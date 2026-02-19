@@ -23,7 +23,8 @@
 
 // include files for QT
 #include <algorithm>
-#include <qlabel.h> 
+#include <QLabel> 
+
 
 #include <QEvent>
 #include <QVector>

@@ -18,7 +18,8 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 // include files for Qt
-#include <qmap.h>
+#include <QMap>
+
 #include <QList>
 #include <QDebug>
 #include <QMessageBox>
@@ -36,7 +37,8 @@
 #include "programinformation.h"
 #include "parameterview.h"
 
-#include <qstandardpaths.h>
+#include <QStandardPaths>
+
 
 
 using namespace ndmanager;
@@ -143,13 +145,13 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openDocument(const QStri
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::newDocument(){
     //If the user has no local version of the file the system default is used
-#ifdef Q_WS_WIN
-	// In Windows, QStandardPaths returns the path to user applications, not not system applications
-	// Therefore we cannot use it here
-	QString path(getenv("PROGRAMFILES"));
-	path += QLatin1String("/NDManager/share/applications/ndmanager/ndManagerDefault.xml");
-#else	
-    QString path = QStandardPaths::locate (QStandardPaths::ApplicationsLocation, QLatin1String("ndmanager/ndManagerDefault.xml"));
+#ifdef Q_OS_WIN
+    // On Windows, QStandardPaths::ApplicationsLocation returns the user apps path,
+    // not the system install prefix — fall back to PROGRAMFILES env var.
+    QString path(qgetenv("PROGRAMFILES"));
+    path += QLatin1String("/NDManager/share/applications/ndmanager/ndManagerDefault.xml");
+#else
+    QString path = QStandardPaths::locate(QStandardPaths::ApplicationsLocation, QLatin1String("ndmanager/ndManagerDefault.xml"));
 #endif
     if (path.isEmpty()) {
        qDebug()<<" ndManagerDefault.xml is not found. Verify install";

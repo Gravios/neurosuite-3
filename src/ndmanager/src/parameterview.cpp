@@ -19,14 +19,20 @@
  ***************************************************************************/
 
 // include files for QT
-#include <qlayout.h>
-#include <qpushbutton.h>
-#include <qlineedit.h>
-#include <qlabel.h>
-#include <qcheckbox.h>
-#include <qpixmap.h>
-#include <qobject.h>
-#include <qstringlist.h>
+#include <QPushButton>
+
+#include <QLineEdit>
+
+#include <QLabel>
+
+#include <QCheckBox>
+
+#include <QPixmap>
+
+#include <QObject>
+
+#include <QStringList>
+
 #include <QTextEdit>
 #include <QDebug>
 #include <QStackedWidget>

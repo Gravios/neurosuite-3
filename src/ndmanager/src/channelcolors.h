@@ -23,9 +23,12 @@
 //include files for the application
 
 // include files for QT
-#include <qwidget.h>
-#include <qstring.h>
-#include <qcolor.h>
+#include <QWidget>
+
+#include <QString>
+
+#include <QColor>
+
 
 /**
   *Class storing the channel color information.

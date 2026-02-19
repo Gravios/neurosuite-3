@@ -21,10 +21,14 @@
 #define MANAGERVIEW_H
 
 // include files for Qt
-#include <qsplitter.h>
-#include <qstring.h>
-#include <qcombobox.h>
-#include <qspinbox.h> 
+#include <QSplitter>
+
+#include <QString>
+
+#include <QComboBox>
+
+#include <QSpinBox> 
+
 
 
 #include <QFrame>

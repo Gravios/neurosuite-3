@@ -20,18 +20,27 @@
 #include "launcherpage.h"
 
 // include files for Qt
-#include <qdir.h> 
-#include <qcombobox.h>
-#include <qstringlist.h> 
+#include <QDir> 
+
+#include <QComboBox>
+
+#include <QStringList> 
+
 #include <QDebug>
 
 LauncherPage::LauncherPage(const QString& url,QWidget* parent)
     : LauncherLayout(parent){
     QDir dir(url);
-    QStringList neuroscopeFiles = dir.entryList(QStringList()<<QLatin1String("*.dat;*.eeg;*.fil"));
+    // Each filter must be a separate QStringList entry — a single string like
+    // "*.dat;*.eeg;*.fil" is treated as one literal pattern (never matches).
+    QStringList neuroscopeFiles = dir.entryList(QStringList() << QLatin1String("*.dat")
+                                                               << QLatin1String("*.eeg")
+                                                               << QLatin1String("*.fil"));
     neuroscopeFiles.append("");
     neuroscopeComboBox->addItems(neuroscopeFiles);
-    QStringList klustersFiles = dir.entryList(QStringList()<<QLatin1String("*.fet;*.spk;*.clu"));
+    QStringList klustersFiles = dir.entryList(QStringList() << QLatin1String("*.fet")
+                                                             << QLatin1String("*.spk")
+                                                             << QLatin1String("*.clu"));
     klustersFiles.append("");
     klustersComboBox->addItems(klustersFiles);
 

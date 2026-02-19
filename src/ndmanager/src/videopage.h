@@ -25,9 +25,12 @@
 #include <helper.h>
 
 // include files for QT
-#include <qwidget.h>
-#include <qlineedit.h>
-#include <qvalidator.h>
+#include <QWidget>
+
+#include <QLineEdit>
+
+#include <QValidator>
+
 
 
 

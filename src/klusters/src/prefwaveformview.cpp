@@ -71,7 +71,7 @@ void PrefWaveformView::resetChannelList(int nb){
 }
 
 void PrefWaveformView::saveChannelOrder(){
-    const QString url = QFileDialog::getSaveFileName(this, tr("Save as..."),QDir::currentPath(), tr("*|All files") );
+    const QString url = QFileDialog::getSaveFileName(this, tr("Save as..."),QDir::currentPath(), tr("All files (*)") );
     if(!url.isEmpty()){
         FILE* channelFile = fopen(url.toLatin1(),"w");
         if(channelFile == NULL){
@@ -99,7 +99,7 @@ void PrefWaveformView::saveChannelOrder(){
 void PrefWaveformView::loadChannelOrder(){
     QSettings settings;
     const QString url = QFileDialog::getOpenFileName(this, tr("Load File..."), settings.value("CurrentDirectory").toString(),
-                                               tr("*|All files") );
+                                               tr("All files (*)") );
 
     if(url.isEmpty())
       return;

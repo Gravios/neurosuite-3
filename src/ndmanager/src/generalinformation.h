@@ -21,8 +21,10 @@
 #define GENERALINFORMATION_H
 
 // include files for QT
-#include <qdatetime.h>
-#include <qstring.h> 
+#include <QDateTime>
+
+#include <QString> 
+
 
 /**
 * Class storing the information contained in the General Information part of the parameter file.

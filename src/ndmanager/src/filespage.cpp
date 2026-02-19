@@ -21,9 +21,10 @@
 #include "filespage.h"
 
 // include files for QT
-#include <qlayout.h>
-#include <qtabwidget.h> 
-#include <qpushbutton.h> 
+#include <QTabWidget> 
+
+#include <QPushButton> 
+
 
 #include <QGridLayout>
 #include <QVBoxLayout>

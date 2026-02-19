@@ -25,11 +25,16 @@
 #include <helper.h>
 
 // include files for QT
-#include <qwidget.h>
-#include <qcombobox.h>
-#include <qspinbox.h>
-#include <qpushbutton.h>
-#include <qvalidator.h>
+#include <QWidget>
+
+#include <QComboBox>
+
+#include <QSpinBox>
+
+#include <QPushButton>
+
+#include <QValidator>
+
 
 /**
 @author Lynn Hazan

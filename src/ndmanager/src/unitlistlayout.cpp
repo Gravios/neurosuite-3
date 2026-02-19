@@ -10,14 +10,21 @@
 #include "unitlistlayout.h"
 #include "unittable.h"
 
-#include <qvariant.h>
-#include <qpushbutton.h>
-#include <qlabel.h>
-#include <qlayout.h>
-#include <qtooltip.h>
+#include <QVariant>
 
-#include <qimage.h>
-#include <qpixmap.h>
+#include <QPushButton>
+
+#include <QLabel>
+
+#include <QVBoxLayout>
+
+#include <QToolTip>
+
+
+#include <QImage>
+
+#include <QPixmap>
+
 
 #include <QGridLayout>
 

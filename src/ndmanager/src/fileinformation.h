@@ -21,7 +21,8 @@
 #define FILEINFORMATION_H
 
 // include files for QT
-#include <qmap.h>
+#include <QMap>
+
 #include <QString>
 #include <QList>
 /**

@@ -24,7 +24,8 @@
 #include "filepage.h"
 
 // include files for QT
-#include <qwidget.h>
+#include <QWidget>
+
 #include <QFrame>
 
 #include <QList>

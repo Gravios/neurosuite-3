@@ -19,8 +19,10 @@
  ***************************************************************************/
 
 // include files for QT
-#include <qcursor.h>
-#include <qevent.h>
+#include <QCursor>
+
+#include <QEvent>
+
 
 #include <QTextStream>
 #include <QList>
@@ -543,7 +545,7 @@ void ndManager::slotSave(){
             initialPath = QFileInfo(currentUrl).absolutePath();
         }
 
-        const QString url=QFileDialog::getSaveFileName( this, tr("Save as..."),initialPath,tr("Xml Files (*.xml)|All Files (*.*)"));
+        const QString url=QFileDialog::getSaveFileName( this, tr("Save as..."),initialPath,tr("Xml Files (*.xml);;All Files (*)"));
         if(!url.isEmpty()){
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             int saveStatus = doc->saveAs(url);

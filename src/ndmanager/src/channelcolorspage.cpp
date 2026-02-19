@@ -21,11 +21,13 @@
 #include "channelcolorspage.h"
 
 // include files for QT
-#include <qwidget.h>
+#include <QWidget>
+
 #include <QList>
-#include <qcolor.h>
-#include <qcolor.h>
-#include <qcolordialog.h>
+#include <QColor>
+
+#include <QColorDialog>
+
 #include <QMouseEvent>
 #include <QTableWidget>
 #include <QTableWidgetItem>

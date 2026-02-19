@@ -21,8 +21,10 @@
 
 #include "config-ndmanager.h"
 // include files for QT
-#include <qdir.h>
-#include <qstring.h>
+#include <QDir>
+
+#include <QString>
+
 #include <QApplication>
 #include <QDebug>
 //Application specific include files

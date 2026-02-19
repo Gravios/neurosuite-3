@@ -21,7 +21,8 @@
 #include "channeloffsetspage.h"
 
 // include files for QT
-#include <qwidget.h>
+#include <QWidget>
+
 #include <QList>
 
 ChannelOffsetsPage::ChannelOffsetsPage(QWidget* parent)

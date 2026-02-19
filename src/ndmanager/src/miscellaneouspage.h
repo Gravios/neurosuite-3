@@ -24,10 +24,14 @@
 #include <neuroscopemisclayout.h>
 
 // include files for QT
-#include <qwidget.h>
-#include <qlineedit.h>
-#include <qvalidator.h>
-#include <qpushbutton.h>
+#include <QWidget>
+
+#include <QLineEdit>
+
+#include <QValidator>
+
+#include <QPushButton>
+
 #include <QFileDialog>
 
 /**

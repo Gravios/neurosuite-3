@@ -21,7 +21,7 @@
 #include "neuroscopevideopage.h"
 
 //QT includes
-#include <qicon.h>
+#include <QIcon>
 
 #include <QPixmap>
 
