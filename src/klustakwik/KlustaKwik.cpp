@@ -292,16 +292,18 @@ int main(int argc, char **argv) {
         // parallelism is active before the first (potentially long) CEM call.
         // -------------------------------------------------------------------
         {
-            int nOmpThreads = 1;
-#ifdef _OPENMP
-            nOmpThreads = omp_get_max_threads();
-#endif
             fprintf(stderr, "KlustaKwik  %s.fet.%d\n", FileBase, ElecNo);
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",
                     K1.nPoints, K1.nDims, MinClusters, MaxClusters);
 
+#ifdef USE_CUDA
+            if (K1.gpu)
+                fprintf(stderr, "  compute: GPU (CUDA)\n");
+            else
+                fprintf(stderr, "  compute: CPU only (no CUDA device found)\n");
+#endif
+
             if (ChunkMinutes > 0.0f) {
-                // Estimate chunk count using same formula as RunChunkedCEM
                 const float sessionSamples = K1.timeRawMax - K1.timeRawMin;
                 const float chunkSamples   = SamplingRate * ChunkMinutes * 60.0f;
                 const int   nChunksEst     = (sessionSamples > 0 && chunkSamples > 0)
@@ -310,10 +312,21 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "  mode: chunked  chunk=%.1f min  SR=%.0f  ~%d chunks\n",
                         ChunkMinutes, SamplingRate, nChunksEst);
 #ifndef _OPENMP
-                fprintf(stderr, "  WARNING: built without OpenMP — chunk phase runs serially.\n");
-                fprintf(stderr, "           Recompile with: g++ -fopenmp ... or cmake with OpenMP found.\n");
+                fprintf(stderr, "  WARNING: built without OpenMP — chunks run serially.\n"
+                                "           Recompile with -fopenmp to enable parallelism.\n");
 #else
-                fprintf(stderr, "  parallel: %d OpenMP threads\n", nOmpThreads);
+                {
+                    const int nThreads = omp_get_max_threads();
+                    const int nProcs   = omp_get_num_procs();
+                    if (nThreads < nProcs)
+                        fprintf(stderr,
+                                "  parallel: %d of %d cores  "
+                                "(OMP_NUM_THREADS=%d limits parallelism — "
+                                "unset it or set to %d to use all cores)\n",
+                                nThreads, nProcs, nThreads, nProcs);
+                    else
+                        fprintf(stderr, "  parallel: %d OpenMP threads\n", nThreads);
+                }
 #endif
             } else if (strcmp(InitMethod, "farthest") == 0) {
                 fprintf(stderr, "  mode: two-phase farthest-point\n");

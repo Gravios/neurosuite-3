@@ -1,27 +1,45 @@
-// KK_cuda.h — declarations for GPU context and host-callable wrappers
-// Included by KK.cpp when compiled with USE_CUDA.
+// KK_cuda.h — GPU context struct and host-callable wrapper declarations.
+// Included by KK.cpp (when compiled with -DUSE_CUDA) and by KK_cuda.cu.
+//
+// DESIGN NOTES
+// ------------
+// * KK_GPU is the single authoritative definition of the GPU context.
+//   KK_cuda.cu includes this header; it does NOT redefine the struct.
+// * Device LogP is always cluster-major [c * nPoints + p] for coalesced
+//   writes in the E-step kernel.  The host KK arrays remain point-major
+//   [p * MaxPossibleClusters + c].  A single download+transpose happens
+//   at the end of cuda_estep; all other functions operate on device memory
+//   directly without round-tripping through the host.
+// * d_Data is uploaded once after LoadData (dim-major [d*nPoints+p]).
+//   It is never re-uploaded during EM iterations.
+// * Cholesky decomposition stays on the CPU (O(D^3), D<=25 -- trivial).
+//   cuda_estep receives the pre-computed Cholesky factors as host pointers
+//   and uploads them as part of the per-step metadata upload.
 #pragma once
-
 #ifdef USE_CUDA
-#include <cuda_runtime.h>
-#include <vector>
 
+#include <cuda_runtime.h>
+
+// ---------------------------------------------------------------------------
+// KK_GPU — persistent GPU context, one per KK instance
+// ---------------------------------------------------------------------------
 struct KK_GPU {
-    float *d_Data      = nullptr;
-    float *d_Mean      = nullptr;
-    float *d_MeanAcc   = nullptr;
-    float *d_Cov       = nullptr;
-    float *d_CovAcc    = nullptr;
-    float *d_LogP      = nullptr;
-    float *d_Weight    = nullptr;
-    float *d_Chol      = nullptr;
-    float *d_LogRootDet= nullptr;
-    float *d_Loss      = nullptr;
-    int   *d_Class     = nullptr;
-    int   *d_OldClass  = nullptr;
-    int   *d_Class2    = nullptr;
-    int   *d_AliveIndex= nullptr;
-    int   *d_nMembers  = nullptr;
+    // --- Device buffers (dim-major or cluster-major as noted) ---
+    float *d_Data       = nullptr;  // [nDims  * nPoints]   dim-major
+    float *d_LogP       = nullptr;  // [MaxClusters * nPoints]  cluster-major
+    float *d_Mean       = nullptr;  // [MaxClusters * nDims]
+    float *d_MeanAcc    = nullptr;  // [MaxClusters * nDims]   accumulator
+    float *d_Cov        = nullptr;  // [MaxClusters * nDims2]
+    float *d_CovAcc     = nullptr;  // [MaxClusters * nDims2]  accumulator
+    float *d_Weight     = nullptr;  // [MaxClusters]
+    float *d_Chol       = nullptr;  // [MaxClusters * nDims2]
+    float *d_LogRootDet = nullptr;  // [MaxClusters]
+    float *d_Loss       = nullptr;  // [MaxClusters]
+    int   *d_Class      = nullptr;  // [nPoints]
+    int   *d_OldClass   = nullptr;  // [nPoints]
+    int   *d_Class2     = nullptr;  // [nPoints]
+    int   *d_AliveIndex = nullptr;  // [MaxClusters]
+    int   *d_nMembers   = nullptr;  // [MaxClusters]
 
     int  nPoints = 0, nDims = 0, nDims2 = 0, MaxClusters = 0;
     bool initialised = false;
@@ -30,29 +48,67 @@ struct KK_GPU {
     void free_all();
 };
 
+// ---------------------------------------------------------------------------
+// Host-callable wrappers (defined in KK_cuda.cu, called from KK.cpp)
+// ---------------------------------------------------------------------------
 extern "C" {
-void cuda_upload_data(KK_GPU *gpu, const float *h_Data_pointMajor);
-void cuda_estep(KK_GPU *gpu,
-    const float *h_Mean, const float *h_Weight, const float *h_Chol,
-    const int *h_AliveIndex, const int *h_Class, const int *h_OldClass,
-    float *h_LogP,
-    int nClustersAlive, float DistThresh, int FullStep, double PI, int MaxClusters);
-void cuda_mstep(KK_GPU *gpu,
-    const int *h_Class, const int *h_AliveIndex,
-    float *h_Mean, float *h_Cov, float *h_Weight,
-    int nClustersAlive, int MaxClusters, int nPoints, int nDims, int nDims2);
-void cuda_cstep(KK_GPU *gpu,
-    const float *h_LogP, const int *h_AliveIndex,
-    int *h_Class, int *h_OldClass, int *h_Class2,
-    int nPoints, int nClustersAlive, int MaxClusters, float HugeScore);
-void cuda_deletion_loss(KK_GPU *gpu,
-    const float *h_LogP, const int *h_Class, const int *h_Class2,
-    float *h_Loss, int nPoints, int MaxClusters);
-}
 
-// Detect CUDA device and return true if one is available
+// Upload transposed Data once after LoadData.
+// h_Data_pointMajor: host array [nPoints * nDims] point-major.
+void cuda_upload_data(KK_GPU *gpu, const float *h_Data_pointMajor);
+
+// E-step: compute LogP on GPU for all alive clusters c>=1.
+// Cholesky decomposition is done on the host before calling this.
+// h_Chol: host array [MaxClusters * nDims2], lower-triangular per cluster.
+// Downloads result and transposes back to h_LogP (point-major).
+void cuda_estep(
+    KK_GPU      *gpu,
+    const float *h_Mean,        // [MaxClusters * nDims]
+    const float *h_Weight,      // [MaxClusters]
+    const float *h_Chol,        // [MaxClusters * nDims2]
+    const int   *h_AliveIndex,  // [nClustersAlive]
+    const int   *h_Class,       // [nPoints]
+    const int   *h_OldClass,    // [nPoints]
+          float *h_LogP,        // [nPoints * MaxClusters] out (point-major)
+    int nClustersAlive, float DistThresh, int FullStep,
+    double PI, int MaxClusters);
+
+// M-step: accumulate means and covariances on GPU, normalise on host.
+// h_Mean, h_Cov, h_Weight are output arrays (updated in-place).
+void cuda_mstep(
+    KK_GPU    *gpu,
+    const int *h_Class,         // [nPoints]
+    const int *h_AliveIndex,    // [nClustersAlive]
+          float *h_Mean,        // [MaxClusters * nDims]  out
+          float *h_Cov,         // [MaxClusters * nDims2] out
+          float *h_Weight,      // [MaxClusters] out
+    int nClustersAlive, int MaxClusters,
+    int nPoints, int nDims, int nDims2);
+
+// C-step: argmin of LogP per point, entirely on GPU.
+// Operates on device d_LogP already uploaded by cuda_estep.
+// Downloads updated Class, OldClass, Class2 to host.
+void cuda_cstep(
+    KK_GPU    *gpu,
+          int *h_Class,         // [nPoints]  in/out
+          int *h_OldClass,      // [nPoints]  out
+          int *h_Class2,        // [nPoints]  out
+    int nClustersAlive, int MaxClusters, float HugeScore);
+
+// ConsiderDeletion loss accumulation: one GPU pass instead of O(N) CPU loop.
+// Operates on device d_LogP, d_Class, d_Class2 already on GPU.
+// Downloads per-cluster loss into h_Loss[MaxClusters].
+void cuda_deletion_loss(
+    KK_GPU    *gpu,
+          float *h_Loss,        // [MaxClusters]  out
+    int MaxClusters);
+
+} // extern "C"
+
+// Returns true if at least one CUDA-capable device is present.
 inline bool cuda_device_available() {
     int count = 0;
     return (cudaGetDeviceCount(&count) == cudaSuccess && count > 0);
 }
+
 #endif // USE_CUDA
