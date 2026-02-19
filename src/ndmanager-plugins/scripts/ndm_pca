@@ -1,0 +1,162 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Compute principal component analysis (PCA)
+#//
+#//   copyright       (C) 2004 by Lynn Hazan,
+#//                   (C) 2007-2011 by Michaël Zugaro
+#//   email           lynn.hazan@myrealbox.com
+#//                   michael.zugaro@college-de-france.fr
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -eq 0 ] || [ $# -gt 2 ]
+then
+	echo_error "usage: $program xml-file [electrodeGroup]"
+	exit $GENERAL_ERROR
+fi
+session=${1%.xml}
+directory=$(basename "$(pwd)")
+electrodeGroup=$2
+
+# Print a header to indicate current processing step
+print_header "$session - Computing PCA for spike sorting"
+
+# Check required programs
+check_commands_installed xpathReader process_pca
+
+once()
+{
+	local electrodeGroup=$1
+
+	# Check input files
+	inputs_missing $session.xml $session.spk.$electrodeGroup && exit $INPUTS_MISSING
+
+	# Check output file
+	outputs_exist $session.fet.$electrodeGroup && exit $OUTPUTS_EXIST
+
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+	# // Read Parameters
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+	nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+	check_mandatory_variable $nElectrodeGroups "missing electrode groups"
+	if [ $electrodeGroup -gt $nElectrodeGroups ]
+	then
+		echo_error "the spike group $electrodeGroup is undefined."
+		exit $GENERAL_ERROR
+	fi
+
+	electrodes=($(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	nElectrodes=${#electrodes[*]}
+	electrodeList=$(for ((i=0;i<$nElectrodes;i++)); do echo -n ${electrodes[${i}]}","; done)
+	electrodeList=${electrodeList:0:${#electrodeList}-1}
+
+	waveformLength=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	nFeatures=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
+
+	check_mandatory_variable $waveformLength "missing number of samples per waveform"
+	check_mandatory_variable $nFeatures "missing number of features"
+
+	# PCA on partial waveform?
+	peak=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+	check_optional_variable $peak && options="$options -p $peak"
+	before=($(read_script_parameter $session before))
+	[ ${#before[*]} -eq 1 ] && before=${before[0]} || before=${before[$electrodeGroup-1]}
+	check_optional_variable $before && options="$options -b $before"
+	after=($(read_script_parameter $session after))
+	[ ${#after[*]} -eq 1 ] && after=${after[0]} || after=${after[$electrodeGroup-1]}
+	check_optional_variable $after && options="$options -a $after"
+
+	# Extra features?
+	extra=$(read_script_parameter $session extra)
+	check_optional_variable $extra || extra=false
+	$extra && options="$options -x"
+
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+	# // Process
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+	# Perform PCA
+	process_pca -f $session.fet.$electrodeGroup.tmp -n $nElectrodes -w $waveformLength -d $nFeatures $options ${@:2} $session.spk.$electrodeGroup
+	check_command_status process_pca
+
+	# Paste timestamps as last column (and update total number of features)
+	totalFeatures=$(($(tail -n 1 $session.fet.$electrodeGroup.tmp|wc -w)+1))
+	cat <(echo $totalFeatures) <(paste -d " " <(tail -n +2 $session.fet.$electrodeGroup.tmp) $session.res.$electrodeGroup) > $session.fet.$electrodeGroup
+	rm $session.fet.$electrodeGroup.tmp
+}
+
+if [ -z "$electrodeGroup" ]
+then
+	nGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+	if [ $nGroups -eq 0 ]
+	then
+		echo_error "missing spike groups"
+		exit $GENERAL_ERROR
+	fi
+
+	# Run all electrode groups in parallel — each reads a different .spk.N file
+	# and writes a different .fet.N file, so there is no shared state.
+	#
+	# Thread budget: process_pca uses OpenMP internally. Cap its thread count so
+	# that nGroups * threadsPerGroup <= nAvailableCores, keeping total load sane.
+	#
+	# threadsPerGroup can be set explicitly in the session XML:
+	#   <program><n>ndm_pca</n><parameters>
+	#     <parameter><n>threadsPerGroup</n><value>2</value><status>Optional</status></parameter>
+	#   </parameters></program>
+	# If absent, defaults to floor(nCores / nGroups), minimum 1.
+	threadsPerGroup=$(xml_read $session "//program/n[.='ndm_pca']/../parameters/parameter/n[.='threadsPerGroup']/../value")
+	if [ -z "$threadsPerGroup" ]
+	then
+		nCores=$(nproc 2>/dev/null || echo 1)
+		threadsPerGroup=$(( nCores / nGroups ))
+		[ $threadsPerGroup -lt 1 ] && threadsPerGroup=1
+	fi
+
+	# Inject thread count into the options picked up by process_pca inside once().
+	# process_pca respects -t nThreads to call omp_set_num_threads().
+	PCA_THREAD_OPT="-t $threadsPerGroup"
+
+	# Launch all groups in background, capturing each group's log separately
+	# so output is not interleaved on the terminal.
+	pids=()
+	for ((i=1;i<=$nGroups;i++))
+	do
+		(once $i $PCA_THREAD_OPT) > /tmp/ndm_pca_${session}_$i.log 2>&1 &
+		pids+=($!)
+	done
+
+	# Wait for all groups and collect exit codes
+	overallStatus=$NO_ERROR
+	for ((i=0;i<${#pids[@]};i++))
+	do
+		wait ${pids[$i]}
+		groupStatus=$?
+		# Print the log for this group in order
+		cat /tmp/ndm_pca_${session}_$((i+1)).log
+		rm -f /tmp/ndm_pca_${session}_$((i+1)).log
+		if [ $groupStatus -ne 0 ] && [ $groupStatus -ne $OUTPUTS_EXIST ] && [ $groupStatus -ne $INPUTS_MISSING ]
+		then
+			overallStatus=$groupStatus
+		fi
+	done
+
+	exit $overallStatus
+else
+	once $electrodeGroup
+	exit $NO_ERROR
+fi
+

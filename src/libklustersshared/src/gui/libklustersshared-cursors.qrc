@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/shared-cursors">
+        <file alias="add_event_cursor">cursors/add_event_cursor.png</file>
+        <file alias="measure_cursor">cursors/measure_cursor.png</file>
+        <file alias="select_channels_cursor">cursors/select_channels_cursor.png</file>
+        <file alias="select_event_cursor">cursors/select_event_cursor.png</file>
+        <file alias="select_time_cursor">cursors/select_time_cursor.png</file>
+        <file alias="time_line_cursor">cursors/time_line_cursor.png</file>
+        <file alias="zoom_cursor">cursors/zoom_cursor.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,24 @@
+#!/bin/bash
+# ndmanager wrapper — forces software OpenGL to avoid MESA/ZINK segfault
+# on systems where Vulkan/Zink is present but incomplete.
+#
+# Install: 
+#   chmod +x ndmanager_wrapper.sh
+#   sudo cp ndmanager_wrapper.sh /usr/local/bin/ndmanager-safe
+#   OR add ~/bin to PATH and put it there as 'ndmanager-safe'
+
+# Disable Zink (OpenGL-over-Vulkan) — this is what causes the crash.
+# Qt5 on Ubuntu 24.04 tries Zink first; if Vulkan is present but pdev fails, it segfaults.
+export MESA_LOADER_DRIVER_OVERRIDE=crocus   # force Intel classic driver if on Intel GPU
+export GALLIUM_DRIVER=llvmpipe             # force software rasterizer
+export LIBGL_ALWAYS_SOFTWARE=1             # tell libGL to always use software path
+export MESA_GL_VERSION_OVERRIDE=4.5        # report GL 4.5 so Qt doesn't reject sw renderer
+
+# Disable Qt's attempt to use EGL/Zink XCB GL integration
+export QT_XCB_GL_INTEGRATION=none
+
+# Unset any Vulkan-related vars that might trigger Zink
+unset VK_ICD_FILENAMES
+unset VK_LAYER_PATH
+
+exec /usr/bin/ndmanager "$@"
