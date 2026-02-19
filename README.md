@@ -8,18 +8,19 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology analysis t
 
 ```
 neurosuite/
-├── libklustersshared/      Shared Qt6 widget library (dependency of ndmanager and klusters)
-├── ndmanager/              GUI session manager — opens .xml parameter files, dispatches plugins
-├── ndmanager-plugins/      Command-line preprocessing pipeline (C++ binaries + shell scripts)
-│   ├── src/                C++/CUDA source for process_* binaries
-│   └── scripts/            ndm_* bash pipeline scripts
-├── neuroscope/             Wideband/LFP/spike waveform visualiser
-├── klusters/               Manual spike-sorting GUI
-├── klustakwik/             Automatic spike-sorting (EM clustering, optional CUDA)
-├── nphys-data/             Shared MIME-type icons and desktop integration files
-├── templates/              Example .xml parameter file for a 96-channel silicon probe session
 ├── doc/                    Per-component manuals and migration notes
-└── scripts/                Utility scripts (backtrace helper, ndmanager-safe wrapper)
+├── scripts/                Utility scripts (backtrace helper, ndmanager-safe wrapper)
+├── src/
+│   ├── libklustersshared/      Shared Qt6 widget library (dependency of ndmanager and klusters)
+│   ├── ndmanager/              GUI session manager — opens .xml parameter files, dispatches plugins
+│   ├── ndmanager-plugins/      Command-line preprocessing pipeline (C++ binaries + shell scripts)
+│   │   ├── src/                C++/CUDA source for process_* binaries
+│   │   └── scripts/            ndm_* bash pipeline scripts
+│   ├── neuroscope/             Wideband/LFP/spike waveform visualiser
+│   ├── klusters/               Manual spike-sorting GUI
+│   ├── klustakwik/             Automatic spike-sorting (EM clustering, optional CUDA)
+│   └── nphys-data/             Shared MIME-type icons and desktop integration files
+└── templates/              Example .xml parameter file for a 96-channel silicon probe session
 ```
 
 ---
