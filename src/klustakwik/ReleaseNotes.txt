@@ -1,5 +1,13 @@
 KlustaKwik Release Notes
 
+Version 2.0 (modernisation fork)
+
+C++17 port of v1.7. Algorithmic additions: farthest-point seeding,
+two-phase CEM with time-merge pass, three-phase temporal chunking for
+long recordings with electrode drift, OpenMP parallel chunk processing,
+optional CUDA backend. All output formats unchanged. See CHANGES.md for
+full details.
+
 Version 1.7 24 Jun 04
 
 Fixed line endings in release archive. Modified building.
