@@ -7,7 +7,7 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology analysis t
 ## Repository layout
 
 ```
-neurosuite/
+neurosuite/src/
 ├── libklustersshared/      Shared Qt6 widget library (dependency of ndmanager and klusters)
 ├── ndmanager/              GUI session manager — opens .xml parameter files, dispatches plugins
 ├── ndmanager-plugins/      Command-line preprocessing pipeline (C++ binaries + shell scripts)
