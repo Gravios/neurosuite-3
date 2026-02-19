@@ -355,7 +355,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
                     const QString newName = cluFileInfo.fileName()+ QLatin1String(".") + cluFileInfo.lastModified().toString("MM.dd.yyyy.hh.mm");
                     renameStatus = dir.rename(cluName,newName);
                 }
-                renameStatus = dir.rename(crashFileInfo.fileName(),cluName.toString());
+                renameStatus = dir.rename(crashFileInfo.fileName(),cluName);
                 if(!renameStatus)
                     QMessageBox::critical(0, tr("I/O Error !"),tr(
                                               "It appears that the rescue file cannot be renamed (possibly because of insufficient file access permissions).\n"

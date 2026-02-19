@@ -6,6 +6,8 @@
 #pragma once
 #include "Array.h"
 #include "KK_cuda.h"   // no-op when USE_CUDA not defined
+#include "KK_sycl.h"   // no-op when USE_SYCL not defined
+#include "KK_hip.h"    // no-op when USE_HIP  not defined
 #include <functional>
 #include <memory>
 #include <numeric>
@@ -126,6 +128,16 @@ public:
     // GPU context — allocated by LoadData() when a CUDA device is present.
     // nullptr on chunk sub-objects (K2/K3/Kc) which always run on the CPU.
     // Freed by ~KK() when non-null.
+    KK_GPU *gpu = nullptr;
+
+    ~KK() { if (gpu) { gpu->free_all(); delete gpu; } }
+#elif defined(USE_SYCL)
+    // SYCL GPU context — same lifetime rules as the CUDA version above.
+    KK_GPU *gpu = nullptr;
+
+    ~KK() { if (gpu) { gpu->free_all(); delete gpu; } }
+#elif defined(USE_HIP)
+    // HIP GPU context — same lifetime rules as the CUDA version above.
     KK_GPU *gpu = nullptr;
 
     ~KK() { if (gpu) { gpu->free_all(); delete gpu; } }

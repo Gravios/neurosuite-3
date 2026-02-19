@@ -32,7 +32,7 @@
 
 #include <QProcess>
 #include <QMainWindow>
-#include <QRecentFileAction>
+#include <qrecentfileaction.h>
 
 #include <QToolBar>
 

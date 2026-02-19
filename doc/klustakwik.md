@@ -16,15 +16,175 @@ enables parallel chunk processing when available.
 
 ```bash
 # CPU-only
-cmake -B build -DUSE_CUDA=OFF
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF
 cmake --build build -j$(nproc)
 
-# With CUDA (requires CUDA Toolkit >= 11)
-cmake -B build -DCMAKE_CUDA_COMPILER=$(which nvcc)
+# With CUDA — NVIDIA GPUs (requires CUDA Toolkit >= 11)
+cmake -B build -DUSE_HIP=OFF -DUSE_SYCL=OFF
+cmake --build build -j$(nproc)
+
+# With HIP — AMD GPUs (requires ROCm >= 5.0)
+cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF
+cmake --build build -j$(nproc)
+
+# With SYCL — Intel Arc/Xe GPUs (requires oneAPI Base Toolkit >= 2023.1)
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF
 cmake --build build -j$(nproc)
 ```
 
-The CUDA build also produces `KlustaKwik_cpu` as a CPU-only fallback target.
+When none of the three backend flags are explicitly set, CMake auto-detects in
+priority order CUDA > HIP > SYCL and selects the first toolkit it finds.
+Every GPU build also produces `KlustaKwik_cpu` as a CPU-only fallback binary.
+
+---
+
+### CUDA installation (NVIDIA)
+
+Install the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
+(>= 11, recommended >= 12) for your distribution. On Ubuntu/Debian:
+
+```bash
+# Ubuntu 22.04 / 24.04 — network installer
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+sudo apt install cuda-toolkit-12-x
+```
+
+Verify the installation:
+
+```bash
+nvcc --version
+nvidia-smi
+```
+
+No extra CMake flags are needed; `check_language(CUDA)` will locate `nvcc`
+automatically. To target specific GPU generations, override the architecture
+list at configure time:
+
+```bash
+# Ampere only (RTX 30xx)
+cmake -B build -DCMAKE_CUDA_ARCHITECTURES="86" -DUSE_HIP=OFF -DUSE_SYCL=OFF
+```
+
+---
+
+### HIP installation (AMD ROCm)
+
+Install [ROCm](https://rocm.docs.amd.com/en/latest/deploy/linux/index.html)
+(>= 5.0) for your distribution. On Ubuntu 22.04 / 24.04:
+
+```bash
+# Add the ROCm package repository
+sudo apt install wget gnupg
+wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
+echo "deb [arch=amd64] https://repo.radeon.com/rocm/apt/debian/ jammy main" \
+    | sudo tee /etc/apt/sources.list.d/rocm.list
+sudo apt update
+sudo apt install rocm-dev hipcc
+```
+
+Add ROCm to your environment (add to `~/.bashrc` to make permanent):
+
+```bash
+export PATH=/opt/rocm/bin:$PATH
+export ROCM_PATH=/opt/rocm
+```
+
+Verify the installation:
+
+```bash
+hipcc --version
+rocminfo | grep "Marketing Name"
+```
+
+Build KlustaKwik with HIP:
+
+```bash
+cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF
+cmake --build build -j$(nproc)
+```
+
+CMake locates `hipcc` automatically via `ROCM_PATH` or the default path
+`/opt/rocm/bin`. The default GPU architecture list covers RDNA2 (RX 6000),
+RDNA3 (RX 7000), and CDNA2 (Instinct MI210/MI250). To target specific
+architectures:
+
+```bash
+# RDNA3 only (RX 7900 XTX etc.)
+cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
+      -DKK_HIP_ARCHS="gfx1100;gfx1101;gfx1102"
+
+# RDNA2 only (RX 6800 XT etc.)
+cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
+      -DKK_HIP_ARCHS="gfx1030;gfx1031;gfx1032"
+```
+
+A full list of gfx identifiers is available via `rocminfo` (look for
+`Name: gfxNNNN` under each agent).
+
+**Note on wavefront size:** RDNA wavefronts are 64 threads wide (vs CUDA
+warps at 32). The default block size of 256 threads (4 wavefronts) is safe
+on all supported architectures. For CDNA2 datacenter cards which benefit from
+higher occupancy, raise it at configure time:
+
+```bash
+cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
+      -DKK_HIP_ARCHS="gfx90a" -DKK_HIP_BLOCK=512
+```
+
+---
+
+### SYCL installation (Intel Arc / Xe)
+
+Install the [Intel oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html)
+(>= 2023.1), which provides the `icpx` DPC++ compiler and the SYCL runtime.
+On Ubuntu/Debian:
+
+```bash
+# Add the Intel oneAPI repository
+wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+    | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
+    https://apt.repos.intel.com/oneapi all main" \
+    | sudo tee /etc/apt/sources.list.d/oneAPI.list
+sudo apt update
+sudo apt install intel-basekit
+```
+
+Activate the oneAPI environment (add to `~/.bashrc` to make permanent):
+
+```bash
+source /opt/intel/oneapi/setvars.sh
+```
+
+Verify the installation:
+
+```bash
+icpx --version
+sycl-ls        # lists available SYCL devices; your Arc GPU should appear
+```
+
+Build KlustaKwik with SYCL:
+
+```bash
+source /opt/intel/oneapi/setvars.sh   # if not already in .bashrc
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF
+cmake --build build -j$(nproc)
+```
+
+This produces `KlustaKwik_sycl` (also installed as `KlustaKwik`). The binary
+is compiled ahead-of-time for Intel Arc (Alchemist) and Iris Xe targets. The
+JIT fallback is still available at runtime for any SYCL-capable device not
+explicitly listed at compile time.
+
+The work-group size defaults to 256. To tune it:
+
+```bash
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF -DKK_SYCL_WG=512
+```
+
+---
 
 To compile manually without CMake:
 
