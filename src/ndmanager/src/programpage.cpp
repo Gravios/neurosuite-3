@@ -24,15 +24,19 @@
 #include "descriptionwriter.h"
 
 // include files for QT
-#include <qlayout.h>
-#include <qtabwidget.h>
-#include <qpushbutton.h>
-#include <qfileinfo.h>
+#include <QTabWidget>
+
+#include <QPushButton>
+
+#include <QFileInfo>
+
 #include <QTextStream>
-#include <qapplication.h>
+#include <QApplication>
+
 #include <QRegularExpression>
 #include <QDebug>
-#include <qtextedit.h>
+#include <QTextEdit>
+
 
 #include <QGridLayout>
 #include <QFrame>

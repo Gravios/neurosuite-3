@@ -23,7 +23,8 @@
 // include files for QT
 #include <algorithm>
 #include <QList>
-#include <qstringlist.h>
+#include <QStringList>
+
 
 #include <QEvent>
 #include <QVector>

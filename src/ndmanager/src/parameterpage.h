@@ -24,8 +24,10 @@
 #include <parameterlayout.h>
 
 // include files for QT
-#include <qstringlist.h> 
-#include <qlineedit.h> 
+#include <QStringList> 
+
+#include <QLineEdit> 
+
 
 #include <QList>
 #include "safetablewidget.h"

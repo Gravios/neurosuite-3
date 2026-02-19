@@ -27,11 +27,15 @@
 #include "unittable.h"
 
 // include files for QT
-#include <qwidget.h>
-#include <qpushbutton.h>
-#include <qmap.h>
+#include <QWidget>
+
+#include <QPushButton>
+
+#include <QMap>
+
 #include <QRegularExpression>
-#include <qlineedit.h>
+#include <QLineEdit>
+
 
 #include <QEvent>
 #include <QList>

@@ -21,7 +21,8 @@
 #define NEUROSCOPEVIDEOINFO_H
 
 // include files for QT
-#include <qstring.h>
+#include <QString>
+
 
 /**
 * Class storing the video information used by NeuroScope.

@@ -23,7 +23,8 @@
 #include "programinformation.h"
 
 //include files for QT
-#include <qdom.h> 
+#include <QDomDocument> 
+
 /**
 This class writes a program description to disk.
 @author Lynn Hazan

@@ -24,7 +24,8 @@
 #include "parameterpage.h"
 
 // include files for QT
-#include <qwidget.h>
+#include <QWidget>
+
 #include <QFrame>
 
 //forward declaration

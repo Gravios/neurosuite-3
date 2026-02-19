@@ -24,9 +24,12 @@
 #include <generalinfolayout.h>
 
 // include files for QT
-#include <qwidget.h>
-#include <qdatetime.h>
-#include <qlineedit.h>
+#include <QWidget>
+
+#include <QDateTime>
+
+#include <QLineEdit>
+
 #include <QCalendarWidget>
 
 

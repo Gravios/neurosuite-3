@@ -22,7 +22,8 @@
 #define _NDMANAGER_H_
 
 //include files for QT
-#include <qdom.h>
+#include <QDomDocument>
+
 
 #include <QList>
 
@@ -31,7 +32,8 @@
 
 #include <QProcess>
 #include <QMainWindow>
-#include <qrecentfileaction.h>
+#include <QRecentFileAction>
+
 #include <QToolBar>
 
 // application specific includes

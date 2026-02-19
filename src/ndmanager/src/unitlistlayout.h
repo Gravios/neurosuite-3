@@ -10,8 +10,10 @@
 #ifndef UNITLISTLAYOUT_H
 #define UNITLISTLAYOUT_H
 
-#include <qvariant.h>
-#include <qwidget.h>
+#include <QVariant>
+
+#include <QWidget>
+
 
 #include <QGridLayout>
 #include <QLabel>

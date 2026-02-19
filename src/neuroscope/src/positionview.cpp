@@ -119,7 +119,7 @@ void PositionView::paintEvent ( QPaintEvent*){
 
         //Fill the double buffer with the background color if no image has been set.
         if(background.isNull())
-            doublebuffer.fill(backgroundRole());
+            doublebuffer.fill(palette().color(backgroundRole()));
 
         //Paint all the positions in the double buffer on top of the background image or the background color.
         drawPositions(painter);

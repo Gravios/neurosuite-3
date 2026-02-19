@@ -22,7 +22,8 @@
 
 // include files for QT
 #include <algorithm>
-#include <qpushbutton.h>
+#include <QPushButton>
+
 
 #include <QEvent>
 #include <QVector>

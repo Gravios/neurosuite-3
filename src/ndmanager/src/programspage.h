@@ -23,7 +23,8 @@
 //include files for the application
 
 // include files for QT
-#include <qwidget.h>
+#include <QWidget>
+
 #include <QFrame>
 
 //forward declaration

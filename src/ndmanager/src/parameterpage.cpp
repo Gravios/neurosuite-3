@@ -22,9 +22,12 @@
 
 // include files for QT
 #include <algorithm>
-#include <qwidget.h>
-#include <qpushbutton.h>
-#include <qlineedit.h>
+#include <QWidget>
+
+#include <QPushButton>
+
+#include <QLineEdit>
+
 #include <QComboBox>
 
 #include <QEvent>

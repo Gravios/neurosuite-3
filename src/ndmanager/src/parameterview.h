@@ -22,10 +22,11 @@
 #define _NDPARAMETERVIEW_H_
 
 // include files for QT
-#include <qwidget.h>
-#include <qvalidator.h>
+#include <QWidget>
+
+#include <QValidator>
+
 #include <QMap>
-#include <qwidget.h>
 #include <QList>
 
 #include <QFrame>

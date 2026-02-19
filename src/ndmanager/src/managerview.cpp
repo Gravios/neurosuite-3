@@ -19,9 +19,10 @@
  ***************************************************************************/
 #include "managerview.h"
 // include files for Qt
-#include <qdir.h> 
-#include <qstringlist.h> 
-#include <qlayout.h>
+#include <QDir> 
+
+#include <QStringList> 
+
 #include <QVBoxLayout>
 #include <QList>
 #include <QFrame>

@@ -349,11 +349,11 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
             {
             case QMessageBox::Yes:
                 QDir dir(crashFileInfo.dir());
-                QUrl cluName = cluFileInfo.fileName();
+                const QString cluName = cluFileInfo.fileName();
                 bool renameStatus;
                 if(cluFileInfo.exists()){
                     const QString newName = cluFileInfo.fileName()+ QLatin1String(".") + cluFileInfo.lastModified().toString("MM.dd.yyyy.hh.mm");
-                    renameStatus = dir.rename(cluName.toString(),newName);
+                    renameStatus = dir.rename(cluName,newName);
                 }
                 renameStatus = dir.rename(crashFileInfo.fileName(),cluName.toString());
                 if(!renameStatus)

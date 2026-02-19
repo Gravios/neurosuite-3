@@ -24,10 +24,13 @@
 #include <spikelayout.h>
 
 // include files for QT
-#include <qwidget.h>
-#include <qpushbutton.h>
+#include <QWidget>
+
+#include <QPushButton>
+
 #include <QRegularExpression>
-#include <qlineedit.h>
+#include <QLineEdit>
+
 
 #include <QEvent>
 #include <QList>

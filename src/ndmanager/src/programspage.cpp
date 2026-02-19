@@ -22,9 +22,10 @@
 #include "programspage.h"
 
 // include files for QT
-#include <qlayout.h>
-#include <qpushbutton.h> 
-#include <qlabel.h>
+#include <QPushButton> 
+
+#include <QLabel>
+
 #include <QRegularExpression> 
 
 #include <QGridLayout>

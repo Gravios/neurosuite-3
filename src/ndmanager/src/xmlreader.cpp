@@ -20,8 +20,10 @@
 // application specific includes
 #include "xmlreader.h"
 //include files for QT
-#include <qfile.h> 
-#include <qstring.h> 
+#include <QFile> 
+
+#include <QString> 
+
 #include <QDomDocument>
 #include <QList>
 #include <QDebug>

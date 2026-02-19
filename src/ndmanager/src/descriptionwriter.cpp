@@ -31,8 +31,10 @@
 #include <QStringList>
 
 //include files for QT
-#include <qfile.h> 
-#include <qstring.h> 
+#include <QFile> 
+
+#include <QString> 
+
 
 using namespace ndmanager;
 

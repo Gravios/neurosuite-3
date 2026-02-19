@@ -32,8 +32,10 @@
 
 //include files for QT
 #include <QList>
-#include <qmap.h>
-#include <qdom.h> 
+#include <QMap>
+
+#include <QDomDocument> 
+
 
 
 /**

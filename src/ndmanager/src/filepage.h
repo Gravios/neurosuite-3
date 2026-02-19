@@ -25,8 +25,10 @@
 #include <helper.h>
 
 // include files for QT
-#include <qwidget.h>
-#include <qlineedit.h>
+#include <QWidget>
+
+#include <QLineEdit>
+
 #include <QRegularExpression>
 
 #include <QEvent>

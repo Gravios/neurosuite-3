@@ -21,7 +21,8 @@
 #define NDMANAGERDOC_H
 
 // include files for QT
-#include <qstring.h>
+#include <QString>
+
 
 
 #include <QWidget>
