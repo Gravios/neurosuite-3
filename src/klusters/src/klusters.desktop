@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Klusters
+GenericName=Cluster cutting application
+Comment=
+Icon=klusters
+Exec=klusters %u
+MimeType=application/nphys-clu;application/nphys-fet;
+Categories=Qt;Education;Science;
