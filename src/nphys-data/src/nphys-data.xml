@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+
+	<!-- 	Multichannel continuous signals -->
+	
+	<mime-type type="application/nphys-dat">
+		<comment>wideband data</comment>
+		<comment xml:lang="fr">données large bande</comment>
+		<glob pattern="*.dat"/>
+	</mime-type>
+	<mime-type type="application/nphys-fil">
+		<comment>high-pass filtered data</comment>
+		<comment xml:lang="fr">données filtrées en passe-haut</comment>
+		<glob pattern="*.fil"/>
+	</mime-type>
+	<mime-type type="application/nphys-lfp">
+		<comment>local field potentials</comment>
+		<comment xml:lang="fr">potentiels de champs locaux</comment>
+		<glob pattern="*.lfp"/>
+	</mime-type>
+	<mime-type type="application/nphys-eeg">
+		<comment>electroencephalogram</comment>
+		<comment xml:lang="fr">électroencephalogramme</comment>
+		<glob pattern="*.eeg"/>
+	</mime-type>
+
+	<!-- 	Spikes -->
+	
+	<mime-type type="application/nphys-spk">
+		<comment>spike waveform file</comment>
+		<comment xml:lang="fr">fichier de formes de potentiels d'action</comment>
+		<glob pattern="*.spk.*"/>
+	</mime-type>
+	<mime-type type="application/nphys-clu">
+		<comment>cluster file</comment>
+		<comment xml:lang="fr">fichier de grappes</comment>
+		<glob pattern="*.clu.*"/>
+	</mime-type>
+	<mime-type type="application/nphys-fet">
+		<comment>feature file</comment>
+		<comment xml:lang="fr">fichier de caractéristiques</comment>
+		<glob pattern="*.fet.*"/>
+	</mime-type>
+	<mime-type type="application/nphys-res">
+		<comment>spike timing file</comment>
+		<comment xml:lang="fr">fichier de temps des potentiels d'action</comment>
+		<glob pattern="*.res.*"/>
+	</mime-type>
+
+	<!-- 	Events -->
+	
+	<mime-type type="application/nphys-evt">
+		<comment>event file</comment>
+		<comment xml:lang="fr">fichier d'événements</comment>
+		<glob pattern="*.evt"/>
+	</mime-type>
+	
+	<!-- 	Tracking -->
+	
+	<mime-type type="application/nphys-spots">
+		<comment>spots file</comment>
+		<comment xml:lang="fr">fichier de points lumineux</comment>
+		<glob pattern="*.spots"/>
+	</mime-type>
+	<mime-type type="application/nphys-pos">
+		<comment>position file</comment>
+		<comment xml:lang="fr">fichier de positions</comment>
+		<glob pattern="*.pos"/>
+	</mime-type>
+	<mime-type type="application/nphys-whl">
+		<comment>wheel file</comment>
+		<comment xml:lang="fr">fichier de roue</comment>
+		<glob pattern="*.whl"/>
+	</mime-type>
+	
+	<!-- 	Preprocessing -->
+	
+	<mime-type type="application/nphys-sts">
+		<comment>spots timestamp file</comment>
+		<comment xml:lang="fr">fichier de temps des points lumineux</comment>
+		<glob pattern="*.sts"/>
+	</mime-type>
+	<mime-type type="application/nphys-nlx-sync">
+		<comment>synchronization file (for Neuralynx systems)</comment>
+		<comment xml:lang="fr">fichier de synchronisation (pour systèmes Neuralynx)</comment>
+		<glob pattern="*.sync"/>
+	</mime-type>
+	<mime-type type="application/nphys-nlx-restart">
+		<comment>acquisition restart file (for Neuralynx systems)</comment>
+		<comment xml:lang="fr">fichier de redémarrage d'acquisition (pour systèmes Neuralynx)</comment>
+		<glob pattern="*.restart"/>
+	</mime-type>
+	
+</mime-info>

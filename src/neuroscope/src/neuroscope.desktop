@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Neuroscope
+GenericName=Viewer for neurophysiological and behavioral data
+Comment=
+Icon=neuroscope
+Exec=neuroscope %u
+MimeType=application/nphys-dat;application/nphys-fil;application/nphys-lfp;application/nphys-eeg;application/nphys-nrs;
+Categories=Qt;Education;Science;

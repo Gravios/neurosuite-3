@@ -1,0 +1,29 @@
+# Config file for LibKlustersShared . Do not modify this file. Any change will be overwritten by CMake.
+
+# This file will define the following variables:
+#
+# LIBKLUSTERSSHARED_LIB_DIR : The libklustersshared library directory
+# LIBKLUSTERSSHARED_INCLUDE_DIR : The libklustersshared include directory
+# LIBKLUSTERSSHARED_LIBRARY : The libklustersshared library
+
+set(LIBKLUSTERSSHARED_VERSION_MAJOR @LIBKLUSTERSSHARED_VERSION_MAJOR@)
+set(LIBKLUSTERSSHARED_VERSION_MINOR @LIBKLUSTERSSHARED_VERSION_MINOR@)
+set(LIBKLUSTERSSHARED_VERSION_PATCH @LIBKLUSTERSSHARED_VERSION_PATCH@)
+set(LIBKLUSTERSSHARED_VERSION       "${LIBKLUSTERSSHARED_VERSION_MAJOR}.${LIBKLUSTERSSHARED_VERSION_MINOR}.${LIBKLUSTERSSHARED_VERSION_PATCH}")
+
+
+get_filename_component(_currentDir ${CMAKE_CURRENT_LIST_FILE} PATH) # The current directory
+get_filename_component(rootDir ${_currentDir}/@relInstallDir@ ABSOLUTE) # The install prefix
+
+# Include directory
+set(LIBKLUSTERSSHARED_INCLUDE_DIR "@INCLUDE_INSTALL_DIR@")
+
+# Library directory
+set(LIBKLUSTERSSHARED_LIB_DIR "@LIB_INSTALL_DIR@")
+set(LIBKLUSTERSSHARED_DLL_DIR "@BIN_INSTALL_DIR@")
+
+# Import the exported targets
+include(${_currentDir}/LibKlustersSharedTargetsWithPrefix.cmake)
+
+# Set the libraries names
+set(LIBKLUSTERSSHARED_LIBRARY klustersshared)

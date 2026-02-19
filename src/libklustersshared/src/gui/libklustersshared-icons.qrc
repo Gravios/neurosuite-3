@@ -1,0 +1,22 @@
+<RCC>
+    <qresource prefix="/shared-icons">
+        <file alias="document-close">icons/document-close.png</file>
+        <file alias="document-new">icons/document-new.png</file>
+        <file alias="document-open-recent">icons/document-open-recent.png</file>
+        <file alias="document-open">icons/document-open.png</file>
+        <file alias="document-print">icons/document-print.png</file>
+        <file alias="document-save-all">icons/document-save-all.png</file>
+        <file alias="document-save-as">icons/document-save-as.png</file>
+        <file alias="document-save">icons/document-save.png</file>
+        <file alias="dialog-cancel">icons/dialog-cancel.png</file>
+        <file alias="dialog-close">icons/dialog-close.png</file>
+        <file alias="dialog-ok-apply">icons/dialog-ok-apply.png</file>
+        <file alias="dialog-ok">icons/dialog-ok.png</file>
+        <file alias="edit-redo">icons/edit-redo.png</file>
+        <file alias="edit-undo">icons/edit-undo.png</file>
+        <file alias="window-close">icons/window-close.png</file>
+        <file alias="folder-open">icons/folder-open.png</file>
+        <file alias="configure">icons/configure.png</file>
+        <file alias="help-contents">icons/help-contents.png</file>
+    </qresource>
+</RCC>
