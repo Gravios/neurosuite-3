@@ -178,7 +178,24 @@ void KK::LoadData() {
         gpu = new KK_GPU();
         gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
         cuda_upload_data(gpu, Data.m_Data);
-        Output("GPU context initialised (%d points, %d dims).\n", nPoints, nDims);
+        Output("GPU context initialised (CUDA, %d points, %d dims).\n", nPoints, nDims);
+    }
+#elif defined(USE_SYCL)
+    if (!suppressBestSave) {
+        sycl::device sycl_dev;
+        if (sycl_device_available(&sycl_dev)) {
+            gpu = new KK_GPU(sycl_dev);
+            gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
+            sycl_upload_data(gpu, Data.m_Data);
+            Output("GPU context initialised (SYCL, %d points, %d dims).\n", nPoints, nDims);
+        }
+    }
+#elif defined(USE_HIP)
+    if (!suppressBestSave && hip_device_available()) {
+        gpu = new KK_GPU();
+        gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
+        hip_upload_data(gpu, Data.m_Data);
+        Output("GPU context initialised (HIP, %d points, %d dims).\n", nPoints, nDims);
     }
 #endif
 }
@@ -228,8 +245,25 @@ void KK::MStep() {
 
 #ifdef USE_CUDA
     if (gpu) {
-        // GPU path: scatter mean+cov accumulation on device, normalise on host
         cuda_mstep(gpu,
+            Class.m_Data, AliveIndex.m_Data,
+            Mean.m_Data, Cov.m_Data, Weight.m_Data,
+            nClustersAlive, MaxPossibleClusters,
+            nPoints, nDims, nDims2);
+        goto mstep_debug;
+    }
+#elif defined(USE_SYCL)
+    if (gpu) {
+        sycl_mstep(gpu,
+            Class.m_Data, AliveIndex.m_Data,
+            Mean.m_Data, Cov.m_Data, Weight.m_Data,
+            nClustersAlive, MaxPossibleClusters,
+            nPoints, nDims, nDims2);
+        goto mstep_debug;
+    }
+#elif defined(USE_HIP)
+    if (gpu) {
+        hip_mstep(gpu,
             Class.m_Data, AliveIndex.m_Data,
             Mean.m_Data, Cov.m_Data, Weight.m_Data,
             nClustersAlive, MaxPossibleClusters,
@@ -270,7 +304,7 @@ void KK::MStep() {
                 Cov[c * nDims2 + i * nDims + j] *= inv;
     }
 
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     mstep_debug:
 #endif
     if (Debug) {
@@ -314,21 +348,34 @@ void KK::EStep() {
     }
     Reindex();
 
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
-        // Flatten Cholesky factors into a contiguous host array for upload
-        // (*pChol)[c] holds the lower-triangular matrix for cluster c
+        // Flatten Cholesky factors into a contiguous host array for upload.
+        // (*pChol)[c] holds the lower-triangular matrix for cluster c.
         std::vector<float> h_chol(MaxPossibleClusters * nDims2, 0.0f);
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (ClassAlive[c])
                 for (int i = 0; i < nDims2; i++)
                     h_chol[c * nDims2 + i] = (*pChol)[c][i];
-
+#if defined(USE_CUDA)
         cuda_estep(gpu,
             Mean.m_Data, Weight.m_Data, h_chol.data(),
             AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
             LogP.m_Data,
             nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
+#elif defined(USE_SYCL)
+        sycl_estep(gpu,
+            Mean.m_Data, Weight.m_Data, h_chol.data(),
+            AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
+            LogP.m_Data,
+            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
+#elif defined(USE_HIP)
+        hip_estep(gpu,
+            Mean.m_Data, Weight.m_Data, h_chol.data(),
+            AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
+            LogP.m_Data,
+            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
+#endif
         return;
     }
 #endif
@@ -378,14 +425,23 @@ void KK::EStep() {
 //   Alternative: parallel reduction per cluster column (transpose back).
 // ---------------------------------------------------------------------------
 void KK::CStep() {
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
-        // d_LogP and d_AliveIndex are already on device from the preceding EStep.
-        // d_Class is also on device (uploaded in EStep); we get back updated
-        // Class, OldClass, Class2 arrays.
+        // d_LogP and d_AliveIndex are current from EStep.
+        // Returns updated Class, OldClass, Class2.
+#if defined(USE_CUDA)
         cuda_cstep(gpu,
             Class.m_Data, OldClass.m_Data, Class2.m_Data,
             nClustersAlive, MaxPossibleClusters, HugeScore);
+#elif defined(USE_SYCL)
+        sycl_cstep(gpu,
+            Class.m_Data, OldClass.m_Data, Class2.m_Data,
+            nClustersAlive, MaxPossibleClusters, HugeScore);
+#elif defined(USE_HIP)
+        hip_cstep(gpu,
+            Class.m_Data, OldClass.m_Data, Class2.m_Data,
+            nClustersAlive, MaxPossibleClusters, HugeScore);
+#endif
         return;
     }
 #endif
@@ -418,19 +474,24 @@ void KK::ConsiderDeletion() {
     for (int c = 0; c < MaxPossibleClusters; c++)
         DeletionLoss[c] = ClassAlive[c] ? 0.0f : HugeScore;
 
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
-        // d_LogP, d_Class, d_Class2 are all current on device from EStep+CStep.
+        // d_LogP, d_Class, d_Class2 are current from EStep+CStep.
+#if defined(USE_CUDA)
         cuda_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
-        // Noise cluster (c=0) is never a deletion candidate — reset it
-        DeletionLoss[0] = HugeScore;
+#elif defined(USE_SYCL)
+        sycl_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
+#elif defined(USE_HIP)
+        hip_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
+#endif
+        DeletionLoss[0] = HugeScore;  // noise cluster never a candidate
     } else {
 #endif
     for (int p = 0; p < nPoints; p++)
         DeletionLoss[Class[p]] +=
             LogP[p * MaxPossibleClusters + Class2[p]] -
             LogP[p * MaxPossibleClusters + Class[p]];
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     }
 #endif
 
