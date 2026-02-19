@@ -10,18 +10,27 @@
 ** sequentially within a single state. This rewrite uses one SRC_STATE
 ** per channel so all channels are independent and run in parallel via OpenMP.
 **
-** Per-chunk layout:
-**   1. Read CHUNK_FRAMES interleaved int16 frames from disk.
-**   2. Deinterleave into per-channel float32 planes (using libsamplerate's
-**      own src_short_to_float_array for correct scaling).
-**   3. #pragma omp parallel for: each thread calls src_process() on its channel.
-**   4. Reinterleave float32 output planes back to interleaved int16.
-**   5. Write to disk.
+** Three parallelised regions per chunk:
+**   1. Deinterleave (int16 interleaved -> float per-channel planes):
+**      Channel-outer loop so each thread writes a contiguous plane.
+**      #pragma omp parallel for schedule(static) over channels.
+**   2. Per-channel resampling (src_process on each SRC_STATE):
+**      #pragma omp parallel for schedule(static) over channels.
+**      This is the dominant cost; one SRC_STATE per channel is essential.
+**   3. Reinterleave (float per-channel planes -> int16 interleaved):
+**      Channel-outer loop; each thread reads its contiguous chanOut plane
+**      and writes to strided positions in outBuf (independent strides).
+**      #pragma omp parallel for schedule(static) over channels.
+**   Filter-tail flush (zero-input src_process at EOF) is also parallelised.
 **
 ** CHUNK_FRAMES = 262144 (1<<18). At 96 channels the read is ~48 MB per chunk.
 ** The original BUFFER_LEN=1024 caused O(totalFrames/1024) src_process() calls;
 ** the new code reduces that by a factor of 256, cutting function-call and
 ** state-update overhead dramatically in addition to the parallelism gain.
+**
+** CUDA is not applicable: libsamplerate is a stateful CPU library with no
+** GPU port. Replacing it with a CUDA sinc resampler would be a larger
+** project and offers no advantage over the fully-parallel CPU path above.
 */
 
 #ifndef _LARGEFILE_SOURCE
@@ -196,10 +205,16 @@ int main(int argc, char *argv[])
         bool eof = (framesRead >= totalFrames);
 
         // Deinterleave: inBuf[f*nCh+ch] -> chanIn[ch][f]  (int16 -> float)
-        for (long long f = 0; f < framesGot; f++) {
-            const short *row = inBuf.data() + f * nChannels;
-            for (int ch = 0; ch < nChannels; ch++)
-                chanIn[ch][f] = (float)row[ch] / 32768.0f;
+        // Channel-outer loop: each thread owns a contiguous chanIn[ch] plane
+        // (sequential writes) — much better cache behaviour than frame-outer.
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
+        for (int ch = 0; ch < nChannels; ch++) {
+            const short *src = inBuf.data() + ch;
+            float       *dst = chanIn[ch].data();
+            for (long long f = 0; f < framesGot; f++, src += nChannels)
+                dst[f] = (float)*src / 32768.0f;
         }
 
         // Parallel per-channel resampling
@@ -228,13 +243,19 @@ int main(int argc, char *argv[])
         }
 
         // Reinterleave: chanOut[ch][f] -> outBuf[f*nCh+ch]  (float -> int16)
-        for (long long f = 0; f < outFramesGen; f++) {
-            short *row = outBuf.data() + f * nChannels;
-            for (int ch = 0; ch < nChannels; ch++) {
-                float v = chanOut[ch][f] * 32768.0f;
+        // Channel-outer: each thread reads contiguous chanOut[ch], writes
+        // strided outBuf[f*nChannels+ch] — independent strides, no conflicts.
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
+        for (int ch = 0; ch < nChannels; ch++) {
+            const float *src = chanOut[ch].data();
+            short       *dst = outBuf.data() + ch;
+            for (long long f = 0; f < outFramesGen; f++, dst += nChannels) {
+                float v = src[f] * 32768.0f;
                 if      (v >  32767.0f) v =  32767.0f;
                 else if (v < -32768.0f) v = -32768.0f;
-                row[ch] = (short)v;
+                *dst = (short)v;
             }
         }
 
@@ -250,7 +271,11 @@ int main(int argc, char *argv[])
     }
 
     // Flush filter tails: call src_process with 0 input frames, end_of_input=1
-    // until no more output is generated
+    // until no more output is generated. Parallelise across channels — each
+    // channel's SRC_STATE is independent.
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (int ch = 0; ch < nChannels; ch++) {
         SRC_DATA sd;
         sd.data_in       = chanIn[ch].data();   // won't be read (input_frames=0)
