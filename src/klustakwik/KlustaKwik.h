@@ -20,7 +20,8 @@
 #include "param.h"
 #include "Array.h"
 
-void export_model(FILE *fp);
+class KK;
+void export_model(FILE *fp, KK& K1);
 void SetupParams(int argc, char **argv);
 [[noreturn]] void Error(const char *fmt, ...);
 void Output(const char *fmt, ...);
@@ -52,6 +53,20 @@ extern char  Screen;
 extern int   MaxIter;
 extern char  StartCluFile[];
 extern float PenaltyMix;
+
+extern char  InitMethod[];
+extern int   TimeMergeIter;
+
+// Three-phase chunked CEM
+extern float ChunkMinutes;
+extern float SamplingRate;
+extern float MergeThresh;
+extern int   GlobalMergeIter;
+
+// Output control
+// SaveIntermediates=1 (default): write .clu whenever a new best is found.
+// SaveIntermediates=0: suppress all mid-run .clu writes; single final write only.
+extern int   SaveIntermediates;
 
 // ---- Model saving ----------------------------------------------------------
 class KlustaSave;

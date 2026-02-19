@@ -34,16 +34,21 @@ set(HEADERS
 
 # ---- CPU-only build ---------------------------------------------------------
 if(NOT USE_CUDA)
+    find_package(OpenMP)
     add_executable(KlustaKwik ${CPU_SOURCES} ${HEADERS})
     target_compile_options(KlustaKwik PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-O3 -march=native -Wall -Wextra>
     )
     target_compile_definitions(KlustaKwik PRIVATE NDEBUG)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(KlustaKwik PRIVATE OpenMP::OpenMP_CXX)
+    endif()
     return()
 endif()
 
 # ---- CUDA build -------------------------------------------------------------
 find_package(CUDAToolkit REQUIRED)
+find_package(OpenMP)
 
 add_executable(KlustaKwik ${CPU_SOURCES} KK_cuda.cu ${HEADERS})
 
@@ -65,12 +70,16 @@ target_compile_definitions(KlustaKwik PRIVATE
 target_link_libraries(KlustaKwik PRIVATE
     CUDA::cudart
     m
+    $<$<BOOL:${OpenMP_CXX_FOUND}>:OpenMP::OpenMP_CXX>
 )
 
 # ---- CPU-fallback build (always available as KlustaKwik_cpu) ----------------
 add_executable(KlustaKwik_cpu ${CPU_SOURCES} ${HEADERS})
 target_compile_options(KlustaKwik_cpu PRIVATE -O3 -march=native)
 target_compile_definitions(KlustaKwik_cpu PRIVATE NDEBUG)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(KlustaKwik_cpu PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # ---- Install ----------------------------------------------------------------
 install(TARGETS KlustaKwik DESTINATION bin)
