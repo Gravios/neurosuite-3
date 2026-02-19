@@ -60,8 +60,11 @@ void KK::AllocateArrays() {
 void KK::AlocateCholeskyVecs() {
     // Allocated on this KK instance, not the global kSv, so chunk sub-objects
     // each own their Cholesky matrices and can run in parallel threads.
-    pChol     = new std::vector<Array<float>>(MaxPossibleClusters, Array<float>(nDims2));
-    pBestChol = new std::vector<Array<float>>(MaxPossibleClusters, Array<float>(nDims2));
+    // unique_ptr ensures memory is freed when the KK instance is destroyed,
+    // including short-lived K2/K3/Kc sub-objects created inside TrySplits
+    // and RunChunkedCEM.
+    pChol     = std::make_unique<std::vector<Array<float>>>(MaxPossibleClusters, Array<float>(nDims2));
+    pBestChol = std::make_unique<std::vector<Array<float>>>(MaxPossibleClusters, Array<float>(nDims2));
     kSv.BestAliveIndex.reserve(MaxPossibleClusters);
 }
 
@@ -167,6 +170,17 @@ void KK::LoadData() {
     }
 
     Output("Loaded %d data points of dimension %d.\n", nPoints, nDims);
+
+#ifdef USE_CUDA
+    // Allocate GPU context for the outer KK object (K1).
+    // Chunk sub-objects (Kc, K2, K3) leave gpu==nullptr and always use CPU.
+    if (!suppressBestSave && cuda_device_available()) {
+        gpu = new KK_GPU();
+        gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
+        cuda_upload_data(gpu, Data.m_Data);
+        Output("GPU context initialised (%d points, %d dims).\n", nPoints, nDims);
+    }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -191,12 +205,10 @@ float KK::Penalty(int n) const {
 //   Covariance outer product: nDims²=289 elements, easily fits in shared mem.
 // ---------------------------------------------------------------------------
 void KK::MStep() {
-    Array<int> nClassMembers(MaxPossibleClusters);  // zero-initialised
+    Array<int> nClassMembers(MaxPossibleClusters);
 
-    // Count members
     for (int p = 0; p < nPoints; p++) nClassMembers[Class[p]]++;
 
-    // Kill clusters with too few points
     for (int cc = 0; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
         if (c > 0 && nClassMembers[c] <= nDims) {
@@ -206,7 +218,6 @@ void KK::MStep() {
     }
     Reindex();
 
-    // Weights
     for (int cc = 0; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
         Weight[c] = (c == 0)
@@ -215,13 +226,23 @@ void KK::MStep() {
     }
     Reindex();
 
-    // Zero mean and covariance accumulators
+#ifdef USE_CUDA
+    if (gpu) {
+        // GPU path: scatter mean+cov accumulation on device, normalise on host
+        cuda_mstep(gpu,
+            Class.m_Data, AliveIndex.m_Data,
+            Mean.m_Data, Cov.m_Data, Weight.m_Data,
+            nClustersAlive, MaxPossibleClusters,
+            nPoints, nDims, nDims2);
+        goto mstep_debug;
+    }
+#endif
+
+    // CPU path
     for (int c = 0; c < MaxPossibleClusters; c++) {
         for (int i = 0; i < nDims; i++)  Mean[c * nDims + i] = 0.0f;
         for (int i = 0; i < nDims2; i++) Cov[c * nDims2 + i] = 0.0f;
     }
-
-    // Accumulate means
     for (int p = 0; p < nPoints; p++) {
         const int c = Class[p];
         for (int i = 0; i < nDims; i++)
@@ -232,11 +253,8 @@ void KK::MStep() {
         if (nClassMembers[c] == 0) continue;
         for (int i = 0; i < nDims; i++) Mean[c * nDims + i] /= nClassMembers[c];
     }
-
-    // Accumulate covariance (upper triangle)
     for (int p = 0; p < nPoints; p++) {
         const int c = Class[p];
-        // vec2mean on stack — nDims is small (≤17)
         float v[64];
         for (int i = 0; i < nDims; i++) v[i] = Data[p * nDims + i] - Mean[c * nDims + i];
         for (int i = 0; i < nDims; i++)
@@ -252,6 +270,9 @@ void KK::MStep() {
                 Cov[c * nDims2 + i * nDims + j] *= inv;
     }
 
+#ifdef USE_CUDA
+    mstep_debug:
+#endif
     if (Debug) {
         for (int cc = 0; cc < nClustersAlive; cc++) {
             const int c = AliveIndex[cc];
@@ -279,61 +300,72 @@ void KK::EStep() {
     static int cEStepCalls = 0;
     kSv.cEStepCallsLast = ++cEStepCalls;
 
-    int nSkipped = 0;
-
     // Cluster 0: uniform noise
     for (int p = 0; p < nPoints; p++)
         LogP[p * MaxPossibleClusters + 0] = -std::log(Weight[0]);
 
+    // Cholesky decomposition always on CPU — O(K * D^3), trivial cost
     for (int cc = 1; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
-
-        // Cholesky decomposition (CPU — small matrix)
         if (Cholesky(Cov.m_Data + c * nDims2, (*pChol)[c].m_Data, nDims)) {
             Output("Deleting class %d: covariance matrix is singular\n", c);
             ClassAlive[c] = 0;
-            continue;
         }
+    }
+    Reindex();
 
+#ifdef USE_CUDA
+    if (gpu) {
+        // Flatten Cholesky factors into a contiguous host array for upload
+        // (*pChol)[c] holds the lower-triangular matrix for cluster c
+        std::vector<float> h_chol(MaxPossibleClusters * nDims2, 0.0f);
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            if (ClassAlive[c])
+                for (int i = 0; i < nDims2; i++)
+                    h_chol[c * nDims2 + i] = (*pChol)[c][i];
+
+        cuda_estep(gpu,
+            Mean.m_Data, Weight.m_Data, h_chol.data(),
+            AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
+            LogP.m_Data,
+            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
+        return;
+    }
+#endif
+
+    // CPU path
+    int nSkipped = 0;
+    for (int cc = 1; cc < nClustersAlive; cc++) {
+        const int c = AliveIndex[cc];
         float LogRootDet = 0.0f;
         for (int i = 0; i < nDims; i++)
             LogRootDet += std::log((*pChol)[c][i * nDims + i]);
-
         const float *chol = (*pChol)[c].m_Data;
 
         for (int p = 0; p < nPoints; p++) {
             float *optLogP = LogP.m_Data + p * MaxPossibleClusters;
-
-            // Skip heuristic (unchanged from original)
             if (!FullStep
                 && Class[p]    == OldClass[p]
                 && optLogP[c] - optLogP[Class[p]] > DistThresh) {
                 nSkipped++;
                 continue;
             }
-
-            // Vec2Mean on stack
             float v[64], root[64];
             for (int i = 0; i < nDims; i++)
                 v[i] = Data[p * nDims + i] - Mean[c * nDims + i];
-
-            // TriSolve: M*root = v,  M lower triangular
             for (int i = 0; i < nDims; i++) {
                 float s = v[i];
                 for (int j = i - 1; j >= 0; j--) s -= chol[i * nDims + j] * root[j];
                 root[i] = s / chol[i * nDims + i];
             }
-
             float Mahal = 0.0f;
             for (int i = 0; i < nDims; i++) Mahal += root[i] * root[i];
-
             optLogP[c] = Mahal * 0.5f
                        + LogRootDet
                        - std::log(Weight[c])
                        + static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
         }
     }
-    // (nSkipped logged in verbose mode if desired)
 }
 
 // ---------------------------------------------------------------------------
@@ -346,11 +378,22 @@ void KK::EStep() {
 //   Alternative: parallel reduction per cluster column (transpose back).
 // ---------------------------------------------------------------------------
 void KK::CStep() {
+#ifdef USE_CUDA
+    if (gpu) {
+        // d_LogP and d_AliveIndex are already on device from the preceding EStep.
+        // d_Class is also on device (uploaded in EStep); we get back updated
+        // Class, OldClass, Class2 arrays.
+        cuda_cstep(gpu,
+            Class.m_Data, OldClass.m_Data, Class2.m_Data,
+            nClustersAlive, MaxPossibleClusters, HugeScore);
+        return;
+    }
+#endif
+    // CPU path
     for (int p = 0; p < nPoints; p++) {
         OldClass[p] = Class[p];
         float bestScore   = HugeScore, secondScore = HugeScore;
         int   topClass = 0, secondClass = 0;
-
         for (int cc = 0; cc < nClustersAlive; cc++) {
             const int c = AliveIndex[cc];
             const float s = LogP[p * MaxPossibleClusters + c];
@@ -375,10 +418,21 @@ void KK::ConsiderDeletion() {
     for (int c = 0; c < MaxPossibleClusters; c++)
         DeletionLoss[c] = ClassAlive[c] ? 0.0f : HugeScore;
 
+#ifdef USE_CUDA
+    if (gpu) {
+        // d_LogP, d_Class, d_Class2 are all current on device from EStep+CStep.
+        cuda_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
+        // Noise cluster (c=0) is never a deletion candidate — reset it
+        DeletionLoss[0] = HugeScore;
+    } else {
+#endif
     for (int p = 0; p < nPoints; p++)
         DeletionLoss[Class[p]] +=
             LogP[p * MaxPossibleClusters + Class2[p]] -
             LogP[p * MaxPossibleClusters + Class[p]];
+#ifdef USE_CUDA
+    }
+#endif
 
     float minLoss = HugeScore;
     int   candidateClass = -1;
@@ -388,7 +442,7 @@ void KK::ConsiderDeletion() {
             candidateClass = c;
         }
     }
-    if (candidateClass < 0) { Reindex(); return; }  // Bug fix: no alive class
+    if (candidateClass < 0) { Reindex(); return; }
 
     const float deltaPen = Penalty(nClustersAlive) - Penalty(nClustersAlive - 1);
     if (minLoss < deltaPen) {

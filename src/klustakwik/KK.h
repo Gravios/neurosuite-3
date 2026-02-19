@@ -5,7 +5,9 @@
 //   - Three-phase chunked: RunChunkedCEM(...)  — parallel over chunks via OpenMP
 #pragma once
 #include "Array.h"
+#include "KK_cuda.h"   // no-op when USE_CUDA not defined
 #include <functional>
+#include <memory>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
@@ -109,13 +111,23 @@ public:
     //
     // Moved from KlustaSave (global singleton) onto KK so that chunk
     // sub-objects are fully self-contained and safe to run in parallel
-    // threads.  Allocated by AlocateCholeskyVecs(); owned by this instance.
+    // threads.  Allocated by AlocateCholeskyVecs(); freed automatically
+    // when the KK instance is destroyed (unique_ptr).
     // -----------------------------------------------------------------------
-    std::vector<Array<float>> *pChol     = nullptr;
-    std::vector<Array<float>> *pBestChol = nullptr;
+    std::unique_ptr<std::vector<Array<float>>> pChol;
+    std::unique_ptr<std::vector<Array<float>>> pBestChol;
 
     // When true, CEMTwoPhase inner loops skip SaveBestMeans() and do not
     // update kSv.BestScoreSave.  Set automatically on chunk sub-objects so
     // parallel per-chunk EM cannot corrupt the outer loop's best-score state.
     bool suppressBestSave = false;
+
+#ifdef USE_CUDA
+    // GPU context — allocated by LoadData() when a CUDA device is present.
+    // nullptr on chunk sub-objects (K2/K3/Kc) which always run on the CPU.
+    // Freed by ~KK() when non-null.
+    KK_GPU *gpu = nullptr;
+
+    ~KK() { if (gpu) { gpu->free_all(); delete gpu; } }
+#endif
 };
