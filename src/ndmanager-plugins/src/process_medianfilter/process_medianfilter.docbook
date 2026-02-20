@@ -1,4 +1,6 @@
-<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_medianfilter">
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+          "http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd">
+<refentry id="process_medianfilter">
 
 	<refmeta>
 		<refentrytitle>process_medianfilter</refentrytitle>
@@ -102,7 +104,7 @@
 				<othername role="mi">B</othername>
 				<surname>Zugaro</surname>
 				<contrib>Original author</contrib>
-			</author>
+			</author>,&nbsp;
 			<email>michael.zugaro@college-de-france.fr</email>.
 		</para>
 	</refsect1>

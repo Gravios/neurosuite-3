@@ -64,10 +64,14 @@ foreach(docbook ${docbooks})
     string(REGEX REPLACE docbook 1 manpage ${docbook})
     add_custom_command(OUTPUT ${manpage}
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${docbook}"
-        COMMAND xsltproc ${xsl} "${CMAKE_CURRENT_SOURCE_DIR}/${docbook}")
+        COMMAND xsltproc --nonet --novalid ${xsl} "${CMAKE_CURRENT_SOURCE_DIR}/${docbook}")
     add_custom_command(OUTPUT ${manpage}.gz
         DEPENDS ${manpage} COMMAND gzip -f ${manpage})
     list(APPEND manpages ${manpage}.gz)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${manpage}.gz" DESTINATION man/man1)
 endforeach()
+if(xsl)
 add_custom_target(man-${program} ALL DEPENDS ${manpages})
+else()
+    message(STATUS "DocBook XSL not found — skipping man pages for ${program}")
+endif()

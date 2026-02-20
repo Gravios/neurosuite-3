@@ -24,7 +24,7 @@ bool verbose = false;
 // CPU: per-channel sliding sorted-window median filter
 // ---------------------------------------------------------------------------
 static void filterChannel(short windowHalfLength, const short* widebandData,
-                           short* filteredData, long int nSamplesPerChannel,
+                           short* filteredData, long long int nSamplesPerChannel,
                            int nChannels, int channel)
 {
     const int windowLength = 2 * windowHalfLength + 1;
@@ -73,7 +73,7 @@ static void filterChannel(short windowHalfLength, const short* widebandData,
 }
 
 static void filterCPU(short windowHalfLength, short* widebandData,
-                       short* filteredData, long int nSamplesPerChannel,
+                       short* filteredData, long long int nSamplesPerChannel,
                        short nChannels = 1)
 {
     if (verbose) {
@@ -195,18 +195,18 @@ int main(int argc, char *argv[])
 
     long long int nSamples = size / sampleSize;
     long long int nSamplesPerChannel = nSamples / nChannels;
-    int nSamplesPerChunkPerChannel = (int)(chunkSize / sampleSize / nChannels);
-    chunkSize = (long int)nSamplesPerChunkPerChannel * sampleSize * nChannels;
-    int nSamplesPerChunk = (int)(chunkSize / sampleSize);
+    long long int nSamplesPerChunkPerChannel = chunkSize / sampleSize / nChannels;
+    chunkSize = nSamplesPerChunkPerChannel * sampleSize * nChannels;
+    long long int nSamplesPerChunk = chunkSize / sampleSize;
 
-    int      nPaddingSamples = nChannels * windowHalfLength;
-    int      nOverlapSamples = nChannels * windowHalfLength;
-    long int overlapSize     = nOverlapSamples * sampleSize;
+    long long int nPaddingSamples = (long long int)nChannels * windowHalfLength;
+    long long int nOverlapSamples = (long long int)nChannels * windowHalfLength;
+    long long int overlapSize     = nOverlapSamples * sampleSize;
     short   *input, *output;
 
     if (nSamplesPerChunk >= nSamples) {
         input  = new short[nPaddingSamples + nSamples];
-        memset(input, 0, nPaddingSamples * sizeof(short));
+        memset(input, 0, (size_t)(nPaddingSamples * sizeof(short)));
         output = new short[nSamples];
         fread((char*)&input[nPaddingSamples], sizeof(char), (size_t)size, inputFile);
         filterCPU(windowHalfLength, &input[nPaddingSamples], output,
@@ -220,7 +220,7 @@ int main(int argc, char *argv[])
         for (long long int sizeLeft = size; sizeLeft > 0; sizeLeft -= chunkSize, ++chunk) {
             if (sizeLeft <= chunkSize) {
                 chunkSize = sizeLeft;
-                nSamplesPerChunkPerChannel = (int)(sizeLeft / nChannels / sampleSize);
+                nSamplesPerChunkPerChannel = sizeLeft / nChannels / sampleSize;
             }
             if (verbose) cout << "Chunk " << chunk << "/" << nChunks << " ";
             if (sizeLeft == size) {
