@@ -18,6 +18,8 @@
 #ifndef CORRELATIONTHREAD_H
 #define CORRELATIONTHREAD_H
 
+#include <atomic>
+
 //include files for the application
 #include "correlationview.h"
 #include "data.h"
@@ -50,7 +52,7 @@ public:
     QList<int> triggeringClusters() const {return clusterIds;}
 
     /**Asks the thread to stop his work as soon as possible.*/
-    void stopProcessing(){haveToStopProcessing = true;}
+    void stopProcessing(){haveToStopProcessing.store(true, std::memory_order_release);}
 
     class CorrelationsEvent;
     friend class CorrelationsEvent;
@@ -96,7 +98,7 @@ private:
     QList<Pair>* clusterPairs;
     QList<int> clusterIds;
     /**True if the thread has to stop processing, false otherwise.*/
-    bool haveToStopProcessing;
+    std::atomic_bool haveToStopProcessing;
 
 };
 

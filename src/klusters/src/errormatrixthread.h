@@ -18,6 +18,8 @@
 #ifndef ERRORMATRIXTHREAD_H
 #define ERRORMATRIXTHREAD_H
 
+#include <atomic>
+
 //include files for the application
 #include "errormatrixview.h"
 #include "data.h"
@@ -53,7 +55,7 @@ public:
 
     /**Asks the thread to stop his work as soon as possible.*/
     void stopProcessing(){
-        haveToStopProcessing = true;
+        haveToStopProcessing.store(true, std::memory_order_release);
         assistant.stopComputing();
     }
 
@@ -89,7 +91,7 @@ protected:
 
 private:
 
-    ErrorMatrixThread(ErrorMatrixView& view,Data& d):errorMatrixView(view),data(d),haveToStopProcessing(false){
+    ErrorMatrixThread(ErrorMatrixView& view,Data& d):errorMatrixView(view),data(d),haveToStopProcessing(false),probabilities(nullptr){
         start();
     }
 
@@ -100,7 +102,7 @@ private:
     QList<int> computedClusterList;
     QList<int> ignoreClusterIndex;
     /**True if the thread has to stop processing, false otherwise.*/
-    bool haveToStopProcessing;
+    std::atomic_bool haveToStopProcessing;
     GroupingAssistant assistant;
 
 };

@@ -1289,7 +1289,9 @@ void KlustersDoc::prepareUndo(QList<int>* addedClustersTemp,QList<int>* modified
         delete addedClustersUndoList.takeAt(currentNbUndo - 1);
         delete modifiedClustersUndoList.takeAt(currentNbUndo - 1);
         delete deletedClustersUndoList.takeAt(currentNbUndo - 1);
-        modifiedClustersByDeleteUndo.removeAt(currentNbUndo);
+        // removeAll(value) removes list entries whose VALUE equals currentNbUndo.
+        // (removeAt(index) would be an out-of-bounds crash when the list is short.)
+        modifiedClustersByDeleteUndo.removeAll(currentNbUndo);
         if(isModifiedByDeletion) modifiedClustersByDeleteUndo.append(currentNbUndo - 1);
 
         //The clusterIdsOldNew and clusterIdsNewOld maps are associated with
@@ -1361,7 +1363,7 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
                 delete modifiedClustersUndoList.takeAt(currentNbUndo - 1);
                 delete deletedClustersUndoList.takeAt(currentNbUndo - 1);
                 delete clusterColorListUndoList.takeAt(currentNbUndo - 1);
-                modifiedClustersByDeleteUndo.removeAt(currentNbUndo);
+                modifiedClustersByDeleteUndo.removeAll(currentNbUndo);
 
                 //The clusterIdsOldNew and clusterIdsNewOld maps are associated with
                 //undo numbers. As the meaning of the numbers change (first undo will not be accessible anymore,
@@ -1408,7 +1410,7 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
                     delete modifiedClustersRedoList.takeAt(currentNbRedo - 1);
                     delete deletedClustersRedoList.takeAt(currentNbRedo - 1);
                     delete clusterColorListRedoList.takeAt(currentNbRedo - 1);
-                    modifiedClustersByDeleteRedo.removeAt(currentNbRedo);
+                    modifiedClustersByDeleteRedo.removeAll(currentNbRedo);
 
                     currentNbRedo = clusterColorListRedoList.count();
                 }
@@ -1774,7 +1776,7 @@ void KlustersDoc::redo(){
             bool isModifiedByDeletion = false;
             if(modifiedClustersByDeleteRedo.contains(nbRedo + 1) != 0){
                 isModifiedByDeletion = true;
-                modifiedClustersByDeleteRedo.removeAt(nbRedo + 1);
+                modifiedClustersByDeleteRedo.removeAll(nbRedo + 1);
                 int nbUndo = clusterColorListUndoList.count();
                 modifiedClustersByDeleteUndo.append(nbUndo);
             }

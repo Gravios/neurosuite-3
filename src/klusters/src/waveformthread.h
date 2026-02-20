@@ -18,6 +18,8 @@
 #ifndef WAVEFORMTHREAD_H
 #define WAVEFORMTHREAD_H
 
+#include <atomic>
+
 //include files for the application
 #include "waveformview.h"
 #include "data.h"
@@ -57,9 +59,15 @@ public:
     int triggeringCluster() const {return clusterId;}
     QList<int> triggeringClusters() const {return clusterIds;}
     bool isMeanRequested() const {return  meanRequested;}
+    /** Returns the meanPresentation value snapshotted when the thread started.
+     *  Use this in customEvent instead of the live view field. */
+    bool wasLaunchedWithMeanPresentation() const { return snapMeanPresentation; }
+    /** Returns the PresentationMode snapshotted at thread launch. Use in getMean() calls
+     *  from customEvent instead of the live presentationMode field. */
+    WaveformView::PresentationMode getSnapshotMode() const { return snapPresentationMode; }
 
     /**Asks the thread to stop his work as soon as possible.*/
-    void stopProcessing(){haveToStopProcessing = true;}
+    void stopProcessing(){haveToStopProcessing.store(true, std::memory_order_release);}
 
     class GetWaveformsEvent;
     friend class GetWaveformsEvent;
@@ -118,7 +126,18 @@ protected:
     void run();
 
 private:
-    WaveformThread(WaveformView& view,Data& d):waveformView(view),meanRequested(false),data(d),haveToStopProcessing(false){}
+    WaveformThread(WaveformView& view,Data& d):waveformView(view),meanRequested(false),data(d),haveToStopProcessing(false),
+        snapPresentationMode(WaveformView::SAMPLE),snapNbSpkToDisplay(0),snapStartTime(0),snapEndTime(0),snapMeanPresentation(false){}
+
+    // Snapshot view parameters captured at start()-time so run() never reads
+    // waveformView fields directly (they can be modified by the main thread mid-flight).
+    void snapshotViewParams(){
+        snapPresentationMode  = waveformView.presentationMode;
+        snapNbSpkToDisplay    = waveformView.nbSpkToDisplay;
+        snapStartTime         = waveformView.startTime;
+        snapEndTime           = waveformView.endTime;
+        snapMeanPresentation  = waveformView.meanPresentation;
+    }
 
     WaveformView& waveformView;
     int clusterId;
@@ -128,7 +147,14 @@ private:
     Data& data;
     WaveformView::PresentationMode mode;
     /**True if the thread has to stop processing, false otherwise.*/
-    bool haveToStopProcessing;
+    std::atomic_bool haveToStopProcessing;
+
+    // Snapshots of WaveformView fields captured before the thread starts.
+    WaveformView::PresentationMode snapPresentationMode;
+    long snapNbSpkToDisplay;
+    long snapStartTime;
+    long snapEndTime;
+    bool snapMeanPresentation;
 };
 
 #endif
