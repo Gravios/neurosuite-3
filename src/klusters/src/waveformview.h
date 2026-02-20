@@ -70,6 +70,11 @@ public:
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled();
 
+    /**Stops and deletes all running threads without setting goingToDie.
+     * Call this before modifying any view state field that threads read,
+     * and before launching replacement threads. */
+    void stopAndClearThreads();
+
 public Q_SLOTS:
 
     /**Updates the view only for one cluster for which the color has been changed

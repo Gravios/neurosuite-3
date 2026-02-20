@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <QApplication>
 /***************************************************************************
                           correlationview.cpp  -  description
                              -------------------
@@ -127,6 +128,9 @@ CorrelationView::~CorrelationView(){
     }
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
+
+    // Drain any thread-posted events so they don't fire after our destruction.
+    QApplication::removePostedEvents(this);
 }
 
 bool CorrelationView::isThreadsRunning() const{  
@@ -366,8 +370,10 @@ void CorrelationView::customEvent(QEvent *event){
         //return when the event is received here.
         while(!correlationThread->wait()){};
 
-        //Delete the correlationThread, this is done by removing it from threadsToBeKill as auto-deletion is enabled.
+        //Delete the correlationThread.
         threadsToBeKill.removeAll(correlationThread);
+        delete correlationThread;
+        correlationThread = nullptr;
 
         if(!goingToDie){
             //Each time a cluster is added to the view or modified, the size of the window is recalculated.

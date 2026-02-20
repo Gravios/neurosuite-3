@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <QThread>
 /***************************************************************************
                           data.cpp  -  description
                              -------------------
@@ -698,21 +699,20 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
         QList<dataType> currentClusterList = clusterIds();
 
         //Deal with the undo mechanism
-        prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+        bool dimChanged = fromClusters.contains(0);
+        prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,dimChanged);
 
         //If some spikes have been taken from the cluster 0, the max and min
         // dimensions have to be recalculated. If minMaxThread is running, the call
         //will wait until it finishes before starting the thread again.
-        if(fromClusters.contains(0)){
+        if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
             //Reset the flag to false so the minMaxThread can do the computation
             clusterZeroJustModified = false;
             minMaxThread->setModifiedClusters(fromClusters);
             minMaxThread->start();
-            dimensionChangedUndo.prepend(true);
         }
-        else dimensionChangedUndo.prepend(false);
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
         //if there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -919,21 +919,22 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
         QList<dataType> currentClusterList = clusterIds();
 
         //Deal with the undo mechanism.
-        prepareUndo(spikesByClusterTemp,clusterInfoMapTemp2);
+        bool dimChanged = fromToNewClusterIds.contains(0);
+        prepareUndo(spikesByClusterTemp,clusterInfoMapTemp2,dimChanged);
 
         //If some spikes have been taken from the cluster 0, the max and min
         // dimensions have to be recalculated. If minMaxThread is running, the call
         //will wait until it finishes before starting the thread again.
-        if(fromToNewClusterIds.contains(0)){
+        if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
             //Reset the flag to false so the minMaxThread can do the computation
             clusterZeroJustModified = false;
-            minMaxThread->start();
+            // setModifiedClusters MUST be called before start() so the thread
+            // sees the correct cluster list from the moment it begins running.
             minMaxThread->setModifiedClusters(fromToNewClusterIds.keys());
-            dimensionChangedUndo.prepend(true);
+            minMaxThread->start();
         }
-        else dimensionChangedUndo.prepend(false);
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
         //if there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -1242,21 +1243,20 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
         QList<dataType> currentClusterList = clusterIds();
 
         //Deal with the undo mechanism
-        prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+        bool dimChanged = (destinationCluster == 0);
+        prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,dimChanged);
 
         //If the spikes have been sent to the cluster 0, the max and min
         // dimensions have to be recalculated. If minMaxThread is running, the call
         //will wait until it finishes before starting the thread again.
-        if(destinationCluster == 0){
+        if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
             //Reset the flag to false so the minMaxThread can do the computation
             clusterZeroJustModified = false;
             minMaxThread->setModifiedClusters(fromClusters);
             minMaxThread->start();
-            dimensionChangedUndo.prepend(true);
         }
-        else dimensionChangedUndo.prepend(false);
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
         //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -1360,8 +1360,8 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     //of the correlation.
     QList<dataType> currentClusterList = clusterIds();
 
-    //Deal with the undo mechanism
-    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+    //Deal with the undo mechanism (dimension always changes when deleting to cluster 0)
+    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,true);
 
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
@@ -1370,7 +1370,6 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     clusterZeroJustModified = false;
     minMaxThread->setModifiedClusters(clustersToDelete);
     minMaxThread->start();
-    dimensionChangedUndo.prepend(true);
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 0.
     //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -1519,20 +1518,19 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism
-    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+    bool dimChanged = clustersToDelete.contains(0);
+    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,dimChanged);
 
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
-    if(clustersToDelete.contains(0)){
+    if(dimChanged){
         while(!minMaxThread->wait()){qDebug()<<"wait for minMaxThread to finish"; };
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         QList<int> modifiedClusters;
         minMaxThread->setModifiedClusters(modifiedClusters);
         minMaxThread->start();
-        dimensionChangedUndo.prepend(true);
     }
-    else dimensionChangedUndo.prepend(false);
 
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 1.
@@ -1695,20 +1693,19 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism
-    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+    bool dimChanged = clustersToGroup.contains(0);
+    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,dimChanged);
 
     //If the clusters to group contain the cluster 0, the max and min
     // dimensions have to be recalculated.
-    if(clustersToGroup.contains(0)){
+    if(dimChanged){
         //If the minMaxThread has not finish, wait until it is done
         while(!minMaxThread->wait()){};
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         minMaxThread->setModifiedClusters(clustersToGroup);
         minMaxThread->start();
-        dimensionChangedUndo.prepend(true);
     }
-    else dimensionChangedUndo.prepend(false);
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
     //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -1743,32 +1740,35 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
 }
 
 
-void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp){
+void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged){
     //Store the current spikesByCluster in the undo list and make the temporary becomes the current one.
     spikesByClusterUndoList.prepend(spikesByCluster);
     //Store the current map in the undo list and make the temporary become the current one.
     clusterInfoMapUndoList.prepend(clusterInfoMap);
+    //Record whether this operation changed the min/max dimensions.
+    //Must be prepended HERE (not by the caller after returning) so the trim below
+    //keeps it in sync with the two data lists.
+    dimensionChangedUndo.prepend(dimensionChanged);
 
     mutex.lock();
     clusterInfoMap = clusterInfoMapTemp;
     spikesByCluster = spikesByClusterTemp;
     mutex.unlock();
 
-    //if the number of undo has been reach remove the last element in the undo list (first inserted)
-    int currentSpikesByClusterNbUndo = spikesByClusterUndoList.count();
-    if(currentSpikesByClusterNbUndo > nbUndo)
-        delete spikesByClusterUndoList.takeAt(currentSpikesByClusterNbUndo - 1);
+    //if the number of undo has been reached, remove the oldest element from all three lists
+    int currentNbUndo = spikesByClusterUndoList.count();
+    if(currentNbUndo > nbUndo){
+        delete spikesByClusterUndoList.takeAt(currentNbUndo - 1);
+        delete clusterInfoMapUndoList.takeAt(currentNbUndo - 1);
+        dimensionChangedUndo.removeAt(currentNbUndo - 1);
+    }
 
-    //if the number of undo has been reach remove the last element in the undo list (first inserted)
-    int currentClusterInfoNbUndo = clusterInfoMapUndoList.count();
-    if(currentClusterInfoNbUndo > nbUndo)
-        delete clusterInfoMapUndoList.takeAt(currentClusterInfoNbUndo - 1);
-
-    //Clear the redoLists
+    //Clear the redoLists (including dimensionChangedRedo which must stay in sync)
     qDeleteAll(spikesByClusterRedoList);
     spikesByClusterRedoList.clear();
     qDeleteAll(clusterInfoMapRedoList);
     clusterInfoMapRedoList.clear();
+    dimensionChangedRedo.clear();
 }
 
 void Data::nbUndoChangedCleaning(int newNbUndo){
@@ -1782,6 +1782,7 @@ void Data::nbUndoChangedCleaning(int newNbUndo){
             while(currentNbUndo > newNbUndo){
                 delete spikesByClusterUndoList.takeAt(currentNbUndo - 1);
                 delete clusterInfoMapUndoList.takeAt(currentNbUndo - 1);
+                if(!dimensionChangedUndo.isEmpty()) dimensionChangedUndo.removeLast();
                 currentNbUndo = spikesByClusterUndoList.count();
             }
             //Clear the redoLists
@@ -1789,6 +1790,7 @@ void Data::nbUndoChangedCleaning(int newNbUndo){
             spikesByClusterRedoList.clear();
             qDeleteAll(clusterInfoMapRedoList);
             clusterInfoMapRedoList.clear();
+            dimensionChangedRedo.clear();
         }
         //currentNbUndo < newNbUndo, check the redo list.
         else{
@@ -1798,6 +1800,7 @@ void Data::nbUndoChangedCleaning(int newNbUndo){
                 while((currentNbRedo + currentNbUndo) > newNbUndo){
                     delete clusterInfoMapRedoList.takeAt(currentNbRedo - 1);
                     delete spikesByClusterRedoList.takeAt(currentNbRedo - 1);
+                    if(!dimensionChangedRedo.isEmpty()) dimensionChangedRedo.removeLast();
                     currentNbRedo = spikesByClusterRedoList.count();
                 }
             }
@@ -1989,11 +1992,10 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         qDebug()<<"in Data::undo 3, spikesByCluster updated";
 
         //If the last action implied a changed of the dimension, change the dimension again
-        if(!dimensionChangedUndo.isEmpty() && dimensionChangedUndo.at(0) == true){
-
+        bool dimChanged = !dimensionChangedUndo.isEmpty() && dimensionChangedUndo.takeFirst();
+        if(dimChanged){
 
             qDebug()<<"in Data::undo dimensionChangedUndo[0] == true";
-
 
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
@@ -2004,6 +2006,9 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
             minMaxThread->setModifiedClusters(modifiedClusters);
             minMaxThread->start();
             dimensionChangedRedo.prepend(true);
+        }
+        else{
+            dimensionChangedRedo.prepend(false);
         }
     }
     qDebug()<<"in Data::undo end";
@@ -2147,7 +2152,8 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
         mutex.unlock();
 
         //If the last redo implied a changed of the dimension, change the dimension again
-        if(!dimensionChangedRedo.isEmpty() && dimensionChangedRedo.at(0) == true){
+        bool dimChanged = !dimensionChangedRedo.isEmpty() && dimensionChangedRedo.takeFirst();
+        if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
 
@@ -2157,6 +2163,9 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
             minMaxThread->setModifiedClusters(modifiedClusters);
             minMaxThread->start();
             dimensionChangedUndo.prepend(true);
+        }
+        else{
+            dimensionChangedUndo.prepend(false);
         }
     }
 }
@@ -2252,8 +2261,8 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
     //to be known in order to do it.
     renumberCorrelation(clusterIdsOldNew);
 
-    //Deal with the undo mechanism
-    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+    //Deal with the undo mechanism (renumber does not affect cluster 0 dimensions)
+    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,false);
 }
 
 bool Data::saveClusters(FILE* clusterFile){
@@ -2342,10 +2351,37 @@ bool Data::saveClusters(FILE* clusterFile){
 
 bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
 
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId))) return false;
-
-    //Lock the mutex to protect the changes as a whole
+    //Lock the mutex to protect the changes as a whole, including the initial contains check.
     mutex.lock();
+
+    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId))){
+        mutex.unlock();
+        return false;
+    }
+
+    ClusterInfo clusterInfo  = (*clusterInfoMap)[clusterId];
+    dataType firstSpikePosition = clusterInfo.firstSpikePosition();
+    dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
+
+    spikesByCluster->subset(subsetTable,1,firstSpikePosition,firstSpikePosition + nbSpikesOfCluster - 1);
+    mutex.unlock();
+
+    return true;
+}
+
+bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
+    // Like spikePositions() but atomically also checks isClusterModified().
+    // Returns false if the cluster is gone OR has been flagged as modified.
+    mutex.lock();
+
+    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId))){
+        mutex.unlock();
+        return false;
+    }
+    if(waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified()){
+        mutex.unlock();
+        return false;
+    }
 
     ClusterInfo clusterInfo  = (*clusterInfoMap)[clusterId];
     dataType firstSpikePosition = clusterInfo.firstSpikePosition();
@@ -2362,7 +2398,10 @@ bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
 Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay){
     //If the cluster has been suppress after the thread calling this function has been launched
     //return this information that the data are not available.
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)))return NOT_AVAILABLE;
+    mutex.lock();
+    bool clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    mutex.unlock();
+    if(!clusterExists) return NOT_AVAILABLE;
 
     //Take a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
 
@@ -2372,18 +2411,37 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
     dataType nbSpikesOfCluster = 0;
 
     //Does this cluster has already been processed?
-    if(waveformStatusMap.contains(clusterId)){
-        Status status = waveformStatusMap[clusterId].sampleStatus();
-        if(status == IN_PROCESS)return IN_PROCESS;
+    // Hold the mutex across the status check AND waveformDict lookup together.
+    // Without this, the main thread can delete waveformDict[key] between our status
+    // check and the pointer dereference, causing a use-after-free crash.
+    mutex.lock();
+    bool alreadyProcessed = waveformStatusMap.contains(clusterId);
+    Status statusLocked = alreadyProcessed ? waveformStatusMap[clusterId].sampleStatus() : NOT_AVAILABLE;
+    if(alreadyProcessed && statusLocked != IN_PROCESS)
         waveforms = waveformDict[clusterIdString];
+    mutex.unlock();
+
+    if(alreadyProcessed){
+        Status status = statusLocked;
+        if(status == IN_PROCESS)return IN_PROCESS;
         //status == READY with the same number of spikes to present
         if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
         //status == READY with a different number of spikes to present, recollect the data
         mutex.lock();
         waveformStatusMap[clusterId].setSampleStatus(IN_PROCESS);
         mutex.unlock();
-        //Check if there not a mean calculation in process, is so wait until it finishes before doing anything
-        while(waveformStatusMap[clusterId].sampleMeanStatus() == IN_PROCESS);
+        //Check if there is not a mean calculation in process; if so, wait until it finishes.
+        //Use a mutex-protected check to avoid racing with main-thread removal of the entry.
+        {
+            bool stillInProcess = true;
+            while(stillInProcess){
+                mutex.lock();
+                stillInProcess = waveformStatusMap.contains(clusterId) &&
+                                 (waveformStatusMap[clusterId].sampleMeanStatus() == IN_PROCESS);
+                mutex.unlock();
+                if(stillInProcess) QThread::yieldCurrentThread();
+            }
+        }
         //check if the cluster has not been removed while the mean function was running
         //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
         if(!waveformStatusMap.contains(clusterId)) return NOT_AVAILABLE;
@@ -2392,7 +2450,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         mutex.unlock();
 
         //Check again that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
-        if(!spikePositions(clusterId,positionOfSpikes) || waveformStatusMap[clusterId].isClusterModified()){
+        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
             mutex.lock();
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
@@ -2413,7 +2471,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         else waveforms = new WaveformData<long>(*this);
 
         //Check that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
-        if(!spikePositions(clusterId,positionOfSpikes) || waveformStatusMap[clusterId].isClusterModified()){
+        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
             mutex.lock();
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
@@ -2441,18 +2499,22 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
 
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)) || waveformStatusMap[clusterId].isClusterModified()){
-        mutex.lock();
-        waveformStatusMap[clusterId].setClusterModified(false);
-        delete waveformDict.take(clusterIdString);  //not already done by the function which modified the data as the thread is running.
-        waveformStatusMap.remove(clusterId);
+    mutex.lock();
+    bool clusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    bool clusterMod  = !clusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
+    if(clusterGone || clusterMod){
+        if(waveformStatusMap.contains(clusterId)){
+            waveformStatusMap[clusterId].setClusterModified(false);
+            delete waveformDict.take(clusterIdString);  //not already done by the function which modified the data as the thread is running.
+            waveformStatusMap.remove(clusterId);
+        }
         mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
         //Store the information in waveformStatusMap
-        mutex.lock();
-        waveformStatusMap[clusterId].setSampleStatus(READY);
+        if(waveformStatusMap.contains(clusterId))
+            waveformStatusMap[clusterId].setSampleStatus(READY);
         mutex.unlock();
         return READY;
     }
@@ -2461,7 +2523,10 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
 Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataType end){
     //If the cluster has been suppress after the thread calling this function has been launched
     //return this information that the data are not available.
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)))return NOT_AVAILABLE;
+    mutex.lock();
+    bool clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    mutex.unlock();
+    if(!clusterExists) return NOT_AVAILABLE;
 
     //Take all the spikes in a given time frame
     QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
@@ -2474,9 +2539,14 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
 
     //Does this cluster has already been processed?
     if(waveformStatusMap.contains(clusterId)){
+        // Hold the mutex across status check AND waveformDict lookup to prevent
+        // main thread deleting the Waveforms* between our check and our dereference.
+        mutex.lock();
         Status status = waveformStatusMap[clusterId].timeFrameStatus();
+        if(status != IN_PROCESS)
+            waveforms = waveformDict[clusterIdString];
+        mutex.unlock();
         if(status == IN_PROCESS)return IN_PROCESS;
-        waveforms = waveformDict[clusterIdString];
         dataType timeEndIndex = waveforms->indexOfTimeEnd();
         dataType timeStart = waveforms->startTime();
         dataType timeEnd = waveforms->endTime();
@@ -2486,8 +2556,17 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         mutex.lock();
         waveformStatusMap[clusterId].setTimeFrameStatus(IN_PROCESS);
         mutex.unlock();
-        //Check if there not a mean calculation in process, is so wait until it finishes before doing anything
-        while(waveformStatusMap[clusterId].timeFrameMeanStatus() == IN_PROCESS);
+        //Check if there is not a mean calculation in process; wait under mutex to avoid racing with main-thread removal.
+        {
+            bool stillInProcess = true;
+            while(stillInProcess){
+                mutex.lock();
+                stillInProcess = waveformStatusMap.contains(clusterId) &&
+                                 (waveformStatusMap[clusterId].timeFrameMeanStatus() == IN_PROCESS);
+                mutex.unlock();
+                if(stillInProcess) QThread::yieldCurrentThread();
+            }
+        }
         //check if the cluster has not been removed while the mean function was running
         //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
         if(!waveformStatusMap.contains(clusterId)) return NOT_AVAILABLE;
@@ -2496,7 +2575,7 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         mutex.unlock();
 
         //Check again that the cluster has not been removed or modifed and get the spikes positions in a one row SortableTable.
-        if(!spikePositions(clusterId,positionOfSpikes) || waveformStatusMap[clusterId].isClusterModified()){
+        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
             mutex.lock();
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
@@ -2521,7 +2600,7 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         else waveforms = new WaveformData<long>(*this);
 
         //Check that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
-        if(!spikePositions(clusterId,positionOfSpikes) || waveformStatusMap[clusterId].isClusterModified()){
+        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
             mutex.lock();
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
@@ -2560,15 +2639,20 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
 
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)) || waveformStatusMap[clusterId].isClusterModified()){
-        mutex.lock();
-        waveformStatusMap[clusterId].setClusterModified(false);
-        delete waveformDict.take(clusterIdString); //if not already done by the function which modified the data
-        waveformStatusMap.remove(clusterId);
+    mutex.lock();
+    bool tfClusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    bool tfClusterMod  = !tfClusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
+    if(tfClusterGone || tfClusterMod){
+        if(waveformStatusMap.contains(clusterId)){
+            waveformStatusMap[clusterId].setClusterModified(false);
+            delete waveformDict.take(clusterIdString); //if not already done by the function which modified the data
+            waveformStatusMap.remove(clusterId);
+        }
         mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
+        mutex.unlock();
         //Store the information in waveforms and waveformStatusMap
         waveforms->setStartTime(start);
         waveforms->setEndTime(end);
@@ -2735,8 +2819,10 @@ Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
     Waveforms* waveforms;
 
     //Does this cluster already processed?
-    if(waveformStatusMap.contains(clusterId)){
-        mutex.lock();
+    // Use mutex around both contains check and waveformDict lookup.
+    mutex.lock();
+    bool sampleExists = waveformStatusMap.contains(clusterId);
+    if(sampleExists){
         Status status = waveformStatusMap[clusterId].sampleMeanStatus();
         waveforms = waveformDict[clusterIdString];
         mutex.unlock();
@@ -2757,24 +2843,31 @@ Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
             mutex.unlock();
         }
     }
-    else return NOT_AVAILABLE;
+    else{
+        mutex.unlock();
+        return NOT_AVAILABLE;
+    }
 
     //calculate the mean and the standard deviation and store the data
     waveforms->calculateMean(SAMPLE);
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available.
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)) || waveformStatusMap[clusterId].isClusterModified()){
-        mutex.lock();
-        waveformStatusMap[clusterId].setClusterModified(false);
-        delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
-        waveformStatusMap.remove(clusterId);;
+    mutex.lock();
+    bool smGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    bool smMod  = !smGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
+    if(smGone || smMod){
+        if(waveformStatusMap.contains(clusterId)){
+            waveformStatusMap[clusterId].setClusterModified(false);
+            delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
+            waveformStatusMap.remove(clusterId);
+        }
         mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
         //Store the information in waveformStatusMap
-        mutex.lock();
-        waveformStatusMap[clusterId].setSampleMeanStatus(READY);
+        if(waveformStatusMap.contains(clusterId))
+            waveformStatusMap[clusterId].setSampleMeanStatus(READY);
         mutex.unlock();
         return READY;
     }
@@ -2789,8 +2882,10 @@ Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType 
     Waveforms* waveforms;
 
     //Does this cluster already processed?
-    if(waveformStatusMap.contains(clusterId)){
-        mutex.lock();
+    // Use mutex around both contains check and waveformDict lookup.
+    mutex.lock();
+    bool frameExists = waveformStatusMap.contains(clusterId);
+    if(frameExists){
         Status status = waveformStatusMap[clusterId].timeFrameMeanStatus();
         waveforms = waveformDict[clusterIdString];
         mutex.unlock();
@@ -2812,7 +2907,10 @@ Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType 
             mutex.unlock();
         }
     }
-    else return NOT_AVAILABLE;
+    else{
+        mutex.unlock();
+        return NOT_AVAILABLE;
+    }
 
 
     //calculate the mean and the standard deviation and store the data
@@ -2820,18 +2918,22 @@ Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType 
 
     //If the cluster has been suppress or modifed after the thread calling this function has been launched
     //return this information that the data are not available.
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)) || waveformStatusMap[clusterId].isClusterModified()){
-        mutex.lock();
-        waveformStatusMap[clusterId].setClusterModified(false);
-        delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
-        waveformStatusMap.remove(clusterId);
+    mutex.lock();
+    bool tfmGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    bool tfmMod  = !tfmGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
+    if(tfmGone || tfmMod){
+        if(waveformStatusMap.contains(clusterId)){
+            waveformStatusMap[clusterId].setClusterModified(false);
+            delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
+            waveformStatusMap.remove(clusterId);
+        }
         mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
         //Store the information in waveformStatusMap
-        mutex.lock();
-        waveformStatusMap[clusterId].setTimeFrameMeanStatus(READY);
+        if(waveformStatusMap.contains(clusterId))
+            waveformStatusMap[clusterId].setTimeFrameMeanStatus(READY);
         mutex.unlock();
         return READY;
     }
@@ -3572,21 +3674,20 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism
-    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp);
+    bool dimChanged = clustersToRecluster.contains(0);
+    prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,dimChanged);
 
     //If the cluster 0 have been recluster (very unlikely), the max and min
     // dimensions have to be recalculated. If minMaxThread is running, the call
     //will wait until it finishes before starting the thread again.
-    if(clustersToRecluster.contains(0)){
+    if(dimChanged){
         //If the minMaxThread has not finish, wait until it is done
         while(!minMaxThread->wait()){};
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         minMaxThread->setModifiedClusters(clustersToRecluster);
         minMaxThread->start();
-        dimensionChangedUndo.prepend(true);
     }
-    else dimensionChangedUndo.prepend(false);
 
     //Remove the waveform and correlation data for the reclustered clusters.
     //If there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess

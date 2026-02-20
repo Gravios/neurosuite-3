@@ -15,6 +15,7 @@
  *                                                                         *
  ***************************************************************************/
 //include files for the application
+#include <QApplication>
 #include "errormatrixview.h"
 #include "errormatrixthread.h"
 #include "groupingassistant.h"
@@ -77,6 +78,9 @@ ErrorMatrixView::~ErrorMatrixView(){
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
     delete probabilities;
+
+    // Drain any thread-posted events so they don't fire after our destruction.
+    QApplication::removePostedEvents(this);
 }
 
 bool ErrorMatrixView::isThreadsRunning() const {
@@ -93,18 +97,25 @@ void ErrorMatrixView::customEvent(QEvent* event){
         ErrorMatrixThread::ErrorMatrixEvent* errorMatrixEvent = (ErrorMatrixThread::ErrorMatrixEvent*) event;
         //Get the event information
         ErrorMatrixThread* errorMatrixThread = errorMatrixEvent->parentThread();
-        probabilities = errorMatrixThread->getProbabilities();
-        clusterList = errorMatrixThread->getClusterList();
-        computedClusterList = errorMatrixThread->getComputedClusterList();
-        ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
+        Array<double>* newProb = errorMatrixThread->getProbabilities();
+        // Only accept the result if the thread actually computed something
+        // (it may be null if haveToStopProcessing was set before run() started)
+        if(newProb != nullptr){
+            probabilities = newProb;
+            clusterList = errorMatrixThread->getClusterList();
+            computedClusterList = errorMatrixThread->getComputedClusterList();
+            ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
+        }
 
         //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
         //action of the run method it seems that the event loop can be pretty fast and the run has not
         //return when the event is received here.
         while(!errorMatrixThread->wait()){};
 
-        //Delete the errorMatrixThread, this is done by removing it from threadsToBeKill as auto-deletion is enabled.
+        //Delete the errorMatrixThread.
         threadsToBeKill.removeAll(errorMatrixThread);
+        delete errorMatrixThread;
+        errorMatrixThread = nullptr;
 
         if(!goingToDie){
             //Each time the matrix is modified, the size of the window is recalculated.

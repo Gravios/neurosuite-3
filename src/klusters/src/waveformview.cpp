@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <QApplication>
 /***************************************************************************
                           waveformview.cpp  -  description
                              -------------------
@@ -123,6 +124,10 @@ WaveformView::~WaveformView(){
     }
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
+
+    // Remove any events that threads posted to us while we were waiting for them.
+    // Without this, Qt may dispatch those events after our destruction → crash.
+    QApplication::removePostedEvents(this);
 }
 
 WaveformThread* WaveformView::getWaveforms(){
@@ -268,7 +273,16 @@ void WaveformView::customEvent(QEvent *event){
         WaveformThread::GetWaveformsEvent* waveformsEvent = (WaveformThread::GetWaveformsEvent*) event;
         //Get the event information
         WaveformThread* waveformThread = waveformsEvent->parentThread();
+
+        // Guard: if this thread was already deleted by stopAndClearThreads(), ignore the event.
+        // threadsToBeKill is our canonical ownership list.
+        if(!threadsToBeKill.contains(waveformThread))
+            return;
+
         bool meanRequested = waveformThread->isMeanRequested();
+        // Use the snapshotted value from when the thread was launched, not the current
+        // live view field (which may have changed while the thread was running).
+        bool launchedWithMean = waveformThread->wasLaunchedWithMeanPresentation();
 
         //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
         //action of the run method it seems that the event loop can be pretty fast and the run has not
@@ -278,11 +292,13 @@ void WaveformView::customEvent(QEvent *event){
         //Only one cluster was concern by the thread
         if(waveformThread->isSingleTriggeringCluster()){
             //the data have be retrieved and the mean and standard deviation calculated
-            if(meanPresentation || (!meanPresentation && meanRequested)){
-                //Delete the waveformThread, this is done by removing it from threadsToBeKill as auto-deletion is enabled.
+            if(launchedWithMean || (!launchedWithMean && meanRequested)){
+                //Delete the waveformThread.
                 threadsToBeKill.removeAll(waveformThread);
+                delete waveformThread;
+                waveformThread = nullptr;
             }
-            if(meanPresentation && !goingToDie){
+            if(launchedWithMean && !goingToDie){
                 //Each time a cluster is added to the view or modified, the size of the window is recalculated.
                 if(!isZoomed) updateWindow();
                 else drawContentsMode = REDRAW;
@@ -293,12 +309,12 @@ void WaveformView::customEvent(QEvent *event){
                 update();
             }
             //the data have be retrieved but the mean and standard deviation have not be calculated.
-            if(!meanPresentation && !meanRequested){
+            if(!launchedWithMean && !meanRequested){
                 //If the widget is not about to be deleted, launch as thread to do calculate the mean and standard deviation.
                 //And draw the waveforms.
                 //Calculating it now will speed up the next call to a mean presentation.
                 if(!goingToDie){
-                    waveformThread->getMean(presentationMode);
+                    waveformThread->getMean(waveformThread->getSnapshotMode());
                     //Each time a cluster is added to the view or modified, the size of the window is recalculated.
                     if(!isZoomed) updateWindow();
                     else drawContentsMode = REDRAW;
@@ -309,20 +325,24 @@ void WaveformView::customEvent(QEvent *event){
                     update();
                 }
                 else{
-                    //Delete the waveformThread, this is done by removing it from threadsToBeKill as auto-deletion is enabled.
+                    //Delete the waveformThread.
                     threadsToBeKill.removeAll(waveformThread);
+                    delete waveformThread;
+                    waveformThread = nullptr;
                 }
             }
         }
         //Several clusters were concern by the thread
         else{
             //the data have be retrieved and the mean and standard deviation calculated
-            if(meanPresentation || (!meanPresentation && meanRequested)){
-                //Delete the waveformThread, this is done by removing it from threadsToBeKill as auto-deletion is enabled.
+            if(launchedWithMean || (!launchedWithMean && meanRequested)){
+                //Delete the waveformThread.
                 threadsToBeKill.removeAll(waveformThread);
+                delete waveformThread;
+                waveformThread = nullptr;
                 // setCursor(zoomCursor);
             }
-            if(meanPresentation && !goingToDie){
+            if(launchedWithMean && !goingToDie){
                 //Each time a cluster is added to the view or modified, the size of the window is recalculated.
                 if(!isZoomed) updateWindow();
                 else drawContentsMode = REDRAW;
@@ -333,9 +353,9 @@ void WaveformView::customEvent(QEvent *event){
                 update();
             }
             //the data have be retrieved but the mean and standard deviation have not be calculated.
-            if(!meanPresentation && !meanRequested){
+            if(!launchedWithMean && !meanRequested){
                 if(!goingToDie){
-                    waveformThread->getMean(presentationMode);
+                    waveformThread->getMean(waveformThread->getSnapshotMode());
                     //Each time a cluster is added to the view or modified, the size of the window is recalculated.
                     if(!isZoomed) updateWindow();
                     else drawContentsMode = REDRAW;
@@ -345,7 +365,11 @@ void WaveformView::customEvent(QEvent *event){
                     //Update the widget
                     update();
                 }
-                else threadsToBeKill.removeAll(waveformThread);
+                else {
+                    threadsToBeKill.removeAll(waveformThread);
+                    delete waveformThread;
+                    waveformThread = nullptr;
+                }
             }
         }
     }
@@ -356,13 +380,19 @@ void WaveformView::customEvent(QEvent *event){
         //Get the parent thread
         WaveformThread* waveformThread = waveformsEvent->parentThread();
 
+        // Guard: if already deleted by stopAndClearThreads(), ignore.
+        if(!threadsToBeKill.contains(waveformThread))
+            return;
+
         //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
         //action of the run method it seems that the event loop can be pretty fast and the run has not
         //return when the event is received here.
         while(!waveformThread->wait()){};
 
-        //Delete the waveformThread, this is done by removing it from threadsToBeKill as auto-deletion is enabled.
+        //Delete the waveformThread.
         threadsToBeKill.removeAll(waveformThread);
+        delete waveformThread;
+        waveformThread = nullptr;
         //setCursor(zoomCursor);
     }
 }
@@ -589,6 +619,7 @@ void WaveformView::updateWindow(){
 }
 
 void WaveformView::setMeanPresentation(){
+    stopAndClearThreads();
     meanPresentation = true;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -604,6 +635,7 @@ void WaveformView::setMeanPresentation(){
 }
 
 void WaveformView::setAllWaveformsPresentation(){
+    stopAndClearThreads();
     meanPresentation = false;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -617,6 +649,7 @@ void WaveformView::setAllWaveformsPresentation(){
 
 
 void WaveformView::setSampleMode(){
+    stopAndClearThreads();
     presentationMode = SAMPLE;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -629,6 +662,7 @@ void WaveformView::setSampleMode(){
 }
 
 void WaveformView::setTimeFrameMode(){
+    stopAndClearThreads();
     presentationMode = TIME_FRAME;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -642,6 +676,7 @@ void WaveformView::setTimeFrameMode(){
 
 void WaveformView::setTimeFrame(long start, long width){
     qDebug()<<" void WaveformView::setTimeFrame(long start, long width){";
+    stopAndClearThreads();
     startTime = start;
     endTime = start + width;
     if(endTime > maximumTime) endTime = maximumTime;
@@ -657,6 +692,7 @@ void WaveformView::setTimeFrame(long start, long width){
 }
 
 void WaveformView::setDisplayNbSpikes(long nbSpikes){
+    stopAndClearThreads();
     nbSpkToDisplay =  nbSpikes;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -803,6 +839,20 @@ void WaveformView::willBeKilled(){
             waveformThread->stopProcessing();
         }
     }
+}
+
+void WaveformView::stopAndClearThreads(){
+    // Signal all threads to stop, then wait for them and delete them.
+    // Does NOT set goingToDie, so new threads can still be launched afterwards.
+    for(int i = 0; i < threadsToBeKill.count(); i++)
+        threadsToBeKill.at(i)->stopProcessing();
+    for(int i = 0; i < threadsToBeKill.count(); i++)
+        while(!threadsToBeKill.at(i)->wait()){};
+    qDeleteAll(threadsToBeKill);
+    threadsToBeKill.clear();
+    // Remove any completion events those threads posted before we waited for them.
+    // Without this, customEvent() would fire with a dangling thread pointer.
+    QApplication::removePostedEvents(this);
 }
 
 void WaveformView::print(QPainter& printPainter,int width,int height, bool whiteBackground){

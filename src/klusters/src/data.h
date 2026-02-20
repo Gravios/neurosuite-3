@@ -38,6 +38,7 @@
 #include <stdexcept>
 #include <math.h>
 #include <vector>
+#include <atomic>
 using namespace std;
 
 // forward declaration
@@ -386,6 +387,9 @@ public:
   * @return true if the cluster exist and the data have been retreive, false otherwise.
   */
     bool spikePositions(int clusterId,SortableTable& subsetTable);
+    /**Like spikePositions() but also atomically checks isClusterModified() under the same lock.
+     * Returns false if the cluster is gone OR was modified by the main thread. */
+    bool spikePositionsNotModified(int clusterId,SortableTable& subsetTable);
 
     /**Returns the number of points corresponding to a spike. This equals to:
   * nbChannels * nbSamplesInWaveform
@@ -858,10 +862,10 @@ private:
     QHash<QString, Waveforms*> waveformDict;
 
     /**Boolean use to inform the MinMaxThread that an undo or a redo is in process and that it has to stop.*/
-    bool undoRedoInProcess;
+    std::atomic_bool undoRedoInProcess;
 
     /**Boolean use to inform the MinMaxThread that the cluster 0 has changed and that it has to stop.*/
-    bool clusterZeroJustModified;
+    std::atomic_bool clusterZeroJustModified;
 
     /**
   * This class stores the information to know which cluster has
@@ -991,7 +995,7 @@ private:
   * @param spikesByClusterTemp the newly created spikesByCluster array
   * @param clusterInfoMapTemp the newly created ClusterInfoMap map
   */
-    void prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp);
+    void prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged = false);
 
     /**
   * Moves the clusters contained in @p clustersToDelete to a the cluster @p destinationId. The correponding spikes are assign to cluster @p destinationId
