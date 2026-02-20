@@ -382,6 +382,7 @@ void KK::EStep() {
 
     // CPU path
     int nSkipped = 0;
+    (void)nSkipped; // diagnostic counter, not currently reported
     for (int cc = 1; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
         float LogRootDet = 0.0f;

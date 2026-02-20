@@ -11,20 +11,643 @@ described in [CHANGES.md](CHANGES.md).
 
 ## Building
 
-Requires a C++17 compiler and CMake ≥ 3.18. OpenMP is detected automatically and
-enables parallel chunk processing when available.
+Requires a C++17 compiler and CMake ≥ 3.21. OpenMP is detected automatically
+and enables parallel chunk processing when available.
 
 ```bash
 # CPU-only
-cmake -B build -DUSE_CUDA=OFF
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF
 cmake --build build -j$(nproc)
 
-# With CUDA (requires CUDA Toolkit >= 11)
-cmake -B build -DCMAKE_CUDA_COMPILER=$(which nvcc)
+# With CUDA — NVIDIA GPUs (requires CUDA Toolkit >= 11)
+cmake -B build -DUSE_HIP=OFF -DUSE_SYCL=OFF
+cmake --build build -j$(nproc)
+
+# With HIP — AMD GPUs (requires ROCm >= 5.0 on Linux, HIP SDK >= 5.5 on Windows)
+cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF
+cmake --build build -j$(nproc)
+
+# With SYCL — Intel Arc/Xe GPUs (requires oneAPI Base Toolkit >= 2023.1)
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF
 cmake --build build -j$(nproc)
 ```
 
-The CUDA build also produces `KlustaKwik_cpu` as a CPU-only fallback target.
+When none of the three backend flags are explicitly set, CMake auto-detects in
+priority order CUDA > HIP > SYCL and selects the first toolkit it finds.
+Every GPU build also produces `KlustaKwik_cpu` as a CPU-only fallback binary.
+
+On Windows, use `-G "Ninja"` and run inside a Visual Studio Developer Command
+Prompt (or any shell where MSVC is on PATH). The SYCL backend additionally
+requires the oneAPI command prompt — see the platform-specific sections below.
+
+---
+
+### CUDA installation (NVIDIA)
+
+Install the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
+(>= 11, recommended >= 12). `check_language(CUDA)` locates `nvcc`
+automatically — no extra CMake flags required on any platform.
+
+- [Ubuntu / Debian (bare metal or WSL2)](#ubuntu--debian-1)
+- [Windows (native)](#windows-native-1)
+
+---
+
+#### Ubuntu / Debian (bare metal or WSL2)
+
+```bash
+# Add the CUDA keyring and repository
+# Choose your exact distro at https://developer.nvidia.com/cuda-downloads
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+sudo apt install cuda-toolkit-12-x
+```
+
+If `nvcc` is not on `PATH` after install, add to `~/.bashrc`:
+
+```bash
+export PATH=/usr/local/cuda/bin:$PATH
+```
+
+Verify:
+
+```bash
+nvcc --version
+nvidia-smi
+```
+
+Build KlustaKwik:
+
+```bash
+rm -rf build && mkdir build && cd build
+cmake .. -DUSE_HIP=OFF -DUSE_SYCL=OFF
+make -j$(nproc)
+```
+
+To target a specific GPU generation:
+
+```bash
+cmake .. -DUSE_HIP=OFF -DUSE_SYCL=OFF -DCMAKE_CUDA_ARCHITECTURES="86"  # Ampere (RTX 30xx)
+cmake .. -DUSE_HIP=OFF -DUSE_SYCL=OFF -DCMAKE_CUDA_ARCHITECTURES="89"  # Ada Lovelace (RTX 40xx)
+cmake .. -DUSE_HIP=OFF -DUSE_SYCL=OFF -DCMAKE_CUDA_ARCHITECTURES="90"  # Hopper (H100)
+```
+
+---
+
+#### Windows (native) {#windows-native-1}
+
+**Step 1 — Install prerequisites**
+
+1. **Visual Studio 2022** with the **Desktop development with C++** workload.
+   `nvcc` uses MSVC as its host compiler and requires it to be present.
+   Download: https://visualstudio.microsoft.com/downloads/
+
+2. **CUDA Toolkit** (>= 12 recommended).
+   Download the Windows installer from https://developer.nvidia.com/cuda-downloads.
+   Select: Windows → x86_64 → Windows 11 → exe (local or network).
+   The CUDA installer includes a bundled GPU driver; accept it unless you have
+   a newer driver already installed.
+
+**Step 2 — Verify**
+
+Open any `cmd.exe` or PowerShell (the CUDA installer adds `nvcc` to PATH):
+
+```bat
+nvcc --version
+nvidia-smi
+```
+
+If `nvcc` is not found, add to your system PATH:
+`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x\bin`
+
+**Step 3 — Build**
+
+```bat
+rmdir /s /q build
+mkdir build && cd build
+cmake .. -G "Ninja" -DUSE_HIP=OFF -DUSE_SYCL=OFF
+ninja
+```
+
+CMake finds `nvcc` automatically. For the Visual Studio generator:
+
+```bat
+cmake .. -G "Visual Studio 17 2022" -A x64 -DUSE_HIP=OFF -DUSE_SYCL=OFF
+cmake --build . --config Release
+```
+
+To target a specific GPU architecture:
+
+```bat
+cmake .. -G "Ninja" -DUSE_HIP=OFF -DUSE_SYCL=OFF ^
+         -DCMAKE_CUDA_ARCHITECTURES="89"
+```
+
+---
+
+### HIP installation (AMD ROCm)
+
+Install the [AMD HIP SDK](https://rocm.docs.amd.com/) (>= 5.0). On Linux this
+is the full ROCm stack; on Windows it is the lighter HIP SDK package. CMake
+locates `hipcc` automatically via `ROCM_PATH` or the default install path.
+
+- [Ubuntu / Debian (bare metal)](#ubuntu--debian-2)
+- [Windows (native)](#windows-native-2)
+
+---
+
+#### Ubuntu / Debian (bare metal)
+
+```bash
+# Add the ROCm package repository (Ubuntu 22.04 / 24.04)
+sudo apt install wget gnupg
+wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
+echo "deb [arch=amd64] https://repo.radeon.com/rocm/apt/debian/ jammy main" \
+    | sudo tee /etc/apt/sources.list.d/rocm.list
+sudo apt update
+sudo apt install rocm-dev hipcc
+```
+
+Add to `~/.bashrc` to make it permanent:
+
+```bash
+export PATH=/opt/rocm/bin:$PATH
+export ROCM_PATH=/opt/rocm
+```
+
+Verify:
+
+```bash
+hipcc --version
+rocminfo | grep "Marketing Name"
+```
+
+Build KlustaKwik:
+
+```bash
+rm -rf build && mkdir build && cd build
+cmake .. -DUSE_CUDA=OFF -DUSE_SYCL=OFF
+make -j$(nproc)
+```
+
+The default GPU architecture list covers RDNA2 (RX 6000), RDNA3 (RX 7000),
+and CDNA2 (Instinct MI210/MI250). To target specific architectures:
+
+```bash
+# RDNA3 only (RX 7900 XTX etc.)
+cmake .. -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
+         -DKK_HIP_ARCHS="gfx1100;gfx1101;gfx1102"
+
+# RDNA2 only (RX 6800 XT etc.)
+cmake .. -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
+         -DKK_HIP_ARCHS="gfx1030;gfx1031;gfx1032"
+```
+
+Run `rocminfo` and look for `Name: gfxNNNN` under each agent for the full list
+of architecture identifiers on your system.
+
+**Note on wavefront size:** RDNA wavefronts are 64 threads wide (vs CUDA
+warps at 32). The default block size of 256 threads (4 wavefronts) is safe
+on all supported architectures. For CDNA2 datacenter cards:
+
+```bash
+cmake .. -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
+         -DKK_HIP_ARCHS="gfx90a" -DKK_HIP_BLOCK=512
+```
+
+---
+
+#### Windows (native) {#windows-native-2}
+
+AMD ships a standalone **HIP SDK** for Windows that is separate from the full
+Linux ROCm stack. It provides `hipcc`, the HIP headers, and the runtime DLLs
+without requiring any Linux tooling.
+
+> **GPU support on Windows:** The HIP SDK supports Radeon RX 6000 (RDNA2),
+> RX 7000 (RDNA3), and RX 9000 (RDNA4) series. Older GCN cards (RX 500/Vega)
+> are not supported on Windows. Check the AMD HIP SDK system requirements
+> before installing: https://rocm.docs.amd.com/projects/install-on-windows/en/latest/reference/system-requirements.html
+
+**Step 1 — Install prerequisites**
+
+1. **Visual Studio 2022** with the **Desktop development with C++** workload.
+   `hipcc` on Windows uses MSVC as its host compiler.
+   Download: https://visualstudio.microsoft.com/downloads/
+
+2. **AMD HIP SDK** (>= 5.5 recommended, >= 6.0 for best CMake support).
+   Download from: https://www.amd.com/en/developer/resources/rocm-hub/hip-sdk.html
+   The installer places the SDK at `C:\Program Files\AMD\ROCm\<version>\`
+   by default and adds it to PATH.
+
+3. **CMake** >= 3.21 and **Ninja** — install via winget or the Visual Studio
+   CMake component:
+   ```powershell
+   winget install Kitware.CMake
+   winget install Ninja-build.Ninja
+   ```
+
+**Step 2 — Verify**
+
+Open a new `cmd.exe` or PowerShell (so the updated PATH takes effect):
+
+```bat
+hipcc --version
+hipconfig --full
+```
+
+`hipconfig --full` should show `HIP_PLATFORM=amd` and the path to the Clang
+compiler bundled with the SDK.
+
+**Step 3 — Build**
+
+CMake needs to find the HIP SDK's `hip-lang-config.cmake`. The HIP SDK
+installer sets `%HIP_PATH%` in the system environment, but CMake also needs
+it on `CMAKE_PREFIX_PATH`:
+
+```bat
+rmdir /s /q build
+mkdir build && cd build
+cmake .. -G "Ninja" ^
+         -DUSE_CUDA=OFF -DUSE_SYCL=OFF ^
+         -DCMAKE_PREFIX_PATH="C:\Program Files\AMD\ROCm\6.3"
+ninja
+```
+
+Replace `6.3` with the version you installed — the exact path is shown in
+`hipconfig --full` output. If CMake still cannot find HIP, set the root
+explicitly:
+
+```bat
+cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_SYCL=OFF ^
+         -DCMAKE_HIP_COMPILER_ROCM_ROOT="C:\Program Files\AMD\ROCm\6.3"
+```
+
+To target a specific GPU architecture:
+
+```bat
+cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_SYCL=OFF ^
+         -DCMAKE_PREFIX_PATH="C:\Program Files\AMD\ROCm\6.3" ^
+         -DKK_HIP_ARCHS="gfx1100"
+```
+
+> **Visual Studio generator note:** The Visual Studio generator does not
+> support the CMake HIP language on Windows. Always use `-G "Ninja"` (or
+> `-G "Unix Makefiles"` via MSYS2/Git Bash) when building HIP code on Windows.
+
+---
+
+### SYCL installation (Intel Arc / Xe)
+
+SYCL support requires the [Intel oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html)
+(>= 2023.1), which provides the `icpx` DPC++ compiler and SYCL runtime.
+CMake will auto-detect `icpx` and select the SYCL backend automatically when
+the toolkit is installed — no manual `-DCMAKE_CXX_COMPILER=icpx` flag needed.
+
+Choose the section for your platform:
+
+- [Ubuntu / Debian (bare metal)](#ubuntu--debian-bare-metal)
+- [WSL2 (Windows Subsystem for Linux)](#wsl2-windows-subsystem-for-linux)
+- [Windows (native)](#windows-native)
+
+---
+
+#### Ubuntu / Debian (bare metal)
+
+**Step 1 — Install the oneAPI compiler**
+
+```bash
+# Add the Intel oneAPI APT repository
+wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+    | gpg --dearmor \
+    | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
+    https://apt.repos.intel.com/oneapi all main" \
+    | sudo tee /etc/apt/sources.list.d/oneAPI.list
+
+sudo apt update
+sudo apt install -y intel-oneapi-compiler-dpcpp-cpp
+```
+
+`intel-oneapi-compiler-dpcpp-cpp` installs only `icpx`/`icx` and the SYCL
+runtime — a ~2 GB download rather than the full ~10 GB Base Toolkit. Install
+`intel-basekit` instead if you also want VTune, MKL, and the other tools.
+
+**Step 2 — Install the Intel GPU runtime packages**
+
+These provide the Level-Zero and OpenCL GPU runtimes that SYCL dispatches
+through. Skip this step only if you intend to run on CPU only.
+
+```bash
+# Add the Intel GPU package repository (Ubuntu 22.04 jammy / 24.04 noble)
+. /etc/os-release   # sets $VERSION_CODENAME
+wget -qO - https://repositories.intel.com/gpu/intel-graphics.key \
+    | sudo gpg --dearmor --output /usr/share/keyrings/intel-graphics.gpg
+
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] \
+    https://repositories.intel.com/gpu/ubuntu ${VERSION_CODENAME} client" \
+    | sudo tee /etc/apt/sources.list.d/intel-gpu.list
+
+sudo apt update
+sudo apt install -y \
+    libze1 \
+    intel-level-zero-gpu \
+    intel-opencl-icd \
+    intel-ocloc \
+    clinfo \
+    libze-dev \
+    level-zero-dev
+```
+
+> **Ubuntu 24.04 (noble) dependency note:** If `intel-level-zero-gpu` fails
+> with unmet dependencies on `libigc1` or `libigdfcl1`, install them first:
+> ```bash
+> sudo apt-get install -y libigc1 libigdfcl1
+> sudo apt-get install -y intel-level-zero-gpu intel-opencl-icd intel-ocloc
+> ```
+> This happens because the `unified` channel omits these packages on noble.
+> The `client` channel used above includes them, but in case of repo sync
+> lag the explicit install is a reliable fallback.
+
+**Step 3 — Add your user to the render group**
+
+```bash
+sudo usermod -aG render $USER
+sudo usermod -aG video $USER
+# Log out and back in, or: newgrp render
+```
+
+**Step 4 — Activate the oneAPI environment**
+
+`icpx` is not on `PATH` until the environment is sourced. Add to `~/.bashrc`
+to make it permanent:
+
+```bash
+source /opt/intel/oneapi/setvars.sh
+```
+
+**Step 5 — Verify**
+
+```bash
+clinfo -l      # should show an Intel(R) OpenCL Graphics GPU entry
+sycl-ls        # should show level_zero:gpu and opencl:gpu entries
+```
+
+**Step 6 — Build**
+
+```bash
+rm -rf build && mkdir build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+CMake auto-detects `icpx` and selects the SYCL backend. No extra flags needed.
+
+---
+
+#### WSL2 (Windows Subsystem for Linux)
+
+Under WSL2 the GPU driver lives on the Windows host — the Linux side only needs
+the Level-Zero and OpenCL *runtime* packages (not the Windows GPU driver).
+The oneAPI compiler (`icpx`) is installed inside WSL exactly as on bare-metal
+Ubuntu.
+
+**Step 1 — Install the oneAPI compiler (inside WSL)**
+
+Same as the Ubuntu bare-metal Step 1 above — add the oneAPI APT repository and
+install `intel-oneapi-compiler-dpcpp-cpp`.
+
+**Step 2 — Add the Intel GPU package repository for Ubuntu 24.04 (noble)**
+
+Use the `client` channel. The `unified` channel is missing the IGC dependency
+packages (`libigc1`, `libigdfcl1`) on noble and will produce unmet-dependency
+errors.
+
+```bash
+wget -qO - https://repositories.intel.com/gpu/intel-graphics.key \
+    | sudo gpg --dearmor --output /usr/share/keyrings/intel-graphics.gpg
+
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] \
+    https://repositories.intel.com/gpu/ubuntu noble client' \
+    | sudo tee /etc/apt/sources.list.d/intel-gpu.list
+
+sudo apt update
+```
+
+**Step 3 — Install the GPU runtime packages**
+
+```bash
+sudo apt-get install -y \
+    libze1 \
+    intel-level-zero-gpu \
+    intel-opencl-icd \
+    intel-ocloc \
+    clinfo \
+    libze-dev \
+    level-zero-dev
+```
+
+If `intel-level-zero-gpu` fails with unmet dependencies on `libigc1` or
+`libigdfcl1`, install those explicitly first:
+
+```bash
+sudo apt-get install -y libigc1 libigdfcl1
+sudo apt-get install -y intel-level-zero-gpu intel-opencl-icd intel-ocloc
+```
+
+**Step 4 — Add your user to the render and video groups**
+
+```bash
+sudo usermod -aG render $USER
+sudo usermod -aG video $USER
+```
+
+Then restart WSL from PowerShell:
+
+```powershell
+wsl.exe --shutdown
+```
+
+**Step 5 — Activate the oneAPI environment**
+
+Add to `~/.bashrc` to make it permanent:
+
+```bash
+source /opt/intel/oneapi/setvars.sh
+```
+
+**Step 6 — Verify**
+
+```bash
+clinfo -l      # should list an Intel(R) OpenCL Graphics GPU entry
+sycl-ls        # should list level_zero:gpu and opencl:gpu entries
+```
+
+A working setup on a Meteor Lake Core Ultra system looks like:
+
+```
+$ clinfo -l
+Platform #0: Intel(R) OpenCL
+ `-- Device #0: Intel(R) Core(TM) Ultra 7 155H
+Platform #1: Intel(R) OpenCL Graphics
+ `-- Device #0: Intel(R) Graphics [0x7d55]
+
+$ sycl-ls
+[level_zero:gpu][level_zero:0] Intel(R) oneAPI Unified Runtime over Level-Zero, Intel(R) Graphics [0x7d55] 12.71.4 [1.3.29735+27]
+[opencl:cpu][opencl:0] Intel(R) OpenCL, Intel(R) Core(TM) Ultra 7 155H OpenCL 3.0 (Build 0) [2026.20.1.0.12_160000]
+[opencl:gpu][opencl:1] Intel(R) OpenCL Graphics, Intel(R) Graphics [0x7d55] OpenCL 3.0 NEO [24.39.31294]
+```
+
+The `level_zero:gpu` entry is what SYCL uses by default — Level Zero has lower
+dispatch overhead than OpenCL and is the preferred backend for compute
+workloads. If only `opencl:gpu` appears (no `level_zero:gpu`), install
+`intel-level-zero-gpu` and restart WSL.
+
+If only `opencl:cpu` and FPGA emulation appear (no GPU at all), the Windows
+Intel GPU driver needs updating. WSL2 GPU passthrough requires driver version
+**31.0.101.4887 or newer** — check in Windows Device Manager → Display
+Adapters → right-click the Intel GPU → Properties → Driver tab.
+
+**Step 7 — Build**
+
+```bash
+rm -rf build && mkdir build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+**Step 8 — Verify the binary sees your GPU**
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:gpu ./KlustaKwik_sycl
+```
+
+The binary should print its usage/help output rather than failing or silently
+falling back to CPU.
+
+**Note on Meteor Lake iGPUs (Core Ultra series)**
+
+The integrated Arc GPU in Meteor Lake (e.g. `[0x7d55]` on Core Ultra 155H)
+shares memory with the CPU — there is no discrete VRAM. SYCL USM allocations
+are zero-copy on this device: data does not physically move and the GPU
+accesses system RAM directly. This is ideal for KlustaKwik's feature matrices,
+which are typically small enough that transfer overhead would dominate on a
+discrete GPU. The bottleneck is EU throughput on the E-step distance
+computations, which is exactly what the SYCL kernel parallelises.
+
+---
+
+#### Windows (native)
+
+Building natively on Windows requires the oneAPI toolkit, a C++ build
+environment (Visual Studio or Build Tools), CMake, and Ninja or NMake.
+The Intel GPU driver is provided by Windows Update or the Intel DSA tool —
+no separate Linux-side runtime packages are needed.
+
+**Step 1 — Install prerequisites**
+
+Install in this order:
+
+1. **Visual Studio 2022** (Community edition is free) with the
+   **Desktop development with C++** workload, or at minimum the
+   **MSVC v143 build tools** and **Windows SDK**. CMake and Ninja are
+   included in this workload — tick them in the installer if not already
+   present, or install them separately.
+   Download: https://visualstudio.microsoft.com/downloads/
+
+2. **Intel oneAPI Base Toolkit** (>= 2023.1).
+   The quickest install via winget:
+   ```powershell
+   winget install Intel.OneAPI.BaseToolkit
+   ```
+   Or download the GUI/offline installer from:
+   https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html
+
+   If you only need `icpx` and the SYCL runtime without the full toolkit,
+   install the C++ Essentials bundle instead — it is a smaller download and
+   sufficient for building KlustaKwik.
+
+3. **Intel GPU driver** — install via the Intel Driver & Support Assistant
+   (DSA) or manually from:
+   https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html
+   Minimum required version for SYCL: **31.0.101.4887**
+
+**Step 2 — Open the oneAPI command prompt**
+
+The oneAPI installer adds a Start Menu shortcut:
+**Intel oneAPI command prompt for Intel oneAPI Toolkit 2025**.
+
+Opening it runs `setvars.bat` automatically, placing `icpx`, `icx`, and all
+related tools on `PATH`. All subsequent steps must be run inside this prompt
+(or any `cmd.exe`/PowerShell session where you have run `setvars.bat` manually).
+
+To activate manually in an existing `cmd.exe`:
+```bat
+"C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+```
+
+Or in PowerShell:
+```powershell
+cmd.exe /K '"C:\Program Files (x86)\Intel\oneAPI\setvars.bat" && powershell'
+```
+
+Verify the compiler is on PATH:
+```bat
+icpx --version
+sycl-ls
+```
+
+`sycl-ls` should list your Intel GPU under `[level_zero:gpu]` or
+`[opencl:gpu]`. If only CPU appears, check that the Intel GPU driver is
+up to date.
+
+**Step 3 — Configure and build with CMake**
+
+Inside the oneAPI command prompt, from the KlustaKwik source directory:
+
+```bat
+rmdir /s /q build
+mkdir build
+cd build
+cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF
+ninja
+```
+
+CMake auto-detects `icpx` from `PATH` and selects the SYCL backend. No
+`-DCMAKE_CXX_COMPILER=icpx` flag is needed when running inside the oneAPI
+command prompt.
+
+If you prefer the Visual Studio generator over Ninja, use CMake >= 3.29 and
+ensure the Intel oneAPI Visual Studio extensions are installed:
+
+```bat
+cmake .. -G "Visual Studio 17 2022" -T "Intel C++ Compiler 2025" ^
+         -DUSE_CUDA=OFF -DUSE_HIP=OFF
+cmake --build . --config Release
+```
+
+**Step 4 — Verify**
+
+```bat
+set ONEAPI_DEVICE_SELECTOR=level_zero:gpu
+KlustaKwik_sycl.exe
+```
+
+The binary should print its usage/help output.
+
+> **AOT compilation note:** The Windows build compiles ahead-of-time for
+> `mtl-m` (Meteor Lake), `acm-g10/g11` (Arc Alchemist), `dg2`, and `pvc`
+> (Ponte Vecchio). Devices not in this list fall back to JIT compilation
+> by the GPU driver at first run — this adds a ~1–2 s startup delay on the
+> first invocation but works correctly on any SYCL-capable Intel GPU.
+> To add or change AOT targets at configure time:
+> ```bat
+> cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF ^
+>          -DKK_SYCL_DEVICES="mtl-m,acm-g10,bmg-g21"
+> ```
+
+---
 
 To compile manually without CMake:
 

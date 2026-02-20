@@ -41,6 +41,7 @@
 #include <QAction>
 #include <QTableWidget>
 #include <QProcess>
+#include <QTimer>
 
 
 
@@ -797,6 +798,12 @@ private:
 
     /**True if all the outputs of the external process have been printed, false otherwise.*/
     bool processOutputsFinished;
+
+    /**Timer used to poll for process completion when slotRecluster is invoked while
+     * a recluster is already in progress.  Using a stoppable QTimer (rather than
+     * repeated QTimer::singleShot) lets us cancel all pending retries the moment
+     * the process finishes, preventing stale timer firings from re-launching KlustaKwik.*/
+    QTimer* reclusterRetryTimer;
 
     /**List of the clusters to recluster.*/
     QList<int> clustersToRecluster;

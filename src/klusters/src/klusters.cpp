@@ -97,6 +97,7 @@ KlustersApp::KlustersApp()
       processFinished(true),
       processOutputsFinished(true),
       processKilled(false),
+      reclusterRetryTimer(nullptr),
       errorMatrixExists(false)
 {
     setObjectName("Klusters");
@@ -2469,29 +2470,40 @@ void KlustersApp::slotSelectAllWO01(){
 }
 
 void KlustersApp::slotRecluster(){
-    if(processFinished && processOutputsFinished) {
-        if(processWidget != 0L){
-            // Remove the tab first — tabsParent does not own the widget and will
-            // dereference a dangling pointer on the next paint if we delete without
-            // removing.  Also decrement displayCount to stay in sync.
-            int tabIndex = tabsParent->indexOf(processWidget);
-            if(tabIndex != -1){
-                tabsParent->removeTab(tabIndex);
-                displayCount--;
-            }
-            delete processWidget;
-            processWidget = 0L;
-            processKilled = false;
-            // We were called from the retry timer to clean up a completed
-            // recluster — do NOT fall through and launch another one.
-            // The user must explicitly invoke recluster again.
-            return;
+    // If a recluster job is still in flight, schedule a retry and return.
+    // We use a single stoppable QTimer rather than repeated QTimer::singleShot,
+    // so we can cancel all pending retries the moment the job finishes — preventing
+    // stale timer firings from re-launching KlustaKwik after the job completes.
+    if(!(processFinished && processOutputsFinished)) {
+        if(!reclusterRetryTimer){
+            reclusterRetryTimer = new QTimer(this);
+            reclusterRetryTimer->setSingleShot(false);
+            reclusterRetryTimer->setInterval(2000);
+            connect(reclusterRetryTimer, SIGNAL(timeout()), this, SLOT(slotRecluster()));
         }
-        processKilled = false;
-    } else {
-        QTimer::singleShot(2000,this, SLOT(slotRecluster()));
+        if(!reclusterRetryTimer->isActive())
+            reclusterRetryTimer->start();
         return;
     }
+
+    // Job is done. Stop and destroy the retry timer so it cannot fire again.
+    if(reclusterRetryTimer){
+        reclusterRetryTimer->stop();
+        delete reclusterRetryTimer;
+        reclusterRetryTimer = nullptr;
+    }
+
+    // Clean up the previous recluster output tab if it still exists.
+    if(processWidget != 0L){
+        int tabIndex = tabsParent->indexOf(processWidget);
+        if(tabIndex != -1){
+            tabsParent->removeTab(tabIndex);
+            displayCount--;
+        }
+        delete processWidget;
+        processWidget = 0L;
+    }
+    processKilled = false;
 
     //Get the clusters to recluster (those selected in the active display)
     const QList<int>& currentClusters = activeView()->clusters();
@@ -2625,17 +2637,20 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         processFinished = true;
         processOutputsFinished = true;
         processKilled = false;
-        slotStateChanged("noReclusterState");
-        if(!doesActiveDisplayContainProcessWidget())  {
-            updateUndoRedoDisplay();
-        }else {
-
-            slotStateChanged("reclusterViewState");
-        }
+        slotTabChange(tabsParent->currentIndex());
         return;
     }
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+
+    // Stop any pending retry timer immediately.  Without this, timers queued
+    // while the process was running fire after we set processFinished=true and
+    // see processWidget==0L — causing them to fall through and re-launch KlustaKwik.
+    if(reclusterRetryTimer){
+        reclusterRetryTimer->stop();
+        delete reclusterRetryTimer;
+        reclusterRetryTimer = nullptr;
+    }
 
     int returnStatus = doc->integrateReclusteredClusters(clustersToRecluster,clustersFromReclustering,reclusteringFetFileName);
 
@@ -2646,12 +2661,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         processFinished = true;
         processOutputsFinished = true;
         processKilled = false;
-        slotStateChanged("noReclusterState");
-        if(!doesActiveDisplayContainProcessWidget()) updateUndoRedoDisplay();
-        else{
-
-            slotStateChanged("reclusterViewState");
-        }
+        slotTabChange(tabsParent->currentIndex());
         return;
     case KlustersDoc::OPEN_ERROR:
         QApplication::restoreOverrideCursor();
@@ -2659,12 +2669,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         processFinished = true;
         processOutputsFinished = true;
         processKilled = false;
-        slotStateChanged("noReclusterState");
-        if(!doesActiveDisplayContainProcessWidget()) updateUndoRedoDisplay();
-        else{
-
-            slotStateChanged("reclusterViewState");
-        }
+        slotTabChange(tabsParent->currentIndex());
         return;
     case KlustersDoc::INCORRECT_CONTENT:
         QApplication::restoreOverrideCursor();
@@ -2672,50 +2677,40 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         processFinished = true;
         processOutputsFinished = true;
         processKilled = false;
-        slotStateChanged("noReclusterState");
-        if(!doesActiveDisplayContainProcessWidget()) updateUndoRedoDisplay();
-        else{
-
-            slotStateChanged("reclusterViewState");
-        }
+        slotTabChange(tabsParent->currentIndex());
+        return;
         return;
     case KlustersDoc::OK:
         break;
     }
 
-    QString info = tr("The automatic reclustering of ");
-    if(clustersToRecluster.size() > 1)
-        info.append("clusters ");
-    else
-        info.append("cluster ");
-    QList<int>::iterator iterator;
-    for(iterator = clustersToRecluster.begin(); iterator != clustersToRecluster.end(); ++iterator ){
-        info.append(QString::number(*iterator));
-        info.append(" ");
+    // Log what happened — the ProcessWidget output tab already shows the
+    // KlustaKwik run log; a modal dialog here only pumps the event loop
+    // while processFinished is still false, which lets stale retry timers
+    // re-queue and eventually re-launch KlustaKwik spuriously.
+    {
+        QString info = tr("Reclustering of ");
+        if(clustersToRecluster.size() > 1) info.append("clusters "); else info.append("cluster ");
+        QList<int>::iterator it;
+        for(it = clustersToRecluster.begin(); it != clustersToRecluster.end(); ++it){
+            info.append(QString::number(*it)); info.append(" ");
+        }
+        info.append("complete. New clusters: ");
+        for(it = clustersFromReclustering.begin(); it != clustersFromReclustering.end(); ++it){
+            info.append(QString::number(*it)); info.append(" ");
+        }
+        qDebug() << info;
     }
 
-    if(clustersFromReclustering.size() > 1)
-        info.append("is finished.\nThe following new clusters have been created: ");
-    else info.append("is finished.\nThe following new cluster has been created: ");
-    for(iterator = clustersFromReclustering.begin(); iterator != clustersFromReclustering.end(); ++iterator ){
-        info.append(QString::number(*iterator));
-        info.append(" ");
-    }
-    info.append(".\nThe cluster list will now be updated.");
-
-    QApplication::restoreOverrideCursor();
-    QMessageBox::information(this, tr("Automatic Reclustering !"),info);
-    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     doc->reclusteringUpdate(clustersToRecluster,clustersFromReclustering);
 
     processFinished = true;
     processKilled = false;
-    slotStateChanged("noReclusterState");
-    if(!doesActiveDisplayContainProcessWidget()) updateUndoRedoDisplay();
-    else{
-
-        slotStateChanged("reclusterViewState");
-    }
+    // Re-run the full tab-change logic so that every action disabled by
+    // reclusterState is restored to the correct enabled/disabled state for
+    // whichever views are currently open.  A bare noReclusterState only
+    // re-enables mReCluster and leaves everything else locked.
+    slotTabChange(tabsParent->currentIndex());
     QApplication::restoreOverrideCursor();
 }
 
@@ -2727,13 +2722,8 @@ void KlustersApp::slotStopRecluster(){
 
 void KlustersApp::slotOutputTreatmentOver(){
     processOutputsFinished = true;
-    slotStateChanged("noReclusterState");
-    if(!doesActiveDisplayContainProcessWidget())
-        updateUndoRedoDisplay();
-    else{
-
-        slotStateChanged("reclusterViewState");
-    }
+    // Re-run full tab-change logic to restore all actions locked by reclusterState.
+    slotTabChange(tabsParent->currentIndex());
 }
 
 void KlustersApp::updateUndoRedoDisplay(){
