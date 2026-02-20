@@ -138,7 +138,11 @@ int main(int argc, char *argv[])
     short    sampleSize       = sizeof(short);
     short    windowHalfLength = 10;
     short    nChannels        = 1;
-    long int chunkSize        = 512L * 1024 * 1024;
+    // Default chunk size: 128 MB.  Large enough for good throughput, small
+    // enough to leave RAM headroom for the overlap buffers and OS on machines
+    // with typical 64-128 GB RAM and 256-channel recordings.
+    // ndm_hipass does not pass -b, so this is the operative default.
+    long int chunkSize        = 128L * 1024 * 1024;
     bool     forceCPU         = false;
 
     int i = 0;
@@ -204,7 +208,11 @@ int main(int argc, char *argv[])
     long long int overlapSize     = nOverlapSamples * sampleSize;
     short   *input, *output;
 
-    if (nSamplesPerChunk >= nSamples) {
+    // Use single-chunk path only when the entire file is smaller than the
+    // chunk budget.  For large recordings the chunked path is always used,
+    // regardless of how nSamplesPerChunk compares to nSamples, to avoid
+    // allocating two full-file buffers simultaneously.
+    if (size <= chunkSize) {
         input  = new short[nPaddingSamples + nSamples];
         memset(input, 0, (size_t)(nPaddingSamples * sizeof(short)));
         output = new short[nSamples];
@@ -217,6 +225,9 @@ int main(int argc, char *argv[])
         if (nChunks * chunkSize < size) nChunks++;
         input  = new short[nSamplesPerChunk + 2 * nOverlapSamples];
         output = new short[nSamplesPerChunk];
+        // Zero the leading overlap region — represents silence before the
+        // recording starts.  The original code left this uninitialised.
+        memset(input, 0, (size_t)(nOverlapSamples * sizeof(short)));
         for (long long int sizeLeft = size; sizeLeft > 0; sizeLeft -= chunkSize, ++chunk) {
             if (sizeLeft <= chunkSize) {
                 chunkSize = sizeLeft;
@@ -224,8 +235,11 @@ int main(int argc, char *argv[])
             }
             if (verbose) cout << "Chunk " << chunk << "/" << nChunks << " ";
             if (sizeLeft == size) {
+                // First chunk: leading overlap region already zeroed above.
+                // Read chunkSize bytes only — the trailing overlap comes from
+                // the next fread on the following iteration.
                 fread((char*)&input[nOverlapSamples], sizeof(char),
-                      (size_t)(chunkSize + overlapSize), inputFile);
+                      (size_t)chunkSize, inputFile);
                 filterCPU(windowHalfLength, &input[nOverlapSamples], output,
                           nSamplesPerChunkPerChannel, nChannels);
             } else {
