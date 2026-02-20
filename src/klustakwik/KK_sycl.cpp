@@ -171,7 +171,6 @@ void sycl_estep_submit(KK_GPU *gpu,
     const int nP      = gpu->nPoints;
     const int nD      = gpu->nDims;
     const int nD2     = gpu->nDims2;
-    const int maxC    = gpu->MaxClusters;
 
     float       *d_LogP       = gpu->d_LogP;
     const float *d_Data       = gpu->d_Data;
@@ -334,7 +333,6 @@ static void sycl_cstep_submit(KK_GPU *gpu,
     int nClustersAlive, float HugeScore)
 {
     const int nP   = gpu->nPoints;
-    const int maxC = gpu->MaxClusters;
     const float *d_LogP      = gpu->d_LogP;
     const int   *d_AliveIndex= gpu->d_AliveIndex;
     int         *d_Class     = gpu->d_Class;
@@ -419,6 +417,7 @@ void sycl_estep(
     const int nD  = gpu->nDims;
     const int nD2 = gpu->nDims2;
     const int maxC= gpu->MaxClusters;
+    (void)MaxClusters; // parameter kept for API consistency with CUDA path
     auto &q = gpu->q;
 
     // Upload per-step metadata: Mean, Weight, Chol, AliveIndex, Class, OldClass
@@ -533,6 +532,7 @@ void sycl_cstep(
 {
     // d_LogP and d_AliveIndex are current from sycl_estep.
     // d_Class is current (uploaded in sycl_estep).
+    (void)MaxClusters; // kept for API consistency with CUDA path
     sycl_cstep_submit(gpu, nClustersAlive, HugeScore);
     gpu->q.wait();
 
