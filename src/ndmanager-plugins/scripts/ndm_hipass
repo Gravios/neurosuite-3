@@ -49,7 +49,15 @@ windowHalfLength=$(read_script_parameter $session windowHalfLength)
 # Uses xml_read directly with the correct <n> element XPath (not read_script_parameter
 # which incorrectly searches for <name> elements).
 chunkSize=$(xml_read $session "//program/n[.='ndm_hipass']/../parameters/parameter/n[.='chunkSize']/../value")
-chunkSize=${chunkSize:-68719476736}   # default: 64 GiB = 64*1024*1024*1024
+chunkSize=${chunkSize:-134217728}   # default: 128 MiB = 128*1024*1024
+
+# Cap at 512 MiB regardless of what the XML says, to prevent OOM on large
+# multi-channel recordings where the old 64 GiB default caused bad_alloc.
+maxChunkSize=536870912   # 512 MiB
+if [ "$chunkSize" -gt "$maxChunkSize" ] 2>/dev/null; then
+    echo "ndm_hipass: chunkSize $chunkSize exceeds cap, clamping to $maxChunkSize"
+    chunkSize=$maxChunkSize
+fi
 
 check_mandatory_variable $nChannels "missing number of channels"
 check_mandatory_variable $windowHalfLength "missing window half-length"
