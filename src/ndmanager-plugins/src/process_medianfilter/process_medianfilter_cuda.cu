@@ -242,7 +242,7 @@ extern "C" void runCudaMedianFilter(const char* inputPath,
 
     const int      sampleSize        = sizeof(short);
     long long      nSamples          = fileSize / sampleSize;
-    long long      nSamplesPerChannel = nSamples / nChannels; (void)nSamplesPerChannel;
+    long long      nSamplesPerChannel = nSamples / nChannels;
     const int      padSamples        = nChannels * windowHalfLength;
     const long int padBytes          = padSamples * sampleSize;
 
