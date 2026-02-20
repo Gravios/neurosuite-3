@@ -3623,27 +3623,54 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
     bool firstLine = true;
 
     dataType highestClusterId = (*spikesByCluster)(2,nbSpikes);
+    const dataType maxK = reclusteringSpikesByCluster.nbOfColumns(); // allocated size
     dataType k = 1;
+    qDebug() << "loadReclusteredClusters: expecting" << maxK
+             << "spike labels, highestClusterId=" << highestClusterId;
+
     while (!clusterFile.atEnd()) {
         QByteArray line = clusterFile.readLine();
-        //qDebug()<<" line "<<line;
         if (firstLine) {
+            // Line 1 is the cluster count written by KlustaKwik — skip it.
+            qDebug() << "loadReclusteredClusters: header line =" << line.trimmed();
             firstLine = false;
         } else {
             QByteArray feature;
-            for (int i = 0; i <line.size();++i) {
-                if ((line.at(i) >= '0' && line.at(i) <='9')) {
+            for (int i = 0; i < line.size(); ++i) {
+                if ((line.at(i) >= '0' && line.at(i) <= '9')) {
                     feature.append(line.at(i));
-                } else if (!feature.isEmpty()){
-                    reclusteringSpikesByCluster(2,k++) = feature.toLongLong() + highestClusterId;//Warning if the typedef dataType changes, change will have to be make here.
+                } else if (!feature.isEmpty()) {
+                    // Guard: never write beyond the allocated column count.
+                    // Without this, an unexpectedly long .clu file causes an
+                    // out-of-bounds write that segfaults before the count-check
+                    // at the end of this function can return an error.
+                    if (k > maxK) {
+                        qDebug() << "loadReclusteredClusters: too many labels (k="
+                                 << k << "> maxK=" << maxK << ") — aborting";
+                        return 0;
+                    }
+                    reclusteringSpikesByCluster(2,k++) = feature.toLongLong() + highestClusterId;
                     feature = "";
                 }
+            }
+            // Handle lines that end without a trailing non-digit (e.g. last line
+            // of file with no '\n', or \r\n where \r was already consumed).
+            if (!feature.isEmpty()) {
+                if (k > maxK) {
+                    qDebug() << "loadReclusteredClusters: too many labels at EOF (k="
+                             << k << "> maxK=" << maxK << ") — aborting";
+                    return 0;
+                }
+                reclusteringSpikesByCluster(2,k++) = feature.toLongLong() + highestClusterId;
             }
         }
     }
 
+    qDebug() << "loadReclusteredClusters: read" << (k-1)
+             << "labels, expected" << maxK;
+
     //if the number of clusters read did not correspond to the number of spikes reclustered, there is a problem.
-    if(k != (reclusteringSpikesByCluster.nbOfColumns() + 1))
+    if(k != (maxK + 1))
         return 0;
     else
         return 1;
