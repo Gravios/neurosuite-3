@@ -91,22 +91,46 @@ ProcessWidget::~ProcessWidget()
 }
 
 
-bool ProcessWidget::startJob(const QString &dir, const QString &command)
+bool ProcessWidget::startJob(const QString &dir, const QString &program, const QStringList &args)
 {
+    // Build a readable display string for the output log.
+    QString displayCmd = program;
+    for(const QString &a : args){
+        displayCmd.append(QLatin1Char(' '));
+        if(a.contains(QLatin1Char(' ')))
+            displayCmd.append(QLatin1Char('"')).append(a).append(QLatin1Char('"')); 
+        else
+            displayCmd.append(a);
+    }
     procLineMaker->reset();
     clear();
-    addItem(new ProcessListBoxItem(command, ProcessListBoxItem::Diagnostic));
-    if(!dir.isEmpty()) {
+    addItem(new ProcessListBoxItem(displayCmd, ProcessListBoxItem::Diagnostic));
+    if(!dir.isEmpty())
         childproc->setWorkingDirectory(dir);
-    }
-    childproc->start(command);
+    childproc->start(program, args);
     bool childProcStarted = childproc->waitForStarted();
-    if (!childProcStarted) {
+    if(!childProcStarted){
         insertStderrLine(childproc->errorString());
         childFinished((childproc->exitStatus() == QProcess::NormalExit), childproc->exitStatus());
         emit processNotStarted();
     }
     return childProcStarted;
+}
+
+bool ProcessWidget::startJob(const QString &dir, const QString &command)
+{
+    // Qt6: QProcess::start(QString) no longer splits the command string into
+    // program + arguments — it treats the whole string as the executable name.
+    // Delegate to the typed overload via splitCommand().
+    const QStringList parts = QProcess::splitCommand(command);
+    if(parts.isEmpty()){
+        procLineMaker->reset();
+        clear();
+        insertStderrLine(tr("Empty command"));
+        emit processNotStarted();
+        return false;
+    }
+    return startJob(dir, parts.first(), parts.mid(1));
 }
 
 

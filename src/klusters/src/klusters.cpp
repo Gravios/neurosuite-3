@@ -2470,8 +2470,23 @@ void KlustersApp::slotSelectAllWO01(){
 
 void KlustersApp::slotRecluster(){
     if(processFinished && processOutputsFinished) {
-        delete processWidget;
-        processWidget = 0L;
+        if(processWidget != 0L){
+            // Remove the tab first — tabsParent does not own the widget and will
+            // dereference a dangling pointer on the next paint if we delete without
+            // removing.  Also decrement displayCount to stay in sync.
+            int tabIndex = tabsParent->indexOf(processWidget);
+            if(tabIndex != -1){
+                tabsParent->removeTab(tabIndex);
+                displayCount--;
+            }
+            delete processWidget;
+            processWidget = 0L;
+            processKilled = false;
+            // We were called from the retry timer to clean up a completed
+            // recluster — do NOT fall through and launch another one.
+            // The user must explicitly invoke recluster again.
+            return;
+        }
         processKilled = false;
     } else {
         QTimer::singleShot(2000,this, SLOT(slotRecluster()));
@@ -2510,38 +2525,39 @@ void KlustersApp::slotRecluster(){
     fileBaseName.append(date);
     fileBaseName.append(time);
 
-    QString command(reclusteringExecutable);
-    command.append(" ");
-    command.append(reclusteringArgs);
-
+    // Build the argument list by substituting tokens in reclusteringArgs.
+    // We operate on individual QStringList tokens (not a flat string) so that:
+    //   1. reclusteringExecutable is cleanly separated for Qt6 QProcess::start()
+    //   2. fileBaseName is always a single opaque token even if it contains
+    //      characters that would confuse shell-style splitting.
     QString electrodeGroupID = doc->currentElectrodeGroupID();
     if(electrodeGroupID.isEmpty())
-        electrodeGroupID = "1";
+        electrodeGroupID = QLatin1String("1");
 
-    //The default arguments are: "%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12"
-    //The fet file name will be docPath/%fileBaseName.fet.%electrodeNb
-    if(command.contains("%electrodeGroupID")) command.replace("%electrodeGroupID",electrodeGroupID);
-    command.replace("%fileBaseName",fileBaseName);
-    reclusteringFetFileName = (doc->documentDirectory() + "/");
-    reclusteringFetFileName.append(fileBaseName);
-    reclusteringFetFileName.append(".fet.");
-    reclusteringFetFileName.append(electrodeGroupID);
-
-    //Subset of the input features to use. The default is to use all the PCA and the time feature.
-    //If other features exist there are not used that is zeros are added for them.
-    //NB: the time is always the last feature.
-    if(command.contains("%features")){
-        int totalNbOfPCAs = doc->totalNbOfPCAs();
-        int nbDimensions = doc->nbDimensions();
+    // Compute %features value once up front.
+    QString features;
+    if(reclusteringArgs.contains(QLatin1String("%features"))){
+        int totalNbOfPCAs   = doc->totalNbOfPCAs();
+        int nbDimensions    = doc->nbDimensions();
         int nbExtraFeatures = nbDimensions - totalNbOfPCAs - 1;
-        QString features;
-        for(int i = 0; i < totalNbOfPCAs; ++i)
-            features.append("1");
-        for(int i = 0; i < nbExtraFeatures; ++i)
-            features.append("0");
-        features.append("1"); // the time feature.
-        command.replace("%features",features);
+        for(int j = 0; j < totalNbOfPCAs; ++j)   features.append(QLatin1Char('1'));
+        for(int j = 0; j < nbExtraFeatures; ++j)  features.append(QLatin1Char('0'));
+        features.append(QLatin1Char('1')); // time feature is always last
     }
+
+    // Split the args template into tokens then substitute each independently.
+    QStringList argList = QProcess::splitCommand(reclusteringArgs);
+    for(QString &arg : argList){
+        arg.replace(QLatin1String("%fileBaseName"),     fileBaseName);
+        arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
+        if(!features.isEmpty())
+            arg.replace(QLatin1String("%features"),     features);
+    }
+
+    reclusteringFetFileName  = doc->documentDirectory() + QLatin1Char('/');
+    reclusteringFetFileName += fileBaseName;
+    reclusteringFetFileName += QLatin1String(".fet.");
+    reclusteringFetFileName += electrodeGroupID;
 
     //Create the feature file for the selected clusters and get its name.
     int returnStatus = doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
@@ -2557,7 +2573,12 @@ void KlustersApp::slotRecluster(){
 
         processWidget = new ProcessWidget(this);
         connect(processWidget,SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(slotProcessExited(int,QProcess::ExitStatus)));
-        connect(processWidget,SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(slotOutputTreatmentOver()));
+        // slotOutputTreatmentOver is driven by processOutputsFinished (emitted by ProcessWidget
+        // after all stdout/stderr has been drained), NOT by finished — connecting it to both
+        // caused a double-invocation: slotProcessExited did the integrate+update work, then
+        // slotOutputTreatmentOver fired on the same signal and corrupted processOutputsFinished
+        // state, causing the next recluster to skip the processWidget cleanup guard and segfault.
+        connect(processWidget,SIGNAL(processOutputsFinished()), this, SLOT(slotOutputTreatmentOver()));
         connect(processWidget,SIGNAL(processNotStarted()), this, SLOT(slotOutputTreatmentOver()));
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display changes.
@@ -2579,7 +2600,7 @@ void KlustersApp::slotRecluster(){
 
     //Start the process
     bool status;
-    status = processWidget->startJob(doc->documentDirectory(),command);
+    status = processWidget->startJob(doc->documentDirectory(), reclusteringExecutable, argList);
 
     if(!status){
         QMessageBox::critical (this,tr("Error !"),tr("The reclustering program could not be started.\n"

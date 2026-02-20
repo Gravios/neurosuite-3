@@ -83,6 +83,7 @@ public Q_SLOTS:
      * @return true if the could be started, false otherwise.
      */
     bool startJob(const QString &dir, const QString &command);
+    bool startJob(const QString &dir, const QString &program, const QStringList &args);
     /**
      * Kills the child processss.
      */

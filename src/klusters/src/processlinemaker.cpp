@@ -100,9 +100,11 @@ void ProcessLineMaker::slotReceivedStderr()
 
     counterErr--;
     
-    //The process has benn killed and all the process'outputs sent to be print,
-    //warn the processWidget.
-    if(counterErr == 0 && (isProcessKilled || isWidgetHidden))
+    //The process has been killed/exited and all the process outputs sent to be printed;
+    //warn the processWidget.  processExited must be checked here to mirror slotReceivedStdout —
+    //KlustaKwik writes exclusively to stderr, so omitting this flag caused the hang: the
+    //outputTreatmentOver signal was never emitted after process exit.
+    if(counterErr == 0 && (isProcessKilled || isWidgetHidden || processExited))
         emit outputTreatmentOver();
 }
 
