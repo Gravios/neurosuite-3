@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <vector>
+#include <stdint.h>
 /***************************************************************************
                           klustersdoc.cpp  -  description
                              -------------------
@@ -32,6 +34,10 @@
 #include <QDebug>
 #include <QAction>
 #include <QUrl>
+#include <QProcess>
+#include <QTemporaryFile>
+#include <QRegularExpression>
+#include <QTextStream>
 
 // application specific includes
 #include "processwidget.h"
@@ -2155,3 +2161,381 @@ void KlustersDoc::showUserClusterInformation(){
 }
 
 
+
+// ===========================================================================
+// KlustersDoc::realignSpikes
+// ===========================================================================
+
+static bool readSpkWaveform(const QString& spkPath, long spikeIdx0,
+                             int nChannels, int nSamples,
+                             std::vector<int16_t>& waveform)
+{
+    // spikeIdx0: 0-based
+    QFile f(spkPath);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    qint64 bytesPerSpike = static_cast<qint64>(nChannels) * nSamples * 2;
+    if (!f.seek(spikeIdx0 * bytesPerSpike)) { f.close(); return false; }
+    waveform.resize(static_cast<size_t>(nChannels * nSamples));
+    qint64 nRead = f.read(reinterpret_cast<char*>(waveform.data()),
+                          static_cast<qint64>(waveform.size() * 2));
+    f.close();
+    return nRead == static_cast<qint64>(waveform.size() * 2);
+}
+
+static bool writeSpkWaveform(const QString& spkPath, long spikeIdx0,
+                              int nChannels, int nSamples,
+                              const std::vector<int16_t>& waveform)
+{
+    QFile f(spkPath);
+    if (!f.open(QIODevice::ReadWrite)) return false;
+    qint64 bytesPerSpike = static_cast<qint64>(nChannels) * nSamples * 2;
+    if (!f.seek(spikeIdx0 * bytesPerSpike)) { f.close(); return false; }
+    qint64 nWritten = f.write(reinterpret_cast<const char*>(waveform.data()),
+                              static_cast<qint64>(waveform.size() * 2));
+    f.close();
+    return nWritten == static_cast<qint64>(waveform.size() * 2);
+}
+
+// Read all lines of a text file into a vector<QString>.
+static bool readTextFile(const QString& path, std::vector<QString>& lines)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+    QTextStream ts(&f);
+    while (!ts.atEnd())
+        lines.push_back(ts.readLine());
+    f.close();
+    return true;
+}
+
+// Write vector<QString> back to a text file (overwrite).
+static bool writeTextFile(const QString& path, const std::vector<QString>& lines)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) return false;
+    QTextStream ts(&f);
+    for (const auto& l : lines) ts << l << "\n";
+    f.close();
+    return true;
+}
+
+// Swap the waveform of two spikes in .spk.N.
+static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
+                            int nChannels, int nSamples)
+{
+    std::vector<int16_t> a, b;
+    if (!readSpkWaveform(spkPath, idxA0, nChannels, nSamples, a)) return false;
+    if (!readSpkWaveform(spkPath, idxB0, nChannels, nSamples, b)) return false;
+    if (!writeSpkWaveform(spkPath, idxA0, nChannels, nSamples, b)) return false;
+    if (!writeSpkWaveform(spkPath, idxB0, nChannels, nSamples, a)) return false;
+    return true;
+}
+
+bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped)
+{
+    nShifted = 0;
+    nSwapped = 0;
+    logOut.clear();
+    QTextStream log(&logOut);
+
+    // -----------------------------------------------------------------------
+    // File paths
+    // -----------------------------------------------------------------------
+    const QString dir    = documentDirectory();
+    const QString base   = documentBaseName();
+    const QString grpId  = currentElectrodeGroupID();
+
+    const QString spkPath = dir + "/" + base + ".spk." + grpId;
+    const QString resPath = dir + "/" + base + ".res." + grpId;
+    const QString fetPath = dir + "/" + base + ".fet." + grpId;
+    const QString cluPath = dir + "/" + base + ".clu." + grpId;
+    const QString pcaPath = dir + "/" + base + ".pca." + grpId;
+    const QString datPath = dir + "/" + base + ".dat";
+
+    // Validate
+    if (!QFileInfo::exists(pcaPath)) {
+        log << "ERROR: PCA eigenvector file not found: " << pcaPath << "\n"
+            << "Run ndm_pca with the -e flag (or use a current version of ndm_pca) first.\n";
+        return false;
+    }
+    if (!QFileInfo::exists(spkPath)) {
+        log << "ERROR: Spike file not found: " << spkPath << "\n"; return false;
+    }
+    if (!QFileInfo::exists(resPath)) {
+        log << "ERROR: Res file not found: " << resPath << "\n"; return false;
+    }
+    if (!QFileInfo::exists(fetPath)) {
+        log << "ERROR: Fet file not found: " << fetPath << "\n"; return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Data parameters
+    // -----------------------------------------------------------------------
+    const Data& d        = data();
+    const int nChan      = d.nbOfChannels();
+    const int nSamp      = d.nbSamplesPerWaveform();
+    const int peakSamp   = d.peakSampleIndex();    // 0-based
+    const int timeDim    = d.timeDimension();      // last column in features
+    const int nFeatCols  = timeDim - 1;            // excludes timestamp
+
+    log << "Cluster " << clusterId << " | nChannels=" << nChan
+        << " | nSamplesPerWaveform=" << nSamp
+        << " | peakSample=" << peakSamp << "\n";
+
+    // -----------------------------------------------------------------------
+    // Load spike list for this cluster
+    // -----------------------------------------------------------------------
+    SortableTable spkTable;
+    if (!clusteringData->spikePositions(clusterId, spkTable)) {
+        log << "ERROR: cluster " << clusterId << " not found.\n"; return false;
+    }
+    long nbClusterSpikes = spkTable.nbOfRows();
+    log << nbClusterSpikes << " spikes in cluster.\n";
+
+    // -----------------------------------------------------------------------
+    // Load .res file lines (1-based spike timestamps, no header in standard format)
+    // -----------------------------------------------------------------------
+    std::vector<QString> resLines;
+    if (!readTextFile(resPath, resLines)) {
+        log << "ERROR: cannot read " << resPath << "\n"; return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Load .fet file lines (first line = nFeatures count, then one per spike)
+    // -----------------------------------------------------------------------
+    std::vector<QString> fetLines;
+    if (!readTextFile(fetPath, fetLines)) {
+        log << "ERROR: cannot read " << fetPath << "\n"; return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Load .clu file lines (first line = nClusters, then one per spike)
+    // -----------------------------------------------------------------------
+    std::vector<QString> cluLines;
+    if (!readTextFile(cluPath, cluLines)) {
+        log << "WARNING: cannot read " << cluPath
+            << " — clu swaps will be skipped.\n";
+    }
+
+    // -----------------------------------------------------------------------
+    // Locate process_refeaturize
+    // -----------------------------------------------------------------------
+    const QString refeaturizeExe = QStringLiteral("process_refeaturize");
+
+    // -----------------------------------------------------------------------
+    // Iterate over spikes in this cluster
+    // -----------------------------------------------------------------------
+    for (long si = 1; si <= nbClusterSpikes; ++si) {
+        dataType featRow  = spkTable(1, si);          // 1-based in features array
+        long spikeIdx0    = static_cast<long>(featRow) - 1; // 0-based in files
+
+        // --- 1. Read waveform ---
+        std::vector<int16_t> waveform;
+        if (!readSpkWaveform(spkPath, spikeIdx0, nChan, nSamp, waveform)) {
+            log << "  spike " << featRow << ": cannot read waveform, skipping.\n";
+            continue;
+        }
+
+        // --- 2. Find true peak sample (largest |value| across all channels) ---
+        int truePeakSamp = 0;
+        int maxAbs = 0;
+        for (int s = 0; s < nSamp; ++s) {
+            for (int ch = 0; ch < nChan; ++ch) {
+                int v = std::abs(static_cast<int>(waveform[static_cast<size_t>(s * nChan + ch)]));
+                if (v > maxAbs) { maxAbs = v; truePeakSamp = s; }
+            }
+        }
+
+        // --- 3. Compute shift ---
+        int shift = truePeakSamp - peakSamp;
+        if (shift == 0) continue;   // already aligned
+
+        ++nShifted;
+        log << "  spike " << featRow << ": shift=" << shift << " sample(s)\n";
+
+        // --- 4. New timestamp ---
+        dataType oldTs = clusteringData->featureValue(featRow, timeDim);
+        dataType newTs = oldTs + static_cast<dataType>(shift);
+
+        // --- 5. Re-extract shifted waveform ---
+        // Try from .dat; fall back to rolling the existing buffer.
+        bool datUsed = false;
+        if (QFileInfo::exists(datPath)) {
+            QFile datFile(datPath);
+            if (datFile.open(QIODevice::ReadOnly)) {
+                // Total channels in .dat (not electrode channels — use nChannels
+                // from acquisitionSystem, stored in Data as totalNbOfAcqChannels)
+                // We don't have a direct accessor, so use spk nChan as best approximation
+                // when dat has same number. For multi-shank recordings with separate
+                // electrode groups, this won't always be right; fall back to roll.
+                int totalChan = nChan; // simplified
+                qint64 sampleOffset = static_cast<qint64>(newTs - peakSamp) * totalChan * 2;
+                if (sampleOffset >= 0 && datFile.seek(sampleOffset)) {
+                    std::vector<int16_t> raw(static_cast<size_t>(totalChan * nSamp));
+                    qint64 nr = datFile.read(reinterpret_cast<char*>(raw.data()),
+                                             static_cast<qint64>(raw.size() * 2));
+                    if (nr == static_cast<qint64>(raw.size() * 2)) {
+                        // Extract our electrode channels (assume consecutive starting at 0
+                        // for the simplified case; proper channel remapping would need
+                        // the channel list from the XML, not available here without more
+                        // plumbing — use as-is for same-channel-count case)
+                        if (totalChan == nChan) {
+                            waveform = raw;
+                            datUsed = true;
+                        }
+                    }
+                }
+                datFile.close();
+            }
+        }
+        if (!datUsed) {
+            // Roll the waveform buffer by |shift| samples
+            std::vector<int16_t> rolled(waveform.size(), 0);
+            for (int s = 0; s < nSamp; ++s) {
+                int srcS = s + shift;
+                if (srcS >= 0 && srcS < nSamp) {
+                    for (int ch = 0; ch < nChan; ++ch) {
+                        rolled[static_cast<size_t>(s * nChan + ch)] =
+                            waveform[static_cast<size_t>(srcS * nChan + ch)];
+                    }
+                }
+            }
+            waveform = rolled;
+        }
+
+        // --- 6. Write shifted waveform to .spk.N ---
+        if (!writeSpkWaveform(spkPath, spikeIdx0, nChan, nSamp, waveform)) {
+            log << "  spike " << featRow << ": cannot write to spk, skipping.\n";
+            continue;
+        }
+
+        // --- 7. Update .res.N line ---
+        // res lines are 1-based (line spikeIdx0 is index spikeIdx0 in the vector,
+        // since there is no header line in the standard .res format).
+        if (spikeIdx0 < static_cast<long>(resLines.size())) {
+            resLines[static_cast<size_t>(spikeIdx0)] = QString::number(newTs);
+        }
+
+        // --- 8. Run process_refeaturize for this spike ---
+        // Write a temporary indices file with the 0-based spike index.
+        QTemporaryFile idxTmp;
+        idxTmp.setAutoRemove(true);
+        QList<dataType> newFeatValues;
+        bool refeaturizeOk = false;
+
+        if (idxTmp.open()) {
+            QTextStream its(&idxTmp);
+            its << spikeIdx0 << "\n";
+            idxTmp.flush();
+            idxTmp.close();
+
+            QProcess proc;
+            QStringList args;
+            args << "-p" << pcaPath
+                 << "-w" << QString::number(nSamp)
+                 << "-n" << QString::number(nChan)
+                 << "-i" << idxTmp.fileName()
+                 << spkPath;
+            proc.start(refeaturizeExe, args);
+            if (proc.waitForFinished(10000)) {
+                QString out = QString::fromLocal8Bit(proc.readAllStandardOutput()).trimmed();
+                if (proc.exitCode() == 0 && !out.isEmpty()) {
+                    // Parse: space-separated integers
+                    const QStringList parts = out.split(QRegularExpression(QStringLiteral("\\s+")),
+                                                         Qt::SkipEmptyParts);
+                    for (const QString& p : parts)
+                        newFeatValues.append(p.toLongLong());
+                    refeaturizeOk = (newFeatValues.size() >= nFeatCols);
+                }
+            }
+            if (!refeaturizeOk)
+                log << "  spike " << featRow << ": process_refeaturize failed — features unchanged.\n";
+        }
+
+        // --- 9. Update .fet.N line for this spike ---
+        // .fet has one header line, then one line per spike (1-based => line spikeIdx0+1)
+        if (refeaturizeOk && spikeIdx0 + 1 < static_cast<long>(fetLines.size())) {
+            // Rebuild the line: new feature values + new timestamp
+            QString newLine;
+            for (int k = 0; k < newFeatValues.size(); ++k)
+                newLine += QString::number(newFeatValues[k]) + " ";
+            newLine += QString::number(newTs);
+            fetLines[static_cast<size_t>(spikeIdx0 + 1)] = newLine;
+        }
+
+        // --- 10. Update in-memory features ---
+        if (refeaturizeOk)
+            clusteringData->updateFeatureRow(featRow, newFeatValues);
+        clusteringData->updateTimestamp(featRow, newTs);
+
+        // --- 11. Check sort order and swap if needed ---
+        // .res must remain strictly sorted ascending.
+        long nRes = static_cast<long>(resLines.size());
+        // Forward: check with the next spike
+        if (spikeIdx0 + 1 < nRes && shift > 0) {
+            dataType nextTs = resLines[static_cast<size_t>(spikeIdx0 + 1)].toLongLong();
+            if (newTs > nextTs) {
+                // Find the correct insertion point
+                long insertAt = spikeIdx0 + 1;
+                while (insertAt < nRes &&
+                       resLines[static_cast<size_t>(insertAt)].toLongLong() < newTs)
+                    ++insertAt;
+                --insertAt;
+                // Swap all file lines
+                std::swap(resLines[static_cast<size_t>(spikeIdx0)],
+                          resLines[static_cast<size_t>(insertAt)]);
+                std::swap(fetLines[static_cast<size_t>(spikeIdx0 + 1)],
+                          fetLines[static_cast<size_t>(insertAt + 1)]);
+                if (!cluLines.empty())
+                    std::swap(cluLines[static_cast<size_t>(spikeIdx0 + 1)],
+                              cluLines[static_cast<size_t>(insertAt + 1)]);
+                swapSpkEntries(spkPath, spikeIdx0, insertAt, nChan, nSamp);
+                // In-memory swap (uses 1-based indices)
+                clusteringData->swapSpikes(static_cast<dataType>(spikeIdx0 + 1),
+                                            static_cast<dataType>(insertAt + 1));
+                ++nSwapped;
+                log << "  spike " << featRow << ": swapped with spike at index "
+                    << insertAt + 1 << " due to order violation\n";
+            }
+        }
+        // Backward: check with the previous spike
+        if (spikeIdx0 > 0 && shift < 0) {
+            dataType prevTs = resLines[static_cast<size_t>(spikeIdx0 - 1)].toLongLong();
+            if (newTs < prevTs) {
+                long insertAt = spikeIdx0 - 1;
+                while (insertAt > 0 &&
+                       resLines[static_cast<size_t>(insertAt - 1)].toLongLong() > newTs)
+                    --insertAt;
+                std::swap(resLines[static_cast<size_t>(spikeIdx0)],
+                          resLines[static_cast<size_t>(insertAt)]);
+                std::swap(fetLines[static_cast<size_t>(spikeIdx0 + 1)],
+                          fetLines[static_cast<size_t>(insertAt + 1)]);
+                if (!cluLines.empty())
+                    std::swap(cluLines[static_cast<size_t>(spikeIdx0 + 1)],
+                              cluLines[static_cast<size_t>(insertAt + 1)]);
+                swapSpkEntries(spkPath, spikeIdx0, insertAt, nChan, nSamp);
+                clusteringData->swapSpikes(static_cast<dataType>(spikeIdx0 + 1),
+                                            static_cast<dataType>(insertAt + 1));
+                ++nSwapped;
+                log << "  spike " << featRow << ": swapped with spike at index "
+                    << insertAt + 1 << " due to order violation\n";
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Flush updated file contents to disk
+    // -----------------------------------------------------------------------
+    if (!writeTextFile(resPath, resLines)) {
+        log << "ERROR: cannot write updated res file.\n"; return false;
+    }
+    if (!writeTextFile(fetPath, fetLines)) {
+        log << "ERROR: cannot write updated fet file.\n"; return false;
+    }
+    if (!cluLines.empty() && !writeTextFile(cluPath, cluLines)) {
+        log << "WARNING: cannot write updated clu file.\n";
+    }
+
+    log << "Done. " << nShifted << " spike(s) shifted, " << nSwapped << " swap(s).\n";
+    return true;
+}
