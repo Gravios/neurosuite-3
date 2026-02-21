@@ -21,6 +21,7 @@ set(klusters_SRCS
     eventsprovider.cpp
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp
+    spikerealigndialog.cpp
     klusters.cpp
     klustersdoc.cpp
     klustersview.cpp
