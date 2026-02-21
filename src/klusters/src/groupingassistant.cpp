@@ -5,377 +5,453 @@
     copyright            : (C) 2003 by Lynn Hazan
     email                : lynn.hazan@myrealbox.com
  ***************************************************************************/
+/*
+ * Parallelism strategy
+ * ====================
+ * Three computational phases:
+ *
+ * 1. meanCovarianceComputation  — OpenMP parallel for over clusters.
+ *    Each cluster writes to a disjoint row of means/covariances.
+ *
+ * 2. computeProbabilities (Mahalanobis) — dominant cost.
+ *    GPU path  : GpuDispatch::computeProbabilities() routes to whichever of
+ *                CUDA / HIP / SYCL was detected at first call.
+ *    CPU path  : OpenMP parallel for over the outer cluster loop.
+ *                Each thread writes to a disjoint column of probabilities.
+ *
+ * 3. computeMeanProbabilities (error matrix) — OpenMP parallel for over rows.
+ */
 
-/***************************************************************************
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 3 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- ***************************************************************************/
-//include files for the application
 #include "groupingassistant.h"
+#include "groupingassistant_gpu.h"
 
-//Include files for QT
 #include <QMap>
 #include <QList>
 
-//include files for c/c++ libraires.
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
+#include <vector>
 
+#ifdef _OPENMP
+#  include <omp.h>
+#endif
+
+// GpuDispatch is defined in groupingassistant_gpu_dispatch.cpp
+namespace GpuDispatch {
+    bool hasGpu();
+    int  computeProbabilities(
+        const double*, const double*, const double*, const double*,
+        double*, const int*, int, int, int, int);
+}
 
 GroupingAssistant::GroupingAssistant()
-    :existCluster1(false),initIndex(1),haveToStopComputing(false)
-{
-}
+    : existCluster1(false), initIndex(1), haveToStopComputing(false)
+{}
 
 GroupingAssistant::~GroupingAssistant()
+{}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+Array<double>* GroupingAssistant::computeMeanProbabilities(
+        Data& clusteringData,
+        QList<int>& clusterList,
+        QList<int>& computedClusterList,
+        QList<int>& ignoreClusterIndex)
 {
-}
+    if (haveToStopComputing) return new Array<double>(0, 0);
 
-Array<double>* GroupingAssistant::computeMeanProbabilities(Data& clusteringData,QList<int>& clusterList,QList<int>& computedClusterList,QList<int>& ignoreClusterIndex){
-    Array<double>* probabilities;
+    Array<double>* probabilities =
+        computeProbabilities(clusteringData, clusterList,
+                             computedClusterList, ignoreClusterIndex);
 
-    if(haveToStopComputing)
-        return new Array<double>(0,0); //We do not care about what is return as it will not be used.
-
-    //Compute the probabilities
-    probabilities = computeProbabilities(clusteringData,clusterList,computedClusterList,ignoreClusterIndex);
-
-    Array<double>* errorMatrix = new Array<double>(static_cast<long>(clusterList.size()),static_cast<long>(clusterList.size()));
+    int nbClusters = clusterList.size();
+    Array<double>* errorMatrix =
+        new Array<double>(static_cast<long>(nbClusters),
+                          static_cast<long>(nbClusters));
     errorMatrix->fillWithZeros();
 
-    //Compute "Error matrix" = mean probabilies that spike of cluster c1 actually belongs to c2.
-    int nbClusters = clusterList.size();
-
-    Data::ClusterInfoMap::Iterator iterator;
-    int clusterIndex = initIndex;
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
-
-        if(haveToStopComputing)
-            break; //We do not care about what is return as it will not be used.
-
-        dataType firstSpikePosition = iterator.value().firstSpikePosition();
-        dataType nbSpikesOfCluster = iterator.value().nbSpikes();
-        dataType lastPosition =  firstSpikePosition + nbSpikesOfCluster;
-
-        //Check if the current cluster has been ignored
-        if(ignoreClusterIndex.contains(clusterIndex) != 0){
-            ++clusterIndex;
-            continue;
-        }
-
-        for(int clusterIndex2 = initIndex; clusterIndex2 <= nbClusters; ++clusterIndex2){
-            //Check if the current cluster has been ignore
-            if(ignoreClusterIndex.contains(clusterIndex2) != 0)
-                continue;
-            if(haveToStopComputing)
-                break;
-
-            //Accumulate sums for mean calculation
-            double sum = 0;
-            for(dataType i = firstSpikePosition; i < lastPosition;++i){
-                dataType featuresRowIndex = (*spikesByCluster)(1,i);
-
-                sum += (*probabilities)(featuresRowIndex,clusterIndex2);
-            }
-            (*errorMatrix)(clusterIndex,clusterIndex2) = sum / nbSpikesOfCluster;
-        }
-        ++clusterIndex;
+    struct CE { dataType first; dataType nb; int idx; };
+    std::vector<CE> entries;
+    entries.reserve(static_cast<size_t>(clusterInfoMap->count()));
+    {
+        Data::ClusterInfoMap::Iterator it;
+        int ci = initIndex;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
+            entries.push_back({ it.value().firstSpikePosition(),
+                                it.value().nbSpikes(), ci });
     }
 
-    //Put zeros on the diagonal of errorMatrix
-    for(int clusterIndex = 1; clusterIndex <= nbClusters; ++clusterIndex){
-        (*errorMatrix)(clusterIndex,clusterIndex) = 0;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(none) \
+    shared(entries, ignoreClusterIndex, probabilities, errorMatrix, nbClusters)
+#endif
+    for (int ei = 0; ei < static_cast<int>(entries.size()); ++ei) {
+        if (haveToStopComputing) continue;
+        const CE& e = entries[static_cast<size_t>(ei)];
+        if (ignoreClusterIndex.contains(e.idx)) continue;
+        dataType last = e.first + e.nb;
+        for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2) {
+            if (ignoreClusterIndex.contains(ci2)) continue;
+            if (haveToStopComputing) break;
+            double sum = 0.0;
+            for (dataType i = e.first; i < last; ++i)
+                sum += (*probabilities)((*spikesByCluster)(1, i), ci2);
+            (*errorMatrix)(e.idx, ci2) = sum / static_cast<double>(e.nb);
+        }
     }
+
+    for (int ci = 1; ci <= nbClusters; ++ci)
+        (*errorMatrix)(ci, ci) = 0.0;
 
     delete spikesByCluster;
     delete clusterInfoMap;
     delete probabilities;
-
     return errorMatrix;
 }
 
+// ---------------------------------------------------------------------------
+// computeProbabilities
+// ---------------------------------------------------------------------------
 
-Array<double>* GroupingAssistant::computeProbabilities(Data& clusteringData,QList<int>& clusterList,QList<int>& computedClusterList,QList<int>& ignoreClusterIndex){
-    dataType nbSpikes = clusteringData.totalNbOfSpikes();
-    //The number of dimensions includes the number of PCA by channels and the any additionnal features
-    //like the Valley to peak amplitude,the peak to valley amplitude,the max of the to previous data
-    //the width of the spike,the time of the spike.
-    //Only the PCs dimensions are taken into account.
-    int nbDimensions = clusteringData.totalNbOfPCAs();
+Array<double>* GroupingAssistant::computeProbabilities(
+        Data& clusteringData,
+        QList<int>& clusterList,
+        QList<int>& computedClusterList,
+        QList<int>& ignoreClusterIndex)
+{
+    dataType nbSpikes     = clusteringData.totalNbOfSpikes();
+    int      nbDimensions = clusteringData.totalNbOfPCAs();
 
-    spikesByCluster;
-    clusterInfoMap;
-    //Obtain a copy of the internal variables of data storing the information the clusters.
-    //A copy is needed because the clusters can changed while the calculation is in process.
-    clusteringData.duplicate(spikesByCluster,clusterInfoMap);
-
-    //Cluster 0 is not compute.
-    if(clusterInfoMap->contains(0))
-        clusterInfoMap->remove(0);
-
+    clusteringData.duplicate(spikesByCluster, clusterInfoMap);
+    if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
     int nbClusters = clusterInfoMap->count();
 
-    if(haveToStopComputing) return new Array<double>(0,0);//We do not care about what is return as it will not be used.
+    if (haveToStopComputing) return new Array<double>(0, 0);
 
-    //Calculate the means and the covariances.
-    meanCovarianceComputation(nbClusters,nbDimensions,nbSpikes,clusteringData,ignoreClusterIndex);
+    meanCovarianceComputation(nbClusters, nbDimensions, nbSpikes,
+                              clusteringData, ignoreClusterIndex);
 
-    //logP(spike,clusterIndex) = minus log likelihood for spike spike in cluster clusterIndex
-    //exp(logP)
-    Array<double>* probabilities = new Array<double>(nbSpikes,nbClusters);
+    Array<double>* probabilities = new Array<double>(nbSpikes, nbClusters);
     probabilities->fillWithZeros();
 
-    double piTerm = static_cast<double>(log(2 * M_PI)) * nbDimensions / 2;
+    double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
 
-    Data::ClusterInfoMap::Iterator iterator;
-    int clusterIndex = 1;
-    int cluster1Index = 1;
+    // ------------------------------------------------------------------
+    // Per-cluster serial precomputation: Cholesky + logTerm + packed L.
+    // ------------------------------------------------------------------
+    struct ClusterData {
+        int      clusterId;
+        dataType nbSpikes;
+        bool     ignore;
+        std::vector<double> L;   // col-major lower-tri, 0-based
+        double   logTerm;
+    };
 
-    //NB: the iterator iterates on the items sorted by their key (clusterId)
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
-        if(haveToStopComputing) return probabilities;//We do not care about what is return as it will not be used.
+    std::vector<ClusterData> cdata;
+    cdata.reserve(static_cast<size_t>(nbClusters));
 
-        dataType nbSpikesOfCluster = iterator.value().nbSpikes();
-        dataType clusterId = iterator.key();
+    {
+        Data::ClusterInfoMap::Iterator it;
+        int ci = 1;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci) {
+            ClusterData cd;
+            cd.clusterId = static_cast<int>(it.key());
+            cd.nbSpikes  = it.value().nbSpikes();
+            cd.ignore    = (ignoreClusterIndex.contains(ci) != 0);
 
-        //Check if the cluster1 exists
-        if(clusterId == 1){
-            existCluster1 = true;
-            cluster1Index = clusterIndex;
-        }
+            if (cd.clusterId == 1) existCluster1 = true;
+            clusterList.append(cd.clusterId);
 
-        //Add the current cluster to the list of analysed clusters.
-        clusterList.append(static_cast<int>(clusterId)); //cluster 0 is ignore.
+            if (!cd.ignore) {
+                Array<double> choleskyDecomp;
+                choleskyDecomp.setSize(nbDimensions, nbDimensions);
+                if (cholesky(choleskyDecomp, nbDimensions, ci)) {
+                    ignoreClusterIndex.append(ci);
+                    cd.ignore = true;
+                } else {
+                    computedClusterList.append(cd.clusterId);
+                    double logRootDet = 0.0;
+                    for (int d = 1; d <= nbDimensions; ++d)
+                        logRootDet += log(choleskyDecomp(d, d));
+                    double weight = log(static_cast<double>(cd.nbSpikes) /
+                                       static_cast<double>(nbSpikes));
+                    cd.logTerm = logRootDet - weight + piTerm;
 
-        //ignore the clusters which do not have enough spikes or the cluster 0.
-        if(ignoreClusterIndex.contains(clusterIndex) != 0){
-            clusterIndex++;
-            continue;
-        }
-
-        if(haveToStopComputing) return probabilities;//We do not care about what is return as it will not be used.
-
-        //Calculate the cholesky decomposition for the current cluster.
-        Array<double> choleskyDecomposition;
-        choleskyDecomposition.setSize(nbDimensions,nbDimensions);
-        if(cholesky(choleskyDecomposition,nbDimensions,clusterIndex)){
-            // If cholesky returns 1, it means the matrix is not positive definite.
-            // So the cluster is not used.
-            ignoreClusterIndex.append(clusterIndex);
-            clusterIndex++;
-            continue;
-        }
-
-        //Add the current cluster to the list of computed clusters.
-        computedClusterList.append(static_cast<int>(clusterId));
-
-        double logRootDet = 0; // log of square root of covariance determinant.
-        //logRootDet is given by log of product of diagonal elements.
-        for(int i = 1; i<= nbDimensions;++i)
-            logRootDet += static_cast<double>(log(static_cast<double>(choleskyDecomposition(i,i))));
-
-        double weight = static_cast<double>(log(static_cast<double>(static_cast<double>(nbSpikesOfCluster)/static_cast<double>(nbSpikes))));
-        double logTerm = logRootDet - weight + piTerm;
-
-        Array<double> dataMinusMean;
-        dataMinusMean.setSize(1,nbDimensions);
-        Array<double> root;
-        root.setSize(1,nbDimensions);
-        root.fillWithZeros();
-
-        Data::ClusterInfoMap::Iterator iterator2;
-        int clusterIndex2 = 1;
-        for(iterator2 = clusterInfoMap->begin(); iterator2 != clusterInfoMap->end(); ++iterator2){
-            if(haveToStopComputing) return probabilities;//We do not care about what is return as it will not be used.
-
-            dataType firstSpikePosition = iterator2.value().firstSpikePosition();
-            dataType lastPosition =  firstSpikePosition + iterator2.value().nbSpikes();
-
-            //Check if the current cluster has been ignore
-            if(ignoreClusterIndex.contains(clusterIndex2) != 0){
-                ++clusterIndex2;
-                continue;
-            }
-
-            for(dataType i = firstSpikePosition; i < lastPosition;++i){
-                dataType featuresRowIndex = (*spikesByCluster)(1,i);
-
-                double sum = 0;
-                //Calculate data minus cluster mean.
-                for(int i = 1; i <= nbDimensions;++i){
-                    sum = clusteringData.features(featuresRowIndex,i)
-                            - means(clusterIndex,i);
-
-                    //Calculate root vector - by choleskyDecomposition*root = dataMinusMean.
-                    for(int j= i-1; j >= 1;--j) sum -= choleskyDecomposition(i,j) * root(1,j); // j<i
-                    root(1,i) = sum / choleskyDecomposition(i,i);
+                    cd.L.assign(static_cast<size_t>(nbDimensions * nbDimensions), 0.0);
+                    for (int row = 1; row <= nbDimensions; ++row)
+                        for (int col = 1; col <= row; ++col)
+                            cd.L[static_cast<size_t>((row-1) + (col-1)*nbDimensions)] =
+                                choleskyDecomp(row, col);
                 }
-
-
-                //Compute Mahalanobis distance of point from cluster center.
-                double mahal = 0;
-                for(int i = 1; i <= nbDimensions;++i) mahal += root(1,i) * root(1,i);
-
-                (*probabilities)(featuresRowIndex,clusterIndex) =
-                        static_cast<double>(exp(- static_cast<double>(mahal/2 + logTerm)));
-
             }
-            ++clusterIndex2;
+            cdata.push_back(std::move(cd));
         }
-
-        ++clusterIndex;
     }
 
-    //If the cluster 1 does not exist, add it to the matrix of probabilities.
-    if(!existCluster1){
-        Array<double>* probabilitiesTmp = new Array<double>(nbSpikes,nbClusters + 1);
-        probabilitiesTmp->fillWithZeros();
-        //probabilitiesTmp->copy(*probabilities,1,1,nbClusters * nbSpikes,1,2);
-        probabilitiesTmp->copyAndPrependColumn(*probabilities);
+    if (haveToStopComputing) return probabilities;
 
+    // ------------------------------------------------------------------
+    // GPU path via dispatcher (CUDA / HIP / SYCL — first available).
+    // ------------------------------------------------------------------
+    bool usedGpu = false;
+
+    if (GpuDispatch::hasGpu()) {
+        std::vector<double> h_features(
+            static_cast<size_t>(nbSpikes) * nbDimensions);
+        for (dataType s = 1; s <= nbSpikes; ++s)
+            for (int d = 1; d <= nbDimensions; ++d)
+                h_features[static_cast<size_t>((s-1)*nbDimensions + (d-1))] =
+                    clusteringData.features(s, d);
+
+        std::vector<double> h_chol(
+            static_cast<size_t>(nbClusters) * nbDimensions * nbDimensions, 0.0);
+        std::vector<double> h_means(
+            static_cast<size_t>(nbClusters) * nbDimensions, 0.0);
+        std::vector<double> h_logTerms(static_cast<size_t>(nbClusters), 0.0);
+        std::vector<int>    h_ignore(static_cast<size_t>(nbClusters), 1);
+
+        for (int ci = 0; ci < static_cast<int>(cdata.size()); ++ci) {
+            const ClusterData& cd = cdata[static_cast<size_t>(ci)];
+            if (cd.ignore) continue;
+            h_ignore[static_cast<size_t>(ci)]   = 0;
+            h_logTerms[static_cast<size_t>(ci)] = cd.logTerm;
+            for (int d = 1; d <= nbDimensions; ++d)
+                h_means[static_cast<size_t>(ci*nbDimensions + (d-1))] =
+                    means(ci + 1, d);
+            memcpy(h_chol.data() + ci * nbDimensions * nbDimensions,
+                   cd.L.data(),
+                   static_cast<size_t>(nbDimensions * nbDimensions) * sizeof(double));
+        }
+
+        std::vector<double> h_prob(
+            static_cast<size_t>(nbSpikes) * nbClusters, 0.0);
+
+        int cluster1Col = 0;
+        if (existCluster1) {
+            int ci = 0;
+            Data::ClusterInfoMap::Iterator it;
+            for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
+                if (it.key() == 1) { cluster1Col = ci; break; }
+        }
+
+        int rc = GpuDispatch::computeProbabilities(
+            h_features.data(), h_chol.data(), h_means.data(),
+            h_logTerms.data(), h_prob.data(), h_ignore.data(),
+            static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
+
+        if (rc == 0) {
+            for (dataType s = 1; s <= nbSpikes; ++s)
+                for (int c = 1; c <= nbClusters; ++c)
+                    (*probabilities)(s, c) =
+                        h_prob[static_cast<size_t>((s-1)*nbClusters + (c-1))];
+            usedGpu = true;
+
+            if (!existCluster1) {
+                Array<double>* tmp = new Array<double>(nbSpikes, nbClusters + 1);
+                tmp->fillWithZeros();
+                tmp->copyAndPrependColumn(*probabilities);
+                delete probabilities;
+                probabilities = tmp;
+                clusterList.prepend(1);
+                computedClusterList.prepend(1);
+                for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
+                    ignoreClusterIndex[i] += 1;
+                initIndex = 2;
+            }
+            return probabilities;
+        }
+        // rc != 0: GPU failed, fall through to CPU path.
+        fprintf(stderr, "[klusters] GPU computation failed — falling back to OpenMP CPU.\n");
+        probabilities->fillWithZeros();
+    }
+
+    (void)usedGpu;
+
+    // ------------------------------------------------------------------
+    // CPU / OpenMP path.
+    // Each cluster ci writes exclusively to column (ci+1) of probabilities.
+    // ------------------------------------------------------------------
+    struct CSpan { dataType first; dataType last; };
+    std::vector<CSpan> spans;
+    spans.reserve(static_cast<size_t>(nbClusters));
+    {
+        Data::ClusterInfoMap::Iterator it;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it)
+            spans.push_back({ it.value().firstSpikePosition(),
+                              it.value().firstSpikePosition() + it.value().nbSpikes() });
+    }
+
+    int nbClustersInt = nbClusters;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(none) \
+    shared(cdata, spans, probabilities, spikesByCluster, clusteringData, \
+           nbClustersInt, nbDimensions)
+#endif
+    for (int ci = 0; ci < static_cast<int>(cdata.size()); ++ci) {
+        if (haveToStopComputing) continue;
+        const ClusterData& cd = cdata[static_cast<size_t>(ci)];
+        if (cd.ignore) continue;
+
+        const double* L    = cd.L.data();
+        double        logT = cd.logTerm;
+        int           ci1  = ci + 1;
+
+        for (int ci2 = 0; ci2 < nbClustersInt; ++ci2) {
+            if (haveToStopComputing) break;
+            if (cdata[static_cast<size_t>(ci2)].ignore) continue;
+            dataType first = spans[static_cast<size_t>(ci2)].first;
+            dataType last  = spans[static_cast<size_t>(ci2)].last;
+            for (dataType si = first; si < last; ++si) {
+                dataType featRow = (*spikesByCluster)(1, si);
+                double root[64], mahal = 0.0;
+                for (int d = 0; d < nbDimensions; ++d) {
+                    double s = clusteringData.features(featRow, d + 1)
+                               - means(ci1, d + 1);
+                    for (int j = 0; j < d; ++j)
+                        s -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
+                    root[d] = s / L[static_cast<size_t>(d + d*nbDimensions)];
+                    mahal  += root[d] * root[d];
+                }
+                (*probabilities)(featRow, ci1) = exp(-0.5 * (mahal + logT));
+            }
+        }
+    }
+
+    if (haveToStopComputing) return probabilities;
+
+    if (!existCluster1) {
+        Array<double>* tmp = new Array<double>(nbSpikes, nbClusters + 1);
+        tmp->fillWithZeros();
+        tmp->copyAndPrependColumn(*probabilities);
         delete probabilities;
-        probabilities = probabilitiesTmp;
-
+        probabilities = tmp;
         clusterList.prepend(1);
         computedClusterList.prepend(1);
-        for(int i = 0; i < static_cast<int>(ignoreClusterIndex.size());++i) ignoreClusterIndex[i] += 1;
-        nbClusters ++; //The number of cluster is now incremented by the cluster 1.
-        initIndex = 2;//skip cluster 1
+        for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
+            ignoreClusterIndex[i] += 1;
+        ++nbClusters;
+        initIndex = 2;
     }
 
-    clusterIndex = initIndex;
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
-        if(haveToStopComputing) return probabilities;//We do not care about what is return as it will not be used.
+    // Row-wise normalization.
+    int cluster1Col1 = initIndex;
+    if (existCluster1) {
+        int ci = 1;
+        Data::ClusterInfoMap::Iterator it;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
+            if (it.key() == 1) { cluster1Col1 = ci; break; }
+    }
 
-        dataType firstSpikePosition = iterator.value().firstSpikePosition();
-        dataType lastPosition =  firstSpikePosition + iterator.value().nbSpikes();
-
-        //Check if the current cluster has been ignore
-        if(ignoreClusterIndex.contains(clusterIndex) != 0){
-            ++clusterIndex;
-            continue;
+    int clusterIndex = initIndex;
+    Data::ClusterInfoMap::Iterator it;
+    for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++clusterIndex) {
+        if (haveToStopComputing) return probabilities;
+        if (ignoreClusterIndex.contains(clusterIndex)) continue;
+        dataType first = it.value().firstSpikePosition();
+        dataType last  = first + it.value().nbSpikes();
+        for (dataType si = first; si < last; ++si) {
+            dataType featRow = (*spikesByCluster)(1, si);
+            double sum = 0.0;
+            for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2)
+                sum += (*probabilities)(featRow, ci2);
+            if (sum == 0.0) { sum = 1.0; (*probabilities)(featRow, cluster1Col1) = 1.0; }
+            double inv = 1.0 / sum;
+            for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2)
+                (*probabilities)(featRow, ci2) *= inv;
         }
-
-        for(dataType i = firstSpikePosition; i < lastPosition;++i){
-            dataType featuresRowIndex = (*spikesByCluster)(1,i);
-
-            double sum = 0;
-            for(int clusterIndex2 = initIndex; clusterIndex2 <= nbClusters; ++clusterIndex2)
-                sum += (*probabilities)(featuresRowIndex,clusterIndex2);
-
-            //If any spikes have all probabilities equal to zero, set them to cluster 1.
-            if(sum == 0){
-                sum = 1;
-                (*probabilities)(featuresRowIndex,cluster1Index) = 1;
-            }
-
-            //Normalize the probabilities
-            for(int clusterIndex2 = initIndex; clusterIndex2 <= nbClusters; ++clusterIndex2)
-                (*probabilities)(featuresRowIndex,clusterIndex2) /= sum;
-        }
-        ++clusterIndex;
     }
 
     return probabilities;
 }
 
-
-int GroupingAssistant::cholesky(Array<double>& out,int nbDimensions,int clusterIndex){
-    double sum = 0;
-
-    for(int i = 1;i <= nbDimensions;++i){
-        for(int j = i;j <= nbDimensions;++j){	// j>=i
-            sum = covariances(clusterIndex,(i - 1) * nbDimensions + j);
-
-            for(int k = i - 1;k >= 1;--k) sum -= out(i,k) * out(j,k); // i,j >= k
-            if(i==j){
-                if(sum <= 0) return(1); // Cholesky decomposition has failed
-                out(i,i) = static_cast<double>(sqrt(static_cast<double>(sum)));
-            }
-            else{
-                out(j,i) = sum/out(i,i);
+// ---------------------------------------------------------------------------
+// cholesky
+// ---------------------------------------------------------------------------
+int GroupingAssistant::cholesky(Array<double>& out, int nbDimensions, int clusterIndex)
+{
+    for (int i = 1; i <= nbDimensions; ++i) {
+        for (int j = i; j <= nbDimensions; ++j) {
+            double sum = covariances(clusterIndex, (i-1)*nbDimensions + j);
+            for (int k = i-1; k >= 1; --k) sum -= out(i,k) * out(j,k);
+            if (i == j) {
+                if (sum <= 0.0) return 1;
+                out(i,i) = sqrt(sum);
+            } else {
+                out(j,i) = sum / out(i,i);
             }
         }
     }
-
-    return 0; // for sucess
+    return 0;
 }
 
-
-void GroupingAssistant::meanCovarianceComputation(int nbClusters,int nbDimensions,dataType nbSpikes,Data& clusteringData,QList<int>& ignoreClusterIndex){
-    //initialize dataMinusMean,means and covariances.
-    Array<double> dataMinusMean;
-    dataMinusMean.setSize(1,nbDimensions);
-    means.setSize(nbClusters,nbDimensions);
+// ---------------------------------------------------------------------------
+// meanCovarianceComputation — OpenMP parallel over clusters
+// ---------------------------------------------------------------------------
+void GroupingAssistant::meanCovarianceComputation(
+        int nbClusters, int nbDimensions, dataType /*nbSpikes*/,
+        Data& clusteringData, QList<int>& ignoreClusterIndex)
+{
+    means.setSize(nbClusters, nbDimensions);
     means.fillWithZeros();
-    covariances.setSize(nbClusters,nbDimensions * nbDimensions);
+    covariances.setSize(nbClusters, nbDimensions * nbDimensions);
     covariances.fillWithZeros();
 
-    Data::ClusterInfoMap::Iterator iterator;
+    struct CInfo { dataType first; dataType nb; int idx; };
+    std::vector<CInfo> cinfo;
+    cinfo.reserve(static_cast<size_t>(nbClusters));
+    {
+        Data::ClusterInfoMap::Iterator it;
+        int ci = 1;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
+            cinfo.push_back({ it.value().firstSpikePosition(),
+                              it.value().nbSpikes(), ci });
+    }
 
-    int clusterIndex = 1;
-    //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
-        if(haveToStopComputing) return;//We do not care about the result as it will not be used.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(none) \
+    shared(cinfo, ignoreClusterIndex, clusteringData, nbDimensions)
+#endif
+    for (int ei = 0; ei < static_cast<int>(cinfo.size()); ++ei) {
+        if (haveToStopComputing) continue;
+        const CInfo& c = cinfo[static_cast<size_t>(ei)];
 
-        dataType firstSpikePosition = iterator.value().firstSpikePosition();
-        dataType nbSpikesOfCluster = iterator.value().nbSpikes();
-        dataType lastPosition =  firstSpikePosition + nbSpikesOfCluster;
-
-        //Check if a cluster as to be ignore <=> not enough spikes.
-        bool ignore = false;
-        if(nbSpikesOfCluster <= nbDimensions){
-            ignoreClusterIndex.append(clusterIndex);
-            ignore = true;
+        if (c.nb <= static_cast<dataType>(nbDimensions)) {
+#ifdef _OPENMP
+#pragma omp critical
+#endif
+            ignoreClusterIndex.append(c.idx);
+            continue;
         }
 
-        if(!ignore && !haveToStopComputing){
-            //Calculate the means.
+        dataType last = c.first + c.nb;
 
-            //Accumulate sums for mean caculation
-            for(dataType i = firstSpikePosition; i < lastPosition;++i){
-                dataType featuresRowIndex = (*spikesByCluster)(1,i);
-                for(int j = 1;j <= nbDimensions;++j){
-                    means(clusterIndex,j) += static_cast<double>(clusteringData.features(featuresRowIndex,j));
-                }
-            }
+        for (dataType i = c.first; i < last; ++i) {
+            dataType featRow = (*spikesByCluster)(1, i);
+            for (int j = 1; j <= nbDimensions; ++j)
+                means(c.idx, j) +=
+                    static_cast<double>(clusteringData.features(featRow, j));
+        }
+        for (int j = 1; j <= nbDimensions; ++j)
+            means(c.idx, j) /= static_cast<double>(c.nb);
 
-            //Normalize
-            for(int j = 1;j <= nbDimensions;++j){
-                means(clusterIndex,j) /= nbSpikesOfCluster;
-            }
-
-            //Calculate the covariances.
-            for(dataType i = firstSpikePosition; i < lastPosition;++i){
-                dataType featuresRowIndex = (*spikesByCluster)(1,i);
-
-                //Calculate distance from mean
-                for(int j = 1;j <= nbDimensions;++j){
-                    dataMinusMean(1,j) = (static_cast<double>(clusteringData.features(featuresRowIndex,j))
-                                          - means(clusterIndex,j));
-                }
-
-                for(int i = 1;i <= nbDimensions;++i){
-                    for(int j = 1;j <= nbDimensions;++j)
-                        covariances(clusterIndex,(i - 1) * nbDimensions + j) += dataMinusMean(1,i) * dataMinusMean(1,j);
-                }
-
-            }
-
-            //Normalize
-            for(int i = 1;i <= nbDimensions;++i){
-                for(int j = 1;j <= nbDimensions;++j){
-                    covariances(clusterIndex,(i - 1) * nbDimensions + j) /= (nbSpikesOfCluster - 1);
-                }
-            }
-
-        }//end ignore
-
-        ++clusterIndex;
+        for (dataType i = c.first; i < last; ++i) {
+            dataType featRow = (*spikesByCluster)(1, i);
+            double dmm[64];
+            for (int j = 1; j <= nbDimensions; ++j)
+                dmm[j-1] = static_cast<double>(clusteringData.features(featRow, j))
+                           - means(c.idx, j);
+            for (int ii = 1; ii <= nbDimensions; ++ii)
+                for (int jj = 1; jj <= nbDimensions; ++jj)
+                    covariances(c.idx, (ii-1)*nbDimensions + jj) += dmm[ii-1] * dmm[jj-1];
+        }
+        double norm = 1.0 / static_cast<double>(c.nb - 1);
+        for (int ii = 1; ii <= nbDimensions; ++ii)
+            for (int jj = 1; jj <= nbDimensions; ++jj)
+                covariances(c.idx, (ii-1)*nbDimensions + jj) *= norm;
     }
 }
-
