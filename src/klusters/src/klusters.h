@@ -390,6 +390,9 @@ private Q_SLOTS:
     /**Launchs a separate process to recluster the selected clusters.*/
     void slotRecluster();
 
+    /**Opens the spike realignment dialog for the currently selected cluster.*/
+    void slotRealignSpikes();
+
     /**Stops the separate process which is reclustering some clusters.*/
     void slotStopRecluster();
 
@@ -537,6 +540,7 @@ private:
     QAction *mRenumberClusters;
     QAction *mReCluster;
     QAction *mAbortReclustering;
+    QAction *mRealignSpikes;
     QAction *mZoomAction;
     QAction *mIncreasePointSize;
     QAction *mDecreasePointSize;

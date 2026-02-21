@@ -25,6 +25,7 @@
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
+#include "spikerealigndialog.h"
 #include "qhelpviewer.h"
 
 
@@ -296,6 +297,14 @@ void KlustersApp::createMenus()
     connect(mReCluster,SIGNAL(triggered()), this,SLOT(slotRecluster()));
 
     mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
+    connect(mAbortReclustering, SIGNAL(triggered()), this, SLOT(slotAbortReclustering()));
+
+    actionMenu->addSeparator();
+
+    mRealignSpikes = actionMenu->addAction(tr("R&ealign Spikes…"));
+    mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
+                                   "update .res/.spk/.fet files, and swap ordering if needed."));
+    connect(mRealignSpikes, SIGNAL(triggered()), this, SLOT(slotRealignSpikes()));
     connect(mAbortReclustering,SIGNAL(triggered()), this,SLOT(slotStopRecluster()));
 
 
@@ -3243,5 +3252,32 @@ void KlustersApp::slotUpdateStartTime(int start)
     if(!isInit){
         startTime = start;
         activeView()->updateTimeFrame(static_cast<long>(start),timeWindow);
+    }
+}
+
+void KlustersApp::slotRealignSpikes()
+{
+    if (!doc) {
+        QMessageBox::information(this, tr("No document"),
+                                 tr("Please open a file first."));
+        return;
+    }
+
+    // Use the first cluster currently shown in the active view.
+    const QList<int>& shown = activeView()->clusters();
+    int clusterId = -1;
+    for (int c : shown) {
+        if (c > 1) { clusterId = c; break; }
+    }
+    if (clusterId < 0) {
+        QMessageBox::information(this, tr("Realign Spikes"),
+            tr("Please select a cluster (cluster > 1) in the active display first."));
+        return;
+    }
+
+    SpikeRealignDialog dlg(*doc, clusterId, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        // Trigger a full display refresh so waveform views reflect updated features.
+        activeView()->updateContents();
     }
 }
