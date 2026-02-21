@@ -88,8 +88,8 @@ once()
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 
-	# Perform PCA
-	process_pca -f $session.fet.$electrodeGroup.tmp -n $nElectrodes -w $waveformLength -d $nFeatures $options ${@:2} $session.spk.$electrodeGroup
+	# Perform PCA and save eigenvectors for later re-featurization
+	process_pca -f $session.fet.$electrodeGroup.tmp -e $session.pca.$electrodeGroup -n $nElectrodes -w $waveformLength -d $nFeatures $options ${@:2} $session.spk.$electrodeGroup
 	check_command_status process_pca
 
 	# Paste timestamps as last column (and update total number of features)
