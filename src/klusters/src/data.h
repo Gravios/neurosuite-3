@@ -162,6 +162,48 @@ public:
   * @param modifiedClusters list of the clusters which have been modified implying
   * the modification of the cluster 0 this the recalculation of the minima and maxima.
   */
+    /**Returns true if spikeIndex is valid (1-based, <= nbSpikes).*/
+    bool isValidSpikeIndex(dataType spikeIndex) const {
+        return spikeIndex >= 1 && spikeIndex <= nbSpikes;
+    }
+
+    /**
+     * Overwrites the feature values for a single spike in memory.
+     * @param spikeIndex  1-based index into the features array (row).
+     * @param newValues   Array of (nbDimensions-1) feature values in order.
+     *                    The timestamp column (last column) is left unchanged.
+     * @return false if spikeIndex is out of range.
+     */
+    bool updateFeatureRow(dataType spikeIndex, const QList<dataType>& newValues);
+
+    /**
+     * Updates only the timestamp column for a spike in memory.
+     * @param spikeIndex  1-based spike index.
+     * @param newTimestamp New timestamp value (samples from recording start).
+     * @return false if spikeIndex is out of range.
+     */
+    bool updateTimestamp(dataType spikeIndex, dataType newTimestamp);
+
+    /**Swaps all in-memory data (features, spikesByCluster) for two 1-based spike indices.*/
+    void swapSpikes(dataType idxA, dataType idxB);
+
+    /**Returns the feature value at (spikeIndex, dimension) — both 1-based.*/
+    dataType featureValue(dataType spikeIndex, int dimension) const {
+        return features(spikeIndex, dimension);
+    }
+
+    /**Returns the number of dimensions (including timestamp as last column).*/
+    int nbOfDimensionsTotal() const { return nbDimensions; }
+
+    /**Returns the number of channels.*/
+    int nbOfChannels() const { return nbChannels; }
+
+    /**Returns the number of samples per waveform.*/
+    int nbSamplesPerWaveform() const { return nbSamplesInWaveform; }
+
+    /**Returns the 0-based peak sample index within a waveform.*/
+    int peakSampleIndex() const { return peakPosition; }
+
     void minMaxDimensionCalculation(QList<int> modifiedClusters);
 
     /**

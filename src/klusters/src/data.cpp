@@ -3793,3 +3793,42 @@ void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Spike re-alignment helpers
+// ---------------------------------------------------------------------------
+
+bool Data::updateFeatureRow(dataType spikeIndex, const QList<dataType>& newValues)
+{
+    if (spikeIndex < 1 || spikeIndex > nbSpikes) return false;
+    int nFeat = nbDimensions - 1; // exclude timestamp column
+    for (int d = 0; d < nFeat && d < newValues.size(); ++d)
+        features(spikeIndex, d + 1) = newValues[d];
+    return true;
+}
+
+bool Data::updateTimestamp(dataType spikeIndex, dataType newTimestamp)
+{
+    if (spikeIndex < 1 || spikeIndex > nbSpikes) return false;
+    features(spikeIndex, nbDimensions) = newTimestamp;
+    return true;
+}
+
+void Data::swapSpikes(dataType idxA, dataType idxB)
+{
+    if (idxA == idxB) return;
+    // Swap all feature columns (including timestamp)
+    for (int d = 1; d <= nbDimensions; ++d) {
+        dataType tmp        = features(idxA, d);
+        features(idxA, d)  = features(idxB, d);
+        features(idxB, d)  = tmp;
+    }
+    // Swap the two entries in spikesByCluster that point to idxA / idxB.
+    // Row 1 = feature row index; row 2 = cluster id.
+    // The table is sorted by cluster, so we need to search for both entries.
+    for (dataType k = 1; k <= nbSpikes; ++k) {
+        dataType ref = (*spikesByCluster)(1, k);
+        if (ref == idxA)       (*spikesByCluster)(1, k) = idxB;
+        else if (ref == idxB)  (*spikesByCluster)(1, k) = idxA;
+    }
+}
