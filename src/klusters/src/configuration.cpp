@@ -34,7 +34,9 @@ const QString Configuration::reclusteringExecutableDefault = QLatin1String("Klus
 const QString Configuration::reclusteringArgsDefault =
         "%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features";
 const QString Configuration::realignExecutableDefault = QLatin1String("");
-const QString Configuration::realignArgsDefault = QLatin1String("");
+const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.70 --iterations 2");
+const int  Configuration::markerSizeDefault = 2;
+const int  Configuration::selectionLineWidthDefault = 1;
 
 Configuration::Configuration():nbChannels(0) {
     read(); // read the settings or set them to the default values
@@ -52,6 +54,8 @@ void Configuration::read() {
     reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
     realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
     realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
+    markerSize = settings.value("markerSize", markerSizeDefault).toInt();
+    selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     settings.endGroup();
 
@@ -78,6 +82,8 @@ void Configuration::write() const {
     settings.setValue("reclusteringArgs",reclusteringArgs);
     settings.setValue("realignExecutable",realignExecutable);
     settings.setValue("realignArgs",realignArgs);
+    settings.setValue("markerSize", markerSize);
+    settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.endGroup();
     

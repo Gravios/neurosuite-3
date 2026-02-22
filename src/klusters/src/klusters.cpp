@@ -323,6 +323,7 @@ void KlustersApp::createMenus()
     actionMenu->addSeparator();
 
     mRealignSpikes = actionMenu->addAction(tr("R&ealign Spikes…"));
+    mRealignSpikes->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_L));
     mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, SIGNAL(triggered()), this, SLOT(slotRealignSpikes()));
@@ -862,6 +863,16 @@ void KlustersApp::applyPreferences() {
     if(realignArgs != configuration().getRealignArguments())
         realignArgs = configuration().getRealignArguments();
 
+    if(markerSize != configuration().getMarkerSize()){
+        markerSize = configuration().getMarkerSize();
+        if(mainDock) doc->setMarkerSize(markerSize);
+    }
+
+    if(selectionLineWidth != configuration().getSelectionLineWidth()){
+        selectionLineWidth = configuration().getSelectionLineWidth();
+        if(mainDock) doc->setSelectionLineWidth(selectionLineWidth);
+    }
+
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
 }
 
@@ -874,6 +885,8 @@ void KlustersApp::initializePreferences(){
     reclusteringArgs = configuration().getReclusteringArguments();
     realignExecutable = configuration().getRealignExecutable();
     realignArgs = configuration().getRealignArguments();
+    markerSize = configuration().getMarkerSize();
+    selectionLineWidth = configuration().getSelectionLineWidth();
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
     clusterPalette->changeBackgroundColor(backgroundColor);
 }
@@ -973,9 +986,9 @@ void KlustersApp::initDisplay(){
     //Update the document's list of view
     doc->addView(view);
 
-
-    //return;
-    //Initialize and dock the clusterpanel
+    // Apply current display preferences to the new view's ClusterViews
+    doc->setMarkerSize(markerSize);
+    doc->setSelectionLineWidth(selectionLineWidth);
     //Create the cluster list and select the clusters which will be drawn
     clusterPalette->createClusterList(doc);
     clusterPalette->selectItems(*clusterList);
@@ -1088,6 +1101,10 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
 
         //Update the document's list of view
         doc->addView(view);
+
+        // Apply current display preferences to the new view's ClusterViews
+        doc->setMarkerSize(markerSize);
+        doc->setSelectionLineWidth(selectionLineWidth);
 
         //Disconnect the previous connection
         if(tabsParent != NULL)
@@ -3395,7 +3412,7 @@ void KlustersApp::slotRealignSpikes()
     // ── Pre-flight dialog ────────────────────────────────────────────────────
     // Shows cluster info, PCA file status, parameters summary.
     // Does NOT run any computation — user just confirms and clicks Start.
-    SpikeRealignDialog dlg(*doc, clusterId, this);
+    SpikeRealignDialog dlg(*doc, clusterId, realignArgs, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
@@ -3446,7 +3463,7 @@ void KlustersApp::slotRealignSpikes()
         realignWorker = nullptr;
     }
 
-    auto* worker = new RealignWorker(doc, clusterId);
+    auto* worker = new RealignWorker(doc, clusterId, realignArgs);
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
 

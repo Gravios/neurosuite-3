@@ -836,6 +836,12 @@ private:
     /**Arguments for the realignment executable (currently unused).*/
     QString realignArgs;
 
+    /**Scatter plot marker size in pixels — kept in sync with configuration.*/
+    int markerSize;
+
+    /**Selection polygon line width in pixels — kept in sync with configuration.*/
+    int selectionLineWidth;
+
     /**Name of the reclustering fet file.*/
     QString reclusteringFetFileName;
 

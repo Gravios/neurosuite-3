@@ -8,10 +8,12 @@
 #include <QThread>
 #include <stdexcept>
 
-RealignWorker::RealignWorker(KlustersDoc* doc, int clusterId, QObject* parent)
+RealignWorker::RealignWorker(KlustersDoc* doc, int clusterId,
+                             const QString& args, QObject* parent)
     : QObject(parent)
     , m_doc(doc)
     , m_clusterId(clusterId)
+    , m_args(args)
     , m_cancel(false)
 {}
 
@@ -38,7 +40,7 @@ void RealignWorker::run()
         ok = m_doc->realignSpikes(m_clusterId, logOut, nShifted, nSwapped,
             [this](const QString& line, bool isError) {
                 emit logLine(line, isError);
-            });
+            }, m_args);
     } catch (const std::bad_alloc& e) {
         logOut += QStringLiteral("\nERROR: out of memory — %1\n").arg(
             QString::fromLatin1(e.what()));

@@ -57,6 +57,7 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     //Set the default mode
     mode = ZOOM;
     pointSize = 2;
+    selectionLineWidth = 1;
 
     //Initialize internal variables
     timeDimension = doc.data().timeDimension();
@@ -195,7 +196,9 @@ void ClusterView::paintEvent ( QPaintEvent*){
     if(!selectionPolygon.isEmpty()) {
         const QColor color = selectPolygonColor(mode);
         p.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-        p.setPen(color);
+        QPen selPen(color);
+        selPen.setWidth(selectionLineWidth);
+        p.setPen(selPen);
         p.drawPolyline(selectionPolygon);
     }
 }

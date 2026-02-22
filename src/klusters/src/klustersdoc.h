@@ -345,6 +345,12 @@ public:
  */
     void setBackgroundColor(const QColor& backgroundColor);
 
+    /**Sets the scatter plot marker size on all ClusterViews.*/
+    void setMarkerSize(int size);
+
+    /**Sets the selection polygon line width on all ClusterViews.*/
+    void setSelectionLineWidth(int w);
+
     /**Creates the feature file to automatically recluster the clusters contained in @p clustersToRecluster.
   * @param clustersToRecluster list of clusters to recluster.
   * @param reclusteringFetFileName name for the reclustering fet file.
@@ -370,7 +376,8 @@ public:
      * @return true on success.
      */
     bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
-                       std::function<void(const QString&,bool)> liveLog = nullptr);
+                       std::function<void(const QString&,bool)> liveLog = nullptr,
+                       const QString& args = QString());
 
     /**Integrates in the data the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.

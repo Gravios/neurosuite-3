@@ -47,6 +47,7 @@
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
+#include "clusterview.h"
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
@@ -706,6 +707,26 @@ void KlustersDoc::setBackgroundColor(const QColor &backgroundColor){
 
     //Ask the active view to take the modification into account immediately
     activeView->showAllWidgets();
+}
+
+void KlustersDoc::setMarkerSize(int size){
+    for(int i = 0; i < viewList->count(); ++i){
+        const QList<ViewWidget*>& views = viewList->at(i)->getViewList();
+        for(ViewWidget* w : views){
+            ClusterView* cv = qobject_cast<ClusterView*>(w);
+            if(cv) cv->setPointSize(size);
+        }
+    }
+}
+
+void KlustersDoc::setSelectionLineWidth(int w){
+    for(int i = 0; i < viewList->count(); ++i){
+        const QList<ViewWidget*>& views = viewList->at(i)->getViewList();
+        for(ViewWidget* vw : views){
+            ClusterView* cv = qobject_cast<ClusterView*>(vw);
+            if(cv) cv->setSelectionLineWidth(w);
+        }
+    }
 }
 
 void KlustersDoc::setTimeStepInSecond(int step){
@@ -2273,7 +2294,8 @@ static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
 }
 
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
-                                std::function<void(const QString&,bool)> liveLog)
+                                std::function<void(const QString&,bool)> liveLog,
+                                const QString& args)
 {
     nShifted = 0;
     nSwapped = 0;
@@ -2313,9 +2335,33 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const int   timeDim   = d.timeDimension();  // = nDimensions from .fet header
     const int   nFeatCols = timeDim - 1;        // feature columns, last col is ts
 
-    const int   maxShift  = std::max(1, peakSamp / 2);
-    const float minScore  = 0.70f;
-    const int   nIter     = 2;
+    // -----------------------------------------------------------------------
+    // Parse configurable parameters from args string.
+    // Supported: --threshold F  --iterations N  --maxshift N
+    // Defaults:  threshold=0.70  iterations=2  maxshift=peakSamp/2
+    // -----------------------------------------------------------------------
+    int   maxShift  = std::max(1, peakSamp / 2);
+    float minScore  = 0.70f;
+    int   nIter     = 2;
+    {
+        const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        for (int ti = 0; ti < tokens.size(); ++ti) {
+            const QString& tok = tokens[ti];
+            if ((tok == QStringLiteral("--threshold") || tok == QStringLiteral("-t"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; float v = tokens[++ti].toFloat(&ok2);
+                if (ok2 && v > 0.0f && v <= 1.0f) minScore = v;
+            } else if ((tok == QStringLiteral("--iterations") || tok == QStringLiteral("-i"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; int v = tokens[++ti].toInt(&ok2);
+                if (ok2 && v >= 1 && v <= 20) nIter = v;
+            } else if ((tok == QStringLiteral("--maxshift") || tok == QStringLiteral("-m"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; int v = tokens[++ti].toInt(&ok2);
+                if (ok2 && v >= 1) maxShift = v;
+            }
+        }
+    }
 
     const QString dir   = documentDirectory();
     const QString base  = documentBaseName();

@@ -92,6 +92,18 @@ public:
     bool useWhiteColorDuringPrinting() const;
 
     void setUseWhiteColorDuringPrinting(bool b);
+
+    /**Sets the scatter plot marker size.*/
+    void setMarkerSize(int size);
+
+    /**Returns the scatter plot marker size.*/
+    int getMarkerSize() const;
+
+    /**Sets the selection polygon line width.*/
+    void setSelectionLineWidth(int w);
+
+    /**Returns the selection polygon line width.*/
+    int getSelectionLineWidth() const;
 private Q_SLOTS:
     void updateCrashRecoveryTimeInterval(int state);
 
