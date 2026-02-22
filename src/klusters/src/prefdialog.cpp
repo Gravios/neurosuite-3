@@ -86,6 +86,10 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->reclusteringExecutableLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
     //connect(prefGeneral,SIGNAL(reclusteringArgsUpdate()),this,SLOT(enableApply()));
     connect(prefGeneral->reclusteringArgsLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
+    connect(prefGeneral->realignExecutableLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
+    connect(prefGeneral->realignArgsLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
+    connect(prefGeneral->markerSizeSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
+    connect(prefGeneral->selectionLineWidthSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     connect(prefGeneral->useWhiteColorPrinting,SIGNAL(clicked()),this,SLOT(enableApply()));
     
     connect(prefclusterView->intervalSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
@@ -114,7 +118,11 @@ void PrefDialog::updateDialog() {
   prefGeneral->setNbUndo(configuration().getNbUndo());
   prefGeneral->setBackgroundColor(configuration().getBackgroundColor());
   prefGeneral->setReclusteringExecutable(configuration().getReclusteringExecutable());
-  prefGeneral->setReclusteringArguments(configuration().getReclusteringArguments()); 
+  prefGeneral->setReclusteringArguments(configuration().getReclusteringArguments());
+  prefGeneral->setRealignExecutable(configuration().getRealignExecutable());
+  prefGeneral->setRealignArguments(configuration().getRealignArguments());
+  prefGeneral->setMarkerSize(configuration().getMarkerSize());
+  prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidth());
   prefclusterView->setTimeInterval(configuration().getTimeInterval());
   prefWaveformView->setGain(configuration().getGain());
   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
@@ -130,6 +138,10 @@ void PrefDialog::updateConfiguration(){
   configuration().setBackgroundColor(prefGeneral->getBackgroundColor()); 
   configuration().setReclusteringExecutable(prefGeneral->getReclusteringExecutable());
   configuration().setReclusteringArguments(prefGeneral->getReclusteringArguments());
+  configuration().setRealignExecutable(prefGeneral->getRealignExecutable());
+  configuration().setRealignArguments(prefGeneral->getRealignArguments());
+  configuration().setMarkerSize(prefGeneral->getMarkerSize());
+  configuration().setSelectionLineWidth(prefGeneral->getSelectionLineWidth());
   configuration().setTimeInterval(prefclusterView->getTimeInterval());
   configuration().setGain(prefWaveformView->getGain());
   configuration().setNbChannels(prefWaveformView->getNbChannels());
@@ -150,7 +162,11 @@ void PrefDialog::slotDefault() {
    prefGeneral->setNbUndo(configuration().getNbUndoDefault());
    prefGeneral->setBackgroundColor(configuration().getBackgroundColorDefault());
    prefGeneral->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
-   prefGeneral->setReclusteringArguments(configuration().getReclusteringArgumentsDefault()); 
+   prefGeneral->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
+   prefGeneral->setRealignExecutable(configuration().getRealignExecutableDefault());
+   prefGeneral->setRealignArguments(configuration().getRealignArgumentsDefault());
+   prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
+   prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
    prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
 
    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());

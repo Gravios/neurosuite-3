@@ -34,7 +34,6 @@ using namespace std;
 struct arguments {
 	char *inputFileName; // Input file name
 	char *outputFileName; // Ouput file name
-	char *eigenFileName; // Output file for saved eigenvectors (.pca.N)
 	long long inputSize; // Size of the input (byte)
 	int nChannels; // Total number of channels
 	int beforeSpike; // number of records to consider before spike
@@ -47,7 +46,6 @@ struct arguments {
 	
 	bool isInputFileProvided;
 	bool isOutputFileProvided;
-	bool isEigenFileProvided; // save eigenvectors for later re-featurization
 	bool isInputSizeProvided;
 	bool isNChannelsProvided;
 	bool isBeforeSpikeProvided;

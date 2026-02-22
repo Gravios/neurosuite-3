@@ -59,6 +59,12 @@ public:
     /**Sets the arguments for the reclustering.*/
     void setReclusteringArguments(const QString &arguments);
 
+    /**Sets the realignment executable.*/
+    void setRealignExecutable(const QString& executable);
+
+    /**Sets the arguments for the realignment.*/
+    void setRealignArguments(const QString& arguments);
+
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const;
 
@@ -77,13 +83,33 @@ public:
     /**Returns the arguments for the reclustering.*/
     QString getReclusteringArguments() const;
 
+    /**Returns the realignment executable.*/
+    QString getRealignExecutable() const;
+
+    /**Returns the arguments for the realignment.*/
+    QString getRealignArguments() const;
+
     bool useWhiteColorDuringPrinting() const;
 
     void setUseWhiteColorDuringPrinting(bool b);
+
+    /**Sets the scatter plot marker size.*/
+    void setMarkerSize(int size);
+
+    /**Returns the scatter plot marker size.*/
+    int getMarkerSize() const;
+
+    /**Sets the selection polygon line width.*/
+    void setSelectionLineWidth(int w);
+
+    /**Returns the selection polygon line width.*/
+    int getSelectionLineWidth() const;
 private Q_SLOTS:
     void updateCrashRecoveryTimeInterval(int state);
 
     void updateReclusteringExecutable();
+
+    void updateRealignExecutable();
 };
 
 #endif
