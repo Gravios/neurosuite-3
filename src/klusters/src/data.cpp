@@ -18,6 +18,7 @@
  ***************************************************************************/
 //Application include files
 #include "data.h"
+#include "binfile.h"
 #include "minmaxthread.h"
 #include "waveformview.h"
 #include "autosavethread.h"
@@ -217,109 +218,107 @@ bool Data::configure(QFile& parXFile,QFile& parFile,QString& errorInformation){
     return true;
 }
 
-bool Data::loadClusters(QFile &clusterFile, long spkFileLength, QString& errorInformation){
-    //Determine the number of spikes using the length of the binary spike file
+bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorInformation)
+{
+    // Determine nbSpikes from the .spk file length
     int sampleSize;
-    switch(nbBits){
-    case 12:
-        sampleSize = 2;
-        isTwoBytesRecording = true;
-        break;
-    case 14:
-        sampleSize = 2;
-        isTwoBytesRecording = true;
-        break;
-    case 16:
-        sampleSize = 2;
-        isTwoBytesRecording = true;
-        break;
-    case 32:
-        sampleSize = 4;
-        isTwoBytesRecording = false;
-        break;
-    default:   //not implemented
+    switch (nbBits) {
+    case 12: case 14: case 16: sampleSize = 2; isTwoBytesRecording = true;  break;
+    case 32:                   sampleSize = 4; isTwoBytesRecording = false; break;
+    default:
         errorInformation = QObject::tr("The number of bits is not supported.");
         return false;
     }
+    nbSpikes = spkFileLength /
+               (long)((long)nbChannels * (long)nbSamplesInWaveform * (long)sampleSize);
 
-    nbSpikes =  spkFileLength / static_cast<long>(static_cast<long>(nbChannels) * static_cast<long>(nbSamplesInWaveform) * static_cast<long>(sampleSize));
-    dataType upperLimit = nbSpikes + 1;
-    //Effectively create the table containing the data
-    spikesByCluster->setSize(nbSpikes);
-    bool firstLine = true;
-    dataType k = 1;
-    while (!clusterFile.atEnd()) {
-        QByteArray line = clusterFile.readLine();
-        if (firstLine) {
-            firstLine = false;
-        } else {
-            QByteArray feature;
-            for (int i = 0; i <line.size();++i) {
-                if ( (line.at(i) >= '0' && line.at(i) <='9')) {
-                    feature.append(line.at(i));
-                } else if( !feature.isEmpty()){
-                    (*spikesByCluster)(2,k++) = feature.toLongLong();//Warning if the typedef dataType changes, change will have to be make here.
-                    feature = "";
-                }
-            }
-            if(k > upperLimit)
-                break;
-        }
-    }
+    // Binary .clu format:
+    //   int32_t  nClusters
+    //   nSpikes x int32_t  cluster ids in timestamp order
+    const QString path = clusterFile.fileName();
+    clusterFile.close();
 
-    qDebug()<<" nbSpikes:"<< nbSpikes<< "k:"<<k<<" spkFileLength:"<<spkFileLength<< "nbChannels : "<< nbChannels<<" nbSamplesInWaveform "<<nbSamplesInWaveform<< " sampleSize:"<<sampleSize;
-
-    qDebug()<<" upperLimit"<<upperLimit<< " k "<<k;
-    //if the number of clusters read did not correspond to nbSpikes, there is a problem.
-    if(k != upperLimit){
-        errorInformation = QObject::tr("The number of spikes read in the cluster file does not correspond to number of spikes computed.(computed : %1, upperlimit %2)").arg(k).arg(upperLimit);
+    FILE* f = fopen(path.toLocal8Bit().constData(), "rb");
+    if (!f) {
+        errorInformation = QObject::tr("Cannot open cluster file: %1").arg(path);
         return false;
-    } else {
-        return true;
     }
+
+    int32_t nClu = 0;
+    if (fread(&nClu, sizeof(int32_t), 1, f) != 1) {
+        fclose(f);
+        errorInformation = QObject::tr("Cannot read .clu header from: %1").arg(path);
+        return false;
+    }
+
+    spikesByCluster->setSize(nbSpikes);
+
+    std::vector<int32_t> ids((size_t)nbSpikes);
+    if ((long)fread(ids.data(), sizeof(int32_t), (size_t)nbSpikes, f) != nbSpikes) {
+        fclose(f);
+        errorInformation = QObject::tr(
+            "Short read in cluster file (expected %1 entries): %2")
+            .arg(nbSpikes).arg(path);
+        return false;
+    }
+    fclose(f);
+
+    for (long k = 0; k < nbSpikes; ++k)
+        (*spikesByCluster)(2, k + 1) = (dataType)ids[(size_t)k];
+
+    return true;
 }
 
-bool Data::loadFeatures(QFile& featureFile,QString& errorInformation){
 
-    bool firstLine = true;
-    dataType k = 0;
-    while (!featureFile.atEnd()) {
-        QByteArray line = featureFile.readLine();
-        //qDebug()<<" line "<<line;
-        if (firstLine) {
-            firstLine = false;
-            int j = 0;
-            for (int i = 0; i <line.size();++i) {
-                if (line.at(i) >= '0' && line.at(i) <='9') {
-                    j++;
-                } else if(j) {
-                    nbDimensions = line.left(j).toInt();
-                    break;
-                }
-            }
-            features.setSize(nbSpikes,nbDimensions);
-        } else {
-            QByteArray feature;
-            for (int i = 0; i <line.size();++i) {
-                if (line.at(i) == '-' || (line.at(i) >= '0' && line.at(i) <='9')) {
-                    feature.append(line.at(i));
-                } else if (!feature.isEmpty()){
-                    features[k++] = feature.toLongLong();//Warning if the typedef dataType changes, change will have to be make here.
-                    feature = "";
-                }
-            }
-        }
-    }
+bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
+{
+    // Binary .fet format:
+    //   int32_t  nDimensions
+    //   nSpikes x nDimensions x int64_t  (row-major, last column = timestamp)
+    const QString path = featureFile.fileName();
+    featureFile.close(); // use fread for performance
 
-    //qDebug() << "in loadFeatures,  k: "<<k<< " nbSpikes "<<nbSpikes<< " nbDimensions "<<nbDimensions;
-
-    //if the number of features read did not correspond to nbSpikes*nbDimensions, there is a problem.
-    if(k != (nbSpikes * nbDimensions)){
-        errorInformation = QObject::tr("The number of features read in the feature file does not correspond to number of spikes times the number of dimensions.");
+    FILE* f = fopen(path.toLocal8Bit().constData(), "rb");
+    if (!f) {
+        errorInformation = QObject::tr("Cannot open feature file: %1").arg(path);
         return false;
     }
-    else
-        return true;
+
+    int32_t nDim = 0;
+    if (fread(&nDim, sizeof(int32_t), 1, f) != 1 || nDim <= 0) {
+        fclose(f);
+        errorInformation = QObject::tr("Cannot read .fet header from: %1").arg(path);
+        return false;
+    }
+    nbDimensions = (int)nDim;
+
+    fseeko(f, 0, SEEK_END);
+    int64_t dataBytes = (int64_t)ftello(f) - (int64_t)sizeof(int32_t);
+    fseeko(f, sizeof(int32_t), SEEK_SET);
+    int64_t nSpikesInFile = dataBytes / ((int64_t)sizeof(int64_t) * nbDimensions);
+    if (nSpikesInFile != (int64_t)nbSpikes) {
+        fclose(f);
+        errorInformation = QObject::tr(
+            "Spike count mismatch: .fet has %1 spikes, expected %2")
+            .arg(nSpikesInFile).arg(nbSpikes);
+        return false;
+    }
+
+    features.setSize(nbSpikes, nbDimensions);
+
+    // Use an explicit int64_t staging buffer so the code is correct
+    // regardless of whether dataType (long) == int64_t on this platform.
+    int64_t total = (int64_t)nbSpikes * nbDimensions;
+    std::vector<int64_t> buf((size_t)total);
+    if ((int64_t)fread(buf.data(), sizeof(int64_t), (size_t)total, f) != total) {
+        fclose(f);
+        errorInformation = QObject::tr("Short read in feature file: %1").arg(path);
+        return false;
+    }
+    fclose(f);
+    for (int64_t i = 0; i < total; ++i)
+        features[(size_t)i] = static_cast<dataType>(buf[(size_t)i]);
+    return true;
 }
 
 
@@ -2265,89 +2264,36 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
     prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,false);
 }
 
-bool Data::saveClusters(FILE* clusterFile){
+bool Data::saveClusters(FILE* clusterFile)
+{
     RestartTimer();
 
-    int writeStatus = 0;
+    // Binary .clu format:
+    //   int32_t  nClusters
+    //   nSpikes x int32_t  cluster ids in timestamp order
 
-    //Sort spikesByCluster by spikes order
-
-    //The mutex protects spikesByCluster and clusterInfoMap so that only one thread can
-    //access them at the time.
-    ClusterInfoMap clusterInfoMapTemp;
-    ClusterInfoMap::Iterator it;
     mutex.lock();
     SortableTable spikesByClusterTemp(*spikesByCluster);
-
-    bool overLimit = false;
-    for(it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it){
-        clusterInfoMapTemp.insert(it.key(),it.value());
-        if(it.value().nbSpikes() > 250000) overLimit = true;
-    }
+    ClusterInfoMap clusterInfoMapTemp;
+    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it)
+        clusterInfoMapTemp.insert(it.key(), it.value());
     mutex.unlock();
 
-    int nbClusters = clusterInfoMapTemp.count();
+    int32_t nClusters = (int32_t)clusterInfoMapTemp.count();
+    if (fwrite(&nClusters, sizeof(int32_t), 1, clusterFile) != 1) return false;
 
-    //first line of the file contains the number of clusters
-    writeStatus = fprintf(clusterFile, "%i\n",nbClusters);
+    // Sort by spike order (row 1 = feature index = timestamp order)
+    spikesByClusterTemp.sort(1);
 
-    //first method
-    if(nbClusters > 12 && !overLimit){
-        spikesByClusterTemp.sort(1);
-
-        //Store all the clusterIds in spikes order
-        for(long i = 1; i <= nbSpikes ; ++i)
-            writeStatus = fprintf(clusterFile, "%i\n",static_cast<int>((spikesByClusterTemp)(2,i)));
+    for (long i = 1; i <= nbSpikes; ++i) {
+        int32_t id = (int32_t)(spikesByClusterTemp)(2, i);
+        if (fwrite(&id, sizeof(int32_t), 1, clusterFile) != 1) return false;
     }
-    //second method
-    else if (nbClusters > 1){
-        QList<dataType> clusterList = clusterInfoMapTemp.keys();
-        QList<dataType>::iterator iterator;
 
-        SortableTable final = SortableTable();
-        final.setSize(nbSpikes,false);
-        dataType position = 1;
-        dataType cluster = spikesByClusterTemp(2,position);
-        dataType value = spikesByClusterTemp(1,position);
-
-        while(true){
-            for(iterator = clusterList.begin(); iterator != clusterList.end(); ++iterator){
-                dataType current = spikesByClusterTemp(1,clusterInfoMapTemp[*iterator].firstSpikePosition());
-                if(current < value){
-                    value = current;
-                    cluster = *iterator;
-                }
-            }
-            final(1,position) = cluster;
-            position ++;
-            dataType firstSpikePosition = clusterInfoMapTemp[cluster].firstSpikePosition() + 1;
-            clusterInfoMapTemp[cluster].setFirstSpikePosition(firstSpikePosition);
-            dataType nbSpikesOfCluster = clusterInfoMapTemp[cluster].nbSpikes() - 1;
-            clusterInfoMapTemp[cluster].setNbSpikes(nbSpikesOfCluster);
-            if(nbSpikesOfCluster == 0){
-                nbClusters --;
-                clusterList.removeAll(cluster);
-                clusterInfoMapTemp.remove(cluster);
-            }
-            if(nbClusters == 0) break;
-            cluster = clusterList[0];
-            value = spikesByClusterTemp(1,clusterInfoMapTemp[cluster].firstSpikePosition());
-        }
-
-        //Store all the clusterIds in spikes order
-        for(long i = 1; i <= nbSpikes ; ++i)
-            writeStatus = fprintf(clusterFile, "%i\n",static_cast<int>((final)(1,i)));
-    }//nbClusters>1
-    //third method
-    else{
-        //Store all the clusterIds in spikes order
-        for(long i = 1; i <= nbSpikes ; ++i)
-            writeStatus = fprintf(clusterFile, "%i\n",static_cast<int>((spikesByClusterTemp)(2,i)));
-    }
-    qDebug() << "save clu file: "<<Timer();
-    if(writeStatus > 0) return 1;
-    else return 0;
+    qDebug() << "save clu file (binary):" << Timer();
+    return true;
 }
+
 
 bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
 
@@ -3581,15 +3527,21 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
         upperInsertionIndex += nbSpikesOfCluster;
     }
 
-    //Write all the features to file
-    QTextStream fetStream(&fetFile);
-    fetStream <<nbDimensions<< Qt::endl;
-    //loop on all the spikes
-    for(dataType i = 1; i <= reclusteringNbSpikes;++i){
-        dataType featuresRowIndex = reclusteringSpikesByCluster(1,i);
-        //loop on the features of the current spike
-        for(int j = 1; j < nbDimensions;++j) fetStream << features(featuresRowIndex,j)<<" ";
-        fetStream << features(featuresRowIndex,nbDimensions)<< Qt::endl;
+    // Write all features to file in binary .fet format:
+    //   int32_t nDimensions; then nSpikes x nDimensions x int64_t row-major
+    fetFile.close();
+    FILE* ff = fopen(fetFile.fileName().toLocal8Bit().constData(), "wb");
+    if (ff) {
+        int32_t nDim32 = (int32_t)nbDimensions;
+        fwrite(&nDim32, sizeof(int32_t), 1, ff);
+        for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
+            dataType featuresRowIndex = reclusteringSpikesByCluster(1, i);
+            for (int j = 1; j <= nbDimensions; ++j) {
+                int64_t v = (int64_t)features(featuresRowIndex, j);
+                fwrite(&v, sizeof(int64_t), 1, ff);
+            }
+        }
+        fclose(ff);
     }
 }
 
@@ -3721,57 +3673,54 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
 
 
 bool Data::loadReclusteredClusters(QFile &clusterFile){
-    bool firstLine = true;
+    // Binary .clu format written by KlustaKwik:
+    //   int32_t  nClusters  (number of distinct cluster labels)
+    //   nSpikes * int32_t   cluster IDs, 1-based
+    //
+    // We offset each ID by highestClusterId so new clusters don't collide
+    // with existing ones.
 
-    dataType highestClusterId = (*spikesByCluster)(2,nbSpikes);
-    const dataType maxK = reclusteringSpikesByCluster.nbOfColumns(); // allocated size
-    dataType k = 1;
+    dataType highestClusterId = (*spikesByCluster)(2, nbSpikes);
+    const dataType maxK = reclusteringSpikesByCluster.nbOfColumns();
+
     qDebug() << "loadReclusteredClusters: expecting" << maxK
              << "spike labels, highestClusterId=" << highestClusterId;
 
-    while (!clusterFile.atEnd()) {
-        QByteArray line = clusterFile.readLine();
-        if (firstLine) {
-            // Line 1 is the cluster count written by KlustaKwik — skip it.
-            qDebug() << "loadReclusteredClusters: header line =" << line.trimmed();
-            firstLine = false;
-        } else {
-            QByteArray feature;
-            for (int i = 0; i < line.size(); ++i) {
-                if ((line.at(i) >= '0' && line.at(i) <= '9')) {
-                    feature.append(line.at(i));
-                } else if (!feature.isEmpty()) {
-                    // Guard: never write beyond the allocated column count.
-                    // Without this, an unexpectedly long .clu file causes an
-                    // out-of-bounds write that segfaults before the count-check
-                    // at the end of this function can return an error.
-                    if (k > maxK) {
-                        qDebug() << "loadReclusteredClusters: too many labels (k="
-                                 << k << "> maxK=" << maxK << ") — aborting";
-                        return 0;
-                    }
-                    reclusteringSpikesByCluster(2,k++) = feature.toLongLong() + highestClusterId;
-                    feature = "";
-                }
-            }
-            // Handle lines that end without a trailing non-digit (e.g. last line
-            // of file with no '\n', or \r\n where \r was already consumed).
-            if (!feature.isEmpty()) {
-                if (k > maxK) {
-                    qDebug() << "loadReclusteredClusters: too many labels at EOF (k="
-                             << k << "> maxK=" << maxK << ") — aborting";
-                    return 0;
-                }
-                reclusteringSpikesByCluster(2,k++) = feature.toLongLong() + highestClusterId;
-            }
-        }
+    const QString path = clusterFile.fileName();
+    clusterFile.close();
+
+    FILE* fp = fopen(path.toLocal8Bit().constData(), "rb");
+    if (!fp) {
+        qDebug() << "loadReclusteredClusters: cannot open" << path;
+        return 0;
     }
 
-    qDebug() << "loadReclusteredClusters: read" << (k-1)
+    // Read nClusters header
+    int32_t nClusters32 = 0;
+    if (fread(&nClusters32, sizeof(int32_t), 1, fp) != 1) {
+        qDebug() << "loadReclusteredClusters: cannot read header";
+        fclose(fp); return 0;
+    }
+    qDebug() << "loadReclusteredClusters: header nClusters=" << nClusters32;
+
+    // Read spike labels
+    dataType k = 1;
+    int32_t id32 = 0;
+    while (fread(&id32, sizeof(int32_t), 1, fp) == 1) {
+        if (k > maxK) {
+            qDebug() << "loadReclusteredClusters: too many labels (k="
+                     << k << "> maxK=" << maxK << ") — aborting";
+            fclose(fp); return 0;
+        }
+        reclusteringSpikesByCluster(2, k++) =
+            static_cast<dataType>(id32) + highestClusterId;
+    }
+    fclose(fp);
+
+    qDebug() << "loadReclusteredClusters: read" << (k - 1)
              << "labels, expected" << maxK;
 
-    //if the number of clusters read did not correspond to the number of spikes reclustered, there is a problem.
-    if(k != (maxK + 1))
+    if (k != (maxK + 1))
         return 0;
     else
         return 1;

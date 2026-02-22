@@ -21,6 +21,9 @@ set(klusters_SRCS
     eventsprovider.cpp
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp
+    realign_xcorr_omp.cpp
+    realign_xcorr_dispatch.cpp
+    realignworker.cpp
     spikerealigndialog.cpp
     klusters.cpp
     klustersdoc.cpp
@@ -54,12 +57,15 @@ set(klusters_SRCS
 # GPU backend source files — each compiled by its own toolchain.
 if(USE_CUDA)
     list(APPEND klusters_SRCS groupingassistant_cuda.cu)
+    list(APPEND klusters_SRCS realign_xcorr_cuda.cu)
 endif()
 if(USE_HIP)
     list(APPEND klusters_SRCS groupingassistant_hip.hip)
+    list(APPEND klusters_SRCS realign_xcorr_hip.hip)
 endif()
 if(USE_SYCL)
     list(APPEND klusters_SRCS groupingassistant_sycl.cpp)
+    list(APPEND klusters_SRCS realign_xcorr_sycl.cpp)
 endif()
 
 qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc)
@@ -112,6 +118,8 @@ if(USE_HIP)
     # hipcc needs to know the target when compiling .hip files.
     set_source_files_properties(groupingassistant_hip.hip
         PROPERTIES LANGUAGE HIP)
+    set_source_files_properties(realign_xcorr_hip.hip
+        PROPERTIES LANGUAGE HIP)
     target_link_libraries(klusters PRIVATE hip::device)
 endif()
 
@@ -124,13 +132,23 @@ if(USE_SYCL)
     # intel_gpu_tgllp  = Tiger Lake / Xe (Arc A-series starts here)
     # intel_gpu_acm-g10 = Arc Alchemist
     # spir64           = generic SPIR-V (fallback, covers all Intel GPUs)
-    set(SYCL_FLAGS "-fsycl" "-fsycl-targets=spir64,spir64_gen")
+    # spir64 = JIT at runtime, works on any Intel GPU/CPU without needing
+    # ocloc or a specific device name.  For AOT add:
+    #   -fsycl-targets=spir64_gen -Xs "-device xe_hpg"  (or your GPU codename)
+    set(SYCL_FLAGS "-fsycl" "-fsycl-targets=spir64")
     target_compile_options(klusters PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:${SYCL_FLAGS}>)
     target_link_options(klusters PRIVATE ${SYCL_FLAGS})
-    # If IntelDPCPP package found, use its imported targets for runtime libs.
-    if(IntelDPCPP_FOUND)
+    # Link SYCL runtime if the CMake package exports an imported target.
+    # Intel renamed the package from IntelDPCPP to IntelSYCL; try both.
+    # If neither exports the target, the -fsycl linker flag (set above via
+    # target_link_options) is sufficient — the icpx driver pulls in the runtime.
+    if(TARGET IntelSYCL::SYCL_CXX)
+        target_link_libraries(klusters PRIVATE IntelSYCL::SYCL_CXX)
+    elseif(TARGET IntelDPCPP::SYCL_CXX)
         target_link_libraries(klusters PRIVATE IntelDPCPP::SYCL_CXX)
+    else()
+        message(STATUS "SYCL: no imported CMake target found — relying on -fsycl linker flag")
     endif()
 endif()
 
@@ -175,3 +193,9 @@ install(FILES hi32-app-klusters.png DESTINATION share/icons/hicolor/32x32/apps/ 
 install(FILES hi48-app-klusters.png DESTINATION share/icons/hicolor/48x48/apps/ RENAME klusters.png)
 install(FILES hi64-app-klusters.png DESTINATION share/icons/hicolor/64x64/apps/ RENAME klusters.png)
 install(FILES klusters.desktop DESTINATION share/applications/)
+
+# ---------------------------------------------------------------------------
+# Standalone binary converter: text res/fet/clu → binary
+# ---------------------------------------------------------------------------
+add_executable(klusters_convert_binary convert_to_binary.cpp)
+install(TARGETS klusters_convert_binary DESTINATION bin)

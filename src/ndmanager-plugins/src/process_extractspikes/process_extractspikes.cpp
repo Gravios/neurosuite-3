@@ -41,6 +41,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 
 #include <sstream>
 #include <fstream>
@@ -858,18 +859,19 @@ int main(int argc,char *argv[]) {
 			     << "Output .spk: " << oss.str() << "\n";
 		}
 
-		// ── Step 1: read all timestamps into SpikeEntry vector ──────────────
+		// ── Step 1: read all timestamps from binary .res into SpikeEntry vector
 		std::vector<SpikeEntry> entries;
-		char line[20];
-		while(fgets(line, sizeof(line), spikeTimeOutputFile[grp])) {
-			long long ts = atoll(line);
-			SpikeEntry e;
-			e.timestamp  = ts;
-			e.origIdx    = (int)entries.size();
-			e.fileOffset = ((off_t)(ts - arguments.timeBeforeSpike)
-			                * (off_t)arguments.totalChannelNumber
-			                * (off_t)sizeof(short));
-			entries.push_back(e);
+		{
+			int64_t ts;
+			while(fread(&ts, sizeof(int64_t), 1, spikeTimeOutputFile[grp]) == 1) {
+				SpikeEntry e;
+				e.timestamp  = (long long)ts;
+				e.origIdx    = (int)entries.size();
+				e.fileOffset = ((off_t)(ts - arguments.timeBeforeSpike)
+				                * (off_t)arguments.totalChannelNumber
+				                * (off_t)sizeof(short));
+				entries.push_back(e);
+			}
 		}
 		fclose(spikeTimeOutputFile[grp]);
 		spikeTimeOutputFile[grp] = nullptr;
@@ -1021,8 +1023,8 @@ bool writeTimeSpike(const off_t iPeak, const int nChanTot, FILE *output) {
 	if(output == NULL || iPeak < 0 || nChanTot < 1)
 		return false;
 
-	off_t i = iPeak/nChanTot; // Index of the peak (in timestamp)
-	fprintf(output,"%lld\n",(long long)i);
+	int64_t ts = (int64_t)(iPeak / nChanTot); // timestamp in samples
+	fwrite(&ts, sizeof(int64_t), 1, output);
 
 	return true;
 } // writeTimeSpike

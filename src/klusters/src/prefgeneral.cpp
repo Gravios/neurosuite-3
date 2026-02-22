@@ -28,10 +28,10 @@ PrefGeneral::PrefGeneral(QWidget *parent )
 {
     connect(crashRecoveryCheckBox,SIGNAL(stateChanged(int)),this,SLOT(updateCrashRecoveryTimeInterval(int)));
     connect(reclusteringExecutableButton,SIGNAL(clicked()),this,SLOT(updateReclusteringExecutable()));
-
-    //Set an icon on the reclusteringExecutableButton button
+    connect(realignExecutableButton,SIGNAL(clicked()),this,SLOT(updateRealignExecutable()));
 
     reclusteringExecutableButton->setIcon(QIcon(":/shared-icons/folder-open"));
+    realignExecutableButton->setIcon(QIcon(":/shared-icons/folder-open"));
 }
 PrefGeneral::~PrefGeneral(){
 }
@@ -56,6 +56,10 @@ void PrefGeneral::setReclusteringExecutable(const QString& executable) {recluste
 
 void PrefGeneral::setReclusteringArguments(const QString& arguments) {reclusteringArgsLineEdit->setText(arguments);}
 
+void PrefGeneral::setRealignExecutable(const QString& executable) {realignExecutableLineEdit->setText(executable);}
+
+void PrefGeneral::setRealignArguments(const QString& arguments) {realignArgsLineEdit->setText(arguments);}
+
 bool PrefGeneral::isCrashRecovery() const{return crashRecoveryCheckBox->isChecked();}
 
 int PrefGeneral::crashRecoveryIntervalIndex() const{return crashRecoveryComboBox->currentIndex();}
@@ -71,6 +75,10 @@ QString PrefGeneral::getReclusteringExecutable() const{return reclusteringExecut
 
 QString PrefGeneral::getReclusteringArguments() const{return reclusteringArgsLineEdit->text();}
 
+QString PrefGeneral::getRealignExecutable() const{return realignExecutableLineEdit->text();}
+
+QString PrefGeneral::getRealignArguments() const{return realignArgsLineEdit->text();}
+
 void PrefGeneral::updateCrashRecoveryTimeInterval(int state){
     if(state == Qt::Checked)
         crashRecoveryComboBox->setEnabled(true);
@@ -79,10 +87,15 @@ void PrefGeneral::updateCrashRecoveryTimeInterval(int state){
 }
 
 void PrefGeneral::updateReclusteringExecutable(){
-
     const QString executable = QFileDialog::getOpenFileName(this, tr("Select the Reclustering executable..."));
     if( !executable.isEmpty() )
       setReclusteringExecutable(executable);
+}
+
+void PrefGeneral::updateRealignExecutable(){
+    const QString executable = QFileDialog::getOpenFileName(this, tr("Select the Realignment executable..."));
+    if( !executable.isEmpty() )
+      setRealignExecutable(executable);
 }
 
 bool PrefGeneral::useWhiteColorDuringPrinting() const

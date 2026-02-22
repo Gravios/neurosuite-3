@@ -27,7 +27,7 @@
 
 void AutoSaveThread::run(){
     //Open the temp file in write mode
-    FILE* cluFile = fopen(autoSaveUrl.toLatin1(),"w");
+    FILE* cluFile = fopen(autoSaveUrl.toLatin1(),"wb");
 
     //If can be open, save the data.
     if(cluFile != NULL){
