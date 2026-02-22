@@ -32,6 +32,7 @@
 #include <QString>
 #include <QPoint>
 #include <QFileInfo>
+#include <functional>
 
 
 #include <QList>
@@ -344,12 +345,39 @@ public:
  */
     void setBackgroundColor(const QColor& backgroundColor);
 
+    /**Sets the scatter plot marker size on all ClusterViews.*/
+    void setMarkerSize(int size);
+
+    /**Sets the selection polygon line width on all ClusterViews.*/
+    void setSelectionLineWidth(int w);
+
     /**Creates the feature file to automatically recluster the clusters contained in @p clustersToRecluster.
   * @param clustersToRecluster list of clusters to recluster.
   * @param reclusteringFetFileName name for the reclustering fet file.
   * @return the creation status as a OpenSaveCreateReturnMessage enum.
   */
     int createFeatureFile(QList<int>& clustersToRecluster, const QString &reclusteringFetFileName);
+
+    /**
+     * Re-aligns the spikes of @p clusterId to their true peak position.
+     *
+     * For each spike: reads the waveform from .spk.N, finds the true peak,
+     * computes the shift, re-extracts the waveform at the corrected offset
+     * from the raw .dat file, updates .res.N / .spk.N in place, and calls
+     * process_refeaturize to recompute features using the saved .pca.N file.
+     * If a timestamp change would violate sorted order, the affected pair
+     * of entries in .res/.spk/.clu/.fet is swapped.  The in-memory arrays
+     * (features, spikesByCluster) are updated accordingly.
+     *
+     * @param clusterId  Cluster to realign.
+     * @param logOut     Receives human-readable progress / warning messages.
+     * @param nShifted   Set to the number of spikes that were shifted.
+     * @param nSwapped   Set to the number of sort-order swaps performed.
+     * @return true on success.
+     */
+    bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
+                       std::function<void(const QString&,bool)> liveLog = nullptr,
+                       const QString& args = QString());
 
     /**Integrates in the data the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.

@@ -2,6 +2,7 @@
 //
 // Changes from original v1.7:
 //   - #include <iostream.h>/<fstream.h> → standard headers
+#include <cstdint>
 //   - Error() marked [[noreturn]], const char* signatures
 //   - Cholesky: no longer allocates temporary Array objects — works directly
 //     on the raw float pointers (eliminates 2 heap allocs per cluster per EStep)
@@ -234,7 +235,8 @@ void export_model(FILE *fp, KK& K1) {
 }
 
 // ---------------------------------------------------------------------------
-// SaveOutput — write .clu file, relabelling to remove gaps
+// SaveOutput — write binary .clu file, relabelling to remove gaps
+// Binary format: int32_t nClusters; nSpikes * int32_t clusterIDs (1-based)
 // ---------------------------------------------------------------------------
 void SaveOutput(const Array<int> &OutputClass) {
     Array<int> cClustMembs(MaxPossibleClusters);
@@ -249,10 +251,14 @@ void SaveOutput(const Array<int> &OutputClass) {
 
     char fname[STRLEN + 16];
     snprintf(fname, sizeof(fname), "%s.clu.%d", FileBase, ElecNo);
-    FILE *fp = fopen_safe(fname, "w");
-    fprintf(fp, "%d\n", maxClass);
-    for (int p = 0; p < OutputClass.size(); p++)
-        fprintf(fp, "%d\n", NewLabel[OutputClass[p]]);
+    FILE *fp = fopen_safe(fname, "wb");
+    int32_t hdr = (int32_t)maxClass;
+    fwrite(&hdr, sizeof(int32_t), 1, fp);
+    const int n = OutputClass.size();
+    for (int p = 0; p < n; p++) {
+        int32_t id = (int32_t)NewLabel[OutputClass[p]];
+        fwrite(&id, sizeof(int32_t), 1, fp);
+    }
     fclose(fp);
 }
 

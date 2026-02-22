@@ -42,6 +42,7 @@
 #include <QTableWidget>
 #include <QProcess>
 #include <QTimer>
+#include <QThread>
 
 
 
@@ -390,6 +391,16 @@ private Q_SLOTS:
     /**Launchs a separate process to recluster the selected clusters.*/
     void slotRecluster();
 
+    /**Opens the spike realignment pre-flight dialog and, if confirmed,
+     * launches realignment on a background thread with output in a tab.*/
+    void slotRealignSpikes();
+
+    /**Abort a running realignment job.*/
+    void slotAbortRealign();
+
+    /**Called when the realignment worker thread finishes.*/
+    void slotRealignFinished(bool ok, int nShifted, int nSwapped);
+
     /**Stops the separate process which is reclustering some clusters.*/
     void slotStopRecluster();
 
@@ -537,6 +548,8 @@ private:
     QAction *mRenumberClusters;
     QAction *mReCluster;
     QAction *mAbortReclustering;
+    QAction *mAbortRealign;
+    QAction *mRealignSpikes;
     QAction *mZoomAction;
     QAction *mIncreasePointSize;
     QAction *mDecreasePointSize;
@@ -817,11 +830,34 @@ private:
     /**Arguments for the reclustering executable.*/
     QString reclusteringArgs;
 
+    /**Path to the realignment executable (currently unused — realignment is internal).*/
+    QString realignExecutable;
+
+    /**Arguments for the realignment executable (currently unused).*/
+    QString realignArgs;
+
+    /**Scatter plot marker size in pixels — kept in sync with configuration.*/
+    int markerSize;
+
+    /**Selection polygon line width in pixels — kept in sync with configuration.*/
+    int selectionLineWidth;
+
     /**Name of the reclustering fet file.*/
     QString reclusteringFetFileName;
 
     /**True if the process has been killed through Klusters.*/
     bool processKilled;
+
+    // ── Realign worker state ─────────────────────────────────────────────────
+    /**Worker object that runs realignSpikes() off the GUI thread.*/
+    QObject*  realignWorker;   // RealignWorker* — stored as QObject* to avoid
+                               // including realignworker.h in this header.
+    /**The thread on which realignWorker runs.*/
+    QThread*  realignThread;
+    /**ProcessWidget tab showing realignment diagnostics.*/
+    ProcessWidget* realignOutputWidget;
+    /**True while a realignment job is running.*/
+    bool realignRunning;
 
     /**True if a Error Martix exists, false otherwise.*/
     bool errorMatrixExists;

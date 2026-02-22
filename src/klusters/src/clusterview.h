@@ -76,6 +76,9 @@ public:
     int getPointSize() const{return pointSize;}
     void setPointSize(int size){pointSize = qBound(1, size, 10); redraw();}
 
+    int getSelectionLineWidth() const{return selectionLineWidth;}
+    void setSelectionLineWidth(int w){selectionLineWidth = qBound(1, w, 10); update();}
+
     /**Returns the current ordinate dimension.
   */
     int getDimensionY() const{return dimensionY;}
@@ -368,6 +371,8 @@ private:
 
     /**Size of scatter plot points in pixels (default: 2, range 1-10).*/
     int pointSize;
+    /**Width of the selection polygon line in pixels (default: 1, range 1-10).*/
+    int selectionLineWidth;
 
     QCursor newClusterCursor;
     QCursor newClustersCursor;

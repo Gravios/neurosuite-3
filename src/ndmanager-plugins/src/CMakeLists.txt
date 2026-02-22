@@ -14,3 +14,5 @@ add_subdirectory(process_removeartefacts)
 add_subdirectory(process_resample)
 add_subdirectory(process_smrconvert)
 add_subdirectory(xpathReader)
+
+add_subdirectory(process_mergefeatures)

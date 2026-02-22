@@ -75,19 +75,61 @@ endif()
 # --- SYCL (Intel oneAPI / Arc) ----------------------------------------------
 option(USE_SYCL "Enable SYCL GPU backend (Intel oneAPI)" ON)
 if(USE_SYCL)
-    # Intel oneAPI uses icpx. Detect by looking for it on PATH or via the
-    # IntelDPCPP CMake package that ships with oneAPI Base Toolkit.
-    find_package(IntelDPCPP QUIET)
-    if(IntelDPCPP_FOUND)
-        message(STATUS "SYCL backend enabled — Intel oneAPI DPC++ found")
-    else()
-        # Fallback: check if CXX compiler is already icpx (user set CC/CXX).
-        if(CMAKE_CXX_COMPILER MATCHES "icpx")
-            message(STATUS "SYCL backend enabled — icpx detected as CXX compiler")
+    # ── Step 1: find icpx on PATH or in canonical oneAPI install locations ──
+    find_program(ICPX_EXECUTABLE
+        NAMES icpx
+        HINTS
+            "$ENV{CMPLR_ROOT}/bin"
+            "$ENV{ONEAPI_ROOT}/compiler/latest/bin"
+            "$ENV{ONEAPI_ROOT}/compiler/latest/linux/bin"
+            "/opt/intel/oneapi/compiler/latest/bin"
+            "/opt/intel/oneapi/compiler/latest/linux/bin"
+        DOC "Intel oneAPI DPC++ compiler (icpx)"
+    )
+
+    if(ICPX_EXECUTABLE)
+        message(STATUS "SYCL backend: icpx found at ${ICPX_EXECUTABLE}")
+        # ── Step 2: prefer the IntelSYCL CMake package; fall back to IntelDPCPP ─
+        # Intel renamed the package in oneAPI 2024+.  IntelDPCPP still works but
+        # emits a deprecation warning and may not export targets in newer toolkits.
+        find_package(IntelSYCL QUIET)
+        if(IntelSYCL_FOUND)
+            message(STATUS "SYCL backend enabled — IntelSYCL CMake package loaded")
         else()
-            set(USE_SYCL OFF)
-            message(STATUS "SYCL backend: Intel oneAPI not found, disabled")
+            find_package(IntelDPCPP QUIET)
+            if(IntelDPCPP_FOUND)
+                message(STATUS "SYCL backend enabled — IntelDPCPP CMake package loaded (consider upgrading to IntelSYCL)")
+            else()
+                # Package not found but we have the compiler — set flags manually.
+                message(STATUS "SYCL backend enabled — icpx found, CMake package absent (flags set manually)")
+            endif()
         endif()
+        # Force the CXX compiler to icpx so CMake uses -fsycl.
+        # Only effective on a clean configure; if the user already configured
+        # with a different CXX the cached value takes precedence.
+        if(NOT CMAKE_CXX_COMPILER MATCHES "icpx")
+            message(STATUS "SYCL: setting CMAKE_CXX_COMPILER to ${ICPX_EXECUTABLE}")
+            set(CMAKE_CXX_COMPILER "${ICPX_EXECUTABLE}" CACHE FILEPATH
+                "C++ compiler (overridden to icpx for SYCL)" FORCE)
+        endif()
+    elseif(CMAKE_CXX_COMPILER MATCHES "icpx")
+        # User explicitly set CXX=icpx before running cmake.
+        message(STATUS "SYCL backend enabled — icpx detected as active CXX compiler")
+        find_package(IntelSYCL QUIET)
+        if(NOT IntelSYCL_FOUND)
+            find_package(IntelDPCPP QUIET)
+        endif()
+    else()
+        # ── icpx not found anywhere ──────────────────────────────────────────
+        set(USE_SYCL OFF)
+        message(STATUS "SYCL backend: disabled")
+        message(STATUS "  Reason: icpx (Intel oneAPI DPC++ compiler) not found.")
+        message(STATUS "  To enable SYCL support, install the Intel oneAPI Base Toolkit:")
+        message(STATUS "    https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html")
+        message(STATUS "  Then source the environment before configuring:")
+        message(STATUS "    source /opt/intel/oneapi/setvars.sh")
+        message(STATUS "    cmake -DUSE_SYCL=ON ..")
+        message(STATUS "  Or disable this message with: -DUSE_SYCL=OFF")
     endif()
 endif()
 

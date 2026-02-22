@@ -35,6 +35,8 @@
 #include <gsl/gsl_blas.h> // matrix operations
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 using namespace std;
@@ -71,8 +73,6 @@ void help(const char* name)
 	cout << "(use the second form to read from stdin)" << endl << endl;
 	cout << " input           input filename" << endl;
 	cout << " -f output       output filename" << endl;
-	cout << " -e eigenfile    save PCA eigenvectors and means to this file" << endl;
-	cout << "                 (allows re-featurization of re-extracted spikes)" << endl;
 	cout << " -n channels     number of channels in the spike file" << endl;
 	cout << " -p position     position of the peak within the waveform, in number of samples"<< endl;
 	cout << " -b length       number of samples to consider for PCA before spike" << endl;
@@ -116,7 +116,6 @@ int main(int argc,char *argv[])
 	
 	arguments.isInputFileProvided = false;
 	arguments.isOutputFileProvided = false;
-	arguments.isEigenFileProvided = false;
 	arguments.isInputSizeProvided = false;
 	arguments.isNChannelsProvided = false;
 	arguments.isBeforeSpikeProvided = false;
@@ -153,6 +152,9 @@ int main(int argc,char *argv[])
 	gsl_matrix *eigenVectors = gsl_matrix_alloc(data2use,data2use);
 	gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(data2use);
 	gsl_matrix_view reducedEigenVectors; // for storing final data
+	// Saved eigenvectors per channel for writing .pca.N file
+	gsl_matrix **savedEvec = new gsl_matrix*[arguments.nChannels];
+	for (int i = 0; i < arguments.nChannels; ++i) savedEvec[i] = nullptr;
 	
 	// open input
 	if ( arguments.isInputFileProvided )
@@ -226,12 +228,6 @@ int main(int argc,char *argv[])
 	}
 
 	ProgressBar *progress = new ProgressBar("","PCA",(arguments.nChannels+4));
-	
-	// Persistent per-channel eigenvector storage (needed to write the .pca.N file).
-	// Each entry: full [data2use × data2use] matrix; we only use the first nComponents columns.
-	gsl_matrix **savedEigenVectors = new gsl_matrix*[arguments.nChannels];
-	for (int i = 0; i < arguments.nChannels; ++i)
-		savedEigenVectors[i] = gsl_matrix_alloc(data2use, data2use);
 	
 	// Init arrays
 	rawData = new short[nRecords]; // Buffer for all data (all channels)
@@ -350,8 +346,9 @@ int main(int argc,char *argv[])
 		else
 			gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&tReducedEigenVectors.matrix,datSpkChanCenter[i],0.0,reducedData[i]);
 
-		// Persist the full eigenvector matrix for the .pca.N save step below.
-		gsl_matrix_memcpy(savedEigenVectors[i], tEigenVectors);
+		// Save the reduced eigenvectors for this channel (data2use x nComponents)
+		savedEvec[i] = gsl_matrix_alloc(data2use, arguments.nComponents);
+		gsl_matrix_memcpy(savedEvec[i], &tReducedEigenVectors.matrix);
 
 		gsl_eigen_symmv_free(tw);
 		gsl_matrix_free(tEigenVectors);
@@ -361,87 +358,94 @@ int main(int argc,char *argv[])
 	} // for i
 	
 	///progress->message("Saving");
-	// Write ouput file (FET format)
-	outputFile = fopen(arguments.outputFileName,"w");
-	if( !arguments.isExtraFeaturesProvided )
-		fprintf(outputFile,"%i\n",(arguments.nChannels*arguments.nComponents));
-	else
-		fprintf(outputFile,"%i\n",(arguments.nChannels*arguments.nComponents + arguments.nChannels));
+	// Write output file: binary PCA features
+	// Format: int32_t nFeatureCols; then nSpikes * nFeatureCols * int64_t (row-major)
+	// Timestamps are NOT written here; ndm_pca will merge with .res via process_mergefeatures
+	const int nFeatureCols = arguments.isExtraFeaturesProvided
+	                        ? (arguments.nChannels * arguments.nComponents + arguments.nChannels)
+	                        : (arguments.nChannels * arguments.nComponents);
+	outputFile = fopen(arguments.outputFileName, "wb");
+	if (!outputFile) {
+		cerr << "error: cannot open output file '" << arguments.outputFileName << "'." << endl;
+		exit(1);
+	}
+	{
+		int32_t nFeat32 = (int32_t)nFeatureCols;
+		fwrite(&nFeat32, sizeof(int32_t), 1, outputFile);
+	}
 	for ( unsigned int k = 0 ; k < nSpikes ; ++k )
 	{
 		for ( int i = 0 ; i < arguments.nChannels ; ++i )
 		{
 			for ( int j = 0 ; j < arguments.nComponents ; ++j )
 			{
-				double *d = gsl_matrix_ptr(reducedData[i],j,k);
-				if ( !fprintf(outputFile,"%i ",int(*d)) )
-					cerr << "warning: missing data (channel " << i << ", dimension " << j << ", spike " 
-					<< k << ")." << endl;
+				double *d = gsl_matrix_ptr(reducedData[i], j, k);
+				int64_t v = (int64_t)llround(*d);
+				fwrite(&v, sizeof(int64_t), 1, outputFile);
 			} // for j
 		} // for i
-		if( arguments.isExtraFeaturesProvided ) // write peak value after all data
-			for ( int i = 0; i < arguments.nChannels ; ++i )
-				if ( !fprintf(outputFile,"%i ",int(peakVal[i][k])) )
-						cerr << "warning: missing peak (channel " << i << ", spike " << k << ")." << endl;
-			
-		fprintf(outputFile,"\n");
+		if ( arguments.isExtraFeaturesProvided )
+			for ( int i = 0; i < arguments.nChannels ; ++i ) {
+				int64_t v = (int64_t)peakVal[i][k];
+				fwrite(&v, sizeof(int64_t), 1, outputFile);
+			}
 	} // for k
 	fclose(outputFile);
 	progress->advance(); // Complete saving results
-	
-	// ---------------------------------------------------------------------------
-	// Save eigenvectors and means for later re-featurization
-	// File format (all little-endian binary):
-	//   int32  magic       = 0x50434145  ("PCAE")
-	//   int32  version     = 1
-	//   int32  nChannels
-	//   int32  data2use    (number of waveform samples used for PCA per channel)
-	//   int32  nComponents
-	//   int32  recShift    (sample offset of first PCA sample within waveform)
-	//   int32  isCentered  (1 if centred projection was used, 0 otherwise)
-	//   then for each channel c in [0, nChannels):
-	//     double[data2use]             mean[c][0..data2use-1]
-	//     double[data2use*nComponents] eigenvectors (col-major: col=component, row=sample)
-	// ---------------------------------------------------------------------------
-	if (arguments.isEigenFileProvided) {
-		FILE* eigenFile = fopen(arguments.eigenFileName, "wb");
-		if (!eigenFile) {
-			cerr << "warning: cannot open eigenvector file '" << arguments.eigenFileName
-			     << "' — eigenvectors not saved." << endl;
+
+	// Write .pca.N eigenvector file for use by klusters spike realignment.
+	// Binary format:
+	//   int32_t nCh, data2use, nComp, centered, recShift
+	//   for each channel: data2use * double  (mean vector)
+	//   for each channel: data2use * nComp * double  (eigenvectors, col-major)
+	{
+		// Derive .pca.N path from outputFileName: strip .tmp, replace .fet. with .pca.
+		std::string pcaPath(arguments.outputFileName);
+		// Remove .tmp suffix if present
+		const std::string tmpSuffix(".tmp");
+		if (pcaPath.size() >= tmpSuffix.size() &&
+		    pcaPath.compare(pcaPath.size()-tmpSuffix.size(), tmpSuffix.size(), tmpSuffix) == 0)
+			pcaPath.erase(pcaPath.size()-tmpSuffix.size());
+		// Replace .fet. with .pca.
+		const std::string fetStr(".fet.");
+		const std::string pcaStr(".pca.");
+		size_t pos = pcaPath.rfind(fetStr);
+		if (pos != std::string::npos)
+			pcaPath.replace(pos, fetStr.size(), pcaStr);
+
+		FILE *pcaFile = fopen(pcaPath.c_str(), "wb");
+		if (!pcaFile) {
+			cerr << "warning: cannot write .pca file: " << pcaPath << endl;
 		} else {
-			int32_t magic      = static_cast<int32_t>(0x50434145);
-			int32_t version    = 1;
-			int32_t nChan      = static_cast<int32_t>(arguments.nChannels);
-			int32_t d2u        = static_cast<int32_t>(data2use);
-			int32_t nComp      = static_cast<int32_t>(arguments.nComponents);
-			int32_t rShift     = static_cast<int32_t>(recShift);
-			int32_t isCentered = arguments.isCenteredData ? 1 : 0;
-			fwrite(&magic,      sizeof(int32_t), 1, eigenFile);
-			fwrite(&version,    sizeof(int32_t), 1, eigenFile);
-			fwrite(&nChan,      sizeof(int32_t), 1, eigenFile);
-			fwrite(&d2u,        sizeof(int32_t), 1, eigenFile);
-			fwrite(&nComp,      sizeof(int32_t), 1, eigenFile);
-			fwrite(&rShift,     sizeof(int32_t), 1, eigenFile);
-			fwrite(&isCentered, sizeof(int32_t), 1, eigenFile);
+			// Header: 5 x int32_t
+			int32_t hdr[5];
+			hdr[0] = (int32_t)arguments.nChannels;
+			hdr[1] = (int32_t)data2use;
+			hdr[2] = (int32_t)arguments.nComponents;
+			hdr[3] = arguments.isCenteredData ? 1 : 0;
+			hdr[4] = (int32_t)recShift;
+			fwrite(hdr, sizeof(int32_t), 5, pcaFile);
+			// Per-channel means (data2use doubles each)
+			for (int i = 0; i < arguments.nChannels; ++i)
+				fwrite(mean[i], sizeof(double), (size_t)data2use, pcaFile);
+			// Per-channel eigenvectors (data2use * nComponents doubles, col-major)
 			for (int i = 0; i < arguments.nChannels; ++i) {
-				// mean vector for this channel
-				fwrite(mean[i], sizeof(double), static_cast<size_t>(data2use), eigenFile);
-				// eigenvectors: first nComponents columns of savedEigenVectors[i], col-major
-				for (int comp = 0; comp < arguments.nComponents; ++comp)
-					for (int samp = 0; samp < data2use; ++samp) {
-						double v = gsl_matrix_get(savedEigenVectors[i], samp, comp);
-						fwrite(&v, sizeof(double), 1, eigenFile);
-					}
+				if (savedEvec[i]) {
+					// realignSpikes reads as E[sample + component * data2use]
+					// so write column-major: for each component, all samples
+					for (int c = 0; c < arguments.nComponents; ++c)
+						for (int r = 0; r < data2use; ++r) {
+							double v = gsl_matrix_get(savedEvec[i], r, c);
+							fwrite(&v, sizeof(double), 1, pcaFile);
+						}
+				}
 			}
-			fclose(eigenFile);
-			if (verbose) cout << "Eigenvectors saved to '" << arguments.eigenFileName << "'." << endl;
+			fclose(pcaFile);
+			if (verbose) cout << "Wrote " << pcaPath << endl;
 		}
 	}
-	
-	// Free savedEigenVectors
-	for (int i = 0; i < arguments.nChannels; ++i)
-		gsl_matrix_free(savedEigenVectors[i]);
-	delete[] savedEigenVectors;
+
+	// Free Memory
 	///progress->message("Free Memory");
 	for ( int i = 0 ; i < arguments.nChannels ; ++i )
 	{
@@ -466,6 +470,10 @@ int main(int argc,char *argv[])
 	delete[] varcov;
 	delete[] reducedData;
 	
+	for (int i = 0; i < arguments.nChannels; ++i)
+		if (savedEvec[i]) gsl_matrix_free(savedEvec[i]);
+	delete[] savedEvec;
+
 	gsl_eigen_symmv_free(w);
 	gsl_vector_free(eigenValues);
 	gsl_matrix_free(eigenVectors);
@@ -546,12 +554,6 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 				if ( i+1 > nOptions ) error(argv[0]);
 				arguments.outputFileName = argv[++i];
 				arguments.isOutputFileProvided = true;
-				break;
-				
-			case 'e': // output file for eigenvectors and means
-				if ( i+1 > nOptions ) error(argv[0]);
-				arguments.eigenFileName = argv[++i];
-				arguments.isEigenFileProvided = true;
 				break;
 				
 #ifdef NBITS
