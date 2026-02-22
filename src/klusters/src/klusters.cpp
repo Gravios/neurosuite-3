@@ -55,6 +55,7 @@
 #include <QPixmap>
 #include <QList>
 #include <QEvent>
+#include <QKeyEvent>
 
 #include <QDebug>
 #include <QStatusBar>
@@ -183,6 +184,9 @@ void KlustersApp::initView()
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
     splitter->addWidget(tabsParent);
+    // App-level event filter so Tab/Shift+Tab cycle display tabs regardless
+    // of which child widget (DockArea, ClusterView, ProcessWidget, …) holds focus.
+    qApp->installEventFilter(this);
     QList<int> size;
     size <<150<<1000;
     splitter->setSizes(size);
@@ -902,6 +906,32 @@ void KlustersApp::initStatusBar()
 bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(object == paramBar && event->type() == 71){//filter the removal of items from the paramBar
         return true;
+    }
+    // Intercept Tab/Shift+Tab from any widget that is a descendant of tabsParent
+    // (covers DockArea, ClusterView, ProcessWidget, etc.) and cycle the active tab
+    // instead of letting Qt's focus traversal consume the key.
+    if(tabsParent && event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab){
+            // Walk up from the event target to see if it lives inside tabsParent
+            QObject* obj = object;
+            bool insideTabs = false;
+            while(obj){
+                if(obj == tabsParent){ insideTabs = true; break; }
+                obj = obj->parent();
+            }
+            if(insideTabs){
+                const int n = tabsParent->count();
+                if(n > 1){
+                    const int cur = tabsParent->currentIndex();
+                    if(ke->key() == Qt::Key_Tab)
+                        tabsParent->setCurrentIndex((cur + 1) % n);
+                    else
+                        tabsParent->setCurrentIndex((cur - 1 + n) % n);
+                }
+                return true;  // swallow — do not pass to focus traversal
+            }
+        }
     }
     return QWidget::eventFilter(object,event);    // standard event processing
 }
@@ -3053,6 +3083,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mRealignSpikes->setEnabled(false);
         scaleByShouler->setEnabled(false);
         timeFrameMode->setEnabled(false);
         mRenumberClusters->setEnabled(false);
@@ -3105,6 +3136,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         newGroupingAssistantDisplay->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
+        mRealignSpikes->setEnabled(true);
         scaleByShouler->setEnabled(true);
         timeFrameMode->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
@@ -3228,6 +3260,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mRealignSpikes->setEnabled(false);
         scaleByShouler->setEnabled(false);
         timeFrameMode->setEnabled(false);
         noScale->setEnabled(false);
@@ -3255,6 +3288,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mRealignSpikes->setEnabled(false);
         mRenumberClusters->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
         mAbortReclustering->setEnabled(true);
@@ -3262,6 +3296,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDecreaseAmplitudeCorrelation->setEnabled(false);
     } else if(state == QLatin1String("noReclusterState")) {
         mReCluster->setEnabled(true);
+        mRealignSpikes->setEnabled(true);
         mAbortReclustering->setEnabled(false);
     } else if(state == QLatin1String("stoppedReclusterState")) {
         mAbortReclustering->setEnabled(false);
