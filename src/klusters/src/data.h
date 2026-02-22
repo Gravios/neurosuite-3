@@ -202,7 +202,7 @@ public:
     int nbSamplesPerWaveform() const { return nbSamplesInWaveform; }
 
     /**Returns the 0-based peak sample index within a waveform.*/
-    int peakSampleIndex() const { return peakPosition; }
+    int peakSampleIndex() const { return peakPositionInWaveform; }
 
     void minMaxDimensionCalculation(QList<int> modifiedClusters);
 

@@ -84,6 +84,32 @@ PcaEigenvectors SpikeRealign::loadEigenvectors(const QString& evecPath)
     if (fread(&centered, sizeof(int32_t), 1, f) != 1) { fclose(f); return pca; }
     pca.isCentered = (centered != 0);
 
+    // recShift: added after isCentered (older files without this field default to 0,
+    // which is correct for whole-waveform PCA).  Peek at the remaining byte count:
+    // if there are enough bytes for recShift + all means + all evecs, read it;
+    // otherwise leave recShift = 0 for backward compatibility.
+    {
+        long curPos = (long)ftell(f);
+        fseek(f, 0, SEEK_END);
+        long endPos = (long)ftell(f);
+        fseek(f, curPos, SEEK_SET);
+        long remaining   = endPos - curPos;
+        long withShift   = sizeof(int32_t)
+                         + (long)pca.nChannels * pca.data2use * sizeof(double)
+                         + (long)pca.nChannels * pca.data2use * pca.nComponents * sizeof(double);
+        long withoutShift = withShift - (long)sizeof(int32_t);
+        if (remaining == withShift) {
+            int32_t shift32 = 0;
+            if (fread(&shift32, sizeof(int32_t), 1, f) != 1) { fclose(f); return pca; }
+            pca.recShift = (int)shift32;
+        } else if (remaining == withoutShift) {
+            pca.recShift = 0;   // old file without recShift field
+        } else {
+            fclose(f);
+            return pca;         // unexpected size — return invalid
+        }
+    }
+
     pca.means.resize(pca.nChannels);
     for (int ch = 0; ch < pca.nChannels; ++ch) {
         pca.means[ch].resize(pca.data2use);

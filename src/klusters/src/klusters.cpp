@@ -26,6 +26,7 @@
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
 #include "spikerealigndialog.h"
+#include "realignworker.h"
 #include "qhelpviewer.h"
 
 
@@ -99,6 +100,10 @@ KlustersApp::KlustersApp()
       processOutputsFinished(true),
       processKilled(false),
       reclusterRetryTimer(nullptr),
+      realignWorker(nullptr),
+      realignThread(nullptr),
+      realignOutputWidget(nullptr),
+      realignRunning(false),
       errorMatrixExists(false)
 {
     setObjectName("Klusters");
@@ -156,6 +161,18 @@ KlustersApp::~KlustersApp()
     delete saveThread;
     delete processWidget;
     processWidget = 0L;
+
+    // Realign worker cleanup — stop the thread if still running.
+    if (realignThread) {
+        if (realignWorker)
+            qobject_cast<RealignWorker*>(realignWorker)->cancel();
+        realignThread->quit();
+        realignThread->wait(3000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    // realignWorker is owned by the thread and deleted via deleteLater.
+    // realignOutputWidget is parented to this and will be deleted automatically.
 }
 
 void KlustersApp::initView()
@@ -298,6 +315,10 @@ void KlustersApp::createMenus()
 
     mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
     connect(mAbortReclustering, SIGNAL(triggered()), this, SLOT(slotAbortReclustering()));
+
+    mAbortRealign = actionMenu->addAction(tr("Abort &Realignment"));
+    mAbortRealign->setEnabled(false);
+    connect(mAbortRealign, &QAction::triggered, this, &KlustersApp::slotAbortRealign);
 
     actionMenu->addSeparator();
 
@@ -835,6 +856,12 @@ void KlustersApp::applyPreferences() {
     if(reclusteringArgs != configuration().getReclusteringArguments())
         reclusteringArgs = configuration().getReclusteringArguments();
 
+    if(realignExecutable != configuration().getRealignExecutable())
+        realignExecutable = configuration().getRealignExecutable();
+
+    if(realignArgs != configuration().getRealignArguments())
+        realignArgs = configuration().getRealignArguments();
+
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
 }
 
@@ -845,6 +872,8 @@ void KlustersApp::initializePreferences(){
     backgroundColor =  configuration().getBackgroundColor();
     reclusteringExecutable =  configuration().getReclusteringExecutable();
     reclusteringArgs = configuration().getReclusteringArguments();
+    realignExecutable = configuration().getRealignExecutable();
+    realignArgs = configuration().getRealignArguments();
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
     clusterPalette->changeBackgroundColor(backgroundColor);
 }
@@ -1305,6 +1334,8 @@ void KlustersApp::importDocumentFile(const QString& url)
 
 bool KlustersApp::doesActiveDisplayContainProcessWidget(){
     QWidget *widget = tabsParent->currentWidget();
+    // Returns true for both the recluster output tab (processWidget) and the
+    // realign output tab (realignOutputWidget) — both are ProcessWidget instances.
     return qobject_cast<ProcessWidget*>(widget);
 }
 
@@ -2252,12 +2283,15 @@ void KlustersApp::slotTabChange(int index){
             //Check if a reclustering process is working in order to correctly set up the menus
             if(processFinished){
                 slotStateChanged("noReclusterState");
+                // If realignment is running, re-apply its locks over the now-restored state.
+                if (realignRunning)
+                    slotStateChanged("realignState");
                 updateUndoRedoDisplay();
             } else {
                 slotStateChanged("reclusterState");
             }
         }
-    } else {// a ProcessWidget
+    } else {// a ProcessWidget (recluster or realign output tab)
         dimensionXAction->setVisible(false);
         dimensionYAction->setVisible(false);
         featureXLabelAction->setVisible(false);
@@ -2274,14 +2308,26 @@ void KlustersApp::slotTabChange(int index){
         correlogramsHalfDurationLabelAction->setVisible(false);
         binSizeBoxAction->setVisible(false);
         binSizeLabelAction->setVisible(false);
-        //Update the palette of clusters
-        if(!processFinished) {
-            clusterPalette->selectItems(clustersToRecluster);
+
+        // Determine which tab type is active so we highlight the right clusters.
+        bool isRealignTab = (widget == realignOutputWidget);
+        bool isReclusterTab = !isRealignTab; // (could also be processWidget)
+
+        if (isReclusterTab) {
+            //Update the palette of clusters
+            if(!processFinished) {
+                clusterPalette->selectItems(clustersToRecluster);
+            } else {
+                QList<int> emptyList;
+                clusterPalette->selectItems(emptyList);
+            }
+            slotStateChanged(QStringLiteral("reclusterViewState"));
         } else {
+            // Realign output tab: clear cluster palette selection.
             QList<int> emptyList;
             clusterPalette->selectItems(emptyList);
+            slotStateChanged(QStringLiteral("realignViewState"));
         }
-        slotStateChanged("reclusterViewState");
     }
 }
 
@@ -3202,6 +3248,69 @@ void KlustersApp::slotStateChanged(const QString& state)
         mAbortReclustering->setEnabled(false);
     } else if(state == QLatin1String("stoppedReclusterState")) {
         mAbortReclustering->setEnabled(false);
+
+    // ── Realignment states — mirror reclusterState locks exactly ─────────────
+    } else if(state == QLatin1String("realignState")) {
+        // Lock all editing actions for the duration of the realignment job.
+        mUndo->setEnabled(false);
+        mRedo->setEnabled(false);
+        mNewCluster->setEnabled(false);
+        mSplitClusters->setEnabled(false);
+        mGroupeClusters->setEnabled(false);
+        mDeleteArtifact->setEnabled(false);
+        mDeleteArtifactSpikes->setEnabled(false);
+        mReCluster->setEnabled(false);
+        mRealignSpikes->setEnabled(false);
+        mRenumberClusters->setEnabled(false);
+        mDeleteNoisy->setEnabled(false);
+        mDeleteNoisySpikes->setEnabled(false);
+        mAbortReclustering->setEnabled(false);
+        mAbortRealign->setEnabled(true);
+        mIncreaseAmplitudeCorrelation->setEnabled(false);
+        mDecreaseAmplitudeCorrelation->setEnabled(false);
+        mSaveAction->setEnabled(false);
+        mSaveAsAction->setEnabled(false);
+        mRenumberAndSave->setEnabled(false);
+
+    } else if(state == QLatin1String("noRealignState")) {
+        // Restore actions that realignState locked.
+        mRealignSpikes->setEnabled(true);
+        mAbortRealign->setEnabled(false);
+        mSaveAction->setEnabled(true);
+        mSaveAsAction->setEnabled(true);
+        mRenumberAndSave->setEnabled(true);
+
+    } else if(state == QLatin1String("stoppedRealignState")) {
+        mAbortRealign->setEnabled(false);
+
+    } else if(state == QLatin1String("realignViewState")) {
+        // Applied by slotTabChange when the realign output tab is the active tab.
+        // Mirrors reclusterViewState.
+        mZoomAction->setEnabled(false);
+        mUpdateErrorMatrix->setEnabled(false);
+        mNewCluster->setEnabled(false);
+        mSplitClusters->setEnabled(false);
+        mDeleteNoisy->setEnabled(false);
+        mDeleteNoisySpikes->setEnabled(false);
+        mDeleteArtifact->setEnabled(false);
+        mDeleteArtifactSpikes->setEnabled(false);
+        mReCluster->setEnabled(false);
+        mRealignSpikes->setEnabled(false);
+        scaleByShouler->setEnabled(false);
+        timeFrameMode->setEnabled(false);
+        noScale->setEnabled(false);
+        meanPresentation->setEnabled(false);
+        overlayPresentation->setEnabled(false);
+        mRenumberClusters->setEnabled(false);
+        scaleByMax->setEnabled(false);
+        mGroupeClusters->setEnabled(false);
+        shoulderLine->setEnabled(false);
+        mIncreaseAmplitude->setEnabled(false);
+        mDecreaseAmplitude->setEnabled(false);
+        mNextSpike->setEnabled(false);
+        mPreviousSpike->setEnabled(false);
+        mUndo->setEnabled(false);
+        mRedo->setEnabled(false);
     } else if(state == QLatin1String("traceViewState")) {
         mIncreaseChannelAmplitudes->setEnabled(true);
         mDecreaseChannelAmplitudes->setEnabled(true);
@@ -3263,6 +3372,14 @@ void KlustersApp::slotRealignSpikes()
         return;
     }
 
+    // Don't allow a second realignment while one is running.
+    if (realignRunning) {
+        QMessageBox::information(this, tr("Realignment in progress"),
+            tr("A realignment job is already running.\n"
+               "Use \"Abort Realignment\" to cancel it first."));
+        return;
+    }
+
     // Use the first cluster currently shown in the active view.
     const QList<int>& shown = activeView()->clusters();
     int clusterId = -1;
@@ -3275,9 +3392,151 @@ void KlustersApp::slotRealignSpikes()
         return;
     }
 
+    // ── Pre-flight dialog ────────────────────────────────────────────────────
+    // Shows cluster info, PCA file status, parameters summary.
+    // Does NOT run any computation — user just confirms and clicks Start.
     SpikeRealignDialog dlg(*doc, clusterId, this);
-    if (dlg.exec() == QDialog::Accepted) {
-        // Trigger a full display refresh so waveform views reflect updated features.
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    // ── Create (or recycle) the output tab ───────────────────────────────────
+    // Remove any leftover tab from a previous realignment run.
+    if (realignOutputWidget) {
+        int tabIndex = tabsParent->indexOf(realignOutputWidget);
+        if (tabIndex != -1) {
+            tabsParent->removeTab(tabIndex);
+            displayCount--;
+        }
+        delete realignOutputWidget;
+        realignOutputWidget = nullptr;
+    }
+
+    realignOutputWidget = new ProcessWidget(this);
+    // ProcessWidget inherits QListWidget and displays coloured log lines.
+    // We do NOT call startJob() — output is fed directly via insertStdoutLine /
+    // insertStderrLine from the worker's logLine signal.
+    tabsParent->addTab(realignOutputWidget, tr("Realign output"));
+    displayCount++;
+    tabsParent->setCurrentWidget(realignOutputWidget);
+
+    // Add a header line matching the reclustering tab style.
+    realignOutputWidget->insertStdoutLine(
+        tr("=== Spike realignment — cluster %1 ===").arg(clusterId));
+
+    // Connect tab-change signal so slotTabChange handles the realign tab correctly.
+    // (It is already connected from the recluster setup; connecting again is harmless
+    // but we guard anyway.)
+    connect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)),
+            Qt::UniqueConnection);
+
+    // ── Lock UI exactly as reclustering does ─────────────────────────────────
+    realignRunning = true;
+    slotStateChanged(QStringLiteral("realignState"));
+
+    // ── Launch background worker ──────────────────────────────────────────────
+    // Clean up any leftover thread from a previous run.
+    if (realignThread) {
+        realignThread->quit();
+        realignThread->wait(2000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    if (realignWorker) {
+        delete realignWorker;
+        realignWorker = nullptr;
+    }
+
+    auto* worker = new RealignWorker(doc, clusterId);
+    auto* thread = new QThread(this);
+    worker->moveToThread(thread);
+
+    // Stream log lines to the output tab (queued — crosses thread boundary).
+    connect(worker, &RealignWorker::logLine,
+            this, [this](const QString& line, bool isError) {
+                if (!realignOutputWidget) return;
+                if (isError)
+                    realignOutputWidget->insertStderrLine(line);
+                else
+                    realignOutputWidget->insertStdoutLine(line);
+            }, Qt::QueuedConnection);
+
+    // When the worker signals finished, call our slot on the GUI thread.
+    connect(worker, &RealignWorker::finished,
+            this, &KlustersApp::slotRealignFinished,
+            Qt::QueuedConnection);
+
+    // Auto-cleanup: delete the worker object after the thread exits.
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+
+    // Start() triggers RealignWorker::run() via QThread::started.
+    connect(thread, &QThread::started, worker, &RealignWorker::run);
+
+    realignWorker = worker;
+    realignThread = thread;
+    thread->start();
+}
+
+void KlustersApp::slotAbortRealign()
+{
+    if (!realignRunning) return;
+
+    if (realignWorker)
+        // Signal the worker to stop (non-blocking — the current realignSpikes()
+        // call will still complete; cancel() prevents re-use in batch mode).
+        qobject_cast<RealignWorker*>(realignWorker)->cancel();
+
+    if (realignThread) {
+        realignThread->quit();
+        realignThread->wait(5000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    realignWorker  = nullptr;   // already scheduled for deleteLater
+    realignRunning = false;
+
+    if (realignOutputWidget)
+        realignOutputWidget->insertStderrLine(
+            tr("--- Realignment aborted by user ---"));
+
+    slotStateChanged(QStringLiteral("stoppedRealignState"));
+    // Restore full UI state for whichever tab is currently active.
+    slotTabChange(tabsParent->currentIndex());
+}
+
+void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped)
+{
+    realignRunning = false;
+
+    // Clean up thread.
+    if (realignThread) {
+        realignThread->quit();
+        realignThread->wait(2000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    realignWorker = nullptr;   // already deleteLater'd
+
+    // Summary line in the output tab.
+    if (realignOutputWidget) {
+        if (ok) {
+            realignOutputWidget->insertStdoutLine(
+                tr("=== Done: %1 spike(s) shifted, %2 sort-order correction(s). ===")
+                .arg(nShifted).arg(nSwapped));
+        } else {
+            realignOutputWidget->insertStderrLine(
+                tr("=== Realignment failed — see log above. ==="));
+        }
+    }
+
+    // Unlock the UI.
+    slotStateChanged(QStringLiteral("noRealignState"));
+
+    if (ok) {
+        // Trigger a full display refresh so waveform and feature views reflect
+        // the updated data, matching what slotRecluster does after integration.
         activeView()->updateContents();
     }
+
+    // Restore undo/redo state correctly.
+    updateUndoRedoDisplay();
 }

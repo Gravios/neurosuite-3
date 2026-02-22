@@ -32,6 +32,7 @@
 #include <QString>
 #include <QPoint>
 #include <QFileInfo>
+#include <functional>
 
 
 #include <QList>
@@ -368,7 +369,8 @@ public:
      * @param nSwapped   Set to the number of sort-order swaps performed.
      * @return true on success.
      */
-    bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped);
+    bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
+                       std::function<void(const QString&,bool)> liveLog = nullptr);
 
     /**Integrates in the data the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.

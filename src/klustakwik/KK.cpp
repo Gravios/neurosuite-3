@@ -17,6 +17,7 @@
 //   Cholesky — sequential on CPU (nDims³ is tiny, ~12³ = 1728 ops)
 
 #include "KK.h"
+#include <cstdint>
 #include "KlustaKwik.h"
 #include "KlustaSave.h"
 
@@ -82,36 +83,28 @@ void KK::Reindex() {
 }
 
 // ---------------------------------------------------------------------------
-// LoadData — reads .fet file and normalises features to [0,1]
+// LoadData — reads binary .fet file and normalises features to [0,1]
+// Binary format: int32_t nDimensions; nSpikes * nDimensions * int64_t (row-major)
 // ---------------------------------------------------------------------------
 void KK::LoadData() {
     char fname[STRLEN + 16];
     snprintf(fname, sizeof(fname), "%s.fet.%d", FileBase, ElecNo);
-    FILE *fp = fopen_safe(fname, "r");
+    FILE *fp = fopen_safe(fname, "rb");
 
-    // Count data lines (original algorithm, unchanged)
-    enum { INLINE, FIRST_DELIM } scst = INLINE;
-    nPoints = -1;
-    char ch, delim = '\n';
-    do {
-        ch = static_cast<char>(fgetc(fp));
-        bool isDelim = (ch == '\n' || ch == '\r');
-        bool isEof   = (ch == EOF);
-        switch (scst) {
-        case INLINE:
-            if (isDelim)     { scst = FIRST_DELIM; delim = ch; }
-            else if (isEof)  { nPoints++; }
-            break;
-        case FIRST_DELIM:
-            if (!isDelim || delim == ch) { nPoints++; scst = INLINE; }
-            break;
-        }
-    } while (ch != EOF);
-    fseek(fp, 0, SEEK_SET);
-
-    int nFeatures = 0;
-    if (fscanf(fp, "%d", &nFeatures) != 1) Error("Failed to read nFeatures");
+    // Read header: number of feature dimensions (including timestamp as last col)
+    int32_t nFeatures32 = 0;
+    if (fread(&nFeatures32, sizeof(int32_t), 1, fp) != 1)
+        Error("Failed to read nFeatures from binary .fet header");
+    const int nFeatures = (int)nFeatures32;
     Output("nFeatures=%d\n", nFeatures);
+
+    // Derive spike count from remaining file size
+    fseeko(fp, 0, SEEK_END);
+    off_t dataBytes = ftello(fp) - (off_t)sizeof(int32_t);
+    fseeko(fp, (off_t)sizeof(int32_t), SEEK_SET);
+    if (dataBytes <= 0 || dataBytes % ((off_t)sizeof(int64_t) * nFeatures) != 0)
+        Error("Binary .fet file size inconsistent with nFeatures");
+    nPoints = (int)(dataBytes / ((off_t)sizeof(int64_t) * nFeatures));
 
     // Handle "all" keyword
     if (strcmp(UseFeatures, "all") == 0) {
@@ -134,18 +127,19 @@ void KK::LoadData() {
     AllocateArrays();
     AlocateCholeskyVecs();
 
-    // Load feature values
+    // Load feature values from binary int64_t rows
     for (int p = 0; p < nPoints; p++) {
         int j = 0;
         for (int i = 0; i < nFeatures; i++) {
-            float val;
-            if (fscanf(fp, "%f", &val) == EOF) Error("Error reading feature file");
+            int64_t raw;
+            if (fread(&raw, sizeof(int64_t), 1, fp) != 1)
+                Error("Short read in binary .fet file");
             if (i < UseLen && UseFeatures[i] == '1')
-                Data[p * nDims + j++] = val;
+                Data[p * nDims + j++] = static_cast<float>(raw);
         }
     }
-    // Check for trailing data
-    { float val; if (fscanf(fp, "%f", &val) != EOF) Error("Mismatch reading feature file"); }
+    // Verify we are at EOF
+    { int64_t probe; if (fread(&probe, sizeof(int64_t), 1, fp) != 0) Error("Trailing data in binary .fet file"); }
     fclose(fp);
 
     // Normalise each dimension to [0,1] and record raw range for time dim
@@ -517,17 +511,22 @@ void KK::ConsiderDeletion() {
 }
 
 // ---------------------------------------------------------------------------
-// LoadClu
+// LoadClu — read binary .clu file
+// Binary format: int32_t nClusters; nSpikes * int32_t clusterIDs (1-based)
 // ---------------------------------------------------------------------------
 void KK::LoadClu(const char *CluFile) {
-    FILE *fp = fopen_safe(CluFile, "r");
-    int val;
-    if (fscanf(fp, "%d", &nStartingClusters) != 1) Error("Failed to read nStartingClusters");
+    FILE *fp = fopen_safe(CluFile, "rb");
+    int32_t nclu32 = 0;
+    if (fread(&nclu32, sizeof(int32_t), 1, fp) != 1)
+        Error("Failed to read nClusters from binary .clu header");
+    nStartingClusters = (int)nclu32;
     nClustersAlive = nStartingClusters;
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
     for (int p = 0; p < nPoints; p++) {
-        if (fscanf(fp, "%d", &val) == EOF) Error("Error reading cluster file");
-        Class[p] = val - 1;
+        int32_t val;
+        if (fread(&val, sizeof(int32_t), 1, fp) != 1)
+            Error("Short read in binary .clu file");
+        Class[p] = (int)val - 1;  // convert 1-based to 0-based
     }
     fclose(fp);
 }

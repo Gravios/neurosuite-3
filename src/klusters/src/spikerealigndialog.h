@@ -1,70 +1,52 @@
 /***************************************************************************
  * spikerealigndialog.h
  *
- * Dialog that shows the waveforms of a single cluster and lets the user
- * trigger an automatic re-alignment followed by re-extraction and
- * re-featurization of misaligned spikes.
+ * Pre-flight configuration panel for spike realignment.
  *
- * Workflow (all heavy I/O is done in KlustersDoc::realignSpikes):
- *   1. User opens the dialog and selects a cluster (or the active cluster
- *      is pre-selected).
- *   2. The dialog displays a summary of the cluster waveforms using existing
- *      waveform data already loaded in memory.
- *   3. User clicks "Realign & Update" — the dialog delegates to
- *      KlustersDoc::realignSpikes(), which:
- *        a. Reads each spike of the cluster from the .spk.N file.
- *        b. Finds the true peak sample with sub-sample precision.
- *        c. Computes the required shift in samples.
- *        d. Writes the shifted spike back to the .spk.N file.
- *        e. Updates the .res.N file with the new timestamp.
- *        f. If the new timestamp changes the sort order, swaps the affected
- *           entries in .res.N, .spk.N, .clu.N, and .fet.N.
- *        g. Re-featurizes the shifted spikes via process_refeaturize and
- *           patches the updated rows into the .fet.N file.
- *        h. Updates the in-memory features array and spikesByCluster table.
- *   4. The dialog reports success/failure and closes.
+ * This dialog lets the user review the cluster to be realigned, confirm
+ * that the .pca.N eigenvector file exists, and click "Start Realignment"
+ * to launch the operation.  It does NOT run the realignment itself —
+ * that is done by RealignWorker on a background thread, with output
+ * streamed to a ProcessWidget tab in the main window (matching the
+ * reclustering UI pattern exactly).
+ *
+ * KlustersApp::slotRealignSpikes() creates this dialog, connects its
+ * accepted() signal to the async launch logic, and shows it.
  ***************************************************************************/
 
 #pragma once
 
 #include <QDialog>
-#include <QList>
-#include <QString>
 
 class QLabel;
-class QSpinBox;
-class QProgressBar;
 class QPushButton;
-class QTextEdit;
 class KlustersDoc;
 
-class SpikeRealignDialog : public QDialog {
+class SpikeRealignDialog : public QDialog
+{
     Q_OBJECT
 
 public:
     /**
-     * @param doc       The active document.
-     * @param clusterId The cluster to realign.  Pass -1 to use the first
-     *                  currently shown cluster.
+     * @param doc       Active document.
+     * @param clusterId Cluster to be realigned (must be > 1).
      * @param parent    Parent widget.
      */
-    explicit SpikeRealignDialog(KlustersDoc& doc, int clusterId, QWidget* parent = nullptr);
+    explicit SpikeRealignDialog(KlustersDoc& doc, int clusterId,
+                                QWidget* parent = nullptr);
     ~SpikeRealignDialog() override;
 
-private slots:
-    void slotRealign();
-    void slotClose();
+    /** Cluster ID selected for realignment. */
+    int clusterId() const { return m_clusterId; }
 
 private:
-    void updateInfo();
+    void buildUi();
 
-    KlustersDoc&  m_doc;
-    int           m_clusterId;
+    KlustersDoc& m_doc;
+    int          m_clusterId;
 
-    QLabel*       m_clusterLabel;
-    QLabel*       m_spikeCountLabel;
-    QLabel*       m_pcaFileLabel;
-    QTextEdit*    m_logEdit;
-    QPushButton*  m_realignBtn;
-    QPushButton*  m_closeBtn;
+    QLabel*      m_spikeCountLabel;
+    QLabel*      m_pcaFileLabel;
+    QLabel*      m_backendLabel;
+    QPushButton* m_startBtn;
 };
