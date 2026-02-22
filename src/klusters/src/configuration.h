@@ -84,6 +84,12 @@ public:
 
     /**Sets the arguments for the realignment.*/
     void setRealignArguments(const QString& arguments) {realignArgs = arguments;}
+
+    /**Sets the scatter plot marker size.*/
+    void setMarkerSize(int size) {markerSize = qBound(1, size, 10);}
+
+    /**Sets the selection polygon line width.*/
+    void setSelectionLineWidth(int w) {selectionLineWidth = qBound(1, w, 10);}
     
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
@@ -141,6 +147,12 @@ public:
     /**Returns the arguments for the realignment.*/
     QString getRealignArguments() const{return realignArgs;}
 
+    /**Returns the scatter plot marker size.*/
+    int getMarkerSize() const{return markerSize;}
+
+    /**Returns the selection polygon line width.*/
+    int getSelectionLineWidth() const{return selectionLineWidth;}
+
     /**Returns the default value for the crash and recovery mechanism.
     * True if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecoveryDefault() const{return crashRecoveryDefault;}
@@ -173,6 +185,12 @@ public:
     /**Returns the default arguments for the realignment.*/
     QString getRealignArgumentsDefault() const{return realignArgsDefault;}
 
+    /**Returns the default scatter plot marker size.*/
+    int getMarkerSizeDefault() const{return markerSizeDefault;}
+
+    /**Returns the default selection polygon line width.*/
+    int getSelectionLineWidthDefault() const{return selectionLineWidthDefault;}
+
     bool getUseWhiteColorDuringPrinting() const { return useWhiteColorDuringPrinting; }
 
     void setUseWhiteColorDuringPrinting(bool b) { useWhiteColorDuringPrinting = b; }
@@ -202,6 +220,10 @@ private:
     QString realignExecutable;
     /**Arguments for the realignment executable.*/
     QString realignArgs;
+    /**Scatter plot marker size in pixels.*/
+    int markerSize;
+    /**Selection polygon line width in pixels.*/
+    int selectionLineWidth;
 
     bool useWhiteColorDuringPrinting;
     static const bool crashRecoveryDefault;
@@ -214,6 +236,8 @@ private:
     static const QString reclusteringArgsDefault;
     static const QString realignExecutableDefault;
     static const QString realignArgsDefault;
+    static const int  markerSizeDefault;
+    static const int  selectionLineWidthDefault;
 
     Configuration();
     Configuration(const Configuration&);

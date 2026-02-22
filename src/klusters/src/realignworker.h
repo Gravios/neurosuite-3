@@ -31,7 +31,9 @@ class RealignWorker : public QObject
     Q_OBJECT
 
 public:
-    explicit RealignWorker(KlustersDoc* doc, int clusterId, QObject* parent = nullptr);
+    explicit RealignWorker(KlustersDoc* doc, int clusterId,
+                        const QString& args = QString(),
+                        QObject* parent = nullptr);
 
 public slots:
     /** Called on the worker thread by QThread::started. */
@@ -56,5 +58,6 @@ signals:
 private:
     KlustersDoc* m_doc;
     int          m_clusterId;
+    QString      m_args;
     bool         m_cancel;
 };

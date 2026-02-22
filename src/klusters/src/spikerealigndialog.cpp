@@ -17,6 +17,7 @@
 #include <QPushButton>
 #include <QFileInfo>
 #include <QFrame>
+#include <algorithm>
 #include <QFont>
 
 // Forward declaration — XcorrDispatch is defined in realign_xcorr_dispatch.cpp
@@ -24,10 +25,12 @@ namespace XcorrDispatch {
     const char* backendName();
 }
 
-SpikeRealignDialog::SpikeRealignDialog(KlustersDoc& doc, int clusterId, QWidget* parent)
+SpikeRealignDialog::SpikeRealignDialog(KlustersDoc& doc, int clusterId,
+                                       const QString& args, QWidget* parent)
     : QDialog(parent)
     , m_doc(doc)
     , m_clusterId(clusterId)
+    , m_args(args)
 {
     setWindowTitle(tr("Realign Spikes — Cluster %1").arg(clusterId));
     setMinimumWidth(500);
@@ -72,19 +75,41 @@ void SpikeRealignDialog::buildUi()
     m_backendLabel = new QLabel(QString::fromLatin1(XcorrDispatch::backendName()));
     grid->addWidget(m_backendLabel, row++, 1);
 
-    // Parameters summary
+    // Parameters summary — parse from args (same logic as realignSpikes)
     Data& d = m_doc.data();
     int peakSamp = d.peakSampleIndex();
-    int maxShift = (peakSamp / 2 > 0) ? peakSamp / 2 : 1;
+    int maxShift = std::max(1, peakSamp / 2);
+    float minScore = 0.70f;
+    int nIter = 2;
+    {
+        const QStringList tokens = m_args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        for (int ti = 0; ti < tokens.size(); ++ti) {
+            const QString& tok = tokens[ti];
+            if ((tok == QStringLiteral("--threshold") || tok == QStringLiteral("-t"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; float v = tokens[++ti].toFloat(&ok2);
+                if (ok2 && v > 0.0f && v <= 1.0f) minScore = v;
+            } else if ((tok == QStringLiteral("--iterations") || tok == QStringLiteral("-i"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; int v = tokens[++ti].toInt(&ok2);
+                if (ok2 && v >= 1 && v <= 20) nIter = v;
+            } else if ((tok == QStringLiteral("--maxshift") || tok == QStringLiteral("-m"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; int v = tokens[++ti].toInt(&ok2);
+                if (ok2 && v >= 1) maxShift = v;
+            }
+        }
+    }
 
     grid->addWidget(new QLabel(tr("Search radius:")), row, 0);
     grid->addWidget(new QLabel(tr("±%1 samples").arg(maxShift)), row++, 1);
 
     grid->addWidget(new QLabel(tr("Acceptance threshold:")), row, 0);
-    grid->addWidget(new QLabel(tr("0.70 (normalised xcorr)")), row++, 1);
+    grid->addWidget(new QLabel(tr("%1 (normalised xcorr)").arg(
+        QString::number(static_cast<double>(minScore), 'f', 2))), row++, 1);
 
     grid->addWidget(new QLabel(tr("Alignment iterations:")), row, 0);
-    grid->addWidget(new QLabel(tr("2")), row++, 1);
+    grid->addWidget(new QLabel(QString::number(nIter)), row++, 1);
 
     vlay->addLayout(grid);
 

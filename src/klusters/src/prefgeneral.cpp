@@ -108,3 +108,9 @@ void PrefGeneral::setUseWhiteColorDuringPrinting(bool b)
     useWhiteColorPrinting->setChecked(b);
 }
 
+void PrefGeneral::setMarkerSize(int size) { markerSizeSpinBox->setValue(size); }
+int  PrefGeneral::getMarkerSize()   const { return markerSizeSpinBox->value(); }
+
+void PrefGeneral::setSelectionLineWidth(int w) { selectionLineWidthSpinBox->setValue(w); }
+int  PrefGeneral::getSelectionLineWidth() const { return selectionLineWidthSpinBox->value(); }
+

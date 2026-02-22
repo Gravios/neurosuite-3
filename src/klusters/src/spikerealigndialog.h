@@ -33,6 +33,7 @@ public:
      * @param parent    Parent widget.
      */
     explicit SpikeRealignDialog(KlustersDoc& doc, int clusterId,
+                                const QString& args = QString(),
                                 QWidget* parent = nullptr);
     ~SpikeRealignDialog() override;
 
@@ -44,6 +45,7 @@ private:
 
     KlustersDoc& m_doc;
     int          m_clusterId;
+    QString      m_args;
 
     QLabel*      m_spikeCountLabel;
     QLabel*      m_pcaFileLabel;
