@@ -201,7 +201,7 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
                 // 2) Read N full records
                 for ( int r = 0 ; r < nRecords ; ++r )
                 {
-                    fread(recordHeader,sizeof(recordHeader),1,dataFile); // skip header
+                    { size_t _r = fread(recordHeader,sizeof(recordHeader),1,dataFile); (void)_r; } // skip header
                     nRead = fread((char*)buffer,sizeof(int16_t),nSamplesPerRecord,dataFile);
                     if (nRead != nSamplesPerRecord)
                     {
@@ -220,7 +220,7 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
                 // 3) Read the beginning of the last record
                 if ( inLastRecord > 0 )
                 {
-                    fread(recordHeader,sizeof(recordHeader),1,dataFile); // skip header
+                    { size_t _r = fread(recordHeader,sizeof(recordHeader),1,dataFile); (void)_r; } // skip header
                     nRead = fread((char*)buffer,sizeof(int16_t),inLastRecord,dataFile);
                     if (nRead != inLastRecord)
                     {

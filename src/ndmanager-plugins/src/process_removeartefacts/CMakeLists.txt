@@ -1,8 +1,4 @@
-project(ndmanager-plugins-src-process_removeartefacts)
-cmake_minimum_required(VERSION 3.16)
-
-set(program process_removeartefacts)
-add_executable(${program} process_removeartefacts.cpp)
-target_compile_features(${program} PRIVATE cxx_std_17)
-install(TARGETS ${program} DESTINATION bin)
-add_manpage(${program})
+add_executable(process_removeartefacts process_removeartefacts.cpp)
+target_compile_features(process_removeartefacts PRIVATE cxx_std_17)
+install(TARGETS process_removeartefacts DESTINATION "${CMAKE_INSTALL_BINDIR}")
+add_manpage(process_removeartefacts)

@@ -1,61 +1,69 @@
-project(ndmanager-plugins-src-process_resample)
-cmake_minimum_required(VERSION 3.16)
-
-set(source process_resample.cpp)
-set(program process_resample)
-
-# ── Prefer system libsamplerate; fall back to vendored build if not found ───
+# Prefer system libsamplerate; fall back to vendored 0.1.8 if absent.
 find_package(PkgConfig QUIET)
-set(LSR_FOUND FALSE)
-
 if(PkgConfig_FOUND)
     pkg_check_modules(LSR QUIET samplerate)
-    if(LSR_FOUND)
-        message(STATUS "process_resample: using system libsamplerate ${LSR_VERSION}")
-    endif()
 endif()
 
-if(NOT LSR_FOUND)
-    message(STATUS "process_resample: system libsamplerate not found, building vendored copy")
-    set(lsr_source "${CMAKE_CURRENT_SOURCE_DIR}/libsamplerate-0.1.8")
-    set(lsr_lib    "${CMAKE_CURRENT_BINARY_DIR}/lsr/src/.libs/libsamplerate.a")
+if(LSR_FOUND)
+    message(STATUS "process_resample: system libsamplerate ${LSR_VERSION}")
+    # Create an IMPORTED target so we link consistently with the other targets
+    add_library(samplerate::samplerate INTERFACE IMPORTED)
+    target_include_directories(samplerate::samplerate INTERFACE ${LSR_INCLUDE_DIRS})
+    target_link_libraries(samplerate::samplerate INTERFACE ${LSR_LINK_LIBRARIES})
+    set(_lsr_target samplerate::samplerate)
+else()
+    message(STATUS "process_resample: building vendored libsamplerate 0.1.8")
+    set(_lsr_src "${CMAKE_CURRENT_SOURCE_DIR}/libsamplerate-0.1.8")
+    set(_lsr_lib "${CMAKE_CURRENT_BINARY_DIR}/lsr/src/.libs/libsamplerate.a")
 
-    add_custom_command(OUTPUT lsr1
-        COMMAND [ -d lsr ] || cp -a ${lsr_source} lsr
-        COMMAND chmod +x lsr/configure lsr/autogen.sh lsr/Cfg/install-sh
-                          lsr/Cfg/config.guess lsr/Cfg/config.sub lsr/Cfg/depcomp
-                          lsr/Cfg/compile lsr/Cfg/ltmain.sh lsr/Cfg/missing
-                          lsr/src/check_asm.sh
-    )
-    add_custom_command(OUTPUT lsr2
-        COMMAND cd lsr && ./configure && make
-        DEPENDS lsr1
-    )
-    add_custom_target(lsr DEPENDS lsr2)
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/lsr_unpacked"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_lsr_src}"
+                "${CMAKE_CURRENT_BINARY_DIR}/lsr"
+        COMMAND chmod +x
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/configure"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/install-sh"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/config.guess"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/config.sub"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/depcomp"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/compile"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/ltmain.sh"
+            "${CMAKE_CURRENT_BINARY_DIR}/lsr/Cfg/missing"
+        COMMAND "${CMAKE_COMMAND}" -E touch
+                "${CMAKE_CURRENT_BINARY_DIR}/lsr_unpacked"
+        COMMENT "Unpacking vendored libsamplerate"
+        VERBATIM)
 
-    set(LSR_INCLUDE_DIRS "${lsr_source}/src")
-    set(LSR_LIBRARIES    m ${lsr_lib})
-    set(LSR_VENDORED     TRUE)
+    add_custom_command(
+        OUTPUT  "${_lsr_lib}"
+        DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lsr_unpacked"
+        COMMAND cd "${CMAKE_CURRENT_BINARY_DIR}/lsr" && ./configure && make
+        COMMENT "Building vendored libsamplerate"
+        VERBATIM)
+
+    add_custom_target(vendored_lsr DEPENDS "${_lsr_lib}")
+
+    add_library(samplerate::samplerate INTERFACE IMPORTED)
+    target_include_directories(samplerate::samplerate
+        INTERFACE "${_lsr_src}/src")
+    target_link_libraries(samplerate::samplerate
+        INTERFACE m "${_lsr_lib}")
+    set(_lsr_target samplerate::samplerate)
 endif()
 
-add_executable(${program} ${source})
-target_compile_features(${program} PRIVATE cxx_std_17)
-target_include_directories(${program} PRIVATE ${LSR_INCLUDE_DIRS})
-
-if(DEFINED LSR_VENDORED)
-    add_dependencies(${program} lsr)
-endif()
-
-# OpenMP for parallel per-channel resampling
 find_package(OpenMP)
+
+add_executable(process_resample process_resample.cpp)
+target_compile_features(process_resample PRIVATE cxx_std_17)
+target_link_libraries(process_resample PRIVATE ${_lsr_target})
+if(NOT LSR_FOUND)
+    add_dependencies(process_resample vendored_lsr)
+endif()
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(${program} OpenMP::OpenMP_CXX ${LSR_LIBRARIES})
+    target_link_libraries(process_resample PRIVATE OpenMP::OpenMP_CXX)
     message(STATUS "process_resample: OpenMP enabled")
 else()
-    target_link_libraries(${program} ${LSR_LIBRARIES})
-    message(STATUS "process_resample: OpenMP not found, single-threaded build")
+    message(STATUS "process_resample: OpenMP not found, single-threaded")
 endif()
-
-install(TARGETS ${program} DESTINATION bin)
-
-add_manpage(${program})
+install(TARGETS process_resample DESTINATION "${CMAKE_INSTALL_BINDIR}")
+add_manpage(process_resample)

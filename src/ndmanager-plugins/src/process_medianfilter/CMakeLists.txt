@@ -1,53 +1,31 @@
-project(ndmanager-plugins-src-process_medianfilter)
-cmake_minimum_required(VERSION 3.18)
-
-set(program process_medianfilter)
-
-# ── CUDA ──────────────────────────────────────────────────────────────────────
 include(CheckLanguage)
 check_language(CUDA)
+find_package(OpenMP)
 
 if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
-    message(STATUS "process_medianfilter: CUDA found – building GPU-accelerated binary")
-
-    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_STANDARD          17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-
-    # sm_120 = Blackwell (RTX 5070 Ti, requires CUDA 12.8+)
-    # sm_89  = Ada Lovelace (RTX 4090 etc.)
-    # sm_86  = Ampere (RTX 3090 etc.)
-    set(CMAKE_CUDA_ARCHITECTURES 86 89 120 100)
-
-    add_executable(${program}
+    set(CMAKE_CUDA_ARCHITECTURES     86 89 100 120)
+    add_executable(process_medianfilter
         process_medianfilter.cpp
         process_medianfilter_cuda.cu)
-
-    target_compile_definitions(${program} PRIVATE USE_CUDA)
-
-    set_target_properties(${program} PROPERTIES
+    target_compile_definitions(process_medianfilter PRIVATE USE_CUDA)
+    set_target_properties(process_medianfilter PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)
-
-    find_package(OpenMP)
     if(OpenMP_CXX_FOUND)
-        target_link_libraries(${program} OpenMP::OpenMP_CXX)
+        target_link_libraries(process_medianfilter PRIVATE OpenMP::OpenMP_CXX)
     endif()
-
+    message(STATUS "process_medianfilter: CUDA build (${CMAKE_CUDA_ARCHITECTURES})")
 else()
-    message(STATUS "process_medianfilter: CUDA not found – CPU-only (OpenMP) build")
-
-    add_executable(${program} process_medianfilter.cpp)
-
-    find_package(OpenMP)
+    add_executable(process_medianfilter process_medianfilter.cpp)
     if(OpenMP_CXX_FOUND)
-        target_link_libraries(${program} OpenMP::OpenMP_CXX)
-        message(STATUS "process_medianfilter: OpenMP enabled")
+        target_link_libraries(process_medianfilter PRIVATE OpenMP::OpenMP_CXX)
+        message(STATUS "process_medianfilter: CPU+OpenMP build")
     else()
-        message(STATUS "process_medianfilter: OpenMP not found, single-threaded")
+        message(STATUS "process_medianfilter: CPU single-threaded build")
     endif()
 endif()
-
-target_compile_features(${program} PRIVATE cxx_std_17)
-install(TARGETS ${program} DESTINATION bin)
-
-add_manpage(${program})
+target_compile_features(process_medianfilter PRIVATE cxx_std_17)
+install(TARGETS process_medianfilter DESTINATION "${CMAKE_INSTALL_BINDIR}")
+add_manpage(process_medianfilter)

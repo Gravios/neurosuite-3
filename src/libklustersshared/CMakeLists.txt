@@ -1,57 +1,76 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 project(libklustersshared VERSION 2.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# ---------------------------------------------------------------------------
+# Language standard
+# ---------------------------------------------------------------------------
+set(CMAKE_CXX_STANDARD          17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_EXTENSIONS        OFF)
 
-set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
+# ---------------------------------------------------------------------------
+# Qt automoc/uic/rcc
+# ---------------------------------------------------------------------------
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
+# ---------------------------------------------------------------------------
+# Install layout
+# ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-set(LIBKLUSTERSSHARED_VERSION       ${PROJECT_VERSION})
-set(LIBKLUSTERSSHARED_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
-set(LIB_SUFFIX "" CACHE STRING "Define suffix of directory name (32/64)")
-set(EXEC_INSTALL_PREFIX  ${CMAKE_INSTALL_PREFIX} CACHE PATH "Base directory for executables and libraries")
-set(BIN_INSTALL_DIR      "${EXEC_INSTALL_PREFIX}/bin"              CACHE PATH "Binary install dir")
-set(LIB_INSTALL_DIR      "${EXEC_INSTALL_PREFIX}/lib${LIB_SUFFIX}" CACHE PATH "Library install dir")
-set(INCLUDE_INSTALL_DIR  "${EXEC_INSTALL_PREFIX}/include/klustersshared" CACHE PATH "Include install dir")
-
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  if(NOT APPLE)
-    set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--fatal-warnings -Wl,--no-undefined ${CMAKE_SHARED_LINKER_FLAGS}")
-    set(CMAKE_MODULE_LINKER_FLAGS "-Wl,--fatal-warnings -Wl,--no-undefined ${CMAKE_MODULE_LINKER_FLAGS}")
-  endif()
-  add_compile_options(-fvisibility=hidden -fvisibility-inlines-hidden)
+# ---------------------------------------------------------------------------
+# Linker hardening (GCC/Clang on non-Apple Linux)
+# ---------------------------------------------------------------------------
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT APPLE)
+    add_link_options(
+        -Wl,--fatal-warnings
+        -Wl,--no-undefined)
 endif()
 
-configure_file(LibKlustersSharedConfig.cmake.in
-               ${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfig.cmake @ONLY)
+# ---------------------------------------------------------------------------
+# Symbol visibility — keeps the public API surface explicit
+# ---------------------------------------------------------------------------
+set(CMAKE_CXX_VISIBILITY_PRESET     hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+
+# ---------------------------------------------------------------------------
+# Package config files
+# ---------------------------------------------------------------------------
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/LibKlustersSharedConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LibKlustersShared")
 
 write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfigVersion.cmake
-    VERSION ${LIBKLUSTERSSHARED_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
+    "${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfigVersion.cmake"
+    VERSION       "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion)
 
-add_definitions(-DKLUSTERSSHARED_BUILD_KLUSTERSSHARED_LIB)
-
+# ---------------------------------------------------------------------------
+# Build the library
+# ---------------------------------------------------------------------------
 add_subdirectory(src)
 
-install(EXPORT LibKlustersSharedLibraryTargets
-    DESTINATION ${LIB_INSTALL_DIR}/cmake/LibKlustersShared
-    FILE LibKlustersSharedTargetsWithPrefix.cmake
-)
+# ---------------------------------------------------------------------------
+# Install cmake package files
+# ---------------------------------------------------------------------------
+install(EXPORT LibKlustersSharedTargets
+    NAMESPACE   KlustersShared::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LibKlustersShared"
+    FILE        LibKlustersSharedTargets.cmake)
+
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfigVersion.cmake
-    DESTINATION ${LIB_INSTALL_DIR}/cmake/LibKlustersShared
-    COMPONENT Devel
-)
+    "${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LibKlustersShared"
+    COMPONENT   Devel)
+
 include(CPack)
