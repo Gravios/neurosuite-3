@@ -56,6 +56,7 @@
 #include <QList>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QAbstractSpinBox>
 
 #include <QDebug>
 #include <QStatusBar>
@@ -183,6 +184,11 @@ void KlustersApp::initView()
     splitter->addWidget(clusterPanel);
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
+    // Prevent the QTabWidget frame itself from ever holding keyboard focus.
+    // Tab/Shift+Tab should cycle our explicit focus zones (buildFocusZones),
+    // not get consumed by the tab bar's internal focus chain.
+    tabsParent->setFocusPolicy(Qt::NoFocus);
+    tabsParent->tabBar()->setFocusPolicy(Qt::NoFocus);
     splitter->addWidget(tabsParent);
     // App-level event filter so Tab/Shift+Tab cycle display tabs regardless
     // of which child widget (DockArea, ClusterView, ProcessWidget, …) holds focus.
@@ -907,33 +913,121 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(object == paramBar && event->type() == 71){//filter the removal of items from the paramBar
         return true;
     }
-    // Intercept Tab/Shift+Tab from any widget that is a descendant of tabsParent
-    // (covers DockArea, ClusterView, ProcessWidget, etc.) and cycle the active tab
-    // instead of letting Qt's focus traversal consume the key.
-    if(tabsParent && event->type() == QEvent::KeyPress){
+    // Tab / Shift+Tab — cycle through the main-window focus zones:
+    //   Cluster list  →  Display tabs  →  Toolbar fields  →  (wrap)
+    if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab){
-            // Walk up from the event target to see if it lives inside tabsParent
-            QObject* obj = object;
-            bool insideTabs = false;
-            while(obj){
-                if(obj == tabsParent){ insideTabs = true; break; }
-                obj = obj->parent();
-            }
-            if(insideTabs){
-                const int n = tabsParent->count();
-                if(n > 1){
-                    const int cur = tabsParent->currentIndex();
-                    if(ke->key() == Qt::Key_Tab)
-                        tabsParent->setCurrentIndex((cur + 1) % n);
-                    else
-                        tabsParent->setCurrentIndex((cur - 1 + n) % n);
+            buildFocusZones();
+            if(focusZones.isEmpty()) return QWidget::eventFilter(object, event);
+
+            // Find which zone the current focus widget belongs to.
+            QWidget* focused = QApplication::focusWidget();
+            int currentZone = -1;
+
+            // First try: walk parent chain of the focused widget.
+            if(focused){
+                for(int z = 0; z < focusZones.size() && currentZone < 0; ++z){
+                    QWidget* zoneRoot = focusZones[z];
+                    QObject* w = focused;
+                    while(w){
+                        if(w == zoneRoot){ currentZone = z; break; }
+                        w = w->parent();
+                    }
                 }
-                return true;  // swallow — do not pass to focus traversal
             }
+
+            // Second try: if focus is nowhere useful (e.g. NoFocus page widget),
+            // check if the currently visible tab page matches a zone.
+            if(currentZone < 0 && tabsParent && tabsParent->isVisible()){
+                QWidget* currentPage = tabsParent->currentWidget();
+                for(int z = 0; z < focusZones.size() && currentZone < 0; ++z){
+                    if(focusZones[z] == currentPage) currentZone = z;
+                }
+            }
+
+            // Advance to next/prev zone (wrap around).
+            const int n = focusZones.size();
+            int next;
+            if(ke->key() == Qt::Key_Tab)
+                next = (currentZone < 0) ? 0 : (currentZone + 1) % n;
+            else
+                next = (currentZone < 0) ? n - 1 : (currentZone - 1 + n) % n;
+
+            // Set focus on the zone's entry widget.
+            QWidget* target = focusZones[next];
+
+            // If the target is a page inside tabsParent, switch to that tab first.
+            if(tabsParent){
+                int tabIdx = tabsParent->indexOf(target);
+                if(tabIdx >= 0){
+                    tabsParent->setCurrentIndex(tabIdx);
+                    // Focus the tab page itself (or its first focusable child).
+                    QWidget* page = target;
+                    QWidget* focusable = page->focusProxy();
+                    if(!focusable){
+                        // nextInFocusChain walks Qt's internal chain — find first
+                        // child that is actually inside this page.
+                        QWidget* candidate = page->nextInFocusChain();
+                        for(int tries = 0; candidate && tries < 50; ++tries){
+                            QObject* p = candidate->parent();
+                            bool inside = false;
+                            while(p){ if(p == page){ inside = true; break; } p = p->parent(); }
+                            if(inside && candidate->focusPolicy() != Qt::NoFocus){
+                                focusable = candidate;
+                                break;
+                            }
+                            candidate = candidate->nextInFocusChain();
+                            if(candidate == page->nextInFocusChain()) break;
+                        }
+                    }
+                    if(focusable)
+                        focusable->setFocus(Qt::TabFocusReason);
+                    else
+                        page->setFocus(Qt::TabFocusReason);
+                    return true;
+                }
+            }
+
+            // Cluster list, toolbar fields — focus directly.
+            target->setFocus(Qt::TabFocusReason);
+            return true;  // swallow the key event
         }
     }
     return QWidget::eventFilter(object,event);    // standard event processing
+}
+
+void KlustersApp::buildFocusZones()
+{
+    // Ordered list of focus zones the user cycles through with Tab / Shift+Tab.
+    // Each entry is a distinct stop: each display tab, the cluster list, and
+    // each visible toolbar input field are all separate stops.
+    focusZones.clear();
+
+    // 1. Cluster list (left panel)
+    if(clusterPanel && clusterPanel->isVisible() && clusterPalette)
+        focusZones.append(clusterPalette);
+
+    // 2. Each display tab individually (Overview, Recluster output, Realign output, …)
+    //    Stored as the tab's page widget; the event filter switches the tab and focuses it.
+    if(tabsParent && tabsParent->isVisible()){
+        for(int i = 0; i < tabsParent->count(); ++i)
+            focusZones.append(tabsParent->widget(i));
+    }
+
+    // 3. Toolbar fields — each visible, enabled input widget is its own stop.
+    //    Collected from paramBar's actions to preserve left-to-right toolbar order.
+    if(paramBar){
+        const QList<QAction*> actions = paramBar->actions();
+        for(QAction* a : actions){
+            QWidget* w = paramBar->widgetForAction(a);
+            if(!w) continue;
+            if(!(qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QLineEdit*>(w)))
+                continue;
+            if(a->isVisible() && w->isVisible() && w->isEnabled())
+                focusZones.append(w);
+        }
+    }
 }
 
 
@@ -2339,22 +2433,12 @@ void KlustersApp::slotTabChange(int index){
             }
         }
     } else {// a ProcessWidget (recluster or realign output tab)
-        dimensionXAction->setVisible(false);
-        dimensionYAction->setVisible(false);
-        featureXLabelAction->setVisible(false);
+        // Do NOT hide toolbar fields — leave Features, Waveforms, Bin size, Duration
+        // in whatever state they were when the user last viewed a real display tab.
+        // Only update menu state and cluster palette selection.
         timeFrameMode->setChecked(false);
         overlayPresentation->setChecked(false);
         meanPresentation->setChecked(false);
-        durationAction->setVisible(false);
-        durationLabelAction->setVisible(false);
-        startAction->setVisible(false);
-        startLabelAction->setVisible(false);
-        spikesTodisplayAction->setVisible(false);
-        spikesTodisplayLabelAction->setVisible(false);
-        correlogramsHalfDurationAction->setVisible(false);
-        correlogramsHalfDurationLabelAction->setVisible(false);
-        binSizeBoxAction->setVisible(false);
-        binSizeLabelAction->setVisible(false);
 
         // Determine which tab type is active so we highlight the right clusters.
         bool isRealignTab = (widget == realignOutputWidget);
@@ -2686,6 +2770,7 @@ void KlustersApp::slotRecluster(){
     if(processWidget == 0L){
 
         processWidget = new ProcessWidget(this);
+        processWidget->setFocusPolicy(Qt::NoFocus);
         connect(processWidget,SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(slotProcessExited(int,QProcess::ExitStatus)));
         // slotOutputTreatmentOver is driven by processOutputsFinished (emitted by ProcessWidget
         // after all stdout/stderr has been drained), NOT by finished — connecting it to both
@@ -3464,6 +3549,7 @@ void KlustersApp::slotRealignSpikes()
     }
 
     realignOutputWidget = new ProcessWidget(this);
+    realignOutputWidget->setFocusPolicy(Qt::NoFocus);
     // ProcessWidget inherits QListWidget and displays coloured log lines.
     // We do NOT call startJob() — output is fed directly via insertStdoutLine /
     // insertStderrLine from the worker's logLine signal.

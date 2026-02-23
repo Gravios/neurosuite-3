@@ -25,6 +25,7 @@
 
 // include files for Qt
 #include <QList>
+#include <QVector>
 #include <QSpinBox> 
 #include <QValidator>
 #include <QLineEdit>
@@ -463,6 +464,9 @@ private:
 
     /** Initialize the first display (create the mainDockWidget).*/
     void initDisplay();
+
+    /**Rebuilds the ordered list of Tab-cycle focus zones from currently visible widgets.*/
+    void buildFocusZones();
     
     /** Creates a new display.
      * @param type enum representing the type of view to be created.
@@ -510,6 +514,11 @@ private:
     QExtendTabWidget* tabsParent;
 
     QToolBar* paramBar;
+
+    /**Ordered list of top-level focus zones cycled by Tab/Shift+Tab.
+     * Rebuilt whenever the UI changes (panels shown/hidden, toolbar fields change).
+     * Each entry is the widget that should receive setFocus() when entering that zone.*/
+    QVector<QWidget*> focusZones;
     QToolBar* mActionBar;
     QToolBar* mToolBar;
     QToolBar* mClusterBar;
