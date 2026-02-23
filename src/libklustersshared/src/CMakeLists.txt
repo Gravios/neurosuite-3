@@ -1,5 +1,9 @@
 project(libklustersshared-src)
 
+include(CMakeFindDependencyMacro)
+
+find_dependency(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+
 include_directories(${CMAKE_SOURCE_DIR}/src/gui/page)
 
 set(libklustersshared_SRCS
@@ -21,6 +25,7 @@ set(libklustersshared_SRCS
     shared/itemcolors.cpp
     shared/zoomwindow.cpp
     shared/utilities.cpp
+    shared/progressbar.cpp
 )
 
 set(libklustersshared_HEADERS
@@ -43,6 +48,8 @@ set(libklustersshared_HEADERS
     shared/array.h
     shared/utilities.h
     shared/zoomwindow.h
+    shared/customtypes.h
+    shared/progressbar.h
 )
 
 qt_add_resources(libklustersshared_SRCS

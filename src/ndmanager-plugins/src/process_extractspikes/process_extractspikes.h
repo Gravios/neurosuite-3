@@ -31,8 +31,8 @@
 #define SPIKE_REC_OUT_EXT "spk"
 
 #include <iostream>
+#include <string>
 #include <sys/types.h>
-using namespace std;
 
 
 // Structure for all arguments

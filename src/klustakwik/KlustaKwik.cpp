@@ -302,11 +302,11 @@ int main(int argc, char **argv) {
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",
                     K1.nPoints, K1.nDims, MinClusters, MaxClusters);
 
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
             if (K1.gpu)
-                fprintf(stderr, "  compute: GPU (CUDA)\n");
+                fprintf(stderr, "  compute: GPU (%s)\n", GPU_BACKEND_NAME);
             else
-                fprintf(stderr, "  compute: CPU only (no CUDA device found)\n");
+                fprintf(stderr, "  compute: CPU only (no %s device found)\n", GPU_BACKEND_NAME);
 #endif
 
             if (ChunkMinutes > 0.0f) {

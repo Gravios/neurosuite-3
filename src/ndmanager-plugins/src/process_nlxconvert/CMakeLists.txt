@@ -1,38 +1,36 @@
 project(ndmanager-plugins-src-process_nlxconvert)
 cmake_minimum_required(VERSION 3.16)
 
-# Install program
-set(sources
-	ncsfilecollection.cpp
-	ncsfile.cpp
-	nevfile.cpp
-	nlxerror.cpp
-	nlxextractor.cpp
-	nvtfile.cpp
-	outputfile.cpp
-	process_nlxconvert.cpp
-	progressbar.cpp
-	smifilecollection.cpp
-	smifile.cpp)
 set(program process_nlxconvert)
-add_executable(${program} ${sources})
-install(TARGETS ${program} DESTINATION bin)
 
-# Create and install man pages
-set(docbooks process_nlxconvert.docbook)
-file(GLOB_RECURSE files /usr/share/docbook.xsl)
-foreach(file ${files})
-	string(FIND ${file} manpages found)
-	if (NOT found EQUAL -1)
-		set(xsl ${file})
-	endif()
-endforeach()
-set(manpages)
-foreach(docbook ${docbooks})
-	string(REGEX REPLACE docbook 1 manpage ${docbook})
-	add_custom_command(OUTPUT ${manpage} DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${docbook}" COMMAND xsltproc ${xsl} "${CMAKE_CURRENT_SOURCE_DIR}/${docbook}")
-	add_custom_command(OUTPUT ${manpage}.gz DEPENDS ${manpage} COMMAND gzip -f ${manpage})
-	list(APPEND manpages ${manpage}.gz)
-	install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${manpage}.gz" DESTINATION man/man1)
-endforeach()
-add_custom_target(man-${program} ALL DEPENDS ${manpages})
+set(sources
+    ncsfilecollection.cpp
+    ncsfile.cpp
+    nevfile.cpp
+    nlxerror.cpp
+    nlxextractor.cpp
+    nvtfile.cpp
+    outputfile.cpp
+    process_nlxconvert.cpp
+    smifilecollection.cpp
+    smifile.cpp)
+
+#find_package(LibKlustersShared REQUIRED)
+
+#find_package(LibKlustersShared QUIET
+#    PATHS /usr/local/lib/cmake/LibKlustersShared
+#          /usr/lib/cmake/LibKlustersShared)
+
+# if(LibKlustersShared_FOUND)
+#     add_executable(${program} ${sources})
+#     target_link_libraries(${program} PRIVATE klustersshared)
+#     message(STATUS "${program}: using progressbar from libklustersshared")
+# else()
+    add_executable(${program} ${sources} progressbar.cpp)
+    target_include_directories(${program} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    message(STATUS "${program}: libklustersshared not found — using local progressbar")
+#endif()
+
+target_compile_features(${program} PRIVATE cxx_std_17)
+install(TARGETS ${program} DESTINATION bin)
+add_manpage(${program})
