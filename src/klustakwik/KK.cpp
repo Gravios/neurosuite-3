@@ -83,63 +83,136 @@ void KK::Reindex() {
 }
 
 // ---------------------------------------------------------------------------
-// LoadData — reads binary .fet file and normalises features to [0,1]
+// LoadData — reads .fet file (auto-detects binary vs legacy text format)
+//
 // Binary format: int32_t nDimensions; nSpikes * nDimensions * int64_t (row-major)
+// Text format  : "%d\n" nDimensions; then nSpikes lines of nDimensions space-
+//                separated integers (legacy ndmanager-plugins output)
+//
+// Detection: if the first byte is an ASCII digit (0x30–0x39) the file is text;
+// otherwise it is binary.  A valid binary header for any realistic nDimensions
+// (1–1023) has a first byte in 0x01–0xFF that is never an ASCII digit.
 // ---------------------------------------------------------------------------
 void KK::LoadData() {
     char fname[STRLEN + 16];
     snprintf(fname, sizeof(fname), "%s.fet.%d", FileBase, ElecNo);
     FILE *fp = fopen_safe(fname, "rb");
 
-    // Read header: number of feature dimensions (including timestamp as last col)
-    int32_t nFeatures32 = 0;
-    if (fread(&nFeatures32, sizeof(int32_t), 1, fp) != 1)
-        Error("Failed to read nFeatures from binary .fet header");
-    const int nFeatures = (int)nFeatures32;
-    Output("nFeatures=%d\n", nFeatures);
+    // ── Format detection ──────────────────────────────────────────────────
+    unsigned char firstByte = 0;
+    if (fread(&firstByte, 1, 1, fp) != 1) Error("Empty .fet file");
+    fseeko(fp, 0, SEEK_SET);
+    const bool isBinary = (firstByte < 0x30 || firstByte > 0x39); // not ASCII digit
 
-    // Derive spike count from remaining file size
-    fseeko(fp, 0, SEEK_END);
-    off_t dataBytes = ftello(fp) - (off_t)sizeof(int32_t);
-    fseeko(fp, (off_t)sizeof(int32_t), SEEK_SET);
-    if (dataBytes <= 0 || dataBytes % ((off_t)sizeof(int64_t) * nFeatures) != 0)
-        Error("Binary .fet file size inconsistent with nFeatures");
-    nPoints = (int)(dataBytes / ((off_t)sizeof(int64_t) * nFeatures));
+    int nFeatures = 0;
 
-    // Handle "all" keyword
-    if (strcmp(UseFeatures, "all") == 0) {
-        if (nFeatures >= STRLEN) Error("Too many features for UseFeatures");
-        for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
-        UseFeatures[nFeatures] = '\0';
-    }
+    if (isBinary) {
+        // ── Binary path ───────────────────────────────────────────────────
+        int32_t nFeatures32 = 0;
+        if (fread(&nFeatures32, sizeof(int32_t), 1, fp) != 1)
+            Error("Failed to read nFeatures from binary .fet header");
+        nFeatures = (int)nFeatures32;
+        Output("nFeatures=%d (binary .fet)\n", nFeatures);
 
-    const int UseLen = static_cast<int>(strlen(UseFeatures));
-    nDims = 0;
-    for (int i = 0; i < nFeatures; i++)
-        nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
+        // Derive spike count from remaining file size
+        fseeko(fp, 0, SEEK_END);
+        off_t dataBytes = ftello(fp) - (off_t)sizeof(int32_t);
+        fseeko(fp, (off_t)sizeof(int32_t), SEEK_SET);
+        if (dataBytes <= 0 || dataBytes % ((off_t)sizeof(int64_t) * nFeatures) != 0)
+            Error("Binary .fet file size inconsistent with nFeatures");
+        nPoints = (int)(dataBytes / ((off_t)sizeof(int64_t) * nFeatures));
 
-    if (fSaveModel) {
-        kSv.FileBase = FileBase;
-        kSv.nDims    = nDims;
-        fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
-    }
-
-    AllocateArrays();
-    AlocateCholeskyVecs();
-
-    // Load feature values from binary int64_t rows
-    for (int p = 0; p < nPoints; p++) {
-        int j = 0;
-        for (int i = 0; i < nFeatures; i++) {
-            int64_t raw;
-            if (fread(&raw, sizeof(int64_t), 1, fp) != 1)
-                Error("Short read in binary .fet file");
-            if (i < UseLen && UseFeatures[i] == '1')
-                Data[p * nDims + j++] = static_cast<float>(raw);
+        // Handle "all" keyword
+        if (strcmp(UseFeatures, "all") == 0) {
+            if (nFeatures >= STRLEN) Error("Too many features for UseFeatures");
+            for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
+            UseFeatures[nFeatures] = '\0';
         }
+        const int UseLen = static_cast<int>(strlen(UseFeatures));
+        nDims = 0;
+        for (int i = 0; i < nFeatures; i++)
+            nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
+
+        if (fSaveModel) {
+            kSv.FileBase = FileBase;
+            kSv.nDims    = nDims;
+            fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
+        }
+        AllocateArrays();
+        AlocateCholeskyVecs();
+
+        for (int p = 0; p < nPoints; p++) {
+            int j = 0;
+            for (int i = 0; i < nFeatures; i++) {
+                int64_t raw;
+                if (fread(&raw, sizeof(int64_t), 1, fp) != 1)
+                    Error("Short read in binary .fet file");
+                if (i < UseLen && UseFeatures[i] == '1')
+                    Data[p * nDims + j++] = static_cast<float>(raw);
+            }
+        }
+        { int64_t probe; if (fread(&probe, sizeof(int64_t), 1, fp) != 0)
+            Error("Trailing data in binary .fet file"); }
+
+    } else {
+        // ── Legacy text path ──────────────────────────────────────────────
+        // Count data lines to get nPoints before reading values
+        {
+            enum { INLINE, FIRST_DELIM } scst = INLINE;
+            nPoints = -1;
+            char ch, delim = '\n';
+            do {
+                ch = static_cast<char>(fgetc(fp));
+                bool isDelim = (ch == '\n' || ch == '\r');
+                bool isEof   = (ch == EOF);
+                switch (scst) {
+                case INLINE:
+                    if (isDelim)    { scst = FIRST_DELIM; delim = ch; }
+                    else if (isEof) { nPoints++; }
+                    break;
+                case FIRST_DELIM:
+                    if (!isDelim || delim == ch) { nPoints++; scst = INLINE; }
+                    break;
+                }
+            } while (ch != EOF);
+            fseeko(fp, 0, SEEK_SET);
+        }
+
+        if (fscanf(fp, "%d", &nFeatures) != 1) Error("Failed to read nFeatures (text .fet)");
+        Output("nFeatures=%d (text .fet)\n", nFeatures);
+
+        // Handle "all" keyword
+        if (strcmp(UseFeatures, "all") == 0) {
+            if (nFeatures >= STRLEN) Error("Too many features for UseFeatures");
+            for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
+            UseFeatures[nFeatures] = '\0';
+        }
+        const int UseLen = static_cast<int>(strlen(UseFeatures));
+        nDims = 0;
+        for (int i = 0; i < nFeatures; i++)
+            nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
+
+        if (fSaveModel) {
+            kSv.FileBase = FileBase;
+            kSv.nDims    = nDims;
+            fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
+        }
+        AllocateArrays();
+        AlocateCholeskyVecs();
+
+        for (int p = 0; p < nPoints; p++) {
+            int j = 0;
+            for (int i = 0; i < nFeatures; i++) {
+                float val;
+                if (fscanf(fp, "%f", &val) == EOF) Error("Error reading feature file (text)");
+                if (i < UseLen && UseFeatures[i] == '1')
+                    Data[p * nDims + j++] = val;
+            }
+        }
+        { float val; if (fscanf(fp, "%f", &val) != EOF)
+            Error("Mismatch reading feature file (text)"); }
     }
-    // Verify we are at EOF
-    { int64_t probe; if (fread(&probe, sizeof(int64_t), 1, fp) != 0) Error("Trailing data in binary .fet file"); }
+
     fclose(fp);
 
     // Normalise each dimension to [0,1] and record raw range for time dim
@@ -165,14 +238,13 @@ void KK::LoadData() {
 
     Output("Loaded %d data points of dimension %d.\n", nPoints, nDims);
 
-#ifdef USE_CUDA
-    // Allocate GPU context for the outer KK object (K1).
-    // Chunk sub-objects (Kc, K2, K3) leave gpu==nullptr and always use CPU.
-    if (!suppressBestSave && cuda_device_available()) {
+#if defined(USE_CUDA) || defined(USE_HIP)
+    if (!suppressBestSave && gpu_device_available()) {
         gpu = new KK_GPU();
         gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
-        cuda_upload_data(gpu, Data.m_Data);
-        Output("GPU context initialised (CUDA, %d points, %d dims).\n", nPoints, nDims);
+        gpu_upload_data(gpu, Data.m_Data);
+        Output("GPU context initialised (%s, %d points, %d dims).\n",
+               GPU_BACKEND_NAME, nPoints, nDims);
     }
 #elif defined(USE_SYCL)
     if (!suppressBestSave) {
@@ -180,16 +252,10 @@ void KK::LoadData() {
         if (sycl_device_available(&sycl_dev)) {
             gpu = new KK_GPU(sycl_dev);
             gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
-            sycl_upload_data(gpu, Data.m_Data);
-            Output("GPU context initialised (SYCL, %d points, %d dims).\n", nPoints, nDims);
+            gpu_upload_data(gpu, Data.m_Data);
+            Output("GPU context initialised (%s, %d points, %d dims).\n",
+                   GPU_BACKEND_NAME, nPoints, nDims);
         }
-    }
-#elif defined(USE_HIP)
-    if (!suppressBestSave && hip_device_available()) {
-        gpu = new KK_GPU();
-        gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters);
-        hip_upload_data(gpu, Data.m_Data);
-        Output("GPU context initialised (HIP, %d points, %d dims).\n", nPoints, nDims);
     }
 #endif
 }
@@ -237,27 +303,9 @@ void KK::MStep() {
     }
     Reindex();
 
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
-        cuda_mstep(gpu,
-            Class.m_Data, AliveIndex.m_Data,
-            Mean.m_Data, Cov.m_Data, Weight.m_Data,
-            nClustersAlive, MaxPossibleClusters,
-            nPoints, nDims, nDims2);
-        goto mstep_debug;
-    }
-#elif defined(USE_SYCL)
-    if (gpu) {
-        sycl_mstep(gpu,
-            Class.m_Data, AliveIndex.m_Data,
-            Mean.m_Data, Cov.m_Data, Weight.m_Data,
-            nClustersAlive, MaxPossibleClusters,
-            nPoints, nDims, nDims2);
-        goto mstep_debug;
-    }
-#elif defined(USE_HIP)
-    if (gpu) {
-        hip_mstep(gpu,
+        gpu_mstep(gpu,
             Class.m_Data, AliveIndex.m_Data,
             Mean.m_Data, Cov.m_Data, Weight.m_Data,
             nClustersAlive, MaxPossibleClusters,
@@ -345,31 +393,16 @@ void KK::EStep() {
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
         // Flatten Cholesky factors into a contiguous host array for upload.
-        // (*pChol)[c] holds the lower-triangular matrix for cluster c.
         std::vector<float> h_chol(MaxPossibleClusters * nDims2, 0.0f);
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (ClassAlive[c])
                 for (int i = 0; i < nDims2; i++)
                     h_chol[c * nDims2 + i] = (*pChol)[c][i];
-#if defined(USE_CUDA)
-        cuda_estep(gpu,
+        gpu_estep(gpu,
             Mean.m_Data, Weight.m_Data, h_chol.data(),
             AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
             LogP.m_Data,
             nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
-#elif defined(USE_SYCL)
-        sycl_estep(gpu,
-            Mean.m_Data, Weight.m_Data, h_chol.data(),
-            AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
-            LogP.m_Data,
-            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
-#elif defined(USE_HIP)
-        hip_estep(gpu,
-            Mean.m_Data, Weight.m_Data, h_chol.data(),
-            AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
-            LogP.m_Data,
-            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
-#endif
         return;
     }
 #endif
@@ -422,21 +455,9 @@ void KK::EStep() {
 void KK::CStep() {
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
-        // d_LogP and d_AliveIndex are current from EStep.
-        // Returns updated Class, OldClass, Class2.
-#if defined(USE_CUDA)
-        cuda_cstep(gpu,
+        gpu_cstep(gpu,
             Class.m_Data, OldClass.m_Data, Class2.m_Data,
             nClustersAlive, MaxPossibleClusters, HugeScore);
-#elif defined(USE_SYCL)
-        sycl_cstep(gpu,
-            Class.m_Data, OldClass.m_Data, Class2.m_Data,
-            nClustersAlive, MaxPossibleClusters, HugeScore);
-#elif defined(USE_HIP)
-        hip_cstep(gpu,
-            Class.m_Data, OldClass.m_Data, Class2.m_Data,
-            nClustersAlive, MaxPossibleClusters, HugeScore);
-#endif
         return;
     }
 #endif
@@ -471,14 +492,7 @@ void KK::ConsiderDeletion() {
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
-        // d_LogP, d_Class, d_Class2 are current from EStep+CStep.
-#if defined(USE_CUDA)
-        cuda_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
-#elif defined(USE_SYCL)
-        sycl_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
-#elif defined(USE_HIP)
-        hip_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
-#endif
+        gpu_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
         DeletionLoss[0] = HugeScore;  // noise cluster never a candidate
     } else {
 #endif
@@ -511,22 +525,41 @@ void KK::ConsiderDeletion() {
 }
 
 // ---------------------------------------------------------------------------
-// LoadClu — read binary .clu file
+// LoadClu — read .clu file (auto-detects binary vs legacy text format)
 // Binary format: int32_t nClusters; nSpikes * int32_t clusterIDs (1-based)
+// Text format  : "%d\n" nClusters; then nSpikes lines each containing one int
 // ---------------------------------------------------------------------------
 void KK::LoadClu(const char *CluFile) {
     FILE *fp = fopen_safe(CluFile, "rb");
-    int32_t nclu32 = 0;
-    if (fread(&nclu32, sizeof(int32_t), 1, fp) != 1)
-        Error("Failed to read nClusters from binary .clu header");
-    nStartingClusters = (int)nclu32;
-    nClustersAlive = nStartingClusters;
-    for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
-    for (int p = 0; p < nPoints; p++) {
-        int32_t val;
-        if (fread(&val, sizeof(int32_t), 1, fp) != 1)
-            Error("Short read in binary .clu file");
-        Class[p] = (int)val - 1;  // convert 1-based to 0-based
+
+    unsigned char firstByte = 0;
+    if (fread(&firstByte, 1, 1, fp) != 1) Error("Empty .clu file");
+    fseeko(fp, 0, SEEK_SET);
+    const bool isBinary = (firstByte < 0x30 || firstByte > 0x39);
+
+    if (isBinary) {
+        int32_t nclu32 = 0;
+        if (fread(&nclu32, sizeof(int32_t), 1, fp) != 1)
+            Error("Failed to read nClusters from binary .clu header");
+        nStartingClusters = (int)nclu32;
+        nClustersAlive = nStartingClusters;
+        for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
+        for (int p = 0; p < nPoints; p++) {
+            int32_t val;
+            if (fread(&val, sizeof(int32_t), 1, fp) != 1)
+                Error("Short read in binary .clu file");
+            Class[p] = (int)val - 1;
+        }
+    } else {
+        int val;
+        if (fscanf(fp, "%d", &nStartingClusters) != 1)
+            Error("Failed to read nStartingClusters (text .clu)");
+        nClustersAlive = nStartingClusters;
+        for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
+        for (int p = 0; p < nPoints; p++) {
+            if (fscanf(fp, "%d", &val) == EOF) Error("Error reading cluster file (text)");
+            Class[p] = val - 1;
+        }
     }
     fclose(fp);
 }
@@ -629,6 +662,69 @@ float KK::ComputeScore() const {
 // ---------------------------------------------------------------------------
 // CEM — main EM loop
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// RunEMLoop — shared convergence loop body used by CEM() and CEMTwoPhase()
+//
+// Runs MStep → EStep → CStep → ConsiderDeletion until convergence.
+//   enableSplits   — call TrySplits() every SplitEvery iterations
+//   enableDistDump — write LogP to Distfp each iteration (CEM only)
+//   maxIter        — iteration cap; 0 uses the global MaxIter
+//   phaseLabel     — prefix for Verbose output (e.g. "P1", "iter")
+// Returns final score.
+// ---------------------------------------------------------------------------
+float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
+                    int maxIter, const char *phaseLabel)
+{
+    if (maxIter <= 0) maxIter = MaxIter;
+
+    int   iter = 0, nChanged, lastStepFull, didSplit;
+    float score = 0.0f;
+    FullStep = 1;
+    Array<int> oldClassBuf(nPoints);
+
+    do {
+        for (int p = 0; p < nPoints; p++) oldClassBuf[p] = Class[p];
+
+        MStep();
+        EStep();
+        if (enableDistDump && DistDump)
+            MatPrint(Distfp, LogP.m_Data, DistDump, MaxPossibleClusters);
+        CStep();
+        ConsiderDeletion();
+
+        nChanged = 0;
+        for (int p = 0; p < nPoints; p++) nChanged += (oldClassBuf[p] != Class[p]);
+
+        score = ComputeScore();
+
+        if (!suppressBestSave && score < kSv.BestScoreSave) {
+            SaveBestMeans();
+            kSv.BestScoreSave = score;
+        }
+
+        if (Verbose >= 1)
+            Output("  %s iter %d%c: %d clusters score %.7g nChanged %d\n",
+                   phaseLabel, iter, FullStep ? 'F' : 'Q',
+                   nClustersAlive, score, nChanged);
+        iter++;
+
+        lastStepFull = FullStep;
+        FullStep = (nChanged > static_cast<int>(ChangedThresh * nPoints)
+                    || nChanged == 0
+                    || iter % FullStepEvery == 0);
+
+        if (iter > maxIter) { Output("%s: max iterations exceeded\n", phaseLabel); break; }
+
+        didSplit = 0;
+        if (enableSplits && SplitEvery > 0 &&
+            (iter % SplitEvery == SplitEvery - 1 || (nChanged == 0 && lastStepFull)))
+            didSplit = TrySplits();
+
+    } while (nChanged > 0 || !lastStepFull || didSplit);
+
+    return score;
+}
+
 float KK::CEM(const char *CluFile, int Recurse) {
     if (CluFile && *CluFile) {
         LoadClu(CluFile);
@@ -642,56 +738,11 @@ float KK::CEM(const char *CluFile, int Recurse) {
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
     Reindex();
 
-    int   iter    = 0;
-    int   nChanged;
-    float score = 0.0f;
-    int   lastStepFull;
-    int   didSplit;
-    FullStep = 1;
-
-    Array<int> oldClassBuf(nPoints);
-
-    do {
-        for (int p = 0; p < nPoints; p++) oldClassBuf[p] = Class[p];
-
-        MStep();
-        EStep();
-        if (DistDump) MatPrint(Distfp, LogP.m_Data, DistDump, MaxPossibleClusters);
-        CStep();
-        if (Recurse) ConsiderDeletion();
-
-        nChanged = 0;
-        for (int p = 0; p < nPoints; p++) nChanged += (oldClassBuf[p] != Class[p]);
-
-
-        score    = ComputeScore();
-
-        if (Recurse && score < kSv.BestScoreSave) {
-            SaveBestMeans();
-            kSv.BestScoreSave = score;
-        }
-
-        if (Verbose >= 1) {
-            if (Recurse == 0) Output("\t");
-            Output("Iteration %d%c: %d clusters Score %.7g nChanged %d tag %d\n",
-                   iter, FullStep ? 'F' : 'Q', nClustersAlive, score,
-                   nChanged, kSv.cEStepCallsLast);
-        }
-        iter++;
-
-        lastStepFull = FullStep;
-        FullStep = (nChanged > static_cast<int>(ChangedThresh * nPoints)
-                    || nChanged == 0
-                    || iter % FullStepEvery == 0);
-
-        if (iter > MaxIter) { Output("Maximum iterations exceeded\n"); break; }
-
-        didSplit = 0;
-        if (Recurse && SplitEvery > 0 &&
-            (iter % SplitEvery == SplitEvery - 1 || (nChanged == 0 && lastStepFull)))
-            didSplit = TrySplits();
-
-    } while (nChanged > 0 || !lastStepFull || didSplit);
+    float score = RunEMLoop(
+        /*enableSplits=*/   Recurse != 0,
+        /*enableDistDump=*/ true,
+        /*maxIter=*/        0,       // use global MaxIter
+        /*phaseLabel=*/     Recurse ? "iter" : "\titer");
 
     if (DistDump) fprintf(Distfp, "\n");
     return score;
@@ -868,46 +919,13 @@ float KK::CEMTwoPhase(int timeMergeIter) {
         Reindex();
     }
 
-    // Run CEM with farthest-point start; skip the CluFile path since we
-    // already populated Class[].  Pass a dummy CluFile = "" so CEM's first
-    // branch is taken (random init), but we overwrite Class[] immediately
-    // after — use recurse=1 to enable ConsiderDeletion and TrySplits.
-    //
-    // Implementation note: we call the inner EM loop directly rather than
-    // routing through CEM() to avoid CEM's random re-init of Class[].
+    // Phase 1: run convergence loop with splits enabled; Class[] already seeded.
     {
-        int   iter = 0, nChanged, lastStepFull, didSplit;
-        float score = 0.0f;
-        FullStep = 1;
-        Array<int> oldClassBuf(nPoints);
-
-        do {
-            for (int p = 0; p < nPoints; p++) oldClassBuf[p] = Class[p];
-            MStep(); EStep(); CStep(); ConsiderDeletion();
-
-            nChanged = 0;
-            for (int p = 0; p < nPoints; p++) nChanged += (oldClassBuf[p] != Class[p]);
-            score = ComputeScore();
-
-            if (score < kSv.BestScoreSave) { SaveBestMeans(); kSv.BestScoreSave = score; }
-
-            if (Verbose >= 1)
-                Output("  P1 iter %dF: %d clusters score %.7g nChanged %d\n",
-                       iter, nClustersAlive, score, nChanged);
-            iter++;
-
-            lastStepFull = FullStep;
-            FullStep = (nChanged > static_cast<int>(ChangedThresh * nPoints)
-                        || nChanged == 0 || iter % FullStepEvery == 0);
-            if (iter > MaxIter) { Output("P1 max iterations exceeded\n"); break; }
-
-            didSplit = 0;
-            if (SplitEvery > 0 &&
-                (iter % SplitEvery == SplitEvery - 1 || (nChanged == 0 && lastStepFull)))
-                didSplit = TrySplits();
-
-        } while (nChanged > 0 || !lastStepFull || didSplit);
-
+        float score = RunEMLoop(
+            /*enableSplits=*/   true,
+            /*enableDistDump=*/ false,
+            /*maxIter=*/        0,
+            /*phaseLabel=*/     "P1");
         Output("Phase 1 converged: %d clusters, score %.7g\n", nClustersAlive, score);
     }
 
@@ -915,9 +933,7 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     // Phase 2: temporal merge pass — restore full dimensionality
     // -----------------------------------------------------------------------
     if (timeMergeIter <= 0 || nFullDims == nSpatialDims) {
-        // No time dimension or merge disabled: just restore nDims and rescore.
         nDims = nFullDims;
-        // Recompute EStep/MStep with full dims so the returned score is consistent
         MStep(); EStep();
         return ComputeScore();
     }
@@ -926,36 +942,15 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     Output("CEMTwoPhase Phase 2: temporal merge pass (%d dims, max %d iters)\n",
            nDims, timeMergeIter);
 
-    // Rebuild covariances with the time dimension now included.
-    // The first MStep/EStep will expand the per-cluster covariance matrices
-    // to full dimensionality, automatically incorporating temporal spread.
-    // We then run ConsiderDeletion each iteration so that clusters occupying
-    // the same spatial region but different temporal windows can be left
-    // separate, while clusters that are truly the same unit merge.
+    // Phase 2 is a bounded pass (no splits, always full step).
+    // RunEMLoop's FullStep heuristic applies; the cap enforces the time budget.
+    FullStep = 1;
     {
-        int iter = 0, nChanged;
-        float score = 0.0f;
-        FullStep = 1;
-        Array<int> oldClassBuf(nPoints);
-
-        for (; iter < timeMergeIter; iter++) {
-            for (int p = 0; p < nPoints; p++) oldClassBuf[p] = Class[p];
-            MStep(); EStep(); CStep(); ConsiderDeletion();
-
-            nChanged = 0;
-            for (int p = 0; p < nPoints; p++) nChanged += (oldClassBuf[p] != Class[p]);
-            score = ComputeScore();
-
-            if (score < kSv.BestScoreSave) { SaveBestMeans(); kSv.BestScoreSave = score; }
-
-            if (Verbose >= 1)
-                Output("  P2 iter %d: %d clusters score %.7g nChanged %d\n",
-                       iter, nClustersAlive, score, nChanged);
-
-            FullStep = 1;   // always full step in Phase 2 (short pass)
-            if (nChanged == 0) { Output("Phase 2 converged at iter %d\n", iter); break; }
-        }
-
+        float score = RunEMLoop(
+            /*enableSplits=*/   false,
+            /*enableDistDump=*/ false,
+            /*maxIter=*/        timeMergeIter,
+            /*phaseLabel=*/     "P2");
         Output("Phase 2 done: %d clusters, score %.7g\n", nClustersAlive, score);
         return score;
     }

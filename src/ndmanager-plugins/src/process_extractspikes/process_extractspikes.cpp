@@ -47,6 +47,8 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
+
+using namespace std;
 #ifdef __linux__
 #include <sys/sysinfo.h>
 #endif
