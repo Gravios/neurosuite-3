@@ -310,24 +310,41 @@ int main(int argc,char *argv[]) {
 	spikeTimeOutputFile = new FILE*[nbGroups];
 	spikeTimeOutputFileName = new string[nbGroups];
 	spikeOutputFile = new FILE*[nbGroups];
-	
+
+	// Per-group timestamp accumulators — filled during detection, written once
+	// after the loop to avoid interleaving .res writes with .fil reads.
+	// Reserve based on the theoretical maximum spike count (one spike per
+	// refractory period across the whole file) to eliminate reallocations.
+	std::vector<std::vector<int64_t>> resTimestamps(nbGroups);
+	{
+		fseeko(inputFile, 0, SEEK_END);
+		const long long fileSamples =
+		    ftello(inputFile) / (arguments.totalChannelNumber * (long long)sizeof(short));
+		fseeko(inputFile, 0, SEEK_SET);
+		const size_t maxSpikes = (arguments.refractoryPeriod > 0)
+		    ? (size_t)(fileSamples / arguments.refractoryPeriod) + 1
+		    : (size_t)fileSamples;
+		for(int g = 0; g < nbGroups; g++)
+			resTimestamps[g].reserve(maxSpikes);
+		if(verbose)
+			cout << "Reserving " << maxSpikes << " timestamp slots per group"
+			     << " (" << (maxSpikes * sizeof(int64_t) * nbGroups / 1024)
+			     << " KB total)" << endl;
+	}
+
 	/************** SPIKES TIME DETECTION **************/
-	// Open positions output files
+	// Build output file names (no file I/O yet — writes happen after the loop).
 	for (int grp=0; grp<nbGroups; grp++) {
 		if(channelNb_group[grp] == 0) // skip empty group
 			continue;
-		
+
 		ostringstream oss;
-		
-		// Output file name for spikes time
 		oss << arguments.outputBaseFileName << "." << SPIKE_TIME_OUT_EXT << ".";
 		oss << (grp+1);
 		spikeTimeOutputFileName[grp] = oss.str();
-		spikeTimeOutputFile[grp] = fopen(spikeTimeOutputFileName[grp].c_str(), 
-										 "w");
-		
+
 		if(verbose)
-			cout << "Positions output file for group #"<<grp+1<<" : " 
+			cout << "Positions output file for group #"<<grp+1<<" : "
 			<< spikeTimeOutputFileName[grp] << endl;
 	} // for grp
 	
@@ -374,7 +391,7 @@ int main(int argc,char *argv[]) {
 		/* Analyse each channel group in parallel.
 		 * Safety: all per-group state is stored in arrays indexed by grp
 		 * (spkChanId[grp], maxId[grp], etc.) with one independent slot per
-		 * group.  Each group writes to its own spikeTimeOutputFile[grp] FILE*.
+		 * group.  Each group has its own resTimestamps[grp] accumulator.
 		 * cur_buffer and prev_buffer are read-only inside this loop.
 		 * rec_nb is set before this loop and is read-only here.
 		 */
@@ -579,9 +596,9 @@ int main(int argc,char *argv[]) {
 									(timeAfterSpike *
 									arguments.totalChannelNumber)) >= rec_nb)) {
 									
-										writeTimeSpike( maxFullId,
-												arguments.totalChannelNumber,
-												spikeTimeOutputFile[grp]);
+										// Accumulate timestamp — written to .res after detection loop.
+										resTimestamps[grp].push_back(
+											(int64_t)(maxFullId / arguments.totalChannelNumber));
 								      lastSpikeFullId[grp] = maxFullId;
 								      nSpikeTot[grp]++; // One spike more !
 								} // if(!(isLastLop & ...) // not eof
@@ -737,11 +754,21 @@ int main(int argc,char *argv[]) {
 		nbLoops++; // one more loop
 	} // while (inputFile)
 
-	for(int g =0; g<nbGroups; g++) {
-		if(channelNb_group[g] == 0) // skip empty group
+	// Write all .res files now — detection loop is complete, no more
+	// .fil reads in flight, so .res writes are fully sequential.
+	for(int g = 0; g < nbGroups; g++) {
+		if(channelNb_group[g] == 0)
 			continue;
-		
-		fclose( spikeTimeOutputFile[g] ); // close spikes time file
+		FILE *resFile = fopen(spikeTimeOutputFileName[g].c_str(), "wb");
+		if(!resFile) {
+			fprintf(stderr, "error: cannot write %s\n",
+			        spikeTimeOutputFileName[g].c_str());
+			exit(1);
+		}
+		if(!resTimestamps[g].empty())
+			fwrite(resTimestamps[g].data(), sizeof(int64_t),
+			       resTimestamps[g].size(), resFile);
+		fclose(resFile);
 	} // for g
 
 	cout << "Number of spikes:" << endl;
@@ -775,8 +802,8 @@ int main(int argc,char *argv[]) {
 
 	// cur_buffer from Pass 1 is no longer needed.
 	delete[] cur_buffer; cur_buffer = nullptr;
-	// spikeTimeOutputFile FILE* handles were closed at end of Pass 1 loop.
-	// Pass 2 opens its own handles directly — free the array here.
+	// spikeTimeOutputFile was allocated but never used for I/O in Pass 1
+	// (timestamps were accumulated in resTimestamps instead).
 	delete[] spikeTimeOutputFile; spikeTimeOutputFile = nullptr;
 
 	/* Pass 2: extract waveforms — single sequential read, then sequential write.
@@ -809,12 +836,13 @@ int main(int argc,char *argv[]) {
 
 	// Maximum waveform buffer per group (default 2 GB). Override via environment
 	// variable PROCESS_EXTRACTSPIKES_MEM_CAP_GB if needed.
-	static const long long MEM_CAP_BYTES = []() -> long long {
-		const char *env = getenv("PROCESS_EXTRACTSPIKES_MEM_CAP_GB");
-		long long cap = env ? (long long)(atof(env) * 1024LL * 1024 * 1024)
-		                    : 2LL * 1024 * 1024 * 1024;
-		return cap;
-	}();
+	const char *_memCapEnv = getenv("PROCESS_EXTRACTSPIKES_MEM_CAP_GB");
+	const long long MEM_CAP_BYTES = _memCapEnv
+	    ? (long long)(atof(_memCapEnv) * 1024LL * 1024 * 1024)
+	    : 2LL * 1024 * 1024 * 1024;
+	fprintf(stderr, "info: waveform memory cap = %.1f GB  (PROCESS_EXTRACTSPIKES_MEM_CAP_GB=%s)\n",
+	        MEM_CAP_BYTES / (1024.0 * 1024.0 * 1024.0),
+	        _memCapEnv ? _memCapEnv : "<not set, defaulting to 2 GB>");
 
 	// One entry per spike across all groups, used to drive the sequential pass.
 	struct SpikeEvent {
@@ -832,15 +860,23 @@ int main(int argc,char *argv[]) {
 	// .spk FILE* for over-cap groups — opened in Phase A, written in Phase A2.
 	std::vector<FILE*> fallbackSpkFiles(nbGroups, nullptr);
 
-	// ── Phase A: read all .res files, size buffers, build merged event list ──
+	// ── Phase A: size buffers and build merged event list from in-memory ────
+	// resTimestamps[] is already populated from Pass 1 — no .res file I/O.
+	// Pre-size allEvents exactly so no reallocation occurs during population.
+	size_t _totalSpikes = 0;
+	for(int g = 0; g < nbGroups; g++) _totalSpikes += resTimestamps[g].size();
 	std::vector<SpikeEvent> allEvents;
+	allEvents.reserve(_totalSpikes);
+
 
 	for(int grp = 0; grp < nbGroups; grp++) {
 		if(channelNb_group[grp] == 0)
 			continue;
 
-		const int nChanGrp = channelNb_group[grp];
+		const int nChanGrp  = channelNb_group[grp];
 		const int wavLen    = arguments.spikeLength * nChanGrp;
+		const int nSpikes   = (int)resTimestamps[grp].size(); // exact, from Pass 1
+		const long long waveformBytes = (long long)nSpikes * wavLen * sizeof(short);
 
 		{
 			ostringstream oss;
@@ -849,20 +885,12 @@ int main(int argc,char *argv[]) {
 			spkFileNames[grp] = oss.str();
 		}
 
-		// Read all timestamps from binary .res.
-		std::vector<long long> timestamps;
-		{
-			FILE *resFile = fopen(spikeTimeOutputFileName[grp].c_str(), "r");
-			if(resFile) {
-				int64_t ts;
-				while(fread(&ts, sizeof(int64_t), 1, resFile) == 1)
-					timestamps.push_back((long long)ts);
-				fclose(resFile);
-			}
-		}
-
-		const int nSpikes = (int)timestamps.size();
-		const long long waveformBytes = (long long)nSpikes * wavLen * sizeof(short);
+		fprintf(stderr,
+		        "info: group %d  spikes=%d  waveform buffer=%.1f MB  cap=%.1f GB  -> %s\n",
+		        grp+1, nSpikes,
+		        waveformBytes / (1024.0 * 1024.0),
+		        MEM_CAP_BYTES / (1024.0 * 1024.0 * 1024.0),
+		        waveformBytes <= MEM_CAP_BYTES ? "in-memory" : "streaming fallback");
 
 		if(waveformBytes > MEM_CAP_BYTES) {
 			fprintf(stderr,
@@ -880,13 +908,14 @@ int main(int argc,char *argv[]) {
 			}
 		} else {
 			useInMemory[grp] = true;
+			// Exact allocation: nSpikes × (spikeLength × nChanGrp) shorts.
 			allWaveforms[grp].resize((size_t)(nSpikes * wavLen));
 		}
 
-		// Append all spikes from this group to the merged event list.
+		// Append this group's spikes to the merged event list.
 		for(int i = 0; i < nSpikes; i++) {
 			SpikeEvent ev;
-			ev.fileOffset = ((off_t)(timestamps[i] - arguments.timeBeforeSpike)
+			ev.fileOffset = ((off_t)(resTimestamps[grp][i] - arguments.timeBeforeSpike)
 			                 * (off_t)arguments.totalChannelNumber
 			                 * (off_t)sizeof(short));
 			ev.grp     = grp;
@@ -1050,7 +1079,7 @@ int main(int argc,char *argv[]) {
 	delete[] thresList;
 
 	delete[] spikeTimeOutputFileName;
-	// spikeTimeOutputFile and spikeOutputFile were freed/managed within Pass 2.
+	// spikeTimeOutputFile freed above; spikeOutputFile managed within Pass 2.
 	delete[] spikeOutputFile;
 
 	if ( verbose ) cout << endl;
@@ -1086,22 +1115,6 @@ bool isRefractoryPeriod(const off_t lastSpikeFullId, const off_t curSpikeFullId,
 } // isRefractoryPeriod
 
 
-/**
- * Write the time for a peak
- * @param iPeak Spike peak absolute index
- * @param nChanTot Total channels number
- * @param output Output to write
- * @return TRUE if there was no problem, FALSE else
- */
-bool writeTimeSpike(const off_t iPeak, const int nChanTot, FILE *output) {
-	if(output == NULL || iPeak < 0 || nChanTot < 1)
-		return false;
-
-	int64_t ts = (int64_t)(iPeak / nChanTot); // timestamp in samples
-	fwrite(&ts, sizeof(int64_t), 1, output);
-
-	return true;
-} // writeTimeSpike
 
 
 /**

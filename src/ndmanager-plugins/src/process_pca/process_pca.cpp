@@ -37,6 +37,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cmath>
+#include <vector>
 #include <fstream>
 #include <iostream>
 using namespace std;
@@ -369,27 +370,28 @@ int main(int argc,char *argv[])
 		cerr << "error: cannot open output file '" << arguments.outputFileName << "'." << endl;
 		exit(1);
 	}
+	// Write .fet output — pack all values into a single buffer then write once.
+	// nSpikes * nFeatureCols int64_t values plus the int32_t header.
 	{
 		int32_t nFeat32 = (int32_t)nFeatureCols;
 		fwrite(&nFeat32, sizeof(int32_t), 1, outputFile);
 	}
-	for ( unsigned int k = 0 ; k < nSpikes ; ++k )
 	{
-		for ( int i = 0 ; i < arguments.nChannels ; ++i )
+		const size_t nVals = (size_t)nSpikes * (size_t)nFeatureCols;
+		std::vector<int64_t> fetBuf(nVals);
+		for ( unsigned int k = 0 ; k < nSpikes ; ++k )
 		{
-			for ( int j = 0 ; j < arguments.nComponents ; ++j )
-			{
-				double *d = gsl_matrix_ptr(reducedData[i], j, k);
-				int64_t v = (int64_t)llround(*d);
-				fwrite(&v, sizeof(int64_t), 1, outputFile);
-			} // for j
-		} // for i
-		if ( arguments.isExtraFeaturesProvided )
-			for ( int i = 0; i < arguments.nChannels ; ++i ) {
-				int64_t v = (int64_t)peakVal[i][k];
-				fwrite(&v, sizeof(int64_t), 1, outputFile);
-			}
-	} // for k
+			size_t col = 0;
+			for ( int i = 0 ; i < arguments.nChannels ; ++i )
+				for ( int j = 0 ; j < arguments.nComponents ; ++j )
+					fetBuf[(size_t)k * nFeatureCols + col++] =
+						(int64_t)llround(*gsl_matrix_ptr(reducedData[i], j, k));
+			if ( arguments.isExtraFeaturesProvided )
+				for ( int i = 0; i < arguments.nChannels ; ++i )
+					fetBuf[(size_t)k * nFeatureCols + col++] = (int64_t)peakVal[i][k];
+		} // for k
+		fwrite(fetBuf.data(), sizeof(int64_t), nVals, outputFile);
+	}
 	fclose(outputFile);
 	progress->advance(); // Complete saving results
 
@@ -428,16 +430,19 @@ int main(int argc,char *argv[])
 			// Per-channel means (data2use doubles each)
 			for (int i = 0; i < arguments.nChannels; ++i)
 				fwrite(mean[i], sizeof(double), (size_t)data2use, pcaFile);
-			// Per-channel eigenvectors (data2use * nComponents doubles, col-major)
-			for (int i = 0; i < arguments.nChannels; ++i) {
-				if (savedEvec[i]) {
-					// realignSpikes reads as E[sample + component * data2use]
-					// so write column-major: for each component, all samples
-					for (int c = 0; c < arguments.nComponents; ++c)
-						for (int r = 0; r < data2use; ++r) {
-							double v = gsl_matrix_get(savedEvec[i], r, c);
-							fwrite(&v, sizeof(double), 1, pcaFile);
-						}
+			// Per-channel eigenvectors (data2use * nComponents doubles, col-major).
+			// Pack into a contiguous buffer and write in one fwrite per channel.
+			{
+				std::vector<double> evecBuf((size_t)data2use * arguments.nComponents);
+				for (int i = 0; i < arguments.nChannels; ++i) {
+					if (savedEvec[i]) {
+						for (int c = 0; c < arguments.nComponents; ++c)
+							for (int r = 0; r < data2use; ++r)
+								evecBuf[(size_t)c * data2use + r] =
+									gsl_matrix_get(savedEvec[i], r, c);
+						fwrite(evecBuf.data(), sizeof(double),
+						       (size_t)data2use * arguments.nComponents, pcaFile);
+					}
 				}
 			}
 			fclose(pcaFile);

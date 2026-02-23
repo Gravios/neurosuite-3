@@ -52,7 +52,7 @@
 #include <omp.h>
 #endif
 
-#include "samplerate.h"
+#include <samplerate.h>
 
 #ifndef CHUNK_FRAMES
 #define CHUNK_FRAMES (1 << 18)   // 262144 frames per chunk per channel

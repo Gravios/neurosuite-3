@@ -66,7 +66,6 @@ struct arguments {
 };
 
 // Write a spike apparition time (in timestamp)
-bool writeTimeSpike(const off_t, const int, FILE*);
 // Determine if the refractory period is resolved
 bool isRefractoryPeriod(const off_t, const off_t, const arguments);
 // Does the max is a peak or an artefact ?
