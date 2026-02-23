@@ -101,16 +101,20 @@ int main(int argc, char* argv[])
     FILE* wf = fopen(fetPath, "wb");
     if (!wf) die("cannot open output .fet for writing");
 
-    int32_t nDim = nFeatCols + 1;  // feature cols + timestamp col
+    const int32_t nDim = nFeatCols + 1;  // feature cols + timestamp col
     fwrite(&nDim, sizeof(int32_t), 1, wf);
 
+    // Pack all rows (features + appended timestamp) into a contiguous buffer
+    // so the entire .fet body is written in a single fwrite.
+    // Buffer is exactly nSpikes * nDim * sizeof(int64_t) bytes.
+    std::vector<int64_t> outBuf((size_t)(nSpikes * nDim));
     for (int64_t k = 0; k < nSpikes; ++k) {
-        // Feature columns
-        const int64_t* row = feats.data() + k * nFeatCols;
-        fwrite(row, sizeof(int64_t), (size_t)nFeatCols, wf);
-        // Timestamp as last column
-        fwrite(&timestamps[(size_t)k], sizeof(int64_t), 1, wf);
+        int64_t* dst = outBuf.data() + k * nDim;
+        const int64_t* src = feats.data() + k * nFeatCols;
+        std::memcpy(dst, src, (size_t)nFeatCols * sizeof(int64_t));
+        dst[nFeatCols] = timestamps[(size_t)k];
     }
+    fwrite(outBuf.data(), sizeof(int64_t), (size_t)(nSpikes * nDim), wf);
     fclose(wf);
 
     return 0;
