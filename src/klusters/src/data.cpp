@@ -3781,3 +3781,26 @@ void Data::swapSpikes(dataType idxA, dataType idxB)
         else if (ref == idxB)  (*spikesByCluster)(1, k) = idxA;
     }
 }
+
+void Data::invalidateWaveformCache(int clusterId)
+{
+    // Mirror the pattern used throughout data.cpp for cache invalidation:
+    // - If no thread is currently loading waveforms for this cluster, delete
+    //   the cached data immediately and remove the status entry so the next
+    //   WaveformThread request re-reads from the .spk file.
+    // - If a thread is in-flight, set the clusterModified flag instead.
+    //   The thread checks this flag after loading and discards its results,
+    //   then removes the status entry itself, forcing a fresh load next time.
+    mutex.lock();
+    if (waveformStatusMap.contains(clusterId)) {
+        if (!waveformStatusMap[clusterId].isInProcess()) {
+            delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
+            waveformStatusMap.remove(clusterId);
+        } else {
+            WaveformStatus updated = waveformStatusMap[clusterId];
+            updated.setClusterModified(true);
+            waveformStatusMap.insert(clusterId, updated);
+        }
+    }
+    mutex.unlock();
+}

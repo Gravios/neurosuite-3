@@ -157,7 +157,7 @@ endif()
 # ---------------------------------------------------------------------------
 target_link_libraries(klusters
     PRIVATE
-    ${LIBKLUSTERSSHARED_LIBRARY}
+    KlustersShared::klustersshared
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
@@ -166,9 +166,7 @@ target_link_libraries(klusters
 )
 
 target_include_directories(klusters PRIVATE
-    ${LIBKLUSTERSSHARED_INCLUDE_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}/../
-)
+    "${CMAKE_CURRENT_BINARY_DIR}/../")   # for config-klusters.h and AUTOUIC output
 
 # ---------------------------------------------------------------------------
 # Summarise what was enabled

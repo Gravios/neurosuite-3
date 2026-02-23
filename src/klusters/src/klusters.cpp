@@ -106,6 +106,7 @@ KlustersApp::KlustersApp()
       realignThread(nullptr),
       realignOutputWidget(nullptr),
       realignRunning(false),
+      realignClusterId(-1),
       errorMatrixExists(false)
 {
     setObjectName("Klusters");
@@ -3609,8 +3610,9 @@ void KlustersApp::slotRealignSpikes()
     // Start() triggers RealignWorker::run() via QThread::started.
     connect(thread, &QThread::started, worker, &RealignWorker::run);
 
-    realignWorker = worker;
-    realignThread = thread;
+    realignWorker  = worker;
+    realignThread  = thread;
+    realignClusterId = clusterId;
     thread->start();
 }
 
@@ -3670,6 +3672,13 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped)
     slotStateChanged(QStringLiteral("noRealignState"));
 
     if (ok) {
+        // Invalidate the waveform cache for the realigned cluster so the
+        // WaveformThread re-reads the updated waveforms from the .spk file
+        // instead of serving the stale in-memory copies.
+        if (realignClusterId >= 0)
+            doc->invalidateWaveformCache(realignClusterId);
+        realignClusterId = -1;
+
         // Trigger a full display refresh so waveform and feature views reflect
         // the updated data, matching what slotRecluster does after integration.
         activeView()->updateContents();
