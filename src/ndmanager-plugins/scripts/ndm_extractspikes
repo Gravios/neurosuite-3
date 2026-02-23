@@ -87,6 +87,7 @@ refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
 peakSearchLength=$(read_script_parameter $session peakSearchLength)
 start=$(read_script_parameter $session start)
 duration=$(read_script_parameter $session duration)
+memCapGB=$(read_script_parameter $session memCapGB)
 
 check_mandatory_variable $thresholdFactor "missing threshold factor"
 check_mandatory_variable $refractoryPeriod "missing refractory period"
@@ -119,6 +120,9 @@ echo_info "    threshold $baseline"
 echo_info -e "2. Extracting spike waveforms (creating .res and .spk files)"
 # Use temporary file name to avoid overwriting existing files
 ln -s $session.fil $session-tmp.fil
+# Set waveform memory cap for process_extractspikes (default 2 GB if not in XML)
+export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
+
 # Process
 process_extractspikes -n $nChannels -c $electrodeList -w $samplesInWaveform -p $peakSample -t $baseline -l $peakSearchLength -r $refractoryPeriod $session-tmp
 check_command_status process_extractspikes
