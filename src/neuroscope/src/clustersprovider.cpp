@@ -25,6 +25,7 @@
 
 //Unix include file
 #include <unistd.h>
+#include <cstdint>
 
 //include files for the application
 #include "clustersprovider.h"
@@ -61,40 +62,63 @@ ClustersProvider::~ClustersProvider(){
 
 int ClustersProvider::loadData(){
 
-    //Fist check if the time file (.res) exists
+    //First check if the time file (.res) exists
     QString timeFilePath = timeFileUrl;
     if(!QFile(timeFileUrl).exists()){
         clusters.setSize(0,0);
         return MISSING_FILE;
     }
 
-    //Get the number of spikes
-    nbSpikes = Utilities::getNbLines(timeFilePath);
+    // ── Detect binary vs text format ─────────────────────────────────────────
+    // Binary .res: N × int64_t, no header.
+    // Text   .res: one decimal integer per line.
+    // Detection: if the file size is a non-zero multiple of 8 AND the first
+    // byte is not an ASCII decimal digit (0x30–0x39), treat as binary.
+    bool binaryFormat = false;
+    {
+        QFile probe(timeFileUrl);
+        if(probe.open(QIODevice::ReadOnly)){
+            qint64 sz = probe.size();
+            if(sz > 0 && (sz % 8) == 0){
+                char firstByte = 0;
+                probe.read(&firstByte, 1);
+                if(firstByte < '0' || firstByte > '9')
+                    binaryFormat = true;
+            }
+            probe.close();
+        }
+    }
 
-    qDebug()<<"nbSpikes "<<nbSpikes;
+    // ── Count spikes ──────────────────────────────────────────────────────────
+    if(binaryFormat){
+        nbSpikes = static_cast<long>(QFileInfo(timeFileUrl).size() / 8);
+    } else {
+        nbSpikes = Utilities::getNbLines(timeFilePath);
+    }
+
+    qDebug() << "nbSpikes" << nbSpikes << "(binary=" << binaryFormat << ")";
 
     if(nbSpikes == -1){
         clusters.setSize(0,0);
         return COUNT_ERROR;
     }
 
-    //should not happen, but just in case
     if(nbSpikes == 0){
         clusters.setSize(0,0);
-
-        //Initialize the variables
         previousStartTime = 0;
         previousStartIndex = 1;
         previousEndIndex = 1;
         previousEndTime = 0;
         fileMaxTime = 0;
-
         return OK;
     }
 
     RestartTimer();
 
-    //Create a reader on the clusterFile
+    //Set the size of the Array containing the spikes and clusters ids.
+    clusters.setSize(2, nbSpikes);
+
+    // ── Read .clu ─────────────────────────────────────────────────────────────
     QFile clusterFile(fileName);
     bool status = clusterFile.open(QIODevice::ReadOnly);
     if(!status){
@@ -102,54 +126,62 @@ int ClustersProvider::loadData(){
         return OPEN_ERROR;
     }
 
-    //Set the size of the Array containing the spikes and clusters ids.
-    clusters.setSize(2,nbSpikes);
+    if(binaryFormat){
+        // Binary .clu: int32_t nClusters header + nbSpikes × int32_t IDs
+        int32_t nClu = 0;
+        if(clusterFile.read(reinterpret_cast<char*>(&nClu), 4) != 4){
+            clusters.setSize(0,0);
+            return OPEN_ERROR;
+        }
+        nbClusters = static_cast<int>(nClu);
 
-    //Get the number of clusters stored on the first line.
-    QString sNbClusters;
-    QByteArray buf;
-    buf.resize(255);
-    int ret=clusterFile.readLine(buf.data(), 255);
-    sNbClusters = QString::fromLatin1(buf, ret);
+        QMap<int,long> ids;
+        for(long k = 0; k < nbSpikes; ++k){
+            int32_t id = 0;
+            if(clusterFile.read(reinterpret_cast<char*>(&id), 4) != 4){
+                clusters.setSize(0,0);
+                return INCORRECT_CONTENT;
+            }
+            clusters(1, k+1) = static_cast<dataType>(id);
+            ids.insert(static_cast<int>(id), static_cast<long>(id));
+        }
+        clusterFile.close();
+        clusterIds = ids.keys();
+    } else {
+        // Text .clu: first line = nClusters, then one cluster ID per line
+        QByteArray buf;
+        buf.resize(255);
+        int ret = clusterFile.readLine(buf.data(), 255);
+        nbClusters = QString::fromLatin1(buf, ret).toInt();
 
+        QMap<int,long> ids;
+        QByteArray buffer = clusterFile.readAll();
+        uint size = static_cast<uint>(buffer.size());
 
-    nbClusters = sNbClusters.toInt();
-    //This map is used as an easy way to compute the unique list of cluster ids
-    QMap<int,long> ids;
-    QByteArray buffer = clusterFile.readAll();
-    uint size = buffer.size();
+        dataType k = 0;
+        int l = 0;
+        char clusterID[255];
+        for(uint i = 0; i < size; ++i){
+            if(buffer[i] >= '0' && buffer[i] <= '9'){
+                clusterID[l++] = buffer[i];
+            } else if(l){
+                clusterID[l] = '\0';
+                long id = atol(clusterID);
+                clusters[k++] = id;
+                ids.insert(static_cast<int>(id), id);
+                l = 0;
+            }
+        }
+        clusterFile.close();
+        clusterIds = ids.keys();
 
-    //The buffer is read and each dataType is build char by char into a string. When the char read
-    //is not [1-9] (<=> blank space or a new line), the string is converted into a dataType and store
-    //into the first row of clusters.
-    //string of character which will contains the current seek dataType
-    dataType k = 0;
-    int l = 0;
-    char clusterID[255];
-    for(uint i = 0 ; i < size ; ++i){
-        if(buffer[i] >= '0' && buffer[i] <= '9')  {
-            clusterID[l++] = buffer[i];
-        } else if(l) {
-            clusterID[l] = '\0';
-            long id = atol(clusterID);
-            clusters[k++] = id;//Warning if the typedef dataType changes, change will have to be made here.
-            ids.insert(static_cast<int>(id),id);
-            l = 0;
+        if(k != nbSpikes){
+            clusters.setSize(0,0);
+            return INCORRECT_CONTENT;
         }
     }
 
-    clusterFile.close();
-    clusterIds = ids.keys();
-
-    //The number of spikes read has to be coherent with the number of spikes computed by wc -l (via Utilities::getNbLines).
-    if(k != nbSpikes){
-        clusters.setSize(0,0);
-        return INCORRECT_CONTENT;
-    }
-
-    //Get the spikes time
-
-    //Create a reader on the spikeFile
+    // ── Read .res ─────────────────────────────────────────────────────────────
     QFile spikeFile(timeFilePath);
     status = spikeFile.open(QIODevice::ReadOnly);
     if(!status){
@@ -157,40 +189,50 @@ int ClustersProvider::loadData(){
         return OPEN_ERROR;
     }
 
+    if(binaryFormat){
+        // Binary .res: nbSpikes × int64_t timestamps, no header
+        for(long k = 0; k < nbSpikes; ++k){
+            int64_t ts = 0;
+            if(spikeFile.read(reinterpret_cast<char*>(&ts), 8) != 8){
+                clusters.setSize(0,0);
+                return INCORRECT_CONTENT;
+            }
+            clusters(2, k+1) = static_cast<dataType>(ts);
+        }
+        spikeFile.close();
+    } else {
+        // Text .res: one timestamp per line
+        QByteArray spikeBuffer = spikeFile.readAll();
+        uint size = static_cast<uint>(spikeBuffer.size());
 
-    QByteArray spikeBuffer = spikeFile.readAll();
-    size = spikeBuffer.size();
+        dataType k = nbSpikes;  // timestamps stored in row 2 (flat offset = nbSpikes)
+        int l = 0;
+        char time[255];
+        for(uint i = 0; i < size; ++i){
+            if(spikeBuffer[i] >= '0' && spikeBuffer[i] <= '9')
+                time[l++] = spikeBuffer[i];
+            else if(l){
+                time[l] = '\0';
+                clusters[k++] = static_cast<dataType>(atol(time));
+                l = 0;
+            }
+        }
+        spikeFile.close();
 
-    //The buffer is read and each dataType is build char by char into a string. When the char read
-    //is not [1-9] (<=> blank space or a new line), the string is converted into a dataType and store
-    //into the second row of clusters.
-    //string of character which will contains the current seek dataType
-    l = 0;
-    char time[255];
-    for(uint i = 0 ; i < size ; ++i){
-        if(spikeBuffer[i] >= '0' && spikeBuffer[i] <= '9') time[l++] = spikeBuffer[i];
-        else if(l){
-            time[l] = '\0';
-            clusters[k++] = atol(time);//Warning if the typedef dataType changes, change will have to be made here.
-            l = 0;
+        if(k != (2 * nbSpikes)){
+            clusters.setSize(0,0);
+            return INCORRECT_CONTENT;
         }
     }
 
-    spikeFile.close();
-
-    //The number of spikes read has to be coherent with the number of spikes computed by wc -l (via Utilities::getNbLines).
-    if(k != (2 * nbSpikes)){
-        clusters.setSize(0,0);
-        return INCORRECT_CONTENT;
-    }
-
-    qDebug() << "Loading clu file into memory: "<<Timer();
+    qDebug() << "Loading cluster files into memory:" << Timer();
 
     //Initialize the variables
     previousStartTime = 0;
     previousStartIndex = 1;
     previousEndIndex = nbSpikes;
-    double maxTime =  static_cast<double>(static_cast<double>(clusters(2,nbSpikes)) * static_cast<double>(1000) / static_cast<double>(samplingRate));
+    double maxTime = static_cast<double>(static_cast<double>(clusters(2,nbSpikes))
+                     * static_cast<double>(1000) / static_cast<double>(samplingRate));
     previousEndTime = static_cast<dataType>(floor(0.5 + maxTime));
     fileMaxTime = previousEndTime;
 

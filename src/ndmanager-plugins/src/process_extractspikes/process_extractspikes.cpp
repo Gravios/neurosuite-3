@@ -773,39 +773,38 @@ int main(int argc,char *argv[]) {
 		cout << endl;
 	} // end if
 
-	// cur_buffer from Pass 1 is no longer needed; each group thread allocates
-	// its own private buffer (grpBuf) below.
+	// cur_buffer from Pass 1 is no longer needed.
 	delete[] cur_buffer; cur_buffer = nullptr;
-	// Free Pass 1's spikeTimeOutputFile array (FILE* handles already closed at
-	// line 738) before re-using the pointer for Pass 2's read-mode handles.
-	delete[] spikeTimeOutputFile;
-	spikeTimeOutputFile = new FILE*[nbGroups];
+	// spikeTimeOutputFile FILE* handles were closed at end of Pass 1 loop.
+	// Pass 2 opens its own handles directly — free the array here.
+	delete[] spikeTimeOutputFile; spikeTimeOutputFile = nullptr;
 
-	/* Pass 2: extract waveforms for all groups in parallel.
+	/* Pass 2: extract waveforms — single sequential read, then sequential write.
 	 *
-	 * STRATEGY: sort-then-read-then-single-write
-	 * -------------------------------------------
-	 * The naive approach (one fseeko+fread per spike) causes random I/O
-	 * whose cost dominates on HDD and matters on SSD at high spike counts.
+	 * STRATEGY: single-pass read → sequential write
+	 * -----------------------------------------------
+	 * Previous approach: each group made its own forward-sweep pass over the
+	 * .fil (N passes total, even if sorted by offset within each group).
+	 * N concurrent read streams compete for the same device queue.
 	 *
 	 * New approach:
-	 *   1. Read all timestamps from the .res file into a SpikeEntry vector.
-	 *      Each entry records: { timestamp, byte-offset-in-raw-file, origIdx }.
-	 *   2. std::sort entries by byte offset ascending → forward-only seeks.
-	 *      Forward-only seeks on HDD avoid head reversal; on SSD they improve
-	 *      prefetcher efficiency. The sort is O(N log N) on a tiny vector.
-	 *   3. Allocate a flat waveform buffer: N_spikes × wavLen shorts.
-	 *      Read spikes in sorted (file-position) order; store each at
-	 *      waveforms[entry.origIdx * wavLen] so the buffer is already in
-	 *      chronological order without any second sort.
-	 *   4. Write the entire waveform buffer in one fwrite call.
-	 *      Eliminates N_spikes × nChanGroup × spikeLength individual fwrites.
+	 *   Phase A  — read all .res files, build per-group waveform buffers and
+	 *              a merged event list across all groups.  Groups that exceed
+	 *              MEM_CAP_BYTES get their .spk file opened for streaming.
 	 *
-	 * Memory guard: if the waveform buffer would exceed MEM_CAP_BYTES,
-	 * fall back to the original seek-per-spike path (no correctness impact).
+	 *   Phase A2 — single sequential pass through the .fil.
+	 *              The merged event list is sorted by file offset so the
+	 *              single FILE* moves strictly forward — true sequential I/O,
+	 *              zero seeks.  Each frame is dispatched to the correct group's
+	 *              waveform buffer (in-memory groups) or written directly to
+	 *              the .spk file (over-cap groups).
 	 *
-	 * Thread safety: everything below is per-group; no shared state is written.
-	 * Each group opens its own FILE* handles.
+	 *   Phase B  — sequential writes for in-memory groups (one fwrite each).
+	 *              No reads in flight — device sees clean sequential writes.
+	 *
+	 * One file open, one forward read from byte 0 to the last spike window.
+	 * The single sequential read saturates NVMe bandwidth rather than making
+	 * N independent seek-and-read sweeps over the same file.
 	 */
 
 	// Maximum waveform buffer per group (default 2 GB). Override via environment
@@ -817,145 +816,219 @@ int main(int argc,char *argv[]) {
 		return cap;
 	}();
 
-	// Spike entry: everything needed to read one waveform.
-	struct SpikeEntry {
-		long long timestamp;   // sample index from .res (chronological sort key)
-		off_t     fileOffset;  // byte offset in raw file (I/O sort key)
-		int       origIdx;     // position in chronological order (0-based)
+	// One entry per spike across all groups, used to drive the sequential pass.
+	struct SpikeEvent {
+		off_t fileOffset; // byte offset of waveform start in .fil
+		int   grp;        // which group owns this spike
+		int   origIdx;    // chronological index within that group
 	};
 
-#ifdef _OPENMP
-	#pragma omp parallel for schedule(dynamic)
-#endif
+	// Per-group waveform buffers (in-memory groups only).
+	std::vector<std::vector<short>> allWaveforms(nbGroups);
+	// Track which groups fit in memory.
+	std::vector<bool> useInMemory(nbGroups, false);
+	// Output file names.
+	std::vector<std::string> spkFileNames(nbGroups);
+	// .spk FILE* for over-cap groups — opened in Phase A, written in Phase A2.
+	std::vector<FILE*> fallbackSpkFiles(nbGroups, nullptr);
+
+	// ── Phase A: read all .res files, size buffers, build merged event list ──
+	std::vector<SpikeEvent> allEvents;
+
 	for(int grp = 0; grp < nbGroups; grp++) {
-		if(channelNb_group[grp] == 0) // skip empty group
+		if(channelNb_group[grp] == 0)
 			continue;
 
 		const int nChanGrp = channelNb_group[grp];
-		const int wavLen    = arguments.spikeLength * nChanGrp; // shorts per waveform
-		const int rawLen    = arguments.spikeLength * arguments.totalChannelNumber;
+		const int wavLen    = arguments.spikeLength * nChanGrp;
 
-		// Per-thread private input file handle — fseeko on a shared FILE* is
-		// not thread-safe; each group gets its own file descriptor.
-		FILE *grpInputFile = fopen(arguments.inputFileName, "rb");
-		if (!grpInputFile) {
-			fprintf(stderr, "error: cannot re-open '%s' for group %d\n",
-					arguments.inputFileName, grp);
-			exit(1);
-		}
-
-		// Raw read buffer: one full interleaved frame at a time.
-		std::vector<short> grpBuf(rawLen);
-
-		// Open .res (read) and .spk (write) files.
-		ostringstream oss;
-		spikeTimeOutputFile[grp] = fopen(spikeTimeOutputFileName[grp].c_str(), "r");
-		oss << arguments.outputBaseFileName << "." << SPIKE_REC_OUT_EXT << "." << (grp+1);
-		spikeOutputFile[grp] = fopen(oss.str().c_str(), "wb");
-
-		if(verbose) {
-			// cout is not thread-safe but verbose output is best-effort only.
-			cout << "Input  .res: " << spikeTimeOutputFileName[grp] << "\n"
-			     << "Output .spk: " << oss.str() << "\n";
-		}
-
-		// ── Step 1: read all timestamps from binary .res into SpikeEntry vector
-		std::vector<SpikeEntry> entries;
 		{
-			int64_t ts;
-			while(fread(&ts, sizeof(int64_t), 1, spikeTimeOutputFile[grp]) == 1) {
-				SpikeEntry e;
-				e.timestamp  = (long long)ts;
-				e.origIdx    = (int)entries.size();
-				e.fileOffset = ((off_t)(ts - arguments.timeBeforeSpike)
-				                * (off_t)arguments.totalChannelNumber
-				                * (off_t)sizeof(short));
-				entries.push_back(e);
+			ostringstream oss;
+			oss << arguments.outputBaseFileName << "." << SPIKE_REC_OUT_EXT
+			    << "." << (grp+1);
+			spkFileNames[grp] = oss.str();
+		}
+
+		// Read all timestamps from binary .res.
+		std::vector<long long> timestamps;
+		{
+			FILE *resFile = fopen(spikeTimeOutputFileName[grp].c_str(), "r");
+			if(resFile) {
+				int64_t ts;
+				while(fread(&ts, sizeof(int64_t), 1, resFile) == 1)
+					timestamps.push_back((long long)ts);
+				fclose(resFile);
 			}
 		}
-		fclose(spikeTimeOutputFile[grp]);
-		spikeTimeOutputFile[grp] = nullptr;
 
-		const int nSpikes = (int)entries.size();
-
-		// ── Step 2: decide path based on memory available ───────────────────
+		const int nSpikes = (int)timestamps.size();
 		const long long waveformBytes = (long long)nSpikes * wavLen * sizeof(short);
-		bool useInMemory = (waveformBytes <= MEM_CAP_BYTES);
 
-		if(useInMemory) {
-			// ── Step 3: allocate flat waveform buffer, indexed by origIdx ───
-			//    waveforms[origIdx * wavLen .. (origIdx+1)*wavLen - 1]
-			//    After filling in file-offset order, the buffer is already in
-			//    chronological order — no second sort required.
-			std::vector<short> waveforms((size_t)(nSpikes * wavLen));
-
-			// ── Step 3a: sort entries by file offset (forward-only I/O) ─────
-			std::sort(entries.begin(), entries.end(),
-			          [](const SpikeEntry &a, const SpikeEntry &b){
-			              return a.fileOffset < b.fileOffset;
-			          });
-
-			// ── Step 4: read spikes in file-offset order ─────────────────────
-			for(const SpikeEntry &e : entries) {
-				fseeko(grpInputFile, e.fileOffset, SEEK_SET);
-				size_t got = fread(grpBuf.data(), sizeof(short), rawLen, grpInputFile);
-				if((int)got != rawLen) {
-					fprintf(stderr,
-					        "error: short read at timestamp %lld group %d "
-					        "(got %zu, want %d)\n",
-					        e.timestamp, grp, got, rawLen);
-					fclose(spikeOutputFile[grp]);
-					fclose(grpInputFile);
-					exit(1);
-				}
-				// Extract only this group's channels, store at chronological slot.
-				short *dst = waveforms.data() + (size_t)e.origIdx * wavLen;
-				for(int s = 0; s < arguments.spikeLength; s++) {
-					const short *frame = grpBuf.data() + s * arguments.totalChannelNumber;
-					for(int c = 0; c < nChanGrp; c++)
-						dst[s * nChanGrp + c] = frame[channelList[grp][c]];
-				}
-			}
-
-			// ── Step 5: single sequential write — all waveforms in chrono order
-			if(nSpikes > 0)
-				fwrite(waveforms.data(), sizeof(short), (size_t)(nSpikes * wavLen),
-				       spikeOutputFile[grp]);
-
-		} else {
-			// ── Fallback: original seek-per-spike when waveforms won't fit ───
+		if(waveformBytes > MEM_CAP_BYTES) {
 			fprintf(stderr,
 			        "warning: group %d waveform buffer (%.1f MB) exceeds cap "
-			        "(%.1f MB); using seek-per-spike fallback\n",
+			        "(%.1f MB); will stream directly to .spk during read pass\n",
 			        grp,
 			        waveformBytes / (1024.0 * 1024.0),
 			        MEM_CAP_BYTES  / (1024.0 * 1024.0));
+			useInMemory[grp] = false;
+			fallbackSpkFiles[grp] = fopen(spkFileNames[grp].c_str(), "wb");
+			if(!fallbackSpkFiles[grp]) {
+				fprintf(stderr, "error: cannot open '%s' for writing\n",
+				        spkFileNames[grp].c_str());
+				exit(1);
+			}
+		} else {
+			useInMemory[grp] = true;
+			allWaveforms[grp].resize((size_t)(nSpikes * wavLen));
+		}
 
-			// entries are in chronological order (not sorted by offset) here.
-			for(const SpikeEntry &e : entries) {
-				fseeko(grpInputFile, e.fileOffset, SEEK_SET);
-				size_t got = fread(grpBuf.data(), sizeof(short), rawLen, grpInputFile);
-				if((int)got != rawLen) {
-					fprintf(stderr,
-					        "error: short read at timestamp %lld group %d\n",
-					        e.timestamp, grp);
-					fclose(spikeOutputFile[grp]);
-					fclose(grpInputFile);
-					exit(1);
-				}
-				for(int s = 0; s < arguments.spikeLength; s++) {
-					const short *frame = grpBuf.data() + s * arguments.totalChannelNumber;
-					for(int c = 0; c < nChanGrp; c++)
-						fwrite(&frame[channelList[grp][c]], sizeof(short), 1,
-						       spikeOutputFile[grp]);
+		// Append all spikes from this group to the merged event list.
+		for(int i = 0; i < nSpikes; i++) {
+			SpikeEvent ev;
+			ev.fileOffset = ((off_t)(timestamps[i] - arguments.timeBeforeSpike)
+			                 * (off_t)arguments.totalChannelNumber
+			                 * (off_t)sizeof(short));
+			ev.grp     = grp;
+			ev.origIdx = i;
+			allEvents.push_back(ev);
+		}
+
+		if(verbose)
+			cout << "Phase A  group " << grp+1
+			     << "  spikes=" << nSpikes
+			     << "  " << (useInMemory[grp] ? "buffered" : "streaming")
+			     << "  -> " << spkFileNames[grp] << "\n";
+	} // Phase A
+
+	// ── Phase A2: single sequential pass through .fil ────────────────────────
+	// Sort merged event list by file offset — the FILE* will move strictly
+	// forward, never seeking.
+	std::sort(allEvents.begin(), allEvents.end(),
+	          [](const SpikeEvent &a, const SpikeEvent &b){
+	              return a.fileOffset < b.fileOffset;
+	          });
+
+	if(verbose)
+		cout << "Phase A2  single sequential read  total events="
+		     << allEvents.size() << "\n";
+
+	{
+		const int rawLen = arguments.spikeLength * arguments.totalChannelNumber;
+		std::vector<short> frameBuf(rawLen);
+		// Discard buffer for skipping gaps — reuse frameBuf-sized chunks.
+		const size_t discardChunk = (size_t)rawLen * sizeof(short);
+
+		FILE *seqFile = fopen(arguments.inputFileName, "rb");
+		if(!seqFile) {
+			fprintf(stderr, "error: cannot open '%s' for sequential read\n",
+			        arguments.inputFileName);
+			exit(1);
+		}
+
+		off_t filePos = 0;
+
+		for(const SpikeEvent &ev : allEvents) {
+			const int grp      = ev.grp;
+			const int nChanGrp = channelNb_group[grp];
+			const int wavLen   = arguments.spikeLength * nChanGrp;
+
+			// Skip forward to this waveform's start by reading and discarding
+			// the gap — keeps the FILE* strictly sequential, never fseeko.
+			if(ev.fileOffset > filePos) {
+				off_t gap = ev.fileOffset - filePos;
+				while(gap > 0) {
+					size_t toRead = (gap < (off_t)discardChunk)
+					                ? (size_t)gap : discardChunk;
+					size_t got = fread(frameBuf.data(), 1, toRead, seqFile);
+					if(got == 0) break;
+					gap     -= (off_t)got;
+					filePos += (off_t)got;
 				}
 			}
-		} // useInMemory
 
-		fclose(spikeOutputFile[grp]);
-		fclose(grpInputFile);
+			// Read the waveform window.
+			size_t got = fread(frameBuf.data(), sizeof(short), rawLen, seqFile);
+			if((int)got != rawLen) {
+				fprintf(stderr,
+				        "error: short read at offset %lld group %d "
+				        "(got %zu, want %d)\n",
+				        (long long)ev.fileOffset, grp, got, rawLen);
+				fclose(seqFile);
+				exit(1);
+			}
+			filePos += (off_t)rawLen * (off_t)sizeof(short);
 
-	} // for grp
+			// Dispatch to the correct group's destination.
+			if(useInMemory[grp]) {
+				// Store at chronological slot — buffer is already in order.
+				short *dst = allWaveforms[grp].data()
+				             + (size_t)ev.origIdx * wavLen;
+				for(int s = 0; s < arguments.spikeLength; s++) {
+					const short *frame = frameBuf.data()
+					                     + s * arguments.totalChannelNumber;
+					for(int c = 0; c < nChanGrp; c++)
+						dst[s * nChanGrp + c] = frame[channelList[grp][c]];
+				}
+			} else {
+				// Over-cap group: write directly to .spk.
+				// Chronological order is preserved because spike timestamps are
+				// monotonically increasing, so fileOffset is also monotonically
+				// increasing within each group.  The global sort by fileOffset
+				// therefore visits each group's spikes in their original
+				// chronological sequence — no secondary sort needed.
+				for(int s = 0; s < arguments.spikeLength; s++) {
+					const short *frame = frameBuf.data()
+					                     + s * arguments.totalChannelNumber;
+					for(int c = 0; c < nChanGrp; c++)
+						fwrite(&frame[channelList[grp][c]], sizeof(short), 1,
+						       fallbackSpkFiles[grp]);
+				}
+			}
+		} // for allEvents
+
+		fclose(seqFile);
+	} // Phase A2
+
+	// Close fallback .spk files written during the read pass.
+	for(int grp = 0; grp < nbGroups; grp++) {
+		if(fallbackSpkFiles[grp]) {
+			fclose(fallbackSpkFiles[grp]);
+			fallbackSpkFiles[grp] = nullptr;
+		}
+	}
+
+	// ── Phase B: sequential writes for in-memory groups ─────────────────────
+	// All reads are complete; write each group's buffer to its .spk file one
+	// at a time — no concurrent reads, clean sequential writes.
+	for(int grp = 0; grp < nbGroups; grp++) {
+		if(channelNb_group[grp] == 0 || !useInMemory[grp])
+			continue;
+
+		const int nChanGrp = channelNb_group[grp];
+		const int wavLen    = arguments.spikeLength * nChanGrp;
+		const int nSpikes   = (int)(allWaveforms[grp].size() / wavLen);
+
+		if(verbose)
+			cout << "Phase B  group " << grp+1
+			     << "  writing " << nSpikes << " spikes -> "
+			     << spkFileNames[grp] << "\n";
+
+		FILE *spkFile = fopen(spkFileNames[grp].c_str(), "wb");
+		if(!spkFile) {
+			fprintf(stderr, "error: cannot open '%s' for writing\n",
+			        spkFileNames[grp].c_str());
+			exit(1);
+		}
+		if(nSpikes > 0)
+			fwrite(allWaveforms[grp].data(), sizeof(short),
+			       (size_t)(nSpikes * wavLen), spkFile);
+		fclose(spkFile);
+
+		allWaveforms[grp].clear();
+		allWaveforms[grp].shrink_to_fit();
+
+	} // Phase B
 
 	if ( verbose ) {
 		cout << endl << " End Of Spike Records Extraction ----->>" << endl;
@@ -976,7 +1049,8 @@ int main(int argc,char *argv[]) {
 	delete[] channelList;
 	delete[] thresList;
 
-	delete[] spikeTimeOutputFileName; delete[] spikeTimeOutputFile;
+	delete[] spikeTimeOutputFileName;
+	// spikeTimeOutputFile and spikeOutputFile were freed/managed within Pass 2.
 	delete[] spikeOutputFile;
 
 	if ( verbose ) cout << endl;
