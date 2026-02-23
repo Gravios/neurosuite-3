@@ -433,6 +433,14 @@ public:
      * Returns false if the cluster is gone OR was modified by the main thread. */
     bool spikePositionsNotModified(int clusterId,SortableTable& subsetTable);
 
+    /**Invalidates the in-memory waveform cache for @p clusterId so that the
+     * next WaveformThread request re-reads waveforms from the .spk file.
+     * Must be called after the .spk file has been modified in-place (e.g.
+     * after spike realignment) to ensure the waveform view shows fresh data.
+     * Thread-safe: uses the internal mutex.
+     */
+    void invalidateWaveformCache(int clusterId);
+
     /**Returns the number of points corresponding to a spike. This equals to:
   * nbChannels * nbSamplesInWaveform
   */

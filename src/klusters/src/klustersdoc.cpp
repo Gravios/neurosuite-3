@@ -2896,3 +2896,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     return true;
 }
 
+void KlustersDoc::invalidateWaveformCache(int clusterId)
+{
+    clusteringData->invalidateWaveformCache(clusterId);
+}

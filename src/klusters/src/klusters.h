@@ -867,6 +867,8 @@ private:
     ProcessWidget* realignOutputWidget;
     /**True while a realignment job is running.*/
     bool realignRunning;
+    /**The cluster ID currently being realigned (valid while realignRunning).*/
+    int realignClusterId;
 
     /**True if a Error Martix exists, false otherwise.*/
     bool errorMatrixExists;

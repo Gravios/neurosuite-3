@@ -379,6 +379,12 @@ public:
                        std::function<void(const QString&,bool)> liveLog = nullptr,
                        const QString& args = QString());
 
+    /**Invalidates the in-memory waveform cache for @p clusterId.
+     * Call this after any in-place modification of the .spk file (e.g. after
+     * spike realignment) so the waveform viewer re-reads from disk.
+     */
+    void invalidateWaveformCache(int clusterId);
+
     /**Integrates in the data the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.
   * @param clustersToRecluster list of clusters reclustered.
