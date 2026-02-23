@@ -1,6 +1,7 @@
-project(ndmanager-src)
-
-set(ndmanager_SRCS
+# ---------------------------------------------------------------------------
+# ndmanager executable
+# ---------------------------------------------------------------------------
+set(_srcs
     acquisitionsystempage.cpp
     anatomypage.cpp
     channelcolors.cpp
@@ -32,12 +33,16 @@ set(ndmanager_SRCS
     queryoutputdialog.cpp
     spikepage.cpp
     tags.cpp
-    unitlistlayout.cpp
     unitlistpage.cpp
     unittable.cpp
     videopage.cpp
     xmlreader.cpp
     xmlwriter.cpp
+    safetablewidget.cpp
+    ndmanagerutils.cpp
+    colortable.cpp
+    parametertree.cpp
+    # AUTOUIC processes .ui files automatically when listed as sources
     acquisitionsystemlayout.cpp
     anatomylayout.cpp
     channelcolorslayout.cpp
@@ -50,45 +55,51 @@ set(ndmanager_SRCS
     neuroscopemisclayout.cpp
     neuroscopevideolayout.cpp
     parameterlayout.cpp
-    safetablewidget.cpp
     queryinputdialogbase.cpp
     spikelayout.cpp
+    unitlistlayout.cpp
     videolayout.cpp
-    ndmanagerutils.cpp
-    colortable.cpp
-    parametertree.cpp
     ndmanager-icons.qrc
-    ndmanager-html.qrc
-)
+    ndmanager-html.qrc)
 
-add_executable(ndmanager ${ndmanager_SRCS})
+add_executable(ndmanager $<$<PLATFORM_ID:Windows>:WIN32> ${_srcs})
 
 target_include_directories(ndmanager PRIVATE
-    ${LIBKLUSTERSSHARED_INCLUDE_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}/../
-)
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/..")   # for config-ndmanager.h
 
-target_link_libraries(ndmanager
-    ${LIBKLUSTERSSHARED_LIBRARY}
+target_link_libraries(ndmanager PRIVATE
+    KlustersShared::klustersshared
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::Xml
-)
+    Qt6::Xml)
 
-install(FILES ndManagerDefault.xml DESTINATION share/applications/ndmanager/)
-install(TARGETS ndmanager DESTINATION bin)
-install(FILES hi16-app-ndmanager.png DESTINATION share/icons/hicolor/16x16/apps/ RENAME ndmanager.png)
-install(FILES hi22-app-ndmanager.png DESTINATION share/icons/hicolor/22x22/apps/ RENAME ndmanager.png)
-install(FILES hi32-app-ndmanager.png DESTINATION share/icons/hicolor/32x32/apps/ RENAME ndmanager.png)
-install(FILES hi48-app-ndmanager.png DESTINATION share/icons/hicolor/48x48/apps/ RENAME ndmanager.png)
-install(FILES hi64-app-ndmanager.png DESTINATION share/icons/hicolor/64x64/apps/ RENAME ndmanager.png)
-install(FILES hi16-nphys-xml.png DESTINATION share/icons/hicolor/16x16/mimetypes/ RENAME application-nphys-xml.png)
-install(FILES hi22-nphys-xml.png DESTINATION share/icons/hicolor/22x22/mimetypes/ RENAME application-nphys-xml.png)
-install(FILES hi32-nphys-xml.png DESTINATION share/icons/hicolor/32x32/mimetypes/ RENAME application-nphys-xml.png)
-install(FILES hi48-nphys-xml.png DESTINATION share/icons/hicolor/48x48/mimetypes/ RENAME application-nphys-xml.png)
-install(FILES hi64-nphys-xml.png DESTINATION share/icons/hicolor/64x64/mimetypes/ RENAME application-nphys-xml.png)
-install(FILES ndmanager.desktop DESTINATION share/applications/)
-install(FILES ndmanager.xml DESTINATION share/mime/packages/)
-file(GLOB files "${CMAKE_CURRENT_SOURCE_DIR}/Template*.xml")
-install(FILES ${files} DESTINATION share/ndmanager/templates/)
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+install(TARGETS ndmanager
+    DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+install(FILES ndManagerDefault.xml
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/applications/ndmanager")
+
+# Application and mimetype icons
+foreach(_size IN ITEMS 16 22 32 48 64)
+    install(FILES "hi${_size}-app-ndmanager.png"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
+        RENAME ndmanager.png)
+    install(FILES "hi${_size}-nphys-xml.png"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/mimetypes"
+        RENAME application-nphys-xml.png)
+endforeach()
+
+install(FILES ndmanager.desktop
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+install(FILES ndmanager.xml
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/mime/packages")
+
+file(GLOB _templates "${CMAKE_CURRENT_SOURCE_DIR}/Template*.xml")
+install(FILES ${_templates}
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/ndmanager/templates")

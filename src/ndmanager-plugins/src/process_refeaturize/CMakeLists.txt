@@ -1,9 +1,4 @@
-project(ndmanager-plugins-src-process_refeaturize)
-cmake_minimum_required(VERSION 3.16)
-
-set(sources process_refeaturize.cpp)
-set(program process_refeaturize)
-add_executable(${program} ${sources})
-target_compile_features(${program} PRIVATE cxx_std_17)
-target_link_libraries(${program} m)
-install(TARGETS ${program} DESTINATION bin)
+add_executable(process_refeaturize process_refeaturize.cpp)
+target_compile_features(process_refeaturize PRIVATE cxx_std_17)
+target_link_libraries(process_refeaturize PRIVATE m)
+install(TARGETS process_refeaturize DESTINATION "${CMAKE_INSTALL_BINDIR}")

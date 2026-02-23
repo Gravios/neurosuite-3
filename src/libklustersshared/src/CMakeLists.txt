@@ -1,12 +1,7 @@
-project(libklustersshared-src)
-
-include(CMakeFindDependencyMacro)
-
-find_dependency(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
-
-include_directories(${CMAKE_SOURCE_DIR}/src/gui/page)
-
-set(libklustersshared_SRCS
+# ---------------------------------------------------------------------------
+# klustersshared shared library
+# ---------------------------------------------------------------------------
+set(_srcs
     gui/qrecentfileaction.cpp
     gui/qcolorbutton.cpp
     gui/page/qpagedialog.cpp
@@ -25,10 +20,9 @@ set(libklustersshared_SRCS
     shared/itemcolors.cpp
     shared/zoomwindow.cpp
     shared/utilities.cpp
-    shared/progressbar.cpp
-)
+    shared/progressbar.cpp)
 
-set(libklustersshared_HEADERS
+set(_hdrs
     libklustersshared_export.h
     gui/qrecentfileaction.h
     gui/qcolorbutton.h
@@ -49,41 +43,51 @@ set(libklustersshared_HEADERS
     shared/utilities.h
     shared/zoomwindow.h
     shared/customtypes.h
-    shared/progressbar.h
-)
+    shared/progressbar.h)
 
-qt_add_resources(libklustersshared_SRCS
+qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc
-    gui/libklustersshared-cursors.qrc
-)
+    gui/libklustersshared-cursors.qrc)
 
-add_library(klustersshared SHARED ${libklustersshared_SRCS})
+add_library(klustersshared SHARED ${_srcs})
+add_library(KlustersShared::klustersshared ALIAS klustersshared)
+
+# Export macro so klustersshared_export.h emits the right declspec/visibility
+target_compile_definitions(klustersshared
+    PRIVATE KLUSTERSSHARED_BUILD_KLUSTERSSHARED_LIB)
+
+# Include paths: build-tree consumers get the source dirs; install-tree
+# consumers get the single flattened installed include prefix.
+target_include_directories(klustersshared
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/gui>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/gui/page>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/shared>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/klustersshared>)
 
 target_link_libraries(klustersshared
     PUBLIC
         Qt6::Core
         Qt6::Gui
-        Qt6::Widgets
-)
-
-target_include_directories(klustersshared
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/gui>
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/shared>
-        $<INSTALL_INTERFACE:${INCLUDE_INSTALL_DIR}>
-)
+        Qt6::Widgets)
 
 set_target_properties(klustersshared PROPERTIES
-    VERSION   ${LIBKLUSTERSSHARED_VERSION}
-    SOVERSION ${LIBKLUSTERSSHARED_VERSION_MAJOR}
-)
+    VERSION   "${PROJECT_VERSION}"
+    SOVERSION "${PROJECT_VERSION_MAJOR}")
 
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
 install(TARGETS klustersshared
-    EXPORT LibKlustersSharedLibraryTargets
-    RUNTIME DESTINATION ${BIN_INSTALL_DIR}
-    LIBRARY DESTINATION ${LIB_INSTALL_DIR}
-    ARCHIVE DESTINATION ${LIB_INSTALL_DIR} COMPONENT Devel
-)
-install(FILES ${libklustersshared_HEADERS} DESTINATION ${INCLUDE_INSTALL_DIR} COMPONENT Devel)
-install(DIRECTORY images DESTINATION ${EXEC_INSTALL_PREFIX}/share/doc/)
+    EXPORT  LibKlustersSharedTargets
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    COMPONENT Devel)
+
+install(FILES ${_hdrs}
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/klustersshared"
+    COMPONENT   Devel)
+
+# Images are embedded in the .so via the .qrc resources; nothing to install.

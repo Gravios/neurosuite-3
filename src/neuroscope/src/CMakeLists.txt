@@ -1,7 +1,11 @@
-configure_file(${CMAKE_SOURCE_DIR}/config-neuroscope.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-neuroscope.h)
-project(neuroscope-src)
+# ---------------------------------------------------------------------------
+# neuroscope executable
+# ---------------------------------------------------------------------------
+configure_file(
+    "${CMAKE_SOURCE_DIR}/config-neuroscope.h.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/config-neuroscope.h")
 
-set(neuroscope_SRCS
+set(_srcs
     main.cpp
     neuroscope.cpp
     neuroscopeview.cpp
@@ -39,48 +43,47 @@ set(neuroscope_SRCS
     imagecreator.cpp
     globaleventsprovider.cpp
     eventdata.cpp
+    # AUTOUIC processes these automatically — list them so CMake tracks them
     clusterpropertieslayout.cpp
     positionpropertieslayout.cpp
     prefdefaultslayout.cpp
     prefgenerallayout.cpp
-    propertieslayout.cpp
-)
+    propertieslayout.cpp)
 
-set(neuroscope_UI
-    propertieslayout.ui
-    prefdefaultslayout.ui
-    positionpropertieslayout.ui
-    prefgenerallayout.ui
-    clusterpropertieslayout.ui
-)
+qt_add_resources(_srcs neuroscope-icons.qrc)
 
-qt_add_resources(neuroscope_SRCS neuroscope-icons.qrc)
-qt_wrap_ui(neuroscope_SRCS ${neuroscope_UI})
+# WIN32 suppresses the console window on Windows; no-op on Linux/macOS
+add_executable(neuroscope $<$<PLATFORM_ID:Windows>:WIN32> ${_srcs})
 
-add_executable(neuroscope WIN32 ${neuroscope_SRCS})
+target_include_directories(neuroscope PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}")   # for config-neuroscope.h and AUTOUIC output
 
-target_link_libraries(neuroscope
-    PRIVATE
-        ${LIBKLUSTERSSHARED_LIBRARY}
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Widgets
-        Qt6::Xml
-        Qt6::PrintSupport
-)
+target_link_libraries(neuroscope PRIVATE
+    KlustersShared::klustersshared
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Xml
+    Qt6::PrintSupport)
 
-install(TARGETS neuroscope DESTINATION bin)
-install(FILES hi16-app-neuroscope.png DESTINATION share/icons/hicolor/16x16/apps/ RENAME neuroscope.png)
-install(FILES hi22-app-neuroscope.png DESTINATION share/icons/hicolor/22x22/apps/ RENAME neuroscope.png)
-install(FILES hi32-app-neuroscope.png DESTINATION share/icons/hicolor/32x32/apps/ RENAME neuroscope.png)
-install(FILES hi48-app-neuroscope.png DESTINATION share/icons/hicolor/48x48/apps/ RENAME neuroscope.png)
-install(FILES hi64-app-neuroscope.png DESTINATION share/icons/hicolor/64x64/apps/ RENAME neuroscope.png)
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+install(TARGETS neuroscope
+    DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
-install(FILES hi16-nphys-nrs.png DESTINATION share/icons/hicolor/16x16/mimetypes/ RENAME application-nphys-nrs.png)
-install(FILES hi22-nphys-nrs.png DESTINATION share/icons/hicolor/22x22/mimetypes/ RENAME application-nphys-nrs.png)
-install(FILES hi32-nphys-nrs.png DESTINATION share/icons/hicolor/32x32/mimetypes/ RENAME application-nphys-nrs.png)
-install(FILES hi48-nphys-nrs.png DESTINATION share/icons/hicolor/48x48/mimetypes/ RENAME application-nphys-nrs.png)
-install(FILES hi64-nphys-nrs.png DESTINATION share/icons/hicolor/64x64/mimetypes/ RENAME application-nphys-nrs.png)
+# Application icons
+foreach(_size IN ITEMS 16 22 32 48 64)
+    install(FILES "hi${_size}-app-neuroscope.png"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
+        RENAME neuroscope.png)
+    install(FILES "hi${_size}-nphys-nrs.png"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/mimetypes"
+        RENAME application-nphys-nrs.png)
+endforeach()
 
-install(FILES neuroscope.desktop DESTINATION share/applications/)
-install(FILES neuroscope.xml DESTINATION share/mime/packages/)
+install(FILES neuroscope.desktop
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+install(FILES neuroscope.xml
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/mime/packages")
