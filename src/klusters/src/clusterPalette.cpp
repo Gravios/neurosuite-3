@@ -66,19 +66,40 @@ void ClusterPaletteWidget::mouseMoveEvent ( QMouseEvent * event )
     QListWidget::mouseMoveEvent(event);
 }
 
+void ClusterPaletteWidget::focusInEvent(QFocusEvent *event)
+{
+    QListWidget::focusInEvent(event);
+    // Scroll so the current (highlighted) cluster is visible and ensure it
+    // has a current-item marker so arrow keys work immediately.
+    QListWidgetItem* cur = currentItem();
+    if(!cur && count() > 0){
+        // No current item yet — set the first one so arrows have a starting point.
+        setCurrentRow(0);
+        cur = currentItem();
+    }
+    if(cur)
+        scrollToItem(cur, QAbstractItemView::EnsureVisible);
+}
+
 void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
 {
     const bool hasShiftPressed = event->modifiers() & Qt::ShiftModifier;
-    if (event->key() == Qt::Key_Right) {
+
+    // Both Right/Down advance to the next cluster; Left/Up go to the previous.
+    // We treat them identically so the user can navigate with either axis.
+    const bool goNext = (event->key() == Qt::Key_Right || event->key() == Qt::Key_Down);
+    const bool goPrev = (event->key() == Qt::Key_Left  || event->key() == Qt::Key_Up);
+
+    if (goNext) {
         QListWidgetItem *c = currentItem();
         if (c) {
             const int i = row(c);
             if (i < count()-1) {
+                QListWidgetItem *nextItem = item(i+1);
                 if (hasShiftPressed) {
-                    QListWidgetItem *nextItem = item(i+1);
-                    if(nextItem->isSelected()) {
+                    if(nextItem->isSelected())
                         c->setSelected(false);
-                    } else {
+                    else {
                         c->setSelected(true);
                         nextItem->setSelected(true);
                     }
@@ -87,18 +108,19 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
                     clearSelection();
                     setCurrentRow(i+1);
                 }
+                scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
             }
         }
-    } else if (event->key() == Qt::Key_Left) {
+    } else if (goPrev) {
         QListWidgetItem *c = currentItem();
         if (c) {
             const int i = row(c);
             if (i > 0) {
+                QListWidgetItem *nextItem = item(i-1);
                 if (hasShiftPressed) {
-                    QListWidgetItem *nextItem = item(i-1);
-                    if(nextItem->isSelected()) {
+                    if(nextItem->isSelected())
                         c->setSelected(false);
-                    } else {
+                    else {
                         c->setSelected(true);
                         nextItem->setSelected(true);
                     }
@@ -107,6 +129,7 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
                     clearSelection();
                     setCurrentRow(i-1);
                 }
+                scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
             }
         }
     } else {
@@ -186,6 +209,11 @@ ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QSt
     connect(iconView,SIGNAL(customContextMenuRequested(QPoint)),this, SLOT(slotCustomContextMenuRequested(QPoint)));
     connect(iconView,SIGNAL(changeColor(QListWidgetItem*)),SLOT(changeColor(QListWidgetItem*)));
     connect(iconView,SIGNAL(onItem(QListWidgetItem*)),this, SLOT(slotOnItem(QListWidgetItem*)));
+
+    // Redirect focus straight to the inner list so Tab-navigation and
+    // arrow-key cluster browsing work the moment the panel is entered.
+    setFocusProxy(iconView);
+
     setLayout(layout);
 }
 
