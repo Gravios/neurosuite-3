@@ -15,6 +15,9 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#ifdef __linux__
+#  include <fcntl.h>   // posix_fallocate
+#endif
 
 using namespace std;
 
@@ -196,6 +199,19 @@ int main(int argc, char *argv[])
     fseeko(inputFile, 0, SEEK_END);
     long long int size = ftello(inputFile);
     fseeko(inputFile, 0, SEEK_SET);
+
+    // Preallocate the output file to the exact input size.
+    // On Linux this uses fallocate(2) to reserve contiguous extents, avoiding
+    // repeated filesystem metadata updates and fragmentation during streaming
+    // writes.  The call is best-effort: failure is silently ignored so the
+    // binary works on filesystems that do not support fallocate (e.g. tmpfs).
+#ifdef __linux__
+    {
+        int outFd = fileno(outputFile);
+        if (outFd >= 0)
+            (void)posix_fallocate(outFd, 0, (off_t)size);
+    }
+#endif
 
     long long int nSamples = size / sampleSize;
     long long int nSamplesPerChannel = nSamples / nChannels;
