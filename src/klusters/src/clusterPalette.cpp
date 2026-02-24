@@ -90,6 +90,14 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
 
     // Left/Right navigate sequentially (previous/next item in list order).
     // Up/Down navigate by row within the same column using visual geometry.
+    // Ctrl+Left/Right is reserved for tab cycling at the app level.
+    // Let it bubble up without handling it here.
+    if((event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) &&
+       (event->modifiers() & Qt::ControlModifier)){
+        QListWidget::keyPressEvent(event);
+        return;
+    }
+
     const bool goNext     = (event->key() == Qt::Key_Right);
     const bool goPrev     = (event->key() == Qt::Key_Left);
     const bool goDown     = (event->key() == Qt::Key_Down);

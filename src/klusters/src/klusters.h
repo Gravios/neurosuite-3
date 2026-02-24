@@ -470,6 +470,8 @@ private:
 
     /**Rebuilds the ordered list of Tab-cycle focus zones from currently visible widgets.*/
     void buildFocusZones();
+    /** Give keyboard focus to the most appropriate widget inside a tab page. */
+    void focusTabPage(QWidget* page);
     
     /** Creates a new display.
      * @param type enum representing the type of view to be created.

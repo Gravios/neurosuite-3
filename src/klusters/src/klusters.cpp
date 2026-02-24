@@ -915,40 +915,39 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(object == paramBar && event->type() == 71){//filter the removal of items from the paramBar
         return true;
     }
-    // Tab / Shift+Tab — cycle through the main-window focus zones:
-    //   Cluster list  →  Display tabs  →  Toolbar fields  →  (wrap)
+    // ── Key navigation ──────────────────────────────────────────────────────
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        const bool ctrlHeld = ke->modifiers() & Qt::ControlModifier;
+
+        // ── Tab / Shift+Tab ─────────────────────────────────────────────────
+        // Cycle: cluster list  →  tab area (single stop, Overview if entering)
+        //        →  toolbar fields  →  (wrap)
         if(ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab){
             buildFocusZones();
             if(focusZones.isEmpty()) return QWidget::eventFilter(object, event);
 
-            // Find which zone the current focus widget belongs to.
+            // Locate which zone currently holds focus.
             QWidget* focused = QApplication::focusWidget();
             int currentZone = -1;
 
-            // First try: walk parent chain of the focused widget.
             if(focused){
                 for(int z = 0; z < focusZones.size() && currentZone < 0; ++z){
-                    QWidget* zoneRoot = focusZones[z];
                     QObject* w = focused;
                     while(w){
-                        if(w == zoneRoot){ currentZone = z; break; }
+                        if(w == focusZones[z]){ currentZone = z; break; }
                         w = w->parent();
                     }
                 }
             }
-
-            // Second try: if focus is nowhere useful (e.g. NoFocus page widget),
-            // check if the currently visible tab page matches a zone.
+            // If focus is inside the tab area but the sentinel is tabsParent,
+            // also accept the current tab page as "inside" the tab zone.
             if(currentZone < 0 && tabsParent && tabsParent->isVisible()){
-                QWidget* currentPage = tabsParent->currentWidget();
                 for(int z = 0; z < focusZones.size() && currentZone < 0; ++z){
-                    if(focusZones[z] == currentPage) currentZone = z;
+                    if(focusZones[z] == tabsParent) currentZone = z;
                 }
             }
 
-            // Advance to next/prev zone (wrap around).
             const int n = focusZones.size();
             int next;
             if(ke->key() == Qt::Key_Tab)
@@ -956,44 +955,67 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             else
                 next = (currentZone < 0) ? n - 1 : (currentZone - 1 + n) % n;
 
-            // Set focus on the zone's entry widget.
             QWidget* target = focusZones[next];
 
-            // If the target is a page inside tabsParent, switch to that tab first.
-            if(tabsParent){
-                int tabIdx = tabsParent->indexOf(target);
-                if(tabIdx >= 0){
-                    tabsParent->setCurrentIndex(tabIdx);
-                    // Focus the tab page itself (or its first focusable child).
-                    QWidget* page = target;
-                    QWidget* focusable = page->focusProxy();
-                    if(!focusable){
-                        // nextInFocusChain walks Qt's internal chain — find first
-                        // child that is actually inside this page.
-                        QWidget* candidate = page->nextInFocusChain();
-                        for(int tries = 0; candidate && tries < 50; ++tries){
-                            QObject* p = candidate->parent();
-                            bool inside = false;
-                            while(p){ if(p == page){ inside = true; break; } p = p->parent(); }
-                            if(inside && candidate->focusPolicy() != Qt::NoFocus){
-                                focusable = candidate;
-                                break;
-                            }
-                            candidate = candidate->nextInFocusChain();
-                            if(candidate == page->nextInFocusChain()) break;
-                        }
+            // The tab area is represented by the tabsParent sentinel.
+            // When Tab lands on it, switch to (or stay on) the Overview tab.
+            if(target == tabsParent){
+                // Find the Overview tab — the first one whose title contains
+                // "Overview" (case-insensitive).  Fall back to tab 0.
+                int overviewIdx = 0;
+                for(int i = 0; i < tabsParent->count(); ++i){
+                    if(tabsParent->tabText(i).contains(tr("Overview"),
+                                                        Qt::CaseInsensitive)){
+                        overviewIdx = i; break;
                     }
-                    if(focusable)
-                        focusable->setFocus(Qt::TabFocusReason);
-                    else
-                        page->setFocus(Qt::TabFocusReason);
-                    return true;
                 }
+                tabsParent->setCurrentIndex(overviewIdx);
+                focusTabPage(tabsParent->widget(overviewIdx));
+                return true;
             }
 
-            // Cluster list, toolbar fields — focus directly.
+            // Cluster list or toolbar field — focus directly.
             target->setFocus(Qt::TabFocusReason);
-            return true;  // swallow the key event
+            return true;
+        }
+
+        // ── Ctrl+Left / Ctrl+Right — cycle display tabs ─────────────────────
+        if(ctrlHeld &&
+           (ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right) &&
+           tabsParent && tabsParent->isVisible() && tabsParent->count() > 0){
+
+            // Determine whether focus is currently inside the tab area.
+            bool inTabArea = false;
+            QWidget* focused = QApplication::focusWidget();
+            if(focused){
+                QObject* w = focused;
+                while(w){ if(w == tabsParent){ inTabArea = true; break; } w = w->parent(); }
+            }
+
+            if(!inTabArea){
+                // Focus is outside the tab area — jump straight to Overview.
+                int overviewIdx = 0;
+                for(int i = 0; i < tabsParent->count(); ++i){
+                    if(tabsParent->tabText(i).contains(tr("Overview"),
+                                                        Qt::CaseInsensitive)){
+                        overviewIdx = i; break;
+                    }
+                }
+                tabsParent->setCurrentIndex(overviewIdx);
+                focusTabPage(tabsParent->widget(overviewIdx));
+            } else {
+                // Already in tab area — advance to next/prev tab (wrapping).
+                const int n   = tabsParent->count();
+                const int cur = tabsParent->currentIndex();
+                int next;
+                if(ke->key() == Qt::Key_Right)
+                    next = (cur + 1) % n;
+                else
+                    next = (cur - 1 + n) % n;
+                tabsParent->setCurrentIndex(next);
+                focusTabPage(tabsParent->widget(next));
+            }
+            return true;
         }
     }
     return QWidget::eventFilter(object,event);    // standard event processing
@@ -1001,24 +1023,22 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
 
 void KlustersApp::buildFocusZones()
 {
-    // Ordered list of focus zones the user cycles through with Tab / Shift+Tab.
-    // Each entry is a distinct stop: each display tab, the cluster list, and
-    // each visible toolbar input field are all separate stops.
+    // Ordered Tab/Shift+Tab stops:
+    //   1. Cluster list (left panel)
+    //   2. Tab area (single stop — Tab always lands on Overview when entering)
+    //   3. Toolbar input fields (left-to-right order)
     focusZones.clear();
 
-    // 1. Cluster list (left panel)
+    // 1. Cluster list
     if(clusterPanel && clusterPanel->isVisible() && clusterPalette)
         focusZones.append(clusterPalette);
 
-    // 2. Each display tab individually (Overview, Recluster output, Realign output, …)
-    //    Stored as the tab's page widget; the event filter switches the tab and focuses it.
-    if(tabsParent && tabsParent->isVisible()){
-        for(int i = 0; i < tabsParent->count(); ++i)
-            focusZones.append(tabsParent->widget(i));
-    }
+    // 2. Tab area as a single sentinel entry.
+    //    Ctrl+Left/Right cycles the individual tabs once focus is inside.
+    if(tabsParent && tabsParent->isVisible() && tabsParent->count() > 0)
+        focusZones.append(tabsParent);
 
-    // 3. Toolbar fields — each visible, enabled input widget is its own stop.
-    //    Collected from paramBar's actions to preserve left-to-right toolbar order.
+    // 3. Toolbar fields
     if(paramBar){
         const QList<QAction*> actions = paramBar->actions();
         for(QAction* a : actions){
@@ -1030,6 +1050,32 @@ void KlustersApp::buildFocusZones()
                 focusZones.append(w);
         }
     }
+}
+
+void KlustersApp::focusTabPage(QWidget* page)
+{
+    // Give keyboard focus to the most appropriate widget inside a tab page.
+    // Tries the page's own focusProxy first, then walks Qt's focus chain to
+    // find the first child that actually accepts keys.
+    if(!page) return;
+    QWidget* focusable = page->focusProxy();
+    if(!focusable){
+        QWidget* candidate = page->nextInFocusChain();
+        for(int tries = 0; candidate && tries < 50; ++tries){
+            QObject* p = candidate->parent();
+            bool inside = false;
+            while(p){ if(p == page){ inside = true; break; } p = p->parent(); }
+            if(inside && candidate->focusPolicy() != Qt::NoFocus){
+                focusable = candidate; break;
+            }
+            candidate = candidate->nextInFocusChain();
+            if(candidate == page->nextInFocusChain()) break;
+        }
+    }
+    if(focusable)
+        focusable->setFocus(Qt::OtherFocusReason);
+    else
+        page->setFocus(Qt::OtherFocusReason);
 }
 
 
