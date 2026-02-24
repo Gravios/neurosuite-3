@@ -216,7 +216,7 @@ int main(int argc, char *argv[])
         input  = new short[nPaddingSamples + nSamples];
         memset(input, 0, (size_t)(nPaddingSamples * sizeof(short)));
         output = new short[nSamples];
-        fread((char*)&input[nPaddingSamples], sizeof(char), (size_t)size, inputFile);
+        { size_t _r = fread((char*)&input[nPaddingSamples], sizeof(char), (size_t)size, inputFile); (void)_r; }
         filterCPU(windowHalfLength, &input[nPaddingSamples], output,
                   nSamplesPerChannel, nChannels);
         fwrite((char*)output, sizeof(char), (size_t)size, outputFile);
@@ -238,14 +238,14 @@ int main(int argc, char *argv[])
                 // First chunk: leading overlap region already zeroed above.
                 // Read chunkSize bytes only — the trailing overlap comes from
                 // the next fread on the following iteration.
-                fread((char*)&input[nOverlapSamples], sizeof(char),
-                      (size_t)chunkSize, inputFile);
+                { size_t _r = fread((char*)&input[nOverlapSamples], sizeof(char),
+                                    (size_t)chunkSize, inputFile); (void)_r; }
                 filterCPU(windowHalfLength, &input[nOverlapSamples], output,
                           nSamplesPerChunkPerChannel, nChannels);
             } else {
                 memcpy(input, &input[nSamplesPerChunk], (size_t)(2 * overlapSize));
-                fread((char*)&input[2 * nOverlapSamples], sizeof(char),
-                      (size_t)chunkSize, inputFile);
+                { size_t _r = fread((char*)&input[2 * nOverlapSamples], sizeof(char),
+                                    (size_t)chunkSize, inputFile); (void)_r; }
                 filterCPU(windowHalfLength, &input[nOverlapSamples], output,
                           nSamplesPerChunkPerChannel, nChannels);
             }

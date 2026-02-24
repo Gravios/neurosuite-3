@@ -37,7 +37,8 @@ else()
     add_custom_command(
         OUTPUT  "${_lsr_lib}"
         DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lsr_unpacked"
-        COMMAND cd "${CMAKE_CURRENT_BINARY_DIR}/lsr" && ./configure && make
+        COMMAND cd "${CMAKE_CURRENT_BINARY_DIR}/lsr" &&
+                ./configure "CFLAGS=-Wno-implicit-fallthrough -Wno-absolute-value -Wno-shift-negative-value" && make
         COMMENT "Building vendored libsamplerate"
         VERBATIM)
 

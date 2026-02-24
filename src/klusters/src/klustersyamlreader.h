@@ -9,7 +9,7 @@
  *   // Detect format from extension, then use the appropriate reader:
  *   if (fileName.endsWith(".yaml") || fileName.endsWith(".yml")) {
  *       KlustersYamlReader reader;
- *       if (!reader.parseFile(fileName)) { /* error *\/ }
+ *       if (!reader.parseFile(fileName)) { // error /// }
  *       int nch = reader.getNbChannels();
  *       // ...
  *   }
