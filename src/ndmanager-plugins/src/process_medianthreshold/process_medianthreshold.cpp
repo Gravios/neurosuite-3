@@ -183,10 +183,10 @@ int main(int argc,char *argv[]) {
 	// Get datas
 	if(arguments.isInputFileProvided) {
 		rewind (inputFile); // put the position indicator at the beginning of the stream
-		fread(input, sizeof(char), arguments.inputSize,inputFile);
+		{ size_t _r = fread(input, sizeof(char), arguments.inputSize,inputFile); (void)_r; }
 		fclose ( inputFile );
 	} else {
-		fread(input, sizeof(char), arguments.inputSize,stdin);
+		{ size_t _r = fread(input, sizeof(char), arguments.inputSize,stdin); (void)_r; }
 	} // else
 
 	// Output (output file)
