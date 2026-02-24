@@ -617,6 +617,7 @@ void KlustersApp::createMenus()
     connect(clusterPalette, SIGNAL(moveClustersToNoise(QList<int>)), this, SLOT(slotMoveClustersToNoise(QList<int>)));
     connect(clusterPalette, SIGNAL(moveClustersToArtefact(QList<int>)), this, SLOT(slotMoveClustersToArtefact(QList<int>)));
     connect(clusterPalette, SIGNAL(clusterInformationModified()), this, SLOT(slotClusterInformationModified()));
+    connect(clusterPalette, SIGNAL(paletteGainedFocus()), this, SLOT(slotShowOverviewForPalette()));
     connect(doc, SIGNAL(updateUndoNb(int)), this, SLOT(slotUpdateUndoNb(int)));
     connect(doc, SIGNAL(updateRedoNb(int)), this, SLOT(slotUpdateRedoNb(int)));
     connect(doc, SIGNAL(spikesDeleted()), this, SLOT(slotSpikesDeleted()));
@@ -2516,6 +2517,27 @@ void KlustersApp::slotTimeFrameMode(){
 
 void KlustersApp::slotClusterInformationModified(){
     doc->clusterInformationModified();
+}
+
+void KlustersApp::slotShowOverviewForPalette()
+{
+    // Switch the tab widget to the first Overview Display tab, then return
+    // keyboard focus to the cluster palette so arrow-key navigation continues
+    // without the user needing to click the palette again.
+    if (!tabsParent)
+        return;
+
+    for (int i = 0; i < tabsParent->count(); ++i) {
+        if (tabsParent->tabText(i).contains(tr("Overview"), Qt::CaseInsensitive)) {
+            tabsParent->setCurrentIndex(i);
+            break;
+        }
+    }
+
+    // Return focus to the palette widget itself (not the outer ClusterPalette
+    // QWidget, which just holds the layout — setFocus() on it does nothing).
+    if (clusterPalette)
+        clusterPalette->setFocusToList();
 }
 
 void KlustersApp::resetState(){
