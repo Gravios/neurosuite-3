@@ -1,0 +1,2496 @@
+parameters:
+  version: '1.0'
+  creator: ndManager-
+generalInfo:
+  date: '2012-03-16'
+  experimenters: gravio
+  description: |-
+    hip
+    ca1
+  notes: replace with jg05-20120312-note.txt
+acquisitionSystem:
+  nBits: 16
+  nChannels: 96
+  samplingRate: 32552
+  voltageRange: 20
+  amplification: 1000
+  offset: 0
+fieldPotentials:
+  lfpSamplingRate: 1250
+files:
+- samplingRate: 1250
+  extension: lfp
+anatomicalDescription:
+  channelGroups:
+  - channels:
+    - id: 0
+      skip: 0
+    - id: 1
+      skip: 0
+    - id: 2
+      skip: 0
+    - id: 3
+      skip: 0
+    - id: 4
+      skip: 0
+    - id: 5
+      skip: 0
+    - id: 6
+      skip: 0
+    - id: 7
+      skip: 0
+  - channels:
+    - id: 8
+      skip: 0
+    - id: 9
+      skip: 0
+    - id: 10
+      skip: 0
+    - id: 11
+      skip: 0
+    - id: 12
+      skip: 0
+    - id: 13
+      skip: 0
+    - id: 14
+      skip: 0
+    - id: 15
+      skip: 0
+  - channels:
+    - id: 16
+      skip: 0
+    - id: 17
+      skip: 0
+    - id: 18
+      skip: 0
+    - id: 19
+      skip: 0
+    - id: 20
+      skip: 0
+    - id: 21
+      skip: 0
+    - id: 22
+      skip: 0
+    - id: 23
+      skip: 0
+  - channels:
+    - id: 24
+      skip: 0
+    - id: 25
+      skip: 0
+    - id: 26
+      skip: 0
+    - id: 27
+      skip: 0
+    - id: 28
+      skip: 0
+    - id: 29
+      skip: 0
+    - id: 30
+      skip: 0
+    - id: 31
+      skip: 0
+  - channels:
+    - id: 32
+      skip: 0
+    - id: 33
+      skip: 0
+    - id: 34
+      skip: 0
+    - id: 35
+      skip: 0
+    - id: 36
+      skip: 0
+    - id: 37
+      skip: 0
+    - id: 38
+      skip: 0
+    - id: 39
+      skip: 0
+  - channels:
+    - id: 40
+      skip: 0
+    - id: 41
+      skip: 0
+    - id: 42
+      skip: 0
+    - id: 43
+      skip: 0
+    - id: 44
+      skip: 0
+    - id: 45
+      skip: 0
+    - id: 46
+      skip: 0
+    - id: 47
+      skip: 0
+  - channels:
+    - id: 48
+      skip: 0
+    - id: 49
+      skip: 0
+    - id: 50
+      skip: 0
+    - id: 51
+      skip: 0
+    - id: 52
+      skip: 0
+    - id: 53
+      skip: 0
+    - id: 54
+      skip: 0
+    - id: 55
+      skip: 0
+  - channels:
+    - id: 56
+      skip: 0
+    - id: 57
+      skip: 0
+    - id: 58
+      skip: 0
+    - id: 59
+      skip: 0
+    - id: 60
+      skip: 0
+    - id: 61
+      skip: 0
+    - id: 62
+      skip: 0
+    - id: 63
+      skip: 0
+  - channels:
+    - id: 64
+      skip: 0
+    - id: 65
+      skip: 0
+    - id: 66
+      skip: 0
+    - id: 67
+      skip: 0
+    - id: 68
+      skip: 0
+    - id: 69
+      skip: 0
+    - id: 70
+      skip: 0
+    - id: 71
+      skip: 0
+    - id: 72
+      skip: 0
+    - id: 73
+      skip: 0
+    - id: 74
+      skip: 0
+    - id: 75
+      skip: 0
+    - id: 76
+      skip: 0
+    - id: 77
+      skip: 0
+    - id: 78
+      skip: 0
+    - id: 79
+      skip: 0
+    - id: 80
+      skip: 0
+    - id: 81
+      skip: 0
+    - id: 82
+      skip: 0
+    - id: 83
+      skip: 0
+    - id: 84
+      skip: 0
+    - id: 85
+      skip: 0
+    - id: 86
+      skip: 0
+    - id: 87
+      skip: 0
+    - id: 88
+      skip: 0
+    - id: 89
+      skip: 0
+    - id: 90
+      skip: 0
+    - id: 91
+      skip: 0
+    - id: 92
+      skip: 0
+    - id: 93
+      skip: 0
+    - id: 94
+      skip: 0
+    - id: 95
+      skip: 0
+spikeDetection:
+  channelGroups:
+  - channels:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 16
+    - 17
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 24
+    - 25
+    - 26
+    - 27
+    - 28
+    - 29
+    - 30
+    - 31
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 32
+    - 33
+    - 34
+    - 35
+    - 36
+    - 37
+    - 38
+    - 39
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 40
+    - 41
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    - 47
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 48
+    - 49
+    - 50
+    - 51
+    - 52
+    - 53
+    - 54
+    - 55
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 56
+    - 57
+    - 58
+    - 59
+    - 60
+    - 61
+    - 62
+    - 63
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 64
+    - 65
+    - 66
+    - 67
+    - 68
+    - 69
+    - 70
+    - 71
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 68
+    - 69
+    - 70
+    - 71
+    - 72
+    - 73
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 83
+    - 84
+    - 85
+    - 86
+    - 87
+    - 88
+    - 89
+    - 90
+    - 91
+    - 92
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+  - channels:
+    - 92
+    - 93
+    - 94
+    - 95
+    nSamples: 52
+    peakSampleIndex: 26
+    nFeatures: 3
+units:
+- group: 4
+  cluster: 2
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 10
+  cluster: 2
+  structure: '----------------'
+  type: '----------------'
+  isolationDistance: '----------------'
+  quality: '----------------'
+  notes: '----------------'
+- group: 10
+  cluster: 3
+  structure: '----------'
+  type: '----------'
+  isolationDistance: '----------'
+  quality: '----------'
+  notes: '----------'
+- group: 10
+  cluster: 4
+  structure: --
+  type: --
+  isolationDistance: --
+  quality: --
+  notes: --
+- group: 6
+  cluster: 2
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 3
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 4
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 5
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 6
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 7
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 8
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 9
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 10
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 11
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 12
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 13
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 14
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 15
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 16
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 17
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 18
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 19
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 20
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 6
+  cluster: 21
+  structure: '------'
+  type: '------'
+  isolationDistance: '------'
+  quality: '------'
+  notes: '------'
+- group: 12
+  cluster: 2
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 12
+  cluster: 3
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 12
+  cluster: 4
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 12
+  cluster: 5
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 12
+  cluster: 6
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 5
+  cluster: 2
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 2
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 3
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 4
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 5
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 6
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 7
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 8
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 9
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 10
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 11
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 12
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 13
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 14
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 15
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 16
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 17
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 18
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 19
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 20
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 21
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 22
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 23
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 24
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 25
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 26
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 27
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 28
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 29
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 30
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 31
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 32
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 33
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 34
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 35
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 36
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 37
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 38
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 39
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 40
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 41
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 42
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 43
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 44
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 45
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 46
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 47
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 7
+  cluster: 48
+  structure: --
+  type: --
+  isolationDistance: --
+  quality: --
+  notes: --
+- group: 7
+  cluster: 49
+  structure: '----'
+  type: '----'
+  isolationDistance: '----'
+  quality: '----'
+  notes: '----'
+- group: 7
+  cluster: 50
+  structure: '----------------'
+  type: '----------------'
+  isolationDistance: '----------------'
+  quality: '----------------'
+  notes: '----------------'
+- group: 7
+  cluster: 51
+  structure: '----'
+  type: '----'
+  isolationDistance: '----'
+  quality: '----'
+  notes: '----'
+- group: 7
+  cluster: 52
+  structure: --
+  type: --
+  isolationDistance: --
+  quality: --
+  notes: --
+- group: 7
+  cluster: 53
+  structure: --
+  type: --
+  isolationDistance: --
+  quality: --
+  notes: --
+- group: 7
+  cluster: 54
+  structure: '------'
+  type: '------'
+  isolationDistance: '------'
+  quality: '------'
+  notes: '------'
+- group: 7
+  cluster: 55
+  structure: --
+  type: --
+  isolationDistance: --
+  quality: --
+  notes: --
+- group: 7
+  cluster: 56
+  structure: --
+  type: --
+  isolationDistance: --
+  quality: --
+  notes: --
+- group: 8
+  cluster: 2
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 3
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 4
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 5
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 6
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 7
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 8
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 9
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 10
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 11
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 12
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 13
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 14
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 15
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 16
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 17
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 18
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 19
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 20
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 21
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 22
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 23
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 24
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 25
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 26
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 27
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 28
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 29
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 30
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 31
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 32
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 33
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 34
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 35
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 36
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 37
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 38
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 39
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 40
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 41
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 42
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 43
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 44
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 45
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 46
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 47
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 48
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 49
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 50
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 51
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 52
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 53
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 54
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 55
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 56
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 57
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 58
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 59
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 60
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 61
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 62
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 63
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 64
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 65
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 66
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 67
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 69
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 70
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 71
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+- group: 8
+  cluster: 72
+  structure: null
+  type: null
+  isolationDistance: null
+  quality: null
+  notes: null
+neuroscope:
+  version: 1.2.5
+  miscellaneous:
+    screenGain: 0.2
+    traceBackgroundImage: null
+  video:
+    rotate: 0
+    flip: 0
+    videoImage: null
+    positionsBackground: 0
+  spikes:
+    nSamples: 32
+    peakSampleIndex: 16
+  channels:
+    colors:
+    - channel: 0
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 1
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 2
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 3
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 4
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 5
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 6
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 7
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 8
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 9
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 10
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 11
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 12
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 13
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 14
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 15
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 16
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 17
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 18
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 19
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 20
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 21
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 22
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 23
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 24
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 25
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 26
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 27
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 28
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 29
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 30
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 31
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 32
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 33
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 34
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 35
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 36
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 37
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 38
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 39
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 40
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 41
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 42
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 43
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 44
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 45
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 46
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 47
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 48
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 49
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 50
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 51
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 52
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 53
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 54
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 55
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 56
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 57
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 58
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 59
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 60
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 61
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 62
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 63
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 64
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 65
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 66
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 67
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 68
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 69
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 70
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 71
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 72
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 73
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 74
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 75
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 76
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 77
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 78
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 79
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 80
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 81
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 82
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 83
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 84
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 85
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 86
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 87
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 88
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 89
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 90
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 91
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 92
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 93
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 94
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    - channel: 95
+      color: '#0080ff'
+      anatomyColor: '#0080ff'
+      spikeColor: '#0080ff'
+    offsets:
+    - channel: 0
+      defaultOffset: 0
+    - channel: 1
+      defaultOffset: 0
+    - channel: 2
+      defaultOffset: 0
+    - channel: 3
+      defaultOffset: 0
+    - channel: 4
+      defaultOffset: 0
+    - channel: 5
+      defaultOffset: 0
+    - channel: 6
+      defaultOffset: 0
+    - channel: 7
+      defaultOffset: 0
+    - channel: 8
+      defaultOffset: 0
+    - channel: 9
+      defaultOffset: 0
+    - channel: 10
+      defaultOffset: 0
+    - channel: 11
+      defaultOffset: 0
+    - channel: 12
+      defaultOffset: 0
+    - channel: 13
+      defaultOffset: 0
+    - channel: 14
+      defaultOffset: 0
+    - channel: 15
+      defaultOffset: 0
+    - channel: 16
+      defaultOffset: 0
+    - channel: 17
+      defaultOffset: 0
+    - channel: 18
+      defaultOffset: 0
+    - channel: 19
+      defaultOffset: 0
+    - channel: 20
+      defaultOffset: 0
+    - channel: 21
+      defaultOffset: 0
+    - channel: 22
+      defaultOffset: 0
+    - channel: 23
+      defaultOffset: 0
+    - channel: 24
+      defaultOffset: 0
+    - channel: 25
+      defaultOffset: 0
+    - channel: 26
+      defaultOffset: 0
+    - channel: 27
+      defaultOffset: 0
+    - channel: 28
+      defaultOffset: 0
+    - channel: 29
+      defaultOffset: 0
+    - channel: 30
+      defaultOffset: 0
+    - channel: 31
+      defaultOffset: 0
+    - channel: 32
+      defaultOffset: 0
+    - channel: 33
+      defaultOffset: 0
+    - channel: 34
+      defaultOffset: 0
+    - channel: 35
+      defaultOffset: 0
+    - channel: 36
+      defaultOffset: 0
+    - channel: 37
+      defaultOffset: 0
+    - channel: 38
+      defaultOffset: 0
+    - channel: 39
+      defaultOffset: 0
+    - channel: 40
+      defaultOffset: 0
+    - channel: 41
+      defaultOffset: 0
+    - channel: 42
+      defaultOffset: 0
+    - channel: 43
+      defaultOffset: 0
+    - channel: 44
+      defaultOffset: 0
+    - channel: 45
+      defaultOffset: 0
+    - channel: 46
+      defaultOffset: 0
+    - channel: 47
+      defaultOffset: 0
+    - channel: 48
+      defaultOffset: 0
+    - channel: 49
+      defaultOffset: 0
+    - channel: 50
+      defaultOffset: 0
+    - channel: 51
+      defaultOffset: 0
+    - channel: 52
+      defaultOffset: 0
+    - channel: 53
+      defaultOffset: 0
+    - channel: 54
+      defaultOffset: 0
+    - channel: 55
+      defaultOffset: 0
+    - channel: 56
+      defaultOffset: 0
+    - channel: 57
+      defaultOffset: 0
+    - channel: 58
+      defaultOffset: 0
+    - channel: 59
+      defaultOffset: 0
+    - channel: 60
+      defaultOffset: 0
+    - channel: 61
+      defaultOffset: 0
+    - channel: 62
+      defaultOffset: 0
+    - channel: 63
+      defaultOffset: 0
+    - channel: 64
+      defaultOffset: 0
+    - channel: 65
+      defaultOffset: 0
+    - channel: 66
+      defaultOffset: 0
+    - channel: 67
+      defaultOffset: 0
+    - channel: 68
+      defaultOffset: 0
+    - channel: 69
+      defaultOffset: 0
+    - channel: 70
+      defaultOffset: 0
+    - channel: 71
+      defaultOffset: 0
+    - channel: 72
+      defaultOffset: 0
+    - channel: 73
+      defaultOffset: 0
+    - channel: 74
+      defaultOffset: 0
+    - channel: 75
+      defaultOffset: 0
+    - channel: 76
+      defaultOffset: 0
+    - channel: 77
+      defaultOffset: 0
+    - channel: 78
+      defaultOffset: 0
+    - channel: 79
+      defaultOffset: 0
+    - channel: 80
+      defaultOffset: 0
+    - channel: 81
+      defaultOffset: 0
+    - channel: 82
+      defaultOffset: 0
+    - channel: 83
+      defaultOffset: 0
+    - channel: 84
+      defaultOffset: 0
+    - channel: 85
+      defaultOffset: 0
+    - channel: 86
+      defaultOffset: 0
+    - channel: 87
+      defaultOffset: 0
+    - channel: 88
+      defaultOffset: 0
+    - channel: 89
+      defaultOffset: 0
+    - channel: 90
+      defaultOffset: 0
+    - channel: 91
+      defaultOffset: 0
+    - channel: 92
+      defaultOffset: 0
+    - channel: 93
+      defaultOffset: 0
+    - channel: 94
+      defaultOffset: 0
+    - channel: 95
+      defaultOffset: 0
+programs:
+- name: ndm_clean
+  help: |-
+    Clean intermediate files after pre-processing is complete.
+
+    OPTIONAL PARAMETERS
+
+    Note: To keep the interface simpler, optional parameters have default values and are not listed in the 'Parameters' tab; to choose custom values, click the 'Add' button and manually add the required parameters (and custom values) to the list.
+
+    # wideband
+
+    Delete single-session wideband data files (default = true).
+
+    # xml
+
+    Delete single-session xml files (default = true).
+
+    # spots
+
+    Delete single-session spots files (default = false).
+
+    # pos
+
+    Delete single-session pos files (default = false).
+
+    # hipass
+
+    Delete the high-pass filtered data file (default = true).
+- name: ndm_concatenate
+  parameters:
+  - name: spotsSamplingRate
+    value: 50
+    status: Mandatory
+  help: |-
+    Concatenate all session files (.dat, .pos and .evt) recorded on the same day.
+
+    OPTIONAL PARAMETERS
+
+    Note: To keep the interface simpler, optional parameters have default values and are not all listed in the 'Parameters' tab; to choose custom values, click the 'Add' button and manually add the required parameters (and custom values) to the list.
+
+    # spotsSamplingRate
+
+    Sampling rate for .spots files, i.e. original sampling rate for video or tracker data (this parameter does not have a default value; if no custom value is provided, time shifts between wideband and video signals will not be reported, although concatenation will be performed normally).
+
+    # maxShift
+
+    If the duration of wideband signals and position samples differ by more than this threshold (in s, default = 3), this triggers a warning message.
+- name: ndm_extractchannels
+  parameters:
+  - name: nChannels
+    value: null
+    status: Mandatory
+  - name: channels
+    value: null
+    status: Mandatory
+  help: |-
+    Extract channels from .dat file (i.e. remove those channels that are not listed).
+
+    PARAMETERS
+
+    # nChannels
+
+    Number of channels in the initial .dat file (before extraction)
+
+    # channels
+
+    Space-separated list of channels to extract, numbered from 0
+- name: ndm_extractleds
+  parameters:
+  - name: suffix
+    value: null
+    status: Mandatory
+  - name: useTrackerData
+    value: 'true'
+    status: Mandatory
+  - name: threshold
+    value: 90
+    status: Mandatory
+  - name: extension
+    value: avi
+    status: Mandatory
+  - name: show
+    value: 'false'
+    status: Mandatory
+  help: |-
+    Extract LEDs (= bright spots) from a video file.
+
+    For each video frame, all bright spots are detected and listed in a .spots file, one line per spot, listing on successive columns the frame number, number of pixels in the spot, x and y coordinates of the spot center, x and y sizes of the spot (defined as standard deviations of the distributions of x and y coordinates of all the pixels in the spot), and spot color (as a YCrCb triplet).
+
+    PARAMETERS
+
+    # suffix
+
+    Suffix of the directory where the video file is located
+
+    # useTrackerData
+
+    Depending on the acquisition systems, the successive positions of the LEDs across time can be extracted from either the video file, or the online tracking file if such a feature is available (e.g. Neuralynx systems). Because in some configurations both video and tracking files may be recorded in parallel, it is necessary to explicitly request one of the above two methods.
+
+    # threshold
+
+    Bright spots consist of pixels brighter than this threshold (from 0 to 255)
+
+    # extension
+
+    Extension of the video file (e.g. avi, mpg, etc.)
+
+    # show
+
+    Whether the video should be displayed during LED extraction
+    (hiding the video yields faster processing, especially over network connections)
+- name: ndm_extractspikes
+  parameters:
+  - name: thresholdFactor
+    value: 1.5
+    status: Mandatory
+  - name: refractoryPeriod
+    value: 25
+    status: Mandatory
+  - name: peakSearchLength
+    value: 50
+    status: Mandatory
+  - name: start
+    value: 0
+    status: Mandatory
+  - name: duration
+    value: 60
+    status: Mandatory
+  help: |-
+    Extract spikes from high-pass filtered .fil file (this creates .res and .spk files).
+
+    First, the program automatically computes a baseline 'noise' level, using a subset of the data. Then, spikes are extracted whenever the signal crosses a threshold proportional to the baseline 'noise' level. To avoid spurious detections, the signal must have a local maximum (or minimum, depending on the sign of the signal) within a fixed search window starting at threshold crossing. Also, the duration between consecutive spikes must be greater than a fixed 'refractory' period.
+
+    PARAMETERS
+
+    # thresholdFactor
+
+    Threshold = thresholdFactor * baseline 'noise' level
+
+    # refractoryPeriod
+
+    Number of samples to skip after a spike, before trying to detect a new spike
+
+    # peakSearchLength
+
+    Length of the peak search window (in number of samples)
+
+    # start
+
+    Starting point in the file (in s) for computation of baseline 'noise' level
+
+    # duration
+
+    Duration (in s) for computation of baseline 'noise' level
+- name: ndm_hipass
+  parameters:
+  - name: windowHalfLength
+    value: 16
+    status: Mandatory
+  - name: chunkSize
+    value: 32000000
+    status: Mandatory
+  help: |-
+    High-pass filter a .dat file (required for spike extraction).
+
+    The program uses a median-based (non-linear) filter to minimize spike waveform distortion.
+
+    PARAMETERS
+
+    # windowHalfWidth
+
+    Determines the cutoff frequency
+- name: ndm_lfp
+  parameters:
+  - name: samplingRate
+    value: 1250
+    status: Mandatory
+  help: |-
+    Downsample a .dat file to create the corresponding LFP file.
+
+    PARAMETERS
+
+    # samplingRate
+
+    Target sampling rate (default = 1250Hz)
+- name: ndm_ncs2dat
+  parameters:
+  - name: reverse
+    value: 'false'
+    status: Mandatory
+  - name: suffixes
+    value: nlx
+    status: Mandatory
+  help: |-
+    Convert from .ncs (Neuralynx files) to .dat format.
+
+    PARAMETERS
+
+    # reverse
+
+    Whether the signals should be reversed (by default, NeuraLynx reverses all signals - this sets them back to normal)
+
+    # suffixes
+
+    List of suffixes of the directories where the NCS files are located
+
+    OPTIONAL PARAMETERS
+
+    Note: To keep the interface simpler, optional parameters have default values and are not listed in the 'Parameters' tab; to choose custom values, click the 'Add' button and manually add the required parameters (and custom values) to the list.
+
+    # gap
+
+    A data record is considered to match an 'acquisition restart' event if it is close in time and follows a sampling gap exceeding this threshold (in seconds, default = 1).
+
+    # ignoreEvents
+
+    In newer versions of Neuralynx, NEV files may not correctly list 'acquisition start/stop' events, which results in incorrect conversion; if this happens, set ignoreEvents to 'true' and reprocess to fix this issue (default = false).
+- name: ndm_nev2evt
+  parameters:
+  - name: suffixes
+    value: nlx
+    status: Mandatory
+  help: |-
+    Convert from .nev (Neuralynx files) to .evt format.
+
+    PARAMETERS
+
+    # suffixes
+
+    List of suffixes of the directories where the NEV files to convert are located
+
+    OPTIONAL PARAMETERS
+
+    Note: To keep the interface simpler, optional parameters have default values and are not listed in the 'Parameters' tab; to choose custom values, click the 'Add' button and manually add the required parameters (and custom values) to the list.
+
+    # gap
+
+    A data record is considered to match an 'acquisition restart' event if it is close in time and follows a sampling gap exceeding this threshold (in seconds, default = 1).
+- name: ndm_nvt2spots
+  parameters:
+  - name: suffix
+    value: null
+    status: Mandatory
+  help: |-
+    Extract spots from .nvt (Neuralynx files).
+
+    PARAMETERS
+
+    # suffix
+
+    Suffix of the directory where the NVT file is located
+
+    OPTIONAL PARAMETERS
+
+    Note: To keep the interface simpler, optional parameters have default values and are not listed in the 'Parameters' tab; to choose custom values, click the 'Add' button and manually add the required parameters (and custom values) to the list.
+
+    # gap
+
+    A data record is considered to match an 'acquisition restart' event if it is close in time and follows a sampling gap exceeding this threshold (in seconds, default = 1).
+- name: ndm_pca
+  parameters:
+  - name: before
+    value: 12
+    status: Mandatory
+  - name: after
+    value: 12
+    status: Mandatory
+  - name: extra
+    value: 'false'
+    status: Mandatory
+  help: |-
+    Compute principal component analysis (PCA).
+
+    PARAMETERS
+
+    All mandatory parameters are defined in the 'Acquisition System' and 'Spike Groups' tab.
+
+    OPTIONAL PARAMETERS
+
+    # before
+
+    Number of samples before the peak to use for the PCA. This can be either a space-separated list of numbers (one per electrode group), or a single common number for all groups.
+
+    # after
+
+    Number of samples after the peak to use for the PCA. This can be either a space-separated list of numbers (one per electrode group), or a single common number for all groups.
+
+    # extra
+
+    Whether extra features (spike peak value) should be included in the output files.
+- name: ndm_reorderchannels
+  help: |-
+    Reorder channels in .dat file.
+
+    PARAMETERS
+
+    # channels
+
+    List of reordered channels, numbered from 0
+- name: ndm_resample
+  parameters:
+  - name: suffixes
+    value: null
+    status: Mandatory
+  - name: samplingRates
+    value: null
+    status: Mandatory
+  - name: nChannels
+    value: null
+    status: Mandatory
+  help: |-
+    Resample individual .dat files from their original sampling rates to the common sampling rate of the final .dat file.
+
+    PARAMETERS
+
+    # suffixes
+
+    List of suffixes for the individual files to resample
+
+    # samplingRate
+
+    List of original sampling rates (in the same order as the suffixes)
+
+    # nChannels
+
+    List of numbers of channels in the individual data files (in the same order as the suffixes)
+- name: ndm_rescale
+  parameters:
+  - name: suffixes
+    value: null
+    status: Mandatory
+  - name: scalingFactors
+    value: null
+    status: Mandatory
+  help: |-
+    Rescale individual .dat files from their original input ranges to the common range (smallest).
+
+    This is useful if data were collected at different input ranges (e.g. different recording systems, amplifiers, or settings on the same recording system), but one wants to process and cluster them together.
+
+    PARAMETERS
+
+    # suffixes
+
+    List of suffixes for the individual files to resample
+
+    # scalingFactors
+
+    List (comma separated) of scaling factors to use for each session file. Must be smaller than 1, i.e. rescaling to the smallest input range of all.
+- name: ndm_smi2sts
+  parameters:
+  - name: suffix
+    value: null
+    status: Mandatory
+  help: "Extract spots timestamps from .smi (Neuralynx files).\n\n\t  WARNING: In\
+    \ the absence of a useable NVT file, you may wish to extract spots from the MPEG\
+    \ file(s) and timestamps from the SMI file(s), and then match them. This is what\
+    \ ndm_smi2sts is for, and spots2pos will try its best to help you do this, but\
+    \ the results are *not* reliable. This is because Neuralynx systems do not control\
+    \ MPEG video streams. Instead, they leave the task to the operating system, which\
+    \ does a very poor job as far as timing accuracy is concerned. As a result, the\
+    \ video gets started after a random delay following acquisition start, and video\
+    \ frames are shifted by an unpredictable amount (up to hundreds of milliseconds).\
+    \ Again, in the absence of a useable NVT file, this may be your only solution,\
+    \ but please keep these limitations in mind when analyzing your data.\n\nPARAMETERS\n\
+    \n# suffix\n\nSuffix of the directory where the SMI file is located\n\nOPTIONAL\
+    \ PARAMETERS\n\nNote: To keep the interface simpler, optional parameters have\
+    \ default values and are not listed in the 'Parameters' tab; to choose custom\
+    \ values, click the 'Add' button and manually add the required parameters (and\
+    \ custom values) to the list.\n\n# gap\n\nA data record is considered to match\
+    \ an 'acquisition restart' event if it is close in time and follows a sampling\
+    \ gap exceeding this threshold (in seconds, default = 1)."
+- name: ndm_start
+  parameters:
+  - name: suffixes
+    value: nlx
+    status: Mandatory
+  - name: log
+    value: 'false'
+    status: Mandatory
+  help: |-
+    Perform all processing steps for a multiple sets of multiple-session recordings: format conversion, channel extraction and reordering, video transcoding and tracking, data concatenation, spike detection and extraction, etc.
+
+    PARAMETERS
+
+    # suffixes
+
+    List of suffixes for the individual files to convert
+
+    OPTIONAL PARAMETERS
+
+    Note: To keep the interface simpler, optional parameters have default values and are not listed in the 'Parameters' tab; to choose custom values, click the 'Add' button and manually add the required parameters (and custom values) to the list.
+
+    # wideband
+
+    Process the wideband data files recorded by the acquisition system: convert to .dat format, resample, merge, extract and reorder channels (default = true)
+
+    # video
+
+    Process video files recorded by the acquisition system: transcode and extract LEDs (default = true)
+
+    # events
+
+    Process event files recorded by the acquisition system: convert to .evt format and rename events (default = true)
+
+    # spikes
+
+    Process spikes: detect and extract spike waveforms, perform PCA (default = true)
+
+    # lfp
+
+    Downsample wideband signals to produce LFP files (default = true)
+
+    # clean
+
+    Remove intermediate files after pre-processing is complete (default = false)
+
+    # log
+
+    Save progress information to log files for later review (use 'cat' or 'less -R' for correct formatting) (default = false)
+- name: ndm_transcodevideo
+  parameters:
+  - name: suffix
+    value: null
+    status: Mandatory
+  - name: extension
+    value: avi
+    status: Mandatory
+  - name: codec
+    value: null
+    status: Mandatory
+  help: |-
+    Transcode video file (convert to a different codec).
+
+    PARAMETERS
+
+    # suffix
+
+    Suffix of the directory where the video files to transcode are located
+
+    # extension
+
+    Extension of the original video file (e.g. avi, mpg, etc.)
+
+    # codec
+
+    Output file codec - possible choices include:
+
+     * x264 (MPEG-4 AVC)
+     * m1v (video-only MPEG-1)
+
+    Leave empty if no transcoding is required
