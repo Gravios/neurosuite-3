@@ -37,6 +37,7 @@ set(_srcs
     unittable.cpp
     videopage.cpp
     xmlreader.cpp
+    ndmanageryamlreader.cpp
     xmlwriter.cpp
     safetablewidget.cpp
     ndmanagerutils.cpp

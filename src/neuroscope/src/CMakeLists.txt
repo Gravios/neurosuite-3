@@ -25,6 +25,7 @@ set(_srcs
     itempalette.cpp
     neuroscopedoc.cpp
     neuroscopexmlreader.cpp
+    neuroscopeyamlreader.cpp
     positionproperties.cpp
     positionsprovider.cpp
     positionview.cpp
