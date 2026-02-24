@@ -29,12 +29,15 @@ neurosuite/
 
 | Component | Purpose | Manual |
 |---|---|---|
-| `ndmanager` | GUI session manager — edits `.xml` parameter files and launches preprocessing plugins | [doc/ndmanager.md](doc/ndmanager.md) |
-| `ndmanager-plugins` | Preprocessing pipeline: format conversion, filtering, spike detection, PCA | [doc/ndmanager-plugins.md](doc/ndmanager-plugins.md) |
-| `neuroscope` | Multi-channel raw signal, LFP, spike and event visualiser | [doc/neuroscope.md](doc/neuroscope.md) |
-| `klusters` | Interactive manual spike-sorting GUI | [doc/klusters.md](doc/klusters.md) |
-| `klustakwik` | Automatic spike-sorting via EM clustering (optional GPU acceleration) | [doc/klustakwik.md](doc/klustakwik.md) |
+| `ndmanager` | GUI session manager — edits `.xml`/`.yaml` parameter files and launches preprocessing plugins | [doc/ndmanager/README.md](doc/ndmanager/README.md) |
+| `ndmanager-plugins` | Preprocessing pipeline: format conversion, filtering, spike detection, PCA | [doc/ndmanager-plugins/README.md](doc/ndmanager-plugins/README.md) |
+| `neuroscope` | Multi-channel raw signal, LFP, spike and event visualiser | [doc/neuroscope/README.md](doc/neuroscope/README.md) |
+| `klusters` | Interactive manual spike-sorting GUI | [doc/klusters/README.md](doc/klusters/README.md) |
+| `klustakwik` | Automatic spike-sorting via EM clustering (optional GPU acceleration) | [doc/klustakwik/README.md](doc/klustakwik/README.md) |
+| `spikerealign` | Standalone batch waveform realignment tool | [doc/spikerealign/README.md](doc/spikerealign/README.md) |
 | `libklustersshared` | Shared Qt6 widget library — build dependency only, not used directly | — |
+
+See [doc/README.md](doc/README.md) for the full documentation index.
 
 ---
 

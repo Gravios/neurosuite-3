@@ -192,7 +192,7 @@ static bool realignCluster(
     // Read .fet header to get actual nDims
     int32_t fetNDim = timeDim;
     fseeko(fetF, 0, SEEK_SET);
-    fread(&fetNDim, sizeof(int32_t), 1, fetF);
+    { size_t _r = fread(&fetNDim, sizeof(int32_t), 1, fetF); (void)_r; }
     if (fetNDim <= 0) fetNDim = timeDim;
 
     for (int64_t i = 0; i < N; ++i) {
@@ -387,7 +387,7 @@ static bool realignCluster(
                               static_cast<off_t>(gidx[static_cast<size_t>(i)] *
                               (int64_t)sizeof(int32_t));
             fseeko(cluF, off, SEEK_SET);
-            fread(&origCluIds[static_cast<size_t>(i)], sizeof(int32_t), 1, cluF);
+            { size_t _r = fread(&origCluIds[static_cast<size_t>(i)], sizeof(int32_t), 1, cluF); (void)_r; }
         }
     }
 
@@ -517,7 +517,7 @@ int main(int argc, char** argv)
             long xsz = ftell(xf);
             rewind(xf);
             std::vector<char> xbuf(static_cast<size_t>(xsz) + 1, '\0');
-            fread(xbuf.data(), 1, static_cast<size_t>(xsz), xf);
+            { size_t _r = fread(xbuf.data(), 1, static_cast<size_t>(xsz), xf); (void)_r; }
             fclose(xf);
 
             // Try electrode-group-specific first, then global
@@ -545,7 +545,7 @@ int main(int argc, char** argv)
             return 1;
         }
         int32_t nClu32 = 0;
-        fread(&nClu32, sizeof(int32_t), 1, cf);
+        { size_t _r = fread(&nClu32, sizeof(int32_t), 1, cf); (void)_r; }
         fseek(cf, 0, SEEK_END);
         long cluSz = ftell(cf);
         fclose(cf);
@@ -592,7 +592,7 @@ int main(int argc, char** argv)
     if (!cf) { fprintf(stderr, "ERROR: cannot open %s\n", cluPath.c_str()); return 1; }
 
     int32_t nClusters32 = 0;
-    fread(&nClusters32, sizeof(int32_t), 1, cf);
+    { size_t _r = fread(&nClusters32, sizeof(int32_t), 1, cf); (void)_r; }
 
     std::vector<int32_t> allCluIds;
     {
@@ -628,7 +628,7 @@ int main(int argc, char** argv)
     {
         FILE* ff = fopen(fetPath.c_str(), "rb");
         if (!ff) { fprintf(stderr, "ERROR: cannot open %s\n", fetPath.c_str()); return 1; }
-        fread(&fetNDim, sizeof(int32_t), 1, ff);
+        { size_t _r = fread(&fetNDim, sizeof(int32_t), 1, ff); (void)_r; }
         fclose(ff);
     }
     const int timeDim   = fetNDim > 0 ? fetNDim : (pca.nCh * pca.nComp + 1);
