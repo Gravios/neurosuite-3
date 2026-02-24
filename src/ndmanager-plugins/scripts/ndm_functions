@@ -412,6 +412,302 @@ check_empty_variables()
 }
 
 #////////////////////////////////////////////////////////////////////////////
+#//  Read YAML parameter file (parallel to xml_read / read_script_parameter)
+#//
+#//  These functions mirror the XML reading API exactly so that ndm_ scripts
+#//  can support both .xml and .yaml parameter files with minimal changes.
+#//
+#//  Requires: python3 with the pyyaml package (pip install pyyaml, or
+#//            apt install python3-yaml on Debian/Ubuntu).
+#//
+#//  Auto-detection
+#//  --------------
+#//  The wrapper functions yaml_read / read_yaml_script_parameter accept a
+#//  session basename (no extension) and look for <session>.yaml first,
+#//  then fall back to <session>.yml.
+#//
+#//  Transparent dispatch
+#//  --------------------
+#//  The existing xml_read and read_script_parameter functions are overridden
+#//  below to auto-detect the file format.  Scripts that currently call
+#//  xml_read / read_script_parameter will transparently use the YAML reader
+#//  when a .yaml file is present, with no changes to the calling script.
+#////////////////////////////////////////////////////////////////////////////
+
+# ---- Low-level YAML reader ------------------------------------------------
+
+# Read a single scalar value from a YAML file using a dot-separated key path.
+# The key path mirrors the YAML hierarchy, e.g.:
+#   acquisitionSystem.nChannels
+#   spikeDetection.channelGroups.0.nSamples
+# Returns the value as a plain string, or empty string on failure.
+#
+#  usage: yaml_read_key file keypath
+yaml_read_key()
+{
+	local file=$1
+	local keypath=$2
+
+	python3 - "$file" "$keypath" << 'PYEOF'
+import sys, yaml
+
+def get_nested(node, parts):
+    for p in parts:
+        if node is None:
+            return None
+        if isinstance(node, list):
+            try:
+                node = node[int(p)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(node, dict):
+            node = node.get(p)
+        else:
+            return None
+    return node
+
+try:
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f)
+    parts = sys.argv[2].split('.')
+    val = get_nested(doc, parts)
+    if val is None:
+        sys.exit(0)
+    print(str(val).strip(), end='')
+except Exception:
+    sys.exit(0)
+PYEOF
+}
+
+# Resolve a session basename to its YAML file path.
+# Returns the path, or empty string if neither .yaml nor .yml exists.
+#  usage: find_yaml_file session
+find_yaml_file()
+{
+	local session=${1%.xml}
+	session=${session%.yaml}
+	session=${session%.yml}
+	if [ -f "${session}.yaml" ]; then echo "${session}.yaml"
+	elif [ -f "${session}.yml" ]; then echo "${session}.yml"
+	else echo ""
+	fi
+}
+
+# Read an arbitrary XPath-style query from a YAML file.
+# Supports the two XPath patterns used by ndm scripts:
+#   //acquisitionSystem/nChannels          → acquisitionSystem.nChannels
+#   //program/name[.='ndm_hipass']/../parameters/parameter/name[.='windowHalfLength']/../value
+#     → searches programs[] list by name, then parameter by name
+#
+#  usage: yaml_read file xpath
+yaml_read()
+{
+	local file=$1
+	local xpath=$2
+
+	# Normalise: strip the basename extension so we can re-add .yaml
+	local session=${file%.xml}
+	local yamlfile
+	yamlfile=$(find_yaml_file "$session")
+	[ -z "$yamlfile" ] && return
+
+	python3 - "$yamlfile" "$xpath" << 'PYEOF'
+import sys, yaml, re
+
+def load(path):
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+def xpath_simple(doc, xpath):
+    # Strip leading //
+    xpath = re.sub(r'^/+', '', xpath)
+    parts = xpath.split('/')
+    node = doc
+    for p in parts:
+        if node is None:
+            return None
+        if isinstance(node, list):
+            try:
+                node = node[int(p)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(node, dict):
+            node = node.get(p)
+        else:
+            return None
+    if node is None:
+        return None
+    return str(node).strip()
+
+def xpath_program_param(doc, xpath):
+    # Pattern: //program/name[.='SCRIPT']/../parameters/parameter/name[.='PARAM']/../value
+    m = re.search(r"name\[\.='([^']+)'\].*name\[\.='([^']+)'\].*value", xpath)
+    if not m:
+        return None
+    script_name, param_name = m.group(1), m.group(2)
+    programs = doc.get('programs', [])
+    for prog in programs:
+        if str(prog.get('name', '')) == script_name:
+            for param in prog.get('parameters', []):
+                if str(param.get('name', '')) == param_name:
+                    v = param.get('value')
+                    return str(v).strip() if v is not None else None
+    return None
+
+try:
+    doc = load(sys.argv[1])
+    xpath = sys.argv[2]
+
+    # Detect pattern
+    if "name[.=" in xpath:
+        result = xpath_program_param(doc, xpath)
+    else:
+        result = xpath_simple(doc, xpath)
+
+    if result is not None:
+        print(result, end='')
+except Exception:
+    pass
+PYEOF
+}
+
+# Read a script parameter from a YAML file.
+# Mirrors read_script_parameter exactly (same flags, same fallback chain).
+#
+#  usage: read_yaml_script_parameter [-s script_name] [-a alt_script_name] file name1 [name2...]
+read_yaml_script_parameter()
+{
+	local script=$program
+	local alt_script=$alt_program
+
+	while true; do
+		case "$1" in
+			-s) script=$2;     shift 2 ;;
+			-a) alt_script=$2; shift 2 ;;
+			*)  break ;;
+		esac
+	done
+
+	local file=$1
+	shift
+	local yamlfile
+	yamlfile=$(find_yaml_file "${file%.xml}")
+	[ -z "$yamlfile" ] && return
+
+	local value name
+
+	# Try current script name
+	for name in "$@"; do
+		value=$(yaml_read "$file" "//program/name[.='${script}']/../parameters/parameter/name[.='${name}']/../value")
+		xml_read_failed "$value" || break
+	done
+
+	# Try legacy / alternative script name
+	if xml_read_failed "$value" && [ -n "$alt_script" ]; then
+		for name in "$@"; do
+			value=$(yaml_read "$file" "//program/name[.='${alt_script}']/../parameters/parameter/name[.='${name}']/../value")
+			xml_read_failed "$value" || break
+		done
+	fi
+
+	# Try 'general' parameters
+	if xml_read_failed "$value"; then
+		for name in "$@"; do
+			value=$(yaml_read "$file" "//program/name[.='general']/../parameters/parameter/name[.='${name}']/../value")
+			xml_read_failed "$value" || break
+		done
+	fi
+
+	echo "$value"
+}
+
+# ---- Transparent dispatch overrides ---------------------------------------
+# Override xml_read and read_script_parameter to auto-detect format.
+# If a .yaml/.yml file exists alongside the .xml file, it takes precedence.
+# This allows all existing ndm_ scripts to work with YAML files unchanged.
+
+_orig_xml_read()
+{
+	local file=$1
+	local xpath=$2
+	file=${file%.xml}.xml
+	xpathReader "$file" "$xpath"
+}
+
+xml_read()
+{
+	local file=$1
+	local yamlfile
+	yamlfile=$(find_yaml_file "${file%.xml}")
+	if [ -n "$yamlfile" ]; then
+		yaml_read "$file" "$2"
+	else
+		_orig_xml_read "$file" "$2"
+	fi
+}
+
+_orig_read_script_parameter()
+{
+	local xpath name value
+	local script=$program
+	local alt_script=$alt_program
+
+	while true; do
+		case "$1" in
+			-s) script=$2;     shift 2 ;;
+			-a) alt_script=$2; shift 2 ;;
+			*)  break ;;
+		esac
+	done
+
+	local file=$1
+	file=${file%.xml}.xml
+	shift
+
+	for name in "$@"; do
+		xpath="//program/name[.='$script']/../parameters/parameter/name[.='$name']/../value"
+		value=$(xpathReader "$file" "$xpath")
+		xml_read_failed "$value" || break
+	done
+	if xml_read_failed "$value" && [ -n "$alt_script" ]; then
+		for name in "$@"; do
+			xpath="//program/name[.='$alt_script']/../parameters/parameter/name[.='$name']/../value"
+			value=$(xpathReader "$file" "$xpath")
+			xml_read_failed "$value" || break
+		done
+	fi
+	if xml_read_failed "$value"; then
+		for name in "$@"; do
+			xpath="//program/name[.='general']/../parameters/parameter/name[.='$name']/../value"
+			value=$(xpathReader "$file" "$xpath")
+			xml_read_failed "$value" || break
+		done
+	fi
+	echo "$value"
+}
+
+read_script_parameter()
+{
+	# Peek at the file argument (after any -s/-a options)
+	local args=("$@")
+	local i=0
+	while [ $i -lt ${#args[@]} ]; do
+		case "${args[$i]}" in
+			-s|-a) i=$((i+2)) ;;
+			*) break ;;
+		esac
+	done
+	local file="${args[$i]}"
+	local yamlfile
+	yamlfile=$(find_yaml_file "${file%.xml}")
+	if [ -n "$yamlfile" ]; then
+		read_yaml_script_parameter "$@"
+	else
+		_orig_read_script_parameter "$@"
+	fi
+}
+
+#////////////////////////////////////////////////////////////////////////////
 #//  General data file processing helpers
 #////////////////////////////////////////////////////////////////////////////
 

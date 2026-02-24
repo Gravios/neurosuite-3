@@ -19,6 +19,7 @@ set(CMAKE_AUTORCC ON)
 # Dependencies
 # ---------------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(yaml-cpp REQUIRED)
 
 # ---------------------------------------------------------------------------
 # Install layout

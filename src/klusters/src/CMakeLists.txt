@@ -29,6 +29,7 @@ set(klusters_SRCS
     klustersdoc.cpp
     klustersview.cpp
     klustersxmlreader.cpp
+    klustersyamlreader.cpp
     main.cpp
     minmaxthread.cpp
     pair.cpp

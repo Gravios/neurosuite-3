@@ -20,7 +20,8 @@ set(_srcs
     shared/itemcolors.cpp
     shared/zoomwindow.cpp
     shared/utilities.cpp
-    shared/progressbar.cpp)
+    shared/progressbar.cpp
+    shared/parameteryamlreader.cpp)
 
 set(_hdrs
     libklustersshared_export.h
@@ -43,7 +44,8 @@ set(_hdrs
     shared/utilities.h
     shared/zoomwindow.h
     shared/customtypes.h
-    shared/progressbar.h)
+    shared/progressbar.h
+    shared/parameteryamlreader.h)
 
 qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc
@@ -70,7 +72,8 @@ target_link_libraries(klustersshared
     PUBLIC
         Qt6::Core
         Qt6::Gui
-        Qt6::Widgets)
+        Qt6::Widgets
+        yaml-cpp)
 
 set_target_properties(klustersshared PROPERTIES
     VERSION   "${PROJECT_VERSION}"
