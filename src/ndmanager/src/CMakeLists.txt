@@ -38,6 +38,7 @@ set(_srcs
     videopage.cpp
     xmlreader.cpp
     ndmanageryamlreader.cpp
+    ndmanageryamlwriter.cpp
     xmlwriter.cpp
     safetablewidget.cpp
     ndmanagerutils.cpp
