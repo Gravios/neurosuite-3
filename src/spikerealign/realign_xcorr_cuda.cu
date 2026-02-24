@@ -61,28 +61,28 @@ __global__ void xcorr_kernel(
     __syncthreads();
 
     const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
+    // tmplEnergyBuf[0] = sqrt(tmplEnergy), tmplEnergyBuf[1] = sqrt(spkEnergy)
+    // for this spike — both precomputed by a preceding kernel.
     const float sqrtTmpl = tmplEnergyBuf[0];
+    // spkEnergy buffer: one float per spike, stored after the single tmpl value.
+    const float sqrtSpk  = tmplEnergyBuf[1 + sp];
 
-    // Zero-padded xcorr: template index s pairs with spike index s+lag.
-    // Spike samples outside [0,nSamp) contribute 0 to both num and spkEnergy.
+    // Circular xcorr: spike index wraps modulo nSamp.
     {
-        double num       = 0.0;
-        double spkEnergy = 0.0;
+        double num = 0.0;
 
         for (int ch = 0; ch < nChan; ++ch) {
             const int16_t* tch = tmpl + ch * nSamp;
             const int16_t* sch = spk  + ch * nSamp;
             for (int s = 0; s < nSamp; ++s) {
-                int sLag = s + lag;
-                if (sLag < 0 || sLag >= nSamp) continue;
-                double tv = static_cast<double>(tch[s]);
-                double sv = static_cast<double>(sch[sLag]);
-                num       += tv * sv;
-                spkEnergy += sv * sv;
+                int sLag = ((s + lag) % nSamp + nSamp) % nSamp;
+                num += static_cast<double>(tch[s]) *
+                       static_cast<double>(sch[sLag]);
             }
         }
 
-        double denom = static_cast<double>(sqrtTmpl) * sqrt(spkEnergy);
+        double denom = static_cast<double>(sqrtTmpl) *
+                       static_cast<double>(sqrtSpk);
         float score  = (denom > 1e-12) ? static_cast<float>(num / denom) : 0.0f;
 
         sh_score[threadIdx.x] = score;
@@ -112,20 +112,39 @@ __global__ void xcorr_kernel(
 }
 
 // ---------------------------------------------------------------------------
-// Template energy precomputation kernel (single block, single thread)
+// Energy precomputation kernel
+// out[0]      = sqrt(tmplEnergy)
+// out[1+sp]   = sqrt(spikeEnergy[sp])   for sp in [0, nSpikes)
 // ---------------------------------------------------------------------------
 __global__ void tmpl_energy_kernel(
     const int16_t* __restrict__ tmpl,
-    int nChan, int nSamp,
+    const int16_t* __restrict__ waveforms,
+    int nChan, int nSamp, int nSpikes,
     float* __restrict__ out)
 {
-    double e = 0.0;
-    for (int ch = 0; ch < nChan; ++ch)
-        for (int s = 0; s < nSamp; ++s) {
-            double v = static_cast<double>(tmpl[ch * nSamp + s]);
-            e += v * v;
-        }
-    out[0] = static_cast<float>(sqrt(e));
+    int sp = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+
+    if (sp == 0) {
+        // Thread 0 also computes template energy
+        double e = 0.0;
+        for (int ch = 0; ch < nChan; ++ch)
+            for (int s = 0; s < nSamp; ++s) {
+                double v = static_cast<double>(tmpl[ch * nSamp + s]);
+                e += v * v;
+            }
+        out[0] = static_cast<float>(sqrt(e));
+    }
+
+    if (sp < nSpikes) {
+        const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
+        double e = 0.0;
+        for (int ch = 0; ch < nChan; ++ch)
+            for (int s = 0; s < nSamp; ++s) {
+                double v = static_cast<double>(spk[ch * nSamp + s]);
+                e += v * v;
+            }
+        out[1 + sp] = static_cast<float>(sqrt(e));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,15 +179,20 @@ int xcorr_cuda_compute(
 
     if (cudaMalloc(&d_wave,   waveBytes)  != cudaSuccess) return -1;
     if (cudaMalloc(&d_tmpl,   tmplBytes)  != cudaSuccess) { cudaFree(d_wave); return -1; }
-    if (cudaMalloc(&d_tmplE,  sizeof(float)) != cudaSuccess) goto cleanup;
+    if (cudaMalloc(&d_tmplE,  (1 + static_cast<size_t>(nSpikes)) * sizeof(float)) != cudaSuccess) goto cleanup;
     if (cudaMalloc(&d_shifts, shiftBytes) != cudaSuccess) goto cleanup;
     if (cudaMalloc(&d_scores, scoreBytes) != cudaSuccess) goto cleanup;
 
     cudaMemcpy(d_wave, waveforms, waveBytes,  cudaMemcpyHostToDevice);
     cudaMemcpy(d_tmpl, tmpl,      tmplBytes,  cudaMemcpyHostToDevice);
 
-    // Precompute template energy
-    tmpl_energy_kernel<<<1, 1>>>(d_tmpl, nChannels, nSamples, d_tmplE);
+    // Precompute template and per-spike energies
+    {
+        int blk = 256;
+        int grd = (nSpikes + blk - 1) / blk;
+        tmpl_energy_kernel<<<grd, blk>>>(d_tmpl, d_wave,
+                                          nChannels, nSamples, nSpikes, d_tmplE);
+    }
 
     {
         const int nLags = 2 * maxShift + 1;

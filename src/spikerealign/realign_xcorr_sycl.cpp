@@ -44,6 +44,7 @@ static void k_xcorr_scores(
     const int16_t* waveforms,   // [nSpikes × nChan × nSamp]
     const int16_t* tmpl,        // [nChan × nSamp]
     float          sqrtTmplE,
+    const float*   sqrtSpkE,    // [nSpikes] — precomputed spike energies
     int nChan, int nSamp, int maxShift,
     float* scores)              // [nSpikes × nLags]
 {
@@ -54,24 +55,22 @@ static void k_xcorr_scores(
 
     const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
 
-    // Zero-padded xcorr: template index s pairs with spike index s+lag.
+    // Circular xcorr: spike index wraps modulo nSamp.
+    // Spike energy is constant (same samples reordered), so use precomputed value.
     float score = 0.0f;
     {
         // Use float throughout — double is not supported on many Intel GPU targets.
-        float num = 0.0f, spkE = 0.0f;
+        float num = 0.0f;
         for (int ch = 0; ch < nChan; ++ch) {
             const int16_t* tch = tmpl + ch * nSamp;
             const int16_t* sch = spk  + ch * nSamp;
             for (int s = 0; s < nSamp; ++s) {
-                int sLag = s + lag;
-                if (sLag < 0 || sLag >= nSamp) continue;
-                float tv = static_cast<float>(tch[s]);
-                float sv = static_cast<float>(sch[sLag]);
-                num  += tv * sv;
-                spkE += sv * sv;
+                int sLag = ((s + lag) % nSamp + nSamp) % nSamp;
+                num += static_cast<float>(tch[s]) *
+                       static_cast<float>(sch[sLag]);
             }
         }
-        float denom = sqrtTmplE * sycl::sqrt(spkE);
+        float denom = sqrtTmplE * sqrtSpkE[sp];
         score = (denom > 1e-12f) ? (num / denom) : 0.0f;
     }
     scores[sp * nLags + lagIdx] = score;
@@ -196,6 +195,7 @@ int xcorr_sycl_compute(
     float*   d_scores = nullptr;
     int*     d_shifts = nullptr;
     float*   d_sout   = nullptr;
+    float*   d_spkE   = nullptr;
 
     // Use optional<queue> so we can construct inside try{} while still
     // having the pointer available to the cleanup lambda in catch{}.
@@ -209,6 +209,7 @@ int xcorr_sycl_compute(
         if (d_scores) { free(d_scores, q); d_scores = nullptr; }
         if (d_shifts) { free(d_shifts, q); d_shifts = nullptr; }
         if (d_sout)   { free(d_sout,   q); d_sout   = nullptr; }
+        if (d_spkE)   { free(d_spkE,   q); d_spkE   = nullptr; }
     };
 
     // Same terminate guard as xcorr_sycl_available() — protects against
@@ -241,6 +242,20 @@ int xcorr_sycl_compute(
             }
         float sqrtTmplE = static_cast<float>(std::sqrt(tmplE));
 
+        // ── Precompute per-spike energies on host, copy to device ─────────────
+        std::vector<float> h_spkE(static_cast<size_t>(nSpikes));
+        for (int sp = 0; sp < nSpikes; ++sp) {
+            const int16_t* spk = waveforms +
+                static_cast<ptrdiff_t>(sp) * nChannels * nSamples;
+            double e = 0.0;
+            for (int ch = 0; ch < nChannels; ++ch)
+                for (int s = 0; s < nSamples; ++s) {
+                    double v = static_cast<double>(spk[ch * nSamples + s]);
+                    e += v * v;
+                }
+            h_spkE[static_cast<size_t>(sp)] = static_cast<float>(std::sqrt(e));
+        }
+
         // ── Device buffers ───────────────────────────────────────────────────
         size_t waveBytes  = static_cast<size_t>(nSpikes) * nChannels * nSamples;
         size_t tmplElems  = static_cast<size_t>(nChannels) * nSamples;
@@ -252,8 +267,12 @@ int xcorr_sycl_compute(
         d_shifts = checked_malloc_device<int>    (nSpikes,    q, "shifts");
         d_sout   = checked_malloc_device<float>  (nSpikes,    q, "scores_out");
 
+        // Per-spike sqrt(energy) — constant across lags for circular shift
+        d_spkE = checked_malloc_device<float>(nSpikes, q, "spkE");
+
         q.memcpy(d_wave, waveforms, waveBytes  * sizeof(int16_t));
         q.memcpy(d_tmpl, tmpl,      tmplElems  * sizeof(int16_t));
+        q.memcpy(d_spkE, h_spkE.data(), static_cast<size_t>(nSpikes) * sizeof(float));
         q.wait();
 
         // ── Kernel 1: score each (spike, lag) ────────────────────────────────
@@ -270,7 +289,7 @@ int xcorr_sycl_compute(
                     // Guard against padding threads beyond nLags
                     if (static_cast<int>(it.get_global_id(1)) < nLags)
                         k_xcorr_scores(it,
-                                       d_wave, d_tmpl, sqrtTmplE,
+                                       d_wave, d_tmpl, sqrtTmplE, d_spkE,
                                        nChannels, nSamples, maxShift,
                                        d_scores);
                 });

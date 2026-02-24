@@ -19,6 +19,19 @@
  * The template is the mean waveform over all spikes in the cluster,
  * computed by the caller before entering this function.
  *
+ * Circular (periodic) shift
+ * -------------------------
+ * Spike waveforms come from high-pass filtered data which has no DC
+ * component.  A circular shift is therefore more appropriate than
+ * zero-padding: the spike samples wrap around at the buffer boundary
+ * rather than being replaced by zeros.  This keeps the spike energy
+ * constant at every candidate lag, so the normalised xcorr score is a
+ * true comparison across all lags with no bias toward any shift magnitude.
+ *
+ * With zero-padding the denominator shrinks at large lags (fewer valid
+ * samples), which artificially inflates scores at the extremes and biases
+ * the argmax toward large shifts.  Circular shift removes this artefact.
+ *
  * Memory layout (all int16, interleaved samples)
  * -----------------------------------------------
  *   waveforms  [nSpikes × nChannels × nSamples]
