@@ -486,7 +486,7 @@
      <property name="title">
       <string>Miscellaneous</string>
      </property>
-     <layout class="QGridLayout" name="gridLayout">
+     <layout class="QGridLayout" name="gridLayout_1">
       <item row="0" column="0">
        <layout class="QHBoxLayout">
         <property name="margin">

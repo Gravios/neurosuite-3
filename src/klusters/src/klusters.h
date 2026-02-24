@@ -439,6 +439,9 @@ private Q_SLOTS:
 
     /**Updates the status modified of the current opend document.*/
     void slotClusterInformationModified();
+    /** Raised when the cluster palette widget gains focus: switches to the
+     *  first Overview Display tab and returns focus to the palette list. */
+    void slotShowOverviewForPalette();
 
     void slotAbout();
 

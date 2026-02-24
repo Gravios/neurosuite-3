@@ -53,6 +53,10 @@ protected:
 Q_SIGNALS:
     void changeColor(QListWidgetItem* item);
     void onItem(QListWidgetItem* item);
+    /** Emitted whenever the palette widget receives keyboard focus.
+     *  klusters.cpp connects this to a slot that ensures the Overview
+     *  Display tab is visible, then returns focus to the palette. */
+    void paletteGainedFocus();
 };
 
 class ClusterPalette : public QWidget
@@ -98,6 +102,10 @@ public:
     /**updates the background color of the palette.*/
     void changeBackgroundColor(const QColor& color);
 
+    /** Transfer keyboard focus to the inner list widget so arrow-key
+     *  navigation works immediately after the Overview tab is raised. */
+    void setFocusToList();
+
 public Q_SLOTS:
     void changeColor(QListWidgetItem *item);
     void moveClustersToNoise();
@@ -126,6 +134,9 @@ Q_SIGNALS:
     void moveClustersToNoise(const QList<int> &selectedClusters);
     void moveClustersToArtefact(const QList<int> &selectedClusters);
     void clusterInformationModified();
+    /** Forwarded from ClusterPaletteWidget: emitted when the palette gains
+     *  keyboard focus. klusters.cpp uses this to switch to the Overview tab. */
+    void paletteGainedFocus();
 
 private:
     ClusterPaletteWidget* iconView;

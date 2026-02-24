@@ -30,6 +30,7 @@
 #include <QToolTip>
 #include <QMouseEvent>
 #include <QDebug>
+#include <climits>
 
 #include <QPixmap>
 #include <QBitmap>
@@ -69,67 +70,133 @@ void ClusterPaletteWidget::mouseMoveEvent ( QMouseEvent * event )
 void ClusterPaletteWidget::focusInEvent(QFocusEvent *event)
 {
     QListWidget::focusInEvent(event);
-    // Scroll so the current (highlighted) cluster is visible and ensure it
-    // has a current-item marker so arrow keys work immediately.
+    // Ensure a current item exists so arrow keys have a starting point.
     QListWidgetItem* cur = currentItem();
-    if(!cur && count() > 0){
-        // No current item yet — set the first one so arrows have a starting point.
+    if (!cur && count() > 0) {
         setCurrentRow(0);
         cur = currentItem();
     }
-    if(cur)
+    if (cur)
         scrollToItem(cur, QAbstractItemView::EnsureVisible);
+
+    // Ask klusters to show the Overview Display tab (it returns focus to us
+    // after switching, so we emit after the scroll above is done).
+    Q_EMIT paletteGainedFocus();
 }
 
 void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
 {
     const bool hasShiftPressed = event->modifiers() & Qt::ShiftModifier;
 
-    // Both Right/Down advance to the next cluster; Left/Up go to the previous.
-    // We treat them identically so the user can navigate with either axis.
-    const bool goNext = (event->key() == Qt::Key_Right || event->key() == Qt::Key_Down);
-    const bool goPrev = (event->key() == Qt::Key_Left  || event->key() == Qt::Key_Up);
+    // Left/Right navigate sequentially (previous/next item in list order).
+    // Up/Down navigate by row within the same column using visual geometry.
+    const bool goNext     = (event->key() == Qt::Key_Right);
+    const bool goPrev     = (event->key() == Qt::Key_Left);
+    const bool goDown     = (event->key() == Qt::Key_Down);
+    const bool goUp       = (event->key() == Qt::Key_Up);
 
-    if (goNext) {
-        QListWidgetItem *c = currentItem();
-        if (c) {
-            const int i = row(c);
-            if (i < count()-1) {
-                QListWidgetItem *nextItem = item(i+1);
-                if (hasShiftPressed) {
-                    if(nextItem->isSelected())
-                        c->setSelected(false);
-                    else {
-                        c->setSelected(true);
-                        nextItem->setSelected(true);
-                    }
-                    setCurrentItem(nextItem);
-                } else {
-                    clearSelection();
-                    setCurrentRow(i+1);
+    auto applyMove = [&](int targetRow) {
+        if (targetRow < 0 || targetRow >= count()) return;
+        QListWidgetItem *target = item(targetRow);
+        if (hasShiftPressed) {
+            QListWidgetItem *c = currentItem();
+            if (c) {
+                if (target->isSelected())
+                    c->setSelected(false);
+                else {
+                    c->setSelected(true);
+                    target->setSelected(true);
                 }
-                scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
             }
+            setCurrentItem(target);
+        } else {
+            clearSelection();
+            setCurrentRow(targetRow);
         }
-    } else if (goPrev) {
+        scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
+    };
+
+    if (goNext || goPrev) {
         QListWidgetItem *c = currentItem();
-        if (c) {
+        if (!c && count() > 0) {
+            // No selection: Right starts at the end, Left starts at the beginning.
+            applyMove(goNext ? count() - 1 : 0);
+        } else if (c) {
             const int i = row(c);
-            if (i > 0) {
-                QListWidgetItem *nextItem = item(i-1);
-                if (hasShiftPressed) {
-                    if(nextItem->isSelected())
-                        c->setSelected(false);
-                    else {
-                        c->setSelected(true);
-                        nextItem->setSelected(true);
-                    }
-                    setCurrentItem(nextItem);
-                } else {
-                    clearSelection();
-                    setCurrentRow(i-1);
+            if      (goNext && i < count() - 1) applyMove(i + 1);
+            else if (goNext)                    applyMove(0);            // wrap: last → first
+            else if (goPrev && i > 0)           applyMove(i - 1);
+            else if (goPrev)                    applyMove(count() - 1); // wrap: first → last
+        }
+    } else if (goDown || goUp) {
+        QListWidgetItem *c = currentItem();
+        if (!c && count() > 0) {
+            // No selection: Down starts at the end, Up starts at the beginning.
+            applyMove(goDown ? count() - 1 : 0);
+        } else if (c) {
+            // Find the item directly above or below by comparing visual
+            // geometry.  We avoid all column-count arithmetic because the
+            // palette reflows freely when the window is resized, making any
+            // cached count wrong.
+            //
+            // Strategy: among all items whose vertical centre is strictly
+            // above (goUp) or below (goDown) the centre of the current item,
+            // pick the one whose horizontal centre is closest to ours.  When
+            // there are ties on the closest-x axis (two items equally near our
+            // column), prefer the one whose top/bottom edge is nearest — i.e.
+            // the item in the immediately adjacent row.
+            const QRect cur = visualRect(indexFromItem(c));
+            const int   cx  = cur.center().x();
+            const int   cy  = cur.center().y();
+
+            int bestRow  = -1;
+            int bestDx   = INT_MAX;   // horizontal distance to our column
+            int bestDy   = INT_MAX;   // vertical distance to adjacent row
+
+            for (int k = 0; k < count(); ++k) {
+                const QRect r = visualRect(model()->index(k, 0));
+                const int   ky = r.center().y();
+                const bool  qualifies = goDown ? (ky > cy) : (ky < cy);
+                if (!qualifies) continue;
+
+                const int dx = qAbs(r.center().x() - cx);
+                const int dy = qAbs(ky - cy);
+
+                // Prefer smaller dx (same column); break ties by smaller dy
+                // (immediately adjacent row rather than two rows away).
+                if (dx < bestDx || (dx == bestDx && dy < bestDy)) {
+                    bestDx  = dx;
+                    bestDy  = dy;
+                    bestRow = k;
                 }
-                scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
+            }
+
+            if (bestRow >= 0) {
+                applyMove(bestRow);
+            } else {
+                // No item found in the target direction — wrap to the opposite
+                // end of the same column.
+                // Find the row boundary: for goDown (wrap to top) the target y
+                // is the minimum centre-y across all items; for goUp (wrap to
+                // bottom) it is the maximum.
+                int edgeY = goDown ? INT_MAX : INT_MIN;
+                for (int k = 0; k < count(); ++k) {
+                    const int ky = visualRect(model()->index(k, 0)).center().y();
+                    if (goDown && ky < edgeY) edgeY = ky;
+                    if (goUp   && ky > edgeY) edgeY = ky;
+                }
+
+                // Among all items on that edge row, pick the one with the
+                // smallest horizontal distance to our column.
+                int wrapRow = -1;
+                int wrapDx  = INT_MAX;
+                for (int k = 0; k < count(); ++k) {
+                    const QRect r  = visualRect(model()->index(k, 0));
+                    if (r.center().y() != edgeY) continue;
+                    const int   dx = qAbs(r.center().x() - cx);
+                    if (dx < wrapDx) { wrapDx = dx; wrapRow = k; }
+                }
+                if (wrapRow >= 0) applyMove(wrapRow);
             }
         }
     } else {
@@ -209,6 +276,7 @@ ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QSt
     connect(iconView,SIGNAL(customContextMenuRequested(QPoint)),this, SLOT(slotCustomContextMenuRequested(QPoint)));
     connect(iconView,SIGNAL(changeColor(QListWidgetItem*)),SLOT(changeColor(QListWidgetItem*)));
     connect(iconView,SIGNAL(onItem(QListWidgetItem*)),this, SLOT(slotOnItem(QListWidgetItem*)));
+    connect(iconView,SIGNAL(paletteGainedFocus()),this, SIGNAL(paletteGainedFocus()));
 
     // Redirect focus straight to the inner list so Tab-navigation and
     // arrow-key cluster browsing work the moment the panel is entered.
@@ -701,6 +769,12 @@ void ClusterPalette::hideUserClusterInformation(){
     iconView->resize(this->width(),this->height());
 }
 
+
+void ClusterPalette::setFocusToList()
+{
+    if (iconView)
+        iconView->setFocus(Qt::OtherFocusReason);
+}
 
 void ClusterPalette::changeBackgroundColor(const QColor& color){
     backgroundColor = color;
