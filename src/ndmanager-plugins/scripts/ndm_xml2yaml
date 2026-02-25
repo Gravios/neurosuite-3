@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+"""
+ndm_xml2yaml — Convert a neurosuite/ndManager XML parameter file to YAML format.
+
+Usage:
+    ndm_xml2yaml SESSION.xml [OUTPUT.yaml]
+
+If OUTPUT is omitted, writes SESSION.yaml in the same directory.
+The XML file is not modified.
+"""
+
+import sys
+import os
+import re
+from xml.etree import ElementTree as ET
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def text(el, default=None):
+    """Return stripped text content of an element, or default if empty/None."""
+    if el is None:
+        return default
+    t = (el.text or "").strip()
+    return t if t else default
+
+
+def intval(el, default=None):
+    t = text(el)
+    if t is None:
+        return default
+    try:
+        return int(t)
+    except ValueError:
+        return default
+
+
+def floatval(el, default=None):
+    t = text(el)
+    if t is None:
+        return default
+    try:
+        return float(t)
+    except ValueError:
+        return default
+
+
+def yaml_str(s):
+    """Quote a string for YAML if it contains special characters or newlines."""
+    if s is None:
+        return "~"
+    if "\n" in s:
+        # Use double-quoted scalar with \n escapes
+        escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        return f'"{escaped}"'
+    # Quote if it looks like a YAML special value or contains : # etc.
+    needs_quote = (
+        s == "" or
+        s.lower() in ("true", "false", "null", "~", "yes", "no", "on", "off") or
+        any(c in s for c in ':#{}&*!|>\'"%@`') or
+        s[0] in "-?[]{}" or
+        s.startswith("0x") or
+        (s.startswith("0") and len(s) > 1 and s[1:].isdigit())
+    )
+    if needs_quote:
+        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return s
+
+
+def yaml_scalar(v):
+    """Return a YAML scalar representation of a Python value."""
+    if v is None:
+        return "~"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    return yaml_str(str(v))
+
+
+# ---------------------------------------------------------------------------
+# Writer — minimal hand-rolled YAML that matches the established format
+# ---------------------------------------------------------------------------
+
+class YamlWriter:
+    def __init__(self):
+        self.lines = []
+
+    def kv(self, indent, key, value):
+        self.lines.append(f"{'  ' * indent}{key}: {yaml_scalar(value)}")
+
+    def key(self, indent, key):
+        self.lines.append(f"{'  ' * indent}{key}:")
+
+    def list_item_open(self, indent):
+        """Emit the list item marker — subsequent fields use indent+1 with
+        the first one on the same line as '- '."""
+        # Caller will use list_item_kv for the first field
+        pass
+
+    def list_item_kv(self, indent, key, value, first=False):
+        prefix = "- " if first else "  "
+        self.lines.append(f"{'  ' * indent}{prefix}{key}: {yaml_scalar(value)}")
+
+    def blank(self):
+        pass  # keep output compact, no blank lines between sections
+
+    def dumps(self):
+        return "\n".join(self.lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Section converters
+# ---------------------------------------------------------------------------
+
+def convert_general_info(root, w):
+    gi = root.find("generalInfo")
+    if gi is None:
+        return
+    w.key(0, "generalInfo")
+    w.kv(1, "date",          text(gi.find("date")))
+    w.kv(1, "experimenters", text(gi.find("experimenters")))
+    w.kv(1, "description",   text(gi.find("description")))
+    w.kv(1, "notes",         text(gi.find("notes")))
+
+
+def convert_acquisition_system(root, w):
+    acq = root.find("acquisitionSystem")
+    if acq is None:
+        return
+    w.key(0, "acquisitionSystem")
+    w.kv(1, "nBits",         intval(acq.find("nBits"),         16))
+    w.kv(1, "nChannels",     intval(acq.find("nChannels"),     0))
+    w.kv(1, "samplingRate",  intval(acq.find("samplingRate"),  0))
+    w.kv(1, "voltageRange",  intval(acq.find("voltageRange"),  20))
+    w.kv(1, "amplification", intval(acq.find("amplification"), 1000))
+    w.kv(1, "offset",        intval(acq.find("offset"),        0))
+
+
+def convert_field_potentials(root, w):
+    fp = root.find("fieldPotentials")
+    if fp is None:
+        return
+    w.key(0, "fieldPotentials")
+    w.kv(1, "lfpSamplingRate", intval(fp.find("lfpSamplingRate")))
+
+
+def convert_files(root, w):
+    files = root.find("files")
+    if files is None:
+        return
+    items = files.findall("file")
+    if not items:
+        return
+    w.key(0, "files")
+    for f in items:
+        sr  = intval(f.find("samplingRate"))
+        ext = text(f.find("extension"))
+        w.list_item_kv(1, "samplingRate", sr,  first=True)
+        w.list_item_kv(1, "extension",    ext, first=False)
+
+
+def convert_anatomical_description(root, w):
+    ad = root.find("anatomicalDescription")
+    if ad is None:
+        return
+    cg = ad.find("channelGroups")
+    if cg is None:
+        return
+    w.key(0, "anatomicalDescription")
+    w.key(1, "channelGroups")
+    for grp in cg.findall("group"):
+        channels = grp.findall("channel")
+        if not channels:
+            continue
+        first = True
+        for ch in channels:
+            ch_id   = intval(ch, 0)
+            ch_skip = int(ch.get("skip", "0"))
+            if first:
+                w.lines.append(f"    - channels:")
+                first = False
+            w.lines.append(f"        - id: {ch_id}")
+            w.lines.append(f"          skip: {ch_skip}")
+
+
+def convert_spike_detection(root, w):
+    sd = root.find("spikeDetection")
+    if sd is None:
+        return
+    cg = sd.find("channelGroups")
+    if cg is None:
+        return
+    w.key(0, "spikeDetection")
+    w.key(1, "channelGroups")
+    for grp in cg.findall("group"):
+        channels     = grp.find("channels")
+        n_samples    = intval(grp.find("nSamples"),        52)
+        peak_idx     = intval(grp.find("peakSampleIndex"), 26)
+        n_features   = intval(grp.find("nFeatures"),       3)
+        ch_list = channels.findall("channel") if channels is not None else []
+        if not ch_list:
+            continue
+        w.lines.append(f"    - channels:")
+        for ch in ch_list:
+            w.lines.append(f"        - {intval(ch)}")
+        w.lines.append(f"      nSamples: {n_samples}")
+        w.lines.append(f"      peakSampleIndex: {peak_idx}")
+        w.lines.append(f"      nFeatures: {n_features}")
+
+
+def convert_units(root, w):
+    units = root.find("units")
+    if units is None:
+        w.lines.append("units: ~")
+        return
+    unit_list = units.findall("unit")
+    if not unit_list:
+        w.lines.append("units: ~")
+        return
+
+    # Sentinel-value dash strings used by ndManager ("--", "---", etc.) → null
+    def clean(s):
+        if s is None:
+            return None
+        if re.fullmatch(r"-+", s):
+            return None
+        return s if s else None
+
+    w.key(0, "units")
+    for u in unit_list:
+        grp     = intval(u.find("group"))
+        cluster = intval(u.find("cluster"))
+        struct  = clean(text(u.find("structure")))
+        utype   = clean(text(u.find("type")))
+        isodist = clean(text(u.find("isolationDistance")))
+        quality = clean(text(u.find("quality")))
+        notes   = clean(text(u.find("notes")))
+        w.list_item_kv(1, "group",             grp,     first=True)
+        w.list_item_kv(1, "cluster",           cluster, first=False)
+        w.list_item_kv(1, "structure",         struct,  first=False)
+        w.list_item_kv(1, "type",              utype,   first=False)
+        w.list_item_kv(1, "isolationDistance", isodist, first=False)
+        w.list_item_kv(1, "quality",           quality, first=False)
+        w.list_item_kv(1, "notes",             notes,   first=False)
+
+
+def convert_neuroscope(root, w):
+    ns = root.find("neuroscope")
+    if ns is None:
+        return
+    version = ns.get("version", "")
+
+    misc  = ns.find("miscellaneous")
+    video = ns.find("video")
+    spks  = ns.find("spikes")
+    chs   = ns.find("channels")
+
+    w.key(0, "neuroscope")
+    w.kv(1, "version", version)
+
+    # miscellaneous
+    w.key(1, "miscellaneous")
+    screen_gain = floatval(misc.find("screenGain") if misc is not None else None, 0.2)
+    bg_image    = text(misc.find("traceBackgroundImage") if misc is not None else None)
+    w.kv(2, "screenGain",          screen_gain)
+    w.kv(2, "traceBackgroundImage", bg_image)
+
+    # video
+    w.key(1, "video")
+    if video is not None:
+        w.kv(2, "rotate",             intval(video.find("rotate"), 0))
+        w.kv(2, "flip",               intval(video.find("flip"),   0))
+        w.kv(2, "videoImage",         text(video.find("videoImage")))
+        w.kv(2, "positionsBackground",intval(video.find("positionsBackground"), 0))
+    else:
+        w.kv(2, "rotate",              0)
+        w.kv(2, "flip",                0)
+        w.kv(2, "videoImage",          None)
+        w.kv(2, "positionsBackground", 0)
+
+    # spikes
+    w.key(1, "spikes")
+    if spks is not None:
+        w.kv(2, "nSamples",       intval(spks.find("nSamples"),       32))
+        w.kv(2, "peakSampleIndex",intval(spks.find("peakSampleIndex"),16))
+    else:
+        w.kv(2, "nSamples",        32)
+        w.kv(2, "peakSampleIndex", 16)
+
+    if chs is None:
+        return
+
+    # Build per-channel dicts from the interleaved channelColors / channelOffset elements
+    color_map  = {}   # channel_id → {color, anatomyColor, spikeColor}
+    offset_map = {}   # channel_id → defaultOffset
+
+    for cc in chs.findall("channelColors"):
+        ch_id = intval(cc.find("channel"))
+        if ch_id is None:
+            continue
+        color_map[ch_id] = {
+            "color":        text(cc.find("color"),        "#0080ff"),
+            "anatomyColor": text(cc.find("anatomyColor"), "#0080ff"),
+            "spikeColor":   text(cc.find("spikeColor"),   "#0080ff"),
+        }
+    for co in chs.findall("channelOffset"):
+        ch_id = intval(co.find("channel"))
+        if ch_id is None:
+            continue
+        offset_map[ch_id] = intval(co.find("defaultOffset"), 0)
+
+    all_ids = sorted(set(list(color_map.keys()) + list(offset_map.keys())))
+
+    # colors
+    w.key(1, "channels")
+    w.key(2, "colors")
+    for ch_id in all_ids:
+        c = color_map.get(ch_id, {"color": "#0080ff", "anatomyColor": "#0080ff", "spikeColor": "#0080ff"})
+        w.list_item_kv(3, "channel",      ch_id,           first=True)
+        w.list_item_kv(3, "color",        c["color"],      first=False)
+        w.list_item_kv(3, "anatomyColor", c["anatomyColor"],first=False)
+        w.list_item_kv(3, "spikeColor",   c["spikeColor"], first=False)
+
+    # offsets
+    w.key(2, "offsets")
+    for ch_id in all_ids:
+        off = offset_map.get(ch_id, 0)
+        w.list_item_kv(3, "channel",       ch_id, first=True)
+        w.list_item_kv(3, "defaultOffset", off,   first=False)
+
+
+def convert_programs(root, w):
+    progs = root.find("programs")
+    if progs is None:
+        return
+    prog_list = progs.findall("program")
+    if not prog_list:
+        return
+    w.key(0, "programs")
+    for prog in prog_list:
+        name   = text(prog.find("name") if prog.find("name") is not None else prog.find("n"))
+        params = prog.find("parameters")
+        help_t = text(prog.find("help"))
+
+        w.list_item_kv(1, "name", name, first=True)
+
+        # parameters
+        param_list = params.findall("parameter") if params is not None else []
+        if param_list:
+            w.key(2, "parameters")
+            for p in param_list:
+                pname   = text(p.find("name") if p.find("name") is not None else p.find("n"))
+                pval    = text(p.find("value"))
+                pstatus = text(p.find("status"))
+                # coerce obvious booleans/ints
+                if pval is not None:
+                    if pval.lower() == "true":
+                        pval = True
+                    elif pval.lower() == "false":
+                        pval = False
+                    else:
+                        try:
+                            pval = int(pval)
+                        except (ValueError, TypeError):
+                            try:
+                                pval = float(pval)
+                            except (ValueError, TypeError):
+                                pass
+                w.list_item_kv(3, "name",   pname,   first=True)
+                w.list_item_kv(3, "value",  pval,    first=False)
+                w.list_item_kv(3, "status", pstatus, first=False)
+        else:
+            w.lines.append(f"    parameters: ~")
+
+        # help — collapse whitespace, emit as double-quoted scalar
+        if help_t:
+            # normalise internal whitespace: collapse runs of spaces/tabs,
+            # keep \n as literal \n in the YAML string
+            cleaned = re.sub(r'[ \t]+', ' ', help_t).strip()
+            escaped = cleaned.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+            w.lines.append(f'    help: "{escaped}"')
+        else:
+            w.lines.append(f"    help: ~")
+
+
+# ---------------------------------------------------------------------------
+# Top-level converter
+# ---------------------------------------------------------------------------
+
+def convert(xml_path, yaml_path):
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+
+    w = YamlWriter()
+
+    # Header
+    version = root.get("version", "1.0")
+    creator = root.get("creator", "ndManager-")
+    w.key(0, "parameters")
+    w.kv(1, "version", version)
+    w.kv(1, "creator", creator)
+
+    convert_general_info(root, w)
+    convert_acquisition_system(root, w)
+    convert_field_potentials(root, w)
+    convert_files(root, w)
+    convert_anatomical_description(root, w)
+    convert_spike_detection(root, w)
+    convert_units(root, w)
+    convert_neuroscope(root, w)
+    convert_programs(root, w)
+
+    with open(yaml_path, "w") as f:
+        f.write(w.dumps())
+
+    print(f"Written: {yaml_path}")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__)
+        sys.exit(0)
+
+    xml_path = sys.argv[1]
+    if not os.path.isfile(xml_path):
+        print(f"error: file not found: {xml_path}", file=sys.stderr)
+        sys.exit(1)
+
+    if len(sys.argv) >= 3:
+        yaml_path = sys.argv[2]
+    else:
+        base = xml_path
+        for ext in (".xml", ".XML"):
+            if base.endswith(ext):
+                base = base[: -len(ext)]
+                break
+        yaml_path = base + ".yaml"
+
+    convert(xml_path, yaml_path)
+
+
+if __name__ == "__main__":
+    main()
