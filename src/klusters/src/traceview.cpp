@@ -18,7 +18,7 @@
 
 //include files for the application
 #include "traceview.h"
-#include "channelcolors.h"
+#include <klustersshared/channelcolors.h>
 
 // include files for QT
 #include <QMap>

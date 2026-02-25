@@ -14,8 +14,8 @@
 #include <QString>
 
 #include "sessionInformation.h"   // ChannelDescription = ChannelColorEntry
-#include "parameteryamlreader.h"
-#include "neuroscopevideoinfo.h"
+#include <klustersshared/parameteryamlreader.h>
+#include <klustersshared/neuroscopevideoinfo.h>
 
 /**
  * @brief Reads neuroscope-relevant fields from a YAML parameter file.

@@ -19,7 +19,7 @@
 
 // application specific includes
 #include "channelpalette.h"
-#include "channelcolors.h"
+#include <klustersshared/channelcolors.h>
 #include "channelmimedata.h"
 
 // include files for Qt

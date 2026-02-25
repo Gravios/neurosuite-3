@@ -23,7 +23,7 @@
 //include files for the application
 #include "data.h"
 #include "tracesprovider.h"
-#include "channelcolors.h"
+#include <klustersshared/channelcolors.h>
 #include "clustersprovider.h"
 
 

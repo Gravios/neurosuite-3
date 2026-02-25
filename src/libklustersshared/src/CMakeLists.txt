@@ -16,13 +16,14 @@ set(_srcs
     gui/qextendtabwidget.cpp
     gui/qhelpviewer.cpp
     gui/klusterrubberband.cpp
-    shared/channelcolors.cpp
-    shared/itemcolors.cpp
-    shared/zoomwindow.cpp
-    shared/utilities.cpp
-    shared/progressbar.cpp
-    shared/parameteryamlreader.cpp
-    shared/parameteryamlmodifier.cpp)
+    klustersshared/channelcolors.cpp
+    klustersshared/itemcolors.cpp
+    klustersshared/zoomwindow.cpp
+    klustersshared/utilities.cpp
+    klustersshared/progressbar.cpp
+    klustersshared/parameteryamlreader.cpp
+    klustersshared/parameteryamlmodifier.cpp
+    klustersshared/parameteryamlwriter.cpp)
 
 set(_hdrs
     libklustersshared_export.h
@@ -38,16 +39,22 @@ set(_hdrs
     gui/qextendtabwidget.h
     gui/qhelpviewer.h
     gui/klusterrubberband.h
-    shared/channelcolors.h
-    shared/itemcolors.h
-    shared/types.h
-    shared/array.h
-    shared/utilities.h
-    shared/zoomwindow.h
-    shared/customtypes.h
-    shared/progressbar.h
-    shared/parameteryamlreader.h
-    shared/parameteryamlmodifier.h)
+    klustersshared/channelcolors.h
+    klustersshared/itemcolors.h
+    klustersshared/types.h
+    klustersshared/array.h
+    klustersshared/utilities.h
+    klustersshared/zoomwindow.h
+    klustersshared/customtypes.h
+    klustersshared/progressbar.h
+    klustersshared/parameteryamlreader.h
+    klustersshared/parameteryamlmodifier.h
+    klustersshared/parameteryamlwriter.h
+    klustersshared/generalinformation.h
+    klustersshared/fileinformation.h
+    klustersshared/programinformation.h
+    klustersshared/neuroscopevideoinfo.h
+    klustersshared/channelcolorentry.h)
 
 qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc
@@ -60,14 +67,28 @@ add_library(KlustersShared::klustersshared ALIAS klustersshared)
 target_compile_definitions(klustersshared
     PRIVATE KLUSTERSSHARED_BUILD_KLUSTERSSHARED_LIB)
 
-# Include paths: build-tree consumers get the source dirs; install-tree
-# consumers get the single flattened installed include prefix.
+# Include paths.
+# The source directory is laid out so that headers live under
+#   src/klustersshared/<header>.h
+# which means #include <klustersshared/header.h> resolves directly at both
+# build time (CMAKE_CURRENT_SOURCE_DIR = .../libklustersshared/src/) and
+# install time (${CMAKE_INSTALL_INCLUDEDIR}/klustersshared/).
+# No symlinks or generator-expression tricks are required.
 target_include_directories(klustersshared
     PUBLIC
+        # Build-tree consumers: the src/ parent is exposed so that
+        # #include <klustersshared/header.h> resolves to src/klustersshared/header.h.
+        # The klustersshared/ subdir is also exposed so that headers *inside*
+        # that subdir can include their siblings as <sibling.h> (no prefix),
+        # mirroring the flat install layout where both the parent and the
+        # klustersshared/ subdir are on the include path.
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/klustersshared>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/gui>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/gui/page>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/shared>
+        # Install-tree consumers get both the parent (for <klustersshared/X.h>)
+        # and the subdir (for <X.h> bare includes).
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/klustersshared>)
 
 target_link_libraries(klustersshared

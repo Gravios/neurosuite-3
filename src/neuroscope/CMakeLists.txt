@@ -37,7 +37,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Xml PrintSupport)
 
 # LibKlustersShared exports KlustersShared::klustersshared via its installed
 # CMake package config.  The cmake/modules/ directory is no longer needed.
-find_package(LibKlustersShared 2.0.0 REQUIRED
+find_package(LibKlustersShared 2.1.0 REQUIRED
     HINTS
         "${CMAKE_INSTALL_PREFIX}/lib/cmake/LibKlustersShared"
         /usr/local/lib/cmake/LibKlustersShared

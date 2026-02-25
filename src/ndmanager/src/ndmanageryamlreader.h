@@ -14,15 +14,15 @@
 #include <QString>
 
 // The data types now live in libklustersshared
-#include "generalinformation.h"
-#include "fileinformation.h"
-#include "programinformation.h"
-#include "neuroscopevideoinfo.h"
-#include "parameteryamlreader.h"
+#include <klustersshared/generalinformation.h>
+#include <klustersshared/fileinformation.h>
+#include <klustersshared/programinformation.h>
+#include <klustersshared/neuroscopevideoinfo.h>
+#include <klustersshared/parameteryamlreader.h>
 
 // ndmanager's local per-channel value type (distinct from libklustersshared's
 // ChannelColors container).  It is now a typedef for ChannelColorEntry.
-#include "channelcolors.h"
+#include "channelcolors.h"  // ChannelColors = ChannelColorEntry (ndmanager shim)
 
 /**
  * @brief Reads ndmanager-relevant fields from a YAML parameter file.

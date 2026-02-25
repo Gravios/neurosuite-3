@@ -23,6 +23,7 @@
 #include "waveformview.h"
 #include "autosavethread.h"
 #include "klustersxmlreader.h"
+#include "klustersyamlreader.h"
 
 //C include files
 //#define _LARGEFILE_SOURCE already defined in /usr/include/features.h
@@ -92,10 +93,10 @@ MinMaxThread* Data::minMaxCalculator(){
 
 
 bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformation){
-    KlustersXmlReader reader = KlustersXmlReader();
-    if(reader.parseFile(parFile,KlustersXmlReader::PARAMETER)){
 
-        //Load the info
+    // Helper lambda to load fields from any reader that exposes the
+    // KlustersXmlReader-compatible API (both XML and YAML readers do).
+    auto loadFromReader = [&](auto& reader) -> bool {
         nbBits = reader.getResolution();
         samplingRate = reader.getSamplingRate();
         QList<int> channels = reader.getNbChannelsByGroup(electrodeGroupID);
@@ -108,57 +109,71 @@ bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformati
         nbFeaturesbyChannel = reader.getNbFeatures(electrodeGroupID);
         totalNbChannels = reader.getNbChannels();
 
-        //Variables used by the traceView
         voltageRange = reader.getVoltageRange();
         amplification = reader.getAmplification();
         initialOffset = reader.getOffset();
         if(voltageRange != 0 && amplification != 0 && totalNbChannels != 0)
             traceViewVariablesAvailable = true;
 
-        //cluster user information
-        reader.getClusterUserInformation(electrodeGroupID,clusterUserInformationMap);
-
+        reader.getClusterUserInformation(electrodeGroupID, clusterUserInformationMap);
         reader.closeFile();
-
-        //If  one of the elements was not in the parameter file, its value would have been assigned 0.
-        if(nbBits == 0){
-            errorInformation = QObject::tr("In the parameter file (base.xml), the number of bits is missing.");
-            return false;
-        }
-        if(samplingRate == 0){
-            errorInformation = QObject::tr("In the parameter file (base.xml), the sampling rate is missing.");
-            return false;
-        }
-        if(channels.isEmpty()){
-            errorInformation = QObject::tr("There is no channels defined for this electrode group.");
-            return false;
-        }
-        if(nbChannels == 0){
-            errorInformation = QObject::tr("In the parameter file (base.xml), the number of channels could not be determined.");
-            return false;
-        }
-        if(nbSamplesInWaveform == 0){
-            errorInformation = QObject::tr("In the parameter file (base.xml), the number of samples per waveform is missing.");
-            return false;
-        }
-        if(peakPositionInWaveform == 0){
-            errorInformation = QObject::tr("In the parameter file (base.xml), the position of the waveform peak is missing.");
-            return false;
-        }
-        if(nbFeaturesbyChannel == 0){
-            errorInformation = QObject::tr("In the parameter file (base.xml), the number of features per channel is missings.");
-            return false;
-        }
-
-        //The sampling rate is given in seconds and the sampling interval used in Klusters is in microseconds.
-        samplingInterval = 1000000.0 /samplingRate;
-
         return true;
+    };
+
+    const QString filePath = parFile.fileName();
+    const bool isYaml = filePath.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
+                     || filePath.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
+
+    bool parsed = false;
+    if (isYaml) {
+        KlustersYamlReader reader;
+        if (reader.parseFile(filePath))
+            parsed = loadFromReader(reader);
+    } else {
+        KlustersXmlReader reader;
+        if (reader.parseFile(parFile, KlustersXmlReader::PARAMETER))
+            parsed = loadFromReader(reader);
     }
-    else{
+
+    if (!parsed) {
         errorInformation = QObject::tr("The parameter file (base.xml) could not be parsed.");
         return false;
     }
+
+    // Validate that required fields were present
+    if(nbBits == 0){
+        errorInformation = QObject::tr("In the parameter file (base.xml), the number of bits is missing.");
+        return false;
+    }
+    if(samplingRate == 0){
+        errorInformation = QObject::tr("In the parameter file (base.xml), the sampling rate is missing.");
+        return false;
+    }
+    if(currentChannels.isEmpty()){
+        errorInformation = QObject::tr("There is no channels defined for this electrode group.");
+        return false;
+    }
+    if(nbChannels == 0){
+        errorInformation = QObject::tr("In the parameter file (base.xml), the number of channels could not be determined.");
+        return false;
+    }
+    if(nbSamplesInWaveform == 0){
+        errorInformation = QObject::tr("In the parameter file (base.xml), the number of samples per waveform is missing.");
+        return false;
+    }
+    if(peakPositionInWaveform == 0){
+        errorInformation = QObject::tr("In the parameter file (base.xml), the position of the waveform peak is missing.");
+        return false;
+    }
+    if(nbFeaturesbyChannel == 0){
+        errorInformation = QObject::tr("In the parameter file (base.xml), the number of features per channel is missings.");
+        return false;
+    }
+
+    // Sampling rate is in Hz; sampling interval used in Klusters is in microseconds.
+    samplingInterval = 1000000.0 / samplingRate;
+
+    return true;
 }
 
 bool Data::configure(QFile& parXFile,QFile& parFile,QString& errorInformation){

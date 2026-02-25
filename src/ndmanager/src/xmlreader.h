@@ -23,11 +23,11 @@
 //include files for the application
 #include <channelcolorslayout.h>
 #include "channelcolors.h"
-#include "generalinformation.h"
-#include "neuroscopevideoinfo.h"
+#include <klustersshared/generalinformation.h>
+#include <klustersshared/neuroscopevideoinfo.h>
 #include "tags.h"
-#include "fileinformation.h"
-#include "programinformation.h"
+#include <klustersshared/fileinformation.h>
+#include <klustersshared/programinformation.h>
 
 
 

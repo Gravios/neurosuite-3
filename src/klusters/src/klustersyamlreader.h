@@ -24,7 +24,7 @@
 #include <QFile>
 #include <QMap>
 
-#include "parameteryamlreader.h"
+#include <klustersshared/parameteryamlreader.h>
 
 class ClusterUserInformation;
 
