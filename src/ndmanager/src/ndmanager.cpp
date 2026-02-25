@@ -247,7 +247,7 @@ void ndManager::slotFileOpen()
 
     QSettings settings;
     const QString url=QFileDialog::getOpenFileName(this, tr("Open File..."),settings.value("CurrentDirectory").toString(),
-                                                   tr("Parameter File (*.xml);;All files (*.*)") );
+                                                   tr("Parameter File (*.xml *.yaml *.yml);;XML files (*.xml);;YAML files (*.yaml *.yml);;All files (*.*)") );
     if(!url.isEmpty()) {
         QDir CurrentDir;
         settings.setValue("CurrentDirectory", CurrentDir.absoluteFilePath(url));
@@ -397,7 +397,7 @@ void ndManager::slotImport(){
 
     QSettings settings;
     const QString url = QFileDialog::getOpenFileName(this, tr("Import file as model..."),settings.value("CurrentDirectory").toString(),
-                                                     tr("Parameter File (*.xml);;All files (*.*)") );
+                                                     tr("Parameter File (*.xml *.yaml *.yml);;XML files (*.xml);;YAML files (*.yaml *.yml);;All files (*.*)") );
     if(!url.isEmpty()) {
         QDir CurrentDir;
         settings.setValue("CurrentDirectory", CurrentDir.absoluteFilePath(url));
@@ -545,7 +545,7 @@ void ndManager::slotSave(){
             initialPath = QFileInfo(currentUrl).absolutePath();
         }
 
-        const QString url=QFileDialog::getSaveFileName( this, tr("Save as..."),initialPath,tr("Xml Files (*.xml);;All Files (*)"));
+        const QString url=QFileDialog::getSaveFileName( this, tr("Save as..."),initialPath,tr("XML files (*.xml);;YAML files (*.yaml);;All files (*)"));
         if(!url.isEmpty()){
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             int saveStatus = doc->saveAs(url);
