@@ -412,17 +412,94 @@ static vector<vector<int>> groupChannels(
         finalLabels = wardCluster(Dk, n, bestK);
     }
 
-    // Build output: list of channel-id vectors, sorted by minimum channel id
-    map<int,vector<int>> groups;
-    for (int i = 0; i < n; ++i)
-        groups[finalLabels[i]].push_back(channelIds[i]);
-    vector<vector<int>> result;
-    for (auto& [lbl, chans] : groups) {
-        sort(chans.begin(), chans.end());
-        result.push_back(chans);
+    // Build contiguous output groups.
+    //
+    // Arbitrary cluster labels can produce interleaved channel sets (e.g.
+    // group 1 = {0..14, 44..95}, group 2 = {15..43}) which look like
+    // overlapping groups on a probe display and are meaningless for
+    // spike sorting.  Instead, project the cluster labels onto the
+    // sorted channel order and find the bestK-1 split points that
+    // minimise label disagreement — producing contiguous blocks.
+    //
+    // Algorithm: channels are already ordered by channelIds (which are
+    // sorted by the caller).  For bestK=1 just return all channels.
+    // For bestK>1, find the split positions in sorted order that
+    // maximise within-block label homogeneity (argmin of a simple
+    // dynamic-programme over O(n * bestK) cells).
+
+    // Sort channels by id; keep track of original index for label lookup
+    vector<int> sortedIdx(n);
+    iota(sortedIdx.begin(), sortedIdx.end(), 0);
+    sort(sortedIdx.begin(), sortedIdx.end(),
+         [&](int a, int b){ return channelIds[a] < channelIds[b]; });
+
+    vector<int> sortedChs(n), sortedLbls(n);
+    for (int i = 0; i < n; ++i) {
+        sortedChs[i]  = channelIds[sortedIdx[i]];
+        sortedLbls[i] = finalLabels[sortedIdx[i]];
     }
-    sort(result.begin(), result.end(),
-         [](const vector<int>& a, const vector<int>& b){ return a.front() < b.front(); });
+
+    vector<vector<int>> result;
+
+    if (bestK == 1) {
+        result.push_back(sortedChs);
+        return result;
+    }
+
+    // Cost of assigning sorted positions [l..r] to a single group:
+    // number of positions that disagree with the majority label in [l..r].
+    // Pre-compute label-count prefix sums for each of the bestK labels.
+    // Since labels are 0..bestK-1 after re-mapping inside wardCluster we
+    // use the actual label values present in sortedLbls.
+    int maxLbl = *max_element(sortedLbls.begin(), sortedLbls.end()) + 1;
+    // prefix[k][i] = count of label k in sortedLbls[0..i-1]
+    vector<vector<int>> prefix(maxLbl, vector<int>(n+1, 0));
+    for (int k = 0; k < maxLbl; ++k)
+        for (int i = 0; i < n; ++i)
+            prefix[k][i+1] = prefix[k][i] + (sortedLbls[i] == k ? 1 : 0);
+
+    auto segCost = [&](int l, int r) -> int {
+        // cost = segment length - count of most-frequent label in [l..r]
+        int len = r - l + 1;
+        int best = 0;
+        for (int k = 0; k < maxLbl; ++k)
+            best = max(best, prefix[k][r+1] - prefix[k][l]);
+        return len - best;
+    };
+
+    // DP: dp[k][i] = min cost to split sortedChs[0..i] into k contiguous groups
+    // split[k][i] = the split point achieving dp[k][i]
+    const int INF = n + 1;
+    vector<vector<int>> dp(bestK+1, vector<int>(n, INF));
+    vector<vector<int>> sp(bestK+1, vector<int>(n, 0));
+
+    for (int i = 0; i < n; ++i) { dp[1][i] = segCost(0, i); sp[1][i] = 0; }
+
+    for (int k = 2; k <= bestK; ++k) {
+        for (int i = k-1; i < n; ++i) {
+            for (int j = k-2; j < i; ++j) {
+                int cost = dp[k-1][j] + segCost(j+1, i);
+                if (cost < dp[k][i]) { dp[k][i] = cost; sp[k][i] = j+1; }
+            }
+        }
+    }
+
+    // Back-track to recover split points
+    vector<int> splits;
+    int pos = n - 1;
+    for (int k = bestK; k >= 2; --k) {
+        splits.push_back(sp[k][pos]);
+        pos = sp[k][pos] - 1;
+    }
+    splits.push_back(0);
+    reverse(splits.begin(), splits.end());  // now splits[i] = start of block i
+
+    for (int k = 0; k < bestK; ++k) {
+        int l = splits[k];
+        int r = (k + 1 < bestK) ? splits[k+1] - 1 : n - 1;
+        vector<int> block(sortedChs.begin() + l, sortedChs.begin() + r + 1);
+        result.push_back(block);
+    }
     return result;
 }
 
