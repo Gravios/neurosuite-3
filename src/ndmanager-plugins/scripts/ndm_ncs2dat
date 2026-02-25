@@ -23,10 +23,13 @@ source ndm_functions
 program=$(basename $0)
 if [ $# -ne 1 ]
 then
-	echo_error "usage: $program xml-file"
+	echo_error "usage: $program parameter-file"
 	exit $GENERAL_ERROR
 fi
 session=${1%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
 directory=$(basename "$(pwd)")
 
 # Print a header to indicate current processing step
@@ -36,7 +39,7 @@ print_header "$session - Converting NCS files -> dat"
 check_commands_installed xpathReader process_nlxconvert
 
 # Check input files
-inputs_missing $session.xml && exit $INPUTS_MISSING
+inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Read Parameters

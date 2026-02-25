@@ -21,10 +21,13 @@ source ndm_functions
 program=$(basename $0)
 if [ $# -ne 1 ]
 then
-	echo_error "usage: $program xml-file"
+	echo_error "usage: $program parameter-file"
 	exit $GENERAL_ERROR
 fi
 session=${1%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
 directory=$(basename "$(pwd)")
 
 # Print a header to indicate current processing step
@@ -32,7 +35,7 @@ print_header "$session - Extracting LEDs"
 
 # Check input and output files
 outputs_exist $session.spots && exit $OUTPUTS_EXIST
-inputs_missing $session.xml && exit $INPUTS_MISSING
+inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
 
 # Check required programs
 check_commands_installed xpathReader process_extractleds
@@ -63,7 +66,7 @@ if $useTrackerData
 then
 	if $(extension_exists "nvt" $directory $session $suffix)
 	then
-		ndm_nvt2spots $session.xml
+		ndm_nvt2spots "$session.$param_ext"
 	else
 		echo_warning "tracker file not found" && exit $INPUTS_MISSING
 	fi
@@ -95,13 +98,13 @@ else
 	if $(extension_exists "smi" $directory $session $suffix)
 	then
 		# Neuralynx systems: generate timestamp file
-		ndm_smi2sts $session.xml
+		ndm_smi2sts "$session.$param_ext"
 		step_completed ndm_smi2sts || exit $GENERAL_ERROR
 	fi
 	if $(extension_exists "tsp" $directory $session $suffix)
 	then
 		# Neuralynx systems: generate timestamp file
-		ndm_tsp2sts $session.xml
+		ndm_tsp2sts "$session.$param_ext"
 		step_completed ndm_tsp2sts || exit $GENERAL_ERROR
 	fi
 fi

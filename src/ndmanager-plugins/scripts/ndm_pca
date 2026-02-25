@@ -27,6 +27,9 @@ then
 	exit $GENERAL_ERROR
 fi
 session=${1%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
 directory=$(basename "$(pwd)")
 electrodeGroup=$2
 
@@ -41,7 +44,7 @@ once()
 	local electrodeGroup=$1
 
 	# Check input files
-	inputs_missing $session.xml $session.spk.$electrodeGroup && exit $INPUTS_MISSING
+	inputs_missing "$session.$param_ext" $session.spk.$electrodeGroup && exit $INPUTS_MISSING
 
 	# Check output file
 	outputs_exist $session.fet.$electrodeGroup && exit $OUTPUTS_EXIST

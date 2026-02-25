@@ -21,10 +21,13 @@ source ndm_functions
 program=$(basename $0)
 if [ $# -ne 1 ]
 then
-	echo_error "usage: $program xml-file"
+	echo_error "usage: $program parameter-file"
 	exit $GENERAL_ERROR
 fi
 session=${1%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
 directory=$(basename "$(pwd)")
 
 # Print a header to indicate current processing step
@@ -60,8 +63,9 @@ then
 fi
 if $delete_xml
 then
-	xml_files=$(ls *xml | grep -v $session.xml 2>/dev/null)
-	[ ! -z "$xml_files" ] && rm -f $xml_files
+	# Remove per-session parameter files (xml, yaml, yml) but keep the directory-level one
+	param_files=$(ls *.xml *.yaml *.yml 2>/dev/null | grep -v "^$session\.xml$" | grep -v "^$session\.yaml$" | grep -v "^$session\.yml$" || true)
+	[ ! -z "$param_files" ] && rm -f $param_files
 fi
 if $delete_spots
 then

@@ -621,10 +621,102 @@ read_yaml_script_parameter()
 	echo "$value"
 }
 
+# Count items in a YAML file matching an XPath-style list selector.
+# Supports the same XPath patterns used by xml_count:
+#   //spikeDetection/channelGroups/group  → counts items in a list at that path
+#
+#  usage: yaml_count file xpath
+yaml_count()
+{
+	local file=$1
+	local xpath=$2
+
+	local yamlfile
+	yamlfile=$(find_yaml_file "${file%.xml}")
+	[ -z "$yamlfile" ] && echo 0 && return
+
+	python3 - "$yamlfile" "$xpath" << 'PYEOF'
+import sys, yaml, re
+
+def get_nested(node, parts):
+    for p in parts:
+        if node is None:
+            return None
+        if isinstance(node, list):
+            try:
+                node = node[int(p)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(node, dict):
+            node = node.get(p)
+        else:
+            return None
+    return node
+
+try:
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f)
+    xpath = sys.argv[2]
+    # Strip leading //
+    xpath = re.sub(r'^/+', '', xpath)
+    parts = xpath.split('/')
+    # Navigate to the parent, then count the last key as a list
+    parent_parts = parts[:-1]
+    last_key = parts[-1]
+    parent = get_nested(doc, parent_parts)
+    if isinstance(parent, dict):
+        val = parent.get(last_key, [])
+        print(len(val) if isinstance(val, list) else (1 if val is not None else 0), end='')
+    elif isinstance(parent, list):
+        # count list items that have the last_key
+        count = sum(1 for item in parent if isinstance(item, dict) and last_key in item)
+        print(count, end='')
+    else:
+        print(0, end='')
+except Exception:
+    print(0, end='')
+PYEOF
+}
+
+# Return the parameter file extension for a given session basename.
+# Checks for .yaml/.yml first, falls back to .xml.
+# This is used by ndm_start to determine which file to copy and pass around.
+#  usage: param_file_ext session
+param_file_ext()
+{
+	local session=${1%.xml}
+	session=${session%.yaml}
+	session=${session%.yml}
+	if [ -f "${session}.yaml" ]; then echo "yaml"
+	elif [ -f "${session}.yml" ]; then echo "yml"
+	else echo "xml"
+	fi
+}
+
 # ---- Transparent dispatch overrides ---------------------------------------
-# Override xml_read and read_script_parameter to auto-detect format.
+# Override xml_read, xml_count, and read_script_parameter to auto-detect format.
 # If a .yaml/.yml file exists alongside the .xml file, it takes precedence.
 # This allows all existing ndm_ scripts to work with YAML files unchanged.
+
+_orig_xml_count()
+{
+	local file=$1
+	local xpath=$2
+	file=${file%.xml}.xml
+	xpathReader --count "$file" "$xpath"
+}
+
+xml_count()
+{
+	local file=$1
+	local yamlfile
+	yamlfile=$(find_yaml_file "${file%.xml}")
+	if [ -n "$yamlfile" ]; then
+		yaml_count "$file" "$2"
+	else
+		_orig_xml_count "$file" "$2"
+	fi
+}
 
 _orig_xml_read()
 {
