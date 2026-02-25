@@ -21,7 +21,8 @@ set(_srcs
     shared/zoomwindow.cpp
     shared/utilities.cpp
     shared/progressbar.cpp
-    shared/parameteryamlreader.cpp)
+    shared/parameteryamlreader.cpp
+    shared/parameteryamlmodifier.cpp)
 
 set(_hdrs
     libklustersshared_export.h
@@ -45,7 +46,8 @@ set(_hdrs
     shared/zoomwindow.h
     shared/customtypes.h
     shared/progressbar.h
-    shared/parameteryamlreader.h)
+    shared/parameteryamlreader.h
+    shared/parameteryamlmodifier.h)
 
 qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc

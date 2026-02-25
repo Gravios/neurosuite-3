@@ -43,6 +43,7 @@ class NeuroscopeApp;
 class ChannelColors;
 class TracesProvider;
 class NeuroscopeXmlReader;
+class NeuroscopeYamlReader;
 class ItemColors;
 class ItemPalette;
 
@@ -880,7 +881,10 @@ private:
     
     /**The url of the parameter file.*/
     QString parameterUrl;
-    
+
+    /**True when the parameter file is YAML (.yaml/.yml); false for XML (.xml).*/
+    bool m_paramIsYaml = false;
+
     /**Reference on the channelPalette used to specify the traces display.*/
     ChannelPalette& displayChannelPalette;
 
@@ -1126,11 +1130,13 @@ private:
     * @param reader xml parser which has loaded the session file.
     */
     void loadSession(NeuroscopeXmlReader reader);
+    void loadSession(NeuroscopeYamlReader reader);
 
     /**Loads the document information for either the parameter file of the session file.
     * @param reader xml parser which has loaded the session file.
     */
     void loadDocumentInformation(NeuroscopeXmlReader reader);
+    void loadDocumentInformation(NeuroscopeYamlReader reader);
 
     /**Computes which cluster files give data for a given anatomical group.*/
     void computeClusterFilesMapping();
