@@ -858,8 +858,10 @@ static vector<ChannelGroup> readYamlGroups(const string& yamlPath)
 }
 
 // ---------------------------------------------------------------------------
-// Rewrite only the spikeDetection.channelGroups section of the YAML file.
-// All other content is preserved verbatim.
+// Rewrite the entire spikeDetection: block in the YAML file with a clean
+// version containing only the new channelGroups.  Any keys previously
+// present inside spikeDetection (stale groups, leftover metadata) are
+// removed.  All other content in the file is preserved verbatim.
 // ---------------------------------------------------------------------------
 static void writeYamlGroups(const string& yamlPath,
                              const vector<ChannelGroup>& groups)
@@ -871,60 +873,53 @@ static void writeYamlGroups(const string& yamlPath,
     { string l; while (getline(fin, l)) lines.push_back(l); }
     fin.close();
 
-    // Locate spikeDetection block
+    // Locate spikeDetection: line
     int sdLine = -1;
     for (int i = 0; i < (int)lines.size(); ++i) {
         if (ltrim(lines[i]).rfind("spikeDetection:", 0) == 0) { sdLine = i; break; }
     }
     if (sdLine < 0) { cerr << "spikeDetection not found in " << yamlPath << "\n"; exit(1); }
 
-    // Locate channelGroups line
-    int cgLine = -1;
-    for (int i = sdLine+1; i < (int)lines.size(); ++i) {
-        string t = ltrim(lines[i]);
-        if (t.rfind("channelGroups:", 0) == 0) { cgLine = i; break; }
-        if (!lines[i].empty() && lines[i][0] != ' ' && lines[i][0] != '\t') break;
-    }
-    if (cgLine < 0) { cerr << "channelGroups not found in " << yamlPath << "\n"; exit(1); }
+    // Determine indentation of spikeDetection (top-level = 0)
+    int sdIndent = indent(lines[sdLine]);
 
-    // Determine indentation of the channelGroups key
-    int cgIndent = indent(lines[cgLine]);
-    string baseInd(cgIndent, ' ');
-    string grpInd = baseInd + "  ";  // group list item indent
-    string chInd  = grpInd  + "  ";  // channel item indent
-
-    // Find the end of the channelGroups block: the next line at indent <= cgIndent
-    // that is not part of the group data
-    int cgEnd = cgLine + 1;
-    while (cgEnd < (int)lines.size()) {
-        const string& l = lines[cgEnd];
-        if (l.empty() || l == "\r") { ++cgEnd; continue; }
+    // Find the end of the entire spikeDetection block: first subsequent line
+    // at indent <= sdIndent that is not blank and not a list continuation
+    int sdEnd = sdLine + 1;
+    while (sdEnd < (int)lines.size()) {
+        const string& l = lines[sdEnd];
+        if (l.empty() || l == "\r") { ++sdEnd; continue; }
         int ind = indent(l);
-        if (ind <= cgIndent && !ltrim(l).empty() && ltrim(l)[0] != '-') break;
-        ++cgEnd;
+        if (ind <= sdIndent && !ltrim(l).empty() && ltrim(l)[0] != '-') break;
+        ++sdEnd;
     }
 
-    // Build replacement lines for spikeDetection.channelGroups
+    // Build the replacement spikeDetection block from scratch
+    string sdInd(sdIndent, ' ');          // "spikeDetection:" indent (usually "")
+    string cgInd  = sdInd  + "  ";        // "channelGroups:" indent
+    string grpInd = cgInd  + "  ";        // "- channels:" indent
+    string chInd  = grpInd + "  ";        // channel list item indent
+
     vector<string> newLines;
-    newLines.push_back(baseInd + "channelGroups:");
+    newLines.push_back(sdInd + "spikeDetection:");
+    newLines.push_back(cgInd + "channelGroups:");
     for (const ChannelGroup& g : groups) {
-        // First channel entry uses list item marker
         newLines.push_back(grpInd + "- channels:");
         for (int ch : g.channels)
             newLines.push_back(chInd + "  - " + to_string(ch));
-        newLines.push_back(grpInd + "  nSamples: " + to_string(g.nSamples));
+        newLines.push_back(grpInd + "  nSamples: "        + to_string(g.nSamples));
         newLines.push_back(grpInd + "  peakSampleIndex: " + to_string(g.peakSampleIndex));
-        newLines.push_back(grpInd + "  nFeatures: " + to_string(g.nFeatures));
+        newLines.push_back(grpInd + "  nFeatures: "       + to_string(g.nFeatures));
     }
 
-    // Assemble final file: before + replacement + after
+    // Assemble final file: before spikeDetection + replacement + after
     string tmpPath = yamlPath + ".spikegrouper_tmp";
     ofstream fout(tmpPath);
     if (!fout) { cerr << "cannot write " << tmpPath << "\n"; exit(1); }
 
-    for (int i = 0; i < cgLine; ++i) fout << lines[i] << "\n";
-    for (const string& l : newLines)  fout << l        << "\n";
-    for (int i = cgEnd; i < (int)lines.size(); ++i) fout << lines[i] << "\n";
+    for (int i = 0; i < sdLine; ++i)      fout << lines[i] << "\n";
+    for (const string& l : newLines)       fout << l        << "\n";
+    for (int i = sdEnd; i < (int)lines.size(); ++i) fout << lines[i] << "\n";
     fout.close();
 
     // Atomic replace
