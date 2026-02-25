@@ -1,0 +1,95 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="ndm_xml2yaml">
+
+	<refmeta>
+		<refentrytitle>ndm_xml2yaml</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>ndm_xml2yaml</refname><refpurpose>convert a neurosuite/ndManager XML parameter file to YAML format.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>ndm_xml2yaml</command>
+		<arg choice="plain">
+			<replaceable>xml_file</replaceable>
+		</arg>
+		<arg>
+			<replaceable>output.yaml</replaceable>
+		</arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>ndm_xml2yaml</command> converts a neurosuite/ndManager XML parameter file
+			to the YAML format used by neurosuite-3. All sections are preserved: generalInfo,
+			acquisitionSystem, fieldPotentials, files, anatomicalDescription, spikeDetection,
+			units, neuroscope (channel colors and offsets), and programs.
+		</para>
+		<para>
+			The original XML file is not modified. If no output path is provided, the YAML
+			file is written in the same directory as the XML file with the same base name.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Arguments</title>
+		<variablelist>
+			<varlistentry>
+				<term><replaceable>xml_file</replaceable></term>
+				<listitem>
+					<para>
+						Path to the neurosuite/ndManager XML parameter file to convert.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>output.yaml</replaceable></term>
+				<listitem>
+					<para>
+						Optional output path. If omitted, the YAML file is written alongside
+						the XML file with the <filename>.yaml</filename> extension.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Notes</title>
+		<para>
+			Both <tag class="element">n</tag> and <tag class="element">name</tag> tag variants
+			produced by different ndManager versions are supported. Parameter values are
+			type-coerced to bool, int, or float where appropriate. Sentinel dash-strings used
+			by ndManager to indicate empty unit annotation fields
+			(<literal>--</literal>, <literal>---</literal>, etc.) are mapped to
+			<literal>null</literal>.
+		</para>
+		<para>
+			For example, to convert a session parameter file in the current directory:
+		</para>
+		<programlisting>
+# ndm_xml2yaml jg05-20120316.xml
+		</programlisting>
+		<para>
+			Or to write the output to a specific path:
+		</para>
+		<programlisting>
+# ndm_xml2yaml jg05-20120316.xml /data/sessions/jg05-20120316.yaml
+		</programlisting>
+	</refsect1>
+
+	<refsect1>
+		<title>Author</title>
+		<para>
+		<author>
+			<firstname>neurosuite-3</firstname>
+			<surname>contributors</surname>
+		</author>.
+		</para>
+	</refsect1>
+
+</refentry>

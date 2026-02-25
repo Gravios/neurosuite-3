@@ -1,0 +1,22 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_xml2yaml</n>
+  <parameters>
+  </parameters>
+  <help>Convert a neurosuite/ndManager XML parameter file to the YAML format used by neurosuite-3.
+
+All sections are preserved: generalInfo, acquisitionSystem, fieldPotentials, files, anatomicalDescription, spikeDetection, units, neuroscope (channel colors and offsets), and programs.
+
+The original XML file is not modified. If no output path is given, the YAML file is written alongside the XML file with the same base name.
+
+USAGE
+
+  ndm_xml2yaml SESSION.xml [OUTPUT.yaml]
+
+NOTES
+
+Supports both &lt;n&gt; and &lt;name&gt; tag variants produced by different ndManager versions. Parameter values are type-coerced to bool, int, or float where appropriate. Sentinel dash-strings used by ndManager to indicate empty unit fields ("--", "---", etc.) are mapped to null.
+</help>
+ </program>
+</parameter>
