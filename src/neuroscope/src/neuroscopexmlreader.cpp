@@ -38,6 +38,10 @@ NeuroscopeXmlReader::~NeuroscopeXmlReader(){
 bool NeuroscopeXmlReader::parseFile(const QString& url,fileType type){
     this->type = type;
     QFile input(url);
+    if (!input.open(QIODevice::ReadOnly)) {
+        qWarning() << "NeuroscopeXmlReader: cannot open" << url;
+        return false;
+    }
 
     QDomDocument docElement;
     QString errorMsg;

@@ -358,6 +358,11 @@ int NeuroscopeDoc::openDocument(const QString& url)
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         }
 
+        // xmlSessionReader is declared here (not inside the YAML branch) so it
+        // remains in scope for the deferred loadSession() call after tracesProvider
+        // is created below.  Only used when m_paramIsYaml && sessionFileExist.
+        NeuroscopeXmlReader xmlSessionReader;
+
         if (m_paramIsYaml) {
             NeuroscopeYamlReader yamlReader;
             if (yamlReader.parseFile(parFileUrl, NeuroscopeYamlReader::PARAMETER)) {
@@ -369,17 +374,17 @@ int NeuroscopeDoc::openDocument(const QString& url)
                 qDebug() << " NeuroscopeDoc::openDocument YAML PARSE_ERROR";
                 return PARSE_ERROR;
             }
-            // Session file (.nrs) is always XML
+            // Session file (.nrs) is always XML.  Parse it here to pick up
+            // extensionSamplingRates, but defer loadSession() until after
+            // tracesProvider is created — loadFirstDisplay() requires it.
             if (sessionFileInfo.exists()) {
                 sessionFileExist = true;
-                NeuroscopeXmlReader xmlReader;
-                if (xmlReader.parseFile(sessionUrl, NeuroscopeXmlReader::SESSION)) {
-                    qDebug() << " reader.getVersion()" << xmlReader.getVersion();
-                    if (xmlReader.getVersion().isEmpty() || xmlReader.getVersion() == QLatin1String("1.2.2"))
-                        extensionSamplingRates = xmlReader.getSampleRateByExtension();
+                if (xmlSessionReader.parseFile(sessionUrl, NeuroscopeXmlReader::SESSION)) {
+                    qDebug() << " reader.getVersion()" << xmlSessionReader.getVersion();
+                    if (xmlSessionReader.getVersion().isEmpty() || xmlSessionReader.getVersion() == QLatin1String("1.2.2"))
+                        extensionSamplingRates = xmlSessionReader.getSampleRateByExtension();
                     qDebug() << "extensionSamplingRates" << extensionSamplingRates;
-                    loadSession(xmlReader);
-                    xmlReader.closeFile();
+                    // loadSession deferred — called after tracesProvider is created below
                 } else {
                     qDebug() << " NeuroscopeDoc::openDocument SESSION PARSE_ERROR";
                     return PARSE_ERROR;
@@ -449,6 +454,13 @@ int NeuroscopeDoc::openDocument(const QString& url)
 
         //Create the tracesProvider with the information gather before.
         tracesProvider = new TracesProvider(docUrl,channelNb,resolution,samplingRate,initialOffset);
+
+        // For the YAML path the session file was parsed above but loadSession
+        // was deferred until tracesProvider exists (loadFirstDisplay requires it).
+        if (m_paramIsYaml && sessionFileExist) {
+            loadSession(xmlSessionReader);
+            xmlSessionReader.closeFile();
+        }
 
     }
     //there is no parameter file
@@ -1440,6 +1452,7 @@ void NeuroscopeDoc::loadSession(NeuroscopeXmlReader reader){
             for(sessionIterator = filesToLoad.begin(); sessionIterator != filesToLoad.end(); ++sessionIterator){
                 SessionFile sessionFile = static_cast<SessionFile>(*sessionIterator);
                 QString fileUrl = sessionFile.getUrl().path();
+                if(fileUrl.isEmpty()) continue;  // skip malformed session entries
                 SessionFile::type fileType = sessionFile.getType();
                 QDateTime lastModified = sessionFile.getModification();
                 QMap<EventDescription,QColor> itemColors = sessionFile.getItemColors();

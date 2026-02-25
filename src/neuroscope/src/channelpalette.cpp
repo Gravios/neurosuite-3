@@ -113,6 +113,7 @@ void ChannelPalette::setGreyScale(bool grey){
     for(iterator = channelsGroups->begin(); iterator != end; ++iterator){
         int groupId = (*channelsGroups)[iterator.key()];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QListWidgetItem * item = 0L;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(iterator.key()),Qt::MatchExactly);
         if(!lstItem.isEmpty())
@@ -309,6 +310,7 @@ void ChannelPalette::hideUnselectAllChannels(){
         //Update the pixmap
         int groupId = (*channelsGroups)[iterator.key()];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*> lstItem =  iconView->findItems(QString::number(iterator.key()),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             //Add an item to the target group with the same text but an update icon.
@@ -358,6 +360,7 @@ void ChannelPalette::updateShowHideStatus(const QList<int>& channelIds,bool show
         int groupId = (*channelsGroups)[*channelIterator];
 
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem = iconView->findItems(QString::number(*channelIterator),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             QListWidgetItem *item = lstItem.first();
@@ -428,6 +431,7 @@ void ChannelPalette::updateSkipStatus(const QMap<int,bool>& skipStatus){
         int groupId = (*channelsGroups)[channelId];
 
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(channelId),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             QListWidgetItem *item = lstItem.first();
@@ -490,6 +494,7 @@ void ChannelPalette::updateSkipStatus(const QList<int>&channelIds,bool skipStatu
         int groupId = (*channelsGroups)[*channelIterator];
 
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(*channelIterator),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             QListWidgetItem *item = lstItem.first();
@@ -538,6 +543,7 @@ void ChannelPalette::updateColor(const QList<int> &channelIds){
     for(channelIterator = channelIds.begin(); channelIterator != channelIds.end(); ++channelIterator){
         int groupId = (*channelsGroups)[*channelIterator];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(*channelIterator),Qt::MatchExactly);
         if(lstItem.isEmpty())
             return;
@@ -603,6 +609,7 @@ void ChannelPalette::applyGroupColor(PaletteType paletteType){
     for(iterator = channelsGroups->begin(); iterator != channelsGroups->end(); ++iterator){
         int groupId = (*channelsGroups)[iterator.key()];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(iterator.key()),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             QListWidgetItem *item = lstItem.first();
@@ -632,6 +639,7 @@ void ChannelPalette::applyCustomColor(){
     for(iterator = channelsGroups->begin(); iterator != channelsGroups->end(); ++iterator){
         int groupId = (*channelsGroups)[iterator.key()];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(iterator.key()),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             QListWidgetItem *item = lstItem.first();
@@ -691,6 +699,7 @@ void ChannelPalette::changeBackgroundColor(const QColor &color){
     for(groupIterator = channelsGroups->begin(); groupIterator != channelsGroups->end(); ++groupIterator){
         int groupId = (*channelsGroups)[groupIterator.key()];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*> lstItem =  iconView->findItems(QString::number(groupIterator.key()),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
 
@@ -784,6 +793,7 @@ void ChannelPalette::selectChannels(const QList<int>& selectedChannels){
     for(channelIterator = selectedChannels.begin(); channelIterator != selectedChannels.end(); ++channelIterator){
         int groupId = (*channelsGroups)[*channelIterator];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*> lstItem = iconView->findItems(QString::number(*channelIterator),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             currentIcon = lstItem.first();
@@ -1819,6 +1829,7 @@ void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard,const Q
         int groupId = (*channelsGroups)[*channelIterator];
         QList<int> sourceChannels = (*groupsChannels)[groupId];
         iconView = iconviewDict[QString::number(groupId)];
+        if(!iconView) continue;
         QList<QListWidgetItem*>lstItem =  iconView->findItems(QString::number(*channelIterator),Qt::MatchExactly);
         if(!lstItem.isEmpty()) {
             delete lstItem.first();

@@ -79,7 +79,12 @@ public:
     // ---- Session file info (not stored in YAML parameter files) ----
     QList<SessionFile>       getFilesToLoad()       { return {}; }
     QList<DisplayInformation> getDisplayInformation() { return {}; }
-    QMap<QString,double>     getSampleRateByExtension() { return {}; }
+    QMap<QString,double>     getSampleRateByExtension() {
+        // Build the extension→samplingRate map from the YAML "files" list.
+        QMap<QString,double> result;
+        m_reader.getSampleRateByExtension(result);
+        return result;
+    }
 
     // ---- Video ----
     int getVideoWidth()  const { return 0; }
