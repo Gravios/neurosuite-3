@@ -521,27 +521,58 @@ def load(path):
 def xpath_simple(doc, xpath):
     # Strip leading //
     xpath = re.sub(r'^/+', '', xpath)
-    parts = xpath.split('/')
+    # Split on / but keep [N] predicates attached to their segment
+    # e.g. spikeDetection/channelGroups/group[2]/channels/channel
+    parts = re.split(r'/(?![^\[]*\])', xpath)
     node = doc
     for p in parts:
         if node is None:
             return None
-        if isinstance(node, list):
-            try:
-                node = node[int(p)]
-            except (ValueError, IndexError):
+        # Check for [N] 1-based index predicate  e.g. group[2]
+        m = re.match(r'^(.+)\[(\d+)\]$', p)
+        if m:
+            key, idx = m.group(1), int(m.group(2))
+            if isinstance(node, dict):
+                node = node.get(key)
+            if isinstance(node, list):
+                if idx < 1 or idx > len(node):
+                    return None
+                node = node[idx - 1]
+            else:
                 return None
+        elif isinstance(node, list):
+            # Terminal traversal over a list: collect scalar values from each item.
+            # Handles: channelGroups/group[N]/channels/channel where channels is a list of ints.
+            results = []
+            for item in node:
+                if isinstance(item, dict):
+                    v = item.get(p)
+                    if v is not None:
+                        if isinstance(v, list):
+                            results.extend(str(x) for x in v)
+                        else:
+                            results.append(str(v).strip())
+                else:
+                    # scalar list item — the XML element name is implicit
+                    results.append(str(item).strip())
+            return ' '.join(results) if results else None
         elif isinstance(node, dict):
             node = node.get(p)
         else:
             return None
+
     if node is None:
         return None
+    # List of scalars: return space-separated
+    if isinstance(node, list):
+        return ' '.join(str(x) for x in node)
     return str(node).strip()
 
 def xpath_program_param(doc, xpath):
-    # Pattern: //program/name[.='SCRIPT']/../parameters/parameter/name[.='PARAM']/../value
-    m = re.search(r"name\[\.='([^']+)'\].*name\[\.='([^']+)'\].*value", xpath)
+    # Handles both name and legacy n element variants:
+    #   //program/name[.='SCRIPT']/../parameters/parameter/name[.='PARAM']/../value
+    #   //program/n[.='SCRIPT']/../parameters/parameter/n[.='PARAM']/../value
+    m = re.search(r"(?:name|n)\[\.\='([^']+)'\].*(?:name|n)\[\.\='([^']+)'\].*value", xpath)
     if not m:
         return None
     script_name, param_name = m.group(1), m.group(2)
@@ -558,8 +589,8 @@ try:
     doc = load(sys.argv[1])
     xpath = sys.argv[2]
 
-    # Detect pattern
-    if "name[.=" in xpath:
+    # Detect program-parameter pattern (has predicate on name/n element)
+    if re.search(r"(?:name|n)\[\.\=", xpath):
         result = xpath_program_param(doc, xpath)
     else:
         result = xpath_simple(doc, xpath)
