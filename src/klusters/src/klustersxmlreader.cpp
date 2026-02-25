@@ -534,20 +534,20 @@ void KlustersXmlReader::getClusterUserInformation (int pGroup, QMap<int,ClusterU
                 QString tag = e.tagName();
                 if (tag == UNITS) {
                     QDomNode unit = e.firstChild(); // try to convert the node to an element.
-                    int groupId = 0;
-                    int clusterId = 0;
-                    QString structure;
-                    QString type;
-                    QString ID;
-                    QString quality;
-                    QString notes;
-                    ClusterUserInformation currentClusterUserInformation = ClusterUserInformation();
-
                     while(!unit.isNull()) {
+                        // Reset per-unit state so missing child elements don't
+                        // inherit values from the previous unit.
+                        int groupId   = 0;
+                        int clusterId = 0;
+                        QString structure;
+                        QString type;
+                        QString ID;
+                        QString quality;
+                        QString notes;
+                        ClusterUserInformation currentClusterUserInformation;
+
                         QDomElement u = unit.toElement();
                         if (!u.isNull()) {
-
-                            tag = u.tagName();
                             QDomNode val = u.firstChild();
                             while(!val.isNull()) {
                                 QDomElement valElement = val.toElement();

@@ -61,6 +61,9 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
             return false;
         }
         YAML::Emitter emitter(out);
+        emitter.SetIndent(2);
+        emitter.SetMapFormat(YAML::Block);
+        emitter.SetSeqFormat(YAML::Block);
         emitter << m_root;
         out.close();
     } catch (const std::exception& e) {
@@ -358,5 +361,33 @@ bool ParameterYamlModifier::setChannelDisplayInformation(
     // unused-parameter warning by referencing it
     (void)channelsGroups;
 
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Units (cluster user information)
+// ---------------------------------------------------------------------------
+
+bool ParameterYamlModifier::setUnitsInformation(const QMap<int,QStringList>& units)
+{
+    YAML::Node seq(YAML::NodeType::Sequence);
+    for (auto it = units.cbegin(); it != units.cend(); ++it) {
+        const QStringList& row = it.value();
+        if (row.size() < 7) continue;
+        YAML::Node u;
+        u["group"]             = row[0].toInt();
+        u["cluster"]           = row[1].toInt();
+        auto strOrNull = [](const QString& s) -> YAML::Node {
+            if (s.isEmpty()) return YAML::Node(YAML::NodeType::Null);
+            YAML::Node n; n = s.toStdString(); return n;
+        };
+        u["structure"]         = strOrNull(row[2]);
+        u["type"]              = strOrNull(row[3]);
+        u["isolationDistance"] = strOrNull(row[4]);
+        u["quality"]           = strOrNull(row[5]);
+        u["notes"]             = strOrNull(row[6]);
+        seq.push_back(u);
+    }
+    m_root["units"] = seq;
     return true;
 }

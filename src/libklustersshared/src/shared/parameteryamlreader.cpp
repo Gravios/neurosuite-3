@@ -329,6 +329,13 @@ void ParameterYamlReader::getUnits(QMap<int,QStringList>& units) const
     auto unitsList = m_root["units"];
     if (!unitsList || !unitsList.IsSequence()) return;
 
+    // Key is a sequential document-order index (0, 1, 2, …) matching the
+    // contract of ndmanager's XmlReader::getUnits().  Using cluster id as
+    // the key is WRONG: every electrode group has its own cluster 1, 2, 3…
+    // so entries from different groups would collide and one would be silently
+    // dropped.  setUnitsInformation ignores the key entirely (it only uses the
+    // row values), so the index choice is irrelevant to writers.
+    int i = 0;
     for (auto u : unitsList) {
         int group   = nodeAs<int>(u["group"],   -1);
         int cluster = nodeAs<int>(u["cluster"], -1);
@@ -342,7 +349,7 @@ void ParameterYamlReader::getUnits(QMap<int,QStringList>& units) const
              << nodeStr(u["isolationDistance"])
              << nodeStr(u["quality"])
              << nodeStr(u["notes"]);
-        units.insert(cluster, info);
+        units.insert(i++, info);
     }
 }
 
@@ -446,4 +453,128 @@ QString ParameterYamlReader::getProgramParameter(
         }
     }
     return {};
+}
+
+// ---------------------------------------------------------------------------
+// High-level getters (return application-ready types)
+// ---------------------------------------------------------------------------
+
+void ParameterYamlReader::getGeneralInformation(GeneralInformation& gi) const
+{
+    const QString dateStr = getDate();
+    if (!dateStr.isEmpty()) {
+        QDate d = QDate::fromString(dateStr, Qt::ISODate);
+        if (d.isValid()) gi.setDate(d);
+    }
+    gi.setExperimenters(getExperimenters());
+    gi.setDescription(getDescription());
+    gi.setNotes(getNotes());
+}
+
+void ParameterYamlReader::getFilesInformation(QList<FileInformation>& files) const
+{
+    files.clear();
+    const auto list = m_root["files"];
+    if (!list || !list.IsSequence()) return;
+    for (const auto& entry : list) {
+        FileInformation fi;
+        fi.setSamplingRate(nodeAs<double>(entry["samplingRate"], 0.0));
+        fi.setExtension(nodeStr(entry["extension"]));
+        // channelMapping is written by ndmanager but rarely present
+        const auto mapping = entry["channelMapping"];
+        if (mapping && mapping.IsSequence()) {
+            QMap<int,QList<int>> cm;
+            for (const auto& m : mapping) {
+                int orig = nodeAs<int>(m["original"], -1);
+                if (orig < 0) continue;
+                QList<int> targets;
+                const auto mapped = m["mapped"];
+                if (mapped && mapped.IsSequence())
+                    for (const auto& t : mapped)
+                        targets.append(nodeAs<int>(t, -1));
+                targets.removeAll(-1);
+                cm[orig] = targets;
+            }
+            fi.setChannelMapping(cm);
+        }
+        files.append(fi);
+    }
+}
+
+void ParameterYamlReader::getChannelColors(QList<ChannelColorEntry>& list) const
+{
+    list.clear();
+    const auto colors = m_root["neuroscope"]["channels"]["colors"];
+    if (!colors || !colors.IsSequence()) return;
+    for (const auto& entry : colors) {
+        int ch = nodeAs<int>(entry["channel"], -1);
+        if (ch < 0) continue;
+        ChannelColorEntry cc;
+        cc.setId(ch);
+        cc.setColor(nodeStr(entry["color"]).isEmpty()
+                    ? QStringLiteral("#0080ff") : nodeStr(entry["color"]));
+        cc.setGroupColor(nodeStr(entry["anatomyColor"]).isEmpty()
+                         ? QStringLiteral("#0080ff") : nodeStr(entry["anatomyColor"]));
+        cc.setSpikeGroupColor(nodeStr(entry["spikeColor"]).isEmpty()
+                              ? QStringLiteral("#0080ff") : nodeStr(entry["spikeColor"]));
+        list.append(cc);
+    }
+}
+
+void ParameterYamlReader::getChannelDefaultOffset(QMap<int,int>& offsets) const
+{
+    offsets.clear();
+    const auto list = m_root["neuroscope"]["channels"]["offsets"];
+    if (!list || !list.IsSequence()) return;
+    for (const auto& entry : list) {
+        int ch  = nodeAs<int>(entry["channel"],      -1);
+        int off = nodeAs<int>(entry["defaultOffset"],  0);
+        if (ch >= 0) offsets[ch] = off;
+    }
+}
+
+void ParameterYamlReader::getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const
+{
+    const auto v = m_root["neuroscope"]["video"];
+    if (!v || !v.IsMap()) return;
+    videoInfo.setRotation(nodeAs<int>(v["rotate"], 0));
+    videoInfo.setFlip(nodeAs<int>(v["flip"], 0));
+    videoInfo.setTrajectory(nodeAs<int>(v["positionsBackground"], 0));
+    const QString img = nodeStr(v["videoImage"]);
+    if (!img.isEmpty()) videoInfo.setBackgroundImage(img);
+}
+
+void ParameterYamlReader::getTopLevelVideoInfo(QMap<QString,double>& info) const
+{
+    // Top-level "video" section written by ndmanager (width/height/samplingRate).
+    // Keys match the ndmanager XmlReader::getVideoInfo() contract so the VideoPage
+    // receives the same data regardless of file format.
+    const auto v = m_root["video"];
+    if (!v || !v.IsMap()) return;
+    if (v["samplingRate"])
+        info.insert(QStringLiteral("samplingRate"), nodeAs<double>(v["samplingRate"], 0.0));
+    if (v["width"])
+        info.insert(QStringLiteral("width"),  static_cast<double>(nodeAs<int>(v["width"],  0)));
+    if (v["height"])
+        info.insert(QStringLiteral("height"), static_cast<double>(nodeAs<int>(v["height"], 0)));
+}
+
+void ParameterYamlReader::getProgramsInformation(QList<ProgramInformation>& programs) const
+{
+    programs.clear();
+    const auto entries = getPrograms();
+    for (const auto& entry : entries) {
+        ProgramInformation pi;
+        pi.setProgramName(entry.name);
+        pi.setHelp(entry.help);
+        QMap<int,QStringList> params;
+        int idx = 0;
+        for (const auto& pe : entry.parameters) {
+            QStringList row;
+            row << pe.name << pe.value << pe.status;
+            params.insert(idx++, row);
+        }
+        pi.setParameterInformation(params);
+        programs.append(pi);
+    }
 }

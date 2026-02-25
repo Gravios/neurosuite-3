@@ -425,11 +425,10 @@ void XmlReader::getChannelDefaultOffset(QMap<int,int>& channelDefaultOffsets)con
                                                 offset = val.text().toInt();
                                             }
                                         }
-                                        //the channels must be numbered continuously from 0.
-                                        //if(channelId < nbChannels)
-                                        channelDefaultOffsets.insert(channelId,offset);
                                         channelGroup =  channelGroup.nextSibling();
                                     }
+                                    // Insert once after both CHANNEL and DEFAULT_OFFSET are read.
+                                    channelDefaultOffsets.insert(channelId, offset);
                                 }
                             }
                             channelColors = channelColors.nextSibling();
@@ -586,7 +585,7 @@ float XmlReader::getScreenGain() const{
 }
 
 QString XmlReader::getTraceBackgroundImage() const{
-    QString traceBackgroundImage = 0;
+    QString traceBackgroundImage;
     QDomNode n = documentNode.firstChild();
     if (!n.isNull()) {
         while(!n.isNull()) {

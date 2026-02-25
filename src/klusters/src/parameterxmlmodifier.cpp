@@ -60,7 +60,9 @@ bool ParameterXmlModifier::parseFile(const QString& url) {
 }
 
 bool ParameterXmlModifier::writeTofile(const QString& url) {
-    QFile parameterFile(url);
+    // Write to a .nstmp temporary file then rename atomically.
+    const QString tmp = url + QLatin1String(".nstmp");
+    QFile parameterFile(tmp);
     bool status = parameterFile.open(QIODevice::WriteOnly);
     if (!status) return status;
 
@@ -74,6 +76,7 @@ bool ParameterXmlModifier::writeTofile(const QString& url) {
         QTextStream stream(&parameterFile);
         stream<< initialXmlDocument;
         parameterFile.close();
+        QFile::remove(tmp);
         return false;
     }
 
@@ -83,6 +86,12 @@ bool ParameterXmlModifier::writeTofile(const QString& url) {
     QTextStream stream(&parameterFile);
     stream<< xmlDocument;
     parameterFile.close();
+
+    QFile::remove(url);
+    if (!QFile::rename(tmp, url)) {
+        QFile::remove(tmp);
+        return false;
+    }
 
     return true;
 }

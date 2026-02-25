@@ -27,16 +27,14 @@ void KlustersYamlReader::getClusterUserInformation(
         int pGroup,
         QMap<int,ClusterUserInformation>& clusterUserInformationMap) const
 {
-    // ParameterYamlReader::getUnits() returns a flat map; we need to filter
-    // by group and populate ClusterUserInformation objects.
-    // Re-parse the units list directly via getProgramParameter() is not
-    // suitable here — instead expose through the shared reader:
+    // Read all units from the YAML file and filter to the requested group.
+    // getUnits() keys entries by sequential document-order index so there is
+    // no collision between groups that share the same cluster ids.
     QMap<int,QStringList> unitsMap;
-    // We need a mutable copy to call getUnits; cast away const via a local:
-    const_cast<ParameterYamlReader&>(m_reader).getUnits(unitsMap);
+    m_reader.getUnits(unitsMap);
 
-    // unitsMap key = cluster id, value = [group, cluster, structure, type,
-    //                                      isolationDistance, quality, notes]
+    // value layout: [0]=group [1]=cluster [2]=structure [3]=type
+    //               [4]=isolationDistance [5]=quality [6]=notes
     for (auto it = unitsMap.cbegin(); it != unitsMap.cend(); ++it) {
         const QStringList& info = it.value();
         if (info.size() < 7) continue;
