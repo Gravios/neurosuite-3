@@ -380,11 +380,16 @@ static vector<vector<int>> groupChannels(
     int kMax = min(maxSubGroups, n / max(1, minChannels));
     if (kMax < 1) kMax = 1;
 
-    int    bestK    = 1;
-    double bestSil  = -1.0;
+    int           bestK      = 1;
+    double        bestSil   = -1.0;
+    vector<int>   bestLabels;
+
+    // wardCluster modifies D in place; take a fresh copy for each k.
+    const vector<double> D0(D);   // pristine distance matrix
 
     for (int k = 1; k <= kMax; ++k) {
-        vector<int> lbl = wardCluster(D, n, k);
+        vector<double> Dk(D0);    // copy for this k
+        vector<int> lbl = wardCluster(Dk, n, k);
         // Check min-cluster-size constraint
         vector<int> cnt(k, 0);
         for (int x : lbl) ++cnt[x];
@@ -392,14 +397,20 @@ static vector<vector<int>> groupChannels(
         for (int c : cnt) if (c < minChannels) { valid = false; break; }
         if (!valid) continue;
 
-        double sil = (k == 1) ? 0.0 : silhouetteScore(D, lbl, n);
-        if (sil > bestSil) { bestSil = sil; bestK = k; }
+        double sil = (k == 1) ? 0.0 : silhouetteScore(Dk, lbl, n);
+        if (sil > bestSil) { bestSil = sil; bestK = k; bestLabels = lbl; }
     }
 
     if (verbose)
         printf("  optimal k=%d  silhouette=%.4f\n", bestK, bestSil);
 
-    vector<int> finalLabels = wardCluster(D, n, bestK);
+    // bestLabels was computed from a clean copy of D — no re-clustering needed.
+    vector<int> finalLabels = bestLabels;
+    if (finalLabels.empty()) {
+        // Fallback: shouldn't happen, but guard against it
+        vector<double> Dk(D0);
+        finalLabels = wardCluster(Dk, n, bestK);
+    }
 
     // Build output: list of channel-id vectors, sorted by minimum channel id
     map<int,vector<int>> groups;
