@@ -258,7 +258,21 @@ suffix=$(get_suffix 0 ${suffixes[*]})
 explicit_list=false
 if [ $# -eq 0 ]
 then
-	directories=$(ls -d *$suffix|sed 's/-'$suffix'//'|sort|uniq)
+	if [ -z "$suffix" ]
+	then
+		echo_error "no suffix defined in parameter file — cannot auto-discover session directories"
+		exit $GENERAL_ERROR
+	fi
+	directories=$(ls -d *-$suffix 2>/dev/null | sed 's/-'$suffix'$//' | sort | uniq)
+	if [ -z "$directories" ]
+	then
+		echo_error "no session directories found matching '*-$suffix' in $(pwd)"
+		echo_info "  template: $template_file"
+		echo_info "  suffix:   $suffix"
+		echo_info "  Tip: run $program from the parent directory that contains the session dirs,"
+		echo_info "       or pass directory names explicitly: $program $template_file dir1 dir2 ..."
+		exit $GENERAL_ERROR
+	fi
 else
 	directories=$*
 	explicit_list=true

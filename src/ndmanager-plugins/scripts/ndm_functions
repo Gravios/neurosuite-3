@@ -231,7 +231,7 @@ step_completed()
 		error=$2
 	fi
 
-	if [ $error -eq $NO_ERROR ] || [ $error -eq $OUTPUTS_EXIST ]
+	if [ $error -eq $NO_ERROR ] || [ $error -eq $OUTPUTS_EXIST ] || [ $error -eq $INPUTS_MISSING ]
 	then
 		return $NO_ERROR
 	else
@@ -623,7 +623,12 @@ read_yaml_script_parameter()
 
 # Count items in a YAML file matching an XPath-style list selector.
 # Supports the same XPath patterns used by xml_count:
-#   //spikeDetection/channelGroups/group  → counts items in a list at that path
+#   //spikeDetection/channelGroups/group  → counts items in the channelGroups list
+#
+# The last path segment is treated as the XML element name that wraps each list
+# item.  In YAML the wrapper element is gone — the list items are direct children
+# of channelGroups.  So we navigate to the parent of the last segment and count
+# list items there.  If the parent itself is a list we count its length.
 #
 #  usage: yaml_count file xpath
 yaml_count()
@@ -660,17 +665,25 @@ try:
     # Strip leading //
     xpath = re.sub(r'^/+', '', xpath)
     parts = xpath.split('/')
-    # Navigate to the parent, then count the last key as a list
-    parent_parts = parts[:-1]
-    last_key = parts[-1]
-    parent = get_nested(doc, parent_parts)
-    if isinstance(parent, dict):
-        val = parent.get(last_key, [])
-        print(len(val) if isinstance(val, list) else (1 if val is not None else 0), end='')
-    elif isinstance(parent, list):
-        # count list items that have the last_key
-        count = sum(1 for item in parent if isinstance(item, dict) and last_key in item)
-        print(count, end='')
+
+    # Strategy: try parent of last segment first (the XML wrapper element is
+    # absent in YAML; groups are direct list items under channelGroups).
+    # e.g. //spikeDetection/channelGroups/group
+    #   -> navigate to spikeDetection/channelGroups, count list items there.
+    parent = get_nested(doc, parts[:-1])
+    if isinstance(parent, list):
+        print(len(parent), end='')
+    elif isinstance(parent, dict):
+        last_key = parts[-1]
+        val = parent.get(last_key)
+        if isinstance(val, list):
+            print(len(val), end='')
+        elif val is not None:
+            print(1, end='')
+        else:
+            # last key not found as a dict key — the list items ARE the parent
+            # (shouldn't normally happen, but fall back to 0)
+            print(0, end='')
     else:
         print(0, end='')
 except Exception:
