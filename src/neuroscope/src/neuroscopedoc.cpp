@@ -35,7 +35,7 @@
 #include "neuroscopeview.h"
 #include "tracesprovider.h"
 #include "traceview.h"
-#include "channelcolors.h"
+#include <klustersshared/channelcolors.h>
 #include "neuroscopexmlreader.h"
 #include "neuroscopeyamlreader.h"
 #include "parameterxmlmodifier.h"

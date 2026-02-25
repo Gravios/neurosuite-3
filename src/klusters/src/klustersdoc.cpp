@@ -53,6 +53,9 @@
 #include "types.h"
 #include "autosavethread.h"
 #include "parameterxmlmodifier.h"
+#include "parameteryamlmodifier.h"
+#include "parameteryamlreader.h"
+#include "clusteruserinformation.h"
 
 //C, C++ include files
 //#define _LARGEFILE_SOURCE already defined in /usr/include/features.h
@@ -263,6 +266,13 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     //Parameter files
     QString xmlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".xml";
     xmlParameterFile = xmlParFileUrl;
+
+    // Also check for a YAML parameter file (takes precedence over .xml if both exist)
+    const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
+    if (QFileInfo(yamlParFileUrl).exists()) {
+        xmlParFileUrl  = yamlParFileUrl;
+        xmlParameterFile = yamlParFileUrl;
+    }
 
 
 
@@ -597,18 +607,65 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
         clusteringData->getClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
 
-        ParameterXmlModifier parameterModifier = ParameterXmlModifier();
-        bool status = parameterModifier.parseFile(xmlParameterFile);
-        if(!status)
-            return PARSE_ERROR;
+        const bool saveAsYaml = xmlParameterFile.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
+                             || xmlParameterFile.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
 
-        status = parameterModifier.setClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
-        if(!status)
-            return CREATION_ERROR;
+        if (saveAsYaml) {
+            // Build the merged units map: read existing units, overwrite the
+            // units for the current electrode group, then write all back.
+            ParameterYamlModifier yamlMod;
+            if (!yamlMod.parseFile(xmlParameterFile))
+                return PARSE_ERROR;
 
-        status = parameterModifier.writeTofile(xmlParameterFile);
-        if(!status)
-            return CREATION_ERROR;
+            // Read existing units (all groups)
+            QMap<int,QStringList> allUnits;
+            {
+                ParameterYamlReader reader;
+                if (reader.parseFile(xmlParameterFile))
+                    reader.getUnits(allUnits);
+            }
+
+            // Remove existing entries for this electrode group
+            const int pGroup = electrodeGroupID.toInt();
+            QMap<int,QStringList> filtered;
+            for (auto it = allUnits.cbegin(); it != allUnits.cend(); ++it) {
+                if (it.value().size() >= 1 && it.value()[0].toInt() != pGroup)
+                    filtered.insert(it.key(), it.value());
+            }
+
+            // Add updated entries for this electrode group
+            for (auto it = clusterUserInformationMap.cbegin();
+                 it != clusterUserInformationMap.cend(); ++it) {
+                const ClusterUserInformation& cui = it.value();
+                QStringList row;
+                row << QString::number(cui.getGroup())
+                    << QString::number(cui.getCluster())
+                    << cui.getStructure()
+                    << cui.getType()
+                    << cui.getId()
+                    << cui.getQuality()
+                    << cui.getNotes();
+                filtered.insert(it.key(), row);
+            }
+
+            if (!yamlMod.setUnitsInformation(filtered))
+                return CREATION_ERROR;
+            if (!yamlMod.writeToFile(xmlParameterFile))
+                return CREATION_ERROR;
+        } else {
+            ParameterXmlModifier parameterModifier = ParameterXmlModifier();
+            bool status = parameterModifier.parseFile(xmlParameterFile);
+            if(!status)
+                return PARSE_ERROR;
+
+            status = parameterModifier.setClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
+            if(!status)
+                return CREATION_ERROR;
+
+            status = parameterModifier.writeTofile(xmlParameterFile);
+            if(!status)
+                return CREATION_ERROR;
+        }
     }
 
     modified=false;

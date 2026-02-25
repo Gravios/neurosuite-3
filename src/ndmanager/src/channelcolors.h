@@ -14,7 +14,7 @@
  ***************************************************************************/
 #pragma once
 
-#include "channelcolorentry.h"
+#include <klustersshared/channelcolorentry.h>
 
 // Legacy alias — all ndmanager code that uses ChannelColors (the per-channel
 // value struct with getId/setColor/setGroupColor/setSpikeGroupColor) continues

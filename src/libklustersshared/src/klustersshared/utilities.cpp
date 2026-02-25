@@ -1,6 +1,6 @@
 /***************************************************************************
  *   Copyright (C) 2004 by Lynn Hazan                                      *
- *   lynn.hazan@myrealbox.com                                              *
+ *   lynn@myrealbox.com                                                    *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -17,46 +17,30 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
-#ifndef DESCRIPTIONWRITER_H
-#define DESCRIPTIONWRITER_H
-//include files for the application
-#include <klustersshared/programinformation.h>
+#include "utilities.h"
 
-//include files for QT
-#include <QDomDocument> 
+int Utilities::getNbLines(const QString& path){
+    // ' are added around the path to take care of directory names with blank.
+    int numLines = 0;
+    QFile file(path);
+    if(file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        while (!file.atEnd()) {
+            file.readLine();
+            ++numLines;
+        }
+    }
+    return numLines;
+}
 
-/**
-This class writes a program description to disk.
-@author Lynn Hazan
-*/
-class DescriptionWriter
-{
-public:
-    DescriptionWriter();
-    ~DescriptionWriter();
 
-    /**Writes the xml tree to a description file given by @p url.
-  * @param url url of the file to write to.
-  * @return true if the description file could be write to disk, false otherwise.
-  */
-    bool writeTofile(const QString& url);
 
-    /** Creates the elements containing the information for a program used to process the data link to the current parameter file.
- * @param programInformation a ProgramInformation containing the program parameter description.
- */
-    void setProgramInformation(const ProgramInformation &programInformation);
+void Utilities::createBackup(const QString& path){
+    QFile original(path);
+    QFile backup(path+"~");
+    original.open(QIODevice::ReadOnly);
+    backup.open(QIODevice::WriteOnly);
+    backup.write(original.readAll());
+    original.close();
+    backup.close();
+}
 
-private:
-
-    /**The description document.*/
-    QDomDocument doc;
-
-    /**The root element.*/
-    QDomElement root;
-
-    /**The element containing the information about the program.*/
-    QDomElement program;
-
-};
-
-#endif

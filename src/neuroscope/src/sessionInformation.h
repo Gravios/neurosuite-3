@@ -429,7 +429,7 @@ private:
   * ChannelColorEntry.  This typedef keeps all existing neuroscope code
   * working without modification.
   */
-#include "channelcolorentry.h"
+#include <klustersshared/channelcolorentry.h>
 using ChannelDescription = ChannelColorEntry;
 
 /**

@@ -24,10 +24,10 @@
 
 
 //include files for the application
-#include "generalinformation.h"
-#include "fileinformation.h"
-#include "programinformation.h"
-#include "neuroscopevideoinfo.h"
+#include <klustersshared/generalinformation.h>
+#include <klustersshared/fileinformation.h>
+#include <klustersshared/programinformation.h>
+#include <klustersshared/neuroscopevideoinfo.h>
 #include "channelcolors.h"
 
 //include files for QT

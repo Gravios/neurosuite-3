@@ -26,7 +26,6 @@ set(_srcs
     neuroscopevideopage.cpp
     parameterpage.cpp
     parameterview.cpp
-    programinformation.cpp
     programspage.cpp
     programpage.cpp
     queryinputdialog.cpp
@@ -38,7 +37,6 @@ set(_srcs
     videopage.cpp
     xmlreader.cpp
     ndmanageryamlreader.cpp
-    ndmanageryamlwriter.cpp
     xmlwriter.cpp
     safetablewidget.cpp
     ndmanagerutils.cpp
@@ -67,6 +65,9 @@ set(_srcs
 add_executable(ndmanager $<$<PLATFORM_ID:Windows>:WIN32> ${_srcs})
 
 target_include_directories(ndmanager PRIVATE
+    # KlustersShared headers first so moved types (GeneralInformation etc)
+    # are found in libklustersshared rather than stale local copies.
+    "$<TARGET_PROPERTY:KlustersShared::klustersshared,INTERFACE_INCLUDE_DIRECTORIES>"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/..")   # for config-ndmanager.h

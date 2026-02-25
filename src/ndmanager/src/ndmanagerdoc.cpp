@@ -33,10 +33,10 @@
 #include "ndmanageryamlreader.h"
 #include "ndmanageryamlwriter.h"
 #include "channelcolors.h"
-#include "generalinformation.h"
-#include "neuroscopevideoinfo.h"
-#include "fileinformation.h"
-#include "programinformation.h"
+#include <klustersshared/generalinformation.h>
+#include <klustersshared/neuroscopevideoinfo.h>
+#include <klustersshared/fileinformation.h>
+#include <klustersshared/programinformation.h>
 #include "parameterview.h"
 
 #include <QStandardPaths>

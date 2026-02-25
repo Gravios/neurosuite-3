@@ -27,11 +27,11 @@
 #include <QMap>
 #include <QString>
 
-#include <klustersshared/generalinformation.h>
-#include <klustersshared/fileinformation.h>
-#include <klustersshared/programinformation.h>
-#include <klustersshared/neuroscopevideoinfo.h>
-#include <klustersshared/channelcolorentry.h>
+#include <generalinformation.h>
+#include <fileinformation.h>
+#include <programinformation.h>
+#include <neuroscopevideoinfo.h>
+#include <channelcolorentry.h>
 
 #include <yaml-cpp/yaml.h>
 
