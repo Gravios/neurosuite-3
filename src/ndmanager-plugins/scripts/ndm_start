@@ -24,28 +24,48 @@ source ndm_functions
 program=$(basename $0)
 if [ $# -lt 1 ]
 then
-	echo_error "usage: $program xml-template [directories]"
+	echo_error "usage: $program parameter-template [directories]"
 	exit $GENERAL_ERROR
 fi
 if [ $1 == '-h' ] ||  [ $1 == "--help" ]
 then
 	echo ""
-	echo "usage: $program xml-template [directories]"
+	echo "usage: $program parameter-template [directories]"
 	echo ""
 	echo " Process all data present in all subdirectories of the current directory, using the"
-	echo " parameters provided in a template XML parameter file. Alternatively, an explicit list"
-	echo " of directories to process can be provided."
+	echo " parameters provided in a template parameter file (XML or YAML). Alternatively, an"
+	echo " explicit list of directories to process can be provided."
+	echo ""
+	echo " The template can be supplied with or without its extension (.xml, .yaml, or .yml)."
+	echo " When both an .xml and a .yaml file share the same basename, the YAML file takes"
+	echo " precedence."
 	echo ""
 	echo " Type 'man $program' for details on directory/file naming conventions."
 	echo ""
 	exit $NO_ERROR
 fi
 
+# Strip any known extension so we work with the bare basename
 template=${1%.xml}
+template=${template%.yaml}
+template=${template%.yml}
 shift
 
+# Determine which file format is available (.yaml > .yml > .xml)
+if [ -f "$template.yaml" ]; then
+	param_ext="yaml"
+elif [ -f "$template.yml" ]; then
+	param_ext="yml"
+elif [ -f "$template.xml" ]; then
+	param_ext="xml"
+else
+	echo_error "no parameter file found for template '$template' (.yaml, .yml, or .xml)"
+	exit $INPUTS_MISSING
+fi
+template_file="$template.$param_ext"
+
 # Check required files
-inputs_missing $template.xml && exit $INPUTS_MISSING
+inputs_missing "$template_file" && exit $INPUTS_MISSING
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Read Parameters
@@ -108,28 +128,28 @@ do_wideband()
 	# Convert wideband data -> .dat
 	if $(extension_exists "smr" $directory $session ${suffixes[*]})
 	then
-		ndm_smr2dat $session.xml
+		ndm_smr2dat $session.$param_ext
 		step_completed ndm_smr2dat || return # subsequent steps cannot be performed if conversion failed
 	elif $(extension_exists "ncs" $directory $session ${suffixes[*]})
 	then
-		ndm_ncs2dat $session.xml
+		ndm_ncs2dat $session.$param_ext
 		step_completed ndm_ncs2dat || return
 	fi
 
 	# Resample files
-	ndm_resample $session.xml
+	ndm_resample $session.$param_ext
 	step_completed ndm_resample || return
 
 	# Merge files
-	ndm_mergedat $session.xml
+	ndm_mergedat $session.$param_ext
 	step_completed ndm_mergedat || return
 
 	# Extract channels
-	ndm_extractchannels $session.xml
+	ndm_extractchannels $session.$param_ext
 	step_completed ndm_extractchannels || return
 
 	# Reoder channels
-	ndm_reorderchannels $session.xml
+	ndm_reorderchannels $session.$param_ext
 	step_completed ndm_reorderchannels || return
 }
 
@@ -139,11 +159,11 @@ do_events()
 
 	if $(extension_exists "smr" $directory $session ${suffixes[*]})
 	then
-		ndm_smr2evt $session.xml
+		ndm_smr2evt $session.$param_ext
 		step_completed ndm_smr2evt || return
 	elif $(extension_exists "nev" $directory $session ${suffixes[*]})
 	then
-		ndm_nev2evt $session.xml
+		ndm_nev2evt $session.$param_ext
 		step_completed ndm_nev2evt || return
 	fi
 }
@@ -153,30 +173,32 @@ do_video()
 	$video || return
 
 	# Convert video files
-	ndm_transcodevideo $session.xml
+	ndm_transcodevideo $session.$param_ext
 	step_completed ndm_transcodevideo || return
 
 	# Extract LEDs
-	ndm_extractleds $session.xml
+	ndm_extractleds $session.$param_ext
 	step_completed ndm_extractleds || return
 }
 
 do_sessions()
 {
-	local xml d
+	local d
 	# Process each set of session files
 	for session in $(list_sessions $directory ${suffixes[*]})
 	do
-		# Copy XML template
-		if [ -f $session.xml ]
+		# Copy parameter template to session file
+		local session_file="$session.$param_ext"
+		local dir_file="$directory.$param_ext"
+		if [ -f "$session_file" ]
 		then
-			if ! diff -q $directory.xml $session.xml >/dev/null
+			if ! diff -q "$dir_file" "$session_file" >/dev/null
 			then
-				echo_warning "'$session.xml' was modified since last batch processing"
-				cp -i $directory.xml $session.xml
+				echo_warning "'$session_file' was modified since last batch processing"
+				cp -i "$dir_file" "$session_file"
 			fi
 		else
-			cp $directory.xml $session.xml
+			cp "$dir_file" "$session_file"
 		fi
 		# Process
 		do_wideband
@@ -259,22 +281,36 @@ do
 	else
 		# Create target directory, copy template and cd there
 		[ ! -d $directory ] && mkdir $directory
-		cp $template.xml $directory/$template.xml
+		cp "$template_file" "$directory/$template_file"
 		cd $directory
-		# Update date field
+		# Update date field (syntax depends on file format)
 		d=$(format_date $(dirname_part date $directory))
 		if [ -z "$d" ]
 		then
 			echo_warning "directory name '$directory' does not seem to contain a date"
 		else
-			sed -i 's/<date>.*<\/date>/<date>'$d'<\/date>/' $template.xml
+			if [ "$param_ext" = "xml" ]; then
+				sed -i 's/<date>.*<\/date>/<date>'$d'<\/date>/' "$template_file"
+			else
+				# YAML: replace "  date: <value>" under generalInfo
+				sed -i 's/^\(  date: \).*/\1'$d'/' "$template_file"
+			fi
 		fi
-		if [ -f $directory.xml ] && ! diff -I '<date>' -q $template.xml $directory.xml >/dev/null
-		then
-			echo_warning "'$directory.xml' was modified since last batch processing"
-			mv -i $template.xml $directory.xml
+		dir_file="$directory.$param_ext"
+		if [ -f "$dir_file" ]; then
+			if [ "$param_ext" = "xml" ]; then
+				diff_flag='-I <date>'
+			else
+				diff_flag='-I "  date: "'
+			fi
+			if ! diff $diff_flag -q "$template_file" "$dir_file" >/dev/null; then
+				echo_warning "'$dir_file' was modified since last batch processing"
+				mv -i "$template_file" "$dir_file"
+			else
+				mv "$template_file" "$dir_file"
+			fi
 		else
-			mv $template.xml $directory.xml
+			mv "$template_file" "$dir_file"
 		fi
 		# Process
 		do_sessions
