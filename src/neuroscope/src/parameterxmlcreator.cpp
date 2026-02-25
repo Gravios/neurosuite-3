@@ -48,7 +48,10 @@ ParameterXmlCreator::ParameterXmlCreator():doc(){
 ParameterXmlCreator::~ParameterXmlCreator(){}
 
 bool ParameterXmlCreator::writeTofile(const QString& url){ 
-    QFile parameterFile(url);
+    // Write to a temporary file then rename atomically to avoid leaving a
+    // half-written parameter file if the process is killed mid-write.
+    const QString tmp = url + QLatin1String(".nstmp");
+    QFile parameterFile(tmp);
     bool status = parameterFile.open(QIODevice::WriteOnly);
     if(!status)
         return status;
@@ -76,6 +79,12 @@ bool ParameterXmlCreator::writeTofile(const QString& url){
     QTextStream stream(&parameterFile);
     stream<< xmlDocument;
     parameterFile.close();
+
+    QFile::remove(url);
+    if (!QFile::rename(tmp, url)) {
+        QFile::remove(tmp);
+        return false;
+    }
 
     return true;
 }

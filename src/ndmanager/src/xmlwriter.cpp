@@ -53,7 +53,10 @@ XmlWriter::XmlWriter():doc(){
 XmlWriter::~XmlWriter(){}
 
 bool XmlWriter::writeTofile(const QString& url){ 
-    QFile parameterFile(url);
+    // Write to a temporary file first, then rename atomically.
+    // This prevents a partially-written parameter file if the process is killed.
+    const QString tmp = url + QLatin1String(".nstmp");
+    QFile parameterFile(tmp);
     const bool status = parameterFile.open(QIODevice::WriteOnly);
     if(!status)
         return status;
@@ -83,9 +86,15 @@ bool XmlWriter::writeTofile(const QString& url){
     const QString xmlDocument = doc.toString();
 
     QTextStream stream(&parameterFile);
-    //stream.setEncoding(QTextStream::UnicodeUTF8);
     stream<< xmlDocument;
     parameterFile.close();
+
+    // Atomically replace the target file.
+    QFile::remove(url);
+    if (!QFile::rename(tmp, url)) {
+        QFile::remove(tmp);
+        return false;
+    }
 
     return true;
 }

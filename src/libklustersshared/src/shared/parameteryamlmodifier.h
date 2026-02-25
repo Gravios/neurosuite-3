@@ -149,6 +149,23 @@ public:
                                       QMap<int,int>&     channelsGroups,
                                       QMap<int,int>&     channelDefaultOffsets);
 
+    // ----------------------------------------------------------------
+    // Units (cluster user information)
+    // ----------------------------------------------------------------
+
+    /**
+     * @brief Replace the entire "units" sequence.
+     *
+     * @p units maps cluster-id → QStringList of seven fields:
+     *   [0] group, [1] cluster, [2] structure, [3] type,
+     *   [4] isolationDistance, [5] quality, [6] notes.
+     *
+     * Any existing units for electrode groups NOT in @p touchedGroups
+     * are preserved.  Pass the merged old+new map so that other
+     * groups' data is retained.
+     */
+    bool setUnitsInformation(const QMap<int,QStringList>& units);
+
 private:
     YAML::Node m_root;   ///< live YAML tree (Map or Null if never parsed)
 

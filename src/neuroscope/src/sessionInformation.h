@@ -425,77 +425,12 @@ private:
 };
 
 /**
-  *Class storing the channel color information to be read from or write to a session file.
-  *@author Lynn Hazan
+  * Channel colour/id value type — now provided by libklustersshared as
+  * ChannelColorEntry.  This typedef keeps all existing neuroscope code
+  * working without modification.
   */
-class ChannelDescription {
-public:
-
-  inline ChannelDescription(){
-   id = 0;
-   color = QColor(Qt::black);
-  };
-
-  inline ChannelDescription(int id,QString color):id(id){
-   setColor(color);
-  };
-
-  inline ~ChannelDescription(){};
-
-  /**Sets the channel id.
-  * @param channelId channel id.
-  */
-  inline void setId(int channelId){id = channelId;};
-
-  /**Sets the color used to display the channel.
-  * @param colorName name of the color in the format "#RRGGBB".
-  */
-  inline void setColor(QString colorName){color = QColor(colorName);};
-
-  /**Sets the group color (anatomical group) for the channel.
-  * @param colorName name of the color in the format "#RRGGBB".
-  */
-  inline void setGroupColor(QString colorName){groupColor = QColor(colorName);};
-
-  /**Sets the spike group color for the channel.
-  * @param colorName name of the color in the format "#RRGGBB".
-  */
-  inline void setSpikeGroupColor(QString colorName){spikeGroupColor = QColor(colorName);};
-
-  /**Gets the channel id.
-  * @return channel id.
-  */
-  inline int getId() const{return id;};
-
-  /**Gets the color used to display the channel.
-  * @return name of the color in the format "#RRGGBB".
-  */
-  inline QColor getColor() const{return color;};
-
-  /**Gets the group color (anatomical group) for the channel.
-  * @return name of the color in the format "#RRGGBB".
-  */
-  inline QColor getGroupColor() const{return groupColor;};
-
-  /**Gets the spike group color for the channel.
-  * @return name of the color in the format "#RRGGBB".
-  */
-  inline QColor getSpikeGroupColor() const{return spikeGroupColor;};
-
-private:
-  /**Channel id*/
-  int id;
-
-  /**Color used to display the channel.*/
-  QColor color;
-
-  /**Group color (anatomical group) for the channel.*/
-  QColor groupColor;
-
-  /**Spike group color for the channel.*/
-  QColor spikeGroupColor;
-
-};
+#include "channelcolorentry.h"
+using ChannelDescription = ChannelColorEntry;
 
 /**
   *Class storing the trace position information in the Trace View to be read from or write to a session file.

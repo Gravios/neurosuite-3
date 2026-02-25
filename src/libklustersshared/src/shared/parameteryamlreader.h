@@ -102,6 +102,12 @@
 // yaml-cpp (libyaml-cpp-dev on Ubuntu/Debian)
 #include <yaml-cpp/yaml.h>
 
+#include "generalinformation.h"
+#include "fileinformation.h"
+#include "programinformation.h"
+#include "neuroscopevideoinfo.h"
+#include "channelcolorentry.h"
+
 /**
  * @brief Reads the neurosuite YAML parameter file.
  *
@@ -266,6 +272,36 @@ public:
     QString getExperimenters() const;
     QString getDescription()   const;
     QString getNotes()         const;
+
+    // ----------------------------------------------------------------
+    // High-level getters (return application-ready types)
+    // ----------------------------------------------------------------
+
+    /** Fills @p gi from generalInfo. */
+    void getGeneralInformation(GeneralInformation& gi) const;
+
+    /** Fills @p files from the YAML "files" sequence. */
+    void getFilesInformation(QList<FileInformation>& files) const;
+
+    /** Fills @p list with one ChannelColorEntry per channel. */
+    void getChannelColors(QList<ChannelColorEntry>& list) const;
+
+    /** Fills @p offsets from neuroscope/channels/offsets. */
+    void getChannelDefaultOffset(QMap<int,int>& offsets) const;
+
+    /** Fills @p videoInfo from neuroscope/video. */
+    void getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const;
+
+    /**
+     * @brief Fills @p info from the top-level \"video\" section.
+     *
+     * Keys written match the ndmanager XmlReader::getVideoInfo() contract:
+     * \"samplingRate\", \"width\", \"height\".  Used by ndmanager's VideoPage.
+     */
+    void getTopLevelVideoInfo(QMap<QString,double>& info) const;
+
+    /** Fills @p programs from the YAML "programs" sequence. */
+    void getProgramsInformation(QList<ProgramInformation>& programs) const;
 
 private:
     bool        m_valid = false;

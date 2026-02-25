@@ -535,11 +535,10 @@ void NeuroscopeXmlReader::getChannelDefaultOffset(QMap<int,int>& channelDefaultO
                                                 offset = val.text().toInt();
                                             }
                                         }
-                                        //the channels must be numbered continuously from 0.
-                                        //if(channelId < nbChannels)
-                                        channelDefaultOffsets.insert(channelId,offset);
                                         channelGroup =  channelGroup.nextSibling();
                                     }
+                                    // Insert once after both CHANNEL and DEFAULT_OFFSET are read.
+                                    channelDefaultOffsets.insert(channelId, offset);
                                 }
                             }
                             channelColors = channelColors.nextSibling();
@@ -1517,7 +1516,7 @@ QMap<QString,double> NeuroscopeXmlReader::getSampleRateByExtension(){
                                         QString extension;
                                         QDomNode sampling = w.firstChild();
                                         while(!sampling.isNull()) {
-                                            QDomElement samplingElement = b.toElement();
+                                            QDomElement samplingElement = sampling.toElement();
                                             if (!samplingElement.isNull()) {
                                                 tag = samplingElement.tagName();
                                                 if (tag == EXTENSION) {

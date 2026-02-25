@@ -69,7 +69,9 @@ bool ParameterXmlModifier::parseFile(const QString& url){
 }
 
 bool ParameterXmlModifier::writeTofile(const QString& url){ 
-    QFile sessionFile(url);
+    // Write to a .nstmp temporary file, then rename atomically.
+    const QString tmp = url + QLatin1String(".nstmp");
+    QFile sessionFile(tmp);
     bool status = sessionFile.open(QIODevice::WriteOnly);
     if(!status) return status;
 
@@ -81,6 +83,7 @@ bool ParameterXmlModifier::writeTofile(const QString& url){
             QTextStream stream(&sessionFile);
             stream<< initialXmlDocument;
             sessionFile.close();
+            QFile::remove(tmp);
             return false;
         }
     }
@@ -92,6 +95,7 @@ bool ParameterXmlModifier::writeTofile(const QString& url){
             QTextStream stream(&sessionFile);
             stream<< initialXmlDocument;
             sessionFile.close();
+            QFile::remove(tmp);
             return false;
         }
     }
@@ -111,6 +115,7 @@ bool ParameterXmlModifier::writeTofile(const QString& url){
         QTextStream stream(&sessionFile);
         stream<< initialXmlDocument;
         sessionFile.close();
+        QFile::remove(tmp);
         return false;
     }
 
@@ -119,6 +124,12 @@ bool ParameterXmlModifier::writeTofile(const QString& url){
     QTextStream stream(&sessionFile);
     stream<< xmlDocument;
     sessionFile.close();
+
+    QFile::remove(url);
+    if (!QFile::rename(tmp, url)) {
+        QFile::remove(tmp);
+        return false;
+    }
 
     return true;
 }

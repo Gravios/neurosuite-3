@@ -1,95 +1,98 @@
 /***************************************************************************
  * ndmanageryamlreader.h
  *
- * Drop-in companion to ndmanager's XmlReader that reads the YAML parameter
- * file.  The public API mirrors XmlReader so ndmanagerdoc.cpp can choose
- * the reader based on the file extension without further restructuring.
+ * Drop-in companion to ndmanager's XmlReader.  Now a thin delegator to
+ * ParameterYamlReader — all the actual parsing logic lives in libklustersshared.
  *
  * Copyright (C) 2024  neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
-
 #pragma once
 
 #include <QList>
 #include <QMap>
 #include <QString>
 
+// The data types now live in libklustersshared
 #include "generalinformation.h"
-#include "programinformation.h"
 #include "fileinformation.h"
-#include "channelcolors.h"
+#include "programinformation.h"
 #include "neuroscopevideoinfo.h"
 #include "parameteryamlreader.h"
 
-#include <yaml-cpp/yaml.h>
+// ndmanager's local per-channel value type (distinct from libklustersshared's
+// ChannelColors container).  It is now a typedef for ChannelColorEntry.
+#include "channelcolors.h"
 
 /**
  * @brief Reads ndmanager-relevant fields from a YAML parameter file.
  *
- * Mirrors the ndmanager XmlReader public API exactly.
+ * Mirrors the ndmanager XmlReader public API.  All methods delegate to
+ * ParameterYamlReader; no parsing logic lives here.
  */
 class NdManagerYamlReader
 {
 public:
-    NdManagerYamlReader() = default;
+    NdManagerYamlReader()  = default;
     ~NdManagerYamlReader() = default;
 
-    bool parseFile(const QString& path);
-    void closeFile();
+    bool parseFile(const QString& path) { return m_reader.parseFile(path); }
+    void closeFile()                    { m_reader.closeFile(); }
 
     // ---- Acquisition system ----
     void getAcquisitionSystemInfo(QMap<QString,double>& info) const;
 
     // ---- General information ----
-    void getGeneralInformation(GeneralInformation& generalInformation) const;
+    void getGeneralInformation(GeneralInformation& gi) const
+    { m_reader.getGeneralInformation(gi); }
 
     // ---- Field potentials ----
     double getLfpInformation() const { return m_reader.getLfpSamplingRate(); }
 
     // ---- Files ----
-    void getFilesInformation(QList<FileInformation>& files) const;
+    void getFilesInformation(QList<FileInformation>& files) const
+    { m_reader.getFilesInformation(files); }
 
     // ---- Anatomical description ----
     void getAnatomicalDescription(int nbChannels,
-                                  QMap<int,QList<int>>&              anatomicalGroups,
-                                  QMap<QString,QMap<int,QString>>&   attributes)
+                                  QMap<int,QList<int>>& anatomicalGroups,
+                                  QMap<QString,QMap<int,QString>>& attributes)
     { m_reader.getAnatomicalDescription(nbChannels, anatomicalGroups, attributes); }
 
     // ---- Spike description ----
     void getSpikeDescription(int nbChannels,
-                             QMap<int,QList<int>>&            spikeGroups,
+                             QMap<int,QList<int>>& spikeGroups,
                              QMap<int,QMap<QString,QString>>& information)
     { m_reader.getSpikeDescription(nbChannels, spikeGroups, information); }
 
     // ---- Units ----
-    void getUnits(QMap<int,QStringList>& units) const
-    { m_reader.getUnits(units); }
+    void getUnits(QMap<int,QStringList>& units) const { m_reader.getUnits(units); }
 
-    // ---- Neuroscope display ----
-    float   getScreenGain()            const { return m_reader.getScreenGain(); }
-    QString getTraceBackgroundImage()  const { return m_reader.getTraceBackgroundImage(); }
-    int     getNbSamples()             const { return m_reader.getNbSamplesSpikes(); }
-    int     getPeakSampleIndex()       const { return m_reader.getPeakSampleIndexSpikes(); }
-    void    getChannelColors(QList<ChannelColors>& list) const;
-    void    getChannelDefaultOffset(QMap<int,int>& offsets) const;
+    // ---- NeuroScope display ----
+    float   getScreenGain()           const { return m_reader.getScreenGain(); }
+    QString getTraceBackgroundImage() const { return m_reader.getTraceBackgroundImage(); }
+    int     getNbSamples()            const { return m_reader.getNbSamplesSpikes(); }
+    int     getPeakSampleIndex()      const { return m_reader.getPeakSampleIndexSpikes(); }
 
-    // ---- Neuroscope video ----
-    void getVideoInfo(QMap<QString,double>& videoInformation) const;
-    void getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const;
+    void getChannelColors(QList<ChannelColors>& list) const;
+
+    void getChannelDefaultOffset(QMap<int,int>& offsets) const
+    { m_reader.getChannelDefaultOffset(offsets); }
+
+    // ---- Video ----
+    // Reads width, height, samplingRate from the top-level "video" section,
+    // using the same map keys as XmlReader::getVideoInfo().
+    void getVideoInfo(QMap<QString,double>& videoInformation) const
+    { m_reader.getTopLevelVideoInfo(videoInformation); }
+    void getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const
+    { m_reader.getNeuroscopeVideoInfo(videoInfo); }
 
     // ---- Programs ----
-    void getProgramsInformation(QList<ProgramInformation>& programs) const;
-    void getProgramInformation(ProgramInformation& programInformation) const;
+    void getProgramsInformation(QList<ProgramInformation>& programs) const
+    { m_reader.getProgramsInformation(programs); }
+
+    void getProgramInformation(ProgramInformation& pi) const;
 
 private:
     ParameterYamlReader m_reader;
-    YAML::Node          m_root;   ///< kept for fields not exposed by ParameterYamlReader
-
-    template<typename T>
-    T nodeAs(const YAML::Node& n, const T& fallback) const {
-        try { if (n && n.IsDefined() && !n.IsNull()) return n.as<T>(); }
-        catch (...) {}
-        return fallback;
-    }
 };
