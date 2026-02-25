@@ -1,0 +1,382 @@
+#!/usr/bin/env python3
+"""
+process_spikegrouper  —  Optimal spikeDetection group discovery from .fil data
+===============================================================================
+
+Algorithm
+---------
+For every existing spikeDetection group in the YAML parameter file the program:
+
+  1. Reads a configurable window of the .fil file (int16, channel-interleaved,
+     no header — identical format to .dat).
+  2. Estimates a per-channel noise threshold using the robust median estimator
+         threshold = thresholdFactor * median(|x|) / 0.6745
+     mirroring process_medianthreshold so results are consistent.
+  3. Detects threshold crossings on each channel with a refractory period to
+     avoid double-counting the same event.
+  4. Builds an N×N spike-coincidence matrix C where C[i,j] = fraction of
+     channel-i events that fall within ±coincidenceWindowMs of a channel-j
+     event.  The symmetrised matrix (C + C.T)/2 is used as a similarity matrix.
+  5. Converts the similarity matrix to a distance matrix and runs agglomerative
+     Ward clustering.  The optimal number of sub-groups k is chosen by
+     maximising the average silhouette score over k ∈ [1, maxSubGroups], with
+     the constraint that every sub-group contains at least minChannels channels.
+  6. If k=1 is optimal (or the group is too small to subdivide) the original
+     group is kept intact.
+
+The updated spikeDetection.channelGroups section is written back to the YAML
+file atomically.  The anatomicalDescription section is left unchanged so that
+the physical shank layout is preserved and can be edited independently.
+
+Usage (called by ndm_spikegrouper):
+    process_spikegrouper
+        --fil            SESSION.fil
+        --yaml           SESSION.yaml
+        --nchannels      N
+        --nbits          B
+        --sampling-rate  SR
+        [--threshold-factor  F]       default 3.0
+        [--refractory-ms     R]       default 1.0
+        [--coincidence-ms    W]       default 0.4
+        [--window-sec        T]       default 60
+        [--max-sub-groups    K]       default 6
+        [--min-channels      M]       default 2
+        [--nsamples          S]       default 52
+        [--peak-sample       P]       default 26
+        [--nfeatures         F]       default 3
+
+Exit codes
+    0   success
+    1   general error
+   11   input file missing
+"""
+
+import argparse
+import os
+import sys
+import numpy as np
+import yaml
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Optimal spikeDetection channel grouping from .fil data"
+    )
+    p.add_argument("--fil",              required=True)
+    p.add_argument("--yaml",             required=True)
+    p.add_argument("--nchannels",        required=True,  type=int)
+    p.add_argument("--nbits",            required=True,  type=int)
+    p.add_argument("--sampling-rate",    required=True,  type=float)
+    p.add_argument("--threshold-factor", default=3.0,    type=float)
+    p.add_argument("--refractory-ms",    default=1.0,    type=float)
+    p.add_argument("--coincidence-ms",   default=0.4,    type=float)
+    p.add_argument("--window-sec",       default=60.0,   type=float)
+    p.add_argument("--max-sub-groups",   default=6,      type=int)
+    p.add_argument("--min-channels",     default=2,      type=int)
+    p.add_argument("--nsamples",         default=52,     type=int)
+    p.add_argument("--peak-sample",      default=26,     type=int)
+    p.add_argument("--nfeatures",        default=3,      type=int)
+    return p.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# .fil I/O
+# ---------------------------------------------------------------------------
+
+def load_fil_window(fil_path, n_channels, n_bits, window_sec, sampling_rate):
+    """Return (n_samples, n_channels) int16 array for the first window_sec."""
+    dtype      = np.int16 if n_bits <= 16 else np.int32
+    bytes_per  = n_channels * dtype(0).itemsize
+    file_bytes = os.path.getsize(fil_path)
+    max_samp   = int(window_sec * sampling_rate)
+    n_samp     = min(max_samp, file_bytes // bytes_per)
+    if n_samp < 1:
+        raise RuntimeError(f"File too small: {fil_path}")
+    raw = np.fromfile(fil_path, dtype=dtype, count=n_samp * n_channels)
+    return raw.reshape(n_samp, n_channels)
+
+
+# ---------------------------------------------------------------------------
+# Threshold detection  (mirrors process_medianthreshold formula)
+# ---------------------------------------------------------------------------
+
+def median_threshold(signal, threshold_factor):
+    """Return scalar threshold for a 1-D channel signal."""
+    return threshold_factor * np.median(np.abs(signal)) / 0.6745
+
+
+def detect_crossings(signal, threshold, refractory_samples):
+    """Return array of sample indices where |signal| crosses threshold."""
+    above   = np.abs(signal) > threshold
+    # rising edges only
+    edges   = np.where(np.diff(above.astype(np.int8)) == 1)[0] + 1
+    if len(edges) == 0:
+        return np.array([], dtype=np.int64)
+    # enforce refractory period
+    kept = [edges[0]]
+    for e in edges[1:]:
+        if e - kept[-1] >= refractory_samples:
+            kept.append(e)
+    return np.array(kept, dtype=np.int64)
+
+
+# ---------------------------------------------------------------------------
+# Coincidence matrix
+# ---------------------------------------------------------------------------
+
+def coincidence_matrix(events_list, n_samples, coincidence_samples):
+    """
+    Build symmetric N×N coincidence matrix.
+    C[i,j] = (# events on ch-i with a co-event on ch-j within ±window) /
+              (# events on ch-i + 1)
+    Symmetrised as (C + C.T) / 2.
+    """
+    n = len(events_list)
+    C = np.zeros((n, n), dtype=np.float64)
+    for i in range(n):
+        ei = events_list[i]
+        if len(ei) == 0:
+            continue
+        for j in range(n):
+            if i == j:
+                C[i, j] = 1.0
+                continue
+            ej = events_list[j]
+            if len(ej) == 0:
+                continue
+            # For each event in ei, check if any event in ej is within window
+            # Use searchsorted for O(N log N)
+            lo = np.searchsorted(ej, ei - coincidence_samples, side='left')
+            hi = np.searchsorted(ej, ei + coincidence_samples, side='right')
+            coincident = np.sum(hi > lo)
+            C[i, j] = coincident / (len(ei) + 1)
+    return (C + C.T) / 2.0
+
+
+# ---------------------------------------------------------------------------
+# Clustering with silhouette-score k selection
+# ---------------------------------------------------------------------------
+
+def cluster_channels(similarity, channel_ids, max_k, min_channels):
+    """
+    Agglomerative Ward clustering on (1 - similarity) distance matrix.
+    Returns list-of-lists of channel IDs for the optimal k.
+    """
+    from scipy.cluster.hierarchy import linkage, fcluster
+    from scipy.spatial.distance   import squareform
+
+    n = len(channel_ids)
+    if n <= min_channels:
+        return [list(channel_ids)]
+
+    # Distance matrix — clip negatives from float arithmetic
+    dist = np.clip(1.0 - similarity, 0.0, None)
+    np.fill_diagonal(dist, 0.0)
+    dist_condensed = squareform(dist)
+
+    Z = linkage(dist_condensed, method='ward')
+
+    best_k      = 1
+    best_score  = -1.0
+
+    k_max = min(max_k, n // min_channels)
+
+    if k_max >= 2:
+        from sklearn.metrics import silhouette_score
+        for k in range(2, k_max + 1):
+            labels = fcluster(Z, k, criterion='maxclust') - 1   # 0-indexed
+            sizes  = np.bincount(labels, minlength=k)
+            if np.any(sizes < min_channels):
+                continue
+            try:
+                score = silhouette_score(dist, labels, metric='precomputed')
+            except Exception:
+                continue
+            if score > best_score:
+                best_score = score
+                best_k     = k
+
+    labels = fcluster(Z, best_k, criterion='maxclust') - 1
+
+    # Build output: list of sorted channel-id lists, sorted by minimum channel
+    groups: dict[int, list] = {}
+    for idx, lbl in enumerate(labels):
+        groups.setdefault(int(lbl), []).append(channel_ids[idx])
+    sorted_groups = [sorted(g) for g in sorted(groups.values(), key=min)]
+    return sorted_groups
+
+
+# ---------------------------------------------------------------------------
+# YAML update — only spikeDetection.channelGroups
+# ---------------------------------------------------------------------------
+
+def build_spike_groups(channel_groups, nsamples, peak_sample, nfeatures):
+    result = []
+    for grp in channel_groups:
+        result.append({
+            'channels':       grp,
+            'nSamples':       nsamples,
+            'peakSampleIndex': peak_sample,
+            'nFeatures':      nfeatures,
+        })
+    return result
+
+
+def rewrite_yaml(yaml_path, new_spike_groups, nsamples, peak_sample, nfeatures):
+    with open(yaml_path, 'r') as f:
+        doc = yaml.safe_load(f)
+    doc['spikeDetection']['channelGroups'] = build_spike_groups(
+        new_spike_groups, nsamples, peak_sample, nfeatures
+    )
+    tmp = yaml_path + '.spikegrouper_tmp'
+    with open(tmp, 'w') as f:
+        yaml.dump(doc, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    os.replace(tmp, yaml_path)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    args = parse_args()
+
+    # --- Input validation ---------------------------------------------------
+    for path in (args.fil, args.yaml):
+        if not os.path.isfile(path):
+            print(f"[process_spikegrouper] ERROR: file not found: {path}", file=sys.stderr)
+            sys.exit(11)
+
+    try:
+        import scipy   # noqa: F401
+    except ImportError:
+        print("[process_spikegrouper] ERROR: scipy is required.  "
+              "Install with: pip install scipy", file=sys.stderr)
+        sys.exit(1)
+    try:
+        import sklearn  # noqa: F401
+    except ImportError:
+        print("[process_spikegrouper] ERROR: scikit-learn is required.  "
+              "Install with: pip install scikit-learn", file=sys.stderr)
+        sys.exit(1)
+
+    # --- Read existing YAML to get current spikeDetection groups ------------
+    with open(args.yaml) as f:
+        doc = yaml.safe_load(f)
+
+    try:
+        raw_groups = doc['spikeDetection']['channelGroups']
+    except KeyError:
+        print("[process_spikegrouper] ERROR: spikeDetection.channelGroups not found in YAML",
+              file=sys.stderr)
+        sys.exit(1)
+
+    existing_groups: list[list[int]] = []
+    for g in raw_groups:
+        if isinstance(g, dict):
+            existing_groups.append([int(c) for c in g.get('channels', [])])
+        elif isinstance(g, list):
+            existing_groups.append([int(c) for c in g])
+
+    if not existing_groups:
+        print("[process_spikegrouper] ERROR: no channel groups found", file=sys.stderr)
+        sys.exit(1)
+
+    # --- Precompute scalar parameters ---------------------------------------
+    sr               = args.sampling_rate
+    refract_samp     = max(1, int(args.refractory_ms   * sr / 1000.0))
+    coincidence_samp = max(1, int(args.coincidence_ms  * sr / 1000.0))
+
+    # --- Load .fil window ---------------------------------------------------
+    print(f"[process_spikegrouper] Loading {args.window_sec:.0f}s from {args.fil}", flush=True)
+    try:
+        data = load_fil_window(args.fil, args.nchannels, args.nbits,
+                               args.window_sec, sr)
+    except Exception as e:
+        print(f"[process_spikegrouper] ERROR reading .fil: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    n_samp = data.shape[0]
+    print(f"[process_spikegrouper] Loaded {n_samp} samples × {args.nchannels} channels",
+          flush=True)
+
+    # --- Process each group -------------------------------------------------
+    all_new_groups: list[list[int]] = []
+
+    for grp_idx, channel_ids in enumerate(existing_groups):
+        n_ch = len(channel_ids)
+        label = f"Group {grp_idx + 1}/{len(existing_groups)}"
+        valid = [c for c in channel_ids if c < args.nchannels]
+
+        if len(valid) < len(channel_ids):
+            bad = set(channel_ids) - set(valid)
+            print(f"  WARNING: channels {sorted(bad)} exceed nChannels={args.nchannels}, "
+                  "dropping", file=sys.stderr)
+        if not valid:
+            print(f"  WARNING: {label} has no valid channels — skipping", file=sys.stderr)
+            continue
+
+        print(f"[process_spikegrouper] {label}: channels {valid[0]}–{valid[-1]} "
+              f"({len(valid)} ch)", flush=True)
+
+        # Threshold + detect per channel
+        events_list = []
+        for ch in valid:
+            sig   = data[:, ch].astype(np.float64)
+            thr   = median_threshold(sig, args.threshold_factor)
+            evts  = detect_crossings(sig, thr, refract_samp)
+            events_list.append(evts)
+            print(f"  ch {ch:4d}: threshold={thr:8.1f}  events={len(evts)}", flush=True)
+
+        # If too few channels to subdivide, pass through unchanged
+        if len(valid) < 2 * args.min_channels:
+            print(f"  → {len(valid)} channels < 2×minChannels={args.min_channels} "
+                  "— keeping as single group", flush=True)
+            all_new_groups.append(valid)
+            continue
+
+        # Coincidence matrix
+        sim = coincidence_matrix(events_list, n_samp, coincidence_samp)
+
+        # Cluster
+        try:
+            sub_groups = cluster_channels(sim, valid, args.max_sub_groups,
+                                          args.min_channels)
+        except Exception as e:
+            print(f"  WARNING: clustering failed ({e}) — keeping group intact", file=sys.stderr)
+            all_new_groups.append(valid)
+            continue
+
+        if len(sub_groups) == 1:
+            print(f"  → Silhouette-optimal k=1, keeping as single group", flush=True)
+        else:
+            summary = "  ".join(
+                f"[{g[0]}–{g[-1]}]({len(g)}ch)" for g in sub_groups
+            )
+            print(f"  → Split into {len(sub_groups)} sub-groups: {summary}", flush=True)
+
+        all_new_groups.extend(sub_groups)
+
+    if not all_new_groups:
+        print("[process_spikegrouper] ERROR: no output groups produced", file=sys.stderr)
+        sys.exit(1)
+
+    # --- Write YAML ---------------------------------------------------------
+    print(f"[process_spikegrouper] Writing {len(all_new_groups)} spikeDetection "
+          f"groups to {args.yaml}", flush=True)
+    try:
+        rewrite_yaml(args.yaml, all_new_groups,
+                     args.nsamples, args.peak_sample, args.nfeatures)
+    except Exception as e:
+        print(f"[process_spikegrouper] ERROR writing YAML: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print("[process_spikegrouper] Done.", flush=True)
+
+
+if __name__ == '__main__':
+    main()

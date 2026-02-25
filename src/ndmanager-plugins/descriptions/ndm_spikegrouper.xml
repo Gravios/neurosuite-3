@@ -1,0 +1,72 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_spikegrouper</n>
+  <parameters>
+   <parameter>
+    <n>thresholdFactor</n>
+    <value>3.0</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>refractoryMs</n>
+    <value>1.0</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>coincidenceMs</n>
+    <value>0.4</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>windowSec</n>
+    <value>60</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>maxSubGroups</n>
+    <value>6</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>minChannels</n>
+    <value>2</value>
+    <status>Mandatory</status>
+   </parameter>
+  </parameters>
+  <help>Discover optimal spikeDetection channel groups from the high-pass filtered .fil file and write them back to the YAML parameter file.
+
+For each existing spikeDetection group the program detects threshold crossings on every channel using the same robust median estimator as ndm_extractspikes (threshold = thresholdFactor * median(|x|)/0.6745). It then builds a spike-coincidence similarity matrix: channels that tend to fire together within a short time window are considered similar. Agglomerative Ward clustering is run on the resulting distance matrix, and the optimal number of sub-groups is chosen by maximising the average silhouette score. Only spikeDetection.channelGroups is rewritten; anatomicalDescription is left unchanged.
+
+Run after ndm_hipass (requires SESSION.fil) and before ndm_extractspikes.
+
+Requires: Python 3 with numpy, pyyaml, scipy, and scikit-learn.
+
+PARAMETERS
+
+# thresholdFactor
+
+Multiplier applied to the per-channel noise estimate when detecting spike events used to build the coincidence matrix. Should match or be slightly lower than the thresholdFactor used in ndm_extractspikes (default 3.0).
+
+# refractoryMs
+
+Minimum time (ms) between two consecutive spike detections on the same channel. Prevents double-counting the same spike waveform (default 1.0 ms).
+
+# coincidenceMs
+
+Half-width (ms) of the coincidence window. Two events are considered coincident if they fall within this window of each other. Should be roughly half the expected spike waveform duration (default 0.4 ms).
+
+# windowSec
+
+Duration (seconds) of .fil data analysed for coincidence estimation. A 60-second window drawn from the start of the file is usually sufficient; increase for sessions with low firing rates (default 60).
+
+# maxSubGroups
+
+Maximum number of sub-groups tested per existing spikeDetection group. The silhouette-optimal k in [1, maxSubGroups] is selected. Larger values increase computation time linearly (default 6).
+
+# minChannels
+
+Minimum number of channels required in every resulting sub-group. Prevents degenerate single-channel groups that cannot be spike-sorted reliably (default 2).
+</help>
+ </program>
+</parameter>

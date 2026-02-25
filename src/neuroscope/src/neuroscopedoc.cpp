@@ -37,8 +37,10 @@
 #include "traceview.h"
 #include "channelcolors.h"
 #include "neuroscopexmlreader.h"
+#include "neuroscopeyamlreader.h"
 #include "parameterxmlmodifier.h"
 #include "parameterxmlcreator.h"
+#include "parameteryamlmodifier.h"
 #include "sessionxmlwriter.h"
 #include "sessionInformation.h"
 #include "clustersprovider.h"
@@ -330,10 +332,21 @@ int NeuroscopeDoc::openDocument(const QString& url)
 
     extension = fileParts.at(fileParts.count() - 1);
 
-    //Look up in the parameter file
-    const QString parFileUrl = QFileInfo(docUrl).absolutePath() + QDir::separator() +baseName +QLatin1String(".xml");
+    //Look up in the parameter file — prefer YAML (.yaml/.yml) over legacy XML (.xml)
+    const QString baseParPath = QFileInfo(docUrl).absolutePath() + QDir::separator() + baseName;
+    QString parFileUrl;
+    m_paramIsYaml = false;
+    if (QFileInfo(baseParPath + QLatin1String(".yaml")).exists()) {
+        parFileUrl    = baseParPath + QLatin1String(".yaml");
+        m_paramIsYaml = true;
+    } else if (QFileInfo(baseParPath + QLatin1String(".yml")).exists()) {
+        parFileUrl    = baseParPath + QLatin1String(".yml");
+        m_paramIsYaml = true;
+    } else {
+        parFileUrl = baseParPath + QLatin1String(".xml");
+    }
     parameterUrl = parFileUrl;
-    
+
     QFileInfo parFileInfo = QFileInfo(parFileUrl);
     QFileInfo sessionFileInfo = QFileInfo(sessionUrl);
 
@@ -345,36 +358,67 @@ int NeuroscopeDoc::openDocument(const QString& url)
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         }
 
-        NeuroscopeXmlReader reader = NeuroscopeXmlReader();
-        if(reader.parseFile(parFileUrl,NeuroscopeXmlReader::PARAMETER)){
-            //Load the general info
-            loadDocumentInformation(reader);
-
-            //try to get the extension information from the parameter file (prior to the 1.2.3 version, the information was
-            //store in the session file)
-            extensionSamplingRates = reader.getSampleRateByExtension();
-            qDebug()<<" NeuroscopeDoc::openDocument NeuroscopeXmlReader::PARAMETER";
-            reader.closeFile();
-        }
-        else{
-            qDebug()<<" NeuroscopeDoc::openDocument PARSE_ERROR";
-            return PARSE_ERROR;
-        }
-
-        //Is there a session file?
-        if(sessionFileInfo.exists()){
-
-            sessionFileExist = true;
-            qDebug()<<" sessionUrl"<<sessionUrl;
-            if(reader.parseFile(sessionUrl,NeuroscopeXmlReader::SESSION)) {
-                //if the session file has been created by a version of NeuroScope prior to the 1.2.3, it contains the extension information
-                qDebug()<<" reader.getVersion()"<<reader.getVersion();
-                if(reader.getVersion().isEmpty() || reader.getVersion() == QLatin1String("1.2.2"))
-                    extensionSamplingRates = reader.getSampleRateByExtension();
-                qDebug()<<"extensionSamplingRates"<<extensionSamplingRates;
+        if (m_paramIsYaml) {
+            NeuroscopeYamlReader yamlReader;
+            if (yamlReader.parseFile(parFileUrl, NeuroscopeYamlReader::PARAMETER)) {
+                loadDocumentInformation(yamlReader);
+                extensionSamplingRates = yamlReader.getSampleRateByExtension();
+                qDebug() << " NeuroscopeDoc::openDocument NeuroscopeYamlReader::PARAMETER";
+                yamlReader.closeFile();
             } else {
-                qDebug()<<" NeuroscopeDoc::openDocument PARSE_ERROR 2";
+                qDebug() << " NeuroscopeDoc::openDocument YAML PARSE_ERROR";
                 return PARSE_ERROR;
+            }
+            // Session file (.nrs) is always XML
+            if (sessionFileInfo.exists()) {
+                sessionFileExist = true;
+                NeuroscopeXmlReader xmlReader;
+                if (xmlReader.parseFile(sessionUrl, NeuroscopeXmlReader::SESSION)) {
+                    qDebug() << " reader.getVersion()" << xmlReader.getVersion();
+                    if (xmlReader.getVersion().isEmpty() || xmlReader.getVersion() == QLatin1String("1.2.2"))
+                        extensionSamplingRates = xmlReader.getSampleRateByExtension();
+                    qDebug() << "extensionSamplingRates" << extensionSamplingRates;
+                    loadSession(xmlReader);
+                    xmlReader.closeFile();
+                } else {
+                    qDebug() << " NeuroscopeDoc::openDocument SESSION PARSE_ERROR";
+                    return PARSE_ERROR;
+                }
+            }
+        } else {
+            NeuroscopeXmlReader reader = NeuroscopeXmlReader();
+            if(reader.parseFile(parFileUrl,NeuroscopeXmlReader::PARAMETER)){
+                //Load the general info
+                loadDocumentInformation(reader);
+
+                //try to get the extension information from the parameter file (prior to the 1.2.3 version, the information was
+                //store in the session file)
+                extensionSamplingRates = reader.getSampleRateByExtension();
+                qDebug()<<" NeuroscopeDoc::openDocument NeuroscopeXmlReader::PARAMETER";
+                reader.closeFile();
+            }
+            else{
+                qDebug()<<" NeuroscopeDoc::openDocument PARSE_ERROR";
+                return PARSE_ERROR;
+            }
+
+            //Is there a session file?
+            if(sessionFileInfo.exists()){
+
+                sessionFileExist = true;
+                qDebug()<<" sessionUrl"<<sessionUrl;
+                if(reader.parseFile(sessionUrl,NeuroscopeXmlReader::SESSION)) {
+                    //if the session file has been created by a version of NeuroScope prior to the 1.2.3, it contains the extension information
+                    qDebug()<<" reader.getVersion()"<<reader.getVersion();
+                    if(reader.getVersion().isEmpty() || reader.getVersion() == QLatin1String("1.2.2"))
+                        extensionSamplingRates = reader.getSampleRateByExtension();
+                    qDebug()<<"extensionSamplingRates"<<extensionSamplingRates;
+                    loadSession(reader);
+                    reader.closeFile();
+                } else {
+                    qDebug()<<" NeuroscopeDoc::openDocument PARSE_ERROR 2";
+                    return PARSE_ERROR;
+                }
             }
         }
 
@@ -406,12 +450,6 @@ int NeuroscopeDoc::openDocument(const QString& url)
         //Create the tracesProvider with the information gather before.
         tracesProvider = new TracesProvider(docUrl,channelNb,resolution,samplingRate,initialOffset);
 
-        //Is there a session file?
-        if(sessionFileExist) {
-            qDebug()<<" NeuroscopeDoc::openDocument sessionfile exit";
-            loadSession(reader);
-            reader.closeFile();
-        }
     }
     //there is no parameter file
     else{
@@ -563,62 +601,103 @@ bool NeuroscopeDoc::saveEventFiles(){
 NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::saveSession(){
     //Save the document information
     QFileInfo parFileInfo = QFileInfo(parameterUrl);
-    //If the parameter file exists, modify it
-    if(parFileInfo.exists()){
-        //Check that the file is writable
-        if(!parFileInfo.isWritable()) return NOT_WRITABLE;
-        bool status;
-        ParameterXmlModifier parameterModifier = ParameterXmlModifier();
-        status = parameterModifier.parseFile(parameterUrl);
-        if(!status)
-            return PARSE_ERROR;
-        status = parameterModifier.setAcquisitionSystemInformation(resolution,channelNb,datSamplingRate,voltageRange,amplification,initialOffset);
-        if(!status)
-            return PARSE_ERROR;
-        if(positionFileOpenOnce){
-            status = parameterModifier.setVideoInformation(videoWidth,videoHeight);
-            if(!status)
+
+    if (m_paramIsYaml) {
+        // ----------------------------------------------------------------
+        // YAML parameter file path
+        // ----------------------------------------------------------------
+        // When the parameter file is YAML, both the "modify existing" and
+        // "create new" cases use ParameterYamlModifier.  The modifier
+        // always reads the existing file (if present) before writing, so
+        // the same call sequence handles both cases.
+        if (parFileInfo.exists() && !parFileInfo.isWritable())
+            return NOT_WRITABLE;
+
+        ParameterYamlModifier yamlMod;
+        if (parFileInfo.exists()) {
+            if (!yamlMod.parseFile(parameterUrl))
                 return PARSE_ERROR;
         }
-        status = parameterModifier.setLfpInformation(eegSamplingRate);
-        if(!status)
+        yamlMod.setAcquisitionSystemInformation(resolution, channelNb, datSamplingRate,
+                                                 voltageRange, amplification, initialOffset);
+        if (positionFileOpenOnce)
+            yamlMod.setVideoInformation(videoWidth, videoHeight);
+        yamlMod.setLfpInformation(eegSamplingRate);
+        if (!extensionSamplingRates.empty())
+            yamlMod.setSampleRateByExtension(extensionSamplingRates);
+        yamlMod.setSpikeDetectionInformation(nbSamples, peakSampleIndex, spikeGroupsChannels);
+        yamlMod.setAnatomicalDescription(displayGroupsChannels,
+                                          displayChannelPalette.getSkipStatus());
+        yamlMod.setNeuroscopeVideoInformation(rotation, flip, backgroundImage,
+                                               drawPositionsOnBackground);
+        yamlMod.setMiscellaneousInformation(screenGain, traceBackgroundImage);
+        if (!yamlMod.setChannelDisplayInformation(channelColorList,
+                                                   displayChannelsGroups,
+                                                   channelDefaultOffsets))
             return PARSE_ERROR;
-        if(!extensionSamplingRates.empty()){
-            status = parameterModifier.setSampleRateByExtension(extensionSamplingRates);
+        if (!yamlMod.writeToFile(parameterUrl))
+            return CREATION_ERROR;
+    } else {
+        // ----------------------------------------------------------------
+        // XML parameter file path (legacy)
+        // ----------------------------------------------------------------
+        //If the parameter file exists, modify it
+        if(parFileInfo.exists()){
+            //Check that the file is writable
+            if(!parFileInfo.isWritable()) return NOT_WRITABLE;
+            bool status;
+            ParameterXmlModifier parameterModifier = ParameterXmlModifier();
+            status = parameterModifier.parseFile(parameterUrl);
             if(!status)
                 return PARSE_ERROR;
+            status = parameterModifier.setAcquisitionSystemInformation(resolution,channelNb,datSamplingRate,voltageRange,amplification,initialOffset);
+            if(!status)
+                return PARSE_ERROR;
+            if(positionFileOpenOnce){
+                status = parameterModifier.setVideoInformation(videoWidth,videoHeight);
+                if(!status)
+                    return PARSE_ERROR;
+            }
+            status = parameterModifier.setLfpInformation(eegSamplingRate);
+            if(!status)
+                return PARSE_ERROR;
+            if(!extensionSamplingRates.empty()){
+                status = parameterModifier.setSampleRateByExtension(extensionSamplingRates);
+                if(!status)
+                    return PARSE_ERROR;
+            }
+            status = parameterModifier.setSpikeDetectionInformation(nbSamples,peakSampleIndex,spikeGroupsChannels);
+            if(!status)
+                return PARSE_ERROR;
+            status = parameterModifier.setAnatomicalDescription(displayGroupsChannels,displayChannelPalette.getSkipStatus());
+            if(!status)
+                return PARSE_ERROR;
+
+            parameterModifier.setNeuroscopeVideoInformation(rotation,flip,backgroundImage,drawPositionsOnBackground);
+            parameterModifier.setMiscellaneousInformation(screenGain,traceBackgroundImage);
+            status = parameterModifier.setChannelDisplayInformation(channelColorList,displayChannelsGroups,channelDefaultOffsets);
+            if(!status)
+                return PARSE_ERROR;
+
+            status = parameterModifier.writeTofile(parameterUrl);
+            if(!status) return CREATION_ERROR;
         }
-        status = parameterModifier.setSpikeDetectionInformation(nbSamples,peakSampleIndex,spikeGroupsChannels);
-        if(!status)
-            return PARSE_ERROR;
-        status = parameterModifier.setAnatomicalDescription(displayGroupsChannels,displayChannelPalette.getSkipStatus());
-        if(!status)
-            return PARSE_ERROR;
+        //If the parameter file does not exist, create it as XML (legacy new-file path)
+        else{
+            ParameterXmlCreator parameterCreator = ParameterXmlCreator();
+            parameterCreator.setAcquisitionSystemInformation(resolution,channelNb,datSamplingRate,voltageRange,amplification,initialOffset);
+            if(positionFileOpenOnce) parameterCreator.setVideoInformation(videoWidth,videoHeight);
+            parameterCreator.setLfpInformation(eegSamplingRate);
+            if(!extensionSamplingRates.empty()) parameterCreator.setSampleRateByExtension(extensionSamplingRates);
+            parameterCreator.setSpikeDetectionInformation(nbSamples,peakSampleIndex,spikeGroupsChannels);
+            parameterCreator.setAnatomicalDescription(displayGroupsChannels,displayChannelPalette.getSkipStatus());
+            parameterCreator.setMiscellaneousInformation(screenGain,traceBackgroundImage);
+            parameterCreator.setNeuroscopeVideoInformation(rotation,flip,backgroundImage,drawPositionsOnBackground);
+            parameterCreator.setChannelDisplayInformation(channelColorList,displayChannelsGroups,channelDefaultOffsets);
 
-        parameterModifier.setNeuroscopeVideoInformation(rotation,flip,backgroundImage,drawPositionsOnBackground);
-        parameterModifier.setMiscellaneousInformation(screenGain,traceBackgroundImage);
-        status = parameterModifier.setChannelDisplayInformation(channelColorList,displayChannelsGroups,channelDefaultOffsets);
-        if(!status)
-            return PARSE_ERROR;
-
-        status = parameterModifier.writeTofile(parameterUrl);
-        if(!status) return CREATION_ERROR;
-    }
-    //If the parameter file does not exist, create it
-    else{
-        ParameterXmlCreator parameterCreator = ParameterXmlCreator();
-        parameterCreator.setAcquisitionSystemInformation(resolution,channelNb,datSamplingRate,voltageRange,amplification,initialOffset);
-        if(positionFileOpenOnce) parameterCreator.setVideoInformation(videoWidth,videoHeight);
-        parameterCreator.setLfpInformation(eegSamplingRate);
-        if(!extensionSamplingRates.empty()) parameterCreator.setSampleRateByExtension(extensionSamplingRates);
-        parameterCreator.setSpikeDetectionInformation(nbSamples,peakSampleIndex,spikeGroupsChannels);
-        parameterCreator.setAnatomicalDescription(displayGroupsChannels,displayChannelPalette.getSkipStatus());
-        parameterCreator.setMiscellaneousInformation(screenGain,traceBackgroundImage);
-        parameterCreator.setNeuroscopeVideoInformation(rotation,flip,backgroundImage,drawPositionsOnBackground);
-        parameterCreator.setChannelDisplayInformation(channelColorList,displayChannelsGroups,channelDefaultOffsets);
-
-        bool status = parameterCreator.writeTofile(parameterUrl);
-        if(!status) return CREATION_ERROR;
+            bool status = parameterCreator.writeTofile(parameterUrl);
+            if(!status) return CREATION_ERROR;
+        }
     }
 
     //Save the session
@@ -2791,4 +2870,452 @@ QImage NeuroscopeDoc::getWhiteTrajectoryBackground() {
     if(!drawPositionsOnBackground)
         return QImage();
     return transformBackgroundImage(true);
+}
+
+// ---------------------------------------------------------------------------
+// YAML reader overloads — delegate to identical implementations
+// ---------------------------------------------------------------------------
+
+void NeuroscopeDoc::loadDocumentInformation(NeuroscopeYamlReader reader){
+    int resolutionRead = reader.getResolution();
+    if(resolutionRead != 0) resolution = resolutionRead;
+    int channelNbRead = reader.getNbChannels();
+    if(channelNbRead != 0) channelNb = channelNbRead;
+    double datSamplingRateRead = reader.getSamplingRate();
+    if(datSamplingRateRead != 0) datSamplingRate =  datSamplingRateRead;
+    upsamplingRate = reader.getUpsamplingRate();
+    double eegSamplingRateRead = reader.getLfpInformation();
+    if(eegSamplingRateRead != 0) eegSamplingRate = eegSamplingRateRead;
+    //the sampling rate for the video is store in the section file extension/sampling rate
+    int videoWidthRead = reader.getVideoWidth();
+    if(videoWidthRead != 0) videoWidth = videoWidthRead;
+    int videoHeightRead = reader.getVideoHeight();
+    if(videoHeightRead != 0) videoHeight = videoHeightRead;
+    drawPositionsOnBackground = reader.getTrajectory();
+
+    //The background image information is stored in the parameter file starting with the version 1.2.3
+    if(reader.getType() == NeuroscopeYamlReader::PARAMETER){
+        if(reader.getBackgroundImage() != "-")
+            backgroundImage = reader.getBackgroundImage();
+
+        if(!backgroundImage.isEmpty()){
+            QFileInfo fileInfo = QFileInfo(backgroundImage);
+            if(!fileInfo.exists()){
+                QString imageUrl(backgroundImage);
+                QString fileName = QFileInfo(imageUrl).fileName();
+                imageUrl = docUrl + QDir::separator() + fileName;
+                backgroundImage = QFileInfo(imageUrl).absolutePath();
+            }
+        }
+    }
+
+    //The background image information for the trace view is stored in the parameter file starting with the version 1.3.4
+    if(reader.getType() == NeuroscopeYamlReader::PARAMETER){
+
+        if(reader.getTraceBackgroundImage() != "-")
+            traceBackgroundImage = reader.getTraceBackgroundImage();
+
+        if(!traceBackgroundImage.isEmpty()){
+            QFileInfo fileInfo = QFileInfo(traceBackgroundImage);
+            if(!fileInfo.exists()){
+                QString imageUrl = traceBackgroundImage;
+                QString fileName = QFileInfo(imageUrl).fileName();
+                imageUrl = docUrl + QDir::separator() + fileName;
+                traceBackgroundImage = QFileInfo(imageUrl).absolutePath();
+            }
+        }
+    }
+
+
+    if(reader.getVoltageRange() != 0) voltageRange = reader.getVoltageRange();
+    //Neuroscope for the moment uses a unique amplification for all the channels
+    if(reader.getAmplification() != 0) amplification = reader.getAmplification();
+    if(reader.getOffset() != 0) initialOffset = reader.getOffset();
+
+    acquisitionGain = static_cast<int>(0.5 +
+                                       static_cast<float>(pow(static_cast<double>(2),static_cast<double>(resolution))
+                                                          / static_cast<float>(voltageRange * 1000))
+                                       * amplification);
+
+    reader.getAnatomicalDescription(channelNb,displayChannelsGroups,displayGroupsChannels,skipStatus);
+
+    if(displayGroupsChannels.contains(0))
+        spikeGroupsChannels.insert(0,displayGroupsChannels[0]);
+    reader.getSpikeDescription(channelNb,channelsSpikeGroups,spikeGroupsChannels);
+
+    //compute which cluster files give data for a given anatomical group
+    computeClusterFilesMapping();
+
+    //Build the channelColorList
+    //the checkColors will be used that their is a color information for each channel.
+    QList<int> checkColors;
+    for(int i = 0; i < channelNb; ++i) checkColors.append(i);
+    QList<ChannelDescription> colorsList = reader.getChannelDescription();
+    if(!colorsList.isEmpty()){
+        QList<ChannelDescription>::iterator colorIterator;
+        for(colorIterator = colorsList.begin(); colorIterator != colorsList.end(); ++colorIterator){
+            int channelId = static_cast<ChannelDescription>(*colorIterator).getId();
+            int removed = checkColors.removeAll(channelId);
+            //it is a duplicate
+            if(removed ==0)
+                continue;
+            QColor color = static_cast<ChannelDescription>(*colorIterator).getColor();
+            QColor groupColor = static_cast<ChannelDescription>(*colorIterator).getGroupColor();
+            QColor spikeGroupColor = static_cast<ChannelDescription>(*colorIterator).getSpikeGroupColor();
+            channelColorList->append(channelId,color,groupColor,spikeGroupColor);
+        }
+        //if a channel does not have color information, set the default (everything to blue)
+        if(!checkColors.isEmpty()){
+            QColor color;
+            color.setHsv(210,255,255);
+            for(int i = 0; i < channelNb; ++i){
+                if(!channelColorList->contains(i)){
+                    channelColorList->insert(i,i,color,color,color);
+                }
+            }
+        }
+    }
+    //if no color are available in the file, set the default (everything to blue)
+    else{
+        QColor color;
+        color.setHsv(210,255,255);
+        for(int i = 0; i < channelNb; ++i){
+            channelColorList->append(i,color);
+        }
+    }
+
+    //Build the list of channel default offsets
+    reader.getChannelDefaultOffset(channelDefaultOffsets);
+    //if no default offset are available in the file, set the default offset to 0
+    if(channelDefaultOffsets.isEmpty()){
+        for(int i = 0; i < channelNb; ++i)
+            channelDefaultOffsets.insert(i,0);
+    }
+    //if a channel does not have a default offset, assign it the value 0
+    if(channelDefaultOffsets.size() != channelNb){
+        for(int i = 0; i < channelNb; ++i){
+            if(!channelDefaultOffsets.contains(i))
+                channelDefaultOffsets.insert(i,0);
+        }
+    }
+
+    if(reader.getScreenGain() != 0)
+        screenGain = reader.getScreenGain();
+    gain = static_cast<int>(0.5 + screenGain * acquisitionGain);
+
+    //For the moment Neuroscope stores it own values for the nbSamples and the peakSampleIndex inside the specific neuroscope tag.
+    //Therefore Neuroscope uses the same values for all the groups
+    //If the data do not exist in the session file a zero is return by the reader.
+
+    //Old way: the nbSamples and peakSampleIndex are given directly
+    //New way: the nbSamples and peakSampleIndex are given in time. The sampling rate is used to compute the information.
+
+    //If no upsampling exists <=> Old way
+    if(upsamplingRate == 0){
+        //the upsampling is set to the sampling rate.
+        upsamplingRate = datSamplingRate;
+        int nbSamplesRead = reader.getNbSamples();
+        int peakSampleIndexRead = reader.getPeakSampleIndex();
+        if(nbSamplesRead != 0) nbSamples = nbSamplesRead;
+        if(peakSampleIndexRead != 0) peakSampleIndex = peakSampleIndexRead;
+    } else {
+        float waveformLengthRead = reader.getWaveformLength();
+        float indexLengthRead = reader.getPeakSampleLength();
+        if(waveformLengthRead != 0) waveformLength = waveformLengthRead;
+        if(indexLengthRead != 0) indexLength = indexLengthRead;
+
+        //Compute the number of samples using the datSamplingRate.
+        nbSamples = static_cast<int>(static_cast<float>(datSamplingRate / 1000) * waveformLength);
+
+        //Compute the peak index using the datSamplingRate.
+        peakSampleIndex = static_cast<int>(static_cast<float>(datSamplingRate / 1000) * indexLength);
+    }
+}
+
+
+void NeuroscopeDoc::loadSession(NeuroscopeYamlReader reader){
+    //Get the file video information
+    if(reader.getRotation() != 0) {
+        rotation = reader.getRotation();
+    }
+    if(reader.getFlip() != 0) {
+        flip = reader.getFlip();
+    }
+
+    QList<SessionFile> filesToLoad = reader.getFilesToLoad();
+    QStringList loadedClusterFiles;
+    QStringList loadedEventFiles;
+    QString loadedPositionFile;
+    QMap< QString, QMap<EventDescription,int> > loadedEventItems;
+
+    //Get the displays information
+    QList<DisplayInformation> displayList = reader.getDisplayInformation();
+
+    bool first = true;
+    QList<DisplayInformation>::ConstIterator iterator;
+    QList<DisplayInformation>::ConstIterator end(displayList.constEnd());
+   for(iterator = displayList.constBegin(); iterator != end; ++iterator) {
+		  QList<int> offsets;
+        QList<int> channelGains;
+        QList<int>* channelsToDisplay = new QList<int>();
+        QList<int> selectedChannels;
+        bool verticalLines = false;
+        bool raster = false;
+        bool waveforms = false;
+        bool multipleColumns = false;
+
+        //Get the information store in DisplayInformation
+        DisplayInformation::mode presentationMode = static_cast<DisplayInformation>(*iterator).getMode();
+        bool autocenterChannels = static_cast<DisplayInformation>(*iterator).getAutocenterChannels();
+        long startTime = static_cast<DisplayInformation>(*iterator).getStartTime();
+        long duration = static_cast<DisplayInformation>(*iterator).getTimeWindow();
+        bool greyMode = static_cast<DisplayInformation>(*iterator).getGreyScale();
+        QList<DisplayInformation::spikeDisplayType> spikeDisplayTypes = static_cast<DisplayInformation>(*iterator).getSpikeDisplayTypes();
+        int rasterHeight = static_cast<DisplayInformation>(*iterator).getRasterHeight();
+        QMap<QString, QList<int> > selectedClusters = static_cast<DisplayInformation>(*iterator).getSelectedClusters();
+        //An id has been assigned to each event, this id will be used internally in NeuroScope and in the session file.
+        QMap<QString, QList<int> > selectedEvents = static_cast<DisplayInformation>(*iterator).getSelectedEvents();
+        //QStringList shownSpikeFiles = static_cast<DisplayInformation>(*iterator).getSelectedSpikeFiles();
+        QMap<QString, QList<int> > skippedClusters = static_cast<DisplayInformation>(*iterator).getSkippedClusters();
+        QMap<QString, QList<int> > skippedEvents = static_cast<DisplayInformation>(*iterator).getSkippedEvents();
+        QList<TracePosition> positions = static_cast<DisplayInformation>(*iterator).getPositions();
+        QList<int> channelIds = static_cast<DisplayInformation>(*iterator).getChannelIds();
+        QList<int> selectedChannelIds = static_cast<DisplayInformation>(*iterator).getSelectedChannelIds();
+        QString tabLabel = static_cast<DisplayInformation>(*iterator).getTabLabel();
+        bool showLabels = static_cast<DisplayInformation>(*iterator).getLabelStatus();
+        bool showEventsInPositionView = static_cast<DisplayInformation>(*iterator).isEventsDisplayedInPositionView();
+
+        //info on the trace presentation
+        if(presentationMode == DisplayInformation::MULTIPLE)
+            multipleColumns = true;
+
+        //info on the spike presentation
+        QList<DisplayInformation::spikeDisplayType>::ConstIterator typeIterator;
+        QList<DisplayInformation::spikeDisplayType>::ConstIterator typeIteratorEnd(spikeDisplayTypes.end());
+        for(typeIterator = spikeDisplayTypes.constBegin(); typeIterator != typeIteratorEnd; ++typeIterator){
+            if(*typeIterator == DisplayInformation::LINES)
+                verticalLines = true;
+            if(*typeIterator == DisplayInformation::RASTER)
+                raster = true;
+            if(*typeIterator == DisplayInformation::WAVEFORMS)
+                waveforms = true;
+        }
+
+        //Info regarding the positionView
+        bool isAPositionView = static_cast<DisplayInformation>(*iterator).isAPositionView();
+
+        /*****************TO FINISH***************************/
+
+        //Get the information concerning the channel positions (gain and offset)
+        QList<TracePosition>::ConstIterator positionIterator;
+        QList<TracePosition>::ConstIterator positionIteratorEnd(positions.constEnd());
+        for (positionIterator = positions.constBegin(); positionIterator != positionIteratorEnd; ++positionIterator) {
+            int gain = static_cast<TracePosition>(*positionIterator).getGain();
+            int offset = static_cast<TracePosition>(*positionIterator).getOffset();
+            offsets.append(offset);
+            channelGains.append(gain);
+        }
+
+        //Get the information concerning the channels shown in the display
+        QList<int>::ConstIterator channelIterator;
+        QList<int>::ConstIterator channelIteratorEnd(channelIds.constEnd());
+        for (channelIterator = channelIds.constBegin(); channelIterator != channelIteratorEnd; ++channelIterator) {
+            channelsToDisplay->append(*channelIterator);
+        }
+
+        //Get the information concerning the channels selected in the display
+        QList<int>::ConstIterator channelSelectedIterator;
+        QList<int>::ConstIterator channelSelectedIteratorEnd(selectedChannelIds.constEnd());
+        for (channelSelectedIterator = selectedChannelIds.constBegin(); channelSelectedIterator != channelSelectedIteratorEnd; ++channelSelectedIterator) {
+            selectedChannels.append(*channelSelectedIterator);
+        }
+
+        //Create the displays
+        if(first){
+            first = false;
+
+            emit loadFirstDisplay(channelsToDisplay,verticalLines,raster,waveforms,showLabels,multipleColumns,greyMode,autocenterChannels,offsets,
+                                  channelGains,selectedChannels,skipStatus,startTime,duration,tabLabel,isAPositionView,rasterHeight,showEventsInPositionView);
+
+            //Now that the channel palettes are created, load the files and create the palettes
+            bool fistClusterFile = true;
+            bool fistEventFile = true;
+            QList<SessionFile>::iterator sessionIterator;
+            for(sessionIterator = filesToLoad.begin(); sessionIterator != filesToLoad.end(); ++sessionIterator){
+                SessionFile sessionFile = static_cast<SessionFile>(*sessionIterator);
+                QString fileUrl = sessionFile.getUrl().path();
+                SessionFile::type fileType = sessionFile.getType();
+                QDateTime lastModified = sessionFile.getModification();
+                QMap<EventDescription,QColor> itemColors = sessionFile.getItemColors();
+                if(fileType == SessionFile::CLUSTER){
+                    //If the file does not exist in the location specified in the session file (absolute path), look up in the directory
+                    //where the session file is. This is useful if you moved your file or you backup them (<=> the absolute path is not good anymore)
+                    QFileInfo fileInfo = QFileInfo(fileUrl);
+                    if(!fileInfo.exists()){
+                        QList<int> ids = selectedClusters[fileUrl];
+                        QList<int> skippedIds = skippedClusters[fileUrl];
+                        selectedClusters.remove(fileUrl);
+                        skippedClusters.remove(fileUrl);
+                        QString fileName = QFileInfo(fileUrl).fileName();
+                        fileUrl = QFileInfo(sessionUrl).absolutePath() + QDir::separator() + fileName;
+                        selectedClusters.insert(fileUrl,ids);
+                        skippedClusters.insert(fileUrl,skippedIds);
+                    }
+                    OpenSaveCreateReturnMessage status = loadClusterFile(fileUrl,itemColors,lastModified,fistClusterFile);
+                    if(status == OK){
+                        loadedClusterFiles.append(lastLoadedProvider);
+                        fistClusterFile = false;
+                    }
+                }
+                if(fileType == SessionFile::EVENT){
+                    //If the file does not exist in the location specified in the session file (absolute path), look up in the directory
+                    //where the session file is. This is useful if you moved your file or ypu backup them (<=> the absolute path is not good anymore)
+                    QFileInfo fileInfo = QFileInfo(fileUrl);
+                    if(!fileInfo.exists()){
+                        QList<int> ids = selectedEvents[fileUrl];
+                        QList<int> skippedIds = skippedEvents[fileUrl];
+                        selectedEvents.remove(fileUrl);
+                        skippedEvents.remove(fileUrl);
+                        QString fileName = QFileInfo(fileUrl).fileName();
+                        fileUrl = QFileInfo(sessionUrl).absolutePath() + QDir::separator() + fileName;
+                        selectedEvents.insert(fileUrl,ids);
+                        skippedEvents.insert(fileUrl,skippedIds);
+                    }
+                    OpenSaveCreateReturnMessage status = loadEventFile(fileUrl,itemColors,lastModified,fistEventFile);
+                    if(status == OK){
+                        loadedEventFiles.append(lastLoadedProvider);
+                        fistEventFile = false;
+                        QMap<EventDescription,int> loadedItems;
+                        QMap<EventDescription,QColor>::ConstIterator it;
+                        QMap<EventDescription,QColor>::ConstIterator endColor(itemColors.constEnd());
+                        int index = 1;
+                        for(it = itemColors.constBegin(); it != endColor; ++it){
+                            loadedItems.insert(it.key(),index);
+                            index++;
+                        }
+                        loadedEventItems.insert(lastLoadedProvider,loadedItems);
+                    }
+                }
+                if(fileType == SessionFile::POSITION){
+                    //If the file does not exist in the location specified in the session file (absolute path), look up in the directory
+                    //where the session file is. This is useful if you moved your file or you backup them (<=> the absolute path is not good anymore)
+                    QFileInfo fileInfo = QFileInfo(fileUrl);
+                    if(!fileInfo.exists()){
+                        QString fileName = QFileInfo(fileUrl).fileName();
+                        fileUrl = QFileInfo(sessionUrl).absolutePath()+QDir::separator() + fileName;
+                    }
+
+                    //Create the transformedBackground
+                    //The background image information is stored in the parameter file starting with the version 1.2.3
+                    if(reader.getVersion().isEmpty() || reader.getVersion() == "1.2.2"){
+                        if(reader.getBackgroundImage() != "-")
+                            backgroundImage = sessionFile.getBackgroundPath();
+                        if(!backgroundImage.isEmpty()){
+                            fileInfo = QFileInfo(backgroundImage);
+                            if(!fileInfo.exists()){
+                                QString imageUrl= backgroundImage;
+                                QString fileName = QFileInfo(imageUrl).fileName();
+                                imageUrl = sessionUrl + QDir::separator() + fileName;
+                                backgroundImage = QFileInfo(imageUrl).absolutePath();
+                            }
+                        }
+                    }
+
+                    OpenSaveCreateReturnMessage status = loadPositionFile(fileUrl);
+                    if(status == OK){
+                        loadedPositionFile = lastLoadedProvider;
+                        if(!backgroundImage.isEmpty() || (backgroundImage.isEmpty() && drawPositionsOnBackground))
+                            transformedBackground = transformBackgroundImage();
+                        static_cast<NeuroscopeApp*>(parent)->positionFileLoaded();
+                    }
+                }
+            }
+        } else {
+            static_cast<NeuroscopeApp*>(parent)->createDisplay(channelsToDisplay,verticalLines,raster,waveforms,showLabels,multipleColumns,
+                                                                greyMode,autocenterChannels,offsets,channelGains,selectedChannels,startTime,duration,rasterHeight,tabLabel);
+        }
+
+
+        //the new view is the last one in the list of view (viewList)
+        NeuroscopeView* view = viewList->last();
+
+        //If the data file is not a dat file, do not display the waveforms but keep the information
+        if(extension != "dat")
+            view->ignoreWaveformInformation();
+
+        //Inform the view of the available providers
+        QStringList::iterator providerIterator;
+        //Cluster files
+        for(providerIterator = loadedClusterFiles.begin(); providerIterator != loadedClusterFiles.end(); ++providerIterator){
+            QString name = *providerIterator;
+            QString fileURL = providerUrls[name];
+            QList<int> clustersIds;
+            QList<int> clustersIdsToSkip;
+            QList<int> ids = selectedClusters[fileURL];
+            QList<int> skippedIds = skippedClusters[fileURL];
+            QList<int> clusterList = static_cast<ClustersProvider*>(providers[name])->clusterIdList();
+            //only keep the cluster ids which are still present
+            QList<int>::iterator shownClustersIterator;
+            for(shownClustersIterator = ids.begin(); shownClustersIterator != ids.end(); ++shownClustersIterator)
+                if(clusterList.contains(*shownClustersIterator)) clustersIds.append(*shownClustersIterator);
+            QList<int>::iterator skippedClustersIterator;
+            for(skippedClustersIterator = skippedIds.begin(); skippedClustersIterator != skippedIds.end(); ++skippedClustersIterator)
+                if(clusterList.contains(*skippedClustersIterator)) clustersIdsToSkip.append(*skippedClustersIterator);
+
+            //an unselected cluster has to be skipped, check and correct if need it
+            QList<int>::iterator iterator;
+            for(iterator = clusterList.begin(); iterator != clusterList.end(); ++iterator)
+                if(!clustersIds.contains(*iterator) && !clustersIdsToSkip.contains(*iterator)) clustersIdsToSkip.append(*iterator);
+            std::sort(clustersIdsToSkip.begin(), clustersIdsToSkip.end());
+            view->setClusterProvider(static_cast<ClustersProvider*>(providers[name]),name,providerItemColors[name],true,clustersIds,
+                                     &displayGroupsClusterFile,&channelsSpikeGroups,peakSampleIndex - 1,nbSamples - peakSampleIndex,clustersIdsToSkip);
+        }
+        //Event files
+        for(providerIterator = loadedEventFiles.begin(); providerIterator != loadedEventFiles.end(); ++providerIterator){
+            QString name = *providerIterator;
+            QString fileURL = providerUrls[name];
+            QList<int> eventsIds;
+            QList<int> eventsIdsToSkip;
+            QList<int> ids = selectedEvents[fileURL];
+            QList<int> skippedIds = skippedEvents[fileURL];
+            QMap<int,EventDescription> eventMap = static_cast<EventsProvider*>(providers[name])->eventIdDescriptionMap();
+            //only keep the event ids which are still present
+            QMap<EventDescription,int> loadedItems = loadedEventItems[name];
+            ItemColors* eventColors = providerItemColors[name];
+            QList<int>::iterator shownEventsIterator;
+            for(shownEventsIterator = ids.begin(); shownEventsIterator != ids.end(); ++shownEventsIterator){
+                EventDescription description = EventDescription(eventColors->itemLabelById(*shownEventsIterator));
+                if(eventMap.contains(*shownEventsIterator) && loadedItems.contains(description) && loadedItems[description] == *shownEventsIterator)
+                    eventsIds.append(*shownEventsIterator);
+            }
+            QList<int>::iterator skippedEventsIterator;
+            for(skippedEventsIterator = skippedIds.begin(); skippedEventsIterator != skippedIds.end(); ++skippedEventsIterator){
+                EventDescription description = EventDescription(eventColors->itemLabelById(*skippedEventsIterator));
+                if(eventMap.contains(*skippedEventsIterator) && loadedItems.contains(description) && loadedItems[description] == *skippedEventsIterator)
+                    eventsIdsToSkip.append(*skippedEventsIterator);
+            }
+
+            //an unselected event has to be skipped, check and correct if need it
+            QMap<int,EventDescription>::iterator iterator;
+            for(iterator = eventMap.begin(); iterator != eventMap.end(); ++iterator)
+                if(!eventsIds.contains(iterator.key()) && !eventsIdsToSkip.contains(iterator.key())) eventsIdsToSkip.append(iterator.key());
+            std::sort(eventsIdsToSkip.begin(), eventsIdsToSkip.end());
+
+            view->setEventProvider(static_cast<EventsProvider*>(providers[name]),name,providerItemColors[name],true,eventsIds,eventsIdsToSkip);
+        }
+        //Position file
+        if(!loadedPositionFile.isEmpty()){
+            if(isAPositionView){
+                if(rotation != 90 && rotation != 270)
+                    view->addPositionView(static_cast<PositionsProvider*>(providers[loadedPositionFile]),transformedBackground, dynamic_cast<NeuroscopeApp*>(parent)->getBackgroundColor(),
+                                          startTime,duration,videoWidth,videoHeight,showEventsInPositionView);
+
+                //If there is a rotation of 90 or 270 degree, the with and height have to be inverted.
+                else
+                    view->addPositionView(static_cast<PositionsProvider*>(providers[loadedPositionFile]),transformedBackground, dynamic_cast<NeuroscopeApp*>(parent)->getBackgroundColor(),
+                                          startTime,duration,videoHeight,videoWidth,showEventsInPositionView);
+
+            }
+        }
+    }
 }

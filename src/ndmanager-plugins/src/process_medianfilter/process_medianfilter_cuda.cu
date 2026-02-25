@@ -121,16 +121,29 @@ insertionSort(short* arr, int n)
 // Main kernel: one thread per (channel, sample-tile).
 //
 // widebandData layout (interleaved, padded):
-//   index = t * nChannels + ch
-//   where t is in [-windowHalfLength, nSamplesPerChunk + windowHalfLength)
+//   index = t * nChannels + ch,  t in [-windowHalfLength, nSamplesPerChunk + windowHalfLength)
 //   The pointer passed in already points to t=0 (past the leading pad).
 //
 // filteredData layout: same interleaved, t in [0, nSamplesPerChunk).
+//
+// Indexing invariant
+// ------------------
+// output[s] = data[s] - median(data[s-wHL .. s+wHL])
+//
+// Each tile independently builds its window by reading the wLen samples
+// centred at tileStart — indices [tileStart-wHL .. tileStart+wHL], all within
+// the valid padded range since tileStart >= 0 and we have wHL padding samples.
+// It then outputs sample tileStart directly (window already correct), then
+// slides the window one step per sample for tileStart+1 .. tileEnd-1:
+//   remove data[s-wHL-1]  (leftmost sample leaving the window)
+//   add    data[s+wHL]    (rightmost sample entering the window)
+// At s = tileStart+1, oldOff = (tileStart+1-wHL-1) = tileStart-wHL >= -wHL,
+// which is always within the padded region — no out-of-bounds access.
 // ---------------------------------------------------------------------------
 __global__ void medianFilterKernel(
     const short* __restrict__ widebandData,
           short* __restrict__ filteredData,
-    int  nSamplesPerChunk,
+    int  nSamplesPerChannel,
     int  nChannels,
     int  windowHalfLength)
 {
@@ -140,28 +153,34 @@ __global__ void medianFilterKernel(
 
     const int wLen      = 2 * windowHalfLength + 1;
     const int tileStart = tile * TILE_SAMPLES;
-    if (tileStart >= nSamplesPerChunk) return;
-    const int tileEnd   = min(tileStart + TILE_SAMPLES, nSamplesPerChunk);
+    if (tileStart >= nSamplesPerChannel) return;
+    const int tileEnd   = min(tileStart + TILE_SAMPLES, nSamplesPerChannel);
 
     // Sorted window in shared memory
     extern __shared__ short sharedMem[];
     const int localIdx = threadIdx.y * blockDim.x + threadIdx.x;
     short* win = sharedMem + localIdx * wLen;
 
-    // Warm-up: build sorted window for the state just before tileStart.
-    // The window centred at sample (tileStart - 1) covers:
-    //   [tileStart - 1 - wHL .. tileStart - 1 + wHL]
-    // = [tileStart - wLen + 1 .. tileStart + wHL - 1 + 1]
-    // which is wLen consecutive samples starting at (tileStart - wLen + 1).
-    // Since widebandData is padded to t=-wHL, indices down to -wHL are valid.
-    const long int warmBase = (long int)(tileStart - wLen + 1) * nChannels + ch;
+    // Warm-up: build the sorted window centred at tileStart.
+    // Reads data[tileStart - wHL .. tileStart + wHL].
+    // Minimum index: tileStart - wHL >= -wHL  (valid, covered by pad).
+    // Maximum index: tileStart + wHL < nSamplesPerChunk + wHL (valid, within buffer).
+    const long int warmBase = (long int)(tileStart - windowHalfLength) * nChannels + ch;
     for (int i = 0; i < wLen; ++i)
         win[i] = widebandData[warmBase + (long int)i * nChannels];
     insertionSort(win, wLen);
 
-    // Main loop: produce [tileStart, tileEnd) outputs.
-    // At entry to iteration s the window is sorted and centred at s-1.
-    for (int s = tileStart; s < tileEnd; ++s) {
+    // Output sample tileStart — window is already centred here.
+    {
+        const long int curOff = (long int)tileStart * nChannels + ch;
+        filteredData[curOff] = widebandData[curOff] - win[windowHalfLength];
+    }
+
+    // Slide the window and output samples tileStart+1 .. tileEnd-1.
+    // At step s: remove data[s - wHL - 1] (leaving), add data[s + wHL] (entering).
+    // oldOff minimum: (tileStart+1) - wHL - 1 = tileStart - wHL >= -wHL  (valid).
+    // newOff maximum: (tileEnd-1) + wHL < nSamplesPerChunk + wHL          (valid).
+    for (int s = tileStart + 1; s < tileEnd; ++s) {
         const long int newOff = (long int)(s + windowHalfLength)     * nChannels + ch;
         const long int oldOff = (long int)(s - windowHalfLength - 1) * nChannels + ch;
         const long int curOff = (long int) s                         * nChannels + ch;
@@ -239,13 +258,15 @@ struct CudaMedianFilter {
 
     void launchKernel(const short* d_in, short* d_out,
                       int nSampThisChunk, cudaStream_t s) const {
-        const int padSamp = nChannels * windowHalfLength;
-        const int nTiles  = (nSampThisChunk + TILE_SAMPLES - 1) / TILE_SAMPLES;
+        const int padSamp          = nChannels * windowHalfLength;
+        // Tile over per-channel samples, not total interleaved samples.
+        const int nSampPerCh       = nSampThisChunk / nChannels;
+        const int nTiles           = (nSampPerCh + TILE_SAMPLES - 1) / TILE_SAMPLES;
         dim3 block(bx, by);
         dim3 grid((nChannels + bx - 1) / bx,
                   (nTiles    + by - 1) / by);
         medianFilterKernel<<<grid, block, smemPerBlock, s>>>(
-            d_in + padSamp, d_out, nSampThisChunk, nChannels, windowHalfLength);
+            d_in + padSamp, d_out, nSampPerCh, nChannels, windowHalfLength);
     }
 };
 
@@ -291,7 +312,8 @@ extern "C" void runCudaMedianFilter(const char* inputPath,
     if (verbose) {
         int bx, by; size_t smem;
         selectBlockConfig(nChannels, windowHalfLength, bx, by, smem, prop);
-        const int nTiles = (nSamplesPerChunk + TILE_SAMPLES - 1) / TILE_SAMPLES;
+        const int nSampPerCh = nSamplesPerChunk / nChannels;
+        const int nTiles = (nSampPerCh + TILE_SAMPLES - 1) / TILE_SAMPLES;
         const int nThreads = ((nChannels + bx-1)/bx * bx) * ((nTiles + by-1)/by * by);
         printf("\n[CUDA medianfilter]\n");
         printf("  File:             %s  (%.2f GB)\n", inputPath, fileSize / 1e9);

@@ -1,0 +1,154 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Discover optimal spikeDetection channel groups from .fil data
+#//
+#//   Reads the high-pass filtered .fil file, detects threshold crossings on
+#//   every channel within each existing spikeDetection group, computes a
+#//   spike-coincidence similarity matrix, and uses agglomerative Ward
+#//   clustering with silhouette-score model selection to find the optimal
+#//   number of sub-groups.  The spikeDetection.channelGroups section of the
+#//   YAML parameter file is replaced with the discovered groups.
+#//   anatomicalDescription is left untouched.
+#//
+#//   Must be run after ndm_hipass (requires SESSION.fil).
+#//   Should be run before ndm_extractspikes so the updated groups are used.
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -ne 1 ]
+then
+	echo_error "usage: $program xml-or-yaml-file"
+	exit $GENERAL_ERROR
+fi
+
+# Accept .xml, .yaml, or .yml — strip all known extensions to get bare session name
+session=${1%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+directory=$(basename "$(pwd)")
+
+# Print a header to indicate current processing step
+print_header "$session - Discovering optimal spikeDetection groups from .fil"
+
+# Check required helper
+check_commands_installed process_spikegrouper
+
+# Check required input files
+inputs_missing $session.fil && exit $INPUTS_MISSING
+
+# Locate YAML parameter file (required — we will rewrite it)
+yamlfile=$(find_yaml_file "$session")
+if [ -z "$yamlfile" ]
+then
+	echo_error "No .yaml or .yml parameter file found for session '$session'"
+	exit $INPUTS_MISSING
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read parameters from the YAML file
+# // xml_read() transparently handles YAML files for simple xpaths.
+# // xml_count() is XML-only, so we use yaml_read_key() for list-length queries.
+# // group[1]-style xpaths are not supported by yaml_read, so we use yaml_read_key()
+# // with dot-notation index (0-based) for per-group metadata.
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+nBits=$(xml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+
+# Count spikeDetection groups via yaml_read_key (xml_count is XML-only).
+# spikeDetection.channelGroups is a YAML list; python len() gives the count.
+nElectrodeGroups=$(python3 -c "
+import sys, yaml
+try:
+    with open('$yamlfile') as f:
+        doc = yaml.safe_load(f)
+    groups = doc.get('spikeDetection', {}).get('channelGroups', [])
+    print(len(groups))
+except Exception:
+    print(0)
+")
+
+check_mandatory_variable $nChannels    "missing number of channels (acquisitionSystem/nChannels)"
+check_mandatory_variable $nBits        "missing bit depth (acquisitionSystem/nBits)"
+check_mandatory_variable $samplingRate "missing sampling rate (acquisitionSystem/samplingRate)"
+
+if [ "$nElectrodeGroups" -eq 0 ]
+then
+	echo_error "No spikeDetection groups found in $yamlfile — cannot determine channel scope"
+	exit $GENERAL_ERROR
+fi
+
+# Optional plugin parameters — read from the YAML programs block, with defaults
+thresholdFactor=$(read_script_parameter $session thresholdFactor)
+thresholdFactor=${thresholdFactor:-3.0}
+
+refractoryMs=$(read_script_parameter $session refractoryMs)
+refractoryMs=${refractoryMs:-1.0}
+
+coincidenceMs=$(read_script_parameter $session coincidenceMs)
+coincidenceMs=${coincidenceMs:-0.4}
+
+windowSec=$(read_script_parameter $session windowSec)
+windowSec=${windowSec:-60}
+
+maxSubGroups=$(read_script_parameter $session maxSubGroups)
+maxSubGroups=${maxSubGroups:-8}
+
+minChannels=$(read_script_parameter $session minChannels)
+minChannels=${minChannels:-2}
+
+# Inherit nSamples / peakSampleIndex / nFeatures from the first spikeDetection group.
+# yaml_read_key uses 0-based dot-notation: spikeDetection.channelGroups.0.nSamples
+nSamples=$(yaml_read_key "$yamlfile" "spikeDetection.channelGroups.0.nSamples")
+nSamples=${nSamples:-52}
+peakSampleIndex=$(yaml_read_key "$yamlfile" "spikeDetection.channelGroups.0.peakSampleIndex")
+peakSampleIndex=${peakSampleIndex:-26}
+nFeatures=$(yaml_read_key "$yamlfile" "spikeDetection.channelGroups.0.nFeatures")
+nFeatures=${nFeatures:-3}
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Run
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Session      : $session"
+echo_info "YAML file    : $yamlfile"
+echo_info "nChannels    : $nChannels  nBits: $nBits  samplingRate: $samplingRate Hz"
+echo_info "Input groups : $nElectrodeGroups"
+echo_info "Parameters   : thresholdFactor=$thresholdFactor  refractoryMs=$refractoryMs"
+echo_info "               coincidenceMs=$coincidenceMs  windowSec=$windowSec"
+echo_info "               maxSubGroups=$maxSubGroups  minChannels=$minChannels"
+
+process_spikegrouper \
+	--fil             "$session.fil"   \
+	--yaml            "$yamlfile"      \
+	--nchannels       "$nChannels"     \
+	--nbits           "$nBits"         \
+	--sampling-rate   "$samplingRate"  \
+	--threshold-factor "$thresholdFactor" \
+	--refractory-ms   "$refractoryMs"  \
+	--coincidence-ms  "$coincidenceMs" \
+	--window-sec      "$windowSec"     \
+	--max-sub-groups  "$maxSubGroups"  \
+	--min-channels    "$minChannels"   \
+	--nsamples        "$nSamples"      \
+	--peak-sample     "$peakSampleIndex" \
+	--nfeatures       "$nFeatures"
+
+check_command_status process_spikegrouper
+
+echo_info "spikeDetection.channelGroups updated in $yamlfile"
