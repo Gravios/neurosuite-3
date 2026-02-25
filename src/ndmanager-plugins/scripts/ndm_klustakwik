@@ -1,0 +1,150 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Run KlustaKwik spike sorting for each spikeDetection group
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -eq 0 ] || [ $# -gt 2 ]
+then
+	echo_error "usage: $program parameter-file [electrodeGroup]"
+	exit $GENERAL_ERROR
+fi
+session=${1%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+directory=$(basename "$(pwd)")
+electrodeGroup=$2
+
+# Print a header to indicate current processing step
+print_header "$session - Running KlustaKwik spike sorting"
+
+# Check required programs
+check_commands_installed KlustaKwik
+
+# Run KlustaKwik for a single electrode group
+once()
+{
+	local electrodeGroup=$1
+
+	# Check input files
+	inputs_missing "$session.$param_ext" $session.fet.$electrodeGroup && exit $INPUTS_MISSING
+
+	# Check output file
+	outputs_exist $session.clu.$electrodeGroup && exit $OUTPUTS_EXIST
+
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+	# // Read Parameters
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+	nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+	if [ $electrodeGroup -gt $nElectrodeGroups ]
+	then
+		echo_error "spike group $electrodeGroup is undefined"
+		exit $GENERAL_ERROR
+	fi
+
+	# Number of channels in this group
+	electrodes=($(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	nElectrodes=${#electrodes[*]}
+
+	# Number of PCA features per channel
+	nFeatures=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
+	check_mandatory_variable $nFeatures "missing number of features for electrode group $electrodeGroup"
+
+	# Sampling rate
+	samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+	check_mandatory_variable $samplingRate "missing sampling rate"
+
+	# UseFeatures: one '1' per feature per channel, plus one for the energy feature
+	nTotalFeatures=$(( nElectrodes * nFeatures + 1 ))
+	useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
+
+	# Optional parameters (read from parameter file, with defaults)
+	minClusters=$(read_script_parameter $session minClusters)
+	check_optional_variable $minClusters || minClusters=2
+
+	maxClusters=$(read_script_parameter $session maxClusters)
+	check_optional_variable $maxClusters || maxClusters=100
+
+	chunkMinutes=$(read_script_parameter $session chunkMinutes)
+	check_optional_variable $chunkMinutes || chunkMinutes=5
+
+	initMethod=$(read_script_parameter $session initMethod)
+	check_optional_variable $initMethod || initMethod=random
+
+	mergeThresh=$(read_script_parameter $session mergeThresh)
+	check_optional_variable $mergeThresh || mergeThresh=35
+
+	globalMergeIter=$(read_script_parameter $session globalMergeIter)
+	check_optional_variable $globalMergeIter || globalMergeIter=30
+
+	timeMergeIter=$(read_script_parameter $session timeMergeIter)
+	check_optional_variable $timeMergeIter || timeMergeIter=35
+
+	saveIntermediates=$(read_script_parameter $session saveIntermediates)
+	check_optional_variable $saveIntermediates || saveIntermediates=0
+
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+	# // Process
+	# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features)"
+
+	KlustaKwik $session $electrodeGroup \
+		-MinClusters    $minClusters    \
+		-MaxClusters    $maxClusters    \
+		-UseFeatures    $useFeatures    \
+		-ChunkMinutes   $chunkMinutes   \
+		-InitMethod     $initMethod     \
+		-SamplingRate   $samplingRate   \
+		-MergeThresh    $mergeThresh    \
+		-GlobalMergeIter $globalMergeIter \
+		-TimeMergeIter  $timeMergeIter  \
+		-SaveIntermediates $saveIntermediates
+
+	check_command_status KlustaKwik
+}
+
+# Run all groups, or just the one requested
+if [ -z "$electrodeGroup" ]
+then
+	nGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+	if [ $nGroups -eq 0 ]
+	then
+		echo_error "missing spike groups"
+		exit $GENERAL_ERROR
+	fi
+
+	# KlustaKwik is CPU-intensive — run groups sequentially to avoid
+	# thrashing on shared memory and CPU resources
+	overallStatus=$NO_ERROR
+	for (( i=1; i<=nGroups; i++ ))
+	do
+		once $i
+		groupStatus=$?
+		if [ $groupStatus -ne $NO_ERROR ] && [ $groupStatus -ne $OUTPUTS_EXIST ] && [ $groupStatus -ne $INPUTS_MISSING ]
+		then
+			overallStatus=$groupStatus
+		fi
+	done
+
+	exit $overallStatus
+else
+	once $electrodeGroup
+	exit $?
+fi
