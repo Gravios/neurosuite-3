@@ -139,6 +139,19 @@ double ParameterYamlReader::getLfpSamplingRate() const
     return nodeAs<double>(m_root["fieldPotentials"]["lfpSamplingRate"], 0.0);
 }
 
+void ParameterYamlReader::getSampleRateByExtension(QMap<QString,double>& result) const
+{
+    // "files" is a sequence of {samplingRate: N, extension: "ext"}
+    auto files = m_root["files"];
+    if (!files || !files.IsSequence()) return;
+    for (auto entry : files) {
+        double rate = nodeAs<double>(entry["samplingRate"], 0.0);
+        QString ext = nodeStr(entry["extension"]);
+        if (rate > 0 && !ext.isEmpty())
+            result.insert(ext, rate);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Anatomical description
 // ---------------------------------------------------------------------------
@@ -231,27 +244,51 @@ int ParameterYamlReader::getNbFeatures(int electrodeGroupID) const
 
 // NeuroscopeXmlReader variant
 void ParameterYamlReader::getSpikeDescription(
-        int /*nbChannels*/,
+        int nbChannels,
         QMap<int,int>&        spikeChannelsGroups,
         QMap<int,QList<int>>& spikeGroupsChannels) const
 {
-    auto groups = m_root["spikeDetection"]["channelGroups"];
-    if (!groups || !groups.IsSequence()) return;
+    // Mirror the XML reader behaviour: every channel starts in the spike
+    // trash group (-1).  Channels that appear in spikeDetection groups get
+    // reassigned.  Channels that are in the anatomical trash group (0) keep
+    // group 0.  This ensures channelsSpikeGroups has an entry for every
+    // channel so the ChannelPalette iconviewDict lookup never gets a
+    // default-constructed 0 for an unassigned channel.
+    QList<int> trashList;
+    if (spikeGroupsChannels.contains(0))
+        trashList = spikeGroupsChannels[0];
 
-    int groupId = 1;
-    for (auto grp : groups) {
-        auto channels = grp["channels"];
-        if (!channels || !channels.IsSequence()) { ++groupId; continue; }
-        QList<int> chList;
-        for (auto ch : channels) {
-            int id = nodeAs<int>(ch, -1);
-            if (id < 0) continue;
-            chList.append(id);
-            spikeChannelsGroups[id] = groupId;
+    QList<int> spikeTrashList;
+    for (int i = 0; i < nbChannels; ++i) {
+        if (!trashList.contains(i)) {
+            spikeTrashList.append(i);
+            spikeChannelsGroups.insert(i, -1);
+        } else {
+            spikeChannelsGroups.insert(i, 0);
         }
-        spikeGroupsChannels[groupId] = chList;
-        ++groupId;
     }
+
+    auto groups = m_root["spikeDetection"]["channelGroups"];
+    if (groups && groups.IsSequence()) {
+        int groupId = 1;
+        for (auto grp : groups) {
+            auto channels = grp["channels"];
+            if (!channels || !channels.IsSequence()) { ++groupId; continue; }
+            QList<int> chList;
+            for (auto ch : channels) {
+                int id = nodeAs<int>(ch, -1);
+                if (id < 0) continue;
+                chList.append(id);
+                spikeChannelsGroups[id] = groupId;  // overwrite -1
+                spikeTrashList.removeAll(id);
+            }
+            spikeGroupsChannels[groupId] = chList;
+            ++groupId;
+        }
+    }
+
+    if (!spikeTrashList.isEmpty())
+        spikeGroupsChannels.insert(-1, spikeTrashList);
 }
 
 // ndmanager XmlReader variant

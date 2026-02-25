@@ -877,12 +877,16 @@ void NeuroscopeApp::initDisplay(QList<int>* channelsToDisplay,bool autocenterCha
 
     isInit = false; //now a change in a spine box or the lineedit will trigger an update of the display
 
+    qDebug() << "initDisplay: creating NeuroscopeView, tracesDataProvider=" << &doc->tracesDataProvider()
+             << "channelColors=" << doc->channelColors()
+             << "channelsToDisplay count=" << channelsToDisplay->count();
     NeuroscopeView* view = new NeuroscopeView(*this,tabLabel,startTime,duration,backgroundColor,Qt::WA_DeleteOnClose,statusBar(),channelsToDisplay,greyScale->isChecked(),
                                               doc->tracesDataProvider(),displayMode->isChecked(),clusterVerticalLines->isChecked(),
                                               clusterRaster->isChecked(),clusterWaveforms->isChecked(),showHideLabels->isChecked(),doc->getGain(),doc->getAcquisitionGain(),
                                               doc->channelColors(),doc->getDisplayGroupsChannels(),doc->getDisplayChannelsGroups(),autocenterChannels,
                                               offsets,channelGains,selectedChannels,skipStatus,rasterHeight,doc->getTraceBackgroundImage(),mainDock,"TracesDisplay");
 
+    qDebug() << "initDisplay: NeuroscopeView created ok";
     view->installEventFilter(this);
 
     connect(view,SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotSelectChannelsInPalette(QList<int>)));
@@ -907,18 +911,25 @@ void NeuroscopeApp::initDisplay(QList<int>* channelsToDisplay,bool autocenterCha
 
     //Initialize and dock the displayPanel
     //Create the channel lists and select the channels which will be drawn
+    qDebug() << "initDisplay: createChannelLists display";
     displayChannelPalette->createChannelLists(doc->channelColors(),doc->getDisplayGroupsChannels(),doc->getDisplayChannelsGroups());
+    qDebug() << "initDisplay: updateShowHideStatus display";
     displayChannelPalette->updateShowHideStatus(*channelsToDisplay,true);
+    qDebug() << "initDisplay: createChannelLists spike";
     spikeChannelPalette->createChannelLists(doc->channelColors(),doc->getSpikeGroupsChannels(),doc->getChannelsSpikeGroups());
+    qDebug() << "initDisplay: updateShowHideStatus spike";
     spikeChannelPalette->updateShowHideStatus(*channelsToDisplay,true);
+    qDebug() << "initDisplay: setGreyScale";
     displayChannelPalette->setGreyScale(greyScale->isChecked());
     spikeChannelPalette->setGreyScale(greyScale->isChecked());
     paletteTabsParent->show();
 
     //Update the skip status of the channels
+    qDebug() << "initDisplay: updateSkipStatus";
     displayChannelPalette->updateSkipStatus(skipStatus);
 
     //update the channel palettes selection
+    qDebug() << "initDisplay: selectChannels";
     if(!selectedChannels.isEmpty()){
         spikeChannelPalette->selectChannels(selectedChannels);
         displayChannelPalette->selectChannels(selectedChannels);

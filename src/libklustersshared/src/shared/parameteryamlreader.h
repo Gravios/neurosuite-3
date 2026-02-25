@@ -149,6 +149,16 @@ public:
     double getLfpSamplingRate() const;
 
     // ----------------------------------------------------------------
+    // File extension → sampling rate  (from "files" list)
+    // ----------------------------------------------------------------
+    /**
+     * @brief Populate @p result with extension→samplingRate pairs from
+     *        the YAML "files" list.  Does NOT add dat/fil — the caller
+     *        is responsible for those.
+     */
+    void getSampleRateByExtension(QMap<QString,double>& result) const;
+
+    // ----------------------------------------------------------------
     // Anatomical description
     // ----------------------------------------------------------------
 
