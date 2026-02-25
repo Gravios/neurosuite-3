@@ -58,6 +58,9 @@ public:
   */
     OpenSaveCreateReturnMessage openDocument(const QString& url);
 
+    template<typename Reader>
+    OpenSaveCreateReturnMessage loadFromReader(Reader& reader);
+
     /**Returns the QString of the document. */
     inline const QString& url() const{return docUrl;}
 

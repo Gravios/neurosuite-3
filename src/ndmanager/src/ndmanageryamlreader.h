@@ -17,7 +17,12 @@
 
 #include "generalinformation.h"
 #include "programinformation.h"
+#include "fileinformation.h"
+#include "channelcolors.h"
+#include "neuroscopevideoinfo.h"
 #include "parameteryamlreader.h"
+
+#include <yaml-cpp/yaml.h>
 
 /**
  * @brief Reads ndmanager-relevant fields from a YAML parameter file.
@@ -42,6 +47,9 @@ public:
     // ---- Field potentials ----
     double getLfpInformation() const { return m_reader.getLfpSamplingRate(); }
 
+    // ---- Files ----
+    void getFilesInformation(QList<FileInformation>& files) const;
+
     // ---- Anatomical description ----
     void getAnatomicalDescription(int nbChannels,
                                   QMap<int,QList<int>>&              anatomicalGroups,
@@ -58,13 +66,30 @@ public:
     void getUnits(QMap<int,QStringList>& units) const
     { m_reader.getUnits(units); }
 
+    // ---- Neuroscope display ----
+    float   getScreenGain()            const { return m_reader.getScreenGain(); }
+    QString getTraceBackgroundImage()  const { return m_reader.getTraceBackgroundImage(); }
+    int     getNbSamples()             const { return m_reader.getNbSamplesSpikes(); }
+    int     getPeakSampleIndex()       const { return m_reader.getPeakSampleIndexSpikes(); }
+    void    getChannelColors(QList<ChannelColors>& list) const;
+    void    getChannelDefaultOffset(QMap<int,int>& offsets) const;
+
+    // ---- Neuroscope video ----
+    void getVideoInfo(QMap<QString,double>& videoInformation) const;
+    void getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const;
+
     // ---- Programs ----
     void getProgramsInformation(QList<ProgramInformation>& programs) const;
     void getProgramInformation(ProgramInformation& programInformation) const;
 
-    // ---- Video (stubbed — not yet in YAML schema) ----
-    void getVideoInfo(QMap<QString,double>& /*videoInformation*/) const {}
-
 private:
     ParameterYamlReader m_reader;
+    YAML::Node          m_root;   ///< kept for fields not exposed by ParameterYamlReader
+
+    template<typename T>
+    T nodeAs(const YAML::Node& n, const T& fallback) const {
+        try { if (n && n.IsDefined() && !n.IsNull()) return n.as<T>(); }
+        catch (...) {}
+        return fallback;
+    }
 };
