@@ -33,7 +33,8 @@ struct SpikeGrouperArgs {
     double      coincidenceMs   = 0.4;    // half-width of coincidence window (ms)
     double      windowSec       = 60.0;   // seconds of .fil to analyse
     int         maxSubGroups    = 6;      // maximum k for clustering
-    int         minChannels     = 2;      // minimum channels per sub-group
+    int         minChannels     = 4;      // minimum channels per sub-group (post-merge)
+    int         maxMergedSize   = 12;    // maximum channels in a merged group
 
     // Values written into new spikeDetection groups
     int         nSamples        = 52;

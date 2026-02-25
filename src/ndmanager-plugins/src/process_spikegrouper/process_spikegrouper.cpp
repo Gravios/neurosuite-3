@@ -97,7 +97,8 @@ static void usage(const char* name)
          << "  --coincidence-ms W       coincidence half-window ms (default 0.4)\n"
          << "  --window-sec     T       seconds of .fil to analyse (default 60)\n"
          << "  --max-sub-groups K       maximum sub-groups per group (default 6)\n"
-         << "  --min-channels   M       minimum channels per sub-group (default 2)\n"
+         << "  --min-channels   M       minimum channels per sub-group (default 4)\n"
+         << "  --max-merged-size S      maximum channels after merging adjacent groups (default 12)\n"
          << "  --nsamples       S       nSamples for new groups (default 52)\n"
          << "  --peak-sample    P       peakSampleIndex for new groups (default 26)\n"
          << "  --nfeatures      F       nFeatures for new groups (default 3)\n"
@@ -134,6 +135,7 @@ static SpikeGrouperArgs parseArgs(int argc, char* argv[])
         else if (arg == "--window-sec")       a.windowSec       = atof(next());
         else if (arg == "--max-sub-groups")   a.maxSubGroups    = atoi(next());
         else if (arg == "--min-channels")     a.minChannels     = atoi(next());
+        else if (arg == "--max-merged-size")  a.maxMergedSize   = atoi(next());
         else if (arg == "--nsamples")         a.nSamples        = atoi(next());
         else if (arg == "--peak-sample")      a.peakSampleIndex = atoi(next());
         else if (arg == "--nfeatures")        a.nFeatures       = atoi(next());
@@ -359,6 +361,129 @@ static double silhouetteScore(const vector<double>& D, const vector<int>& labels
 }
 
 // ===========================================================================
+// Post-split adjacency merge
+// ===========================================================================
+//
+// After Ward clustering produces a set of contiguous channel groups, we
+// consider merging neighboring groups when doing so would reduce the chance
+// of splitting spikes across group boundaries.
+//
+// Scoring
+// -------
+// The coincidence matrix C (already symmetrised, values in [0,1]) measures
+// how often a spike on channel i fires within the coincidence window of
+// channel j.  For two adjacent groups A and B, the inter-group coincidence
+// score is:
+//
+//   score(A,B) = mean of C[i,j] for all i in A, j in B (and vice-versa)
+//
+// A high score means spikes from these two groups frequently co-fire, so
+// separating them will split many spikes — a strong reason to merge.
+//
+// Constraints
+// -----------
+//   • merged group size ≤ maxMergedSize  (hard: never exceed)
+//   • every group must have ≥ minChannels (hard: groups that already have
+//     fewer channels than minChannels are allowed to merge freely, they
+//     just cannot be the result of a split that leaves another group
+//     below minChannels — the clustering step above already enforced that)
+//
+// Algorithm
+// ---------
+// Greedy: repeatedly merge the adjacent pair with the highest inter-group
+// coincidence score, subject to the constraints, until no valid merge remains.
+// O(K² log K) per iteration where K = number of groups.
+
+// Returns the mean coincidence between the channels of two groups.
+static double interGroupCoinc(
+    const vector<double>& coinc,   // full n×n coincidence matrix (original group)
+    int n,                          // size of coinc matrix
+    const vector<int>& idxA,       // indices INTO the n-channel array for group A
+    const vector<int>& idxB)       // indices for group B
+{
+    if (idxA.empty() || idxB.empty()) return 0.0;
+    double sum = 0.0;
+    long cnt = 0;
+    for (int i : idxA)
+        for (int j : idxB) {
+            sum += coinc[i * n + j];
+            sum += coinc[j * n + i];
+            cnt += 2;
+        }
+    return cnt > 0 ? sum / cnt : 0.0;
+}
+
+// channelIndices[g] = indices (0..n-1) of the channels in sub-group g,
+// in terms of the original n-channel coincidence matrix ordering.
+// groupChannels[g] = actual channel IDs.
+// coinc = n×n coincidence matrix for the full group.
+// Returns updated groupChannels after merging.
+static vector<vector<int>> mergeAdjacentGroups(
+    const vector<vector<int>>& groupChIds,    // channel IDs per sub-group (sorted)
+    const vector<vector<int>>& groupIdxs,     // coinc-matrix indices per sub-group
+    const vector<double>&      coinc,
+    int                        n,
+    int                        minChannels,
+    int                        maxMergedSize,
+    bool                       verbose)
+{
+    int K = (int)groupChIds.size();
+    if (K <= 1) return groupChIds;
+
+    // Working copies
+    vector<vector<int>> chIds  = groupChIds;
+    vector<vector<int>> idxs   = groupIdxs;
+
+    bool merged = true;
+    while (merged) {
+        merged = false;
+        K = (int)chIds.size();
+        if (K <= 1) break;
+
+        // Find the adjacent pair with the best (highest) inter-group coinc
+        // subject to size constraints.
+        double bestScore = -1.0;
+        int    bestA = -1, bestB = -1;
+
+        for (int a = 0; a < K - 1; ++a) {
+            int b = a + 1;   // only adjacent pairs
+            int mergedSize = (int)(chIds[a].size() + chIds[b].size());
+            if (mergedSize > maxMergedSize) continue;
+            // After merge, remaining groups must still be ≥ minChannels.
+            // The merged group itself will be mergedSize ≥ each part which
+            // was already ≥ minChannels (enforced by clustering), so no
+            // issue there. We just enforce the cap.
+            double score = interGroupCoinc(coinc, n, idxs[a], idxs[b]);
+            if (score > bestScore) {
+                bestScore = score;
+                bestA = a; bestB = b;
+            }
+        }
+
+        if (bestA < 0 || bestScore <= 0.0) break;  // nothing to merge
+
+        if (verbose)
+            printf("    merge groups %d+%d → %d channels  inter-coinc=%.4f\n",
+                   bestA, bestB,
+                   (int)(chIds[bestA].size() + chIds[bestB].size()),
+                   bestScore);
+
+        // Merge bestB into bestA
+        for (int c : chIds[bestB]) chIds[bestA].push_back(c);
+        for (int i : idxs[bestB]) idxs[bestA].push_back(i);
+        // chIds[bestA] should already be sorted (bestA < bestB and
+        // both were contiguous sorted blocks), so just sort to be safe.
+        sort(chIds[bestA].begin(), chIds[bestA].end());
+
+        chIds.erase(chIds.begin() + bestB);
+        idxs.erase(idxs.begin()  + bestB);
+        merged = true;
+    }
+
+    return chIds;
+}
+
+// ===========================================================================
 // Group one block of channels
 // ===========================================================================
 
@@ -369,7 +494,8 @@ static vector<vector<int>> groupChannels(
     int                         n,
     int                         maxSubGroups,
     int                         minChannels,
-    bool                        verbose)
+    bool                        verbose,
+    vector<vector<int>>*        outIdxs = nullptr)  // if non-null: per-subgroup coinc indices
 {
     // Distance matrix = 1 - coincidence  (clip to [0,1])
     vector<double> D(n * n);
@@ -443,6 +569,11 @@ static vector<vector<int>> groupChannels(
 
     if (bestK == 1) {
         result.push_back(sortedChs);
+        if (outIdxs) {
+            vector<int> allIdxs(n);
+            iota(allIdxs.begin(), allIdxs.end(), 0);
+            outIdxs->push_back(allIdxs);
+        }
         return result;
     }
 
@@ -499,6 +630,14 @@ static vector<vector<int>> groupChannels(
         int r = (k + 1 < bestK) ? splits[k+1] - 1 : n - 1;
         vector<int> block(sortedChs.begin() + l, sortedChs.begin() + r + 1);
         result.push_back(block);
+        if (outIdxs) {
+            // The coinc matrix is indexed by position in the original validChs
+            // array, which maps to sortedIdx[l..r].
+            vector<int> idxBlock;
+            for (int p = l; p <= r; ++p)
+                idxBlock.push_back(sortedIdx[p]);
+            outIdxs->push_back(idxBlock);
+        }
     }
     return result;
 }
@@ -555,8 +694,8 @@ int main(int argc, char* argv[])
         printf("  refractory:   %.2f ms\n", args.refractoryMs);
         printf("  coincidence:  %.2f ms  window: %.1f s\n",
                args.coincidenceMs, args.windowSec);
-        printf("  maxSubGroups: %d  minChannels: %d\n",
-               args.maxSubGroups, args.minChannels);
+        printf("  maxSubGroups: %d  minChannels: %d  maxMergedSize: %d\n",
+               args.maxSubGroups, args.minChannels, args.maxMergedSize);
     }
 
     // ----- Load spikeDetection groups (for metadata and channel lists) ----
@@ -696,10 +835,23 @@ int main(int argc, char* argv[])
         }
 
         vector<long int> dummy;
+        vector<vector<int>> subGroupIdxs;
         vector<vector<int>> subGroups = groupChannels(
             coinc, dummy, validChs, nv,
-            args.maxSubGroups, args.minChannels, args.verbose
+            args.maxSubGroups, args.minChannels, args.verbose,
+            &subGroupIdxs
         );
+
+        // ---- Post-split merge: re-combine adjacent groups that have high
+        //      cross-boundary coincidence, up to maxMergedSize channels. ----
+        if ((int)subGroups.size() > 1) {
+            if (args.verbose)
+                printf("    → merge pass: %d groups, minCh=%d, maxMerged=%d\n",
+                       (int)subGroups.size(), args.minChannels, args.maxMergedSize);
+            subGroups = mergeAdjacentGroups(
+                subGroups, subGroupIdxs, coinc, nv,
+                args.minChannels, args.maxMergedSize, args.verbose);
+        }
 
         if (args.verbose) {
             printf("    → %d sub-group(s)\n", (int)subGroups.size());
