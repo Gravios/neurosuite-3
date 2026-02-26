@@ -19,16 +19,17 @@ source ndm_functions
 
 # Parse command-line
 program=$(basename $0)
-if [ $# -ne 1 ]
+if [ $# -gt 1 ]
 then
-	echo_error "usage: $program parameter-file"
+	echo_error "usage: $program [parameter-file]"
 	exit $GENERAL_ERROR
 fi
-session=${1%.xml}
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
 session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
-directory=$(basename "$(pwd)")
 
 # Print a header to indicate current processing step
 print_header "$session - Converting SMI files -> sts"

@@ -15,6 +15,7 @@
 
 #include <vector>
 #include <string>
+#include <set>
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
@@ -32,9 +33,11 @@ struct SpikeGrouperArgs {
     double      refractoryMs    = 1.0;    // minimum inter-event interval (ms)
     double      coincidenceMs   = 0.4;    // half-width of coincidence window (ms)
     double      windowSec       = 60.0;   // seconds of .fil to analyse
-    int         maxSubGroups    = 6;      // maximum k for clustering
+    int         maxSubGroups    = 16;     // maximum k for clustering (silhouette sweep upper bound)
     int         minChannels     = 4;      // minimum channels per sub-group (post-merge)
     int         maxMergedSize   = 12;    // maximum channels in a merged group
+    int         channelOverlap  = 0;     // channels borrowed from each neighbour group
+    std::set<int> excludeChannels;        // channels excluded from all groups (user-supplied)
 
     // Values written into new spikeDetection groups
     int         nSamples        = 52;

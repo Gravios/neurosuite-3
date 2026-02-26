@@ -19,16 +19,17 @@ source ndm_functions
 
 # Parse command-line
 program=$(basename $0)
-if [ $# -lt 1 ]
+if [ $# -gt 1 ]
 then
-	echo_error "usage: $program parameter-file"
+	echo_error "usage: $program [parameter-file]"
 	exit $GENERAL_ERROR
 fi
-concatenated=${1%.xml}
+directory=$(basename "$(pwd)")
+concatenated=${1:-$directory}
+concatenated=${concatenated%.xml}
 concatenated=${concatenated%.yaml}
 concatenated=${concatenated%.yml}
 param_ext=$(param_file_ext "$concatenated")
-directory=$(basename "$(pwd)")
 
 # Check required files
 inputs_missing "$concatenated.$param_ext" && exit $INPUTS_MISSING

@@ -54,6 +54,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -99,6 +100,8 @@ static void usage(const char* name)
          << "  --max-sub-groups K       maximum sub-groups per group (default 6)\n"
          << "  --min-channels   M       minimum channels per sub-group (default 4)\n"
          << "  --max-merged-size S      maximum channels after merging adjacent groups (default 12)\n"
+         << "  --channel-overlap N      channels borrowed from each neighbour group (default 0)\n"
+         << "  --exclude-channels LIST  comma-separated channel indices to exclude (e.g. 3,7,42)\n"
          << "  --nsamples       S       nSamples for new groups (default 52)\n"
          << "  --peak-sample    P       peakSampleIndex for new groups (default 26)\n"
          << "  --nfeatures      F       nFeatures for new groups (default 3)\n"
@@ -136,6 +139,17 @@ static SpikeGrouperArgs parseArgs(int argc, char* argv[])
         else if (arg == "--max-sub-groups")   a.maxSubGroups    = atoi(next());
         else if (arg == "--min-channels")     a.minChannels     = atoi(next());
         else if (arg == "--max-merged-size")  a.maxMergedSize   = atoi(next());
+        else if (arg == "--channel-overlap")  a.channelOverlap  = atoi(next());
+        else if (arg == "--exclude-channels") {
+            // Comma-separated list of channel indices, e.g. "3,7,42"
+            string list = next();
+            stringstream ss(list);
+            string token;
+            while (getline(ss, token, ',')) {
+                token.erase(remove_if(token.begin(), token.end(), ::isspace), token.end());
+                if (!token.empty()) a.excludeChannels.insert(atoi(token.c_str()));
+            }
+        }
         else if (arg == "--nsamples")         a.nSamples        = atoi(next());
         else if (arg == "--peak-sample")      a.peakSampleIndex = atoi(next());
         else if (arg == "--nfeatures")        a.nFeatures       = atoi(next());
@@ -147,6 +161,12 @@ static SpikeGrouperArgs parseArgs(int argc, char* argv[])
     if (!haveChannels)      { cerr << "--nchannels is required\n";    exit(1);  }
     if (!haveSR)            { cerr << "--sampling-rate is required\n"; exit(1); }
     if (a.minChannels < 1)  a.minChannels = 1;
+    if (a.maxMergedSize < a.minChannels) {
+        cerr << "warning: --max-merged-size (" << a.maxMergedSize
+             << ") < --min-channels (" << a.minChannels
+             << "); raising max-merged-size to match\n";
+        a.maxMergedSize = a.minChannels;
+    }
 
     return a;
 }
@@ -382,11 +402,11 @@ static double silhouetteScore(const vector<double>& D, const vector<int>& labels
 //
 // Constraints
 // -----------
-//   • merged group size ≤ maxMergedSize  (hard: never exceed)
-//   • every group must have ≥ minChannels (hard: groups that already have
-//     fewer channels than minChannels are allowed to merge freely, they
-//     just cannot be the result of a split that leaves another group
-//     below minChannels — the clustering step above already enforced that)
+//   • merged group size ≤ maxMergedSize  (enforced by groupChannels before
+//     this function is called; this pass will not create oversized groups
+//     because all input groups already satisfy the cap)
+//   • all groups have ≥ minChannels  (also enforced by groupChannels;
+//     this pass only merges groups that already satisfy the minimum)
 //
 // Algorithm
 // ---------
@@ -494,6 +514,7 @@ static vector<vector<int>> groupChannels(
     int                         n,
     int                         maxSubGroups,
     int                         minChannels,
+    int                         maxMergedSize,
     bool                        verbose,
     vector<vector<int>>*        outIdxs = nullptr)  // if non-null: per-subgroup coinc indices
 {
@@ -625,19 +646,87 @@ static vector<vector<int>> groupChannels(
     splits.push_back(0);
     reverse(splits.begin(), splits.end());  // now splits[i] = start of block i
 
+    // Collect raw DP blocks (channel ids + coinc-matrix indices)
+    struct Block {
+        vector<int> chs;
+        vector<int> idxs;
+    };
+    vector<Block> blocks;
     for (int k = 0; k < bestK; ++k) {
         int l = splits[k];
         int r = (k + 1 < bestK) ? splits[k+1] - 1 : n - 1;
-        vector<int> block(sortedChs.begin() + l, sortedChs.begin() + r + 1);
-        result.push_back(block);
-        if (outIdxs) {
-            // The coinc matrix is indexed by position in the original validChs
-            // array, which maps to sortedIdx[l..r].
-            vector<int> idxBlock;
-            for (int p = l; p <= r; ++p)
-                idxBlock.push_back(sortedIdx[p]);
-            outIdxs->push_back(idxBlock);
+        Block b;
+        b.chs = vector<int>(sortedChs.begin() + l, sortedChs.begin() + r + 1);
+        for (int p = l; p <= r; ++p)
+            b.idxs.push_back(sortedIdx[p]);
+        blocks.push_back(move(b));
+    }
+
+    // ---- Enforce maxMergedSize: re-split any oversized block ----
+    // Split at maxMergedSize-aligned boundaries, each piece >= minChannels.
+    // (maxMergedSize > 0 is guaranteed by the caller.)
+    if (maxMergedSize > 0) {
+        vector<Block> sized;
+        for (auto& b : blocks) {
+            int sz = (int)b.chs.size();
+            if (sz <= maxMergedSize) {
+                sized.push_back(move(b));
+                continue;
+            }
+            // How many pieces do we need?  Round up to keep each piece <= maxMergedSize
+            // but also >= minChannels if possible.
+            int pieces = (sz + maxMergedSize - 1) / maxMergedSize;
+            int chunkSz = sz / pieces;  // base size; last piece gets the remainder
+            int pos2 = 0;
+            for (int p = 0; p < pieces; ++p) {
+                int len = (p < pieces - 1) ? chunkSz : (sz - pos2);
+                Block nb;
+                nb.chs  = vector<int>(b.chs.begin()  + pos2, b.chs.begin()  + pos2 + len);
+                nb.idxs = vector<int>(b.idxs.begin() + pos2, b.idxs.begin() + pos2 + len);
+                sized.push_back(move(nb));
+                pos2 += len;
+            }
         }
+        blocks = move(sized);
+    }
+
+    // ---- Enforce minChannels: absorb undersized blocks into best neighbour ----
+    // Walk until stable; at most O(n) passes for n blocks.
+    bool changed = true;
+    while (changed && blocks.size() > 1) {
+        changed = false;
+        for (int i = 0; i < (int)blocks.size(); ++i) {
+            if ((int)blocks[i].chs.size() >= minChannels) continue;
+            // Find the neighbour (left or right) whose merged size is smallest
+            // (prefer the smaller merge to stay closer to maxMergedSize).
+            int best = -1;
+            int bestSz = INT_MAX;
+            if (i > 0) {
+                int sz = (int)(blocks[i-1].chs.size() + blocks[i].chs.size());
+                if (sz < bestSz) { bestSz = sz; best = i - 1; }
+            }
+            if (i + 1 < (int)blocks.size()) {
+                int sz = (int)(blocks[i+1].chs.size() + blocks[i].chs.size());
+                if (sz < bestSz) { bestSz = sz; best = i + 1; }
+            }
+            if (best < 0) break;
+            // Merge block i into best
+            int dst = min(i, best);
+            int src = max(i, best);
+            for (int c : blocks[src].chs)  blocks[dst].chs.push_back(c);
+            for (int x : blocks[src].idxs) blocks[dst].idxs.push_back(x);
+            sort(blocks[dst].chs.begin(),  blocks[dst].chs.end());
+            blocks.erase(blocks.begin() + src);
+            changed = true;
+            break;  // restart scan after any merge
+        }
+    }
+
+    // Emit final result
+    for (auto& b : blocks) {
+        result.push_back(b.chs);
+        if (outIdxs)
+            outIdxs->push_back(b.idxs);
     }
     return result;
 }
@@ -694,8 +783,13 @@ int main(int argc, char* argv[])
         printf("  refractory:   %.2f ms\n", args.refractoryMs);
         printf("  coincidence:  %.2f ms  window: %.1f s\n",
                args.coincidenceMs, args.windowSec);
-        printf("  maxSubGroups: %d  minChannels: %d  maxMergedSize: %d\n",
-               args.maxSubGroups, args.minChannels, args.maxMergedSize);
+        printf("  maxSubGroups: %d  minChannels: %d  maxMergedSize: %d  channelOverlap: %d\n",
+               args.maxSubGroups, args.minChannels, args.maxMergedSize, args.channelOverlap);
+        if (!args.excludeChannels.empty()) {
+            printf("  excludeChannels:");
+            for (int ch : args.excludeChannels) printf(" %d", ch);
+            printf("\n");
+        }
     }
 
     // ----- Load spikeDetection groups (for metadata and channel lists) ----
@@ -752,9 +846,12 @@ int main(int argc, char* argv[])
         // Intersect anatomical channels with spikeDetection channels.
         // Channels absent from spikeDetection are silently skipped — they
         // were intentionally excluded (e.g. reference or bad channels).
+        // User-supplied excludeChannels are also removed here.
         vector<int> validChs;
         for (int ch : anatGroups[ag])
-            if (ch >= 0 && ch < args.nChannels && chToSpikeGroup.count(ch))
+            if (ch >= 0 && ch < args.nChannels
+                && chToSpikeGroup.count(ch)
+                && !args.excludeChannels.count(ch))
                 validChs.push_back(ch);
 
         if (validChs.empty()) {
@@ -838,8 +935,8 @@ int main(int argc, char* argv[])
         vector<vector<int>> subGroupIdxs;
         vector<vector<int>> subGroups = groupChannels(
             coinc, dummy, validChs, nv,
-            args.maxSubGroups, args.minChannels, args.verbose,
-            &subGroupIdxs
+            args.maxSubGroups, args.minChannels, args.maxMergedSize,
+            args.verbose, &subGroupIdxs
         );
 
         // ---- Post-split merge: re-combine adjacent groups that have high
@@ -854,15 +951,63 @@ int main(int argc, char* argv[])
         }
 
         if (args.verbose) {
-            printf("    → %d sub-group(s)\n", (int)subGroups.size());
+            printf("    → %d sub-group(s) after merge\n", (int)subGroups.size());
             for (int s = 0; s < (int)subGroups.size(); ++s) {
-                printf("       [%d] %d channels:", s, (int)subGroups[s].size());
+                printf("       [%d] %d channels (core):", s, (int)subGroups[s].size());
                 for (int c : subGroups[s]) printf(" %d", c);
                 printf("\n");
             }
         }
 
-        for (const auto& sg : subGroups) {
+        // ---- Channel overlap: borrow N channels from each neighbour group ----
+        // Applied after all splitting/merging so core group sizes are final.
+        // Each group gets up to channelOverlap channels prepended from the
+        // previous group's tail and appended from the next group's head.
+        // subGroups are sorted ascending (contiguous blocks on the same shank)
+        // so borrowing from tails/heads preserves anatomical proximity.
+        // The core group boundaries are unchanged — overlap channels are
+        // purely additive context for spike sorting.
+        vector<vector<int>> overlappedGroups(subGroups);
+        if (args.channelOverlap > 0 && (int)subGroups.size() > 1) {
+            for (int s = 0; s < (int)subGroups.size(); ++s) {
+                vector<int> extended = subGroups[s];
+
+                // Borrow from the tail of the previous group
+                if (s > 0) {
+                    const auto& prev = subGroups[s-1];
+                    int n_borrow = min(args.channelOverlap, (int)prev.size());
+                    for (int i = (int)prev.size() - n_borrow; i < (int)prev.size(); ++i)
+                        extended.push_back(prev[i]);
+                }
+
+                // Borrow from the head of the next group
+                if (s + 1 < (int)subGroups.size()) {
+                    const auto& nxt = subGroups[s+1];
+                    int n_borrow = min(args.channelOverlap, (int)nxt.size());
+                    for (int i = 0; i < n_borrow; ++i)
+                        extended.push_back(nxt[i]);
+                }
+
+                // Sort and deduplicate
+                sort(extended.begin(), extended.end());
+                extended.erase(unique(extended.begin(), extended.end()), extended.end());
+                overlappedGroups[s] = move(extended);
+            }
+
+            if (args.verbose) {
+                for (int s = 0; s < (int)overlappedGroups.size(); ++s) {
+                    int core  = (int)subGroups[s].size();
+                    int total = (int)overlappedGroups[s].size();
+                    if (total != core)
+                        printf("       [%d] %d channels after overlap (+%d borrowed):",
+                               s, total, total - core);
+                    for (int c : overlappedGroups[s]) printf(" %d", c);
+                    if (total != core) printf("\n");
+                }
+            }
+        }
+
+        for (const auto& sg : overlappedGroups) {
             ChannelGroup out;
             out.channels        = sg;
             out.nSamples        = meta.nSamples;

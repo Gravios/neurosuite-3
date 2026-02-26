@@ -32,6 +32,8 @@
  *   along with this program. If not, see <http://www.gnu.org/licenses/>.  *
  *                                                                         *
  ***************************************************************************/
+#define _LARGEFILE_SOURCE64
+#define _FILE_OFFSET_BITS 64
 #include "process_medianthreshold.h"
 #include <fstream>
 #include <algorithm>
@@ -49,8 +51,8 @@ extern "C" void runCudaMedianThreshold(const short* hostData,
 #endif
 static bool verbose = false;
 const char *program_version = "process_medianthreshold 0.3b (21-12-2007)";
-int allChannels_nbRecords = 0; // number of records in all channels
-int oneChannel_nbRecords = 0; // number of records for a channel
+long long allChannels_nbRecords = 0; // number of records in all channels
+long long oneChannel_nbRecords = 0;  // number of records for a channel
 
 
 /**
@@ -124,8 +126,8 @@ int main(int argc,char *argv[]) {
 			cerr<<"Error when opening Input File "<< arguments.inputFileName <<endl;
 			exit(1);
 		} // if
-		fseek ( inputFile , 0 , SEEK_END ); // put the position indicator at the end of the stream
-		arguments.inputSize = ftell (inputFile); // value of the position indicator of the stream (here ~file size)
+		fseeko(inputFile, 0, SEEK_END);  // put the position indicator at the end of the stream
+		arguments.inputSize = ftello(inputFile); // value of the position indicator (file size)
 	} // if
 	if(arguments.isOutputFileProvided) {
 		outputFile = fopen(arguments.outputFileName,"wb");
@@ -163,7 +165,7 @@ int main(int argc,char *argv[]) {
 
 	// number of records (for all and one channels)
 	allChannels_nbRecords = arguments.inputSize/RECORD_BYTE_SIZE;
-	oneChannel_nbRecords = int(allChannels_nbRecords/arguments.totalChannelNumber);
+	oneChannel_nbRecords = allChannels_nbRecords/arguments.totalChannelNumber;
 	if(allChannels_nbRecords < 1 || oneChannel_nbRecords < 1) {
 		cerr << "Error : The record number " << arguments.inputSize
 		<< " is < 1 per channel !" << endl;
@@ -192,13 +194,13 @@ int main(int argc,char *argv[]) {
 	// Output (output file)
 	if(arguments.isOutputFileProvided && outputFile != NULL) {
 		if ( verbose ) cout << "Generating output file..." << endl;
-		for(int i = 0; i < allChannels_nbRecords; i++)
+		for(long long i = 0; i < allChannels_nbRecords; i++)
 			fprintf(outputFile,"%d\n",input[i]);
 		fclose( outputFile );
 	}
 
 	if ( verbose ) cout << "Converting datas into absolute values ..." << endl;
-	for (int i = 0; i < allChannels_nbRecords; i++) {
+	for (long long i = 0; i < allChannels_nbRecords; i++) {
 		input[i] = abs(input[i]);
 	} // for i
 
@@ -323,9 +325,9 @@ int main(int argc,char *argv[]) {
 /**
  * Compute median of a short array using nth_element (O(N) average, modifies copy)
  */
-static long double medianOf(short* data, int size) {
+static long double medianOf(short* data, long long size) {
     std::vector<short> tmp(data, data + size);
-    int mid = size / 2;
+    long long mid = size / 2;
     std::nth_element(tmp.begin(), tmp.begin() + mid, tmp.end());
     if (size % 2 == 1)
         return tmp[mid];
@@ -354,10 +356,10 @@ long double* groupThresholds(const short* allRecords, int allChannelsNb,
 	// sigma_n = median{abs(x)/0.6745}
 	long double sigma_n = 0;
 	// Loop counter
-	int index = 0;
+	long long index = 0;
 
 	// store current group records
-	for (int i = 0; i < allChannels_nbRecords; i += allChannelsNb) {
+	for (long long i = 0; i < allChannels_nbRecords; i += allChannelsNb) {
 		for (int j = 0; j < groupChannelNb; j++) {
 			records[j][index] = allRecords[i+groupChannelId[j]];
 		} // for j
@@ -380,7 +382,7 @@ long double* groupThresholds(const short* allRecords, int allChannelsNb,
 
 		thres[i] = (4*sigma_n); // Threshold = 4*sigma_n
 		if ( verbose) {
-			cout << "Index of the half : " << int(oneChannel_nbRecords/2) << endl;
+			cout << "Index of the half : " << (oneChannel_nbRecords/2) << endl;
 			cout << "Sigma_n of the datas : " << sigma_n << endl;
 			cout << "Threshold for channel #" << i << " : " << thres[i] << endl;
 		} // verbose
@@ -461,7 +463,7 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 
 				case 's': // input size
 					if ( i+1 > nOptions ) error(argv[0]);
-					arguments.inputSize = atoi(argv[++i]);
+					arguments.inputSize = atoll(argv[++i]);
 					arguments.isInputSizeprovided = true;
 					break;
 

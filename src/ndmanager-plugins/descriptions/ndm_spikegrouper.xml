@@ -25,48 +25,100 @@
    </parameter>
    <parameter>
     <n>maxSubGroups</n>
-    <value>6</value>
+    <value>16</value>
     <status>Mandatory</status>
    </parameter>
    <parameter>
     <n>minChannels</n>
-    <value>2</value>
+    <value>4</value>
     <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>maxMergedSize</n>
+    <value>12</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>channelOverlap</n>
+    <value>0</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>excludeChannels</n>
+    <value></value>
+    <status>Optional</status>
    </parameter>
   </parameters>
   <help>Discover optimal spikeDetection channel groups from the high-pass filtered .fil file and write them back to the YAML parameter file.
 
-For each existing spikeDetection group the program detects threshold crossings on every channel using the same robust median estimator as ndm_extractspikes (threshold = thresholdFactor * median(|x|)/0.6745). It then builds a spike-coincidence similarity matrix: channels that tend to fire together within a short time window are considered similar. Agglomerative Ward clustering is run on the resulting distance matrix, and the optimal number of sub-groups is chosen by maximising the average silhouette score. Only spikeDetection.channelGroups is rewritten; anatomicalDescription is left unchanged.
+OVERVIEW
 
-Run after ndm_hipass (requires SESSION.fil) and before ndm_extractspikes.
+For each anatomical shank (anatomicalDescription.channelGroups), ndm_spikegrouper analyses the high-pass filtered .fil data to find which channels tend to record the same spikes, and partitions them into channel groups suitable for spike sorting.
 
-Requires: Python 3 with numpy, pyyaml, scipy, and scikit-learn.
+The algorithm runs in two stages:
+
+1. SPLIT — Ward clustering partitions the shank into contiguous sub-groups. The number of groups k is chosen automatically in [1, maxSubGroups] by maximising the average silhouette score over the spike-coincidence distance matrix. Every group is guaranteed to have at least minChannels channels.
+
+2. MERGE — Adjacent sub-groups are greedily re-combined when the mean spike coincidence across their shared boundary is high. This corrects over-splits where a genuine unit straddles a clustering boundary. A merge is accepted only when the resulting group would not exceed maxMergedSize channels.
+
+Only spikeDetection.channelGroups is rewritten; anatomicalDescription is left unchanged. Run after ndm_hipass (requires SESSION.fil) and before ndm_extractspikes.
+
+ALGORITHM DETAILS
+
+Spike detection uses the same robust noise estimator as ndm_extractspikes:
+  threshold = thresholdFactor * median(|x|) / 0.6745
+
+The coincidence matrix C[i,j] measures the fraction of spikes on channel i that occur within coincidenceMs of a spike on channel j. Ward agglomerative clustering is applied to the distance matrix (1 - C), producing contiguous channel blocks. The silhouette score selects the best k. The merge pass then scores each adjacent pair by their mean cross-boundary coincidence and greedily merges the highest-scoring valid pair, repeating until no valid pair remains.
+
+HIGH-DENSITY PROBES (e.g. 96 channels per shank)
+
+With 96 channels on a single shank, a neuron's waveform is typically visible on 4-12 neighbouring channels. Setting maxSubGroups to 16-24 allows the clustering stage to find fine-grained splits, while maxMergedSize=12 and minChannels=4 ensure the merge stage recombines over-splits into biologically meaningful groups. The final number of groups will typically be 8-16 per shank at these probe densities.
 
 PARAMETERS
 
 # thresholdFactor
 
-Multiplier applied to the per-channel noise estimate when detecting spike events used to build the coincidence matrix. Should match or be slightly lower than the thresholdFactor used in ndm_extractspikes (default 3.0).
+Multiplier applied to the per-channel noise estimate (sigma_n = median(|x|)/0.6745) when detecting spike events for coincidence estimation. Should match or be slightly lower than the thresholdFactor used in ndm_extractspikes so that the same events are captured (default 3.0).
 
 # refractoryMs
 
-Minimum time (ms) between two consecutive spike detections on the same channel. Prevents double-counting the same spike waveform (default 1.0 ms).
+Minimum time (ms) between two consecutive spike detections on the same channel. Prevents double-counting the same waveform during coincidence estimation (default 1.0 ms).
 
 # coincidenceMs
 
-Half-width (ms) of the coincidence window. Two events are considered coincident if they fall within this window of each other. Should be roughly half the expected spike waveform duration (default 0.4 ms).
+Half-width (ms) of the coincidence window. Two events on different channels are counted as coincident if they occur within this time of each other. Should be roughly half the expected spike waveform duration; 0.4 ms suits 30 kHz recordings (default 0.4 ms).
 
 # windowSec
 
-Duration (seconds) of .fil data analysed for coincidence estimation. A 60-second window drawn from the start of the file is usually sufficient; increase for sessions with low firing rates (default 60).
+Duration (seconds) of .fil data loaded for coincidence estimation. 60 seconds from the start of the file is sufficient for most sessions; increase for recordings with low firing rates or high session variability (default 60).
 
 # maxSubGroups
 
-Maximum number of sub-groups tested per existing spikeDetection group. The silhouette-optimal k in [1, maxSubGroups] is selected. Larger values increase computation time linearly (default 6).
+Upper bound on the number of sub-groups the clustering stage is allowed to produce per shank. The silhouette sweep tests k = 1, 2, ..., maxSubGroups and selects the k with the highest average silhouette score — it does not force exactly maxSubGroups groups. This is a search budget, not a target.
+
+For high-density probes (64-128 channels per shank) set this to 16-24 so that the clustering stage can find fine-grained natural groupings; the subsequent merge pass will recombine any over-splits. For low-density probes (4-16 channels per shank) the default of 16 is already larger than any reasonable split count and has no practical effect (default 16).
 
 # minChannels
 
-Minimum number of channels required in every resulting sub-group. Prevents degenerate single-channel groups that cannot be spike-sorted reliably (default 2).
+Minimum number of channels in every sub-group produced by the clustering stage, and the minimum allowed after the merge pass. Groups smaller than this are biologically questionable for spike sorting: too few waveform samples to estimate reliable features. For tetrode-scale work 4 is the natural minimum; for high-density shanks 4-8 is appropriate (default 4).
+
+# maxMergedSize
+
+Hard upper limit on the size of a merged group. Adjacent sub-groups will not be merged if the result would exceed this channel count. This prevents the merge pass from creating groups so large that spike sorting becomes intractable. A value of 8-16 works well for high-density probes; it should be at least 2 * minChannels (default 12).
+
+# channelOverlap
+
+Number of channels borrowed from each neighbouring group's boundary and added to the current group. Applied after all splitting and merging, so core group sizes and boundaries are unaffected.
+
+A value of N means each group gains up to N channels from the tail of the previous group and up to N channels from the head of the next group (edge groups only get one side). The borrowed channels are sorted into the group's channel list. This provides the spike sorter with waveform context across the boundary, reducing the chance that a unit straddling two groups is split into two clusters.
+
+For high-density probes where a neuron's waveform spans 4-8 channels, an overlap of 2-4 is typical. The total channel count of an overlapped group can exceed maxMergedSize — the cap applies to the core group only. Set to 0 to disable overlap (default 0).
+
+# excludeChannels
+
+Comma-separated list of channel indices to remove from all groups before any processing. For example: "3,7,42". Excluded channels are stripped from every anatomical group's channel list before coincidence estimation, clustering, merging, and overlap — they will not appear in any output group.
+
+Use this to remove known bad channels (broken contacts, saturated channels, reference electrodes that leaked into the recording). Leave empty to exclude nothing (default empty).
 </help>
  </program>
 </parameter>

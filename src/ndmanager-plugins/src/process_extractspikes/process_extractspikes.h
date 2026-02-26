@@ -23,7 +23,7 @@
 #define __PROCESS_DETECT_SPK_H
 
 #define BUFFER_CHANNEL_SIZE 50000
-#define MAX_CHANNO 128 // max channel number
+#define MAX_CHANNO 512  // was 128; raised for high-density probes
 #define RECORD_BYTE_SIZE 2
 #define GROUP_SEPARATOR ":"
 #define CHANNEL_SEPARATOR ","

@@ -2,3 +2,8 @@
 *.o
 *.moc
 Makefile
+build/
+install/
+*.bak
+__pycache__/
+*.pyc
