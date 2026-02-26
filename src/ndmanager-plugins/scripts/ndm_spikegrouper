@@ -8,9 +8,17 @@
 #//   every channel within each existing spikeDetection group, computes a
 #//   spike-coincidence similarity matrix, and uses agglomerative Ward
 #//   clustering with silhouette-score model selection to find the optimal
-#//   number of sub-groups.  The spikeDetection.channelGroups section of the
-#//   YAML parameter file is replaced with the discovered groups.
-#//   anatomicalDescription is left untouched.
+#//   number of sub-groups.
+#//
+#//   After splitting, adjacent sub-groups are greedily merged when their
+#//   inter-group spike coincidence is high (i.e. the split risks separating
+#//   the same unit across groups).  Merges respect two hard constraints:
+#//     * merged group size <= maxMergedSize  (default 12)
+#//     * each group must have >= minChannels  (default 4)
+#//
+#//   The spikeDetection.channelGroups section of the YAML parameter file is
+#//   replaced with the discovered groups.  anatomicalDescription is left
+#//   untouched.
 #//
 #//   Must be run after ndm_hipass (requires SESSION.fil).
 #//   Should be run before ndm_extractspikes so the updated groups are used.
@@ -29,17 +37,19 @@ source ndm_functions
 
 # Parse command-line
 program=$(basename $0)
-if [ $# -ne 1 ]
+if [ $# -gt 1 ]
 then
-	echo_error "usage: $program xml-or-yaml-file"
+	echo_error "usage: $program [parameter-file]"
 	exit $GENERAL_ERROR
 fi
 
-# Accept .xml, .yaml, or .yml — strip all known extensions to get bare session name
-session=${1%.xml}
+# Default to the parent directory name when no argument is given.
+# Strip any known extension to get the bare session name.
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
 session=${session%.yaml}
 session=${session%.yml}
-directory=$(basename "$(pwd)")
 
 # Print a header to indicate current processing step
 print_header "$session - Discovering optimal spikeDetection groups from .fil"
@@ -107,10 +117,27 @@ windowSec=$(read_script_parameter $session windowSec)
 windowSec=${windowSec:-60}
 
 maxSubGroups=$(read_script_parameter $session maxSubGroups)
-maxSubGroups=${maxSubGroups:-8}
+maxSubGroups=${maxSubGroups:-16}
 
+# Minimum channels per sub-group (post-merge).  Default 4 matches the
+# biological minimum for useful spike sorting on a tetrode-scale group.
 minChannels=$(read_script_parameter $session minChannels)
-minChannels=${minChannels:-2}
+minChannels=${minChannels:-4}
+
+# Maximum channels allowed in a merged group.  Adjacent sub-groups whose
+# inter-group coincidence is high will be merged up to this cap.
+maxMergedSize=$(read_script_parameter $session maxMergedSize)
+maxMergedSize=${maxMergedSize:-12}
+
+# Number of channels borrowed from each neighbouring group's boundary.
+# Set to 0 to disable overlap (default).
+channelOverlap=$(read_script_parameter $session channelOverlap)
+channelOverlap=${channelOverlap:-0}
+
+# Comma-separated list of channel indices to exclude from all groups.
+# Leave empty to exclude nothing (default).
+excludeChannels=$(read_script_parameter $session excludeChannels)
+excludeChannels=${excludeChannels:-}
 
 # Inherit nSamples / peakSampleIndex / nFeatures from the first spikeDetection group.
 # yaml_read_key uses 0-based dot-notation: spikeDetection.channelGroups.0.nSamples
@@ -131,23 +158,31 @@ echo_info "nChannels    : $nChannels  nBits: $nBits  samplingRate: $samplingRate
 echo_info "Input groups : $nElectrodeGroups"
 echo_info "Parameters   : thresholdFactor=$thresholdFactor  refractoryMs=$refractoryMs"
 echo_info "               coincidenceMs=$coincidenceMs  windowSec=$windowSec"
-echo_info "               maxSubGroups=$maxSubGroups  minChannels=$minChannels"
+echo_info "               maxSubGroups=$maxSubGroups  minChannels=$minChannels  maxMergedSize=$maxMergedSize  channelOverlap=$channelOverlap"
+[ -n "$excludeChannels" ] && echo_info "               excludeChannels=$excludeChannels"
+
+# Build optional --exclude-channels argument only when the list is non-empty
+exclude_arg=()
+[ -n "$excludeChannels" ] && exclude_arg=(--exclude-channels "$excludeChannels")
 
 process_spikegrouper \
-	--fil             "$session.fil"   \
-	--yaml            "$yamlfile"      \
-	--nchannels       "$nChannels"     \
-	--nbits           "$nBits"         \
-	--sampling-rate   "$samplingRate"  \
+	--fil              "$session.fil"    \
+	--yaml             "$yamlfile"       \
+	--nchannels        "$nChannels"      \
+	--nbits            "$nBits"          \
+	--sampling-rate    "$samplingRate"   \
 	--threshold-factor "$thresholdFactor" \
-	--refractory-ms   "$refractoryMs"  \
-	--coincidence-ms  "$coincidenceMs" \
-	--window-sec      "$windowSec"     \
-	--max-sub-groups  "$maxSubGroups"  \
-	--min-channels    "$minChannels"   \
-	--nsamples        "$nSamples"      \
-	--peak-sample     "$peakSampleIndex" \
-	--nfeatures       "$nFeatures"
+	--refractory-ms    "$refractoryMs"   \
+	--coincidence-ms   "$coincidenceMs"  \
+	--window-sec       "$windowSec"      \
+	--max-sub-groups   "$maxSubGroups"   \
+	--min-channels     "$minChannels"    \
+	--max-merged-size  "$maxMergedSize"  \
+	--channel-overlap  "$channelOverlap" \
+	"${exclude_arg[@]}"                  \
+	--nsamples         "$nSamples"       \
+	--peak-sample      "$peakSampleIndex" \
+	--nfeatures        "$nFeatures"
 
 check_command_status process_spikegrouper
 

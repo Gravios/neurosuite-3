@@ -35,8 +35,11 @@
 #ifndef __PROCESS_MEDIAN_THRESHOLD_H
 #define __PROCESS_MEDIAN_THRESHOLD_H
 
-#define MAX_INPUT_SIZE 1280000000 // = 128*2*25*20000
-#define MAX_CHANNO 128 // max channel number
+// 16 GB cap — sufficient for any realistic recording window.
+// Original 1280000000 (1.28 GB) overflowed for high-density probes
+// (e.g. 384ch × 25 kHz × 60 s × 2 bytes ≈ 1.4 GB).
+#define MAX_INPUT_SIZE 17179869184LL  // 16 * 1024^3
+#define MAX_CHANNO 512  // was 128; raised for high-density probes
 #define RECORD_BYTE_SIZE 2
 #define GROUP_SEPARATOR ":"
 #define CHANNEL_SEPARATOR ","
@@ -49,7 +52,7 @@ using namespace std;
 // Structure for all arguments
 struct arguments {
 	char *inputFileName, *outputFileName; // Input and Ouput files name
-	int inputSize; // Size of the input (byte)
+	long long inputSize; // Size of the input (bytes) — long long for files > 2 GB
 	int totalChannelNumber; // Total number of channels
 	char* channelList;	// List of channels for each group (comma separated integers between 
 							// channel numbers in a group and semicolon separated between two groups)
