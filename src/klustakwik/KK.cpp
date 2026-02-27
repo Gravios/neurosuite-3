@@ -398,10 +398,13 @@ void KK::EStep() {
             if (ClassAlive[c])
                 for (int i = 0; i < nDims2; i++)
                     h_chol[c * nDims2 + i] = (*pChol)[c][i];
+        // Pass h_LogP only when DistDump is active — otherwise nullptr signals
+        // the backend to leave LogP device-resident.  ComputeScore() uses the
+        // gpu_compute_score reduction kernel instead of reading h_LogP.
         gpu_estep(gpu,
             Mean.m_Data, Weight.m_Data, h_chol.data(),
             AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
-            LogP.m_Data,
+            DistDump ? LogP.m_Data : nullptr,
             nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
         return;
     }
@@ -565,6 +568,40 @@ void KK::LoadClu(const char *CluFile) {
 }
 
 // ---------------------------------------------------------------------------
+// ReinitForSplit — reset a pre-allocated KK scratch object for reuse.
+//
+// Instead of destroying and reallocating all arrays for each split trial,
+// we reuse the existing heap storage (allocated at full nPoints capacity)
+// and zero only what CEM will touch.  This eliminates the per-cluster
+// heap allocation inside the TrySplits loop that causes contention when
+// multiple OMP chunk workers call TrySplits concurrently.
+//
+// Contract: caller must have previously called AllocateArrays() with
+// nPoints = maxPoints (the largest value that will ever be passed here).
+// ---------------------------------------------------------------------------
+void KK::ReinitForSplit(int newNPoints, int newNDims, float newPenaltyMix) {
+    nPoints   = newNPoints;
+    nDims     = newNDims;
+    nDims2    = newNDims * newNDims;
+    penaltyMix = newPenaltyMix;
+    NoisePoint = 0;
+    FullStep   = 1;
+    suppressBestSave = true;
+
+    // Zero point-indexed arrays to newNPoints (arrays are allocated >= this)
+    std::memset(Class.m_Data,    0, sizeof(int)   * newNPoints);
+    std::memset(OldClass.m_Data, 0, sizeof(int)   * newNPoints);
+    std::memset(Class2.m_Data,   0, sizeof(int)   * newNPoints);
+    std::memset(LogP.m_Data,     0, sizeof(float) * MaxPossibleClusters * newNPoints);
+
+    // Zero cluster-indexed arrays entirely (small — MaxPossibleClusters elements)
+    std::memset(Weight.m_Data,    0, sizeof(float) * MaxPossibleClusters);
+    std::memset(ClassAlive.m_Data,0, sizeof(int)   * MaxPossibleClusters);
+    std::memset(AliveIndex.m_Data,0, sizeof(int)   * MaxPossibleClusters);
+    // Mean and Cov are overwritten by MStep before being read; no need to zero.
+}
+
+// ---------------------------------------------------------------------------
 // TrySplits — try splitting each cluster; keep if it improves score
 // C++17: KK objects use move semantics when passed around.
 // ---------------------------------------------------------------------------
@@ -574,6 +611,8 @@ int KK::TrySplits() {
         return 0;
     }
 
+    // K3: full-session scratch for scoring candidate splits.
+    // Allocated once per TrySplits call, outside the cluster loop.
     KK K3;
     K3.nDims = nDims; K3.nPoints = nPoints;
     K3.AllocateArrays();
@@ -582,29 +621,31 @@ int KK::TrySplits() {
     K3.penaltyMix = PenaltyMix;
     for (int i = 0; i < nDims * nPoints; i++) K3.Data[i] = Data[i];
 
+    // K2: sub-cluster scratch for split CEM trials.
+    // Pre-allocated at full nPoints capacity and reused for every cluster
+    // via ReinitForSplit — eliminates per-cluster heap allocation.
+    KK K2;
+    K2.nDims   = nDims;
+    K2.nPoints = nPoints;   // maximum possible; actual count set per cluster
+    K2.AllocateArrays();
+    K2.AlocateCholeskyVecs();
+
     const float Score = ComputeScore();
     int DidSplit = 0;
 
     for (int cc = 1; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
 
-        KK K2;
-        K2.nPoints = 0;
-        for (int p = 0; p < nPoints; p++) if (Class[p] == c) K2.nPoints++;
-        if (K2.nPoints == 0) continue;
-        K2.nDims = nDims;
-        K2.AllocateArrays();
-        K2.AlocateCholeskyVecs();
-        K2.suppressBestSave = true;
-        K2.penaltyMix = PenaltyMix;
-        K2.NoisePoint = 0;
+        // Count points in this cluster
+        int clusterSize = 0;
+        for (int p = 0; p < nPoints; p++) if (Class[p] == c) clusterSize++;
+        if (clusterSize == 0) continue;
 
+        // Reuse K2's pre-allocated arrays for this cluster's size
+        K2.ReinitForSplit(clusterSize, nDims, PenaltyMix);
+
+        // Pack this cluster's points into K2.Data
         int p2 = 0;
-        for (int p = 0; p < nPoints; p++) if (Class[p] == c)
-            for (int d = 0; d < nDims; d++)
-                K2.Data[p2++ / nDims * nDims + d] = Data[p * nDims + d];
-        // re-do properly
-        p2 = 0;
         for (int p = 0; p < nPoints; p++) if (Class[p] == c) {
             for (int d = 0; d < nDims; d++)
                 K2.Data[p2 * nDims + d] = Data[p * nDims + d];
@@ -616,7 +657,7 @@ int KK::TrySplits() {
             if (!ClassAlive[c2]) { unusedCluster = c2; break; }
         if (unusedCluster == -1) { Output("No free clusters, abandoning split"); return DidSplit; }
 
-        if (Verbose >= 1) Output("Trying to split cluster %d (%d points)\n", c, K2.nPoints);
+        if (Verbose >= 1) Output("Trying to split cluster %d (%d points)\n", c, clusterSize);
         K2.nStartingClusters = 2;
         const float unsplitScore = K2.CEM(nullptr, 0);
         K2.nStartingClusters = 3;
@@ -651,8 +692,16 @@ int KK::TrySplits() {
 
 // ---------------------------------------------------------------------------
 // ComputeScore
+//
+// When a GPU is present, LogP is device-resident and we run a lightweight
+// reduction kernel rather than reading the full host LogP array.
+// The CPU path is unchanged.
 // ---------------------------------------------------------------------------
 float KK::ComputeScore() const {
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    if (gpu)
+        return gpu_compute_score(gpu, Penalty(nClustersAlive));
+#endif
     float score = Penalty(nClustersAlive);
     for (int p = 0; p < nPoints; p++)
         score += LogP[p * MaxPossibleClusters + Class[p]];
@@ -1180,6 +1229,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
     //   suppressBestSave = true   — no writes to global kSv during parallel section
     //   its own pChol/pBestChol  — no shared Cholesky storage
     //
+    // To avoid per-chunk heap allocation inside the parallel region (which
+    // causes allocator contention across threads), we pre-allocate one KK
+    // scratch object per OMP thread, sized to the largest chunk.  Each
+    // iteration reinitialises the relevant fields via ReinitForSplit rather
+    // than allocating fresh arrays.
+    //
     // Thread-local vectors accumulate models and point assignments.
     // A serial reduction gathers them into allModels / pointPacked after
     // the parallel block, so no atomic or mutex is needed.
@@ -1197,22 +1252,46 @@ float KK::RunChunkedCEM(float chunkMinutes,
     std::vector<float> perChunkScore(nActive, 0.0f);
     std::vector<int>   perChunkNClusters(nActive, 0);
 
+    // Find the largest chunk size so we can pre-allocate at that capacity.
+    int maxChunkSize = 0;
+    for (int k = 0; k < nActive; k++)
+        maxChunkSize = std::max(maxChunkSize, static_cast<int>(chunkPoints[k].size()));
+
+    // One pre-allocated KK scratch per OMP thread.
+#ifdef _OPENMP
+    const int nThreads = omp_get_max_threads();
+#else
+    const int nThreads = 1;
+#endif
+    std::vector<KK> threadKc(nThreads);
+    for (int t = 0; t < nThreads; t++) {
+        threadKc[t].nDims             = nFullDims;
+        threadKc[t].nPoints           = maxChunkSize;
+        threadKc[t].nStartingClusters = nStartingClusters;
+        threadKc[t].penaltyMix        = penaltyMix;
+        threadKc[t].suppressBestSave  = true;
+        threadKc[t].AllocateArrays();
+        threadKc[t].AlocateCholeskyVecs();
+    }
+
     #pragma omp parallel for schedule(dynamic) default(none) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
-               chunkPoints, nActive, nFullDims, timeMergeIter) \
-        firstprivate(MaxPossibleClusters)
+               chunkPoints, nActive, nFullDims, timeMergeIter, threadKc) \
+        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix)
     for (int k = 0; k < nActive; k++) {
         const std::vector<int>& pts = chunkPoints[k];
         const int nPts = static_cast<int>(pts.size());
 
-        KK Kc;
-        Kc.nDims             = nFullDims;
-        Kc.nPoints           = nPts;
+        KK& Kc = threadKc[
+#ifdef _OPENMP
+            omp_get_thread_num()
+#else
+            0
+#endif
+        ];
+        Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
         Kc.nStartingClusters = nStartingClusters;
-        Kc.penaltyMix        = penaltyMix;
-        Kc.suppressBestSave  = true;   // must not write to global kSv in parallel
-        Kc.AllocateArrays();
-        Kc.AlocateCholeskyVecs();
+        Kc.NoisePoint        = 1;   // restore default (ReinitForSplit sets 0)
 
         for (int i = 0; i < nPts; i++) {
             const int p = pts[i];

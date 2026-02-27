@@ -40,6 +40,7 @@ struct KK_GPU {
     int   *d_Class2     = nullptr;  // [nPoints]
     int   *d_AliveIndex = nullptr;  // [MaxClusters]
     int   *d_nMembers   = nullptr;  // [MaxClusters]
+    float *d_Score      = nullptr;  // [1]  score reduction accumulator
 
     int  nPoints = 0, nDims = 0, nDims2 = 0, MaxClusters = 0;
     bool initialised = false;
@@ -102,6 +103,15 @@ void cuda_deletion_loss(
     KK_GPU    *gpu,
           float *h_Loss,        // [MaxClusters]  out
     int MaxClusters);
+
+// Score reduction: sum of LogP[Class[p]*nP+p] over all points + penalty.
+// LogP stays device-resident; no full LogP download needed.
+float cuda_compute_score(KK_GPU *gpu, float penalty);
+
+// Full LogP download for DistDump debug mode only.
+// Transposes device cluster-major [c*nP+p] to host point-major [p*maxC+c].
+void cuda_download_logp(KK_GPU *gpu, float *h_LogP, int nClustersAlive,
+                         const int *h_AliveIndex);
 
 } // extern "C"
 

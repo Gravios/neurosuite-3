@@ -21,6 +21,8 @@
 #  define gpu_mstep          cuda_mstep
 #  define gpu_cstep          cuda_cstep
 #  define gpu_deletion_loss  cuda_deletion_loss
+#  define gpu_compute_score  cuda_compute_score
+#  define gpu_download_logp  cuda_download_logp
 #  define gpu_device_available() cuda_device_available()
 #  define GPU_BACKEND_NAME   "CUDA"
 #elif defined(USE_SYCL)
@@ -29,6 +31,8 @@
 #  define gpu_mstep          sycl_mstep
 #  define gpu_cstep          sycl_cstep
 #  define gpu_deletion_loss  sycl_deletion_loss
+#  define gpu_compute_score  sycl_compute_score
+#  define gpu_download_logp  sycl_download_logp
 #  define GPU_BACKEND_NAME   "SYCL"
 #elif defined(USE_HIP)
 #  define gpu_upload_data    hip_upload_data
@@ -36,6 +40,8 @@
 #  define gpu_mstep          hip_mstep
 #  define gpu_cstep          hip_cstep
 #  define gpu_deletion_loss  hip_deletion_loss
+#  define gpu_compute_score  hip_compute_score
+#  define gpu_download_logp  hip_download_logp
 #  define gpu_device_available() hip_device_available()
 #  define GPU_BACKEND_NAME   "HIP"
 #endif
@@ -90,6 +96,15 @@ public:
     // Phase 2: short merge pass reintroducing the time dimension.
     // -----------------------------------------------------------------------
     float CEMTwoPhase(int timeMergeIter);
+
+    // Reinitialise a pre-allocated KK scratch object for a new split trial
+    // without freeing/reallocating its arrays.  Arrays were allocated at
+    // maxPoints capacity; only nPoints is updated and point-indexed arrays
+    // are zeroed to the new size.  Cluster-indexed arrays (Weight, Mean, Cov,
+    // ClassAlive, AliveIndex) are small and zeroed entirely.
+    // Must be called after the arrays were initially allocated via
+    // AllocateArrays() with nPoints = maxPoints.
+    void ReinitForSplit(int newNPoints, int newNDims, float newPenaltyMix);
 
     // -----------------------------------------------------------------------
     // Three-phase chunked CEM
