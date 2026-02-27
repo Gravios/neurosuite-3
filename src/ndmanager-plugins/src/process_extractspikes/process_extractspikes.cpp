@@ -522,15 +522,15 @@ int main(int argc,char *argv[]) {
 												thresList[grp], prevVals,
 												isNegativeMax[grp]);
 							
-							double thr = getThresholdFromChan(spkChanId[grp], 
-												arguments.totalChannelNumber,
-												channelList[grp], 
-												  thresList[grp]);
+							double thr = getThresholdFromChan(spkChanId[grp],
+												channelNb_group[grp],
+												channelList[grp],
+												thresList[grp]);
 							double prevBuffer_thr = -1;
 							if(prevBuffer_spkChanId[grp] != -1) {
 								prevBuffer_thr = getThresholdFromChan(
 												prevBuffer_spkChanId[grp],
-												arguments.totalChannelNumber,
+												channelNb_group[grp],
 												channelList[grp],
 												thresList[grp]);
 							}
@@ -557,7 +557,7 @@ int main(int argc,char *argv[]) {
 												prevVals);
 							
 							double thr = getThresholdFromChan(spkChanId[grp],
-												arguments.totalChannelNumber,
+												channelNb_group[grp],
 												channelList[grp],
 												thresList[grp]);
 							
@@ -565,7 +565,7 @@ int main(int argc,char *argv[]) {
 							if(prevBuffer_spkChanId[grp] != -1) {
 								prevBuffer_thr =  getThresholdFromChan(
 												prevBuffer_spkChanId[grp],
-												arguments.totalChannelNumber,
+												channelNb_group[grp],
 												channelList[grp],
 												thresList[grp]);
 							}
@@ -775,7 +775,7 @@ int main(int argc,char *argv[]) {
 
 	cout << "Number of spikes:" << endl;
 	for (int g = 0; g < nbGroups; g++)
-		cout << "- Group " << g << " = " << nSpikeTot[g] << endl;
+		cout << "- Group " << g+1 << " = " << nSpikeTot[g] << endl;
 	if ( verbose ) {
 		cout << "Total number of records : " << nRecTot << endl;
 		cout << endl << " End Of Spike Time Extraction ----->>" << endl;
@@ -981,6 +981,20 @@ int main(int argc,char *argv[]) {
 			// Read the waveform window.
 			size_t got = fread(frameBuf.data(), sizeof(short), rawLen, seqFile);
 			if((int)got != rawLen) {
+				if(feof(seqFile)) {
+					// Waveform window extends past EOF — the last spike(s) in the
+					// recording land too close to the end of the file for a full
+					// waveform to be read.  allEvents is sorted by fileOffset so
+					// all remaining events are also at or past EOF.  Warn and stop.
+					size_t remaining = (size_t)(&allEvents.back() - &ev);
+					fprintf(stderr,
+					        "warning: waveform window for group %d at offset %lld "
+					        "extends past end of file (%zu/%d samples); "
+					        "skipping last %zu event(s)\n",
+					        grp, (long long)ev.fileOffset,
+					        got, rawLen, remaining + 1);
+					break;
+				}
 				fprintf(stderr,
 				        "error: short read at offset %lld group %d "
 				        "(got %zu, want %d)\n",
