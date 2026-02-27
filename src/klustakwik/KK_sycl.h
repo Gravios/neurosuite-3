@@ -66,6 +66,10 @@ struct KK_GPU {
     int   *d_AliveIndex = nullptr;
     int   *d_nMembers   = nullptr;
 
+    // Single-float device accumulator for the score reduction kernel.
+    // Avoids downloading the full LogP matrix just to compute ComputeScore().
+    float *d_Score = nullptr;
+
     int  nPoints = 0, nDims = 0, nDims2 = 0, MaxClusters = 0;
     bool initialised = false;
 
@@ -125,6 +129,15 @@ void sycl_deletion_loss(
     KK_GPU    *gpu,
           float *h_Loss,
     int MaxClusters);
+
+// Score reduction: returns sum of LogP[Class[p]*nP+p] over all points + penalty.
+// LogP stays device-resident; no full download needed.
+float sycl_compute_score(KK_GPU *gpu, float penalty);
+
+// Full LogP download for DistDump debug mode only.
+// Transposes device cluster-major [c*nP+p] to host point-major [p*maxC+c].
+void sycl_download_logp(KK_GPU *gpu, float *h_LogP, int nClustersAlive,
+                         const int *h_AliveIndex);
 
 // Returns true if at least one Intel GPU (or any GPU with SYCL support) exists.
 // On success, fills *out_dev with the selected device for queue construction.
