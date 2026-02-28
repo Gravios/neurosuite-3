@@ -64,7 +64,7 @@ public:
     float ComputeScore() const;
     void  MStep();
     void  EStep();
-    void  CStep();
+    int   CStep();   // returns number of points that changed class
     void  ConsiderDeletion();
     void  LoadClu(const char *StartCluFile);
     int   TrySplits();
@@ -145,11 +145,25 @@ public:
     int   FullStep          = 1;
     float penaltyMix        = 0.0f;
 
+    // Hard floor for ConsiderDeletion: it will never delete a cluster if doing
+    // so would bring nClustersAlive below this value.  Set from MinClusters by
+    // the outer loop in KlustaKwik.cpp, and propagated to chunk sub-objects by
+    // RunChunkedCEM so that per-chunk EM never drops below the user's requested
+    // minimum — which is what causes under-clustering when MinClusters=MaxClusters.
+    // Default 1 matches legacy behaviour (noise cluster always kept).
+    int   minClustersAlive  = 1;
+
     // Raw time range for the last feature dimension, captured by LoadData()
     // before normalisation so RunChunkedCEM can convert chunkMinutes ->
     // normalised chunk boundaries without needing kSv.dataMin/dataMax.
     float timeRawMin = 0.0f;
     float timeRawMax = 1.0f;
+
+    // Precomputed constant: log(2π)^(nDims/2).
+    // Set by AllocateArrays() and updated whenever nDims changes (CEMTwoPhase
+    // temporarily reduces nDims for the spatial phase).  Avoids recomputing
+    // the transcendental inside the EStep inner loop (optimisation #11).
+    float log2piHalf = 0.0f;
 
     // -----------------------------------------------------------------------
     // Data arrays
@@ -159,7 +173,7 @@ public:
     Array<float> Weight;     // [MaxPossibleClusters]
     Array<float> Mean;       // [MaxPossibleClusters x nDims]
     Array<float> Cov;        // [MaxPossibleClusters x nDims²]  upper-tri stored
-    Array<float> LogP;       // [nPoints x MaxPossibleClusters]
+    Array<float> LogP;       // [MaxPossibleClusters x nPoints]  cluster-major (c*nPoints+p)
     Array<int>   Class;      // [nPoints]
     Array<int>   OldClass;   // [nPoints]
     Array<int>   Class2;     // [nPoints]

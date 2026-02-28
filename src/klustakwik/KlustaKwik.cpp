@@ -136,11 +136,21 @@ void SetupParams(int argc, char **argv) {
 
 void Output(const char *fmt, ...) {
     if (!Screen && !Log) return;
-    va_list arg;
-    va_start(arg, fmt);
-    if (Screen) vprintf(fmt, arg);
-    if (Log)    vfprintf(logfp, fmt, arg);
-    va_end(arg);
+#ifdef _OPENMP
+    #pragma omp critical(output_lock)
+#endif
+    {
+        va_list arg;
+        va_start(arg, fmt);
+        if (Screen) vprintf(fmt, arg);
+        va_end(arg);
+        if (Log) {
+            va_list arg2;
+            va_start(arg2, fmt);
+            vfprintf(logfp, fmt, arg2);
+            va_end(arg2);
+        }
+    }
 }
 
 int irand(int min, int max) {
@@ -374,6 +384,10 @@ int main(int argc, char **argv) {
         for (K1.nStartingClusters = MinClusters;
              K1.nStartingClusters <= MaxClusters;
              K1.nStartingClusters++) {
+            // Propagate the hard deletion floor so ConsiderDeletion never
+            // collapses below the user's -MinClusters — both in the main EM
+            // and in per-chunk sub-objects created by RunChunkedCEM.
+            K1.minClustersAlive = MinClusters;
             for (int i = 0; i < nStarts; i++) {
                 // Always show outer-loop progress on stderr so the user can
                 // monitor a silent run without enabling Screen/Log.

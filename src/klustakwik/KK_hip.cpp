@@ -423,7 +423,7 @@ extern "C" void hip_estep(
 
 extern "C" void hip_mstep(
     KK_GPU    *gpu,
-    const int *h_Class,          // d_Class already current from CStep; h_Class unused
+    const int *h_Class,
     const int *h_AliveIndex,
           float *h_Mean,
           float *h_Cov,
@@ -434,6 +434,13 @@ extern "C" void hip_mstep(
     const int nP = nPoints, nD = nDims, nD2 = nDims2, maxC = MaxClusters;
     const int grid = (nP + BLOCK - 1) / BLOCK;
     const int nTri = nD * (nD + 1) / 2;
+
+    // Upload h_Class to d_Class.  During normal EM this costs 1.4 MB but is
+    // trivial compared to the accumulation kernels.  On the first MStep of
+    // Phase 3 it is essential — the warm-start Class[] lives only on the host
+    // with no prior GPU CStep, so d_Class would otherwise be stale.
+    HIP_CHECK(hipMemcpy(gpu->d_Class, h_Class,
+                        sizeof(int)*nP, hipMemcpyHostToDevice));
 
     // Upload AliveIndex (may have changed after ConsiderDeletion)
     HIP_CHECK(hipMemcpy(gpu->d_AliveIndex, h_AliveIndex,
@@ -541,18 +548,14 @@ extern "C" float hip_compute_score(KK_GPU *gpu, float penalty)
 }
 
 extern "C" void hip_download_logp(KK_GPU *gpu, float *h_LogP,
-                                   int nClustersAlive, const int *h_AliveIndex)
+                                   int /*nClustersAlive*/, const int * /*h_AliveIndex*/)
 {
+    // Device LogP is cluster-major; host LogP is now also cluster-major.
+    // Direct memcpy — no transpose required.
     const int nP   = gpu->nPoints;
     const int maxC = gpu->MaxClusters;
-    std::vector<float> staging(maxC * nP);
-    HIP_CHECK(hipMemcpy(staging.data(), gpu->d_LogP,
+    HIP_CHECK(hipMemcpy(h_LogP, gpu->d_LogP,
                         sizeof(float)*maxC*nP, hipMemcpyDeviceToHost));
-    for (int cc = 0; cc < nClustersAlive; cc++) {
-        const int c = h_AliveIndex[cc];
-        for (int p = 0; p < nP; p++)
-            h_LogP[p * maxC + c] = staging[c * nP + p];
-    }
 }
 
 #endif // USE_HIP
