@@ -39,6 +39,7 @@ void KK::AllocateArrays() {
     nDims2  = nDims * nDims;
     FullStep  = 1;
     NoisePoint = 1;
+    log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
     Data.SetSize(nPoints * nDims);
     Centres.SetSize(MaxPossibleClusters * nDims);  // farthest-point seeds
@@ -301,7 +302,9 @@ void KK::MStep() {
             ? static_cast<float>(nClassMembers[c] + NoisePoint) / (nPoints + NoisePoint)
             : static_cast<float>(nClassMembers[c])              / (nPoints + NoisePoint);
     }
-    Reindex();
+    // Second Reindex is only needed if weight computation itself changed the
+    // alive set, which it never does — skip the redundant O(MaxClusters) pass.
+    // (Reindex already called above after the size-deletion loop.)
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
@@ -315,9 +318,12 @@ void KK::MStep() {
 #endif
 
     // CPU path
-    for (int c = 0; c < MaxPossibleClusters; c++) {
-        for (int i = 0; i < nDims; i++)  Mean[c * nDims + i] = 0.0f;
-        for (int i = 0; i < nDims2; i++) Cov[c * nDims2 + i] = 0.0f;
+    // Zero only the alive cluster rows — avoids clearing ~250 KB of unused
+    // Mean/Cov storage when few clusters are alive (optimisation #3).
+    for (int cc = 0; cc < nClustersAlive; cc++) {
+        const int c = AliveIndex[cc];
+        std::memset(Mean.m_Data + c * nDims,  0, sizeof(float) * nDims);
+        std::memset(Cov.m_Data  + c * nDims2, 0, sizeof(float) * nDims2);
     }
     for (int p = 0; p < nPoints; p++) {
         const int c = Class[p];
@@ -376,9 +382,12 @@ void KK::EStep() {
     static int cEStepCalls = 0;
     kSv.cEStepCallsLast = ++cEStepCalls;
 
-    // Cluster 0: uniform noise
-    for (int p = 0; p < nPoints; p++)
-        LogP[p * MaxPossibleClusters + 0] = -std::log(Weight[0]);
+    // Cluster 0: uniform noise — write into cluster-major row 0
+    {
+        const float noiseLogP = -std::log(Weight[0]);
+        float *noiseRow = LogP.m_Data; // row 0: c=0, [0 * nPoints + p]
+        for (int p = 0; p < nPoints; p++) noiseRow[p] = noiseLogP;
+    }
 
     // Cholesky decomposition always on CPU — O(K * D^3), trivial cost
     for (int cc = 1; cc < nClustersAlive; cc++) {
@@ -411,37 +420,53 @@ void KK::EStep() {
 #endif
 
     // CPU path
+    //
+    // LogP is cluster-major [c * nPoints + p] matching the GPU layout so
     int nSkipped = 0;
-    (void)nSkipped; // diagnostic counter, not currently reported
+    (void)nSkipped; // diagnostic counter, available for future reporting
+    // the inner point loop writes are sequential (optimisation #2).
+    //
+    // log(Weight[c]) and log2piHalf are hoisted outside the point loop —
+    // they are cluster constants, not per-point (optimisations #1, #11).
+    //
+    // The DistThresh skip heuristic is checked per point before the
+    // expensive forward-solve; if ALL alive clusters skip a given point the
+    // point's LogP entries are unchanged from the previous iteration, which
+    // is exactly the desired behaviour (optimisation #6).
     for (int cc = 1; cc < nClustersAlive; cc++) {
-        const int c = AliveIndex[cc];
-        float LogRootDet = 0.0f;
+        const int   c          = AliveIndex[cc];
+        const float *chol      = (*pChol)[c].m_Data;
+        float       logRootDet = 0.0f;
         for (int i = 0; i < nDims; i++)
-            LogRootDet += std::log((*pChol)[c][i * nDims + i]);
-        const float *chol = (*pChol)[c].m_Data;
+            logRootDet += std::log(chol[i * nDims + i]);
+        const float logWeight  = std::log(Weight[c]);
+        const float baseScore  = logRootDet - logWeight + log2piHalf;
+        float *clusterLogP     = LogP.m_Data + c * nPoints;   // cluster-major row
 
         for (int p = 0; p < nPoints; p++) {
-            float *optLogP = LogP.m_Data + p * MaxPossibleClusters;
+            // DistThresh skip: point's class is stable and its LogP for this
+            // cluster is already far worse than its best — skip recomputation.
             if (!FullStep
                 && Class[p]    == OldClass[p]
-                && optLogP[c] - optLogP[Class[p]] > DistThresh) {
+                && clusterLogP[p] - LogP.m_Data[Class[p] * nPoints + p] > DistThresh) {
                 nSkipped++;
                 continue;
             }
+
             float v[64], root[64];
-            for (int i = 0; i < nDims; i++)
-                v[i] = Data[p * nDims + i] - Mean[c * nDims + i];
+            const float *dp = Data.m_Data + p * nDims;
+            const float *mp = Mean.m_Data + c * nDims;
+            for (int i = 0; i < nDims; i++) v[i] = dp[i] - mp[i];
+
             for (int i = 0; i < nDims; i++) {
                 float s = v[i];
                 for (int j = i - 1; j >= 0; j--) s -= chol[i * nDims + j] * root[j];
                 root[i] = s / chol[i * nDims + i];
             }
-            float Mahal = 0.0f;
-            for (int i = 0; i < nDims; i++) Mahal += root[i] * root[i];
-            optLogP[c] = Mahal * 0.5f
-                       + LogRootDet
-                       - std::log(Weight[c])
-                       + static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
+
+            float mahal = 0.0f;
+            for (int i = 0; i < nDims; i++) mahal += root[i] * root[i];
+            clusterLogP[p] = mahal * 0.5f + baseScore;
         }
     }
 }
@@ -449,29 +474,34 @@ void KK::EStep() {
 // ---------------------------------------------------------------------------
 // CStep — assign each point to best cluster
 //
-// GPU parallelism: trivially parallel over points.
-//   One thread per point; load LogP row, find argmin and second-argmin.
-//   With LogP transposed to [c*nPoints+p], each thread strides by nPoints
-//   which is non-coalesced but unavoidable for argmin-per-point.
-//   Alternative: parallel reduction per cluster column (transpose back).
+// Returns the number of points that changed class this iteration so
+// RunEMLoop can use it directly without a separate copy+scan pass (fix #5).
+//
+// LogP is now cluster-major [c * nPoints + p] on both CPU and GPU paths,
+// so the per-point read strides by nPoints through cluster rows (fix #2).
 // ---------------------------------------------------------------------------
-void KK::CStep() {
+int KK::CStep() {
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
         gpu_cstep(gpu,
             Class.m_Data, OldClass.m_Data, Class2.m_Data,
             nClustersAlive, MaxPossibleClusters, HugeScore);
-        return;
+        // Count changes from OldClass (already updated by gpu_cstep)
+        int nChanged = 0;
+        for (int p = 0; p < nPoints; p++) nChanged += (Class[p] != OldClass[p]);
+        return nChanged;
     }
 #endif
-    // CPU path
+    // CPU path — LogP cluster-major [c * nPoints + p]
+    int nChanged = 0;
     for (int p = 0; p < nPoints; p++) {
-        OldClass[p] = Class[p];
+        const int prevClass = Class[p];
+        OldClass[p] = prevClass;
         float bestScore   = HugeScore, secondScore = HugeScore;
         int   topClass = 0, secondClass = 0;
         for (int cc = 0; cc < nClustersAlive; cc++) {
-            const int c = AliveIndex[cc];
-            const float s = LogP[p * MaxPossibleClusters + c];
+            const int   c = AliveIndex[cc];
+            const float s = LogP.m_Data[c * nPoints + p];  // cluster-major
             if (s < bestScore) {
                 secondClass = topClass;   secondScore = bestScore;
                 topClass    = c;          bestScore   = s;
@@ -481,7 +511,9 @@ void KK::CStep() {
         }
         Class[p]  = topClass;
         Class2[p] = secondClass;
+        nChanged += (topClass != prevClass);
     }
+    return nChanged;
 }
 
 // ---------------------------------------------------------------------------
@@ -496,13 +528,19 @@ void KK::ConsiderDeletion() {
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
         gpu_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
+        // gpu_deletion_loss downloads d_Loss directly into DeletionLoss, overwriting
+        // the pre-initialised HugeScore for dead clusters with zeros (d_Loss was
+        // memset to 0 before the kernel; dead clusters accumulate nothing).
+        // Restore HugeScore so dead clusters are never selected as candidates.
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            if (!ClassAlive[c]) DeletionLoss[c] = HugeScore;
         DeletionLoss[0] = HugeScore;  // noise cluster never a candidate
     } else {
 #endif
     for (int p = 0; p < nPoints; p++)
         DeletionLoss[Class[p]] +=
-            LogP[p * MaxPossibleClusters + Class2[p]] -
-            LogP[p * MaxPossibleClusters + Class[p]];
+            LogP.m_Data[Class2[p] * nPoints + p] -   // cluster-major
+            LogP.m_Data[Class[p]  * nPoints + p];
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     }
 #endif
@@ -516,6 +554,13 @@ void KK::ConsiderDeletion() {
         }
     }
     if (candidateClass < 0) { Reindex(); return; }
+
+    // Enforce minClustersAlive floor: never delete if already at or below it.
+    // This is the mechanism that makes -MinClusters work during EM — without it,
+    // ConsiderDeletion will happily delete clusters down to 1 regardless of what
+    // the user requested.  Critical for chunked mode where per-chunk EM must
+    // keep enough clusters to cover the full-session unit count after merging.
+    if (nClustersAlive <= minClustersAlive) { Reindex(); return; }
 
     const float deltaPen = Penalty(nClustersAlive) - Penalty(nClustersAlive - 1);
     if (minLoss < deltaPen) {
@@ -580,19 +625,21 @@ void KK::LoadClu(const char *CluFile) {
 // nPoints = maxPoints (the largest value that will ever be passed here).
 // ---------------------------------------------------------------------------
 void KK::ReinitForSplit(int newNPoints, int newNDims, float newPenaltyMix) {
-    nPoints   = newNPoints;
-    nDims     = newNDims;
-    nDims2    = newNDims * newNDims;
+    nPoints    = newNPoints;
+    nDims      = newNDims;
+    nDims2     = newNDims * newNDims;
     penaltyMix = newPenaltyMix;
     NoisePoint = 0;
     FullStep   = 1;
     suppressBestSave = true;
+    log2piHalf = static_cast<float>(std::log(2.0 * PI) * newNDims * 0.5);
 
-    // Zero point-indexed arrays to newNPoints (arrays are allocated >= this)
+    // Zero point-indexed arrays to newNPoints (arrays are allocated >= this).
+    // LogP is deliberately NOT zeroed: EStep writes every LogP[c*nPoints+p]
+    // before any read, so pre-zeroing (potentially 137 MB) is wasted work.
     std::memset(Class.m_Data,    0, sizeof(int)   * newNPoints);
     std::memset(OldClass.m_Data, 0, sizeof(int)   * newNPoints);
     std::memset(Class2.m_Data,   0, sizeof(int)   * newNPoints);
-    std::memset(LogP.m_Data,     0, sizeof(float) * MaxPossibleClusters * newNPoints);
 
     // Zero cluster-indexed arrays entirely (small — MaxPossibleClusters elements)
     std::memset(Weight.m_Data,    0, sizeof(float) * MaxPossibleClusters);
@@ -608,6 +655,15 @@ void KK::ReinitForSplit(int newNPoints, int newNDims, float newPenaltyMix) {
 int KK::TrySplits() {
     if (nClustersAlive >= MaxPossibleClusters - 1) {
         Output("Won't try splitting - already at maximum number of clusters\n");
+        return 0;
+    }
+
+    // Respect the user's -MaxClusters ceiling — don't split beyond it.
+    // Without this guard, per-chunk EM with PenaltyMix=0.0 (pure AIC) will
+    // keep accepting splits indefinitely since AIC heavily favours more clusters.
+    if (nClustersAlive >= MaxClusters) {
+        if (Verbose >= 2)
+            Output("Won't try splitting - already at MaxClusters (%d)\n", MaxClusters);
         return 0;
     }
 
@@ -704,7 +760,7 @@ float KK::ComputeScore() const {
 #endif
     float score = Penalty(nClustersAlive);
     for (int p = 0; p < nPoints; p++)
-        score += LogP[p * MaxPossibleClusters + Class[p]];
+        score += LogP.m_Data[Class[p] * nPoints + p];  // cluster-major
     return score;
 }
 
@@ -726,35 +782,37 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
 {
     if (maxIter <= 0) maxIter = MaxIter;
 
-    int   iter = 0, nChanged, lastStepFull, didSplit;
+    int   iter = 0, nChanged = 1, lastStepFull = 1, didSplit = 0;
     float score = 0.0f;
     FullStep = 1;
-    Array<int> oldClassBuf(nPoints);
+
+    // Whether score is needed this iteration:
+    //   - always when verbose (logging) or best-save is active
+    //   - never when suppressBestSave && Verbose < 1 (chunk sub-objects, fix #10)
+    const bool needScore = (!suppressBestSave || Verbose >= 1);
 
     do {
-        for (int p = 0; p < nPoints; p++) oldClassBuf[p] = Class[p];
-
         MStep();
         EStep();
         if (enableDistDump && DistDump)
-            MatPrint(Distfp, LogP.m_Data, DistDump, MaxPossibleClusters);
-        CStep();
+            MatPrint(Distfp, LogP.m_Data, MaxPossibleClusters, DistDump); // cluster-major: rows=clusters, cols=nPoints
+
+        // CStep now returns nChanged directly, eliminating the pre-copy of
+        // Class[] into oldClassBuf and the post-scan diff loop (fix #5).
+        nChanged = CStep();
         ConsiderDeletion();
 
-        nChanged = 0;
-        for (int p = 0; p < nPoints; p++) nChanged += (oldClassBuf[p] != Class[p]);
-
-        score = ComputeScore();
-
-        if (!suppressBestSave && score < kSv.BestScoreSave) {
-            SaveBestMeans();
-            kSv.BestScoreSave = score;
+        if (needScore) {
+            score = ComputeScore();
+            if (!suppressBestSave && score < kSv.BestScoreSave) {
+                SaveBestMeans();
+                kSv.BestScoreSave = score;
+            }
+            if (Verbose >= 1)
+                Output("  %s iter %d%c: %d clusters score %.7g nChanged %d\n",
+                       phaseLabel, iter, FullStep ? 'F' : 'Q',
+                       nClustersAlive, score, nChanged);
         }
-
-        if (Verbose >= 1)
-            Output("  %s iter %d%c: %d clusters score %.7g nChanged %d\n",
-                   phaseLabel, iter, FullStep ? 'F' : 'Q',
-                   nClustersAlive, score, nChanged);
         iter++;
 
         lastStepFull = FullStep;
@@ -771,6 +829,8 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
 
     } while (nChanged > 0 || !lastStepFull || didSplit);
 
+    // Compute final score if we skipped it during the loop
+    if (!needScore) score = ComputeScore();
     return score;
 }
 
@@ -952,7 +1012,8 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     // Temporarily reduce nDims so EStep/MStep operate on spatial dims only.
     // LogP, Mean, Cov are already allocated for nFullDims; we simply lie about
     // nDims so the inner loops stop before the time column.
-    nDims = nSpatialDims;
+    nDims      = nSpatialDims;
+    log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
     // Seed with farthest-point centres (in spatial dims)
     const int nCentres = nStartingClusters - 1;  // noise cluster is always 0
@@ -982,12 +1043,14 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     // Phase 2: temporal merge pass — restore full dimensionality
     // -----------------------------------------------------------------------
     if (timeMergeIter <= 0 || nFullDims == nSpatialDims) {
-        nDims = nFullDims;
+        nDims      = nFullDims;
+        log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
         MStep(); EStep();
         return ComputeScore();
     }
 
-    nDims = nFullDims;
+    nDims      = nFullDims;
+    log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
     Output("CEMTwoPhase Phase 2: temporal merge pass (%d dims, max %d iters)\n",
            nDims, timeMergeIter);
 
@@ -1008,17 +1071,22 @@ float KK::CEMTwoPhase(int timeMergeIter) {
 // ---------------------------------------------------------------------------
 // MergeChunkModels
 //
-// Assigns a global cluster ID to every ChunkModel by running Union-Find on
-// the symmetric Mahalanobis adjacency graph of adjacent-chunk cluster pairs.
+// Assigns a global cluster ID to every ChunkModel using mutual nearest-neighbour
+// (MNN) matching across adjacent chunks, then propagates labels via union-find.
+//
+// For each pair of adjacent chunks (k, k+1):
+//   - Compute the full K×K symmetric Mahalanobis distance matrix.
+//   - For each cluster i in chunk k, find its nearest neighbour j* in chunk k+1.
+//   - For each cluster j in chunk k+1, find its nearest neighbour i* in chunk k.
+//   - Merge i and j only if they are mutual nearest neighbours AND d_sym(i,j) < mergeThresh.
+//
+// This prevents the chaining failure mode of plain union-find with a loose
+// threshold, where A→B and B→C edges (both below mergeThresh) would merge A
+// and C even if d_sym(A,C) >> mergeThresh.  MNN requires both sides to agree
+// that the other is their closest match, so a unit can only absorb one chain
+// link per chunk boundary.
 //
 // d_sym(A,B) = 0.5 * [mahal(μ_A, Σ_B) + mahal(μ_B, Σ_A)]
-//
-// where mahal(x, Σ) is computed via Cholesky solve on the upper-left
-// nSpatialDims × nSpatialDims block of Σ (time axis excluded).
-//
-// Only adjacent chunks are compared: O(K² × T) total.  Transitivity handles
-// units that vanish and reappear: A-B and B-C edges imply A and C are in
-// the same component even if A-C was never tested.
 //
 // Noise (localClusterId==0) always maps to globalClusterId==0.
 // Returns the number of distinct real global clusters.
@@ -1029,7 +1097,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 {
     const int n = static_cast<int>(models.size());
 
-    // Union-Find with path compression
+    // Union-Find with path compression — used only after MNN filtering
     std::vector<int> parent(n);
     std::iota(parent.begin(), parent.end(), 0);
 
@@ -1043,15 +1111,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     };
 
     // All noise models (localClusterId==0) are unconditionally merged into
-    // globalClusterId=0 regardless of model similarity.  This is done before
-    // any Mahalanobis comparisons so the threshold cannot accidentally split
-    // the noise population across multiple global clusters.
-    //
-    // Note: a chunk where zero spikes landed in the noise bin will still
-    // produce a ChunkModel for c=0, but with nMembers=0 and undefined
-    // mean/cov (MStep divides by nClassMembers[0]=0).  That is harmless here
-    // because the mahalDist lambda skips localClusterId==0 entirely, so
-    // the garbage values never enter any distance computation.
+    // globalClusterId=0 regardless of model similarity.
     int nNoiseMerged  = 0;
     int nNoiseChunks  = 0;
     int firstNoise    = -1;
@@ -1068,39 +1128,30 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         Output("MergeChunkModels: noise — %d spikes across %d chunks merged to global c=0\n",
                nNoiseMerged, nNoiseChunks);
 
-    // Mahalanobis distance of src.mean under tgt's spatial covariance
+    // Mahalanobis distance of src.mean under tgt's spatial covariance.
     auto mahalDist = [&](const ChunkModel& src, const ChunkModel& tgt) -> float {
-        std::vector<float> covS(nSpatialDims * nSpatialDims);
+        float covS[64*64], chol[64*64], diff[64], root[64];
         for (int r = 0; r < nSpatialDims; r++)
             for (int c = r; c < nSpatialDims; c++)
                 covS[r * nSpatialDims + c] = tgt.cov[r * nDims + c];
 
-        std::vector<float> chol(nSpatialDims * nSpatialDims, 0.0f);
-        if (Cholesky(covS.data(), chol.data(), nSpatialDims))
-            return HugeScore;
+        if (Cholesky(covS, chol, nSpatialDims)) return HugeScore;
 
-        std::vector<float> diff(nSpatialDims), root(nSpatialDims);
         for (int d = 0; d < nSpatialDims; d++)
             diff[d] = src.mean[d] - tgt.mean[d];
-        TriSolve(chol.data(), diff.data(), root.data(), nSpatialDims);
+        TriSolve(chol, diff, root, nSpatialDims);
 
         float dist = 0.0f;
         for (int d = 0; d < nSpatialDims; d++) dist += root[d] * root[d];
         return dist;
     };
 
-    // Build graph edges — only immediate neighbours (chunk k vs chunk k+1).
-    // Clusters from non-adjacent chunks are never compared directly; any
-    // longer-range connection arises only through transitivity in the
-    // Union-Find (e.g. A-B and B-C edges imply A,C in one component).
-    //
     // Index models by chunkIdx for O(1) lookup.
-    std::unordered_map<int, std::vector<int>> byChunk;  // chunkIdx -> model indices
+    std::unordered_map<int, std::vector<int>> byChunk;
     for (int i = 0; i < n; i++)
         if (models[i].localClusterId != 0)
             byChunk[models[i].chunkIdx].push_back(i);
 
-    // Iterate over consecutive chunk pairs only
     const int maxChunk = byChunk.empty() ? -1 :
         std::max_element(byChunk.begin(), byChunk.end(),
             [](const auto& a, const auto& b){ return a.first < b.first; })->first;
@@ -1110,17 +1161,48 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         auto itB = byChunk.find(k + 1);
         if (itA == byChunk.end() || itB == byChunk.end()) continue;
 
-        for (int i : itA->second) {
-            for (int j : itB->second) {
-                const float dsym = 0.5f * (mahalDist(models[i], models[j]) +
-                                            mahalDist(models[j], models[i]));
-                if (dsym < mergeThresh) {
-                    Union(i, j);
-                    Output("  match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f\n",
-                           models[i].chunkIdx, models[i].localClusterId,
-                           models[j].chunkIdx, models[j].localClusterId, dsym);
-                }
+        const auto& vecA = itA->second;
+        const auto& vecB = itB->second;
+        const int nA = (int)vecA.size();
+        const int nB = (int)vecB.size();
+
+        // Build full symmetric distance matrix for this chunk pair
+        std::vector<float> D(nA * nB);
+        for (int a = 0; a < nA; a++)
+            for (int b = 0; b < nB; b++) {
+                const float dAB = mahalDist(models[vecA[a]], models[vecB[b]]);
+                const float dBA = mahalDist(models[vecB[b]], models[vecA[a]]);
+                D[a * nB + b] = 0.5f * (dAB + dBA);
             }
+
+        // Nearest neighbour in B for each A
+        std::vector<int> nnA(nA, -1);
+        for (int a = 0; a < nA; a++) {
+            float best = HugeScore; int bestB = -1;
+            for (int b = 0; b < nB; b++)
+                if (D[a * nB + b] < best) { best = D[a * nB + b]; bestB = b; }
+            if (best < mergeThresh) nnA[a] = bestB;
+        }
+
+        // Nearest neighbour in A for each B
+        std::vector<int> nnB(nB, -1);
+        for (int b = 0; b < nB; b++) {
+            float best = HugeScore; int bestA = -1;
+            for (int a = 0; a < nA; a++)
+                if (D[a * nB + b] < best) { best = D[a * nB + b]; bestA = a; }
+            if (best < mergeThresh) nnB[b] = bestA;
+        }
+
+        // Merge only mutual nearest neighbours
+        for (int a = 0; a < nA; a++) {
+            const int b = nnA[a];
+            if (b < 0) continue;
+            if (nnB[b] != a) continue;  // not mutual
+            Union(vecA[a], vecB[b]);
+            Output("  match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f\n",
+                   models[vecA[a]].chunkIdx, models[vecA[a]].localClusterId,
+                   models[vecB[b]].chunkIdx, models[vecB[b]].localClusterId,
+                   D[a * nB + b]);
         }
     }
 
@@ -1270,6 +1352,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
         threadKc[t].nStartingClusters = nStartingClusters;
         threadKc[t].penaltyMix        = penaltyMix;
         threadKc[t].suppressBestSave  = true;
+        // Per-chunk sub-objects use nStartingClusters as their deletion floor,
+        // not the global minClustersAlive (which is MinClusters from the command
+        // line).  This prevents chunks from collapsing below their seeded K, while
+        // still allowing ConsiderDeletion to reclaim genuinely empty clusters.
+        // The global minClustersAlive floor applies only in the Phase 3 global EM
+        // which runs on the outer KK object (which retains minClustersAlive).
+        threadKc[t].minClustersAlive  = nStartingClusters;
         threadKc[t].AllocateArrays();
         threadKc[t].AlocateCholeskyVecs();
     }
@@ -1387,6 +1476,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // -------------------------------------------------------------------
     nDims  = nFullDims;
     nDims2 = nDims * nDims;
+    log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
     for (int p = 0; p < nPoints; p++) {
@@ -1404,14 +1494,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
     int   iter = 0, nChanged;
     float score = 0.0f;
     FullStep = 1;
-    Array<int> oldClassBuf(nPoints);
 
     for (; iter < globalMergeIter; iter++) {
-        for (int p = 0; p < nPoints; p++) oldClassBuf[p] = Class[p];
-        MStep(); EStep(); CStep(); ConsiderDeletion();
+        MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
 
-        nChanged = 0;
-        for (int p = 0; p < nPoints; p++) nChanged += (oldClassBuf[p] != Class[p]);
         score = ComputeScore();
 
         if (score < kSv.BestScoreSave) { SaveBestMeans(); kSv.BestScoreSave = score; }

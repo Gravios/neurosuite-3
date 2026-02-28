@@ -579,7 +579,6 @@ static void sycl_deletion_loss_submit(KK_GPU *gpu) {
 float sycl_compute_score(KK_GPU *gpu, float penalty)
 {
     const int nP   = gpu->nPoints;
-    const int maxC = gpu->MaxClusters;
     const float *d_LogP  = gpu->d_LogP;
     const int   *d_Class = gpu->d_Class;
     float       *d_Score = gpu->d_Score;
@@ -631,20 +630,13 @@ float sycl_compute_score(KK_GPU *gpu, float penalty)
 // Only called when DistDump != 0.  Not on the hot path.
 // ===========================================================================
 void sycl_download_logp(KK_GPU *gpu, float *h_LogP,
-                         int nClustersAlive, const int *h_AliveIndex)
+                         int /*nClustersAlive*/, const int * /*h_AliveIndex*/)
 {
+    // Device LogP is cluster-major; host LogP is now also cluster-major.
+    // Direct memcpy — no transpose required.
     const int nP   = gpu->nPoints;
     const int maxC = gpu->MaxClusters;
-
-    std::vector<float> staging(maxC * nP);
-    gpu->q.memcpy(staging.data(), gpu->d_LogP,
-                  sizeof(float) * maxC * nP).wait();
-
-    for (int cc = 0; cc < nClustersAlive; cc++) {
-        const int c = h_AliveIndex[cc];
-        for (int p = 0; p < nP; p++)
-            h_LogP[p * maxC + c] = staging[c * nP + p];
-    }
+    gpu->q.memcpy(h_LogP, gpu->d_LogP, sizeof(float) * maxC * nP).wait();
 }
 
 // ===========================================================================
@@ -692,6 +684,26 @@ void sycl_estep(
 
     const float log2piHalf = static_cast<float>(std::log(2.0 * PI) * nD * 0.5);
 
+    // Fill cluster-0 (noise) row of d_LogP: noiseLogP = -log(Weight[0]).
+    // The main E-step kernel loops from cc=1 and never writes d_LogP[0*nP+p].
+    // Without this fill the noise row contains uninitialised GPU memory, which
+    // CStep reads and often mistakes for the best cluster (very negative garbage
+    // values), assigning all points to noise and making ConsiderDeletion see
+    // zero deletion loss for every real cluster.
+    {
+        const float noiseLogP = -std::log(h_Weight[0]);
+        float *d_noiseRow = gpu->d_LogP;   // row 0: c=0, offset = 0 * nP
+        const int nGroups = (nP + WG - 1) / WG;
+        q.submit([&](sycl::handler &h) {
+            h.parallel_for(sycl::nd_range<1>(nGroups * WG, WG),
+                           [=](sycl::nd_item<1> it) {
+                const int p = static_cast<int>(it.get_global_id(0));
+                if (p < nP) d_noiseRow[p] = noiseLogP;
+            });
+        });
+        // No wait needed — in-order queue; sycl_estep_submit is next
+    }
+
     // Launch E-step kernel
     sycl_estep_submit(gpu, nClustersAlive, DistThresh, FullStep, log2piHalf);
     q.wait();
@@ -702,7 +714,9 @@ void sycl_estep(
     // ConsiderDeletion / the DistThresh heuristic all operate on d_LogP
     // directly.  This eliminates the ~138 MB/step transfer that previously
     // dominated iteration time on large datasets.
-    if (h_LogP && DistDump) {
+    // h_LogP is non-null only when KK.cpp's DistDump path is active.
+    // The caller (KK::EStep) already gates this on DistDump != 0.
+    if (h_LogP) {
         sycl_download_logp(gpu, h_LogP, nClustersAlive, h_AliveIndex);
     }
 }
@@ -718,11 +732,21 @@ void sycl_mstep(
     int nPoints, int nDims, int nDims2)
 {
     auto &q = gpu->q;
-    const int nP = nPoints, nD = nDims, nD2 = nDims2, maxC = MaxClusters;
+    const int nD = nDims, nD2 = nDims2, maxC = MaxClusters;
+    (void)nPoints; // nPoints implicit in gpu->nPoints
 
-    // d_Class is already current from the previous CStep — no need to re-upload
-    // h_Class here.  AliveIndex may have changed due to ConsiderDeletion, so
-    // upload it once for use by the normalisation kernels.
+    // Upload h_Class to d_Class.  During normal EM, d_Class is technically
+    // already current from the preceding CStep, but uploading it here costs
+    // only 1.4 MB (344k × 4 bytes) and is far cheaper than the accumulation
+    // kernels that follow.  On the first MStep of Phase 3 this upload is
+    // essential: the warm-start Class[] was assembled on the CPU from merged
+    // per-chunk labels with no preceding GPU CStep, so d_Class would otherwise
+    // contain stale data from before RunChunkedCEM, causing every cluster to
+    // accumulate zero members and produce a singular covariance.
+    q.memcpy(gpu->d_Class, h_Class, sizeof(int) * gpu->nPoints).wait();
+
+    // AliveIndex may have changed due to ConsiderDeletion, so upload it once
+    // for use by the normalisation kernels.
     q.memcpy(gpu->d_AliveIndex, h_AliveIndex, sizeof(int) * nClustersAlive).wait();
 
     // Zero accumulators (three independent memsets — no .wait() between them)
@@ -788,6 +812,32 @@ void sycl_deletion_loss(
     gpu->q.wait();
 
     gpu->q.memcpy(h_Loss, gpu->d_Loss, sizeof(float) * MaxClusters).wait();
+
+    // DEBUG: print first few Class/Class2 values and all Loss values
+    static int dbgCall = 0;
+    if (dbgCall++ < 3) {
+        const int nP = gpu->nPoints;
+        std::vector<int> hC1(nP), hC2(nP);
+        std::vector<float> hLP_c1(nP), hLP_c2(nP);
+        gpu->q.memcpy(hC1.data(), gpu->d_Class,  sizeof(int)*nP).wait();
+        gpu->q.memcpy(hC2.data(), gpu->d_Class2, sizeof(int)*nP).wait();
+        // Count how many points have c1==c2
+        int nSame = 0, nNoise = 0;
+        for (int p = 0; p < nP; p++) {
+            if (hC1[p] == hC2[p]) nSame++;
+            if (hC1[p] == 0) nNoise++;
+        }
+        fprintf(stderr, "[DBG sycl_deletion_loss call %d] nPoints=%d  c1==c2: %d/%d  c1==0(noise): %d/%d\n",
+                dbgCall-1, nP, nSame, nP, nNoise, nP);
+        // Print first 5 (c1, c2) pairs
+        for (int p = 0; p < std::min(5, nP); p++)
+            fprintf(stderr, "  p=%d c1=%d c2=%d\n", p, hC1[p], hC2[p]);
+        // Print non-zero losses
+        int nNonzero = 0;
+        for (int c = 0; c < MaxClusters; c++)
+            if (h_Loss[c] != 0.0f) { fprintf(stderr, "  d_Loss[%d]=%g\n", c, h_Loss[c]); nNonzero++; }
+        if (nNonzero == 0) fprintf(stderr, "  ALL d_Loss are zero!\n");
+    }
 }
 
 #endif // USE_SYCL
