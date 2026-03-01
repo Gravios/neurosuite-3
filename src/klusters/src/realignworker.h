@@ -2,27 +2,13 @@
  * realignworker.h
  *
  * Background worker for spike realignment.
- *
- * KlustersDoc::realignSpikes() does substantial file I/O and computation.
- * Running it on the GUI thread would freeze the main window for large
- * clusters (seconds to tens of seconds).  This worker moves the call to a
- * QThread and streams per-line diagnostic output back to the main thread via
- * Qt signals, mirroring the pattern used by ProcessWidget for reclustering.
- *
- * Usage (from KlustersApp::slotRealignSpikes):
- *   auto* worker = new RealignWorker(doc, clusterId);
- *   auto* thread = new QThread;
- *   worker->moveToThread(thread);
- *   connect(thread, &QThread::started,  worker, &RealignWorker::run);
- *   connect(worker, &RealignWorker::logLine, ...);
- *   connect(worker, &RealignWorker::finished, ...);
- *   thread->start();
  ***************************************************************************/
 
 #pragma once
 
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 class KlustersDoc;
 
@@ -36,24 +22,25 @@ public:
                         QObject* parent = nullptr);
 
 public slots:
-    /** Called on the worker thread by QThread::started. */
     void run();
-
-    /** Request cancellation.  The running realignSpikes() call will not be
-     *  interrupted mid-way (it holds no cancellation point), but the worker
-     *  will not start a new cluster if batch-mode is ever added. */
     void cancel();
 
 signals:
-    /** Emitted for each line of diagnostic output (thread-safe via Qt::QueuedConnection). */
     void logLine(const QString& line, bool isError);
 
     /** Emitted when the realignment job finishes.
-     *  @param ok        true = completed successfully.
-     *  @param nShifted  number of spikes shifted.
-     *  @param nSwapped  number of sort-order corrections performed.
+     *  @param ok          true = completed successfully.
+     *  @param nShifted    spikes shifted.
+     *  @param nSwapped    sort-order corrections.
+     *  @param meanBefore  cluster mean waveform before alignment (channel-major float).
+     *  @param meanAfter   cluster mean waveform after alignment (channel-major float).
+     *  @param backupBase  base path of .realign_bak files (empty if backup failed).
+     *  @param nChan       number of channels.
+     *  @param nSamp       samples per channel.
      */
-    void finished(bool ok, int nShifted, int nSwapped);
+    void finished(bool ok, int nShifted, int nSwapped,
+                  QVector<float> meanBefore, QVector<float> meanAfter,
+                  QString backupBase, int nChan, int nSamp);
 
 private:
     KlustersDoc* m_doc;

@@ -26,6 +26,7 @@
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
 #include "spikerealigndialog.h"
+#include "realignreviewdialog.h"
 #include "realignworker.h"
 #include "qhelpviewer.h"
 
@@ -979,12 +980,14 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
-        // ── Ctrl+Left / Ctrl+Right — cycle display tabs ─────────────────────
-        if(ctrlHeld &&
-           (ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right) &&
+        // ── Left / Right (plain or Ctrl) — cycle display tabs ───────────────
+        // Plain Left/Right switches tabs when focus is already inside the tab
+        // area (no view consumes these keys, so they always reach here).
+        // Ctrl+Left/Right works from anywhere: from outside, first jumps to
+        // Overview; from inside, cycles tabs just like plain Left/Right.
+        if((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right) &&
            tabsParent && tabsParent->isVisible() && tabsParent->count() > 0){
 
-            // Determine whether focus is currently inside the tab area.
             bool inTabArea = false;
             QWidget* focused = QApplication::focusWidget();
             if(focused){
@@ -992,8 +995,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                 while(w){ if(w == tabsParent){ inTabArea = true; break; } w = w->parent(); }
             }
 
-            if(!inTabArea){
-                // Focus is outside the tab area — jump straight to Overview.
+            if(ctrlHeld && !inTabArea){
+                // Ctrl+arrow from outside: jump to Overview first.
                 int overviewIdx = 0;
                 for(int i = 0; i < tabsParent->count(); ++i){
                     if(tabsParent->tabText(i).contains(tr("Overview"),
@@ -1003,19 +1006,20 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                 }
                 tabsParent->setCurrentIndex(overviewIdx);
                 focusTabPage(tabsParent->widget(overviewIdx));
-            } else {
-                // Already in tab area — advance to next/prev tab (wrapping).
-                const int n   = tabsParent->count();
-                const int cur = tabsParent->currentIndex();
-                int next;
-                if(ke->key() == Qt::Key_Right)
-                    next = (cur + 1) % n;
-                else
-                    next = (cur - 1 + n) % n;
+                return true;
+            }
+
+            if(inTabArea){
+                // Inside the tab area: Left/Right cycles tabs (with or without Ctrl).
+                const int n    = tabsParent->count();
+                const int cur  = tabsParent->currentIndex();
+                const int next = ke->key() == Qt::Key_Right
+                    ? (cur + 1) % n
+                    : (cur - 1 + n) % n;
                 tabsParent->setCurrentIndex(next);
                 focusTabPage(tabsParent->widget(next));
+                return true;
             }
-            return true;
         }
     }
     return QWidget::eventFilter(object,event);    // standard event processing
@@ -3479,12 +3483,28 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberAndSave->setEnabled(false);
 
     } else if(state == QLatin1String("noRealignState")) {
-        // Restore actions that realignState locked.
+        // Restore all actions that realignState locked.
         mRealignSpikes->setEnabled(true);
         mAbortRealign->setEnabled(false);
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);
         mRenumberAndSave->setEnabled(true);
+        // Restore editing actions (mirror what realignState disabled)
+        mUndo->setEnabled(true);
+        mRedo->setEnabled(true);
+        mNewCluster->setEnabled(true);
+        mSplitClusters->setEnabled(true);
+        mGroupeClusters->setEnabled(true);
+        mDeleteArtifact->setEnabled(true);
+        mDeleteArtifactSpikes->setEnabled(true);
+        mReCluster->setEnabled(true);
+        mRenumberClusters->setEnabled(true);
+        mDeleteNoisy->setEnabled(true);
+        mDeleteNoisySpikes->setEnabled(true);
+        mIncreaseAmplitudeCorrelation->setEnabled(true);
+        mDecreaseAmplitudeCorrelation->setEnabled(true);
+        // Re-sync with tab state so any tab-specific disabling is reapplied.
+        slotTabChange(tabsParent->currentIndex());
 
     } else if(state == QLatin1String("stoppedRealignState")) {
         mAbortRealign->setEnabled(false);
@@ -3711,7 +3731,11 @@ void KlustersApp::slotAbortRealign()
     slotTabChange(tabsParent->currentIndex());
 }
 
-void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped)
+void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
+                                       QVector<float> meanBefore,
+                                       QVector<float> meanAfter,
+                                       QString backupBase,
+                                       int nChan, int nSamp)
 {
     realignRunning = false;
 
@@ -3740,16 +3764,60 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped)
     slotStateChanged(QStringLiteral("noRealignState"));
 
     if (ok) {
-        // Invalidate the waveform cache for the realigned cluster so the
-        // WaveformThread re-reads the updated waveforms from the .spk file
-        // instead of serving the stale in-memory copies.
-        if (realignClusterId >= 0)
-            doc->invalidateWaveformCache(realignClusterId);
-        realignClusterId = -1;
+        // Show accept/reject review dialog with before/after mean waveforms.
+        // backupBase is now always empty (deferred writes — no backup files).
+        RealignReviewDialog reviewDlg(realignClusterId, nShifted, nSwapped,
+                                      nChan, nSamp,
+                                      meanBefore, meanAfter,
+                                      QString(), this);
+        reviewDlg.exec();
 
-        // Trigger a full display refresh so waveform and feature views reflect
-        // the updated data, matching what slotRecluster does after integration.
-        activeView()->updateContents();
+        if (reviewDlg.accepted()) {
+            // User accepted: pending files exist, will be flushed on next save.
+            // Mark document modified so the save action is enabled.
+            doc->setModified(true);
+
+            // Invalidate both caches so views re-read from the pending .spk
+            // and recompute correlograms from the updated in-memory timestamps.
+            if (realignClusterId >= 0) {
+                doc->invalidateWaveformCache(realignClusterId);
+                doc->invalidateCorrelogramCache(realignClusterId);
+                doc->forceClusterRefresh(realignClusterId);
+            }
+
+            // Switch to the Overview tab so the user immediately sees the
+            // updated waveforms and auto-correlogram.
+            if (tabsParent) {
+                for (int i = 0; i < tabsParent->count(); ++i) {
+                    if (tabsParent->tabText(i).contains(tr("Overview"),
+                                                        Qt::CaseInsensitive)) {
+                        tabsParent->setCurrentIndex(i);
+                        break;
+                    }
+                }
+            }
+
+            // Select the realigned cluster in the palette and put focus there
+            // so the user can immediately use arrow keys for further work.
+            if (clusterPalette && realignClusterId >= 0) {
+                clusterPalette->selectItems(QList<int>{realignClusterId});
+                clusterPalette->setFocusToList();
+            }
+
+        } else {
+            // User rejected: delete pending files, restore original spkFileName,
+            // revert in-memory Data.
+            doc->rejectLastRealign();
+
+            // Invalidate caches and repaint (back to original state).
+            if (realignClusterId >= 0) {
+                doc->invalidateWaveformCache(realignClusterId);
+                doc->invalidateCorrelogramCache(realignClusterId);
+                doc->forceClusterRefresh(realignClusterId);
+            }
+        }
+
+        realignClusterId = -1;
     }
 
     // Restore undo/redo state correctly.

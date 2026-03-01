@@ -287,6 +287,21 @@ void KlustersView::update(KlustersView* pSender){
         repaint();
 }
 
+void KlustersView::forceClusterRefresh(int clusterId)
+{
+    // Only refresh if the cluster is actually shown in this view.
+    if (!shownClusters->contains(clusterId))
+        return;
+
+    // Emitting spikesAddedToCluster forces every sub-view widget to:
+    //   WaveformView:    set drawContentsMode = REDRAW, askForWaveformInformation()
+    //   CorrelationView: set drawContentsMode = REDRAW, askForCorrelograms()
+    //   ClusterView:     addClusterToUpdate() + redraw()
+    // This is the same signal fired by grouping/deletion operations, so all
+    // the normal cache-miss + thread-launch paths are exercised.
+    emit spikesAddedToCluster(clusterId, true);
+}
+
 void KlustersView::print(QPrinter *pPrinter, const QString& filePath, bool whiteBackground)
 {
     QPainter printPainter;

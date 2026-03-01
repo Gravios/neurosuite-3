@@ -441,6 +441,21 @@ public:
      */
     void invalidateWaveformCache(int clusterId);
 
+    /** Invalidates the cached auto/cross-correlogram data for @p clusterId
+     *  so the next CorrelationThread request recomputes from the (updated)
+     *  in-memory spike timestamps.  Call after updating timestamps in memory.
+     *  Thread-safe: uses the internal mutex.
+     */
+    void invalidateCorrelogramCache(int clusterId);
+
+    /** Redirect waveform reads to @p path.
+     *  Use this to point the waveform viewer at a pending .spk file before
+     *  the original has been overwritten.  Call invalidateWaveformCache()
+     *  for the affected cluster afterwards.
+     */
+    void setSpkFileName(const QString& path) { spkFileName = path; }
+    QString getSpkFileName() const { return spkFileName; }
+
     /**Returns the number of points corresponding to a spike. This equals to:
   * nbChannels * nbSamplesInWaveform
   */

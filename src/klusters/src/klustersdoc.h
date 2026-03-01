@@ -29,6 +29,7 @@
 
 // include files for QT
 #include <QObject>
+#include <QVector>
 #include <QString>
 #include <QPoint>
 #include <QFileInfo>
@@ -39,6 +40,7 @@
 #include <QFile>
 #include <QEvent>
 #include <QDebug>
+#include <vector>
 
 
 
@@ -377,13 +379,49 @@ public:
      */
     bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                        std::function<void(const QString&,bool)> liveLog = nullptr,
-                       const QString& args = QString());
+                       const QString& args = QString(),
+                       QVector<float>* meanBefore = nullptr,
+                       QVector<float>* meanAfter  = nullptr,
+                       QString*        backupBase  = nullptr);
 
     /**Invalidates the in-memory waveform cache for @p clusterId.
      * Call this after any in-place modification of the .spk file (e.g. after
      * spike realignment) so the waveform viewer re-reads from disk.
      */
     void invalidateWaveformCache(int clusterId);
+    void invalidateCorrelogramCache(int clusterId);
+
+    // ── Pending realignment ────────────────────────────────────────────────
+    /** One modified spike record, held in memory until saveDocument() writes
+     *  it to disk.  Original values are stored so rejectLastRealign() can
+     *  undo the in-memory Data changes without touching disk. */
+    struct PendingSpkRecord {
+        int64_t              destPos;    // 0-based global spike position in file
+        std::vector<int16_t> spkRow;    // sample-major waveform for .spk
+        int64_t              ts;        // new timestamp for .res
+        std::vector<int64_t> fetRow;   // new feature row for .fet (length timeDim)
+        // --- originals for reject ---
+        int64_t              origTs;
+        QList<dataType>      origFet;  // original feature values (length nFeatCols)
+    };
+
+    struct PendingRealign {
+        // Paths are stored doc-level (m_origSpkPath etc.); only per-batch
+        // metadata and the per-spike undo records are needed here.
+        int64_t bytesPerSpike = 0;
+        int     spkElems      = 0;
+        int     timeDim       = 0;
+        int     nFeatCols     = 0;
+        std::vector<PendingSpkRecord> records;
+    };
+
+    /** True when realignment results are waiting to be written to disk. */
+    bool hasPendingRealign() const { return !m_pendingRealign.empty(); }
+
+    /** Discards the most recent pending realignment and restores the
+     *  in-memory Data to its state before that realignment was run.
+     *  Called when the user hits Reject in the review dialog. */
+    void rejectLastRealign();
 
     /**Integrates in the data the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.
@@ -517,6 +555,14 @@ public Q_SLOTS:
      * As this view normally repaints itself, it is excluded from the paintEvent.
      */
     void updateAllViews(KlustersView* sender);
+    /** Repaint all views AND trigger correlogram recomputation by firing
+     *  updateDrawing() on each view.  Call after realignment so that the
+     *  scatter, waveform, and correlation views all refresh. */
+    void refreshAllViews();
+
+    /** Forces all views to discard cached data for @p clusterId and re-fetch.
+     *  Equivalent to emitting spikesAddedToCluster on each KlustersView. */
+    void forceClusterRefresh(int clusterId);
 
     /**Renumbers the clusters, so the the clusterIds will be consecutive.*/
     void renumberClusters();
@@ -525,6 +571,29 @@ public Q_SLOTS:
     void launchAutoSave();
 
 private:
+
+    /** Commit all pending files to the originals, then re-seed the pending
+     *  files from the freshly-written originals so the cycle continues.
+     *  Called by saveDocument() after a successful write.
+     *  Also handles SaveAs: pass the new base paths when the doc URL changed. */
+    void commitAndRenewPending();
+
+    /** Seed all four .pending files from their originals.
+     *  Redirects spkFileName and tmpCluFile to the pending paths.
+     *  Called on open, after commit (save), and after reject. */
+    bool initPendingFiles();
+
+    /** Original file paths — set on open, updated on SaveAs. */
+    QString m_origSpkPath;
+    QString m_origResPath;
+    QString m_origFetPath;
+    // clu original == docUrl; clu pending == m_pendingCluPath
+
+    /** Persistent .pending file paths — live for the entire document session. */
+    QString m_pendingSpkPath;
+    QString m_pendingResPath;
+    QString m_pendingFetPath;
+    QString m_pendingCluPath;
 
     /**
     * Removes spikes from some clusters and assign them to the cluster @pdestinationCluster
@@ -782,6 +851,9 @@ private:
  * spike group 1).
  */
     QMap<int, QList<int> > displayGroupsClusterFile;
+
+    /** Realignment writes pending until saveDocument() is called. */
+    std::vector<PendingRealign> m_pendingRealign;
 
 };
 

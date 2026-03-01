@@ -6,6 +6,7 @@
  ***************************************************************************/
 
 #include "spikerealign.h"
+#include "realign_xcorr.h"
 #include "data.h"
 #include "sortabletable.h"
 
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <algorithm>
 #include <limits>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // SpikeRealign
@@ -437,18 +439,77 @@ RealignResult SpikeRealign::run()
     for (int p = 0; p < nPts; ++p)
         meanWv[p] = (short)std::round(meanWvD[p]);
 
-    // Find the channel with the largest mean peak amplitude
-    int peakChan = 0;
-    double peakAmp = 0.0;
-    for (int ch = 0; ch < nChan; ++ch) {
-        double amp = std::abs(meanWvD[peakPos * nChan + ch]);
-        if (amp > peakAmp) { peakAmp = amp; peakChan = ch; }
+    // Find the sample where the mean waveform actually peaks (summed |amplitude|
+    // across all channels), then shift meanWv so that sample lands at peakPos.
+    // Without this step the template is misaligned and xcorr shifts every spike
+    // away from the true peak rather than toward it.
+    {
+        int    meanPeakSamp = peakPos;
+        double bestAmp      = -1.0;
+        for (int s = 0; s < nSamples; ++s) {
+            double amp = 0.0;
+            for (int ch = 0; ch < nChan; ++ch)
+                amp += std::abs(meanWvD[s * nChan + ch]);
+            if (amp > bestAmp) { bestAmp = amp; meanPeakSamp = s; }
+        }
+        const int tmplShift = peakPos - meanPeakSamp;
+        if (tmplShift != 0) {
+            QVector<short> shifted(nPts, 0);
+            for (int s = 0; s < nSamples; ++s) {
+                int src = s - tmplShift;
+                if (src < 0 || src >= nSamples) continue;
+                for (int ch = 0; ch < nChan; ++ch)
+                    shifted[s * nChan + ch] = meanWv[src * nChan + ch];
+            }
+            meanWv = shifted;
+        }
     }
 
     emit progress(15);
 
     // ------------------------------------------------------------------
-    // 5. Read all .res and .clu into memory (we will rewrite them once at end)
+    // 5. Pack waveforms and template into channel-major buffers and run
+    //    the xcorr dispatcher (CUDA -> HIP -> SYCL -> OpenMP).
+    //
+    //    .spk layout:  sample-major  [s * nChan + ch]
+    //    dispatcher:   channel-major [ch * nSamples + s]
+    //    Transpose both buffers before the call; shifts[] maps 1-to-1
+    //    back to waveforms[] / globalIndices[].
+    // ------------------------------------------------------------------
+    // Template - channel-major
+    std::vector<int16_t> tmplBuf(static_cast<size_t>(nChan) * nSamples);
+    for (int ch = 0; ch < nChan; ++ch)
+        for (int s = 0; s < nSamples; ++s)
+            tmplBuf[static_cast<size_t>(ch) * nSamples + s] =
+                meanWv[s * nChan + ch];
+
+    // Waveforms - [nSpikes x nChan x nSamples], channel-major per spike
+    std::vector<int16_t> waveBuf(
+        static_cast<size_t>(nSpikesInCluster) * nChan * nSamples);
+    for (int si = 0; si < nSpikesInCluster; ++si) {
+        const QVector<short>& wv = waveforms[si];
+        int16_t* dst = waveBuf.data()
+                     + static_cast<ptrdiff_t>(si) * nChan * nSamples;
+        for (int ch = 0; ch < nChan; ++ch)
+            for (int s = 0; s < nSamples; ++s)
+                dst[ch * nSamples + s] = wv[s * nChan + ch];
+    }
+
+    std::vector<int>   shifts(static_cast<size_t>(nSpikesInCluster), 0);
+    std::vector<float> xcorrScores(static_cast<size_t>(nSpikesInCluster), 0.0f);
+
+    // minScore = 0: accept any non-zero shift - the pre-aligned template
+    // ensures lag=0 wins naturally when the spike is already well aligned.
+    XcorrDispatch::compute(
+        waveBuf.data(), tmplBuf.data(),
+        nSpikesInCluster, nChan, nSamples,
+        m_maxShift, /*minScore=*/0.0f,
+        shifts.data(), xcorrScores.data());
+
+    emit progress(20);
+
+    // ------------------------------------------------------------------
+    // 6. Read all .res and .clu into memory (we will rewrite them once at end)
     // ------------------------------------------------------------------
     QVector<long long> allRes;
     if (!readAllRes(allRes)) {
@@ -467,7 +528,7 @@ RealignResult SpikeRealign::run()
     }
 
     // ------------------------------------------------------------------
-    // 6. Read the .fet file fully into memory so we can patch individual rows
+    // 7. Read the .fet file fully into memory so we can patch individual rows
     // ------------------------------------------------------------------
     QFile fetFile(fetPath());
     if (!fetFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -500,7 +561,7 @@ RealignResult SpikeRealign::run()
     emit progress(20);
 
     // ------------------------------------------------------------------
-    // 7. Main loop over spikes in cluster
+    // 8. Main loop over spikes in cluster
     // ------------------------------------------------------------------
     const int totalSamples = (int)(QFileInfo(filPath()).size()
                                    / (sizeof(short) * totalNbChan));
@@ -525,8 +586,8 @@ RealignResult SpikeRealign::run()
         const long long gidx = globalIndices[si];  // 1-based
         const int vecIdx = (int)(gidx - 1);        // 0-based index into allRes/allClu
 
-        // Find best shift
-        int sh = findBestShift(waveforms[si], meanWv, nChan, nSamples, peakChan, m_maxShift);
+        // Shift from dispatcher (sign convention: add to timestamp to realign)
+        int sh = shifts[static_cast<size_t>(si)];
 
         if (sh != 0) {
             // -- a. Compute new timestamp --
@@ -636,7 +697,7 @@ RealignResult SpikeRealign::run()
     emit progress(90);
 
     // ------------------------------------------------------------------
-    // 8. Write back .res, .clu, .fet files
+    // 9. Write back .res, .clu, .fet files
     // ------------------------------------------------------------------
     if (!writeAllRes(allRes)) {
         result.success = false;

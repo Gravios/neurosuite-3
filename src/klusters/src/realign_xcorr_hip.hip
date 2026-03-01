@@ -2,7 +2,10 @@
  * realign_xcorr_hip.hip
  *
  * AMD ROCm/HIP port of the CUDA xcorr alignment kernel.
- * Logic is identical; only the API calls differ (hipMalloc etc.).
+ * Logic identical to CUDA version; only API calls differ.
+ *
+ * Normalization: both tmplEnergy and spkEnergy use the full waveform so
+ * the denominator is constant across lags, preventing drift on re-runs.
  ***************************************************************************/
 
 #ifdef USE_HIP
@@ -15,14 +18,42 @@
 #include <cstdint>
 #include <cstdio>
 
-// ---------------------------------------------------------------------------
-// Kernels  (identical algorithm to the CUDA version)
-// ---------------------------------------------------------------------------
+__global__ void tmpl_energy_hip_kernel(
+    const int16_t* __restrict__ tmpl,
+    int nChan, int nSamp,
+    float* __restrict__ out)
+{
+    double e = 0.0;
+    for (int ch = 0; ch < nChan; ++ch)
+        for (int s = 0; s < nSamp; ++s) {
+            double v = static_cast<double>(tmpl[ch * nSamp + s]);
+            e += v * v;
+        }
+    out[0] = static_cast<float>(sqrt(e));
+}
+
+__global__ void spike_energy_hip_kernel(
+    const int16_t* __restrict__ waveforms,
+    int nChan, int nSamp, int nSpikes,
+    float* __restrict__ spkSqrtEnergy)
+{
+    const int sp = blockIdx.x * blockDim.x + threadIdx.x;
+    if (sp >= nSpikes) return;
+    const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
+    double e = 0.0;
+    for (int ch = 0; ch < nChan; ++ch)
+        for (int s = 0; s < nSamp; ++s) {
+            double v = static_cast<double>(spk[ch * nSamp + s]);
+            e += v * v;
+        }
+    spkSqrtEnergy[sp] = static_cast<float>(sqrt(e));
+}
 
 __global__ void xcorr_hip_kernel(
     const int16_t* __restrict__ waveforms,
     const int16_t* __restrict__ tmpl,
-    float* __restrict__ tmplEnergyBuf,
+    const float*   __restrict__ tmplEnergyBuf,
+    const float*   __restrict__ spkSqrtEnergy,
     int nChan, int nSamp,
     int maxShift, float minScore,
     int*   __restrict__ shifts_out,
@@ -41,25 +72,22 @@ __global__ void xcorr_hip_kernel(
     __syncthreads();
 
     const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
-    const float sqrtTmpl = tmplEnergyBuf[0];
+    const double denom = static_cast<double>(tmplEnergyBuf[0])
+                       * static_cast<double>(spkSqrtEnergy[sp]);
 
-    // Zero-padded xcorr: template index s pairs with spike index s+lag.
     {
-        double num = 0.0, spkEnergy = 0.0;
+        double num = 0.0;
+        // Circular shift — all samples contribute at every lag.
         for (int ch = 0; ch < nChan; ++ch) {
             const int16_t* tch = tmpl + ch * nSamp;
             const int16_t* sch = spk  + ch * nSamp;
             for (int s = 0; s < nSamp; ++s) {
-                int sLag = s + lag;
-                if (sLag < 0 || sLag >= nSamp) continue;
-                double tv = static_cast<double>(tch[s]);
-                double sv = static_cast<double>(sch[sLag]);
-                num       += tv * sv;
-                spkEnergy += sv * sv;
+                int sLag = (s + lag + nSamp) % nSamp;
+                num += static_cast<double>(tch[s])
+                     * static_cast<double>(sch[sLag]);
             }
         }
-        double denom = static_cast<double>(sqrtTmpl) * sqrt(spkEnergy);
-        float score  = (denom > 1e-12) ? static_cast<float>(num / denom) : 0.0f;
+        float score = (denom > 1e-12) ? static_cast<float>(num / denom) : 0.0f;
         sh_score[threadIdx.x] = score;
         sh_lag  [threadIdx.x] = static_cast<float>(lag);
     }
@@ -78,28 +106,12 @@ __global__ void xcorr_hip_kernel(
     if (threadIdx.x == 0) {
         float best = sh_score[0];
         int   blag = static_cast<int>(sh_lag[0]);
-        shifts_out[sp] = (best >= minScore) ? -blag : 0;
+        // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
+        // caller does newTs = ts + shifts_out to correct.
+        shifts_out[sp] = (best >= minScore) ? blag : 0;
         scores_out[sp] = best;
     }
 }
-
-__global__ void tmpl_energy_hip_kernel(
-    const int16_t* __restrict__ tmpl,
-    int nChan, int nSamp,
-    float* __restrict__ out)
-{
-    double e = 0.0;
-    for (int ch = 0; ch < nChan; ++ch)
-        for (int s = 0; s < nSamp; ++s) {
-            double v = static_cast<double>(tmpl[ch * nSamp + s]);
-            e += v * v;
-        }
-    out[0] = static_cast<float>(sqrt(e));
-}
-
-// ---------------------------------------------------------------------------
-// Host entry points
-// ---------------------------------------------------------------------------
 
 extern "C" {
 
@@ -122,22 +134,31 @@ int xcorr_hip_compute(
     const size_t tmplBytes  = static_cast<size_t>(nChannels) * nSamples * sizeof(int16_t);
     const size_t shiftBytes = static_cast<size_t>(nSpikes) * sizeof(int);
     const size_t scoreBytes = static_cast<size_t>(nSpikes) * sizeof(float);
+    const size_t spkEBytes  = static_cast<size_t>(nSpikes) * sizeof(float);
 
     int16_t *d_wave = nullptr, *d_tmpl = nullptr;
-    float   *d_tmplE = nullptr, *d_scores = nullptr;
+    float   *d_tmplE = nullptr, *d_spkE = nullptr;
+    float   *d_scores = nullptr;
     int     *d_shifts = nullptr;
 
     if (hipMalloc(&d_wave,   waveBytes)    != hipSuccess) return -1;
     if (hipMalloc(&d_tmpl,   tmplBytes)    != hipSuccess) { hipFree(d_wave); return -1; }
     if (hipMalloc(&d_tmplE,  sizeof(float)) != hipSuccess) goto cleanup;
+    if (hipMalloc(&d_spkE,   spkEBytes)    != hipSuccess) goto cleanup;
     if (hipMalloc(&d_shifts, shiftBytes)   != hipSuccess) goto cleanup;
     if (hipMalloc(&d_scores, scoreBytes)   != hipSuccess) goto cleanup;
 
-    hipMemcpy(d_wave, waveforms, waveBytes,  hipMemcpyHostToDevice);
-    hipMemcpy(d_tmpl, tmpl,      tmplBytes,  hipMemcpyHostToDevice);
+    hipMemcpy(d_wave, waveforms, waveBytes, hipMemcpyHostToDevice);
+    hipMemcpy(d_tmpl, tmpl,      tmplBytes, hipMemcpyHostToDevice);
 
     hipLaunchKernelGGL(tmpl_energy_hip_kernel, dim3(1), dim3(1), 0, 0,
                        d_tmpl, nChannels, nSamples, d_tmplE);
+    {
+        const int blk = 128;
+        hipLaunchKernelGGL(spike_energy_hip_kernel,
+                           dim3((nSpikes + blk - 1) / blk), dim3(blk), 0, 0,
+                           d_wave, nChannels, nSamples, nSpikes, d_spkE);
+    }
 
     {
         const int nLags = 2 * maxShift + 1;
@@ -149,7 +170,7 @@ int xcorr_hip_compute(
         size_t shmBytes = 2 * static_cast<size_t>(blockSz) * sizeof(float);
         hipLaunchKernelGGL(xcorr_hip_kernel,
                            dim3(nSpikes), dim3(blockSz), shmBytes, 0,
-                           d_wave, d_tmpl, d_tmplE,
+                           d_wave, d_tmpl, d_tmplE, d_spkE,
                            nChannels, nSamples,
                            maxShift, minScore,
                            d_shifts, d_scores);
@@ -161,12 +182,12 @@ int xcorr_hip_compute(
     hipMemcpy(shifts_out, d_shifts, shiftBytes, hipMemcpyDeviceToHost);
     hipMemcpy(scores_out, d_scores, scoreBytes, hipMemcpyDeviceToHost);
 
-    hipFree(d_wave); hipFree(d_tmpl); hipFree(d_tmplE);
+    hipFree(d_wave); hipFree(d_tmpl); hipFree(d_tmplE); hipFree(d_spkE);
     hipFree(d_shifts); hipFree(d_scores);
     return 0;
 
 cleanup:
-    hipFree(d_wave); hipFree(d_tmpl); hipFree(d_tmplE);
+    hipFree(d_wave); hipFree(d_tmpl); hipFree(d_tmplE); hipFree(d_spkE);
     hipFree(d_shifts); hipFree(d_scores);
     return -1;
 }
