@@ -25,7 +25,7 @@ void RealignWorker::cancel()
 void RealignWorker::run()
 {
     if (m_cancel) {
-        emit finished(false, 0, 0);
+        emit finished(false, 0, 0, {}, {}, {}, 0, 0);
         return;
     }
 
@@ -36,11 +36,19 @@ void RealignWorker::run()
     int nShifted = 0;
     int nSwapped = 0;
     bool ok = false;
+    QVector<float> meanBefore, meanAfter;
+    QString backupBase;
+
+    const int nChan = m_doc->data().nbOfChannels();
+    const int nSamp = m_doc->data().nbSamplesPerWaveform();
+
     try {
         ok = m_doc->realignSpikes(m_clusterId, logOut, nShifted, nSwapped,
             [this](const QString& line, bool isError) {
                 emit logLine(line, isError);
-            }, m_args);
+            },
+            m_args,
+            &meanBefore, &meanAfter, &backupBase);
     } catch (const std::bad_alloc& e) {
         logOut += QStringLiteral("\nERROR: out of memory — %1\n").arg(
             QString::fromLatin1(e.what()));
@@ -51,8 +59,6 @@ void RealignWorker::run()
         logOut += QStringLiteral("\nERROR: unknown exception in realignSpikes\n");
     }
 
-    // If live logging was used, logOut is empty on success (all lines were emitted
-    // live).  On exception, the catch blocks wrote to logOut directly — emit those.
     if (!logOut.isEmpty()) {
         const QStringList lines = logOut.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         for (const QString& line : lines) {
@@ -62,5 +68,5 @@ void RealignWorker::run()
         }
     }
 
-    emit finished(ok, nShifted, nSwapped);
+    emit finished(ok, nShifted, nSwapped, meanBefore, meanAfter, backupBase, nChan, nSamp);
 }

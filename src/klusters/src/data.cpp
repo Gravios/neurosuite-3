@@ -3819,3 +3819,12 @@ void Data::invalidateWaveformCache(int clusterId)
     }
     mutex.unlock();
 }
+
+void Data::invalidateCorrelogramCache(int clusterId)
+{
+    // Remove all cached correlogram entries that involve this cluster so the
+    // next CorrelationThread recomputes them from the updated in-memory
+    // timestamps.  Use the existing cleanCorrelation helper which handles
+    // the mutex and iterates all pairs that reference clusterId.
+    cleanCorrelation(static_cast<dataType>(clusterId), clusterIds(), false);
+}

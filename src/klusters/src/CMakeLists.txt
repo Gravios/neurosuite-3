@@ -24,6 +24,7 @@ set(klusters_SRCS
     realign_xcorr_omp.cpp
     realign_xcorr_dispatch.cpp
     realignworker.cpp
+    realignreviewdialog.cpp
     spikerealigndialog.cpp
     klusters.cpp
     klustersdoc.cpp

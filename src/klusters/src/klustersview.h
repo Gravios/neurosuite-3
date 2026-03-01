@@ -114,6 +114,15 @@ public:
     /**Updates the view.*/
     void update(KlustersView* pSender);
 
+    /** Forces all enclosed sub-views to discard their cached data for
+     *  @p clusterId and re-fetch from the current data source.
+     *  Use after realignment: the waveform cache and correlogram cache have
+     *  already been invalidated; this method sets the REDRAW mode flag and
+     *  starts new fetch threads for both the waveform and correlation views.
+     *  @param clusterId cluster whose data should be refreshed.
+     */
+    void forceClusterRefresh(int clusterId);
+
     /** Prints the views in the display, for multiple-view displays, each view is printed on a separate page.
     * The file name and view-specific parameters are printed below the figure.
     * @param printer printer to print into.

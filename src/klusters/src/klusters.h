@@ -400,7 +400,9 @@ private Q_SLOTS:
     void slotAbortRealign();
 
     /**Called when the realignment worker thread finishes.*/
-    void slotRealignFinished(bool ok, int nShifted, int nSwapped);
+    void slotRealignFinished(bool ok, int nShifted, int nSwapped,
+                             QVector<float> meanBefore, QVector<float> meanAfter,
+                             QString backupBase, int nChan, int nSamp);
 
     /**Stops the separate process which is reclustering some clusters.*/
     void slotStopRecluster();

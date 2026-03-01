@@ -25,6 +25,7 @@
 
 // include files for Qt
 #include <QDir>
+#include <QFile>
 #include <QWidget>
 #include <QStringList>
 #include <QString>
@@ -133,6 +134,21 @@ void KlustersDoc::updateAllViews(KlustersView *sender){
         view->update(sender);
     }
 
+}
+
+void KlustersDoc::refreshAllViews()
+{
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* view = viewList->at(i);
+        view->update(nullptr);         // repaint scatter + waveform
+        view->updateViewContents();    // fires updateDrawing() → askForCorrelograms()
+    }
+}
+
+void KlustersDoc::forceClusterRefresh(int clusterId)
+{
+    for (int i = 0; i < viewList->count(); ++i)
+        viewList->at(i)->forceClusterRefresh(clusterId);
 }
 
 bool KlustersDoc::canCloseDocument(KlustersApp* mainWindow,const QString& callingMethod){
@@ -487,6 +503,18 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         autoSaveThread->start();
     }
 
+    // Establish the four permanent pending files so the originals are never
+    // touched during a session.  spkFileName and tmpCluFile are redirected
+    // to the pending paths; they stay there for the whole document lifetime.
+    m_origSpkPath = spkFileUrl;
+    m_origResPath = urlFileInfo.absolutePath() + QDir::separator()
+                    + baseName + ".res." + electrodeGroupID;
+    m_origFetPath = fetFileUrl;
+    // clu original == docUrl (set above); clu pending set in initPendingFiles.
+    if (!initPendingFiles()) {
+        qWarning() << "[openDocument] could not create pending files";
+    }
+
     return OK;
 }
 
@@ -553,26 +581,28 @@ void KlustersDoc::customEvent(QEvent *event){
 
 int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/){
 
-    QString tmpCluFileSave = tmpCluFile;
-    if(docUrl != saveUrl){
-        tmpCluFile =  saveUrl;
-    }
-    //Open the temp file in write mode
-    FILE* cluFile = fopen(tmpCluFile.toLatin1(),"wb");
+    // Determine whether this is a Save (same URL) or SaveAs (new URL).
+    const bool isSaveAs = (docUrl != saveUrl);
+
+    // For a regular Save:  write clu to the pending clu file (crash-safe).
+    // For a SaveAs:        write directly to the new URL (no pending for it).
+    const QString cluWritePath = isSaveAs ? saveUrl : m_pendingCluPath;
+
+    //Open the clu file in write mode
+    FILE* cluFile = fopen(cluWritePath.toLatin1(),"wb");
     if(cluFile == NULL){
-        tmpCluFile = tmpCluFileSave;
         return OPEN_ERROR;
     }
 
     if(!clusteringData->saveClusters(cluFile)){
-        tmpCluFile = tmpCluFileSave;
         return SAVE_ERROR;
     }
 
     //close the file
     fclose(cluFile);
-    //if it was a saveAs, the url has changed, update it
-    if(docUrl != saveUrl){
+
+    // For SaveAs: update doc URL and derived paths before committing.
+    if(isSaveAs){
         docUrl = saveUrl;
         QFileInfo docUrlFileInfo(docUrl);
         QString fileName = docUrlFileInfo.fileName();
@@ -667,6 +697,20 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
                 return CREATION_ERROR;
         }
     }
+
+    // Commit pending files → originals, then re-seed pending from fresh originals.
+    // For SaveAs, update the original paths first so commitAndRenewPending()
+    // copies to the correct new location.
+    if (isSaveAs) {
+        QFileInfo newInfo(docUrl);
+        m_origSpkPath = newInfo.absolutePath() + QDir::separator()
+                        + baseName + ".spk." + electrodeGroupID;
+        m_origResPath = newInfo.absolutePath() + QDir::separator()
+                        + baseName + ".res." + electrodeGroupID;
+        m_origFetPath = newInfo.absolutePath() + QDir::separator()
+                        + baseName + ".fet." + electrodeGroupID;
+    }
+    commitAndRenewPending();
 
     modified=false;
     return OK;
@@ -2352,7 +2396,10 @@ static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
 
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                                 std::function<void(const QString&,bool)> liveLog,
-                                const QString& args)
+                                const QString& args,
+                                QVector<float>* meanBefore,
+                                QVector<float>* meanAfter,
+                                QString* backupBase)
 {
     nShifted = 0;
     nSwapped = 0;
@@ -2388,7 +2435,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const Data& d         = data();
     const int   nChan     = d.nbOfChannels();
     const int   nSamp     = d.nbSamplesPerWaveform();
-    const int   peakSamp  = d.peakSampleIndex();
+    const int   peakSamp  = d.peakSampleIndex(); // 1-based (XML value)
+    const int   peakSamp0 = peakSamp - 1;        // 0-based waveform index
     const int   timeDim   = d.timeDimension();  // = nDimensions from .fet header
     const int   nFeatCols = timeDim - 1;        // feature columns, last col is ts
 
@@ -2397,7 +2445,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // Supported: --threshold F  --iterations N  --maxshift N
     // Defaults:  threshold=0.70  iterations=2  maxshift=peakSamp/2
     // -----------------------------------------------------------------------
-    int   maxShift  = std::max(1, peakSamp / 2);
+    int   maxShift  = std::max(1, peakSamp0 / 2);
     float minScore  = 0.70f;
     int   nIter     = 2;
     {
@@ -2463,6 +2511,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     for (int64_t i = 0; i < N; ++i)
         gidx[static_cast<size_t>(i)] =
             static_cast<int64_t>(spkTable(1, static_cast<dataType>(i + 1))) - 1;
+
+    // -----------------------------------------------------------------------
+    // No backup needed: writes are deferred until saveDocument() is called.
+    // -----------------------------------------------------------------------
+    if (backupBase) *backupBase = QString();  // kept for API compatibility
 
     // -----------------------------------------------------------------------
     // Load PCA eigenvectors (per-channel basis)
@@ -2585,6 +2638,35 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     emitFlush();
 
     // -----------------------------------------------------------------------
+    // Transpose wavBuf from sample-major (.spk on-disk: [s * nChan + ch])
+    // to channel-major (algorithm + XcorrDispatch: [ch * nSamp + s]).
+    // -----------------------------------------------------------------------
+    {
+        std::vector<int16_t> cm(static_cast<size_t>(N) * spkElems);
+        for (int64_t i = 0; i < N; ++i) {
+            const int16_t* src = wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            int16_t* dst = cm.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            for (int s = 0; s < nSamp; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    dst[ch * nSamp + s] = src[s * nChan + ch];
+        }
+        wavBuf = std::move(cm);
+    }
+
+    // Capture before-mean in channel-major order for the review dialog.
+    if (meanBefore) {
+        meanBefore->resize(static_cast<int>(spkElems));
+        for (size_t e = 0; e < spkElems; ++e) {
+            double acc = 0.0;
+            for (int64_t i = 0; i < N; ++i)
+                acc += wavBuf[static_cast<size_t>(i) * spkElems + e];
+            (*meanBefore)[static_cast<int>(e)] = static_cast<float>(acc / N);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Read cluster timestamps and extra feature columns from binary files.
     //
     // Binary .res: N_total * int64_t, no header.
@@ -2678,6 +2760,32 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         for (size_t e = 0; e < spkElems; ++e)
             tmpl[e] = static_cast<int16_t>(acc[e] / N);
 
+        // Pre-align template: shift so its peak lands at peakSamp0.
+        // Without this the xcorr moves every spike away from the true peak.
+        {
+            int    tmplPeak = 0;
+            double bestAmp  = -1.0;
+            for (int t = 0; t < nSamp; ++t) {
+                double amp = 0.0;
+                for (int ch = 0; ch < nChan; ++ch)
+                    amp += std::abs(static_cast<double>(
+                               tmpl[static_cast<size_t>(ch * nSamp + t)]));
+                if (amp > bestAmp) { bestAmp = amp; tmplPeak = t; }
+            }
+            const int tShift = peakSamp0 - tmplPeak;
+            if (tShift != 0) {
+                // To move the peak from tmplPeak to peakSamp0: src = (t - tShift + N) % N
+                std::vector<int16_t> shifted(spkElems);
+                for (int ch = 0; ch < nChan; ++ch)
+                    for (int t = 0; t < nSamp; ++t) {
+                        const int src = (t - tShift + nSamp) % nSamp;
+                        shifted[static_cast<size_t>(ch * nSamp + t)] =
+                            tmpl[static_cast<size_t>(ch * nSamp + src)];
+                    }
+                tmpl = std::move(shifted);
+            }
+        }
+
         std::vector<int>   sh(static_cast<size_t>(N), 0);
         std::vector<float> sc(static_cast<size_t>(N), 0.0f);
         int rc = XcorrDispatch::compute(
@@ -2695,10 +2803,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             if (s == 0) continue;
             int16_t* w = wavBuf.data()
                 + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            std::vector<int16_t> tmp(spkElems, 0);
+            // Circular shift: newSpike[t] = oldSpike[(t + shift) % N].
+            // Derivation: score(lag) = Σ tmpl[s]·spike[(s+lag)%N] peaks at
+            // lag = bestLag when spike[(s+bestLag)%N] ≈ tmpl[s], so
+            // newSpike[t] = spike[(t+bestLag)%N] aligns the waveform.
+            std::vector<int16_t> tmp(spkElems);
             for (int t = 0; t < nSamp; ++t) {
-                const int src = t - s;
-                if (src < 0 || src >= nSamp) continue;
+                const int src = (t + s + nSamp) % nSamp;
                 for (int ch = 0; ch < nChan; ++ch)
                     tmp[static_cast<size_t>(ch * nSamp + t)] =
                         w[static_cast<size_t>(ch * nSamp + src)];
@@ -2859,101 +2970,271 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     };
 
     // -----------------------------------------------------------------------
-    // Write all updated records to binary files using random-access seeks.
-    // Only the cluster's positions are overwritten; no full file rewrite.
-    //
-    // .spk: spike p → byte offset p * bytesPerSpike
-    // .res: spike p → byte offset p * 8
-    // .fet: spike p → byte offset sizeof(int32_t) + p * timeDim * 8
-    // .clu: spike p → byte offset sizeof(int32_t) + p * 4
+    // Open raw signal file for re-extraction from .fil/.dat
+    // (still needed to fill wavBuf with real signal at corrected timestamps)
     // -----------------------------------------------------------------------
-    FILE* spkW = fopen(spkPath.toLocal8Bit().constData(), "r+b");
-    FILE* resW = fopen(resPath.toLocal8Bit().constData(), "r+b");
-    FILE* fetW = fopen(fetPath.toLocal8Bit().constData(), "r+b");
-    FILE* cluW = QFileInfo::exists(cluPath)
-                 ? fopen(cluPath.toLocal8Bit().constData(), "r+b")
-                 : nullptr;
+    const int totalNbChan = clusteringData->getTotalNbChannels();
+    const QList<int>& groupChannels = clusteringData->getCurrentChannels();
 
+    // Resolve .fil / .dat path
+    QString filPath;
+    {
+        const QString base = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
+        const QString noExt = base.left(base.lastIndexOf(QLatin1Char('.')));
+        if (QFileInfo::exists(noExt + QStringLiteral(".fil")))
+            filPath = noExt + QStringLiteral(".fil");
+        else
+            filPath = noExt + QStringLiteral(".dat");
+    }
+    FILE* filF = fopen(filPath.toLocal8Bit().constData(), "rb");
+    if (!filF)
+        log << "WARNING: cannot open raw file " << filPath
+            << " — waveforms will not be re-extracted\n";
+
+    const int64_t totalSamples = filF
+        ? (static_cast<int64_t>(QFileInfo(filPath).size())
+           / (static_cast<int64_t>(sizeof(short)) * totalNbChan))
+        : 0LL;
+
+    // -----------------------------------------------------------------------
+    // Write realignment results directly into the persistent .pending files.
+    // These were seeded from the originals on document open (and re-seeded
+    // after every save/reject), so they are always complete files ready for
+    // random-access writes.  The originals remain untouched until save.
+    // -----------------------------------------------------------------------
+    FILE* spkW = fopen(m_pendingSpkPath.toLocal8Bit().constData(), "r+b");
+    FILE* resW = fopen(m_pendingResPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(m_pendingFetPath.toLocal8Bit().constData(), "r+b");
     if (!spkW || !resW || !fetW) {
         if (spkW) fclose(spkW);
         if (resW) fclose(resW);
         if (fetW) fclose(fetW);
-        if (cluW) fclose(cluW);
-        log << "ERROR: cannot open files for writing\n";
+        if (filF) fclose(filF);
+        log << "ERROR: cannot open pending files for writing\n";
         return false;
     }
 
-    // We need the original clu id for each cluster spike before we start
-    // overwriting, because source and destination positions may overlap.
-    std::vector<int32_t> origCluIds(static_cast<size_t>(N), 0);
-    if (cluW) {
-        for (int64_t i = 0; i < N; ++i) {
-            const off_t off = (off_t)sizeof(int32_t)
-                            + (off_t)(gidx[static_cast<size_t>(i)]
-                                      * (int64_t)sizeof(int32_t));
-            fseeko(cluW, off, SEEK_SET);
-            fread(&origCluIds[static_cast<size_t>(i)], sizeof(int32_t), 1, cluW);
-        }
-    }
+    PendingRealign pending;
+    pending.bytesPerSpike  = bytesPerSpike;
+    pending.spkElems       = spkElems;
+    pending.timeDim        = timeDim;
+    pending.nFeatCols      = nFeatCols;
+    pending.records.reserve(static_cast<size_t>(N));
 
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
         const int64_t dest  = targetPos[static_cast<size_t>(j)];
         const int64_t ts    = newTs[static_cast<size_t>(csIdx)];
 
-        const int16_t* w = wavBuf.data()
+        int16_t* w = wavBuf.data()
             + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
 
-        // .spk
-        fseeko(spkW, (off_t)(dest * bytesPerSpike), SEEK_SET);
-        fwrite(w, 2, spkElems, spkW);
+        // Capture original in-memory values before any update (needed for reject)
+        PendingSpkRecord rec;
+        rec.destPos = dest;
+        rec.ts      = ts;
+        rec.origTs  = static_cast<int64_t>(
+            clusteringData->featureValue(
+                static_cast<dataType>(dest + 1),
+                static_cast<int>(timeDim)));  // timestamp is last dim
+        rec.origFet.reserve(nFeatCols);
+        for (int col = 0; col < nFeatCols; ++col)
+            rec.origFet.append(
+                clusteringData->featureValue(
+                    static_cast<dataType>(dest + 1), col + 1));
 
-        // .res
-        fseeko(resW, (off_t)(dest * (int64_t)sizeof(int64_t)), SEEK_SET);
-        fwrite(&ts, sizeof(int64_t), 1, resW);
-
-        // .fet
-        std::vector<int64_t> row = makeFetRow(csIdx, w, ts);
-        const off_t fetOff = (off_t)sizeof(int32_t)
-                           + (off_t)(dest * (int64_t)timeDim)
-                           * (off_t)sizeof(int64_t);
-        fseeko(fetW, fetOff, SEEK_SET);
-        fwrite(row.data(), sizeof(int64_t),
-               static_cast<size_t>(timeDim), fetW);
-
-        // .clu — preserve original cluster id
-        if (cluW) {
-            const int32_t id = origCluIds[static_cast<size_t>(csIdx)];
-            const off_t cluOff = (off_t)sizeof(int32_t)
-                               + (off_t)(dest * (int64_t)sizeof(int32_t));
-            fseeko(cluW, cluOff, SEEK_SET);
-            fwrite(&id, sizeof(int32_t), 1, cluW);
+        // Re-extract waveform from .fil/.dat at the new timestamp.
+        std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
+        if (filF && cumShift[static_cast<size_t>(csIdx)] != 0) {
+            const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
+            if (startSample >= 0 && startSample + nSamp <= totalSamples) {
+                const off_t rawOff = static_cast<off_t>(startSample)
+                                   * static_cast<off_t>(totalNbChan)
+                                   * static_cast<off_t>(sizeof(short));
+                if (fseeko(filF, rawOff, SEEK_SET) == 0) {
+                    std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
+                    if (fread(rawFrame.data(), sizeof(short),
+                              rawFrame.size(), filF) == rawFrame.size()) {
+                        for (int s = 0; s < nSamp; ++s) {
+                            for (int ci = 0; ci < nChan; ++ci) {
+                                const int16_t v =
+                                    rawFrame[static_cast<size_t>(
+                                        s * totalNbChan + groupChannels[ci])];
+                                spkRow[static_cast<size_t>(s * nChan + ci)] = v;
+                                w[static_cast<size_t>(ci * nSamp + s)] = v;
+                            }
+                        }
+                    } else {
+                        for (int s = 0; s < nSamp; ++s)
+                            for (int ch = 0; ch < nChan; ++ch)
+                                spkRow[static_cast<size_t>(s * nChan + ch)] =
+                                    w[static_cast<size_t>(ch * nSamp + s)];
+                    }
+                } else {
+                    for (int s = 0; s < nSamp; ++s)
+                        for (int ch = 0; ch < nChan; ++ch)
+                            spkRow[static_cast<size_t>(s * nChan + ch)] =
+                                w[static_cast<size_t>(ch * nSamp + s)];
+                }
+            } else {
+                for (int s = 0; s < nSamp; ++s)
+                    for (int ch = 0; ch < nChan; ++ch)
+                        spkRow[static_cast<size_t>(s * nChan + ch)] =
+                            w[static_cast<size_t>(ch * nSamp + s)];
+            }
+        } else {
+            for (int s = 0; s < nSamp; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    spkRow[static_cast<size_t>(s * nChan + ch)] =
+                        w[static_cast<size_t>(ch * nSamp + s)];
         }
 
-        // Update in-memory feature table and timestamp
+        rec.fetRow = makeFetRow(csIdx, w, ts);
+
+        // Write into the pending files (random-access, same layout as originals)
+        fseeko(spkW, static_cast<off_t>(dest) * static_cast<off_t>(bytesPerSpike), SEEK_SET);
+        fwrite(spkRow.data(), sizeof(int16_t), static_cast<size_t>(spkElems), spkW);
+
+        fseeko(resW, static_cast<off_t>(dest) * static_cast<off_t>(sizeof(int64_t)), SEEK_SET);
+        fwrite(&ts, sizeof(int64_t), 1, resW);
+
+        const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
+            + static_cast<off_t>(dest) * static_cast<off_t>(timeDim)
+              * static_cast<off_t>(sizeof(int64_t));
+        fseeko(fetW, fetOff, SEEK_SET);
+        fwrite(rec.fetRow.data(), sizeof(int64_t), static_cast<size_t>(timeDim), fetW);
+
+        // Update in-memory feature table and timestamp so scatter/feature
+        // views reflect the new alignment without requiring a save first.
         {
             QList<dataType> vals;
             vals.reserve(nFeatCols);
             for (int col = 0; col < nFeatCols; ++col)
-                vals.append(static_cast<dataType>(row[static_cast<size_t>(col)]));
+                vals.append(static_cast<dataType>(rec.fetRow[static_cast<size_t>(col)]));
             clusteringData->updateFeatureRow(
                 static_cast<dataType>(dest + 1), vals);
             clusteringData->updateTimestamp(
                 static_cast<dataType>(dest + 1),
                 static_cast<dataType>(ts));
         }
+
+        rec.spkRow = std::move(spkRow);  // keep copy for flush-to-original
+        pending.records.push_back(std::move(rec));
     }
 
     fclose(spkW);
     fclose(resW);
     fclose(fetW);
-    if (cluW) fclose(cluW);
+    if (filF) fclose(filF);
 
-    log << "Done. " << nShifted << " shifted, " << nSwapped << " reordered.\n";
+    // spkFileName already points to m_pendingSpkPath (set on open and kept
+    // permanently) — no redirect needed here.
+    m_pendingRealign.push_back(std::move(pending));
+
+    log << "Done. " << nShifted << " shifted, " << nSwapped
+        << " reordered. (pending save)\n";
+
+    // Capture after-mean for the review dialog.
+    if (meanAfter) {
+        meanAfter->resize(static_cast<int>(spkElems));
+        for (size_t e = 0; e < spkElems; ++e) {
+            double acc = 0.0;
+            for (int64_t i = 0; i < N; ++i)
+                acc += wavBuf[static_cast<size_t>(i) * spkElems + e];
+            (*meanAfter)[static_cast<int>(e)] = static_cast<float>(acc / N);
+        }
+    }
+
     return true;
 }
 
 void KlustersDoc::invalidateWaveformCache(int clusterId)
 {
     clusteringData->invalidateWaveformCache(clusterId);
+}
+
+void KlustersDoc::invalidateCorrelogramCache(int clusterId)
+{
+    clusteringData->invalidateCorrelogramCache(clusterId);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent pending files: init on open, commit+renew on save, reseed on reject
+// ---------------------------------------------------------------------------
+
+bool KlustersDoc::initPendingFiles()
+{
+    // Build the four pending paths from the current originals.
+    m_pendingSpkPath = m_origSpkPath + QStringLiteral(".pending");
+    m_pendingResPath = m_origResPath + QStringLiteral(".pending");
+    m_pendingFetPath = m_origFetPath + QStringLiteral(".pending");
+    m_pendingCluPath = docUrl       + QStringLiteral(".pending");
+
+    // Helper: overwrite dst with a fresh copy of src.
+    auto seedFile = [](const QString& src, const QString& dst) -> bool {
+        QFile::remove(dst);
+        if (!QFile::copy(src, dst)) {
+            qWarning() << "[initPendingFiles] copy failed:" << src << "->" << dst;
+            return false;
+        }
+        return true;
+    };
+
+    const bool ok = seedFile(m_origSpkPath, m_pendingSpkPath)
+                 && seedFile(m_origResPath, m_pendingResPath)
+                 && seedFile(m_origFetPath, m_pendingFetPath)
+                 && seedFile(docUrl,        m_pendingCluPath);
+
+    if (ok) {
+        // Redirect the waveform reader and clu writer to the pending files.
+        // They will remain here for the entire document session.
+        clusteringData->setSpkFileName(m_pendingSpkPath);
+        tmpCluFile = m_pendingCluPath;
+    }
+    return ok;
+}
+
+void KlustersDoc::commitAndRenewPending()
+{
+    // Step 1 — commit: copy each pending file over the original.
+    // QFile::copy refuses to overwrite, so remove the target first.
+    auto copyOver = [](const QString& src, const QString& dst) {
+        QFile::remove(dst);
+        if (!QFile::copy(src, dst))
+            qWarning() << "[commitAndRenewPending] copy failed:" << src << "->" << dst;
+    };
+    copyOver(m_pendingSpkPath, m_origSpkPath);
+    copyOver(m_pendingResPath, m_origResPath);
+    copyOver(m_pendingFetPath, m_origFetPath);
+    copyOver(m_pendingCluPath, docUrl);
+
+    // Clear the in-memory queue — all realignment batches are now on disk.
+    m_pendingRealign.clear();
+
+    // Step 2 — renew: re-seed the pending files from the fresh originals so
+    // the next realignment (or another save cycle) starts from a clean slate.
+    initPendingFiles();
+}
+
+void KlustersDoc::rejectLastRealign()
+{
+    if (m_pendingRealign.empty()) return;
+
+    const PendingRealign& p = m_pendingRealign.back();
+
+    // Restore in-memory feature/timestamp data.
+    for (const PendingSpkRecord& rec : p.records) {
+        clusteringData->updateFeatureRow(
+            static_cast<dataType>(rec.destPos + 1),
+            rec.origFet);
+        clusteringData->updateTimestamp(
+            static_cast<dataType>(rec.destPos + 1),
+            static_cast<dataType>(rec.origTs));
+    }
+
+    m_pendingRealign.pop_back();
+
+    // Re-seed pending files from the untouched originals so the waveform
+    // viewer immediately reflects the restored state.
+    initPendingFiles();
 }

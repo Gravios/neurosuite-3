@@ -8,17 +8,19 @@
  * -------------------
  * For lag τ in [-maxShift, +maxShift]:
  *
- *   The waveform buffer for spike i is padded with zeros outside [0, nSamples).
- *   For each lag τ:
+ *   num(τ)    = Σ_ch Σ_s  tmpl[ch,s] · spike[ch, (s+τ+N) % N]
+ *   spkNorm²  = Σ_ch Σ_s  spike[ch,s]²    (full energy, precomputed once)
+ *   tmplNorm² = Σ_ch Σ_s  tmpl[ch,s]²     (constant, precomputed once)
+ *   score(τ)  = num(τ) / sqrt(tmplNorm² · spkNorm²)
  *
- *   num(τ)      = Σ_ch Σ_s  tmpl[ch,s] · spike_padded[ch, s+τ]
- *   spkNorm²(τ) = Σ_ch Σ_s  spike_padded[ch, s+τ]²
- *   tmplNorm²   = Σ_ch Σ_s  tmpl[ch,s]²     (constant, precomputed once)
- *   score(τ)    = num(τ) / sqrt(tmplNorm² · spkNorm²(τ))
+ * Circular shift (wrap-around) is used instead of zero-padding because the
+ * data is high-pass filtered, so edge discontinuities are negligible and
+ * every lag has the same number of contributing samples — no normalization
+ * bias.  An already-aligned spike always scores highest at lag 0.
  *
- * Zero-padding (rather than "valid" mode) ensures the denominator is
- * consistent with the numerator at every lag and removes the bias toward
- * lag 0 that "valid" mode introduces.
+ * Sign: bestLag > 0 means the spike peak is late relative to the template.
+ * shifts_out[sp] = -bestLag so the caller subtracts bestLag from the
+ * timestamp, moving the spike earlier.
  *
  * Sign convention
  * ---------------
@@ -82,33 +84,39 @@ int xcorr_omp_compute(
         const int16_t* spk = waveforms + static_cast<ptrdiff_t>(sp)
                              * nChannels * nSamples;
 
+        // Precompute full spike energy (all samples, all channels).
+        // Using the full energy — rather than the windowed overlap at each lag
+        // — removes the normalization bias that would otherwise inflate scores
+        // at large lags (where fewer samples overlap) and cause drift on
+        // repeated realignment calls.
+        double spkEnergy = 0.0;
+        for (int ch = 0; ch < nChannels; ++ch)
+            for (int s = 0; s < nSamples; ++s) {
+                double v = static_cast<double>(spk[ch * nSamples + s]);
+                spkEnergy += v * v;
+            }
+        const double denom = sqrtTmplEnergy * std::sqrt(spkEnergy);
+
         float bestScore = -FLT_MAX;
         int   bestLag   = 0;
 
         for (int lag = -maxShift; lag <= maxShift; ++lag) {
-            double num       = 0.0;
-            double spkEnergy = 0.0;
+            double num = 0.0;
 
-            // Zero-padded: template index s pairs with spike index s+lag.
-            // Spike samples outside [0, nSamples) are treated as zero,
-            // contributing 0 to both numerator and spkEnergy.
+            // Circular shift: all samples always contribute.
             for (int ch = 0; ch < nChannels; ++ch) {
                 const int16_t* tch = tmpl + ch * nSamples;
                 const int16_t* sch = spk  + ch * nSamples;
                 for (int s = 0; s < nSamples; ++s) {
-                    int sLag = s + lag;
-                    if (sLag < 0 || sLag >= nSamples) continue; // zero pad
-                    double tv = static_cast<double>(tch[s]);
-                    double sv = static_cast<double>(sch[sLag]);
-                    num       += tv * sv;
-                    spkEnergy += sv * sv;
+                    int sLag = (s + lag + nSamples) % nSamples;
+                    num += static_cast<double>(tch[s])
+                         * static_cast<double>(sch[sLag]);
                 }
             }
 
-            double denom = sqrtTmplEnergy * std::sqrt(spkEnergy);
-            float  score = (denom > 1e-12)
-                           ? static_cast<float>(num / denom)
-                           : 0.0f;
+            float score = (denom > 1e-12)
+                          ? static_cast<float>(num / denom)
+                          : 0.0f;
 
             if (score > bestScore) {
                 bestScore = score;
@@ -119,7 +127,9 @@ int xcorr_omp_compute(
         // A peak at bestLag means the spike is shifted +bestLag samples
         // relative to the template.  Negate so the caller can simply add
         // shifts_out to the timestamp (moving the spike earlier).
-        shifts_out[sp] = (bestScore >= minScore) ? -bestLag : 0;
+        // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
+        // caller does newTs = ts + shifts_out to correct.
+        shifts_out[sp] = (bestScore >= minScore) ? bestLag : 0;
         scores_out[sp] = bestScore;
     }
 
