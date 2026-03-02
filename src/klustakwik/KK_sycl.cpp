@@ -801,9 +801,9 @@ void sycl_cstep(
 }
 
 void sycl_deletion_loss(
-    KK_GPU    *gpu,
-          float *h_Loss,
-    int MaxClusters)
+    KK_GPU  *gpu,
+    float   *h_Loss,
+    int      MaxClusters)
 {
     // Zero loss accumulators
     gpu->q.memset(gpu->d_Loss, 0, sizeof(float) * MaxClusters).wait();
@@ -813,31 +813,6 @@ void sycl_deletion_loss(
 
     gpu->q.memcpy(h_Loss, gpu->d_Loss, sizeof(float) * MaxClusters).wait();
 
-    // DEBUG: print first few Class/Class2 values and all Loss values
-    static int dbgCall = 0;
-    if (dbgCall++ < 3) {
-        const int nP = gpu->nPoints;
-        std::vector<int> hC1(nP), hC2(nP);
-        std::vector<float> hLP_c1(nP), hLP_c2(nP);
-        gpu->q.memcpy(hC1.data(), gpu->d_Class,  sizeof(int)*nP).wait();
-        gpu->q.memcpy(hC2.data(), gpu->d_Class2, sizeof(int)*nP).wait();
-        // Count how many points have c1==c2
-        int nSame = 0, nNoise = 0;
-        for (int p = 0; p < nP; p++) {
-            if (hC1[p] == hC2[p]) nSame++;
-            if (hC1[p] == 0) nNoise++;
-        }
-        fprintf(stderr, "[DBG sycl_deletion_loss call %d] nPoints=%d  c1==c2: %d/%d  c1==0(noise): %d/%d\n",
-                dbgCall-1, nP, nSame, nP, nNoise, nP);
-        // Print first 5 (c1, c2) pairs
-        for (int p = 0; p < std::min(5, nP); p++)
-            fprintf(stderr, "  p=%d c1=%d c2=%d\n", p, hC1[p], hC2[p]);
-        // Print non-zero losses
-        int nNonzero = 0;
-        for (int c = 0; c < MaxClusters; c++)
-            if (h_Loss[c] != 0.0f) { fprintf(stderr, "  d_Loss[%d]=%g\n", c, h_Loss[c]); nNonzero++; }
-        if (nNonzero == 0) fprintf(stderr, "  ALL d_Loss are zero!\n");
-    }
 }
 
 #endif // USE_SYCL
