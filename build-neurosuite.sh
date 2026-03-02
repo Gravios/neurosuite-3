@@ -1,47 +1,72 @@
 #!/usr/bin/env bash
 # =============================================================================
 # build-neurosuite.sh
-# Build and install all Neurosuite Qt6 packages in dependency order.
+# Build and install all NeuroSuite-3 packages on Linux (Ubuntu 24.04).
 #
 # Build order (dependency graph):
-#   1. libklustersshared   — shared library, no upstream deps
-#   2. klusters            — depends on libklustersshared
-#   3. neuroscope          — depends on libklustersshared
-#   4. ndmanager           — depends on libklustersshared
-#   5. ndmanager-plugins   — standalone (C/CUDA/OpenMP only, no Qt)
+#   1. nphys-data          — MIME types and icons; no compiler needed
+#   2. libklustersshared   — shared Qt6 library; all Qt apps depend on it
+#   3. klusters            — depends on libklustersshared
+#   4. neuroscope          — depends on libklustersshared
+#   5. ndmanager           — depends on libklustersshared
+#   6. ndmanager-plugins   — standalone C/C++ (no Qt); optional CUDA/FFmpeg
+#   7. klustakwik          — standalone C/C++; optional CUDA/HIP/SYCL
+#   8. spikerealign        — standalone C/C++; optional CUDA/HIP/SYCL
 #
-# Usage:
+# GPU BACKENDS (CUDA / HIP / SYCL)
+#   Auto-detected by CMake for klustakwik, spikerealign, klusters, and the
+#   CUDA-accelerated ndmanager-plugins (process_medianfilter, process_spikegrouper,
+#   process_medianthreshold).
+#   RTX 5070 Ti (Blackwell, sm_120) requires CUDA >= 12.8 and driver >= 570
+#   from NVIDIA's own repository — Ubuntu 24.04's stock cuda toolkit is too old.
+#   Pass --gpu-off to disable all GPU backends and build CPU-only.
+#
+# APT PREREQUISITES (Ubuntu 24.04)
+#   # Core build tools and libraries
+#   sudo apt-get install -y \
+#       build-essential cmake ninja-build git pkg-config \
+#       qt6-base-dev libgl-dev libxkbcommon-dev libxcb-cursor0 \
+#       libyaml-cpp-dev libxml2-dev libgsl-dev libsamplerate0-dev \
+#       libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+#       ffmpeg python3
+#
+#   # CUDA 12.8+ for RTX 5070 Ti (Blackwell / sm_120) — from NVIDIA repo:
+#   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+#   sudo dpkg -i cuda-keyring_1.1-1_all.deb && sudo apt-get update
+#   sudo apt-get install -y cuda-toolkit-12-8 nvidia-open
+#
+# USAGE
 #   ./build-neurosuite.sh [OPTIONS]
 #
-# Options:
-#   --prefix DIR     Install prefix (default: /usr/local)
-#   --build-dir DIR  Parent directory for build trees (default: ./build)
-#   --source-dir DIR Parent directory containing all source trees (default: .)
-#   --jobs N         Parallel make jobs (default: nproc)
-#   --no-install     Configure and build but skip installation
-#   --skip PKG       Skip a package; repeat to skip multiple
-#                    Valid names: libklustersshared klusters neuroscope
-#                                 ndmanager ndmanager-plugins
-#   --cuda-arch LIST Semicolon-separated CUDA arch list (default: auto-detect)
-#                    Example: --cuda-arch "86;89;120"
-#   --clean          Remove each package's build directory after it is
-#                    successfully installed. Has no effect with --no-install.
-#   --clean-on-fail  Remove a package's build directory only if its build or
-#                    install step fails (useful for CI; leaves trees on success
-#                    for incremental rebuilds, removes them on error so a retry
-#                    starts from a clean state rather than a broken cache).
-#   -h, --help       Show this help
+# OPTIONS
+#   --prefix     DIR   Install prefix                (default: /usr/local)
+#   --build-dir  DIR   Parent of build trees         (default: ./build)
+#   --source-dir DIR   src/ directory (default: ./src)
+#   --jobs       N     Parallel build jobs           (default: nproc)
+#   --cuda-arch  LIST  Semicolon-separated CUDA arch list
+#                      (default: auto — targets 86;89;100;120 when nvcc found)
+#                      Example: --cuda-arch "86;89;120"
+#   --gpu-off          Disable all GPU backends (CUDA / HIP / SYCL)
+#   --no-install       Build but do not install
+#   --only       PKG   Build only this package; repeat for multiple.
+#                      All other packages are skipped. Mutually exclusive
+#                      with --skip. Valid names:
+#                      nphys-data libklustersshared klusters neuroscope
+#                      ndmanager ndmanager-plugins klustakwik spikerealign
+#   --skip       PKG   Skip a package; repeat for multiple. Valid names:
+#                      nphys-data libklustersshared klusters neuroscope
+#                      ndmanager ndmanager-plugins klustakwik spikerealign
+#   --clean            Remove each package's build tree after install
+#   --clean-on-fail    Remove build tree only when a package fails
+#   -h, --help         Show this help
 #
-# Expected source tree layout (adjust with --source-dir):
-#   <source-dir>/
-#     libklustersshared-qt6/
-#     klusters-qt6/
-#     neuroscope-patched/      (or neuroscope-qt6/)
-#     ndmanager-patched/       (or ndmanager-qt6/)
-#     ndmanager-plugins-qt6/
-#
-# The script will automatically detect the correct directory name for
-# neuroscope and ndmanager (preferring the patched variant).
+# EXAMPLES
+#   ./build-neurosuite.sh
+#   ./build-neurosuite.sh --prefix ~/.local --jobs 8
+#   ./build-neurosuite.sh --only klusters
+#   ./build-neurosuite.sh --only klustakwik --only spikerealign --cuda-arch "120"
+#   ./build-neurosuite.sh --gpu-off --skip klustakwik --skip spikerealign
+#   ./build-neurosuite.sh --cuda-arch "120" --clean
 # =============================================================================
 
 set -euo pipefail
@@ -62,98 +87,102 @@ log()     { echo -e "${C_CYAN}[build]${C_RESET} $*"; }
 success() { echo -e "${C_GREEN}[  OK ]${C_RESET} $*"; }
 warn()    { echo -e "${C_YELLOW}[ WARN]${C_RESET} $*"; }
 error()   { echo -e "${C_RED}[FAIL ]${C_RESET} $*" >&2; }
-header()  { echo -e "\n${C_BOLD}══════════════════════════════════════════════${C_RESET}"; \
-             echo -e "${C_BOLD}  $*${C_RESET}"; \
-             echo -e "${C_BOLD}══════════════════════════════════════════════${C_RESET}"; }
+header()  { echo -e "\n${C_BOLD}══════════════════════════════════════════════${C_RESET}"
+            echo -e "${C_BOLD}  $*${C_RESET}"
+            echo -e "${C_BOLD}══════════════════════════════════════════════${C_RESET}"; }
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 PREFIX="/usr/local"
 BUILD_BASE="$(pwd)/build"
-SOURCE_BASE="$(pwd)"
-JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+SOURCE_BASE="$(pwd)/src"
+JOBS="$(nproc 2>/dev/null || echo 4)"
 DO_INSTALL=true
+GPU_OFF=false
 CLEAN=false
 CLEAN_ON_FAIL=false
 SKIP_PKGS=()
+ONLY_PKGS=()
 CUDA_ARCH=""
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --prefix)      PREFIX="$2";      shift 2 ;;
-        --build-dir)   BUILD_BASE="$2";  shift 2 ;;
-        --source-dir)  SOURCE_BASE="$2"; shift 2 ;;
-        --jobs)        JOBS="$2";        shift 2 ;;
-        --no-install)       DO_INSTALL=false;        shift   ;;
-        --clean)            CLEAN=true;              shift   ;;
-        --clean-on-fail)    CLEAN_ON_FAIL=true;      shift   ;;
-        --skip)             SKIP_PKGS+=("$2");       shift 2 ;;
-        --cuda-arch)   CUDA_ARCH="$2";   shift 2 ;;
+        --prefix)       PREFIX="$2";      shift 2 ;;
+        --build-dir)    BUILD_BASE="$2";  shift 2 ;;
+        --source-dir)   SOURCE_BASE="$2"; shift 2 ;;
+        --jobs)         JOBS="$2";        shift 2 ;;
+        --cuda-arch)    CUDA_ARCH="$2";   shift 2 ;;
+        --gpu-off)      GPU_OFF=true;     shift   ;;
+        --no-install)   DO_INSTALL=false; shift   ;;
+        --clean)        CLEAN=true;       shift   ;;
+        --clean-on-fail) CLEAN_ON_FAIL=true; shift ;;
+        --only)         ONLY_PKGS+=("$2"); shift 2 ;;
+        --skip)         SKIP_PKGS+=("$2"); shift 2 ;;
         -h|--help)
-            sed -n '3,52p' "$0" | sed 's/^# \?//'
+            sed -n '3,62p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         *) error "Unknown option: $1"; exit 1 ;;
     esac
 done
 
-# ── Helper: check if a package is in the skip list ────────────────────────────
+# ── Validate --only / --skip mutual exclusion ─────────────────────────────────
+if [[ ${#ONLY_PKGS[@]} -gt 0 ]] && [[ ${#SKIP_PKGS[@]} -gt 0 ]]; then
+    error "--only and --skip are mutually exclusive."
+    exit 1
+fi
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 should_skip() {
     local pkg="$1"
+    # --only mode: skip everything not explicitly listed
+    if [[ ${#ONLY_PKGS[@]} -gt 0 ]]; then
+        for o in "${ONLY_PKGS[@]}"; do
+            [[ "$o" == "$pkg" ]] && return 1  # in the list → do not skip
+        done
+        return 0  # not in the list → skip
+    fi
+    # --skip mode: skip packages explicitly listed
     for s in "${SKIP_PKGS[@]+"${SKIP_PKGS[@]}"}"; do
         [[ "$s" == "$pkg" ]] && return 0
     done
     return 1
 }
 
-# ── Helper: resolve which of several candidate dirs exists ───────────────────
-resolve_src() {
-    # resolve_src <label> <candidate1> [<candidate2> ...]
-    local label="$1"; shift
-    for candidate in "$@"; do
-        local full="${SOURCE_BASE}/${candidate}"
-        if [[ -f "${full}/CMakeLists.txt" ]]; then
-            echo "$full"
-            return 0
-        fi
-    done
-    error "Cannot find source directory for ${label}."
-    error "Looked for (under ${SOURCE_BASE}/):"
-    for candidate in "$@"; do error "  ${candidate}"; done
-    exit 1
-}
-
-# ── Helper: remove a build directory (with sudo if needed) ───────────────────
 remove_build() {
-    local build="$1"
-    local label="$2"
-    if [[ -d "${build}" ]]; then
-        log "Removing build tree: ${build}"
-        if [[ -w "${build}" ]] || [[ -w "$(dirname "${build}")" ]]; then
-            rm -rf "${build}"
-        else
-            sudo rm -rf "${build}"
-        fi
-        log "Build tree removed for ${label}."
+    local build="$1" label="$2"
+    [[ -d "${build}" ]] || return 0
+    log "Removing build tree: ${build}"
+    if [[ -w "${build}" ]] || [[ -w "$(dirname "${build}")" ]]; then
+        rm -rf "${build}"
+    else
+        sudo rm -rf "${build}"
     fi
+    log "Build tree removed for ${label}."
 }
 
-# ── Helper: build + (optionally) install one CMake package ───────────────────
 cmake_build() {
-    local label="$1"
-    local src="$2"
+    local label="$1" src="$2"
     local build="${BUILD_BASE}/${label}"
     shift 2
-    # Any remaining args are passed as extra -D flags to cmake
+
+    if should_skip "${label}"; then
+        warn "Skipping ${label} (--skip requested)"
+        return 0
+    fi
 
     header "Building ${label}"
     log "Source : ${src}"
     log "Build  : ${build}"
     log "Prefix : ${PREFIX}"
 
+    if [[ ! -f "${src}/CMakeLists.txt" ]]; then
+        error "Source not found: ${src}"
+        exit 1
+    fi
+
     mkdir -p "${build}"
 
-    # Inner function so we can trap failure for --clean-on-fail
     _do_build_and_install() {
         log "Configuring…"
         cmake -S "${src}" -B "${build}" \
@@ -167,8 +196,8 @@ cmake_build() {
 
         if ${DO_INSTALL}; then
             log "Installing…"
-            # Use sudo only if the prefix is not user-writable
-            if [[ -w "${PREFIX}" ]] || [[ -w "$(dirname "${PREFIX}")" && ! -e "${PREFIX}" ]]; then
+            if [[ -w "${PREFIX}" ]] || \
+               { [[ -w "$(dirname "${PREFIX}")" ]] && [[ ! -e "${PREFIX}" ]]; }; then
                 cmake --install "${build}"
             else
                 warn "Prefix ${PREFIX} not writable — using sudo for install"
@@ -181,7 +210,6 @@ cmake_build() {
     }
 
     if ${CLEAN_ON_FAIL}; then
-        # Run in a subshell so we can catch failure without stopping the script
         if ! ( _do_build_and_install "$@" ); then
             error "${label} failed."
             remove_build "${build}" "${label}"
@@ -191,119 +219,174 @@ cmake_build() {
         _do_build_and_install "$@"
     fi
 
-    # --clean: remove build tree after a successful install
     if ${CLEAN} && ${DO_INSTALL}; then
         remove_build "${build}" "${label}"
     fi
 }
 
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
-header "Neurosuite Qt6 Build Script"
+# =============================================================================
+# Pre-flight checks
+# =============================================================================
+header "NeuroSuite-3 Linux Build Script"
 log "Prefix     : ${PREFIX}"
 log "Build base : ${BUILD_BASE}"
 log "Source base: ${SOURCE_BASE}"
 log "Jobs       : ${JOBS}"
 log "Install    : ${DO_INSTALL}"
+log "GPU off    : ${GPU_OFF}"
+log "CUDA arch  : ${CUDA_ARCH:-auto}"
 log "Clean      : ${CLEAN} (on-fail: ${CLEAN_ON_FAIL})"
+[[ ${#ONLY_PKGS[@]} -gt 0 ]] && log "Only       : ${ONLY_PKGS[*]}"
 [[ ${#SKIP_PKGS[@]} -gt 0 ]] && log "Skipping   : ${SKIP_PKGS[*]}"
 
-for tool in cmake ninja gcc g++; do
-    if ! command -v "$tool" &>/dev/null; then
-        if [[ "$tool" == "ninja" ]]; then
-            warn "ninja not found — cmake will use Makefiles instead"
-        else
-            error "Required tool not found: ${tool}"
-            exit 1
-        fi
+# Required tools
+for tool in cmake g++ git pkg-config; do
+    if ! command -v "${tool}" &>/dev/null; then
+        error "Required tool not found: ${tool}"
+        error "Install with: sudo apt-get install -y build-essential cmake git pkg-config"
+        exit 1
     fi
 done
+success "Build toolchain found (cmake $(cmake --version | head -1 | awk '{print $3}'), $(g++ --version | head -1))"
 
-if ! command -v qmake6 &>/dev/null && ! command -v qt6-config &>/dev/null; then
-    if ! cmake --find-package -DNAME=Qt6 -DCOMPILER_ID=GNU -DLANGUAGE=CXX -DMODE=EXIST \
-            &>/dev/null 2>&1; then
-        warn "Qt6 may not be installed or not on CMAKE_PREFIX_PATH."
-        warn "Set CMAKE_PREFIX_PATH or Qt6_DIR if the build fails."
+# Warn if ninja is absent (cmake falls back to Makefiles — still works)
+if ! command -v ninja &>/dev/null; then
+    warn "ninja not found — CMake will use Makefiles (install ninja-build for faster builds)"
+fi
+
+# Qt6 sanity check
+if ! pkg-config --exists Qt6Core 2>/dev/null && \
+   ! dpkg -l qt6-base-dev &>/dev/null 2>&1; then
+    warn "qt6-base-dev may not be installed. Qt-dependent packages will fail."
+    warn "Install with: sudo apt-get install -y qt6-base-dev libgl-dev libxkbcommon-dev"
+fi
+
+# CUDA check (informational only — packages auto-detect at configure time)
+if command -v nvcc &>/dev/null; then
+    NVCC_VER=$(nvcc --version | grep -oP 'release \K[0-9.]+')
+    success "CUDA found: nvcc ${NVCC_VER}"
+    if [[ -n "${NVCC_VER}" ]]; then
+        NVCC_MAJOR="${NVCC_VER%%.*}"
+        if (( NVCC_MAJOR < 12 )); then
+            warn "CUDA ${NVCC_VER} detected. RTX 5070 Ti (sm_120) requires CUDA >= 12.8."
+            warn "Install cuda-toolkit-12-8 from NVIDIA's repository."
+        fi
+    fi
+else
+    if ${GPU_OFF}; then
+        log "nvcc not found — GPU backends disabled (--gpu-off)."
+    else
+        warn "nvcc not found — CUDA backends will be skipped by CMake."
+        warn "For RTX 5070 Ti support, install cuda-toolkit-12-8 from NVIDIA's repo."
     fi
 fi
 
+# Verify all source trees exist under src/
+log "Verifying source trees under ${SOURCE_BASE} …"
+MISSING=0
+for pkg in nphys-data libklustersshared klusters neuroscope ndmanager \
+           ndmanager-plugins klustakwik spikerealign; do
+    if [[ ! -f "${SOURCE_BASE}/${pkg}/CMakeLists.txt" ]]; then
+        error "Source tree not found: ${SOURCE_BASE}/${pkg}"
+        MISSING=1
+    fi
+done
+if [[ "${MISSING}" -eq 1 ]]; then
+    error "Run this script from the neurosuite-3 repository root, or pass --source-dir <repo>/src."
+    exit 1
+fi
+success "All source trees found."
+
 mkdir -p "${BUILD_BASE}"
 
-# ── Resolve source directories ────────────────────────────────────────────────
-SRC_SHARED=$(resolve_src "libklustersshared" \
-    "libklustersshared-qt6" "libklustersshared")
-
-SRC_KLUSTERS=$(resolve_src "klusters" \
-    "klusters-qt6" "klusters")
-
-SRC_NEUROSCOPE=$(resolve_src "neuroscope" \
-    "neuroscope-patched" "neuroscope-qt6" "neuroscope")
-
-SRC_NDMANAGER=$(resolve_src "ndmanager" \
-    "ndmanager-patched" "ndmanager-qt6" "ndmanager")
-
-SRC_PLUGINS=$(resolve_src "ndmanager-plugins" \
-    "ndmanager-plugins-qt6" "ndmanager-plugins")
+# ── GPU flag assembly ─────────────────────────────────────────────────────────
+GPU_FLAGS=()
+if ${GPU_OFF}; then
+    GPU_FLAGS=(-DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF)
+    log "GPU backends: disabled (--gpu-off)"
+fi
+CUDA_ARCH_FLAG=()
+if [[ -n "${CUDA_ARCH}" ]]; then
+    CUDA_ARCH_FLAG=("-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}")
+    log "CUDA arch override: ${CUDA_ARCH}"
+fi
 
 # ── Record start time ─────────────────────────────────────────────────────────
 T_START=$(date +%s)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 1. libklustersshared
-# Must be installed before any downstream package is configured, because
-# klusters/neuroscope/ndmanager all call find_package(LibKlustersShared).
-# ══════════════════════════════════════════════════════════════════════════════
-if should_skip "libklustersshared"; then
-    warn "Skipping libklustersshared (--skip requested)"
-else
-    cmake_build "libklustersshared" "${SRC_SHARED}"
-fi
+# =============================================================================
+# 1/8  nphys-data
+# No compiler required. Installs MIME types and hicolor icons.
+# update-mime-database and gtk-update-icon-cache are called post-install
+# by the system if xdg-utils is present.
+# =============================================================================
+cmake_build "nphys-data" "${SOURCE_BASE}/nphys-data"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. klusters
-# ══════════════════════════════════════════════════════════════════════════════
-if should_skip "klusters"; then
-    warn "Skipping klusters (--skip requested)"
-else
-    cmake_build "klusters" "${SRC_KLUSTERS}"
-fi
+# =============================================================================
+# 2/8  libklustersshared
+# Deps: Qt6 (Core, Gui, Widgets), yaml-cpp
+# Must be fully installed before klusters, neuroscope, and ndmanager are
+# configured — they all call find_package(LibKlustersShared 2.1.0 REQUIRED).
+# =============================================================================
+cmake_build "libklustersshared" "${SOURCE_BASE}/libklustersshared"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. neuroscope
-# ══════════════════════════════════════════════════════════════════════════════
-if should_skip "neuroscope"; then
-    warn "Skipping neuroscope (--skip requested)"
-else
-    cmake_build "neuroscope" "${SRC_NEUROSCOPE}"
-fi
+# =============================================================================
+# 3/8  klusters
+# Deps: Qt6 (Core, Gui, Widgets, Xml, PrintSupport), libklustersshared
+# Optional: OpenMP (auto, via libgomp bundled with GCC), CUDA, HIP, SYCL
+# =============================================================================
+cmake_build "klusters" "${SOURCE_BASE}/klusters" \
+    "${GPU_FLAGS[@]+"${GPU_FLAGS[@]}"}" \
+    "${CUDA_ARCH_FLAG[@]+"${CUDA_ARCH_FLAG[@]}"}"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. ndmanager
-# ══════════════════════════════════════════════════════════════════════════════
-if should_skip "ndmanager"; then
-    warn "Skipping ndmanager (--skip requested)"
-else
-    cmake_build "ndmanager" "${SRC_NDMANAGER}"
-fi
+# =============================================================================
+# 4/8  neuroscope
+# Deps: Qt6 (Core, Gui, Widgets, Xml, PrintSupport), libklustersshared
+# =============================================================================
+cmake_build "neuroscope" "${SOURCE_BASE}/neuroscope"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. ndmanager-plugins
-# Standalone: pure C/C++ with optional CUDA and OpenMP.
-# No Qt dependency; no libklustersshared dependency.
-# CUDA is auto-detected by CMake's check_language(CUDA).
-# Override arch list with --cuda-arch "86;89;120" if needed.
-# ══════════════════════════════════════════════════════════════════════════════
-if should_skip "ndmanager-plugins"; then
-    warn "Skipping ndmanager-plugins (--skip requested)"
-else
-    EXTRA_PLUGIN_FLAGS=()
-    if [[ -n "${CUDA_ARCH}" ]]; then
-        EXTRA_PLUGIN_FLAGS+=("-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}")
-        log "CUDA arch override: ${CUDA_ARCH}"
-    fi
-    cmake_build "ndmanager-plugins" "${SRC_PLUGINS}" "${EXTRA_PLUGIN_FLAGS[@]+"${EXTRA_PLUGIN_FLAGS[@]}"}"
-fi
+# =============================================================================
+# 5/8  ndmanager
+# Deps: Qt6 (Core, Gui, Widgets, Xml), libklustersshared
+# =============================================================================
+cmake_build "ndmanager" "${SOURCE_BASE}/ndmanager"
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# =============================================================================
+# 6/8  ndmanager-plugins
+# Deps: LibXml2 (REQUIRED), GSL (REQUIRED), pkg-config
+# Optional: OpenMP, libsamplerate (system pkg recommended over vendored 0.1.8),
+#           FFmpeg/libav (process_extractleds), CUDA (process_medianfilter,
+#           process_medianthreshold, process_spikegrouper)
+# No Qt6 or libklustersshared dependency.
+# =============================================================================
+cmake_build "ndmanager-plugins" "${SOURCE_BASE}/ndmanager-plugins" \
+    "${CUDA_ARCH_FLAG[@]+"${CUDA_ARCH_FLAG[@]}"}" \
+    "${GPU_FLAGS[@]+"${GPU_FLAGS[@]}"}"
+
+# =============================================================================
+# 7/8  klustakwik
+# Deps: OpenMP (optional, auto via GCC libgomp)
+# Optional GPU: CUDA > HIP > SYCL (auto-detected, priority order)
+# NOTE: If Intel oneAPI is installed and USE_SYCL is not explicitly OFF,
+#       CMakeLists.txt will auto-select icpx as C++ compiler before project().
+#       Pass --gpu-off to force GCC and avoid this.
+# =============================================================================
+cmake_build "klustakwik" "${SOURCE_BASE}/klustakwik" \
+    "${GPU_FLAGS[@]+"${GPU_FLAGS[@]}"}" \
+    "${CUDA_ARCH_FLAG[@]+"${CUDA_ARCH_FLAG[@]}"}"
+
+# =============================================================================
+# 8/8  spikerealign
+# Deps: OpenMP (optional)
+# Optional GPU: CUDA > HIP > SYCL (auto-detected)
+# =============================================================================
+cmake_build "spikerealign" "${SOURCE_BASE}/spikerealign" \
+    "${GPU_FLAGS[@]+"${GPU_FLAGS[@]}"}" \
+    "${CUDA_ARCH_FLAG[@]+"${CUDA_ARCH_FLAG[@]}"}"
+
+# =============================================================================
+# Post-install
+# =============================================================================
 T_END=$(date +%s)
 T_ELAPSED=$(( T_END - T_START ))
 T_MIN=$(( T_ELAPSED / 60 ))
@@ -311,19 +394,71 @@ T_SEC=$(( T_ELAPSED % 60 ))
 
 header "Build complete"
 success "All packages built in ${T_MIN}m ${T_SEC}s."
+
 if ${DO_INSTALL}; then
     success "Installed to: ${PREFIX}"
+
     if ${CLEAN}; then
         success "Build trees removed (--clean)."
     else
         log "Build trees kept in: ${BUILD_BASE}"
         log "(Re-run with --clean to remove them, or delete manually.)"
     fi
-    log ""
-    log "If ${PREFIX}/lib is not in your library path, add it:"
-    log "  echo '${PREFIX}/lib' | sudo tee /etc/ld.so.conf.d/neurosuite.conf"
-    log "  sudo ldconfig"
-    log ""
-    log "If ${PREFIX}/bin is not in PATH:"
-    log "  export PATH=\"${PREFIX}/bin:\$PATH\""
+
+    # ── ldconfig — register the new shared library ────────────────────────────
+    # libklustersshared installs its .so into ${PREFIX}/lib. Tell the dynamic
+    # linker about it so klusters, neuroscope and ndmanager can find it at
+    # runtime without requiring LD_LIBRARY_PATH.
+    if [[ "${PREFIX}" == /usr* ]] || [[ "${PREFIX}" == /opt* ]]; then
+        LDCONF_FILE="/etc/ld.so.conf.d/neurosuite.conf"
+        if [[ ! -f "${LDCONF_FILE}" ]] || \
+           ! grep -qF "${PREFIX}/lib" "${LDCONF_FILE}" 2>/dev/null; then
+            log "Registering ${PREFIX}/lib with ldconfig…"
+            echo "${PREFIX}/lib" | sudo tee "${LDCONF_FILE}" > /dev/null
+        fi
+        sudo ldconfig
+        success "ldconfig updated."
+    else
+        warn "Non-system prefix (${PREFIX}) — ldconfig not run automatically."
+        warn "Add ${PREFIX}/lib to your library path:"
+        log "  export LD_LIBRARY_PATH=\"${PREFIX}/lib:\${LD_LIBRARY_PATH:-}\""
+        log "  # or add permanently:"
+        log "  echo '${PREFIX}/lib' | sudo tee /etc/ld.so.conf.d/neurosuite.conf"
+        log "  sudo ldconfig"
+    fi
+
+    # ── avconv compatibility symlink ──────────────────────────────────────────
+    # ndm_transcodevideo calls 'avconv', which was replaced by 'ffmpeg'.
+    # Create a symlink so the script works out of the box.
+    if command -v ffmpeg &>/dev/null && ! command -v avconv &>/dev/null; then
+        FFMPEG_PATH="$(command -v ffmpeg)"
+        AVCONV_DEST="/usr/local/bin/avconv"
+        log "Creating avconv → ffmpeg symlink for ndm_transcodevideo…"
+        if [[ -w "$(dirname "${AVCONV_DEST}")" ]]; then
+            ln -sf "${FFMPEG_PATH}" "${AVCONV_DEST}"
+        else
+            sudo ln -sf "${FFMPEG_PATH}" "${AVCONV_DEST}"
+        fi
+        success "avconv symlink created: ${AVCONV_DEST} → ${FFMPEG_PATH}"
+    fi
+
+    # ── PATH and verification hints ───────────────────────────────────────────
+    echo ""
+    log "─── Next steps ──────────────────────────────────────────────"
+    echo ""
+
+    if [[ ":${PATH}:" != *":${PREFIX}/bin:"* ]]; then
+        log "Add NeuroSuite to PATH (open a new terminal after):"
+        echo "    echo 'export PATH=\"${PREFIX}/bin:\$PATH\"' >> ~/.bashrc"
+        echo "    source ~/.bashrc"
+        echo ""
+    fi
+
+    log "Verify the installation:"
+    echo "    klusters --version"
+    echo "    neuroscope --version"
+    echo "    ndmanager --version"
+    echo "    KlustaKwik"
+    echo "    SpikeRealign"
+    echo ""
 fi
