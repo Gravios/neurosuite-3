@@ -9,7 +9,7 @@ Klusters is an interactive manual spike-sorting application. It loads the featur
 | Dependency | Purpose | Required |
 |---|---|---|
 | Qt6 (Core, Gui, Widgets, Xml, PrintSupport) | UI framework | Yes |
-| libklustersshared | Shared Qt6 widget library | Yes — build first |
+| libklustersshared | Shared YAML layer and widget library | Yes — build first |
 
 `libklustersshared` is not available as a distro package and must be built from source before klusters.
 
@@ -26,7 +26,7 @@ klusters session.xml
 klusters session.yaml
 ```
 
-When opened from a `.fet.N` file, klusters automatically locates the paired `.clu.N`, `.spk.N`, and `.xml` (or `.yaml`) files in the same directory.
+When opened from a `.fet.N` file, klusters automatically locates the paired `.clu.N`, `.spk.N`, and `.xml` (or `.yaml`) parameter file in the same directory. Both XML and YAML formats are supported and detected from the file extension.
 
 ---
 
@@ -38,83 +38,85 @@ When opened from a `.fet.N` file, klusters automatically locates the paired `.cl
 | `session.clu.N` | Cluster assignments — read on open, **overwritten on save** |
 | `session.spk.N` | Spike waveforms — read for the Waveform View |
 | `session.xml` / `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry) |
-
-Saving writes only the `.clu.N` file. Cluster metadata (structure, type, isolation distance, quality, notes) is written back into the parameter file `<units>` block.
+| `session.res.N` | Spike timestamps — read when available; used by the Trace View |
+| `session.dat` / `session.fil` | Raw signal — loaded by Trace View when present |
+| `session.#.clu.N` | Autosave files written periodically by the background save thread |
 
 ---
 
 ## Views
 
-**Cluster View** — 2D scatter plot of feature space. X and Y axes are freely selectable feature dimensions. Tools: Zoom (`Z`), New Cluster (`C`), Split (`S`), Delete Noisy Spikes (`N`), Delete Artefact Spikes (`A`), Select Time (`W`).
+Klusters supports multiple synchronised views that can be docked, floated, or closed independently.
 
-**Waveform View** — spike waveforms coloured by cluster. Sample mode (random subset) or time-frame mode (`T`). Toggle overlay/side-by-side with `O`, mean±SD with `M`.
+### Cluster View (scatter plot)
 
-**Correlation View** — auto- and cross-correlograms as a matrix of histograms. Scaling: by maximum (`Shift+M`), by asymptote (`Shift+A`), or uniform counts (`Shift+U`).
+Displays spike feature vectors as a 2-D scatter plot. The x/y axes can be assigned to any feature dimension via a pop-up menu. Points are coloured by cluster membership. Selections made here propagate instantly to all other views.
 
-**Trace View** — raw filtered signal (`.fil`) with spike tick marks. Requires `session.fil` to be present.
+Multiple Cluster Views can be open simultaneously with different axis pairs, making it straightforward to assess cluster quality in several projection planes at once.
 
-**Grouping Assistant** — adds an Error Matrix showing cluster pair misclassification probabilities. Update with `U`.
+### Waveform View
+
+Shows the mean ± SD waveform for each cluster on each channel of the electrode group. Overlays from multiple clusters can be enabled for direct comparison.
+
+### Autocorrelogram / Cross-correlogram View
+
+Displays per-cluster autocorrelograms and between-cluster cross-correlograms. Computed on a background thread to avoid blocking the UI.
+
+### Error Matrix View
+
+Evaluates cluster separation quality using the Grouping Assistant's probabilistic misclassification estimator (`GroupingAssistant::computeMeanProbabilities()`). Fills a cluster × cluster matrix where entry (c1, c2) is the mean posterior probability that a spike of cluster c1 actually belongs to c2. Clusters with high off-diagonal entries are poor candidates for merging and good candidates for further splitting.
+
+### Trace View
+
+Shows the raw wideband or high-pass filtered signal. Spike timestamps from the current group are overlaid as tick marks. Opens `session.dat` or `session.fil` using parameters from the session file.
 
 ---
 
-## Key cluster operations
+## Cluster editing operations
 
-| Action | Shortcut |
+All operations are undoable (Edit → Undo / Ctrl+Z) and redoable.
+
+| Operation | How |
 |---|---|
-| Group (merge) selected clusters | `G` |
-| Delete as artefact | `Shift+Del` |
-| Delete as noise | `Del` |
-| Renumber clusters | `R` |
-| Undo | `Ctrl+Z` |
-| Save | `Ctrl+S` |
-| Recluster (external program) | `Shift+R` |
-
-**Select All Except 0 and 1** (`Ctrl+Shift+A`) selects all user-defined clusters — use this before **Recluster** to re-run KlustaKwik on the entire sorting.
+| Select clusters | Click or lasso in scatter plot; Ctrl+click for multi-select |
+| Move spikes | Drag a lasso around spikes in scatter plot, then assign to target cluster |
+| Merge clusters | Select two or more clusters, then Edit → Merge |
+| Split a cluster | Select one cluster, draw a split boundary, Edit → Split |
+| Delete spikes (→ noise) | Select spikes, Edit → Move to Noise (assigns to cluster 1) |
+| Undo / Redo | Edit → Undo / Redo; full undo stack maintained for the session |
 
 ---
 
-## Reclustering integration
+## Automatic reclustering (KlustaKwik)
 
-Configure the executable path and arguments in **Settings → Preferences**. On triggering recluster (`Shift+R`):
+Klusters can launch KlustaKwik on the current electrode group directly from the GUI:
 
-1. A `.fet` file is written containing only spikes from selected clusters.
-2. The configured executable launches as a child process; output streams into a Process View tab.
-3. On completion, new `.clu` assignments are read back and all views update.
+1. Select the clusters to recluster (or select all).
+2. Choose **Actions → Recluster** (or the toolbar button).
+3. KlustaKwik runs as a subprocess using the parameters in **Settings → Preferences → KlustaKwik**. Its stdout streams into the embedded process widget.
+4. When KlustaKwik finishes, klusters reloads the `.clu.N` file automatically and the new assignment is reflected in all views.
 
----
-
-## Preferences
-
-**Settings → Preferences:**
-
-- **Undo depth** (default 3)
-- **Background colour**
-- **Channel positions** — vertical layout in Waveform and Trace views; should match the physical probe geometry
-- **Reclustering executable** — e.g. `/usr/local/bin/KlustaKwik`
-- **Reclustering arguments** — e.g. `-MinClusters 2 -MaxClusters 20`
-- **Autosave** — enable and set interval in minutes
+KlustaKwik parameters passed by klusters are set in the Preferences dialog. The executable path defaults to `KlustaKwik` on `PATH`.
 
 ---
 
-## Full keyboard reference
+## Spike realignment
 
-### Tools (Cluster View)
-`Z` zoom · `C` new cluster · `S` split · `A` delete artefact spikes · `N` delete noisy spikes · `W` select time · `+`/`-` scatter point size
+Klusters includes interactive spike realignment via normalised cross-correlation, using the same algorithm as the standalone `SpikeRealign` tool. Configure the executable path and default arguments in **Settings → Preferences → General → Realignment**.
 
-### Actions
-`G` group · `Del` delete as noise · `Shift+Del` delete as artefact · `R` renumber · `U` update error matrix · `Shift+R` recluster
+For batch realignment of entire sessions outside the GUI, use [SpikeRealign](../spikerealign/README.md) directly.
 
-### Waveforms
-`T` time-frame/sample toggle · `O` overlay toggle · `M` mean+SD toggle · `I`/`D` amplitude up/down
+---
 
-### Correlations
-`Shift+M` scale by max · `Shift+A` scale by asymptote · `Shift+U` uniform scale · `L` asymptote line · `Shift+I`/`Shift+D` amplitude
+## Autosave and crash recovery
 
-### Traces
-`Ctrl+Shift+I`/`D` all-channel amplitude · `Ctrl+Shift+F`/`B` next/previous spike · `Ctrl+L` channel labels
+A configurable background thread periodically writes `session.#.clu.N` files (where `#` is the save index) so work is not lost on crash. The autosave interval and whether autosave is enabled are set in **Settings → Preferences → General**. On restart, klusters detects orphaned autosave files and offers to restore from them.
 
-### File and display
-`Ctrl+O` open · `Ctrl+S` save · `Ctrl+Shift+S` renumber and save · `Ctrl+Z` undo · `Ctrl+Shift+Z` redo · `Ctrl+A` select all · `Ctrl+Shift+A` select all except 0 and 1 · `Ctrl+W` close display · `Ctrl+R` rename display
+---
+
+## GPU acceleration (Grouping Assistant)
+
+The Error Matrix computation (`GroupingAssistant`) uses the same GPU dispatch mechanism as KlustaKwik. If a CUDA, HIP, or SYCL backend is available at build time, the posterior probability matrix is computed on the GPU. The CPU path (OpenMP) is always compiled as a fallback.
 
 ---
 

@@ -6,6 +6,14 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology toolchain.
 
 ## Programs
 
+### [libklustersshared](libklustersshared/README.md)
+
+Shared library providing the canonical YAML parameter-file implementation. Contains `ParameterYamlReader`, `ParameterYamlWriter`, and `ParameterYamlModifier` — the only classes that parse or write YAML in the entire toolchain — plus shared data types and GUI widget infrastructure. ndmanager and klusters both depend on it; neuroscope does not.
+
+**Depends on:** Qt6, yaml-cpp
+
+---
+
 ### [ndmanager](ndmanager/README.md)
 
 GUI session manager. Opens a `.xml` (or `.yaml`) parameter file and provides a tabbed interface for editing all acquisition and processing parameters. Launches the `ndmanager-plugins` preprocessing pipeline step-by-step or as a full batch. The central starting point for any recording session.
@@ -62,7 +70,7 @@ Standalone batch waveform realignment tool. Reads binary `.spk/.res/.clu/.fet` f
 libklustersshared → ndmanager
                  → klusters
 ndmanager-plugins  (independent)
-neuroscope         (independent)
+neuroscope         (independent — does not use libklustersshared)
 klustakwik         (independent)
 spikerealign       (independent)
 ```

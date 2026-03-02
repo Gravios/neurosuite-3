@@ -198,6 +198,52 @@ Converts video to MPEG-1 or H.264 using FFmpeg.
 
 ---
 
+## Electrode group discovery
+
+### `ndm_spikegrouper` — automatic spike group detection (.fil → updated YAML)
+
+Discovers optimal spike detection channel groups from the high-pass filtered data. Must be run after `ndm_hipass` and before `ndm_extractspikes`.
+
+**Algorithm:**
+
+1. Detects threshold crossings on every channel within each existing `spikeDetection` group.
+2. Computes a spike-coincidence similarity matrix: how often do two channels fire within the same threshold-crossing window?
+3. Uses agglomerative Ward clustering with silhouette-score model selection to find the optimal number of sub-groups.
+4. Greedily merges adjacent sub-groups whose inter-group spike coincidence is high (i.e. the split would separate the same unit across groups). Two hard constraints apply: merged group size ≤ `maxMergedSize` (default 12 channels) and each group must have ≥ `minChannels` (default 4).
+5. Replaces the `spikeDetection.channelGroups` section of the YAML parameter file with the discovered groups. The `anatomicalDescription` section is left untouched.
+
+```yaml
+- name: ndm_spikegrouper
+  parameters:
+    - name: maxMergedSize
+      value: 12
+      status: Optional
+    - name: minChannels
+      value: 4
+      status: Optional
+```
+
+`ndm_spikegrouper` operates only on YAML parameter files. If the session file is XML, convert it first with `ndm_xml2yaml`.
+
+---
+
+## Format conversion
+
+### `ndm_xml2yaml` — convert XML parameter file to YAML
+
+Converts a legacy ndManager XML parameter file to the neurosuite YAML format. The XML file is not modified.
+
+```bash
+ndm_xml2yaml session.xml             # writes session.yaml in the same directory
+ndm_xml2yaml session.xml output.yaml # explicit output path
+```
+
+The converter maps every XML element to its YAML equivalent, including `acquisitionSystem`, `fieldPotentials`, `anatomicalDescription`, `spikeDetection`, `programs`, and the `neuroscope` display section. The `units` section is copied if present.
+
+After conversion, update the `programs` section in the new YAML file so that any scripts referencing `.xml` by path use `.yaml` instead, then verify with `ndmanager session.yaml`.
+
+---
+
 ## Cleanup
 
 ### `ndm_clean`
