@@ -2,7 +2,7 @@
 
 SpikeRealign is a standalone batch tool that aligns spike waveforms to the cluster mean template via normalised cross-correlation, correcting for systematic jitter in threshold-crossing detection. It reads and writes binary `.spk/.res/.clu/.fet` files in-place using the same formats as KlustaKwik and klusters.
 
-The klusters interactive realignment (cluster-by-cluster from the GUI) uses the same algorithm internally. SpikeRealign is intended for batch processing entire sessions outside the klusters GUI, or for scripted pipelines.
+The klusters interactive realignment (cluster-by-cluster from the GUI, via `RealignWorker`) uses the same cross-correlation algorithm from `realign_xcorr.h` internally. SpikeRealign is intended for batch processing entire sessions outside the klusters GUI, or for scripted pipelines.
 
 ---
 
@@ -55,6 +55,20 @@ SpikeRealign session 1 -Verbose
 
 ---
 
+## Algorithm
+
+The realignment runs iteratively for `-Iterations` passes. Each pass:
+
+1. Computes the cluster mean template from all spikes in the cluster.
+2. For each spike, slides the waveform over the template within `±MaxShift` samples and computes the normalised cross-correlation at each shift position.
+3. If the best-shift correlation exceeds `Threshold`, the spike's stored waveform is shifted by that amount and its timestamp (`res`) updated accordingly.
+4. After shifting, if the new timestamp order no longer matches the old sort order, `clu` entries are reordered to maintain timestamp-sorted order. The count of these sort corrections is reported as "swapped" in verbose output.
+5. If a `.pca.N` file is present, PCA features in `.fet.N` are reprojected using the stored eigenvectors after all shifts are applied.
+
+Multiple iterations converge the template toward a well-aligned mean; two iterations is usually sufficient.
+
+---
+
 ## Files read and written
 
 | File | Access | Description |
@@ -72,7 +86,15 @@ All file access is random-read / sequential-write. The tool does not load the en
 
 ## Integration with klusters
 
-Configure in **Settings → Preferences → General → Realignment**:
+The same realignment algorithm is also available interactively inside klusters. After realignment completes, klusters shows a `RealignReviewDialog` with:
+
+- Before/after mean waveform plots for the realigned cluster.
+- Counts of spikes shifted and timestamps reordered.
+- Accept or Reject buttons (keyboard: Left/Right arrows to navigate, Enter to confirm).
+
+Rejecting the review restores the previous cluster state from an in-memory backup without touching disk.
+
+Configure the standalone batch tool path and default arguments in **Settings → Preferences → General → Realignment**:
 
 - **Executable**: path to `SpikeRealign`
 - **Arguments**: `-Threshold 0.75 -Iterations 3`

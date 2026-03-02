@@ -1,6 +1,6 @@
 # neuroscope — Signal Visualiser
 
-NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays wideband, LFP, and high-pass filtered signals as scrollable traces and simultaneously overlays spike waveforms, cluster assignments, event markers, and animal position — all driven from the session `.xml` parameter file.
+NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays wideband, LFP, and high-pass filtered signals as scrollable traces and simultaneously overlays spike waveforms, cluster assignments, event markers, and animal position. It reads both `.xml` and `.yaml` parameter files; YAML reading is handled by `NeuroscopeYamlReader`, which delegates to `ParameterYamlReader` in `libklustersshared`.
 
 ---
 
@@ -40,15 +40,17 @@ NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, 
 
 | File | Content |
 |---|---|
-| `session.xml` / `session.yaml` | Parameter file — channel count, sampling rates, electrode groups |
+| `session.xml` / `session.yaml` | Parameter file — channel count, sampling rates, electrode groups, display colours |
 | `session.dat` | Wideband signal (int16, channel-interleaved, no header) |
-| `session.lfp` | LFP signal (same format as `.dat`, lower sampling rate) |
-| `session.fil` | High-pass filtered signal (same format as `.dat`) |
+| `session.lfp` | LFP signal (same binary format as `.dat`, lower sampling rate) |
+| `session.fil` | High-pass filtered signal (same binary format as `.dat`) |
 | `session.spk.N` | Spike waveforms for electrode group N |
-| `session.res.N` | Spike timestamps for electrode group N (sample indices) |
+| `session.res.N` | Spike timestamps for electrode group N (integer sample indices) |
 | `session.clu.N` | Cluster assignments for electrode group N |
-| `session.evt` | Event file (ms timestamps + labels) |
+| `session.evt` | Event file (ms timestamps + labels, one per line) |
 | `session.pos` | Animal position (x,y per video frame) |
+
+All binary files (`.dat`, `.lfp`, `.fil`, `.spk.N`) are raw int16, channel-interleaved, with no header. The number of channels and sampling rates are taken from the parameter file.
 
 ---
 
@@ -56,20 +58,34 @@ NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, 
 
 The main window shows multi-channel traces as a vertically stacked scrollable panel. The horizontal axis is time; the vertical axis stacks channels according to the order and grouping defined in the parameter file.
 
-**Navigation:** scroll with the scrollbar or arrow keys; zoom the time axis with `+` / `-` or the mouse wheel; jump to a time by typing in the toolbar; page through with `Page Up` / `Page Down`; jump to events with `Ctrl+Right` / `Ctrl+Left`.
+**Navigation:** scroll with the scrollbar or arrow keys; zoom the time axis with `+` / `-` or the mouse wheel; type a time into the toolbar to jump there; page with `Page Up` / `Page Down`; jump between events with `Ctrl+Right` / `Ctrl+Left`.
 
-**Signal layers** — each toggled from the View menu:
+### Signal layers
 
-- Wideband traces (`.dat`) — full-bandwidth signal at acquisition rate
-- LFP traces (`.lfp`) — downsampled local field potential
-- High-pass traces (`.fil`) — median-filtered signal used for spike detection
-- Spikes and clusters (`.spk.N`, `.clu.N`, `.res.N`) — waveforms drawn at detected timestamps, coloured by cluster
-- Events (`.evt`) — vertical lines with labels; multiple files supported
-- Animal position (`.pos`) — docked trajectory panel with a moving position dot
+Each layer is toggled independently from the View menu:
 
-**Channel panel** — left-hand panel for showing/hiding individual channels or groups, reordering by drag-and-drop, and rescaling individual channel gains.
+- **Wideband** (`.dat`) — full-bandwidth signal at acquisition rate.
+- **LFP** (`.lfp`) — downsampled local field potential.
+- **High-pass** (`.fil`) — median-filtered signal used for spike detection.
+- **Spikes and clusters** (`.spk.N`, `.clu.N`, `.res.N`) — waveform snippets drawn at detected timestamps, coloured by cluster. Cluster colours are shared with klusters.
+- **Events** (`.evt`) — vertical marker lines with text labels. Multiple event files from the same session are supported simultaneously.
+- **Animal position** (`.pos`) — docked trajectory panel showing a moving dot at the animal's position for the currently displayed time window.
 
-See [ndmanager-plugins/README.md](../ndmanager-plugins/README.md) for byte-level file format descriptions.
+### Channel panel
+
+The left-hand panel lists channels organised by anatomical group. Channels can be shown or hidden individually, reordered by drag-and-drop, and scaled with per-channel gain sliders. Group-level operations (hide/show all channels in a group, rescale group) are available from the context menu.
+
+### YAML display settings
+
+When opening a YAML parameter file, neuroscope reads display preferences from the `neuroscope` section:
+
+- `neuroscope/miscellaneous/screenGain` — default vertical scale
+- `neuroscope/miscellaneous/traceBackgroundImage` — optional background image path
+- `neuroscope/video/rotate` and `flip` — video orientation for position overlay
+- `neuroscope/channels/colors` — per-channel colours (wideband, anatomy group, spike group)
+- `neuroscope/channels/offsets` — per-channel vertical offsets
+
+On save, only these `neuroscope/` sub-keys are updated; the rest of the parameter file is preserved via `ParameterYamlModifier`.
 
 ---
 
