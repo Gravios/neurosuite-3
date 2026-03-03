@@ -336,6 +336,10 @@ public:
     /**Returns the total number of PCAs used
   * (number of channels times number of PCA by channel).*/
     int totalNbOfPCAs() const{return clusteringData->totalNbOfPCAs();}
+    /** Per-feature variance for spikes in @p clusterId (delegates to Data). */
+    QVector<double> computeFeatureVariancesForCluster(int clusterId) const {
+        return clusteringData->featureVariancesForCluster(clusterId);
+    }
     
     /**Makes all the internal changes due to a modification of the number of undo.
   * @param newNbUndo the futur new number of undo.

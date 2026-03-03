@@ -1,0 +1,216 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Remove electrically uniform noise events from spike data
+#//
+#//   Examines every spikeDetection group and removes spike-shaped waveforms
+#//   that are nearly identical across all channels — the hallmark of
+#//   electrical interference rather than genuine neural activity.
+#//
+#//   Detection method
+#//   ----------------
+#//   For each spike waveform the *spatial uniformity score* is computed:
+#//
+#//     1. Remove DC per channel.
+#//     2. For every sample time, compute the std of values across channels.
+#//     3. Divide the mean of those per-sample stds by the overall RMS.
+#//
+#//   Score ≈ 0  → all channels look the same → noise event (removed).
+#//   Score ≈ 1  → channels are maximally diverse → genuine spike (kept).
+#//
+#//   Spikes with score < uniformityThreshold are removed.  Spikes whose
+#//   peak amplitude is below minAmplitude (ADC counts) are retained without
+#//   scoring (they are too quiet to classify reliably).
+#//
+#//   Pipeline position
+#//   -----------------
+#//   Must run AFTER ndm_extractspikes (requires .res and .spk files).
+#//   Should run BEFORE ndm_pca / ndm_klustakwik so that the removed events
+#//   do not pollute the feature space or clustering.
+#//
+#//   Backup
+#//   ------
+#//   Original .res and .spk files are copied to <session>_denoise_backup/
+#//   before modification.  Other files (.clu, .fet) are also backed up and
+#//   filtered when present.
+#//
+#//   Parameter file (YAML or XML)
+#//   ----------------------------
+#//   Optional program-specific parameters under the script name
+#//   ndm_denoiseuniform:
+#//
+#//     uniformityThreshold   score below which a spike is classified as noise
+#//                           (float, default 0.30 — increase to remove more)
+#//     minAmplitude          minimum peak ADC count needed to attempt scoring
+#//                           (integer, default 0 — disabled)
+#//     dryRun                1 = report only, do not modify files (default 0)
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 2 ]
+then
+	echo_error "usage: $program [parameter-file] [electrodeGroup]"
+	exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+# Print a header to indicate current processing step
+print_header "$session - Removing uniform-noise spikes"
+
+# Check required programs
+check_commands_installed process_denoiseuniform
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read global parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+resolution=$(xml_read $session "//acquisitionSystem/nBits")
+
+check_mandatory_variable $nChannels  "missing total number of channels (acquisitionSystem/nChannels)"
+check_mandatory_variable $resolution "missing ADC resolution (acquisitionSystem/nBits)"
+
+# Number of spike groups
+nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+if [ "$nElectrodeGroups" -eq 0 ]
+then
+	echo_error "no spikeDetection groups found — check parameter file"
+	exit $GENERAL_ERROR
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read optional plugin parameters (with defaults)
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+uniformityThreshold=$(read_script_parameter $session uniformityThreshold)
+check_optional_variable $uniformityThreshold || uniformityThreshold=0.30
+
+minAmplitude=$(read_script_parameter $session minAmplitude)
+check_optional_variable $minAmplitude || minAmplitude=0
+
+dryRun=$(read_script_parameter $session dryRun)
+check_optional_variable $dryRun || dryRun=0
+
+echo_info "Parameters:"
+echo_info "  uniformityThreshold : $uniformityThreshold"
+echo_info "  minAmplitude        : $minAmplitude  ADC counts"
+echo_info "  dryRun              : $dryRun"
+
+# Build optional flags for process_denoiseuniform
+extra_args=()
+[ "$dryRun" -eq 1 ] 2>/dev/null && extra_args+=(--dry-run)
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Process one electrode group
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+once()
+{
+	local electrodeGroup=$1
+
+	# ---- check group index ----
+	if [ "$electrodeGroup" -gt "$nElectrodeGroups" ]
+	then
+		echo_error "spike group $electrodeGroup is undefined (session has $nElectrodeGroups groups)"
+		exit $GENERAL_ERROR
+	fi
+
+	# ---- required input files ----
+	inputs_missing "$session.$param_ext" \
+	               "$session.res.$electrodeGroup" \
+	               "$session.spk.$electrodeGroup" \
+		&& exit $INPUTS_MISSING
+
+	# ---- per-group parameters ----
+	# channels in this group
+	electrodes=($(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	nGroupChannels=${#electrodes[*]}
+
+	# samples per waveform for this group
+	nSamples=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	check_mandatory_variable $nSamples \
+		"missing nSamples for electrode group $electrodeGroup"
+
+	if [ "$nGroupChannels" -lt 2 ]
+	then
+		echo_warning "group $electrodeGroup has only $nGroupChannels channel — spatial uniformity cannot be computed, skipping"
+		return $NO_ERROR
+	fi
+
+	echo_info ""
+	print_header "$session - Group $electrodeGroup  ($nGroupChannels channels, $nSamples samples/waveform)" "-"
+
+	# ---- backup directory ----
+	backupDir="${session}_denoise_backup"
+	if [ "$dryRun" -ne 1 ] 2>/dev/null
+	then
+		mkdir -p "$backupDir"
+
+		# Back up all files that will be modified
+		for ext in res spk clu fet
+		do
+			src="$session.$ext.$electrodeGroup"
+			if [ -f "$src" ]
+			then
+				cp --no-clobber "$src" "$backupDir/$src.bak" && \
+					echo_info "  backed up: $backupDir/$src.bak"
+			fi
+		done
+	fi
+
+	# ---- run process_denoiseuniform ----
+	process_denoiseuniform \
+		"$session"              \
+		"$electrodeGroup"       \
+		"$nGroupChannels"       \
+		"$nSamples"             \
+		"$resolution"           \
+		--uniformity-threshold "$uniformityThreshold" \
+		--min-amplitude        "$minAmplitude"        \
+		"${extra_args[@]}"
+
+	check_command_status process_denoiseuniform
+}
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Run all groups, or just the one requested
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+if [ -z "$electrodeGroup" ]
+then
+	overallStatus=$NO_ERROR
+	for (( i=1; i<=nElectrodeGroups; i++ ))
+	do
+		once $i
+		groupStatus=$?
+		if [ $groupStatus -ne $NO_ERROR ] && \
+		   [ $groupStatus -ne $OUTPUTS_EXIST ] && \
+		   [ $groupStatus -ne $INPUTS_MISSING ]
+		then
+			overallStatus=$groupStatus
+		fi
+	done
+	exit $overallStatus
+else
+	once $electrodeGroup
+	exit $?
+fi

@@ -887,6 +887,7 @@ void KlustersApp::applyPreferences() {
     }
 
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
+    autoSelectFeatures = configuration().getAutoSelectFeatures();
 }
 
 void KlustersApp::initializePreferences(){
@@ -2805,15 +2806,53 @@ void KlustersApp::slotRecluster(){
     if(electrodeGroupID.isEmpty())
         electrodeGroupID = QLatin1String("1");
 
-    // Compute %features value once up front.
+    // Compute %features value: auto-variance when checkbox on + 1 cluster selected,
+    // otherwise original behaviour (PCA cols ON, extra cols OFF, timestamp ON).
     QString features;
     if(reclusteringArgs.contains(QLatin1String("%features"))){
         int totalNbOfPCAs   = doc->totalNbOfPCAs();
         int nbDimensions    = doc->nbDimensions();
         int nbExtraFeatures = nbDimensions - totalNbOfPCAs - 1;
-        for(int j = 0; j < totalNbOfPCAs; ++j)   features.append(QLatin1Char('1'));
-        for(int j = 0; j < nbExtraFeatures; ++j)  features.append(QLatin1Char('0'));
-        features.append(QLatin1Char('1')); // time feature is always last
+        int nFeatureCols    = nbDimensions - 1; // all cols except timestamp
+
+        bool usedAutoSelect = false;
+        if(autoSelectFeatures){
+            // Gather the currently-selected clusters from the active view.
+            QList<int> sel;
+            if(activeView())
+                sel = activeView()->clusters();
+            if(sel.size() == 1){
+                QVector<double> variances =
+                    doc->computeFeatureVariancesForCluster(sel.first());
+                if(!variances.isEmpty()){
+                    // Sort feature indices by descending variance.
+                    QVector<QPair<int,double>> iv;
+                    iv.reserve(variances.size());
+                    for(int i = 0; i < variances.size() && i < nFeatureCols; ++i)
+                        iv.append(qMakePair(i, variances[i]));
+                    std::sort(iv.begin(), iv.end(),
+                        [](const QPair<int,double>& a, const QPair<int,double>& b){
+                            return a.second > b.second;
+                        });
+                    // Enable top 4–7 features (clamped to available columns).
+                    int nSelect = qBound(4, 7, nFeatureCols);
+                    QSet<int> selected;
+                    for(int k = 0; k < nSelect && k < iv.size(); ++k)
+                        selected.insert(iv[k].first);
+                    // Build bit-string; timestamp column is always 1.
+                    for(int i = 0; i < nFeatureCols; ++i)
+                        features.append(selected.contains(i) ? QLatin1Char('1') : QLatin1Char('0'));
+                    features.append(QLatin1Char('1'));
+                    usedAutoSelect = true;
+                }
+            }
+        }
+        if(!usedAutoSelect){
+            // Fallback: all PCA dims ON, extra dims OFF, timestamp ON.
+            for(int j = 0; j < totalNbOfPCAs; ++j)   features.append(QLatin1Char('1'));
+            for(int j = 0; j < nbExtraFeatures; ++j)  features.append(QLatin1Char('0'));
+            features.append(QLatin1Char('1'));
+        }
     }
 
     // Split the args template into tokens then substitute each independently.

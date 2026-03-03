@@ -468,6 +468,16 @@
             </item>
            </layout>
           </item>
+         <item row="2" column="0" colspan="2">
+          <widget class="QCheckBox" name="autoSelectFeaturesCheckBox">
+           <property name="text">
+            <string>Auto-select features (4–7 highest-variance features of selected cluster)</string>
+           </property>
+           <property name="toolTip">
+            <string>When checked, klusters ranks feature dimensions by variance for the selected cluster and passes the top 4–7 as 1s in the UseFeatures bit-string sent to KlustaKwik. When unchecked, %features expands to all PCA columns ON (default behaviour).</string>
+           </property>
+          </widget>
+         </item>
          </layout>
         </item>
        </layout>

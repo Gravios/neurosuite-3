@@ -25,6 +25,7 @@
 
 
 const bool Configuration::crashRecoveryDefault = true;
+const bool Configuration::autoSelectFeaturesDefault = false;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
 const int  Configuration::timeIntervalDefault = 60;
@@ -57,6 +58,7 @@ void Configuration::read() {
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
+    autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     settings.endGroup();
 
     //read cluster view options
@@ -85,6 +87,7 @@ void Configuration::write() const {
     settings.setValue("markerSize", markerSize);
     settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
+    settings.setValue("autoSelectFeatures", autoSelectFeatures);
     settings.endGroup();
     
     //write cluster view options

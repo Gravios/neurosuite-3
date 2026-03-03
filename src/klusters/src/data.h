@@ -403,6 +403,11 @@ public:
   * (number of channels times number of PCA by channel).*/
     int totalNbOfPCAs()const{return (nbChannels*nbFeaturesbyChannel);}
 
+    /** Per-feature sample variance for all spikes belonging to @p clusterId.
+     *  Returned vector has length nbDimensions-1 (timestamp column excluded).
+     *  Returns empty vector when cluster has fewer than 2 spikes. */
+    QVector<double> featureVariancesForCluster(int clusterId) const;
+
     /**Returns the sampling interval (time between two samples) in second.*/
     double intervalOfSampling()const{return samplingInterval;}
 

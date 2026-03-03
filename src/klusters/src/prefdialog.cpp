@@ -91,6 +91,7 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->markerSizeSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     connect(prefGeneral->selectionLineWidthSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     connect(prefGeneral->useWhiteColorPrinting,SIGNAL(clicked()),this,SLOT(enableApply()));
+    connect(prefGeneral->autoSelectFeaturesCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
     
     connect(prefclusterView->intervalSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     connect(prefWaveformView->gainSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
@@ -126,6 +127,7 @@ void PrefDialog::updateDialog() {
   prefclusterView->setTimeInterval(configuration().getTimeInterval());
   prefWaveformView->setGain(configuration().getGain());
   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
+  prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
   enableButtonApply(false);   // disable apply button
   applyEnable = false;
 }
@@ -147,6 +149,7 @@ void PrefDialog::updateConfiguration(){
   configuration().setNbChannels(prefWaveformView->getNbChannels());
   configuration().setChannelPositions(prefWaveformView->getChannelPositions()); 
   configuration().setUseWhiteColorDuringPrinting(prefGeneral->useWhiteColorDuringPrinting());
+  configuration().setAutoSelectFeatures(prefGeneral->getAutoSelectFeatures());
   enableButtonApply(false);   // disable apply button
   applyEnable = false;
 }
@@ -168,6 +171,7 @@ void PrefDialog::slotDefault() {
    prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
    prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
    prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
+   prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
 
    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
    prefWaveformView->setGain(configuration().getGainDefault());
