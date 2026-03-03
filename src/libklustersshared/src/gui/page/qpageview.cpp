@@ -217,18 +217,14 @@ void QPageViewPrivate::_k_modelChanged()
 
 void QPageViewPrivate::_k_pageSelected(const QItemSelection &index, const QItemSelection &previous)
 {
-    qDebug()<<" ssssssssssssssssssss";
   if ( !model )
     return;
 
-  qDebug()<<" _k_pageSelected";
   // Return if the current Index is not valid
   if ( index.indexes().size() != 1 ) {
     return;
   }
   QModelIndex currentIndex = index.indexes().first();
-
-  qDebug()<<" currentIndex "<<currentIndex;
   QModelIndex previousIndex;
   // The previous index can be invalid
   if ( previous.indexes().size() == 1 ) {

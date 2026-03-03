@@ -104,6 +104,7 @@ QRegion QPagePlainView::visualRegionForSelection( const QItemSelection& ) const
 QPageListView::QPageListView( QWidget *parent )
  : QListView( parent )
 {
+  setTabKeyNavigation(false); // Tab should move focus to content, not cycle pages
   setViewMode( QListView::ListMode );
   setMovement( QListView::Static );
   setVerticalScrollMode( QListView::ScrollPerPixel );
@@ -292,7 +293,6 @@ int QPageTabbedView::verticalOffset() const
 
 bool QPageTabbedView::isIndexHidden( const QModelIndex &index ) const
 {
-    qDebug()<<" ssssssssssssssssssssssssssssssssssssss555555555555555";
   return ( mTabWidget->currentIndex() != index.row() );
 }
 
@@ -307,7 +307,6 @@ QRegion QPageTabbedView::visualRegionForSelection( const QItemSelection& ) const
 
 void QPageTabbedView::currentPageChanged( int index )
 {
-    qDebug()<<" sssssssssssssssssssssssssssssss"<<index;
   if ( !model() )
     return;
 
