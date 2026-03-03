@@ -289,6 +289,7 @@ private Q_SLOTS:
     void slotTabChange(int index);
     /**Triggers an update of the dimensions due to a change of the absciss dimension.*/
     void slotUpdateDimensionX(int dimensionX);
+    void slotUpdateAutoNFeatures(int n);
     /**Triggers an update of the dimensions due to a change of the ordinate dimension.*/
     void slotUpdateDimensionY(int dimensionYs);
     /** Closes the display and if it is the last one asks for saving, then closes the actual file and window.*/
@@ -885,11 +886,16 @@ private:
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;  ///< mirrors Configuration setting
+    int  autoSelectNFeatures; ///< number of top-variance features to use
 
 
     QAction *featureXLabelAction;
     QAction *dimensionXAction;
     QAction *dimensionYAction;
+    QLabel  *autoNFeaturesLabel;
+    SpinBox *autoNFeaturesSpinBox;
+    QAction *autoNFeaturesLabelAction;
+    QAction *autoNFeaturesSpinBoxAction;
     QAction *startLabelAction;
     QAction *startAction;
     QAction *durationLabelAction;

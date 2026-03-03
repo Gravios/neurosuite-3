@@ -49,6 +49,9 @@ class PrefDialog : public QPageDialog {
     void resetChannelList(int nbChannels);
 
     void enableChannelSettings(bool state);
+
+    /** Syncs the N-features spinbox from the toolbar without triggering applyPreferences. */
+    void syncAutoNFeatures(int n);
     
   public Q_SLOTS:
     /// Will be called when the "Default" button has been clicked.

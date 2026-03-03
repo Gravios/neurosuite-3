@@ -785,6 +785,26 @@ void KlustersApp::initSelectionBoxes(){
     correlogramsHalfDurationAction = paramBar->addWidget(correlogramsHalfDuration);
     connect(correlogramsHalfDuration, SIGNAL(returnPressed()),this, SLOT(slotUpdateCorrelogramsHalfDuration()));
 
+    // Auto-select N-features spinbox — appended at end of paramBar,
+    // visible only when the feature selectors are visible AND autoSelectFeatures is on.
+    autoNFeaturesLabel = new QLabel(tr("  N feat:"), paramBar);
+    autoNFeaturesLabel->setFrameStyle(QFrame::StyledPanel|QFrame::Plain);
+    autoNFeaturesLabel->setFont(font);
+    autoNFeaturesSpinBox = new SpinBox(paramBar);
+    autoNFeaturesSpinBox->setObjectName("autoNFeaturesSpinBox");
+    autoNFeaturesSpinBox->setMinimum(1);
+    autoNFeaturesSpinBox->setMaximum(25);
+    autoNFeaturesSpinBox->setSingleStep(1);
+    autoNFeaturesSpinBox->setWrapping(false);
+    autoNFeaturesSpinBox->setFocusPolicy(Qt::StrongFocus);
+    autoNFeaturesSpinBox->setToolTip(tr("Number of highest-variance features passed to KlustaKwik"));
+    connect(autoNFeaturesSpinBox, SIGNAL(valueChanged(int)), autoNFeaturesSpinBox, SLOT(deselect()), Qt::QueuedConnection);
+    connect(autoNFeaturesSpinBox, SIGNAL(valueChanged(int)), this, SLOT(slotUpdateAutoNFeatures(int)));
+    autoNFeaturesLabelAction   = paramBar->addWidget(autoNFeaturesLabel);
+    autoNFeaturesSpinBoxAction = paramBar->addWidget(autoNFeaturesSpinBox);
+    autoNFeaturesLabelAction->setVisible(false);
+    autoNFeaturesSpinBoxAction->setVisible(false);
+
     //Connect the move function of the parameterBar to slotUpdateParameterBar to always correctly show its contents.
     connect(paramBar, SIGNAL(allowedAreasChanged(Qt::ToolBarAreas)), this, SLOT(slotUpdateParameterBar()));
     connect(paramBar, SIGNAL(orientationChanged(Qt::Orientation)), this, SLOT(slotUpdateParameterBar()));
@@ -887,7 +907,16 @@ void KlustersApp::applyPreferences() {
     }
 
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
-    autoSelectFeatures = configuration().getAutoSelectFeatures();
+    autoSelectFeatures  = configuration().getAutoSelectFeatures();
+    autoSelectNFeatures = configuration().getAutoSelectNFeatures();
+    if(autoNFeaturesSpinBoxAction){
+        // Visibility follows featureXLabel: show the spinbox only when
+        // the feature selectors are visible AND auto-select is enabled.
+        bool featVisible = featureXLabelAction && featureXLabelAction->isVisible();
+        autoNFeaturesLabelAction->setVisible(autoSelectFeatures && featVisible);
+        autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures && featVisible);
+        if(!isInit) autoNFeaturesSpinBox->setValue(autoSelectNFeatures);
+    }
 }
 
 void KlustersApp::initializePreferences(){
@@ -1106,6 +1135,9 @@ void KlustersApp::initDisplay(){
     dimensionXAction->setVisible(true);
     dimensionYAction->setVisible(true);
     featureXLabelAction->setVisible(true);
+    autoNFeaturesSpinBox->setValue(autoSelectNFeatures);
+    autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+    autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
     spikesTodisplayAction->setVisible(true);
     spikesTodisplayLabelAction->setVisible(true);
     correlogramsHalfDuration->setText(INITIAL_CORRELOGRAMS_HALF_TIME_FRAME);
@@ -2356,12 +2388,16 @@ void KlustersApp::slotTabChange(int index){
                 dimensionXAction->setVisible(true);
                 dimensionYAction->setVisible(true);
                 featureXLabelAction->setVisible(true);
+                autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+                autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
             }
             else{
                 slotStateChanged("noClusterViewState");
                 dimensionXAction->setVisible(false);
                 dimensionYAction->setVisible(false);
                 featureXLabelAction->setVisible(false);
+                autoNFeaturesLabelAction->setVisible(false);
+                autoNFeaturesSpinBoxAction->setVisible(false);
             }
 
             if(activeView->containsWaveformView()){
@@ -2519,6 +2555,15 @@ void KlustersApp::slotUpdateDimensionX(int dimensionXValue){
     if(!isInit)updateDimensions(dimensionXValue,dimensionY->value());
 }
 
+void KlustersApp::slotUpdateAutoNFeatures(int n){
+    if(isInit) return;
+    autoSelectNFeatures = n;
+    configuration().setAutoSelectNFeatures(n);
+    configuration().write();
+    // Keep the preferences spinbox in sync if the dialog is open.
+    if(prefDialog) prefDialog->syncAutoNFeatures(n);
+}
+
 void KlustersApp::slotUpdateDimensionY(int dimensionYValue){
     if(!isInit)updateDimensions(dimensionX->value(),dimensionYValue);
 }
@@ -2601,6 +2646,8 @@ void KlustersApp::resetState(){
     dimensionXAction->setVisible(false);
     dimensionYAction->setVisible(false);
     featureXLabelAction->setVisible(false);
+    autoNFeaturesLabelAction->setVisible(false);
+    autoNFeaturesSpinBoxAction->setVisible(false);
     spikesTodisplayAction->setVisible(false);
     spikesTodisplayLabelAction->setVisible(false);
     correlogramsHalfDurationAction->setVisible(false);
@@ -2669,6 +2716,8 @@ void KlustersApp::slotUpdateParameterBar(){
     dimensionXAction->setVisible(false);
     dimensionYAction->setVisible(false);
     featureXLabelAction->setVisible(false);
+    autoNFeaturesLabelAction->setVisible(false);
+    autoNFeaturesSpinBoxAction->setVisible(false);
     spikesTodisplayAction->setVisible(false);
     spikesTodisplayLabelAction->setVisible(false);
     correlogramsHalfDurationAction->setVisible(false);
@@ -2683,6 +2732,8 @@ void KlustersApp::slotUpdateParameterBar(){
             dimensionXAction->setVisible(true);
             dimensionYAction->setVisible(true);
             featureXLabelAction->setVisible(true);
+            autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+            autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
         }
 
         if(currentView->containsWaveformView()){
@@ -2834,8 +2885,8 @@ void KlustersApp::slotRecluster(){
                         [](const QPair<int,double>& a, const QPair<int,double>& b){
                             return a.second > b.second;
                         });
-                    // Enable top 4–7 features (clamped to available columns).
-                    int nSelect = qBound(4, 7, nFeatureCols);
+                    // Enable top N features (user-configured, clamped to available columns).
+                    int nSelect = qBound(1, autoSelectNFeatures, nFeatureCols);
                     QSet<int> selected;
                     for(int k = 0; k < nSelect && k < iv.size(); ++k)
                         selected.insert(iv[k].first);
@@ -3054,6 +3105,8 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             dimensionXAction->setVisible(true);
             dimensionYAction->setVisible(true);
             featureXLabelAction->setVisible(true);
+            autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+            autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
             break;
         case KlustersView::WAVEFORMS:
             slotStateChanged("waveformsViewState");
@@ -3118,6 +3171,8 @@ void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType
         dimensionXAction->setVisible(false);
         dimensionYAction->setVisible(false);
         featureXLabelAction->setVisible(false);
+        autoNFeaturesLabelAction->setVisible(false);
+        autoNFeaturesSpinBoxAction->setVisible(false);
         break;
     case KlustersView::WAVEFORMS:
         timeFrameMode->setChecked(false);
@@ -3161,6 +3216,8 @@ void KlustersApp::updateDimensionSpinBoxes(int dimensionX, int dimensionY){
     this->dimensionY->setValue(dimensionY);
     this->dimensionXAction->setVisible(true);
     this->dimensionYAction->setVisible(true);
+    autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+    autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
 
     isInit = false; //now a change in a spine box  or the lineedit
     //will trigger an update of the view contains in the active display.

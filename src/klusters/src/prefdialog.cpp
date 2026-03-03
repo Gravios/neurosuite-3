@@ -92,6 +92,7 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->selectionLineWidthSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     connect(prefGeneral->useWhiteColorPrinting,SIGNAL(clicked()),this,SLOT(enableApply()));
     connect(prefGeneral->autoSelectFeaturesCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
+    connect(prefGeneral->autoSelectNFeaturesSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     
     connect(prefclusterView->intervalSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
     connect(prefWaveformView->gainSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
@@ -128,6 +129,7 @@ void PrefDialog::updateDialog() {
   prefWaveformView->setGain(configuration().getGain());
   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
   prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
+  prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
   enableButtonApply(false);   // disable apply button
   applyEnable = false;
 }
@@ -150,6 +152,7 @@ void PrefDialog::updateConfiguration(){
   configuration().setChannelPositions(prefWaveformView->getChannelPositions()); 
   configuration().setUseWhiteColorDuringPrinting(prefGeneral->useWhiteColorDuringPrinting());
   configuration().setAutoSelectFeatures(prefGeneral->getAutoSelectFeatures());
+  configuration().setAutoSelectNFeatures(prefGeneral->getAutoSelectNFeatures());
   enableButtonApply(false);   // disable apply button
   applyEnable = false;
 }
@@ -172,6 +175,7 @@ void PrefDialog::slotDefault() {
    prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
    prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
    prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
+   prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
 
    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
    prefWaveformView->setGain(configuration().getGainDefault());
@@ -192,6 +196,10 @@ void PrefDialog::slotApply() {
 void PrefDialog::enableApply() {
     enableButtonApply(true);   // enable apply button
     applyEnable = true;
+}
+
+void PrefDialog::syncAutoNFeatures(int n){
+    prefGeneral->setAutoSelectNFeatures(n);
 }
 
 void PrefDialog::resetChannelList(int nbChannels){
