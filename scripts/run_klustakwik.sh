@@ -1,8 +1,8 @@
-#!/bin/bash
-# run_klustakwik.sh - Run KlustaKwik on all spike groups
+#!/usr/bin/env zsh
+# run_klustakwik.sh - Run KlustaKwik on all spike groups (Linux / zsh)
 #
 # Sampling rate  : parsed from <basename>.yaml  (field: SamplingRate / samplingRate)
-# UseFeatures    : derived from column count in each .fet file
+# UseFeatures    : derived from feature count in binary .fet header (first int32)
 # OMP_NUM_THREADS: derived from /proc/cpuinfo
 #
 # Usage:
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            if [ -z "$BASENAME" ]; then
+            if [[ -z "$BASENAME" ]]; then
                 BASENAME="$1"
             else
                 echo "Unexpected argument: $1" >&2
@@ -65,12 +65,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Auto-detect basename from .xml if not supplied
-if [ -z "$BASENAME" ]; then
-    BASENAME=$(ls *.xml 2>/dev/null | head -1 | sed 's/\.xml$//')
-    if [ -z "$BASENAME" ]; then
+if [[ -z "$BASENAME" ]]; then
+    local_xml=(*.xml(N))
+    if [[ ${#local_xml[@]} -eq 0 ]]; then
         echo "Could not detect basename. Supply it as the first argument." >&2
         exit 1
     fi
+    BASENAME="${local_xml[1]:r}"
     echo "No basename supplied – using detected: $BASENAME"
 fi
 
@@ -78,7 +79,7 @@ fi
 # Parse sampling rate from YAML
 # ---------------------------------------------------------------------------
 YAML_FILE="${BASENAME}.yaml"
-if [ ! -f "$YAML_FILE" ]; then
+if [[ ! -f "$YAML_FILE" ]]; then
     echo "YAML file not found: $YAML_FILE" >&2
     exit 1
 fi
@@ -89,7 +90,7 @@ SAMPLING_RATE=$(grep -iE '^\s*(SamplingRate|sampling_rate)\s*:' "$YAML_FILE" \
     | sed 's/.*:\s*//' \
     | tr -d '[:space:]"')
 
-if [ -z "$SAMPLING_RATE" ]; then
+if [[ -z "$SAMPLING_RATE" ]]; then
     echo "Could not parse SamplingRate from $YAML_FILE" >&2
     exit 1
 fi
@@ -105,35 +106,34 @@ echo "OMP_NUM_THREADS = $OMP_NUM_THREADS  (from /proc/cpuinfo)"
 # ---------------------------------------------------------------------------
 # Iterate over every spike group that has a .fet file
 # ---------------------------------------------------------------------------
-shopt -s nullglob
-FET_FILES=( "${BASENAME}".fet.* )
+# (N) suppresses the "no matches" error in zsh (nullglob per-glob)
+fet_files=(${BASENAME}.fet.*(N))
 
-if [ ${#FET_FILES[@]} -eq 0 ]; then
+if [[ ${#fet_files[@]} -eq 0 ]]; then
     echo "No .fet files found for basename '${BASENAME}'" >&2
     exit 1
 fi
 
-for FET_FILE in "${FET_FILES[@]}"; do
+for FET_FILE in "${fet_files[@]}"; do
 
     GROUP="${FET_FILE##*.fet.}"
 
     # Skip group 0 (noise / unsorted channel)
-    if [ "$GROUP" -eq 0 ] 2>/dev/null; then
+    if [[ "$GROUP" -eq 0 ]]; then
         echo "Skipping group 0"
         continue
     fi
 
-    # First line of a .fet file = total column count;
-    # last column is the timestamp, the rest are features.
-    TOTAL_COLS=$(head -1 "$FET_FILE")
-    N_FEATURES=$(( TOTAL_COLS - 1 ))
+    # Binary .fet format: first 4 bytes = little-endian int32 = number of features
+    # (this count excludes the trailing timestamp column)
+    N_FEATURES=$(od -An -t d4 -N 4 "$FET_FILE" | tr -d ' \n')
 
-    if [ "$N_FEATURES" -le 0 ]; then
-        echo "Group $GROUP: no features (TOTAL_COLS=$TOTAL_COLS), skipping" >&2
+    if ! [[ "$N_FEATURES" =~ ^[0-9]+$ ]] || [[ "$N_FEATURES" -le 0 ]]; then
+        echo "Group $GROUP: could not read feature count from $FET_FILE (got: '$N_FEATURES'), skipping" >&2
         continue
     fi
 
-    USE_FEATURES=$(printf '1%.0s' $(seq 1 "$N_FEATURES"))
+    USE_FEATURES=$(printf '1%.0s' {1..$N_FEATURES})
 
     echo ""
     echo "=== Group $GROUP | features: $N_FEATURES | UseFeatures: $USE_FEATURES ==="

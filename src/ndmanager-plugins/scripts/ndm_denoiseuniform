@@ -44,6 +44,10 @@
 #//                           (float, default 0.30 — increase to remove more)
 #//     minAmplitude          minimum peak ADC count needed to attempt scoring
 #//                           (integer, default 0 — disabled)
+#//     removeFlat            1 = remove waveforms with near-zero AC energy
+#//                           after DC subtraction (default 1 — recommended)
+#//                           Set to 0 only if you want to inspect flat events
+#//                           in Klusters before discarding them
 #//     dryRun                1 = report only, do not modify files (default 0)
 #//
 #//   copyright       (C) 2025 neurosuite-3 contributors
@@ -107,17 +111,22 @@ check_optional_variable $uniformityThreshold || uniformityThreshold=0.30
 minAmplitude=$(read_script_parameter $session minAmplitude)
 check_optional_variable $minAmplitude || minAmplitude=0
 
+removeFlat=$(read_script_parameter $session removeFlat)
+check_optional_variable $removeFlat || removeFlat=1
+
 dryRun=$(read_script_parameter $session dryRun)
 check_optional_variable $dryRun || dryRun=0
 
 echo_info "Parameters:"
 echo_info "  uniformityThreshold : $uniformityThreshold"
 echo_info "  minAmplitude        : $minAmplitude  ADC counts"
+echo_info "  removeFlat          : $removeFlat"
 echo_info "  dryRun              : $dryRun"
 
 # Build optional flags for process_denoiseuniform
 extra_args=()
-[ "$dryRun" -eq 1 ] 2>/dev/null && extra_args+=(--dry-run)
+[ "$dryRun"      -eq 1 ] 2>/dev/null && extra_args+=(--dry-run)
+[ "$removeFlat"  -eq 0 ] 2>/dev/null && extra_args+=(--keep-flat)
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Process one electrode group
@@ -165,14 +174,17 @@ once()
 	then
 		mkdir -p "$backupDir"
 
-		# Back up all files that will be modified
+		# Back up all files that will be modified (only if backup doesn't already exist)
 		for ext in res spk clu fet
 		do
 			src="$session.$ext.$electrodeGroup"
-			if [ -f "$src" ]
+			dst="$backupDir/$src.bak"
+			if [ -f "$src" ] && [ ! -f "$dst" ]
 			then
-				cp --no-clobber "$src" "$backupDir/$src.bak" && \
-					echo_info "  backed up: $backupDir/$src.bak"
+				cp "$src" "$dst" && echo_info "  backed up: $dst"
+			elif [ -f "$dst" ]
+			then
+				echo_info "  backup exists, skipping: $dst"
 			fi
 		done
 	fi

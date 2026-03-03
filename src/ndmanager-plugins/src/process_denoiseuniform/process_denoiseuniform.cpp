@@ -41,7 +41,21 @@
  * Score near 0: channels carry the same waveform → noise event.
  * Score near 1: channels are maximally diverse → genuine spike.
  * Spikes with score < uniformity_threshold are removed.
- * Spikes with peak amplitude < min_amplitude are retained unscored.
+ *
+ * Flat waveforms
+ * --------------
+ * A waveform is considered *flat* when total_rms < 0.5 ADC counts after
+ * per-channel DC removal, meaning the waveform carries no AC energy at all.
+ * This is distinct from a quiet spike (small raw amplitude but genuine AC
+ * waveform shape).  Flat events are almost always DC-step artifacts — a
+ * hardware transient that hits all channels identically and drives the
+ * threshold detector but contains no neural information.  By default they
+ * are removed (--remove-flat is on).  Pass --keep-flat to retain them.
+ *
+ * The --min-amplitude guard applies before both tests: spikes whose raw peak
+ * is below the amplitude floor are always kept regardless of flatness or
+ * uniformity score.  Use it to protect genuine but very small spikes on
+ * high-impedance probes.
  *
  * Parallelism
  * -----------
@@ -167,6 +181,11 @@ double uniformityScore(const int16_t *waveform,
 
 // ---------------------------------------------------------------------------
 // Classify a batch of spikes — OpenMP-parallelised across spikes
+//
+// Decision logic for each spike:
+//   1. If peak < minAmplitude       → always KEEP  (amplitude guard, unscored)
+//   2. If total_rms < 0.5 (flat)   → REMOVE if removeFlat, else KEEP
+//   3. Otherwise                    → KEEP if score >= uniformityThreshold
 // ---------------------------------------------------------------------------
 void classifySpikes(const int16_t  *waveforms,
                     int64_t         nSpikes,
@@ -174,6 +193,7 @@ void classifySpikes(const int16_t  *waveforms,
                     int             nChannels,
                     double          uniformityThreshold,
                     double          minAmplitude,
+                    bool            removeFlat,
                     SpikeScore     *results)
 {
     const int samplesPerSpike = nSamples * nChannels;
@@ -187,10 +207,14 @@ void classifySpikes(const int16_t  *waveforms,
         double score = uniformityScore(wav, nSamples, nChannels, peak);
 
         bool keep;
-        if (score < 0.0 || peak < minAmplitude) {
-            // too quiet or too flat — retain unconditionally
-            keep  = true;
-            score = -1.0;       // sentinel: unscored
+        if (peak < minAmplitude) {
+            // Amplitude guard: too small to classify reliably → always keep.
+            // score is left as-is (may be -1 if flat, or a valid value).
+            keep = true;
+        } else if (score < 0.0) {
+            // Flat waveform: near-zero AC energy after DC removal.
+            // score stays at -1 so the stats counter can identify these.
+            keep = !removeFlat;
         } else {
             keep = (score >= uniformityThreshold);
         }
@@ -216,6 +240,7 @@ static void usage(const char *prog)
         "\n"
         "  --uniformity-threshold T  score below which a spike is noise  (default 0.30)\n"
         "  --min-amplitude A         min peak ADC count to attempt scoring (default 0)\n"
+        "  --keep-flat               keep waveforms with near-zero AC energy (default: remove)\n"
         "  --dry-run                 report removed spikes but keep files intact\n"
         "  --verbose                 print per-spike scores\n"
         "  --cpu                     no-op; reserved for future GPU path\n"
@@ -268,6 +293,7 @@ int main(int argc, char *argv[])
     // ---- options ----
     double uniformityThreshold = 0.30;
     double minAmplitude        = 0.0;
+    bool   removeFlat          = true;
     bool   dryRun              = false;
     bool   verbose             = false;
 
@@ -277,6 +303,8 @@ int main(int argc, char *argv[])
             uniformityThreshold = atof(argv[++i]);
         else if ((arg == "--min-amplitude" || arg == "-a") && i + 1 < argc)
             minAmplitude = atof(argv[++i]);
+        else if (arg == "--keep-flat")   removeFlat = false;
+        else if (arg == "--remove-flat") removeFlat = true;
         else if (arg == "--dry-run")  dryRun  = true;
         else if (arg == "--verbose")  verbose = true;
         else if (arg == "--cpu")      { /* reserved, no-op */ }
@@ -376,9 +404,11 @@ int main(int argc, char *argv[])
     const int64_t samplesPerSpike = (int64_t)nSamples * nChannels;
 
     printf("process_denoiseuniform: group %s  %lld spikes"
-           "  nChannels=%d  nSamples=%d  threshold=%.3f%s%s\n",
+           "  nChannels=%d  nSamples=%d  threshold=%.3f"
+           "  removeFlat=%s%s%s\n",
            group.c_str(), (long long)nSpikes, nChannels, nSamples,
            uniformityThreshold,
+           removeFlat ? "yes" : "no",
            dryRun  ? "  [dry-run]" : "",
 #ifdef _OPENMP
            "  [OpenMP]"
@@ -401,7 +431,7 @@ int main(int argc, char *argv[])
     vector<SpikeScore> scores((size_t)nSpikes);
     classifySpikes(allWaveforms.data(), nSpikes,
                    nSamples, nChannels,
-                   uniformityThreshold, minAmplitude,
+                   uniformityThreshold, minAmplitude, removeFlat,
                    scores.data());
 
     // ---- read timestamps ----
@@ -435,27 +465,40 @@ int main(int argc, char *argv[])
 
     // ---- statistics ----
     {
-        int64_t nKept = 0, nRemoved = 0, nUnscored = 0;
+        int64_t nKept = 0, nRemovedFlat = 0, nRemovedThresh = 0, nGuarded = 0;
         for (int64_t i = 0; i < nSpikes; ++i) {
-            if (scores[(size_t)i].score < 0.0) ++nUnscored;
-            if (scores[(size_t)i].keep)         ++nKept;
-            else                                ++nRemoved;
+            const SpikeScore &s = scores[(size_t)i];
+
+            if (s.keep) {
+                ++nKept;
+                if (s.score < 0.0 && s.peak >= minAmplitude) {
+                    // flat but kept because --keep-flat
+                }
+                if (s.peak < minAmplitude) ++nGuarded;
+            } else {
+                if (s.score < 0.0) ++nRemovedFlat;
+                else               ++nRemovedThresh;
+            }
 
             if (verbose) {
+                const char *tag = s.keep ? "" :
+                                  (s.score < 0.0 ? "  [FLAT-NOISE]" : "  [NOISE]");
                 printf("  spike %lld  t=%lld  peak=%.0f  score=%.4f%s\n",
                        (long long)i,
                        (long long)timestamps[(size_t)i],
-                       scores[(size_t)i].peak,
-                       scores[(size_t)i].score,
-                       scores[(size_t)i].keep ? "" : "  [NOISE]");
+                       s.peak,
+                       s.score,
+                       tag);
             }
         }
 
+        int64_t nRemoved = nRemovedFlat + nRemovedThresh;
         printf("process_denoiseuniform: removed %lld / %lld spikes (%.1f%%)"
-               "  kept=%lld  unscored=%lld%s\n",
+               "  [flat=%lld  threshold=%lld  amplitude-guarded=%lld]%s\n",
                (long long)nRemoved, (long long)nSpikes,
                nSpikes > 0 ? (100.0 * nRemoved / nSpikes) : 0.0,
-               (long long)nKept, (long long)nUnscored,
+               (long long)nRemovedFlat, (long long)nRemovedThresh,
+               (long long)nGuarded,
                dryRun ? "  [dry-run — files unchanged]" : "");
 
         if (dryRun) goto done;

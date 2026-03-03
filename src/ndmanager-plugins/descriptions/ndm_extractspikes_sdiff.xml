@@ -1,0 +1,93 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_extractspikes_sdiff</n>
+  <parameters>
+   <parameter>
+    <n>thresholdFactor</n>
+    <value>1.5</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>refractoryPeriod</n>
+    <value>16</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>peakSearchLength</n>
+    <value>32</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>start</n>
+    <value>0</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>duration</n>
+    <value>60</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>sdiffOrder</n>
+    <value>2</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Extract spikes using the spatial derivative across probe channels to
+suppress common-mode noise before threshold detection.
+
+The script is a drop-in replacement for ndm_extractspikes.  Its detection
+step applies a spatial derivative across the ordered channels of each
+electrode group before evaluating whether the signal exceeds the
+threshold.  Because genuine spike currents are spatially localised while
+motion artefacts and electrical interference are correlated across all
+contacts, the derivative enhances single-unit signals relative to noise.
+
+Detection (threshold crossing + peak search) operates entirely on the
+spatial-derivative signal.  Waveform extraction writes the ORIGINAL,
+un-differentiated data to the .spk files so that downstream PCA and
+clustering see raw amplitudes — exactly as they would with
+ndm_extractspikes.
+
+CHANNEL ORDERING
+Channels in each spikeDetection group should be listed in their physical
+probe order (tip-to-base, or shank-proximal to shank-distal) so that
+spatial neighbours are adjacent in the channel list.
+
+PARAMETERS
+
+# thresholdFactor
+
+Threshold = thresholdFactor × 4σ, where σ is the Quiroga (2004) noise
+estimate computed from the SPATIAL DERIVATIVE of the signal over the
+baseline window:   σ = median(|sdiff|) / 0.6745
+
+# refractoryPeriod
+
+Minimum number of samples between consecutive spikes.
+
+# peakSearchLength
+
+Length of the peak-search window (in samples).
+
+# start
+
+Starting point in the file (in s) for computation of the baseline noise
+level.
+
+# duration
+
+Duration (in s) for computation of the baseline noise level.
+
+# sdiffOrder
+
+Order of the spatial derivative:
+  0 — none (equivalent to ndm_extractspikes; no spatial filtering)
+  1 — first-order difference:   s[i] = x[i] − x[i+1]
+  2 — discrete Laplacian (default):
+           s[i] = x[i] − ½(x[i−1] + x[i+1])
+      (edge channels use one-sided differences)
+</help>
+ </program>
+</parameter>

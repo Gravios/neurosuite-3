@@ -27,6 +27,7 @@ struct DenoiseArgs {
 
     double      uniformityThreshold = 0.30;
     double      minAmplitude        = 0.0;
+    bool        removeFlat          = true;  // remove waveforms with near-zero AC energy
     bool        dryRun              = false;
     bool        verbose             = false;
 };
@@ -70,4 +71,5 @@ void classifySpikes(const int16_t  *waveforms,
                     int             nChannels,
                     double          uniformityThreshold,
                     double          minAmplitude,
+                    bool            removeFlat,
                     SpikeScore     *results);

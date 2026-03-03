@@ -1,0 +1,267 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_extractspikes_sdiff">
+
+	<refmeta>
+		<refentrytitle>process_extractspikes_sdiff</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_extractspikes_sdiff</refname>
+		<refpurpose>detect and extract spike waveforms using the spatial derivative across probe channels to suppress common-mode noise before threshold crossing.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_extractspikes_sdiff</command>
+		<arg choice="plain">
+			<option>-n</option> <replaceable>nChannels</replaceable>
+		</arg>
+		<arg choice="plain">
+			<option>-c</option> <replaceable>channels</replaceable>
+		</arg>
+		<arg choice="plain">
+			<option>-w</option> <replaceable>waveformLength</replaceable>
+		</arg>
+		<arg choice="plain">
+			<option>-p</option> <replaceable>peakSample</replaceable>
+		</arg>
+		<arg choice="plain">
+			<option>-r</option> <replaceable>refractoryPeriod</replaceable>
+		</arg>
+		<arg choice="plain">
+			<option>-f</option> <replaceable>thresholdFactor</replaceable>
+		</arg>
+		<arg choice="plain">
+			<option>-Z</option> <replaceable>sizeBytes</replaceable>
+		</arg>
+		<arg>
+			<option>-B</option> <replaceable>startByte</replaceable>
+		</arg>
+		<arg>
+			<option>-l</option> <replaceable>peakSearchLength</replaceable>
+		</arg>
+		<arg>
+			<option>-d</option> <replaceable>sdiffOrder</replaceable>
+		</arg>
+		<arg>
+			<option>-v</option>
+		</arg>
+		<arg choice="plain">
+			<replaceable>basename</replaceable>
+		</arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1><title>Description</title>
+
+		<para>
+			<command>process_extractspikes_sdiff</command> is a drop-in companion to
+			<command>process_extractspikes</command> that applies a spatial derivative
+			across the ordered channels of each electrode group before evaluating
+			threshold crossings. Because genuine spike currents are spatially
+			localised while common-mode artefacts (motion noise, electrical
+			interference) are correlated across all contacts, the derivative
+			enhances single-unit signals relative to noise and suppresses
+			artefacts that would otherwise trigger false detections.
+		</para>
+
+		<para>
+			Detection (threshold crossing and peak search) operates entirely on
+			the spatial-derivative signal. Waveform extraction writes the
+			<emphasis>original, un-differentiated</emphasis> data to the
+			<filename>.spk</filename> output files so that downstream PCA and
+			clustering tools see unmodified raw amplitudes, exactly as they would
+			with <command>process_extractspikes</command>.
+		</para>
+
+		<para>
+			The detection threshold is computed internally using the Quiroga
+			(2004) robust noise estimator applied to the derivative signal:
+			<emphasis>threshold = factor × 4σ</emphasis>,
+			where <emphasis>σ = median(|sdiff|) / 0.6745</emphasis>.
+			No external call to <command>process_medianthreshold</command> is
+			required.
+		</para>
+
+		<variablelist>
+			<varlistentry>
+				<term><option>-n</option> <replaceable>nChannels</replaceable></term>
+				<listitem>
+					<para>
+						Total number of channels in the file.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-c</option> <replaceable>channels</replaceable></term>
+				<listitem>
+					<para>
+						Grouped channel list (e.g. <literal>0,1,2:4,5,7</literal> for
+						2 groups with 3 channels each). Channels within each group
+						<emphasis>must</emphasis> be listed in physical probe order
+						(tip-to-base) so that spatial neighbours are adjacent.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-w</option> <replaceable>waveformLength</replaceable></term>
+				<listitem>
+					<para>
+						Number of samples per extracted waveform window.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-p</option> <replaceable>peakSample</replaceable></term>
+				<listitem>
+					<para>
+						Position of the peak within the waveform (1-based, in samples).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-r</option> <replaceable>refractoryPeriod</replaceable></term>
+				<listitem>
+					<para>
+						Minimum number of samples between two consecutive spikes
+						(refractory period).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-f</option> <replaceable>thresholdFactor</replaceable></term>
+				<listitem>
+					<para>
+						Threshold multiplier applied to the Quiroga noise estimate of
+						the spatial-derivative signal:
+						<emphasis>threshold = factor × 4σ</emphasis>.
+						Typical values: 3.0 – 5.0.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-Z</option> <replaceable>sizeBytes</replaceable></term>
+				<listitem>
+					<para>
+						Length in bytes of the noise-estimation window within the
+						<filename>.fil</filename> file.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-B</option> <replaceable>startByte</replaceable></term>
+				<listitem>
+					<para>
+						Byte offset into the <filename>.fil</filename> file at which the
+						noise-estimation window begins (default 0).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-l</option> <replaceable>peakSearchLength</replaceable></term>
+				<listitem>
+					<para>
+						Size of the window within which to look for the peak after a
+						threshold crossing (in samples). Defaults to
+						<replaceable>waveformLength</replaceable>. Do not change this
+						unless you know what you are doing.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-d</option> <replaceable>sdiffOrder</replaceable></term>
+				<listitem>
+					<para>
+						Spatial derivative order:
+						<literal>0</literal> — none (identical to
+						<command>process_extractspikes</command>);
+						<literal>1</literal> — first-order difference
+						(<emphasis>s[i] = x[i] − x[i+1]</emphasis>);
+						<literal>2</literal> — discrete Laplacian (default,
+						<emphasis>s[i] = x[i] − ½(x[i−1] + x[i+1])</emphasis>,
+						edge channels use one-sided differences).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-v</option></term>
+				<listitem>
+					<para>
+						Verbose mode.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>basename</replaceable></term>
+				<listitem>
+					<para>
+						Common basename (filename without extension) for the input
+						<filename>.fil</filename> file and the output
+						<filename>.res</filename> / <filename>.spk</filename> files.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+
+	</refsect1>
+
+	<refsect1>
+		<title>Output files</title>
+		<para>
+			For each electrode group <emphasis>N</emphasis>, the program writes:
+		</para>
+		<variablelist>
+			<varlistentry>
+				<term><filename>basename.res.N</filename></term>
+				<listitem><para>Spike timestamps (binary int64, one per spike).</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>basename.spk.N</filename></term>
+				<listitem>
+					<para>
+						Raw waveform snippets (binary int16, interleaved by channel
+						then by sample). The waveforms are taken from the
+						<emphasis>original</emphasis> signal, not the spatial derivative.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Environment</title>
+		<variablelist>
+			<varlistentry>
+				<term><envar>PROCESS_EXTRACTSPIKES_MEM_CAP_GB</envar></term>
+				<listitem>
+					<para>
+						Maximum in-memory waveform buffer per group, in GB
+						(default 2). Groups whose waveform data would exceed this
+						limit are written to disk in streaming mode.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>See Also</title>
+		<para>
+			<citerefentry><refentrytitle>ndm_extractspikes_sdiff</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_extractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_medianthreshold</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Author</title>
+		<para>
+		<author>
+			<firstname>Gravios</firstname>
+			<surname>NeuroSuite-3 contributors</surname>
+			<contrib>Original author</contrib>
+		</author>
+		</para>
+	</refsect1>
+
+</refentry>
