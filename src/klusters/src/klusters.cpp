@@ -931,6 +931,8 @@ void KlustersApp::initializePreferences(){
     markerSize = configuration().getMarkerSize();
     selectionLineWidth = configuration().getSelectionLineWidth();
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
+    autoSelectFeatures  = configuration().getAutoSelectFeatures();
+    autoSelectNFeatures = configuration().getAutoSelectNFeatures();
     clusterPalette->changeBackgroundColor(backgroundColor);
 }
 
