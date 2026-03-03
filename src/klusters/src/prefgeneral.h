@@ -94,6 +94,8 @@ public:
     void setUseWhiteColorDuringPrinting(bool b);
     bool getAutoSelectFeatures() const;
     void setAutoSelectFeatures(bool checked);
+    int  getAutoSelectNFeatures() const;
+    void setAutoSelectNFeatures(int n);
 
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size);

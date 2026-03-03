@@ -106,6 +106,9 @@ void PrefGeneral::setAutoSelectFeatures(bool checked) {
     autoSelectFeaturesCheckBox->setChecked(checked);
 }
 
+int  PrefGeneral::getAutoSelectNFeatures() const  { return autoSelectNFeaturesSpinBox->value(); }
+void PrefGeneral::setAutoSelectNFeatures(int n)   { autoSelectNFeaturesSpinBox->setValue(n); }
+
 bool PrefGeneral::useWhiteColorDuringPrinting() const
 {
     return useWhiteColorPrinting->isChecked();

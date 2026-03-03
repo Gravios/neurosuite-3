@@ -468,16 +468,63 @@
             </item>
            </layout>
           </item>
-         <item row="2" column="0" colspan="2">
-          <widget class="QCheckBox" name="autoSelectFeaturesCheckBox">
-           <property name="text">
-            <string>Auto-select features (4–7 highest-variance features of selected cluster)</string>
-           </property>
-           <property name="toolTip">
-            <string>When checked, klusters ranks feature dimensions by variance for the selected cluster and passes the top 4–7 as 1s in the UseFeatures bit-string sent to KlustaKwik. When unchecked, %features expands to all PCA columns ON (default behaviour).</string>
-           </property>
-          </widget>
-         </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QCheckBox" name="autoSelectFeaturesCheckBox">
+              <property name="text">
+               <string>Auto-select features (highest-variance)</string>
+              </property>
+              <property name="toolTip">
+               <string>When checked, klusters ranks feature dimensions by variance for the selected cluster and passes the top N as 1s in the UseFeatures bit-string sent to KlustaKwik. When unchecked, %features expands to all PCA columns ON (default behaviour).</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="autoSelectNFeaturesLabel">
+              <property name="text">
+               <string>N features:</string>
+              </property>
+              <property name="wordWrap">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="autoSelectNFeaturesSpinBox">
+              <property name="toolTip">
+               <string>Number of highest-variance feature dimensions to pass to KlustaKwik</string>
+              </property>
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>25</number>
+              </property>
+              <property name="value">
+               <number>7</number>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer_autosel">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+
          </layout>
         </item>
        </layout>
@@ -638,6 +685,24 @@
    <header location="global">qcolorbutton.h</header>
   </customwidget>
  </customwidgets>
+
+ <tabstops>
+  <tabstop>crashRecoveryCheckBox</tabstop>
+  <tabstop>crashRecoveryComboBox</tabstop>
+  <tabstop>undoSpinBox</tabstop>
+  <tabstop>reclusteringExecutableLineEdit</tabstop>
+  <tabstop>reclusteringExecutableButton</tabstop>
+  <tabstop>reclusteringArgsLineEdit</tabstop>
+  <tabstop>autoSelectFeaturesCheckBox</tabstop>
+  <tabstop>autoSelectNFeaturesSpinBox</tabstop>
+  <tabstop>realignExecutableLineEdit</tabstop>
+  <tabstop>realignExecutableButton</tabstop>
+  <tabstop>realignArgsLineEdit</tabstop>
+  <tabstop>backgroundColorButton</tabstop>
+  <tabstop>markerSizeSpinBox</tabstop>
+  <tabstop>selectionLineWidthSpinBox</tabstop>
+  <tabstop>useWhiteColorPrinting</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>
