@@ -884,6 +884,7 @@ private:
     QString filePath;
 
     bool useWhiteColorDuringPrinting;
+    bool autoSelectFeatures;  ///< mirrors Configuration setting
 
 
     QAction *featureXLabelAction;

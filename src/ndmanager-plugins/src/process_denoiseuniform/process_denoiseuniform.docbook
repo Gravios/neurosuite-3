@@ -1,0 +1,272 @@
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+          "http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd">
+<refentry id="process_denoiseuniform">
+
+	<refmeta>
+		<refentrytitle>process_denoiseuniform</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_denoiseuniform</refname>
+		<refpurpose>remove electrically uniform noise events from spike data files</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_denoiseuniform</command>
+		<arg choice="plain"><replaceable>basename</replaceable></arg>
+		<arg choice="plain"><replaceable>group</replaceable></arg>
+		<arg choice="plain"><replaceable>nChannels</replaceable></arg>
+		<arg choice="plain"><replaceable>nSamples</replaceable></arg>
+		<arg choice="plain"><replaceable>resolution</replaceable></arg>
+		<arg><option>--uniformity-threshold</option> <replaceable>T</replaceable></arg>
+		<arg><option>--min-amplitude</option> <replaceable>A</replaceable></arg>
+		<arg><option>--dry-run</option></arg>
+		<arg><option>--verbose</option></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_denoiseuniform</command> identifies and removes
+			spike-shaped noise events from a spike dataset. Electrical
+			interference artifacts — such as 50/60 Hz mains pickup, cable
+			transients, or ground faults — typically appear as waveforms that
+			are nearly identical across all channels in a recording group.
+			Genuine single-unit action potentials always show a spatially
+			varying amplitude profile because the neuron is located
+			asymmetrically relative to the electrode sites.
+		</para>
+		<para>
+			For each spike waveform the tool computes a <emphasis>spatial
+			uniformity score</emphasis>: the mean standard deviation across
+			channels at each sample time, normalised by the overall waveform
+			RMS. A score near zero indicates that all channels carry the same
+			waveform (noise); a score near one indicates maximal inter-channel
+			diversity (genuine spike). Spikes whose score falls below
+			<option>--uniformity-threshold</option> are removed.
+		</para>
+		<para>
+			The algorithm operates in two passes. In the first pass all spike
+			waveforms are read into memory and classified in parallel
+			(OpenMP across spikes when built with <option>-fopenmp</option>).
+			In the second pass the filtered timestamps and waveforms are
+			written to temporary files which atomically replace the originals
+			on success.
+		</para>
+		<para>
+			This tool is normally invoked through the
+			<command>ndm_denoiseuniform</command> pipeline script, which
+			handles parameter file reading, backup, and multi-group looping.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Arguments</title>
+		<variablelist>
+			<varlistentry>
+				<term><replaceable>basename</replaceable></term>
+				<listitem>
+					<para>
+						Session basename without extension (e.g.
+						<filename>rat01-20240315-01</filename>).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>group</replaceable></term>
+				<listitem>
+					<para>
+						Electrode group number (integer, 1-based). The files
+						<filename>basename.res.group</filename> and
+						<filename>basename.spk.group</filename> are processed.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>nChannels</replaceable></term>
+				<listitem>
+					<para>
+						Number of recording channels in this electrode group.
+						Must be at least 2; single-channel groups cannot have
+						a spatial uniformity score computed.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>nSamples</replaceable></term>
+				<listitem>
+					<para>
+						Number of samples per waveform snippet. Must match the
+						value in the session parameter file
+						(<literal>spikeDetection/channelGroups/group[N]/nSamples</literal>).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>resolution</replaceable></term>
+				<listitem>
+					<para>
+						ADC resolution in bits. Currently only 16-bit data is
+						supported.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>--uniformity-threshold</option> <replaceable>T</replaceable></term>
+				<listitem>
+					<para>
+						Spikes with a spatial uniformity score below
+						<replaceable>T</replaceable> are classified as noise
+						and removed. Default: <literal>0.30</literal>.
+						Increase to remove more events; decrease to remove
+						fewer. Inspect the score distribution with
+						<option>--dry-run --verbose</option> before committing
+						to a threshold.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--min-amplitude</option> <replaceable>A</replaceable></term>
+				<listitem>
+					<para>
+						Spikes whose peak amplitude (in raw ADC counts) is
+						below <replaceable>A</replaceable> are retained
+						without scoring. They are too small to classify
+						reliably and could otherwise be incorrectly discarded.
+						Default: <literal>0</literal> (disabled).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--dry-run</option></term>
+				<listitem>
+					<para>
+						Classify all spikes and report the number that would
+						be removed, but do not modify any files. Useful for
+						threshold calibration.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--verbose</option></term>
+				<listitem>
+					<para>
+						Print the timestamp, peak amplitude, and uniformity
+						score for every spike, with a <literal>[NOISE]</literal>
+						marker on those that would be removed.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>File Formats</title>
+		<para>
+			<command>process_denoiseuniform</command> reads and writes the
+			binary spike file formats used by the modern ndmanager-plugins
+			pipeline:
+		</para>
+		<variablelist>
+			<varlistentry>
+				<term><filename>.res.N</filename></term>
+				<listitem>
+					<para>
+						Binary, no header. <literal>nSpikes × int64_t</literal>
+						sample timestamps (little-endian).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>.spk.N</filename></term>
+				<listitem>
+					<para>
+						Binary, no header. <literal>nSpikes × nSamples ×
+						nChannels × int16_t</literal>, sample-major layout.
+						Element at spike <literal>i</literal>, sample
+						<literal>s</literal>, channel <literal>c</literal>:
+						byte offset <literal>(i·nSamples·nChannels + s·nChannels + c) × 2</literal>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>.clu.N</filename> (optional)</term>
+				<listitem>
+					<para>
+						Plain text. First line: cluster count. Subsequent
+						lines: one cluster ID per spike. Filtered in sync
+						with <filename>.res</filename> and
+						<filename>.spk</filename> when present.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>.fet.N</filename> (optional)</term>
+				<listitem>
+					<para>
+						Binary. Header: <literal>int32_t nDimensions</literal>.
+						Body: <literal>nSpikes × nDimensions × int64_t</literal>,
+						row-major. Filtered when present and size-consistent.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Exit Status</title>
+		<variablelist>
+			<varlistentry>
+				<term>0</term>
+				<listitem><para>Success.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term>1</term>
+				<listitem>
+					<para>Error — bad arguments, unreadable input files, or
+					I/O failure. Input files are left untouched on error.</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Examples</title>
+		<para>
+			Calibrate the threshold without modifying files:
+		</para>
+		<screen>process_denoiseuniform session 1 4 32 16 --dry-run --verbose 2>&amp;1 | grep score</screen>
+		<para>
+			Remove noise with a stricter threshold:
+		</para>
+		<screen>process_denoiseuniform session 2 4 32 16 --uniformity-threshold 0.40</screen>
+		<para>
+			Protect very small spikes from being scored:
+		</para>
+		<screen>process_denoiseuniform session 1 4 32 16 --min-amplitude 200</screen>
+	</refsect1>
+
+	<refsect1>
+		<title>See Also</title>
+		<para>
+			<citerefentry><refentrytitle>ndm_denoiseuniform</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>ndm_extractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>ndm_pca</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Authors</title>
+		<para>neurosuite-3 contributors</para>
+	</refsect1>
+
+</refentry>

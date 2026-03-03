@@ -195,6 +195,10 @@ public:
 
     void setUseWhiteColorDuringPrinting(bool b) { useWhiteColorDuringPrinting = b; }
 
+    bool getAutoSelectFeatures() const { return autoSelectFeatures; }
+    bool getAutoSelectFeaturesDefault() const { return autoSelectFeaturesDefault; }
+    void setAutoSelectFeatures(bool b) { autoSelectFeatures = b; }
+
 private:
     /**Boolean indicating if a crash and recovery is ask.*/
     bool crashRecovery;
@@ -226,6 +230,8 @@ private:
     int selectionLineWidth;
 
     bool useWhiteColorDuringPrinting;
+    bool autoSelectFeatures;
+    static const bool autoSelectFeaturesDefault;
     static const bool crashRecoveryDefault;
     static const int  crashRecoveryIndexDefault;
     static const int  gainDefault;

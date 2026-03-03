@@ -98,6 +98,14 @@ void PrefGeneral::updateRealignExecutable(){
       setRealignExecutable(executable);
 }
 
+bool PrefGeneral::getAutoSelectFeatures() const {
+    return autoSelectFeaturesCheckBox->isChecked();
+}
+
+void PrefGeneral::setAutoSelectFeatures(bool checked) {
+    autoSelectFeaturesCheckBox->setChecked(checked);
+}
+
 bool PrefGeneral::useWhiteColorDuringPrinting() const
 {
     return useWhiteColorPrinting->isChecked();

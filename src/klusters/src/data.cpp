@@ -336,6 +336,48 @@ bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
     return true;
 }
 
+// ---------------------------------------------------------------------------
+QVector<double> Data::featureVariancesForCluster(int clusterId) const
+{
+    const int nDim  = nbDimensions;   // last column is timestamp
+    const int nFeat = nDim - 1;       // feature columns only
+    const int nSpk  = (int)nbSpikes;
+
+    // 1. Collect spike indices for this cluster
+    QVector<int> idx;
+    idx.reserve(256);
+    for (int s = 0; s < nSpk; ++s)
+        if (static_cast<int>((*spikesByCluster)(2, s + 1)) == clusterId)
+            idx.append(s);
+
+    if (idx.size() < 2)
+        return QVector<double>();
+
+    const double n = (double)idx.size();
+
+    // 2. Per-feature mean
+    QVector<double> mean(nFeat, 0.0);
+    for (int s : idx)
+        for (int f = 0; f < nFeat; ++f)
+            mean[f] += (double)features[(size_t)s * (size_t)nDim + (size_t)f];
+    for (int f = 0; f < nFeat; ++f)
+        mean[f] /= n;
+
+    // 3. Sample variance (n-1 denominator)
+    QVector<double> var(nFeat, 0.0);
+    for (int s : idx) {
+        for (int f = 0; f < nFeat; ++f) {
+            double d = (double)features[(size_t)s * (size_t)nDim + (size_t)f] - mean[f];
+            var[f] += d * d;
+        }
+    }
+    for (int f = 0; f < nFeat; ++f)
+        var[f] /= (n - 1.0);
+
+    return var;
+}
+
+
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,QString& errorInformation){
     if(!loadClusters(clusterFile,spkFileLength,errorInformation))
