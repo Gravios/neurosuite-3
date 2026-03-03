@@ -1,0 +1,191 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Detect and extract spikes using spatial derivative across channels
+#//
+#//   copyright       (C) 2024 Gravios / NeuroSuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+#
+#  DESCRIPTION
+#  -----------
+#  This script is a drop-in replacement for ndm_extractspikes that applies a
+#  spatial derivative (Laplacian by default) across the ordered channels of
+#  each electrode group before threshold detection.  Because genuine spikes
+#  are spatially localised while common-mode artefacts are correlated across
+#  all contacts, the derivative enhances single-unit signals relative to
+#  noise before the threshold-crossing test.
+#
+#  Detection (threshold crossing + peak search) operates entirely on the
+#  spatial-derivative signal.  Waveform extraction writes the original,
+#  un-differentiated signal to the .spk files so that downstream PCA and
+#  clustering see raw amplitudes.
+#
+#  CHANNEL ORDERING
+#  ----------------
+#  Channels in each spikeDetection group must be listed in their physical
+#  probe order (tip-to-base, or shank-proximal to shank-distal) so that
+#  spatial neighbours are adjacent in the channel list.  This is already
+#  standard practice for tetrode / linear-probe recordings.
+#
+#  PARAMETERS  (in addition to the standard ndm_extractspikes parameters)
+#  ----------
+#  sdiffOrder   Spatial derivative order:
+#                 0 = none (identical behaviour to ndm_extractspikes)
+#                 1 = first-order difference  s[i] = x[i] − x[i+1]
+#                 2 = Laplacian               s[i] = x[i] − ½(x[i-1]+x[i+1])
+#                 3 = all-pairwise (default)  s[i] = n·x[i] − Σ x[j]
+#                     Proportional to x[i]−mean(x).  Provides maximum
+#                     common-mode rejection; does not require channels to be
+#                     listed in probe order.
+#
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Detecting/extracting spikes (spatial-derivative)"
+
+check_commands_installed xpathReader process_extractspikes_sdiff
+
+inputs_missing "$session.$param_ext" $session.fil && exit $INPUTS_MISSING
+
+# ── Unit conversion helper ──────────────────────────────────────────────────
+secondsToBytes()
+{
+    unset LANG && echo $1 $samplingRate $nChannels $resolution | \
+        awk '{printf "%f", int($1*$2)/8*$3*$4}' | sed 's/[.].*//'
+}
+
+# ── Read parameters ─────────────────────────────────────────────────────────
+nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+resolution=$(xml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+
+# Check output files – only process groups whose outputs are missing.
+for group in $(seq 1 $nElectrodeGroups)
+do
+    output=$session.spk.$group
+    if ! outputs_exist $output
+    then
+        electrodeGroups="$electrodeGroups $group"
+    fi
+done
+
+check_mandatory_variable $nChannels    "missing number of channels"
+check_mandatory_variable $resolution   "missing resolution (in bits)"
+check_mandatory_variable $samplingRate "missing sampling rate"
+if [ $nElectrodeGroups -eq 0 ]
+then
+    echo_error "missing spike groups"
+    exit $GENERAL_ERROR
+fi
+
+if [ -z "$electrodeGroups" ]
+then
+    echo_info "All output files already exist, nothing to do."
+    exit $NO_ERROR
+fi
+
+# Build per-group waveform parameters.
+for electrodeGroup in $electrodeGroups
+do
+    electrodes=$(xml_read $session \
+        "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
+    check_mandatory_variable $electrodes \
+        "missing electrode list for group $electrodeGroup"
+    electrodes=$(echo $electrodes | sed 's/ /,/g')
+    electrodeList="$electrodeList:$electrodes"
+
+    samplesInWaveform=$(xml_read $session \
+        "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+    peakSample=$(xml_read $session \
+        "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+    check_mandatory_variable $samplesInWaveform \
+        "missing number of samples in waveform for group $electrodeGroup"
+    check_mandatory_variable $peakSample \
+        "missing peak sample for group $electrodeGroup"
+done
+
+n=$((${#electrodeList}-1))
+electrodeList=${electrodeList:1:$n}   # strip leading ':'
+
+# Script-specific parameters.
+thresholdFactor=$(read_script_parameter $session thresholdFactor)
+refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
+peakSearchLength=$(read_script_parameter $session peakSearchLength)
+start=$(read_script_parameter $session start)
+duration=$(read_script_parameter $session duration)
+memCapGB=$(read_script_parameter $session memCapGB)
+sdiffOrder=$(read_script_parameter $session sdiffOrder)
+
+check_mandatory_variable $thresholdFactor  "missing threshold factor"
+check_mandatory_variable $refractoryPeriod "missing refractory period"
+check_mandatory_variable $peakSearchLength "missing peak search window length"
+check_mandatory_variable $start            "missing starting point for threshold computation"
+check_mandatory_variable $duration         "missing duration for threshold computation"
+
+# Default spatial derivative order is 3 (all-pairwise) if not specified.
+sdiffOrder=${sdiffOrder:-3}
+
+startInBytes=$(secondsToBytes $start)
+durationInBytes=$(secondsToBytes $duration)
+
+# ── Detect + extract spikes ─────────────────────────────────────────────────
+echo_info "Processing channels $electrodeList"
+echo_info " Spatial derivative order : $sdiffOrder"
+echo_info " Threshold factor         : $thresholdFactor"
+echo_info " Noise window             : ${start}s – $((start + duration))s"
+echo_info "   (= byte offset $startInBytes, length $durationInBytes)"
+
+# Set waveform memory cap (default 2 GB if not in parameter file).
+export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
+
+# Use a temporary symlink so output files from incomplete runs cannot
+# accidentally overwrite good existing files (mirrors ndm_extractspikes).
+ln -s $session.fil $session-sdiff-tmp.fil
+
+process_extractspikes_sdiff \
+    -n $nChannels \
+    -c $electrodeList \
+    -w $samplesInWaveform \
+    -p $peakSample \
+    -r $refractoryPeriod \
+    -l $peakSearchLength \
+    -f $thresholdFactor \
+    -B $startInBytes \
+    -Z $durationInBytes \
+    -d $sdiffOrder \
+    $session-sdiff-tmp
+
+check_command_status process_extractspikes_sdiff
+
+rm $session-sdiff-tmp.fil
+
+# Rename temporary output files to final names.
+declare -i i=0
+for group in $electrodeGroups
+do
+    i=$i+1
+    mv $session-sdiff-tmp.res.$i $session.res.$group
+    mv $session-sdiff-tmp.spk.$i $session.spk.$group
+done
