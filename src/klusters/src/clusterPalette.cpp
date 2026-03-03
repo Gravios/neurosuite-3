@@ -118,8 +118,15 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
             }
             setCurrentItem(target);
         } else {
+            // Move to targetRow. clearSelection() + setCurrentRow() ensures
+            // a clean single-select visual state for the cursor. Then restore
+            // m_sRows highlights so S-pinned clusters stay visually selected.
+            // selectedClusters() now unions visual + m_sRows so every
+            // itemSelectionChanged fired here returns the correct display set.
             clearSelection();
             setCurrentRow(targetRow);
+            for (int k : std::as_const(m_sRows))
+                if (k < count()) item(k)->setSelected(true);
         }
         scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
     };
@@ -207,6 +214,33 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
                 if (wrapRow >= 0) applyMove(wrapRow);
             }
         }
+    } else if (event->key() == Qt::Key_S) {
+        QListWidgetItem *cur = currentItem();
+        if (!cur) { QListWidget::keyPressEvent(event); return; }
+
+        const int curRow = row(cur);
+
+        if (!m_sRows.contains(curRow)) {
+            // Not S-selected yet → add it.
+            cur->setSelected(true);
+            m_sRows.insert(curRow);
+            lastSPressItem = cur;
+        } else if (cur == lastSPressItem) {
+            // S pressed a second time on the same item → isolate: clear all
+            // other S-rows and deselect them visually, keep only this one.
+            m_sRows.clear();
+            for (int k = 0; k < count(); ++k)
+                if (item(k) != cur) item(k)->setSelected(false);
+            // Current item stays selected (it was already); m_sRows is now empty
+            // so next arrow navigation resumes single-select behaviour.
+            lastSPressItem = nullptr;
+        } else {
+            // S on a different already-S-selected item → remove it.
+            cur->setSelected(false);
+            m_sRows.remove(curRow);
+            lastSPressItem = cur;
+        }
+        emit selectionToggled();
     } else {
         QListWidget::keyPressEvent(event);
     }
@@ -285,6 +319,7 @@ ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QSt
     connect(iconView,SIGNAL(changeColor(QListWidgetItem*)),SLOT(changeColor(QListWidgetItem*)));
     connect(iconView,SIGNAL(onItem(QListWidgetItem*)),this, SLOT(slotOnItem(QListWidgetItem*)));
     connect(iconView,SIGNAL(paletteGainedFocus()),this, SIGNAL(paletteGainedFocus()));
+    connect(iconView, &ClusterPaletteWidget::selectionToggled, this, &ClusterPalette::slotClickRedraw);
 
     // Redirect focus straight to the inner list so Tab-navigation and
     // arrow-key cluster browsing work the moment the panel is entered.
@@ -535,16 +570,48 @@ QList<int> ClusterPalette::selectedClusters() {
 
     QList<int> selectedClusters;
 
-    for(int i = 0; i < iconView->count(); ++i) {
-        if(iconView->item(i)->isSelected()){
-            selectedClusters.append(clusterColors.itemId(i));
-        }
-    }
+    // Build the set of rows to report: the visually selected items UNION
+    // m_sRows (S-pinned clusters). Using the union means even the transient
+    // intermediate signals fired during arrow navigation (before we restore
+    // m_sRows highlights) return the correct cluster list.
+    QSet<int> reportRows;
+    for (int i = 0; i < iconView->count(); ++i)
+        if (iconView->item(i)->isSelected()) reportRows.insert(i);
+    for (int k : iconView->getSRows()) reportRows.insert(k);
+
+    for (int i : reportRows)
+        selectedClusters.append(clusterColors.itemId(i));
 
     //Selection has just changed
     isUpToDate = false;
 
     return selectedClusters;
+}
+
+void ClusterPalette::toggleCurrentSelection(){
+    QListWidgetItem *cur = iconView->currentItem();
+    if (!cur) return;
+
+    const int curRow = iconView->row(cur);
+
+    if (!iconView->m_sRows.contains(curRow)) {
+        // Not S-selected → add it.
+        cur->setSelected(true);
+        iconView->m_sRows.insert(curRow);
+        iconView->lastSPressItem = cur;
+    } else if (cur == iconView->lastSPressItem) {
+        // S twice on same item → isolate: clear all others, keep only this.
+        iconView->m_sRows.clear();
+        for (int k = 0; k < iconView->count(); ++k)
+            if (iconView->item(k) != cur) iconView->item(k)->setSelected(false);
+        iconView->lastSPressItem = nullptr;
+    } else {
+        // S on a different already-S-selected item → deselect it.
+        cur->setSelected(false);
+        iconView->m_sRows.remove(curRow);
+        iconView->lastSPressItem = cur;
+    }
+    slotClickRedraw();
 }
 
 void ClusterPalette::slotClickRedraw (){

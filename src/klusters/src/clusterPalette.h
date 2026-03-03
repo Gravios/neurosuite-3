@@ -57,6 +57,29 @@ Q_SIGNALS:
      *  klusters.cpp connects this to a slot that ensures the Overview
      *  Display tab is visible, then returns focus to the palette. */
     void paletteGainedFocus();
+    /** Emitted when S toggles a cluster's selection state; connected to
+     *  ClusterPalette::slotClickRedraw to trigger a display update. */
+    void selectionToggled();
+
+private:
+    /** Tracks which item S was last pressed on, for the "S twice = isolate"
+     *  behaviour: pressing S on an already-selected item that was the last
+     *  S-target deselects all others and keeps only that item selected. */
+    QListWidgetItem *lastSPressItem{nullptr};
+
+    /** Rows explicitly toggled by the S key. Arrow navigation restores only
+     *  these rows so that non-S navigation keeps the normal single-select
+     *  behaviour. Cleared when S isolates back to one cluster. */
+    QSet<int> m_sRows;
+
+    /** True while arrow-key navigation is in progress. */
+    bool m_navigating{false};
+
+public:
+    bool isNavigating() const { return m_navigating; }
+    const QSet<int>& getSRows() const { return m_sRows; }
+
+    friend class ClusterPalette;
 };
 
 class ClusterPalette : public QWidget
@@ -107,6 +130,9 @@ public:
     void setFocusToList();
 
 public Q_SLOTS:
+    /** Called by KlustersApp when S is pressed while the palette has focus.
+     *  Intercept needed because Qt::Key_S is also the Split Clusters shortcut. */
+    void toggleCurrentSelection();
     void changeColor(QListWidgetItem *item);
     void moveClustersToNoise();
     void moveClustersToArtefact();

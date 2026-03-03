@@ -326,7 +326,7 @@ void KlustersApp::createMenus()
     connect(mReCluster,SIGNAL(triggered()), this,SLOT(slotRecluster()));
 
     mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
-    connect(mAbortReclustering, SIGNAL(triggered()), this, SLOT(slotAbortReclustering()));
+    connect(mAbortReclustering, SIGNAL(triggered()), this, SLOT(slotStopRecluster()));
 
     mAbortRealign = actionMenu->addAction(tr("Abort &Realignment"));
     mAbortRealign->setEnabled(false);
@@ -339,7 +339,6 @@ void KlustersApp::createMenus()
     mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, SIGNAL(triggered()), this, SLOT(slotRealignSpikes()));
-    connect(mAbortReclustering,SIGNAL(triggered()), this,SLOT(slotStopRecluster()));
 
 
     //Tools menu
@@ -531,7 +530,7 @@ void KlustersApp::createMenus()
 
 
     //Settings menu
-    QMenu *settingsMenu = menuBar()->addMenu(tr("Settings"));
+    QMenu *settingsMenu = menuBar()->addMenu(tr("&Settings"));
 
 
     viewMainToolBar = settingsMenu->addAction(tr("Show Main Toolbar"));
@@ -572,11 +571,13 @@ void KlustersApp::createMenus()
     settingsMenu->addSeparator();
 
     mIncreasePointSize = settingsMenu->addAction(tr("Increase Point Size"));
-    mIncreasePointSize->setShortcut(Qt::Key_Plus);
+    mIncreasePointSize->setShortcuts({QKeySequence(Qt::Key_Equal),
+                                      QKeySequence(Qt::SHIFT | Qt::Key_Equal)});
     connect(mIncreasePointSize, SIGNAL(triggered()), this, SLOT(slotIncreasePointSize()));
 
     mDecreasePointSize = settingsMenu->addAction(tr("Decrease Point Size"));
-    mDecreasePointSize->setShortcut(Qt::Key_Minus);
+    mDecreasePointSize->setShortcuts({QKeySequence(Qt::Key_Minus),
+                                      QKeySequence(Qt::Key_Underscore)});
     connect(mDecreasePointSize, SIGNAL(triggered()), this, SLOT(slotDecreasePointSize()));
 
     settingsMenu->addSeparator();
@@ -593,7 +594,8 @@ void KlustersApp::createMenus()
     connect(mDelaySelection,SIGNAL(triggered()), this,SLOT(slotDelaySelection()));
 
     settingsMenu->addSeparator();
-    mPreferenceAction = settingsMenu->addAction(tr("Preferences"));
+    mPreferenceAction = settingsMenu->addAction(tr("&Preferences"));
+    mPreferenceAction->setShortcut(Qt::Key_P);
     mPreferenceAction->setIcon(QIcon(":/shared-icons/configure"));
     connect(mPreferenceAction,SIGNAL(triggered()), this,SLOT(executePreferencesDlg()));
 
@@ -1050,6 +1052,35 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                     : (cur - 1 + n) % n;
                 tabsParent->setCurrentIndex(next);
                 focusTabPage(tabsParent->widget(next));
+                return true;
+            }
+        }
+    }
+    // ── S key: palette cluster toggle ──────────────────────────────────────
+    // Qt::Key_S is also the Split Clusters shortcut, so it never reaches the
+    // palette's keyPressEvent. Intercept it here when the palette has focus.
+    if(event->type() == QEvent::ShortcutOverride){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier){
+            QWidget* focused = QApplication::focusWidget();
+            QObject* w = focused;
+            bool paletteHasFocus = false;
+            while(w){ if(w == clusterPalette){ paletteHasFocus = true; break; } w = w->parent(); }
+            if(paletteHasFocus){
+                ke->accept(); // claim the shortcut so the QAction doesn't fire
+                return true;
+            }
+        }
+    }
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier){
+            QWidget* focused = QApplication::focusWidget();
+            QObject* w = focused;
+            bool paletteHasFocus = false;
+            while(w){ if(w == clusterPalette){ paletteHasFocus = true; break; } w = w->parent(); }
+            if(paletteHasFocus){
+                clusterPalette->toggleCurrentSelection();
                 return true;
             }
         }
