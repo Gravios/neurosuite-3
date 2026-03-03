@@ -199,6 +199,13 @@ public:
     bool getAutoSelectFeaturesDefault() const { return autoSelectFeaturesDefault; }
     void setAutoSelectFeatures(bool b) { autoSelectFeatures = b; }
 
+    /**Returns number of top-variance features to pass to KlustaKwik.*/
+    int  getAutoSelectNFeatures()        const { return autoSelectNFeatures; }
+    /**Returns the default for autoSelectNFeatures.*/
+    int  getAutoSelectNFeaturesDefault() const { return autoSelectNFeaturesDefault; }
+    /**Sets number of top-variance features to pass to KlustaKwik (clamped 1-25).*/
+    void setAutoSelectNFeatures(int n)         { autoSelectNFeatures = qBound(1, n, 25); }
+
 private:
     /**Boolean indicating if a crash and recovery is ask.*/
     bool crashRecovery;
@@ -232,6 +239,8 @@ private:
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;
     static const bool autoSelectFeaturesDefault;
+    int  autoSelectNFeatures;
+    static const int  autoSelectNFeaturesDefault;
     static const bool crashRecoveryDefault;
     static const int  crashRecoveryIndexDefault;
     static const int  gainDefault;
