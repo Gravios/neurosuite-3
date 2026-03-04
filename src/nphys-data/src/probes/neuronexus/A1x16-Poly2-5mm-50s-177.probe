@@ -1,0 +1,21 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A1x16-Poly2-5mm-50s-177
+  catalogPage: 23
+  totalChannels: 16
+  substrate: {material: silicon, thickness_um: 15}
+  shanks:
+    count: 1
+    spacing_um: null
+    length_mm: 5.0
+  sites:
+    count_per_shank: 16
+    layout: poly2
+    area_um2: 177
+    spacing_um: 25          # staggered 25 µm vertical pitch, 50 µm column offset
+    geometry_description: >
+      Two staggered columns: left column sites at x=-25 µm, right at x=+25 µm.
+      Vertical (y) spacing 25 µm alternating. Total vertical coverage 375 µm.
+  channelMap: {description: null, map: null}
+  notes: "Poly2 (dual-column staggered) layout. 375 µm active span. 68 µm column separation."

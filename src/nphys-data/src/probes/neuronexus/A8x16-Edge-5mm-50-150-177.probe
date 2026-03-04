@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A8x16-Edge-5mm-50-150-177
+  catalogPage: 121
+  totalChannels: 128
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 8, spacing_um: 150, length_mm: 5.0 }
+  sites: { count_per_shank: 16, layout: edge, area_um2: 177, spacing_um: 50 }
+  channelMap: { description: null, map: null }
+  notes: "8-shank 128-ch edge layout. 150 µm shank pitch, 1050 µm lateral span. 750 µm/shank."

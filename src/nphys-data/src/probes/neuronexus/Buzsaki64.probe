@@ -1,0 +1,34 @@
+# NeuroNexus Buzsaki64 — NeuroSuite-3 probe configuration
+# Source: 2026 Penetrating Probe Catalog v2.1, page 101
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: Buzsaki64
+  catalogPage: 101
+  totalChannels: 64
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 8
+    spacing_um: 200
+    length_mm: 5.0
+  sites:
+    count_per_shank: 8
+    layout: octrode
+    area_um2: 160
+    spacing_um: null
+    geometry:
+      - [0,    0]
+      - [-11,  20]
+      - [11,   40]
+      - [-11,  60]
+      - [11,   80]
+      - [-11, 100]
+      - [11,  120]
+      - [-11, 140]
+  channelMap: { description: "H64LP dual 32-ch Omnetics", map: null }
+  notes: >
+    8-shank 64-ch archetypal hippocampal probe. 1400 µm lateral span.
+    Reference sites 4200 µm² at base. Tip width 8.5 µm.
+    Cite: Berenyi et al. (2014) J Neurophysiol.

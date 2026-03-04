@@ -1,0 +1,18 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A1x64-Edge-6mm-20-177
+  catalogPage: 78
+  totalChannels: 64
+  substrate: {material: silicon, thickness_um: 15}
+  shanks:
+    count: 1
+    spacing_um: null
+    length_mm: 6.0
+  sites:
+    count_per_shank: 64
+    layout: edge
+    area_um2: 177
+    spacing_um: 20
+  channelMap: {description: null, map: null}
+  notes: "High-density single-shank edge probe. 1260 µm active span. 20 µm pitch."

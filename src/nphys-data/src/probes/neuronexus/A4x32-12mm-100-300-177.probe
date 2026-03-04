@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A4x32-12mm-100-300-177
+  catalogPage: 114
+  totalChannels: 128
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 4, spacing_um: 300, length_mm: 12.0 }
+  sites: { count_per_shank: 32, layout: linear, area_um2: 177, spacing_um: 100 }
+  channelMap: { description: null, map: null }
+  notes: "Deep-target 4-shank 128-ch. 12 mm shank, 300 µm pitch."

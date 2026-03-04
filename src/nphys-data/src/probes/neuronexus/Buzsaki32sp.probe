@@ -1,0 +1,27 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: Buzsaki32sp
+  catalogPage: 74
+  totalChannels: 32
+  substrate: {material: silicon, thickness_um: 15}
+  shanks:
+    count: 4
+    spacing_um: 200
+    length_mm: 5.0
+  sites:
+    count_per_shank: 8
+    layout: octrode
+    area_um2: 160
+    spacing_um: null
+    geometry:
+      - [0,    0]
+      - [-11,  20]
+      - [11,   40]
+      - [-11,  60]
+      - [11,   80]
+      - [-11, 100]
+      - [11,  120]
+      - [-11, 140]
+  channelMap: {description: null, map: null}
+  notes: "Buzsaki32 with staggered 100 µm inter-shank spacing variant."

@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A8x32-5mm-35-300-160
+  catalogPage: 127
+  totalChannels: 256
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 8, spacing_um: 300, length_mm: 5.0 }
+  sites: { count_per_shank: 32, layout: linear, area_um2: 160, spacing_um: 35 }
+  channelMap: { description: null, map: null }
+  notes: "8-shank 256-ch high-density. 300 µm shank pitch, 2100 µm lateral span. 1085 µm/shank."

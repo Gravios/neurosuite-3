@@ -1,0 +1,18 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A4x8-7mm-100-200-177
+  catalogPage: 69
+  totalChannels: 32
+  substrate: {material: silicon, thickness_um: 15}
+  shanks:
+    count: 4
+    spacing_um: 200
+    length_mm: 7.0
+  sites:
+    count_per_shank: 8
+    layout: linear
+    area_um2: 177
+    spacing_um: 100
+  channelMap: {description: null, map: null}
+  notes: "4-shank, 7 mm depth. 700 µm active span per shank."

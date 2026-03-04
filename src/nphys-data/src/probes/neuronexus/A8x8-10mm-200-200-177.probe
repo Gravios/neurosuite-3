@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A8x8-10mm-200-200-177
+  catalogPage: 98
+  totalChannels: 64
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 8, spacing_um: 200, length_mm: 10.0 }
+  sites: { count_per_shank: 8, layout: linear, area_um2: 177, spacing_um: 200 }
+  channelMap: { description: null, map: null }
+  notes: "8-shank 64-ch, long 10 mm. 1400 µm lateral span."

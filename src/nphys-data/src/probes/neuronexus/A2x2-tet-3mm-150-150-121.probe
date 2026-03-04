@@ -1,0 +1,16 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A2x2-tet-3mm-150-150-121
+  catalogPage: 24
+  totalChannels: 4
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 2, spacing_um: 150, length_mm: 3.0 }
+  sites:
+    count_per_shank: 2
+    layout: tetrode
+    area_um2: 121
+    spacing_um: null
+    geometry: [[-12, 0], [12, 0]]
+  channelMap: { description: null, map: null }
+  notes: "2-shank tetrode. 150 µm shank pitch. Site diameter 25 µm circular."
