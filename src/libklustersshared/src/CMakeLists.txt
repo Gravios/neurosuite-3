@@ -23,7 +23,8 @@ set(_srcs
     klustersshared/progressbar.cpp
     klustersshared/parameteryamlreader.cpp
     klustersshared/parameteryamlmodifier.cpp
-    klustersshared/parameteryamlwriter.cpp)
+    klustersshared/parameteryamlwriter.cpp
+    klustersshared/parameteryamlreader_probes.cpp)
 
 set(_hdrs
     libklustersshared_export.h
@@ -50,6 +51,7 @@ set(_hdrs
     klustersshared/parameteryamlreader.h
     klustersshared/parameteryamlmodifier.h
     klustersshared/parameteryamlwriter.h
+    klustersshared/parameteryamlreader_probes.h
     klustersshared/generalinformation.h
     klustersshared/fileinformation.h
     klustersshared/programinformation.h
