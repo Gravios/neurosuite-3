@@ -16,9 +16,13 @@
 
 YAML::Node ParameterYamlWriter::strNode(const QString& s)
 {
-    if (s.isEmpty()) return YAML::Node(YAML::NodeType::Null);
+    // Write empty optional fields as the explicit YAML null scalar "~".
+    // YAML::NodeType::Null is correct per-spec but yaml-cpp's emitter can
+    // produce a bare "key:" (no value token) in certain block-mapping contexts
+    // on some builds, which causes "illegal map value" errors on re-read.
+    // Using "~" as a plain scalar is unambiguous across all yaml-cpp versions.
     YAML::Node n;
-    n = s.toStdString();
+    n = s.isEmpty() ? std::string("~") : s.toStdString();
     return n;
 }
 
@@ -345,7 +349,7 @@ void ParameterYamlWriter::setProgramsInformation(
                 else {
                     double dv = row[1].toDouble(&ok);
                     if (ok) { p["value"] = dv; }
-                    else if (row[1].isEmpty()) { p["value"] = YAML::Node(YAML::NodeType::Null); }
+                    else if (row[1].isEmpty()) { p["value"] = std::string("~"); }
                     else { p["value"] = row[1].toStdString(); }
                 }
                 p["status"] = row[2].toStdString();
