@@ -77,11 +77,13 @@ struct KK_GPU {
     float *d_Score      = nullptr;  // [1]  score reduction accumulator
 
     int  nPoints = 0, nDims = 0, nDims2 = 0, MaxClusters = 0;
+    int  smemLimit = 49152;  // device LDS limit per workgroup (bytes), queried at allocate()
     bool initialised = false;
 
     void allocate(int nP, int nD, int nD2, int maxC);
     void free_all();
 };
+    bool initialised = false;
 
 // ---------------------------------------------------------------------------
 // Host-callable wrappers (defined in KK_hip.cpp, called from KK.cpp).

@@ -95,6 +95,9 @@ bool sycl_device_available(sycl::device *out_dev) {
 // ---------------------------------------------------------------------------
 void KK_GPU::allocate(int nP, int nD, int nD2, int maxC) {
     nPoints = nP; nDims = nD; nDims2 = nD2; MaxClusters = maxC;
+    // Query device local memory limit for adaptive kernel selection
+    smemLimit = (int)q.get_device()
+        .get_info<sycl::info::device::local_mem_size>();
 
     d_Data       = sycl::malloc_device<float>(nD   * nP,   q);
     d_LogP       = sycl::malloc_device<float>(maxC * nP,   q);
@@ -289,54 +292,76 @@ static void sycl_mstep_mean_submit(KK_GPU *gpu) {
     const int lm_mean_elems = maxC * nD;
     const int lm_nm_elems   = maxC;
     const int nGroups = (nP + WG - 1) / WG;
+    const int smem_needed = (int)(sizeof(float)*lm_mean_elems + sizeof(int)*lm_nm_elems);
 
-    gpu->q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<float, 1> lm_mean(lm_mean_elems, h);
-        sycl::local_accessor<int,   1> lm_nm  (lm_nm_elems,   h);
+    if (smem_needed <= gpu->smemLimit) {
+        // Local-memory block reduction path
+        gpu->q.submit([&](sycl::handler &h) {
+            sycl::local_accessor<float, 1> lm_mean(lm_mean_elems, h);
+            sycl::local_accessor<int,   1> lm_nm  (lm_nm_elems,   h);
 
-        h.parallel_for(sycl::nd_range<1>(nGroups * WG, WG),
-                       [=](sycl::nd_item<1> it) {
-            const int p   = static_cast<int>(it.get_global_id(0));
-            const int lid = static_cast<int>(it.get_local_id(0));
-            const int lsz = static_cast<int>(it.get_local_range(0));
+            h.parallel_for(sycl::nd_range<1>(nGroups * WG, WG),
+                           [=](sycl::nd_item<1> it) {
+                const int p   = static_cast<int>(it.get_global_id(0));
+                const int lid = static_cast<int>(it.get_local_id(0));
+                const int lsz = static_cast<int>(it.get_local_range(0));
 
-            // Zero local accumulators cooperatively
-            for (int i = lid; i < lm_mean_elems; i += lsz) lm_mean[i] = 0.0f;
-            for (int i = lid; i < lm_nm_elems;   i += lsz) lm_nm[i]   = 0;
-            it.barrier(sycl::access::fence_space::local_space);
+                for (int i = lid; i < lm_mean_elems; i += lsz) lm_mean[i] = 0.0f;
+                for (int i = lid; i < lm_nm_elems;   i += lsz) lm_nm[i]   = 0;
+                it.barrier(sycl::access::fence_space::local_space);
 
-            // Accumulate this point into local memory (no global atomics here)
-            if (p < nP) {
-                const int c = d_Class[p];
-                using AtomLI = sycl::atomic_ref<int,
+                if (p < nP) {
+                    const int c = d_Class[p];
+                    using AtomLI = sycl::atomic_ref<int,
+                        sycl::memory_order::relaxed,
+                        sycl::memory_scope::work_group,
+                        sycl::access::address_space::local_space>;
+                    using AtomLF = sycl::atomic_ref<float,
+                        sycl::memory_order::relaxed,
+                        sycl::memory_scope::work_group,
+                        sycl::access::address_space::local_space>;
+                    AtomLI(lm_nm[c]).fetch_add(1);
+                    for (int d = 0; d < nD; d++)
+                        AtomLF(lm_mean[c * nD + d]).fetch_add(d_Data[d * nP + p]);
+                }
+                it.barrier(sycl::access::fence_space::local_space);
+
+                using AtomGI = sycl::atomic_ref<int,
                     sycl::memory_order::relaxed,
-                    sycl::memory_scope::work_group,
-                    sycl::access::address_space::local_space>;
-                using AtomLF = sycl::atomic_ref<float,
+                    sycl::memory_scope::device,
+                    sycl::access::address_space::global_space>;
+                using AtomGF = sycl::atomic_ref<float,
                     sycl::memory_order::relaxed,
-                    sycl::memory_scope::work_group,
-                    sycl::access::address_space::local_space>;
-                AtomLI(lm_nm[c]).fetch_add(1);
-                for (int d = 0; d < nD; d++)
-                    AtomLF(lm_mean[c * nD + d]).fetch_add(d_Data[d * nP + p]);
-            }
-            it.barrier(sycl::access::fence_space::local_space);
-
-            // Flush non-zero local partial sums to global (one atomic per element)
-            using AtomGI = sycl::atomic_ref<int,
-                sycl::memory_order::relaxed,
-                sycl::memory_scope::device,
-                sycl::access::address_space::global_space>;
-            using AtomGF = sycl::atomic_ref<float,
-                sycl::memory_order::relaxed,
-                sycl::memory_scope::device,
-                sycl::access::address_space::global_space>;
-            for (int i = lid; i < lm_nm_elems; i += lsz)
-                if (lm_nm[i] > 0) AtomGI(d_nMem[i]).fetch_add(lm_nm[i]);
-            for (int i = lid; i < lm_mean_elems; i += lsz)
-                if (lm_mean[i] != 0.0f) AtomGF(d_MeanAcc[i]).fetch_add(lm_mean[i]);
+                    sycl::memory_scope::device,
+                    sycl::access::address_space::global_space>;
+                for (int i = lid; i < lm_nm_elems; i += lsz)
+                    if (lm_nm[i] > 0) AtomGI(d_nMem[i]).fetch_add(lm_nm[i]);
+                for (int i = lid; i < lm_mean_elems; i += lsz)
+                    if (lm_mean[i] != 0.0f) AtomGF(d_MeanAcc[i]).fetch_add(lm_mean[i]);
+            });
         });
-    });
+    } else {
+        // Direct global atomics fallback — no local buffer needed
+        gpu->q.submit([&](sycl::handler &h) {
+            h.parallel_for(sycl::range<1>(nGroups * WG),
+                           [=](sycl::id<1> idx) {
+                const int p = static_cast<int>(idx[0]);
+                if (p >= nP) return;
+                const int c = d_Class[p];
+                using AtomGI = sycl::atomic_ref<int,
+                    sycl::memory_order::relaxed,
+                    sycl::memory_scope::device,
+                    sycl::access::address_space::global_space>;
+                using AtomGF = sycl::atomic_ref<float,
+                    sycl::memory_order::relaxed,
+                    sycl::memory_scope::device,
+                    sycl::access::address_space::global_space>;
+                AtomGI(d_nMem[c]).fetch_add(1);
+                for (int d = 0; d < nD; d++)
+                    AtomGF(d_MeanAcc[c * nD + d]).fetch_add(d_Data[d * nP + p]);
+            });
+        });
+    }
 }
 
 // Phase 1c: scatter covariance accumulation with per-cluster local reduction.

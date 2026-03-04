@@ -408,6 +408,11 @@ public:
      *  Returns empty vector when cluster has fewer than 2 spikes. */
     QVector<double> featureVariancesForCluster(int clusterId) const;
 
+    /** Per-feature variance pooled across all spikes belonging to any cluster
+     *  in @p clusterIds.  Returns an empty vector if fewer than 2 spikes are
+     *  found in total across all listed clusters. */
+    QVector<double> featureVariancesForClusters(const QList<int>& clusterIds) const;
+
     /**Returns the sampling interval (time between two samples) in second.*/
     double intervalOfSampling()const{return samplingInterval;}
 

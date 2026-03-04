@@ -25,7 +25,7 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology toolchain.
 git clone https://github.com/Gravios/neurosuite-3.git
 cd neurosuite-3
 
-# Build and install everything in dependency order (requires cmake, ninja, Qt6, yaml-cpp, libxml2)
+# Install dependencies (see Dependencies below), then:
 ./build-neurosuite.sh --prefix /usr/local
 
 # Reload the dynamic linker if needed
@@ -37,6 +37,91 @@ ndmanager session.yaml
 ```
 
 Pass `--help` to `build-neurosuite.sh` for the full option list, including `--skip`, `--cuda-arch`, `--no-install`, and `--clean`.
+
+---
+
+## Dependencies
+
+GPU backends (CUDA, ROCm/HIP, SYCL) are optional and auto-detected at build time. Instructions for those are in the per-component `doc/` directories. The packages below are everything needed for a full CPU build.
+
+### Linux (Ubuntu 24.04 / Debian 12)
+
+```bash
+sudo apt install -y \
+  build-essential cmake ninja-build pkg-config git \
+  qt6-base-dev qt6-tools-dev libqt6svg6-dev \
+  libgl-dev libxkbcommon-dev libxcb-cursor0 \
+  libyaml-cpp-dev libxml2-dev libgsl-dev \
+  libsamplerate0-dev \
+  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+  ffmpeg python3
+```
+
+**What each group covers:**
+
+| Package(s) | Required by |
+|---|---|
+| `build-essential cmake ninja-build pkg-config git` | All components — build toolchain |
+| `qt6-base-dev qt6-tools-dev libqt6svg6-dev` | libklustersshared, klusters, neuroscope, ndmanager |
+| `libgl-dev libxkbcommon-dev libxcb-cursor0` | Qt6 OpenGL and XCB platform plugin |
+| `libyaml-cpp-dev` | libklustersshared — YAML parameter I/O |
+| `libxml2-dev` | ndmanager — legacy XML parameter files and xpathReader |
+| `libgsl-dev` | process\_pca — PCA feature extraction |
+| `libsamplerate0-dev` | process\_resample — avoids building the vendored fallback |
+| `libavcodec-dev libavformat-dev libavutil-dev libswscale-dev` | process\_extractleds — video LED tracking |
+| `ffmpeg` | ndm\_transcodevideo and other pipeline video scripts |
+| `python3` | ndm\_prepare, ndm\_checkconsistency scripts |
+
+OpenMP is provided by GCC (part of `build-essential`) and requires no additional package.
+
+---
+
+### macOS
+
+Requires [Homebrew](https://brew.sh) and Xcode Command Line Tools (`xcode-select --install`).
+
+```bash
+brew install cmake ninja pkg-config qt@6 yaml-cpp gsl libomp
+# Optional but recommended:
+brew install ffmpeg libsamplerate
+```
+
+Then build using the macOS script (GPU backends are disabled automatically):
+
+```bash
+./build-neurosuite-macos.sh --prefix "$HOME/.local" --with-ffmpeg --with-libsamplerate
+```
+
+`libomp` is needed because Apple Clang does not ship OpenMP; the build script passes the required CMake hint flags automatically when Homebrew libomp is present.
+
+---
+
+### Windows
+
+Requires:
+- [Visual Studio 2022](https://visualstudio.microsoft.com/) with the **Desktop development with C++** workload
+- [CMake 3.21+](https://cmake.org/download/) (or use the one bundled with Visual Studio)
+- [Git for Windows](https://git-scm.com/download/win)
+- [Qt 6.6+](https://www.qt.io/download-qt-installer) — install the `MSVC 2022 64-bit` component; set `Qt6_DIR` to the cmake subdirectory, e.g. `C:\Qt\6.7.0\msvc2022_64\lib\cmake\Qt6`
+- [vcpkg](https://vcpkg.io/en/getting-started) — used for the remaining C++ libraries
+
+Bootstrap vcpkg once:
+
+```bat
+git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+setx VCPKG_ROOT C:\vcpkg
+```
+
+Then build from a **Developer Command Prompt for VS 2022**:
+
+```bat
+build-neurosuite.bat --qt-dir C:\Qt\6.7.0\msvc2022_64\lib\cmake\Qt6 ^
+                     --vcpkg-root C:\vcpkg ^
+                     --with-ffmpeg --with-libsamplerate
+```
+
+The build script installs `yaml-cpp`, `libxml2`, `gsl`, and (if requested) `ffmpeg` and `libsamplerate` via vcpkg automatically. The `--with-ffmpeg` flag is needed only if you intend to use `process_extractleds` for video LED tracking.
 
 ---
 

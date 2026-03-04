@@ -340,6 +340,10 @@ public:
     QVector<double> computeFeatureVariancesForCluster(int clusterId) const {
         return clusteringData->featureVariancesForCluster(clusterId);
     }
+    /** Per-feature variance pooled across all spikes in @p clusterIds. */
+    QVector<double> computeFeatureVariancesForClusters(const QList<int>& clusterIds) const {
+        return clusteringData->featureVariancesForClusters(clusterIds);
+    }
     
     /**Makes all the internal changes due to a modification of the number of undo.
   * @param newNbUndo the futur new number of undo.
