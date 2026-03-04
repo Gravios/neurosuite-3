@@ -20,23 +20,67 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology toolchain.
 
 ## Quick start
 
+The top-level `CMakeLists.txt` is a CMake superbuild that builds and installs all components in dependency order. The invocation is identical on Linux, macOS, and Windows:
+
 ```bash
-# Clone
 git clone https://github.com/Gravios/neurosuite-3.git
 cd neurosuite-3
 
-# Install dependencies (see Dependencies below), then:
-./build-neurosuite.sh --prefix /usr/local
+# Install system dependencies and build in one step:
+cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DNS_INSTALL_DEPS=ON
+cmake --build build
 
-# Reload the dynamic linker if needed
-echo '/usr/local/lib' | sudo tee /etc/ld.so.conf.d/neurosuite.conf
-sudo ldconfig
-
-# Open a session
-ndmanager session.yaml
+# Or, if you have already installed dependencies manually:
+cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
 ```
 
-Pass `--help` to `build-neurosuite.sh` for the full option list, including `--skip`, `--cuda-arch`, `--no-install`, and `--clean`.
+`-DNS_INSTALL_DEPS=ON` runs `apt-get` / `brew` / `vcpkg` at configure time to install all required packages automatically (see [Dependencies](#dependencies) for what gets installed). It is `OFF` by default so repeated cmake invocations don't re-run the package manager unnecessarily.
+
+On Linux, run `sudo cmake --build build` if writing to a system prefix, or pass `-DCMAKE_INSTALL_PREFIX=$HOME/.local` to install without elevated privileges.
+
+On **macOS**, Qt6 is not on the system path by default — pass `-DQt6_DIR` explicitly:
+
+```bash
+cmake -B build \
+  -DCMAKE_INSTALL_PREFIX="$HOME/.local" \
+  -DQt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6"
+cmake --build build
+```
+
+On **Windows**, run from a **Developer Command Prompt for VS 2022** and point at your Qt installation:
+
+```bat
+cmake -B build ^
+  -DCMAKE_INSTALL_PREFIX=C:\NeuroSuite ^
+  -DQt6_DIR=C:\Qt\6.7.0\msvc2022_64\lib\cmake\Qt6
+cmake --build build
+```
+
+**Useful options** (pass with `-D`):
+
+| Option | Default | Description |
+|---|---|---|
+| `CMAKE_INSTALL_PREFIX` | `/usr/local` | Install root |
+| `CMAKE_BUILD_TYPE` | `Release` | `Release` or `Debug` |
+| `JOBS` | CMake default | Parallel job count |
+| `Qt6_DIR` | auto-detected | Path to `Qt6Config.cmake` |
+| `NS_INSTALL_DEPS` | `OFF` | Auto-install system deps via apt / brew / vcpkg |
+| `NS_VCPKG_ROOT` | `%VCPKG_ROOT%` or `C:/vcpkg` | vcpkg root (Windows, `NS_INSTALL_DEPS=ON` only) |
+| `USE_CUDA` / `USE_HIP` / `USE_SYCL` | `ON` | GPU backend enable/disable |
+| `CMAKE_CUDA_ARCHITECTURES` | auto | e.g. `"86;89;120"` for Blackwell |
+| `NS_SKIP_<NAME>` | `OFF` | Skip a component, e.g. `-DNS_SKIP_KLUSTAKWIK=ON` |
+
+Valid `NS_SKIP_*` names: `NPHYS_DATA`, `LIBKLUSTERSSHARED`, `KLUSTERS`, `NEUROSCOPE`, `NDMANAGER`, `NDMANAGER_PLUGINS`, `KLUSTAKWIK`, `SPIKEREALIGN`.
+
+After installing to a non-standard prefix on Linux, register the shared library with the dynamic linker:
+
+```bash
+echo '/usr/local/lib' | sudo tee /etc/ld.so.conf.d/neurosuite.conf
+sudo ldconfig
+```
+
+Platform-specific build scripts (`scripts/build-neurosuite.sh`, `scripts/build-neurosuite-macos.sh`, `scripts/build-neurosuite.bat`) are also available for advanced use cases such as incremental rebuilds of individual components.
 
 ---
 
