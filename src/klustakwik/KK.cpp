@@ -689,6 +689,26 @@ int KK::TrySplits() {
     const float Score = ComputeScore();
     int DidSplit = 0;
 
+    // Pre-compute global per-dim variance for variance-ratio feature selection.
+    // Excludes the time dimension (last dim).
+    const int nSpatialD  = (nDims > 1) ? nDims - 1 : nDims;
+    const int kSelect    = std::min(nSpatialD, std::max(6, nSpatialD / 2));
+    const bool doFeatSel = (kSelect < nSpatialD);
+    std::vector<float> globalVar(nSpatialD, 0.0f);
+    if (doFeatSel) {
+        std::vector<float> globalMean(nSpatialD, 0.0f);
+        for (int p = 0; p < nPoints; p++)
+            for (int d = 0; d < nSpatialD; d++)
+                globalMean[d] += Data[p * nDims + d];
+        for (int d = 0; d < nSpatialD; d++) globalMean[d] /= nPoints;
+        for (int p = 0; p < nPoints; p++)
+            for (int d = 0; d < nSpatialD; d++) {
+                float diff = Data[p * nDims + d] - globalMean[d];
+                globalVar[d] += diff * diff;
+            }
+        for (int d = 0; d < nSpatialD; d++) globalVar[d] /= nPoints;
+    }
+
     for (int cc = 1; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
 
@@ -697,14 +717,59 @@ int KK::TrySplits() {
         for (int p = 0; p < nPoints; p++) if (Class[p] == c) clusterSize++;
         if (clusterSize == 0) continue;
 
-        // Reuse K2's pre-allocated arrays for this cluster's size
-        K2.ReinitForSplit(clusterSize, nDims, PenaltyMix);
+        // Compute within-cluster per-dim variance for feature selection
+        std::vector<float> clusterVar(nSpatialD, 0.0f);
+        std::vector<float> clusterMean(nSpatialD, 0.0f);
+        if (doFeatSel) {
+            for (int p = 0; p < nPoints; p++) if (Class[p] == c)
+                for (int d = 0; d < nSpatialD; d++)
+                    clusterMean[d] += Data[p * nDims + d];
+            for (int d = 0; d < nSpatialD; d++) clusterMean[d] /= clusterSize;
+            for (int p = 0; p < nPoints; p++) if (Class[p] == c)
+                for (int d = 0; d < nSpatialD; d++) {
+                    float diff = Data[p * nDims + d] - clusterMean[d];
+                    clusterVar[d] += diff * diff;
+                }
+            for (int d = 0; d < nSpatialD; d++) clusterVar[d] /= clusterSize;
+        }
 
-        // Pack this cluster's points into K2.Data
+        // Select top-kSelect dims by within/global variance ratio
+        std::vector<int> selectedDims(nSpatialD);
+        std::iota(selectedDims.begin(), selectedDims.end(), 0);
+        if (doFeatSel) {
+            std::sort(selectedDims.begin(), selectedDims.end(), [&](int a, int b) {
+                float ra = (globalVar[a] > 1e-12f) ? clusterVar[a] / globalVar[a] : 0.0f;
+                float rb = (globalVar[b] > 1e-12f) ? clusterVar[b] / globalVar[b] : 0.0f;
+                return ra > rb;  // descending: highest ratio first
+            });
+            selectedDims.resize(kSelect);
+            std::sort(selectedDims.begin(), selectedDims.end());  // restore order for packing
+        }
+        // Always include the time dimension last
+        const int nDimsK2 = kSelect + (nDims > nSpatialD ? 1 : 0);
+
+        // Reuse K2's pre-allocated arrays for this cluster's size
+        // When doing feature selection, run K2 with reduced dims
+        if (doFeatSel) {
+            K2.ReinitForSplit(clusterSize, nDimsK2, PenaltyMix);
+        } else {
+            K2.ReinitForSplit(clusterSize, nDims, PenaltyMix);
+        }
+
+        // Pack this cluster's points into K2.Data (selected dims only)
         int p2 = 0;
         for (int p = 0; p < nPoints; p++) if (Class[p] == c) {
-            for (int d = 0; d < nDims; d++)
-                K2.Data[p2 * nDims + d] = Data[p * nDims + d];
+            if (doFeatSel) {
+                int d2 = 0;
+                for (int d : selectedDims)
+                    K2.Data[p2 * nDimsK2 + d2++] = Data[p * nDims + d];
+                // append time dim if present
+                if (nDims > nSpatialD)
+                    K2.Data[p2 * nDimsK2 + d2] = Data[p * nDims + nSpatialD];
+            } else {
+                for (int d = 0; d < nDims; d++)
+                    K2.Data[p2 * nDims + d] = Data[p * nDims + d];
+            }
             p2++;
         }
 
@@ -1435,6 +1500,28 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // -------------------------------------------------------------------
     // Phase 2: cross-chunk model matching
     // -------------------------------------------------------------------
+    // Sanity-check mergeThresh against the chi²(nSpatialDims) distribution.
+    // The symmetric Mahalanobis² distance between two draws from the SAME
+    // Gaussian is distributed as chi²(nSpatialDims), so a threshold much
+    // larger than chi²(nSpatialDims, 0.9999) means essentially every pair
+    // is a candidate — the MNN filter degenerates and all local clusters
+    // tend to union into one global component.
+    // chi²(d, p) ≈ d * (1 - 2/(9d) + z_p * sqrt(2/(9d)))³  (Wilson-Hilferty)
+    {
+        const float d   = static_cast<float>(nSpatialDims);
+        // z for p=0.9999 ≈ 3.719
+        const float chi2_9999 = d * std::pow(1.0f - 2.0f/(9.0f*d) + 3.719f * std::sqrt(2.0f/(9.0f*d)), 3.0f);
+        // z for p=0.99 ≈ 2.326
+        const float chi2_99   = d * std::pow(1.0f - 2.0f/(9.0f*d) + 2.326f * std::sqrt(2.0f/(9.0f*d)), 3.0f);
+        if (mergeThresh > chi2_9999 * 1.5f) {
+            Output("WARNING: MergeThresh=%.1f is far above chi2(%d, 0.9999)=%.1f.\n"
+                   "  With this threshold nearly every cluster pair is a candidate,\n"
+                   "  which causes the MNN chain to collapse all clusters into one\n"
+                   "  global component.\n"
+                   "  Recommended: MergeThresh=%.1f (chi2(%d, 0.99))\n",
+                   mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
+        }
+    }
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -1452,8 +1539,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
                "  This means MergeThresh=%.1f is too small: no cross-chunk\n"
                "  cluster matches were found, so every chunk-local cluster\n"
                "  became its own global unit.\n"
-               "  Action: increase -MergeThresh (default 30 ~ chi2(nDims,0.99))\n"
-               "  or reduce -ChunkMinutes so clusters change less between chunks.\n"
+               "  Action: set -MergeThresh to ~chi2(nSpatialDims, 0.99)\n"
+               "  (e.g. ~51 for 30 dims) so genuine same-neuron matches pass.\n"
+               "  Or reduce -ChunkMinutes so clusters drift less between chunks.\n"
                "  Falling back to CEMTwoPhase on the full session.\n",
                nGlobal, MaxPossibleClusters, mergeThresh);
         return CEMTwoPhase(timeMergeIter);
