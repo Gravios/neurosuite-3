@@ -1,0 +1,88 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_estimatedrift</n>
+  <parameters>
+   <parameter>
+    <n>windowSec</n>
+    <value>60</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>minUnits</n>
+    <value>3</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>minSpikes</n>
+    <value>20</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>excludeNoise</n>
+    <value>true</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>probeLibrary</n>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Estimate spatial probe drift from curated spike-sorting results.
+
+Must be run AFTER spike sorting (ndm_klustakwik) and manual curation in Klusters.
+Requires .res.N, .clu.N, and (for full accuracy) .spk.N files for each spike group.
+
+The plugin reads the curated cluster files and, using the electrode site geometry
+from the .probe configuration files declared in the session YAML, computes the
+waveform centre-of-mass (CoM) for each well-isolated unit on each shank.  By
+tracking how those CoM positions shift over successive time windows, the algorithm
+estimates the in-vivo drift of each probe shank in micrometres.
+
+The result is written to SESSION.drift (YAML format) and can be used to:
+  - Visualise drift trajectories in a companion tool
+  - Flag sessions with excessive drift (>10–15 µm/h) for re-analysis
+  - Provide correction parameters for post-hoc spike re-assignment
+
+OUTPUT FILE  SESSION.drift
+  drift:
+    format: '1.0'
+    method: unit_com
+    windowSec: 60.0
+    probes:
+      - probeId: 0
+        shanks:
+          - shankIndex: 0
+            spikeGroup: 1
+            nUnitsTotal: 8
+            refCom_um: 245.3
+            windows:
+              - { t_start: 0.0, t_end: 60.0, drift_um: 0.0, com_um: 245.3 }
+              - { t_start: 60.0, t_end: 120.0, drift_um: -1.8, com_um: 243.5 }
+
+OPTIONAL PARAMETERS
+
+# windowSec
+Time window length in seconds for drift computation (default = 60).
+Shorter windows give finer temporal resolution but require more spikes/unit.
+
+# minUnits
+Minimum number of well-isolated units per shank required to compute drift
+(default = 3). Shanks with fewer good units are skipped.
+
+# minSpikes
+Minimum number of spikes a unit must fire in a given window to be included
+in the CoM computation for that window (default = 20).
+
+# excludeNoise
+If true (default), excludes cluster 0 (artifact/noise) and cluster 1 (MUA)
+from the CoM calculation. Set to false to include MUA.
+
+# probeLibrary
+Override the probe library search path.  By default the plugin searches:
+  $NEUROSUITE_PROBE_PATH, ~/.local/share/neurosuite/probes/,
+  /usr/share/neurosuite/probes/, and ./probes/ (session-local).
+</help>
+ </program>
+</parameter>

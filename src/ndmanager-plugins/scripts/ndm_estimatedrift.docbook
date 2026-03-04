@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2"
+          xmlns:xlink="http://www.w3.org/1999/xlink"
+          xml:id="ndm_estimatedrift">
+
+  <info>
+    <productname>neurosuite-3</productname>
+    <authorgroup>
+      <author><personname><firstname>neurosuite-3</firstname>
+        <surname>contributors</surname></personname></author>
+    </authorgroup>
+    <copyright><year>2025</year><holder>neurosuite-3 contributors</holder></copyright>
+    <legalnotice><para>GPL-3.0-or-later</para></legalnotice>
+  </info>
+
+  <refmeta>
+    <refentrytitle>ndm_estimatedrift</refentrytitle>
+    <manvolnum>1</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+    <refname>ndm_estimatedrift</refname>
+    <refpurpose>
+      Estimate in-vivo spatial drift from curated spike-sorting results
+    </refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>ndm_estimatedrift</command>
+      <arg choice="opt"><replaceable>session</replaceable></arg>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+    <title>Description</title>
+    <para>
+      <command>ndm_estimatedrift</command> reads the curated
+      <filename>.clu.N</filename> cluster assignment files and the
+      corresponding spike-time <filename>.res.N</filename> and waveform
+      <filename>.spk.N</filename> files for each spikeDetection group, then
+      estimates the in-vivo vertical displacement (drift) of each electrode
+      shank over successive time windows.
+    </para>
+    <para>
+      The algorithm computes the waveform <emphasis>centre-of-mass</emphasis>
+      (CoM) of each well-isolated unit by weighting the depth coordinate of
+      each electrode site by the peak-to-peak amplitude of the mean waveform
+      on that site.  The median CoM across qualified units in each time window
+      is taken as the population-level estimate of the local tissue/probe
+      displacement.  Drift for each window is expressed as the CoM shift
+      relative to the first window (µm; positive = deeper insertion).
+    </para>
+    <para>
+      Electrode site geometry is read from the <filename>.probe</filename>
+      configuration file declared in the session YAML under the
+      <literal>probes</literal> section.  When no probe file is present, a
+      uniform 50 µm linear spacing is assumed.
+    </para>
+    <para>
+      The result is written to <filename>SESSION.drift</filename> in YAML
+      format.  This file is consumed by drift-correction tools and can be
+      inspected in any text editor.
+    </para>
+  </refsect1>
+
+  <refsect1>
+    <title>Prerequisites</title>
+    <itemizedlist>
+      <listitem><para>
+        Spike sorting must be complete:
+        <filename>.fet.N</filename>, <filename>.clu.N</filename>,
+        <filename>.res.N</filename>, <filename>.spk.N</filename> files must
+        exist for all groups.
+      </para></listitem>
+      <listitem><para>
+        Clusters should have been manually curated in
+        <application>Klusters</application>.  Cluster 0 (noise) and cluster 1
+        (MUA) are excluded by default.
+      </para></listitem>
+      <listitem><para>
+        Python 3 with <package>pyyaml</package> and <package>numpy</package>
+        must be installed.
+      </para></listitem>
+    </itemizedlist>
+  </refsect1>
+
+  <refsect1>
+    <title>Parameters</title>
+    <para>
+      All parameters are optional.  Default values are shown in parentheses.
+      Parameters are passed via the ndManager <guilabel>Parameters</guilabel>
+      tab or appended to the script invocation.
+    </para>
+    <variablelist>
+      <varlistentry>
+        <term><parameter>windowSec</parameter></term>
+        <listitem><para>
+          Length of each analysis time window in seconds (default:
+          <literal>60</literal>).  Shorter windows yield finer temporal
+          resolution but require more spikes per unit per window.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>minUnits</parameter></term>
+        <listitem><para>
+          Minimum number of well-isolated units per shank required to compute
+          drift for that shank (default: <literal>3</literal>).  Shanks with
+          fewer good units in a given window are skipped.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>minSpikes</parameter></term>
+        <listitem><para>
+          Minimum number of spikes a unit must fire within a window to be
+          included in the CoM computation for that window (default:
+          <literal>20</literal>).
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>excludeNoise</parameter></term>
+        <listitem><para>
+          If <literal>true</literal> (default), excludes cluster 0 (noise/
+          artifact) and cluster 1 (multi-unit activity) from the CoM
+          calculation.  Set to <literal>false</literal> to include MUA in the
+          estimate, which can help when few well-isolated units are present.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>probeLibrary</parameter></term>
+        <listitem><para>
+          Override the probe library search path.  When not set, the plugin
+          searches in order: <envar>NEUROSUITE_PROBE_PATH</envar>,
+          <filename>~/.local/share/neurosuite/probes/</filename>,
+          <filename>/usr/share/neurosuite/probes/</filename>, and
+          <filename>probes/</filename> relative to the session directory.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>Output File Format</title>
+    <para>
+      The drift file <filename>SESSION.drift</filename> is a YAML document
+      with the following structure:
+    </para>
+    <programlisting language="yaml"><![CDATA[
+drift:
+  format: '1.0'
+  method: unit_com
+  windowSec: 60.0
+  minUnits: 3
+  minSpikes: 20
+  probes:
+    - probeId: 0
+      label: "left CA1"
+      shanks:
+        - shankIndex: 0
+          spikeGroup: 1
+          nUnitsTotal: 7
+          refCom_um: 245.3
+          windows:
+            - t_start: 0.0
+              t_end: 60.0
+              n_units: 6
+              com_um: 245.3
+              drift_um: 0.0
+            - t_start: 60.0
+              t_end: 120.0
+              n_units: 7
+              com_um: 243.5
+              drift_um: -1.8
+    ]]></programlisting>
+    <variablelist>
+      <varlistentry>
+        <term><structfield>drift_um</structfield></term>
+        <listitem><para>
+          Signed displacement in micrometres relative to the first window.
+          Positive = probe moved deeper into tissue; negative = retraction.
+          <literal>null</literal> when fewer than <parameter>minUnits</parameter>
+          units qualified in this window.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>com_um</structfield></term>
+        <listitem><para>
+          Absolute depth of the population centre-of-mass in micrometres
+          (origin = shank tip).
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>Session YAML Requirements</title>
+    <para>
+      For drift estimation to use accurate probe geometry the session YAML
+      should include a <literal>probes</literal> section and
+      <literal>probeId</literal> / <literal>shankIndex</literal> fields on
+      each anatomical group entry:
+    </para>
+    <programlisting language="yaml"><![CDATA[
+probes:
+  - id: 0
+    probeFile: neuronexus/Buzsaki64.probe
+    label: "left CA1"
+    channelOffset: 0
+    anatomicalGroups: [1, 2, 3, 4, 5, 6, 7, 8]
+
+anatomicalDescription:
+  channelGroups:
+    - id: 1
+      probeId: 0
+      shankIndex: 0
+      channels:
+        - { id: 0, skip: 0 }
+        ...
+    ]]></programlisting>
+    <para>
+      Without these fields a uniform 50 µm linear spacing is assumed and
+      <structfield>probeId</structfield> defaults to 0 for all groups.
+    </para>
+  </refsect1>
+
+  <refsect1>
+    <title>Files</title>
+    <variablelist>
+      <varlistentry>
+        <term><filename>SESSION.yaml</filename> (or .xml)</term>
+        <listitem><para>Session parameter file (mandatory input).</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.res.N</filename></term>
+        <listitem><para>Spike timestamps for group N (mandatory input).</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.clu.N</filename></term>
+        <listitem><para>Curated cluster labels for group N (mandatory input).</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.spk.N</filename></term>
+        <listitem><para>
+          Spike waveforms for group N (optional; used for accurate CoM).
+          When absent, the global CoM is used as a proxy.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.drift</filename></term>
+        <listitem><para>Output drift file (YAML).</para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>See Also</title>
+    <para>
+      <citerefentry><refentrytitle>ndm_klustakwik</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>ndm_pca</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>klusters</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+    </para>
+  </refsect1>
+
+</refentry>
