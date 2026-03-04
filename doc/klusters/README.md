@@ -40,6 +40,7 @@ When opened from a `.fet.N` file, klusters automatically locates the paired `.cl
 | `session.xml` / `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry) |
 | `session.res.N` | Spike timestamps — read when available; used by the Trace View |
 | `session.dat` / `session.fil` | Raw signal — loaded by Trace View when present |
+| `session.pca.N` | PCA eigenvectors — used by spike realignment to recompute features |
 | `session.#.clu.N` | Autosave files written periodically by the background save thread |
 
 ---
@@ -64,7 +65,7 @@ Displays per-cluster autocorrelograms and between-cluster cross-correlograms. Co
 
 ### Error Matrix View
 
-Evaluates cluster separation quality using the Grouping Assistant's probabilistic misclassification estimator (`GroupingAssistant::computeMeanProbabilities()`). Fills a cluster × cluster matrix where entry (c1, c2) is the mean posterior probability that a spike of cluster c1 actually belongs to c2. Clusters with high off-diagonal entries are poor candidates for merging and good candidates for further splitting.
+Evaluates cluster separation quality using the Grouping Assistant's probabilistic misclassification estimator (`GroupingAssistant::computeMeanProbabilities()`). Fills a cluster × cluster matrix where entry (c1, c2) is the mean posterior probability that a spike of cluster c1 actually belongs to c2. Clusters with high off-diagonal entries are candidates for further splitting; clusters with high mutual off-diagonal entries are candidates for merging.
 
 ### Trace View
 
@@ -98,11 +99,43 @@ Klusters can launch KlustaKwik on the current electrode group directly from the 
 
 KlustaKwik parameters passed by klusters are set in the Preferences dialog. The executable path defaults to `KlustaKwik` on `PATH`.
 
+### Automatic feature selection
+
+When **Auto-select features** is enabled in the toolbar and one or more clusters are selected, klusters computes the per-feature variance across all spikes in the selected clusters and passes only the high-variance features to KlustaKwik.
+
+**How it works:**
+
+1. Feature variances are computed by pooling all spikes from every selected cluster. Selecting two overlapping clusters pools both populations, giving the variance across their combined spike set — the right signal when re-sorting units that may have been split or that genuinely overlap.
+2. Features are ranked by descending variance. The **N feat** spin box in the toolbar sets a ceiling on how many features to use.
+3. A variance drop-off threshold (5% of the top feature's variance) trims features that have fallen to noise level. If only 4 of the requested 10 features carry meaningful information, only those 4 are passed to KlustaKwik.
+4. At least one feature is always selected even if all variances are zero.
+5. Noise (cluster 0) and artefact (cluster 1) pseudo-clusters are excluded from the variance estimate even if they appear in the selection.
+
+When the selection is empty or auto-select is disabled, klusters falls back to passing all PCA dimensions with extra/non-PCA dimensions off.
+
 ---
 
 ## Spike realignment
 
-Klusters includes interactive spike realignment via normalised cross-correlation, using the same algorithm as the standalone `SpikeRealign` tool. Configure the executable path and default arguments in **Settings → Preferences → General → Realignment**.
+Klusters includes interactive spike realignment via normalised cross-correlation, using the same algorithm as the standalone `SpikeRealign` tool.
+
+### How it works
+
+For each spike in the selected cluster:
+
+1. The cluster mean waveform is computed from all spikes in the cluster.
+2. The spike's waveform is cross-correlated against the mean template at each lag within `±maxShift` samples.
+3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its `.res` timestamp is updated, the waveform snippet is re-extracted from the raw `.fil` / `.dat` file at the corrected sample offset, and its PCA features are reprojected using the stored `.pca.N` eigenvectors.
+4. If shifting a timestamp would violate the chronological sort order of the spike train, the affected `.res`/`.spk`/`.clu`/`.fet` entries are swapped.
+
+A `RealignReviewDialog` is shown after realignment completes for each cluster, displaying before/after mean waveform plots and counts of spikes shifted and timestamps reordered. The result can be accepted (written to disk) or rejected (in-memory rollback, no disk writes).
+
+### Configuration
+
+Configure the executable path and default arguments in **Settings → Preferences → General → Realignment**:
+
+- **Executable**: path to `SpikeRealign`
+- **Arguments**: e.g. `-Threshold 0.75 -Iterations 2`
 
 For batch realignment of entire sessions outside the GUI, use [SpikeRealign](../spikerealign/README.md) directly.
 
@@ -110,13 +143,15 @@ For batch realignment of entire sessions outside the GUI, use [SpikeRealign](../
 
 ## Autosave and crash recovery
 
-A configurable background thread periodically writes `session.#.clu.N` files (where `#` is the save index) so work is not lost on crash. The autosave interval and whether autosave is enabled are set in **Settings → Preferences → General**. On restart, klusters detects orphaned autosave files and offers to restore from them.
+A configurable background thread periodically writes `session.#.clu.N` files (where `#` is the save index) so work is not lost on crash. The autosave interval is set in **Settings → Preferences → General**. On restart, klusters detects orphaned autosave files and offers to restore from them.
 
 ---
 
-## GPU acceleration (Grouping Assistant)
+## GPU acceleration
 
-The Error Matrix computation (`GroupingAssistant`) uses the same GPU dispatch mechanism as KlustaKwik. If a CUDA, HIP, or SYCL backend is available at build time, the posterior probability matrix is computed on the GPU. The CPU path (OpenMP) is always compiled as a fallback.
+The Error Matrix computation (`GroupingAssistant`) and the spike realignment cross-correlation use the same GPU dispatch mechanism as KlustaKwik: CUDA → HIP → SYCL → OpenMP fallback. The CPU/OpenMP path is always compiled as a fallback.
+
+See the [GPU installation guide](../gpu/README.md) for setup instructions for CUDA, ROCm/HIP, and Intel oneAPI/SYCL.
 
 ---
 

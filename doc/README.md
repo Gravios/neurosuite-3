@@ -26,7 +26,7 @@ GUI session manager. Opens a `.xml` (or `.yaml`) parameter file and provides a t
 
 Command-line preprocessing pipeline. Converts raw acquisition data (Neuralynx, CED/Spike2, Amplipex) into spike-sorting-ready files through format conversion, median-subtraction high-pass filtering, LFP downsampling, spike detection, and PCA feature extraction. The filter and threshold steps optionally use GPU acceleration.
 
-**Depends on:** CMake, OpenMP, FFmpeg (optional, for video). CUDA/ROCm/oneAPI optional.
+**Depends on:** CMake, OpenMP, FFmpeg (optional, for video). CUDA optional for `process_medianfilter`, `process_medianthreshold`, `process_spikegrouper`.
 
 ---
 
@@ -40,9 +40,9 @@ Multi-channel signal visualiser. Displays wideband, LFP, and high-pass filtered 
 
 ### [klusters](klusters/README.md)
 
-Interactive manual spike-sorting GUI. Loads feature, cluster, waveform, and parameter files for one electrode group at a time and provides scatter-plot, waveform, and autocorrelogram views for cluster inspection, splitting, merging, and reassignment. Integrates with KlustaKwik for in-app automatic reclustering.
+Interactive manual spike-sorting GUI. Loads feature, cluster, waveform, and parameter files for one electrode group at a time and provides scatter-plot, waveform, and autocorrelogram views for cluster inspection, splitting, merging, and reassignment. Integrates with KlustaKwik for in-app automatic reclustering, with automatic feature selection (variance-ranked, noise-floor trimmed, multi-cluster aware). Interactive spike realignment via normalised cross-correlation is also available.
 
-**Depends on:** Qt6, libklustersshared
+**Depends on:** Qt6, libklustersshared. CUDA/ROCm/oneAPI optional for Grouping Assistant and realignment.
 
 ---
 
@@ -59,6 +59,18 @@ Automatic spike sorter using Classification EM (CEM). Reads a `.fet` feature fil
 Standalone batch waveform realignment tool. Reads binary `.spk/.res/.clu/.fet` files, aligns each spike to the cluster mean template via normalised cross-correlation, and writes corrected data back in-place. Shares GPU backend selection with KlustaKwik. Intended for batch processing outside the klusters GUI; the klusters interactive realignment uses the same algorithm internally.
 
 **Depends on:** C++17 compiler, CMake. OpenMP, CUDA/ROCm/oneAPI (optional GPU).
+
+---
+
+## GPU Acceleration
+
+GPU acceleration is available for klustakwik, spikerealign, klusters (Grouping Assistant and realignment), and several ndmanager-plugins (`process_medianfilter`, `process_medianthreshold`, `process_spikegrouper`). All GPU backends are auto-detected at build time; a CPU/OpenMP fallback is always compiled.
+
+See the **[GPU installation guide](gpu/README.md)** for:
+- NVIDIA CUDA — including CUDA 12.8 for RTX 5000 series (Blackwell / sm_120) and Secure Boot MOK key signing
+- AMD ROCm / HIP
+- Intel oneAPI / SYCL (bare metal and WSL2)
+- Runtime backend selection and verification
 
 ---
 

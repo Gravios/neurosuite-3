@@ -1,0 +1,304 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_spikegrouper">
+
+	<refmeta>
+		<refentrytitle>process_spikegrouper</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_spikegrouper</refname>
+		<refpurpose>discover optimal spike detection channel groups from a high-pass filtered signal.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_spikegrouper</command>
+		<arg choice="plain"><option>--fil</option> <replaceable>file</replaceable></arg>
+		<arg choice="plain"><option>--yaml</option> <replaceable>file</replaceable></arg>
+		<arg choice="plain"><option>--nchannels</option> <replaceable>N</replaceable></arg>
+		<arg choice="plain"><option>--sampling-rate</option> <replaceable>SR</replaceable></arg>
+		<arg><option>--nbits</option> <replaceable>N</replaceable></arg>
+		<arg><option>--threshold-factor</option> <replaceable>F</replaceable></arg>
+		<arg><option>--refractory-ms</option> <replaceable>R</replaceable></arg>
+		<arg><option>--coincidence-ms</option> <replaceable>W</replaceable></arg>
+		<arg><option>--window-sec</option> <replaceable>T</replaceable></arg>
+		<arg><option>--max-sub-groups</option> <replaceable>K</replaceable></arg>
+		<arg><option>--min-channels</option> <replaceable>M</replaceable></arg>
+		<arg><option>--max-merged-size</option> <replaceable>S</replaceable></arg>
+		<arg><option>--channel-overlap</option> <replaceable>N</replaceable></arg>
+		<arg><option>--exclude-channels</option> <replaceable>LIST</replaceable></arg>
+		<arg><option>--nsamples</option> <replaceable>S</replaceable></arg>
+		<arg><option>--peak-sample</option> <replaceable>P</replaceable></arg>
+		<arg><option>--nfeatures</option> <replaceable>F</replaceable></arg>
+		<arg><option>--cpu</option></arg>
+		<arg><option>-v</option></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_spikegrouper</command> analyses a high-pass filtered
+			<replaceable>.fil</replaceable> file to discover optimal spike detection
+			channel sub-groups and rewrites the
+			<literal>spikeDetection.channelGroups</literal> section of the session
+			YAML parameter file with the result.
+		</para>
+		<para>
+			It is called by the <command>ndm_spikegrouper</command> pipeline script
+			and operates only on YAML parameter files.  Convert XML sessions to YAML
+			first with <command>ndm_xml2yaml</command>.
+		</para>
+		<para>
+			Grouping is bounded by the <literal>anatomicalDescription.channelGroups</literal>
+			entries in the YAML file: channels from different anatomical groups (shanks)
+			are never merged.  Within each anatomical group the algorithm computes a
+			spike-coincidence similarity matrix and clusters channels by Ward
+			agglomerative clustering, choosing the number of sub-groups that maximises
+			the average silhouette score.  A post-clustering merge pass re-combines
+			adjacent sub-groups that have high inter-boundary coincidence.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Required Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>--fil</option> <replaceable>file</replaceable></term>
+				<listitem>
+					<para>
+						Path to the high-pass filtered binary signal file
+						(<replaceable>.fil</replaceable>).  Must be raw int16,
+						channel-interleaved, no header.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--yaml</option> <replaceable>file</replaceable></term>
+				<listitem>
+					<para>
+						Path to the YAML session parameter file.  The
+						<literal>spikeDetection.channelGroups</literal> section will be
+						atomically replaced with the discovered groups; all other content
+						is preserved verbatim.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--nchannels</option> <replaceable>N</replaceable></term>
+				<listitem>
+					<para>Total number of channels in the <replaceable>.fil</replaceable> file.</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--sampling-rate</option> <replaceable>SR</replaceable></term>
+				<listitem>
+					<para>
+						Acquisition sampling rate in Hz.  Used to convert millisecond
+						timing parameters to sample counts.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Detection Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>--nbits</option> <replaceable>N</replaceable></term>
+				<listitem><para>Bits per sample in the <replaceable>.fil</replaceable> file.  Default: 16.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--threshold-factor</option> <replaceable>F</replaceable></term>
+				<listitem>
+					<para>
+						Threshold multiplier: threshold = <replaceable>F</replaceable> ×
+						median(|signal|) / 0.6745.  Identical to the estimator used by
+						<command>process_medianthreshold</command>, so thresholds are
+						consistent with what <command>ndm_extractspikes</command> will
+						use.  Default: 3.0.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--refractory-ms</option> <replaceable>R</replaceable></term>
+				<listitem><para>Minimum inter-event interval in milliseconds for threshold-crossing detection.  Default: 1.0.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--coincidence-ms</option> <replaceable>W</replaceable></term>
+				<listitem>
+					<para>
+						Half-window for spike coincidence: events on two channels are
+						considered coincident if they fall within ±<replaceable>W</replaceable> ms
+						of each other.  Default: 0.4.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--window-sec</option> <replaceable>T</replaceable></term>
+				<listitem><para>Seconds of the <replaceable>.fil</replaceable> file to analyse.  Default: 60.</para></listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Grouping Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>--max-sub-groups</option> <replaceable>K</replaceable></term>
+				<listitem><para>Maximum number of sub-groups to create per anatomical group.  Default: 6.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--min-channels</option> <replaceable>M</replaceable></term>
+				<listitem><para>Minimum channels required in any sub-group.  Groups smaller than this are absorbed into their nearest neighbour.  Default: 4.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--max-merged-size</option> <replaceable>S</replaceable></term>
+				<listitem>
+					<para>
+						Maximum number of channels in any final group after the
+						post-clustering merge pass.  Default: 12.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--channel-overlap</option> <replaceable>N</replaceable></term>
+				<listitem>
+					<para>
+						Number of channels to borrow from each neighbouring group and
+						append to this group's channel list.  Borrowed channels provide
+						spatial context without changing core group boundaries.
+						Default: 0 (disabled).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--exclude-channels</option> <replaceable>LIST</replaceable></term>
+				<listitem>
+					<para>
+						Comma-separated list of channel indices to exclude from all
+						groups, e.g. <literal>3,7,42</literal>.  Useful for known bad or
+						reference channels.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Output Group Metadata</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>--nsamples</option> <replaceable>S</replaceable></term>
+				<listitem><para>Value to write for <literal>nSamples</literal> in newly created groups.  If not specified, the value is inherited from the matching existing spike group.  Default: 52.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--peak-sample</option> <replaceable>P</replaceable></term>
+				<listitem><para>Value to write for <literal>peakSampleIndex</literal> in newly created groups.  Default: 26.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--nfeatures</option> <replaceable>F</replaceable></term>
+				<listitem><para>Value to write for <literal>nFeatures</literal> in newly created groups.  Default: 3.</para></listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Other Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>--cpu</option></term>
+				<listitem>
+					<para>
+						Force the CPU code path even when a CUDA device is available.
+						Available only in CUDA builds.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-v</option></term>
+				<listitem><para>Verbose output: per-channel thresholds and event counts, silhouette scores, merge decisions, and final group assignments.</para></listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Algorithm</title>
+		<para>
+			For each anatomical group, the algorithm:
+		</para>
+		<orderedlist>
+			<listitem>
+				<para>Loads up to <option>--window-sec</option> seconds of the <replaceable>.fil</replaceable> file.</para>
+			</listitem>
+			<listitem>
+				<para>Estimates per-channel noise as
+					threshold = <option>--threshold-factor</option> ×
+					median(|signal|) / 0.6745.</para>
+			</listitem>
+			<listitem>
+				<para>Detects threshold crossings with the specified refractory period.</para>
+			</listitem>
+			<listitem>
+				<para>Builds an N×N spike-coincidence similarity matrix C where
+					C[i,j] = coincident events(i,j) / (events(i) + 1),
+					then symmetrises as (C + C^T) / 2.</para>
+			</listitem>
+			<listitem>
+				<para>Applies Ward agglomerative clustering on the distance matrix (1 − C),
+					selecting the number of clusters in [1, <option>--max-sub-groups</option>]
+					that maximises the average silhouette score subject to the
+					<option>--min-channels</option> constraint.</para>
+			</listitem>
+			<listitem>
+				<para>Runs a greedy merge pass on adjacent sub-groups: repeatedly merges
+					the adjacent pair with the highest inter-group coincidence while
+					respecting <option>--max-merged-size</option>.</para>
+			</listitem>
+			<listitem>
+				<para>Optionally extends each group by borrowing
+					<option>--channel-overlap</option> channels from its neighbours.</para>
+			</listitem>
+			<listitem>
+				<para>Atomically rewrites the YAML file's
+					<literal>spikeDetection.channelGroups</literal> section.</para>
+			</listitem>
+		</orderedlist>
+		<para>
+			The computationally intensive threshold estimation and coincidence matrix
+			construction are accelerated by CUDA when built with <literal>USE_CUDA</literal>
+			and a device is available.  When CUDA is absent, OpenMP parallelises the
+			per-channel threshold/detection loop and the O(N²) coincidence matrix
+			construction.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Exit Status</title>
+		<variablelist>
+			<varlistentry>
+				<term>0</term>
+				<listitem><para>Success.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term>1</term>
+				<listitem><para>Error: missing required argument, YAML parse failure, or I/O error.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term>11</term>
+				<listitem><para>Input missing: the <replaceable>.fil</replaceable> or YAML file could not be opened, or the <replaceable>.fil</replaceable> file is too small.</para></listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>See Also</title>
+		<para>
+			<citerefentry><refentrytitle>process_extractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_medianfilter</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_medianthreshold</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>

@@ -1,0 +1,190 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_refeaturize">
+
+	<refmeta>
+		<refentrytitle>process_refeaturize</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_refeaturize</refname>
+		<refpurpose>re-project spike waveforms onto previously saved PCA eigenvectors.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_refeaturize</command>
+		<arg choice="plain"><option>-p</option> <replaceable>pca-file</replaceable></arg>
+		<arg choice="plain"><option>-w</option> <replaceable>waveformLength</replaceable></arg>
+		<arg choice="plain"><option>-n</option> <replaceable>nChannels</replaceable></arg>
+		<arg><option>-i</option> <replaceable>indices-file</replaceable></arg>
+		<arg><option>-x</option></arg>
+		<arg><option>-v</option></arg>
+		<arg><option>-h</option></arg>
+		<arg choice="plain"><replaceable>spk-file</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_refeaturize</command> reads spike waveforms from a binary
+			<replaceable>.spk.N</replaceable> file and projects them onto the principal
+			component eigenvectors that were saved to a <replaceable>.pca.N</replaceable>
+			file by <command>process_pca -e</command>.  The resulting feature values are
+			written to standard output, one space-separated row per spike, without a
+			leading count line or a trailing timestamp column.
+		</para>
+		<para>
+			This tool is used internally by the klusters spike-realignment workflow.
+			After <command>SpikeRealign</command> shifts spike waveforms in-place,
+			<command>process_refeaturize</command> is called for each shifted spike to
+			recompute its feature vector using the original PCA basis, so the
+			<replaceable>.fet.N</replaceable> file remains consistent with the updated
+			<replaceable>.spk.N</replaceable> file.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>-p</option> <replaceable>pca-file</replaceable></term>
+				<listitem>
+					<para>
+						Path to the <replaceable>.pca.N</replaceable> file written by
+						<command>process_pca -e</command>.  Contains the channel count,
+						waveform window parameters, per-channel means, and
+						column-major eigenvector matrices for all channels.
+						(Required.)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-w</option> <replaceable>waveformLength</replaceable></term>
+				<listitem>
+					<para>
+						Number of samples per waveform in the spike file.  Must match
+						the value used when <command>process_pca</command> was originally
+						run.  (Required.)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-n</option> <replaceable>nChannels</replaceable></term>
+				<listitem>
+					<para>
+						Number of channels in the spike file.  Must match the channel
+						count stored in the <replaceable>.pca.N</replaceable> file.
+						(Required.)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-i</option> <replaceable>indices-file</replaceable></term>
+				<listitem>
+					<para>
+						Plain-text file containing 0-based spike indices to
+						re-featurize, one per line.  If omitted, all spikes in the
+						spike file are processed.  Providing a subset is efficient when
+						only a small number of waveforms have changed (e.g. after
+						selective spike realignment).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-x</option></term>
+				<listitem>
+					<para>
+						Append per-channel peak values as extra features after the PCA
+						components.  Mirrors the <option>-x</option> flag of
+						<command>process_pca</command>.  If the original
+						<replaceable>.fet.N</replaceable> was produced with
+						<option>-x</option>, this flag must also be supplied here.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-v</option></term>
+				<listitem>
+					<para>
+						Verbose output.  Prints PCA model parameters and spike counts to
+						standard error before processing.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-h</option></term>
+				<listitem>
+					<para>Print help and exit.</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Output Format</title>
+		<para>
+			One line per requested spike, written to standard output.  Each line
+			contains <replaceable>nChannels</replaceable> ×
+			<replaceable>nComponents</replaceable> integer feature values separated by
+			spaces, in channel-major order (all components of channel 0, then all
+			components of channel 1, etc.).  If <option>-x</option> is specified,
+			<replaceable>nChannels</replaceable> additional peak values follow.
+			No header line is written and no timestamp column is appended; the
+			caller is responsible for patching these rows back into the
+			<replaceable>.fet.N</replaceable> file at the correct positions.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>PCA File Format</title>
+		<para>
+			The <replaceable>.pca.N</replaceable> file written by
+			<command>process_pca -e</command> contains a fixed header followed by
+			per-channel mean vectors and eigenvector matrices:
+		</para>
+		<itemizedlist>
+			<listitem><para><type>int32</type> magic — 0x50434145 (<literal>"PCAE"</literal>)</para></listitem>
+			<listitem><para><type>int32</type> version — 1</para></listitem>
+			<listitem><para><type>int32</type> nChannels</para></listitem>
+			<listitem><para><type>int32</type> data2use — samples per channel used in PCA</para></listitem>
+			<listitem><para><type>int32</type> nComponents — principal components kept</para></listitem>
+			<listitem><para><type>int32</type> recShift — first sample offset within the waveform window</para></listitem>
+			<listitem><para><type>int32</type> isCentered — 1 = centred projection; 0 = raw</para></listitem>
+			<listitem>
+				<para>For each channel: <type>double[data2use]</type> per-channel mean, followed by
+				<type>double[data2use × nComponents]</type> eigenvectors in column-major order
+				(column = component).</para>
+			</listitem>
+		</itemizedlist>
+	</refsect1>
+
+	<refsect1>
+		<title>Exit Status</title>
+		<variablelist>
+			<varlistentry>
+				<term>0</term>
+				<listitem><para>Success.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term>1</term>
+				<listitem>
+					<para>
+						Error: missing required arguments, could not open a file, bad
+						magic in the PCA file, channel count mismatch, or I/O error
+						during processing.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>See Also</title>
+		<para>
+			<citerefentry><refentrytitle>process_pca</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_mergefeatures</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>
