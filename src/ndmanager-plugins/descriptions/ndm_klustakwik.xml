@@ -1,0 +1,90 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_klustakwik</n>
+  <parameters>
+   <parameter>
+    <n>minClusters</n>
+    <value>2</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>maxClusters</n>
+    <value>100</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>chunkMinutes</n>
+    <value>5</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>initMethod</n>
+    <value>random</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>mergeThresh</n>
+    <value>35</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>globalMergeIter</n>
+    <value>30</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>timeMergeIter</n>
+    <value>35</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>saveIntermediates</n>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Run KlustaKwik automatic spike sorting for each spikeDetection group.
+
+Runs KlustaKwik on each spikeDetection group in sequence. For each group, reads the .fet.N feature file produced by ndm_pca and writes a .clu.N cluster assignment file. Groups for which a .clu.N already exists are skipped.
+
+The UseFeatures mask is constructed automatically from the per-group channel count and nFeatures value: all PCA features plus one energy feature per channel are enabled.
+
+PARAMETERS
+
+All mandatory parameters (channel count, nFeatures, sampling rate) are read from the 'Acquisition System' and 'Spike Groups' sections of the parameter file.
+
+# minClusters
+
+Minimum number of clusters passed to KlustaKwik -MinClusters (default 2).
+
+# maxClusters
+
+Maximum number of clusters passed to KlustaKwik -MaxClusters. For high-density probes with many channels a value of 50-100 is reasonable; for tetrodes 12-20 is typical (default 100).
+
+# chunkMinutes
+
+Duration in minutes for three-phase temporal chunking (-ChunkMinutes). Chunked mode splits the recording into windows, sorts each independently, and then merges the per-chunk models — useful for long recordings with electrode drift. Set to 0 to disable chunked mode and use standard two-phase CEM (default 5).
+
+# initMethod
+
+Cluster centre initialisation method passed to KlustaKwik -InitMethod. Use "random" for standard random initialisation or "farthest" for farthest-point seeding, which often gives better initial separation (default "random").
+
+# mergeThresh
+
+Maximum inter-chunk Mahalanobis distance for merging two per-chunk models in the global merge pass (-MergeThresh). Increase to allow more aggressive merging across chunks (default 35).
+
+# globalMergeIter
+
+Number of EM iterations run on the globally merged solution after the chunk merge pass (-GlobalMergeIter, default 30).
+
+# timeMergeIter
+
+Phase-2 merge iterations in two-phase CEM mode (-TimeMergeIter). Set to 0 to disable two-phase mode (default 35).
+
+# saveIntermediates
+
+Set to 1 to write .clu.N whenever a new best score is found during sorting. Set to 0 to produce only the final .clu.N file (default 0). Setting to 1 can be useful for inspecting intermediate states on very long runs, but produces many files.
+</help>
+ </program>
+</parameter>

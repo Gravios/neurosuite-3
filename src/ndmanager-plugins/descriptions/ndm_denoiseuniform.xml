@@ -1,0 +1,66 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_denoiseuniform</n>
+  <parameters>
+   <parameter>
+    <n>uniformityThreshold</n>
+    <value>0.30</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>minAmplitude</n>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>removeFlat</n>
+    <value>1</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>dryRun</n>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Remove electrically uniform noise events from spike data.
+
+Examines every spikeDetection group and removes spike-shaped waveforms that are nearly identical across all channels — the hallmark of electrical interference rather than genuine neural activity.
+
+Must run AFTER ndm_extractspikes (requires .res and .spk files) and BEFORE ndm_pca / ndm_klustakwik.
+
+Original .res and .spk files are copied to &lt;session&gt;_denoise_backup/ before modification.
+
+DETECTION METHOD
+
+For each waveform the spatial uniformity score is computed:
+  1. Remove DC per channel.
+  2. For every sample time, compute the standard deviation across channels.
+  3. Divide the mean of those per-sample stds by the overall RMS.
+
+Score ≈ 0 → all channels look the same → noise event (removed).
+Score ≈ 1 → channels are maximally diverse → genuine spike (kept).
+
+Spikes with score below uniformityThreshold are removed. Spikes whose peak amplitude is below minAmplitude are retained without scoring (too quiet to classify reliably).
+
+PARAMETERS
+
+# uniformityThreshold
+
+Spatial uniformity score below which a waveform is classified as uniform noise and removed. Increase to remove more events (default 0.30).
+
+# minAmplitude
+
+Minimum peak ADC count needed to attempt scoring. Spikes quieter than this are never removed regardless of their uniformity score. Set to 0 to score all spikes (default 0 — disabled).
+
+# removeFlat
+
+Set to 1 to also remove waveforms with near-zero AC energy after DC subtraction (flat-line artefacts). Set to 0 only if you want to inspect flat events in Klusters before discarding them (default 1 — recommended).
+
+# dryRun
+
+Set to 1 to report which spikes would be removed without modifying any files. Useful for tuning uniformityThreshold (default 0).
+</help>
+ </program>
+</parameter>

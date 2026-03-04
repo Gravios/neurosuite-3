@@ -1,22 +1,15 @@
 # SpikeRealign — WSL2 Installation, Intel Arc / SYCL
 
-The GPU backend setup is identical to KlustaKwik. See [KlustaKwik WSL2 SYCL](../../klustakwik/install/wsl2-sycl.md) for full WSL2 setup instructions, then build SpikeRealign:
+## Step 1 — Install oneAPI and Level-Zero runtime
 
-```bash
-source /opt/intel/oneapi/setvars.sh
+Follow **[doc/gpu/README.md — Intel SYCL / oneAPI — WSL2](../../gpu/README.md#wsl2-intel-arc-via-wsl2-gpu-passthrough)** for complete installation instructions.
 
-cd /path/to/neurosuite-3/src/spikerealign
+## Step 2 — Build
 
-cmake -B build \
-  -DUSE_CUDA=OFF -DUSE_HIP=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-sudo cmake --install build
-```
+Identical to bare-metal Linux — see [linux-sycl.md](linux-sycl.md).
 
 ## Verify
 
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:gpu SpikeRealign --help
-SpikeRealign_cpu --help
 ```

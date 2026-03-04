@@ -1,30 +1,8 @@
 # KlustaKwik — Linux Installation, NVIDIA CUDA
 
-Requires CUDA Toolkit ≥ 11. CUDA 12 is recommended.
-
 ## Step 1 — Install CUDA Toolkit
 
-```bash
-# Choose your exact distro at https://developer.nvidia.com/cuda-downloads
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt update
-sudo apt install cuda-toolkit-12-x
-```
-
-Add to `~/.bashrc` if `nvcc` is not on PATH after install:
-
-```bash
-echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Verify:
-
-```bash
-nvcc --version
-nvidia-smi
-```
+Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)** for complete installation instructions, including CUDA 12.8 for RTX 5000 series (Blackwell / sm_120) and Secure Boot MOK key signing.
 
 ## Step 2 — System packages
 
@@ -34,7 +12,7 @@ sudo apt install cmake build-essential libgomp1
 
 ## Step 3 — Build
 
-CMake detects `nvcc` automatically. `KlustaKwik_cpu` is always built alongside the GPU binary.
+CMake auto-detects `nvcc`. `KlustaKwik_cpu` is always built alongside the GPU binary.
 
 ```bash
 cd /path/to/neurosuite-3/src/klustakwik
@@ -51,9 +29,10 @@ To target a specific GPU architecture:
 ```bash
 cmake -B build \
   -DUSE_HIP=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_CUDA_ARCHITECTURES="86"   # Ampere (RTX 30xx)
-  # 89 = Ada Lovelace (RTX 40xx), 90 = Hopper (H100)
+  -DCMAKE_CUDA_ARCHITECTURES="86;89;120"
 ```
+
+Common targets: `86` = Ampere (RTX 30xx), `89` = Ada Lovelace (RTX 40xx), `120` = Blackwell (RTX 50xx, requires CUDA ≥ 12.8).
 
 ## Verify
 

@@ -222,7 +222,7 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 - **Qt6 / C++17** — all five Qt packages compile cleanly under Qt 6 on Ubuntu 24.04.
 - **YAML parameter format** — new YAML schema mirrors the XML schema exactly; `ParameterYamlReader`, `ParameterYamlWriter`, and `ParameterYamlModifier` in `libklustersshared` are the single implementation shared by all applications.
-- **GPU acceleration** — KlustaKwik and SpikeRealign support CUDA, ROCm/HIP, and SYCL (Intel Arc). `process_medianfilter` (ndmanager-plugins) supports CUDA.
+- **GPU acceleration** — KlustaKwik and SpikeRealign support CUDA, ROCm/HIP, and SYCL (Intel Arc). `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` (ndmanager-plugins) support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
 - **Three-phase chunked CEM** — KlustaKwik can sort long recordings in temporal chunks for improved handling of electrode drift.
 - **`ndm_spikegrouper`** — automatic discovery of optimal spike detection channel groups from the high-pass filtered data.
 - **`ndm_xml2yaml`** — converts legacy XML parameter files to YAML.
@@ -245,3 +245,23 @@ Per-component documentation is in `doc/`:
 - [doc/spikerealign/](doc/spikerealign/README.md)
 
 Each component doc directory contains an `install/` subdirectory with platform-specific build instructions.
+
+---
+
+## GPU Acceleration
+
+Several components use GPU acceleration when the relevant toolkit is present at build time. A CPU/OpenMP fallback is always compiled — no flag is needed to get a working build without a GPU.
+
+| Component | GPU backends | What is accelerated |
+|---|---|---|
+| `klustakwik` | CUDA / HIP / SYCL | E-step distance computations in CEM |
+| `spikerealign` | CUDA / HIP / SYCL | Cross-correlation across all spikes |
+| `klusters` | CUDA / HIP / SYCL | Grouping Assistant, interactive realignment |
+| `process_medianfilter` | CUDA | High-pass filter (`ndm_hipass`) |
+| `process_medianthreshold` | CUDA | Threshold estimation (`ndm_extractspikes`) |
+| `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix (`ndm_spikegrouper`) |
+
+See **[doc/gpu/README.md](doc/gpu/README.md)** for toolkit installation instructions for:
+- **NVIDIA CUDA** — including CUDA 12.8 for RTX 5000 series (Blackwell / sm_120) and Secure Boot MOK key signing on Ubuntu 24.04
+- **AMD ROCm / HIP**
+- **Intel oneAPI / SYCL** — bare metal and WSL2

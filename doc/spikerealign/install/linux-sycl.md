@@ -1,11 +1,19 @@
 # SpikeRealign — Linux Installation, Intel Arc / SYCL (bare metal)
 
-The GPU backend setup is identical to KlustaKwik. See [KlustaKwik Linux SYCL](../../klustakwik/install/linux-sycl.md) for oneAPI and GPU runtime installation instructions, then build SpikeRealign:
+## Step 1 — Install oneAPI and Intel GPU runtime
+
+Follow **[doc/gpu/README.md — Intel SYCL / oneAPI](../../gpu/README.md#intel-sycl--oneapi-intel-arc)** for complete installation instructions.
+
+After sourcing the oneAPI environment, verify:
 
 ```bash
-# Ensure oneAPI environment is active
 source /opt/intel/oneapi/setvars.sh
+sycl-ls   # should show level_zero:gpu entries
+```
 
+## Step 2 — Build
+
+```bash
 cd /path/to/neurosuite-3/src/spikerealign
 
 cmake -B build \

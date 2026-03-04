@@ -1,0 +1,116 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_mergefeatures">
+
+	<refmeta>
+		<refentrytitle>process_mergefeatures</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_mergefeatures</refname>
+		<refpurpose>merge binary PCA features with spike timestamps to produce a .fet file.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_mergefeatures</command>
+		<arg choice="plain"><replaceable>features.tmp</replaceable></arg>
+		<arg choice="plain"><replaceable>res.N</replaceable></arg>
+		<arg choice="plain"><replaceable>fet.N</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_mergefeatures</command> combines a binary PCA feature matrix
+			(written by <command>process_pca</command>) with a binary spike-timestamp file
+			(the <replaceable>.res.N</replaceable> file written by
+			<command>process_extractspikes</command>) to produce a final binary
+			<replaceable>.fet.N</replaceable> feature file suitable for KlustaKwik.
+		</para>
+		<para>
+			It is called internally by <command>ndm_pca</command> to replace the
+			shell-based <command>paste</command>/<command>tail</command>/<command>cat</command>
+			pipeline used in older versions of ndmanager-plugins.  Under normal use,
+			<command>process_mergefeatures</command> is not invoked directly.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Arguments</title>
+		<variablelist>
+			<varlistentry>
+				<term><replaceable>features.tmp</replaceable></term>
+				<listitem>
+					<para>
+						Binary feature matrix written by <command>process_pca</command>.
+						Format: a 4-byte <type>int32</type> header giving the number of
+						feature columns (PCA components × channels, without a timestamp
+						column), followed by
+						<replaceable>nSpikes</replaceable> ×
+						<replaceable>nFeatureCols</replaceable> row-major
+						<type>int64</type> values.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>res.N</replaceable></term>
+				<listitem>
+					<para>
+						Binary spike-timestamp file.  Contains exactly
+						<replaceable>nSpikes</replaceable> <type>int64</type> sample
+						indices with no header.  The spike count must match that implied
+						by the <replaceable>features.tmp</replaceable> file size; a
+						mismatch causes a non-zero exit.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>fet.N</replaceable></term>
+				<listitem>
+					<para>
+						Output file.  Binary <replaceable>.fet</replaceable> format:
+						a 4-byte <type>int32</type> header giving the total dimension
+						count (<replaceable>nFeatureCols</replaceable> + 1), followed by
+						<replaceable>nSpikes</replaceable> ×
+						(<replaceable>nFeatureCols</replaceable> + 1) row-major
+						<type>int64</type> values, with the spike timestamp appended as
+						the final column of each row.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Exit Status</title>
+		<variablelist>
+			<varlistentry>
+				<term>0</term>
+				<listitem><para>Success.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term>1</term>
+				<listitem>
+					<para>
+						Error: could not open an input or output file, the
+						<replaceable>features.tmp</replaceable> header is malformed,
+						the file sizes are inconsistent, or the spike count in the
+						<replaceable>.res</replaceable> file does not match the feature
+						matrix.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>See Also</title>
+		<para>
+			<citerefentry><refentrytitle>process_pca</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_extractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_refeaturize</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>
