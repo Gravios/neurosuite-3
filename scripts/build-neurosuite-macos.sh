@@ -87,8 +87,10 @@ header()  { echo -e "\n${C_BOLD}════════════════
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 PREFIX="${HOME}/.local"
-BUILD_BASE="$(pwd)/build"
-SOURCE_BASE="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BUILD_BASE="${REPO_ROOT}/build"
+SOURCE_BASE="${REPO_ROOT}"
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 QT_DIR=""
 BREW_PREFIX=""           # auto-detected below

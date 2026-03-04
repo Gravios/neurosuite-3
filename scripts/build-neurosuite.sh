@@ -93,8 +93,10 @@ header()  { echo -e "\n${C_BOLD}════════════════
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 PREFIX="/usr/local"
-BUILD_BASE="$(pwd)/build"
-SOURCE_BASE="$(pwd)/src"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BUILD_BASE="${REPO_ROOT}/build"
+SOURCE_BASE="${REPO_ROOT}/src"
 JOBS="$(nproc 2>/dev/null || echo 4)"
 DO_INSTALL=true
 GPU_OFF=false

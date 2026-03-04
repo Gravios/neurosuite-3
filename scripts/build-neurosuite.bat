@@ -59,8 +59,8 @@ set "RED=%ESC%[31m"
 
 :: ── Defaults ─────────────────────────────────────────────────────────────────
 set "PREFIX=C:\NeuroSuite"
-set "BUILD_BASE=%~dp0build"
-set "SOURCE_BASE=%~dp0src"
+set "BUILD_BASE=%~dp0..\build"
+set "SOURCE_BASE=%~dp0..\src"
 set "QT_DIR="
 set "VCPKG_ROOT_ARG="
 set "JOBS="
