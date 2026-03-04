@@ -1,0 +1,537 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2"
+          xmlns:xlink="http://www.w3.org/1999/xlink"
+          xml:id="ndm_decomposecollisions">
+
+  <info>
+    <productname>neurosuite-3</productname>
+    <authorgroup>
+      <author><personname><firstname>neurosuite-3</firstname>
+        <surname>contributors</surname></personname></author>
+    </authorgroup>
+    <copyright><year>2025</year><holder>neurosuite-3 contributors</holder></copyright>
+    <legalnotice><para>GPL-3.0-or-later</para></legalnotice>
+  </info>
+
+  <refmeta>
+    <refentrytitle>ndm_decomposecollisions</refentrytitle>
+    <manvolnum>1</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+    <refname>ndm_decomposecollisions</refname>
+    <refpurpose>
+      Detect and decompose spike collision waveforms into single-unit components
+    </refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>ndm_decomposecollisions</command>
+      <arg choice="opt"><replaceable>session</replaceable></arg>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Description</title>
+    <para>
+      <command>ndm_decomposecollisions</command> identifies spike waveforms
+      that are composed of two overlapping action potentials ("collisions")
+      and decomposes each collision into its constituent single-unit components.
+      It operates post-curation: the curated
+      <filename>.clu.N</filename> files provide the unit labels from which
+      mean waveform templates are derived.  The original
+      <filename>.clu.N</filename>, <filename>.res.N</filename>, and
+      <filename>.spk.N</filename> files are never modified.
+    </para>
+    <para>
+      When two neurons fire within approximately one spike-width of each other
+      (roughly 0.5–1 ms at typical sampling rates), their extracellular
+      waveforms sum linearly at each electrode site.  The composite waveform
+      occupies an intermediate region of PCA feature space and is commonly
+      misassigned — either to the dominant parent cluster or to the noise
+      cluster — during automated sorting.  Even after careful manual curation,
+      collision spikes inflate false-positive and false-negative firing rates
+      and produce artifactual troughs in cross-correlograms near zero lag.
+    </para>
+    <para>
+      All template matching is restricted to spikes within a single
+      spikeDetection group (same tetrode or polytrode shank).  Cross-shank
+      collisions are not attempted because the spatial overlap of waveforms
+      from different shanks at individual electrode sites is negligible
+      compared to the within-shank signal.
+    </para>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Algorithm</title>
+
+    <refsect2>
+      <title>Stage 1 — Template building</title>
+      <para>
+        For each curated single unit (cluster ≥ 2 by default) that fired at
+        least <parameter>minSpikesTemplate</parameter> spikes, the algorithm
+        computes the mean waveform template
+        <inlineequation><mathphrase>T_k</mathphrase></inlineequation>
+        of shape (<emphasis>n_samples</emphasis> × <emphasis>n_sites</emphasis>)
+        in floating point.  The per-unit peak-to-peak amplitude distribution
+        on the dominant channel (the site with the largest mean PTP) is stored
+        as 1st and 99th percentiles; these bounds are used in the acceptance
+        gate at Stage 3.
+      </para>
+      <para>
+        At least two qualifying templates must be present for a group to be
+        processed.  Groups with only one unit cannot produce collisions between
+        distinct neurons (same-unit burst doublets are handled separately via
+        <parameter>maxShiftSamp</parameter>).
+      </para>
+    </refsect2>
+
+    <refsect2>
+      <title>Stage 2 — Single-template screening</title>
+      <para>
+        Every spike waveform <inlineequation><mathphrase>W</mathphrase></inlineequation>
+        is correlated against all templates over a grid of integer shifts
+        <inlineequation><mathphrase>τ ∈ [−maxShiftSamp, +maxShiftSamp]</mathphrase></inlineequation>
+        samples.  The correlation measure is the Pearson r computed over all
+        (sample × site) values in the overlapping region after applying the
+        shift — no zero-padding is used.
+      </para>
+      <para>
+        If the best-match Pearson r exceeds
+        <parameter>corrThreshold</parameter>, the spike is well explained by a
+        single template and is skipped.  Spikes whose peak-to-peak amplitude
+        across all sites is below
+        <parameter>minSnrRms</parameter> × estimated RMS noise are also
+        skipped; they are too weak for reliable decomposition.  The noise
+        floor is estimated from the full waveform matrix using the MAD
+        estimator
+        <inlineequation><mathphrase>σ ≈ median(|x|) / 0.6745</mathphrase></inlineequation>
+        (Quiroga 2004), which is robust in the presence of spike signals.
+      </para>
+    </refsect2>
+
+    <refsect2>
+      <title>Stage 3 — Two-component matching pursuit</title>
+      <para>
+        For each collision candidate, two greedy passes find the (unit, shift,
+        amplitude) triplets that minimise the residual waveform energy.
+      </para>
+      <para>
+        <emphasis role="bold">Pass 1</emphasis> — find the dominant component:
+        For each template <inlineequation><mathphrase>T_k</mathphrase></inlineequation>
+        and shift <inlineequation><mathphrase>τ</mathphrase></inlineequation>,
+        the amplitude
+        <inlineequation><mathphrase>a = ⟨W, T_k(τ)⟩ / ‖T_k‖²</mathphrase></inlineequation>
+        (the least-squares scalar) is computed and the residual
+        <inlineequation><mathphrase>R₁ = W − a·T_k(τ)</mathphrase></inlineequation>
+        is evaluated.  The (k₁, τ₁, a₁) with the smallest
+        <inlineequation><mathphrase>‖R₁‖</mathphrase></inlineequation>
+        is retained.
+      </para>
+      <para>
+        <emphasis role="bold">Pass 2</emphasis> — fit the residual:
+        The same scan is applied to <inlineequation><mathphrase>R₁</mathphrase></inlineequation>
+        to find (k₂, τ₂, a₂).  The second unit may be the same as the first,
+        capturing burst doublets from a single neuron.
+      </para>
+      <para>
+        A decomposition is <emphasis>accepted</emphasis> when all three
+        conditions hold:
+      </para>
+      <itemizedlist>
+        <listitem><para>
+          <emphasis>Residual gate</emphasis>:
+          <inlineequation><mathphrase>‖R₂‖ / ‖W‖ &lt; residualThreshold</mathphrase></inlineequation>.
+          The two-template model must account for at least
+          (1 − <parameter>residualThreshold</parameter>) × 100 % of the
+          waveform energy.
+        </para></listitem>
+        <listitem><para>
+          <emphasis>Amplitude gate</emphasis>:
+          Both fitted amplitudes a₁ and a₂ fall within the 1st–99th percentile
+          of the respective unit's empirical amplitude distribution.  This
+          rejects solutions where a component has a physically implausible
+          amplitude (e.g., 3× the unit mean).
+        </para></listitem>
+        <listitem><para>
+          <emphasis>Sign gate</emphasis>:
+          Both amplitudes are positive.  Anti-phase solutions indicate a
+          spurious template match and are rejected.
+        </para></listitem>
+      </itemizedlist>
+      <para>
+        After finding the integer-sample optimum τ, sub-sample precision is
+        achieved by parabolic interpolation on the three adjacent residual
+        values.  The refined fractional shift is stored in
+        <structfield>shiftFrac</structfield> alongside the integer
+        <structfield>shiftSamp</structfield>.
+      </para>
+    </refsect2>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Prerequisites</title>
+    <itemizedlist>
+      <listitem><para>
+        Spike sorting must be complete and manual curation in
+        <application>Klusters</application> must be finished.
+        <filename>.clu.N</filename>, <filename>.res.N</filename>, and
+        <filename>.spk.N</filename> files must exist for all groups.
+      </para></listitem>
+      <listitem><para>
+        Each spikeDetection group must contain at least two curated single
+        units with at least <parameter>minSpikesTemplate</parameter> spikes
+        each.  Groups with only one unit are skipped.
+      </para></listitem>
+      <listitem><para>
+        Python 3.10 or later with <package>pyyaml</package> and
+        <package>numpy</package> installed.
+        <package>scipy</package> is optional but not required.
+      </para></listitem>
+    </itemizedlist>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Parameters</title>
+    <variablelist>
+
+      <varlistentry>
+        <term><parameter>maxShiftSamp</parameter></term>
+        <listitem><para>
+          Maximum temporal shift (± samples) explored when matching templates
+          to spike waveforms.  At 32 kHz, the default of 10 samples covers
+          ±0.31 ms, which encompasses collisions between independently firing
+          neurons.  Increase to 16 for lower sampling rates or broader
+          waveforms; larger values increase runtime approximately as
+          O(maxShiftSamp × n_templates).
+          (Default: 10)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>corrThreshold</parameter></term>
+        <listitem><para>
+          Pearson r threshold for the single-template screening stage.
+          Spikes with a best-match correlation ≥ this value are considered
+          well explained by one unit and are not passed to the two-component
+          pursuit.  Increase toward 0.92 to flag only the most obvious
+          collisions; decrease toward 0.75 to widen the candidate pool
+          (at the cost of more false positives in stage 3).
+          (Default: 0.85)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>residualThreshold</parameter></term>
+        <listitem><para>
+          Maximum fractional residual energy
+          <inlineequation><mathphrase>‖R₂‖ / ‖W‖</mathphrase></inlineequation>
+          for a two-template decomposition to be accepted.  A value of 0.25
+          means the model must account for ≥ 75 % of the waveform energy.
+          Tighten to 0.15 for high-SNR recordings; relax to 0.35 when the
+          noise floor is elevated.
+          (Default: 0.25)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>minSnrRms</parameter></term>
+        <listitem><para>
+          Minimum spike amplitude in multiples of the estimated RMS noise
+          floor.  Spikes below this threshold are skipped in the screening
+          stage because their waveform SNR is insufficient for reliable
+          decomposition.  The noise floor is estimated from all spike
+          waveforms using the MAD estimator (Quiroga 2004).
+          (Default: 4.0)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>minSpikesTemplate</parameter></term>
+        <listitem><para>
+          Minimum spikes a curated unit must have fired to be included in the
+          template library.  Units with fewer spikes produce noisy mean
+          waveforms that degrade decomposition accuracy.
+          (Default: 30)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>excludeNoise</parameter></term>
+        <listitem><para>
+          When <literal>true</literal>, cluster 0 (artifact/noise) and
+          cluster 1 (MUA) are excluded from template building.  Their
+          waveforms are too heterogeneous to serve as meaningful collision
+          components.  Set to <literal>false</literal> only if MUA was
+          intentionally curated into a homogeneous population.
+          (Default: true)
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>overwrite</parameter></term>
+        <listitem><para>
+          When <literal>false</literal>, spikeDetection groups whose
+          <filename>.col.N</filename> file already exists are skipped.
+          Set to <literal>true</literal> to force recomputation after
+          adjusting parameters.
+          (Default: false)
+        </para></listitem>
+      </varlistentry>
+
+    </variablelist>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Output File Format</title>
+    <para>
+      One <filename>SESSION.col.N</filename> file is written per spikeDetection
+      group.  The file is a YAML document with the following structure:
+    </para>
+    <programlisting language="yaml"><![CDATA[
+collisions:
+  format: '1.0'
+  session: jg05-20120316
+  spikeGroup: 1
+  nSpikes: 14302
+  nTemplates: 6
+  nCandidates: 847
+  nDecomposed: 312
+  rmsNoise: 48.3
+  corrThreshold: 0.85
+  residualThreshold: 0.25
+  maxShiftSamp: 10
+  minSnrRms: 4.0
+  minSpikesTemplate: 30
+  templates:
+    - unitId: 2
+      nSpikes: 1204
+      dominantChannel: 3
+      meanPtp: 142.3
+      ampPct01: 98.4
+      ampPct99: 201.7
+    - unitId: 3
+      nSpikes: 876
+      dominantChannel: 1
+      meanPtp: 87.1
+      ampPct01: 61.2
+      ampPct99: 118.5
+  spikes:
+    - spikeIndex: 47
+      timestamp: 19423
+      bestSingleUnit: 2
+      bestSingleCorr: 0.781
+      collision_accepted: true
+      component1:
+        unitId: 3
+        shiftSamp: -4
+        shiftFrac: -3.82
+        amplitude: 1.03
+        ampInRange: true
+      component2:
+        unitId: 2
+        shiftSamp: 6
+        shiftFrac: 6.14
+        amplitude: 0.97
+        ampInRange: true
+      residualNorm: 0.19
+    ]]></programlisting>
+
+    <variablelist>
+      <varlistentry>
+        <term><structfield>spikeIndex</structfield></term>
+        <listitem><para>
+          0-based index into the <filename>.res.N</filename> /
+          <filename>.clu.N</filename> / <filename>.spk.N</filename> arrays.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>timestamp</structfield></term>
+        <listitem><para>
+          Spike detection time in samples (from <filename>.res.N</filename>).
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>collision_accepted</structfield></term>
+        <listitem><para>
+          <literal>true</literal> when all acceptance criteria are met.
+          <literal>false</literal> when the spike is a candidate but the
+          decomposition was not convincing; treat as unresolved.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>shiftSamp</structfield></term>
+        <listitem><para>
+          Integer-sample shift applied to the component template relative to
+          the spike detection time.  Positive = the component template was
+          shifted later (the component spike arrived earlier).
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>shiftFrac</structfield></term>
+        <listitem><para>
+          Sub-sample refined shift from parabolic interpolation.  Use this
+          when constructing corrected spike times at sub-sample precision.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>amplitude</structfield></term>
+        <listitem><para>
+          Dimensionless scale factor relative to the mean template.
+          A value of 1.0 means the component amplitude exactly matches the
+          unit mean; values between 0.6 and 1.4 are typical for well-isolated
+          units with moderate amplitude variability.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>residualNorm</structfield></term>
+        <listitem><para>
+          Fractional residual energy
+          <inlineequation><mathphrase>‖R₂‖ / ‖W‖</mathphrase></inlineequation>
+          after subtracting both components.  Lower is better; accepted
+          decompositions have values below
+          <parameter>residualThreshold</parameter>.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Downstream Use</title>
+    <para>
+      The <filename>.col.N</filename> sidecar provides two downstream options
+      without altering the original spike-sorting files:
+    </para>
+    <variablelist>
+      <varlistentry>
+        <term>Exclusion</term>
+        <listitem><para>
+          Spikes with <structfield>collision_accepted == true</structfield>
+          are removed from firing-rate computations and cross-correlograms.
+          This is the conservative approach and is always safe.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Reassignment</term>
+        <listitem><para>
+          Each accepted collision spike at time <emphasis>t</emphasis> is
+          replaced by two events: one for unit k₁ at
+          <emphasis>t + shiftSamp_1</emphasis> (or
+          <emphasis>t + shiftFrac_1</emphasis> for sub-sample precision) and
+          one for unit k₂ at <emphasis>t + shiftSamp_2</emphasis>.  This
+          recovers spikes that would otherwise be permanently lost from both
+          units' spike trains.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+    <para>
+      For cross-correlogram analysis, excluding accepted collisions recovers
+      the true refractory dip between units and removes the spurious excess
+      coincidences that confound functional connectivity inference.
+    </para>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Limitations</title>
+    <itemizedlist>
+      <listitem><para>
+        Three-component collisions (three neurons firing within a single
+        waveform window) are not attempted.  They are rare (&lt; 0.1 % of
+        spikes in typical recordings) and the two-pass pursuit will usually
+        assign the pair with the highest combined energy, leaving a
+        detectable residual.
+      </para></listitem>
+      <listitem><para>
+        The algorithm assumes that within-collision amplitude variability
+        follows the same distribution as single-unit amplitude variability.
+        For units with very narrow amplitude distributions the acceptance gate
+        may be over-restrictive; lowering the percentile bounds (via source
+        modification) relaxes this.
+      </para></listitem>
+      <listitem><para>
+        Template drift over the course of a long recording degrades
+        decomposition accuracy.  Run
+        <citerefentry>
+          <refentrytitle>ndm_estimatedrift</refentrytitle>
+          <manvolnum>1</manvolnum>
+        </citerefentry>
+        first and inspect the drift output.  Sessions with drift &gt; 10 µm/h
+        should be corrected or split into shorter segments before collision
+        decomposition.
+      </para></listitem>
+    </itemizedlist>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>Files</title>
+    <variablelist>
+      <varlistentry>
+        <term><filename>SESSION.yaml</filename></term>
+        <listitem><para>
+          Session parameter file (mandatory input).  The
+          <literal>spikeDetection.channelGroups</literal> section is read
+          for per-group <literal>nSamples</literal>,
+          <literal>peakSampleIndex</literal>, and channel lists.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.clu.N</filename></term>
+        <listitem><para>
+          Curated cluster labels (mandatory input).
+          Must reflect post-curation single-unit assignments.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.res.N</filename></term>
+        <listitem><para>
+          Spike timestamps in samples (mandatory input).
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.spk.N</filename></term>
+        <listitem><para>
+          Spike waveforms — int16 binary, row-major (spike × sample × site)
+          (mandatory input).  Waveform data is required; the plugin exits with
+          an error if no <filename>.spk.N</filename> files are found.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.col.N</filename></term>
+        <listitem><para>
+          Output collision sidecar file (YAML).  One per spikeDetection group.
+          Contains global statistics, template metadata, and per-spike
+          decomposition records.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <refsect1>
+    <title>See Also</title>
+    <para>
+      <citerefentry>
+        <refentrytitle>ndm_klustakwik</refentrytitle><manvolnum>1</manvolnum>
+      </citerefentry>,
+      <citerefentry>
+        <refentrytitle>ndm_pca</refentrytitle><manvolnum>1</manvolnum>
+      </citerefentry>,
+      <citerefentry>
+        <refentrytitle>ndm_estimatedrift</refentrytitle><manvolnum>1</manvolnum>
+      </citerefentry>,
+      <citerefentry>
+        <refentrytitle>klusters</refentrytitle><manvolnum>1</manvolnum>
+      </citerefentry>
+    </para>
+  </refsect1>
+
+</refentry>

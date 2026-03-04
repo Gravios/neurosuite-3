@@ -1,0 +1,152 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_decomposecollisions</n>
+  <parameters>
+   <parameter>
+    <n>maxShiftSamp</n>
+    <value>10</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>corrThreshold</n>
+    <value>0.85</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>residualThreshold</n>
+    <value>0.25</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>minSnrRms</n>
+    <value>4.0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>minSpikesTemplate</n>
+    <value>30</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>excludeNoise</n>
+    <value>true</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>overwrite</n>
+    <value>false</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Detect and decompose spike collision waveforms into their single-unit components.
+
+Must be run AFTER spike sorting (ndm_klustakwik) and manual curation in Klusters.
+Requires .clu.N, .res.N, and .spk.N files for each spike group.
+
+When two neurons fire within roughly one spike-width of each other (~1 ms),
+their extracellular waveforms sum linearly and the recorded composite waveform
+lands between the two parent clusters in feature space. These "collision spikes"
+inflate false-positive and false-negative rates and corrupt cross-correlograms
+near zero lag. This plugin identifies and decomposes them post-curation, without
+modifying the original spike-sorting files.
+
+All template matching is performed within a single spikeDetection group (same
+shank). Cross-shank collisions are not attempted because their spatial overlap
+at individual electrode sites is negligible.
+
+ALGORITHM
+
+1. Template building
+   A mean waveform template is computed for each curated unit that fired at
+   least minSpikesTemplate spikes. The per-unit peak-to-peak amplitude
+   distribution on the dominant channel is stored for the acceptance gate.
+
+2. Single-template screening
+   Each spike is correlated against all templates at shifts in
+   [-maxShiftSamp, +maxShiftSamp] samples. Spikes whose best-match Pearson r
+   exceeds corrThreshold are well explained by a single unit and skipped.
+   Spikes below the minSnrRms noise gate are also skipped.
+
+3. Two-component matching pursuit
+   For each candidate, two greedy passes find (unit, shift, amplitude) pairs
+   that minimise the residual waveform energy. A decomposition is accepted when:
+     - The residual energy is < residualThreshold * original energy (default 25%)
+     - Both component amplitudes fall within the 1st-99th percentile of their
+       unit's empirical amplitude distribution (rejects unphysical solutions)
+     - Both amplitudes are positive (no anti-phase solutions)
+   Sub-sample shift precision is achieved via parabolic interpolation around
+   the integer-sample optimum, identical to the drift estimator's xcorr peak.
+
+4. Output
+   One SESSION.col.N sidecar file per spikeDetection group (YAML format).
+   The original .clu.N, .res.N and .spk.N files are NOT modified.
+
+OUTPUT FILE  SESSION.col.N
+  collisions:
+    format: '1.0'
+    spikeGroup: 1
+    nSpikes: 14302
+    nTemplates: 6
+    nCandidates: 847
+    nDecomposed: 312
+    spikes:
+      - spikeIndex: 47
+        timestamp: 19423
+        collision_accepted: true
+        component1: { unitId: 3, shiftSamp: -4, shiftFrac: -3.82, amplitude: 1.03 }
+        component2: { unitId: 2, shiftSamp:  6, shiftFrac:  6.14, amplitude: 0.97 }
+        residualNorm: 0.19
+
+DOWNSTREAM USE
+  collision_accepted == true  →  exclude spike from single-unit analyses, OR
+                                  re-assign as two events at timestamp+shiftSamp_1
+                                  (unit k1) and timestamp+shiftSamp_2 (unit k2).
+  collision_accepted == false →  spike is a candidate but decomposition was
+                                  not convincing; treat as unresolved.
+
+OPTIONAL PARAMETERS
+
+# maxShiftSamp
+Maximum temporal shift (±samples) when scanning template matches.
+At 32 kHz, 10 samples ≈ 0.31 ms. Increase to ~16 for slower acquisition rates
+or probes with wider waveforms. Larger values increase runtime quadratically.
+(default = 10)
+
+# corrThreshold
+Pearson r threshold below which a spike is flagged as a collision candidate.
+Increase toward 0.92 to flag only the most obvious collisions; decrease toward
+0.75 to cast a wider net (more candidates, more false positives in stage 3).
+(default = 0.85)
+
+# residualThreshold
+Maximum fractional residual energy ||R|| / ||W|| for an accepted decomposition.
+0.25 means the two-template model must explain ≥75% of the waveform energy.
+Tighten to 0.15 for high-SNR recordings; relax to 0.35 for noisy data.
+(default = 0.25)
+
+# minSnrRms
+Minimum spike amplitude in units of estimated RMS noise (Quiroga 2004 MAD
+estimator). Spikes below this level cannot be reliably decomposed and are
+skipped regardless of their template correlation.
+(default = 4.0)
+
+# minSpikesTemplate
+Minimum number of spikes a curated unit must have contributed to be used as a
+template. Units with fewer spikes have noisy mean waveforms that degrade
+decomposition accuracy.
+(default = 30)
+
+# excludeNoise
+If true (default), cluster 0 (artifact) and cluster 1 (MUA) are excluded from
+template building. Their waveforms are too heterogeneous to serve as reliable
+collision components. Set to false only if MUA was intentionally curated.
+(default = true)
+
+# overwrite
+If false (default), skip groups whose .col.N file already exists.
+Set to true to force recomputation after changing parameters.
+(default = false)
+</help>
+ </program>
+</parameter>
