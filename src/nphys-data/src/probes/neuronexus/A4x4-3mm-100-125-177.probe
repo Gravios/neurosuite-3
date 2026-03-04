@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A4x4-3mm-100-125-177
+  catalogPage: 29
+  totalChannels: 16
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 4, spacing_um: 125, length_mm: 3.0 }
+  sites: { count_per_shank: 4, layout: linear, area_um2: 177, spacing_um: 100 }
+  channelMap: { description: null, map: null }
+  notes: "4-shank 4 ch/shank. 125 µm shank pitch. 300 µm active span per shank."

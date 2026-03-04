@@ -1,0 +1,22 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A1x16-5mm-25-177
+  catalogPage: 16
+  totalChannels: 16
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 1
+    spacing_um: null
+    length_mm: 5.0
+  sites:
+    count_per_shank: 16
+    layout: linear
+    area_um2: 177
+    spacing_um: 25
+  channelMap:
+    description: null
+    map: null
+  notes: "Single-shank linear array, 25 µm pitch. Coverage span 375 µm."

@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A1x32-Edge-5mm-50-177
+  catalogPage: 43
+  totalChannels: 32
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 1, spacing_um: null, length_mm: 5.0 }
+  sites: { count_per_shank: 32, layout: edge, area_um2: 177, spacing_um: 50 }
+  channelMap: { description: null, map: null }
+  notes: "Edge layout — all sites on silicon edge. Minimal displacement. 1550 µm span."

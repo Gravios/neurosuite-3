@@ -1,0 +1,18 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A2x8-5mm-50-200-703
+  catalogPage: 25
+  totalChannels: 16
+  substrate: {material: silicon, thickness_um: 15}
+  shanks:
+    count: 2
+    spacing_um: 200
+    length_mm: 5.0
+  sites:
+    count_per_shank: 8
+    layout: linear
+    area_um2: 703
+    spacing_um: 50
+  channelMap: {description: null, map: null}
+  notes: "Large-site (703 µm²) 2-shank probe. 200 µm shank pitch. LFP-optimized."

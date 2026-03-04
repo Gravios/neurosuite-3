@@ -1,0 +1,18 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A4x32-Poly2-5mm-23s-200-177
+  catalogPage: 115
+  totalChannels: 128
+  substrate: {material: silicon, thickness_um: 15}
+  shanks:
+    count: 4
+    spacing_um: 200
+    length_mm: 5.0
+  sites:
+    count_per_shank: 32
+    layout: poly2
+    area_um2: 177
+    spacing_um: 23
+  channelMap: {description: null, map: null}
+  notes: "4-shank Poly2 layout, 23 µm staggered pitch. High-density laminar coverage."

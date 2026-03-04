@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A1x16-5mm-50-177
+  catalogPage: 17
+  totalChannels: 16
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 1, spacing_um: null, length_mm: 5.0 }
+  sites: { count_per_shank: 16, layout: linear, area_um2: 177, spacing_um: 50 }
+  channelMap: { description: null, map: null }
+  notes: "Single-shank linear. 50 µm pitch, 750 µm active span."

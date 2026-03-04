@@ -1,0 +1,11 @@
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: A2x16-10mm-50-500-177
+  catalogPage: 57
+  totalChannels: 32
+  substrate: { material: silicon, thickness_um: 15 }
+  shanks: { count: 2, spacing_um: 500, length_mm: 10.0 }
+  sites: { count_per_shank: 16, layout: linear, area_um2: 177, spacing_um: 50 }
+  channelMap: { description: null, map: null }
+  notes: "2-shank 10 mm. 500 µm shank pitch. 750 µm active span per shank."

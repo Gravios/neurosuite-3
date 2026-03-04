@@ -1,0 +1,65 @@
+# NeuroNexus Buzsaki 5x12 — probe configuration file
+# Catalog page: 102 (2026 Penetrating Probe Catalog v2.1)
+#
+# 5-shank probe: 1 centre shank (12 ch) + 4 side shanks (varying ch).
+# 60-channel total. Unique mixed layout: centre shank is denser.
+probeFile:
+  version: '1.0'
+  vendor: NeuroNexus
+  model: "Buzsaki 5x12"
+  catalogPage: 102
+  totalChannels: 60         # 5 shanks × 12 ch
+
+  substrate:
+    material: silicon
+    thickness_um: 15
+
+  shanks:
+    count: 5
+    spacing_um: 200
+    length_mm: 5.0
+    # Note: center shank has denser layout (110 µm between sites on center vs side)
+
+  sites:
+    count_per_shank: 12
+    layout: octrode           # Buzsaki-family octrode per shank
+    area_um2: 160
+    spacing_um: null
+
+    # Center shank geometry (110 µm between tip sites, then 200 µm to outer sites)
+    # Side shanks: standard octrode at 20 µm steps
+    geometry_center_shank:
+      - [0,   0]
+      - [-11,  20]
+      - [11,   40]
+      - [-11,  60]
+      - [11,   80]
+      - [-11, 100]
+      - [11,  120]
+      - [-11, 140]
+      - [11,  160]
+      - [-11, 180]
+      - [11,  200]
+      - [-11, 220]
+    geometry_side_shanks:
+      - [0,   0]
+      - [-11,  20]
+      - [11,   40]
+      - [-11,  60]
+      - [11,   80]
+      - [-11, 100]
+      - [11,  120]
+      - [-11, 140]
+      - [11,  160]
+      - [-11, 180]
+      - [11,  200]
+      - [-11, 220]
+
+  channelMap:
+    description: null
+    map: null
+
+  notes: >
+    5-shank Buzsaki-family probe. Center shank has different spacing from side shanks
+    per catalog diagram (110 µm spacing on center, 200 µm between outer groups).
+    Total active span 800 µm laterally. Used for high-density CA1/CA3 laminar coverage.
