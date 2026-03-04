@@ -296,6 +296,49 @@ set(_pfx "${CMAKE_INSTALL_PREFIX}")
 # find_package(LibKlustersShared) works when configuring dependent packages.
 list(APPEND CMAKE_PREFIX_PATH "${_pfx}")
 
+# ── Sudo detection ────────────────────────────────────────────────────────────
+#
+# Walk up from the install prefix to find the first existing ancestor, then
+# test whether the current user can write to it.  If not, prepend sudo to
+# every cmake --install call so that sub-projects can install to system paths
+# (e.g. /usr/local) without requiring the entire cmake --build invocation to
+# be run as root.
+
+if(UNIX)
+    set(_test_dir "${_pfx}")
+    while(NOT EXISTS "${_test_dir}")
+        get_filename_component(_test_dir "${_test_dir}" DIRECTORY)
+        if("${_test_dir}" STREQUAL "/")
+            break()
+        endif()
+    endwhile()
+
+    execute_process(
+        COMMAND test -w "${_test_dir}"
+        RESULT_VARIABLE _pfx_not_writable
+    )
+    if(_pfx_not_writable)
+        find_program(_sudo_exe sudo)
+        if(_sudo_exe)
+            set(_install_prefix "${_sudo_exe}" "${CMAKE_COMMAND}")
+            message(STATUS
+                "Install prefix ${_pfx} not writable by current user — "
+                "install steps will use sudo.")
+        else()
+            set(_install_prefix "${CMAKE_COMMAND}")
+            message(WARNING
+                "Install prefix ${_pfx} not writable and sudo not found. "
+                "Install steps may fail. Run cmake --build as root or "
+                "choose a writable prefix with -DCMAKE_INSTALL_PREFIX=.")
+        endif()
+    else()
+        set(_install_prefix "${CMAKE_COMMAND}")
+    endif()
+else()
+    # Windows: no sudo concept, cmake --install runs as the current user
+    set(_install_prefix "${CMAKE_COMMAND}")
+endif()
+
 # ── Job count flag ────────────────────────────────────────────────────────────
 
 if(JOBS)
@@ -353,7 +396,7 @@ macro(ns_add_package _name _subdir)
             INSTALL_DIR     "${_pfx}"
             CMAKE_ARGS      ${_common_args} ${_p_EXTRA_ARGS}
             BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> ${_parallel}
-            INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
+            INSTALL_COMMAND ${_install_prefix} --install <BINARY_DIR>
             DEPENDS         ${_p_DEPENDS}
             # Keep the stamp/log files inside the binary dir to avoid polluting src/
             STAMP_DIR       "${CMAKE_BINARY_DIR}/${_name}/stamp"
