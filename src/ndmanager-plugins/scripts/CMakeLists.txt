@@ -7,18 +7,21 @@ install(PROGRAMS
     ndm_denoiseuniform ndm_klustakwik ndm_spikegrouper
     ndm_start ndm_transcodevideo ndm_tsp2sts ndm_xml2yaml
     ndm_estimatedrift
+    ndm_decomposecollisions
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
-# Python helper installed alongside the bash driver so the script can find it
-# via its own directory; also lands on PATH for direct invocation.
+# Python helpers installed alongside their bash drivers so each script can
+# find its helper via its own directory; also land on PATH for direct use.
 install(PROGRAMS
     process_estimatedrift.py
+    process_decomposecollisions.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 foreach(_page IN ITEMS
-        cnt duration ndm ndm_recolorchannels ndm_start ndm_xml2yaml ndm_estimatedrift pad
+        cnt duration ndm ndm_recolorchannels ndm_start ndm_xml2yaml
+        ndm_estimatedrift ndm_decomposecollisions pad
         process_reorderclusters rn)
     add_manpage(${_page})
 endforeach()

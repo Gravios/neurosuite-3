@@ -3170,7 +3170,7 @@ bool KlustersDoc::initPendingFiles()
     m_pendingFetPath = m_origFetPath + QStringLiteral(".pending");
     m_pendingCluPath = docUrl       + QStringLiteral(".pending");
 
-    // Helper: overwrite dst with a fresh copy of src.
+    // Helper: overwrite dst with a fresh copy of src.  src must exist.
     auto seedFile = [](const QString& src, const QString& dst) -> bool {
         QFile::remove(dst);
         if (!QFile::copy(src, dst)) {
@@ -3180,10 +3180,35 @@ bool KlustersDoc::initPendingFiles()
         return true;
     };
 
+    // Helper: seed clu pending — copy if the clu file already exists (post-
+    // clustering), otherwise create an empty pending file so that the first
+    // Save after clustering writes to m_pendingCluPath rather than directly
+    // to docUrl.  Opening on a raw .fet.N before any clustering is the normal
+    // case where the clu file does not yet exist.
+    auto seedCluFile = [](const QString& src, const QString& dst) -> bool {
+        QFile::remove(dst);
+        if (QFile::exists(src)) {
+            if (!QFile::copy(src, dst)) {
+                qWarning() << "[initPendingFiles] copy failed:" << src << "->" << dst;
+                return false;
+            }
+        } else {
+            // clu file does not exist yet — create an empty placeholder so
+            // tmpCluFile can be redirected to the pending path.
+            QFile f(dst);
+            if (!f.open(QIODevice::WriteOnly)) {
+                qWarning() << "[initPendingFiles] could not create empty pending clu:" << dst;
+                return false;
+            }
+            f.close();
+        }
+        return true;
+    };
+
     const bool ok = seedFile(m_origSpkPath, m_pendingSpkPath)
                  && seedFile(m_origResPath, m_pendingResPath)
                  && seedFile(m_origFetPath, m_pendingFetPath)
-                 && seedFile(docUrl,        m_pendingCluPath);
+                 && seedCluFile(docUrl,     m_pendingCluPath);
 
     if (ok) {
         // Redirect the waveform reader and clu writer to the pending files.
