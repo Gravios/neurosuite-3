@@ -44,6 +44,14 @@ static constexpr int BLOCK    = KK_HIP_BLOCK;
 // ---------------------------------------------------------------------------
 void KK_GPU::allocate(int nP, int nD, int nD2, int maxC) {
     nPoints = nP; nDims = nD; nDims2 = nD2; MaxClusters = maxC;
+    // Query device LDS limit for adaptive kernel selection
+    {
+        int dev = 0;
+        hipGetDevice(&dev);
+        hipDeviceProp_t prop;
+        hipGetDeviceProperties(&prop, dev);
+        smemLimit = (int)prop.sharedMemPerBlock;
+    }
     HIP_CHECK(hipMalloc(&d_Data,       sizeof(float) * nD   * nP));
     HIP_CHECK(hipMalloc(&d_LogP,       sizeof(float) * maxC * nP));
     HIP_CHECK(hipMalloc(&d_Mean,       sizeof(float) * maxC * nD));
@@ -186,6 +194,24 @@ __global__ void kk_mstep_mean_kernel(
 
     for (int i = tid; i < maxC;         i += lsz) if (lm_nm[i])   atomicAdd(&d_nMembers[i], lm_nm[i]);
     for (int i = tid; i < maxC * nDims; i += lsz) if (lm_mean[i]) atomicAdd(&d_MeanAcc[i], lm_mean[i]);
+}
+
+// Phase 1b (fallback): direct global atomics — no LDS buffer.
+// Used when maxC*nD*4 + maxC*4 would exceed the device LDS limit.
+__global__ void kk_mstep_mean_direct_kernel(
+    const float * __restrict__ d_Data,
+    const int   * __restrict__ d_Class,
+          float * __restrict__ d_MeanAcc,
+          int   * __restrict__ d_nMembers,
+    int nPoints, int nDims
+)
+{
+    const int p = blockIdx.x * blockDim.x + threadIdx.x;
+    if (p >= nPoints) return;
+    const int c = d_Class[p];
+    atomicAdd(&d_nMembers[c], 1);
+    for (int d = 0; d < nDims; d++)
+        atomicAdd(&d_MeanAcc[c * nDims + d], d_Data[d * nPoints + p]);
 }
 
 // Phase 1c: scatter covariance — one target cluster per launch.
@@ -452,10 +478,15 @@ extern "C" void hip_mstep(
     HIP_CHECK(hipMemsetAsync(gpu->d_nMembers, 0, sizeof(int)  *maxC));
     HIP_CHECK(hipDeviceSynchronize());
 
-    // Scatter mean with LDS block reduction (fix 4)
-    const int smem_mean = sizeof(float)*maxC*nD + sizeof(int)*maxC;
-    hipLaunchKernelGGL(kk_mstep_mean_kernel, grid, BLOCK, smem_mean, nullptr,
-        gpu->d_Data, gpu->d_Class, gpu->d_MeanAcc, gpu->d_nMembers, nP, nD, maxC);
+    // Scatter mean — LDS reduction when it fits, direct atomics otherwise
+    const int smem_mean = (int)(sizeof(float)*maxC*nD + sizeof(int)*maxC);
+    if (smem_mean <= gpu->smemLimit) {
+        hipLaunchKernelGGL(kk_mstep_mean_kernel, grid, BLOCK, smem_mean, nullptr,
+            gpu->d_Data, gpu->d_Class, gpu->d_MeanAcc, gpu->d_nMembers, nP, nD, maxC);
+    } else {
+        hipLaunchKernelGGL(kk_mstep_mean_direct_kernel, grid, BLOCK, 0, nullptr,
+            gpu->d_Data, gpu->d_Class, gpu->d_MeanAcc, gpu->d_nMembers, nP, nD);
+    }
     HIP_CHECK(hipDeviceSynchronize());
 
     // Normalise mean on device (fix 3)

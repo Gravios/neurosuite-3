@@ -53,6 +53,14 @@ static constexpr int BLOCK = 256;
 // ===========================================================================
 void KK_GPU::allocate(int nP, int nD, int nD2, int maxC) {
     nPoints = nP; nDims = nD; nDims2 = nD2; MaxClusters = maxC;
+    // Query device shared memory limit for adaptive kernel selection
+    {
+        int dev = 0;
+        cudaGetDevice(&dev);
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, dev);
+        smemLimit = (int)prop.sharedMemPerBlock;
+    }
     CUDA_CHECK(cudaMalloc(&d_Data,       sizeof(float) * nD   * nP));
     CUDA_CHECK(cudaMalloc(&d_LogP,       sizeof(float) * maxC * nP));
     CUDA_CHECK(cudaMalloc(&d_Mean,       sizeof(float) * maxC * nD));
@@ -193,6 +201,28 @@ __global__ void kk_mstep_mean_kernel(
 
     for (int i = tid; i < maxC;         i += lsz) if (lm_nm[i])   atomicAdd(&d_nMembers[i], lm_nm[i]);
     for (int i = tid; i < maxC * nDims; i += lsz) if (lm_mean[i]) atomicAdd(&d_MeanAcc[i], lm_mean[i]);
+}
+
+// Phase 1b (fallback): scatter mean with direct global atomics.
+//
+// Used when maxC*nD*4 + maxC*4 would exceed the device shared memory limit.
+// No shared buffer — each thread atomically accumulates directly into global
+// memory.  Higher atomic traffic than the shared-memory variant but correct
+// on all hardware regardless of maxC or nDims.
+__global__ void kk_mstep_mean_direct_kernel(
+    const float * __restrict__ d_Data,
+    const int   * __restrict__ d_Class,
+          float * __restrict__ d_MeanAcc,
+          int   * __restrict__ d_nMembers,
+    int nPoints, int nDims
+)
+{
+    const int p = blockIdx.x * blockDim.x + threadIdx.x;
+    if (p >= nPoints) return;
+    const int c = d_Class[p];
+    atomicAdd(&d_nMembers[c], 1);
+    for (int d = 0; d < nDims; d++)
+        atomicAdd(&d_MeanAcc[c * nDims + d], d_Data[d * nPoints + p]);
 }
 
 // Phase 1c: scatter covariance — one target cluster per launch.
@@ -457,10 +487,18 @@ extern "C" void cuda_mstep(
     CUDA_CHECK(cudaMemsetAsync(gpu->d_nMembers, 0, sizeof(int)  *maxC));
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    // Scatter mean with shared-memory block reduction (fix 4)
-    const int smem_mean = sizeof(float)*maxC*nD + sizeof(int)*maxC;
-    kk_mstep_mean_kernel<<<grid, BLOCK, smem_mean>>>(
-        gpu->d_Data, gpu->d_Class, gpu->d_MeanAcc, gpu->d_nMembers, nP, nD, maxC);
+    // Scatter mean — use shared-memory block reduction when it fits within the
+    // device smem limit, otherwise fall back to direct global atomics.
+    // smem_mean = maxC*nD floats + maxC ints; can exceed 48 KB with large
+    // MaxPossibleClusters and many features (e.g. maxC=500, nD=25 -> 50.8 KB).
+    const int smem_mean = (int)(sizeof(float)*maxC*nD + sizeof(int)*maxC);
+    if (smem_mean <= gpu->smemLimit) {
+        kk_mstep_mean_kernel<<<grid, BLOCK, smem_mean>>>(
+            gpu->d_Data, gpu->d_Class, gpu->d_MeanAcc, gpu->d_nMembers, nP, nD, maxC);
+    } else {
+        kk_mstep_mean_direct_kernel<<<grid, BLOCK>>>(
+            gpu->d_Data, gpu->d_Class, gpu->d_MeanAcc, gpu->d_nMembers, nP, nD);
+    }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 

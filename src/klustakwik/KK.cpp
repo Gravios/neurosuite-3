@@ -123,13 +123,18 @@ void KK::LoadData() {
             Error("Binary .fet file size inconsistent with nFeatures");
         nPoints = (int)(dataBytes / ((off_t)sizeof(int64_t) * nFeatures));
 
-        // Handle "all" keyword
+        // Handle "all" keyword — also the default when -UseFeatures is not passed
         if (strcmp(UseFeatures, "all") == 0) {
             if (nFeatures >= STRLEN) Error("Too many features for UseFeatures");
             for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
             UseFeatures[nFeatures] = '\0';
         }
         const int UseLen = static_cast<int>(strlen(UseFeatures));
+        if (UseLen != nFeatures)
+            Output("WARNING: UseFeatures length (%d) != nFeatures (%d). "
+                   "Features beyond position %d will be excluded. "
+                   "Pass -UseFeatures all to select all features.\n",
+                   UseLen, nFeatures, UseLen);
         nDims = 0;
         for (int i = 0; i < nFeatures; i++)
             nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
@@ -182,13 +187,18 @@ void KK::LoadData() {
         if (fscanf(fp, "%d", &nFeatures) != 1) Error("Failed to read nFeatures (text .fet)");
         Output("nFeatures=%d (text .fet)\n", nFeatures);
 
-        // Handle "all" keyword
+        // Handle "all" keyword — also the default when -UseFeatures is not passed
         if (strcmp(UseFeatures, "all") == 0) {
             if (nFeatures >= STRLEN) Error("Too many features for UseFeatures");
             for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
             UseFeatures[nFeatures] = '\0';
         }
         const int UseLen = static_cast<int>(strlen(UseFeatures));
+        if (UseLen != nFeatures)
+            Output("WARNING: UseFeatures length (%d) != nFeatures (%d). "
+                   "Features beyond position %d will be excluded. "
+                   "Pass -UseFeatures all to select all features.\n",
+                   UseLen, nFeatures, UseLen);
         nDims = 0;
         for (int i = 0; i < nFeatures; i++)
             nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;

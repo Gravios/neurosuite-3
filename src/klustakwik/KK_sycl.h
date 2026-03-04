@@ -71,6 +71,7 @@ struct KK_GPU {
     float *d_Score = nullptr;
 
     int  nPoints = 0, nDims = 0, nDims2 = 0, MaxClusters = 0;
+    int  smemLimit = 49152;  // device local memory limit per workgroup (bytes)
     bool initialised = false;
 
     // Constructs with the GPU selector passed in from sycl_device_available()

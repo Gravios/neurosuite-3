@@ -377,6 +377,52 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
     return var;
 }
 
+QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) const
+{
+    if (clusterIds.isEmpty())
+        return QVector<double>();
+
+    const int nDim  = nbDimensions;
+    const int nFeat = nDim - 1;
+    const int nSpk  = (int)nbSpikes;
+
+    // Build a fast lookup set
+    QSet<int> idSet(clusterIds.begin(), clusterIds.end());
+
+    // Collect spike indices belonging to any of the listed clusters
+    QVector<int> idx;
+    idx.reserve(256);
+    for (int s = 0; s < nSpk; ++s)
+        if (idSet.contains(static_cast<int>((*spikesByCluster)(2, s + 1))))
+            idx.append(s);
+
+    if (idx.size() < 2)
+        return QVector<double>();
+
+    const double n = (double)idx.size();
+
+    // Per-feature mean
+    QVector<double> mean(nFeat, 0.0);
+    for (int s : idx)
+        for (int f = 0; f < nFeat; ++f)
+            mean[f] += (double)features[(size_t)s * (size_t)nDim + (size_t)f];
+    for (int f = 0; f < nFeat; ++f)
+        mean[f] /= n;
+
+    // Sample variance (n-1 denominator)
+    QVector<double> var(nFeat, 0.0);
+    for (int s : idx) {
+        for (int f = 0; f < nFeat; ++f) {
+            double d = (double)features[(size_t)s * (size_t)nDim + (size_t)f] - mean[f];
+            var[f] += d * d;
+        }
+    }
+    for (int f = 0; f < nFeat; ++f)
+        var[f] /= (n - 1.0);
+
+    return var;
+}
+
 
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,QString& errorInformation){

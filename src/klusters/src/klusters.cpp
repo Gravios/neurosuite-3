@@ -2902,12 +2902,22 @@ void KlustersApp::slotRecluster(){
         bool usedAutoSelect = false;
         if(autoSelectFeatures){
             // Gather the currently-selected clusters from the active view.
+            // Works for any number of selected clusters (>= 1).
             QList<int> sel;
             if(activeView())
                 sel = activeView()->clusters();
-            if(sel.size() == 1){
-                QVector<double> variances =
-                    doc->computeFeatureVariancesForCluster(sel.first());
+
+            // Remove noise/artefact pseudo-clusters (0 and 1) — they have no
+            // meaningful feature spread and would dilute the variance estimate.
+            sel.removeAll(0);
+            sel.removeAll(1);
+
+            if(!sel.isEmpty()){
+                // Pool spikes across all selected clusters for variance computation.
+                QVector<double> variances = (sel.size() == 1)
+                    ? doc->computeFeatureVariancesForCluster(sel.first())
+                    : doc->computeFeatureVariancesForClusters(sel);
+
                 if(!variances.isEmpty()){
                     // Sort feature indices by descending variance.
                     QVector<QPair<int,double>> iv;
@@ -2918,11 +2928,23 @@ void KlustersApp::slotRecluster(){
                         [](const QPair<int,double>& a, const QPair<int,double>& b){
                             return a.second > b.second;
                         });
-                    // Enable top N features (user-configured, clamped to available columns).
-                    int nSelect = qBound(1, autoSelectNFeatures, nFeatureCols);
+
+                    // nSelect is a ceiling, not a target: stop early if variance
+                    // drops below 5 % of the top feature (noise-floor trim).
+                    int    nSelect  = qBound(1, autoSelectNFeatures, nFeatureCols);
+                    double topVar   = iv.isEmpty() ? 0.0 : iv[0].second;
+                    double minVar   = topVar * 0.05;
+
                     QSet<int> selected;
-                    for(int k = 0; k < nSelect && k < iv.size(); ++k)
+                    for(int k = 0; k < nSelect && k < iv.size(); ++k){
+                        if(topVar > 0.0 && iv[k].second < minVar)
+                            break;   // remaining features are at noise level
                         selected.insert(iv[k].first);
+                    }
+                    // Always keep at least the single most-informative feature.
+                    if(selected.isEmpty() && !iv.isEmpty())
+                        selected.insert(iv[0].first);
+
                     // Build bit-string; timestamp column is always 1.
                     for(int i = 0; i < nFeatureCols; ++i)
                         features.append(selected.contains(i) ? QLatin1Char('1') : QLatin1Char('0'));
