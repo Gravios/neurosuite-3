@@ -1,0 +1,78 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_setupgroups — build anatomicalDescription and spikeDetection groups
+#//                    from the probe library entries in the session YAML
+#//
+#//  Reads the session YAML `probes:` section, loads each referenced .probe
+#//  file, and writes anatomicalDescription.channelGroups and
+#//  spikeDetection.channelGroups into the session YAML in-place.
+#//
+#//  One anatomical group is created per shank.  The spikeDetection groups
+#//  mirror the anatomical groups (same channel lists) and are populated with
+#//  the nSamples / peakSampleIndex / nFeatures values given as parameters.
+#//
+#//  The probes: anatomicalGroups field is updated to reflect the newly
+#//  assigned group IDs, and probeId / shankIndex annotations are written
+#//  into each anatomical group for use by ndm_estimatedrift.
+#//
+#//  copyright (C) 2025 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}; session=${session%.yaml}; session=${session%.yml}
+
+print_header "$session - Setting up anatomical and spike-detection groups from probe library"
+
+check_commands_installed python3
+python3 -c "import yaml" 2>/dev/null || {
+    echo_error "Python package missing: install pyyaml"; exit $GENERAL_ERROR; }
+
+# Resolve the YAML parameter file
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No parameter file found for session '$session' (expected ${session}.yaml)"
+    exit $INPUTS_MISSING; }
+inputs_missing "$yamlfile" && exit $INPUTS_MISSING
+
+# Read parameters
+nSamples=$(read_script_parameter        "$session" ndm_setupgroups nSamples)
+nSamples=${nSamples:-52}
+
+peakSampleIndex=$(read_script_parameter "$session" ndm_setupgroups peakSampleIndex)
+peakSampleIndex=${peakSampleIndex:-26}
+
+nFeatures=$(read_script_parameter       "$session" ndm_setupgroups nFeatures)
+nFeatures=${nFeatures:-3}
+
+probeLibrary=$(read_script_parameter    "$session" ndm_setupgroups probeLibrary)
+
+overwrite=$(read_script_parameter       "$session" ndm_setupgroups overwrite)
+overwrite=${overwrite:-false}
+
+# Locate the Python helper alongside this script, or in PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_setupgroups.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="process_setupgroups.py"
+
+python3 "$PY_HELPER" \
+    --param-file        "$yamlfile" \
+    --n-samples         "$nSamples" \
+    --peak-sample-index "$peakSampleIndex" \
+    --n-features        "$nFeatures" \
+    --overwrite         "$overwrite" \
+    ${probeLibrary:+--probe-library "$probeLibrary"}
+
+status=$?
+[ $status -ne 0 ] && exit $GENERAL_ERROR
+
+echo_message "Groups written to $yamlfile"
+exit $OK
