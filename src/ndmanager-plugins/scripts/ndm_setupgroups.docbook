@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
+  "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
+
+<refentry id="ndm_setupgroups">
+
+<refmeta>
+  <refentrytitle>ndm_setupgroups</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo class="source">ndmanager-plugins</refmiscinfo>
+  <refmiscinfo class="manual">NeuroSuite-3 Tools</refmiscinfo>
+</refmeta>
+
+<refnamediv>
+  <refname>ndm_setupgroups</refname>
+  <refpurpose>
+    Build anatomical and spike-detection channel groups from probe library entries
+  </refpurpose>
+</refnamediv>
+
+<refsynopsisdiv>
+  <cmdsynopsis>
+    <command>ndm_setupgroups</command>
+    <arg choice="opt"><replaceable>parameter-file</replaceable></arg>
+  </cmdsynopsis>
+</refsynopsisdiv>
+
+<refsect1>
+  <title>Description</title>
+  <para>
+    <command>ndm_setupgroups</command> reads the <literal>probes:</literal>
+    section of the session YAML, loads each referenced
+    <filename>.probe</filename> configuration file from the probe library, and
+    writes <literal>anatomicalDescription.channelGroups</literal> and
+    <literal>spikeDetection.channelGroups</literal> into the session YAML
+    in-place.
+  </para>
+  <para>
+    One anatomical group and one corresponding spike-detection group are created
+    per shank.  The two tables are always in sync: the spike-detection groups
+    mirror the anatomical groups with the same channel lists, supplemented by
+    the waveform-window parameters <parameter>nSamples</parameter>,
+    <parameter>peakSampleIndex</parameter>, and <parameter>nFeatures</parameter>.
+  </para>
+  <para>
+    Probe and shank metadata (<literal>probeId</literal>,
+    <literal>shankIndex</literal>) are written into each anatomical group entry
+    so that <citerefentry><refentrytitle>ndm_estimatedrift</refentrytitle>
+    <manvolnum>1</manvolnum></citerefentry> can reconstruct the spatial geometry
+    of each shank without re-reading the probe library.  The
+    <literal>probes[].anatomicalGroups</literal> field is updated to reflect the
+    newly assigned group IDs.
+  </para>
+  <para>
+    <command>ndm_setupgroups</command> must be run <emphasis>before</emphasis>
+    any spike-detection step
+    (<citerefentry><refentrytitle>ndm_extractspikes</refentrytitle>
+    <manvolnum>1</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>ndm_pca</refentrytitle>
+    <manvolnum>1</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>ndm_klustakwik</refentrytitle>
+    <manvolnum>1</manvolnum></citerefentry>).
+  </para>
+</refsect1>
+
+<refsect1>
+  <title>Channel Assignment</title>
+  <para>
+    When <literal>channelMap.map</literal> is <literal>null</literal> (the
+    default for all NeuroNexus probe files), channels are assigned sequentially:
+  </para>
+  <blockquote>
+    <para>
+      shank <replaceable>i</replaceable> →
+      [<replaceable>offset</replaceable> + <replaceable>i</replaceable>·<replaceable>n</replaceable>,
+       …,
+       <replaceable>offset</replaceable> + (<replaceable>i</replaceable>+1)·<replaceable>n</replaceable> − 1]
+    </para>
+  </blockquote>
+  <para>
+    where <replaceable>offset</replaceable> = <literal>probes[].channelOffset</literal>
+    and <replaceable>n</replaceable> = <literal>probeFile.sites.count_per_shank</literal>.
+  </para>
+  <para>
+    When <literal>channelMap.map</literal> is present it is used directly
+    (flat or shank-major nested list), with <literal>channelOffset</literal>
+    added to each entry.
+  </para>
+  <para>
+    Channel ordering within each group follows the probe file order
+    (tip-to-base for linear and octrode layouts).  This ordering is required
+    by <command>ndm_extractspikes_sdiff</command> and
+    <command>ndm_estimatedrift</command>.
+  </para>
+</refsect1>
+
+<refsect1>
+  <title>Options</title>
+  <variablelist>
+    <varlistentry>
+      <term><parameter>nSamples</parameter></term>
+      <listitem>
+        <para>
+          Total waveform window width in samples written to each spike-detection
+          group.  At 32 kHz a 1.625 ms window requires 52 samples; at 20 kHz
+          use 32.  Default: <literal>52</literal>.
+        </para>
+      </listitem>
+    </varlistentry>
+    <varlistentry>
+      <term><parameter>peakSampleIndex</parameter></term>
+      <listitem>
+        <para>
+          Zero-based index of the expected waveform peak within the
+          <parameter>nSamples</parameter> window.  Default:
+          <literal>26</literal> (midpoint of a 52-sample window).
+        </para>
+      </listitem>
+    </varlistentry>
+    <varlistentry>
+      <term><parameter>nFeatures</parameter></term>
+      <listitem>
+        <para>
+          Number of PCA components per channel used by
+          <command>ndm_pca</command> and <command>ndm_klustakwik</command>.
+          Default: <literal>3</literal>.
+        </para>
+      </listitem>
+    </varlistentry>
+    <varlistentry>
+      <term><parameter>probeLibrary</parameter></term>
+      <listitem>
+        <para>
+          Override the probe library search path.  By default the plugin
+          searches (in order, highest priority last):
+          <filename>/usr/share/neurosuite/probes/</filename>,
+          <filename>/usr/local/share/neurosuite/probes/</filename>,
+          <filename>~/.local/share/neurosuite/probes/</filename>,
+          <envar>NEUROSUITE_PROBE_PATH</envar> (colon-separated), and
+          <filename>SESSION_DIR/probes/</filename>.
+        </para>
+      </listitem>
+    </varlistentry>
+    <varlistentry>
+      <term><parameter>overwrite</parameter></term>
+      <listitem>
+        <para>
+          If <literal>false</literal> (default), the plugin aborts when
+          <literal>anatomicalDescription</literal> or
+          <literal>spikeDetection</literal> groups already exist in the session
+          YAML.  Set to <literal>true</literal> to replace them.
+        </para>
+      </listitem>
+    </varlistentry>
+  </variablelist>
+</refsect1>
+
+<refsect1>
+  <title>Session YAML Requirements</title>
+  <para>
+    The session YAML must contain a <literal>probes:</literal> sequence with
+    at least one entry providing:
+  </para>
+  <itemizedlist>
+    <listitem>
+      <para>
+        <literal>probeFile</literal> — path relative to the probe library
+        (e.g. <filename>neuronexus/Buzsaki64.probe</filename>).
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <literal>channelOffset</literal> — first ADC channel index for this
+        probe (0-based).  Default: <literal>0</literal>.
+      </para>
+    </listitem>
+  </itemizedlist>
+</refsect1>
+
+<refsect1>
+  <title>Example</title>
+  <para>
+    Session YAML fragment before running <command>ndm_setupgroups</command>:
+  </para>
+  <programlisting>
+probes:
+  - id: 0
+    probeFile: neuronexus/Buzsaki64.probe
+    label: "left CA1"
+    channelOffset: 0
+  - id: 1
+    probeFile: neuronexus/Buzsaki64.probe
+    label: "right CA1"
+    channelOffset: 64
+  </programlisting>
+  <para>
+    After running the plugin (Buzsaki64: 8 shanks × 8 channels):
+  </para>
+  <programlisting>
+probes:
+  - id: 0
+    probeFile: neuronexus/Buzsaki64.probe
+    label: "left CA1"
+    channelOffset: 0
+    anatomicalGroups: [1, 2, 3, 4, 5, 6, 7, 8]
+  - id: 1
+    probeFile: neuronexus/Buzsaki64.probe
+    label: "right CA1"
+    channelOffset: 64
+    anatomicalGroups: [9, 10, 11, 12, 13, 14, 15, 16]
+
+anatomicalDescription:
+  channelGroups:
+    - channels: [{id: 0, skip: 0}, …, {id: 7, skip: 0}]
+      probeId: 0
+      shankIndex: 0
+    …
+
+spikeDetection:
+  channelGroups:
+    - channels: [0, 1, 2, 3, 4, 5, 6, 7]
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    …
+  </programlisting>
+</refsect1>
+
+<refsect1>
+  <title>See Also</title>
+  <para>
+    <citerefentry>
+      <refentrytitle>ndm_extractspikes</refentrytitle>
+      <manvolnum>1</manvolnum>
+    </citerefentry>,
+    <citerefentry>
+      <refentrytitle>ndm_spikegrouper</refentrytitle>
+      <manvolnum>1</manvolnum>
+    </citerefentry>,
+    <citerefentry>
+      <refentrytitle>ndm_estimatedrift</refentrytitle>
+      <manvolnum>1</manvolnum>
+    </citerefentry>
+  </para>
+</refsect1>
+
+</refentry>

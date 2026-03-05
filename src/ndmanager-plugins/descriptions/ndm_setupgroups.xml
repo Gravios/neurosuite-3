@@ -1,0 +1,92 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_setupgroups</n>
+  <parameters>
+   <parameter>
+    <n>nSamples</n>
+    <value>52</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>peakSampleIndex</n>
+    <value>26</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>nFeatures</n>
+    <value>3</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>probeLibrary</n>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>overwrite</n>
+    <value>false</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Build anatomical and spike-detection channel groups from probe library entries.
+
+Must be run BEFORE any spike-detection or sorting step (ndm_extractspikes,
+ndm_pca, ndm_klustakwik).  Requires the session YAML to have a populated
+`probes:` section (probeFile, channelOffset per probe).
+
+The plugin reads each .probe file listed in the session YAML and creates one
+anatomicalDescription group and one corresponding spikeDetection group per
+shank.  The two group tables are always in sync: spikeDetection groups mirror
+the anatomical groups with the same channel ordering and the nSamples /
+peakSampleIndex / nFeatures values given as parameters.
+
+Group IDs are assigned sequentially starting from 1.  Probe and shank metadata
+(probeId, shankIndex) are written into each anatomical group so that
+ndm_estimatedrift can reconstruct the spatial geometry of each shank.
+
+The probes[].anatomicalGroups field in the session YAML is updated to reflect
+the newly assigned group IDs.
+
+Channel assignment
+  If channelMap.map is null (the common case) channels are assigned
+  sequentially within each shank:
+    shank i → [offset + i×n_per_shank, …, offset + (i+1)×n_per_shank − 1]
+  where offset = probes[].channelOffset and n_per_shank =
+  probeFile.sites.count_per_shank.
+
+  If channelMap.map is a list it is used directly (flat or shank-major nested)
+  with channelOffset added to each entry.
+
+Channel ordering within each group follows the probe file order (tip-to-base
+for linear and octrode layouts as recorded in the NeuroNexus catalog).  This
+ordering is assumed by ndm_extractspikes_sdiff and ndm_estimatedrift.
+
+OPTIONAL PARAMETERS
+
+# nSamples
+Total waveform window width in samples written to each spikeDetection group.
+At 32 kHz a 1.625 ms window needs 52 samples; at 20 kHz use 32 (default = 52).
+
+# peakSampleIndex
+0-based index of the expected waveform peak within the nSamples window
+(default = 26, i.e. the midpoint of a 52-sample window).
+
+# nFeatures
+Number of PCA components per channel used by ndm_pca and ndm_klustakwik
+(default = 3).
+
+# probeLibrary
+Override the probe library search path.  By default the plugin searches:
+  /usr/share/neurosuite/probes/
+  /usr/local/share/neurosuite/probes/
+  ~/.local/share/neurosuite/probes/
+  $NEUROSUITE_PROBE_PATH  (colon-separated)
+  SESSION_DIR/probes/
+
+# overwrite
+If false (default), the plugin aborts if anatomicalDescription or
+spikeDetection groups already exist.  Set to true to replace them.
+</help>
+ </program>
+</parameter>
