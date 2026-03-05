@@ -191,7 +191,7 @@ void KlustersDoc::closeDocument(){
     addedClustersRedoList.clear();
     qDeleteAll(modifiedClustersUndoList);
     modifiedClustersUndoList.clear();
-    qDeleteAll(modifiedClustersUndoList);
+    qDeleteAll(modifiedClustersRedoList);
     modifiedClustersRedoList.clear();
     clusterIdsNewOldMap.clear();
     clusterIdsOldNewMap.clear();
@@ -250,6 +250,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     clusterColorList = new ItemColors();
     addedClusters = new QList<int>();
     modifiedClusters = new QList<int>();
+    deletedClusters = new QList<int>();
     modified = false;
 
     //Store the baseName for future use
@@ -1698,12 +1699,17 @@ void KlustersDoc::undo(){
 
     if(!activeView)
         return;
-    clusteringData->undo(*addedClusters,*modifiedClusters);
 
     //If clusterColorListUndoList is not empty, make the current clusterColorList become the first element
     //of the clusterColorListRedoList and the first element of the clusterColorListUndoList become the current clusterColorList
     //do the same for the addedClusters and modifiedClusters Lists.
     if(clusterColorListUndoList.count()>0){
+        // Must be called after the guard: if the undo list is empty there is nothing
+        // to revert at the data layer either, and calling it unconditionally can leave
+        // addedClusters/modifiedClusters in an inconsistent state (null after takeAt on
+        // an empty list) which later causes a crash through the waveform cleanup path.
+        clusteringData->undo(*addedClusters,*modifiedClusters);
+
         clusterColorListRedoList.prepend(clusterColorList);
         ItemColors* clusterColorListTemp = clusterColorListUndoList.takeAt(0);
         clusterColorList =  clusterColorListTemp;
@@ -1821,15 +1827,21 @@ void KlustersDoc::undo(){
             }
         }
         addedClustersRedoList.prepend(addedClusters);
-        QList<int>* addedClustersTemp = addedClustersUndoList.takeAt(0);
+        QList<int>* addedClustersTemp = addedClustersUndoList.isEmpty()
+                                        ? new QList<int>()
+                                        : addedClustersUndoList.takeAt(0);
         addedClusters =  addedClustersTemp;
 
         modifiedClustersRedoList.prepend(modifiedClusters);
-        QList<int>* modifiedClustersTemp = modifiedClustersUndoList.takeAt(0);
+        QList<int>* modifiedClustersTemp = modifiedClustersUndoList.isEmpty()
+                                           ? new QList<int>()
+                                           : modifiedClustersUndoList.takeAt(0);
         modifiedClusters =  modifiedClustersTemp;
 
         deletedClustersRedoList.prepend(deletedClusters);
-        QList<int>* deletedClustersTemp = deletedClustersUndoList.takeAt(0);
+        QList<int>* deletedClustersTemp = deletedClustersUndoList.isEmpty()
+                                          ? new QList<int>()
+                                          : deletedClustersUndoList.takeAt(0);
         deletedClusters =  deletedClustersTemp;
 
         QList<int> clustersToShow = activeView->clusters();
@@ -3170,7 +3182,7 @@ bool KlustersDoc::initPendingFiles()
     m_pendingFetPath = m_origFetPath + QStringLiteral(".pending");
     m_pendingCluPath = docUrl       + QStringLiteral(".pending");
 
-    // Helper: overwrite dst with a fresh copy of src.  src must exist.
+    // Helper: overwrite dst with a fresh copy of src.
     auto seedFile = [](const QString& src, const QString& dst) -> bool {
         QFile::remove(dst);
         if (!QFile::copy(src, dst)) {
@@ -3180,35 +3192,10 @@ bool KlustersDoc::initPendingFiles()
         return true;
     };
 
-    // Helper: seed clu pending — copy if the clu file already exists (post-
-    // clustering), otherwise create an empty pending file so that the first
-    // Save after clustering writes to m_pendingCluPath rather than directly
-    // to docUrl.  Opening on a raw .fet.N before any clustering is the normal
-    // case where the clu file does not yet exist.
-    auto seedCluFile = [](const QString& src, const QString& dst) -> bool {
-        QFile::remove(dst);
-        if (QFile::exists(src)) {
-            if (!QFile::copy(src, dst)) {
-                qWarning() << "[initPendingFiles] copy failed:" << src << "->" << dst;
-                return false;
-            }
-        } else {
-            // clu file does not exist yet — create an empty placeholder so
-            // tmpCluFile can be redirected to the pending path.
-            QFile f(dst);
-            if (!f.open(QIODevice::WriteOnly)) {
-                qWarning() << "[initPendingFiles] could not create empty pending clu:" << dst;
-                return false;
-            }
-            f.close();
-        }
-        return true;
-    };
-
     const bool ok = seedFile(m_origSpkPath, m_pendingSpkPath)
                  && seedFile(m_origResPath, m_pendingResPath)
                  && seedFile(m_origFetPath, m_pendingFetPath)
-                 && seedCluFile(docUrl,     m_pendingCluPath);
+                 && seedFile(docUrl,        m_pendingCluPath);
 
     if (ok) {
         // Redirect the waveform reader and clu writer to the pending files.

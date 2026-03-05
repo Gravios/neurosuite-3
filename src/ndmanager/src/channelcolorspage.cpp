@@ -50,12 +50,20 @@ ChannelColorsPage::ChannelColorsPage(QWidget* parent)
 ChannelColorsPage::~ChannelColorsPage(){}
 
 void ChannelColorsPage::getColors(QList<ChannelColors>& colors){
-    for(int i = 0; i < colorTable->rowCount();++i) {
+    // Guard against null items: cells may be uninitialised if the session YAML
+    // had no neuroscope/channels/colors section (new sessions, xml2yaml output,
+    // template files).  Null cells produce a segfault on ->text(); fall back to
+    // the same default colour used by nbChannelsModified().
+    static const QString kDefault = QStringLiteral("#0080ff");
+    for(int i = 0; i < colorTable->rowCount(); ++i) {
         ChannelColors channelColors;
         channelColors.setId(i);
-        channelColors.setColor(colorTable->item(i,0)->text());
-        channelColors.setGroupColor(colorTable->item(i,1)->text());
-        channelColors.setSpikeGroupColor(colorTable->item(i,2)->text());
+        QTableWidgetItem* c0 = colorTable->item(i, 0);
+        QTableWidgetItem* c1 = colorTable->item(i, 1);
+        QTableWidgetItem* c2 = colorTable->item(i, 2);
+        channelColors.setColor(           c0 ? c0->text() : kDefault);
+        channelColors.setGroupColor(      c1 ? c1->text() : kDefault);
+        channelColors.setSpikeGroupColor( c2 ? c2->text() : kDefault);
         colors.append(channelColors);
     }
 }
@@ -71,9 +79,19 @@ void ChannelColorsPage::setColors(const QList<ChannelColors>& colors){
 }
 
 void ChannelColorsPage::setNbChannels(int nbChannels){
-    for(int i =0; i<colorTable->rowCount();++i)
-        colorTable->removeRow(i);
+    // Use setRowCount(0) instead of a forward removeRow() loop.
+    // The loop `for(i=0; i<rowCount(); ++i) removeRow(i)` only removes half
+    // the rows because rowCount() shrinks as rows are deleted.
+    colorTable->setRowCount(0);
     colorTable->setRowCount(nbChannels);
+    // Pre-populate every cell with the default colour so that getColors()
+    // always sees valid QTableWidgetItem* regardless of what setColors() does.
+    static const QString kDefault = QStringLiteral("#0080ff");
+    for(int i = 0; i < nbChannels; ++i){
+        colorTable->setItem(i, 0, new QTableWidgetItem(kDefault));
+        colorTable->setItem(i, 1, new QTableWidgetItem(kDefault));
+        colorTable->setItem(i, 2, new QTableWidgetItem(kDefault));
+    }
 }
 
 

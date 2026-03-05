@@ -2110,6 +2110,8 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
             dimensionChangedRedo.prepend(true);
         }
         else{
+            // No dimension change: undo/redo is complete; allow minMaxThread to run again.
+            undoRedoInProcess = false;
             dimensionChangedRedo.prepend(false);
         }
     }
@@ -2267,6 +2269,8 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
             dimensionChangedUndo.prepend(true);
         }
         else{
+            // No dimension change: undo/redo is complete; allow minMaxThread to run again.
+            undoRedoInProcess = false;
             dimensionChangedUndo.prepend(false);
         }
     }
