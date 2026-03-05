@@ -190,8 +190,12 @@ spikerealign       (independent)
 Raw acquisition files
         │
         ▼
-ndmanager session.yaml       ← edit parameters, then run pipeline
-        │  (calls ndm_start)
+ndmanager session.yaml       ← edit parameters; fill in Probes tab
+        │
+        ├─ ndm_setupgroups   ← writes anatomical + spike groups from probe library
+        │
+        ├─ ndm_hipass / ndm_lfp / ndm_extractspikes / ndm_pca
+        │  (full pipeline via ndm_start)
         ▼
 session.fet.1 … session.fet.N
         │
@@ -204,6 +208,8 @@ session.clu.1 … session.clu.N
         ▼
 klusters session.yaml        ← manual curation
         │
+        ├─ ndm_decomposecollisions  ← flag overlapping spikes (SESSION.col.N)
+        ├─ ndm_estimatedrift        ← quantify probe drift (SESSION.drift)
         ▼
 neuroscope session.yaml      ← validation against LFP / events / position
 ```
@@ -222,11 +228,16 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 - **Qt6 / C++17** — all five Qt packages compile cleanly under Qt 6 on Ubuntu 24.04.
 - **YAML parameter format** — new YAML schema mirrors the XML schema exactly; `ParameterYamlReader`, `ParameterYamlWriter`, and `ParameterYamlModifier` in `libklustersshared` are the single implementation shared by all applications.
-- **GPU acceleration** — KlustaKwik and SpikeRealign support CUDA, ROCm/HIP, and SYCL (Intel Arc). `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` (ndmanager-plugins) support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
+- **GPU acceleration** — KlustaKwik and SpikeRealign support CUDA, ROCm/HIP, and SYCL (Intel Arc). `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
 - **Three-phase chunked CEM** — KlustaKwik can sort long recordings in temporal chunks for improved handling of electrode drift.
+- **Probe library** — 50 NeuroNexus `.probe` configuration files installed to `share/neurosuite/probes/`. Covers the full current silicon probe catalog including all Buzsaki series, A-series, and tetrode probes.
+- **Probe tab** — new ndmanager GUI tab for editing the `probes:` session YAML section: probe model, channel offset, and label per device.
+- **`ndm_setupgroups`** — automatically populates `anatomicalDescription` and `spikeDetection` channel groups from the probe library. Run before `ndm_extractspikes`; groups are always kept in sync (spikeDetection mirrors anatomical). Writes `probeId`/`shankIndex` metadata into each anatomical group.
+- **`ndm_estimatedrift`** — estimates in-vivo probe drift from curated spike-sorting results. Uses per-unit spatial-profile cross-correlation for sub-site precision; falls back to population-level cross-correlation when unit yield is low. Output: `SESSION.drift` (YAML).
+- **`ndm_decomposecollisions`** — template-matching decomposition of overlapping spike waveforms. Identifies collision candidates and fits two-component matching-pursuit solutions. Output: `SESSION.col.N` YAML sidecars (original data unchanged).
 - **`ndm_spikegrouper`** — automatic discovery of optimal spike detection channel groups from the high-pass filtered data.
 - **`ndm_xml2yaml`** — converts legacy XML parameter files to YAML.
-- **Bug fixes** — critical data-loss bug in `getUnits()` fixed; video orientation (rotation/flip/trajectory) no longer lost on YAML save/reload; `ndmanager` video page fields now populate correctly from YAML.
+- **Bug fixes** — yaml-cpp 0.8 const `operator[]` crash in `ParameterYamlReader` (13 chained subscripts patched); null-value emission fix in `ParameterYamlWriter`; empty `.clu` placeholder seeding fix in klusters; data-loss bug in `getUnits()` fixed; video orientation no longer lost on YAML save/reload.
 
 See [CHANGES.md](CHANGES.md) for the full list of fixes and improvements.
 
