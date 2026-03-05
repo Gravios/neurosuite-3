@@ -552,6 +552,35 @@ programs:
 
     Space-separated list of reordered channel indices (0-based)
 
+# == Group setup ==============================================================
+- name: ndm_setupgroups
+  parameters:
+  - {name: nSamples,         value: 52,    status: Optional}
+  - {name: peakSampleIndex,  value: 26,    status: Optional}
+  - {name: nFeatures,        value: 3,     status: Optional}
+  - {name: probeLibrary,     value: '',    status: Optional}
+  - {name: overwrite,        value: false, status: Optional}
+  help: "Build anatomicalDescription and spikeDetection channel groups from the probe\
+    \ library entries declared in probes:.\n\nMust be run BEFORE ndm_extractspikes.\
+    \ Reads each .probe file listed in the probes: section, creates one anatomical\
+    \ group and one spikeDetection group per shank, and writes both into the session\
+    \ YAML in-place.  The spikeDetection groups mirror the anatomical groups exactly\
+    \ (same channel order) and are annotated with nSamples / peakSampleIndex /\
+    \ nFeatures.\n\nprobeId and shankIndex metadata are written into each anatomical\
+    \ group entry so that ndm_estimatedrift can reconstruct probe geometry without\
+    \ re-reading the probe library.\n\nChannel assignment: if channelMap.map is null\
+    \ (all NeuroNexus files), channels are assigned sequentially:\n  shank i →\
+    \ [offset + i*n_per_shank, …, offset + (i+1)*n_per_shank − 1]\nwhere offset\
+    \ = probes[].channelOffset.\n\nOPTIONAL PARAMETERS\n\n# nSamples\nTotal waveform\
+    \ window width in samples (default = 52; use 32 at 20 kHz).\n\n# peakSampleIndex\n\
+    0-based index of the expected spike peak within the window (default = 26,\
+    \ i.e. midpoint of a 52-sample window).\n\n# nFeatures\nPCA components per\
+    \ channel for ndm_pca / ndm_klustakwik (default = 3).\n\n# probeLibrary\n\
+    Override probe library search path.  Default search order:\n  /usr/share/neurosuite/probes/,\
+    \ /usr/local/share/neurosuite/probes/,\n  ~/.local/share/neurosuite/probes/,\
+    \ $NEUROSUITE_PROBE_PATH, SESSION_DIR/probes/\n\n# overwrite\nIf false (default),\
+    \ abort if groups already exist.  Set to true to replace them."
+
 # == Spike detection pipeline =================================================
 - name: ndm_spikegrouper
   parameters:

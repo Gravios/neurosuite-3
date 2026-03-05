@@ -8,6 +8,7 @@ install(PROGRAMS
     ndm_start ndm_transcodevideo ndm_tsp2sts ndm_xml2yaml
     ndm_estimatedrift
     ndm_decomposecollisions
+    ndm_setupgroups
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
@@ -17,11 +18,12 @@ install(PROGRAMS
 install(PROGRAMS
     process_estimatedrift.py
     process_decomposecollisions.py
+    process_setupgroups.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 foreach(_page IN ITEMS
         cnt duration ndm ndm_recolorchannels ndm_start ndm_xml2yaml
-        ndm_estimatedrift ndm_decomposecollisions pad
+        ndm_estimatedrift ndm_decomposecollisions ndm_setupgroups pad
         process_reorderclusters rn)
     add_manpage(${_page})
 endforeach()

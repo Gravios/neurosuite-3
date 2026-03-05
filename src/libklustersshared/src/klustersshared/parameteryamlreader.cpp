@@ -57,10 +57,38 @@ T ParameterYamlReader::nodeAs(const YAML::Node& n, const T& fallback) const
     catch (...) { return fallback; }
 }
 
+// ---------------------------------------------------------------------------
+// Safe chained-key helpers
+// ---------------------------------------------------------------------------
+// yaml-cpp 0.8: in a const method, the member YAML::Node is accessed via
+// its const operator[], which throws YAML::InvalidNode on any chained access
+// through an absent intermediate key — BEFORE the caller's !node guard can
+// run.  All chained accesses in const methods must go through these helpers.
+
+// Returns root[k1][k2] safely. Returns an empty (Null) Node if k1 is absent.
+static YAML::Node safeGet2(const YAML::Node& root,
+                           const char* k1, const char* k2)
+{
+    YAML::Node s1 = root[k1];
+    if (!s1 || !s1.IsDefined()) return YAML::Node{};
+    return s1[k2];
+}
+
+// Returns root[k1][k2][k3] safely.
+static YAML::Node safeGet3(const YAML::Node& root,
+                           const char* k1, const char* k2, const char* k3)
+{
+    YAML::Node s1 = root[k1];
+    if (!s1 || !s1.IsDefined()) return YAML::Node{};
+    YAML::Node s2 = s1[k2];
+    if (!s2 || !s2.IsDefined()) return YAML::Node{};
+    return s2[k3];
+}
+
 const YAML::Node ParameterYamlReader::spikeGroup(int electrodeGroupID) const
 {
     // electrodeGroupID is 1-based
-    auto groups = m_root["spikeDetection"]["channelGroups"];
+    auto groups = safeGet2(m_root, "spikeDetection", "channelGroups");
     if (!groups || !groups.IsSequence()) return YAML::Node{};
     int idx = electrodeGroupID - 1;
     if (idx < 0 || idx >= static_cast<int>(groups.size())) return YAML::Node{};
@@ -73,27 +101,27 @@ const YAML::Node ParameterYamlReader::spikeGroup(int electrodeGroupID) const
 
 QString ParameterYamlReader::getVersion() const
 {
-    return nodeStr(m_root["parameters"]["version"]);
+    return nodeStr(safeGet2(m_root, "parameters", "version"));
 }
 
 QString ParameterYamlReader::getDate() const
 {
-    return nodeStr(m_root["generalInfo"]["date"]);
+    return nodeStr(safeGet2(m_root, "generalInfo", "date"));
 }
 
 QString ParameterYamlReader::getExperimenters() const
 {
-    return nodeStr(m_root["generalInfo"]["experimenters"]);
+    return nodeStr(safeGet2(m_root, "generalInfo", "experimenters"));
 }
 
 QString ParameterYamlReader::getDescription() const
 {
-    return nodeStr(m_root["generalInfo"]["description"]);
+    return nodeStr(safeGet2(m_root, "generalInfo", "description"));
 }
 
 QString ParameterYamlReader::getNotes() const
 {
-    return nodeStr(m_root["generalInfo"]["notes"]);
+    return nodeStr(safeGet2(m_root, "generalInfo", "notes"));
 }
 
 // ---------------------------------------------------------------------------
@@ -102,32 +130,32 @@ QString ParameterYamlReader::getNotes() const
 
 int ParameterYamlReader::getResolution() const
 {
-    return nodeAs<int>(m_root["acquisitionSystem"]["nBits"], 0);
+    return nodeAs<int>(safeGet2(m_root, "acquisitionSystem", "nBits"), 0);
 }
 
 int ParameterYamlReader::getNbChannels() const
 {
-    return nodeAs<int>(m_root["acquisitionSystem"]["nChannels"], 0);
+    return nodeAs<int>(safeGet2(m_root, "acquisitionSystem", "nChannels"), 0);
 }
 
 double ParameterYamlReader::getSamplingRate() const
 {
-    return nodeAs<double>(m_root["acquisitionSystem"]["samplingRate"], 0.0);
+    return nodeAs<double>(safeGet2(m_root, "acquisitionSystem", "samplingRate"), 0.0);
 }
 
 int ParameterYamlReader::getVoltageRange() const
 {
-    return nodeAs<int>(m_root["acquisitionSystem"]["voltageRange"], 0);
+    return nodeAs<int>(safeGet2(m_root, "acquisitionSystem", "voltageRange"), 0);
 }
 
 int ParameterYamlReader::getAmplification() const
 {
-    return nodeAs<int>(m_root["acquisitionSystem"]["amplification"], 0);
+    return nodeAs<int>(safeGet2(m_root, "acquisitionSystem", "amplification"), 0);
 }
 
 int ParameterYamlReader::getOffset() const
 {
-    return nodeAs<int>(m_root["acquisitionSystem"]["offset"], 0);
+    return nodeAs<int>(safeGet2(m_root, "acquisitionSystem", "offset"), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +164,7 @@ int ParameterYamlReader::getOffset() const
 
 double ParameterYamlReader::getLfpSamplingRate() const
 {
-    return nodeAs<double>(m_root["fieldPotentials"]["lfpSamplingRate"], 0.0);
+    return nodeAs<double>(safeGet2(m_root, "fieldPotentials", "lfpSamplingRate"), 0.0);
 }
 
 void ParameterYamlReader::getSampleRateByExtension(QMap<QString,double>& result) const
@@ -163,7 +191,7 @@ void ParameterYamlReader::getAnatomicalDescription(
         QMap<int,QList<int>>& displayGroupsChannels,
         QMap<int,bool>&       skipStatus) const
 {
-    auto groups = m_root["anatomicalDescription"]["channelGroups"];
+    auto groups = safeGet2(m_root, "anatomicalDescription", "channelGroups");
     if (!groups || !groups.IsSequence()) return;
 
     int groupId = 1;
@@ -190,7 +218,7 @@ void ParameterYamlReader::getAnatomicalDescription(
         QMap<int,QList<int>>&              anatomicalGroups,
         QMap<QString,QMap<int,QString>>&   attributes) const
 {
-    auto groups = m_root["anatomicalDescription"]["channelGroups"];
+    auto groups = safeGet2(m_root, "anatomicalDescription", "channelGroups");
     if (!groups || !groups.IsSequence()) return;
 
     int groupId = 1;
@@ -268,7 +296,7 @@ void ParameterYamlReader::getSpikeDescription(
         }
     }
 
-    auto groups = m_root["spikeDetection"]["channelGroups"];
+    auto groups = safeGet2(m_root, "spikeDetection", "channelGroups");
     if (groups && groups.IsSequence()) {
         int groupId = 1;
         for (auto grp : groups) {
@@ -297,7 +325,7 @@ void ParameterYamlReader::getSpikeDescription(
         QMap<int,QList<int>>&            spikeGroups,
         QMap<int,QMap<QString,QString>>& information) const
 {
-    auto groups = m_root["spikeDetection"]["channelGroups"];
+    auto groups = safeGet2(m_root, "spikeDetection", "channelGroups");
     if (!groups || !groups.IsSequence()) return;
 
     int groupId = 1;
@@ -359,29 +387,43 @@ void ParameterYamlReader::getUnits(QMap<int,QStringList>& units) const
 
 float ParameterYamlReader::getScreenGain() const
 {
-    return nodeAs<float>(m_root["neuroscope"]["miscellaneous"]["screenGain"], 0.0f);
+    // Break three-level chain: yaml-cpp throws InvalidNode on chained const access
+    // through an absent intermediate key.
+    auto ns = m_root["neuroscope"];
+    if (!ns || !ns.IsDefined()) return 0.0f;
+    auto misc = ns["miscellaneous"];
+    return nodeAs<float>(misc["screenGain"], 0.0f);
 }
 
 int ParameterYamlReader::getNbSamplesSpikes() const
 {
-    return nodeAs<int>(m_root["neuroscope"]["spikes"]["nSamples"], 0);
+    auto ns = m_root["neuroscope"];
+    if (!ns || !ns.IsDefined()) return 0;
+    auto spk = ns["spikes"];
+    return nodeAs<int>(spk["nSamples"], 0);
 }
 
 int ParameterYamlReader::getPeakSampleIndexSpikes() const
 {
-    return nodeAs<int>(m_root["neuroscope"]["spikes"]["peakSampleIndex"], 0);
+    auto ns = m_root["neuroscope"];
+    if (!ns || !ns.IsDefined()) return 0;
+    auto spk = ns["spikes"];
+    return nodeAs<int>(spk["peakSampleIndex"], 0);
 }
 
 QString ParameterYamlReader::getTraceBackgroundImage() const
 {
-    return nodeStr(m_root["neuroscope"]["miscellaneous"]["traceBackgroundImage"]);
+    auto ns = m_root["neuroscope"];
+    if (!ns || !ns.IsDefined()) return {};
+    auto misc = ns["miscellaneous"];
+    return nodeStr(misc["traceBackgroundImage"]);
 }
 
 void ParameterYamlReader::getChannelDisplayInfo(
         QList<QMap<QString,QString>>& colors,
         QMap<int,int>&                offsets) const
 {
-    auto chNode = m_root["neuroscope"]["channels"];
+    auto chNode = safeGet2(m_root, "neuroscope", "channels");
     if (!chNode) return;
 
     auto colorsNode = chNode["colors"];
@@ -504,7 +546,13 @@ void ParameterYamlReader::getFilesInformation(QList<FileInformation>& files) con
 void ParameterYamlReader::getChannelColors(QList<ChannelColorEntry>& list) const
 {
     list.clear();
-    const auto colors = m_root["neuroscope"]["channels"]["colors"];
+    // Break three-level chain: const access through absent "channels" key throws
+    // YAML::InvalidNode in yaml-cpp 0.8.
+    auto ns = m_root["neuroscope"];
+    if (!ns || !ns.IsDefined()) return;
+    auto chNode = ns["channels"];
+    if (!chNode || !chNode.IsDefined() || chNode.IsNull()) return;
+    const auto colors = chNode["colors"];
     if (!colors || !colors.IsSequence()) return;
     for (const auto& entry : colors) {
         int ch = nodeAs<int>(entry["channel"], -1);
@@ -524,7 +572,12 @@ void ParameterYamlReader::getChannelColors(QList<ChannelColorEntry>& list) const
 void ParameterYamlReader::getChannelDefaultOffset(QMap<int,int>& offsets) const
 {
     offsets.clear();
-    const auto list = m_root["neuroscope"]["channels"]["offsets"];
+    // Break three-level chain (same InvalidNode issue as getChannelColors).
+    auto ns = m_root["neuroscope"];
+    if (!ns || !ns.IsDefined()) return;
+    auto chNode = ns["channels"];
+    if (!chNode || !chNode.IsDefined() || chNode.IsNull()) return;
+    const auto list = chNode["offsets"];
     if (!list || !list.IsSequence()) return;
     for (const auto& entry : list) {
         int ch  = nodeAs<int>(entry["channel"],      -1);
@@ -535,7 +588,7 @@ void ParameterYamlReader::getChannelDefaultOffset(QMap<int,int>& offsets) const
 
 void ParameterYamlReader::getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const
 {
-    const auto v = m_root["neuroscope"]["video"];
+    const auto v = safeGet2(m_root, "neuroscope", "video");
     if (!v || !v.IsMap()) return;
     videoInfo.setRotation(nodeAs<int>(v["rotate"], 0));
     videoInfo.setFlip(nodeAs<int>(v["flip"], 0));
