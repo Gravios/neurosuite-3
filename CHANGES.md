@@ -10,6 +10,36 @@ cmake --build build
 
 ---
 
+### Bug fixes (this session)
+
+**klusters: undo/redo state corruption (segfault in `~ItemColors`)**
+
+Three bugs working together could corrupt the undo/redo bookkeeping and
+eventually double-free an `ItemColors` object, manifesting as a segfault
+inside `qDeleteAll(itemList)` immediately after `undo()` returned.
+
+1. **`undoRedoInProcess` not reset in normal undo/redo path** (`data.cpp`):
+   `Data::undo()` and `Data::redo()` set `undoRedoInProcess = true` at entry
+   but only reset it to `false` inside the `if(dimChanged)` branch.
+   In the common case (no dimension change, e.g. every `groupClusters` undo),
+   the flag stayed `true` for the remainder of the session, permanently blocking
+   `minMaxDimensionCalculation` from re-running after any undo. Fixed by resetting
+   `undoRedoInProcess = false` in the `else` branch of both `Data::undo()` and
+   `Data::redo()`.
+
+2. **`KlustersView::nbUndoChangedCleaning` cleared the wrong list** (`klustersview.cpp`):
+   When preferences reduced `nbUndo`, the code trimmed excess entries from
+   `removedClustersUndoList` in the while-loop, then the comment "Clear the
+   redoLists" was followed by `qDeleteAll(removedClustersUndoList)` — clearing
+   the **undo** list (including entries that were just kept) instead of the **redo**
+   list. This left `removedClustersRedoList` un-cleared and double-freed the
+   surviving undo entries. Fixed by correcting the list name to
+   `removedClustersRedoList`.
+
+**Changed files**: `src/klusters/src/data.cpp`,
+`src/klusters/src/klustersview.cpp`
+
+
 ## Contents
 
 This drop-in delivers four related feature areas and three bug fixes:
@@ -61,6 +91,70 @@ yaml-cpp versions.
 
 **Fix:** A `seedCluFile` lambda now creates an empty placeholder `.clu` pending file when the
 source `.clu.N` does not yet exist, and copies it normally when it does.
+
+### `klusters/src/klustersdoc.cpp` — segfault during undo (three interacting bugs)
+
+**Symptom:** Klusters crashes with a segfault inside `~ItemColors()::qDeleteAll(itemList)`
+immediately after the last debug print of `KlustersDoc::undo()`.  The sequence printed is:
+
+```
+nbUndo in KlustersDoc::undo:  1
+addedClusters->size() > 0 && modifiedClusters->size() == 0
+in KlustersDoc::undo 2
+~ItemColors()
+[N] segmentation fault
+```
+
+**Root causes (three separate bugs):**
+
+1. **`clusteringData->undo()` called outside the guard.**  
+   The call `clusteringData->undo(*addedClusters, *modifiedClusters)` appeared
+   *before* the `if(clusterColorListUndoList.count() > 0)` guard.  When the
+   guard body then calls `addedClustersUndoList.takeAt(0)` on an unexpectedly
+   empty list (possible after a partial error rollback or list skew), it returns
+   `nullptr`.  `addedClusters` is set to `nullptr`, and the *next* call into any
+   code that dereferences it — including the subsequent `clusteringData->undo()`
+   invocation — crashes through the waveform / ItemColors cleanup path.
+
+   **Fix:** `clusteringData->undo()` is now called *inside* the guard, and all
+   three `takeAt(0)` swaps (`addedClusters`, `modifiedClusters`, `deletedClusters`)
+   now guard against an unexpectedly empty undo list by allocating a fresh empty
+   `QList<int>` instead of returning `nullptr`.
+
+2. **`closeDocument()` double-`qDeleteAll` of `modifiedClustersUndoList`.**  
+   A copy-paste error caused `qDeleteAll(modifiedClustersUndoList)` to appear
+   twice in a row.  After the first call the list is `clear()`-ed, so the second
+   `qDeleteAll` operates on an empty list and is harmless — but `modifiedClustersRedoList`
+   was never freed, leaking every redo entry on document close.  
+   **Fix:** Second call changed to `qDeleteAll(modifiedClustersRedoList)`.
+
+3. **`deletedClusters` not initialised in `openDocument()`.**  
+   Unlike `addedClusters` and `modifiedClusters` (both seeded to `new QList<int>()`),
+   `deletedClusters` started life as `0L` from the constructor and was never
+   re-seeded.  The first `prepareUndo()` call therefore pushed `nullptr` into
+   `deletedClustersUndoList`; after the first undo `deletedClusters` would revert
+   to `nullptr`, causing a latent dereference risk.  
+   **Fix:** `deletedClusters = new QList<int>()` added to `openDocument()` beside
+   the other two initialisations.
+
+### `ndmanager/src/channelcolorspage.cpp` — segfault on save with no colour data**Symptom:** `ndmanager` crashes with a segfault when saving any session YAML that was opened
+without a `neuroscope.channels.colors` section — which includes every file produced by
+`ndm_xml2yaml`, every template-derived session, and every freshly created session.
+
+**Root cause:** `ChannelColorsPage::setNbChannels` resizes the table but leaves all cells as
+null `QTableWidgetItem*`. `setColors` only populates cells for channels present in the list,
+so when the list is empty (no colour data in the YAML) all cells remain null.
+`getColors` then calls `->item(i,col)->text()` without a null check → segfault.
+
+`setNbChannels` also had a separate pre-existing bug: `for(i=0; i<rowCount(); ++i)
+removeRow(i)` only removes half the rows because `rowCount()` shrinks as rows are deleted.
+
+**Fix:**
+- `setNbChannels` now uses `setRowCount(0)` to clear the table (fixes the half-removal bug),
+  then pre-populates every cell with the default colour `#0080ff` after `setRowCount(nbChannels)`
+  so that `getColors` always encounters valid items regardless of what `setColors` does.
+- `getColors` now null-checks each `item()` pointer and substitutes the default colour if null,
+  providing a defensive second layer of protection.
 
 ---
 
@@ -309,7 +403,8 @@ combinations with shifts up to `maxShiftSamp`. (4) Accept when residual RMS frac
 | `src/libklustersshared/src/klustersshared/parameteryamlreader.cpp` | Bug fix | yaml-cpp 0.8 const crash — 13 chained subscripts → `safeGet2`/`safeGet3` |
 | `src/libklustersshared/src/klustersshared/parameteryamlwriter.cpp` | Bug fix | Null strings → `~` |
 | `src/libklustersshared/src/CMakeLists.txt` | Build | Added probe YAML extension sources |
-| `src/klusters/src/klustersdoc.cpp` | Bug fix | Empty `.clu` placeholder seeding |
+| `src/klusters/src/klustersdoc.cpp` | Bug fix | Three undo bugs: misplaced clusteringData->undo(), double-qDeleteAll, uninit deletedClusters |
+| `src/ndmanager/src/channelcolorspage.cpp` | Bug fix | Segfault on save — null table cells + half-removal loop |
 | `src/ndmanager/src/CMakeLists.txt` | Build | Added Probe tab sources |
 | `src/ndmanager/src/ndmanager-icons.qrc` | Build | Added `probe.png` |
 | `src/ndmanager-plugins/scripts/CMakeLists.txt` | Build | Added 3 plugins + Python helpers + man pages |

@@ -1105,9 +1105,9 @@ void KlustersView::nbUndoChangedCleaning(int newNbUndo){
                 delete removedClustersUndoList.takeAt(numberUndo - 1);
                 --numberUndo;
             }
-            //Clear the redoLists
-            qDeleteAll(removedClustersUndoList);
-            removedClustersUndoList.clear();
+            //Clear the redoList (was incorrectly clearing undoList -- copy-paste bug)
+            qDeleteAll(removedClustersRedoList);
+            removedClustersRedoList.clear();
         }
         //currentNbUndo < newNbUndo, check the redo list.
         else{
