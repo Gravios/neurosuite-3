@@ -25,6 +25,12 @@
 
 
 void SaveThread::save(const QString& url,KlustersDoc* doc,bool isSaveAs){
+    // Guard against calling save() while a previous save is still in flight.
+    // Writing url/doc/isSaveAs while run() is reading them would be a data race.
+    if(isRunning()){
+        qWarning() << "[SaveThread::save] called while thread still running — ignored";
+        return;
+    }
     this->url = url;
     this->doc = doc;
     this->isSaveAs = isSaveAs;

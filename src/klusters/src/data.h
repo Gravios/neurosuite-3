@@ -754,7 +754,7 @@ private:
     QList<int> clustersGivingMinimum;
 
     /**QT object providing access serialization between threads*/
-    QMutex mutex;
+    mutable QMutex mutex;  // mutable: locked in const methods called from worker threads
 
     /**List containing the the dimension change status of each action of the undo list*/
     QList<bool> dimensionChangedUndo;
