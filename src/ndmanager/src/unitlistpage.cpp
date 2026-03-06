@@ -36,11 +36,7 @@
 UnitListPage::UnitListPage(QWidget* parent) :
     UnitListLayout(parent),isIncorrect(false),incorrectRow(0),modified(false)
 {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    unitTable->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
-#else
     unitTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-#endif
     //install a filter on the unitTable in order to validate the entries
     unitTable->installEventFilter(this);
     unitTable->setSortingEnabled(true);
@@ -130,7 +126,7 @@ void UnitListPage::removeUnit()
     const QList<QTableWidgetSelectionRange> range = unitTable->selectedRanges();
     if(!range.isEmpty()) {
         QList<int> lst;
-        Q_FOREACH(const QTableWidgetSelectionRange&r, range) {
+        for (const QTableWidgetSelectionRange&r : range) {
             const int nbRows = r.bottomRow() - r.topRow()+1;
             for(int i = 0; i < nbRows;++i){
                 const int val = (r.topRow() + i);

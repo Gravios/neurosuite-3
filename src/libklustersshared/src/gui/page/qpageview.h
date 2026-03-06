@@ -195,11 +195,14 @@ class KLUSTERSSHARED_EXPORT QPageView : public QWidget
         QPageView(QPageViewPrivate &dd, QWidget *parent);
         QPageViewPrivate *const d_ptr;
 
+    private Q_SLOTS:
+        void _k_rebuildGui();
+        void _k_modelChanged();
+        void _k_pageSelected(const QItemSelection &, const QItemSelection &);
+        void _k_dataChanged(const QModelIndex &, const QModelIndex &);
+
     private:
-        Q_PRIVATE_SLOT(d_func(), void _k_rebuildGui())
-        Q_PRIVATE_SLOT(d_func(), void _k_modelChanged())
-        Q_PRIVATE_SLOT(d_func(), void _k_pageSelected(const QItemSelection &, const QItemSelection &))
-        Q_PRIVATE_SLOT(d_func(), void _k_dataChanged(const QModelIndex &, const QModelIndex &))
+        Q_DISABLE_COPY(QPageView)
 };
 
 #endif

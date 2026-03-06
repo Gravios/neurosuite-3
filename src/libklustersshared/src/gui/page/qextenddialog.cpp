@@ -968,7 +968,7 @@ void QExtendDialog::enableLinkedHelp( bool state )
         d->mUrlHelp->setFloatEnabled( true );
         d->mUrlHelp->setUnderline( true );
         d->mUrlHelp->setMinimumHeight( fontMetrics().height() + marginHint() );
-        connect( d->mUrlHelp, SIGNAL(leftClickedUrl()), SLOT(helpLinkClicked()) );
+        connect( d->mUrlHelp, SIGNAL(leftClickedUrl()), this, SLOT(helpLinkClicked()) );
 
         d->mUrlHelp->show();
     } else {
@@ -1065,6 +1065,17 @@ void QExtendDialog::saveDialogSize() const
 void QExtendDialog::setAllowEmbeddingInGraphicsView( bool allowEmbedding )
 {
   sAllowEmbeddingInGraphicsView = allowEmbedding;
+}
+
+// Forwarding slots: Q_PRIVATE_SLOT removed for Qt6 compatibility
+void QExtendDialog::queuedLayoutUpdate()
+{
+    d_ptr->queuedLayoutUpdate();
+}
+
+void QExtendDialog::helpLinkClicked()
+{
+    d_ptr->helpLinkClicked();
 }
 
 #include "moc_qextenddialog.cpp"

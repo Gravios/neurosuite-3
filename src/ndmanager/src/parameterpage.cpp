@@ -45,11 +45,7 @@ ParameterPage::ParameterPage(bool expertMode,QWidget *parent)
 {
     status<<tr("Mandatory")<<tr("Optional")<<tr("Dynamic");
     ddList.append(2);
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    parameterTable->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
-#else
     parameterTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-#endif
     //If the export mode is not set, only the value column is editable
     if (!expertMode) {
         // Note: read-only enforcement for non-expert mode is done via item flags
@@ -216,7 +212,7 @@ void ParameterPage::removeParameter(){
     const QList<QTableWidgetSelectionRange> range = parameterTable->selectedRanges();
     if(!range.isEmpty()) {
         QList<int> lst;
-        Q_FOREACH(const QTableWidgetSelectionRange&r, range) {
+        for (const QTableWidgetSelectionRange&r : range) {
             const int nbRows = r.bottomRow() - r.topRow() + 1;
             for(int i = 0; i < nbRows;++i){
                 int val = (r.topRow() + i);

@@ -1,6 +1,7 @@
 #include "scrollarea.h"
 #include "itemgroupview.h"
 #include "listview.h"
+#include <algorithm>
 #include <QPalette>
 #include <QVBoxLayout>
 #include <QPainter>
@@ -158,7 +159,7 @@ void ScrollArea::orderTheGroups(){
     }
 
     {
-    qSort(itemGroupList);
+    std::sort(itemGroupList.begin(), itemGroupList.end());
     QStringList::iterator iterator;
     for(iterator = itemGroupList.begin(); iterator != itemGroupList.end(); ++iterator)
         verticalContainer->addWidget(itemGroupViewDict[*iterator]);

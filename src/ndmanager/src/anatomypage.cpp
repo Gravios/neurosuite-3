@@ -36,13 +36,8 @@ AnatomyPage::AnatomyPage(QWidget* parent)
       isIncorrectRow(false),
       modified(false)
 {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     attributesTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
     groupTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-#else
-    attributesTable->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
-    groupTable->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
-#endif
     //install a filter on the groupTable in order to validate the entries
     groupTable->installEventFilter(this);
 
@@ -159,7 +154,7 @@ void AnatomyPage::removeGroup()
     const QList<QTableWidgetSelectionRange> range = groupTable->selectedRanges();
     if (!range.isEmpty()) {
         QList<int> lst;
-        Q_FOREACH(const QTableWidgetSelectionRange&r, range) {
+        for (const QTableWidgetSelectionRange&r : range) {
             const int nbRows = r.bottomRow() - r.topRow() + 1;
             for(int i = 0; i < nbRows;++i){
                 int val = (r.topRow() + i);

@@ -36,11 +36,7 @@ FilePage::FilePage(QWidget *parent)
       modified(false),
       isInit(true)
 {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    mappingTable->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
-#else
     mappingTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-#endif
     connect(extensionLineEdit,SIGNAL(returnPressed()),this,SLOT(changeCaption()));
     connect(extensionLineEdit,SIGNAL(editingFinished()),this,SLOT(changeCaption()));
 
@@ -108,7 +104,7 @@ void FilePage::removeChannel(){
     QList<QTableWidgetSelectionRange> range = mappingTable->selectedRanges ();
     if(!range.isEmpty()) {
         QList<int> rowsToRemove;
-        Q_FOREACH(const QTableWidgetSelectionRange& selection, range) {
+        for (const QTableWidgetSelectionRange& selection : range) {
             int nbRows = selection.bottomRow() - selection.topRow() + 1;
             for(int i = 0; i < nbRows;++i){
                 rowsToRemove.append(selection.topRow() + i);

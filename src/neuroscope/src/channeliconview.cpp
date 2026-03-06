@@ -96,7 +96,7 @@ QMimeData* ChannelIconView::mimeData(const QList<QListWidgetItem*> items) const
     QByteArray data;
     //For the moment just one item
     QDataStream stream(&data, QIODevice::WriteOnly);
-    Q_FOREACH(QListWidgetItem *item, items) {
+    for (QListWidgetItem *item : items) {
         stream << *item;
     }
 

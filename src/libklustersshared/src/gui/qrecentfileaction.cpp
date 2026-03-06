@@ -70,7 +70,7 @@ void QRecentFileActionPrivate::initializeRecentMenu()
     clearSeparator = q->menu()->addSeparator();
     clearAction = q->menu()->addAction(q->tr("Clear List"), q, SLOT(clear()));
     updateActionsState();
-    q->connect(q->menu(), SIGNAL(triggered(QAction*)),q, SLOT(fileSelected(QAction*)));
+    q->connect(q->menu(), &QMenu::triggered, q, &QRecentFileAction::fileSelected);
 
 }
 
@@ -122,7 +122,7 @@ void QRecentFileActionPrivate::removeAction(const QString &file)
     if (q->menu()->actions().isEmpty()) {
         recentFiles.removeAll(file);
     }
-    Q_FOREACH (QAction *action, q->menu()->actions()) {
+    for (QAction *action : q->menu()->actions()) {
         if (action->data().toString()==file) {
             removeAction(action);
             break;
@@ -154,7 +154,7 @@ QRecentFileAction::~QRecentFileAction()
 */
 void QRecentFileAction::clear()
 {
-    Q_FOREACH (QAction *action, menu()->actions()) {
+    for (QAction *action : menu()->actions()) {
         if ((action != d->clearAction) && (action != d->noEntriesAction) && (action != d->clearSeparator))
             d->removeAction(action);
     }
@@ -249,7 +249,7 @@ void QRecentFileAction::setRecentFiles(const QStringList& lst)
 QStringList QRecentFileAction::recentFiles() const
 {
     QStringList recentFiles;
-    Q_FOREACH (QAction *action, menu()->actions()) {
+    for (QAction *action : menu()->actions()) {
         if ((action != d->clearAction) && (action != d->noEntriesAction) && (action != d->clearSeparator)) {
             recentFiles << action->data().toString();
         }
@@ -279,5 +279,16 @@ QStringList QRecentFileAction::recentFiles() const
     \a file is the file selected.
 */
 
+
+// Forwarding slots: Q_PRIVATE_SLOT removed for Qt6 compatibility
+void QRecentFileAction::initializeRecentMenu()
+{
+    d->initializeRecentMenu();
+}
+
+void QRecentFileAction::fileSelected(QAction *action)
+{
+    d->fileSelected(action);
+}
 
 #include "moc_qrecentfileaction.cpp"
