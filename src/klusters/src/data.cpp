@@ -343,32 +343,36 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
     const int nFeat = nDim - 1;       // feature columns only
     const int nSpk  = (int)nbSpikes;
 
-    // 1. Collect spike indices for this cluster
-    QVector<int> idx;
-    idx.reserve(256);
-    for (int s = 0; s < nSpk; ++s)
-        if (static_cast<int>((*spikesByCluster)(2, s + 1)) == clusterId)
-            idx.append(s);
+    // 1. Collect feature-file row indices for spikes in this cluster.
+    // spikesByCluster is the sort map: row1 = feature-file row (1-based),
+    // row2 = cluster id. The features array uses the feature-file row as its
+    // row index, NOT the sorted position s.
+    QVector<int> rows;   // 1-based rows into the features array
+    rows.reserve(256);
+    for (int s = 1; s <= nSpk; ++s){
+        if (static_cast<int>((*spikesByCluster)(2, s)) == clusterId)
+            rows.append(static_cast<int>((*spikesByCluster)(1, s)));
+    }
 
-    if (idx.size() < 2)
+    if (rows.size() < 2)
         return QVector<double>();
 
-    const double n = (double)idx.size();
+    const double n = (double)rows.size();
 
     // 2. Per-feature mean
     QVector<double> mean(nFeat, 0.0);
-    for (int s : idx)
-        for (int f = 0; f < nFeat; ++f)
-            mean[f] += (double)features[(size_t)s * (size_t)nDim + (size_t)f];
+    for (int row : rows)
+        for (int f = 1; f <= nFeat; ++f)
+            mean[f - 1] += (double)features(row, f);
     for (int f = 0; f < nFeat; ++f)
         mean[f] /= n;
 
     // 3. Sample variance (n-1 denominator)
     QVector<double> var(nFeat, 0.0);
-    for (int s : idx) {
-        for (int f = 0; f < nFeat; ++f) {
-            double d = (double)features[(size_t)s * (size_t)nDim + (size_t)f] - mean[f];
-            var[f] += d * d;
+    for (int row : rows) {
+        for (int f = 1; f <= nFeat; ++f) {
+            double d = (double)features(row, f) - mean[f - 1];
+            var[f - 1] += d * d;
         }
     }
     for (int f = 0; f < nFeat; ++f)
@@ -389,32 +393,33 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
     // Build a fast lookup set
     QSet<int> idSet(clusterIds.begin(), clusterIds.end());
 
-    // Collect spike indices belonging to any of the listed clusters
-    QVector<int> idx;
-    idx.reserve(256);
-    for (int s = 0; s < nSpk; ++s)
-        if (idSet.contains(static_cast<int>((*spikesByCluster)(2, s + 1))))
-            idx.append(s);
+    // Collect feature-file row indices for spikes in the listed clusters.
+    // spikesByCluster row1 = feature-file row (1-based), row2 = cluster id.
+    QVector<int> rows;
+    rows.reserve(256);
+    for (int s = 1; s <= nSpk; ++s)
+        if (idSet.contains(static_cast<int>((*spikesByCluster)(2, s))))
+            rows.append(static_cast<int>((*spikesByCluster)(1, s)));
 
-    if (idx.size() < 2)
+    if (rows.size() < 2)
         return QVector<double>();
 
-    const double n = (double)idx.size();
+    const double n = (double)rows.size();
 
     // Per-feature mean
     QVector<double> mean(nFeat, 0.0);
-    for (int s : idx)
-        for (int f = 0; f < nFeat; ++f)
-            mean[f] += (double)features[(size_t)s * (size_t)nDim + (size_t)f];
+    for (int row : rows)
+        for (int f = 1; f <= nFeat; ++f)
+            mean[f - 1] += (double)features(row, f);
     for (int f = 0; f < nFeat; ++f)
         mean[f] /= n;
 
     // Sample variance (n-1 denominator)
     QVector<double> var(nFeat, 0.0);
-    for (int s : idx) {
-        for (int f = 0; f < nFeat; ++f) {
-            double d = (double)features[(size_t)s * (size_t)nDim + (size_t)f] - mean[f];
-            var[f] += d * d;
+    for (int row : rows) {
+        for (int f = 1; f <= nFeat; ++f) {
+            double d = (double)features(row, f) - mean[f - 1];
+            var[f - 1] += d * d;
         }
     }
     for (int f = 0; f < nFeat; ++f)
