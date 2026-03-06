@@ -40,11 +40,7 @@ SpikePage::SpikePage(QWidget* parent)
       incorrectColumn(0),
       modified(false)
 {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    groupTable->horizontalHeader()->setResizeMode( QHeaderView::ResizeToContents );
-#else
     groupTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-#endif
     //install a filter on the groupTable in order to validate the entries
     groupTable->installEventFilter(this);
 
@@ -176,7 +172,7 @@ void SpikePage::removeGroup(){
     const QList<QTableWidgetSelectionRange> range = groupTable->selectedRanges();
     if(!range.isEmpty()) {
         QList<int> lst;
-        Q_FOREACH(const QTableWidgetSelectionRange&r, range) {
+        for (const QTableWidgetSelectionRange&r : range) {
             const int nbRows = r.bottomRow() - r.topRow() + 1;
             for(int i = 0; i < nbRows;++i){
                 int val = (r.topRow() + i);

@@ -10,7 +10,6 @@ Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kda
 
 QT_BEGIN_NAMESPACE
 
-QT_MODULE(Gui)
 
 class QRecentFileActionPrivate;
 
@@ -39,12 +38,14 @@ Q_SIGNALS:
     void recentFileCleared();
     void recentFileListChanged();
 
+private Q_SLOTS:
+    void initializeRecentMenu();
+    void fileSelected(QAction *action);
+
 private:
     QRecentFileActionPrivate * const d;
     friend class QRecentFileActionPrivate;
     Q_DISABLE_COPY(QRecentFileAction)
-    Q_PRIVATE_SLOT(d, void initializeRecentMenu())
-    Q_PRIVATE_SLOT(d, void fileSelected(QAction *))
 };
 
 QT_END_NAMESPACE

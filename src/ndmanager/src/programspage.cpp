@@ -106,7 +106,7 @@ void ProgramsPage::loadProgram(){
 
     const QStringList programUrls=QFileDialog::getOpenFileNames(this, tr("Select the Plugin(s) to load..."));
     if(!programUrls.isEmpty()){
-        Q_FOREACH(const QString &programUrl, programUrls) {
+        for (const QString &programUrl : programUrls) {
             QString filePath = programUrl;
             QFileInfo fileInfo(filePath);
 

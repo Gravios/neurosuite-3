@@ -854,10 +854,12 @@ class KLUSTERSSHARED_EXPORT QExtendDialog : public QDialog
         QExtendDialog(QExtendDialogPrivate &dd, QWidget *parent, Qt::WindowFlags flags = Qt::WindowFlags());
         QExtendDialogPrivate *const d_ptr;
 
+    private Q_SLOTS:
+        void queuedLayoutUpdate();
+        void helpLinkClicked();
+
     private:
         Q_DISABLE_COPY(QExtendDialog)
-        Q_PRIVATE_SLOT(d_ptr, void queuedLayoutUpdate())
-        Q_PRIVATE_SLOT(d_ptr, void helpLinkClicked())
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QExtendDialog::ButtonCodes)

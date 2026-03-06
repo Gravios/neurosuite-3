@@ -420,7 +420,7 @@ void ndManager::slotFileClose(){
         //check first if some scripts have been modified
         QStringList scriptModified = parameterView->modifiedScripts();
         if(!scriptModified.isEmpty()) {
-            Q_FOREACH(const QString& name, scriptModified ) {
+            for (const QString& name : scriptModified) {
                 switch(QMessageBox::question(0,tr("Plugin modification"),tr("The plugin %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
                 case QMessageBox::Save://<=> Save
                     parameterView->saveScript(name);
@@ -436,7 +436,7 @@ void ndManager::slotFileClose(){
         //check if some descriptions have been modified
         QStringList programModified = parameterView->modifiedProgramDescription();
         if(!programModified.isEmpty()){
-            Q_FOREACH(const QString& name, programModified ) {
+            for (const QString& name : programModified) {
                 switch(QMessageBox::question(this,tr("Program description modification"),tr("The description of the program %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
                 case QMessageBox::Save://<=> Save
                     parameterView->saveProgramDescription(name);
@@ -483,7 +483,7 @@ bool ndManager::queryClose()
         //check first if some scripts have been modified
         const QStringList scriptModified = parameterView->modifiedScripts();
         if( !scriptModified.isEmpty() ){
-            Q_FOREACH(const QString& name, scriptModified) {
+            for (const QString& name : scriptModified) {
                 switch(QMessageBox::question(this,tr("Plugin modification"),tr("The plugin %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
                 case QMessageBox::Save://<=> Save
                     parameterView->saveScript(name);
@@ -500,7 +500,7 @@ bool ndManager::queryClose()
         //check if some descriptions have been modified
         const QStringList programModified = parameterView->modifiedProgramDescription();
         if(!programModified.isEmpty()){
-            Q_FOREACH(const QString& name, programModified) {
+            for (const QString& name : programModified) {
                 switch(QMessageBox::question(this,tr("Program description modification"),tr("The description of the program %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
                 case QMessageBox::Save://<=> Save
                     parameterView->saveProgramDescription(name);

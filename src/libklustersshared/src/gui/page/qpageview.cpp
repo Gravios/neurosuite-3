@@ -338,17 +338,17 @@ void QPageView::setModel(QAbstractItemModel *model)
     Q_D(QPageView);
   // clean up old model
   if ( d->model ) {
-        disconnect(d->model, SIGNAL(layoutChanged()), this, SLOT(_k_modelChanged()));
-        disconnect(d->model, SIGNAL(dataChanged(QModelIndex,QModelIndex)),
-                this, SLOT(_k_dataChanged(QModelIndex,QModelIndex)));
+        disconnect(d->model, &QAbstractItemModel::layoutChanged, this, &QPageView::_k_modelChanged);
+        disconnect(d->model, &QAbstractItemModel::dataChanged,
+                this, &QPageView::_k_dataChanged);
   }
 
   d->model = model;
 
   if ( d->model ) {
-        connect(d->model, SIGNAL(layoutChanged()), this, SLOT(_k_modelChanged()));
-        connect(d->model, SIGNAL(dataChanged(QModelIndex,QModelIndex)),
-                this, SLOT(_k_dataChanged(QModelIndex,QModelIndex)));
+        connect(d->model, &QAbstractItemModel::layoutChanged, this, &QPageView::_k_modelChanged);
+        connect(d->model, &QAbstractItemModel::dataChanged,
+                this, &QPageView::_k_dataChanged);
 
     // set new model in navigation view
     if ( d->view )
@@ -484,5 +484,13 @@ Qt::Alignment QPageView::viewPosition() const
   else
     return Qt::AlignLeft;
 }
+
+// Forwarding slots: Q_PRIVATE_SLOT removed for Qt6 compatibility
+void QPageView::_k_rebuildGui()          { d_func()->_k_rebuildGui(); }
+void QPageView::_k_modelChanged()        { d_func()->_k_modelChanged(); }
+void QPageView::_k_pageSelected(const QItemSelection &sel, const QItemSelection &desel)
+    { d_func()->_k_pageSelected(sel, desel); }
+void QPageView::_k_dataChanged(const QModelIndex &tl, const QModelIndex &br)
+    { d_func()->_k_dataChanged(tl, br); }
 
 #include "moc_qpageview.cpp"

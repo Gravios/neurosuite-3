@@ -157,7 +157,7 @@ class KLUSTERSSHARED_EXPORT QPageWidget : public QPageView
         QPageWidget(QPageWidgetPrivate &dd, QWidget *parent);
 
     private:
-        Q_PRIVATE_SLOT(d_func(), void _k_slotCurrentPageChanged(const QModelIndex &, const QModelIndex &))
+        // _k_slotCurrentPageChanged is connected via lambda in qpagewidget.cpp
 };
 
 #endif
