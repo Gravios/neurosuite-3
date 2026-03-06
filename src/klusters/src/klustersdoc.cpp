@@ -491,7 +491,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         if(*it == 1)
             color.setHsv(0,0,220);//Cluster 1 is always gray
         else
-            color.setHsv(static_cast<int>(fmod(static_cast<double>(*it)*7,36))*10,255,255);
+            color.setHsv(static_cast<int>(fmod(static_cast<double>(*it)*7,36))*10,200,255);
         clusterColorList->append(static_cast<int>(*it),color);
     }
 
@@ -992,7 +992,7 @@ void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeV
 
     //Add the cluster in clusterColors.
     QColor color;
-    color.setHsv(static_cast<int>(fmod(newClusterId*7,36))*10,255,255);
+    color.setHsv(static_cast<int>(fmod(newClusterId*7,36))*10,200,255);
     clusterColorList->append(newClusterIdint,color);
 
     //Remove the clusters which were grouped
@@ -1258,7 +1258,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
 
         //Add the cluster in clusterColors and clustersToShow.
         QColor color;
-        color.setHsv(static_cast<int>(fmod(newClusterId*7,36))*10,255,255);
+        color.setHsv(static_cast<int>(fmod(newClusterId*7,36))*10,200,255);
         clusterColorList->append(newClusterIdint,color);
         clustersToShow.append(newClusterIdint);
         //Remove all the empty clusters from clusterColors and clustersToShow
@@ -1328,7 +1328,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         QList<int>::iterator clustersToCreate;
         std::sort(newClusters.begin(), newClusters.end());
         for (clustersToCreate = newClusters.begin(); clustersToCreate != newClusters.end(); ++clustersToCreate ){
-            color.setHsv(static_cast<int>(fmod(static_cast<float>(*clustersToCreate)*7,36))*10,255,255);
+            color.setHsv(static_cast<int>(fmod(static_cast<float>(*clustersToCreate)*7,36))*10,200,255);
             clusterColorList->append(*clustersToCreate,color);
             clustersToShow.append(*clustersToCreate);
         }
@@ -2162,7 +2162,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         QColor color;
         QList<int>::iterator clustersToCreate;
         for(clustersToCreate = reclusteredClusterList.begin(); clustersToCreate != reclusteredClusterList.end(); ++clustersToCreate ){
-            color.setHsv(static_cast<int>(fmod(static_cast<float>(*clustersToCreate)*7,36))*10,255,255);
+            color.setHsv(static_cast<int>(fmod(static_cast<float>(*clustersToCreate)*7,36))*10,200,255);
             clusterColorList->append(*clustersToCreate,color);
             clustersToShow.append(*clustersToCreate);
         }
@@ -2203,7 +2203,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         QColor color;
         QList<int>::iterator clustersToCreate;
         for(clustersToCreate = reclusteredClusterList.begin(); clustersToCreate != reclusteredClusterList.end(); ++clustersToCreate ){
-            color.setHsv(static_cast<int>(fmod(static_cast<float>(*clustersToCreate)*7,36))*10,255,255);
+            color.setHsv(static_cast<int>(fmod(static_cast<float>(*clustersToCreate)*7,36))*10,200,255);
             clusterColorList->append(*clustersToCreate,color);
         }
 
@@ -2262,7 +2262,7 @@ void KlustersDoc::createProviders(){
     channelColorList = new ChannelColors();
     QColor color;
     QList<int> group;
-    color.setHsv(210,255,255);
+    color.setHsv(210,200,255);
 
     QList<int>& currentChannels =  clusteringData->getCurrentChannels();
     QList<int>::const_iterator iterator;

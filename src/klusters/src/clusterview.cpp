@@ -91,30 +91,40 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
     ItemColors& clusterColors = doc.clusterColors();
     Data& clusteringData = doc.data();
 
+    // Markers are drawn in VIEWPORT (pixel) space so their size is independent of
+    // the axis range.  We reset the world-to-viewport transform, map each spike
+    // point ourselves via worldToViewport(), and draw with fixed pixel dimensions.
+    const QTransform savedTransform = painter.transform();
+    painter.resetTransform();
+    const int r = pointSize;           // pixel radius
+
     for(clusterIterator = clustersList.begin(); clusterIterator != clustersList.end(); ++clusterIterator){
-        //Get the color associated with the cluster and set the color to use to this color
-        painter.setPen(clusterColors.color(*clusterIterator));
+        const QColor clusterColor = clusterColors.color(*clusterIterator);
+        painter.setPen(clusterColor);
         //Get the iterator on the spikes of the current cluster
         Data::Iterator spikeIterator = clusteringData.iterator(static_cast<dataType>(*clusterIterator));
         //Iterate over the spikes of the cluster and draw them
         if(drawCircles)  {
+            painter.setBrush(clusterColor);
+            painter.setPen(Qt::NoPen);
             for(;spikeIterator.hasNext();spikeIterator.next())
             {
-                QPoint point = spikeIterator(dimensionX,dimensionY);
-                painter.setBrush(clusterColors.color(*clusterIterator));
-                painter.drawEllipse(point.x() - pointSize, point.y() - pointSize, pointSize*2, pointSize*2);
+                QPoint px = worldToViewport(spikeIterator(dimensionX,dimensionY));
+                painter.drawEllipse(px.x() - r, px.y() - r, r*2, r*2);
             }
         }
         else  {
-            QPen pen = painter.pen();
-            pen.setWidth(pointSize);
+            QPen pen(clusterColor);
+            pen.setWidth(r > 1 ? r : 1);
             painter.setPen(pen);
             for(;spikeIterator.hasNext();spikeIterator.next()){
-                painter.drawPoint(spikeIterator(dimensionX,dimensionY));
+                QPoint px = worldToViewport(spikeIterator(dimensionX,dimensionY));
+                painter.drawPoint(px);
             }
         }
     }
 
+    painter.setTransform(savedTransform);
     painter.setBrush(Qt::NoBrush);
 }
 
