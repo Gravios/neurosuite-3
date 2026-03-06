@@ -3839,11 +3839,20 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
 }
 
 void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation>& clusterUserInformationMap)const{
+    // This method is called from SaveThread (off the main thread) while the main
+    // thread may concurrently modify clusterInfoMap via undo/redo/clustering.
+    // Take a snapshot of the map under the mutex to avoid a use-after-free.
+    mutex.lock();
+    // Copy the pointer-stable entries we need before releasing the lock.
+    // ClusterInfo is a small value type so copying is cheap.
+    ClusterInfoMap localSnapshot(*clusterInfoMap);
+    mutex.unlock();
+
     //Iteration on the clusters
     ClusterInfoMap::Iterator iterator;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator) {
+    for(iterator = localSnapshot.begin(); iterator != localSnapshot.end(); ++iterator) {
         int clusterId = static_cast<int>(iterator.key());
 
         if(clusterId == 0 || clusterId == 1) continue;
