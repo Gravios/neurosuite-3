@@ -30,13 +30,14 @@ Port to Qt4
 
 #include "libklustersshared_export.h"
 
+#include <QItemSelection>
+#include <QModelIndex>
 #include <QWidget>
 
 class QPageModel;
 
 class QAbstractItemDelegate;
 class QAbstractItemView;
-class QModelIndex;
 class QPageViewPrivate;
 class QAbstractItemModel;
 
