@@ -225,10 +225,16 @@ def main() -> None:
     spike_groups: list[dict] = []
     next_group_id = 1
 
+    running_offset = 0   # cumulative channels consumed by preceding probes
+
     for probe_entry in probes_list:
         probe_id     = int(probe_entry.get("id", 0))
         probe_rel    = str(probe_entry.get("probeFile") or "")
-        channel_off  = int(probe_entry.get("channelOffset", 0))
+        # probes[].channelOffset is an *additional* per-probe base (e.g. to match
+        # hardware ADC numbering).  The inter-probe offset is accumulated
+        # automatically from the actual channel count of each preceding probe.
+        extra_off    = int(probe_entry.get("channelOffset", 0))
+        channel_off  = running_offset + extra_off
 
         if not probe_rel:
             print(f"WARNING: probe entry id={probe_id} has no probeFile, skipping.",
@@ -244,13 +250,17 @@ def main() -> None:
             )
             sys.exit(1)
 
-        print(f"  probe {probe_id}: {probe_path.name}  offset={channel_off}")
+        print(f"  probe {probe_id}: {probe_path.name}  running_offset={running_offset}"
+              f"  extra_off={extra_off}  effective_offset={channel_off}")
 
         try:
             shanks = parse_probe(probe_path, channel_off)
         except Exception as exc:
             print(f"ERROR parsing {probe_path}: {exc}", file=sys.stderr)
             sys.exit(1)
+
+        # Advance the running offset by the total number of channels in this probe.
+        running_offset += sum(len(s) for s in shanks)
 
         assigned_group_ids: list[int] = []
 
