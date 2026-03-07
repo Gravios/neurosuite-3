@@ -80,23 +80,23 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
 
     // connect interactive widgets and selfmade signals to the enableApply slotDefault
     connect(prefGeneral->crashRecoveryCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
-    connect(prefGeneral->crashRecoveryComboBox,SIGNAL(activated(int)),this,SLOT(enableApply()));
-    connect(prefGeneral->undoSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
-    connect(prefGeneral->backgroundColorButton,SIGNAL(colorChanged(QColor)),this,SLOT(enableApply()));
-    connect(prefGeneral->reclusteringExecutableLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
+    connect(prefGeneral->crashRecoveryComboBox,&QComboBox::activated,this,&PrefDialog::enableApply);
+    connect(prefGeneral->undoSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->backgroundColorButton,&QColorButton::colorChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->reclusteringExecutableLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
     //connect(prefGeneral,SIGNAL(reclusteringArgsUpdate()),this,SLOT(enableApply()));
-    connect(prefGeneral->reclusteringArgsLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefGeneral->realignExecutableLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefGeneral->realignArgsLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefGeneral->markerSizeSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
-    connect(prefGeneral->selectionLineWidthSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
+    connect(prefGeneral->reclusteringArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->realignExecutableLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->realignArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->markerSizeSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->selectionLineWidthSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->useWhiteColorPrinting,SIGNAL(clicked()),this,SLOT(enableApply()));
     connect(prefGeneral->autoSelectFeaturesCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
-    connect(prefGeneral->autoSelectNFeaturesSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
+    connect(prefGeneral->autoSelectNFeaturesSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     
-    connect(prefclusterView->intervalSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
-    connect(prefWaveformView->gainSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
-    connect(prefWaveformView,SIGNAL(positionsChanged()),this,SLOT(enableApply()));
+    connect(prefclusterView->intervalSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefWaveformView->gainSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefWaveformView,&PrefWaveformView::positionsChanged,this,&PrefDialog::enableApply);
 
 
     connect(this, SIGNAL(applyClicked()), SLOT(slotApply()));

@@ -1,0 +1,12 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/ndmanager/src/unitlistpage.cpp'
+Diagnostics:
+  - DiagnosticName:  string-compare
+    DiagnosticMessage:
+      Message:         'result of comparison against a string literal is unspecified (use an explicit string comparison function instead)'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/unitlistpage.cpp'
+      FileOffset:      3488
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...

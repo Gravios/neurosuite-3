@@ -61,11 +61,11 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     initSelectionWidgets();
     adjustSize();
 
-    connect(&view,SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotChannelsSelected(QList<int>)));
-    connect(&view,SIGNAL(setStartAndDuration(long,long)),this, SLOT(slotSetStartAndDuration(long,long)));
-    connect(&view,SIGNAL(eventModified(QString,int,double,double)),this, SLOT(slotEventModified(QString,int,double,double)));
-    connect(&view,SIGNAL(eventRemoved(QString,int,double)),this, SLOT(slotEventRemoved(QString,int,double)));
-    connect(&view,SIGNAL(eventAdded(QString,QString,double)),this, SLOT(slotEventAdded(QString,QString,double)));
+    connect(&view,&TraceView::channelsSelected,this, &TraceWidget::slotChannelsSelected);
+    connect(&view,&TraceView::setStartAndDuration,this, &TraceWidget::slotSetStartAndDuration);
+    connect(&view,&TraceView::eventModified,this, &TraceWidget::slotEventModified);
+    connect(&view,&TraceView::eventRemoved,this, &TraceWidget::slotEventRemoved);
+    connect(&view,&TraceView::eventAdded,this, &TraceWidget::slotEventAdded);
 
     isInit = false;
 }
@@ -150,7 +150,7 @@ void TraceWidget::initSelectionWidgets(){
     connect(startMinute,SIGNAL(valueChanged(int)),this, SLOT(slotStartMinuteTimeUpdated(int)));
     connect(startSecond,SIGNAL(valueChanged(int)),this, SLOT(slotStartSecondTimeUpdated(int)));
     connect(startMilisecond,SIGNAL(valueChanged(int)),this, SLOT(slotStartMilisecondTimeUpdated(int)));
-    connect(duration,SIGNAL(returnPressed()),this, SLOT(slotDurationUpdated()));
+    connect(duration,&QLineEdit::returnPressed,this, &TraceWidget::slotDurationUpdated);
 
     //Create and initialize the scrollbar. The line step is a 20iest of the page step
     pageStep = timeWindow;

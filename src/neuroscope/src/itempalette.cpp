@@ -823,9 +823,9 @@ void ItemPalette::createGroup(const QString &id)
     //Signal and slot connection
     connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
     connect(iconView,SIGNAL(mousePressMiddleButton(QString,QListWidgetItem*)),this, SLOT(slotMousePressed(QString,QListWidgetItem*)));
-    connect(this,SIGNAL(paletteResized(int,int)),group,SLOT(reAdjustSize(int,int)));
-    connect(iconView,SIGNAL(mousePressWAltButton(QString,QListWidgetItem*)),this, SLOT(slotMousePressWAltButton(QString,QListWidgetItem*)));
-    connect(iconView,SIGNAL(mouseReleased(QString)),this, SLOT(slotMouseReleased(QString)));
+    connect(this,&ItemPalette::paletteResized,group,&ItemGroupView::reAdjustSize);
+    connect(iconView,&ItemIconView::mousePressWAltButton,this, &ItemPalette::slotMousePressWAltButton);
+    connect(iconView,&ItemIconView::mouseReleased,this, &ItemPalette::slotMouseReleased);
 
     connect(label,SIGNAL(leftClickOnLabel(QString,bool,bool)),this, SLOT(slotMousePressed(QString,bool,bool)));
     connect(iconView, SIGNAL(rowInsered()), SLOT(slotRowInsered()));

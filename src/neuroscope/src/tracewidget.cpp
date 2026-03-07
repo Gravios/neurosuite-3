@@ -66,12 +66,12 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     initSelectionWidgets();
     adjustSize();
 
-    connect(&view,SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotChannelsSelected(QList<int>)));
-    connect(&view,SIGNAL(setStartAndDuration(long,long)),this, SLOT(slotSetStartAndDuration(long,long)));
-    connect(&view,SIGNAL(eventModified(QString,int,double,double)),this, SLOT(slotEventModified(QString,int,double,double)));
-    connect(&view,SIGNAL(eventRemoved(QString,int,double)),this, SLOT(slotEventRemoved(QString,int,double)));
-    connect(&view,SIGNAL(eventAdded(QString,QString,double)),this, SLOT(slotEventAdded(QString,QString,double)));
-    connect(&view,SIGNAL(eventsAvailable(QHash<QString,EventData*>&,QMap<QString,QList<int> >&,QHash<QString,ItemColors*>&,QObject*,double)),this, SLOT(slotEventsAvailable(QHash<QString,EventData*>&,QMap<QString,QList<int> >&,QHash<QString,ItemColors*>&,QObject*,double)));
+    connect(&view,&TraceView::channelsSelected,this, &TraceWidget::slotChannelsSelected);
+    connect(&view,&TraceView::setStartAndDuration,this, &TraceWidget::slotSetStartAndDuration);
+    connect(&view,&TraceView::eventModified,this, &TraceWidget::slotEventModified);
+    connect(&view,&TraceView::eventRemoved,this, &TraceWidget::slotEventRemoved);
+    connect(&view,&TraceView::eventAdded,this, &TraceWidget::slotEventAdded);
+    connect(&view,&TraceView::eventsAvailable,this, &TraceWidget::slotEventsAvailable);
 
     isInit = false;
     /// Added by M.Zugaro to enable automatic forward paging
@@ -161,9 +161,9 @@ void TraceWidget::advance()
     emit updateStartAndDuration(startTime,timeWindow);
 	 
 	 // Reconnect
-	 connect(startMinute,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    connect(startSecond,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    connect(startMilisecond,SIGNAL(valueChanged(int)),this, SLOT(stop()));
+	 connect(startMinute,&QSpinBox::valueChanged,this, &TraceWidget::stop);
+    connect(startSecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
+    connect(startMilisecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
     connect(scrollBar,SIGNAL(valueChanged(int)),this, SLOT(stop()));
 	 
     timer->start(pageTime); // restart timer
@@ -251,11 +251,11 @@ void TraceWidget::initSelectionWidgets()
     connect(startMilisecond,SIGNAL(editingFinished()),this, SLOT(slotStartMilisecondTimeUpdated()));
 
 	 /// Added by M.Zugaro to enable automatic forward paging
-	 connect(startMinute,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    connect(startSecond,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    connect(startMilisecond,SIGNAL(valueChanged(int)),this, SLOT(stop()));
+	 connect(startMinute,&QSpinBox::valueChanged,this, &TraceWidget::stop);
+    connect(startSecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
+    connect(startMilisecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
 #endif
-    connect(duration,SIGNAL(returnPressed()),this, SLOT(slotDurationUpdated()));
+    connect(duration,&QLineEdit::returnPressed,this, &TraceWidget::slotDurationUpdated);
 
     //Create and initialize the scrollbar. The line step is a 20iest of the page step
     pageStep = timeWindow;

@@ -38,7 +38,7 @@ PrefWaveformView::PrefWaveformView(QWidget *parent,int nbChannels,const char *na
 
     connect(saveButton,SIGNAL(clicked()),this,SLOT(saveChannelOrder()));
     connect(loadButton,SIGNAL(clicked()),this,SLOT(loadChannelOrder()));
-    connect(channelList,SIGNAL(positionsChanged()),this,SLOT(updateChannelPositions()));
+    connect(channelList,&ChannelList::positionsChanged,this,&PrefWaveformView::updateChannelPositions);
 
 }
 PrefWaveformView::~PrefWaveformView(){

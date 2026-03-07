@@ -34,7 +34,7 @@ ImageCreator::ImageCreator(PositionsProvider& provider, int width, int height, c
     nbSpots = positionsProvider.getNbSpots();
 
     //Set Connection.
-    connect(&positionsProvider,SIGNAL(dataReady(Array<dataType>&,QObject*)),this,SLOT(dataAvailable(Array<dataType>&,QObject*)));
+    connect(&positionsProvider,&PositionsProvider::dataReady,this,&ImageCreator::dataAvailable);
 }
 
 ImageCreator::~ImageCreator(){}

@@ -34,7 +34,7 @@ QueryInputPathWidget::QueryInputPathWidget(QWidget *parent)
     mLineEdit = new QLineEdit;
     mPushButton = new QPushButton;
     lay->addWidget(mLineEdit);
-    connect(mLineEdit, SIGNAL(textChanged(QString)), this, SIGNAL(textChanged(QString)));
+    connect(mLineEdit, &QLineEdit::textChanged, this, &QueryInputPathWidget::textChanged);
     mPushButton->setIcon(QPixmap(":/shared-icons/document-open"));
     lay->addWidget(mPushButton);
     connect(mPushButton, SIGNAL(clicked()), SLOT(slotSelectPath()));
@@ -102,7 +102,7 @@ QueryInputDialog::QueryInputDialog(QWidget *parent,const QString& caption,const 
     layout->addStretch(10);
 
     //connections
-    connect(path, SIGNAL(textChanged(QString)), this, SLOT(pathChanged(QString)));
+    connect(path, &QueryInputPathWidget::textChanged, this, &QueryInputDialog::pathChanged);
     buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok
                                      | QDialogButtonBox::Cancel);
     layout->addWidget(buttonBox);

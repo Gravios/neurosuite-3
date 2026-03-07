@@ -1,0 +1,52 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+Diagnostics:
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+      FileOffset:      15426
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+      FileOffset:      16241
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+      FileOffset:      17040
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+      FileOffset:      18149
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+      FileOffset:      18966
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/ndmanager.cpp'
+      FileOffset:      19717
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...

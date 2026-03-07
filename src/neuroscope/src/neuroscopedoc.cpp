@@ -2205,8 +2205,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
     providerItemColors.insert(name,eventColors);
 
     //Install the connections with the provider
-    connect(eventsProvider, SIGNAL(newEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)),this, SLOT(slotNewEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)));
-    connect(eventsProvider, SIGNAL(eventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)),this, SLOT(slotEventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)));
+    connect(eventsProvider, &EventsProvider::newEventDescriptionCreated,this, &NeuroscopeDoc::slotNewEventDescriptionCreated);
+    connect(eventsProvider, &EventsProvider::eventDescriptionRemoved,this, &NeuroscopeDoc::slotEventDescriptionRemoved);
 
     //Informs the views than there is a new event provider.
     QList<int> eventsToShow;
@@ -2314,8 +2314,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
     }
 
     //Install the connections with the provider
-    connect(eventsProvider, SIGNAL(newEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)),this, SLOT(slotNewEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)));
-    connect(eventsProvider, SIGNAL(eventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)),this, SLOT(slotEventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)));
+    connect(eventsProvider, &EventsProvider::newEventDescriptionCreated,this, &NeuroscopeDoc::slotNewEventDescriptionCreated);
+    connect(eventsProvider, &EventsProvider::eventDescriptionRemoved,this, &NeuroscopeDoc::slotEventDescriptionRemoved);
 
     if(firstFile) dynamic_cast<NeuroscopeApp*>(parent)->createEventPalette(name);
     else dynamic_cast<NeuroscopeApp*>(parent)->addEventFile(name);
@@ -2661,8 +2661,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::createEventFile(const 
     providerItemColors.insert(name,eventColors);
 
     //Install the connections with the provider
-    connect(eventsProvider, SIGNAL(newEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)),this, SLOT(slotNewEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)));
-    connect(eventsProvider, SIGNAL(eventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)),this, SLOT(slotEventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)));
+    connect(eventsProvider, &EventsProvider::newEventDescriptionCreated,this, &NeuroscopeDoc::slotNewEventDescriptionCreated);
+    connect(eventsProvider, &EventsProvider::eventDescriptionRemoved,this, &NeuroscopeDoc::slotEventDescriptionRemoved);
 
     //Informs the views than there is a new event provider.
     QList<int> eventsToShow;

@@ -74,7 +74,7 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
 
     mStackWidget = new QStackedWidget;
     splitter->addWidget(mStackWidget);
-    connect(mParameterTree,SIGNAL(showWidgetPage(QWidget*)),mStackWidget,SLOT(setCurrentWidget(QWidget*)));
+    connect(mParameterTree,&ParameterTree::showWidgetPage,mStackWidget,&QStackedWidget::setCurrentWidget);
 
     setWindowTitle(tr("Parameter View"));
 

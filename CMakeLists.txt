@@ -353,6 +353,7 @@ set(_common_args
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_INSTALL_PREFIX=${_pfx}
     -DCMAKE_PREFIX_PATH=${_pfx}
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 )
 
 # Forward Qt6_DIR if the user supplied it

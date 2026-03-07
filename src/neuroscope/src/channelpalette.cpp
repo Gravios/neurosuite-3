@@ -875,21 +875,21 @@ void ChannelPalette::createGroup(int id){
     verticalContainer->setStretchFactor(spaceWidget,2);
 
     connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
-    connect(iconView,SIGNAL(mousePressMiddleButton(QListWidgetItem*)),this, SLOT(slotMousePressMiddleButton(QListWidgetItem*)));
-    connect(this,SIGNAL(paletteResized(int,int)),group,SLOT(reAdjustSize(int,int)));
+    connect(iconView,&ChannelIconView::mousePressMiddleButton,this, &ChannelPalette::slotMousePressMiddleButton);
+    connect(this,&ChannelPalette::paletteResized,group,&ChannelGroupView::reAdjustSize);
     connect(iconView,SIGNAL(channelsMoved(QString,QListWidgetItem*)),this, SLOT(slotChannelsMoved(QString,QListWidgetItem*)));
     connect(iconView,SIGNAL(channelsMoved(QList<int>,QString,QListWidgetItem*)),this, SLOT(slotChannelsMoved(QList<int>,QString,QListWidgetItem*)));
 
-    connect(label,SIGNAL(middleClickOnLabel(QString)),this, SLOT(slotMidButtonPressed(QString)));
-    connect(label,SIGNAL(leftClickOnLabel(QString)),this, SLOT(slotMousePressed(QString)));
+    connect(label,&GroupLabel::middleClickOnLabel,this, &ChannelPalette::slotMidButtonPressed);
+    connect(label,&GroupLabel::leftClickOnLabel,this, &ChannelPalette::slotMousePressed);
 
-    connect(this,SIGNAL(setDragAndDrop(bool)),iconView, SLOT(setDragAndDrop(bool)));
-    connect(this,SIGNAL(setDragAndDrop(bool)),group, SLOT(setDragAndDrop(bool)));
-    connect(this,SIGNAL(setDragAndDrop(bool)),spaceWidget, SLOT(setDragAndDrop(bool)));
-    connect(iconView,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
-    connect(group,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
-    connect(spaceWidget,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
-    connect(group,SIGNAL(dragObjectMoved(QPoint)),this, SLOT(slotDragLabeltMoved(QPoint)));
+    connect(this,&ChannelPalette::setDragAndDrop,iconView, &ChannelIconView::setDragAndDrop);
+    connect(this,&ChannelPalette::setDragAndDrop,group, &ChannelGroupView::setDragAndDrop);
+    connect(this,&ChannelPalette::setDragAndDrop,spaceWidget, &SpaceWidget::setDragAndDrop);
+    connect(iconView,&ChannelIconView::dropLabel,this, &ChannelPalette::groupToMove);
+    connect(group,&ChannelGroupView::dropLabel,this, &ChannelPalette::groupToMove);
+    connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
+    connect(group,&ChannelGroupView::dragObjectMoved,this, &ChannelPalette::slotDragLabeltMoved);
 
     connect(iconView, SIGNAL(moveListItem(QList<int>,QString,QString,int, bool)),
             SLOT(slotMoveListItem(QList<int>,QString,QString,int, bool)));
@@ -1054,8 +1054,8 @@ void ChannelPalette::groupToMove(int sourceId,int targetId,int start, int destin
     delete spaceWidget;
     spaceWidget = new SpaceWidget(this,edit);
     verticalContainer->addWidget(spaceWidget);
-    connect(this,SIGNAL(setDragAndDrop(bool)),spaceWidget, SLOT(setDragAndDrop(bool)));
-    connect(spaceWidget,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
+    connect(this,&ChannelPalette::setDragAndDrop,spaceWidget, &SpaceWidget::setDragAndDrop);
+    connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
     spaceWidget->show();
     verticalContainer->setStretchFactor(spaceWidget,2);
 
@@ -2003,8 +2003,8 @@ void ChannelPalette::moveTrashesToBottom(){
     delete spaceWidget;
     spaceWidget = new SpaceWidget(this,edit);
     verticalContainer->addWidget(spaceWidget);
-    connect(this,SIGNAL(setDragAndDrop(bool)),spaceWidget, SLOT(setDragAndDrop(bool)));
-    connect(spaceWidget,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
+    connect(this,&ChannelPalette::setDragAndDrop,spaceWidget, &SpaceWidget::setDragAndDrop);
+    connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
     spaceWidget->show();
     verticalContainer->setStretchFactor(spaceWidget,2);
 }

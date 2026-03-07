@@ -1,0 +1,20 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/neuroscope/src/traceview.cpp'
+Diagnostics:
+  - DiagnosticName:  self-assign-field
+    DiagnosticMessage:
+      Message:         assigning field to itself
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/traceview.cpp'
+      FileOffset:      91888
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  self-assign-field
+    DiagnosticMessage:
+      Message:         assigning field to itself
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/traceview.cpp'
+      FileOffset:      92988
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...

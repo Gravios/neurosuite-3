@@ -70,9 +70,9 @@ PropertiesDialog::PropertiesDialog(QWidget *parent)
 
     QDialogButtonBox *dialogButton = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel|QDialogButtonBox::Help);
     lay->addWidget(dialogButton);
-    connect(dialogButton, SIGNAL(accepted()), this, SLOT(slotVerify()));
+    connect(dialogButton, &QDialogButtonBox::accepted, this, &PropertiesDialog::slotVerify);
     connect(dialogButton, SIGNAL(rejected()), this, SLOT(reject()));
-    connect(dialogButton, SIGNAL(helpRequested()), this, SLOT(slotHelp()));
+    connect(dialogButton, &QDialogButtonBox::helpRequested, this, &PropertiesDialog::slotHelp);
 }
 PropertiesDialog::~PropertiesDialog(){
 }

@@ -1,0 +1,28 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscopedoc.cpp'
+Diagnostics:
+  - DiagnosticName:  self-assign-field
+    DiagnosticMessage:
+      Message:         assigning field to itself
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscopedoc.cpp'
+      FileOffset:      7470
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  self-assign-field
+    DiagnosticMessage:
+      Message:         assigning field to itself
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscopedoc.cpp'
+      FileOffset:      131366
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  self-assign-field
+    DiagnosticMessage:
+      Message:         assigning field to itself
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscopedoc.cpp'
+      FileOffset:      131406
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...
