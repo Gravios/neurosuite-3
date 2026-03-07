@@ -400,7 +400,6 @@ void NeuroscopeView::updateSelectedEventsIds(const QString& providerName,QMap<in
         if(added){
             for(iterator = currentSelectedEvents->begin(); iterator != currentSelectedEvents->end(); ++iterator) {
                 newSelectedEventsIds->append(oldNewEventIds[*iterator]);
-                qDebug()<<" oldNewEventIds"<<oldNewEventIds[*iterator];
             }
 
             //Add the new type of event to the active view in order to display the added event right away.

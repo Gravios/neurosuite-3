@@ -39,7 +39,6 @@ TracesProvider::TracesProvider(const QString& fileUrl,int nbChannels,int resolut
 }
 
 TracesProvider::~TracesProvider(){
-    qDebug()<<"in ~TracesProvider";
 }
 
 

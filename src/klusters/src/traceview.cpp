@@ -3149,7 +3149,6 @@ void TraceView::correctZoom(QRect& r){
         }
     }
     /* if(zoomed && !firstZoom && zoomOut){
-     qDebug()<<" zoomed && !firstZoom && zoomOut r.width() "<<r.width();
     zoomOut = false;
     zoomed = false;
     if(zoomFactor != 1){
@@ -3157,7 +3156,6 @@ void TraceView::correctZoom(QRect& r){
      }
      else{
       zoomed = false;
-      qDebug()<<"zoomFactor "<<zoomFactor;
       int windowWidth = r.width();
 
 
@@ -3180,8 +3178,6 @@ void TraceView::correctZoom(QRect& r){
       r.setLeft(newLeft);
       r.setWidth(newWidth);
       window = ZoomWindow(r);
- qDebug()<<"previousWindow.width() "<<previousWindow.width()<<" windowWidth "<<windowWidth<<" previousDownSampling "<<previousDownSampling<<" zoomFactor "<<zoomFactor;
-qDebug()<<" downSampling "<<downSampling<<" newWidth "<<newWidth<<" r.left() "<<r.left()<<" newLeft "<<newLeft<<" timeStep "<<timeStep;
 
      }
     }

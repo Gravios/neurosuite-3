@@ -682,7 +682,6 @@ void Data::minMaxDimensionCalculation(QList<int> modifiedClusters){
     }
     mutex.unlock();
 
-    qDebug() << "in minMaxDimensionCalculation end";
 
 }
 
@@ -1472,7 +1471,6 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
 
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
-    while(!minMaxThread->wait()){qDebug()<<"wait for minMaxThread to finish";};
     //Reset the flag to false so the minMaxThread can do the computation
     clusterZeroJustModified = false;
     minMaxThread->setModifiedClusters(clustersToDelete);
@@ -1631,7 +1629,6 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
     if(dimChanged){
-        while(!minMaxThread->wait()){qDebug()<<"wait for minMaxThread to finish"; };
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         QList<int> modifiedClusters;
@@ -1970,7 +1967,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     //Inform that an undo is in process
     undoRedoInProcess = true;
 
-    qDebug()<<"in Data::undo 1";
 
     //Get the list of clusters before applying the changes, this will be used in the clean
     //of the correlation.
@@ -1984,7 +1980,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = addedClusters.begin(); clustersToRemoveIterator != addedClusters.end(); ++clustersToRemoveIterator){
 
-            qDebug()<<"in Data::undo addedClusters.size() > 0, *clustersToRemoveIterator: "<<*clustersToRemoveIterator;
             mutex.lock();
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
                 if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
@@ -1999,7 +1994,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
                 }
             }
             mutex.unlock();
-            qDebug()<<"in Data::undo addedClusters.size() > 0, *clustersToRemoveIterator: "<<*clustersToRemoveIterator<<", correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator): "<<correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator));
 
 
 
@@ -2015,7 +2009,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = updatedClusters.begin(); clustersToRemoveIterator != updatedClusters.end(); ++clustersToRemoveIterator){
 
-            qDebug()<<"in Data::undo updatedClusters.size() > 0, *clustersToRemoveIterator: "<<*clustersToRemoveIterator;
 
             mutex.lock();
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
@@ -2051,7 +2044,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         QList<dataType>::iterator iterator;
         for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
 
-            qDebug()<<"in Data::undo addedClusters.isEmpty() && updatedClusters.isEmpty(), *iterator: "<<*iterator;
 
 
             mutex.lock();
@@ -2090,19 +2082,16 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         mutex.lock();
         clusterInfoMap =  clusterInfoMapTemp;
 
-        qDebug()<<"in Data::undo 2, clusterInfoMap updated";
 
         spikesByCluster =  spikesByClusterTemp;
 
         mutex.unlock();
 
-        qDebug()<<"in Data::undo 3, spikesByCluster updated";
 
         //If the last action implied a changed of the dimension, change the dimension again
         bool dimChanged = !dimensionChangedUndo.isEmpty() && dimensionChangedUndo.takeFirst();
         if(dimChanged){
 
-            qDebug()<<"in Data::undo dimensionChangedUndo[0] == true";
 
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
@@ -2120,7 +2109,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
             dimensionChangedRedo.prepend(false);
         }
     }
-    qDebug()<<"in Data::undo end";
 }
 
 

@@ -24,8 +24,7 @@
 #
 #   NS_SKIP_<NAME>         Set to ON to skip a component, e.g.:
 #                            -DNS_SKIP_KLUSTAKWIK=ON
-#                            -DNS_SKIP_SPIKEREALIGN=ON
-#                          Valid names (case-insensitive suffix):
+#                            #                          Valid names (case-insensitive suffix):
 #                            NPHYS_DATA  LIBKLUSTERSSHARED
 #                            KLUSTERS    NEUROSCOPE   NDMANAGER
 #                            NDMANAGER_PLUGINS        KLUSTAKWIK
@@ -71,8 +70,7 @@
 #   cmake --build build
 #
 #   # Skip heavy optional components
-#   cmake -B build -DNS_SKIP_KLUSTAKWIK=ON -DNS_SKIP_SPIKEREALIGN=ON
-#   cmake --build build
+#   cmake -B build -DNS_SKIP_KLUSTAKWIK=ON #   cmake --build build
 #
 #   # Qt6 installed to a non-standard location
 #   cmake -B build -DQt6_DIR=/opt/Qt/6.7.0/gcc_64/lib/cmake/Qt6
@@ -102,7 +100,6 @@ option(NS_SKIP_NEUROSCOPE          "Skip neuroscope"         OFF)
 option(NS_SKIP_NDMANAGER           "Skip ndmanager"          OFF)
 option(NS_SKIP_NDMANAGER_PLUGINS   "Skip ndmanager-plugins"  OFF)
 option(NS_SKIP_KLUSTAKWIK          "Skip klustakwik"         OFF)
-option(NS_SKIP_SPIKEREALIGN        "Skip spikerealign"       OFF)
 
 # Dependency installation
 option(NS_INSTALL_DEPS
@@ -417,7 +414,6 @@ endmacro()
 #                      └──> ndmanager                │  of each other)
 #  ndmanager-plugins ────────────────────────────────┤
 #  klustakwik ───────────────────────────────────────┤
-#  spikerealign ─────────────────────────────────────┘
 #
 # libklustersshared must be *installed* before klusters/neuroscope/ndmanager
 # are *configured* (they call find_package(LibKlustersShared)).  The DEPENDS
@@ -447,11 +443,8 @@ ns_add_package(ndmanager ndmanager
 ns_add_package(ndmanager-plugins ndmanager-plugins
     EXTRA_ARGS ${_gpu_args})
 
-# 7–8. Standalone spike sorter and realigner
+# 7. Standalone spike sorter
 ns_add_package(klustakwik klustakwik
-    EXTRA_ARGS ${_gpu_args})
-
-ns_add_package(spikerealign spikerealign
     EXTRA_ARGS ${_gpu_args})
 
 # ── Summary ───────────────────────────────────────────────────────────────────
