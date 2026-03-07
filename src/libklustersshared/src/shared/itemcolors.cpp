@@ -28,7 +28,6 @@ ItemColors::ItemColors()
 }
 
 ItemColors::~ItemColors(){
-    qDebug() << "~ItemColors()";
     qDeleteAll(itemList);
     itemList.clear();
 }

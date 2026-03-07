@@ -40,7 +40,6 @@ class SaveThread : public QThread{
 public: 
 
     explicit SaveThread(KlustersApp* parent):doc(0L),parent(parent),isSaveAs(false){}
-    ~SaveThread(){qDebug()<<"in ~SaveThread";}
 
 
     virtual void run();

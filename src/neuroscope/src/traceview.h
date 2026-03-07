@@ -479,7 +479,6 @@ public Q_SLOTS:
   * @param eventDescription description of the next event to be created.
   */
     void eventToAddProperties(const QString &providerName, const QString &eventDescription){
-qDebug()<<" eventToAddProperties***********************";
         //If an event is being modified, this function can be called with eventDescription set to empty,
         //this should not be taken into account.
         if(!eventBeingModified){

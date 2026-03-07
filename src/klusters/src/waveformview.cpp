@@ -675,7 +675,6 @@ void WaveformView::setTimeFrameMode(){
 }
 
 void WaveformView::setTimeFrame(long start, long width){
-    qDebug()<<" void WaveformView::setTimeFrame(long start, long width){";
     stopAndClearThreads();
     startTime = start;
     endTime = start + width;

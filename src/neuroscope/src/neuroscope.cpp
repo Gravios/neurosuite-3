@@ -2286,7 +2286,6 @@ void NeuroscopeApp::slotPaletteTabChange(int index){
         //Update the selected items of the current palette
         if(qobject_cast<ItemPalette*>(widget)){
             QString name = widget->objectName();
-            qDebug()<<" name "<<name;
             if(name.contains("clusterPanel")){
                 ItemPalette* clusterPalette = static_cast<ItemPalette*>(widget);
                 NeuroscopeView* view = activeView();
@@ -2312,7 +2311,6 @@ void NeuroscopeApp::slotPaletteTabChange(int index){
                 for(iterator = eventFileList.begin(); iterator != eventFileList.end(); ++iterator){
                     const QList<int>* selectedEvents = view->getSelectedEvents(*iterator);
                     const QList<int>* skippedEventIds = view->getEventsNotUsedForBrowsing(*iterator);
-                    qDebug()<<" selectedEvents"<<selectedEvents<<" skippedEventIds"<<skippedEventIds;
                     eventPalette->selectItems(*iterator,*selectedEvents,*skippedEventIds);
                 }
                 slotStateChanged("eventTabState");
@@ -2634,7 +2632,6 @@ void NeuroscopeApp::slotSelectChannelsInPalette(const QList<int>& selectedIds){
 
 void NeuroscopeApp::slotChannelsSelected(const QList<int>& selectedIds){
     //if the selection tool is selected  warn the active display
-    qDebug()<<" void NeuroscopeApp::slotChannelsSelected(const QList<int>& selectedIds){"<<activeView()<<" select"<<select;
     if(select)
         activeView()->selectChannels(selectedIds);
     else
@@ -2869,10 +2866,8 @@ void NeuroscopeApp::addClusterFile(const QString& clusterFileId){
 void NeuroscopeApp::slotClusterColorUpdate(int clusterId,const QString &providerName, const QColor &color){
     QWidget* current = paletteTabsParent->currentWidget();
     QString name = current->objectName();
-    qDebug()<<" dsssssssssssssssssssssssssssssssssssssssssssssssssssssssss";
     if(qobject_cast<ItemPalette*>(current) && name.contains("clusterPanel")){
         NeuroscopeView* view = activeView();
-        qDebug()<<" providerName"<<providerName<<" clusterId "<<clusterId<<" color"<<color;
         doc->clusterColorUpdate(providerName,clusterId,view, color);
     }
 
@@ -2887,7 +2882,6 @@ void NeuroscopeApp::slotUpdateShownClusters(const QMap<QString,QList<int> >& sel
             QString providerName = groupIterator.key();
             QList<int> clusterIds = groupIterator.value();
             NeuroscopeView* view = activeView();
-            qDebug()<<" void NeuroscopeApp::slotUpdateShownClusters(const QMap<QString,QList<int> >& selection){"<<selection;
             view->shownClustersUpdate(providerName,clusterIds);
         }
     }

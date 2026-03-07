@@ -22,7 +22,6 @@
 
 #include "qextenddialog.h"
 #include <QtCore/QPointer>
-#include <QtCore/QSignalMapper>
 #include <QtCore/QSize>
 #include <QtCore/QHash>
 
@@ -51,7 +50,6 @@ class QExtendDialogPrivate
         virtual ~QExtendDialogPrivate() {}
 
         QExtendDialog *q_ptr;
-
         void setupLayout();
         void appendButton(QExtendDialog::ButtonCode code , const QString &item );
         QPushButton *button( QExtendDialog::ButtonCode code ) const;
@@ -80,7 +78,6 @@ class QExtendDialogPrivate
 
         QDialogButtonBox *mButtonBox;
         QHash<int, QPushButton*> mButtonList;
-        QSignalMapper mButtonSignalMapper;
 
     protected Q_SLOTS:
         void queuedLayoutUpdate();

@@ -448,12 +448,10 @@ void ParameterView::loadProgram(const QString &programUrl) {
     // Get the information concering the program from the file.
     XmlReader reader = XmlReader();
     reader.parseFile(programUrl);
-    qDebug()<<" ssssssssssssssssssssssssssssssssssssssssssss"<<programUrl;
     ProgramInformation programInformation;
     reader.getProgramInformation(programInformation);
 
     QString name = programInformation.getProgramName();
-    qDebug()<<" name"<<name;
     //If the description file was incorrect, no name was supplied
     if(name.isEmpty())
         name = QString::fromLatin1("Untitled-%1").arg(programId);
