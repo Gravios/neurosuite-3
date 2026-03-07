@@ -68,12 +68,9 @@ install(EXPORT LibKlustersSharedTargets
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LibKlustersShared"
     FILE        LibKlustersSharedTargets.cmake)
 
-# Build-tree export — allows find_package(LibKlustersShared) to work from the
-# build tree without an install step (used by the monorepo top-level when
-# building via add_subdirectory rather than ExternalProject).
-export(EXPORT LibKlustersSharedTargets
-    NAMESPACE KlustersShared::
-    FILE      "${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedTargets.cmake")
+# Build-tree export is driven from the top-level monorepo CMakeLists.txt
+# (after add_subdirectory) where the export set is guaranteed to be fully
+# populated.  See the ns_add_subdir(libklustersshared …) call there.
 
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/LibKlustersSharedConfig.cmake"

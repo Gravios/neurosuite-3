@@ -2763,7 +2763,10 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             dataType currentSpikePosition = (positionOfSpikes(1,i) - 1) * nbPtsBySpike ;
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
-            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+            size_t got = fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+            if(got != static_cast<size_t>(nbPtsBySpike))
+                qWarning("WaveformData::read: short read at spike %lld (got %zu/%lld items)",
+                         static_cast<long long>(i), got, static_cast<long long>(nbPtsBySpike));
             position += nbPtsBySpike;
             ++nbSampleSpikes;
         }
@@ -2774,7 +2777,10 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         dataType currentSpikePosition = (positionOfSpikes(1,1) - 1) * nbPtsBySpike ;
         fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
         // copy the spikes into spikePoints.
-        fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile);
+        { size_t got = fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile);
+          if(got != static_cast<size_t>(nbPtsBySpike))
+              qWarning("WaveformData::read: short read for single spike (got %zu/%lld items)",
+                       got, static_cast<long long>(nbPtsBySpike)); }
         nbSampleSpikes = 1;
     }
     else{
@@ -2789,7 +2795,10 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             dataType currentSpikePosition = (positionOfSpikes(1,spkIndice) - 1) * nbPtsBySpike ;
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
-            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+            size_t got = fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+            if(got != static_cast<size_t>(nbPtsBySpike))
+                qWarning("WaveformData::read: short read at spike index %lld (got %zu/%lld items)",
+                         static_cast<long long>(spkIndice), got, static_cast<long long>(nbPtsBySpike));
             position += nbPtsBySpike;
             ++nbSampleSpikes;
             floatSpkIndice += factor;
@@ -2814,7 +2823,10 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         //go to the spike position
         fseeko64(spikeFile,startPositionInSpk,SEEK_SET);
         // copy the spikes into timeFrameSpikesTable.
-        fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+        size_t got = fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+        if(got != static_cast<size_t>(nbPtsBySpike))
+            qWarning("WaveformData::read: short read in timeframe (got %zu/%lld items)",
+                     got, static_cast<long long>(nbPtsBySpike));
         position += nbPtsBySpike;
         ++nbTimeFrameSpikes;
     }

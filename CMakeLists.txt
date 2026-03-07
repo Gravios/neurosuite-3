@@ -72,16 +72,115 @@ option(USE_HIP  "Enable AMD ROCm/HIP GPU backends" ON)
 option(USE_SYCL "Enable Intel oneAPI SYCL GPU backends" ON)
 
 if(USE_CUDA)
+    # Help CMake find nvcc when the toolkit lives in a non-default location.
+    # check_language(CUDA) searches CMAKE_CUDA_COMPILER (cache), then PATH,
+    # then the directories listed here via CMAKE_PREFIX_PATH / hints.
+    # Users can override by passing -DCMAKE_CUDA_COMPILER=/path/to/nvcc.
+    if(NOT CMAKE_CUDA_COMPILER)
+        # find_program searches PATH (unlike check_language which uses hard-coded
+        # locations).  Run it first so an nvcc that is on PATH is always found.
+        find_program(_nvcc_on_path nvcc)
+        if(_nvcc_on_path)
+            set(CMAKE_CUDA_COMPILER "${_nvcc_on_path}"
+                CACHE FILEPATH "CUDA compiler" FORCE)
+        else()
+            # Fallback: common fixed installation roots, platform-specific.
+            # On Windows nvcc lives under the versioned toolkit directory;
+            # on Linux under /usr/local/cuda*; macOS dropped CUDA after 10.2.
+            if(WIN32)
+                # Collect all versioned toolkit dirs under Program Files
+                file(GLOB _cuda_roots
+                    "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/*/bin/nvcc.exe"
+                    "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v*/bin/nvcc.exe")
+                # Also honour env vars set by the CUDA installer
+                foreach(_env_root "$ENV{CUDA_PATH}" "$ENV{CUDA_HOME}" "$ENV{CUDA_PATH_V12_0}")
+                    if(EXISTS "${_env_root}/bin/nvcc.exe")
+                        list(PREPEND _cuda_roots "${_env_root}/bin/nvcc.exe")
+                    endif()
+                endforeach()
+                if(_cuda_roots)
+                    # Sort descending so the highest version wins
+                    list(SORT _cuda_roots ORDER DESCENDING)
+                    list(GET _cuda_roots 0 _first_nvcc)
+                    set(CMAKE_CUDA_COMPILER "${_first_nvcc}"
+                        CACHE FILEPATH "CUDA compiler" FORCE)
+                endif()
+            elseif(APPLE)
+                # CUDA toolkit support for macOS was dropped after 10.2 (Mojave).
+                # Apple Silicon has no CUDA support at all.  Skip silently.
+                message(STATUS "neurosuite-3: CUDA not supported on macOS — skipping")
+            else()
+                # Linux: versioned symlinks under /usr/local/cuda*
+                foreach(_cuda_root
+                        "$ENV{CUDA_HOME}"
+                        "$ENV{CUDA_PATH}"
+                        "/usr/local/cuda"
+                        "/usr/local/cuda-13.1"
+                        "/usr/local/cuda-13"
+                        "/usr/local/cuda-12"
+                        "/usr/local/cuda-11"
+                        "/opt/cuda")
+                    if(EXISTS "${_cuda_root}/bin/nvcc")
+                        set(CMAKE_CUDA_COMPILER "${_cuda_root}/bin/nvcc"
+                            CACHE FILEPATH "CUDA compiler" FORCE)
+                        break()
+                    endif()
+                endforeach()
+            endif()
+        endif()
+        unset(_nvcc_on_path CACHE)
+    endif()
+
     check_language(CUDA)
     if(CMAKE_CUDA_COMPILER)
         set(_cuda_lang CUDA)
+        message(STATUS "neurosuite-3: CUDA compiler — ${CMAKE_CUDA_COMPILER}")
     else()
         message(STATUS "neurosuite-3: CUDA toolkit not found — building without CUDA")
+        message(STATUS "  To enable CUDA, install the NVIDIA CUDA Toolkit and either:")
+        message(STATUS "    a) Add nvcc to PATH before running cmake, or")
+        message(STATUS "    b) Pass -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc")
         set(USE_CUDA OFF CACHE BOOL "" FORCE)
         set(_cuda_lang "")
     endif()
 else()
     set(_cuda_lang "")
+endif()
+
+# ---------------------------------------------------------------------------
+# CUDA architecture selection
+#
+# Must be set BEFORE project() so it is in the cache when CMake initialises
+# the CUDA language — any set() after project(LANGUAGES CUDA) is too late to
+# override the auto-detected default.
+#
+# Strategy:
+#   "native"  — CMake 3.24+ queries the installed GPU and compiles only for
+#               that SM.  Fast builds, optimal code, requires a GPU at
+#               configure time.
+#   explicit  — Fall back to an explicit list covering Turing through
+#               Blackwell when no GPU is present (CI, headless nodes, etc.).
+#
+# Users can override from the command line:
+#   cmake -DCMAKE_CUDA_ARCHITECTURES="89;120" ...
+# ---------------------------------------------------------------------------
+if(_cuda_lang AND NOT CMAKE_CUDA_ARCHITECTURES)
+    # Detect whether the running machine actually has a CUDA-capable GPU so
+    # we can use "native".  cmake --find-package cannot do this at pre-project
+    # time, but we can inspect nvidia-smi if it is available.
+    find_program(_nvidia_smi nvidia-smi)
+    if(_nvidia_smi)
+        set(CMAKE_CUDA_ARCHITECTURES "native"
+            CACHE STRING "CUDA architectures (native = auto-detect installed GPU)" FORCE)
+        message(STATUS "neurosuite-3: CUDA architectures = native (GPU detected via nvidia-smi)")
+    else()
+        # No GPU at configure time (headless/CI) — compile for the range of
+        # Maxwell through Blackwell that the codebase targets.
+        set(CMAKE_CUDA_ARCHITECTURES "75;86;89;100;120"
+            CACHE STRING "CUDA architectures (explicit list — no GPU detected)" FORCE)
+        message(STATUS "neurosuite-3: CUDA architectures = 75;86;89;100;120 (no GPU at configure time)")
+    endif()
+    unset(_nvidia_smi CACHE)
 endif()
 
 project(neurosuite-3 VERSION 3.0.0 LANGUAGES CXX C ${_cuda_lang})
@@ -302,11 +401,16 @@ ns_add_subdir(nphys-data src/nphys-data)
 # 2. Shared Qt6 library
 ns_add_subdir(libklustersshared src/libklustersshared)
 
-# After add_subdirectory() both LibKlustersSharedConfig.cmake and
-# LibKlustersSharedTargets.cmake exist in ${CMAKE_BINARY_DIR}/libklustersshared.
-# Advertise that path so the downstream find_package(LibKlustersShared) calls
-# succeed without an install step.
+# After add_subdirectory() libklustersshared's install(TARGETS … EXPORT …) has
+# run and the LibKlustersSharedTargets export set is populated.  Generate the
+# build-tree targets file now so that the downstream find_package() guard
+# (if(NOT TARGET KlustersShared::klustersshared)) also has a valid file on disk
+# for users who build libklustersshared standalone and then consume it via
+# find_package from the build tree.
 if(NOT NS_SKIP_LIBKLUSTERSSHARED)
+    export(EXPORT LibKlustersSharedTargets
+        NAMESPACE KlustersShared::
+        FILE "${CMAKE_BINARY_DIR}/libklustersshared/LibKlustersSharedTargets.cmake")
     set(LibKlustersShared_DIR "${CMAKE_BINARY_DIR}/libklustersshared"
         CACHE PATH "Build-tree LibKlustersShared cmake dir (set by monorepo)" FORCE)
 endif()
