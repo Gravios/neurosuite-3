@@ -35,11 +35,14 @@ include(GNUInstallDirs)
 # ---------------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Xml)
 
-find_package(LibKlustersShared 2.1.0 REQUIRED
-    HINTS
-        "${CMAKE_INSTALL_PREFIX}/lib/cmake/LibKlustersShared"
-        /usr/local/lib/cmake/LibKlustersShared
-        /usr/lib/cmake/LibKlustersShared)
+# In a monorepo add_subdirectory build the alias target is already present.
+if(NOT TARGET KlustersShared::klustersshared)
+    find_package(LibKlustersShared 2.1.0 REQUIRED
+        HINTS
+            "${CMAKE_INSTALL_PREFIX}/lib/cmake/LibKlustersShared"
+            /usr/local/lib/cmake/LibKlustersShared
+            /usr/lib/cmake/LibKlustersShared)
+endif()
 
 # ---------------------------------------------------------------------------
 # Generated config header

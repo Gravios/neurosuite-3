@@ -2,7 +2,7 @@
 # neuroscope executable
 # ---------------------------------------------------------------------------
 configure_file(
-    "${CMAKE_SOURCE_DIR}/config-neuroscope.h.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../config-neuroscope.h.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/config-neuroscope.h")
 
 set(_srcs

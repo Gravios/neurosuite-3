@@ -137,11 +137,15 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Xml PrintSupport)
 qt_standard_project_setup()
 
-find_package(LibKlustersShared 2.1.0 REQUIRED
-    HINTS
-        "${CMAKE_INSTALL_PREFIX}/lib/cmake/LibKlustersShared"
-        /usr/local/lib/cmake/LibKlustersShared
-        /usr/lib/cmake/LibKlustersShared)
+# In a monorepo add_subdirectory build the alias target is already present;
+# only call find_package when building klusters standalone.
+if(NOT TARGET KlustersShared::klustersshared)
+    find_package(LibKlustersShared 2.1.0 REQUIRED
+        HINTS
+            "${CMAKE_INSTALL_PREFIX}/lib/cmake/LibKlustersShared"
+            /usr/local/lib/cmake/LibKlustersShared
+            /usr/lib/cmake/LibKlustersShared)
+endif()
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/config-klusters.h.cmake

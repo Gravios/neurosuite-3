@@ -1518,7 +1518,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
             for(int i = 0; i< nbViews; i++) {
                 ViewWidget* viewWidget = viewList.at(i);
                 if(qobject_cast<ClusterView*>(viewWidget)){
-                    connect(viewWidget, &ClusterView::moveToTime, qobject_cast<TraceWidget*>(view), &TraceWidget::moveToTime);
+                    connect(qobject_cast<ClusterView*>(viewWidget), &ClusterView::moveToTime, qobject_cast<TraceWidget*>(view), &TraceWidget::moveToTime);
                 }
             }
         }
