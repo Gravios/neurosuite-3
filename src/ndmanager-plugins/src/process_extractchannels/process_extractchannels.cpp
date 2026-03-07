@@ -165,25 +165,6 @@ int main(int argc,char *argv[])
 				return EXIT_FAILURE;
 			}
 	}
-// 	for ( int j = 0 ; j < nChannelsToExtract ; j++ )
-// 	{
-// 		i++;
-// 		string channel(argv[i]);
-// 		int n = channel.find('*');
-// 		channelToExtract[j] = atoi(channel.substr(0,n).c_str());
-// 		if ( n == -1 ) gain[j] = 1;
-// 		else gain[j] = atof(channel.substr(n+1,channel.length()).c_str());
-// 		if ( channelToExtract[j] < 0 )
-// 		{
-// 			cerr << "error: negative channel number (" << channelToExtract[j] << ")." << endl;
-// 			return EXIT_FAILURE;
-// 		}
-// 		else if ( channelToExtract[j] >= nChannels )
-// 		{
-// 			cerr << "error: cannot extract channel " << channelToExtract[j] << " (" << nChannels << " channels, numbered from 0)." << endl;
-// 			return EXIT_FAILURE;
-// 		}
-// 	}
 
 	// Open the source file
 

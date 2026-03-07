@@ -245,11 +245,6 @@ void TraceWidget::initSelectionWidgets()
     //to maximum of time for the current document (set when the document will be opened)
     duration->setValidator(&validator);
 
-#if 0
-    connect(startMinute, &QSpinBox::valueChanged, this, &TraceWidget::slotStartMinuteTimeUpdated);
-    connect(startSecond, &QSpinBox::valueChanged, this, &TraceWidget::slotStartSecondTimeUpdated);
-    connect(startMilisecond, &QSpinBox::valueChanged, this, &TraceWidget::slotStartMilisecondTimeUpdated);
-#else
     connect(startMinute, &QAbstractSpinBox::editingFinished, this, &TraceWidget::slotStartMinuteTimeUpdated);
     connect(startSecond, &QAbstractSpinBox::editingFinished, this, &TraceWidget::slotStartSecondTimeUpdated);
     connect(startMilisecond, &QAbstractSpinBox::editingFinished, this, &TraceWidget::slotStartMilisecondTimeUpdated);
@@ -258,7 +253,6 @@ void TraceWidget::initSelectionWidgets()
 	 connect(startMinute,&QSpinBox::valueChanged,this, &TraceWidget::stop);
     connect(startSecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
     connect(startMilisecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
-#endif
     connect(duration,&QLineEdit::returnPressed,this, &TraceWidget::slotDurationUpdated);
 
     //Create and initialize the scrollbar. The line step is a 20iest of the page step
@@ -441,11 +435,6 @@ void TraceWidget::slotStartMinuteTimeUpdated(/*int start*/){
            correctStartTime();
         }else{
             startTime = modifiedStartTime;
-/*
-            startMinute->setMaximum(minutePart);
-            startSecond->setMaximum(recordingLength/1000);
-            startMilisecond->setMaximum(recordingLength);
-*/
             scrollBar->blockSignals(true);
             scrollBar->setValue(startTime);
             scrollBar->blockSignals(false);

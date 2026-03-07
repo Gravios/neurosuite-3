@@ -122,13 +122,6 @@ QPageListView::~QPageListView()
 
 void QPageListView::setModel( QAbstractItemModel *model )
 {
-/*
-  QPageListViewProxy *proxy = new QPageListViewProxy( this );
-  proxy->setSourceModel( model );
-  proxy->rebuildMap();
-
-  connect(model, &QAbstractItemModel::layoutChanged, proxy, &QPagePlainViewProxy::rebuildMap);
-*/
   connect(model, &QAbstractItemModel::layoutChanged, this, &QPageListView::updateWidth);
 
 //  QListView::setModel( proxy );
@@ -374,18 +367,6 @@ QPageListViewDelegate::QPageListViewDelegate( QObject *parent )
     //connect(KGlobalSettings::self(), SIGNAL(iconChanged(int)), this, SLOT(iconSettingsChanged(int)) );
 }
 
-/*
-void QPageListViewDelegate::iconSettingsChanged( int group )
-{
-    if ( group == KIconLoader::Dialog ) {
-        const int iconSize = KIconLoader::global()->currentSize( KIconLoader::Dialog );
-        if ( mIconSize != iconSize ) {
-            mIconSize = iconSize;
-            emit sizeHintChanged( QModelIndex() );
-        }
-    }
-}
-*/
 
 static int layoutText(QTextLayout *layout, int maxWidth)
 {

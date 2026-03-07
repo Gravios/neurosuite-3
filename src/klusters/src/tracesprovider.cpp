@@ -92,16 +92,6 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
     //  sizeof(std::streamoff) = 4 bytes (32 bits)
     //  sizeof(std::streampos) = 12 bytes (96 bits)
 
-    /*  ifstream dataFile;
-
- //Open the file containing the data
- dataFile.open(fileName,ifstream::in|ifstream::binary);
- if(dataFile.fail()){
-  //emit the signal with an empty array, the reciever will take care of it, given a message to the user.
-  data.setSize(0,0);
-  emit dataReady(data,initiator);
-  return;
- }*/
 
     //Search what is the number of samples in the given time frame.
 
@@ -213,16 +203,6 @@ void TracesProvider::computeRecordingLength(){
     //  sizeof(std::streamoff) = 4 bytes (32 bits)
     //  sizeof(std::streampos) = 12 bytes (96 bits)
 
-    /*ifstream dataFile;
-
- //Open the file containing the data
- dataFile.open(fileName,ifstream::in|ifstream::binary);
- if(dataFile.fail()) return 0;
-
- // get the length of the file:
- dataFile.seekg (0, ios::end);
- qint64 fileLength = dataFile.tellg();
- dataFile.close();*/
 
     QFile f(fileName);
     if (!f.open(QIODevice::ReadOnly)) {

@@ -300,18 +300,6 @@ class KLUSTERSSHARED_EXPORT QExtendDialog : public QDialog
      * Returns the "What's this?" text of any button.
      */
     QString buttonWhatsThis( ButtonCode id ) const;
-#if 0
-    /**
-     * Sets the KGuiItem directly for the button instead of using 3 methods to
-     * set the text, tooltip and whatsthis strings. This also allows to set an
-     * icon for the button which is otherwise not possible for the extra
-     * buttons beside Ok, Cancel and Apply.
-     *
-     * @param id The button identifier.
-     * @param item The KGuiItem for the button.
-     */
-    void setButtonGuiItem( ButtonCode id, const KGuiItem &item );
-#endif
     /**
      * Sets the menu of any button.
      *

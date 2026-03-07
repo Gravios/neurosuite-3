@@ -403,17 +403,6 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
     if ( !item ) return; // right pressed on viewport,pix
     else{
         ////If several options are available a poppupmenu can be added////
-        /*  //Create a popmenu with an changeColor option
-    QPopupMenu menu(iconView);
-
-      int CHANGE_COLOR = menu.insertItem(clusterInformationtr("Change color"));
-      clusterNumber
-    menu.setMouseTracking( TRUE );
-    int id = menu.exec( QCursor::pos());
-
-    if(id == CHANGE_COLOR){
-      changeColor(item);
-    }*/
 
         int clusterNumber = doc->clusterColors().itemId(item->data(INDEX).toInt());
 

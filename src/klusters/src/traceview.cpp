@@ -2874,11 +2874,6 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
             previousWindow = (QRect)window;
             zoomOut = true;
             zoomed = true;
-            /*QRect r((QRect)window);
-   QPoint click;
-   if(r.left() != 0) click = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
-   else click = viewportToWorld(e->position().toPoint().x() - xMargin,e->position().toPoint().y());
-   if(click.x() < 0) click.setX(0);*/
         }
         else if(!doubleClick){
             if(!maxZoomReached) previousWindow = (QRect)window;
@@ -3148,40 +3143,7 @@ void TraceView::correctZoom(QRect& r){
             initialTraceWidth = traceWidth;
         }
     }
-    /* if(zoomed && !firstZoom && zoomOut){
-    zoomOut = false;
-    zoomed = false;
-    if(zoomFactor != 1){
-     if(multiColumns){
-     }
-     else{
-      zoomed = false;
-      int windowWidth = r.width();
 
-
-      //float factor = 0.5;//static_cast<float>(previousWindow.width())/static_cast<float>(windowWidth);
-      float previousDownSampling = downSampling;
-
-      downSampling = 2 * downSampling;
-      //float factor = static_cast<float>(previousWindow.width())/static_cast<float>(windowWidth);
-      //float previousDownSampling = downSampling;
-     // downSampling = downSampling/factor;
-
-
-
-      if(downSampling < 1) downSampling = 1;
-      int newWidth = static_cast<int>(2 * windowWidth * previousDownSampling/ downSampling) * Xstep;
-      int newLeft = 0;//static_cast<int>(static_cast<float>(r.left()) * previousDownSampling / downSampling) * Xstep;
-      timeStep = timeStepUnit * downSampling;
-
-      //update the window
-      r.setLeft(newLeft);
-      r.setWidth(newWidth);
-      window = ZoomWindow(r);
-
-     }
-    }
-   }*/
     else if(zoomed && downSampling == 1 && !doubleClick){
         if(maxZoomReached){
             int newLeft = r.left();

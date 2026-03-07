@@ -59,11 +59,6 @@ void NCSFile::init()
 	nRecords = (after-before)/(sizeof(recordHeader)+sizeof(recordData));
 	if ( fmod((float)after-before,(float)nRecords) != 0 ) nRecords++;
 
-/*	// Start from record number -1, i.e. read first record and move t by -recordDuration
-	seekg(before,ios::beg);
-	readRecord();
-	t = t - recordDuration;
-	gap = 0;*/
 
 	// Return to initial position in file
 	seekg(before,ios::beg);
