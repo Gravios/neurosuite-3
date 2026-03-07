@@ -98,7 +98,6 @@ void BaseFrame::mousePressEvent(QMouseEvent* e){
             else
                 firstClick = QPoint(e->position().toPoint().x() + 8 - Xborder,e->position().toPoint().y()+4 - Yborder);
 */
-            //qDebug()<<" firstClick"<<firstClick;
             //Construct the rubber starting on the selected point (width = 1 and not 0 because bottomRight = left+width-1, same trick for height ;0))
             //or using only the abscissa and the ordinate if the top of the window if the rubber band has to
             //drawn on whole the height of the window.
@@ -153,7 +152,6 @@ void BaseFrame::mouseReleaseEvent(QMouseEvent* e){
                 secondClick = QPoint(e->position().toPoint().x() - Xborder,e->position().toPoint().y() - Yborder);
             }
 
-            qDebug()<<" firstClick"<<firstClick<<" secondClick"<<secondClick;
             //If the distance between the first and second selected points are > 5:
             //the user wanted to draw a rectangle otherwise he intended to select a single point
             if((abs(secondClick.x() - firstClickOffset.x()) > 5) || (abs(secondClick.y() - firstClickOffset.y()) > 5)){

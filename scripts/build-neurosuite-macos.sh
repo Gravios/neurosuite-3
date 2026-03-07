@@ -11,7 +11,7 @@
 #   5. ndmanager           -- depends on libklustersshared
 #   6. ndmanager-plugins   -- standalone C/C++ (no Qt); optional FFmpeg/OpenMP
 #   7. klustakwik          -- standalone C/C++; optional OpenMP (no GPU on macOS)
-#   8. spikerealign        -- standalone C/C++; optional OpenMP (no GPU on macOS)
+#   8.        -- standalone C/C++; optional OpenMP (no GPU on macOS)
 #
 # GPU BACKENDS (CUDA / HIP / SYCL)
 #   All GPU backends are disabled by default on macOS:
@@ -50,7 +50,7 @@
 #                         vendored fallback that needs autoconf on macOS)
 #   --skip       PKG   Skip a package (repeat for multiple). Valid names:
 #                      nphys-data libklustersshared klusters neuroscope
-#                      ndmanager ndmanager-plugins klustakwik spikerealign
+#                      ndmanager ndmanager-plugins klustakwik
 #   --clean            Remove each package's build tree after install
 #   --clean-on-fail    Remove build tree only when a package fails
 #   -h, --help         Show this help
@@ -59,7 +59,7 @@
 #   ./build-neurosuite-macos.sh
 #   ./build-neurosuite-macos.sh --prefix /opt/neurosuite --with-ffmpeg --with-libsamplerate
 #   ./build-neurosuite-macos.sh --qt-dir /opt/homebrew/opt/qt/lib/cmake/Qt6
-#   ./build-neurosuite-macos.sh --skip klustakwik --skip spikerealign
+#   ./build-neurosuite-macos.sh --skip klustakwik --skip
 #   ./build-neurosuite-macos.sh --no-brew --no-openmp
 # =============================================================================
 
@@ -464,7 +464,7 @@ PREFIX_PATH_FLAG="-DCMAKE_PREFIX_PATH=${BREW_CMAKE_PREFIX}"
 log "Verifying source trees under ${SOURCE_BASE}/src …"
 MISSING=0
 for _pkg in nphys-data libklustersshared klusters neuroscope ndmanager \
-            ndmanager-plugins klustakwik spikerealign; do
+            ndmanager-plugins klustakwik; do
     if [[ ! -f "${SOURCE_BASE}/src/${_pkg}/CMakeLists.txt" ]]; then
         error "Source tree not found: ${SOURCE_BASE}/src/${_pkg}"
         MISSING=1
@@ -484,7 +484,7 @@ mkdir -p "${BUILD_BASE}"
 T_START=$(date +%s)
 
 # =============================================================================
-# 1/8  nphys-data  (no deps — just installs MIME types and icons)
+# 1/7  nphys-data  (no deps — just installs MIME types and icons)
 # Note: on macOS the hicolor icon paths are Linux conventions and are not
 # integrated with the OS, but the install is harmless.
 # =============================================================================
@@ -492,7 +492,7 @@ cmake_build "nphys-data" "${SOURCE_BASE}/src/nphys-data" \
     "${PREFIX_PATH_FLAG}"
 
 # =============================================================================
-# 2/8  libklustersshared
+# 2/7  libklustersshared
 # Deps: Qt6 (Core, Gui, Widgets), yaml-cpp
 # =============================================================================
 cmake_build "libklustersshared" "${SOURCE_BASE}/src/libklustersshared" \
@@ -500,7 +500,7 @@ cmake_build "libklustersshared" "${SOURCE_BASE}/src/libklustersshared" \
     "${QT_FLAG[@]+"${QT_FLAG[@]}"}"
 
 # =============================================================================
-# 3/8  klusters
+# 3/7  klusters
 # Deps: Qt6 (Core, Gui, Widgets, Xml, PrintSupport), libklustersshared
 # Optional: OpenMP (via libomp), GPU backends (disabled on macOS)
 # =============================================================================
@@ -511,7 +511,7 @@ cmake_build "klusters" "${SOURCE_BASE}/src/klusters" \
     "${GPU_FLAGS[@]}"
 
 # =============================================================================
-# 4/8  neuroscope
+# 4/7  neuroscope
 # Deps: Qt6 (Core, Gui, Widgets, Xml, PrintSupport), libklustersshared
 # =============================================================================
 cmake_build "neuroscope" "${SOURCE_BASE}/src/neuroscope" \
@@ -519,7 +519,7 @@ cmake_build "neuroscope" "${SOURCE_BASE}/src/neuroscope" \
     "${QT_FLAG[@]+"${QT_FLAG[@]}"}"
 
 # =============================================================================
-# 5/8  ndmanager
+# 5/7  ndmanager
 # Deps: Qt6 (Core, Gui, Widgets, Xml), libklustersshared
 # =============================================================================
 cmake_build "ndmanager" "${SOURCE_BASE}/src/ndmanager" \
@@ -527,7 +527,7 @@ cmake_build "ndmanager" "${SOURCE_BASE}/src/ndmanager" \
     "${QT_FLAG[@]+"${QT_FLAG[@]}"}"
 
 # =============================================================================
-# 6/8  ndmanager-plugins
+# 6/7  ndmanager-plugins
 # Deps: LibXml2 (required), GSL (required), pkg-config (required)
 # Optional: OpenMP, libsamplerate (brew install --with-libsamplerate),
 #           FFmpeg (brew install --with-ffmpeg), CUDA (disabled)
@@ -539,21 +539,12 @@ cmake_build "ndmanager-plugins" "${SOURCE_BASE}/src/ndmanager-plugins" \
     -DUSE_CUDA=OFF
 
 # =============================================================================
-# 7/8  klustakwik
+# 7/7  klustakwik
 # Deps: OpenMP (optional). GPU backends disabled on macOS.
 # NOTE: The CMakeLists will auto-select icpx if oneAPI is installed and
 #       USE_SYCL is not explicitly OFF. We pass USE_SYCL=OFF to prevent that.
 # =============================================================================
 cmake_build "klustakwik" "${SOURCE_BASE}/src/klustakwik" \
-    "${PREFIX_PATH_FLAG}" \
-    "${OMP_FLAGS[@]+"${OMP_FLAGS[@]}"}" \
-    "${GPU_FLAGS[@]}"
-
-# =============================================================================
-# 8/8  spikerealign
-# Deps: OpenMP (optional). GPU backends disabled on macOS.
-# =============================================================================
-cmake_build "spikerealign" "${SOURCE_BASE}/src/spikerealign" \
     "${PREFIX_PATH_FLAG}" \
     "${OMP_FLAGS[@]+"${OMP_FLAGS[@]}"}" \
     "${GPU_FLAGS[@]}"

@@ -16,6 +16,7 @@
  ***************************************************************************/
 //Application specific includes.
 #include "prefgeneral.h"
+#include <QPushButton>
 
 //QT includes
 #include <QIcon>
@@ -26,9 +27,9 @@
 PrefGeneral::PrefGeneral(QWidget *parent )
     : PrefGeneralLayout(parent)
 {
-    connect(crashRecoveryCheckBox,SIGNAL(stateChanged(int)),this,SLOT(updateCrashRecoveryTimeInterval(int)));
-    connect(reclusteringExecutableButton,SIGNAL(clicked()),this,SLOT(updateReclusteringExecutable()));
-    connect(realignExecutableButton,SIGNAL(clicked()),this,SLOT(updateRealignExecutable()));
+    connect(crashRecoveryCheckBox,&QCheckBox::stateChanged,this,&PrefGeneral::updateCrashRecoveryTimeInterval);
+    connect(reclusteringExecutableButton, &QAbstractButton::clicked, this, &PrefGeneral::updateReclusteringExecutable);
+    connect(realignExecutableButton, &QAbstractButton::clicked, this, &PrefGeneral::updateRealignExecutable);
 
     reclusteringExecutableButton->setIcon(QIcon(":/shared-icons/folder-open"));
     realignExecutableButton->setIcon(QIcon(":/shared-icons/folder-open"));

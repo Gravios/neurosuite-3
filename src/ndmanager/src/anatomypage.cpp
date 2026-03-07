@@ -19,6 +19,8 @@
  ***************************************************************************/
 //include files for the application
 #include "anatomypage.h"
+#include <QTableWidget>
+#include <QPushButton>
 
 // include files for QT
 #include <algorithm>
@@ -41,15 +43,15 @@ AnatomyPage::AnatomyPage(QWidget* parent)
     //install a filter on the groupTable in order to validate the entries
     groupTable->installEventFilter(this);
 
-    connect(addGroupButton,SIGNAL(clicked()),this,SLOT(addGroup()));
-    connect(removeGroupButton,SIGNAL(clicked()),this,SLOT(removeGroup()));
-    connect(groupTable, SIGNAL(currentCellChanged(int,int,int,int)),this, SLOT(slotValidate()));
-    connect(groupTable, SIGNAL(cellChanged(int,int)),this, SLOT(groupChanged(int,int)));
-    connect(groupTable, SIGNAL(cellPressed(int,int)),this, SLOT(slotValidate()));
-    connect(groupTable, SIGNAL(cellClicked(int,int)),this,SLOT(slotValidate()));
-    connect(groupTable, SIGNAL(cellDoubleClicked(int,int)),this,SLOT(slotValidate()));
+    connect(addGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::addGroup);
+    connect(removeGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::removeGroup);
+    connect(groupTable, &QTableWidget::currentCellChanged, this, &AnatomyPage::slotValidate);
+    connect(groupTable, &QTableWidget::cellChanged, this, &AnatomyPage::groupChanged);
+    connect(groupTable, &QTableWidget::cellPressed, this, &AnatomyPage::slotValidate);
+    connect(groupTable, &QTableWidget::cellClicked, this, &AnatomyPage::slotValidate);
+    connect(groupTable, &QTableWidget::cellDoubleClicked, this, &AnatomyPage::slotValidate);
 
-    connect(attributesTable, SIGNAL(cellChanged(int,int)),this, SLOT(attributeChanged(int,int)));
+    connect(attributesTable, &QTableWidget::cellChanged, this, &AnatomyPage::attributeChanged);
 }
 
 AnatomyPage::~AnatomyPage(){}

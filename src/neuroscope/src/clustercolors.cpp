@@ -22,7 +22,6 @@
 ClusterColors::ClusterColors():ItemColors(){}
 
 ClusterColors::~ClusterColors(){
-    qDebug() << "~ClusterColors()";
 }
 
 ClusterColors::ClusterColors(const ClusterColors& origin){

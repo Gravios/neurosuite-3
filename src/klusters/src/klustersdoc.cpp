@@ -575,7 +575,7 @@ void KlustersDoc::customEvent(QEvent *event){
             else
                 //upload the temp file, this can not be done asynchronously.
                 //wait savingInterval before starting the autoSaveThread again.
-                QTimer::singleShot(savingInterval*60000,this, SLOT(launchAutoSave()));
+                QTimer::singleShot(savingInterval*60000, this, &KlustersDoc::launchAutoSave);
         }
     }
 }
@@ -590,8 +590,8 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     const QString cluWritePath = isSaveAs ? saveUrl : m_pendingCluPath;
 
     //Open the clu file in write mode
-    FILE* cluFile = fopen(cluWritePath.toLatin1(),"wb");
-    if(cluFile == NULL){
+    FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
+    if(cluFile == nullptr){
         return OPEN_ERROR;
     }
 
@@ -2546,11 +2546,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             int32_t hdr[5] = {};
             bool ok = (fread(hdr, sizeof(int32_t), 5, fp) == 5);
             if (ok) {
-                pca.nCh      = (int)hdr[0];
-                pca.data2use = (int)hdr[1];
-                pca.nComp    = (int)hdr[2];
+                pca.nCh      = static_cast<int>(hdr[0]);
+                pca.data2use = static_cast<int>(hdr[1]);
+                pca.nComp    = static_cast<int>(hdr[2]);
                 pca.centered = (hdr[3] != 0);
-                pca.recShift = (int)hdr[4];
+                pca.recShift = static_cast<int>(hdr[4]);
                 if (pca.nCh<=0    || pca.nCh>64       ||
                     pca.data2use<=0 || pca.data2use>4096 ||
                     pca.nComp<=0   || pca.nComp>64       ||

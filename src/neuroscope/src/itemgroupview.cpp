@@ -53,7 +53,6 @@ ItemGroupView::ItemGroupView(const QColor& backgroundColor,QWidget* parent)
 
 ItemGroupView::~ItemGroupView()
 {
-    qDebug()<<"in ~ItemGroupView()";
 }
 
 void ItemGroupView::setIconView(ItemIconView *view){
@@ -75,7 +74,6 @@ void ItemGroupView::reAdjustSize(int parentWidth,int labelSize){
         iconView->setNewWidth(viewfuturWidth);
 
         /*if(iconView->size().height() != 1 && height() != iconView->size().height()) {
-            qDebug() << "setFixedHeight" << iconView->size().height();
             setFixedHeight(iconView->size().height());
         }*/
     }

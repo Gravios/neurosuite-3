@@ -88,7 +88,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
 
     setAttribute(Qt::WA_DeleteOnClose, true);
     //Create the mainDock
-    mainDock = new QDockWidget(tr(doc.documentName().toLatin1()));
+    mainDock = new QDockWidget(doc.documentName());
     mainDock->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     mainDock->setAttribute(Qt::WA_DeleteOnClose, true);
     //If the type of view is a not base one, call the function to call the complex views.
@@ -232,10 +232,10 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
 
 
     //Create and add the waveforms view
-    QDockWidget* waveforms = new QDockWidget(tr(doc.documentName().toLatin1()));
+    QDockWidget* waveforms = new QDockWidget(doc.documentName());
     waveforms->setAttribute(Qt::WA_DeleteOnClose, true);
     waveforms->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-    //createDockWidget( "WaveForm", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+    //createDockWidget( "WaveForm", QPixmap(), 0L, doc.documentName(), doc.documentName());
     waveforms->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,waveforms,
                                           inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));//assign the widget
     ViewWidget* waveformView = dynamic_cast<ViewWidget*>(waveforms->widget());
@@ -248,10 +248,10 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     setConnections(WAVEFORMS,waveformView,waveforms);
 
     //Create and add the correlations view
-    QDockWidget* correlations = new QDockWidget(tr(doc.documentName().toLatin1()));
+    QDockWidget* correlations = new QDockWidget(doc.documentName());
     correlations->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     correlations->setAttribute(Qt::WA_DeleteOnClose, true);
-            //createDockWidget( "Correlation", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+            //createDockWidget( "Correlation", QPixmap(), 0L, doc.documentName(), doc.documentName());
     correlations->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,correlations,correlationScale,binSize,correlogramTimeFrame,shoulderLine));//assign the widget
     ViewWidget* correlationView = dynamic_cast<ViewWidget*>(correlations->widget());
     viewList.append(correlationView);
@@ -268,10 +268,10 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     createOverview(backgroundColor,statusBar,timeInterval,maxAmplitude,positions);
 
     //Create and add the errorMatrixView beneath the clusterView (mainDock)
-    QDockWidget* errorMatrix = new QDockWidget(tr(doc.documentName().toLatin1()));
+    QDockWidget* errorMatrix = new QDockWidget(doc.documentName());
     errorMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
     errorMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-    //createDockWidget("ErrorMatrix", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+    //createDockWidget("ErrorMatrix", QPixmap(), 0L, doc.documentName(), doc.documentName());
     errorMatrix->setWidget(new ErrorMatrixView(doc,*this,backgroundColor,statusBar,errorMatrix));//assign the widget
     ViewWidget* errorMatrixView = dynamic_cast<ViewWidget*>(errorMatrix->widget());
     viewList.append(errorMatrixView);
@@ -390,7 +390,7 @@ void  KlustersView::clusterDockClosed(QObject *clusterView){
             dimensionY = dynamic_cast<ClusterView*>(viewWidget)->getDimensionY();
             mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
             QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
-            connect(this,SIGNAL(updatedDimensions(int,int)),viewWidget, SLOT(updatedDimensions(int,int)));
+            connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
             break;
         }
     }
@@ -478,7 +478,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                         dimensionY = dynamic_cast<ClusterView*>(viewWidget)->getDimensionY();
                         mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
                         QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
-                        connect(this,SIGNAL(updatedDimensions(int,int)),viewWidget, SLOT(updatedDimensions(int,int)));
+                        connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
                         return QWidget::eventFilter(object,event);
                     }
                 }
@@ -518,7 +518,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                     dimensionY = dynamic_cast<ClusterView*>(widget)->getDimensionY();
                     mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
                     QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
-                    connect(this,SIGNAL(updatedDimensions(int,int)),widget, SLOT(updatedDimensions(int,int)));
+                    connect(this,&KlustersView::updatedDimensions,widget, &ViewWidget::updatedDimensions);
                     bool inProcess = dynamic_cast<ClusterView*>(widget)->isASelectionInProcess();
                     if(inProcess) return QWidget::eventFilter(object,event);
                 }
@@ -662,10 +662,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereClusterView = true;
         count = QString::number(viewCounter["ClusterView"]);
 
-        clusters = new QDockWidget(tr(doc.documentName().toLatin1()));
+        clusters = new QDockWidget(doc.documentName());
         clusters->setAttribute(Qt::WA_DeleteOnClose, true);
         clusters->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-                //createDockWidget(count.prepend("ClusterView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("ClusterView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         clusters->setWidget(new ClusterView(doc,*this,backgroundColor,timeInterval,statusBar,clusters));
         clusterView = static_cast<ViewWidget*>(clusters->widget());
         viewList.append(clusterView);
@@ -703,10 +703,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereWaveformView = true;
         count = QString::number(viewCounter["WaveformView"]);
 
-        waveforms = new QDockWidget(tr(doc.documentName().toLatin1()));
+        waveforms = new QDockWidget(doc.documentName());
         waveforms->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         waveforms->setAttribute(Qt::WA_DeleteOnClose, true);
-                //createDockWidget(count.prepend("WaveformView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("WaveformView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         waveforms->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,waveforms,
                                               inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));//assign the widget
         waveformView = dynamic_cast<ViewWidget*>(waveforms->widget());
@@ -726,11 +726,11 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereCorrelationView = true;
         count = QString::number(viewCounter["CorrelationView"]);
 
-        correlations = new QDockWidget(tr(doc.documentName().toLatin1()));
+        correlations = new QDockWidget(doc.documentName());
         correlations->setAttribute(Qt::WA_DeleteOnClose, true);
         correlations->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
 
-                //createDockWidget(count.prepend("CorrelationView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("CorrelationView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         correlations->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,correlations,correlationScale,binSize,correlogramTimeFrame,shoulderLine));//assign the widget
         correlationView = dynamic_cast<ViewWidget*>(correlations->widget());
         viewList.append(correlationView);
@@ -753,10 +753,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         newViewType = true;
         isThereErrorMatrixView = true;
 
-        errorMatrix = new QDockWidget(tr(doc.documentName().toLatin1()));
+        errorMatrix = new QDockWidget(doc.documentName());
         errorMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         errorMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-        //createDockWidget("ErrorMatrix", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+        //createDockWidget("ErrorMatrix", QPixmap(), 0L, doc.documentName(), doc.documentName());
         errorMatrix->setWidget(new ErrorMatrixView(doc,*this,backgroundColor,statusBar,errorMatrix));//assign the widget
         errorMatrixView = dynamic_cast<ViewWidget*>(errorMatrix->widget());
         viewList.append(errorMatrixView);
@@ -776,10 +776,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereTraceView = true;
         count = QString::number(viewCounter["TraceView"]);
 
-        traces = new QDockWidget(tr(doc.documentName().toLatin1()));
+        traces = new QDockWidget(doc.documentName());
         traces->setAttribute(Qt::WA_DeleteOnClose, true);
         traces->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-                //createDockWidget(count.prepend("TraceView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("TraceView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         //the settings are : greyScale, no vertical lines nor rasters and waveforms, no labels displayed, no channel skipped.
         traces->setWidget(new TraceWidget(startingTime,duration,true,*doc.getTraceProvider(),false,false,false,
                                           true,labelsDisplay,doc.getCurrentChannels(),doc.getGain(),doc.getAcquisitionGain(),doc.channelColors(),
@@ -1506,8 +1506,8 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this,SIGNAL(decreaseAllAmplitude()),view,SLOT(decreaseAllChannelsAmplitude()));
         connect(view,SIGNAL(updateStartAndDuration(long,long)),this, SLOT(setStartAndDuration(long,long)));
         connect(this,SIGNAL(showLabels(bool)),view, SLOT(showLabels(bool)));
-        connect(this,SIGNAL(nextCluster()),traceWidget,SLOT(showNextCluster()));
-        connect(this,SIGNAL(previousCluster()),traceWidget,SLOT(showPreviousCluster()));
+        connect(this,&KlustersView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
+        connect(this,&KlustersView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
 
         //Connect the TraceView to possible clusterViews
         if(isThereClusterView){

@@ -21,6 +21,7 @@
 #include "channelpalette.h"
 #include <klustersshared/channelcolors.h>
 #include "channelmimedata.h"
+#include "channeliconview.h"
 
 // include files for Qt
 #include <QVariant>
@@ -139,7 +140,7 @@ void ChannelPalette::paintEvent ( QPaintEvent*){
     //(the mouse is still in the iconView area). To make sure the groups are suppressed, isGroupToRemove
     //is set to inform that empty groups have to be suppressed and a repaint of the palette is asked.
     if(isGroupToRemove){
-        QTimer::singleShot(100, this, SLOT(deleteEmptyGroups()));
+        QTimer::singleShot(100, this, &ChannelPalette::deleteEmptyGroups);
         //deleteEmptyGroups();
         isGroupToRemove = false;
         //Inform the application that the groups have been modified
@@ -725,7 +726,6 @@ void ChannelPalette::changeColor(QListWidgetItem* item,bool single){
 
     //Get the channelColor associated with the item
     const QColor oldColor = channelColors->color(id);
-    qDebug()<<" void ChannelPalette::changeColor(QListWidgetItem* item,bool single){";
     QColor color = QColorDialog::getColor(oldColor,0);
     if(color.isValid()){
         if(single){
@@ -874,27 +874,28 @@ void ChannelPalette::createGroup(int id){
     spaceWidget->show();
     verticalContainer->setStretchFactor(spaceWidget,2);
 
-    connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
-    connect(iconView,SIGNAL(mousePressMiddleButton(QListWidgetItem*)),this, SLOT(slotMousePressMiddleButton(QListWidgetItem*)));
-    connect(this,SIGNAL(paletteResized(int,int)),group,SLOT(reAdjustSize(int,int)));
-    connect(iconView,SIGNAL(channelsMoved(QString,QListWidgetItem*)),this, SLOT(slotChannelsMoved(QString,QListWidgetItem*)));
-    connect(iconView,SIGNAL(channelsMoved(QList<int>,QString,QListWidgetItem*)),this, SLOT(slotChannelsMoved(QList<int>,QString,QListWidgetItem*)));
+    connect(iconView, &QListWidget::itemSelectionChanged, this, &ChannelPalette::slotClickRedraw);
+    connect(iconView,&ChannelIconView::mousePressMiddleButton,this, &ChannelPalette::slotMousePressMiddleButton);
+    connect(this,&ChannelPalette::paletteResized,group,&ChannelGroupView::reAdjustSize);
+    connect(iconView, static_cast<void(ChannelIconView::*)(const QString&,QListWidgetItem*)>(&ChannelIconView::channelsMoved),
+        this, static_cast<void(ChannelPalette::*)(const QString&,QListWidgetItem*)>(&ChannelPalette::slotChannelsMoved));
+    connect(iconView, static_cast<void(ChannelIconView::*)(const QList<int>&,const QString&,QListWidgetItem*)>(&ChannelIconView::channelsMoved),
+        this, static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,QListWidgetItem*)>(&ChannelPalette::slotChannelsMoved));
 
-    connect(label,SIGNAL(middleClickOnLabel(QString)),this, SLOT(slotMidButtonPressed(QString)));
-    connect(label,SIGNAL(leftClickOnLabel(QString)),this, SLOT(slotMousePressed(QString)));
+    connect(label,&GroupLabel::middleClickOnLabel,this, &ChannelPalette::slotMidButtonPressed);
+    connect(label,&GroupLabel::leftClickOnLabel,this, &ChannelPalette::slotMousePressed);
 
-    connect(this,SIGNAL(setDragAndDrop(bool)),iconView, SLOT(setDragAndDrop(bool)));
-    connect(this,SIGNAL(setDragAndDrop(bool)),group, SLOT(setDragAndDrop(bool)));
-    connect(this,SIGNAL(setDragAndDrop(bool)),spaceWidget, SLOT(setDragAndDrop(bool)));
-    connect(iconView,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
-    connect(group,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
-    connect(spaceWidget,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
-    connect(group,SIGNAL(dragObjectMoved(QPoint)),this, SLOT(slotDragLabeltMoved(QPoint)));
+    connect(this,&ChannelPalette::setDragAndDrop,iconView, &ChannelIconView::setDragAndDrop);
+    connect(this,&ChannelPalette::setDragAndDrop,group, &ChannelGroupView::setDragAndDrop);
+    connect(this,&ChannelPalette::setDragAndDrop,spaceWidget, &SpaceWidget::setDragAndDrop);
+    connect(iconView,&ChannelIconView::dropLabel,this, &ChannelPalette::groupToMove);
+    connect(group,&ChannelGroupView::dropLabel,this, &ChannelPalette::groupToMove);
+    connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
+    connect(group,&ChannelGroupView::dragObjectMoved,this, &ChannelPalette::slotDragLabeltMoved);
 
-    connect(iconView, SIGNAL(moveListItem(QList<int>,QString,QString,int, bool)),
-            SLOT(slotMoveListItem(QList<int>,QString,QString,int, bool)));
+    connect(iconView, &ChannelIconView::moveListItem, this, &ChannelPalette::slotMoveListItem);
 
-    connect(iconView, SIGNAL(rowInsered()), SLOT(slotRowInsered()));
+    connect(iconView, &ChannelIconView::rowInsered, this, &ChannelPalette::slotRowInsered);
 
 
     if(id != 0 && id != -1 && (iconviewDict.contains("0")  || iconviewDict.contains("-1") ))
@@ -1054,8 +1055,8 @@ void ChannelPalette::groupToMove(int sourceId,int targetId,int start, int destin
     delete spaceWidget;
     spaceWidget = new SpaceWidget(this,edit);
     verticalContainer->addWidget(spaceWidget);
-    connect(this,SIGNAL(setDragAndDrop(bool)),spaceWidget, SLOT(setDragAndDrop(bool)));
-    connect(spaceWidget,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
+    connect(this,&ChannelPalette::setDragAndDrop,spaceWidget, &SpaceWidget::setDragAndDrop);
+    connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
     spaceWidget->show();
     verticalContainer->setStretchFactor(spaceWidget,2);
 
@@ -1368,7 +1369,6 @@ void ChannelPalette::moveChannels(const QList<int>& channelIds, const QString &s
                 channelsShowHideStatus[*iterator] = false;
             QPainter painter;
             drawItem(painter,&pixmap,color,channelsShowHideStatus[*iterator],channelsSkipStatus[*iterator]);
-            qDebug()<<" index "<<index;
             if (index != -1) {
                 ChannelIconViewItem *item = new ChannelIconViewItem(QIcon(pixmap),QString::number(*iterator));
                 targetIconView->insertItem(index, item);
@@ -1422,7 +1422,6 @@ void ChannelPalette::moveChannels(const QList<int>& channelIds, const QString &s
 }
 
 void ChannelPalette::slotChannelsMoved(const QString &targetGroup, QListWidgetItem* after){
-    qDebug()<<" void ChannelPalette::slotChannelsMoved(const QString &targetGroup, QListWidgetItem* after){"<<targetGroup<<" after "<<after;
     //If the channels have been moved to the trash inform the other palette.
     QString afterId;
     bool beforeFirst = false;
@@ -1600,12 +1599,9 @@ void ChannelPalette::trashChannelsMovedAround(const QList<int>& channelIds, cons
 void ChannelPalette::moveChannels(const QList<int>& channelIds,const QString& sourceGroup,QListWidgetItem* after){
     QList<int>::const_iterator iterator;
     QPainter painter;
-    qDebug()<<" sourceGroup"<<sourceGroup<<" channelIds"<<channelIds<<" after :"<<after;
 
     ChannelIconView* iconView = iconviewDict[sourceGroup];
-    qDebug()<<" iconView "<<iconView;
 
-    qDebug()<<" void ChannelPalette::moveChannels(const QList<int>& channelIds "<<after;
     //If the items have to be moved before the first item, insert them after the first item
     //and then move the first item after the others
     bool moveFirst = false;
@@ -1624,7 +1620,6 @@ void ChannelPalette::moveChannels(const QList<int>& channelIds,const QString& so
             QPixmap pixmap(14,14);
             QColor color = channelColors->color(*iterator);
             drawItem(painter,&pixmap,color,channelsShowHideStatus[*iterator],channelsSkipStatus[*iterator]);
-            qDebug()<<" afterIndex"<<afterIndex;
             after = new ChannelIconViewItem(QIcon(pixmap),QString::number(*iterator));
             iconView->insertItem(afterIndex,after);
             afterIndex++;
@@ -1684,7 +1679,6 @@ void ChannelPalette::discardChannels()
 }
 
 void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard){
-    qDebug()<<" void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard){ "<<objectName()<<" channelsToDiscard "<<channelsToDiscard;
     //Get the destination group color to later update the group color of the moved channels, default is blue
     QColor groupColor;
     groupColor.setHsv(210,255,255);
@@ -1794,7 +1788,6 @@ void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard){
 }
 
 void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard,const QString& afterId,bool beforeFirst){
-    qDebug()<<" void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard,const QString& afterId,bool beforeFirst){"<<this<<" channelsToDiscard"<<channelsToDiscard<<" afterid"<<afterId;
     QListWidgetItem* after = 0;
     ChannelIconView* trash = iconviewDict["0"];
     //If the items have to be moved before the first item, insert them after the first item
@@ -1808,7 +1801,6 @@ void ChannelPalette::discardChannels(const QList<int>& channelsToDiscard,const Q
         if(!lstItem.isEmpty()) {
             after = lstItem.first();
         }
-        qDebug() <<" after "<<after;
     }
 
     //Get the destination group color to later update the group color of the moved channels, default is blue
@@ -1908,7 +1900,6 @@ void ChannelPalette::setEditMode(bool edition){
     if(edition)
         channelsShowHideStatus.clear();
 
-    qDebug()<<" channelsShowHideStatus"<<channelsShowHideStatus;
 
     //Update the item icons
     QPainter painter;
@@ -1927,7 +1918,6 @@ void ChannelPalette::setEditMode(bool edition){
                 channelsShowHideStatus.insert(iterator.key(),selected);
             } else {
                 selected = channelsShowHideStatus[iterator.key()];
-                qDebug()<<" iterator.key()"<<iterator.key()<<" selected"<<selected;
             }
             QIcon icon = item->icon();
             QPixmap pixmap(icon.pixmap(QSize(14,14)).size());
@@ -1940,7 +1930,6 @@ void ChannelPalette::setEditMode(bool edition){
     }
 
     selectChannels(selectedIds);
-    qDebug()<<"void ChannelPalette::setEditMode "<<this<<" edition"<<edition<<" selectedIds"<<selectedIds;
 
     //reset isInSelectItems to false to enable again the the emission of signals due to selectionChange
     isInSelectItems = false;
@@ -2003,8 +1992,8 @@ void ChannelPalette::moveTrashesToBottom(){
     delete spaceWidget;
     spaceWidget = new SpaceWidget(this,edit);
     verticalContainer->addWidget(spaceWidget);
-    connect(this,SIGNAL(setDragAndDrop(bool)),spaceWidget, SLOT(setDragAndDrop(bool)));
-    connect(spaceWidget,SIGNAL(dropLabel(int,int,int,int)),this, SLOT(groupToMove(int,int,int,int)));
+    connect(this,&ChannelPalette::setDragAndDrop,spaceWidget, &SpaceWidget::setDragAndDrop);
+    connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
     spaceWidget->show();
     verticalContainer->setStretchFactor(spaceWidget,2);
 }
@@ -2189,7 +2178,7 @@ void ChannelPalette::slotMoveListItem(const QList<int> &items, const QString& so
     emit groupModified();
 
     if (moveAll) {
-        QTimer::singleShot(100, this, SLOT(deleteEmptyGroups()));
+        QTimer::singleShot(100, this, &ChannelPalette::deleteEmptyGroups);
     }
 }
 

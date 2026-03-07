@@ -1,0 +1,20 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/ndmanager/src/spikepage.cpp'
+Diagnostics:
+  - DiagnosticName:  string-compare
+    DiagnosticMessage:
+      Message:         'result of comparison against a string literal is unspecified (use an explicit string comparison function instead)'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/spikepage.cpp'
+      FileOffset:      3408
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  string-compare
+    DiagnosticMessage:
+      Message:         'result of comparison against a string literal is unspecified (use an explicit string comparison function instead)'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/spikepage.cpp'
+      FileOffset:      8180
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...

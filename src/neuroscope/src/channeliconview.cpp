@@ -73,7 +73,7 @@ ChannelIconView::ChannelIconView(const QColor& backgroundColor, int gridX, int g
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setSizePolicy(QSizePolicy::Minimum,QSizePolicy::Minimum);
-    connect(model(), SIGNAL(rowsInserted(QModelIndex, int,int)), this, SIGNAL(rowInsered()));
+    connect(model(), &QAbstractItemModel::rowsInserted, this, &ChannelIconView::rowInsered);
 }
 
 
@@ -147,7 +147,6 @@ bool ChannelIconView::dropMimeData(int index, const QMimeData * mimeData, Qt::Dr
     if (data.isEmpty())
         return false;
 
-    qDebug()<<" index "<<index;
 
     const QString sourceGroupName = QString::fromUtf8(mimeData->data("application/x-channeliconview-name"));
     QDataStream stream(data);
@@ -161,7 +160,6 @@ bool ChannelIconView::dropMimeData(int index, const QMimeData * mimeData, Qt::Dr
             ChannelIconViewItem *item = new ChannelIconViewItem(this);
             stream >> *item;
             channelIds.append(item->text().toInt());
-            qDebug()<<" channelIds"<<channelIds;
             delete item;
         }
         if (!channelIds.isEmpty()) {

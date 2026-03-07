@@ -16,6 +16,8 @@
  ***************************************************************************/
 //Application specific includes.
 #include "positionproperties.h"
+#include <QPushButton>
+#include <QComboBox>
 
 //QT includes
 #include <QIcon>
@@ -31,10 +33,10 @@ PositionProperties::PositionProperties(QWidget *parent ) : PositionPropertiesLay
     widthLineEdit->setValidator(&intValidator);
     heightLineEdit->setValidator(&intValidator);
 
-    connect(backgroundButton,SIGNAL(clicked()),this,SLOT(updateBackgroundImage()));
-    connect(backgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(updateBackgroundImage(QString)));
-    connect(rotateComboBox,SIGNAL(activated(int)),this,SLOT(updateDisplayedImage()));
-    connect(filpComboBox,SIGNAL(activated(int)),this,SLOT(updateDisplayedImage()));
+    connect(backgroundButton, &QAbstractButton::clicked, this, static_cast<void(PositionProperties::*)()>(&PositionProperties::updateBackgroundImage));
+    connect(backgroundLineEdit, &QLineEdit::textChanged, this, static_cast<void(PositionProperties::*)(const QString&)>(&PositionProperties::updateBackgroundImage));
+    connect(rotateComboBox, &QComboBox::activated, this, &PositionProperties::updateDisplayedImage);
+    connect(filpComboBox, &QComboBox::activated, this, &PositionProperties::updateDisplayedImage);
 
     //Set an icon on the backgroundButton button
 

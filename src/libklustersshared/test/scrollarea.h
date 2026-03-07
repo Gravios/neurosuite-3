@@ -63,7 +63,7 @@ protected:
         if(e->button() == Qt::LeftButton && (e->modifiers() & Qt::ControlModifier) && (e->modifiers() & Qt::AltModifier)){
             emit leftClickOnLabel(parent()->objectName(),false,true);
         }
-        if(e->button() == Qt::MidButton){
+        if(e->button() == Qt::MiddleButton){
             emit middleClickOnLabel(parent()->objectName());
         }
     }

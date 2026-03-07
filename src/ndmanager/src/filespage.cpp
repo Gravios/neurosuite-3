@@ -19,6 +19,7 @@
  ***************************************************************************/
 //include files for the application
 #include "filespage.h"
+#include <QLineEdit>
 
 // include files for QT
 #include <QTabWidget> 
@@ -66,8 +67,8 @@ FilesPage::FilesPage(QWidget* parent)
     QSpacerItem* space3 = new QSpacerItem(29,16,QSizePolicy::Fixed,QSizePolicy::Minimum);
     gridLayout->addItem(space3,0,2);
 
-    connect(addButton,SIGNAL(clicked()),this,SLOT(addNewFile()));
-    connect(removeButton,SIGNAL(clicked()),this,SLOT(removeFile()));
+    connect(addButton, &QAbstractButton::clicked, this, &FilesPage::addNewFile);
+    connect(removeButton, &QAbstractButton::clicked, this, &FilesPage::removeFile);
 }
 
 FilesPage::~FilesPage()
@@ -80,7 +81,7 @@ void FilesPage::addNewFile(){
     tabWidget->addTab(filePage,tr("New File"));
 
     //set the connection
-    connect(filePage,SIGNAL(extensionChanged(QString,FilePage*)),this,SLOT(changeCaption(QString,FilePage*)));
+    connect(filePage, &FilePage::extensionChanged, this, &FilesPage::changeCaption);
     filePage->initialisationOver();
 
     //make sure to show the content of the new page
@@ -92,7 +93,7 @@ FilePage* FilesPage::addFile(const QString &title){
     tabWidget->addTab(filePage,title);
 
     //set the connection
-    connect(filePage,SIGNAL(extensionChanged(QString,FilePage*)),this,SLOT(changeCaption(QString,FilePage*)));
+    connect(filePage, &FilePage::extensionChanged, this, &FilesPage::changeCaption);
 
     return filePage;
 }

@@ -1,0 +1,12 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/ndmanager/src/channeloffsetspage.cpp'
+Diagnostics:
+  - DiagnosticName:  unused-value
+    DiagnosticMessage:
+      Message:         left operand of comma operator has no effect
+      FilePath:        '/home/graboski/software/neurosuite-3/src/ndmanager/src/channeloffsetspage.cpp'
+      FileOffset:      2545
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...

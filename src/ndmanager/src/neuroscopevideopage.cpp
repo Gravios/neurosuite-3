@@ -19,6 +19,9 @@
  ***************************************************************************/
 //include files for the application
 #include "neuroscopevideopage.h"
+#include <QLineEdit>
+#include <QComboBox>
+#include <QPushButton>
 
 //QT includes
 #include <QIcon>
@@ -28,15 +31,15 @@
 NeuroscopeVideoPage::NeuroscopeVideoPage(QWidget* parent)
     : NeuroscopeVideoLayout(parent),height(100),width(100),modified(false),isInit(true){
 
-    connect(backgroundButton,SIGNAL(clicked()),this,SLOT(updateBackgroundImage()));
-    connect(backgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(updateBackgroundImage(QString)));
-    connect(rotateComboBox,SIGNAL(activated(int)),this,SLOT(updateDisplayedImage()));
-    connect(filpComboBox,SIGNAL(activated(int)),this,SLOT(updateDisplayedImage()));
+    connect(backgroundButton, &QAbstractButton::clicked, this, static_cast<void(NeuroscopeVideoPage::*)()>(&NeuroscopeVideoPage::updateBackgroundImage));
+    connect(backgroundLineEdit, &QLineEdit::textChanged, this, static_cast<void(NeuroscopeVideoPage::*)(const QString&)>(&NeuroscopeVideoPage::updateBackgroundImage));
+    connect(rotateComboBox, &QComboBox::activated, this, &NeuroscopeVideoPage::updateDisplayedImage);
+    connect(filpComboBox, &QComboBox::activated, this, &NeuroscopeVideoPage::updateDisplayedImage);
 
-    connect(backgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(rotateComboBox,SIGNAL(activated(int)),this,SLOT(propertyModified()));
-    connect(filpComboBox,SIGNAL(activated(int)),this,SLOT(propertyModified()));
-    connect(checkBoxBackground,SIGNAL(clicked()),this,SLOT(propertyModified()));
+    connect(backgroundLineEdit, &QLineEdit::textChanged, this, &NeuroscopeVideoPage::propertyModified);
+    connect(rotateComboBox, &QComboBox::activated, this, &NeuroscopeVideoPage::propertyModified);
+    connect(filpComboBox, &QComboBox::activated, this, &NeuroscopeVideoPage::propertyModified);
+    connect(checkBoxBackground, &QAbstractButton::clicked, this, &NeuroscopeVideoPage::propertyModified);
 
     //Set an icon on the backgroundButton button
 

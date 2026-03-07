@@ -425,7 +425,6 @@ void ClustersProvider::retrieveData(long startTime,long endTime,QObject* initiat
     }
 
 
-    qDebug()<<" in retrieveData, count " <<count<<" startInRecordingUnits " <<startInRecordingUnits<<" endInRecordingUnits " <<endInRecordingUnits<<" endTime " <<endTime;
 
 
     //Store the data in a array of the good size
@@ -446,7 +445,6 @@ void ClustersProvider::requestNextClusterData(long startTime, long timeFrame, co
     //Compute the start time for the spike look up
     startTime = initialStartTime + static_cast<long>(timeFrame * clusterPosition);
 
-    qDebug()<<"timeFrame " <<timeFrame<<" clusterPosition " <<clusterPosition<<" initialStartTime " <<initialStartTime<<" startTime " <<startTime<<" startTime " <<startTime<<" startTimeInRecordingUnits " <<startTimeInRecordingUnits;
 
     //first look up for the index corresponding to the startTime and then for the first valid spike (contained in selectedIds)
     //after that time
@@ -525,7 +523,6 @@ void ClustersProvider::requestNextClusterData(long startTime, long timeFrame, co
         //look up for the startIndex index by index
         time = clusters(2,newStartIndex);
 
-        qDebug()<<"newStartIndex " <<newStartIndex<<" time " <<time<<" nbSpikes " <<nbSpikes;
 
         if(time < startInRecordingUnits && (newStartIndex < nbSpikes)){
             while(time < startInRecordingUnits){
@@ -678,7 +675,6 @@ void ClustersProvider::requestNextClusterData(long startTime, long timeFrame, co
     }
 
 
-    qDebug()<<" count " <<count;
 
 
     //Store the data in a array of the good size

@@ -12,7 +12,7 @@ setlocal EnableDelayedExpansion
 ::   5. ndmanager           -- depends on libklustersshared
 ::   6. ndmanager-plugins   -- standalone C/C++ (no Qt); optional FFmpeg/CUDA
 ::   7. klustakwik          -- standalone C/C++; optional CUDA/HIP/SYCL
-::   8. spikerealign        -- standalone C/C++; optional CUDA/HIP/SYCL
+::   8.        -- standalone C/C++; optional CUDA/HIP/SYCL
 ::
 :: Usage:
 ::   build-neurosuite.bat [OPTIONS]
@@ -32,7 +32,7 @@ setlocal EnableDelayedExpansion
 ::   --cuda-arch LIST      Semicolon-separated CUDA arch list (e.g. "75;86;89")
 ::   --skip PKG            Skip a package (repeat for multiple). Valid names:
 ::                         nphys-data libklustersshared klusters neuroscope
-::                         ndmanager ndmanager-plugins klustakwik spikerealign
+::                         ndmanager ndmanager-plugins klustakwik
 ::   --gpu-off             Disable all GPU backends (CUDA / HIP / SYCL)
 ::   --clean               Delete each package's build directory after install
 ::   -h / --help           Show this help
@@ -177,7 +177,7 @@ if errorlevel 1 (
 :: Verify all source trees are present
 echo %CYAN%[build]%RESET% Verifying source trees...
 set "_MISSING=0"
-for %%P in (nphys-data libklustersshared klusters neuroscope ndmanager ndmanager-plugins klustakwik spikerealign) do (
+for %%P in (nphys-data libklustersshared klusters neuroscope ndmanager ndmanager-plugins klustakwik) do (
     if not exist "%SOURCE_BASE%\%%P\CMakeLists.txt" (
         echo %RED%[FAIL ]%RESET% Source tree not found: %SOURCE_BASE%\%%P
         set "_MISSING=1"
@@ -402,10 +402,6 @@ if errorlevel 1 exit /b 1
 call :cmake_build "klustakwik" "%SOURCE_BASE%\klustakwik" %GPU_FLAGS% %CUDA_ARCH_FLAG%
 if errorlevel 1 exit /b 1
 
-:: ── 8. spikerealign ──────────────────────────────────────────────────────────
-:: Deps: OpenMP (optional). Optional GPU: CUDA, HIP, SYCL (auto-detected).
-call :cmake_build "spikerealign" "%SOURCE_BASE%\spikerealign" %GPU_FLAGS% %CUDA_ARCH_FLAG%
-if errorlevel 1 exit /b 1
 
 :: =============================================================================
 :: Post-install summary

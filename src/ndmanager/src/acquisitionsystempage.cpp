@@ -19,6 +19,9 @@
  ***************************************************************************/
 //include files for the application
 #include "acquisitionsystempage.h"
+#include <QLineEdit>
+#include <QComboBox>
+#include <QSpinBox>
 #include <QMessageBox>
 
 AcquisitionSystemPage::AcquisitionSystemPage(QWidget *parent)
@@ -40,15 +43,15 @@ AcquisitionSystemPage::AcquisitionSystemPage(QWidget *parent)
     voltageRangeLineEdit->setValidator(&intValidator);
     amplificationLineEdit->setValidator(&intValidator);
 
-    connect(nbChannelsLineEdit,SIGNAL(returnPressed()),this,SLOT(nbChannelsLineEditReturnPressed()));
-    connect(nbChannelsLineEdit,SIGNAL(editingFinished()),this,SLOT(nbChannelsLineEditLostFocus()));
+    connect(nbChannelsLineEdit, &QLineEdit::returnPressed, this, &AcquisitionSystemPage::nbChannelsLineEditReturnPressed);
+    connect(nbChannelsLineEdit, &QLineEdit::editingFinished, this, &AcquisitionSystemPage::nbChannelsLineEditLostFocus);
 
 
-    connect(resolutionComboBox,SIGNAL(activated(int)),this,SLOT(propertyModified()));
-    connect(voltageRangeLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(amplificationLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(samplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(offsetLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
+    connect(resolutionComboBox, &QComboBox::activated, this, &AcquisitionSystemPage::propertyModified);
+    connect(voltageRangeLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
+    connect(amplificationLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
+    connect(samplingRateLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
+    connect(offsetLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
 }
 
 

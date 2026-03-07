@@ -179,10 +179,10 @@ void QExtendDialogPrivate::appendButton(QExtendDialog::ButtonCode key, const QSt
   }
 
   mButtonList.insert( key, button );
-  mButtonSignalMapper.setMapping( button, key );
 
-    QObject::connect(button, SIGNAL(clicked()),
-           &mButtonSignalMapper, SLOT(map()) );
+    // Qt6: connect directly via lambda, replacing the deprecated QSignalMapper
+    QObject::connect(button, &QAbstractButton::clicked,
+                     q_ptr, [this, key](){ q_ptr->slotButtonClicked(key); });
 
     if (key == mDefaultButton) {
         // Now that it exists, set it as default
@@ -198,10 +198,6 @@ void QExtendDialogPrivate::init(QExtendDialog *q)
 
     q->setButtons(QExtendDialog::Ok | QExtendDialog::Cancel);
     q->setDefaultButton(QExtendDialog::Ok);
-
-    // Qt6: QSignalMapper::mapped(int) was removed; use mappedInt instead.
-    q->connect(&mButtonSignalMapper, &QSignalMapper::mappedInt,
-               q, &QExtendDialog::slotButtonClicked);
 
     q->setPlainCaption(/*KGlobal::caption()*/QString()); // set appropriate initial window title for case it gets not set later
 }
@@ -532,7 +528,7 @@ void QExtendDialog::resizeLayout( QWidget *widget, int margin, int spacing ) //s
 
   if ( widget->children().count() > 0 ) {
     const QList<QObject*> list = widget->children();
-    foreach ( QObject *object, list ) {
+    for ( QObject *object : list ) {
       if ( object->isWidgetType() )
         resizeLayout( (QWidget*)object, margin, spacing );
     }

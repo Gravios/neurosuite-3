@@ -133,7 +133,7 @@ void ScrollArea::createGroup(const QString &id)
 
 /*
     //Signal and slot connection
-    connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
+    connect(iconView, &QListWidget::itemSelectionChanged, this, &ScrollArea::slotClickRedraw);
     connect(iconView,SIGNAL(mousePressMiddleButton(QString,QListWidgetItem*)),this, SLOT(slotMousePressed(QString,QListWidgetItem*)));
 
     connect(iconView,SIGNAL(mousePressWoModificators(QString)),this, SLOT(slotMousePressWoModificators(QString)));

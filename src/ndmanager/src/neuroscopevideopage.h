@@ -165,6 +165,9 @@ public:
     /**Indicates that the initialisation is finished.*/
     void initialisationOver(){isInit = false;}
 
+    /**Resets the internal modification status to false.*/
+    void resetModificationStatus(){modified = false;}
+
 private slots:
     void updateBackgroundImage(){
         QString image = QFileDialog::getOpenFileName(this, tr("Select the background image..."));
@@ -188,9 +191,6 @@ private slots:
 
     /** Will be called when any properties.*/
     void propertyModified(){if(!isInit) modified = true;}
-
-    /**Resets the internal modification status to false.*/
-    void resetModificationStatus(){modified = false;}
 
 private:
     QImage backgroungImage;
