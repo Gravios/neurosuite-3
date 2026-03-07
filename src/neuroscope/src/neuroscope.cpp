@@ -48,6 +48,10 @@
 
 // application specific includes
 #include "neuroscope.h"
+#include <QCheckBox>
+#include <QPushButton>
+#include <QScrollBar>
+#include <QSpinBox>
 #include "neuroscopedoc.h"
 #include "channelpalette.h"
 #include "prefdialog.h"
@@ -131,27 +135,27 @@ void NeuroscopeApp::initActions()
     mOpenAction = fileMenu->addAction(tr("&Open..."));
     mOpenAction->setShortcut(QKeySequence::Open);
     mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
-    connect(mOpenAction, SIGNAL(triggered()), this, SLOT(slotFileOpen()));
+    connect(mOpenAction, &QAction::triggered, this, &NeuroscopeApp::slotFileOpen);
 
     mFileOpenRecent = new QRecentFileAction(this);
     QSettings settings;
     mFileOpenRecent->setRecentFiles(settings.value(QLatin1String("Recent Files"),QStringList()).toStringList());
 
     fileMenu->addAction(mFileOpenRecent);
-    connect(mFileOpenRecent, SIGNAL(recentFileSelected(QString)), this, SLOT(slotFileOpenRecent(QString)));
-    connect(mFileOpenRecent, SIGNAL(recentFileListChanged()), this, SLOT(slotSaveRecentFiles()));
+    connect(mFileOpenRecent, &QRecentFileAction::recentFileSelected, this, &NeuroscopeApp::slotFileOpenRecent);
+    connect(mFileOpenRecent, &QRecentFileAction::recentFileListChanged, this, &NeuroscopeApp::slotSaveRecentFiles);
 
     mLoadClusterFiles = fileMenu->addAction(tr("Load Cl&uster File(s)..."));
-    connect(mLoadClusterFiles,SIGNAL(triggered()), this,SLOT(slotLoadClusterFiles()));
+    connect(mLoadClusterFiles, &QAction::triggered, this, &NeuroscopeApp::slotLoadClusterFiles);
 
     mLoadEventFiles = fileMenu->addAction(tr("Load &Event File(s)..."));
-    connect(mLoadEventFiles,SIGNAL(triggered()), this,SLOT(slotLoadEventFiles()));
+    connect(mLoadEventFiles, &QAction::triggered, this, &NeuroscopeApp::slotLoadEventFiles);
 
     mCreateEventFile = fileMenu->addAction(tr("Create Event &File..."));
-    connect(mCreateEventFile,SIGNAL(triggered()), this,SLOT(slotCreateEventFile()));
+    connect(mCreateEventFile, &QAction::triggered, this, &NeuroscopeApp::slotCreateEventFile);
 
     mLoadPositionFile = fileMenu->addAction(tr("Load Posi&tion File..."));
-    connect(mLoadPositionFile,SIGNAL(triggered()), this,SLOT(slotLoadPositionFile()));
+    connect(mLoadPositionFile, &QAction::triggered, this, &NeuroscopeApp::slotLoadPositionFile);
 
     fileMenu->addSeparator();
 
@@ -159,12 +163,12 @@ void NeuroscopeApp::initActions()
     mSaveAction = fileMenu->addAction(tr("Save..."));
     mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
-    connect(mSaveAction, SIGNAL(triggered()), this, SLOT(saveSession()));
+    connect(mSaveAction, &QAction::triggered, this, &NeuroscopeApp::saveSession);
 
     mSaveAsAction = fileMenu->addAction(tr("&Save As..."));
     mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
     mSaveAsAction->setShortcut(QKeySequence::SaveAs);
-    connect(mSaveAsAction, SIGNAL(triggered()), this, SLOT(slotSessionSaveAs()));
+    connect(mSaveAsAction, &QAction::triggered, this, &NeuroscopeApp::slotSessionSaveAs);
 
 
 
@@ -174,28 +178,28 @@ void NeuroscopeApp::initActions()
     mPrintAction = fileMenu->addAction(tr("&Print"));
     mPrintAction->setIcon(QPixmap(":/shared-icons/document-print"));
     mPrintAction->setShortcut(QKeySequence::Print);
-    connect(mPrintAction, SIGNAL(triggered()), this, SLOT(slotFilePrint()));
+    connect(mPrintAction, &QAction::triggered, this, &NeuroscopeApp::slotFilePrint);
 
     fileMenu->addSeparator();
 
     mProperties = fileMenu->addAction(tr("&Properties"));
-    connect(mProperties,SIGNAL(triggered()), this,SLOT(slotFileProperties()));
+    connect(mProperties, &QAction::triggered, this, &NeuroscopeApp::slotFileProperties);
 
     fileMenu->addSeparator();
 
     mCloseAction = fileMenu->addAction(tr("Close"));
     mCloseAction->setIcon(QPixmap(":/shared-icons/document-close"));
-    connect(mCloseAction, SIGNAL(triggered()), this, SLOT(slotFileClose()));
+    connect(mCloseAction, &QAction::triggered, this, &NeuroscopeApp::slotFileClose);
 
 
     mCloseCluster = fileMenu->addAction(tr("Close C&luster File"));
-    connect(mCloseCluster,SIGNAL(triggered()), this,SLOT(slotCloseClusterFile()));
+    connect(mCloseCluster, &QAction::triggered, this, &NeuroscopeApp::slotCloseClusterFile);
 
     mCloseEvent = fileMenu->addAction(tr("Close E&vent File"));
-    connect(mCloseEvent,SIGNAL(triggered()), this,SLOT(slotCloseEventFile()));
+    connect(mCloseEvent, &QAction::triggered, this, &NeuroscopeApp::slotCloseEventFile);
 
     mClosePositionFile = fileMenu->addAction(tr("Close Position File"));
-    connect(mClosePositionFile,SIGNAL(triggered()), this,SLOT(slotClosePositionFile()));
+    connect(mClosePositionFile, &QAction::triggered, this, &NeuroscopeApp::slotClosePositionFile);
 
 
     fileMenu->addSeparator();
@@ -203,7 +207,7 @@ void NeuroscopeApp::initActions()
     mQuitAction = fileMenu->addAction(tr("Quit"));
     mQuitAction->setIcon(QPixmap(":/shared-icons/window-close"));
     mQuitAction->setShortcut(QKeySequence::Quit);
-    connect(mQuitAction, SIGNAL(triggered()), this, SLOT(slotFileQuit()));
+    connect(mQuitAction, &QAction::triggered, this, &NeuroscopeApp::slotFileQuit);
 
 
 
@@ -213,34 +217,34 @@ void NeuroscopeApp::initActions()
     mUndo = editMenu->addAction(tr("Undo"));
     mUndo->setIcon(QPixmap(":/shared-icons/edit-undo"));
     mUndo->setShortcut(QKeySequence::Undo);
-    connect(mUndo, SIGNAL(triggered()), this, SLOT(slotUndo()));
+    connect(mUndo, &QAction::triggered, this, &NeuroscopeApp::slotUndo);
 
     mRedo = editMenu->addAction(tr("Redo"));
     mRedo->setIcon(QPixmap(":/shared-icons/edit-redo"));
     mRedo->setShortcut(QKeySequence::Redo);
-    connect(mRedo, SIGNAL(triggered()), this, SLOT(slotRedo()));
+    connect(mRedo, &QAction::triggered, this, &NeuroscopeApp::slotRedo);
 
     editMenu->addSeparator();
 
     mSelectAll = editMenu->addAction(tr("Select &All"));
     mSelectAll->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_A));
-    connect(mSelectAll,SIGNAL(triggered()), this,SLOT(slotSelectAll()));
+    connect(mSelectAll, &QAction::triggered, this, &NeuroscopeApp::slotSelectAll);
 
     editMenu->addSeparator();
 
     mSelectAllExcept0And1 = editMenu->addAction(tr("Select All e&xcept 0 and 1"));
     mSelectAllExcept0And1->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
-    connect(mSelectAllExcept0And1,SIGNAL(triggered()), this,SLOT(slotSelectAllWO01()));
+    connect(mSelectAllExcept0And1, &QAction::triggered, this, &NeuroscopeApp::slotSelectAllWO01);
 
     mDeselectAll = editMenu->addAction(tr("Deselect All"));
     mDeselectAll->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_U));
-    connect(mDeselectAll,SIGNAL(triggered()), this,SLOT(slotDeselectAll()));
+    connect(mDeselectAll, &QAction::triggered, this, &NeuroscopeApp::slotDeselectAll);
 
     editMode = editMenu->addAction(tr("&Edit Mode"));
     editMode->setIcon(QIcon(":/icons/edit"));
     editMode->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_E));
     editMode->setCheckable(true);
-    connect(editMode,SIGNAL(triggered()), this,SLOT(slotEditMode()));
+    connect(editMode, &QAction::triggered, this, &NeuroscopeApp::slotEditMode);
 
     editMode->setChecked(true);
 
@@ -249,137 +253,137 @@ void NeuroscopeApp::initActions()
     mZoomTool = toolMenu->addAction(tr("Zoom"));
     mZoomTool->setIcon(QIcon(":/icons/zoom_tool"));
     mZoomTool->setShortcut(Qt::Key_Z);
-    connect(mZoomTool,SIGNAL(triggered()), this,SLOT(slotZoom()));
+    connect(mZoomTool, &QAction::triggered, this, &NeuroscopeApp::slotZoom);
 
 
     mDrawTimeLine = toolMenu->addAction(tr("Draw Time Line"));
     mDrawTimeLine->setIcon(QIcon(":/icons/time_line_tool"));
     mDrawTimeLine->setShortcut(Qt::Key_L);
-    connect(mDrawTimeLine,SIGNAL(triggered()), this,SLOT(slotDrawTimeLine()));
+    connect(mDrawTimeLine, &QAction::triggered, this, &NeuroscopeApp::slotDrawTimeLine);
 
 
     mSelectTool = toolMenu->addAction(tr("Select Channels"));
     mSelectTool->setIcon(QIcon(":/icons/select_tool"));
     mSelectTool->setShortcut(Qt::Key_C);
-    connect(mSelectTool,SIGNAL(triggered()), this,SLOT(slotSelect()));
+    connect(mSelectTool, &QAction::triggered, this, &NeuroscopeApp::slotSelect);
 
     mMeasureTool = toolMenu->addAction(tr("Measure"));
     mMeasureTool->setIcon(QIcon(":/icons/measure_tool"));
     mMeasureTool->setShortcut(Qt::Key_V);
-    connect(mMeasureTool,SIGNAL(triggered()), this,SLOT(slotMeasure()));
+    connect(mMeasureTool, &QAction::triggered, this, &NeuroscopeApp::slotMeasure);
 
     mTimeTool = toolMenu->addAction(tr("Select Time"));
     mTimeTool->setIcon(QIcon(":/icons/time_tool"));
     mTimeTool->setShortcut(Qt::Key_T);
-    connect(mTimeTool,SIGNAL(triggered()), this,SLOT(slotSelectTime()));
+    connect(mTimeTool, &QAction::triggered, this, &NeuroscopeApp::slotSelectTime);
 
     mEventTool = toolMenu->addAction(tr("Select Event"));
     mEventTool->setIcon(QIcon(":/icons/event_tool"));
     mEventTool->setShortcut(Qt::Key_E);
-    connect(mEventTool,SIGNAL(triggered()), this,SLOT(slotSelectEvent()));
+    connect(mEventTool, &QAction::triggered, this, &NeuroscopeApp::slotSelectEvent);
 
     addEventToolBarAction = toolMenu->addAction(tr("Add Event"));
     addEventToolBarAction->setIcon(QIcon(":icons/add_event_tool"));
-    connect(addEventToolBarAction,SIGNAL(triggered()), this,SLOT(addEvent()));
+    connect(addEventToolBarAction, &QAction::triggered, this, &NeuroscopeApp::addEvent);
 
     addEventPopup = new QMenu;
     addEventToolBarAction->setMenu(addEventPopup);
-    connect(addEventPopup, SIGNAL(aboutToShow()), this, SLOT(slotAddEventAboutToShow()));
-    connect(addEventPopup, SIGNAL(triggered(QAction*)), this, SLOT(slotAddEventButtonActivated(QAction*)));
+    connect(addEventPopup, &QMenu::aboutToShow, this, &NeuroscopeApp::slotAddEventAboutToShow);
+    connect(addEventPopup, &QMenu::triggered, this, &NeuroscopeApp::slotAddEventButtonActivated);
 
     //Channels Menu
     QMenu *channelsMenu = menuBar()->addMenu(tr("&Channels"));
     mShowChannel = channelsMenu->addAction(tr("Show &Channels"));
     mShowChannel->setIcon(QIcon(":/icons/eye"));
     mShowChannel->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_C));
-    connect(mShowChannel,SIGNAL(triggered()), this,SLOT(slotShowChannels()));
+    connect(mShowChannel, &QAction::triggered, this, &NeuroscopeApp::slotShowChannels);
 
     mHideChannel = channelsMenu->addAction(tr("&Hide Channels"));
     mHideChannel->setIcon(QIcon(":/icons/eye_close"));
     mHideChannel->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_H));
-    connect(mHideChannel,SIGNAL(triggered()), this,SLOT(slotHideChannels()));
+    connect(mHideChannel, &QAction::triggered, this, &NeuroscopeApp::slotHideChannels);
 
     channelsMenu->addSeparator();
 
     mMoveToNewGroup = channelsMenu->addAction(tr("&Move Channels to New Group"));
     mMoveToNewGroup->setIcon(QIcon(":/icons/new_group"));
     mMoveToNewGroup->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
-    connect(mMoveToNewGroup,SIGNAL(triggered()), this,SLOT(slotCreateGroup()));
+    connect(mMoveToNewGroup, &QAction::triggered, this, &NeuroscopeApp::slotCreateGroup);
 
     mRemoveChannelFromGroup = channelsMenu->addAction(tr("&Remove Channels from Group"));
     mRemoveChannelFromGroup->setIcon(QIcon(":/icons/remove"));
     mRemoveChannelFromGroup->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Delete));
-    connect(mRemoveChannelFromGroup,SIGNAL(triggered()), this,SLOT(slotDiscardSpikeChannels()));
+    connect(mRemoveChannelFromGroup, &QAction::triggered, this, &NeuroscopeApp::slotDiscardSpikeChannels);
 
     mDiscardChannels = channelsMenu->addAction(tr("&Discard Channels"));
     mDiscardChannels->setIcon(QIcon(":/icons/discard"));
     mDiscardChannels->setShortcut(Qt::Key_Delete);
-    connect(mDiscardChannels,SIGNAL(triggered()), this,SLOT(slotDiscardChannels()));
+    connect(mDiscardChannels, &QAction::triggered, this, &NeuroscopeApp::slotDiscardChannels);
 
     channelsMenu->addSeparator();
 
     mKeepChannels = channelsMenu->addAction(tr("&Keep Channels"));
     mKeepChannels->setIcon(QIcon(":/icons/keep"));
     mKeepChannels->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_K));
-    connect(mKeepChannels,SIGNAL(triggered()), this,SLOT(slotKeepChannels()));
+    connect(mKeepChannels, &QAction::triggered, this, &NeuroscopeApp::slotKeepChannels);
 
     mSkipChannels = channelsMenu->addAction(tr("&Skip Channels"));
     mSkipChannels->setIcon(QIcon(":/icons/skip"));
     mSkipChannels->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
-    connect(mSkipChannels,SIGNAL(triggered()), this,SLOT(slotSkipChannels()));
+    connect(mSkipChannels, &QAction::triggered, this, &NeuroscopeApp::slotSkipChannels);
     channelsMenu->addSeparator();
 
     mSynchronizeGroups =channelsMenu->addAction(tr("&Synchronize Groups"));
-    connect(mSynchronizeGroups,SIGNAL(triggered()), this,SLOT(slotSynchronize()));
+    connect(mSynchronizeGroups, &QAction::triggered, this, &NeuroscopeApp::slotSynchronize);
 
     channelsMenu->addSeparator();
 
     //Color section
     mColorAnatomicalGroups = channelsMenu->addAction(tr("Color by &Anatomical Groups"));
-    connect(mColorAnatomicalGroups,SIGNAL(triggered()), this,SLOT(slotApplyDisplayColor()));
+    connect(mColorAnatomicalGroups, &QAction::triggered, this, &NeuroscopeApp::slotApplyDisplayColor);
 
     mColorSpikeGroups = channelsMenu->addAction(tr("Color by S&pike Groups"));
-    connect(mColorSpikeGroups,SIGNAL(triggered()), this,SLOT(slotApplySpikeColor()));
+    connect(mColorSpikeGroups, &QAction::triggered, this, &NeuroscopeApp::slotApplySpikeColor);
 
 
     //Units Menu
     QMenu *unitsMenu = menuBar()->addMenu(tr("&Units"));
     clusterVerticalLines = unitsMenu->addAction(tr("&Vertical Lines"));
     clusterVerticalLines->setCheckable(true);
-    connect(clusterVerticalLines,SIGNAL(triggered()), this,SLOT(slotClustersVerticalLines()));
+    connect(clusterVerticalLines, &QAction::triggered, this, &NeuroscopeApp::slotClustersVerticalLines);
 
     clusterVerticalLines->setChecked(false);
     clusterRaster = unitsMenu->addAction(tr("&Raster"));
     clusterRaster->setCheckable(true);
-    connect(clusterRaster,SIGNAL(triggered()), this,SLOT(slotClustersRaster()));
+    connect(clusterRaster, &QAction::triggered, this, &NeuroscopeApp::slotClustersRaster);
 
     clusterRaster->setChecked(true);
     clusterWaveforms = unitsMenu->addAction(tr("&Waveforms"));
     clusterWaveforms->setCheckable(true);
-    connect(clusterWaveforms,SIGNAL(triggered()), this,SLOT(slotClustersWaveforms()));
+    connect(clusterWaveforms, &QAction::triggered, this, &NeuroscopeApp::slotClustersWaveforms);
     clusterWaveforms->setChecked(false);
 
     unitsMenu->addSeparator();
 
     mIncreaseHeight = unitsMenu->addAction(tr("&Increase Height"));
     mIncreaseHeight->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus));
-    connect(mIncreaseHeight,SIGNAL(triggered()), this,SLOT(slotIncreaseRasterHeight()));
+    connect(mIncreaseHeight, &QAction::triggered, this, &NeuroscopeApp::slotIncreaseRasterHeight);
 
     mDecreaseHeight = unitsMenu->addAction(tr("&Decrease Height"));
     mDecreaseHeight->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
-    connect(mDecreaseHeight,SIGNAL(triggered()), this,SLOT(slotDecreaseRasterHeight()));
+    connect(mDecreaseHeight, &QAction::triggered, this, &NeuroscopeApp::slotDecreaseRasterHeight);
 
     unitsMenu->addSeparator();
 
     mNextSpike = unitsMenu->addAction(tr("&Next Spike"));
     mNextSpike->setIcon(QIcon(":/icons/forwardCluster"));
     mNextSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F));
-    connect(mNextSpike,SIGNAL(triggered()), this,SLOT(slotShowNextCluster()));
+    connect(mNextSpike, &QAction::triggered, this, &NeuroscopeApp::slotShowNextCluster);
 
     mPreviousSpike = unitsMenu->addAction(tr("&Previous Spike"));
     mPreviousSpike->setIcon(QIcon(":/icons/backCluster"));
     mPreviousSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
-    connect(mPreviousSpike,SIGNAL(triggered()), this,SLOT(slotShowPreviousCluster()));
+    connect(mPreviousSpike, &QAction::triggered, this, &NeuroscopeApp::slotShowPreviousCluster);
 
 
     //Events Menu
@@ -387,28 +391,28 @@ void NeuroscopeApp::initActions()
     mNextEvent = eventMenu->addAction(tr("&Next Event"));
     mNextEvent->setIcon(QIcon(":/icons/forwardEvent"));
     mNextEvent->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_F));
-    connect(mNextEvent,SIGNAL(triggered()), this,SLOT(slotShowNextEvent()));
+    connect(mNextEvent, &QAction::triggered, this, &NeuroscopeApp::slotShowNextEvent);
 
     mPreviousEvent = eventMenu->addAction(tr("&Previous Event"));
     mPreviousEvent->setIcon(QIcon(":/icons/backEvent"));
     mPreviousEvent->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
-    connect(mPreviousEvent,SIGNAL(triggered()), this,SLOT(slotShowPreviousEvent()));
+    connect(mPreviousEvent, &QAction::triggered, this, &NeuroscopeApp::slotShowPreviousEvent);
 
     mRemoveEvent = eventMenu->addAction(tr("&Remove Event"));
     mRemoveEvent->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_K));
-    connect(mRemoveEvent,SIGNAL(triggered()), this,SLOT(removeEvent()));
+    connect(mRemoveEvent, &QAction::triggered, this, &NeuroscopeApp::removeEvent);
 
 
     //Positions Menu
     QMenu *positionsMenu = menuBar()->addMenu(tr("&Positions"));
     positionViewToggle = positionsMenu->addAction(tr("&Show Position View"));
     positionViewToggle->setCheckable(true);
-    connect(positionViewToggle,SIGNAL(triggered()), this,SLOT(slotShowPositionView()));
+    connect(positionViewToggle, &QAction::triggered, this, &NeuroscopeApp::slotShowPositionView);
 
     positionViewToggle->setChecked(false);
     showEventsInPositionView = positionsMenu->addAction(tr("Show &Events"));
     showEventsInPositionView->setCheckable(true);
-    connect(showEventsInPositionView,SIGNAL(triggered()), this,SLOT(slotShowEventsInPositionView()));
+    connect(showEventsInPositionView, &QAction::triggered, this, &NeuroscopeApp::slotShowEventsInPositionView);
 
     showEventsInPositionView->setChecked(false);
 
@@ -418,55 +422,55 @@ void NeuroscopeApp::initActions()
     QMenu *traceMenu = menuBar()->addMenu(tr("&Traces"));
     displayMode = traceMenu->addAction(tr("&Multiple Columns"));
     displayMode->setCheckable(true);
-    connect(displayMode,SIGNAL(triggered()), this,SLOT(slotDisplayMode()));
+    connect(displayMode, &QAction::triggered, this, &NeuroscopeApp::slotDisplayMode);
 
     traceMenu->addSeparator();
 
     displayMode->setChecked(false);
     greyScale = traceMenu->addAction(tr("&Grey-Scale"));
     greyScale->setCheckable(true);
-    connect(greyScale,SIGNAL(triggered()), this,SLOT(slotSetGreyScale()));
+    connect(greyScale, &QAction::triggered, this, &NeuroscopeApp::slotSetGreyScale);
 
     traceMenu->addSeparator();
 
     greyScale->setChecked(false);
     mIncreaseAllChannelAmplitudes = traceMenu->addAction(tr("&Increase All Channel Amplitudes"));
     mIncreaseAllChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
-    connect(mIncreaseAllChannelAmplitudes,SIGNAL(triggered()), this,SLOT(slotIncreaseAllChannelsAmplitude()));
+    connect(mIncreaseAllChannelAmplitudes, &QAction::triggered, this, &NeuroscopeApp::slotIncreaseAllChannelsAmplitude);
 
 
     mDecreaseAllChannelAmplitudes = traceMenu->addAction(tr("&Decrease All Channel Amplitudes"));
     mDecreaseAllChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
-    connect(mDecreaseAllChannelAmplitudes,SIGNAL(triggered()), this,SLOT(slotDecreaseAllChannelsAmplitude()));
+    connect(mDecreaseAllChannelAmplitudes, &QAction::triggered, this, &NeuroscopeApp::slotDecreaseAllChannelsAmplitude);
 
     mIncreaseSelectedChannelAmplitude = traceMenu->addAction(tr("I&ncrease Selected Channel Amplitudes"));
     mIncreaseSelectedChannelAmplitude->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I));
-    connect(mIncreaseSelectedChannelAmplitude,SIGNAL(triggered()), this,SLOT(slotIncreaseSelectedChannelsAmplitude()));
+    connect(mIncreaseSelectedChannelAmplitude, &QAction::triggered, this, &NeuroscopeApp::slotIncreaseSelectedChannelsAmplitude);
 
     mDecreaseSelectedChannelAmplitude = traceMenu->addAction(tr("D&ecrease Selected Channel Amplitudes"));
     mDecreaseSelectedChannelAmplitude->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D));
-    connect(mDecreaseSelectedChannelAmplitude,SIGNAL(triggered()), this,SLOT(slotDecreaseSelectedChannelsAmplitude()));
+    connect(mDecreaseSelectedChannelAmplitude, &QAction::triggered, this, &NeuroscopeApp::slotDecreaseSelectedChannelsAmplitude);
 
     mResetSelectedChannel = traceMenu->addAction(tr("Reset Selected Channel &Offsets"));
-    connect(mResetSelectedChannel,SIGNAL(triggered()), this,SLOT(slotResetOffsets()));
+    connect(mResetSelectedChannel, &QAction::triggered, this, &NeuroscopeApp::slotResetOffsets);
 
 
     mResetSelectedChannelAmplitudes = traceMenu->addAction(tr("Reset Selected Channel &Amplitudes"));
-    connect(mResetSelectedChannelAmplitudes,SIGNAL(triggered()), this,SLOT(slotResetGains()));
+    connect(mResetSelectedChannelAmplitudes, &QAction::triggered, this, &NeuroscopeApp::slotResetGains);
 
     traceMenu->addSeparator();
 
     mSetCurrentOffsetsAsDefault = traceMenu->addAction(tr("&Set Current Offsets as Defaults"));
-    connect(mSetCurrentOffsetsAsDefault,SIGNAL(triggered()), this,SLOT(slotSetDefaultOffsets()));
+    connect(mSetCurrentOffsetsAsDefault, &QAction::triggered, this, &NeuroscopeApp::slotSetDefaultOffsets);
 
     mSetDefaultOffsetToZero = traceMenu->addAction(tr("Set Default Offsets to &Zero"));
-    connect(mSetDefaultOffsetToZero,SIGNAL(triggered()), this,SLOT(slotResetDefaultOffsets()));
+    connect(mSetDefaultOffsetToZero, &QAction::triggered, this, &NeuroscopeApp::slotResetDefaultOffsets);
 
     traceMenu->addSeparator();
     autocenterChannels = traceMenu->addAction(tr("Autocenter Channels"));
     autocenterChannels->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
     autocenterChannels->setCheckable(true);
-    connect(autocenterChannels,SIGNAL(triggered()), this,SLOT(slotAutocenterChannels()));
+    connect(autocenterChannels, &QAction::triggered, this, &NeuroscopeApp::slotAutocenterChannels);
 
     autocenterChannels->setChecked(false);
 
@@ -474,7 +478,7 @@ void NeuroscopeApp::initActions()
     showHideLabels = traceMenu->addAction(tr("Show &Labels"));
     showHideLabels->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_L));
     showHideLabels->setCheckable(true);
-    connect(showHideLabels,SIGNAL(triggered()), this,SLOT(slotShowLabels()));
+    connect(showHideLabels, &QAction::triggered, this, &NeuroscopeApp::slotShowLabels);
 
     showHideLabels->setChecked(false);
 
@@ -483,15 +487,15 @@ void NeuroscopeApp::initActions()
     mPage = traceMenu->addAction(tr("Auto-advance to end of recording"));
     mPage->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Space));
     mPage->setCheckable(true);
-    connect(mPage,SIGNAL(triggered()), this,SLOT(page()));
+    connect(mPage, &QAction::triggered, this, &NeuroscopeApp::page);
 
 	 mAccelerate = traceMenu->addAction(tr("Accelerate"));
     mAccelerate->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Up));
-    connect(mAccelerate,SIGNAL(triggered()), this,SLOT(accelerate()));
+    connect(mAccelerate, &QAction::triggered, this, &NeuroscopeApp::accelerate);
 
     mDecelerate = traceMenu->addAction(tr("Decelerate"));
     mDecelerate->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Down));
-    connect(mDecelerate,SIGNAL(triggered()), this,SLOT(decelerate()));
+    connect(mDecelerate, &QAction::triggered, this, &NeuroscopeApp::decelerate);
 
 
     //Displays Menu
@@ -499,15 +503,15 @@ void NeuroscopeApp::initActions()
 
     mNewDisplay = displaysMenu->addAction(tr("&New Display"));
     mNewDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_N));
-    connect(mNewDisplay,SIGNAL(triggered()), this,SLOT(slotNewDisplay()));
+    connect(mNewDisplay, &QAction::triggered, this, &NeuroscopeApp::slotNewDisplay);
 
     mRenameActiveDisplay = displaysMenu->addAction(tr("&Rename Active Display"));
     mRenameActiveDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    connect(mRenameActiveDisplay,SIGNAL(triggered()), this,SLOT(slotRenameActiveDisplay()));
+    connect(mRenameActiveDisplay, &QAction::triggered, this, &NeuroscopeApp::slotRenameActiveDisplay);
 
     mCloseActiveDisplay = displaysMenu->addAction(tr("&Close Active Display"));
     mCloseActiveDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_W));
-    connect(mCloseActiveDisplay,SIGNAL(triggered()), this,SLOT(slotDisplayClose()));
+    connect(mCloseActiveDisplay, &QAction::triggered, this, &NeuroscopeApp::slotDisplayClose);
 
 
 
@@ -518,25 +522,25 @@ void NeuroscopeApp::initActions()
 
     viewMainToolBar->setCheckable(true);
     viewMainToolBar->setChecked(true);
-    connect(viewMainToolBar,SIGNAL(triggered()), this,SLOT(slotViewMainToolBar()));
+    connect(viewMainToolBar, &QAction::triggered, this, &NeuroscopeApp::slotViewMainToolBar);
 
 
     viewToolBar = settingsMenu->addAction(tr("Show T&ools"));
     viewToolBar->setCheckable(true);
-    connect(viewToolBar,SIGNAL(triggered()), this,SLOT(slotViewToolBar()));
+    connect(viewToolBar, &QAction::triggered, this, &NeuroscopeApp::slotViewToolBar);
 
     viewToolBar->setChecked(true);
 
     mViewStatusBar = settingsMenu->addAction(tr("Show StatusBar"));
     mViewStatusBar->setCheckable(true);
     mViewStatusBar->setChecked(true);
-    connect(mViewStatusBar,SIGNAL(triggered()), this,SLOT(slotViewStatusBar()));
+    connect(mViewStatusBar, &QAction::triggered, this, &NeuroscopeApp::slotViewStatusBar);
 
     settingsMenu->addSeparator();
 
     calibrationBar = settingsMenu->addAction(tr("&Display Calibration"));
     calibrationBar->setCheckable(true);
-    connect(calibrationBar,SIGNAL(triggered()), this,SLOT(slotShowCalibration()));
+    connect(calibrationBar, &QAction::triggered, this, &NeuroscopeApp::slotShowCalibration);
 
     calibrationBar->setChecked(false);
 
@@ -544,62 +548,63 @@ void NeuroscopeApp::initActions()
     settingsMenu->addSeparator();
     mPreferenceAction = settingsMenu->addAction(tr("Preferences"));
     mPreferenceAction->setIcon(QIcon(":/shared-icons/configure"));
-    connect(mPreferenceAction,SIGNAL(triggered()), this,SLOT(executePreferencesDlg()));
+    connect(mPreferenceAction, &QAction::triggered, this, &NeuroscopeApp::executePreferencesDlg);
 
     //Help menu
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     QAction *handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
-    connect(handbook,SIGNAL(triggered()), this,SLOT(slotHanbook()));
+    connect(handbook, &QAction::triggered, this, &NeuroscopeApp::slotHanbook);
 
     QAction *about = helpMenu->addAction(tr("About"));
-    connect(about,SIGNAL(triggered()), this,SLOT(slotAbout()));
+    connect(about, &QAction::triggered, this, &NeuroscopeApp::slotAbout);
 
 
     //Custom connections
-    connect(doc, SIGNAL(noSession(QMap<int,int>&,QMap<int,bool>&)),this, SLOT(slotDefaultSetUp(QMap<int,int>&,QMap<int,bool>&)));
-    connect(doc, SIGNAL(loadFirstDisplay(QList<int>*,bool,bool,bool,bool,bool,bool,bool,QList<int>,QList<int>,QList<int>,QMap<int,bool>&,long,long,QString,bool,int,bool)),this,
-            SLOT(slotSetUp(QList<int>*,bool,bool,bool,bool,bool,bool,bool,QList<int>,QList<int>,QList<int>,QMap<int,bool>&,long,long,QString,bool,int,bool)));
+    connect(doc, &NeuroscopeDoc::noSession, this, &NeuroscopeApp::slotDefaultSetUp);
+    connect(doc, &NeuroscopeDoc::loadFirstDisplay, this, &NeuroscopeApp::slotSetUp);
 
-    connect(displayChannelPalette, SIGNAL(singleChangeColor(int)),this, SLOT(slotSingleChannelColorUpdate(int)));
-    connect(spikeChannelPalette, SIGNAL(singleChangeColor(int)),this, SLOT(slotSingleChannelColorUpdate(int)));
-    connect(displayChannelPalette, SIGNAL(singleChangeColor(int)),spikeChannelPalette, SLOT(updateColor(int)));
-    connect(spikeChannelPalette, SIGNAL(singleChangeColor(int)),displayChannelPalette, SLOT(updateColor(int)));
+    connect(displayChannelPalette, &ChannelPalette::singleChangeColor, this, &NeuroscopeApp::slotSingleChannelColorUpdate);
+    connect(spikeChannelPalette, &ChannelPalette::singleChangeColor, this, &NeuroscopeApp::slotSingleChannelColorUpdate);
+    connect(displayChannelPalette, &ChannelPalette::singleChangeColor, spikeChannelPalette, static_cast<void(ChannelPalette::*)(int)>(&ChannelPalette::updateColor));
+    connect(spikeChannelPalette, &ChannelPalette::singleChangeColor, displayChannelPalette, static_cast<void(ChannelPalette::*)(int)>(&ChannelPalette::updateColor));
 
-    connect(displayChannelPalette, SIGNAL(groupChangeColor(int)),this, SLOT(slotChannelGroupColorUpdate(int)));
-    connect(spikeChannelPalette, SIGNAL(groupChangeColor(int)),this, SLOT(slotChannelGroupColorUpdate(int)));
-    connect(displayChannelPalette, SIGNAL(groupChangeColor(int)),spikeChannelPalette, SLOT(applyCustomColor()));
-    connect(spikeChannelPalette, SIGNAL(groupChangeColor(int)),displayChannelPalette, SLOT(applyCustomColor()));
+    connect(displayChannelPalette, &ChannelPalette::groupChangeColor, this, &NeuroscopeApp::slotChannelGroupColorUpdate);
+    connect(spikeChannelPalette, &ChannelPalette::groupChangeColor, this, &NeuroscopeApp::slotChannelGroupColorUpdate);
+    connect(displayChannelPalette, &ChannelPalette::groupChangeColor, spikeChannelPalette, &ChannelPalette::applyCustomColor);
+    connect(spikeChannelPalette, &ChannelPalette::groupChangeColor, displayChannelPalette, &ChannelPalette::applyCustomColor);
 
     /*connect(displayChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),this, SLOT(slotChannelsColorUpdate(QValueList<int>)));
   connect(spikeChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),this, SLOT(slotChannelsColorUpdate(QValueList<int>)));
   connect(displayChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),spikeChannelPalette, SLOT(updateColor(QValueList<int>)));
   connect(spikeChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),displayChannelPalette, SLOT(updateColor(QValueList<int>)));
   */
-    connect(displayChannelPalette, SIGNAL(updateShownChannels(QList<int>)),this, SLOT(slotUpdateShownChannels(QList<int>)));
-    connect(spikeChannelPalette, SIGNAL(updateShownChannels(QList<int>)),this, SLOT(slotUpdateShownChannels(QList<int>)));
+    connect(displayChannelPalette, &ChannelPalette::updateShownChannels, this, &NeuroscopeApp::slotUpdateShownChannels);
+    connect(spikeChannelPalette, &ChannelPalette::updateShownChannels, this, &NeuroscopeApp::slotUpdateShownChannels);
 
-    connect(displayChannelPalette, SIGNAL(updateHideChannels(QList<int>)),this, SLOT(slotUpdateHiddenChannels(QList<int>)));
-    connect(spikeChannelPalette, SIGNAL(updateHideChannels(QList<int>)),this, SLOT(slotUpdateHiddenChannels(QList<int>)));
+    connect(displayChannelPalette, &ChannelPalette::updateHideChannels, this, &NeuroscopeApp::slotUpdateHiddenChannels);
+    connect(spikeChannelPalette, &ChannelPalette::updateHideChannels, this, &NeuroscopeApp::slotUpdateHiddenChannels);
 
-    connect(displayChannelPalette, SIGNAL(channelsDiscarded(QList<int>)),this, SLOT(slotChannelsDiscarded(QList<int>)));
-    connect(spikeChannelPalette, SIGNAL(channelsDiscarded(QList<int>)),this, SLOT(slotChannelsDiscarded(QList<int>)));
-
-
-    connect(displayChannelPalette, SIGNAL(channelsMovedToTrash(QList<int>,QString,bool)),spikeChannelPalette, SLOT(discardChannels(QList<int>,QString,bool)));
-    connect(spikeChannelPalette, SIGNAL(channelsMovedToTrash(QList<int>,QString,bool)),displayChannelPalette, SLOT(discardChannels(QList<int>,QString,bool)));
-    connect(displayChannelPalette, SIGNAL(channelsMovedAroundInTrash(QList<int>,QString,bool)),spikeChannelPalette, SLOT(trashChannelsMovedAround(QList<int>,QString,bool)));
-    connect(spikeChannelPalette, SIGNAL(channelsMovedAroundInTrash(QList<int>,QString,bool)),displayChannelPalette, SLOT(trashChannelsMovedAround(QList<int>,QString,bool)));
-
-    connect(displayChannelPalette, SIGNAL(channelsRemovedFromTrash(QList<int>)),spikeChannelPalette, SLOT(removeChannelsFromTrash(QList<int>)));
-    connect(spikeChannelPalette, SIGNAL(channelsRemovedFromTrash(QList<int>)),displayChannelPalette, SLOT(removeChannelsFromTrash(QList<int>)));
-
-    connect(displayChannelPalette, SIGNAL(groupModified()),this, SLOT(slotGroupsModified()));
-    connect(spikeChannelPalette, SIGNAL(groupModified()),this, SLOT(slotGroupsModified()));
+    connect(displayChannelPalette, &ChannelPalette::channelsDiscarded, this, &NeuroscopeApp::slotChannelsDiscarded);
+    connect(spikeChannelPalette, &ChannelPalette::channelsDiscarded, this, &NeuroscopeApp::slotChannelsDiscarded);
 
 
-    connect(displayChannelPalette, SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotChannelsSelected(QList<int>)));
-    connect(spikeChannelPalette, SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotChannelsSelected(QList<int>)));
+    connect(displayChannelPalette, &ChannelPalette::channelsMovedToTrash, spikeChannelPalette,
+            static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,bool)>(&ChannelPalette::discardChannels));
+    connect(spikeChannelPalette, &ChannelPalette::channelsMovedToTrash, displayChannelPalette,
+            static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,bool)>(&ChannelPalette::discardChannels));
+    connect(displayChannelPalette, &ChannelPalette::channelsMovedAroundInTrash, spikeChannelPalette, &ChannelPalette::trashChannelsMovedAround);
+    connect(spikeChannelPalette, &ChannelPalette::channelsMovedAroundInTrash, displayChannelPalette, &ChannelPalette::trashChannelsMovedAround);
+
+    connect(displayChannelPalette, &ChannelPalette::channelsRemovedFromTrash, spikeChannelPalette, &ChannelPalette::removeChannelsFromTrash);
+    connect(spikeChannelPalette, &ChannelPalette::channelsRemovedFromTrash, displayChannelPalette, &ChannelPalette::removeChannelsFromTrash);
+
+    connect(displayChannelPalette, &ChannelPalette::groupModified, this, &NeuroscopeApp::slotGroupsModified);
+    connect(spikeChannelPalette, &ChannelPalette::groupModified, this, &NeuroscopeApp::slotGroupsModified);
+
+
+    connect(displayChannelPalette, &ChannelPalette::channelsSelected, this, &NeuroscopeApp::slotChannelsSelected);
+    connect(spikeChannelPalette, &ChannelPalette::channelsSelected, this, &NeuroscopeApp::slotChannelsSelected);
 
 
     mMainToolBar = new QToolBar;
@@ -681,7 +686,7 @@ void NeuroscopeApp::executePreferencesDlg(){
     if(prefDialog == 0L){
         prefDialog = new PrefDialog(this);
         // connect to the "settingsChanged" signal
-        connect(prefDialog,SIGNAL(settingsChanged()),this,SLOT(applyPreferences()));
+        connect(prefDialog, &PrefDialog::settingsChanged, this, &NeuroscopeApp::applyPreferences);
     }
 
     // update the dialog widgets.
@@ -885,14 +890,14 @@ void NeuroscopeApp::initDisplay(QList<int>* channelsToDisplay,bool autocenterCha
 
     view->installEventFilter(this);
 
-    connect(view,SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotSelectChannelsInPalette(QList<int>)));
-    connect(view,SIGNAL(eventModified(QString,int,double,double)),this, SLOT(slotEventModified(QString,int,double,double)));
-    connect(view,SIGNAL(eventRemoved(QString,int,double)),this, SLOT(slotEventRemoved(QString,int,double)));
-    connect(view,SIGNAL(eventAdded(QString,QString,double)),this, SLOT(slotEventAdded(QString,QString,double)));
-    connect(view,SIGNAL(positionViewClosed()),this, SLOT(positionViewClosed()));
+    connect(view, &NeuroscopeView::channelsSelected, this, &NeuroscopeApp::slotSelectChannelsInPalette);
+    connect(view, &NeuroscopeView::eventModified, this, &NeuroscopeApp::slotEventModified);
+    connect(view, &NeuroscopeView::eventRemoved, this, &NeuroscopeApp::slotEventRemoved);
+    connect(view, &NeuroscopeView::eventAdded, this, &NeuroscopeApp::slotEventAdded);
+    connect(view, &NeuroscopeView::positionViewClosed, this, &NeuroscopeApp::positionViewClosed);
 	 
 	 /// Added by M.Zugaro to enable automatic forward paging
-	 connect(view,SIGNAL(stopped()),this,SLOT(neuroscopeViewStopped()));
+	 connect(view, &NeuroscopeView::stopped, this, &NeuroscopeApp::neuroscopeViewStopped);
 
     //Keep track of the number of displays
     displayCount ++;
@@ -928,7 +933,7 @@ void NeuroscopeApp::initDisplay(QList<int>* channelsToDisplay,bool autocenterCha
 
     //Connect the change tab signal to slotPaletteTabChange(QWidget* widget) to trigger updates when
     //the active palette changes.
-    connect(paletteTabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotPaletteTabChange(int)));
+    connect(paletteTabsParent, &QTabWidget::currentChanged, this, &NeuroscopeApp::slotPaletteTabChange);
 
 
     //Enable some actions now that a document is open
@@ -1465,7 +1470,7 @@ void NeuroscopeApp::slotFileClose(){
             }
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             //Remove the display from the group of tabs
-            disconnect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)));
+            disconnect(tabsParent, &QTabWidget::currentChanged, this, &NeuroscopeApp::slotTabChange);
             for (int i = tabsParent->count()-1; i>=0; --i) {
                 QWidget *w = tabsParent->widget(i);
                 tabsParent->removeTab(tabsParent->indexOf(w));
@@ -2539,13 +2544,13 @@ void NeuroscopeApp::createDisplay(QList<int>* channelsToDisplay,bool verticalLin
         tabsParent->addDockArea(view,tabLabel);
         view->installEventFilter(this);
 
-        connect(view,SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotSelectChannelsInPalette(QList<int>)));
-        connect(view,SIGNAL(eventModified(QString,int,double,double)),this, SLOT(slotEventModified(QString,int,double,double)));
-        connect(view,SIGNAL(eventRemoved(QString,int,double)),this, SLOT(slotEventRemoved(QString,int,double)));
-        connect(view,SIGNAL(eventAdded(QString,QString,double)),this, SLOT(slotEventAdded(QString,QString,double)));
-        connect(view,SIGNAL(positionViewClosed()),this, SLOT(positionViewClosed()));
+        connect(view, &NeuroscopeView::channelsSelected, this, &NeuroscopeApp::slotSelectChannelsInPalette);
+        connect(view, &NeuroscopeView::eventModified, this, &NeuroscopeApp::slotEventModified);
+        connect(view, &NeuroscopeView::eventRemoved, this, &NeuroscopeApp::slotEventRemoved);
+        connect(view, &NeuroscopeView::eventAdded, this, &NeuroscopeApp::slotEventAdded);
+        connect(view, &NeuroscopeView::positionViewClosed, this, &NeuroscopeApp::positionViewClosed);
 		  /// Added by M.Zugaro to enable automatic forward paging
-		  connect(view,SIGNAL(stopped()),this,SLOT(neuroscopeViewStopped()));
+		  connect(view, &NeuroscopeView::stopped, this, &NeuroscopeApp::neuroscopeViewStopped);
 
         view->installEventFilter(this);
 
@@ -2556,7 +2561,7 @@ void NeuroscopeApp::createDisplay(QList<int>* channelsToDisplay,bool verticalLin
 
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display change.
-        connect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)));
+        connect(tabsParent, &QTabWidget::currentChanged, this, &NeuroscopeApp::slotTabChange);
 
         //Keep track of the number of displays
         displayCount ++;
@@ -2821,18 +2826,18 @@ void NeuroscopeApp::createClusterPalette(const QString& clusterFileId)
     clusterPalette->createItemList(doc->providerColorList(clusterFileId),clusterFileId,0);
 
     //Disconnect the previous connection
-    if(paletteTabsParent != NULL)
+    if(paletteTabsParent != nullptr)
         disconnect(paletteTabsParent,0,0,0);
     //Connect the change tab signal to slotPaletteTabChange(QWidget* widget) to trigger updates when
     //the active palette changes.
-    connect(paletteTabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotPaletteTabChange(int)));
+    connect(paletteTabsParent, &QTabWidget::currentChanged, this, &NeuroscopeApp::slotPaletteTabChange);
 
     //Palette connections
-    connect(clusterPalette, SIGNAL(colorChanged(int,QString,QColor)), this, SLOT(slotClusterColorUpdate(int,QString, QColor)));
-    connect(clusterPalette, SIGNAL(updateShownItems(QMap<QString,QList<int> >)), this, SLOT(slotUpdateShownClusters(QMap<QString,QList<int> >)));
-    connect(clusterPalette, SIGNAL(updateItemsToSkip(QString,QList<int>)), this, SLOT(slotUpdateClustersToSkip(QString,QList<int>)));
-    connect(clusterPalette,SIGNAL(noClustersToBrowse()),this, SLOT(slotNoClustersToBrowse()));
-    connect(clusterPalette,SIGNAL(clustersToBrowse()),this, SLOT(slotClustersToBrowse()));
+    connect(clusterPalette, &ItemPalette::colorChanged, this, &NeuroscopeApp::slotClusterColorUpdate);
+    connect(clusterPalette, &ItemPalette::updateShownItems, this, &NeuroscopeApp::slotUpdateShownClusters);
+    connect(clusterPalette, &ItemPalette::updateItemsToSkip, this, &NeuroscopeApp::slotUpdateClustersToSkip);
+    connect(clusterPalette, &ItemPalette::noClustersToBrowse, this, &NeuroscopeApp::slotNoClustersToBrowse);
+    connect(clusterPalette, &ItemPalette::clustersToBrowse, this, &NeuroscopeApp::slotClustersToBrowse);
 
     slotStateChanged("clusterState");
     //Waveforms are allowed only for dat and fil files.
@@ -3030,22 +3035,22 @@ void NeuroscopeApp::createEventPalette(const QString& eventFileId){
 
 
     //Palette connections
-    connect(eventPalette, SIGNAL(colorChanged(int,QString,QColor)), this, SLOT(slotEventColorUpdate(int,QString,QColor)));
-    connect(eventPalette, SIGNAL(updateShownItems(QMap<QString,QList<int> >)), this, SLOT(slotUpdateShownEvents(QMap<QString,QList<int> >)));
-    connect(eventPalette, SIGNAL(selectedGroupChanged(QString)), this, SLOT(slotEventGroupSelected(QString)));
-    connect(eventPalette, SIGNAL(updateItemsToSkip(QString,QList<int>)), this, SLOT(slotUpdateEventsToSkip(QString,QList<int>)));
-    connect(eventPalette,SIGNAL(noEventsToBrowse()),this, SLOT(slotNoEventsToBrowse()));
-    connect(eventPalette,SIGNAL(eventsToBrowse()),this, SLOT(slotEventsToBrowse()));
+    connect(eventPalette, &ItemPalette::colorChanged, this, &NeuroscopeApp::slotEventColorUpdate);
+    connect(eventPalette, &ItemPalette::updateShownItems, this, &NeuroscopeApp::slotUpdateShownEvents);
+    connect(eventPalette, &ItemPalette::selectedGroupChanged, this, &NeuroscopeApp::slotEventGroupSelected);
+    connect(eventPalette, &ItemPalette::updateItemsToSkip, this, &NeuroscopeApp::slotUpdateEventsToSkip);
+    connect(eventPalette, &ItemPalette::noEventsToBrowse, this, &NeuroscopeApp::slotNoEventsToBrowse);
+    connect(eventPalette, &ItemPalette::eventsToBrowse, this, &NeuroscopeApp::slotEventsToBrowse);
 
 
     //Create the list
     eventPalette->createItemList(doc->providerColorList(eventFileId),eventFileId,doc->getLastEventProviderGridX());
 
     //Disconnect the previous connection
-    if(paletteTabsParent != NULL)
+    if(paletteTabsParent != nullptr)
         disconnect(paletteTabsParent,0,0,0);
 
-    connect(paletteTabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotPaletteTabChange(int)));
+    connect(paletteTabsParent, &QTabWidget::currentChanged, this, &NeuroscopeApp::slotPaletteTabChange);
 
     slotStateChanged("eventState");
     if(isPositionFileLoaded) {

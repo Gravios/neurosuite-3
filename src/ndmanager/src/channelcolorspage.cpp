@@ -19,6 +19,7 @@
  ***************************************************************************/
 //include files for the application
 #include "channelcolorspage.h"
+#include <QPushButton>
 
 // include files for QT
 #include <QWidget>
@@ -38,9 +39,9 @@ ChannelColorsPage::ChannelColorsPage(QWidget* parent)
     ,modified(false)
 {
     colorTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-    connect(colorTable, SIGNAL(cellChanged(int,int)),this, SLOT(propertyModified()));
-    connect(colorTable, SIGNAL(cellDoubleClicked(int,int)),this, SLOT(propertyModified()));
-    connect(colorTable, SIGNAL(modified()),SLOT(propertyModified()));
+    connect(colorTable, &QTableWidget::cellChanged, this, &ChannelColorsPage::propertyModified);
+    connect(colorTable, &QTableWidget::cellDoubleClicked, this, &ChannelColorsPage::propertyModified);
+    connect(colorTable, &ColorTable::modified, this, &ChannelColorsPage::propertyModified);
 }
 
 ChannelColorsPage::~ChannelColorsPage(){}

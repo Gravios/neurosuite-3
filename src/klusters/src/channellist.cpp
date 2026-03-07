@@ -26,8 +26,8 @@ ChannelList::ChannelList(QWidget * parent)
     setDragDropMode(QAbstractItemView::InternalMove);
     setSelectionMode(QAbstractItemView::SingleSelection);
     connect( model(),
-             SIGNAL(rowsMoved(QModelIndex,int,int,QModelIndex,int)),
-             SIGNAL(positionsChanged()) );
+             &QAbstractItemModel::rowsMoved,
+             [this](){ emit positionsChanged(); } );
 
 }
 

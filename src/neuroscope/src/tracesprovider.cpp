@@ -169,10 +169,10 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
                     for ( int j = 0 ; j < i ; ++j )
                         pad += "0";
                     cscFileName = baseName + pad + QString::fromLatin1("%1.ncs").arg(channel);
-                    dataFile = fopen(cscFileName.toLatin1(),"rb");
-                    if (dataFile != NULL) break;
+                    dataFile = fopen(qPrintable(cscFileName),"rb");
+                    if (dataFile != nullptr) break;
                 }
-                if (dataFile == NULL)
+                if (dataFile == nullptr)
                 {
                     // Emit the signal with an empty array, let the receiver handle the error (user message).
                     data.setSize(0,0);

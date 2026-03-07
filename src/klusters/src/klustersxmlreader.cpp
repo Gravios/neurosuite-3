@@ -43,7 +43,6 @@ bool KlustersXmlReader::parseFile(const QFile& file,fileType type){
     this->type = type;
 
     QFile input(file.fileName());
-    qDebug()<<" file.fileName"<<file.fileName();
 
     if (!input.open(QIODevice::ReadOnly)) {
         qWarning() << "Unable to open file:" << input.fileName();
@@ -64,7 +63,6 @@ bool KlustersXmlReader::parseFile(const QFile& file,fileType type){
     if (element.tagName() == QLatin1String("parameters")) {
         if( element.hasAttribute(VERSION)) {
             readVersion = element.attribute(VERSION);
-            qDebug()<<" readVersion "<<readVersion;
         }
     }
     documentNode = element;

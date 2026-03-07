@@ -605,7 +605,7 @@ public:
     int isEventsInPositionView()const{return eventsInPositionView;}
 
 	 /// Added by M.Zugaro to enable automatic forward paging
-	 bool isStill() { return ( traceWidget == NULL || traceWidget->isStill() ); }
+	 bool isStill() { return ( traceWidget == nullptr || traceWidget->isStill() ); }
 
 private Q_SLOTS:
 

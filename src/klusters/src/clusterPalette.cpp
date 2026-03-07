@@ -314,11 +314,11 @@ ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QSt
     //Set the legend in the good language
     languageChange();
 
-    connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
-    connect(iconView,SIGNAL(customContextMenuRequested(QPoint)),this, SLOT(slotCustomContextMenuRequested(QPoint)));
-    connect(iconView,SIGNAL(changeColor(QListWidgetItem*)),SLOT(changeColor(QListWidgetItem*)));
-    connect(iconView,SIGNAL(onItem(QListWidgetItem*)),this, SLOT(slotOnItem(QListWidgetItem*)));
-    connect(iconView,SIGNAL(paletteGainedFocus()),this, SIGNAL(paletteGainedFocus()));
+    connect(iconView, &QListWidget::itemSelectionChanged, this, &ClusterPalette::slotClickRedraw);
+    connect(iconView, &QWidget::customContextMenuRequested, this, &ClusterPalette::slotCustomContextMenuRequested);
+    connect(iconView, &ClusterPaletteWidget::changeColor, this, &ClusterPalette::changeColor);
+    connect(iconView,&ClusterPaletteWidget::onItem,this, &ClusterPalette::slotOnItem);
+    connect(iconView,&ClusterPaletteWidget::paletteGainedFocus,this, &ClusterPalette::paletteGainedFocus);
     connect(iconView, &ClusterPaletteWidget::selectionToggled, this, &ClusterPalette::slotClickRedraw);
 
     // Redirect focus straight to the inner list so Tab-navigation and

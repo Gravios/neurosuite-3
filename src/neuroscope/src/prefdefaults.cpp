@@ -16,6 +16,7 @@
  ***************************************************************************/
 //Application specific includes.
 #include "prefdefaults.h"
+#include <QPushButton>
 
 
 
@@ -33,7 +34,7 @@ PrefDefaults::PrefDefaults(QWidget *parent )
     voltageRangeLineEdit->setValidator(&intValidator);
     amplificationLineEdit->setValidator(&intValidator);
 
-    connect(traceBackgroundButton,SIGNAL(clicked()),this,SLOT(updateTraceBackgroundImage()));
+    connect(traceBackgroundButton, &QAbstractButton::clicked, this, &PrefDefaults::updateTraceBackgroundImage);
 
     //Set an icon on the backgroundButton button
 

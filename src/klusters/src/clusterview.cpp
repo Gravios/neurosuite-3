@@ -81,7 +81,6 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
 }
 
 ClusterView::~ClusterView(){
-    qDebug() << "in ~ClusterView(): ";
 }
 
 void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,bool drawCircles){

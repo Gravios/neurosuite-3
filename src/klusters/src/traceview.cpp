@@ -138,7 +138,8 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     }
 
     //Set Connection(s).
-    connect(&tracesProvider,SIGNAL(dataReady(Array<dataType>&,QObject*)),this,SLOT(dataAvailable(Array<dataType>&,QObject*)));
+    connect(&tracesProvider, &TracesProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,QObject*)>(&TraceView::dataAvailable));
 
     //Set the display of the labels, the default is to hide them, if need it change that.
     if(showLabels){
@@ -3148,7 +3149,6 @@ void TraceView::correctZoom(QRect& r){
         }
     }
     /* if(zoomed && !firstZoom && zoomOut){
-     qDebug()<<" zoomed && !firstZoom && zoomOut r.width() "<<r.width();
     zoomOut = false;
     zoomed = false;
     if(zoomFactor != 1){
@@ -3156,7 +3156,6 @@ void TraceView::correctZoom(QRect& r){
      }
      else{
       zoomed = false;
-      qDebug()<<"zoomFactor "<<zoomFactor;
       int windowWidth = r.width();
 
 
@@ -3179,8 +3178,6 @@ void TraceView::correctZoom(QRect& r){
       r.setLeft(newLeft);
       r.setWidth(newWidth);
       window = ZoomWindow(r);
- qDebug()<<"previousWindow.width() "<<previousWindow.width()<<" windowWidth "<<windowWidth<<" previousDownSampling "<<previousDownSampling<<" zoomFactor "<<zoomFactor;
-qDebug()<<" downSampling "<<downSampling<<" newWidth "<<newWidth<<" r.left() "<<r.left()<<" newLeft "<<newLeft<<" timeStep "<<timeStep;
 
      }
     }
@@ -3439,9 +3436,10 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
                                    QList<int>& clustersToShow,QMap<int, QList<int> >* displayGroupsClusterFile,QMap<int,int>* channelsSpikeGroups,
                                    int nbSamplesBefore,int nbSamplesAfter,const QList<int>& clustersToSkip){
     //Set Connection
-    connect(clustersProvider,SIGNAL(dataReady(Array<dataType>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,QObject*,QString)));
-    connect(clustersProvider,SIGNAL(nextClusterDataReady(Array<dataType>&,QObject*,QString,long,long)),this,SLOT(nextClusterDataAvailable(Array<dataType>&,QObject*,QString,long,long)));
-    connect(clustersProvider,SIGNAL(previousClusterDataReady(Array<dataType>&,QObject*,QString,long,long)),this,SLOT(previousClusterDataAvailable(Array<dataType>&,QObject*,QString,long,long)));
+    connect(clustersProvider, &ClustersProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,QObject*,QString)>(&TraceView::dataAvailable));
+    connect(clustersProvider,&ClustersProvider::nextClusterDataReady,this,&TraceView::nextClusterDataAvailable);
+    connect(clustersProvider,&ClustersProvider::previousClusterDataReady,this,&TraceView::previousClusterDataAvailable);
 
     updateNoneBrowsingClusterList(name,clustersToSkip);
 
@@ -3630,9 +3628,10 @@ void TraceView::addEventProvider(EventsProvider* eventsProvider,QString name,Ite
                                  bool active,QList<int>& eventsToShow,const QList<int>& eventsToSkip){
 
     //Set Connections
-    connect(eventsProvider,SIGNAL(dataReady(Array<dataType>&,Array<int>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,Array<int>&,QObject*,QString)));
-    connect(eventsProvider,SIGNAL(nextEventDataReady(Array<dataType>&,Array<int>&,QObject*,QString,long)),this,SLOT(nextEventDataAvailable(Array<dataType>&,Array<int>&,QObject*,QString,long)));
-    connect(eventsProvider,SIGNAL(previousEventDataReady(Array<dataType>&,Array<int>&,QObject*,QString,long)),this,SLOT(previousEventDataAvailable(Array<dataType>&,Array<int>&,QObject*,QString,long)));
+    connect(eventsProvider, &EventsProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,Array<int>&,QObject*,QString)>(&TraceView::dataAvailable));
+    connect(eventsProvider,&EventsProvider::nextEventDataReady,this,&TraceView::nextEventDataAvailable);
+    connect(eventsProvider,&EventsProvider::previousEventDataReady,this,&TraceView::previousEventDataAvailable);
 
     updateNoneBrowsingEventList(name,eventsToSkip);
 

@@ -181,7 +181,8 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     }
 
     //Set Connection(s).
-    connect(&tracesProvider,SIGNAL(dataReady(Array<dataType>&,QObject*)),this,SLOT(dataAvailable(Array<dataType>&,QObject*)));
+    connect(&tracesProvider, &TracesProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,QObject*)>(&TraceView::dataAvailable));
 
     //Set the display of the labels, the default is to hide them, if need it change that.
     if (showLabels){
@@ -1042,7 +1043,6 @@ void TraceView::updateWindow(){
     const int nbGps = shownGroupsChannels.count();
     const int nbShownchannels = shownChannels.size();
     const int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
-    //qDebug() << Q_FUNC_INFO << "nbSamples=" << nbSamples << "multiColumns=" << multiColumns << "isInit=" << isInit;
 
     const int oldXshift = Xshift;
 
@@ -1116,7 +1116,6 @@ void TraceView::updateWindow(){
         XGroupSpace = viewportToWorldWidth(xMargin);
         abscissaMax = 2 * borderX + (nbSamplesToDraw -1) * Xstep * nbGps + (nbGps - 1) * XGroupSpace;
         Xshift = (nbSamplesToDraw - 1) * Xstep + XGroupSpace;
-        //qDebug() << Q_FUNC_INFO << this << "XGroupSpace =" << XGroupSpace << "Xshift =" << (nbSamplesToDraw - 1) << "*" << Xstep << "+" << XGroupSpace << "=" << Xshift;
 
         int maxNbChannels = 0;
         for (QMap<int, QList<int> >::const_iterator iterator = shownGroupsChannels.constBegin();
@@ -1369,7 +1368,6 @@ void TraceView::drawTrace(QPainter& painter,int limit,int basePosition,int X,int
 
 void TraceView::drawTraces( const QList<int>& channels,bool highlight)
 {
-    //qDebug() << Q_FUNC_INFO << channels << "selected=" << highlight;
 
     QRect r((QRect)window);
 
@@ -1573,7 +1571,6 @@ void TraceView::drawTraces(QPainter& painter){
     int limit = viewportToWorldHeight(1);
     int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
     int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
-    qDebug()<<"nbSamplesToDraw "<<nbSamplesToDraw;
 
     //traces presented on multiple columns
     if (multiColumns){
@@ -2033,14 +2030,11 @@ void TraceView::drawTraces(QPainter& painter){
 
             QMap<int,QList<int> >::Iterator iterator;
             for(iterator = selectedClusters.begin(); iterator != selectedClusters.end(); ++iterator){
-                qDebug()<<" selectedClusters.begin()"<<*iterator;
                 QList<int> clusterList = iterator.value();
                 if (clusterList.isEmpty())
                     continue;
                 QString providerName = QString::number(iterator.key());
-                qDebug()<<" providerName "<<providerName;
                 ItemColors* colors = providerItemColors[providerName];
-                qDebug()<<" clustersData[providerName]"<<clustersData[providerName];
                 Array<dataType>& currentData = static_cast<ClusterData*>(clustersData[providerName])->getData();
                 int nbSpikes = currentData.nbOfColumns();
                 QList<int>::iterator clusterIterator;
@@ -2128,7 +2122,6 @@ void TraceView::drawChannelIdsAndGain(QPainter& painter){
             for(int i = 0;i < static_cast<int>(clustersOrder.size());++i){
                 int position = rasterOrdinates.at(i);
                 QString clusterIdentifier = clustersOrder.at(i);
-                qDebug()<<"clusterIdentifier "<<clusterIdentifier;
                 int abscissa = rasterAbscisses.at(i);
                 QRect r;
                 QRect rHighlight;
@@ -3281,7 +3274,6 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
 }
 
 void TraceView::selectChannels(const QList<int>& selectedIds){
-    qDebug() << Q_FUNC_INFO << selectedIds;
     if ((mSelectedChannels.size() == 0 && selectedIds.size() == 0))
         return;
 
@@ -3313,7 +3305,6 @@ void TraceView::selectChannels(const QList<int>& selectedIds){
         if(shownChannels.contains(*iterator) && !skippedChannels.contains(*iterator))
             mSelectedChannels.append(*iterator);
     }
-    //qDebug() << Q_FUNC_INFO << "now mSelectedChannels=" << mSelectedChannels;
 
     drawTraces(deselectedChannels,false);
     drawTraces(newlySelectedChannels,true);
@@ -3396,7 +3387,6 @@ void TraceView::correctZoom(QRect& r){
         }
     }
     /* if (zoomed && !firstZoom && zoomOut){
-     qDebug()<<" zoomed && !firstZoom && zoomOut r.width() "<<r.width();
     zoomOut = false;
     zoomed = false;
     if (zoomFactor != 1){
@@ -3404,7 +3394,6 @@ void TraceView::correctZoom(QRect& r){
      }
      else{
       zoomed = false;
-      qDebug()<<"zoomFactor "<<zoomFactor;
       int windowWidth = r.width();
 
 
@@ -3427,8 +3416,6 @@ void TraceView::correctZoom(QRect& r){
       r.setLeft(newLeft);
       r.setWidth(newWidth);
       window = ZoomWindow(r);
- qDebug()<<"previousWindow.width() "<<previousWindow.width()<<" windowWidth "<<windowWidth<<" previousDownSampling "<<previousDownSampling<<" zoomFactor "<<zoomFactor;
-qDebug()<<" downSampling "<<downSampling<<" newWidth "<<newWidth<<" r.left() "<<r.left()<<" newLeft "<<newLeft<<" timeStep "<<timeStep;
 
      }
     }
@@ -3690,9 +3677,10 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
                                    int nbSamplesBefore,int nbSamplesAfter,const QList<int>& clustersToSkip){
 
     //Set Connection
-    connect(clustersProvider,SIGNAL(dataReady(Array<dataType>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,QObject*,QString)));
-    connect(clustersProvider,SIGNAL(nextClusterDataReady(Array<dataType>&,QObject*,QString,long,long)),this,SLOT(nextClusterDataAvailable(Array<dataType>&,QObject*,QString,long,long)));
-    connect(clustersProvider,SIGNAL(previousClusterDataReady(Array<dataType>&,QObject*,QString,long,long)),this,SLOT(previousClusterDataAvailable(Array<dataType>&,QObject*,QString,long,long)));
+    connect(clustersProvider, &ClustersProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,QObject*,const QString&)>(&TraceView::dataAvailable));
+    connect(clustersProvider,&ClustersProvider::nextClusterDataReady,this,&TraceView::nextClusterDataAvailable);
+    connect(clustersProvider,&ClustersProvider::previousClusterDataReady,this,&TraceView::previousClusterDataAvailable);
 
     updateNoneBrowsingClusterList(name,clustersToSkip);
 
@@ -3704,7 +3692,6 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
         }
 
         selectedClusters.insert(name.toInt(),clusters);
-        qDebug()<<"name.toInt() "<<name.toInt();
         ClusterData* clusterData = new ClusterData();
         clustersData.insert(name,clusterData);
 
@@ -3715,7 +3702,6 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
         }
     }
 
-    qDebug()<<" void TraceView::addClusterProvider*************************************"<<name;
     clusterProviders.insert(name,clustersProvider);
     providerItemColors.insert(name,clusterColors);
 
@@ -3741,17 +3727,14 @@ void TraceView::removeClusterProvider(const QString &name, bool active){
 
 
 void TraceView::showClusters(const QString &name, const QList<int> &clustersToShow){
-    qDebug()<<" void TraceView::showClusters(const QString &name, const QList<int> &clustersToShow){"<<name;
     ClusterData* clusterData = clustersData[name];
 
     QList<int> clusters;
     if (!clustersToShow.isEmpty()){
-        qDebug()<<" selectedClusters.insert(name.toInt(),clustersToShow);"<<clustersToShow;
         selectedClusters.insert(name.toInt(),clustersToShow);
         if (clusterData == 0){
             clusterData = new ClusterData();
             clustersData.insert(name,clusterData);
-            qDebug()<<" name "<<name;
             ClustersProvider* provider = clusterProviders[name];
             setCursor(Qt::WaitCursor);
             updateWindow();
@@ -3789,8 +3772,6 @@ void TraceView::skipStatusChanged(const QList<int>& skippedChannels){
 
 void TraceView::clusterColorUpdate(const QColor &c, const QString &name, int clusterId, bool active){
     //redraw everything
-    qDebug()<<" clusterID"<<clusterId;
-    qDebug()<<" cluster providerItemColors"<<providerItemColors[name]->numberOfItems();
     ItemColors* colors = providerItemColors[name];
     colors->setColor(clusterId, c,ItemColors::BY_INDEX);
     if (active){
@@ -3885,9 +3866,10 @@ void TraceView::addEventProvider(EventsProvider* eventsProvider,QString name,Ite
                                  bool active,QList<int>& eventsToShow,const QList<int>& eventsToSkip){
 
     //Set Connections
-    connect(eventsProvider,SIGNAL(dataReady(Array<dataType>&,Array<int>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,Array<int>&,QObject*,QString)));
-    connect(eventsProvider,SIGNAL(nextEventDataReady(Array<dataType>&,Array<int>&,QObject*,QString,long)),this,SLOT(nextEventDataAvailable(Array<dataType>&,Array<int>&,QObject*,QString,long)));
-    connect(eventsProvider,SIGNAL(previousEventDataReady(Array<dataType>&,Array<int>&,QObject*,QString,long)),this,SLOT(previousEventDataAvailable(Array<dataType>&,Array<int>&,QObject*,QString,long)));
+    connect(eventsProvider, &EventsProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,Array<int>&,QObject*,const QString&)>(&TraceView::dataAvailable));
+    connect(eventsProvider,&EventsProvider::nextEventDataReady,this,&TraceView::nextEventDataAvailable);
+    connect(eventsProvider,&EventsProvider::previousEventDataReady,this,&TraceView::previousEventDataAvailable);
 
     updateNoneBrowsingEventList(name,eventsToSkip);
 

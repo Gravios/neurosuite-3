@@ -28,6 +28,5 @@ ViewWidget::ViewWidget(KlustersDoc& doc,KlustersView& view,const QColor& backgro
 }
 
 ViewWidget::~ViewWidget(){
-    qDebug() << "in ~ViewWidget(): ";
 }
 

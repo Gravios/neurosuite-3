@@ -1,0 +1,116 @@
+---
+MainSourceFile:  '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+Diagnostics:
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      52322
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      54237
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      51904
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      56176
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      62902
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      64805
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      62484
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      66732
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      104364
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      106194
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '20 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      103883
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  switch
+    DiagnosticMessage:
+      Message:         '21 enumeration values not handled in switch: ''ButtonMask'', ''NoButton'', ''Default''...'
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      108136
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  parentheses
+    DiagnosticMessage:
+      Message:         using the result of an assignment as a condition without parentheses
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      116571
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+  - DiagnosticName:  parentheses
+    DiagnosticMessage:
+      Message:         using the result of an assignment as a condition without parentheses
+      FilePath:        '/home/graboski/software/neurosuite-3/src/neuroscope/src/neuroscope.cpp'
+      FileOffset:      117121
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  ''
+...

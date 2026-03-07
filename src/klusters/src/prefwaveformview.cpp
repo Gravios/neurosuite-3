@@ -16,6 +16,7 @@
  ***************************************************************************/
 //include files for the application
 #include "prefwaveformview.h"
+#include <QPushButton>
 
 // include files for QT
 #include <QPainter>
@@ -36,9 +37,9 @@ PrefWaveformView::PrefWaveformView(QWidget *parent,int nbChannels,const char *na
         channelList->setEnabled(false);
     }
 
-    connect(saveButton,SIGNAL(clicked()),this,SLOT(saveChannelOrder()));
-    connect(loadButton,SIGNAL(clicked()),this,SLOT(loadChannelOrder()));
-    connect(channelList,SIGNAL(positionsChanged()),this,SLOT(updateChannelPositions()));
+    connect(saveButton, &QAbstractButton::clicked, this, &PrefWaveformView::saveChannelOrder);
+    connect(loadButton, &QAbstractButton::clicked, this, &PrefWaveformView::loadChannelOrder);
+    connect(channelList,&ChannelList::positionsChanged,this,&PrefWaveformView::updateChannelPositions);
 
 }
 PrefWaveformView::~PrefWaveformView(){
@@ -73,8 +74,8 @@ void PrefWaveformView::resetChannelList(int nb){
 void PrefWaveformView::saveChannelOrder(){
     const QString url = QFileDialog::getSaveFileName(this, tr("Save as..."),QDir::currentPath(), tr("All files (*)") );
     if(!url.isEmpty()){
-        FILE* channelFile = fopen(url.toLatin1(),"w");
-        if(channelFile == NULL){
+        FILE* channelFile = fopen(qPrintable(url),"w");
+        if(channelFile == nullptr){
             QMessageBox::critical (this,tr("Error !"),
                                    tr("The selected file could not be opened, possibly because of access permissions !")
                                    );

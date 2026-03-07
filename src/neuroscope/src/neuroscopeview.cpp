@@ -28,6 +28,10 @@
 #include "neuroscopedoc.h"
 #include "neuroscope.h"
 #include "tracewidget.h"
+// Qt6 PMF connect requires complete types for all signal/slot parameter types
+#include "clustersprovider.h"
+#include "eventsprovider.h"
+#include "itemcolors.h"
 
 
 class EventData;
@@ -70,74 +74,79 @@ NeuroscopeView::NeuroscopeView(NeuroscopeApp& mainWindow, const QString &label, 
                                   waveforms,labelsDisplay,*shownChannels,unitGain,acquisitionGain,channelColors,groupsChannels,channelsGroups,autocenterChannels,
                                   channelOffsets,gains,skippedChannels,rasterHeight,QImage(backgroundImagePath),mainDock,"traces",backgroundColor,statusBar,5);
 	 /// Added by M.Zugaro to enable automatic forward paging
-    connect(traceWidget,SIGNAL(stopped()),this,SLOT(traceWidgetStopped()));
+    connect(traceWidget,&TraceWidget::stopped,this,&NeuroscopeView::traceWidgetStopped);
 
     mainDock->setWidget(traceWidget);
     mainDock->setFocusPolicy(Qt::NoFocus);
 
     //Set Connection(s) common to all widgets.
-    connect(this,SIGNAL(updateContents()),traceWidget,SLOT(updateContents()));
-    connect(this,SIGNAL(changeBackgroundColor(QColor)),traceWidget, SLOT(changeBackgroundColor(QColor)));
-    connect(this,SIGNAL(greyScale(bool)),traceWidget, SLOT(setGreyScale(bool)));
-    connect(traceWidget,SIGNAL(channelsSelected(QList<int>)),this, SLOT(slotChannelsSelected(QList<int>)));
-    connect(this,SIGNAL(modeToSet(BaseFrame::Mode,bool)),traceWidget,SLOT(setMode(BaseFrame::Mode,bool)));
-    connect(this,SIGNAL(multiColumnsDisplay(bool)),traceWidget,SLOT(setMultiColumns(bool)));
-    connect(this,SIGNAL(clusterVerticalLinesDisplay(bool)),traceWidget,SLOT(setClusterVerticalLines(bool)));
-    connect(this,SIGNAL(clusterRasterDisplay(bool)),traceWidget,SLOT(setClusterRaster(bool)));
-    connect(this,SIGNAL(clusterWaveformsDisplay(bool)),traceWidget,SLOT(setClusterWaveforms(bool)));
-    connect(this,SIGNAL(showChannels(QList<int>)),traceWidget,SLOT(showChannels(QList<int>)));
-    connect(this,SIGNAL(channelColorUpdate(int,bool)),traceWidget,SLOT(channelColorUpdate(int,bool)));
-    connect(this,SIGNAL(groupColorUpdate(int,bool)),traceWidget,SLOT(groupColorUpdate(int,bool)));
-    connect(this,SIGNAL(increaseAllAmplitude()),traceWidget,SLOT(increaseAllChannelsAmplitude()));
-    connect(this,SIGNAL(decreaseAllAmplitude()),traceWidget,SLOT(decreaseAllChannelsAmplitude()));
-    connect(this,SIGNAL(increaseAmplitude(QList<int>)),traceWidget,SLOT(increaseSelectedChannelsAmplitude(QList<int>)));
-    connect(this,SIGNAL(decreaseAmplitude(QList<int>)),traceWidget,SLOT(decreaseSelectedChannelsAmplitude(QList<int>)));
-    connect(this,SIGNAL(updateGains(int,int)),traceWidget,SLOT(setGains(int,int)));
-    connect(this,SIGNAL(updateDrawing()),traceWidget, SLOT(updateDrawing()));
-    connect(this,SIGNAL(groupsHaveBeenModified(bool)),traceWidget, SLOT(groupsModified(bool)));
-    connect(this,SIGNAL(channelsToBeSelected(QList<int>)),traceWidget,SLOT(selectChannels(QList<int>)));
-    connect(this,SIGNAL(resetChannelOffsets(QMap<int,int>)),traceWidget,SLOT(resetOffsets(QMap<int,int>)));
-    connect(this,SIGNAL(resetChannelGains(QList<int>)),traceWidget,SLOT(resetGains(QList<int>)));
-    connect(this,SIGNAL(drawTraces()),traceWidget,SLOT(drawTraces()));
-    connect(this,SIGNAL(reset()),traceWidget,SLOT(reset()));
-    connect(traceWidget,SIGNAL(updateStartAndDuration(long,long)),this, SLOT(setStartAndDuration(long,long)));
-    connect(this,SIGNAL(autocenterChannelsChanged(bool)),traceWidget, SLOT(setAutocenterChannels(bool)));
-    connect(this,SIGNAL(showLabels(bool)),traceWidget, SLOT(showLabels(bool)));
-    connect(this,SIGNAL(displayCalibration(bool,bool)),traceWidget, SLOT(showCalibration(bool,bool)));
-    connect(this,SIGNAL(newSamplingRate(qlonglong)),traceWidget,SLOT(samplingRateModified(qlonglong)));
-    connect(this,SIGNAL(newClusterProvider(ClustersProvider*,QString,ItemColors*,bool,QList<int>&,QMap<int,QList<int> >*,QMap<int,int>*,int,int,QList<int>)),traceWidget,
-            SLOT(addClusterProvider(ClustersProvider*,QString,ItemColors*,bool,QList<int>&,QMap<int,QList<int> >*,QMap<int,int>*,int,int,QList<int>)));
-    connect(this,SIGNAL(clusterProviderRemoved(QString,bool)),traceWidget,SLOT(removeClusterProvider(QString,bool)));
-    connect(this,SIGNAL(showClusters(QString,QList<int>)),traceWidget,SLOT(showClusters(QString,QList<int>)));
-    connect(this,SIGNAL(clusterColorUpdated(QColor,QString,int,bool)),traceWidget,SLOT(clusterColorUpdate(QColor,QString,int,bool)));
-    connect(this,SIGNAL(print(QPainter&,int,int,QString,bool)),traceWidget,SLOT(print(QPainter&,int,int,QString,bool)));
-    connect(this,SIGNAL(newEventProvider(EventsProvider*,QString,ItemColors*,bool,QList<int>&,QList<int>)),traceWidget,
-            SLOT(addEventProvider(EventsProvider*,QString,ItemColors*,bool,QList<int>&,QList<int>)));
-    connect(this,SIGNAL(eventProviderRemoved(QString,bool,bool)),traceWidget,SLOT(removeEventProvider(QString,bool)));
-    connect(this,SIGNAL(showEvents(QString,QList<int>&)),traceWidget,SLOT(showEvents(QString,QList<int>&)));
-    connect(this,SIGNAL(eventColorUpdated(QColor,QString,int,bool)),traceWidget,SLOT(eventColorUpdate(QColor,QString,int,bool)));
-    connect(this,SIGNAL(nextEvent()),traceWidget,SLOT(showNextEvent()));
-    connect(this,SIGNAL(previousEvent()),traceWidget,SLOT(showPreviousEvent()));
-    connect(traceWidget,SIGNAL(eventModified(QString,int,double,double)),this, SLOT(slotEventModified(QString,int,double,double)));
-    connect(this,SIGNAL(updateEvents(bool,QString,double,double)),traceWidget,SLOT(updateEvents(bool,QString,double,double)));
-    connect(this,SIGNAL(eventToRemove()),traceWidget,SLOT(removeEvent()));
-    connect(traceWidget,SIGNAL(eventRemoved(QString,int,double)),this, SLOT(slotEventRemoved(QString,int,double)));
-    connect(this,SIGNAL(updateEvents(bool,QString,double)),traceWidget,SLOT(updateEvents(bool,QString,double)));
-    connect(this,SIGNAL(newEventProperties(QString,QString)),traceWidget,SLOT(eventToAddProperties(QString,QString)));
-    connect(traceWidget,SIGNAL(eventAdded(QString,QString,double)),this, SLOT(slotEventAdded(QString,QString,double)));
-    connect(this,SIGNAL(updateEvents(QString,QList<int>&,bool)),traceWidget,SLOT(updateEvents(QString,QList<int>&,bool)));
-    connect(this,SIGNAL(nextCluster()),traceWidget,SLOT(showNextCluster()));
-    connect(this,SIGNAL(previousCluster()),traceWidget,SLOT(showPreviousCluster()));
-    connect(this,SIGNAL(waveformInformationUpdated(int,int,bool)),traceWidget,SLOT(updateWaveformInformation(int,int,bool)));
-    connect(this,SIGNAL(clusterProviderUpdated(bool)),traceWidget,SLOT(updateClusterData(bool)));
-    connect(this,SIGNAL(noneBrowsingClusterListUpdated(QString,QList<int>)),traceWidget,SLOT(updateNoneBrowsingClusterList(QString,QList<int>)));
-    connect(this,SIGNAL(noneBrowsingEventListUpdated(QString,QList<int>)),traceWidget,SLOT(updateNoneBrowsingEventList(QString,QList<int>)));
-    connect(this,SIGNAL(skipStatusChanged(QList<int>)),traceWidget,SLOT(updateSkipStatus(QList<int>)));
-    connect(this,SIGNAL(decreaseTheRasterHeight()),traceWidget,SLOT(decreaseRasterHeight()));
-    connect(this,SIGNAL(increaseTheRasterHeight()),traceWidget,SLOT(increaseRasterHeight()));
-    connect(this,SIGNAL(traceBackgroundImageUpdate(QImage,bool)),traceWidget,SLOT(traceBackgroundImageUpdate(QImage,bool)));
+    connect(this,&NeuroscopeView::updateContents,traceWidget,&TraceWidget::updateContents);
+    connect(this,&NeuroscopeView::changeBackgroundColor,traceWidget, &TraceWidget::changeBackgroundColor);
+    connect(this,&NeuroscopeView::greyScale,traceWidget, &TraceWidget::setGreyScale);
+    connect(traceWidget,&TraceWidget::channelsSelected,this, &NeuroscopeView::slotChannelsSelected);
+    connect(this,&NeuroscopeView::modeToSet,traceWidget,&TraceWidget::setMode);
+    connect(this,&NeuroscopeView::multiColumnsDisplay,traceWidget,&TraceWidget::setMultiColumns);
+    connect(this,&NeuroscopeView::clusterVerticalLinesDisplay,traceWidget,&TraceWidget::setClusterVerticalLines);
+    connect(this,&NeuroscopeView::clusterRasterDisplay,traceWidget,&TraceWidget::setClusterRaster);
+    connect(this,&NeuroscopeView::clusterWaveformsDisplay,traceWidget,&TraceWidget::setClusterWaveforms);
+    connect(this,&NeuroscopeView::showChannels,traceWidget,&TraceWidget::showChannels);
+    connect(this,&NeuroscopeView::channelColorUpdate,traceWidget,&TraceWidget::channelColorUpdate);
+    connect(this,&NeuroscopeView::groupColorUpdate,traceWidget,&TraceWidget::groupColorUpdate);
+    connect(this,&NeuroscopeView::increaseAllAmplitude,traceWidget,&TraceWidget::increaseAllChannelsAmplitude);
+    connect(this,&NeuroscopeView::decreaseAllAmplitude,traceWidget,&TraceWidget::decreaseAllChannelsAmplitude);
+    connect(this,&NeuroscopeView::increaseAmplitude,traceWidget,&TraceWidget::increaseSelectedChannelsAmplitude);
+    connect(this,&NeuroscopeView::decreaseAmplitude,traceWidget,&TraceWidget::decreaseSelectedChannelsAmplitude);
+    connect(this,&NeuroscopeView::updateGains,traceWidget,&TraceWidget::setGains);
+    connect(this,&NeuroscopeView::updateDrawing,traceWidget, &TraceWidget::updateDrawing);
+    connect(this,&NeuroscopeView::groupsHaveBeenModified,traceWidget, &TraceWidget::groupsModified);
+    connect(this,&NeuroscopeView::channelsToBeSelected,traceWidget,&TraceWidget::selectChannels);
+    connect(this,&NeuroscopeView::resetChannelOffsets,traceWidget,&TraceWidget::resetOffsets);
+    connect(this,&NeuroscopeView::resetChannelGains,traceWidget,&TraceWidget::resetGains);
+    connect(this,&NeuroscopeView::drawTraces,traceWidget,&TraceWidget::drawTraces);
+    connect(this,&NeuroscopeView::reset,traceWidget,&TraceWidget::reset);
+    connect(traceWidget,&TraceWidget::updateStartAndDuration,this, &NeuroscopeView::setStartAndDuration);
+    connect(this,&NeuroscopeView::autocenterChannelsChanged,traceWidget, &TraceWidget::setAutocenterChannels);
+    connect(this,&NeuroscopeView::showLabels,traceWidget, &TraceWidget::showLabels);
+    connect(this,&NeuroscopeView::displayCalibration,traceWidget, &TraceWidget::showCalibration);
+    connect(this,&NeuroscopeView::newSamplingRate,traceWidget,&TraceWidget::samplingRateModified);
+    connect(this,&NeuroscopeView::newClusterProvider,traceWidget,
+            &TraceWidget::addClusterProvider);
+    connect(this,&NeuroscopeView::clusterProviderRemoved,traceWidget,&TraceWidget::removeClusterProvider);
+    connect(this,&NeuroscopeView::showClusters,traceWidget,&TraceWidget::showClusters);
+    connect(this,&NeuroscopeView::clusterColorUpdated,traceWidget,&TraceWidget::clusterColorUpdate);
+    connect(this,
+        static_cast<void(NeuroscopeView::*)(QPainter&,int,int,const QString&,bool)>(&NeuroscopeView::print),
+        traceWidget, &TraceWidget::print);
+    connect(this,&NeuroscopeView::newEventProvider,traceWidget,
+            &TraceWidget::addEventProvider);
+    connect(this,&NeuroscopeView::eventProviderRemoved,traceWidget,&TraceWidget::removeEventProvider);
+    connect(this,&NeuroscopeView::showEvents,traceWidget,&TraceWidget::showEvents);
+    connect(this,&NeuroscopeView::eventColorUpdated,traceWidget,&TraceWidget::eventColorUpdate);
+    connect(this,&NeuroscopeView::nextEvent,traceWidget,&TraceWidget::showNextEvent);
+    connect(this,&NeuroscopeView::previousEvent,traceWidget,&TraceWidget::showPreviousEvent);
+    connect(traceWidget,&TraceWidget::eventModified,this, &NeuroscopeView::slotEventModified);
+    connect(this, static_cast<void(NeuroscopeView::*)(bool,const QString&,double,double)>(&NeuroscopeView::updateEvents),
+        traceWidget, static_cast<void(TraceWidget::*)(bool,const QString&,double,double)>(&TraceWidget::updateEvents));
+    connect(this,&NeuroscopeView::eventToRemove,traceWidget,&TraceWidget::removeEvent);
+    connect(traceWidget,&TraceWidget::eventRemoved,this, &NeuroscopeView::slotEventRemoved);
+    connect(this, static_cast<void(NeuroscopeView::*)(bool,const QString&,double)>(&NeuroscopeView::updateEvents),
+        traceWidget, static_cast<void(TraceWidget::*)(bool,const QString&,double)>(&TraceWidget::updateEvents));
+    connect(this,&NeuroscopeView::newEventProperties,traceWidget,&TraceWidget::eventToAddProperties);
+    connect(traceWidget,&TraceWidget::eventAdded,this, &NeuroscopeView::slotEventAdded);
+    connect(this, static_cast<void(NeuroscopeView::*)(const QString&,QList<int>&,bool)>(&NeuroscopeView::updateEvents),
+        traceWidget, static_cast<void(TraceWidget::*)(const QString&,QList<int>&,bool)>(&TraceWidget::updateEvents));
+    connect(this,&NeuroscopeView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
+    connect(this,&NeuroscopeView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
+    connect(this,&NeuroscopeView::waveformInformationUpdated,traceWidget,&TraceWidget::updateWaveformInformation);
+    connect(this,&NeuroscopeView::clusterProviderUpdated,traceWidget,&TraceWidget::updateClusterData);
+    connect(this,&NeuroscopeView::noneBrowsingClusterListUpdated,traceWidget,&TraceWidget::updateNoneBrowsingClusterList);
+    connect(this,&NeuroscopeView::noneBrowsingEventListUpdated,traceWidget,&TraceWidget::updateNoneBrowsingEventList);
+    connect(this,&NeuroscopeView::skipStatusChanged,traceWidget,&TraceWidget::updateSkipStatus);
+    connect(this,&NeuroscopeView::decreaseTheRasterHeight,traceWidget,&TraceWidget::decreaseRasterHeight);
+    connect(this,&NeuroscopeView::increaseTheRasterHeight,traceWidget,&TraceWidget::increaseRasterHeight);
+    connect(this,&NeuroscopeView::traceBackgroundImageUpdate,traceWidget,&TraceWidget::traceBackgroundImageUpdate);
     
-    connect(&globalEventProvider,SIGNAL(getCurrentEventInformation(long,long,QObject*)),traceWidget,SLOT(getCurrentEventInformation(long,long,QObject*)));
+    connect(&globalEventProvider,&GlobalEventsProvider::getCurrentEventInformation,traceWidget,&TraceWidget::getCurrentEventInformation);
 }
 
 NeuroscopeView::~NeuroscopeView()
@@ -391,7 +400,6 @@ void NeuroscopeView::updateSelectedEventsIds(const QString& providerName,QMap<in
         if(added){
             for(iterator = currentSelectedEvents->begin(); iterator != currentSelectedEvents->end(); ++iterator) {
                 newSelectedEventsIds->append(oldNewEventIds[*iterator]);
-                qDebug()<<" oldNewEventIds"<<oldNewEventIds[*iterator];
             }
 
             //Add the new type of event to the active view in order to display the added event right away.
@@ -440,20 +448,20 @@ void NeuroscopeView::addPositionView(PositionsProvider* positionsProvider,const 
     //To do so, connect the positions dockwidget close button to the dockBeingClosed slot of is contained widget
     //and connect this widget parentDockBeingClosed signal to the view positionDockClosed slot.
     //connect(positions, SIGNAL(headerCloseButtonClicked()),positionView, SLOT(dockBeingClosed()));
-    connect(positionView, SIGNAL(parentDockBeingClosed(QWidget*)), this, SLOT(positionDockClosed(QWidget*)));
+    connect(positionView, &BaseFrame::parentDockBeingClosed, this, &NeuroscopeView::positionDockClosed);
 
     //Set the different connections with the view
-    connect(this,SIGNAL(positionInformationUpdated(int,int,QImage,bool,bool)),positionView,SLOT(updatePositionInformation(int,int,QImage,bool,bool)));
-    connect(this,SIGNAL(timeChanged(long,long)),positionView,SLOT(displayTimeFrame(long,long)));
-    connect(this,SIGNAL(changeBackgroundColor(QColor)),positionView, SLOT(changeBackgroundColor(QColor)));
-    connect(traceWidget,SIGNAL(eventsAvailable(QHash<QString, EventData*>&,QMap<QString, QList<int> >&,
-                                               QHash<QString, ItemColors*>&,QObject*,double)),positionView,SLOT(dataAvailable(QHash<QString,EventData*>&,QMap<QString,QList<int> >&,QHash<QString,ItemColors*>&,QObject*,double)));
-    connect(this,SIGNAL(updateEventDisplay()),positionView,SLOT(updateEventDisplay()));
-    connect(this,SIGNAL(eventColorUpdated(QColor,QString,int,bool)),positionView,SLOT(eventColorUpdate(QColor,QString,int,bool)));
-    connect(this,SIGNAL(updateDrawing()),positionView, SLOT(updateDrawing()));
-    connect(this,SIGNAL(newEventProvider(EventsProvider*,QString,ItemColors*,bool,QList<int>&,QList<int>)),positionView,SLOT(addEventProvider()));
-    connect(this,SIGNAL(eventProviderRemoved(QString,bool,bool)),positionView,SLOT(removeEventProvider(QString,bool,bool)));
-    connect(this,SIGNAL(eventsShownInPositionView(bool)),positionView,SLOT(setEventsInPositionView(bool)));
+    connect(this,&NeuroscopeView::positionInformationUpdated,positionView,&PositionView::updatePositionInformation);
+    connect(this,&NeuroscopeView::timeChanged,positionView,&PositionView::displayTimeFrame);
+    connect(this,&NeuroscopeView::changeBackgroundColor,positionView, &PositionView::changeBackgroundColor);
+    connect(traceWidget, &TraceWidget::eventsAvailable, positionView,
+            static_cast<void(PositionView::*)(QHash<QString,EventData*>&,QMap<QString,QList<int>>&,QHash<QString,ItemColors*>&,QObject*,double)>(&PositionView::dataAvailable));
+    connect(this,&NeuroscopeView::updateEventDisplay,positionView,&PositionView::updateEventDisplay);
+    connect(this,&NeuroscopeView::eventColorUpdated,positionView,&PositionView::eventColorUpdate);
+    connect(this,&NeuroscopeView::updateDrawing,positionView, &PositionView::updateDrawing);
+    connect(this,&NeuroscopeView::newEventProvider,positionView,&PositionView::addEventProvider);
+    connect(this,&NeuroscopeView::eventProviderRemoved,positionView,&PositionView::removeEventProvider);
+    connect(this,&NeuroscopeView::eventsShownInPositionView,positionView,&PositionView::setEventsInPositionView);
 
     //Request the data for all the events (can be done only after the connection has be set)
     if(eventsInPositionView) globalEventProvider.requestData(startTime,startTime + duration,positionView);

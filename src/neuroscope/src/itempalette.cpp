@@ -19,6 +19,7 @@
 
 // application specific includes
 #include "itempalette.h"
+#include "itemiconview.h"
 #include "itemcolors.h"
 
 
@@ -821,14 +822,16 @@ void ItemPalette::createGroup(const QString &id)
     }
 
     //Signal and slot connection
-    connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
-    connect(iconView,SIGNAL(mousePressMiddleButton(QString,QListWidgetItem*)),this, SLOT(slotMousePressed(QString,QListWidgetItem*)));
-    connect(this,SIGNAL(paletteResized(int,int)),group,SLOT(reAdjustSize(int,int)));
-    connect(iconView,SIGNAL(mousePressWAltButton(QString,QListWidgetItem*)),this, SLOT(slotMousePressWAltButton(QString,QListWidgetItem*)));
-    connect(iconView,SIGNAL(mouseReleased(QString)),this, SLOT(slotMouseReleased(QString)));
+    connect(iconView, &QListWidget::itemSelectionChanged, this, &ItemPalette::slotClickRedraw);
+    connect(iconView, static_cast<void(ItemIconView::*)(const QString&,QListWidgetItem*)>(&ItemIconView::mousePressMiddleButton),
+        this, static_cast<void(ItemPalette::*)(const QString&,QListWidgetItem*)>(&ItemPalette::slotMousePressed));
+    connect(this,&ItemPalette::paletteResized,group,&ItemGroupView::reAdjustSize);
+    connect(iconView,&ItemIconView::mousePressWAltButton,this, &ItemPalette::slotMousePressWAltButton);
+    connect(iconView,&ItemIconView::mouseReleased,this, &ItemPalette::slotMouseReleased);
 
-    connect(label,SIGNAL(leftClickOnLabel(QString,bool,bool)),this, SLOT(slotMousePressed(QString,bool,bool)));
-    connect(iconView, SIGNAL(rowInsered()), SLOT(slotRowInsered()));
+    connect(label, &GroupNameLabel::leftClickOnLabel,
+        this, static_cast<void(ItemPalette::*)(const QString&,bool,bool)>(&ItemPalette::slotMousePressed));
+    connect(iconView, &ItemIconView::rowInsered, this, &ItemPalette::slotRowInsered);
 
     orderTheGroups();
     emit paletteResized(viewport()->width(),labelSize);

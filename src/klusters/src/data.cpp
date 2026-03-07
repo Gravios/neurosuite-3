@@ -305,7 +305,7 @@ bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
         errorInformation = QObject::tr("Cannot read .fet header from: %1").arg(path);
         return false;
     }
-    nbDimensions = (int)nDim;
+    nbDimensions = static_cast<int>(nDim);
 
     fseeko(f, 0, SEEK_END);
     int64_t dataBytes = (int64_t)ftello(f) - (int64_t)sizeof(int32_t);
@@ -341,7 +341,7 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
 {
     const int nDim  = nbDimensions;   // last column is timestamp
     const int nFeat = nDim - 1;       // feature columns only
-    const int nSpk  = (int)nbSpikes;
+    const int nSpk  = static_cast<int>(nbSpikes);
 
     // 1. Collect feature-file row indices for spikes in this cluster.
     // spikesByCluster is the sort map: row1 = feature-file row (1-based),
@@ -388,7 +388,7 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
 
     const int nDim  = nbDimensions;
     const int nFeat = nDim - 1;
-    const int nSpk  = (int)nbSpikes;
+    const int nSpk  = static_cast<int>(nbSpikes);
 
     // Build a fast lookup set
     QSet<int> idSet(clusterIds.begin(), clusterIds.end());
@@ -2546,8 +2546,8 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         waveformDict.insert(clusterIdString,waveforms);
     }
 
-    FILE* spikeFile = fopen(spkFileName.toLatin1(),"r");
-    if(spikeFile == NULL){
+    FILE* spikeFile = fopen(qPrintable(spkFileName),"r");
+    if(spikeFile == nullptr){
         // OPEN_ERROR;  ///The openning pb has to be taken into account
     }
 
@@ -2685,8 +2685,8 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         }
     }
 
-    FILE* spikeFile = fopen(spkFileName.toLatin1(),"r");
-    if(spikeFile == NULL){
+    FILE* spikeFile = fopen(qPrintable(spkFileName),"r");
+    if(spikeFile == nullptr){
         // OPEN_ERROR;  ///The openning pb has to be taken into account
     }
 

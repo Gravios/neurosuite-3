@@ -64,7 +64,6 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
 }
 
 ErrorMatrixView::~ErrorMatrixView(){
-    qDebug()<<" ErrorMatrixView::~ErrorMatrixView(){******************************";
     //Ask the threads to stop as soon as possible.
     willBeKilled();
 

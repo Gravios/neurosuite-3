@@ -39,6 +39,8 @@
 
 // application specific includes
 #include "ndmanager.h"
+#include <QDialog>
+#include <qrecentfileaction.h>
 #include "queryinputdialog.h"
 #include "queryoutputdialog.h"
 #include "qhelpviewer.h"
@@ -104,42 +106,42 @@ void ndManager::setupActions()
     mNewAction = fileMenu->addAction(tr("&New..."));
     mNewAction->setIcon(QPixmap(":/shared-icons/document-new"));
     mNewAction->setShortcut(QKeySequence::New);
-    connect(mNewAction, SIGNAL(triggered()), this, SLOT(slotNewFile()));
+    connect(mNewAction, &QAction::triggered, this, &ndManager::slotNewFile);
 
 
     mOpenAction = fileMenu->addAction(tr("&Open..."));
     mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
     mOpenAction->setShortcut(QKeySequence::Open);
-    connect(mOpenAction, SIGNAL(triggered()), this, SLOT(slotFileOpen()));
+    connect(mOpenAction, &QAction::triggered, this, &ndManager::slotFileOpen);
 
     mFileOpenRecent = new QRecentFileAction(this);
     QSettings settings;
     mFileOpenRecent->setRecentFiles(settings.value(QLatin1String("Recent Files"),QStringList()).toStringList());
     fileMenu->addAction(mFileOpenRecent);
-    connect(mFileOpenRecent, SIGNAL(recentFileSelected(QString)), this, SLOT(slotFileOpenRecent(QString)));
-    connect(mFileOpenRecent, SIGNAL(recentFileListChanged()), this, SLOT(slotSaveRecentFiles()));
+    connect(mFileOpenRecent, &QRecentFileAction::recentFileSelected, this, &ndManager::slotFileOpenRecent);
+    connect(mFileOpenRecent, &QRecentFileAction::recentFileListChanged, this, &ndManager::slotSaveRecentFiles);
 
     mUseTemplateAction = fileMenu->addAction(tr("Use &Template..."));
-    connect(mUseTemplateAction, SIGNAL(triggered()), this, SLOT(slotImport()));
+    connect(mUseTemplateAction, &QAction::triggered, this, &ndManager::slotImport);
 
     fileMenu->addSeparator();
     mSaveAction = fileMenu->addAction(tr("Save..."));
     mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
-    connect(mSaveAction, SIGNAL(triggered()), this, SLOT(slotSave()));
+    connect(mSaveAction, &QAction::triggered, this, &ndManager::slotSave);
 
     mSaveAsAction = fileMenu->addAction(tr("&Save As..."));
     mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
     mSaveAsAction->setShortcut(QKeySequence::SaveAs);
-    connect(mSaveAsAction, SIGNAL(triggered()), this, SLOT(slotSaveAs()));
+    connect(mSaveAsAction, &QAction::triggered, this, &ndManager::slotSaveAs);
 
 
     mSaveAsDefaultAction = fileMenu->addAction(tr("Save as &Default"));
-    connect(mSaveAsDefaultAction, SIGNAL(triggered()), this, SLOT(slotSaveDefault()));
+    connect(mSaveAsDefaultAction, &QAction::triggered, this, &ndManager::slotSaveDefault);
 
     mReloadAction = fileMenu->addAction(tr("&Reload"));
     mReloadAction->setShortcut(Qt::Key_F5);
-    connect(mReloadAction, SIGNAL(triggered()), this, SLOT(slotReload()));
+    connect(mReloadAction, &QAction::triggered, this, &ndManager::slotReload);
 
 
     fileMenu->addSeparator();
@@ -148,7 +150,7 @@ void ndManager::setupActions()
     mCloseAction = fileMenu->addAction(tr("Close"));
     mCloseAction->setIcon(QPixmap(":/shared-icons/document-close"));
     mCloseAction->setShortcut(QKeySequence::Close);
-    connect(mCloseAction, SIGNAL(triggered()), this, SLOT(slotFileClose()));
+    connect(mCloseAction, &QAction::triggered, this, &ndManager::slotFileClose);
 
 
     fileMenu->addSeparator();
@@ -156,7 +158,7 @@ void ndManager::setupActions()
     mQuitAction = fileMenu->addAction(tr("Quit"));
     mQuitAction->setIcon(QPixmap(":/shared-icons/window-close"));
     mQuitAction->setShortcut(QKeySequence::Quit);
-    connect(mQuitAction, SIGNAL(triggered()), this, SLOT(close()));
+    connect(mQuitAction, &QAction::triggered, this, &QWidget::close);
 
 
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
@@ -164,7 +166,7 @@ void ndManager::setupActions()
 #ifndef Q_OS_UNIX
     mQueryAction->setEnabled(false);
 #endif
-    connect(mQueryAction, SIGNAL(triggered()), this, SLOT(slotQuery()));
+    connect(mQueryAction, &QAction::triggered, this, &ndManager::slotQuery);
 
     //mProcessingManager = actionMenu->addAction(tr("Show Processing Manager"));
 
@@ -173,7 +175,7 @@ void ndManager::setupActions()
     //Settings
     mExpertMode = settingsMenu->addAction(tr("&Expert Mode"));
     mExpertMode->setCheckable(true);
-    connect(mExpertMode, SIGNAL(triggered(bool)), this, SLOT(slotExpertMode()));
+    connect(mExpertMode, &QAction::triggered, this, &ndManager::slotExpertMode);
     settingsMenu->addSeparator();
 
     settings.beginGroup("General");
@@ -185,21 +187,21 @@ void ndManager::setupActions()
 
     viewMainToolBar->setCheckable(true);
     viewMainToolBar->setChecked(true);
-    connect(viewMainToolBar,SIGNAL(triggered()), this,SLOT(slotViewMainToolBar()));
+    connect(viewMainToolBar,&QAction::triggered, this,&ndManager::slotViewMainToolBar);
 
 
     viewStatusBar = settingsMenu->addAction(tr("Show StatusBar"));
     viewStatusBar->setCheckable(true);
-    connect(viewStatusBar,SIGNAL(triggered()), this,SLOT(slotViewStatusBar()));
+    connect(viewStatusBar,&QAction::triggered, this,&ndManager::slotViewStatusBar);
     viewStatusBar->setChecked(true);
 
     QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
     QAction *handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
-    connect(handbook,SIGNAL(triggered()), this,SLOT(slotHanbook()));
+    connect(handbook,&QAction::triggered, this,&ndManager::slotHanbook);
 
     QAction *about = helpMenu->addAction(tr("About"));
-    connect(about,SIGNAL(triggered()), this,SLOT(slotAbout()));
+    connect(about,&QAction::triggered, this,&ndManager::slotAbout);
 
     mMainToolBar->addAction(mNewAction);
     mMainToolBar->addAction(mOpenAction);
@@ -374,8 +376,8 @@ void ndManager::createParameterView(QMap<int, QList<int> >& anatomicalGroups,QMa
 
     parameterView = new ParameterView(this,*doc,mainDock,"ParameterView",mExpertMode->isChecked());
 
-    connect(parameterView,SIGNAL(nbSpikeGroupsHasBeenModified(int)),this,SLOT(nbSpikeGroupsModified(int)));
-    connect(parameterView,SIGNAL(fileHasBeenModified(QStringList)),this,SLOT(fileModification(QStringList)));
+    connect(parameterView, &ParameterView::nbSpikeGroupsHasBeenModified, this, &ndManager::nbSpikeGroupsModified);
+    connect(parameterView, &ParameterView::fileHasBeenModified, this, &ndManager::fileModification);
     //connect(parameterView,SIGNAL(scriptListHasBeenModified(QStringList)),this,SLOT(scriptModification(QStringList)));
 
 

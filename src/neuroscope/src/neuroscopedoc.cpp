@@ -253,7 +253,6 @@ bool NeuroscopeDoc::isADocumentToClose(){
 
 int NeuroscopeDoc::openDocument(const QString& url)
 {
-    qDebug()<<" int NeuroscopeDoc::openDocument(const QString& url)"<<url;
     channelColorList = new ChannelColors();
     docUrl = url;
 
@@ -287,13 +286,11 @@ int NeuroscopeDoc::openDocument(const QString& url)
     QStringList fileParts = fileName.split(QLatin1Char('.'), Qt::SkipEmptyParts);
     if(fileParts.count() < 2)
         return INCORRECT_FILE;
-    qDebug()<<"NeuroscopeDoc::openDocument file correct";
     //QString extension;
 
     //Treat the case when the selected file is a neuroscope session file or a par file.
     if(fileName.contains(QLatin1String(".nrs")) || fileName.contains(QLatin1String(".xml"))){
         if((fileName.contains(".nrs") && fileParts[fileParts.count() - 1] != "nrs") || (fileName.contains(".xml") && fileParts[fileParts.count() - 1] != "xml")) {
-            qDebug()<<" NeuroscopeDoc::openDocument INCORRECT FILE";
             return INCORRECT_FILE;
         } else {
             baseName = fileParts.first();
@@ -313,9 +310,7 @@ int NeuroscopeDoc::openDocument(const QString& url)
                 QString docFile = baseName + ".dat";
                 docUrl = urlFileInfo.absolutePath() + QDir::separator() + docFile;
 
-                qDebug()<<" NeuroscopeDoc::openDocument dat file";
                 if(!QFile::exists(docUrl)) {
-                    qDebug()<<" NeuroscopeDoc::openDocument DOWNLOADERROR";
                     return DOWNLOAD_ERROR;
                 }
             }
@@ -368,10 +363,8 @@ int NeuroscopeDoc::openDocument(const QString& url)
             if (yamlReader.parseFile(parFileUrl, NeuroscopeYamlReader::PARAMETER)) {
                 loadDocumentInformation(yamlReader);
                 extensionSamplingRates = yamlReader.getSampleRateByExtension();
-                qDebug() << " NeuroscopeDoc::openDocument NeuroscopeYamlReader::PARAMETER";
                 yamlReader.closeFile();
             } else {
-                qDebug() << " NeuroscopeDoc::openDocument YAML PARSE_ERROR";
                 return PARSE_ERROR;
             }
             // Session file (.nrs) is always XML.  Parse it here to pick up
@@ -380,13 +373,10 @@ int NeuroscopeDoc::openDocument(const QString& url)
             if (sessionFileInfo.exists()) {
                 sessionFileExist = true;
                 if (xmlSessionReader.parseFile(sessionUrl, NeuroscopeXmlReader::SESSION)) {
-                    qDebug() << " reader.getVersion()" << xmlSessionReader.getVersion();
                     if (xmlSessionReader.getVersion().isEmpty() || xmlSessionReader.getVersion() == QLatin1String("1.2.2"))
                         extensionSamplingRates = xmlSessionReader.getSampleRateByExtension();
-                    qDebug() << "extensionSamplingRates" << extensionSamplingRates;
                     // loadSession deferred — called after tracesProvider is created below
                 } else {
-                    qDebug() << " NeuroscopeDoc::openDocument SESSION PARSE_ERROR";
                     return PARSE_ERROR;
                 }
             }
@@ -399,11 +389,9 @@ int NeuroscopeDoc::openDocument(const QString& url)
                 //try to get the extension information from the parameter file (prior to the 1.2.3 version, the information was
                 //store in the session file)
                 extensionSamplingRates = reader.getSampleRateByExtension();
-                qDebug()<<" NeuroscopeDoc::openDocument NeuroscopeXmlReader::PARAMETER";
                 reader.closeFile();
             }
             else{
-                qDebug()<<" NeuroscopeDoc::openDocument PARSE_ERROR";
                 return PARSE_ERROR;
             }
 
@@ -411,17 +399,13 @@ int NeuroscopeDoc::openDocument(const QString& url)
             if(sessionFileInfo.exists()){
 
                 sessionFileExist = true;
-                qDebug()<<" sessionUrl"<<sessionUrl;
                 if(reader.parseFile(sessionUrl,NeuroscopeXmlReader::SESSION)) {
                     //if the session file has been created by a version of NeuroScope prior to the 1.2.3, it contains the extension information
-                    qDebug()<<" reader.getVersion()"<<reader.getVersion();
                     if(reader.getVersion().isEmpty() || reader.getVersion() == QLatin1String("1.2.2"))
                         extensionSamplingRates = reader.getSampleRateByExtension();
-                    qDebug()<<"extensionSamplingRates"<<extensionSamplingRates;
                     loadSession(reader);
                     reader.closeFile();
                 } else {
-                    qDebug()<<" NeuroscopeDoc::openDocument PARSE_ERROR 2";
                     return PARSE_ERROR;
                 }
             }
@@ -485,7 +469,6 @@ int NeuroscopeDoc::openDocument(const QString& url)
                     //Load the general info
                     loadDocumentInformation(reader);
                 }else {
-                    qDebug()<<" NeuroscopeDoc::openDocument MISSING FILE";
                     return MISSING_FILE;
                 }
 
@@ -524,7 +507,6 @@ int NeuroscopeDoc::openDocument(const QString& url)
                 //Load the session information
                 loadSession(reader);
 
-                qDebug()<<" NeuroscopeDoc::openDocument CLOSE FILE";
                 reader.closeFile();
             }
             else return PARSE_ERROR;
@@ -575,7 +557,6 @@ int NeuroscopeDoc::openDocument(const QString& url)
         }
     }
 
-    qDebug()<<" NeuroscopeDoc::openDocument END ?";
     //if skipStatus is empty, set the default status to 0
     if(skipStatus.isEmpty()){
         for(int i = 0; i < channelNb; ++i)
@@ -585,7 +566,6 @@ int NeuroscopeDoc::openDocument(const QString& url)
     //Use the channel default offsets
     if(!sessionFileExist)
         emit noSession(channelDefaultOffsets,skipStatus);
-    qDebug()<<" NeuroscopeDoc::openDocument END FINISH";
     return OK;
 }
 
@@ -862,7 +842,6 @@ void NeuroscopeDoc::channelGroupColorUpdate(int groupId,NeuroscopeView* activeVi
 }
 
 /*void NeuroscopeDoc::channelsColorUpdate(QValueList<int>selectedChannels,NeuroscopeView& view){
-qDebug()<<"in NeuroscopeDoc::channelsColorUpdate";
 }*/
 
 void NeuroscopeDoc::showCalibration(bool show,NeuroscopeView* activeView){
@@ -2205,8 +2184,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
     providerItemColors.insert(name,eventColors);
 
     //Install the connections with the provider
-    connect(eventsProvider, SIGNAL(newEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)),this, SLOT(slotNewEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)));
-    connect(eventsProvider, SIGNAL(eventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)),this, SLOT(slotEventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)));
+    connect(eventsProvider, &EventsProvider::newEventDescriptionCreated,this, &NeuroscopeDoc::slotNewEventDescriptionCreated);
+    connect(eventsProvider, &EventsProvider::eventDescriptionRemoved,this, &NeuroscopeDoc::slotEventDescriptionRemoved);
 
     //Informs the views than there is a new event provider.
     QList<int> eventsToShow;
@@ -2314,8 +2293,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
     }
 
     //Install the connections with the provider
-    connect(eventsProvider, SIGNAL(newEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)),this, SLOT(slotNewEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)));
-    connect(eventsProvider, SIGNAL(eventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)),this, SLOT(slotEventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)));
+    connect(eventsProvider, &EventsProvider::newEventDescriptionCreated,this, &NeuroscopeDoc::slotNewEventDescriptionCreated);
+    connect(eventsProvider, &EventsProvider::eventDescriptionRemoved,this, &NeuroscopeDoc::slotEventDescriptionRemoved);
 
     if(firstFile) dynamic_cast<NeuroscopeApp*>(parent)->createEventPalette(name);
     else dynamic_cast<NeuroscopeApp*>(parent)->addEventFile(name);
@@ -2661,8 +2640,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::createEventFile(const 
     providerItemColors.insert(name,eventColors);
 
     //Install the connections with the provider
-    connect(eventsProvider, SIGNAL(newEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)),this, SLOT(slotNewEventDescriptionCreated(QString,QMap<int,int>,QMap<int,int>,QString)));
-    connect(eventsProvider, SIGNAL(eventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)),this, SLOT(slotEventDescriptionRemoved(QString,QMap<int,int>,QMap<int,int>,int,QString)));
+    connect(eventsProvider, &EventsProvider::newEventDescriptionCreated,this, &NeuroscopeDoc::slotNewEventDescriptionCreated);
+    connect(eventsProvider, &EventsProvider::eventDescriptionRemoved,this, &NeuroscopeDoc::slotEventDescriptionRemoved);
 
     //Informs the views than there is a new event provider.
     QList<int> eventsToShow;

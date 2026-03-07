@@ -34,11 +34,11 @@ ProcessLineMaker::ProcessLineMaker( QProcess* proc )
       isWidgetHidden(false),
       processExited(false)
 {
-    connect(mProc, SIGNAL(readyReadStandardOutput()),
-            this, SLOT(slotReceivedStdout()) );
+    connect(mProc, &QProcess::readyReadStandardOutput,
+            this, &ProcessLineMaker::slotReceivedStdout );
     
-    connect(mProc, SIGNAL(readyReadStandardError()),
-            this, SLOT(slotReceivedStderr()) );
+    connect(mProc, &QProcess::readyReadStandardError,
+            this, &ProcessLineMaker::slotReceivedStderr );
 }
 
 void ProcessLineMaker::slotReceivedStdout()
