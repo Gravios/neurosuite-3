@@ -589,8 +589,10 @@ void NeuroscopeApp::initActions()
     connect(spikeChannelPalette, &ChannelPalette::channelsDiscarded, this, &NeuroscopeApp::slotChannelsDiscarded);
 
 
-    connect(displayChannelPalette, &ChannelPalette::channelsMovedToTrash, spikeChannelPalette, static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,bool)>(&ChannelPalette::discardChannels));
-    connect(spikeChannelPalette, &ChannelPalette::channelsMovedToTrash, displayChannelPalette, static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,bool)>(&ChannelPalette::discardChannels));
+    connect(displayChannelPalette, &ChannelPalette::channelsMovedToTrash, spikeChannelPalette,
+            static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,bool)>(&ChannelPalette::discardChannels));
+    connect(spikeChannelPalette, &ChannelPalette::channelsMovedToTrash, displayChannelPalette,
+            static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,bool)>(&ChannelPalette::discardChannels));
     connect(displayChannelPalette, &ChannelPalette::channelsMovedAroundInTrash, spikeChannelPalette, &ChannelPalette::trashChannelsMovedAround);
     connect(spikeChannelPalette, &ChannelPalette::channelsMovedAroundInTrash, displayChannelPalette, &ChannelPalette::trashChannelsMovedAround);
 

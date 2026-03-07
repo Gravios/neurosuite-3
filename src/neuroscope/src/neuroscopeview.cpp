@@ -456,7 +456,7 @@ void NeuroscopeView::addPositionView(PositionsProvider* positionsProvider,const 
     connect(this,&NeuroscopeView::timeChanged,positionView,&PositionView::displayTimeFrame);
     connect(this,&NeuroscopeView::changeBackgroundColor,positionView, &PositionView::changeBackgroundColor);
     connect(traceWidget, &TraceWidget::eventsAvailable, positionView,
-        static_cast<void(PositionView::*)(QHash<QString,EventData*>&,QMap<QString,QList<int>>&,QHash<QString,ItemColors*>&,QObject*,double)>(&PositionView::dataAvailable));
+            static_cast<void(PositionView::*)(QHash<QString,EventData*>&,QMap<QString,QList<int>>&,QHash<QString,ItemColors*>&,QObject*,double)>(&PositionView::dataAvailable));
     connect(this,&NeuroscopeView::updateEventDisplay,positionView,&PositionView::updateEventDisplay);
     connect(this,&NeuroscopeView::eventColorUpdated,positionView,&PositionView::eventColorUpdate);
     connect(this,&NeuroscopeView::updateDrawing,positionView, &PositionView::updateDrawing);
