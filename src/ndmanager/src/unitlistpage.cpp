@@ -21,6 +21,8 @@
  ***************************************************************************/
 //include files for the application
 #include "unitlistpage.h"
+#include "unittable.h"
+#include <QPushButton>
 
 
 // include files for QT
@@ -41,14 +43,14 @@ UnitListPage::UnitListPage(QWidget* parent) :
     unitTable->installEventFilter(this);
     unitTable->setSortingEnabled(true);
 
-    connect(unitTable, SIGNAL(currentCellChanged(int,int,int,int)),this, SLOT(currentChanged()));
-    connect(unitTable, SIGNAL(cellPressed(int,int)),this, SLOT(currentChanged()));
-    connect(unitTable, SIGNAL(cellClicked(int,int)),this,SLOT(currentChanged()));
-    connect(unitTable, SIGNAL(cellDoubleClicked(int,int)),this,SLOT(currentChanged()));
-    connect(unitTable, SIGNAL(cellChanged(int,int)),this, SLOT(unitChanged(int,int)));
+    connect(unitTable, &QTableWidget::currentCellChanged, this, &UnitListPage::currentChanged);
+    connect(unitTable, &QTableWidget::cellPressed, this, &UnitListPage::currentChanged);
+    connect(unitTable, &QTableWidget::cellClicked, this, &UnitListPage::currentChanged);
+    connect(unitTable, &QTableWidget::cellDoubleClicked, this, &UnitListPage::currentChanged);
+    connect(unitTable, &QTableWidget::cellChanged, this, &UnitListPage::unitChanged);
 
-    connect(addUnitButton,SIGNAL(clicked()),this,SLOT(addUnit()));
-    connect(removeUnitButton,SIGNAL(clicked()),this,SLOT(removeUnit()));
+    connect(addUnitButton, &QAbstractButton::clicked, this, &UnitListPage::addUnit);
+    connect(removeUnitButton, &QAbstractButton::clicked, this, &UnitListPage::removeUnit);
 }
 
 UnitListPage::~UnitListPage(){}

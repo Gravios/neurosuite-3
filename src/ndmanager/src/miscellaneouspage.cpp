@@ -19,6 +19,8 @@
  ***************************************************************************/
 //include files for the application
 #include "miscellaneouspage.h"
+#include <QLineEdit>
+#include <QPushButton>
 
 MiscellaneousPage::MiscellaneousPage(QWidget* parent)
     : NeuroscopeMiscLayout(parent),doubleValidator(this),modified(false),isInit(true){
@@ -26,11 +28,11 @@ MiscellaneousPage::MiscellaneousPage(QWidget* parent)
     //Set a validator on the line edits, the values have to be integers or doubles.
     screenGainLineEdit->setValidator(&doubleValidator);
 
-    connect(traceBackgroundButton,SIGNAL(clicked()),this,SLOT(updateTraceBackgroundImage()));
-    connect(traceBackgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(updateTraceBackgroundImage(QString)));
+    connect(traceBackgroundButton, &QAbstractButton::clicked, this, static_cast<void(MiscellaneousPage::*)()>(&MiscellaneousPage::updateTraceBackgroundImage));
+    connect(traceBackgroundLineEdit, &QLineEdit::textChanged, this, static_cast<void(MiscellaneousPage::*)(const QString&)>(&MiscellaneousPage::updateTraceBackgroundImage));
 
-    connect(screenGainLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(traceBackgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
+    connect(screenGainLineEdit, &QLineEdit::textChanged, this, &MiscellaneousPage::propertyModified);
+    connect(traceBackgroundLineEdit, &QLineEdit::textChanged, this, &MiscellaneousPage::propertyModified);
 
     //Set an icon on the backgroundButton button
 

@@ -19,6 +19,7 @@
  ***************************************************************************/
 //include files for the application
 #include "channeloffsetspage.h"
+#include <QTableWidget>
 
 // include files for QT
 #include <QWidget>
@@ -29,8 +30,8 @@ ChannelOffsetsPage::ChannelOffsetsPage(QWidget* parent)
     : ChannelOffsetsLayout(parent),nbChannels(0),modified(false)
 {
     offsetTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-    connect(offsetTable, SIGNAL(itemChanged(QTableWidgetItem*)),this, SLOT(propertyModified()));
-    connect(offsetTable, SIGNAL(itemDoubleClicked(QTableWidgetItem*)),this, SLOT(propertyModified()));
+    connect(offsetTable, &QTableWidget::itemChanged, this, &ChannelOffsetsPage::propertyModified);
+    connect(offsetTable, &QTableWidget::itemDoubleClicked, this, &ChannelOffsetsPage::propertyModified);
 
 }
 

@@ -19,6 +19,7 @@
  ***************************************************************************/
 //include files for the application
 #include "clusterspage.h"
+#include <QLineEdit>
 
 ClustersPage::ClustersPage(QWidget* parent)
     : ClustersLayout(parent),
@@ -31,8 +32,8 @@ ClustersPage::ClustersPage(QWidget* parent)
     nbSamplesLineEdit->setValidator(&intValidator);
     peakIndexLineEdit->setValidator(&intValidator);
 
-    connect(nbSamplesLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(peakIndexLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
+    connect(nbSamplesLineEdit, &QLineEdit::textChanged, this, &ClustersPage::propertyModified);
+    connect(peakIndexLineEdit, &QLineEdit::textChanged, this, &ClustersPage::propertyModified);
 }
 
 

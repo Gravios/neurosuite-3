@@ -19,6 +19,7 @@
  ***************************************************************************/
 //include files for the application
 #include "videopage.h"
+#include <QLineEdit>
 
 VideoPage::VideoPage(QWidget* parent)
     : VideoLayout(parent),intValidator(this),doubleValidator(this),modified(false),isInit(true){
@@ -28,9 +29,9 @@ VideoPage::VideoPage(QWidget* parent)
     widthLineEdit->setValidator(&intValidator);
     heightLineEdit->setValidator(&intValidator);
 
-    connect(widthLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(heightLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(samplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
+    connect(widthLineEdit, &QLineEdit::textChanged, this, &VideoPage::propertyModified);
+    connect(heightLineEdit, &QLineEdit::textChanged, this, &VideoPage::propertyModified);
+    connect(samplingRateLineEdit, &QLineEdit::textChanged, this, &VideoPage::propertyModified);
 
 }
 

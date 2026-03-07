@@ -58,6 +58,7 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QAbstractSpinBox>
+#include "spinbox.h"
 
 #include <QDebug>
 #include <QStatusBar>
@@ -290,17 +291,17 @@ void KlustersApp::createMenus()
     mDeleteArtifact = actionMenu->addAction(tr("Delete &Artifact Cluster(s)"));
     mDeleteArtifact->setIcon(QIcon(":/icons/delete_artefact"));
     mDeleteArtifact->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Delete));
-    connect(mDeleteArtifact,SIGNAL(triggered()), clusterPalette,SLOT(moveClustersToArtefact()));
+    connect(mDeleteArtifact, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::moveClustersToArtefact));
 
     mDeleteNoisy = actionMenu->addAction(tr("Delete &Noisy Cluster(s)"));
     mDeleteNoisy->setIcon(QIcon(":/icons/delete_noise"));
     mDeleteNoisy->setShortcut(Qt::Key_Delete);
-    connect(mDeleteNoisy,SIGNAL(triggered()), clusterPalette,SLOT(moveClustersToNoise()));
+    connect(mDeleteNoisy, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::moveClustersToNoise));
 
     mGroupeClusters = actionMenu->addAction(tr("&Group Clusters"));
     mGroupeClusters->setIcon(QIcon(":/icons/group"));
     mGroupeClusters->setShortcut(Qt::Key_G);
-    connect(mGroupeClusters,SIGNAL(triggered()), clusterPalette,SLOT(groupClusters()));
+    connect(mGroupeClusters, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::groupClusters));
 
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
@@ -616,9 +617,9 @@ void KlustersApp::createMenus()
     //Custom connections
     connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
     connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
-    connect(clusterPalette, SIGNAL(groupClusters(QList<int>)), this, SLOT(slotGroupClusters(QList<int>)));
-    connect(clusterPalette, SIGNAL(moveClustersToNoise(QList<int>)), this, SLOT(slotMoveClustersToNoise(QList<int>)));
-    connect(clusterPalette, SIGNAL(moveClustersToArtefact(QList<int>)), this, SLOT(slotMoveClustersToArtefact(QList<int>)));
+    connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::groupClusters), this, &KlustersApp::slotGroupClusters);
+    connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToNoise), this, &KlustersApp::slotMoveClustersToNoise);
+    connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToArtefact), this, &KlustersApp::slotMoveClustersToArtefact);
     connect(clusterPalette, &ClusterPalette::clusterInformationModified, this, &KlustersApp::slotClusterInformationModified);
     connect(clusterPalette, &ClusterPalette::paletteGainedFocus, this, &KlustersApp::slotShowOverviewForPalette);
     connect(doc, &KlustersDoc::updateUndoNb, this, &KlustersApp::slotUpdateUndoNb);
@@ -679,7 +680,7 @@ void KlustersApp::initSelectionBoxes(){
     dimensionX->setMaximum(1);
     dimensionX->setSingleStep(1);
     dimensionX->setFocusPolicy(Qt::StrongFocus);
-	 connect(dimensionX,SIGNAL(valueChanged(int)),dimensionX,SLOT(deselect()),Qt::QueuedConnection);
+	 connect(dimensionX, &SpinBox::valueChanged, dimensionX, &SpinBox::deselect, Qt::QueuedConnection);
 	 
     dimensionY = new SpinBox(paramBar);
     dimensionY->setObjectName("dimensionY");
@@ -687,7 +688,7 @@ void KlustersApp::initSelectionBoxes(){
     dimensionY->setMaximum(1);
     dimensionY->setSingleStep(1);
     dimensionY->setFocusPolicy(Qt::StrongFocus);
-	 connect(dimensionY,SIGNAL(valueChanged(int)),dimensionY,SLOT(deselect()),Qt::QueuedConnection);
+	 connect(dimensionY, &SpinBox::valueChanged, dimensionY, &SpinBox::deselect, Qt::QueuedConnection);
 
     //Enable to step the value from the highest value to the lowest value and vice versa
     dimensionX->setWrapping(true);
@@ -699,8 +700,8 @@ void KlustersApp::initSelectionBoxes(){
     featureXLabelAction = paramBar->addWidget(featureXLabel);
     dimensionXAction = paramBar->addWidget(dimensionX);
     dimensionYAction = paramBar->addWidget(dimensionY);
-    connect(dimensionX, SIGNAL(valueChanged(int)),this, SLOT(slotUpdateDimensionX(int)));
-    connect(dimensionY, SIGNAL(valueChanged(int)),this, SLOT(slotUpdateDimensionY(int)));
+    connect(dimensionX, &SpinBox::valueChanged, this, &KlustersApp::slotUpdateDimensionX);
+    connect(dimensionY, &SpinBox::valueChanged, this, &KlustersApp::slotUpdateDimensionY);
 
     //Create and initialize the spin boxe and lineEdit for the waveforms time frame mode.
     start = new SpinBox(paramBar);
@@ -709,7 +710,7 @@ void KlustersApp::initSelectionBoxes(){
     start->setMaximum(1);
     start->setSingleStep(timeWindow);
     start->setFocusPolicy(Qt::StrongFocus);
-    connect(start,SIGNAL(valueChanged(int)),start,SLOT(deselect()),Qt::QueuedConnection);
+    connect(start, &SpinBox::valueChanged, start, &SpinBox::deselect, Qt::QueuedConnection);
 
     //Enable to step the value from the highest value to the lowest value and vice versa
     start->setWrapping(true);
@@ -733,7 +734,7 @@ void KlustersApp::initSelectionBoxes(){
     duration->setMinimumSize(70,duration->minimumHeight());
     duration->setMaximumSize(70,duration->maximumHeight());
     durationAction = paramBar->addWidget(duration);
-    connect(start, SIGNAL(valueChanged(int)),this, SLOT(slotUpdateStartTime(int)));
+    connect(start, &SpinBox::valueChanged, this, &KlustersApp::slotUpdateStartTime);
     connect(duration, &QLineEdit::returnPressed,this, &KlustersApp::slotUpdateDuration);
 
     //Create and initialize the spin boxe for the waveforms sample mode.
@@ -742,7 +743,7 @@ void KlustersApp::initSelectionBoxes(){
     spikesTodisplay->setMaximum(1);
     spikesTodisplay->setSingleStep(spikesTodisplayStep);
     spikesTodisplay->setFocusPolicy(Qt::StrongFocus);
-	 connect(spikesTodisplay,SIGNAL(valueChanged(int)),spikesTodisplay,SLOT(deselect()),Qt::QueuedConnection);
+	 connect(spikesTodisplay, &SpinBox::valueChanged, spikesTodisplay, &SpinBox::deselect, Qt::QueuedConnection);
 
     spikesTodisplay->setObjectName("spikesTodisplay");
     //Enable to step the value from the highest value to the lowest value and vice versa
@@ -754,7 +755,7 @@ void KlustersApp::initSelectionBoxes(){
     spikesTodisplay->setMinimumSize(70,spikesTodisplay->minimumHeight());
     spikesTodisplay->setMaximumSize(70,spikesTodisplay->maximumHeight());
     spikesTodisplayAction = paramBar->addWidget(spikesTodisplay);
-    connect(spikesTodisplay, SIGNAL(valueChanged(int)),this, SLOT(slotSpikesTodisplay(int)));
+    connect(spikesTodisplay, &SpinBox::valueChanged, this, &KlustersApp::slotSpikesTodisplay);
 
     //Create and initialize the lineEdit for the correlations.
     binSizeBox = new QLineEdit(paramBar);
@@ -800,8 +801,8 @@ void KlustersApp::initSelectionBoxes(){
     autoNFeaturesSpinBox->setWrapping(false);
     autoNFeaturesSpinBox->setFocusPolicy(Qt::StrongFocus);
     autoNFeaturesSpinBox->setToolTip(tr("Number of highest-variance features passed to KlustaKwik"));
-    connect(autoNFeaturesSpinBox, SIGNAL(valueChanged(int)), autoNFeaturesSpinBox, SLOT(deselect()), Qt::QueuedConnection);
-    connect(autoNFeaturesSpinBox, SIGNAL(valueChanged(int)), this, SLOT(slotUpdateAutoNFeatures(int)));
+    connect(autoNFeaturesSpinBox, &SpinBox::valueChanged, autoNFeaturesSpinBox, &SpinBox::deselect, Qt::QueuedConnection);
+    connect(autoNFeaturesSpinBox, &SpinBox::valueChanged, this, &KlustersApp::slotUpdateAutoNFeatures);
     autoNFeaturesLabelAction   = paramBar->addWidget(autoNFeaturesLabel);
     autoNFeaturesSpinBoxAction = paramBar->addWidget(autoNFeaturesSpinBox);
     autoNFeaturesLabelAction->setVisible(false);
@@ -1354,7 +1355,7 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
 
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display change.
-        connect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)));
+        connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange);
 
         //Keep track of the number of displays
         displayCount ++;
@@ -1621,7 +1622,7 @@ bool KlustersApp::queryClose()
                     processKilled = true;
                 }
                 if(!(processFinished && processOutputsFinished)){
-                    QTimer::singleShot(2000,this, SLOT(close()));
+                    QTimer::singleShot(2000, this, &KlustersApp::close);
                     return false;
                 }
                 else if(processWidget != 0L){
@@ -1740,7 +1741,7 @@ void KlustersApp::slotFileClose(){
                     if(processFinished && processOutputsFinished){
                         processWidget = 0L;
                     } else{
-                        QTimer::singleShot(2000,this, SLOT(slotFileClose()));
+                        QTimer::singleShot(2000, this, &KlustersApp::slotFileClose);
                         return;
                     }
                 }
@@ -1880,7 +1881,7 @@ void KlustersApp::slotDisplayClose()
                     } else {
                         mainDock->hide();
                         processWidget->hideWidget();
-                        QTimer::singleShot(2000,this, SLOT(slotDisplayClose()));
+                        QTimer::singleShot(2000, this, &KlustersApp::slotDisplayClose);
                         return;
                     }
                 }
@@ -1916,7 +1917,7 @@ void KlustersApp::slotDisplayClose()
                         } else {
                             mainDock->hide();
                             processWidget->hideWidget();
-                            QTimer::singleShot(2000,this, SLOT(slotDisplayClose()));
+                            QTimer::singleShot(2000, this, &KlustersApp::slotDisplayClose);
                             return;
                         }
                     }
@@ -2999,7 +3000,7 @@ void KlustersApp::slotRecluster(){
         connect(processWidget,&ProcessWidget::processNotStarted, this, &KlustersApp::slotOutputTreatmentOver);
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display changes.
-        connect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)));
+        connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange);
 
         tabsParent->addTab(processWidget,tr("Recluster output"));
 
@@ -3804,7 +3805,7 @@ void KlustersApp::slotRealignSpikes()
     // Connect tab-change signal so slotTabChange handles the realign tab correctly.
     // (It is already connected from the recluster setup; connecting again is harmless
     // but we guard anyway.)
-    connect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)),
+    connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange,
             Qt::UniqueConnection);
 
     // ── Lock UI exactly as reclustering does ─────────────────────────────────

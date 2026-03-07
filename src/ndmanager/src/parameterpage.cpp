@@ -19,6 +19,9 @@
  ***************************************************************************/
 //include files for the application
 #include "parameterpage.h"
+#include <QTableWidget>
+#include <QLineEdit>
+#include <QSpinBox>
 
 // include files for QT
 #include <algorithm>
@@ -54,10 +57,10 @@ ParameterPage::ParameterPage(bool expertMode,QWidget *parent)
         removeButton->setEnabled(false);
         nameLineEdit->setReadOnly(true);
     } else {
-        connect(addButton,SIGNAL(clicked()),this,SLOT(addParameter()));
-        connect(removeButton,SIGNAL(clicked()),this,SLOT(removeParameter()));
-        connect(nameLineEdit,SIGNAL(returnPressed()),this,SLOT(changeCaption()));
-        connect(nameLineEdit,SIGNAL(editingFinished()),this,SLOT(changeCaption()));
+        connect(addButton, &QAbstractButton::clicked, this, &ParameterPage::addParameter);
+        connect(removeButton, &QAbstractButton::clicked, this, &ParameterPage::removeParameter);
+        connect(nameLineEdit, &QLineEdit::returnPressed, this, &ParameterPage::changeCaption);
+        connect(nameLineEdit, &QLineEdit::editingFinished, this, &ParameterPage::changeCaption);
     }
 
     // Restrict edit triggers to DoubleClicked only.
@@ -70,7 +73,7 @@ ParameterPage::ParameterPage(bool expertMode,QWidget *parent)
     // Track modifications via itemChanged — works correctly for both mouse and keyboard
     // in Qt6. The old eventFilter + KeyRelease hack consumed events that Qt6 needs
     // internally to commit cell editors, causing a crash on data entry.
-    connect(parameterTable, SIGNAL(itemChanged(QTableWidgetItem*)), this, SLOT(itemModified(QTableWidgetItem*)));
+    connect(parameterTable, &QTableWidget::itemChanged, this, &ParameterPage::itemModified);
 }
 
 
@@ -163,7 +166,7 @@ void ParameterPage::setParameterInformation(const QMap<int, QStringList >& param
                 int idx = combo->findText(parameterInfo[i]);
                 if(idx >= 0) combo->setCurrentIndex(idx);
                 parameterTable->setCellWidget(row,i,combo);
-                connect(combo, SIGNAL(activated(int)), SLOT(slotValueModified()));
+                connect(combo, QOverload<int>::of(&QComboBox::activated), this, &ParameterPage::slotValueModified);
             } else {
                 QTableWidgetItem *item = new QTableWidgetItem(parameterInfo[i]);
                 // In non-expert mode, only the value column (1) is editable.

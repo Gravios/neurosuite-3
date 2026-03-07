@@ -18,6 +18,8 @@
 #include "tracewidget.h"
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
 #include "itemcolors.h"
+#include <QScrollBar>
+#include <QSpinBox>
 
 // include files for QT
 #include <QString>
@@ -134,10 +136,10 @@ void TraceWidget::decelerate()
 void TraceWidget::advance()
 {
 	 // Temporarily disconnect so that changes to scrollbar and time boxes do not automatically stop paging!
-	 disconnect(startMinute,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    disconnect(startSecond,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    disconnect(startMilisecond,SIGNAL(valueChanged(int)),this, SLOT(stop()));
-    disconnect(scrollBar,SIGNAL(valueChanged(int)),this, SLOT(stop()));
+	 disconnect(startMinute, &QSpinBox::valueChanged, this, &TraceWidget::stop);
+    disconnect(startSecond, &QSpinBox::valueChanged, this, &TraceWidget::stop);
+    disconnect(startMilisecond, &QSpinBox::valueChanged, this, &TraceWidget::stop);
+    disconnect(scrollBar, &QScrollBar::valueChanged, this, &TraceWidget::stop);
 	 
     // Because data files are expected to have grown, update recording length,
     // as well as spin box and scroll bar in the view
@@ -166,7 +168,7 @@ void TraceWidget::advance()
 	 connect(startMinute,&QSpinBox::valueChanged,this, &TraceWidget::stop);
     connect(startSecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
     connect(startMilisecond,&QSpinBox::valueChanged,this, &TraceWidget::stop);
-    connect(scrollBar,SIGNAL(valueChanged(int)),this, SLOT(stop()));
+    connect(scrollBar, &QScrollBar::valueChanged, this, &TraceWidget::stop);
 	 
     timer->start(pageTime); // restart timer
 }
@@ -244,13 +246,13 @@ void TraceWidget::initSelectionWidgets()
     duration->setValidator(&validator);
 
 #if 0
-    connect(startMinute,SIGNAL(valueChanged(int)),this, SLOT(slotStartMinuteTimeUpdated(int)));
-    connect(startSecond,SIGNAL(valueChanged(int)),this, SLOT(slotStartSecondTimeUpdated(int)));
-    connect(startMilisecond,SIGNAL(valueChanged(int)),this, SLOT(slotStartMilisecondTimeUpdated(int)));
+    connect(startMinute, &QSpinBox::valueChanged, this, &TraceWidget::slotStartMinuteTimeUpdated);
+    connect(startSecond, &QSpinBox::valueChanged, this, &TraceWidget::slotStartSecondTimeUpdated);
+    connect(startMilisecond, &QSpinBox::valueChanged, this, &TraceWidget::slotStartMilisecondTimeUpdated);
 #else
-    connect(startMinute,SIGNAL(editingFinished()),this, SLOT(slotStartMinuteTimeUpdated()));
-    connect(startSecond,SIGNAL(editingFinished()),this, SLOT(slotStartSecondTimeUpdated()));
-    connect(startMilisecond,SIGNAL(editingFinished()),this, SLOT(slotStartMilisecondTimeUpdated()));
+    connect(startMinute, &QAbstractSpinBox::editingFinished, this, &TraceWidget::slotStartMinuteTimeUpdated);
+    connect(startSecond, &QAbstractSpinBox::editingFinished, this, &TraceWidget::slotStartSecondTimeUpdated);
+    connect(startMilisecond, &QAbstractSpinBox::editingFinished, this, &TraceWidget::slotStartMilisecondTimeUpdated);
 
 	 /// Added by M.Zugaro to enable automatic forward paging
 	 connect(startMinute,&QSpinBox::valueChanged,this, &TraceWidget::stop);
@@ -273,9 +275,9 @@ void TraceWidget::initSelectionWidgets()
 
     lay->addWidget(scrollBar);
     scrollBar->setValue(startTime);
-    connect(scrollBar,SIGNAL(sliderReleased()),this, SLOT(slotScrollBarUpdated()));
-    connect(scrollBar,SIGNAL(valueChanged(int)),this, SLOT(slotScrollBarUpdated()));
-    connect(scrollBar,SIGNAL(valueChanged(int)),this, SLOT(stop()));
+    connect(scrollBar, &QAbstractSlider::sliderReleased, this, &TraceWidget::slotScrollBarUpdated);
+    connect(scrollBar, &QScrollBar::valueChanged, this, &TraceWidget::slotScrollBarUpdated);
+    connect(scrollBar, &QScrollBar::valueChanged, this, &TraceWidget::stop);
 
     //enable the user to use the keyboard to interact with the scrollbar.
     scrollBar->setMouseTracking(false);

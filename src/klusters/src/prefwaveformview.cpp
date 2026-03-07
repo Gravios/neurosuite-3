@@ -16,6 +16,7 @@
  ***************************************************************************/
 //include files for the application
 #include "prefwaveformview.h"
+#include <QPushButton>
 
 // include files for QT
 #include <QPainter>
@@ -36,8 +37,8 @@ PrefWaveformView::PrefWaveformView(QWidget *parent,int nbChannels,const char *na
         channelList->setEnabled(false);
     }
 
-    connect(saveButton,SIGNAL(clicked()),this,SLOT(saveChannelOrder()));
-    connect(loadButton,SIGNAL(clicked()),this,SLOT(loadChannelOrder()));
+    connect(saveButton, &QAbstractButton::clicked, this, &PrefWaveformView::saveChannelOrder);
+    connect(loadButton, &QAbstractButton::clicked, this, &PrefWaveformView::loadChannelOrder);
     connect(channelList,&ChannelList::positionsChanged,this,&PrefWaveformView::updateChannelPositions);
 
 }

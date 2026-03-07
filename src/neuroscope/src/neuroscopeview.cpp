@@ -114,7 +114,9 @@ NeuroscopeView::NeuroscopeView(NeuroscopeApp& mainWindow, const QString &label, 
     connect(this,&NeuroscopeView::clusterProviderRemoved,traceWidget,&TraceWidget::removeClusterProvider);
     connect(this,&NeuroscopeView::showClusters,traceWidget,&TraceWidget::showClusters);
     connect(this,&NeuroscopeView::clusterColorUpdated,traceWidget,&TraceWidget::clusterColorUpdate);
-    connect(this,SIGNAL(print(QPainter&,int,int,QString,bool)),traceWidget,SLOT(print(QPainter&,int,int,QString,bool)));
+    connect(this,
+        static_cast<void(NeuroscopeView::*)(QPainter&,int,int,const QString&,bool)>(&NeuroscopeView::print),
+        traceWidget, &TraceWidget::print);
     connect(this,&NeuroscopeView::newEventProvider,traceWidget,
             &TraceWidget::addEventProvider);
     connect(this,&NeuroscopeView::eventProviderRemoved,traceWidget,&TraceWidget::removeEventProvider);
@@ -123,13 +125,16 @@ NeuroscopeView::NeuroscopeView(NeuroscopeApp& mainWindow, const QString &label, 
     connect(this,&NeuroscopeView::nextEvent,traceWidget,&TraceWidget::showNextEvent);
     connect(this,&NeuroscopeView::previousEvent,traceWidget,&TraceWidget::showPreviousEvent);
     connect(traceWidget,&TraceWidget::eventModified,this, &NeuroscopeView::slotEventModified);
-    connect(this,SIGNAL(updateEvents(bool,QString,double,double)),traceWidget,SLOT(updateEvents(bool,QString,double,double)));
+    connect(this, static_cast<void(NeuroscopeView::*)(bool,const QString&,double,double)>(&NeuroscopeView::updateEvents),
+        traceWidget, static_cast<void(TraceWidget::*)(bool,const QString&,double,double)>(&TraceWidget::updateEvents));
     connect(this,&NeuroscopeView::eventToRemove,traceWidget,&TraceWidget::removeEvent);
     connect(traceWidget,&TraceWidget::eventRemoved,this, &NeuroscopeView::slotEventRemoved);
-    connect(this,SIGNAL(updateEvents(bool,QString,double)),traceWidget,SLOT(updateEvents(bool,QString,double)));
+    connect(this, static_cast<void(NeuroscopeView::*)(bool,const QString&,double)>(&NeuroscopeView::updateEvents),
+        traceWidget, static_cast<void(TraceWidget::*)(bool,const QString&,double)>(&TraceWidget::updateEvents));
     connect(this,&NeuroscopeView::newEventProperties,traceWidget,&TraceWidget::eventToAddProperties);
     connect(traceWidget,&TraceWidget::eventAdded,this, &NeuroscopeView::slotEventAdded);
-    connect(this,SIGNAL(updateEvents(QString,QList<int>&,bool)),traceWidget,SLOT(updateEvents(QString,QList<int>&,bool)));
+    connect(this, static_cast<void(NeuroscopeView::*)(const QString&,QList<int>&,bool)>(&NeuroscopeView::updateEvents),
+        traceWidget, static_cast<void(TraceWidget::*)(const QString&,QList<int>&,bool)>(&TraceWidget::updateEvents));
     connect(this,&NeuroscopeView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
     connect(this,&NeuroscopeView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
     connect(this,&NeuroscopeView::waveformInformationUpdated,traceWidget,&TraceWidget::updateWaveformInformation);
@@ -444,14 +449,14 @@ void NeuroscopeView::addPositionView(PositionsProvider* positionsProvider,const 
     //To do so, connect the positions dockwidget close button to the dockBeingClosed slot of is contained widget
     //and connect this widget parentDockBeingClosed signal to the view positionDockClosed slot.
     //connect(positions, SIGNAL(headerCloseButtonClicked()),positionView, SLOT(dockBeingClosed()));
-    connect(positionView, SIGNAL(parentDockBeingClosed(QWidget*)), this, SLOT(positionDockClosed(QWidget*)));
+    connect(positionView, &BaseFrame::parentDockBeingClosed, this, &NeuroscopeView::positionDockClosed);
 
     //Set the different connections with the view
     connect(this,&NeuroscopeView::positionInformationUpdated,positionView,&PositionView::updatePositionInformation);
     connect(this,&NeuroscopeView::timeChanged,positionView,&PositionView::displayTimeFrame);
     connect(this,&NeuroscopeView::changeBackgroundColor,positionView, &PositionView::changeBackgroundColor);
-    connect(traceWidget,SIGNAL(eventsAvailable(QHash<QString, EventData*>&,QMap<QString, QList<int> >&,
-                                               QHash<QString, ItemColors*>&,QObject*,double)),positionView,SLOT(dataAvailable(QHash<QString,EventData*>&,QMap<QString,QList<int> >&,QHash<QString,ItemColors*>&,QObject*,double)));
+    connect(traceWidget, &TraceWidget::eventsAvailable, positionView,
+        static_cast<void(PositionView::*)(QHash<QString,EventData*>&,QMap<QString,QList<int>>&,QHash<QString,ItemColors*>&,QObject*,double)>(&PositionView::dataAvailable));
     connect(this,&NeuroscopeView::updateEventDisplay,positionView,&PositionView::updateEventDisplay);
     connect(this,&NeuroscopeView::eventColorUpdated,positionView,&PositionView::eventColorUpdate);
     connect(this,&NeuroscopeView::updateDrawing,positionView, &PositionView::updateDrawing);

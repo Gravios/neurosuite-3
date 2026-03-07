@@ -18,16 +18,18 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 #include "generalinfopage.h"
+#include <QLineEdit>
+#include <QPushButton>
 
 GeneralInfoPage::GeneralInfoPage(QWidget *parent)
     : GeneralInfoLayout(parent),modified(false),isInit(true){
     descriptionTextEdit->setAcceptRichText(false);
     notesTextEdit->setAcceptRichText(false);
 
-    connect(experimentersLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(descriptionTextEdit,SIGNAL(textChanged()),this,SLOT(propertyModified()));
-    connect(notesTextEdit,SIGNAL(textChanged()),this,SLOT(propertyModified()));
-    connect(kDatePicker,SIGNAL(clicked(QDate)),this,SLOT(propertyModified()));
+    connect(experimentersLineEdit, &QLineEdit::textChanged, this, &GeneralInfoPage::propertyModified);
+    connect(descriptionTextEdit, &QTextEdit::textChanged, this, &GeneralInfoPage::propertyModified);
+    connect(notesTextEdit, &QTextEdit::textChanged, this, &GeneralInfoPage::propertyModified);
+    connect(kDatePicker, &QCalendarWidget::clicked, this, &GeneralInfoPage::propertyModified);
 }
 
 

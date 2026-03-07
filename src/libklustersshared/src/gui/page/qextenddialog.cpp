@@ -181,8 +181,8 @@ void QExtendDialogPrivate::appendButton(QExtendDialog::ButtonCode key, const QSt
   mButtonList.insert( key, button );
   mButtonSignalMapper.setMapping( button, key );
 
-    QObject::connect(button, SIGNAL(clicked()),
-           &mButtonSignalMapper, SLOT(map()) );
+    QObject::connect(button, &QAbstractButton::clicked,
+           &mButtonSignalMapper, static_cast<void(QSignalMapper::*)()>(&QSignalMapper::map));
 
     if (key == mDefaultButton) {
         // Now that it exists, set it as default

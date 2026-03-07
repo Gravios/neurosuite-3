@@ -46,7 +46,8 @@ PositionView::PositionView(PositionsProvider& provider,GlobalEventsProvider& glo
     nbSpots = positionsProvider.getNbSpots();
     
     //Set Connection.
-    connect(&positionsProvider,SIGNAL(dataReady(Array<dataType>&,QObject*)),this,SLOT(dataAvailable(Array<dataType>&,QObject*)));
+    connect(&positionsProvider, &PositionsProvider::dataReady, this,
+        static_cast<void(PositionView::*)(Array<dataType>&,QObject*)>(&PositionView::dataAvailable));
 
     scaleBackgroundImage();
 

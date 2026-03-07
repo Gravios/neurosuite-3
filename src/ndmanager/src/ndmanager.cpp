@@ -39,6 +39,8 @@
 
 // application specific includes
 #include "ndmanager.h"
+#include <QDialog>
+#include <qrecentfileaction.h>
 #include "queryinputdialog.h"
 #include "queryoutputdialog.h"
 #include "qhelpviewer.h"
@@ -156,7 +158,7 @@ void ndManager::setupActions()
     mQuitAction = fileMenu->addAction(tr("Quit"));
     mQuitAction->setIcon(QPixmap(":/shared-icons/window-close"));
     mQuitAction->setShortcut(QKeySequence::Quit);
-    connect(mQuitAction, SIGNAL(triggered()), this, SLOT(close()));
+    connect(mQuitAction, &QAction::triggered, this, &QWidget::close);
 
 
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
@@ -374,8 +376,8 @@ void ndManager::createParameterView(QMap<int, QList<int> >& anatomicalGroups,QMa
 
     parameterView = new ParameterView(this,*doc,mainDock,"ParameterView",mExpertMode->isChecked());
 
-    connect(parameterView,SIGNAL(nbSpikeGroupsHasBeenModified(int)),this,SLOT(nbSpikeGroupsModified(int)));
-    connect(parameterView,SIGNAL(fileHasBeenModified(QStringList)),this,SLOT(fileModification(QStringList)));
+    connect(parameterView, &ParameterView::nbSpikeGroupsHasBeenModified, this, &ndManager::nbSpikeGroupsModified);
+    connect(parameterView, &ParameterView::fileHasBeenModified, this, &ndManager::fileModification);
     //connect(parameterView,SIGNAL(scriptListHasBeenModified(QStringList)),this,SLOT(scriptModification(QStringList)));
 
 

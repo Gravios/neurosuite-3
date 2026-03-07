@@ -1,4 +1,5 @@
 #include "parametertree.h"
+#include <QTreeWidget>
 
 ParameterTreeItem::ParameterTreeItem(QTreeWidget *parent)
     : QTreeWidgetItem(parent), mWidget(0)
@@ -30,9 +31,9 @@ QWidget *ParameterTreeItem::widget() const
 ParameterTree::ParameterTree(QWidget *parent)
     : QTreeWidget(parent)
 {
-    connect(this, SIGNAL(itemClicked(QTreeWidgetItem*,int)), SLOT(slotItemClicked(QTreeWidgetItem*,int)));
-    connect(this, SIGNAL(itemPressed(QTreeWidgetItem*,int)), SLOT(slotItemClicked(QTreeWidgetItem*,int)));
-    connect(this, SIGNAL(itemSelectionChanged ()), SLOT(slotSelectionChanged()));
+    connect(this, &QTreeWidget::itemClicked, this, &ParameterTree::slotItemClicked);
+    connect(this, &QTreeWidget::itemPressed, this, &ParameterTree::slotItemClicked);
+    connect(this, &QTreeWidget::itemSelectionChanged, this, &ParameterTree::slotSelectionChanged);
 }
 
 ParameterTree::~ParameterTree()

@@ -22,6 +22,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QDialogButtonBox>
+#include <QDialog>
 #include <QPushButton>
 #include <QFileDialog>
 #include <QLineEdit>
@@ -37,7 +38,7 @@ QueryInputPathWidget::QueryInputPathWidget(QWidget *parent)
     connect(mLineEdit, &QLineEdit::textChanged, this, &QueryInputPathWidget::textChanged);
     mPushButton->setIcon(QPixmap(":/shared-icons/document-open"));
     lay->addWidget(mPushButton);
-    connect(mPushButton, SIGNAL(clicked()), SLOT(slotSelectPath()));
+    connect(mPushButton, &QAbstractButton::clicked, this, &QueryInputPathWidget::slotSelectPath);
     setLayout(lay);
 }
 
@@ -106,8 +107,8 @@ QueryInputDialog::QueryInputDialog(QWidget *parent,const QString& caption,const 
     buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok
                                      | QDialogButtonBox::Cancel);
     layout->addWidget(buttonBox);
-    connect(buttonBox, SIGNAL(accepted()), this, SLOT(accept()));
-    connect(buttonBox, SIGNAL(rejected()), this, SLOT(reject()));
+    connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
 }
 

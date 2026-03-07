@@ -15,6 +15,7 @@
  *                                                                         *
  ***************************************************************************/
 // include files for QT
+#include <QCheckBox>
 #include <QLayout>        // for QVBoxLayout
 #include <QLabel>         // for QLabel
 
@@ -79,7 +80,7 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
 
 
     // connect interactive widgets and selfmade signals to the enableApply slotDefault
-    connect(prefGeneral->crashRecoveryCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
+    connect(prefGeneral->crashRecoveryCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->crashRecoveryComboBox,&QComboBox::activated,this,&PrefDialog::enableApply);
     connect(prefGeneral->undoSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->backgroundColorButton,&QColorButton::colorChanged,this,&PrefDialog::enableApply);
@@ -90,8 +91,8 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->realignArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->markerSizeSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->selectionLineWidthSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->useWhiteColorPrinting,SIGNAL(clicked()),this,SLOT(enableApply()));
-    connect(prefGeneral->autoSelectFeaturesCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
+    connect(prefGeneral->useWhiteColorPrinting, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    connect(prefGeneral->autoSelectFeaturesCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectNFeaturesSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     
     connect(prefclusterView->intervalSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
@@ -99,9 +100,9 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefWaveformView,&PrefWaveformView::positionsChanged,this,&PrefDialog::enableApply);
 
 
-    connect(this, SIGNAL(applyClicked()), SLOT(slotApply()));
-    connect(this, SIGNAL(defaultClicked()), SLOT(slotDefault()));
-    connect(this,SIGNAL(helpClicked()),SLOT(slotHelp()));
+    connect(this, &QExtendDialog::applyClicked, this, &PrefDialog::slotApply);
+    connect(this, &QExtendDialog::defaultClicked, this, &PrefDialog::slotDefault);
+    connect(this, &QExtendDialog::helpClicked, this, &PrefDialog::slotHelp);
 
     applyEnable = false;
 }
