@@ -16,6 +16,8 @@
  ***************************************************************************/
 //include files for the application
 #include "tracewidget.h"
+#include "spinbox.h"
+#include <QScrollBar>
 
 // include files for QT
 #include <QString>
@@ -113,7 +115,7 @@ void TraceWidget::initSelectionWidgets(){
     startMinute->setWrapping(true);
     startMinute->setValue(nbMinutes);
     startMinute->setFocusPolicy(Qt::StrongFocus);
-	 connect(startMinute,SIGNAL(valueChanged(int)),startMinute,SLOT(deselect()),Qt::QueuedConnection);
+	 connect(startMinute, &SpinBox::valueChanged, startMinute, &SpinBox::deselect, Qt::QueuedConnection);
     startSecond = new SpinBox(selectionWidgets);
     startSecond->setMinimum(0);
     startSecond->setMaximum(recordingLength/1000);
@@ -122,7 +124,7 @@ void TraceWidget::initSelectionWidgets(){
     startSecond->setSuffix( tr(" s") );
     startSecond->setValue(nbSeconds);
     startSecond->setFocusPolicy(Qt::StrongFocus);
-	 connect(startSecond,SIGNAL(valueChanged(int)),startSecond,SLOT(deselect()),Qt::QueuedConnection);
+	 connect(startSecond, &SpinBox::valueChanged, startSecond, &SpinBox::deselect, Qt::QueuedConnection);
     startMilisecond = new SpinBox(selectionWidgets);
     startMilisecond->setMinimum(0);
     startMilisecond->setMaximum(recordingLength);
@@ -131,7 +133,7 @@ void TraceWidget::initSelectionWidgets(){
     startMilisecond->setSuffix( tr(" ms") );
     startMilisecond->setValue(remainingMiliseconds);
     startMilisecond->setFocusPolicy(Qt::StrongFocus);
-	 connect(startMilisecond,SIGNAL(valueChanged(int)),startMilisecond,SLOT(deselect()),Qt::QueuedConnection);
+	 connect(startMilisecond, &SpinBox::valueChanged, startMilisecond, &SpinBox::deselect, Qt::QueuedConnection);
 
 
     durationLabel = new QLabel(tr("  Duration (ms)"),selectionWidgets);
@@ -147,9 +149,9 @@ void TraceWidget::initSelectionWidgets(){
     //to maximum of time for the current document (set when the document will be opened)
     duration->setValidator(&validator);
 
-    connect(startMinute,SIGNAL(valueChanged(int)),this, SLOT(slotStartMinuteTimeUpdated(int)));
-    connect(startSecond,SIGNAL(valueChanged(int)),this, SLOT(slotStartSecondTimeUpdated(int)));
-    connect(startMilisecond,SIGNAL(valueChanged(int)),this, SLOT(slotStartMilisecondTimeUpdated(int)));
+    connect(startMinute, &SpinBox::valueChanged, this, &TraceWidget::slotStartMinuteTimeUpdated);
+    connect(startSecond, &SpinBox::valueChanged, this, &TraceWidget::slotStartSecondTimeUpdated);
+    connect(startMilisecond, &SpinBox::valueChanged, this, &TraceWidget::slotStartMilisecondTimeUpdated);
     connect(duration,&QLineEdit::returnPressed,this, &TraceWidget::slotDurationUpdated);
 
     //Create and initialize the scrollbar. The line step is a 20iest of the page step
@@ -162,13 +164,13 @@ void TraceWidget::initSelectionWidgets(){
     scrollBar->setPageStep(pageStep);
     lay->addWidget(scrollBar);
     scrollBar->setValue(startTime);
-    connect(scrollBar,SIGNAL(sliderReleased()),this, SLOT(slotScrollBarUpdated()));
-    connect(scrollBar,SIGNAL(sliderMoved(int)),this, SLOT(slotScrollBarUpdated()));
+    connect(scrollBar, &QAbstractSlider::sliderReleased, this, &TraceWidget::slotScrollBarUpdated);
+    connect(scrollBar, &QAbstractSlider::sliderMoved, this, &TraceWidget::slotScrollBarUpdated);
 
     //enable the user to use the keyboard to interact with the scrollbar.
     scrollBar->setMouseTracking(false);
     scrollBar->setFocusPolicy(Qt::StrongFocus);
-    connect(scrollBar,SIGNAL(valueChanged(int)),this, SLOT(slotScrollBarUpdated()));
+    connect(scrollBar, &QScrollBar::valueChanged, this, &TraceWidget::slotScrollBarUpdated);
 
     lay->setContentsMargins(0,0,0,0);
     lay->setSpacing(0);

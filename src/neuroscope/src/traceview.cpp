@@ -181,7 +181,8 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     }
 
     //Set Connection(s).
-    connect(&tracesProvider,SIGNAL(dataReady(Array<dataType>&,QObject*)),this,SLOT(dataAvailable(Array<dataType>&,QObject*)));
+    connect(&tracesProvider, &TracesProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,QObject*)>(&TraceView::dataAvailable));
 
     //Set the display of the labels, the default is to hide them, if need it change that.
     if (showLabels){
@@ -3690,7 +3691,8 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
                                    int nbSamplesBefore,int nbSamplesAfter,const QList<int>& clustersToSkip){
 
     //Set Connection
-    connect(clustersProvider,SIGNAL(dataReady(Array<dataType>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,QObject*,QString)));
+    connect(clustersProvider, &ClustersProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,QObject*,const QString&)>(&TraceView::dataAvailable));
     connect(clustersProvider,&ClustersProvider::nextClusterDataReady,this,&TraceView::nextClusterDataAvailable);
     connect(clustersProvider,&ClustersProvider::previousClusterDataReady,this,&TraceView::previousClusterDataAvailable);
 
@@ -3885,7 +3887,8 @@ void TraceView::addEventProvider(EventsProvider* eventsProvider,QString name,Ite
                                  bool active,QList<int>& eventsToShow,const QList<int>& eventsToSkip){
 
     //Set Connections
-    connect(eventsProvider,SIGNAL(dataReady(Array<dataType>&,Array<int>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,Array<int>&,QObject*,QString)));
+    connect(eventsProvider, &EventsProvider::dataReady, this,
+        static_cast<void(TraceView::*)(Array<dataType>&,Array<int>&,QObject*,const QString&)>(&TraceView::dataAvailable));
     connect(eventsProvider,&EventsProvider::nextEventDataReady,this,&TraceView::nextEventDataAvailable);
     connect(eventsProvider,&EventsProvider::previousEventDataReady,this,&TraceView::previousEventDataAvailable);
 

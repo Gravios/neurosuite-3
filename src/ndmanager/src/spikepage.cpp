@@ -19,6 +19,8 @@
  ***************************************************************************/
 //include files for the application
 #include "spikepage.h"
+#include <QTableWidget>
+#include <QPushButton>
 #include "tags.h"
 
 // include files for QT
@@ -45,13 +47,13 @@ SpikePage::SpikePage(QWidget* parent)
     groupTable->installEventFilter(this);
 
 
-    connect(groupTable, SIGNAL(currentCellChanged(int,int,int,int)),this, SLOT(slotValidate()));
-    connect(addGroupButton,SIGNAL(clicked()),this,SLOT(addGroup()));
-    connect(removeGroupButton,SIGNAL(clicked()),this,SLOT(removeGroup()));
-    connect(groupTable, SIGNAL(cellPressed(int,int)),this, SLOT(slotValidate()));
-    connect(groupTable, SIGNAL(cellClicked(int,int)),this, SLOT(slotValidate()));
-    connect(groupTable, SIGNAL(cellDoubleClicked(int,int)),this, SLOT(slotValidate()));
-    connect(groupTable, SIGNAL(cellChanged(int,int)),this, SLOT(groupChanged(int,int)));
+    connect(groupTable, &QTableWidget::currentCellChanged, this, &SpikePage::slotValidate);
+    connect(addGroupButton, &QAbstractButton::clicked, this, &SpikePage::addGroup);
+    connect(removeGroupButton, &QAbstractButton::clicked, this, &SpikePage::removeGroup);
+    connect(groupTable, &QTableWidget::cellPressed, this, &SpikePage::slotValidate);
+    connect(groupTable, &QTableWidget::cellClicked, this, &SpikePage::slotValidate);
+    connect(groupTable, &QTableWidget::cellDoubleClicked, this, &SpikePage::slotValidate);
+    connect(groupTable, &QTableWidget::cellChanged, this, &SpikePage::groupChanged);
 
 }
 

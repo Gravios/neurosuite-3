@@ -575,7 +575,7 @@ void KlustersDoc::customEvent(QEvent *event){
             else
                 //upload the temp file, this can not be done asynchronously.
                 //wait savingInterval before starting the autoSaveThread again.
-                QTimer::singleShot(savingInterval*60000,this, SLOT(launchAutoSave()));
+                QTimer::singleShot(savingInterval*60000, this, &KlustersDoc::launchAutoSave);
         }
     }
 }

@@ -19,6 +19,9 @@
  ***************************************************************************/
 //include files for the application
 #include "filepage.h"
+#include <QTableWidget>
+#include <QLineEdit>
+#include <QSpinBox>
 
 // include files for QT
 #include <algorithm>
@@ -37,23 +40,23 @@ FilePage::FilePage(QWidget *parent)
       isInit(true)
 {
     mappingTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-    connect(extensionLineEdit,SIGNAL(returnPressed()),this,SLOT(changeCaption()));
-    connect(extensionLineEdit,SIGNAL(editingFinished()),this,SLOT(changeCaption()));
+    connect(extensionLineEdit, &QLineEdit::returnPressed, this, &FilePage::changeCaption);
+    connect(extensionLineEdit, &QLineEdit::editingFinished, this, &FilePage::changeCaption);
 
-    connect(addChannelButton,SIGNAL(clicked()),this,SLOT(addChannel()));
-    connect(removeChannelButton,SIGNAL(clicked()),this,SLOT(removeChannel()));
+    connect(addChannelButton, &QAbstractButton::clicked, this, &FilePage::addChannel);
+    connect(removeChannelButton, &QAbstractButton::clicked, this, &FilePage::removeChannel);
 
-    connect(extensionLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(samplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
+    connect(extensionLineEdit, &QLineEdit::textChanged, this, &FilePage::propertyModified);
+    connect(samplingRateLineEdit, &QLineEdit::textChanged, this, &FilePage::propertyModified);
 
     //install a filter on the mappingTable in order to validate the entries
     mappingTable->installEventFilter(this);
 
     //For validation
-    connect(mappingTable, SIGNAL(cellChanged(int,int)),this, SLOT(mappingChanged(int,int)));
-    connect(mappingTable, SIGNAL(cellPressed(int,int)),this, SLOT(slotValidate()));
-    connect(mappingTable, SIGNAL(cellClicked(int,int)),this, SLOT(slotValidate()));
-    connect(mappingTable, SIGNAL(cellDoubleClicked(int,int)),this, SLOT(slotValidate()));
+    connect(mappingTable, &QTableWidget::cellChanged, this, &FilePage::mappingChanged);
+    connect(mappingTable, &QTableWidget::cellPressed, this, &FilePage::slotValidate);
+    connect(mappingTable, &QTableWidget::cellClicked, this, &FilePage::slotValidate);
+    connect(mappingTable, &QTableWidget::cellDoubleClicked, this, &FilePage::slotValidate);
 
 }
 

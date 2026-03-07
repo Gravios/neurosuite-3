@@ -172,30 +172,30 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
     mScriptsItem = mParameterTree->addPage(":/icons/programs", tr("Plugins"), programs);
 
     //set connections
-    connect(acquisitionSystem,SIGNAL(nbChannelsModified(int)),this,SLOT(nbChannelsModified(int)));
-    connect(programs,SIGNAL(addNewProgram()),this,SLOT(addNewProgram()));
-    connect(programs,SIGNAL(programToLoad(QString)),this,SLOT(loadProgram(QString)));
-    connect(spike,SIGNAL(nbGroupsModified(int)),this,SLOT(nbSpikeGroupsModified(int)));
-    connect(files,SIGNAL(fileModification(QStringList)),this,SLOT(fileModification(QStringList)));
+    connect(acquisitionSystem, &AcquisitionSystemPage::nbChannelsModified, this, &ParameterView::nbChannelsModified);
+    connect(programs, &ProgramsPage::addNewProgram, this, &ParameterView::addNewProgram);
+    connect(programs, &ProgramsPage::programToLoad, this, &ParameterView::loadProgram);
+    connect(spike, &SpikePage::nbGroupsModified, this, &ParameterView::nbSpikeGroupsModified);
+    connect(files, &FilesPage::fileModification, this, &ParameterView::fileModification);
 
 
 
 
-    connect(this,SIGNAL(resetModificationStatus()),generalInfo,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),acquisitionSystem,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),video,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),lfp,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),miscellaneous,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),neuroscopeVideo,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),clusters,SLOT(resetModificationStatus()));
-    connect(this,SIGNAL(resetModificationStatus()),unitList,SLOT(resetModificationStatus()));
+    connect(this, &ParameterView::resetModificationStatus, generalInfo, &GeneralInfoPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, acquisitionSystem, &AcquisitionSystemPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, video, &VideoPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, lfp, &LfpPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, miscellaneous, &MiscellaneousPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, neuroscopeVideo, &NeuroscopeVideoPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, clusters, &ClustersPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, unitList, &UnitListPage::resetModificationStatus);
 
 
     if(expertMode){
-        connect(this,SIGNAL(resetModificationStatus()),files,SLOT(resetModificationStatus()));
-        connect(this,SIGNAL(resetModificationStatus()),anatomy,SLOT(resetModificationStatus()));
-        connect(this,SIGNAL(resetModificationStatus()),spike,SLOT(resetModificationStatus()));
-        connect(this,SIGNAL(resetModificationStatus()),channelDefaultOffsets,SLOT(resetModificationStatus()));
+        connect(this, &ParameterView::resetModificationStatus, files, &FilesPage::resetModificationStatus);
+        connect(this, &ParameterView::resetModificationStatus, anatomy, &AnatomyPage::resetModificationStatus);
+        connect(this, &ParameterView::resetModificationStatus, spike, &SpikePage::resetModificationStatus);
+        connect(this, &ParameterView::resetModificationStatus, channelDefaultOffsets, &ChannelOffsetsPage::resetModificationStatus);
     }
 }
 
@@ -243,9 +243,9 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
     parameterPage->setProgramName(programName);
 
     //set connections
-    connect(program,SIGNAL(programNameChanged(ProgramPage*,QString,QString,QString)),this,SLOT(changeProgramName(ProgramPage*,QString,QString,QString)));
-    connect(program,SIGNAL(programToRemove(ProgramPage*)),this,SLOT(removeProgram(ProgramPage*)));
-    connect(program,SIGNAL(scriptHidden()),this,SLOT(scriptHidden()));
+    connect(program, &ProgramPage::programNameChanged, this, &ParameterView::changeProgramName);
+    connect(program, &ProgramPage::programToRemove, this, &ParameterView::removeProgram);
+    connect(program, &ProgramPage::scriptHidden, this, &ParameterView::scriptHidden);
 
     //Show the new page
     if(show)

@@ -19,6 +19,7 @@
 #include <QLabel>         // for QLabel
 #include <QMessageBox>
 #include <QTabWidget>
+#include <QDialog>
 #include <QDialogButtonBox>
 //include files for the application
 #include "propertiesdialog.h"
@@ -47,31 +48,31 @@ PropertiesDialog::PropertiesDialog(QWidget *parent)
     positionProperties = new PositionProperties;
     mTabWidget->addTab(positionProperties,tr("Positions"));
     // connect interactive widgets and selfmade signals to the enableApply slotDefault
-    connect(properties->nbChannelsLineEdit,SIGNAL(textChanged(QString)),this,SLOT(channelNbModified()));
-    connect(properties->screenGainLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(properties->voltageRangeLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(properties->amplificationLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(properties->samplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(properties->asSamplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(properties->offsetLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(properties->resolutionComboBox,SIGNAL(activated(int)),this,SLOT(propertyModified()));
-    connect(properties->traceBackgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
+    connect(properties->nbChannelsLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::channelNbModified);
+    connect(properties->screenGainLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(properties->voltageRangeLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(properties->amplificationLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(properties->samplingRateLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(properties->asSamplingRateLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(properties->offsetLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(properties->resolutionComboBox, &QComboBox::activated, this, &PropertiesDialog::propertyModified);
+    connect(properties->traceBackgroundLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
 
 
-    connect(clusterProperties->nbSamplesLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(clusterProperties->peakIndexLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(positionProperties->samplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(positionProperties->widthLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(positionProperties->heightLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(positionProperties->backgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(propertyModified()));
-    connect(positionProperties->rotateComboBox,SIGNAL(activated(int)),this,SLOT(propertyModified()));
-    connect(positionProperties->filpComboBox,SIGNAL(activated(int)),this,SLOT(propertyModified()));
-    connect(positionProperties->checkBoxBackground,SIGNAL(clicked()),this,SLOT(propertyModified()));
+    connect(clusterProperties->nbSamplesLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(clusterProperties->peakIndexLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->samplingRateLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->widthLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->heightLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->backgroundLineEdit, &QLineEdit::textChanged, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->rotateComboBox, &QComboBox::activated, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->filpComboBox, &QComboBox::activated, this, &PropertiesDialog::propertyModified);
+    connect(positionProperties->checkBoxBackground, &QAbstractButton::clicked, this, &PropertiesDialog::propertyModified);
 
     QDialogButtonBox *dialogButton = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel|QDialogButtonBox::Help);
     lay->addWidget(dialogButton);
     connect(dialogButton, &QDialogButtonBox::accepted, this, &PropertiesDialog::slotVerify);
-    connect(dialogButton, SIGNAL(rejected()), this, SLOT(reject()));
+    connect(dialogButton, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(dialogButton, &QDialogButtonBox::helpRequested, this, &PropertiesDialog::slotHelp);
 }
 PropertiesDialog::~PropertiesDialog(){

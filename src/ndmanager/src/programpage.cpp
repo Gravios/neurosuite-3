@@ -20,6 +20,8 @@
 
 //include files for the application
 #include "programpage.h"
+#include <QTabWidget>
+#include <QLineEdit>
 #include "parameterpage.h"
 #include "descriptionwriter.h"
 
@@ -73,7 +75,7 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
     tabWidget->addTab(parameters,tr("Parameters"));
 
     tabWidget->addTab(help,tr("Help"));
-    connect(tabWidget, SIGNAL(currentChanged(int)), this, SLOT(tabChange(int)));
+    connect(tabWidget, &QTabWidget::currentChanged, this, &ProgramPage::tabChange);
 
     if(expertMode){
         scriptView = new QTextEdit(this);
@@ -134,10 +136,10 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
         QSpacerItem* space4 = new QSpacerItem(112,16,QSizePolicy::Expanding,QSizePolicy::Minimum);
         gridLayout->addItem(space4,0,6);
 
-        connect(saveScriptButton,SIGNAL(clicked()),this,SLOT(saveProgramScript()));
-        connect(saveParametersButton,SIGNAL(clicked()),this,SLOT(saveProgramParameters()));
-        connect(scriptView,SIGNAL(textChanged()),this,SLOT(scriptModified()));
-        connect(help,SIGNAL(textChanged()),this,SLOT(helpModified()));
+        connect(saveScriptButton, &QAbstractButton::clicked, this, &ProgramPage::saveProgramScript);
+        connect(saveParametersButton, &QAbstractButton::clicked, this, &ProgramPage::saveProgramParameters);
+        connect(scriptView, &QTextEdit::textChanged, this, &ProgramPage::scriptModified);
+        connect(help, &QTextEdit::textChanged, this, &ProgramPage::helpModified);
     } else {
         removeButton = new QPushButton(tr("Remove Plugin"),buttons);
         QSizePolicy policy(QSizePolicy::Fixed,QSizePolicy::Fixed);
@@ -156,8 +158,8 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
         gridLayout->addItem(space2,0,2);
     }
 
-    connect(removeButton,SIGNAL(clicked()),this,SLOT(removeProgram()));
-    connect(parameters,SIGNAL(nameChanged(QString)),this,SLOT(nameChanged(QString)));
+    connect(removeButton, &QAbstractButton::clicked, this, &ProgramPage::removeProgram);
+    connect(parameters, &ParameterPage::nameChanged, this, &ProgramPage::nameChanged);
 }
 
 

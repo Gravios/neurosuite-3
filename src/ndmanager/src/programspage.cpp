@@ -77,7 +77,7 @@ ProgramsPage::ProgramsPage(bool expertMode,QWidget *parent)
         QSpacerItem* space3 = new QSpacerItem(29,16,QSizePolicy::Fixed,QSizePolicy::Minimum);
         gridLayout->addItem(space3,0,2);
 
-        connect(addButton,SIGNAL(clicked()),this,SLOT(addProgram()));
+        connect(addButton, &QAbstractButton::clicked, this, &ProgramsPage::addProgram);
     } else {
         loadButton = new QPushButton(tr("Load..."),buttons);
         //loadButton->setSizePolicy(QSizePolicy((QSizePolicy::Policy)0,(QSizePolicy::Policy)0,0,0,loadButton->sizePolicy().hasHeightForWidth()));
@@ -95,7 +95,7 @@ ProgramsPage::ProgramsPage(bool expertMode,QWidget *parent)
 
     loadButton->setIcon(QIcon(":/shared-icons/folder-open"));
 
-    connect(loadButton,SIGNAL(clicked()),this,SLOT(loadProgram()));
+    connect(loadButton, &QAbstractButton::clicked, this, &ProgramsPage::loadProgram);
 }
 
 

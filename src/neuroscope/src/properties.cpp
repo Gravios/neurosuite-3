@@ -17,6 +17,7 @@
 
 //includes files for the application
 #include "properties.h"
+#include <QPushButton>
 
 Properties::Properties(QWidget *parent)
     : PropertiesLayout(parent),
@@ -31,7 +32,7 @@ Properties::Properties(QWidget *parent)
     amplificationLineEdit->setValidator(&intValidator);
     asSamplingRateLineEdit->setValidator(&doubleValidator);
 
-    connect(traceBackgroundButton,SIGNAL(clicked()),this,SLOT(updateTraceBackgroundImage()));
+    connect(traceBackgroundButton, &QAbstractButton::clicked, this, &Properties::updateTraceBackgroundImage);
 
     //Set an icon on the backgroundButton button
 

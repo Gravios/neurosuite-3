@@ -15,6 +15,7 @@
  *                                                                         *
  ***************************************************************************/
 // include files for QT
+#include <QCheckBox>
 #include <QLayout>        // for QVBoxLayout
 #include <QLabel>         // for QLabel
 #include <QTabWidget>
@@ -82,34 +83,34 @@ PrefDialog::PrefDialog(QWidget *parent)
     addPage(item);
 
     // connect interactive widgets and selfmade signals to the enableApply slotDefault
-    connect(prefGeneral->headerCheckBox,SIGNAL(clicked()),this,SLOT(enableApply()));
+    connect(prefGeneral->headerCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->backgroundColorButton,SIGNAL(colorChanged(QColor)),this,SLOT(enableApply()));
-    connect(prefGeneral->eventPositionSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
-    connect(prefGeneral->clusterPositionSpinBox,SIGNAL(valueChanged(int)),this,SLOT(enableApply()));
-    connect(prefGeneral->useWhiteColorPrinting,SIGNAL(clicked()),this,SLOT(enableApply()));
-    connect(prefDefaults->screenGainLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->voltageRangeLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->amplificationLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->nbChannelsLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->datSamplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->eegSamplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->offsetLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(prefDefaults->resolutionComboBox,SIGNAL(activated(int)),this,SLOT(enableApply()));
-    connect(prefDefaults->traceBackgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(clusterProperties->nbSamplesLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(clusterProperties->peakIndexLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(positionProperties->samplingRateLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(positionProperties->widthLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(positionProperties->heightLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(positionProperties->backgroundLineEdit,SIGNAL(textChanged(QString)),this,SLOT(enableApply()));
-    connect(positionProperties->rotateComboBox,SIGNAL(activated(int)),this,SLOT(enableApply()));
-    connect(positionProperties->filpComboBox,SIGNAL(activated(int)),this,SLOT(enableApply()));
-    connect(positionProperties->checkBoxBackground,SIGNAL(clicked()),this,SLOT(enableApply()));
+    connect(prefGeneral->eventPositionSpinBox, &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefGeneral->clusterPositionSpinBox, &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefGeneral->useWhiteColorPrinting, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    connect(prefDefaults->screenGainLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->voltageRangeLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->amplificationLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->nbChannelsLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->datSamplingRateLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->eegSamplingRateLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->offsetLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefDefaults->resolutionComboBox, &QComboBox::activated, this, &PrefDialog::enableApply);
+    connect(prefDefaults->traceBackgroundLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(clusterProperties->nbSamplesLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(clusterProperties->peakIndexLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(positionProperties->samplingRateLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(positionProperties->widthLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(positionProperties->heightLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(positionProperties->backgroundLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(positionProperties->rotateComboBox, &QComboBox::activated, this, &PrefDialog::enableApply);
+    connect(positionProperties->filpComboBox, &QComboBox::activated, this, &PrefDialog::enableApply);
+    connect(positionProperties->checkBoxBackground, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
 
 
-    connect(this, SIGNAL(applyClicked()), SLOT(slotApply()));
-    connect(this, SIGNAL(defaultClicked()), SLOT(slotDefault()));
-    connect(this,SIGNAL(helpClicked()),SLOT(slotHelp()));
+    connect(this, &QExtendDialog::applyClicked, this, &PrefDialog::slotApply);
+    connect(this, &QExtendDialog::defaultClicked, this, &PrefDialog::slotDefault);
+    connect(this, &QExtendDialog::helpClicked, this, &PrefDialog::slotHelp);
     applyEnable = false;
 }
 

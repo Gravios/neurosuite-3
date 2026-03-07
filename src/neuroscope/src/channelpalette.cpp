@@ -21,6 +21,7 @@
 #include "channelpalette.h"
 #include <klustersshared/channelcolors.h>
 #include "channelmimedata.h"
+#include "channeliconview.h"
 
 // include files for Qt
 #include <QVariant>
@@ -139,7 +140,7 @@ void ChannelPalette::paintEvent ( QPaintEvent*){
     //(the mouse is still in the iconView area). To make sure the groups are suppressed, isGroupToRemove
     //is set to inform that empty groups have to be suppressed and a repaint of the palette is asked.
     if(isGroupToRemove){
-        QTimer::singleShot(100, this, SLOT(deleteEmptyGroups()));
+        QTimer::singleShot(100, this, &ChannelPalette::deleteEmptyGroups);
         //deleteEmptyGroups();
         isGroupToRemove = false;
         //Inform the application that the groups have been modified
@@ -874,11 +875,13 @@ void ChannelPalette::createGroup(int id){
     spaceWidget->show();
     verticalContainer->setStretchFactor(spaceWidget,2);
 
-    connect(iconView,SIGNAL(itemSelectionChanged()),this, SLOT(slotClickRedraw()));
+    connect(iconView, &QListWidget::itemSelectionChanged, this, &ChannelPalette::slotClickRedraw);
     connect(iconView,&ChannelIconView::mousePressMiddleButton,this, &ChannelPalette::slotMousePressMiddleButton);
     connect(this,&ChannelPalette::paletteResized,group,&ChannelGroupView::reAdjustSize);
-    connect(iconView,SIGNAL(channelsMoved(QString,QListWidgetItem*)),this, SLOT(slotChannelsMoved(QString,QListWidgetItem*)));
-    connect(iconView,SIGNAL(channelsMoved(QList<int>,QString,QListWidgetItem*)),this, SLOT(slotChannelsMoved(QList<int>,QString,QListWidgetItem*)));
+    connect(iconView, static_cast<void(ChannelIconView::*)(const QString&,QListWidgetItem*)>(&ChannelIconView::channelsMoved),
+        this, static_cast<void(ChannelPalette::*)(const QString&,QListWidgetItem*)>(&ChannelPalette::slotChannelsMoved));
+    connect(iconView, static_cast<void(ChannelIconView::*)(const QList<int>&,const QString&,QListWidgetItem*)>(&ChannelIconView::channelsMoved),
+        this, static_cast<void(ChannelPalette::*)(const QList<int>&,const QString&,QListWidgetItem*)>(&ChannelPalette::slotChannelsMoved));
 
     connect(label,&GroupLabel::middleClickOnLabel,this, &ChannelPalette::slotMidButtonPressed);
     connect(label,&GroupLabel::leftClickOnLabel,this, &ChannelPalette::slotMousePressed);
@@ -891,10 +894,9 @@ void ChannelPalette::createGroup(int id){
     connect(spaceWidget,&SpaceWidget::dropLabel,this, &ChannelPalette::groupToMove);
     connect(group,&ChannelGroupView::dragObjectMoved,this, &ChannelPalette::slotDragLabeltMoved);
 
-    connect(iconView, SIGNAL(moveListItem(QList<int>,QString,QString,int, bool)),
-            SLOT(slotMoveListItem(QList<int>,QString,QString,int, bool)));
+    connect(iconView, &ChannelIconView::moveListItem, this, &ChannelPalette::slotMoveListItem);
 
-    connect(iconView, SIGNAL(rowInsered()), SLOT(slotRowInsered()));
+    connect(iconView, &ChannelIconView::rowInsered, this, &ChannelPalette::slotRowInsered);
 
 
     if(id != 0 && id != -1 && (iconviewDict.contains("0")  || iconviewDict.contains("-1") ))
@@ -2189,7 +2191,7 @@ void ChannelPalette::slotMoveListItem(const QList<int> &items, const QString& so
     emit groupModified();
 
     if (moveAll) {
-        QTimer::singleShot(100, this, SLOT(deleteEmptyGroups()));
+        QTimer::singleShot(100, this, &ChannelPalette::deleteEmptyGroups);
     }
 }
 
