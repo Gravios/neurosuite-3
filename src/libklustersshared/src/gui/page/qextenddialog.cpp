@@ -22,9 +22,6 @@
 
 #include "qextenddialog.h"
 #include "qextenddialog_p.h"
-#if 0
-#include "kdialogqueue_p.h"
-#endif
 #include <QApplication>
 #include <QGuiApplication>
 #include <QFontMetricsF>
@@ -41,15 +38,6 @@
 #include <QSettings>
 #include <QDebug>
 
-#if 0
-
-#include <klocale.h>
-#include <kpushbutton.h>
-#include <kseparator.h>
-#include <kstandardguiitem.h>
-#include <ktoolinvocation.h>
-#include <kurllabel.h>
-#endif
 
 #include <klusterseparator.h>
 
@@ -89,10 +77,6 @@ void QExtendDialogPrivate::queuedLayoutUpdate()
         mTopLayout = new QVBoxLayout(q);
   else
         mTopLayout = new QHBoxLayout(q);
-#if 0
-  if ( mUrlHelp )
-    mTopLayout->addWidget( mUrlHelp, 0, Qt::AlignRight );
-#endif
   if ( mMainWidget )
     mTopLayout->addWidget( mMainWidget, 10 );
 
@@ -512,12 +496,6 @@ void QExtendDialog::setPlainCaption( const QString &caption )
 {
     if (QWidget *win = window()) {
         win->setWindowTitle( caption );
-#if 0
-#ifdef Q_WS_X11
-        NETWinInfo info( QX11Info::display(), win->winId(), QX11Info::appRootWindow(), 0 );
-        info.setName( caption.toUtf8().constData() );
-#endif
-#endif
     }
 }
 
@@ -565,14 +543,6 @@ void QExtendDialog::centerOnScreen( QWidget *widget, int screen )
 {
   if ( !widget )
     return;
-#if 0
-#ifdef Q_WS_X11
-  if( !( widget->windowFlags() & Qt::X11BypassWindowManagerHint ) && widget->windowType() != Qt::Popup
-      && NETRootInfo( QX11Info::display(), NET::Supported ).isSupported( NET::WM2FullPlacement )) {
-      return; // the WM can handle placement much better
-  }
-#endif
-#endif
   QRect rect = screenRect( widget, screen );
 
   widget->move( rect.center().x() - widget->width() / 2,
@@ -705,16 +675,6 @@ void QExtendDialog::showButton( ButtonCode id, bool state )
   if ( button )
     state ? button->show() : button->hide();
 }
-#if 0
-void QExtendDialog::setButtonGuiItem( ButtonCode id, const KGuiItem &item )
-{
-  QPushButton *button = this->button( id );
-  if ( !button )
-    return;
-
-  button->setGuiItem( item );
-}
-#endif
 void QExtendDialog::setButtonMenu( ButtonCode id, QMenu *menu, ButtonPopupMode popupmode)
 {
   QPushButton *button = this->button( id );
@@ -949,32 +909,6 @@ void QExtendDialog::slotButtonClicked( int button )
     }
 }
 
-#if 0
-void QExtendDialog::enableLinkedHelp( bool state )
-{
-    Q_D(QExtendDialog);
-    if ( ( d->mUrlHelp != 0 ) == state )
-        return;
-    if ( state ) {
-        if ( d->mUrlHelp )
-            return;
-
-        d->mUrlHelp = new KUrlLabel( this );
-        d->mUrlHelp->setText( helpLinkText() );
-        d->mUrlHelp->setFloatEnabled( true );
-        d->mUrlHelp->setUnderline( true );
-        d->mUrlHelp->setMinimumHeight( fontMetrics().height() + marginHint() );
-        connect( d->mUrlHelp, SIGNAL(leftClickedUrl()), this, SLOT(helpLinkClicked()) );
-
-        d->mUrlHelp->show();
-    } else {
-        delete d->mUrlHelp;
-        d->mUrlHelp = 0;
-    }
-
-    d->setupLayout();
-}
-#endif
 
 void QExtendDialog::setHelp( const QString &anchor, const QString &appname )
 {
@@ -984,15 +918,6 @@ void QExtendDialog::setHelp( const QString &anchor, const QString &appname )
 }
 
 
-/*
-void QExtendDialog::setHelpLinkText( const QString &text )
-{
-    Q_D(QExtendDialog);
-  d->mHelpLinkText = text;
-  if ( d->mUrlHelp )
-    d->mUrlHelp->setText( helpLinkText() );
-}
-*/
 
 QString QExtendDialog::helpLinkText() const
 {

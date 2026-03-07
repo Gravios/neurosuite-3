@@ -1963,20 +1963,6 @@ void KlustersApp::slotFilePrint()
 void KlustersApp::slotFileQuit()
 {
     slotStatusMsg(tr("Exiting..."));
-    /*
-  // close the first window, the list makes the next one the first again.
-  // This ensures that queryClose() is called on each window to ask for closing
-  KMainWindow* w;
-  if(memberList) //List of members of KMainWindow class
-  {
-    for(w=memberList->first(); w!=0; w=memberList->first())
-    {
-      // only close the window if the closeEvent is accepted. If the user presses Cancel on the saveModified() dialog,
-      // the window and the application stay open.
-      if(!w->close())
-        break;
-    }
-  }*/
 
     if (!queryClose()) {
         slotStatusMsg(tr("Ready."));

@@ -2458,102 +2458,7 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
         update();
 
 
-        /*
-        QPainter painter;
-        painter.begin(this);
-        //set the window (part of the world I want to show)
-        QRect r((QRect)window);
-
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-        painter.setViewport(viewport);
-
-        painter.setPen(QPen(Qt::color0,1));
-        painter.setBrush(Qt::NoBrush);
-        int top = r.top();
-        int bottom = r.bottom();
-        int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
-        int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
-        int delta = x - lastClickAbscissa;
-        int currentAbscissa = selectedEventPosition[1] + delta;
-
-        int groupIndex = 0;
-        int max = nbSamplesToDraw - 1;//points draw from 0 to (nbSamplesToDraw - 1)
-        int min = borderX;
-        if (multiColumns){
-            //left margin is visible
-            if (r.left() == 0){
-                if (lastClickAbscissa <= (Xshift - XGroupSpace)) groupIndex = 0;
-                else groupIndex = ((lastClickAbscissa - (Xshift - XGroupSpace)) / Xshift) + 1;
-            }
-            //left margin is invisible
-            else{
-                int shift = (nbSamplesToDraw - 1) * Xstep;
-                if (lastClickAbscissa < shift + XGroupSpace) groupIndex = 0;
-                else groupIndex = ((lastClickAbscissa - (shift + XGroupSpace)) / Xshift) + 1;
-            }
-            min = X0 + groupIndex * Xshift;
-            max = X0 + groupIndex * Xshift + nbSamplesToDraw - 1;//points draw from 0 to (nbSamplesToDraw - 1)
-        }
-
-        //If the user went to far on the left, draw a line at the minimum min
-        if (currentAbscissa < min){
-            if (!startEventDragging){
-                int previousDelta = previousDragAbscissa - lastClickAbscissa;
-                int previousAbscissa = selectedEventPosition[1] + previousDelta;
-                if (previousAbscissa > min){
-                    painter.drawLine(previousAbscissa,top,previousAbscissa,bottom);//erase the previous line
-                    painter.drawLine(min,top,min,bottom);//draw a line at min
-                    if (x > min) previousDragAbscissa = x;
-                    else{
-                        previousDragAbscissa = min - selectedEventPosition[1] + lastClickAbscissa;
-                    }
-                }
-            }
-            else{
-                startEventDragging = false;
-                previousDragAbscissa = x;
-            }
-            painter.end();
-        } else if (currentAbscissa > max){//If the user went to far on the right, draw a line at the last sample position (max)
-            if (!startEventDragging){
-                int previousDelta = previousDragAbscissa - lastClickAbscissa;
-                int previousAbscissa = selectedEventPosition[1] + previousDelta;
-                if (previousAbscissa < max){
-                    painter.drawLine(previousAbscissa,top,previousAbscissa,bottom);//erase the previous line
-                    painter.drawLine(max,top,max,bottom);//draw a line at max
-                    //compute previousDragAbscissa in order to have the line drawn at the far rigth of the trace
-                    if (x <= max){
-                        previousDragAbscissa = x;
-                        if (selectedEventPosition[1] + (previousDragAbscissa - lastClickAbscissa) > max) previousDragAbscissa = max - selectedEventPosition[1] + lastClickAbscissa;
-                    }
-                    else{
-                        previousDragAbscissa = max - selectedEventPosition[1] + lastClickAbscissa;
-                    }
-                }
-            }
-            else{
-                startEventDragging = false;
-                previousDragAbscissa = x;
-            }
-            painter.end();
-        } else {
-            //erase the previous line
-            if (!startEventDragging){
-                int previousDelta = previousDragAbscissa - lastClickAbscissa;
-                int previousAbscissa = selectedEventPosition[1] + previousDelta;
-                if (previousAbscissa >= min) painter.drawLine(previousAbscissa,top,previousAbscissa,bottom);
-                if (previousAbscissa < min) painter.drawLine(min,top,min,bottom);//the line has been drawn at min
-            }
-            else{
-                previousDragAbscissa = x;
-                startEventDragging = false;
-            }
-            //draw the new line
-            painter.drawLine(currentAbscissa,top,currentAbscissa,bottom);
-            previousDragAbscissa = x;
-            painter.end();
-        }
-        */
+        
 
     }
 
@@ -3116,11 +3021,6 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
             previousWindow = (QRect)window;
             zoomOut = true;
             zoomed = true;
-            /*QRect r((QRect)window);
-   QPoint click;
-   if (r.left() != 0) click = viewportToWorld(e->x(),e->y());
-   else click = viewportToWorld(e->x() - xMargin,e->y());
-   if (click.x() < 0) click.setX(0);*/
         }
         else if (!doubleClick){
             if (!maxZoomReached) previousWindow = (QRect)window;
@@ -3386,40 +3286,7 @@ void TraceView::correctZoom(QRect& r){
             initialTraceWidth = traceWidth;
         }
     }
-    /* if (zoomed && !firstZoom && zoomOut){
-    zoomOut = false;
-    zoomed = false;
-    if (zoomFactor != 1){
-     if (multiColumns){
-     }
-     else{
-      zoomed = false;
-      int windowWidth = r.width();
 
-
-      //float factor = 0.5;//static_cast<float>(previousWindow.width())/static_cast<float>(windowWidth);
-      float previousDownSampling = downSampling;
-
-      downSampling = 2 * downSampling;
-      //float factor = static_cast<float>(previousWindow.width())/static_cast<float>(windowWidth);
-      //float previousDownSampling = downSampling;
-     // downSampling = downSampling/factor;
-
-
-
-      if (downSampling < 1) downSampling = 1;
-      int newWidth = static_cast<int>(2 * windowWidth * previousDownSampling/ downSampling) * Xstep;
-      int newLeft = 0;//static_cast<int>(static_cast<float>(r.left()) * previousDownSampling / downSampling) * Xstep;
-      timeStep = timeStepUnit * downSampling;
-
-      //update the window
-      r.setLeft(newLeft);
-      r.setWidth(newWidth);
-      window = ZoomWindow(r);
-
-     }
-    }
-   }*/
     else if (zoomed && downSampling == 1 && !doubleClick){
         if (maxZoomReached){
             int newLeft = r.left();

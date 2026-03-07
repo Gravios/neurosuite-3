@@ -574,11 +574,6 @@ void NeuroscopeApp::initActions()
     connect(displayChannelPalette, &ChannelPalette::groupChangeColor, spikeChannelPalette, &ChannelPalette::applyCustomColor);
     connect(spikeChannelPalette, &ChannelPalette::groupChangeColor, displayChannelPalette, &ChannelPalette::applyCustomColor);
 
-    /*connect(displayChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),this, SLOT(slotChannelsColorUpdate(QValueList<int>)));
-  connect(spikeChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),this, SLOT(slotChannelsColorUpdate(QValueList<int>)));
-  connect(displayChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),spikeChannelPalette, SLOT(updateColor(QValueList<int>)));
-  connect(spikeChannelPalette, SIGNAL(channelsChangeColor(QValueList<int>)),displayChannelPalette, SLOT(updateColor(QValueList<int>)));
-  */
     connect(displayChannelPalette, &ChannelPalette::updateShownChannels, this, &NeuroscopeApp::slotUpdateShownChannels);
     connect(spikeChannelPalette, &ChannelPalette::updateShownChannels, this, &NeuroscopeApp::slotUpdateShownChannels);
 

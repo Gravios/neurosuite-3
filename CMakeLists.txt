@@ -1,98 +1,118 @@
 # =============================================================================
-# neurosuite-3 — top-level superbuild
+# neurosuite-3 — monorepo top-level build
 #
-# Builds all components in dependency order using CMake's ExternalProject
-# module.  Every sub-project is configured, built, and installed in sequence;
-# the install tree (CMAKE_INSTALL_PREFIX) is also added to CMAKE_PREFIX_PATH
-# so that packages that depend on libklustersshared find it automatically.
+# Builds all components in dependency order using add_subdirectory.
+# All packages share a single CMake configure/build invocation; no
+# inter-package install steps are required between configure and build.
 #
-# Usage (identical on Linux, macOS, and Windows):
+# Differences from the ExternalProject superbuild:
+#
+#   • Single configure + single build invocation — no stamp-file dance
+#   • IDE integration works out of the box (all targets visible)
+#   • Incremental rebuilds are fully incremental across package boundaries
+#   • SYCL for klustakwik requires -DCMAKE_CXX_COMPILER=icpx at the
+#     top level (the per-package pre-project() probe cannot override the
+#     compiler once the parent project() has run).  All other GPU backends
+#     (CUDA, HIP) work identically to the superbuild.
+#
+# Usage:
 #
 #   cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local
-#   cmake --build build
+#   cmake --build build [--parallel N]
+#   cmake --install build            # or: sudo cmake --install build
 #
 # Optional variables (pass with -D):
 #
 #   CMAKE_INSTALL_PREFIX   Install root       (default: /usr/local)
 #   CMAKE_BUILD_TYPE       Release|Debug      (default: Release)
-#   JOBS                   Parallel jobs      (default: cmake --build default)
 #   Qt6_DIR                Path to Qt6Config.cmake if Qt6 is not on PATH
 #   USE_CUDA               ON|OFF             (default: ON — auto-detected)
 #   USE_HIP                ON|OFF             (default: ON — auto-detected)
 #   USE_SYCL               ON|OFF             (default: ON — auto-detected)
 #   CMAKE_CUDA_ARCHITECTURES  e.g. "86;89;120"
 #
-#   NS_SKIP_<NAME>         Set to ON to skip a component, e.g.:
-#                            -DNS_SKIP_KLUSTAKWIK=ON
-#                            #                          Valid names (case-insensitive suffix):
-#                            NPHYS_DATA  LIBKLUSTERSSHARED
-#                            KLUSTERS    NEUROSCOPE   NDMANAGER
-#                            NDMANAGER_PLUGINS        KLUSTAKWIK
-#                            SPIKEREALIGN
+#   NS_SKIP_<N>         Set to ON to skip a component, e.g.:
+#                         -DNS_SKIP_KLUSTAKWIK=ON
+#                       Valid names (case-insensitive suffix):
+#                         NPHYS_DATA  LIBKLUSTERSSHARED
+#                         KLUSTERS    NEUROSCOPE   NDMANAGER
+#                         NDMANAGER_PLUGINS        KLUSTAKWIK
 #
-#   NS_INSTALL_DEPS     Set to ON to automatically install system dependencies
-#                       before building (default: OFF).
-#                         Linux   — sudo apt-get install <packages>
-#                         macOS   — brew install <packages>; bootstraps Homebrew
-#                                   if absent; also sets Qt6_DIR automatically
-#                         Windows — bootstraps vcpkg if absent, then
-#                                   vcpkg install <packages>; Qt6 must still be
-#                                   installed via the Qt Online Installer.
+#   NS_INSTALL_DEPS     Set to ON to automatically install system
+#                       dependencies before building (apt/Homebrew/vcpkg).
 #
 #   NS_VCPKG_ROOT       vcpkg root for Windows NS_INSTALL_DEPS
 #                       (default: %VCPKG_ROOT% env var, or C:/vcpkg)
 #
-# Examples:
-#
-#   # Default build
-#   cmake -B build && cmake --build build
-#
-#   # Install dependencies then build (Linux)
-#   cmake -B build -DNS_INSTALL_DEPS=ON
-#   cmake --build build
-#
-#   # Install dependencies then build (macOS — Qt6_DIR set automatically)
-#   cmake -B build -DNS_INSTALL_DEPS=ON -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-#   cmake --build build
-#
-#   # Install dependencies then build (Windows, from VS Developer Prompt)
-#   cmake -B build -DNS_INSTALL_DEPS=ON ^
-#         -DQt6_DIR=C:\Qt\6.7.0\msvc2022_64\lib\cmake\Qt6
-#   cmake --build build
-#
-#   # CPU-only, custom prefix
-#   cmake -B build -DCMAKE_INSTALL_PREFIX=~/.local \
-#         -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF
-#   cmake --build build
-#
-#   # Blackwell GPU, explicit arch
-#   cmake -B build -DCMAKE_CUDA_ARCHITECTURES="89;120"
-#   cmake --build build
-#
-#   # Skip heavy optional components
-#   cmake -B build -DNS_SKIP_KLUSTAKWIK=ON #   cmake --build build
-#
-#   # Qt6 installed to a non-standard location
-#   cmake -B build -DQt6_DIR=/opt/Qt/6.7.0/gcc_64/lib/cmake/Qt6
-#   cmake --build build
+# SYCL / Intel oneAPI note:
+#   The ExternalProject superbuild allowed klustakwik to probe for icpx
+#   before its own project() call.  In a monorepo, the top-level project()
+#   locks the compiler for all subdirectories.  To build klustakwik with
+#   SYCL support, pass:
+#       cmake -B build -DCMAKE_CXX_COMPILER=icpx -DCMAKE_C_COMPILER=icx
+#   With a standard compiler, klustakwik will still build cleanly with
+#   OpenMP and (if found) CUDA/HIP backends — only the SYCL backend is
+#   affected by this constraint.
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.25)
-project(neurosuite-3 VERSION 3.0.0 LANGUAGES NONE)
 
-include(ExternalProject)
+# ---------------------------------------------------------------------------
+# CUDA optional language declaration
+#
+# CMake requires all project languages to be declared in project().  We
+# probe for the CUDA toolkit before calling project() so that the CUDA
+# language is only enabled when the toolkit is actually present.
+# HIP and SYCL are handled inside the packages that need them.
+# ---------------------------------------------------------------------------
+include(CheckLanguage)
 
-# ── Options ──────────────────────────────────────────────────────────────────
-
-set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type")
-set(JOBS "" CACHE STRING "Parallel jobs for sub-builds (empty = CMake default)")
-
-# GPU backends — forwarded to every sub-project that accepts them
 option(USE_CUDA "Enable NVIDIA CUDA GPU backends" ON)
 option(USE_HIP  "Enable AMD ROCm/HIP GPU backends" ON)
 option(USE_SYCL "Enable Intel oneAPI SYCL GPU backends" ON)
 
+if(USE_CUDA)
+    check_language(CUDA)
+    if(CMAKE_CUDA_COMPILER)
+        set(_cuda_lang CUDA)
+    else()
+        message(STATUS "neurosuite-3: CUDA toolkit not found — building without CUDA")
+        set(USE_CUDA OFF CACHE BOOL "" FORCE)
+        set(_cuda_lang "")
+    endif()
+else()
+    set(_cuda_lang "")
+endif()
+
+project(neurosuite-3 VERSION 3.0.0 LANGUAGES CXX C ${_cuda_lang})
+
+# ---------------------------------------------------------------------------
+# Global language standards
+# ---------------------------------------------------------------------------
+set(CMAKE_CXX_STANDARD          17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS        OFF)
+set(CMAKE_C_STANDARD            11)
+set(CMAKE_C_STANDARD_REQUIRED   ON)
+set(CMAKE_C_EXTENSIONS          OFF)
+
+if(_cuda_lang)
+    set(CMAKE_CUDA_STANDARD          17)
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+endif()
+
+# ---------------------------------------------------------------------------
+# Default build type
+# ---------------------------------------------------------------------------
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
+# ---------------------------------------------------------------------------
 # Per-component skip flags
+# ---------------------------------------------------------------------------
 option(NS_SKIP_NPHYS_DATA          "Skip nphys-data"         OFF)
 option(NS_SKIP_LIBKLUSTERSSHARED   "Skip libklustersshared"  OFF)
 option(NS_SKIP_KLUSTERS            "Skip klusters"           OFF)
@@ -101,31 +121,22 @@ option(NS_SKIP_NDMANAGER           "Skip ndmanager"          OFF)
 option(NS_SKIP_NDMANAGER_PLUGINS   "Skip ndmanager-plugins"  OFF)
 option(NS_SKIP_KLUSTAKWIK          "Skip klustakwik"         OFF)
 
+# ---------------------------------------------------------------------------
 # Dependency installation
+# ---------------------------------------------------------------------------
 option(NS_INSTALL_DEPS
-    "Automatically install system dependencies before building (apt / Homebrew / vcpkg)"
+    "Automatically install system dependencies before building (apt/Homebrew/vcpkg)"
     OFF)
 set(NS_VCPKG_ROOT "$ENV{VCPKG_ROOT}" CACHE PATH
     "vcpkg root directory (Windows only, defaults to VCPKG_ROOT env var or C:/vcpkg)")
 
-# ── Dependency installation ────────────────────────────────────────────────────
-#
-# Runs at configure time so that find_package() calls in the sub-projects
-# succeed on the same cmake invocation.  Only runs when NS_INSTALL_DEPS=ON.
-# GPU packages (CUDA, ROCm, oneAPI) are intentionally excluded — those
-# require vendor-specific installers and are documented in doc/<component>/.
-#
-# Linux  : sudo apt-get install
-# macOS  : brew install  (Homebrew bootstrapped automatically if absent)
-# Windows: vcpkg install (vcpkg root resolved from NS_VCPKG_ROOT / VCPKG_ROOT)
-
 if(NS_INSTALL_DEPS)
 
-    # ── Linux (apt) ───────────────────────────────────────────────────────────
+    # ── Linux (apt) ───────────────────────────────────────────────────────
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         find_program(_apt apt-get)
         if(NOT _apt)
-            message(WARNING "NS_INSTALL_DEPS: apt-get not found — skipping dependency installation.")
+            message(WARNING "NS_INSTALL_DEPS: apt-get not found — skipping.")
         else()
             message(STATUS "NS_INSTALL_DEPS: installing apt packages…")
             set(_apt_packages
@@ -140,61 +151,47 @@ if(NS_INSTALL_DEPS)
             execute_process(
                 COMMAND sudo apt-get install -y ${_apt_packages}
                 RESULT_VARIABLE _apt_result
-                ECHO_OUTPUT_VARIABLE
-                ECHO_ERROR_VARIABLE
+                ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
             )
             if(NOT _apt_result EQUAL 0)
                 message(FATAL_ERROR
                     "NS_INSTALL_DEPS: apt-get install failed (exit ${_apt_result}).\n"
-                    "Try running manually:\n"
-                    "  sudo apt-get install -y ${_apt_packages}")
+                    "Try: sudo apt-get install -y ${_apt_packages}")
             endif()
-            message(STATUS "NS_INSTALL_DEPS: apt packages installed.")
         endif()
 
-    # ── macOS (Homebrew) ──────────────────────────────────────────────────────
+    # ── macOS (Homebrew) ──────────────────────────────────────────────────
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        find_program(_brew brew)
+        find_program(_brew brew PATHS /opt/homebrew/bin /usr/local/bin)
         if(NOT _brew)
             message(STATUS "NS_INSTALL_DEPS: Homebrew not found — bootstrapping…")
             execute_process(
                 COMMAND /bin/bash -c
                     "\"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
                 RESULT_VARIABLE _brew_bootstrap
-                ECHO_OUTPUT_VARIABLE
-                ECHO_ERROR_VARIABLE
+                ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
             )
             if(NOT _brew_bootstrap EQUAL 0)
                 message(FATAL_ERROR
                     "NS_INSTALL_DEPS: Homebrew bootstrap failed.\n"
                     "Install manually from https://brew.sh then re-run cmake.")
             endif()
-            # Re-detect after bootstrap (arm64 vs x86_64 prefix differs)
-            find_program(_brew brew
-                PATHS /opt/homebrew/bin /usr/local/bin
-                NO_DEFAULT_PATH)
+            find_program(_brew brew PATHS /opt/homebrew/bin /usr/local/bin NO_DEFAULT_PATH)
         endif()
         if(NOT _brew)
             message(FATAL_ERROR "NS_INSTALL_DEPS: brew still not found after bootstrap.")
         endif()
-
-        message(STATUS "NS_INSTALL_DEPS: installing Homebrew packages…")
         set(_brew_packages cmake ninja pkg-config qt@6 yaml-cpp gsl libomp
                            ffmpeg libsamplerate)
         execute_process(
             COMMAND ${_brew} install ${_brew_packages}
             RESULT_VARIABLE _brew_result
-            ECHO_OUTPUT_VARIABLE
-            ECHO_ERROR_VARIABLE
+            ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
         )
         if(NOT _brew_result EQUAL 0)
             message(FATAL_ERROR
-                "NS_INSTALL_DEPS: brew install failed (exit ${_brew_result}).\n"
-                "Try running manually:\n"
-                "  brew install ${_brew_packages}")
+                "NS_INSTALL_DEPS: brew install failed (exit ${_brew_result}).")
         endif()
-
-        # Tell CMake where Homebrew's Qt6 lives so sub-projects find it.
         if(NOT DEFINED Qt6_DIR)
             execute_process(
                 COMMAND ${_brew} --prefix qt@6
@@ -204,14 +201,12 @@ if(NS_INSTALL_DEPS)
             if(_qt6_prefix)
                 set(Qt6_DIR "${_qt6_prefix}/lib/cmake/Qt6" CACHE PATH
                     "Qt6 cmake directory (set by NS_INSTALL_DEPS)" FORCE)
-                message(STATUS "NS_INSTALL_DEPS: Qt6_DIR set to ${Qt6_DIR}")
+                message(STATUS "NS_INSTALL_DEPS: Qt6_DIR → ${Qt6_DIR}")
             endif()
         endif()
-        message(STATUS "NS_INSTALL_DEPS: Homebrew packages installed.")
 
-    # ── Windows (vcpkg) ───────────────────────────────────────────────────────
+    # ── Windows (vcpkg) ───────────────────────────────────────────────────
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        # Resolve vcpkg root: option > env var > default location
         if(NOT NS_VCPKG_ROOT)
             if(DEFINED ENV{VCPKG_ROOT})
                 set(NS_VCPKG_ROOT "$ENV{VCPKG_ROOT}")
@@ -219,10 +214,9 @@ if(NS_INSTALL_DEPS)
                 set(NS_VCPKG_ROOT "C:/vcpkg")
             endif()
         endif()
-
         set(_vcpkg_exe "${NS_VCPKG_ROOT}/vcpkg.exe")
         if(NOT EXISTS "${_vcpkg_exe}")
-            message(STATUS "NS_INSTALL_DEPS: vcpkg not found at ${NS_VCPKG_ROOT} — bootstrapping…")
+            message(STATUS "NS_INSTALL_DEPS: bootstrapping vcpkg at ${NS_VCPKG_ROOT}…")
             find_program(_git git)
             if(NOT _git)
                 message(FATAL_ERROR
@@ -230,237 +224,115 @@ if(NS_INSTALL_DEPS)
                     "  https://git-scm.com/download/win")
             endif()
             execute_process(
-                COMMAND ${_git} clone https://github.com/microsoft/vcpkg.git
-                        "${NS_VCPKG_ROOT}"
-                RESULT_VARIABLE _vcpkg_clone
-                ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
-            )
-            if(NOT _vcpkg_clone EQUAL 0)
+                COMMAND ${_git} clone https://github.com/microsoft/vcpkg.git "${NS_VCPKG_ROOT}"
+                RESULT_VARIABLE _r ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE)
+            if(NOT _r EQUAL 0)
                 message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg clone failed.")
             endif()
             execute_process(
                 COMMAND "${NS_VCPKG_ROOT}/bootstrap-vcpkg.bat" -disableMetrics
-                RESULT_VARIABLE _vcpkg_boot
-                ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
-            )
-            if(NOT _vcpkg_boot EQUAL 0)
+                RESULT_VARIABLE _r ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE)
+            if(NOT _r EQUAL 0)
                 message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg bootstrap failed.")
             endif()
         endif()
-
-        message(STATUS "NS_INSTALL_DEPS: installing vcpkg packages…")
         set(_vcpkg_triplet "x64-windows")
-        set(_vcpkg_packages
-            yaml-cpp libxml2 gsl libsamplerate ffmpeg
-        )
         execute_process(
-            COMMAND "${_vcpkg_exe}" install ${_vcpkg_packages}
+            COMMAND "${_vcpkg_exe}" install
+                    yaml-cpp libxml2 gsl libsamplerate ffmpeg
                     --triplet ${_vcpkg_triplet}
-            RESULT_VARIABLE _vcpkg_result
-            ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
-        )
-        if(NOT _vcpkg_result EQUAL 0)
-            message(FATAL_ERROR
-                "NS_INSTALL_DEPS: vcpkg install failed (exit ${_vcpkg_result}).\n"
-                "Try running manually from a VS Developer Prompt:\n"
-                "  ${_vcpkg_exe} install ${_vcpkg_packages} --triplet ${_vcpkg_triplet}")
+            RESULT_VARIABLE _r ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE)
+        if(NOT _r EQUAL 0)
+            message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg install failed (exit ${_r}).")
         endif()
-
-        # Inject the vcpkg toolchain into the sub-project common args so that
-        # find_package() in each sub-project resolves the vcpkg-installed libs.
-        set(_vcpkg_toolchain
-            "${NS_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
-        list(APPEND _common_args
-            "-DCMAKE_TOOLCHAIN_FILE=${_vcpkg_toolchain}"
-            "-DVCPKG_TARGET_TRIPLET=${_vcpkg_triplet}")
-        message(STATUS "NS_INSTALL_DEPS: vcpkg packages installed.")
-        message(STATUS "NS_INSTALL_DEPS: NOTE — Qt6 must be installed separately via the Qt Online Installer.")
-        message(STATUS "NS_INSTALL_DEPS: Set -DQt6_DIR=C:\\Qt\\6.x.x\\msvc2022_64\\lib\\cmake\\Qt6")
-
+        if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+            set(CMAKE_TOOLCHAIN_FILE
+                "${NS_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+                CACHE FILEPATH "vcpkg toolchain (set by NS_INSTALL_DEPS)" FORCE)
+        endif()
+        message(STATUS "NS_INSTALL_DEPS: NOTE — Qt6 must still be installed via the Qt Online Installer.")
     else()
-        message(WARNING
-            "NS_INSTALL_DEPS: unsupported platform '${CMAKE_SYSTEM_NAME}' — skipping.")
+        message(WARNING "NS_INSTALL_DEPS: unsupported platform '${CMAKE_SYSTEM_NAME}' — skipping.")
     endif()
 
 endif() # NS_INSTALL_DEPS
 
-# ── Derived paths ─────────────────────────────────────────────────────────────
-
-set(_src "${CMAKE_CURRENT_SOURCE_DIR}/src")
-set(_pfx "${CMAKE_INSTALL_PREFIX}")
-
-# CMAKE_PREFIX_PATH needs to include the install prefix so that
-# find_package(LibKlustersShared) works when configuring dependent packages.
-list(APPEND CMAKE_PREFIX_PATH "${_pfx}")
-
-# ── Sudo detection ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Helper: add one subdirectory with skip-flag support
 #
-# Walk up from the install prefix to find the first existing ancestor, then
-# test whether the current user can write to it.  If not, prepend sudo to
-# every cmake --install call so that sub-projects can install to system paths
-# (e.g. /usr/local) without requiring the entire cmake --build invocation to
-# be run as root.
-
-if(UNIX)
-    set(_test_dir "${_pfx}")
-    while(NOT EXISTS "${_test_dir}")
-        get_filename_component(_test_dir "${_test_dir}" DIRECTORY)
-        if("${_test_dir}" STREQUAL "/")
-            break()
-        endif()
-    endwhile()
-
-    execute_process(
-        COMMAND test -w "${_test_dir}"
-        RESULT_VARIABLE _pfx_not_writable
-    )
-    if(_pfx_not_writable)
-        find_program(_sudo_exe sudo)
-        if(_sudo_exe)
-            set(_install_prefix "${_sudo_exe}" "${CMAKE_COMMAND}")
-            message(STATUS
-                "Install prefix ${_pfx} not writable by current user — "
-                "install steps will use sudo.")
-        else()
-            set(_install_prefix "${CMAKE_COMMAND}")
-            message(WARNING
-                "Install prefix ${_pfx} not writable and sudo not found. "
-                "Install steps may fail. Run cmake --build as root or "
-                "choose a writable prefix with -DCMAKE_INSTALL_PREFIX=.")
-        endif()
-    else()
-        set(_install_prefix "${CMAKE_COMMAND}")
-    endif()
-else()
-    # Windows: no sudo concept, cmake --install runs as the current user
-    set(_install_prefix "${CMAKE_COMMAND}")
-endif()
-
-# ── Job count flag ────────────────────────────────────────────────────────────
-
-if(JOBS)
-    set(_parallel "--parallel;${JOBS}")
-else()
-    set(_parallel "")
-endif()
-
-# ── Common cmake args forwarded to every sub-project ─────────────────────────
-
-set(_common_args
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    -DCMAKE_INSTALL_PREFIX=${_pfx}
-    -DCMAKE_PREFIX_PATH=${_pfx}
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-)
-
-# Forward Qt6_DIR if the user supplied it
-if(DEFINED Qt6_DIR)
-    list(APPEND _common_args -DQt6_DIR=${Qt6_DIR})
-endif()
-
-# Forward CUDA arch override if supplied
-if(DEFINED CMAKE_CUDA_ARCHITECTURES)
-    list(APPEND _common_args -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES})
-endif()
-
-# ── GPU args — only forwarded to packages that use them ───────────────────────
-
-set(_gpu_args
-    -DUSE_CUDA=${USE_CUDA}
-    -DUSE_HIP=${USE_HIP}
-    -DUSE_SYCL=${USE_SYCL}
-)
-
-# ── Helper: add one ExternalProject with standard boilerplate ─────────────────
+#   ns_add_subdir(<n> <rel_source_path>)
 #
-#  ns_add_package(<name> <source_subdir>
-#                 [DEPENDS <dep1> ...]
-#                 [EXTRA_ARGS <-DFOO=bar> ...])
-#
-macro(ns_add_package _name _subdir)
-    cmake_parse_arguments(_p "" "" "DEPENDS;EXTRA_ARGS" ${ARGN})
-
-    # Compute the skip-flag variable name: convert to uppercase, replace - with _
+# Derives NS_SKIP_<UPPER_NAME> from <n> for the skip check.
+# The binary directory is always ${CMAKE_BINARY_DIR}/<n>.
+# ---------------------------------------------------------------------------
+macro(ns_add_subdir _name _rel_src)
     string(TOUPPER "${_name}" _upper)
     string(REPLACE "-" "_" _upper "${_upper}")
     set(_skip_var "NS_SKIP_${_upper}")
-
     if(${_skip_var})
         message(STATUS "neurosuite-3: skipping ${_name} (${_skip_var}=ON)")
     else()
-        ExternalProject_Add(${_name}
-            SOURCE_DIR      "${_src}/${_subdir}"
-            BINARY_DIR      "${CMAKE_BINARY_DIR}/${_name}"
-            INSTALL_DIR     "${_pfx}"
-            CMAKE_ARGS      ${_common_args} ${_p_EXTRA_ARGS}
-            BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> ${_parallel}
-            INSTALL_COMMAND ${_install_prefix} --install <BINARY_DIR>
-            DEPENDS         ${_p_DEPENDS}
-            # Keep the stamp/log files inside the binary dir to avoid polluting src/
-            STAMP_DIR       "${CMAKE_BINARY_DIR}/${_name}/stamp"
-            LOG_CONFIGURE   ON
-            LOG_BUILD       ON
-            LOG_INSTALL     ON
-            LOG_OUTPUT_ON_FAILURE ON
+        add_subdirectory(
+            "${CMAKE_CURRENT_SOURCE_DIR}/${_rel_src}"
+            "${CMAKE_BINARY_DIR}/${_name}"
         )
     endif()
 endmacro()
 
-# ── Build graph ───────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Build graph
 #
-#  nphys-data  ──────────────────────────────────────┐
-#  libklustersshared ──┬──> klusters                 │
-#                      ├──> neuroscope               │ (all independent
-#                      └──> ndmanager                │  of each other)
-#  ndmanager-plugins ────────────────────────────────┤
-#  klustakwik ───────────────────────────────────────┤
+#   nphys-data  ──────────────────────────────────────────────────────────┐
+#   libklustersshared ──┬──> klusters                                     │
+#                       ├──> neuroscope                                   │
+#                       └──> ndmanager                                    │
+#   ndmanager-plugins ────────────────────────────────────────────────────┤
+#   klustakwik ───────────────────────────────────────────────────────────┘
 #
-# libklustersshared must be *installed* before klusters/neuroscope/ndmanager
-# are *configured* (they call find_package(LibKlustersShared)).  The DEPENDS
-# clause on each of those packages ensures ExternalProject serialises them
-# correctly: configure → build → install of libklustersshared runs fully
-# before configure of the dependents begins.
+# libklustersshared exports a build-tree targets file via export(EXPORT …)
+# alongside its install(EXPORT …).  After add_subdirectory() the config
+# and targets files exist in the binary sub-directory; we point
+# LibKlustersShared_DIR there so that the downstream find_package() calls
+# succeed without an install step.
+# ---------------------------------------------------------------------------
 
 # 1. MIME types and desktop icons — no compiler required
-ns_add_package(nphys-data nphys-data)
+ns_add_subdir(nphys-data src/nphys-data)
 
-# 2. Shared Qt6 library — all GUI packages depend on this
-ns_add_package(libklustersshared libklustersshared
-    DEPENDS nphys-data)
+# 2. Shared Qt6 library
+ns_add_subdir(libklustersshared src/libklustersshared)
 
-# 3–5. Qt GUI applications — depend on libklustersshared being installed first
-ns_add_package(klusters klusters
-    DEPENDS libklustersshared
-    EXTRA_ARGS ${_gpu_args})
+# After add_subdirectory() both LibKlustersSharedConfig.cmake and
+# LibKlustersSharedTargets.cmake exist in ${CMAKE_BINARY_DIR}/libklustersshared.
+# Advertise that path so the downstream find_package(LibKlustersShared) calls
+# succeed without an install step.
+if(NOT NS_SKIP_LIBKLUSTERSSHARED)
+    set(LibKlustersShared_DIR "${CMAKE_BINARY_DIR}/libklustersshared"
+        CACHE PATH "Build-tree LibKlustersShared cmake dir (set by monorepo)" FORCE)
+endif()
 
-ns_add_package(neuroscope neuroscope
-    DEPENDS libklustersshared)
-
-ns_add_package(ndmanager ndmanager
-    DEPENDS libklustersshared)
+# 3–5. Qt GUI applications — find_package(LibKlustersShared) resolves to build tree
+ns_add_subdir(klusters   src/klusters)
+ns_add_subdir(neuroscope src/neuroscope)
+ns_add_subdir(ndmanager  src/ndmanager)
 
 # 6. Preprocessing pipeline — no Qt, no libklustersshared dependency
-ns_add_package(ndmanager-plugins ndmanager-plugins
-    EXTRA_ARGS ${_gpu_args})
+ns_add_subdir(ndmanager-plugins src/ndmanager-plugins)
 
 # 7. Standalone spike sorter
-ns_add_package(klustakwik klustakwik
-    EXTRA_ARGS ${_gpu_args})
+ns_add_subdir(klustakwik src/klustakwik)
 
-# ── Summary ───────────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 message(STATUS "")
-message(STATUS "neurosuite-3 superbuild configured")
-message(STATUS "  Install prefix : ${_pfx}")
+message(STATUS "neurosuite-3 monorepo configured")
+message(STATUS "  Install prefix : ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "  Build type     : ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Install deps   : ${NS_INSTALL_DEPS}")
 message(STATUS "  CUDA           : ${USE_CUDA}")
 message(STATUS "  HIP            : ${USE_HIP}")
 message(STATUS "  SYCL           : ${USE_SYCL}")
-if(JOBS)
-    message(STATUS "  Jobs           : ${JOBS}")
-endif()
 message(STATUS "")
-message(STATUS "To build and install:")
-message(STATUS "  cmake --build ${CMAKE_BINARY_DIR}")
+message(STATUS "To build:    cmake --build ${CMAKE_BINARY_DIR}")
+message(STATUS "To install:  cmake --install ${CMAKE_BINARY_DIR}")
 message(STATUS "")

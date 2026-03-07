@@ -743,13 +743,6 @@ void ndManager::fileModification(const QStringList& extensions){
         //managerView->updateFileList(extensions);
     }
 }
-#if 0
-void ndManager::scriptModification(const QStringList& scriptNames){
-    if(managerView){
-        managerView->updateScriptList(scriptNames);
-    }
-}
-#endif
 void ndManager::checkBeforeLaunchingPrograms(){
     if(managerView){
         if(importedFile || newFile) {

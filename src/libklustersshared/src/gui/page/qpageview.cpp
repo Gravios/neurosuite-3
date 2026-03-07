@@ -253,18 +253,6 @@ void QPageViewPrivate::_k_pageSelected(const QItemSelection &index, const QItemS
 void QPageViewPrivate::updateTitleWidget(const QModelIndex& index)
 {
     //Q_Q(QPageView);
-/*
-    QString header = model->data( index, QPageModel::HeaderRole ).toString();
-    if ( header.isNull() ) { //TODO KDE5 remove that ugly logic, see also doxy-comments in QPageWidgetItem::setHeader()
-        header = model->data( index, Qt::DisplayRole ).toString();
-    }
-
-    const QIcon icon = model->data( index, Qt::DecorationRole ).value<QIcon>();
-    titleWidget->setPixmap( icon.pixmap( 22, 22 ) );
-    titleWidget->setText( header );
-
-    titleWidget->setVisible(q->showPageHeader());
-    */
 }
 
 void QPageViewPrivate::_k_dataChanged(const QModelIndex &, const QModelIndex &)
