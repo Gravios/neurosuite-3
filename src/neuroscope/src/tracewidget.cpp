@@ -16,6 +16,8 @@
  ***************************************************************************/
 //include files for the application
 #include "tracewidget.h"
+// Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
+#include "itemcolors.h"
 
 // include files for QT
 #include <QString>

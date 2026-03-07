@@ -28,6 +28,10 @@
 #include "neuroscopedoc.h"
 #include "neuroscope.h"
 #include "tracewidget.h"
+// Qt6 PMF connect requires complete types for all signal/slot parameter types
+#include "clustersprovider.h"
+#include "eventsprovider.h"
+#include "itemcolors.h"
 
 
 class EventData;
