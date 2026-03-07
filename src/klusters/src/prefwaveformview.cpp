@@ -74,8 +74,8 @@ void PrefWaveformView::resetChannelList(int nb){
 void PrefWaveformView::saveChannelOrder(){
     const QString url = QFileDialog::getSaveFileName(this, tr("Save as..."),QDir::currentPath(), tr("All files (*)") );
     if(!url.isEmpty()){
-        FILE* channelFile = fopen(url.toLatin1(),"w");
-        if(channelFile == NULL){
+        FILE* channelFile = fopen(qPrintable(url),"w");
+        if(channelFile == nullptr){
             QMessageBox::critical (this,tr("Error !"),
                                    tr("The selected file could not be opened, possibly because of access permissions !")
                                    );

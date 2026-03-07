@@ -37,11 +37,8 @@
 #include "klustersview.h"
 #include "klustersdoc.h"
 #include "clusterview.h"
-#include "correlationview.h"
 #include "waveformview.h"
 #include "errormatrixview.h"
-#include "viewwidget.h"
-#include "baseframe.h"
 #include "tracewidget.h"
 
 extern int nbUndo;
@@ -91,7 +88,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
 
     setAttribute(Qt::WA_DeleteOnClose, true);
     //Create the mainDock
-    mainDock = new QDockWidget(tr(doc.documentName().toLatin1()));
+    mainDock = new QDockWidget(doc.documentName());
     mainDock->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     mainDock->setAttribute(Qt::WA_DeleteOnClose, true);
     //If the type of view is a not base one, call the function to call the complex views.
@@ -206,6 +203,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
 
 KlustersView::~KlustersView()
 {
+    qDebug() << "in ~KlustersView(): ";
     qDeleteAll(removedClustersUndoList);
     removedClustersUndoList.clear();
     qDeleteAll(removedClustersRedoList);
@@ -234,10 +232,10 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
 
 
     //Create and add the waveforms view
-    QDockWidget* waveforms = new QDockWidget(tr(doc.documentName().toLatin1()));
+    QDockWidget* waveforms = new QDockWidget(doc.documentName());
     waveforms->setAttribute(Qt::WA_DeleteOnClose, true);
     waveforms->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-    //createDockWidget( "WaveForm", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+    //createDockWidget( "WaveForm", QPixmap(), 0L, doc.documentName(), doc.documentName());
     waveforms->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,waveforms,
                                           inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));//assign the widget
     ViewWidget* waveformView = dynamic_cast<ViewWidget*>(waveforms->widget());
@@ -250,10 +248,10 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     setConnections(WAVEFORMS,waveformView,waveforms);
 
     //Create and add the correlations view
-    QDockWidget* correlations = new QDockWidget(tr(doc.documentName().toLatin1()));
+    QDockWidget* correlations = new QDockWidget(doc.documentName());
     correlations->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     correlations->setAttribute(Qt::WA_DeleteOnClose, true);
-            //createDockWidget( "Correlation", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+            //createDockWidget( "Correlation", QPixmap(), 0L, doc.documentName(), doc.documentName());
     correlations->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,correlations,correlationScale,binSize,correlogramTimeFrame,shoulderLine));//assign the widget
     ViewWidget* correlationView = dynamic_cast<ViewWidget*>(correlations->widget());
     viewList.append(correlationView);
@@ -270,10 +268,10 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     createOverview(backgroundColor,statusBar,timeInterval,maxAmplitude,positions);
 
     //Create and add the errorMatrixView beneath the clusterView (mainDock)
-    QDockWidget* errorMatrix = new QDockWidget(tr(doc.documentName().toLatin1()));
+    QDockWidget* errorMatrix = new QDockWidget(doc.documentName());
     errorMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
     errorMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-    //createDockWidget("ErrorMatrix", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+    //createDockWidget("ErrorMatrix", QPixmap(), 0L, doc.documentName(), doc.documentName());
     errorMatrix->setWidget(new ErrorMatrixView(doc,*this,backgroundColor,statusBar,errorMatrix));//assign the widget
     ViewWidget* errorMatrixView = dynamic_cast<ViewWidget*>(errorMatrix->widget());
     viewList.append(errorMatrixView);
@@ -391,7 +389,7 @@ void  KlustersView::clusterDockClosed(QObject *clusterView){
             dimensionX = dynamic_cast<ClusterView*>(viewWidget)->getDimensionX();
             dimensionY = dynamic_cast<ClusterView*>(viewWidget)->getDimensionY();
             mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
-            QObject::disconnect(this, &KlustersView::updatedDimensions, nullptr, nullptr);
+            QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
             connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
             break;
         }
@@ -479,7 +477,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                         dimensionX = dynamic_cast<ClusterView*>(viewWidget)->getDimensionX();
                         dimensionY = dynamic_cast<ClusterView*>(viewWidget)->getDimensionY();
                         mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
-                        QObject::disconnect(this, &KlustersView::updatedDimensions, nullptr, nullptr);
+                        QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
                         connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
                         return QWidget::eventFilter(object,event);
                     }
@@ -519,7 +517,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                     dimensionX = dynamic_cast<ClusterView*>(widget)->getDimensionX();
                     dimensionY = dynamic_cast<ClusterView*>(widget)->getDimensionY();
                     mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
-                    QObject::disconnect(this, &KlustersView::updatedDimensions, nullptr, nullptr);
+                    QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
                     connect(this,&KlustersView::updatedDimensions,widget, &ViewWidget::updatedDimensions);
                     bool inProcess = dynamic_cast<ClusterView*>(widget)->isASelectionInProcess();
                     if(inProcess) return QWidget::eventFilter(object,event);
@@ -664,10 +662,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereClusterView = true;
         count = QString::number(viewCounter["ClusterView"]);
 
-        clusters = new QDockWidget(tr(doc.documentName().toLatin1()));
+        clusters = new QDockWidget(doc.documentName());
         clusters->setAttribute(Qt::WA_DeleteOnClose, true);
         clusters->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-                //createDockWidget(count.prepend("ClusterView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("ClusterView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         clusters->setWidget(new ClusterView(doc,*this,backgroundColor,timeInterval,statusBar,clusters));
         clusterView = static_cast<ViewWidget*>(clusters->widget());
         viewList.append(clusterView);
@@ -676,7 +674,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         addDockWidget(Qt::BottomDockWidgetArea,clusters);
         //Make the new ClusterView the only view connected to the signal of update of the spin boxes.
         //To do so disconnect all the other clusterViews connected, the actual connection for the current view is done in setConnections.
-        QObject::disconnect(this, &KlustersView::updatedDimensions, nullptr, nullptr);
+        QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
 
         setConnections(CLUSTERS,clusterView,clusters);
 
@@ -705,10 +703,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereWaveformView = true;
         count = QString::number(viewCounter["WaveformView"]);
 
-        waveforms = new QDockWidget(tr(doc.documentName().toLatin1()));
+        waveforms = new QDockWidget(doc.documentName());
         waveforms->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         waveforms->setAttribute(Qt::WA_DeleteOnClose, true);
-                //createDockWidget(count.prepend("WaveformView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("WaveformView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         waveforms->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,waveforms,
                                               inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));//assign the widget
         waveformView = dynamic_cast<ViewWidget*>(waveforms->widget());
@@ -728,11 +726,11 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereCorrelationView = true;
         count = QString::number(viewCounter["CorrelationView"]);
 
-        correlations = new QDockWidget(tr(doc.documentName().toLatin1()));
+        correlations = new QDockWidget(doc.documentName());
         correlations->setAttribute(Qt::WA_DeleteOnClose, true);
         correlations->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
 
-                //createDockWidget(count.prepend("CorrelationView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("CorrelationView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         correlations->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,correlations,correlationScale,binSize,correlogramTimeFrame,shoulderLine));//assign the widget
         correlationView = dynamic_cast<ViewWidget*>(correlations->widget());
         viewList.append(correlationView);
@@ -741,13 +739,13 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         addDockWidget(Qt::BottomDockWidgetArea,correlations);
         //Make the new CorrelationView the only view connected to the signals.
         //To do so disconnect all the other CorrelationView connected, the actual connection for the current view is done in setConnections.
-        QObject::disconnect(this, &KlustersView::updatedBinSizeAndTimeFrame, nullptr, nullptr);
-        QObject::disconnect(this, &KlustersView::noScale, nullptr, nullptr);
-        QObject::disconnect(this, &KlustersView::maxScale, nullptr, nullptr);
-        QObject::disconnect(this, &KlustersView::shoulderScale, nullptr, nullptr);
-        QObject::disconnect(this, &KlustersView::increaseAmplitudeofCorrelograms, nullptr, nullptr);
-        QObject::disconnect(this, &KlustersView::decreaseAmplitudeofCorrelograms, nullptr, nullptr);
-        QObject::disconnect(this, &KlustersView::setShoulderLine, nullptr, nullptr);
+        QObject::disconnect(this, SIGNAL(updatedBinSizeAndTimeFrame(int,int)),0,0);
+        QObject::disconnect(this, SIGNAL(noScale()),0,0);
+        QObject::disconnect(this, SIGNAL(maxScale()),0,0);
+        QObject::disconnect(this, SIGNAL(shoulderScale()),0,0);
+        QObject::disconnect(this, SIGNAL(increaseAmplitudeofCorrelograms()),0,0);
+        QObject::disconnect(this, SIGNAL(decreaseAmplitudeofCorrelograms()),0,0);
+        QObject::disconnect(this, SIGNAL(setShoulderLine(bool)),0,0);
 
         setConnections(CORRELATIONS,correlationView,correlations);
         break;
@@ -755,10 +753,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         newViewType = true;
         isThereErrorMatrixView = true;
 
-        errorMatrix = new QDockWidget(tr(doc.documentName().toLatin1()));
+        errorMatrix = new QDockWidget(doc.documentName());
         errorMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         errorMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-        //createDockWidget("ErrorMatrix", QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+        //createDockWidget("ErrorMatrix", QPixmap(), 0L, doc.documentName(), doc.documentName());
         errorMatrix->setWidget(new ErrorMatrixView(doc,*this,backgroundColor,statusBar,errorMatrix));//assign the widget
         errorMatrixView = dynamic_cast<ViewWidget*>(errorMatrix->widget());
         viewList.append(errorMatrixView);
@@ -778,10 +776,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereTraceView = true;
         count = QString::number(viewCounter["TraceView"]);
 
-        traces = new QDockWidget(tr(doc.documentName().toLatin1()));
+        traces = new QDockWidget(doc.documentName());
         traces->setAttribute(Qt::WA_DeleteOnClose, true);
         traces->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
-                //createDockWidget(count.prepend("TraceView"), QPixmap(), 0L, tr(doc.documentName().toLatin1()), tr(doc.documentName().toLatin1()));
+                //createDockWidget(count.prepend("TraceView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
         //the settings are : greyScale, no vertical lines nor rasters and waveforms, no labels displayed, no channel skipped.
         traces->setWidget(new TraceWidget(startingTime,duration,true,*doc.getTraceProvider(),false,false,false,
                                           true,labelsDisplay,doc.getCurrentChannels(),doc.getGain(),doc.getAcquisitionGain(),doc.channelColors(),
@@ -1421,119 +1419,103 @@ QList< QList<int>* >  KlustersView::getRedoList(){
 
 void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWidget* dockWidget){
     //Connection(s) common to all widgets.
-    connect(this, &KlustersView::updateContents, view, [view](){ view->update(); });
-
+    connect(this,SIGNAL(updateContents()),view, SLOT(update()));
+    
     //Connections common to ClusterView, WaveformView and CorrelationView
-    //All three inherit ViewWidget → BaseFrame, so we can bind to ViewWidget*/BaseFrame* slots directly.
     if((displayType == CLUSTERS) || (displayType == WAVEFORMS) || (displayType == CORRELATIONS)){
-        ViewWidget* vw = qobject_cast<ViewWidget*>(view);
-        Q_ASSERT(vw);
-        connect(this, &KlustersView::singleColorUpdated,         vw, &ViewWidget::singleColorUpdate);
-        connect(this, &KlustersView::clusterRemovedFromView,     vw, &ViewWidget::removeClusterFromView);
-        connect(this, &KlustersView::clusterAddedToView,         vw, &ViewWidget::addClusterToView);
-        connect(this, static_cast<void(KlustersView::*)(QList<int>&,int,bool)>(&KlustersView::newClusterAddedToView),
-                vw,  static_cast<void(ViewWidget::*)(QList<int>&,int,bool)>(&ViewWidget::addNewClusterToView));
-        connect(this, static_cast<void(KlustersView::*)(int,bool)>(&KlustersView::newClusterAddedToView),
-                vw,  static_cast<void(ViewWidget::*)(int,bool)>(&ViewWidget::addNewClusterToView));
-        connect(this, &KlustersView::spikesRemovedFromClusters,  vw, &ViewWidget::spikesRemovedFromClusters);
-        connect(this, &KlustersView::modeToSet,                  vw, &BaseFrame::setMode);
-        connect(this, &KlustersView::spikesAddedToCluster,       vw, &ViewWidget::spikesAddedToCluster);
-        connect(this, &KlustersView::modifiedClusters,           vw, &ViewWidget::updateClusters);
-        connect(this, &KlustersView::modifiedClustersUndo,       vw, &ViewWidget::undoUpdateClusters);
-        connect(this, &KlustersView::updateDrawing,              vw, &BaseFrame::updateDrawing);
-        connect(this, &KlustersView::changeBackgroundColor,      vw, &BaseFrame::changeBackgroundColor);
+        connect(this,SIGNAL(singleColorUpdated(int,bool)),view, SLOT(singleColorUpdate(int,bool)));
+        connect(this,SIGNAL(clusterRemovedFromView(int,bool)),view, SLOT(removeClusterFromView(int,bool)));
+        connect(this,SIGNAL(clusterAddedToView(int,bool)),view, SLOT(addClusterToView(int,bool)));
+        connect(this,SIGNAL(newClusterAddedToView(QList<int>&,int,bool)),view, SLOT(addNewClusterToView(QList<int>&,int,bool)));
+        connect(this,SIGNAL(newClusterAddedToView(int,bool)),view, SLOT(addNewClusterToView(int,bool)));
+        connect(this,SIGNAL(spikesRemovedFromClusters(QList<int>&,bool)),view, SLOT(spikesRemovedFromClusters(QList<int>&,bool)));
+        connect(this,SIGNAL(modeToSet(BaseFrame::Mode)),view, SLOT(setMode(BaseFrame::Mode)));
+        connect(this,SIGNAL(spikesAddedToCluster(int,bool)),view, SLOT(spikesAddedToCluster(int,bool)));
+        connect(this,SIGNAL(modifiedClusters(QList<int>&,bool,bool)),view, SLOT(updateClusters(QList<int>&,bool,bool)));
+        connect(this,SIGNAL(modifiedClustersUndo(QList<int>&,bool)),view, SLOT(undoUpdateClusters(QList<int>&,bool)));
+        connect(this,SIGNAL(updateDrawing()),view, SLOT(updateDrawing()));
+        connect(this,SIGNAL(changeBackgroundColor(QColor)),view, SLOT(changeBackgroundColor(QColor)));
     }
 
     if(displayType == CLUSTERS){ //Connections for ClusterViews
-        ClusterView* cv = qobject_cast<ClusterView*>(view);
-        Q_ASSERT(cv);
-        connect(this, &KlustersView::changeTimeInterval,  cv,
-                static_cast<void(ClusterView::*)(int,bool)>(&ClusterView::setTimeStepInSecond));
-        connect(this, &KlustersView::updatedDimensions,   cv, &ClusterView::updatedDimensions);
-        connect(this, &KlustersView::emptySelection,      cv, &ClusterView::emptySelection);
-        connect(cv,   &QObject::destroyed,                this, &KlustersView::clusterDockClosed);
+        connect(this,SIGNAL(changeTimeInterval(int,bool)),view, SLOT(setTimeStepInSecond(int,bool)));
+        connect(this,SIGNAL(updatedDimensions(int,int)),view, SLOT(updatedDimensions(int,int)));
+        connect(this,SIGNAL(emptySelection()),view, SLOT(emptySelection()));
+        connect(view, SIGNAL(destroyed(QObject*)), this, SLOT(clusterDockClosed(QObject*)));
 
         //Connect the clusterView to a possible TraceView
         if(isThereTraceView){
-            connect(cv, &ClusterView::moveToTime, traceWidget, &TraceWidget::moveToTime);
+            connect(view,SIGNAL(moveToTime(long)),traceWidget, SLOT(moveToTime(long)));
         }
-    } else if(displayType == WAVEFORMS){ //Connections for WaveformViews
-        WaveformView* wv = qobject_cast<WaveformView*>(view);
-        Q_ASSERT(wv);
-        connect(this, &KlustersView::updatedTimeFrame,          wv, &WaveformView::setTimeFrame);
-        connect(this, &KlustersView::sampleMode,                wv, &WaveformView::setSampleMode);
-        connect(this, &KlustersView::timeFrameMode,             wv, &WaveformView::setTimeFrameMode);
-        connect(this, &KlustersView::meanPresentation,          wv, &WaveformView::setMeanPresentation);
-        connect(this, &KlustersView::allWaveformsPresentation,  wv, &WaveformView::setAllWaveformsPresentation);
-        connect(this, &KlustersView::overLayPresentation,       wv, &WaveformView::setOverLayPresentation);
-        connect(this, &KlustersView::sideBySidePresentation,    wv, &WaveformView::setSideBySidePresentation);
-        connect(this, &KlustersView::increaseAmplitude,         wv, &WaveformView::increaseAmplitude);
-        connect(this, &KlustersView::decreaseAmplitude,         wv, &WaveformView::decreaseAmplitude);
-        connect(this, &KlustersView::updateDisplayNbSpikes,     wv, &WaveformView::setDisplayNbSpikes);
-        connect(this, &KlustersView::changeGain,                wv, &WaveformView::setGain);
-        connect(this, &KlustersView::changeChannelPositions,    wv, &WaveformView::setChannelPositions);
-        connect(this, &KlustersView::clustersRenumbered,        wv, &WaveformView::clustersRenumbered);
-        connect(wv,   &QObject::destroyed,                      this, &KlustersView::waveformDockClosed);
+    } else if(displayType == WAVEFORMS) { //Connections for WaveformViews
+        connect(this,SIGNAL(updatedTimeFrame(long,long)),view, SLOT(setTimeFrame(long,long)));
+        connect(this,SIGNAL(sampleMode()),view, SLOT(setSampleMode()));
+        connect(this,SIGNAL(timeFrameMode()),view, SLOT(setTimeFrameMode()));
+        connect(this,SIGNAL(meanPresentation()),view, SLOT(setMeanPresentation()));
+        connect(this,SIGNAL(allWaveformsPresentation()),view, SLOT(setAllWaveformsPresentation()));
+        connect(this,SIGNAL(overLayPresentation()),view, SLOT(setOverLayPresentation()));
+        connect(this,SIGNAL(sideBySidePresentation()),view, SLOT(setSideBySidePresentation()));
+        connect(this,SIGNAL(increaseAmplitude()),view, SLOT(increaseAmplitude()));
+        connect(this,SIGNAL(decreaseAmplitude()),view, SLOT(decreaseAmplitude()));
+        connect(this,SIGNAL(updateDisplayNbSpikes(long)),view, SLOT(setDisplayNbSpikes(long)));
+        connect(this,SIGNAL(changeGain(int)),view, SLOT(setGain(int)));
+        connect(this,SIGNAL(changeChannelPositions(QList<int>&)),view, SLOT(setChannelPositions(QList<int>&)));
+        connect(this,SIGNAL(clustersRenumbered(bool)),view, SLOT(clustersRenumbered(bool)));
+        connect(view, SIGNAL(destroyed(QObject*)), this, SLOT(waveformDockClosed(QObject*)));
     } else if(displayType == CORRELATIONS){ //Connections for CorrelationViews
-        CorrelationView* crv = qobject_cast<CorrelationView*>(view);
-        Q_ASSERT(crv);
-        connect(this, &KlustersView::updatedBinSizeAndTimeFrame,        crv, &CorrelationView::setBinSizeAndTimeWindow);
-        connect(this, &KlustersView::noScale,                           crv, &CorrelationView::setNoScale);
-        connect(this, &KlustersView::maxScale,                          crv, &CorrelationView::setMaximumScale);
-        connect(this, &KlustersView::shoulderScale,                     crv, &CorrelationView::setShoulderScale);
-        connect(this, &KlustersView::increaseAmplitudeofCorrelograms,   crv, &CorrelationView::increaseAmplitude);
-        connect(this, &KlustersView::decreaseAmplitudeofCorrelograms,   crv, &CorrelationView::decreaseAmplitude);
-        connect(this, &KlustersView::setShoulderLine,                   crv, &CorrelationView::setShoulderLine);
-        connect(this, &KlustersView::clustersRenumbered,                crv, &CorrelationView::clustersRenumbered);
-        connect(crv,  &QObject::destroyed,                              this, &KlustersView::correlogramDockClosed);
+        connect(this,SIGNAL(updatedBinSizeAndTimeFrame(int,int)),view, SLOT(setBinSizeAndTimeWindow(int,int)));
+        connect(this,SIGNAL(noScale()),view, SLOT(setNoScale()));
+        connect(this,SIGNAL(maxScale()),view, SLOT(setMaximumScale()));
+        connect(this,SIGNAL(shoulderScale()),view, SLOT(setShoulderScale()));
+        connect(this,SIGNAL(increaseAmplitudeofCorrelograms()),view, SLOT(increaseAmplitude()));
+        connect(this,SIGNAL(decreaseAmplitudeofCorrelograms()),view, SLOT(decreaseAmplitude()));
+        connect(this,SIGNAL(setShoulderLine(bool)),view, SLOT(setShoulderLine(bool)));
+        connect(this,SIGNAL(clustersRenumbered(bool)),view, SLOT(clustersRenumbered(bool)));
+        connect(view, SIGNAL(destroyed(QObject*)), this, SLOT(correlogramDockClosed(QObject*)));
     } else if(displayType == ERROR_MATRIX){ //Connections for ErrorMatrixViews
-        ErrorMatrixView* emv = qobject_cast<ErrorMatrixView*>(view);
-        Q_ASSERT(emv);
-        connect(this,  &KlustersView::computeProbabilities,  emv, &ErrorMatrixView::updateMatrixContents);
-        connect(emv,   &QObject::destroyed,                  this, &KlustersView::errorMatrixDockClosed);
+        connect(this,SIGNAL(computeProbabilities()),view, SLOT(updateMatrixContents()));
+        connect(view, SIGNAL(destroyed(QObject*)), this, SLOT(errorMatrixDockClosed(QObject*)));
         //connection with the document
-        connect(&doc, &KlustersDoc::clustersGrouped,          emv, &ErrorMatrixView::clustersGrouped);
-        connect(&doc, &KlustersDoc::clustersDeleted,          emv, &ErrorMatrixView::clustersDeleted);
-        connect(&doc, &KlustersDoc::removeSpikesFromClusters, emv, &ErrorMatrixView::removeSpikesFromClusters);
-        connect(&doc, &KlustersDoc::newClusterAdded,          emv, &ErrorMatrixView::newClusterAdded);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
-                emv,  static_cast<void(ErrorMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ErrorMatrixView::newClustersAdded));
-        connect(&doc, &KlustersDoc::renumber,                 emv, &ErrorMatrixView::renumber);
-        connect(&doc, &KlustersDoc::undoRenumbering,          emv, &ErrorMatrixView::undoRenumbering);
-        connect(&doc, &KlustersDoc::undoAdditionModification, emv, &ErrorMatrixView::undoAdditionModification);
-        connect(&doc, &KlustersDoc::undoAddition,             emv, &ErrorMatrixView::undoAddition);
-        connect(&doc, &KlustersDoc::undoModification,         emv, &ErrorMatrixView::undoModification);
-        connect(&doc, &KlustersDoc::redoRenumbering,          emv, &ErrorMatrixView::redoRenumbering);
-        connect(&doc, &KlustersDoc::redoAdditionModification, emv, &ErrorMatrixView::redoAdditionModification);
-        connect(&doc, &KlustersDoc::redoAddition,             emv, &ErrorMatrixView::redoAddition);
-        connect(&doc, &KlustersDoc::redoModification,         emv, &ErrorMatrixView::redoModification);
-        connect(&doc, &KlustersDoc::redoDeletion,             emv, &ErrorMatrixView::redoDeletion);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
-                emv,  static_cast<void(ErrorMatrixView::*)(QList<int>&)>(&ErrorMatrixView::newClustersAdded));
-        connect(this, &KlustersView::changeBackgroundColor,   emv, &BaseFrame::changeBackgroundColor);
+        connect(&doc,SIGNAL(clustersGrouped(QList<int>&,int)),view, SLOT(clustersGrouped(QList<int>&,int)));
+        connect(&doc,SIGNAL(clustersDeleted(QList<int>&,int)),view, SLOT(clustersDeleted(QList<int>&,int)));
+        connect(&doc,SIGNAL(removeSpikesFromClusters(QList<int>&,int,QList<int>&)),view, SLOT(removeSpikesFromClusters(QList<int>&,int,QList<int>&)));
+        connect(&doc,SIGNAL(newClusterAdded(QList<int>&,int,QList<int>&)),view, SLOT(newClusterAdded(QList<int>&,int,QList<int>&)));
+        connect(&doc,SIGNAL(newClustersAdded(QMap<int,int>&,QList<int>&)),view, SLOT(newClustersAdded(QMap<int,int>&,QList<int>&)));
+        connect(&doc,SIGNAL(renumber(QMap<int,int>&)),view, SLOT(renumber(QMap<int,int>&)));
+        connect(&doc,SIGNAL(undoRenumbering(QMap<int,int>&)),view, SLOT(undoRenumbering(QMap<int,int>&)));
+        connect(&doc,SIGNAL(undoAdditionModification(QList<int>&,QList<int>&)),view, SLOT(undoAdditionModification(QList<int>&,QList<int>&)));
+        connect(&doc,SIGNAL(undoAddition(QList<int>&)),view, SLOT(undoAddition(QList<int>&)));
+        connect(&doc,SIGNAL(undoModification(QList<int>&)),view, SLOT(undoModification(QList<int>&)));
+        connect(&doc,SIGNAL(redoRenumbering(QMap<int,int>&)),view, SLOT(redoRenumbering(QMap<int,int>&)));
+        connect(&doc,SIGNAL(redoAdditionModification(QList<int>&,QList<int>&,bool,QList<int>&)),view, SLOT(redoAdditionModification(QList<int>&,QList<int>&,bool,QList<int>&)));
+        connect(&doc,SIGNAL(redoAddition(QList<int>&,QList<int>&)),view, SLOT(redoAddition(QList<int>&,QList<int>&)));
+        connect(&doc,SIGNAL(redoModification(QList<int>&,bool,QList<int>&)),view, SLOT(redoModification(QList<int>&,bool,QList<int>&)));
+        connect(&doc,SIGNAL(redoDeletion(QList<int>&)),view, SLOT(redoDeletion(QList<int>&)));
+        connect(&doc,SIGNAL(newClustersAdded(QList<int>&)),view, SLOT(newClustersAdded(QList<int>&)));
+        connect(this,SIGNAL(changeBackgroundColor(QColor)),view, SLOT(changeBackgroundColor(QColor)));
     } else if(displayType == TRACES){ //Connections for TraceViews
-        TraceWidget* tw = qobject_cast<TraceWidget*>(view);
-        Q_ASSERT(tw);
-        connect(this, &KlustersView::updateContents,      tw, &TraceWidget::updateContents);
-        connect(this, &KlustersView::singleColorUpdated,  tw, &TraceWidget::updateDrawing);
-        connect(this, &KlustersView::updateClusters,      tw, &TraceWidget::updateClusters);
-        connect(this, &KlustersView::updateDrawing,       tw, &TraceWidget::updateDrawing);
-        connect(this, &KlustersView::changeBackgroundColor, tw, &TraceWidget::changeBackgroundColor);
-        connect(tw,   &QObject::destroyed,                this, &KlustersView::traceDockClosed);
-        connect(this, &KlustersView::increaseAllAmplitude,  tw, &TraceWidget::increaseAllChannelsAmplitude);
-        connect(this, &KlustersView::decreaseAllAmplitude,  tw, &TraceWidget::decreaseAllChannelsAmplitude);
-        connect(tw,   &TraceWidget::updateStartAndDuration, this, &KlustersView::setStartAndDuration);
-        connect(this, &KlustersView::showLabels,            tw, &TraceWidget::showLabels);
-        connect(this, &KlustersView::nextCluster,           traceWidget, &TraceWidget::showNextCluster);
-        connect(this, &KlustersView::previousCluster,       traceWidget, &TraceWidget::showPreviousCluster);
+    
+        connect(this,SIGNAL(updateContents()),view, SLOT(updateContents()));
+        connect(this,SIGNAL(singleColorUpdated(int,bool)),view, SLOT(updateDrawing()));
+        connect(this,SIGNAL(updateClusters(QString,QList<int>&,ItemColors*,bool)),view,SLOT(updateClusters(QString,QList<int>&,ItemColors*,bool)));
+
+        connect(this,SIGNAL(updateDrawing()),view, SLOT(updateDrawing()));
+        connect(this,SIGNAL(changeBackgroundColor(QColor)),view, SLOT(changeBackgroundColor(QColor)));
+        connect(view, SIGNAL(destroyed(QObject*)), this, SLOT(traceDockClosed(QObject*)));
+        connect(this,SIGNAL(increaseAllAmplitude()),view,SLOT(increaseAllChannelsAmplitude()));
+        connect(this,SIGNAL(decreaseAllAmplitude()),view,SLOT(decreaseAllChannelsAmplitude()));
+        connect(view,SIGNAL(updateStartAndDuration(long,long)),this, SLOT(setStartAndDuration(long,long)));
+        connect(this,SIGNAL(showLabels(bool)),view, SLOT(showLabels(bool)));
+        connect(this,&KlustersView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
+        connect(this,&KlustersView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
 
         //Connect the TraceView to possible clusterViews
         if(isThereClusterView){
             int nbViews = viewList.count();
-            for(int i = 0; i < nbViews; i++){
+            for(int i = 0; i< nbViews; i++) {
                 ViewWidget* viewWidget = viewList.at(i);
-                if(ClusterView* cv = qobject_cast<ClusterView*>(viewWidget)){
-                    connect(cv, &ClusterView::moveToTime, tw, &TraceWidget::moveToTime);
+                if(qobject_cast<ClusterView*>(viewWidget)){
+                    connect(viewWidget,SIGNAL(moveToTime(long)),view, SLOT(moveToTime(long)));
                 }
             }
         }
@@ -1554,32 +1536,30 @@ void KlustersView::updateClustersProvider(){
         doc.getClustersProvider()->setClusterIdList(shownClusters);
 }
 
-void KlustersView::updateCorrelogramConnections(ViewWidget* viewWidget){
-    CorrelationView* crv = qobject_cast<CorrelationView*>(viewWidget);
-    Q_ASSERT(crv);
-
+void KlustersView::updateCorrelogramConnections(ViewWidget* viewWidget){     
     //First disconnect the view
-    QObject::disconnect(this, &KlustersView::updatedBinSizeAndTimeFrame,      nullptr, nullptr);
-    QObject::disconnect(this, &KlustersView::noScale,                         nullptr, nullptr);
-    QObject::disconnect(this, &KlustersView::maxScale,                        nullptr, nullptr);
-    QObject::disconnect(this, &KlustersView::shoulderScale,                   nullptr, nullptr);
-    QObject::disconnect(this, &KlustersView::increaseAmplitudeofCorrelograms, nullptr, nullptr);
-    QObject::disconnect(this, &KlustersView::decreaseAmplitudeofCorrelograms, nullptr, nullptr);
-    QObject::disconnect(this, &KlustersView::setShoulderLine,                 nullptr, nullptr);
+    QObject::disconnect(this, SIGNAL(updatedBinSizeAndTimeFrame(int,int)),0,0);
+    QObject::disconnect(this, SIGNAL(noScale()),0,0);
+    QObject::disconnect(this, SIGNAL(maxScale()),0,0);
+    QObject::disconnect(this, SIGNAL(shoulderScale()),0,0);
+    QObject::disconnect(this, SIGNAL(increaseAmplitudeofCorrelograms()),0,0);
+    QObject::disconnect(this, SIGNAL(decreaseAmplitudeofCorrelograms()),0,0);
+    QObject::disconnect(this, SIGNAL(setShoulderLine(bool)),0,0);
 
     //Connect the viewWidget
-    connect(this, &KlustersView::updatedBinSizeAndTimeFrame,        crv, &CorrelationView::setBinSizeAndTimeWindow);
-    connect(this, &KlustersView::noScale,                           crv, &CorrelationView::setNoScale);
-    connect(this, &KlustersView::maxScale,                          crv, &CorrelationView::setMaximumScale);
-    connect(this, &KlustersView::shoulderScale,                     crv, &CorrelationView::setShoulderScale);
-    connect(this, &KlustersView::increaseAmplitudeofCorrelograms,   crv, &CorrelationView::increaseAmplitude);
-    connect(this, &KlustersView::decreaseAmplitudeofCorrelograms,   crv, &CorrelationView::decreaseAmplitude);
-    connect(this, &KlustersView::setShoulderLine,                   crv, &CorrelationView::setShoulderLine);
+    connect(this,SIGNAL(updatedBinSizeAndTimeFrame(int,int)),viewWidget, SLOT(setBinSizeAndTimeWindow(int,int)));
+    connect(this,SIGNAL(noScale()),viewWidget, SLOT(setNoScale()));
+    connect(this,SIGNAL(maxScale()),viewWidget, SLOT(setMaximumScale()));
+    connect(this,SIGNAL(shoulderScale()),viewWidget, SLOT(setShoulderScale()));
+    connect(this,SIGNAL(increaseAmplitudeofCorrelograms()),viewWidget, SLOT(increaseAmplitude()));
+    connect(this,SIGNAL(decreaseAmplitudeofCorrelograms()),viewWidget, SLOT(decreaseAmplitude()));
+    connect(this,SIGNAL(setShoulderLine(bool)),viewWidget, SLOT(setShoulderLine(bool)));
 }
 
 void KlustersView::updateTimeFrame(long start,long timeFrameWidth)
 {
     startTime = start;
     timeWindow = timeFrameWidth;
+    qDebug()<<" void KlustersView::updateTimeFrame(long start,long timeFrameWidth)";
     emit updatedTimeFrame(start,timeFrameWidth);
 }

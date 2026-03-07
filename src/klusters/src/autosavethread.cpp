@@ -27,10 +27,10 @@
 
 void AutoSaveThread::run(){
     //Open the temp file in write mode
-    FILE* cluFile = fopen(autoSaveUrl.toLatin1(),"wb");
+    FILE* cluFile = fopen(qPrintable(autoSaveUrl),"wb");
 
     //If can be open, save the data.
-    if(cluFile != NULL){
+    if(cluFile != nullptr){
         data.saveClusters(cluFile);
         //close the file
         fclose(cluFile);
