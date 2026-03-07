@@ -390,7 +390,7 @@ void  KlustersView::clusterDockClosed(QObject *clusterView){
             dimensionY = dynamic_cast<ClusterView*>(viewWidget)->getDimensionY();
             mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
             QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
-            connect(this,SIGNAL(updatedDimensions(int,int)),viewWidget, SLOT(updatedDimensions(int,int)));
+            connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
             break;
         }
     }
@@ -478,7 +478,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                         dimensionY = dynamic_cast<ClusterView*>(viewWidget)->getDimensionY();
                         mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
                         QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
-                        connect(this,SIGNAL(updatedDimensions(int,int)),viewWidget, SLOT(updatedDimensions(int,int)));
+                        connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
                         return QWidget::eventFilter(object,event);
                     }
                 }
@@ -518,7 +518,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                     dimensionY = dynamic_cast<ClusterView*>(widget)->getDimensionY();
                     mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
                     QObject::disconnect(this, SIGNAL(updatedDimensions(int,int)),0,0);
-                    connect(this,SIGNAL(updatedDimensions(int,int)),widget, SLOT(updatedDimensions(int,int)));
+                    connect(this,&KlustersView::updatedDimensions,widget, &ViewWidget::updatedDimensions);
                     bool inProcess = dynamic_cast<ClusterView*>(widget)->isASelectionInProcess();
                     if(inProcess) return QWidget::eventFilter(object,event);
                 }
@@ -1506,8 +1506,8 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this,SIGNAL(decreaseAllAmplitude()),view,SLOT(decreaseAllChannelsAmplitude()));
         connect(view,SIGNAL(updateStartAndDuration(long,long)),this, SLOT(setStartAndDuration(long,long)));
         connect(this,SIGNAL(showLabels(bool)),view, SLOT(showLabels(bool)));
-        connect(this,SIGNAL(nextCluster()),traceWidget,SLOT(showNextCluster()));
-        connect(this,SIGNAL(previousCluster()),traceWidget,SLOT(showPreviousCluster()));
+        connect(this,&KlustersView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
+        connect(this,&KlustersView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
 
         //Connect the TraceView to possible clusterViews
         if(isThereClusterView){

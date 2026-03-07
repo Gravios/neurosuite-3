@@ -209,55 +209,55 @@ void KlustersApp::createMenus()
     mOpenAction = fileMenu->addAction(tr("&Open..."));
     mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
     mOpenAction->setShortcut(QKeySequence::Open);
-    connect(mOpenAction, SIGNAL(triggered()), this, SLOT(slotFileOpen()));
+    connect(mOpenAction, &QAction::triggered, this, &KlustersApp::slotFileOpen);
 
     QSettings settings;
     mFileOpenRecent = new QRecentFileAction(this);
     mFileOpenRecent->setRecentFiles(settings.value(QLatin1String("Recent Files"),QStringList()).toStringList());
     fileMenu->addAction(mFileOpenRecent);
-    connect(mFileOpenRecent, SIGNAL(recentFileSelected(QString)), this, SLOT(slotFileOpenRecent(QString)));
-    connect(mFileOpenRecent, SIGNAL(recentFileListChanged()), this, SLOT(slotSaveRecentFiles()));
+    connect(mFileOpenRecent, &QRecentFileAction::recentFileSelected, this, &KlustersApp::slotFileOpenRecent);
+    connect(mFileOpenRecent, &QRecentFileAction::recentFileListChanged, this, &KlustersApp::slotSaveRecentFiles);
 
 
     mImportFile = fileMenu->addAction(tr("&Import File"));
     mImportFile->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
-    connect(mImportFile,SIGNAL(triggered()), this,SLOT(slotFileImport()));
+    connect(mImportFile,&QAction::triggered, this,&KlustersApp::slotFileImport);
 
     fileMenu->addSeparator();
 
     mSaveAction = fileMenu->addAction(tr("Save..."));
     mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
-    connect(mSaveAction, SIGNAL(triggered()), this, SLOT(slotFileSave()));
+    connect(mSaveAction, &QAction::triggered, this, &KlustersApp::slotFileSave);
 
     mSaveAsAction = fileMenu->addAction(tr("&Save As..."));
     mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
-    connect(mSaveAsAction, SIGNAL(triggered()), this, SLOT(slotFileSaveAs()));
+    connect(mSaveAsAction, &QAction::triggered, this, &KlustersApp::slotFileSaveAs);
 
     mRenumberAndSave = fileMenu->addAction(tr("Re&number and Save"));
     mRenumberAndSave->setIcon(QIcon(QPixmap("filesave.png")));
     mRenumberAndSave->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
-    connect(mRenumberAndSave,SIGNAL(triggered()), this,SLOT(slotFileRenumberAndSave()));
+    connect(mRenumberAndSave,&QAction::triggered, this,&KlustersApp::slotFileRenumberAndSave);
 
     fileMenu->addSeparator();
 
     mPrintAction = fileMenu->addAction(tr("Print"));
     mPrintAction->setIcon(QPixmap(":/shared-icons/document-print"));
     mPrintAction->setShortcut(QKeySequence::Print);
-    connect(mPrintAction, SIGNAL(triggered()), this, SLOT(slotFilePrint()));
+    connect(mPrintAction, &QAction::triggered, this, &KlustersApp::slotFilePrint);
 
     fileMenu->addSeparator();
 
     mCloseAction = fileMenu->addAction(tr("Close"));
     mCloseAction->setIcon(QPixmap(":/shared-icons/document-close"));
-    connect(mCloseAction, SIGNAL(triggered()), this, SLOT(slotFileClose()));
+    connect(mCloseAction, &QAction::triggered, this, &KlustersApp::slotFileClose);
 
     fileMenu->addSeparator();
 
     mQuitAction = fileMenu->addAction(tr("Quit"));
     mQuitAction->setShortcut(QKeySequence::Quit);
     mQuitAction->setIcon(QPixmap(":/shared-icons/window-close"));
-    connect(mQuitAction, SIGNAL(triggered()), this, SLOT(slotFileQuit()));
+    connect(mQuitAction, &QAction::triggered, this, &KlustersApp::slotFileQuit);
 
     //Edit Menu
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
@@ -265,24 +265,24 @@ void KlustersApp::createMenus()
     mUndo = editMenu->addAction(tr("Undo"));
     mUndo->setIcon(QPixmap(":/shared-icons/edit-undo"));
     mUndo->setShortcut(QKeySequence::Undo);
-    connect(mUndo, SIGNAL(triggered()), this, SLOT(slotUndo()));
+    connect(mUndo, &QAction::triggered, this, &KlustersApp::slotUndo);
 
     mRedo = editMenu->addAction(tr("Redo"));
     mRedo->setShortcut(QKeySequence::Redo);
     mRedo->setIcon(QPixmap(":/shared-icons/edit-redo"));
-    connect(mRedo, SIGNAL(triggered()), this, SLOT(slotRedo()));
+    connect(mRedo, &QAction::triggered, this, &KlustersApp::slotRedo);
 
     editMenu->addSeparator();
 
     mSelectAllAction = editMenu->addAction(tr("Select &All"));
     mSelectAllAction->setShortcut(QKeySequence::SelectAll);
-    connect(mSelectAllAction, SIGNAL(triggered()), this, SLOT(slotSelectAll()));
+    connect(mSelectAllAction, &QAction::triggered, this, &KlustersApp::slotSelectAll);
 
     editMenu->addSeparator();
 
     mSelectAllExceptAction = editMenu->addAction(tr("Select All Except 0 and 1"));
     mSelectAllExceptAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
-    connect(mSelectAllExceptAction, SIGNAL(triggered()), this, SLOT(slotSelectAllWO01()));
+    connect(mSelectAllExceptAction, &QAction::triggered, this, &KlustersApp::slotSelectAllWO01);
 
 
     //Actions menu
@@ -304,29 +304,29 @@ void KlustersApp::createMenus()
 
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
-    connect(mUpdateDisplay,SIGNAL(triggered()), clusterPalette,SLOT(updateClusters()));
+    connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
 
     actionMenu->addSeparator();
 
     mRenumberClusters = actionMenu->addAction(tr("&Renumber Clusters"));
     mRenumberClusters->setShortcut(Qt::Key_R);
-    connect(mRenumberClusters,SIGNAL(triggered()), doc,SLOT(renumberClusters()));
+    connect(mRenumberClusters,&QAction::triggered, doc,&KlustersDoc::renumberClusters);
 
     actionMenu->addSeparator();
 
     mUpdateErrorMatrix = actionMenu->addAction(tr("&Update Error Matrix"));
     mUpdateErrorMatrix->setIcon(QIcon(":/icons/grouping_assistant_update"));
     mUpdateErrorMatrix->setShortcut(Qt::Key_U);
-    connect(mUpdateErrorMatrix,SIGNAL(triggered()), this,SLOT(slotUpdateErrorMatrix()));
+    connect(mUpdateErrorMatrix,&QAction::triggered, this,&KlustersApp::slotUpdateErrorMatrix);
 
     actionMenu->addSeparator();
 
     mReCluster = actionMenu->addAction(tr("Re&cluster"));
     mReCluster->setShortcut(QKeySequence(Qt::SHIFT  | Qt::Key_R));
-    connect(mReCluster,SIGNAL(triggered()), this,SLOT(slotRecluster()));
+    connect(mReCluster,&QAction::triggered, this,&KlustersApp::slotRecluster);
 
     mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
-    connect(mAbortReclustering, SIGNAL(triggered()), this, SLOT(slotStopRecluster()));
+    connect(mAbortReclustering, &QAction::triggered, this, &KlustersApp::slotStopRecluster);
 
     mAbortRealign = actionMenu->addAction(tr("Abort &Realignment"));
     mAbortRealign->setEnabled(false);
@@ -338,7 +338,7 @@ void KlustersApp::createMenus()
     mRealignSpikes->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_L));
     mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
-    connect(mRealignSpikes, SIGNAL(triggered()), this, SLOT(slotRealignSpikes()));
+    connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
 
 
     //Tools menu
@@ -346,38 +346,38 @@ void KlustersApp::createMenus()
     mZoomAction = toolsMenu->addAction(tr("Zoom"));
     mZoomAction->setIcon(QIcon(":/icons/zoom_tool.png"));
     mZoomAction->setShortcut(Qt::Key_Z);
-    connect(mZoomAction,SIGNAL(triggered()), this,SLOT(slotZoom()));
+    connect(mZoomAction,&QAction::triggered, this,&KlustersApp::slotZoom);
 
     toolsMenu->addSeparator();
 
     mNewCluster = toolsMenu->addAction(tr("New Cluster"));
     mNewCluster->setIcon(QIcon(":/icons/new_cluster"));
     mNewCluster->setShortcut(Qt::Key_C);
-    connect(mNewCluster,SIGNAL(triggered()), this,SLOT(slotSingleNew()));
+    connect(mNewCluster,&QAction::triggered, this,&KlustersApp::slotSingleNew);
 
     mSplitClusters = toolsMenu->addAction(tr("&Split Clusters"));
     mSplitClusters->setIcon(QIcon(":/icons/new_clusters"));
     mSplitClusters->setShortcut(Qt::Key_S);
-    connect(mSplitClusters,SIGNAL(triggered()), this,SLOT(slotMultipleNew()));
+    connect(mSplitClusters,&QAction::triggered, this,&KlustersApp::slotMultipleNew);
 
     toolsMenu->addSeparator();
 
     mDeleteArtifactSpikes = toolsMenu->addAction(tr("Delete &Artifact Spikes"));
     mDeleteArtifactSpikes->setIcon(QIcon(":/icons/delete_artefact_tool"));
     mDeleteArtifactSpikes->setShortcut(Qt::Key_A);
-    connect(mDeleteArtifactSpikes,SIGNAL(triggered()), this,SLOT(slotDeleteArtefact()));
+    connect(mDeleteArtifactSpikes,&QAction::triggered, this,&KlustersApp::slotDeleteArtefact);
 
     mDeleteNoisySpikes = toolsMenu->addAction(tr("Delete &Noisy Spikes"));
     mDeleteNoisySpikes->setIcon(QIcon(":/icons/delete_noise_tool"));
     mDeleteNoisySpikes->setShortcut(Qt::Key_N);
-    connect(mDeleteNoisySpikes,SIGNAL(triggered()), this,SLOT(slotDeleteNoise()));
+    connect(mDeleteNoisySpikes,&QAction::triggered, this,&KlustersApp::slotDeleteNoise);
 
     toolsMenu->addSeparator();
 
     mSelectTime = toolsMenu->addAction(tr("Select Time"));
     mSelectTime->setIcon(QIcon(":/icons/time_tool"));
     mSelectTime->setShortcut(Qt::Key_W);
-    connect(mSelectTime,SIGNAL(triggered()), this,SLOT(slotSelectTime()));
+    connect(mSelectTime,&QAction::triggered, this,&KlustersApp::slotSelectTime);
 
 
 
@@ -386,28 +386,28 @@ void KlustersApp::createMenus()
     timeFrameMode = waveFormsMenu->addAction(tr("&Time Frame"));
     timeFrameMode->setShortcut(Qt::Key_T);
     timeFrameMode->setCheckable(true);
-    connect(timeFrameMode,SIGNAL(triggered()), this,SLOT(slotTimeFrameMode()));
+    connect(timeFrameMode,&QAction::triggered, this,&KlustersApp::slotTimeFrameMode);
 
     overlayPresentation = waveFormsMenu->addAction(tr("&Overlay"));
     overlayPresentation->setShortcut(Qt::Key_O);
     overlayPresentation->setCheckable(true);
-    connect(overlayPresentation,SIGNAL(triggered()), this,SLOT(setOverLayPresentation()));
+    connect(overlayPresentation,&QAction::triggered, this,&KlustersApp::setOverLayPresentation);
 
     meanPresentation = waveFormsMenu->addAction(tr("&Mean and Standard Deviation"));
     meanPresentation->setShortcut(Qt::Key_M);
     meanPresentation->setCheckable(true);
-    connect(meanPresentation,SIGNAL(triggered()), this,SLOT(slotMeanPresentation()));
+    connect(meanPresentation,&QAction::triggered, this,&KlustersApp::slotMeanPresentation);
 
     waveFormsMenu->addSeparator();
 
 
     mIncreaseAmplitude = waveFormsMenu->addAction(tr("&Increase Amplitude"));
     mIncreaseAmplitude->setShortcut(Qt::Key_I);
-    connect(mIncreaseAmplitude,SIGNAL(triggered()), this,SLOT(slotIncreaseAmplitude()));
+    connect(mIncreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotIncreaseAmplitude);
 
     mDecreaseAmplitude = waveFormsMenu->addAction(tr("&Decrease Amplitude"));
     mDecreaseAmplitude->setShortcut(Qt::Key_D);
-    connect(mDecreaseAmplitude,SIGNAL(triggered()), this,SLOT(slotDecreaseAmplitude()));
+    connect(mDecreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotDecreaseAmplitude);
 
     timeFrameMode->setChecked(false);
     overlayPresentation->setChecked(false);
@@ -422,26 +422,26 @@ void KlustersApp::createMenus()
     grp->addAction(scaleByMax);
     scaleByMax->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_M));
     scaleByMax->setCheckable(true);
-    connect(scaleByMax,SIGNAL(triggered()), this,SLOT(slotScaleByMax()));
+    connect(scaleByMax,&QAction::triggered, this,&KlustersApp::slotScaleByMax);
 
     scaleByShouler = correlationsMenu->addAction(tr("Scale by &Asymptote"));
     grp->addAction(scaleByShouler);
     scaleByShouler->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_A));
     scaleByShouler->setCheckable(true);
-    connect(scaleByShouler,SIGNAL(triggered()), this,SLOT(slotScaleByShouler()));
+    connect(scaleByShouler,&QAction::triggered, this,&KlustersApp::slotScaleByShouler);
 
     noScale = correlationsMenu->addAction(tr("&Uniform Scale"));
     grp->addAction(noScale);
     noScale->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_U));
     noScale->setCheckable(true);
-    connect(noScale,SIGNAL(triggered()), this,SLOT(slotNoScale()));
+    connect(noScale,&QAction::triggered, this,&KlustersApp::slotNoScale);
 
     correlationsMenu->addSeparator();
 
     shoulderLine = correlationsMenu->addAction(tr("Asymptote &Line"));
     shoulderLine->setShortcut(Qt::Key_L);
     shoulderLine->setCheckable(true);
-    connect(shoulderLine,SIGNAL(triggered()), this,SLOT(slotShoulderLine()));
+    connect(shoulderLine,&QAction::triggered, this,&KlustersApp::slotShoulderLine);
 
     correlationsMenu->addSeparator();
 
@@ -449,11 +449,11 @@ void KlustersApp::createMenus()
     scaleByMax->setChecked(true);
     mIncreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Increase Amplitude"));
     mIncreaseAmplitudeCorrelation->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_I));
-    connect(mIncreaseAmplitudeCorrelation,SIGNAL(triggered()), this,SLOT(slotIncreaseCorrelogramsAmplitude()));
+    connect(mIncreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotIncreaseCorrelogramsAmplitude);
 
     mDecreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Decrease Amplitude"));
     mDecreaseAmplitudeCorrelation->setShortcut(QKeySequence(Qt::SHIFT |  Qt::Key_D));
-    connect(mDecreaseAmplitudeCorrelation,SIGNAL(triggered()), this,SLOT(slotDecreaseCorrelogramsAmplitude()));
+    connect(mDecreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotDecreaseCorrelogramsAmplitude);
 
 
 
@@ -461,11 +461,11 @@ void KlustersApp::createMenus()
     QMenu *traceMenu = menuBar()->addMenu(tr("T&races"));
     mIncreaseChannelAmplitudes = traceMenu->addAction(tr("&Increase Channel Amplitudes"));
     mIncreaseChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I));
-    connect(mIncreaseChannelAmplitudes,SIGNAL(triggered()), this,SLOT(slotIncreaseAllChannelsAmplitude()));
+    connect(mIncreaseChannelAmplitudes,&QAction::triggered, this,&KlustersApp::slotIncreaseAllChannelsAmplitude);
 
     mDecreaseChannelAmplitudes = traceMenu->addAction(tr("&Decrease Channel Amplitudes"));
     mDecreaseChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D));
-    connect(mDecreaseChannelAmplitudes,SIGNAL(triggered()), this,SLOT(slotDecreaseAllChannelsAmplitude()));
+    connect(mDecreaseChannelAmplitudes,&QAction::triggered, this,&KlustersApp::slotDecreaseAllChannelsAmplitude);
 
 
     traceMenu->addSeparator();
@@ -473,12 +473,12 @@ void KlustersApp::createMenus()
     mNextSpike = traceMenu->addAction(tr("&Next Spike"));
     mNextSpike->setIcon(QIcon(":/icons/forwardCluster"));
     mNextSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F));
-    connect(mNextSpike,SIGNAL(triggered()), this,SLOT(slotShowNextCluster()));
+    connect(mNextSpike,&QAction::triggered, this,&KlustersApp::slotShowNextCluster);
 
     mPreviousSpike = traceMenu->addAction(tr("&Previous Spike"));
     mPreviousSpike->setIcon(QIcon(":/icons/backCluster"));
     mPreviousSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
-    connect(mPreviousSpike,SIGNAL(triggered()), this,SLOT(slotShowPreviousCluster()));
+    connect(mPreviousSpike,&QAction::triggered, this,&KlustersApp::slotShowPreviousCluster);
 
 
     traceMenu->addSeparator();
@@ -486,7 +486,7 @@ void KlustersApp::createMenus()
     showHideLabels = traceMenu->addAction(tr("Show &Labels"));
     showHideLabels->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_L));
     showHideLabels->setCheckable(true);
-    connect(showHideLabels,SIGNAL(triggered()), this,SLOT(slotShowLabels()));
+    connect(showHideLabels,&QAction::triggered, this,&KlustersApp::slotShowLabels);
 
     showHideLabels->setChecked(false);
 
@@ -496,37 +496,37 @@ void KlustersApp::createMenus()
     QMenu *displayMenu = menuBar()->addMenu(tr("&Displays"));
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");
     newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
-    connect(newClusterDisplay,SIGNAL(triggered()), this,SLOT(slotWindowNewClusterDisplay()));
+    connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
 
     newWaveformDisplay = displayMenu->addAction(tr("New &Waveform Display"));
-    connect(newWaveformDisplay,SIGNAL(triggered()), this,SLOT(slotWindowNewWaveformDisplay()));
+    connect(newWaveformDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewWaveformDisplay);
 
     newCrosscorrelationDisplay = displayMenu->addAction(tr("New C&orrelation Display"));
-    connect(newCrosscorrelationDisplay,SIGNAL(triggered()), this,SLOT(slotWindowNewCrosscorrelationDisplay()));
+    connect(newCrosscorrelationDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewCrosscorrelationDisplay);
 
     // ???????????????
     newOverViewDisplay = displayMenu->addAction(tr("New &Overview Display"));
-    connect(newOverViewDisplay,SIGNAL(triggered()), this,SLOT(slotWindowNewOverViewDisplay()));
+    connect(newOverViewDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewOverViewDisplay);
 
     newGroupingAssistantDisplay = displayMenu->addAction(tr("New &Grouping Assistant Display"));
-    connect(newGroupingAssistantDisplay,SIGNAL(triggered()), this,SLOT(slotWindowNewGroupingAssistantDisplay()));
+    connect(newGroupingAssistantDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewGroupingAssistantDisplay);
 
 
     mNewTraceDisplay = displayMenu->addAction(tr("New &Trace Display"));
-    connect(mNewTraceDisplay,SIGNAL(triggered()), this,SLOT(slotNewTraceDisplay()));
+    connect(mNewTraceDisplay,&QAction::triggered, this,&KlustersApp::slotNewTraceDisplay);
 
 
     displayMenu->addSeparator();
 
     mRenameActiveDisplay = displayMenu->addAction(tr("&Rename Active Display"));
     mRenameActiveDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    connect(mRenameActiveDisplay,SIGNAL(triggered()), this,SLOT(renameActiveDisplay()));
+    connect(mRenameActiveDisplay,&QAction::triggered, this,&KlustersApp::renameActiveDisplay);
 
     displayMenu->addSeparator();
 
     mCloseActiveDisplay = displayMenu->addAction(tr("&Close Active Display"));
     mCloseActiveDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_W));
-    connect(mCloseActiveDisplay,SIGNAL(triggered()), this,SLOT(slotDisplayClose()));
+    connect(mCloseActiveDisplay,&QAction::triggered, this,&KlustersApp::slotDisplayClose);
 
 
     //Settings menu
@@ -537,27 +537,27 @@ void KlustersApp::createMenus()
 
     viewMainToolBar->setCheckable(true);
     viewMainToolBar->setChecked(true);
-    connect(viewMainToolBar,SIGNAL(triggered()), this,SLOT(slotViewMainToolBar()));
+    connect(viewMainToolBar,&QAction::triggered, this,&KlustersApp::slotViewMainToolBar);
 
     viewActionBar = settingsMenu->addAction(tr("Show Actions"));
     viewActionBar->setCheckable(true);
-    connect(viewActionBar,SIGNAL(triggered()), this,SLOT(slotViewActionBar()));
+    connect(viewActionBar,&QAction::triggered, this,&KlustersApp::slotViewActionBar);
 
     viewActionBar->setChecked(true);
     viewToolBar = settingsMenu->addAction(tr("Show Tools"));
     viewToolBar->setCheckable(true);
-    connect(viewToolBar,SIGNAL(triggered()), this,SLOT(slotViewToolBar()));
+    connect(viewToolBar,&QAction::triggered, this,&KlustersApp::slotViewToolBar);
 
     viewToolBar->setChecked(true);
     viewParameterBar = settingsMenu->addAction(tr("Show Parameters"));
     viewParameterBar->setCheckable(true);
-    connect(viewParameterBar,SIGNAL(triggered()), this,SLOT(slotViewParameterBar()));
+    connect(viewParameterBar,&QAction::triggered, this,&KlustersApp::slotViewParameterBar);
 
     viewParameterBar->setChecked(true);
 
     viewClusterInfo = settingsMenu->addAction(tr("Show Cluster Info"));
     viewClusterInfo->setCheckable(true);
-    connect(viewClusterInfo,SIGNAL(triggered()), this,SLOT(slotViewClusterInfo()));
+    connect(viewClusterInfo,&QAction::triggered, this,&KlustersApp::slotViewClusterInfo);
 
     viewClusterInfo->setChecked(false);
 
@@ -566,19 +566,19 @@ void KlustersApp::createMenus()
     mViewStatusBar = settingsMenu->addAction(tr("Show StatusBar"));
     mViewStatusBar->setCheckable(true);
     mViewStatusBar->setChecked(true);
-    connect(mViewStatusBar,SIGNAL(triggered()), this,SLOT(slotViewStatusBar()));
+    connect(mViewStatusBar,&QAction::triggered, this,&KlustersApp::slotViewStatusBar);
 
     settingsMenu->addSeparator();
 
     mIncreasePointSize = settingsMenu->addAction(tr("Increase Point Size"));
     mIncreasePointSize->setShortcuts({QKeySequence(Qt::Key_Equal),
                                       QKeySequence(Qt::SHIFT | Qt::Key_Equal)});
-    connect(mIncreasePointSize, SIGNAL(triggered()), this, SLOT(slotIncreasePointSize()));
+    connect(mIncreasePointSize, &QAction::triggered, this, &KlustersApp::slotIncreasePointSize);
 
     mDecreasePointSize = settingsMenu->addAction(tr("Decrease Point Size"));
     mDecreasePointSize->setShortcuts({QKeySequence(Qt::Key_Minus),
                                       QKeySequence(Qt::Key_Underscore)});
-    connect(mDecreasePointSize, SIGNAL(triggered()), this, SLOT(slotDecreasePointSize()));
+    connect(mDecreasePointSize, &QAction::triggered, this, &KlustersApp::slotDecreasePointSize);
 
     settingsMenu->addSeparator();
 
@@ -586,18 +586,18 @@ void KlustersApp::createMenus()
     grp = new QActionGroup(this);
     grp->addAction(mImmediateSelection);
     mImmediateSelection->setCheckable(true);
-    connect(mImmediateSelection,SIGNAL(triggered()), this,SLOT(slotImmediateSelection()));
+    connect(mImmediateSelection,&QAction::triggered, this,&KlustersApp::slotImmediateSelection);
 
     mDelaySelection = settingsMenu->addAction(tr("Delayed Update"));
     grp->addAction(mDelaySelection);
     mDelaySelection->setCheckable(true);
-    connect(mDelaySelection,SIGNAL(triggered()), this,SLOT(slotDelaySelection()));
+    connect(mDelaySelection,&QAction::triggered, this,&KlustersApp::slotDelaySelection);
 
     settingsMenu->addSeparator();
     mPreferenceAction = settingsMenu->addAction(tr("&Preferences"));
     mPreferenceAction->setShortcut(Qt::Key_P);
     mPreferenceAction->setIcon(QIcon(":/shared-icons/configure"));
-    connect(mPreferenceAction,SIGNAL(triggered()), this,SLOT(executePreferencesDlg()));
+    connect(mPreferenceAction,&QAction::triggered, this,&KlustersApp::executePreferencesDlg);
 
 
     //Initialize the update mode
@@ -608,22 +608,22 @@ void KlustersApp::createMenus()
 
     QAction *handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
-    connect(handbook,SIGNAL(triggered()), this,SLOT(slotHanbook()));
+    connect(handbook,&QAction::triggered, this,&KlustersApp::slotHanbook);
 
     QAction *about = helpMenu->addAction(tr("About"));
-    connect(about,SIGNAL(triggered()), this,SLOT(slotAbout()));
+    connect(about,&QAction::triggered, this,&KlustersApp::slotAbout);
 
     //Custom connections
-    connect(clusterPalette, SIGNAL(singleChangeColor(int)), this, SLOT(slotSingleColorUpdate(int)));
-    connect(clusterPalette, SIGNAL(updateShownClusters(QList<int>)), this, SLOT(slotUpdateShownClusters(QList<int>)));
+    connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
+    connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
     connect(clusterPalette, SIGNAL(groupClusters(QList<int>)), this, SLOT(slotGroupClusters(QList<int>)));
     connect(clusterPalette, SIGNAL(moveClustersToNoise(QList<int>)), this, SLOT(slotMoveClustersToNoise(QList<int>)));
     connect(clusterPalette, SIGNAL(moveClustersToArtefact(QList<int>)), this, SLOT(slotMoveClustersToArtefact(QList<int>)));
-    connect(clusterPalette, SIGNAL(clusterInformationModified()), this, SLOT(slotClusterInformationModified()));
-    connect(clusterPalette, SIGNAL(paletteGainedFocus()), this, SLOT(slotShowOverviewForPalette()));
-    connect(doc, SIGNAL(updateUndoNb(int)), this, SLOT(slotUpdateUndoNb(int)));
-    connect(doc, SIGNAL(updateRedoNb(int)), this, SLOT(slotUpdateRedoNb(int)));
-    connect(doc, SIGNAL(spikesDeleted()), this, SLOT(slotSpikesDeleted()));
+    connect(clusterPalette, &ClusterPalette::clusterInformationModified, this, &KlustersApp::slotClusterInformationModified);
+    connect(clusterPalette, &ClusterPalette::paletteGainedFocus, this, &KlustersApp::slotShowOverviewForPalette);
+    connect(doc, &KlustersDoc::updateUndoNb, this, &KlustersApp::slotUpdateUndoNb);
+    connect(doc, &KlustersDoc::updateRedoNb, this, &KlustersApp::slotUpdateRedoNb);
+    connect(doc, &KlustersDoc::spikesDeleted, this, &KlustersApp::slotSpikesDeleted);
 }
 
 
@@ -734,7 +734,7 @@ void KlustersApp::initSelectionBoxes(){
     duration->setMaximumSize(70,duration->maximumHeight());
     durationAction = paramBar->addWidget(duration);
     connect(start, SIGNAL(valueChanged(int)),this, SLOT(slotUpdateStartTime(int)));
-    connect(duration, SIGNAL(returnPressed()),this, SLOT(slotUpdateDuration()));
+    connect(duration, &QLineEdit::returnPressed,this, &KlustersApp::slotUpdateDuration);
 
     //Create and initialize the spin boxe for the waveforms sample mode.
     spikesTodisplay = new SpinBox(paramBar);
@@ -770,7 +770,7 @@ void KlustersApp::initSelectionBoxes(){
     binSizeBox->setMinimumSize(30,binSizeBox->minimumHeight());
     binSizeBox->setMaximumSize(30,binSizeBox->maximumHeight());
     binSizeBoxAction = paramBar->addWidget(binSizeBox);
-    connect(binSizeBox, SIGNAL(returnPressed()),this, SLOT(slotUpdateBinSize()));
+    connect(binSizeBox, &QLineEdit::returnPressed,this, &KlustersApp::slotUpdateBinSize);
 
     correlogramsHalfDuration = new QLineEdit(paramBar);
     correlogramsHalfDuration->setObjectName("INITIAL_CORRELOGRAMS_HALF_TIME_FRAME");
@@ -785,7 +785,7 @@ void KlustersApp::initSelectionBoxes(){
     correlogramsHalfDuration->setMinimumSize(70,correlogramsHalfDuration->minimumHeight());
     correlogramsHalfDuration->setMaximumSize(70,correlogramsHalfDuration->maximumHeight());
     correlogramsHalfDurationAction = paramBar->addWidget(correlogramsHalfDuration);
-    connect(correlogramsHalfDuration, SIGNAL(returnPressed()),this, SLOT(slotUpdateCorrelogramsHalfDuration()));
+    connect(correlogramsHalfDuration, &QLineEdit::returnPressed,this, &KlustersApp::slotUpdateCorrelogramsHalfDuration);
 
     // Auto-select N-features spinbox — appended at end of paramBar,
     // visible only when the feature selectors are visible AND autoSelectFeatures is on.
@@ -808,8 +808,8 @@ void KlustersApp::initSelectionBoxes(){
     autoNFeaturesSpinBoxAction->setVisible(false);
 
     //Connect the move function of the parameterBar to slotUpdateParameterBar to always correctly show its contents.
-    connect(paramBar, SIGNAL(allowedAreasChanged(Qt::ToolBarAreas)), this, SLOT(slotUpdateParameterBar()));
-    connect(paramBar, SIGNAL(orientationChanged(Qt::Orientation)), this, SLOT(slotUpdateParameterBar()));
+    connect(paramBar, &QToolBar::allowedAreasChanged, this, &KlustersApp::slotUpdateParameterBar);
+    connect(paramBar, &QToolBar::orientationChanged, this, &KlustersApp::slotUpdateParameterBar);
 }
 
 void KlustersApp::executePreferencesDlg(){
@@ -819,7 +819,7 @@ void KlustersApp::executePreferencesDlg(){
         else
             prefDialog = new PrefDialog(this);
         // connect to the "settingsChanged" signal
-        connect(prefDialog,SIGNAL(settingsChanged()),this,SLOT(applyPreferences()));
+        connect(prefDialog,&PrefDialog::settingsChanged,this,&KlustersApp::applyPreferences);
     }
     else{
         //If the dialog has been open the first time before any document has been open
@@ -2823,7 +2823,7 @@ void KlustersApp::slotRecluster(){
             reclusterRetryTimer = new QTimer(this);
             reclusterRetryTimer->setSingleShot(false);
             reclusterRetryTimer->setInterval(2000);
-            connect(reclusterRetryTimer, SIGNAL(timeout()), this, SLOT(slotRecluster()));
+            connect(reclusterRetryTimer, &QTimer::timeout, this, &KlustersApp::slotRecluster);
         }
         if(!reclusterRetryTimer->isActive())
             reclusterRetryTimer->start();
@@ -2989,14 +2989,14 @@ void KlustersApp::slotRecluster(){
 
         processWidget = new ProcessWidget(this);
         processWidget->setFocusPolicy(Qt::NoFocus);
-        connect(processWidget,SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(slotProcessExited(int,QProcess::ExitStatus)));
+        connect(processWidget,&ProcessWidget::finished, this, &KlustersApp::slotProcessExited);
         // slotOutputTreatmentOver is driven by processOutputsFinished (emitted by ProcessWidget
         // after all stdout/stderr has been drained), NOT by finished — connecting it to both
         // caused a double-invocation: slotProcessExited did the integrate+update work, then
         // slotOutputTreatmentOver fired on the same signal and corrupted processOutputsFinished
         // state, causing the next recluster to skip the processWidget cleanup guard and segfault.
-        connect(processWidget,SIGNAL(processOutputsFinished()), this, SLOT(slotOutputTreatmentOver()));
-        connect(processWidget,SIGNAL(processNotStarted()), this, SLOT(slotOutputTreatmentOver()));
+        connect(processWidget,&ProcessWidget::processOutputsFinished, this, &KlustersApp::slotOutputTreatmentOver);
+        connect(processWidget,&ProcessWidget::processNotStarted, this, &KlustersApp::slotOutputTreatmentOver);
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display changes.
         connect(tabsParent, SIGNAL(currentChanged(int)), this, SLOT(slotTabChange(int)));

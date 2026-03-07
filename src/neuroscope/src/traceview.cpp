@@ -3691,8 +3691,8 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
 
     //Set Connection
     connect(clustersProvider,SIGNAL(dataReady(Array<dataType>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,QObject*,QString)));
-    connect(clustersProvider,SIGNAL(nextClusterDataReady(Array<dataType>&,QObject*,QString,long,long)),this,SLOT(nextClusterDataAvailable(Array<dataType>&,QObject*,QString,long,long)));
-    connect(clustersProvider,SIGNAL(previousClusterDataReady(Array<dataType>&,QObject*,QString,long,long)),this,SLOT(previousClusterDataAvailable(Array<dataType>&,QObject*,QString,long,long)));
+    connect(clustersProvider,&ClustersProvider::nextClusterDataReady,this,&TraceView::nextClusterDataAvailable);
+    connect(clustersProvider,&ClustersProvider::previousClusterDataReady,this,&TraceView::previousClusterDataAvailable);
 
     updateNoneBrowsingClusterList(name,clustersToSkip);
 
@@ -3886,8 +3886,8 @@ void TraceView::addEventProvider(EventsProvider* eventsProvider,QString name,Ite
 
     //Set Connections
     connect(eventsProvider,SIGNAL(dataReady(Array<dataType>&,Array<int>&,QObject*,QString)),this,SLOT(dataAvailable(Array<dataType>&,Array<int>&,QObject*,QString)));
-    connect(eventsProvider,SIGNAL(nextEventDataReady(Array<dataType>&,Array<int>&,QObject*,QString,long)),this,SLOT(nextEventDataAvailable(Array<dataType>&,Array<int>&,QObject*,QString,long)));
-    connect(eventsProvider,SIGNAL(previousEventDataReady(Array<dataType>&,Array<int>&,QObject*,QString,long)),this,SLOT(previousEventDataAvailable(Array<dataType>&,Array<int>&,QObject*,QString,long)));
+    connect(eventsProvider,&EventsProvider::nextEventDataReady,this,&TraceView::nextEventDataAvailable);
+    connect(eventsProvider,&EventsProvider::previousEventDataReady,this,&TraceView::previousEventDataAvailable);
 
     updateNoneBrowsingEventList(name,eventsToSkip);
 
