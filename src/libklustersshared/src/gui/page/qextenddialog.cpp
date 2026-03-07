@@ -532,7 +532,7 @@ void QExtendDialog::resizeLayout( QWidget *widget, int margin, int spacing ) //s
 
   if ( widget->children().count() > 0 ) {
     const QList<QObject*> list = widget->children();
-    foreach ( QObject *object, list ) {
+    for ( QObject *object : list ) {
       if ( object->isWidgetType() )
         resizeLayout( (QWidget*)object, margin, spacing );
     }

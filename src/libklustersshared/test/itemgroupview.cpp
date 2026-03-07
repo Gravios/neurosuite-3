@@ -27,7 +27,7 @@ ItemGroupView::ItemGroupView(const QColor& backgroundColor,QWidget* parent)
 {
     qDebug()<<" ItemGroupView::ItemGroupView(const QColor& backgroundColor,QWidget* parent)";
     mLayout = new QHBoxLayout;
-    mLayout->setMargin(0);
+    mLayout->setContentsMargins(0, 0, 0, 0);
     mLayout->setSpacing(0);
 
     setAutoFillBackground(true);
