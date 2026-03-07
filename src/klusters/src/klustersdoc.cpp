@@ -84,6 +84,7 @@ KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool aut
 }
 
 KlustersDoc::~KlustersDoc(){
+    qDebug() << "~KlustersDoc()";
 
     delete viewList;
 
@@ -497,6 +498,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     //If ask create a thread for the auto saving of the document.
     if(autoSave){
+        qDebug()<<"autoSave = true in openDoc";
         endAutoSaving = false;
         autoSaveThread = new AutoSaveThread(*clusteringData,this,cluFileSaveUrl);
         autoSaveThread->start();
@@ -588,8 +590,8 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     const QString cluWritePath = isSaveAs ? saveUrl : m_pendingCluPath;
 
     //Open the clu file in write mode
-    FILE* cluFile = fopen(cluWritePath.toLatin1(),"wb");
-    if(cluFile == NULL){
+    FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
+    if(cluFile == nullptr){
         return OPEN_ERROR;
     }
 
@@ -625,6 +627,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     //NB : for the moment, the specific errors are not return to the user, only a generic message (document could not be saved).
     if(clusteringData->isTraceViewVariablesAvailable()){
         //Save the document information
+        qDebug()<<" xmlParameterFile"<<xmlParameterFile;
         QFileInfo parFileInfo = QFileInfo(xmlParameterFile);
 
         //Check that the file is writable
@@ -1659,6 +1662,7 @@ void KlustersDoc::prepareUndo(QMap<int,int> clusterIdsOldNew,QMap<int,int> clust
 
     //Update the renumbering lists
     int currentNbUndo = clusterColorListUndoList.count();
+    qDebug()<<"currentNbUndo in KlustersDoc::prepareUndo: "<<currentNbUndo;
     clusterIdsOldNewMap.insert(currentNbUndo,clusterIdsOldNew);
     clusterIdsNewOldMap.insert(currentNbUndo,clusterIdsNewOld);
 }
@@ -1684,6 +1688,7 @@ void KlustersDoc::prepareReclusteringUndo(QList<int>& newClusters,QList<int>& de
 
 void KlustersDoc::undo(){
 
+    qDebug()<<"in KlustersDoc::undo 1";
 
     //Update the boolean modified here as every undo action implies a call to the function.
     //The user can save and make an undo just behind, in that case the document is modified.
@@ -1711,9 +1716,11 @@ void KlustersDoc::undo(){
 
         int nbUndo = clusterColorListUndoList.count();
 
+        qDebug() << "nbUndo in KlustersDoc::undo: "<<nbUndo;
 
         //If this undo does concern renumbering
         if(clusterIdsNewOldMap.contains(nbUndo + 1)){
+            qDebug() << "renumber in KlustersDoc::undo, nbUndo + 1 : "<<nbUndo + 1;
             //Add the current undo indice to the renumberingRedoList
             renumberingRedoList.append(nbUndo + 1);
 
@@ -1745,6 +1752,7 @@ void KlustersDoc::undo(){
 
             //Notify all the views of the undo
             if(addedClusters->size() > 0 && modifiedClusters->size() > 0){
+                qDebug() << "addedClusters->size() > 0 && modifiedClusters->size() > 0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1763,6 +1771,7 @@ void KlustersDoc::undo(){
                 emit undoAdditionModification(*addedClusters,*modifiedClusters);
             }
             else if(!addedClusters->isEmpty() && modifiedClusters->isEmpty()){
+                qDebug() << "addedClusters->size() > 0 && modifiedClusters->size() == 0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1781,6 +1790,7 @@ void KlustersDoc::undo(){
                 emit undoAddition(*addedClusters);
             }
             else if(addedClusters->isEmpty() && !modifiedClusters->isEmpty()){
+                qDebug() << "addedClusters->size() == 0 && modifiedClusters->size() > 0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1800,6 +1810,7 @@ void KlustersDoc::undo(){
             }
             //////!!!!This last condition should not be reach anymore, to test and remove.!!!!!////
             else if(addedClusters->size() == 0 && modifiedClusters->size() == 0){
+                qDebug() << "addedClusters->size() == 0 && modifiedClusters->size() == 0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1847,6 +1858,7 @@ void KlustersDoc::undo(){
         emit updateRedoNb(clusterColorListRedoList.count());
     }
 
+    qDebug()<<"in KlustersDoc::undo 2";
 }
 
 
@@ -1883,8 +1895,10 @@ void KlustersDoc::redo(){
         //If this redo does concern renumbering
         int nbUndo = clusterColorListUndoList.count();
 
+        qDebug() << "in KlustersDoc::redo, nbUndo  : "<<nbUndo;
 
         if(clusterIdsOldNewMap.contains(nbUndo)){
+            qDebug() << "renumber in KlustersDoc::redo, nbUndo  : "<<nbUndo;
             //remove the current undo indice from the renumberingRedoList
             renumberingRedoList.removeAll(nbUndo);
 
@@ -1918,6 +1932,7 @@ void KlustersDoc::redo(){
 
             //Notify all the views of the undo
             if(addedClusters->size() > 0 && modifiedClusters->size() > 0){
+                qDebug() << "in KlustersDoc::redo, nbUndo  addedClusters->size() > 0 && modifiedClusters->size()>0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1936,6 +1951,7 @@ void KlustersDoc::redo(){
                 emit redoAdditionModification(*addedClusters,*modifiedClusters,isModifiedByDeletion,*deletedClusters);
             }
             else if(addedClusters->size() > 0 && modifiedClusters->size() == 0){
+                qDebug() << "in KlustersDoc::redo, nbUndo  addedClusters->size() > 0 && modifiedClusters->size()==0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1954,6 +1970,7 @@ void KlustersDoc::redo(){
                 emit redoAddition(*addedClusters,*deletedClusters);
             }
             else if(addedClusters->size() == 0 && modifiedClusters->size() > 0){
+                qDebug() << "in KlustersDoc::redo, nbUndo  addedClusters->size() == 0 && modifiedClusters->size()>0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1972,6 +1989,7 @@ void KlustersDoc::redo(){
                 emit redoModification(*modifiedClusters,isModifiedByDeletion,*deletedClusters);
             }
             else if(addedClusters->size() == 0 && modifiedClusters->size() == 0){
+                qDebug() << "in KlustersDoc::redo, nbUndo  addedClusters->size() == 0 && modifiedClusters->size() ==0";
                 for(int i =0; i<viewList->count();++i) {
                     KlustersView *view = viewList->at(i);
                     if(view != activeView){
@@ -1991,6 +2009,7 @@ void KlustersDoc::redo(){
             }
         }
 
+        qDebug() << "in KlustersDoc::redo, 2  : ";
 
         QList<int> clustersToShow = activeView->clusters();
 
@@ -1999,14 +2018,17 @@ void KlustersDoc::redo(){
         //Update the clusterPalette
         clusterPalette.updateClusterList();
 
+        qDebug() << "in KlustersDoc::redo, 3 b : ";
 
         clusterPalette.selectItems(clustersToShow);
 
+        qDebug() << "in KlustersDoc::redo, 4  : ";
 
         //Signal to klusters the new number of undo and redo
         emit updateUndoNb(clusterColorListUndoList.count());
         emit updateRedoNb(clusterColorListRedoList.count());
 
+        qDebug() << "in KlustersDoc::redo, end  : ";
     }
 }
 
@@ -2078,6 +2100,7 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
 
     QString cluFileName(reclusteringFetFileName);
+    qDebug()<<"reclusteringFetFileName "<<reclusteringFetFileName;
     cluFileName.replace(".fet.",".clu.");
 
     QString cluFileUrl(cluFileName);
@@ -2087,6 +2110,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         return DOWNLOAD_ERROR;
     }
 
+    qDebug()<<" tmpCluFile"<<tmpCluFile;
     QFile cluFile(tmpCluFile);
 
     if(!cluFile.open(QIODevice::ReadOnly)){
@@ -2522,11 +2546,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             int32_t hdr[5] = {};
             bool ok = (fread(hdr, sizeof(int32_t), 5, fp) == 5);
             if (ok) {
-                pca.nCh      = (int)hdr[0];
-                pca.data2use = (int)hdr[1];
-                pca.nComp    = (int)hdr[2];
+                pca.nCh      = static_cast<int>(hdr[0]);
+                pca.data2use = static_cast<int>(hdr[1]);
+                pca.nComp    = static_cast<int>(hdr[2]);
                 pca.centered = (hdr[3] != 0);
-                pca.recShift = (int)hdr[4];
+                pca.recShift = static_cast<int>(hdr[4]);
                 if (pca.nCh<=0    || pca.nCh>64       ||
                     pca.data2use<=0 || pca.data2use>4096 ||
                     pca.nComp<=0   || pca.nComp>64       ||

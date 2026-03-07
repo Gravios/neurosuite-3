@@ -1350,7 +1350,7 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
         doc->setSelectionLineWidth(selectionLineWidth);
 
         //Disconnect the previous connection
-        if(tabsParent != NULL)
+        if(tabsParent != nullptr)
             disconnect(tabsParent,0,0,0);
 
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
@@ -1644,6 +1644,7 @@ bool KlustersApp::queryExit()
 {
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     //If the saveThread has not finish, wait until id done
+    while(!saveThread->wait()){qDebug()<<"in queryExit";};
     QApplication::restoreOverrideCursor();
 
     return true;
@@ -2619,6 +2620,7 @@ void KlustersApp::slotTimeFrameMode(){
         if(timeFrameMode->isChecked()){
             timeWindow = activeView()->timeFrameWidth();
             startTime =  activeView()->timeFrameStart();
+            qDebug()<<" ssssssssssssssssssssssssssssssssssssssssssssssssssss";
             start->setValue(startTime);
             start->setSingleStep(timeWindow);
             duration->setText(QString::fromLatin1("%1").arg(timeWindow));
@@ -3733,6 +3735,7 @@ void KlustersApp::slotSaveRecentFiles()
 /**Informs the active display to present the waveforms for an updated time frame.*/
 void KlustersApp::slotUpdateStartTime(int start)
 {
+    qDebug()<<" void KlustersApp::slotUpdateStartTime(int start)"<<start;
     if(!isInit){
         startTime = start;
         activeView()->updateTimeFrame(static_cast<long>(start),timeWindow);

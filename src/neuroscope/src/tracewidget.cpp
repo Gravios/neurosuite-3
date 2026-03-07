@@ -101,7 +101,7 @@ void TraceWidget::page()
 
 bool TraceWidget::isStill()
 {
-	return ! ( timer != NULL && timer->isActive() );
+	return ! ( timer != nullptr && timer->isActive() );
 }
 
 void TraceWidget::stop()

@@ -39,6 +39,7 @@ TracesProvider::TracesProvider(const QString& fileUrl,int nbChannels,int resolut
 }
 
 TracesProvider::~TracesProvider(){
+    qDebug()<<"in ~TracesProvider";
 }
 
 
@@ -74,8 +75,8 @@ void TracesProvider::requestData(long startTime,long endTime,QObject* initiator,
 void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator,long startTimeInRecordingUnits){
     Array<dataType> data;
 
-    FILE* dataFile = fopen(fileName.toLatin1(),"rb");
-    if(dataFile == NULL){
+    FILE* dataFile = fopen(qPrintable(fileName),"rb");
+    if(dataFile == nullptr){
         //emit the signal with an empty array, the reciever will take care of it, given a message to the user.
         data.setSize(0,0);
         emit dataReady(data,initiator);
