@@ -255,6 +255,42 @@ QList<int> ParameterYamlReader::getChannelsByGroup(int electrodeGroupID) const
     return result;
 }
 
+int ParameterYamlReader::getProbeId(int electrodeGroupID) const
+{
+    auto grp = spikeGroup(electrodeGroupID);
+    if (!grp) return 0;
+    // probeId is optional; default 0 (all groups on one probe)
+    return nodeAs<int>(grp["probeId"], 0);
+}
+
+int ParameterYamlReader::getShankIndex(int electrodeGroupID) const
+{
+    auto grp = spikeGroup(electrodeGroupID);
+    if (!grp) return electrodeGroupID - 1;
+    // shankIndex is optional; default to group-1 (0-based)
+    return nodeAs<int>(grp["shankIndex"], electrodeGroupID - 1);
+}
+
+QList<int> ParameterYamlReader::getSiblingElectrodeGroups(int electrodeGroupID) const
+{
+    QList<int> siblings;
+    const int myProbeId = getProbeId(electrodeGroupID);
+
+    auto groups = safeGet2(m_root, "spikeDetection", "channelGroups");
+    if (!groups || !groups.IsSequence()) return siblings;
+
+    int gnum = 1;
+    for (const auto& grp : groups) {
+        if (gnum != electrodeGroupID) {
+            const int pid = nodeAs<int>(grp["probeId"], 0);
+            if (pid == myProbeId)
+                siblings.append(gnum);
+        }
+        ++gnum;
+    }
+    return siblings;
+}
+
 int ParameterYamlReader::getNbSamples(int electrodeGroupID) const
 {
     return nodeAs<int>(spikeGroup(electrodeGroupID)["nSamples"], 0);

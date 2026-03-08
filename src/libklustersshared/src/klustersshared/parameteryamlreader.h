@@ -195,6 +195,34 @@ public:
     /** Returns the channel list for spike group @p electrodeGroupID (1-based). */
     QList<int> getChannelsByGroup(int electrodeGroupID) const;
 
+    // -----------------------------------------------------------------------
+    // Probe / shank metadata (optional fields in spikeDetection.channelGroups)
+    //
+    // These fields allow multi-shank probes to be represented explicitly:
+    //
+    //   spikeDetection:
+    //     channelGroups:
+    //       - channels: [0,1,2,3]
+    //         probeId: 0
+    //         shankIndex: 0
+    //         ...
+    //       - channels: [4,5,6,7]
+    //         probeId: 0
+    //         shankIndex: 1
+    //         ...
+    //
+    // When the fields are absent:
+    //   getProbeId()    returns 0 for all groups (backward compatible).
+    //   getShankIndex() returns electrodeGroupID - 1 for all groups.
+    //
+    // getSiblingElectrodeGroups() returns all spike groups that share the
+    // same probeId as electrodeGroupID, excluding electrodeGroupID itself.
+    // This is the list of groups whose drift is driven by the same probe.
+    // -----------------------------------------------------------------------
+    int        getProbeId(int electrodeGroupID)                  const;
+    int        getShankIndex(int electrodeGroupID)               const;
+    QList<int> getSiblingElectrodeGroups(int electrodeGroupID)  const;
+
     int getNbSamples(int electrodeGroupID)      const;
     int getPeakSampleIndex(int electrodeGroupID) const;
     int getNbFeatures(int electrodeGroupID)      const;

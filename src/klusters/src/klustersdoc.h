@@ -445,6 +445,15 @@ public:
   */
     QString currentElectrodeGroupID() const {return electrodeGroupID;}
 
+    /**Returns the list of spike group IDs that share the same probeId as
+     * electrodeGroupID in the YAML parameter file.  Used by the drift-sibling
+     * workflow to identify which groups to reprocess when probe drift is
+     * estimated from a single curated shank.
+     * When no probeId fields are present, all groups default to probe 0 so
+     * every group is a sibling of every other group.
+     */
+    QList<int> getSiblingElectrodeGroups(int electrodeGroupID) const;
+
     /**Updates the views to take into account the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.
   * @param clustersToRecluster list of clusters reclustered.

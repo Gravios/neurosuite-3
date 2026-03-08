@@ -759,6 +759,16 @@ QString KlustersDoc::documentDirectory() const {
     return docUrlFileInfo.absolutePath();
 }
 
+QList<int> KlustersDoc::getSiblingElectrodeGroups(int groupId) const
+{
+    QList<int> result;
+    if (parameterFile.isEmpty()) return result;
+
+    ParameterYamlReader reader;
+    if (!reader.parseFile(parameterFile)) return result;
+    return reader.getSiblingElectrodeGroups(groupId);
+}
+
 void KlustersDoc::setGain(int acquisitionGain){
     //Notify all the views of the modification
     for(int i =0; i<viewList->count();++i) {

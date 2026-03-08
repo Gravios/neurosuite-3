@@ -128,6 +128,17 @@ public:
                         int   globalMergeIter,
                         int   timeMergeIter);
 
+    // Overload that accepts externally-computed chunk boundaries (in seconds).
+    // Used by KlustaKwik.cpp when -ChunkFile is provided.  The boundaries
+    // vector must be sorted ascending; the first element is typically 0.0
+    // and the last is the session end time.  Each consecutive pair defines
+    // one chunk: [bounds[k], bounds[k+1]).
+    float RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
+                        float samplingRate,
+                        float mergeThresh,
+                        int   globalMergeIter,
+                        int   timeMergeIter);
+
 public:
     // -----------------------------------------------------------------------
     // Dimensions
