@@ -1,6 +1,8 @@
 # klusters — Spike Sorting GUI
 
-Klusters is an interactive manual spike-sorting application. It loads the feature, cluster, spike-waveform, and parameter files for one electrode group at a time and lets the researcher inspect, split, merge, and reassign clusters across multiple synchronised views. All changes are fully undoable, and a background autosave thread writes crash-recovery copies on a configurable schedule.
+Klusters is an interactive manual spike-sorting application. It loads feature vectors, cluster assignments, spike waveforms, and session parameters for one electrode group at a time, and lets the researcher inspect, split, merge, and reassign clusters across multiple synchronised views. All editing operations are fully undoable, and a background autosave thread writes crash-recovery copies on a configurable schedule.
+
+> **XML support has been removed.** Legacy `.xml` parameter files must be converted with `ndm_xml2yaml` (from ndmanager-plugins) before opening a session in klusters-3.
 
 ---
 
@@ -8,10 +10,10 @@ Klusters is an interactive manual spike-sorting application. It loads the featur
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| Qt6 (Core, Gui, Widgets, Xml, PrintSupport) | UI framework | Yes |
-| libklustersshared | Shared YAML layer and widget library | Yes — build first |
+| Qt6 (Core, Gui, Widgets, PrintSupport) | UI framework | Yes |
+| libklustersshared | Shared YAML reader/writer and widget library | Yes — build first |
 
-`libklustersshared` is not available as a distro package and must be built from source before klusters.
+`libklustersshared` is not available as a distro package. Build it from `src/libklustersshared/` before building klusters.
 
 ---
 
@@ -22,11 +24,15 @@ Klusters is an interactive manual spike-sorting application. It loads the featur
 klusters session.fet.1
 
 # Open via parameter file — klusters will ask which group to load
-klusters session.xml
 klusters session.yaml
 ```
 
-When opened from a `.fet.N` file, klusters automatically locates the paired `.clu.N`, `.spk.N`, and `.xml` (or `.yaml`) parameter file in the same directory. Both XML and YAML formats are supported and detected from the file extension.
+When opened from a `.fet.N` file, klusters automatically locates the paired `.clu.N`, `.spk.N`, and `.yaml` parameter file in the same directory.
+
+**Legacy formats still accepted at open time:**
+- `.par` / `.par.N` — original KlustaKwik text parameter pair
+- `.xml` — legacy neurosuite XML (read-only; save output will always be YAML)
+- `.fet.N` in text format (auto-detected alongside binary format)
 
 ---
 
@@ -34,124 +40,414 @@ When opened from a `.fet.N` file, klusters automatically locates the paired `.cl
 
 | File | Role |
 |---|---|
-| `session.fet.N` | **Required.** PCA feature vectors — primary input |
+| `session.fet.N` | **Required.** Feature vectors — primary input (binary int64 or legacy text) |
 | `session.clu.N` | Cluster assignments — read on open, **overwritten on save** |
-| `session.spk.N` | Spike waveforms — read for the Waveform View |
-| `session.xml` / `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry) |
-| `session.res.N` | Spike timestamps — read when available; used by the Trace View |
-| `session.dat` / `session.fil` | Raw signal — loaded by Trace View when present |
-| `session.pca.N` | PCA eigenvectors — used by spike realignment to recompute features |
-| `session.#.clu.N` | Autosave files written periodically by the background save thread |
+| `session.spk.N` | Spike waveforms — optional; enables Waveform View |
+| `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry, cluster notes) |
+| `session.res.N` | Spike timestamps — used by Trace View for overlay tick marks |
+| `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View |
+| `session.pca.N` | PCA eigenvectors — used by spike realignment to reproject features |
+| `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
+
+### Feature file format (`.fet.N`)
+
+Binary format (neurosuite-3 default):
+```
+int32_t  nDimensions          (4-byte header)
+nSpikes × nDimensions × int64_t   (row-major; last column is timestamp in samples)
+```
+
+Text format (legacy KlustaKwik):
+```
+nDimensions
+feat_0 feat_1 … feat_n-1 timestamp
+feat_0 feat_1 … feat_n-1 timestamp
+…
+```
+
+klusters auto-detects the format by reading the first 4 bytes. Values 48–57 (ASCII digits) indicate text format; other values indicate binary. The last column in both formats is always the spike timestamp; only the preceding columns are used as clustering features.
+
+---
+
+## Interface layout
+
+The window is divided into:
+
+- **Left — Cluster palette**: coloured buttons, one per cluster ID. Shows/hides clusters, drives per-cluster colour editing, and optionally shows cluster metadata.
+- **Centre — Display tabs**: one tab per open view. The default opening tab is the **Overview Display** (cluster scatter + waveform side by side).
+- **Top — Toolbars**: Main toolbar (tools), Parameters bar (axis selectors, waveform/correlogram controls), Actions bar (recluster toggle, auto-select features), Cluster bar (next/previous spike).
+
+---
+
+## Cluster palette
+
+Each cluster is represented by a coloured icon button. The palette drives everything: clicking buttons selects which clusters appear in the views.
+
+### Selection
+
+| Action | Method |
+|---|---|
+| Select one cluster | Click its button |
+| Add cluster to selection | `S` key while focus is on that cluster's button |
+| Pin current selection (accumulate) | `S` on each cluster in turn |
+| Clear S-pin set (keep single visual) | `S` on an already-pinned cluster |
+| Select All | `Ctrl+A` |
+| Select All except 0 and 1 | `Ctrl+Shift+A` (skips noise/MUA) |
+| Deselect All | `Ctrl+U` |
+
+The `S` key (S-pin) is specifically designed to accumulate a working set without requiring Ctrl+click in the palette. The set of S-pinned clusters is unioned with the current visual selection; all views respond to the combined set.
+
+### Colours
+
+Double-click a cluster button to open a colour picker. Colours are saved to the YAML parameter file under the `units` section on save.
+
+### Cluster information panel
+
+**Settings → Show Cluster Info** (or `Settings` menu toggle) expands each cluster button to show five user-editable metadata fields:
+
+| Field | Description |
+|---|---|
+| **Structure** | Brain region or anatomical label (e.g. `CA1`, `DG`) |
+| **Type** | Unit type (e.g. `p`, `i` for pyramidal/interneuron) |
+| **ID** | Free-form identifier |
+| **Quality** | Sorting quality rating (e.g. `1`, `2`, `3`) |
+| **Notes** | Free-form text |
+
+Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. Metadata is persisted in the YAML parameter file's `units` section alongside cluster colours.
 
 ---
 
 ## Views
 
-Klusters supports multiple synchronised views that can be docked, floated, or closed independently.
+Multiple views can be open simultaneously as tabs. Each view type can be opened from the **Displays** menu:
 
-### Cluster View (scatter plot)
+| View type | Menu | Description |
+|---|---|---|
+| Cluster Display | Displays → New Cluster Display | 2-D scatter plot of feature projections |
+| Waveform Display | Displays → New Waveform Display | Per-cluster mean ± SD waveforms |
+| Correlation Display | Displays → New Correlation Display | Auto- and cross-correlograms |
+| Overview Display | Displays → New Overview Display | Scatter + waveform side by side (default on open) |
+| Grouping Assistant | Displays → New Grouping Assistant Display | Misclassification probability matrix |
+| Trace Display | Displays → New Trace Display | Raw signal with spike overlays |
 
-Displays spike feature vectors as a 2-D scatter plot. The x/y axes can be assigned to any feature dimension via a pop-up menu. Points are coloured by cluster membership. Selections made here propagate instantly to all other views.
+All views are synchronised: selecting a cluster in any view highlights it in all others.
 
-Multiple Cluster Views can be open simultaneously with different axis pairs, making it straightforward to assess cluster quality in several projection planes at once.
+### Cluster Display (scatter plot)
 
-### Waveform View
+Displays spike feature vectors as a 2-D scatter plot. The x and y axes are selected from drop-down menus in the **Parameters** toolbar.
 
-Shows the mean ± SD waveform for each cluster on each channel of the electrode group. Overlays from multiple clusters can be enabled for direct comparison.
+- **Axis dimensions**: any pair of feature dimensions (0-indexed; the last dimension, which is the timestamp, is available as an axis and is useful for detecting drift).
+- **Point size**: `=` / `Shift+=` to increase; `-` to decrease.
+- **Lasso selection**: draw a polygon around spikes to select them for reassignment.
+- **Zoom**: `Z` to activate zoom tool; scroll to zoom.
+- **Time selection** (`W`): click and drag on the time axis to show only spikes within a time range.
 
-### Autocorrelogram / Cross-correlogram View
+Multiple Cluster Displays can be open simultaneously with different axis pairs, allowing quality assessment in several projection planes at once.
 
-Displays per-cluster autocorrelograms and between-cluster cross-correlograms. Computed on a background thread to avoid blocking the UI.
+### Waveform Display
 
-### Error Matrix View
+Shows spike waveforms for the selected clusters on all channels of the electrode group.
 
-Evaluates cluster separation quality using the Grouping Assistant's probabilistic misclassification estimator (`GroupingAssistant::computeMeanProbabilities()`). Fills a cluster × cluster matrix where entry (c1, c2) is the mean posterior probability that a spike of cluster c1 actually belongs to c2. Clusters with high off-diagonal entries are candidates for further splitting; clusters with high mutual off-diagonal entries are candidates for merging.
+**Presentation modes** (Waveforms menu):
 
-### Trace View
+| Mode | Key | Description |
+|---|---|---|
+| Sample mode (default) | — | Shows the N most-recent spikes per cluster (N set in Parameters bar) |
+| Time Frame mode | `T` | Shows all spikes from a time window set in the Parameters bar (start + duration in seconds) |
+| Overlay | `O` | All clusters drawn in the same colour space on top of each other |
+| Mean ± SD | `M` | Shows the cluster mean waveform with ±1 SD envelope; hides individual spikes |
 
-Shows the raw wideband or high-pass filtered signal. Spike timestamps from the current group are overlaid as tick marks. Opens `session.dat` or `session.fil` using parameters from the session file.
+**Amplitude controls** (Waveforms menu):
+
+| Action | Key |
+|---|---|
+| Increase amplitude (all channels) | `I` |
+| Decrease amplitude (all channels) | `D` |
+| Increase selected channel amplitudes | `Ctrl+Shift+I` |
+| Decrease selected channel amplitudes | `Ctrl+Shift+D` |
+
+**Scale modes** affect how the y-axis is normalised across channels:
+
+| Scale | Key | Description |
+|---|---|---|
+| Scale by Maximum | `Shift+M` | Each channel normalised to its global maximum across all displayed clusters |
+| Scale by Asymptote | `Shift+A` | Each channel normalised to its asymptotic noise level (shoulder) |
+| Uniform Scale | `Shift+U` | All channels share the same fixed scale |
+| Shoulder Line | `L` | Toggles a dotted reference line at the shoulder level |
+
+### Correlogram Display
+
+Shows auto-correlograms (diagonal) and cross-correlograms (off-diagonal) for selected clusters.
+
+**Parameters** (set in the Parameters toolbar):
+
+| Parameter | Description |
+|---|---|
+| Bin size | Width of each correlogram bin in milliseconds |
+| Half duration | Time span on each side of zero lag (total window = 2 × half duration) |
+
+**Amplitude controls** (Correlations menu):
+
+| Action | Key |
+|---|---|
+| Increase correlogram amplitude | `Shift+I` |
+| Decrease correlogram amplitude | `Shift+D` |
+
+**Scale modes** (Correlations menu):
+
+| Scale | Description |
+|---|---|
+| Scale by Maximum | Normalise each correlogram to its own peak |
+| Scale by Asymptote | Normalise to the flat baseline (shoulder) |
+| Uniform Scale (Raw) | No normalisation — raw counts |
+
+Correlograms are computed on a background thread and update asynchronously. `Actions → Update Display` forces a recompute.
+
+### Overview Display
+
+The default view on open. Shows the Cluster Display (scatter) and Waveform Display side by side in a single tab. All controls from both views are available.
+
+### Grouping Assistant Display
+
+Computes a cluster × cluster misclassification probability matrix using a probabilistic classifier (`GroupingAssistant::computeMeanProbabilities()`).
+
+Entry (r, c) is the mean posterior probability that a spike from cluster r was actually generated by cluster c. The diagonal should be close to 1.0; high off-diagonal values indicate:
+
+- High (r, c) alone → spikes of cluster r are frequently misclassified as cluster c (possible contaminant).
+- High (r, c) **and** (c, r) symmetrically → the two clusters are strongly overlapping and are candidates for merging.
+
+**Actions → Update Error Matrix** (`U`) recomputes the matrix after editing.
+
+### Trace Display
+
+Shows raw or high-pass filtered signal (`session.dat` or `session.fil`). Spike timestamps from the current electrode group are overlaid as coloured tick marks.
+
+- Navigate with the start / duration fields in the Parameters toolbar.
+- **Next Spike** (`Ctrl+Shift+F`) and **Previous Spike** (`Ctrl+Shift+B`) scroll the trace to the next or previous spike of the selected clusters.
+- Select Time tool (`W`): click a time range in the trace view to restrict the Waveform Display to that window (Time Frame mode).
+- Show Labels toggle (`Ctrl+L`): display channel names on the trace view.
 
 ---
 
 ## Cluster editing operations
 
-All operations are undoable (Edit → Undo / Ctrl+Z) and redoable.
+All operations push onto the undo stack. The full session history is preserved until the file is closed.
 
-| Operation | How |
-|---|---|
-| Select clusters | Click or lasso in scatter plot; Ctrl+click for multi-select |
-| Move spikes | Drag a lasso around spikes in scatter plot, then assign to target cluster |
-| Merge clusters | Select two or more clusters, then Edit → Merge |
-| Split a cluster | Select one cluster, draw a split boundary, Edit → Split |
-| Delete spikes (→ noise) | Select spikes, Edit → Move to Noise (assigns to cluster 1) |
-| Undo / Redo | Edit → Undo / Redo; full undo stack maintained for the session |
+| Operation | Shortcut / Menu | Description |
+|---|---|---|
+| Group (merge) clusters | `G` | Merges all selected clusters into the lowest-numbered one |
+| Split clusters | `S` | Draw a lasso in the scatter plot; `S` assigns the enclosed spikes to a new cluster |
+| New cluster from lasso | `C` | Creates a new cluster ID and assigns the lasso-enclosed spikes to it |
+| Delete selected spikes → artefact (0) | `A` | Moves lasso-enclosed spikes to cluster 0 (artefact) |
+| Delete selected spikes → noise (1) | `N` | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
+| Delete cluster(s) → artefact (0) | `Shift+Delete` | Moves all spikes of selected clusters to cluster 0 |
+| Delete cluster(s) → noise (1) | `Delete` | Moves all spikes of selected clusters to cluster 1 |
+| Undo | `Ctrl+Z` | Undoes the last editing operation |
+| Redo | `Ctrl+Y` | Redoes the last undone operation |
+| Renumber clusters | `R` | Reassigns cluster IDs to be contiguous starting from 2 (0 and 1 are always noise/artefact) |
+| Renumber and Save | `Ctrl+Shift+S` | Renumbers then saves in one step |
+| Update Display | — | Forces all views to recompute from current cluster assignments |
+
+**Cluster 0** is the artefact pseudo-cluster (waveforms that are not spikes). **Cluster 1** is the noise/MUA pseudo-cluster. Both are always shown at the top of the palette. Spikes sent to these clusters are not deleted — they remain in the feature file and can be retrieved by undo.
+
+---
+
+## Saving
+
+| Action | Shortcut | Description |
+|---|---|---|
+| Save | `Ctrl+S` | Overwrites `session.clu.N` in place |
+| Save As | `Ctrl+Shift+A` | Saves to a new `.clu.N` path |
+| Renumber and Save | `Ctrl+Shift+S` | Renumbers cluster IDs, then saves |
+
+The cluster user information (structure, type, quality, etc.) is saved to the `units` section of the YAML parameter file.
+
+---
+
+## Update modes
+
+**Settings → Immediate Update** (default): all views redraw immediately after every editing operation. Appropriate for small datasets.
+
+**Settings → Delayed Update**: views are not updated until **Actions → Update Display** is triggered manually. Useful for large datasets where recomputing all views after every lasso operation is slow.
 
 ---
 
 ## Automatic reclustering (KlustaKwik)
 
-Klusters can launch KlustaKwik on the current electrode group directly from the GUI:
+Klusters can launch KlustaKwik on the current electrode group:
 
 1. Select the clusters to recluster (or select all).
-2. Choose **Actions → Recluster** (or the toolbar button).
-3. KlustaKwik runs as a subprocess using the parameters in **Settings → Preferences → KlustaKwik**. Its stdout streams into the embedded process widget.
-4. When KlustaKwik finishes, klusters reloads the `.clu.N` file automatically and the new assignment is reflected in all views.
+2. **Actions → Recluster** (`Shift+R`) or toolbar button.
+3. KlustaKwik runs as a subprocess; its stdout streams into the embedded process widget.
+4. When KlustaKwik finishes, klusters reloads the `.clu.N` file automatically and all views update.
+5. **Actions → Abort Reclustering** cancels a running KlustaKwik process.
 
-KlustaKwik parameters passed by klusters are set in the Preferences dialog. The executable path defaults to `KlustaKwik` on `PATH`.
+KlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → KlustaKwik**.
 
 ### Automatic feature selection
 
-When **Auto-select features** is enabled in the toolbar and one or more clusters are selected, klusters computes the per-feature variance across all spikes in the selected clusters and passes only the high-variance features to KlustaKwik.
+When **Auto-select features** is enabled in the Preferences (and the **N feat** spinbox appears in the Parameters toolbar), klusters computes per-feature variance across all spikes in the selected clusters and passes only the top-N high-variance features to KlustaKwik via the `UseFeatures` parameter.
 
-**How it works:**
+**Algorithm:**
 
-1. Feature variances are computed by pooling all spikes from every selected cluster. Selecting two overlapping clusters pools both populations, giving the variance across their combined spike set — the right signal when re-sorting units that may have been split or that genuinely overlap.
-2. Features are ranked by descending variance. The **N feat** spin box in the toolbar sets a ceiling on how many features to use.
-3. A variance drop-off threshold (5% of the top feature's variance) trims features that have fallen to noise level. If only 4 of the requested 10 features carry meaningful information, only those 4 are passed to KlustaKwik.
-4. At least one feature is always selected even if all variances are zero.
-5. Noise (cluster 0) and artefact (cluster 1) pseudo-clusters are excluded from the variance estimate even if they appear in the selection.
+1. Feature variances are pooled across all spikes from every selected cluster (clusters 0 and 1 are excluded even if selected).
+2. Features are ranked by descending variance.
+3. The **N feat** spinbox sets a ceiling on the number of features passed.
+4. A variance drop-off threshold (5 % of the top feature's variance) trims features that have fallen to noise level — if only 4 of the requested 10 carry meaningful information, only those 4 are passed.
+5. At least one feature is always selected.
+6. The timestamp dimension (last column) is never included.
 
-When the selection is empty or auto-select is disabled, klusters falls back to passing all PCA dimensions with extra/non-PCA dimensions off.
+When no clusters are selected or auto-select is disabled, klusters falls back to passing all PCA feature dimensions (timestamp excluded).
 
 ---
 
 ## Spike realignment
 
-Klusters includes interactive spike realignment via normalised cross-correlation, using the same algorithm as the standalone `SpikeRealign` tool.
+**Actions → Realign Spikes…** (`Shift+L`) opens the realignment dialog for the selected clusters.
 
 ### How it works
 
-For each spike in the selected cluster:
+For each spike in the selected clusters:
 
-1. The cluster mean waveform is computed from all spikes in the cluster.
-2. The spike's waveform is cross-correlated against the mean template at each lag within `±maxShift` samples.
-3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its `.res` timestamp is updated, the waveform snippet is re-extracted from the raw `.fil` / `.dat` file at the corrected sample offset, and its PCA features are reprojected using the stored `.pca.N` eigenvectors.
-4. If shifting a timestamp would violate the chronological sort order of the spike train, the affected `.res`/`.spk`/`.clu`/`.fet` entries are swapped.
+1. The cluster mean waveform is computed.
+2. The spike's waveform is cross-correlated against the mean template at each lag within ±maxShift samples.
+3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its `.res.N` timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected using the stored `.pca.N` eigenvectors.
+4. If a timestamp shift would violate chronological order, the affected `.res`/`.spk`/`.clu`/`.fet` rows are swapped.
 
-A `RealignReviewDialog` is shown after realignment completes for each cluster, displaying before/after mean waveform plots and counts of spikes shifted and timestamps reordered. The result can be accepted (written to disk) or rejected (in-memory rollback, no disk writes).
+After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted and timestamps reordered. The result can be **accepted** (changes written to disk) or **rejected** (full in-memory rollback, no disk writes).
 
-### Configuration
+**Actions → Abort Realignment** cancels realignment in progress.
 
-Configure the executable path and default arguments in **Settings → Preferences → General → Realignment**:
-
-- **Executable**: path to `SpikeRealign`
-- **Arguments**: e.g. `-Threshold 0.75 -Iterations 2`
-
-For batch realignment of entire sessions outside the GUI, use [SpikeRealign](../spikerealign/README.md) directly.
+Realignment parameters (executable path and arguments) are set in **Settings → Preferences → General**.
 
 ---
 
 ## Autosave and crash recovery
 
-A configurable background thread periodically writes `session.#.clu.N` files (where `#` is the save index) so work is not lost on crash. The autosave interval is set in **Settings → Preferences → General**. On restart, klusters detects orphaned autosave files and offers to restore from them.
+A background thread periodically saves `session.#.clu.N` files (where `#` is a rotating index) to protect against crashes. The autosave interval is configured in **Settings → Preferences → General**.
+
+On opening a session, klusters detects orphaned autosave files and offers to restore from the most recent one.
+
+---
+
+## Keyboard shortcuts reference
+
+### File
+
+| Action | Shortcut |
+|---|---|
+| Open | `Ctrl+O` |
+| Import File | `Ctrl+I` |
+| Save | `Ctrl+S` |
+| Renumber and Save | `Ctrl+Shift+S` |
+| Print | `Ctrl+P` |
+| Quit | `Ctrl+Q` |
+
+### Edit
+
+| Action | Shortcut |
+|---|---|
+| Undo | `Ctrl+Z` |
+| Redo | `Ctrl+Y` |
+| Select All | `Ctrl+A` |
+| Select All except 0 and 1 | `Ctrl+Shift+A` |
+
+### Actions
+
+| Action | Shortcut |
+|---|---|
+| Delete artifact cluster(s) | `Shift+Delete` |
+| Delete noisy cluster(s) | `Delete` |
+| Group (merge) clusters | `G` |
+| Renumber clusters | `R` |
+| Update error matrix | `U` |
+| Recluster (KlustaKwik) | `Shift+R` |
+| Realign spikes | `Shift+L` |
+
+### Tools
+
+| Action | Shortcut |
+|---|---|
+| Zoom | `Z` |
+| New cluster from lasso | `C` |
+| Split clusters | `S` |
+| Delete artifact spikes (lasso) | `A` |
+| Delete noisy spikes (lasso) | `N` |
+| Select time | `W` |
+
+### Waveforms
+
+| Action | Shortcut |
+|---|---|
+| Time Frame mode | `T` |
+| Overlay presentation | `O` |
+| Mean ± SD presentation | `M` |
+| Increase amplitude | `I` |
+| Decrease amplitude | `D` |
+| Scale by Maximum | `Shift+M` |
+| Scale by Asymptote | `Shift+A` |
+| Uniform Scale | `Shift+U` |
+| Shoulder line toggle | `L` |
+
+### Correlations
+
+| Action | Shortcut |
+|---|---|
+| Increase correlogram amplitude | `Shift+I` |
+| Decrease correlogram amplitude | `Shift+D` |
+
+### Trace
+
+| Action | Shortcut |
+|---|---|
+| Next spike | `Ctrl+Shift+F` |
+| Previous spike | `Ctrl+Shift+B` |
+| Show labels | `Ctrl+L` |
+
+### Displays
+
+| Action | Shortcut |
+|---|---|
+| Rename active display | `Ctrl+R` |
+| Close active display | `Ctrl+W` |
+
+### Settings
+
+| Action | Shortcut |
+|---|---|
+| Increase point size | `=` or `Shift+=` |
+| Decrease point size | `-` |
+| Preferences | `P` |
+
+---
+
+## Parameters toolbar reference
+
+The **Parameters** toolbar (Settings → Show Parameters) shows context-sensitive controls depending on the active view:
+
+| Control | Context | Description |
+|---|---|---|
+| X / Y dimension selectors | Cluster View | Feature dimensions assigned to the scatter plot axes |
+| Start (s) | Waveform View (Time Frame mode) | Beginning of the time window shown |
+| Duration (s) | Waveform View (Time Frame mode) | Length of the time window shown |
+| # spikes | Waveform View (Sample mode) | Maximum number of spikes displayed per cluster |
+| Bin size (ms) | Correlogram View | Width of each correlogram bin |
+| Half duration (ms) | Correlogram View | Half-width of the correlogram time window |
+| N feat | All (when auto-select is on) | Maximum number of features passed to KlustaKwik |
+
+---
+
+## Printing
+
+**File → Print** (`Ctrl+P`) prints the currently active view to the system print dialog.
 
 ---
 
 ## GPU acceleration
 
-The Error Matrix computation (`GroupingAssistant`) and the spike realignment cross-correlation use the same GPU dispatch mechanism as KlustaKwik: CUDA → HIP → SYCL → OpenMP fallback. The CPU/OpenMP path is always compiled as a fallback.
+The Grouping Assistant matrix computation and the spike realignment cross-correlation use the same GPU dispatch as KlustaKwik: CUDA → HIP → SYCL → OpenMP CPU fallback. The CPU path is always compiled as a baseline.
 
-See the [GPU installation guide](../gpu/README.md) for setup instructions for CUDA, ROCm/HIP, and Intel oneAPI/SYCL.
+See the [GPU installation guide](../gpu/README.md) for CUDA, ROCm/HIP, and Intel oneAPI/SYCL setup.
 
 ---
 
