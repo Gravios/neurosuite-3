@@ -55,7 +55,7 @@
 #   affected by this constraint.
 # =============================================================================
 
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.22)
 
 # ---------------------------------------------------------------------------
 # CUDA optional language declaration
@@ -170,9 +170,15 @@ if(_cuda_lang AND NOT CMAKE_CUDA_ARCHITECTURES)
     # time, but we can inspect nvidia-smi if it is available.
     find_program(_nvidia_smi nvidia-smi)
     if(_nvidia_smi)
-        set(CMAKE_CUDA_ARCHITECTURES "native"
-            CACHE STRING "CUDA architectures (native = auto-detect installed GPU)" FORCE)
-        message(STATUS "neurosuite-3: CUDA architectures = native (GPU detected via nvidia-smi)")
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+            set(CMAKE_CUDA_ARCHITECTURES "native"
+                CACHE STRING "CUDA architectures (native = auto-detect installed GPU)" FORCE)
+            message(STATUS "neurosuite-3: CUDA architectures = native (GPU detected via nvidia-smi)")
+        else()
+            set(CMAKE_CUDA_ARCHITECTURES "75;86;89;100;120"
+                CACHE STRING "CUDA architectures (CMake < 3.24, native not supported)" FORCE)
+            message(STATUS "neurosuite-3: CUDA architectures = 75;86;89;100;120 (CMake < 3.24)")
+        endif()
     else()
         # No GPU at configure time (headless/CI) — compile for the range of
         # Maxwell through Blackwell that the codebase targets.
@@ -188,7 +194,7 @@ project(neurosuite-3 VERSION 3.0.0 LANGUAGES CXX C ${_cuda_lang})
 # ---------------------------------------------------------------------------
 # Global language standards
 # ---------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD          17)
+set(CMAKE_CXX_STANDARD          20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS        OFF)
 set(CMAKE_C_STANDARD            11)

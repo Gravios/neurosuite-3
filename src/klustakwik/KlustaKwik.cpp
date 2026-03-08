@@ -42,7 +42,7 @@ int   nStarts                = 1;
 int   RandomSeed             = 1;
 char  Debug                  = 0;
 int   Verbose                = 0;
-char  UseFeatures[STRLEN]    = "11111111111100001";
+char  UseFeatures[STRLEN]    = "all";  // auto-filled from nFeatures in .fet file if not overridden
 int   DistDump               = 0;
 float DistThresh             = static_cast<float>(std::log(1000.0));
 int   FullStepEvery          = 10;
@@ -57,7 +57,6 @@ int   TimeMergeIter          = 30;          // Phase 2 iterations; 0 = disabled
 
 // Three-phase chunked CEM parameters
 float ChunkMinutes           = 0.0f;    // 0 = disabled (use two-phase only)
-float ChunkOverlapMinutes    = 0.0f;    // trailing overlap appended to each chunk; 0 = disabled
 float SamplingRate           = 20000.0f;// samples/sec; needed to convert chunk boundaries
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
 int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations
@@ -89,7 +88,6 @@ void SetupParams(int argc, char **argv) {
     STRING_PARAM(InitMethod);
     INT_PARAM(TimeMergeIter);
     FLOAT_PARAM(ChunkMinutes);
-    FLOAT_PARAM(ChunkOverlapMinutes);
     FLOAT_PARAM(SamplingRate);
     FLOAT_PARAM(MergeThresh);
     INT_PARAM(GlobalMergeIter);
@@ -402,7 +400,7 @@ int main(int argc, char **argv) {
                 if (useChunked)
                     score = K1.RunChunkedCEM(ChunkMinutes, SamplingRate,
                                               MergeThresh, GlobalMergeIter,
-                                              TimeMergeIter, ChunkOverlapMinutes);
+                                              TimeMergeIter);
                 else if (useFarthest)
                     score = K1.CEMTwoPhase(TimeMergeIter);
                 else

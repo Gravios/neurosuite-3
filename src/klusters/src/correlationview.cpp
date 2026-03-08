@@ -97,9 +97,9 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
         clusters.append(id);
     std::sort(clusters.begin(), clusters.end());
 
-    for(int j = 0; j<clusters.size(); ++j) {
-        for(int h = j; h<clusters.size(); ++h) {
-            pairs.append(Pair(clusters.at(j),clusters.at(h)));
+    for(qsizetype j = 0; j < clusters.size(); ++j) {
+        for(qsizetype h = j; h<clusters.size(); ++h) {
+            pairs.append(std::make_pair(clusters.at(j),clusters.at(h)));
         }
     }
 
@@ -118,8 +118,7 @@ CorrelationView::~CorrelationView(){
 
     //Wait until all the threads have finish before quiting otherwise
     // it may endup in a crash of the application.
-    for(int i = 0; i<threadsToBeKill.count();++i ) {
-        CorrelationThread* correlationThread = threadsToBeKill.at(i);
+    for(CorrelationThread* correlationThread : threadsToBeKill) {
         while(!correlationThread->wait())
         {
             ;
@@ -151,9 +150,9 @@ void CorrelationView::singleColorUpdate(int clusterId,bool active){
             //Create pairs as (*iterator,clusterId) where *iterator <= clusterId
             //and (clusterId,*iterator) where *iterator > clusterId
             if(*iterator <= clusterId)
-                pairUpdateList.append(Pair(*iterator,clusterId));
+                pairUpdateList.append(std::make_pair(*iterator,clusterId));
             else
-                pairUpdateList.append(Pair(clusterId,*iterator));
+                pairUpdateList.append(std::make_pair(clusterId,*iterator));
         }
 
         if(drawContentsMode == REFRESH)
@@ -343,10 +342,10 @@ void CorrelationView::askForCorrelograms(){
 
         pairs.clear();
         QList<Pair>* clusterPairs = new QList<Pair>();
-        for(int j = 0; j<clusters.size(); ++j) {
-            for(int h = j; h<clusters.size(); ++h) {
-                pairs.append(Pair(clusters.at(j),clusters.at(h)));
-                clusterPairs->append(Pair(clusters.at(j),clusters.at(h)));
+        for(qsizetype j = 0; j < clusters.size(); ++j) {
+            for(qsizetype h = j; h<clusters.size(); ++h) {
+                pairs.append(std::make_pair(clusters.at(j),clusters.at(h)));
+                clusterPairs->append(std::make_pair(clusters.at(j),clusters.at(h)));
             }
         }
 
@@ -430,8 +429,8 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
     int verticalNb = 0;
     //Clusters corresponding to the previous pair, they are initialized with the first pair.
 
-    int previousCluster1 = pairList.at(0).getX();
-    int previousCluster2 = pairList.at(0).getY();
+    int previousCluster1 = pairList.at(0).first;
+    int previousCluster2 = pairList.at(0).second;
     QColor clusterColor;
 
     //If it is an update that means that there some correlograms to redraw.
@@ -447,8 +446,8 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
     }
 
     for (const Pair& pair : qAsConst(pairList)) {
-        int cluster1 = pair.getX();
-        int cluster2 = pair.getY();
+        int cluster1 = pair.first;
+        int cluster2 = pair.second;
 
         //Get the iterator on the values of the current correlogram.
         Data::CorrelogramIterator iterator = clusteringData.correlogramIterator(pair,scaleMode,binSize,timeWindow);
@@ -781,8 +780,7 @@ void CorrelationView::willBeKilled(){
     if(!goingToDie){
         goingToDie = true;
         //inform the running threads to stop processing as soon as possible.
-        for(int i = 0; i<threadsToBeKill.count();i++ ) {
-            CorrelationThread* correlationThread = threadsToBeKill.at(i);
+        for(CorrelationThread* correlationThread : threadsToBeKill) {
             correlationThread->stopProcessing();
         }
     }

@@ -1458,11 +1458,10 @@ public:
         CorrelogramIterator(const Data& d,Pair pair,ScaleMode scaleMode,int binSize,int timeframe):data(d){
             index = 0;
             lastIndex = -1;
-            QHash<QString, Correlation*>* dict = data.correlationDict[pair.toString()];
+            QHash<QString, Correlation*>* dict = data.correlationDict[pairKey(pair)];
             if(dict == 0) dataAvailable = false;
             else{
-                Pair parameters = Pair(binSize,timeframe);
-                correlation = (*dict)[parameters.toString()];
+                correlation = (*dict)[pairKey(binSize, timeframe)];
                 if(correlation == 0) dataAvailable = false;
                 else{
                     if(correlation->getStatus(binSize,timeframe) == READY){

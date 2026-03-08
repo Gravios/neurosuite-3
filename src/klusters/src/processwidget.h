@@ -125,11 +125,10 @@ protected Q_SLOTS:
     void slotProcessExited( int, QProcess::ExitStatus);
     void slotOutputTreatmentOver();
     
-private:
-  /** Should be called right after an insertItem(),
-  * will automatic scroll the listbox if it is already at the bottom
-  * to prevent automatic scrolling when the user has scrolled up
-  */
+private Q_SLOTS:
+    // Legacy slot kept for ABI compatibility; auto-scroll is now driven by
+    // verticalScrollBar::rangeChanged → scrollToBottom() lambda in the constructor.
+    void maybeScrollToBottom();
 
 private:
     QProcess* childproc;

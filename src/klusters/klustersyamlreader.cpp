@@ -42,14 +42,8 @@ void KlustersYamlReader::getClusterUserInformation(
         if (group != pGroup) continue;
 
         int clusterId = info[1].toInt();
-        ClusterUserInformation cui;
-        cui.setGroup(group);
-        cui.setCluster(clusterId);
-        cui.setStructure(info[2]);
-        cui.setType(info[3]);
-        cui.setId(info[4]);
-        cui.setQuality(info[5]);
-        cui.setNotes(info[6]);
+        ClusterUserInformation cui(group, clusterId,
+                                   info[2], info[3], info[4], info[5], info[6]);
         clusterUserInformationMap.insert(clusterId, cui);
     }
 }
