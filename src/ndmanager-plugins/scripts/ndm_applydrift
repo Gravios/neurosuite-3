@@ -1,0 +1,173 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_applydrift — apply probe drift from a curated shank to its siblings
+#//
+#//  Reads SESSION.drift (produced by ndm_estimatedrift), extracts the drift
+#//  timeseries for the *source* spike group, and writes adaptive chunk
+#//  boundary files (SESSION.chunks.N) for each sibling group on the same
+#//  probe.  Optionally re-runs KlustaKwik for each sibling immediately.
+#//
+#//  Usage:
+#//    ndm_applydrift [parameter-file] [source-group] [target-groups...]
+#//
+#//    parameter-file   — optional; defaults to the current directory name
+#//    source-group     — 1-based spike group whose curated .clu was used to
+#//                       generate SESSION.drift.  Defaults to reading
+#//                       ndm_applydrift/sourceGroup from the parameter file,
+#//                       or prompting if absent.
+#//    target-groups    — 1-based spike groups to process.  Defaults to all
+#//                       groups except the source group.
+#//
+#//  Options read from the parameter file (ndm_applydrift section):
+#//    sourceGroup      — which spike group was curated (default: 1)
+#//    threshUm         — max drift per chunk in µm (default: 5.0)
+#//    minChunkSec      — minimum chunk duration in seconds (default: 30.0)
+#//    runKlustaKwik    — also re-run KlustaKwik for each target (default: false)
+#//    minClusters      — KlustaKwik MinClusters when runKlustaKwik=true
+#//    maxClusters      — KlustaKwik MaxClusters when runKlustaKwik=true
+#//    mergeThresh      — KlustaKwik MergeThresh when runKlustaKwik=true
+#//    globalMergeIter  — KlustaKwik GlobalMergeIter when runKlustaKwik=true
+#//    timeMergeIter    — KlustaKwik TimeMergeIter when runKlustaKwik=true
+#//
+#//  copyright (C) 2025 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 10 ]; then
+    echo_error "usage: $program [parameter-file] [source-group] [target-groups...]"
+    exit $GENERAL_ERROR
+fi
+
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}; session=${session%.yaml}; session=${session%.yml}
+
+print_header "$session - Applying probe drift to sibling spike groups"
+
+check_commands_installed python3
+python3 -c "import yaml" 2>/dev/null || {
+    echo_error "Python package missing: install pyyaml"; exit $GENERAL_ERROR; }
+
+# Resolve YAML parameter file
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No parameter file found for session '$session'"; exit $INPUTS_MISSING; }
+
+# Drift file must already exist
+driftfile="$session.drift"
+inputs_missing "$driftfile" && {
+    echo_error "Drift file $driftfile not found. Run ndm_estimatedrift first."
+    exit $INPUTS_MISSING; }
+
+# Read parameters
+sourceGroup=$(read_script_parameter "$session" ndm_applydrift sourceGroup)
+check_optional_variable $sourceGroup || sourceGroup=${2:-1}
+
+threshUm=$(read_script_parameter "$session" ndm_applydrift threshUm)
+check_optional_variable $threshUm || threshUm=5.0
+
+minChunkSec=$(read_script_parameter "$session" ndm_applydrift minChunkSec)
+check_optional_variable $minChunkSec || minChunkSec=30.0
+
+runKlustaKwik=$(read_script_parameter "$session" ndm_applydrift runKlustaKwik)
+check_optional_variable $runKlustaKwik || runKlustaKwik=false
+
+samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
+nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
+
+[ -z "$nSpikeGroups" ] || [ "$nSpikeGroups" -eq 0 ] && {
+    echo_error "No spikeDetection groups in $yamlfile"; exit $GENERAL_ERROR; }
+
+# Build target group list — all groups except the source, or from args 3+
+targetGroups=()
+if [ $# -ge 3 ]; then
+    for g in "${@:3}"; do
+        targetGroups+=($g)
+    done
+else
+    for (( g=1; g<=nSpikeGroups; g++ )); do
+        [ "$g" -ne "$sourceGroup" ] && targetGroups+=($g)
+    done
+fi
+
+echo_message "Source group: $sourceGroup  Targets: ${targetGroups[*]}"
+echo_message "Drift threshold: $threshUm µm  Min chunk: $minChunkSec s"
+
+# Locate the Python helper alongside this script, or in PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_applydrift.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="process_applydrift.py"
+
+python3 "$PY_HELPER" \
+    --session       "$session" \
+    --drift-file    "$driftfile" \
+    --source-group  "$sourceGroup" \
+    --target-groups "${targetGroups[@]}" \
+    --thresh-um     "$threshUm" \
+    --min-chunk-sec "$minChunkSec" \
+    --sampling-rate "$samplingRate"
+
+check_command_status process_applydrift
+
+# ── Optional: re-run KlustaKwik for each target group ──────────────────────
+if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
+
+    check_commands_installed KlustaKwik
+
+    minClusters=$(read_script_parameter "$session" ndm_applydrift minClusters)
+    check_optional_variable $minClusters || minClusters=2
+
+    maxClusters=$(read_script_parameter "$session" ndm_applydrift maxClusters)
+    check_optional_variable $maxClusters || maxClusters=100
+
+    mergeThresh=$(read_script_parameter "$session" ndm_applydrift mergeThresh)
+    check_optional_variable $mergeThresh || mergeThresh=35
+
+    globalMergeIter=$(read_script_parameter "$session" ndm_applydrift globalMergeIter)
+    check_optional_variable $globalMergeIter || globalMergeIter=30
+
+    timeMergeIter=$(read_script_parameter "$session" ndm_applydrift timeMergeIter)
+    check_optional_variable $timeMergeIter || timeMergeIter=35
+
+    overallStatus=$NO_ERROR
+    for g in "${targetGroups[@]}"; do
+        chunksFile="$session.chunks.$g"
+        if [ ! -f "$chunksFile" ]; then
+            echo_error "Chunks file $chunksFile missing — skipping group $g"
+            continue
+        fi
+        inputs_missing "$session.fet.$g" && {
+            echo_message "  Group $g: .fet file missing — skipping"
+            continue
+        }
+
+        nElectrodes=$(yaml_count "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
+        nFeatures=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nFeatures")
+        nTotalFeatures=$(( nElectrodes * nFeatures + 1 ))
+        useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
+
+        print_header "$session - KlustaKwik group $g (drift-adaptive chunks)"
+        echo_message "  ChunkFile: $chunksFile"
+
+        KlustaKwik "$session" "$g" \
+            -MinClusters     "$minClusters" \
+            -MaxClusters     "$maxClusters" \
+            -UseFeatures     "$useFeatures" \
+            -ChunkFile       "$chunksFile" \
+            -SamplingRate    "$samplingRate" \
+            -MergeThresh     "$mergeThresh" \
+            -GlobalMergeIter "$globalMergeIter" \
+            -TimeMergeIter   "$timeMergeIter" \
+            -SaveIntermediates 0
+
+        groupStatus=$?
+        if [ $groupStatus -ne $NO_ERROR ]; then
+            overallStatus=$groupStatus
+        fi
+    done
+    exit $overallStatus
+fi
+
+exit $NO_ERROR

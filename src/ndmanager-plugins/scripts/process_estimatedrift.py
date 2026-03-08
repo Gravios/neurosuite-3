@@ -98,6 +98,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--outlier-threshold", type=float, default=5.0,
                    help="Max pairwise distance change (µm) to flag a unit as outlier")
     p.add_argument("--probe-library",     default="")
+    p.add_argument("--source-group",      type=int, default=0,
+                   help="1-based spike group whose curated .clu drives the drift "
+                        "estimate. 0 = estimate independently for every group "
+                        "(default). When non-zero only this group is processed "
+                        "and its drift windows are propagated to all sibling groups "
+                        "(same probeId) in the output file.")
     p.add_argument("--output",            required=True)
     return p.parse_args()
 
@@ -570,6 +576,41 @@ def estimate_shank_drift(
     }
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Probe / group mapping helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_group_probe_map(param: dict) -> dict:
+    """Return {1-based group index: (probe_id, shank_index)}.
+
+    Reads optional ``probeId`` and ``shankIndex`` fields from each entry in
+    ``spikeDetection.channelGroups``.  When the fields are absent the group is
+    assigned to probe 0 with shankIndex = group_index - 1, which preserves full
+    backward compatibility with parameter files that predate this feature.
+    """
+    result: dict[int, tuple[int, int]] = {}
+    groups = (param or {}).get("spikeDetection", {}).get("channelGroups", [])
+    for i, grp in enumerate(groups):
+        gnum        = i + 1
+        probe_id    = int(grp.get("probeId",    0))
+        shank_index = int(grp.get("shankIndex", i))
+        result[gnum] = (probe_id, shank_index)
+    return result
+
+
+def build_probe_entry_map(param: dict) -> dict:
+    """Return {probe_id: probe-entry dict} from the optional top-level
+    ``probes`` list in the parameter file.  Returns {0: {}} when the list
+    is absent so callers always get a valid entry for probe 0.
+    """
+    result: dict[int, dict] = {0: {}}
+    for entry in (param or {}).get("probes", []):
+        pid = int(entry.get("probeId", 0))
+        result[pid] = entry
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
@@ -602,7 +643,12 @@ def main() -> int:
 
     all_results: list[tuple[int, int, int, dict]] = []
 
+    source_group = args.source_group  # 0 = all groups
+    source_result: Optional[dict] = None
+
     for g in range(1, args.n_groups + 1):
+        if source_group and g != source_group:
+            continue  # only estimate from the nominated shank
         pid, shk = g_probe_map.get(g, (0, g - 1))
         d        = get_depths(g)
         print(f"  Group {g}: probe={pid} shank={shk} sites={len(d)}", file=sys.stderr)
@@ -613,6 +659,25 @@ def main() -> int:
             exclude_noise, args.outlier_threshold)
         if r:
             all_results.append((pid, shk, g, r))
+            if source_group:
+                source_result = r
+
+    # --source-group mode: propagate the source shank's drift windows to
+    # all sibling groups on the same probe that were NOT estimated.
+    if source_group and source_result is not None:
+        src_pid = g_probe_map.get(source_group, (0, source_group - 1))[0]
+        for g in range(1, args.n_groups + 1):
+            if g == source_group:
+                continue
+            pid, shk = g_probe_map.get(g, (0, g - 1))
+            if pid != src_pid:
+                continue  # different probe — skip
+            # Clone the source result under this shank's identity.
+            import copy
+            sibling = copy.deepcopy(source_result)
+            sibling["spikeGroup"]    = g
+            sibling["derivedFrom"]   = source_group
+            all_results.append((pid, shk, g, sibling))
 
     probe_ids  = sorted({r[0] for r in all_results})
     probes_out = []
