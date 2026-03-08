@@ -160,32 +160,32 @@ public:
     * @param clustersToShow list of clusters to be drawn.
     * @param activeView the view in which the change has to be immediate.
     */
-    void shownClustersUpdate(QList<int> clustersToShow,KlustersView& activeView);
+    void shownClustersUpdate(const QList<int>& clustersToShow,KlustersView& activeView);
 
     /**Updates the selection of clusters to be shown in the active view due to
     * a selection in the error matrix.
     * @param clustersToShow list of clusters to be drawn.
     */
-    void shownClustersUpdate(QList<int> clustersToShow);
+    void shownClustersUpdate(const QList<int>& clustersToShow);
 
     /**Updates the selection of clusters to be shown in the active view due to
     * a selection in the error matrix.
     * @param clustersToShow list of clusters to be drawn.
     * @param previousSelectedClusterPairs list of clusters corresponding to the clusters previous selected in the error matrix.
     */
-    void shownClustersUpdate(QList<int> clustersToShow,QList<int> previousSelectedClusterPairs);
+    void shownClustersUpdate(const QList<int>& clustersToShow,const QList<int>& previousSelectedClusterPairs);
 
     /**Updates the selection of clusters to be shown in the active view due to
     * a selection in the error matrix.
     * @param clustersToShow list of clusters to be drawn in addition to those already shown.
     */
-    void addClustersToActiveView(QList<int> clustersToShow);
+    void addClustersToActiveView(const QList<int>& clustersToShow);
 
     /**Updates the selection of clusters to be shown by showing all the clusters
     * except those contained in @p clustersToHide.
     * @param clustersToHide list of clusters to not show.
     */
-    void showAllClustersExcept(QList<int> clustersToHide);
+    void showAllClustersExcept(const QList<int>& clustersToHide);
     
     /**Manages the grouping of clusters.
     * @param clustersToGroup list of clusters to be grouped.
@@ -313,8 +313,7 @@ public:
    */
     bool stopAutoSaving(bool currentDocument = false);
 
-    void customEvent (QEvent* event);
-
+    void customEvent (QEvent* event) override;
     /**Sets the acquisition system gain.
     * @param acquisitionGain acquisition system gain.
     */
@@ -455,7 +454,7 @@ public:
 
     /**
   * Informs if the variables need it by the traceView are available. Those variables are retrieve only from
-  * the parameter file in xml format (the new format).
+  * the YAML parameter file.
   * @return true if the variables are available, false otherwise.*/
     bool isTraceViewVariablesAvailable()const {return clusteringData->isTraceViewVariablesAvailable();}
 
@@ -474,7 +473,7 @@ public:
   * Informs if a TracesProvider exits.
   * @return true if the provider exists, false otherwise.*/
     bool isTracesProvider() const{
-        if(tracesProvider == 0L) return false;
+        if(tracesProvider == nullptr) return false;
         else return true;
     }
 

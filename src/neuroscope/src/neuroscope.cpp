@@ -65,18 +65,18 @@
 
 NeuroscopeApp::NeuroscopeApp()
     :QMainWindow(0)
-    ,prefDialog(0L)
+    ,prefDialog(nullptr)
     ,displayCount(0)
     ,mainDock(0)
     ,spikeChannelPalette(0)
-    ,tabsParent(0L)
-    ,paletteTabsParent(0L),
+    ,tabsParent(nullptr)
+    ,paletteTabsParent(nullptr),
       isInit(true)
     ,groupsModified(false)
     ,colorModified(false)
     ,eventsModified(false)
     ,initialOffsetDefault(0)
-    ,propertiesDialog(0L)
+    ,propertiesDialog(nullptr)
     ,select(false)
     ,initialTimeWindow(0)
     ,undoRedoInprocess(false)
@@ -678,7 +678,7 @@ void NeuroscopeApp::initItemPanel(){
     paletteTabsParent->hide();
 }
 void NeuroscopeApp::executePreferencesDlg(){
-    if(prefDialog == 0L){
+    if(prefDialog == nullptr){
         prefDialog = new PrefDialog(this);
         // connect to the "settingsChanged" signal
         connect(prefDialog, &PrefDialog::settingsChanged, this, &NeuroscopeApp::applyPreferences);
@@ -983,7 +983,7 @@ void NeuroscopeApp::openDocumentFile(const QString& url)
         int returnStatus = doc->openDocument(url);
         if(returnStatus == NeuroscopeDoc::INCORRECT_FILE){
             QApplication::restoreOverrideCursor();
-            QMessageBox::critical (this, tr("Error!"),tr("The selected file is invalid, it has to be of the form baseName.nrs, baseName.xml or baseName.*"));
+            QMessageBox::critical (this, tr("Error!"),tr("The selected file is invalid, it has to be of the form baseName.nrs or baseName.*"));
             //close the document
             doc->closeDocument();
             resetState();
@@ -1484,7 +1484,7 @@ void NeuroscopeApp::slotFileClose(){
             spikeChannelPalette->reset();
             displayChannelPalette->reset();
 
-            mainDock = 0L;
+            mainDock = nullptr;
             doc->closeDocument();
             resetState();
             QApplication::restoreOverrideCursor();
@@ -1705,7 +1705,7 @@ void NeuroscopeApp::slotUpdateHiddenChannels(const QList<int>& hiddenChannels){
 }
 
 void NeuroscopeApp::slotFileProperties(){
-    if(propertiesDialog == 0L)
+    if(propertiesDialog == nullptr)
         propertiesDialog = new PropertiesDialog(this);
 
     //enable the tabs for cluster and positions if a corresponding file is open, otherwise disable them.
@@ -1780,7 +1780,7 @@ void NeuroscopeApp::displayFileProperties(int channelNb,double SR,int resolution
                                           float screenGain,int currentNbSamples,int currentPeakIndex,double videoSamplingRate,int width,
                                           int height, QString backgroundImage,int rotation,int flip,double acquisitionSystemSamplingRate,bool isaDatFile,bool positionsBackground,QString traceBackgroundImage){
     QApplication::restoreOverrideCursor();
-    if(propertiesDialog == 0L)
+    if(propertiesDialog == nullptr)
         propertiesDialog = new PropertiesDialog(this);
 
     //enable the tabs for cluster and positions if a corresponding file is open, otherwise disable them.
@@ -2476,7 +2476,7 @@ void NeuroscopeApp::slotDisplayClose(){
             doc->closeDocument();
             //Delete the view
             delete tabsParent->currentWidget();
-            mainDock = 0L;
+            mainDock = nullptr;
 
             resetState();
             QApplication::restoreOverrideCursor();
@@ -3213,8 +3213,7 @@ void NeuroscopeApp::slotAddEventAboutToShow(){
     QList<EventDescription> eventList = doc->eventIds(eventProvider);
 
     bool found = false;
-    for(int i = 0; i <eventList.count();++i) {
-        QString label = eventList.at(i);
+    for(const QString& label : eventList) {
         QAction *act = addEventPopup->addAction(label);
         act->setCheckable(true);
         if(eventLabelToCreate == label){
@@ -3248,7 +3247,7 @@ void NeuroscopeApp::slotAddEventButtonActivated(QAction *act){
 }
 
 ItemPalette* NeuroscopeApp::getEventPalette(){
-    ItemPalette* eventPalette = 0L;
+    ItemPalette* eventPalette = nullptr;
 
     for(int i = 0; i< paletteTabsParent->count();++i){
         QWidget* current = paletteTabsParent->widget(i);

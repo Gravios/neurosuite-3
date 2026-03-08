@@ -68,8 +68,7 @@ public:
     enum PresentationMode{SAMPLE=1,TIME_FRAME=2};
 
     /**Signals that the widget is about to be deleted.*/
-    void willBeKilled();
-
+    void willBeKilled() override;
     /**Stops and deletes all running threads without setting goingToDie.
      * Call this before modifying any view state field that threads read,
      * and before launching replacement threads. */
@@ -223,17 +222,13 @@ public Q_SLOTS:
     bool isThreadsRunning() const;
 
     /**Update the information presented in the view if need it.*/
-    void updateDrawing();
-
+    void updateDrawing() override;
     /**Initialize the position of the channels in the view.
  * @param positions positions of the channels to use in the view set by the user in the settings dialog.
  */
     inline void setChannelPositions(QList<int>& positions){
-        delete []channelPositions;
-        //nbchannels = positions.size(), this has been check in the calling functions.
-        channelPositions = new int[nbchannels];
-        for(int i = 0; i < nbchannels; ++i)
-            channelPositions[i] = positions[i];
+        // nbchannels = positions.size(), checked in calling functions.
+        channelPositions.assign(positions.begin(), positions.end());
 
         //Everything has to be redraw
         drawContentsMode = REDRAW;
@@ -257,32 +252,27 @@ protected:
   * Draws the contents of the frame.
   * @param p painter used to draw the contents of the frame.
   */
-    void paintEvent ( QPaintEvent *);
-
+    void paintEvent ( QPaintEvent *) override;
     /**Treat the events sent by the WaveformThread instances*/
-    void customEvent(QEvent* event);
-
+    void customEvent(QEvent* event) override;
     /**The view responds to a double click.
   * The waveforms are retrieve in case the data have changed (an other view has changed its parameters)
   * as all the views are sharing the same data.
   * @param event mouse event.
   */
-    void mouseDoubleClickEvent (QMouseEvent* event);
-
+    void mouseDoubleClickEvent (QMouseEvent* event) override;
     /**The view responds to a mouse click.
   * The waveforms are retrieve in case the data have changed (an other view has changed its parameters)
   * as all the views are sharing the same data.
   * @param event mouse release event.
   */
-    void mouseReleaseEvent(QMouseEvent* event);
-
+    void mouseReleaseEvent(QMouseEvent* event) override;
     /**The view responds to a resize event.
   * The waveforms are retrieve in case the data have changed (an other view has changed its parameters)
   * as all the views are sharing the same data.
   * @param event resize event.
   */
-    void resizeEvent(QResizeEvent* event);
-    
+    void resizeEvent(QResizeEvent* event) override;
 private:
     //members
 
@@ -367,7 +357,7 @@ private:
     float Yfactor;
 
     /**Index positions of the channels*/
-    int* channelPositions;
+    std::vector<int> channelPositions;
 
     /**When the presentation mode is time frame, this variable keeps track of
   * the current start time of the time window.*/

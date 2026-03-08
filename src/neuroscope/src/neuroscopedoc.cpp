@@ -2434,9 +2434,7 @@ void NeuroscopeDoc::loadSession(SessionReader reader){
     QList<DisplayInformation> displayList = reader.getDisplayInformation();
 
     bool first = true;
-    QList<DisplayInformation>::ConstIterator iterator;
-    QList<DisplayInformation>::ConstIterator end(displayList.constEnd());
-   for(iterator = displayList.constBegin(); iterator != end; ++iterator) {
+    for (const DisplayInformation& di : displayList) {
 		  QList<int> offsets;
         QList<int> channelGains;
         QList<int>* channelsToDisplay = new QList<int>();
@@ -2447,70 +2445,55 @@ void NeuroscopeDoc::loadSession(SessionReader reader){
         bool multipleColumns = false;
 
         //Get the information store in DisplayInformation
-        DisplayInformation::mode presentationMode = static_cast<DisplayInformation>(*iterator).getMode();
-        bool autocenterChannels = static_cast<DisplayInformation>(*iterator).getAutocenterChannels();
-        long startTime = static_cast<DisplayInformation>(*iterator).getStartTime();
-        long duration = static_cast<DisplayInformation>(*iterator).getTimeWindow();
-        bool greyMode = static_cast<DisplayInformation>(*iterator).getGreyScale();
-        QList<DisplayInformation::spikeDisplayType> spikeDisplayTypes = static_cast<DisplayInformation>(*iterator).getSpikeDisplayTypes();
-        int rasterHeight = static_cast<DisplayInformation>(*iterator).getRasterHeight();
-        QMap<QString, QList<int> > selectedClusters = static_cast<DisplayInformation>(*iterator).getSelectedClusters();
+        DisplayInformation::mode presentationMode = di.getMode();
+        bool autocenterChannels = di.getAutocenterChannels();
+        long startTime = di.getStartTime();
+        long duration = di.getTimeWindow();
+        bool greyMode = di.getGreyScale();
+        QList<DisplayInformation::spikeDisplayType> spikeDisplayTypes = di.getSpikeDisplayTypes();
+        int rasterHeight = di.getRasterHeight();
+        QMap<QString, QList<int> > selectedClusters = di.getSelectedClusters();
         //An id has been assigned to each event, this id will be used internally in NeuroScope and in the session file.
-        QMap<QString, QList<int> > selectedEvents = static_cast<DisplayInformation>(*iterator).getSelectedEvents();
-        //QStringList shownSpikeFiles = static_cast<DisplayInformation>(*iterator).getSelectedSpikeFiles();
-        QMap<QString, QList<int> > skippedClusters = static_cast<DisplayInformation>(*iterator).getSkippedClusters();
-        QMap<QString, QList<int> > skippedEvents = static_cast<DisplayInformation>(*iterator).getSkippedEvents();
-        QList<TracePosition> positions = static_cast<DisplayInformation>(*iterator).getPositions();
-        QList<int> channelIds = static_cast<DisplayInformation>(*iterator).getChannelIds();
-        QList<int> selectedChannelIds = static_cast<DisplayInformation>(*iterator).getSelectedChannelIds();
-        QString tabLabel = static_cast<DisplayInformation>(*iterator).getTabLabel();
-        bool showLabels = static_cast<DisplayInformation>(*iterator).getLabelStatus();
-        bool showEventsInPositionView = static_cast<DisplayInformation>(*iterator).isEventsDisplayedInPositionView();
+        QMap<QString, QList<int> > selectedEvents = di.getSelectedEvents();
+        //QStringList shownSpikeFiles = di.getSelectedSpikeFiles();
+        QMap<QString, QList<int> > skippedClusters = di.getSkippedClusters();
+        QMap<QString, QList<int> > skippedEvents = di.getSkippedEvents();
+        QList<TracePosition> positions = di.getPositions();
+        QList<int> channelIds = di.getChannelIds();
+        QList<int> selectedChannelIds = di.getSelectedChannelIds();
+        QString tabLabel = di.getTabLabel();
+        bool showLabels = di.getLabelStatus();
+        bool showEventsInPositionView = di.isEventsDisplayedInPositionView();
 
         //info on the trace presentation
         if(presentationMode == DisplayInformation::MULTIPLE)
             multipleColumns = true;
 
         //info on the spike presentation
-        QList<DisplayInformation::spikeDisplayType>::ConstIterator typeIterator;
-        QList<DisplayInformation::spikeDisplayType>::ConstIterator typeIteratorEnd(spikeDisplayTypes.end());
-        for(typeIterator = spikeDisplayTypes.constBegin(); typeIterator != typeIteratorEnd; ++typeIterator){
-            if(*typeIterator == DisplayInformation::LINES)
-                verticalLines = true;
-            if(*typeIterator == DisplayInformation::RASTER)
-                raster = true;
-            if(*typeIterator == DisplayInformation::WAVEFORMS)
-                waveforms = true;
+        for (DisplayInformation::spikeDisplayType sdt : spikeDisplayTypes) {
+            if (sdt == DisplayInformation::LINES)    verticalLines = true;
+            if (sdt == DisplayInformation::RASTER)   raster = true;
+            if (sdt == DisplayInformation::WAVEFORMS) waveforms = true;
         }
 
         //Info regarding the positionView
-        bool isAPositionView = static_cast<DisplayInformation>(*iterator).isAPositionView();
+        bool isAPositionView = di.isAPositionView();
 
         /*****************TO FINISH***************************/
 
         //Get the information concerning the channel positions (gain and offset)
-        QList<TracePosition>::ConstIterator positionIterator;
-        QList<TracePosition>::ConstIterator positionIteratorEnd(positions.constEnd());
-        for (positionIterator = positions.constBegin(); positionIterator != positionIteratorEnd; ++positionIterator) {
-            int gain = static_cast<TracePosition>(*positionIterator).getGain();
-            int offset = static_cast<TracePosition>(*positionIterator).getOffset();
-            offsets.append(offset);
-            channelGains.append(gain);
+        for (const TracePosition& pos : positions) {
+            offsets.append(pos.getOffset());
+            channelGains.append(pos.getGain());
         }
 
         //Get the information concerning the channels shown in the display
-        QList<int>::ConstIterator channelIterator;
-        QList<int>::ConstIterator channelIteratorEnd(channelIds.constEnd());
-        for (channelIterator = channelIds.constBegin(); channelIterator != channelIteratorEnd; ++channelIterator) {
-            channelsToDisplay->append(*channelIterator);
-        }
+        for (int ch : channelIds)
+            channelsToDisplay->append(ch);
 
         //Get the information concerning the channels selected in the display
-        QList<int>::ConstIterator channelSelectedIterator;
-        QList<int>::ConstIterator channelSelectedIteratorEnd(selectedChannelIds.constEnd());
-        for (channelSelectedIterator = selectedChannelIds.constBegin(); channelSelectedIterator != channelSelectedIteratorEnd; ++channelSelectedIterator) {
-            selectedChannels.append(*channelSelectedIterator);
-        }
+        for (int ch : selectedChannelIds)
+            selectedChannels.append(ch);
 
         //Create the displays
         if(first){

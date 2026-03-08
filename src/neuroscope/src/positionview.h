@@ -101,7 +101,7 @@ public Q_SLOTS:
     void print(QPainter& printPainter, int width, int height, bool whiteBackground, const QImage &backgroundForPrinting = QImage());
 
     /***Changes the color of the background.*/
-    void changeBackgroundColor(const QColor& color);
+    void changeBackgroundColor(const QColor& color) override;
     
     /** Displays the event data that has been retrieved.
   * @param eventsData dictionary between the event provider names and the event data and status.
@@ -123,7 +123,7 @@ public Q_SLOTS:
     void eventColorUpdate(const QColor &color, const QString& name, int eventId, bool active);
 
     /**Update the information presented in the view.*/
-    void updateDrawing(){
+    void updateDrawing() override{
         //Everything has to be redraw
         drawContentsMode = REDRAW ;
         update();
@@ -148,13 +148,12 @@ protected:
   * Draws the contents of the frame
   * @param p painter used to draw the contents
   */
-    void paintEvent ( QPaintEvent*);
-
+    void paintEvent ( QPaintEvent*) override;
     /**The view responds to a resize event.
   * The bachground image is recomputed.
   * @param event resize event.
   */
-    void resizeEvent(QResizeEvent* event){
+    void resizeEvent(QResizeEvent* event) override{
         drawContentsMode = REDRAW;
         resized = true;
     }

@@ -81,12 +81,12 @@ public:
     /**Opens a file, only one document at the time is allowed.
     * Asking for a new one will open a new instance of the application with it.
     */
-    virtual void openDocumentFile(const QString& url=QString());
+    void openDocumentFile(const QString& url=QString());
 
     /** Imports a file using the old format, only one document at the time is allowed.
     * Asking for a new one will open a new instance of the application with it.
     */
-    virtual void importDocumentFile(const QString& url=QString());
+    void importDocumentFile(const QString& url=QString());
 
     /**Returns the view contains in the active display.
     * @return active view.
@@ -134,9 +134,8 @@ protected:
      */
     bool queryExit();
     
-    void customEvent (QEvent *event);
-    
-    void showEvent(QShowEvent* event){slotUpdateParameterBar();}
+    void customEvent (QEvent *event) override;
+    void showEvent(QShowEvent* event)override {slotUpdateParameterBar();}
 
     /** Event filter to catch right click for contextual menu.
     * @param object target object for the event.
@@ -144,8 +143,7 @@ protected:
     */
     bool eventFilter(QObject* object,QEvent* event);
 
-    void closeEvent(QCloseEvent *event);
-
+    void closeEvent(QCloseEvent *event) override;
 public Q_SLOTS:
     /** queryClose is called by KDocMainWindow call just before being closed.
      */

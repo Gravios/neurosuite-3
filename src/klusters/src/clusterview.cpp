@@ -97,11 +97,11 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
     painter.resetTransform();
     const int r = pointSize;           // pixel radius
 
-    for(clusterIterator = clustersList.begin(); clusterIterator != clustersList.end(); ++clusterIterator){
-        const QColor clusterColor = clusterColors.color(*clusterIterator);
+    for (int clustId : clustersList) {
+        const QColor clusterColor = clusterColors.color(clustId);
         painter.setPen(clusterColor);
         //Get the iterator on the spikes of the current cluster
-        Data::Iterator spikeIterator = clusteringData.iterator(static_cast<dataType>(*clusterIterator));
+        Data::Iterator spikeIterator = clusteringData.iterator(static_cast<dataType>(clustId));
         //Iterate over the spikes of the cluster and draw them
         if(drawCircles)  {
             painter.setBrush(clusterColor);

@@ -119,7 +119,7 @@ public:
     /**Updates the background color used in the views.
     * @param color color of the new background.
     */
-    void updateBackgroundColor(const QColor& color){emit changeBackgroundColor(color);}
+    void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
 
     /**
     * Informs all the child widgets that one of the features for the document have changed.
@@ -292,8 +292,7 @@ public:
 
     /**Update all the encapsulated widgets contain in the view. The widgets know how to draw themselves.*/
     void updateViewContents(){
-        emit updateDrawing();
-    }
+        emit updateDrawing();    }
 
     /**Triggers the update of the display due to a change in the display groups.
     * @param active true if the view is the active one, false otherwise.

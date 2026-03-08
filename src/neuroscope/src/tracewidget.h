@@ -90,7 +90,7 @@ public:
                 bool raster, bool waveforms, bool labelsDisplay, QList<int>& channelsToDisplay, int gain, int acquisitionGain, ChannelColors* channelColors,
                 QMap<int, QList<int> >* groupsChannels, QMap<int,int>* channelsGroups, bool autocenterChannels, QList<int>& channelOffsets,
                 QList<int>& gains, const QList<int>& skippedChannels, int rasterHeight, const QImage &backgroundImage, QWidget* parent=0, const char* name=0, const QColor &backgroundColor = Qt::black,
-                QStatusBar* statusBar = 0L, int minSize = 0, int maxSize = 4000, int windowTopLeft = -500,
+                QStatusBar* statusBar = nullptr, int minSize = 0, int maxSize = 4000, int windowTopLeft = -500,
                 int windowBottomRight = 1001, int border = 0);
 
     ~TraceWidget();
@@ -133,7 +133,6 @@ public Q_SLOTS:
 
     /**Changes the color of the background.*/
     void changeBackgroundColor(const QColor &color);
-
     /**All the channels are now display either in a gradation of grey or in color.
   * @param grey true if the channels have to be displayed in grey false otherwise.
   */
@@ -176,7 +175,7 @@ public Q_SLOTS:
   * @param selectedMode new mode of drawing.
   * @param active true if the view is the active one, false otherwise.
   */
-    virtual void setMode(BaseFrame::Mode selectedMode,bool active);
+    virtual void setMode(BaseFrame::Mode selectedMode,bool active) override;
 
     /**
   * Updates the list of channels shown with @p channelsToShow.
@@ -257,7 +256,7 @@ public Q_SLOTS:
     void setGains(int gain,int acquisitionGain){view.setGains(gain,acquisitionGain);}
 
     /**Update the information presented in the view if need it.*/
-    void updateDrawing(){view.updateDrawing();}
+    void updateDrawing() {view.updateDrawing();}
 
     /**Update the TraceView.*/
     void updateContents(){view.update();}
@@ -502,7 +501,7 @@ public Q_SLOTS:
   * when the enclosing dockwidget is being closed.
   * Emits the parentDockBeingClosed signal.
   */
-    virtual void dockBeingClosed(){emit parentDockBeingClosed(this);}
+    virtual void dockBeingClosed() {emit parentDockBeingClosed(this);}
 
     /**Updates the display due to modification of clusters provided by the cluster provider identified
   * by @p name.
@@ -607,8 +606,7 @@ protected:
     /**The view responds to a key press event.
   * @param event key press event.
   */
-    void keyPressEvent(QKeyEvent* event);
-
+    void keyPressEvent(QKeyEvent* event) override;
 private:
     //Functions
 

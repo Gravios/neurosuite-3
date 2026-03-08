@@ -292,9 +292,8 @@ protected:
      */
     bool queryClose();
     
-    void customEvent (QEvent* event);
-    void closeEvent(QCloseEvent *event);
-    
+    void customEvent (QEvent* event) override;
+    void closeEvent(QCloseEvent *event) override;    
 private Q_SLOTS:
 
     void slotAbout();

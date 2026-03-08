@@ -619,7 +619,7 @@ int main(int argc,char *argv[]) {
 								}
 							}
 							// next spk detection in prev buffer or in cur one
-							else {
+							else if (prevBuffer_maxID[grp] >= 0) {
 								// end of last detected spike
 								maxEndSpike = prevBuffer_maxID[grp] 
 											+ (arguments.peakLength 
@@ -1533,7 +1533,8 @@ int lookForMax(const short *buf, const int start, const int stop, int &chanId,
 	} // for c
 	
 	if(!isMaxPeak) {
-		maxID = -1; // FIXME : to check !!!
+		maxID = -1; // No peak found in range — -1 is the "no peak" sentinel,
+		             // consistent with all callers (they check maxId[grp] != -1).
 	}
 	
 	return maxID;
@@ -1705,9 +1706,12 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 	else
 	{
 		arguments.isInputFileProvided = true;
-		arguments.inputFileName = new char[256];
-		strcpy(arguments.inputFileName,arguments.outputBaseFileName);
-		strcat(arguments.inputFileName,".fil");
+		{
+			size_t baseLen = strlen(arguments.outputBaseFileName);
+			arguments.inputFileName = new char[baseLen + 5]; // +4 for ".fil" +1 for NUL
+			memcpy(arguments.inputFileName, arguments.outputBaseFileName, baseLen);
+			memcpy(arguments.inputFileName + baseLen, ".fil", 5);
+		}
 	}
 	
 	// Make sure we get the correct arguments.

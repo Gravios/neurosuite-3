@@ -71,15 +71,15 @@ extern int nbUndo;
 KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool autoSave,int savingInterval)
     : clusterColorListUndoList(),clusterColorListRedoList(),modified(false),docUrl(),parent(parent),clusterPalette(clusterPalette),
     addedClustersUndoList(),addedClustersRedoList(),modifiedClustersUndoList(),modifiedClustersRedoList()
-  ,autoSave(autoSave),savingInterval(savingInterval),tracesProvider(0L),clustersProvider(0L),channelColorList(0L)
+  ,autoSave(autoSave),savingInterval(savingInterval),tracesProvider(nullptr),clustersProvider(nullptr),channelColorList(nullptr)
 {
     viewList = new QList<KlustersView*>();
-    clusterColorList = 0L;
-    addedClusters = 0L;
-    modifiedClusters = 0L;
-    deletedClusters = 0L;
+    clusterColorList = nullptr;
+    addedClusters = nullptr;
+    modifiedClusters = nullptr;
+    deletedClusters = nullptr;
     endAutoSaving = false;
-    autoSaveThread = 0L;
+    autoSaveThread = nullptr;
 }
 
 KlustersDoc::~KlustersDoc(){
@@ -87,7 +87,7 @@ KlustersDoc::~KlustersDoc(){
 
     delete viewList;
 
-    if(clusterColorList != 0L){
+    if(clusterColorList != nullptr){
         delete clusteringData;
         delete clusterColorList;
         delete addedClusters;
@@ -96,17 +96,17 @@ KlustersDoc::~KlustersDoc(){
     }
 
     //If an autoSaveThread exists and has not finish, wait until it is done
-    if(autoSave && autoSaveThread != 0L){
+    if(autoSave && autoSaveThread != nullptr){
         if(!autoSaveThread->isRunning()){
             autoSaveThread->removeTmpFile();
             delete autoSaveThread;
-            autoSaveThread = 0L;
+            autoSaveThread = nullptr;
         }
         else{
             endAutoSaving = true;
             while(!autoSaveThread->wait()){};
             //Wait that the customEvent has process the AutoSaveEvent and deleted the autoSaveThread
-            while(autoSaveThread != 0L){};
+            while(autoSaveThread != nullptr){};
         }
     }
 }
@@ -196,28 +196,28 @@ void KlustersDoc::closeDocument(){
     clusterIdsOldNewMap.clear();
 
 
-    if(clusterColorList != 0L){
+    if(clusterColorList != nullptr){
         delete clusteringData;
-        clusteringData = 0L;
+        clusteringData = nullptr;
         delete clusterColorList;
-        clusterColorList = 0L;
+        clusterColorList = nullptr;
         delete addedClusters;
-        addedClusters = 0L;
+        addedClusters = nullptr;
         delete modifiedClusters;
-        modifiedClusters = 0L;
+        modifiedClusters = nullptr;
     }
     //Remove the temp files if any
     tmpCluFile.clear();
     tmpSpikeFile.clear();
 
     //Variables link to TraceView
-    if(channelColorList != 0L){
+    if(channelColorList != nullptr){
         delete channelColorList;
-        channelColorList = 0L;
+        channelColorList = nullptr;
         delete tracesProvider;
-        tracesProvider = 0L;
+        tracesProvider = nullptr;
         delete clustersProvider;
-        clustersProvider = 0L;
+        clustersProvider = nullptr;
     }
 
     displayChannelsGroups.clear();
@@ -234,7 +234,7 @@ bool KlustersDoc::importDocument(const QString &url, const char *format ){
     bool returnValue = true;
 
     //1 - Get the base name of the file
-    //2 - load the config information: Parse the XML config file, initialize clusteringData (loadConfigFromNewFormat())
+    //2 - load the config information: Parse the YAML config file, initialize clusteringData (loadConfigFromNewFormat())
     //3 - load the spikes, clusters, time and PCA information (loadDataFromNewFormat())
     return  returnValue;
 }
@@ -261,7 +261,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         return INCORRECT_FILE;
     baseName = fileParts[0];
 
-    for(uint i = 1;i < fileParts.count()-2; ++i)
+    for(qsizetype i = 1;i < fileParts.count()-2; ++i)
         baseName += "." + fileParts[i];
 
     electrodeGroupID = fileParts[fileParts.count()-1];
@@ -328,7 +328,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     if(xmlParFileInfo.exists()){
         tmpXmlParFile = xmlParFileUrl;
         isXmlParExist = true;
-        //Check if the generic parameter file also exist, if so, warn the user that the xml format parameter file will be used.
+        //Check if the generic parameter file also exist, if so, warn the user that the YAML parameter file will be used.
         QFileInfo parFileInfo(parFileUrl);
         if(parFileInfo.exists()){
             QApplication::restoreOverrideCursor();
@@ -522,11 +522,11 @@ void KlustersDoc::updateAutoSavingInterval(int interval){
 }
 
 bool KlustersDoc::stopAutoSaving(bool currentDocument){
-    if(autoSave && autoSaveThread != 0L){
+    if(autoSave && autoSaveThread != nullptr){
         if(!autoSaveThread->isRunning()){
             autoSaveThread->removeTmpFile();
             delete autoSaveThread;
-            autoSaveThread = 0L;
+            autoSaveThread = nullptr;
             if(!currentDocument) autoSave = false;
             endAutoSaving = true;
             return true;
@@ -551,10 +551,10 @@ void KlustersDoc::customEvent(QEvent *event){
     //The autoSaveThread has finish, it can be delete.
     if(event->type() == QEvent::User + 500){
         if(endAutoSaving){
-            if(autoSaveThread != 0L){
+            if(autoSaveThread != nullptr){
                 autoSaveThread->removeTmpFile();
                 delete autoSaveThread;
-                autoSaveThread = 0L;
+                autoSaveThread = nullptr;
             }
         }
         else{
@@ -602,7 +602,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         const QStringList fileParts = fileName.split(".", Qt::SkipEmptyParts);
         baseName = fileParts.first();
         if(fileParts.count() > 2)  {
-            for(uint i = 1;i < fileParts.count()-2; ++i){
+            for(qsizetype i = 1;i < fileParts.count()-2; ++i){
                 baseName += "." + fileParts.at(i);
             }
         }
@@ -852,7 +852,7 @@ void KlustersDoc::singleColorUpdate(int clusterId,KlustersView& activeView){
 }
 
 
-void KlustersDoc::shownClustersUpdate(QList<int> clustersToShow,KlustersView& activeView){
+void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersView& activeView){
     if(clusterColorList->isColorChanged()){
         //Notify all the views of the modification
 
@@ -878,7 +878,7 @@ void KlustersDoc::shownClustersUpdate(QList<int> clustersToShow,KlustersView& ac
     activeView.updateTraceView(electrodeGroupID,clusterColorList,true);
 }
 
-void KlustersDoc::shownClustersUpdate(QList<int> clustersToShow){
+void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){
     //Update the palette of cluster
     clusterPalette.selectItems(clustersToShow);
 
@@ -892,7 +892,7 @@ void KlustersDoc::shownClustersUpdate(QList<int> clustersToShow){
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);
 }
 
-void KlustersDoc::shownClustersUpdate(QList<int> clustersToShow,QList<int> previousSelectedClusterPairs){
+void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,const QList<int>& previousSelectedClusterPairs){
     //Get the clusters currently selected
     QList<int> currentShownClusters = clusterPalette.selectedClusters();
 
@@ -914,7 +914,7 @@ void KlustersDoc::shownClustersUpdate(QList<int> clustersToShow,QList<int> previ
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);
 }
 
-void KlustersDoc::showAllClustersExcept(QList<int> clustersToHide){
+void KlustersDoc::showAllClustersExcept(const QList<int>& clustersToHide){
 
     QList<dataType> clusterList = clusteringData->clusterIds();
     QList<int> clustersToShow;
@@ -937,7 +937,7 @@ void KlustersDoc::showAllClustersExcept(QList<int> clustersToHide){
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);
 }
 
-void KlustersDoc::addClustersToActiveView(QList<int> clustersToShow){
+void KlustersDoc::addClustersToActiveView(const QList<int>& clustersToShow){
     //Get the clusters currently selected
     QList<int> currentShownClusters = clusterPalette.selectedClusters();
 
@@ -2423,7 +2423,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const Data& d         = data();
     const int   nChan     = d.nbOfChannels();
     const int   nSamp     = d.nbSamplesPerWaveform();
-    const int   peakSamp  = d.peakSampleIndex(); // 1-based (XML value)
+    const int   peakSamp  = d.peakSampleIndex(); // 1-based index from .par.N / parameter file
     const int   peakSamp0 = peakSamp - 1;        // 0-based waveform index
     const int   timeDim   = d.timeDimension();  // = nDimensions from .fet header
     const int   nFeatCols = timeDim - 1;        // feature columns, last col is ts
@@ -2438,7 +2438,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     int   nIter     = 2;
     {
         const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        for (int ti = 0; ti < tokens.size(); ++ti) {
+        for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
             const QString& tok = tokens[ti];
             if ((tok == QStringLiteral("--threshold") || tok == QStringLiteral("-t"))
                     && ti + 1 < tokens.size()) {
@@ -2946,6 +2946,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             const dataType spikeRow =
                 static_cast<dataType>(
                     gidx[static_cast<size_t>(csIdx)] + 1);  // 1-based
+            Q_ASSERT_X(clusteringData->isValidSpikeIndex(spikeRow),
+                       "featureValue", "spikeRow out of range");
             for (int col = 0; col < nFeatCols; ++col)
                 row[static_cast<size_t>(col)] =
                     static_cast<int64_t>(

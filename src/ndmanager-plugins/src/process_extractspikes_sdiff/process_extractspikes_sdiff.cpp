@@ -638,9 +638,12 @@ void parseArgs(int argc, char **argv, arguments &a)
     a.outputBaseFileName = argv[i];
     a.isOutputBaseFileProvided = true;
     a.isInputFileProvided      = true;
-    a.inputFileName = new char[strlen(argv[i]) + 8];
-    strcpy(a.inputFileName, argv[i]);
-    strcat(a.inputFileName, ".fil");
+    {
+        size_t baseLen = strlen(argv[i]);
+        a.inputFileName = new char[baseLen + 5]; // +4 for ".fil" +1 for NUL
+        memcpy(a.inputFileName, argv[i], baseLen);
+        memcpy(a.inputFileName + baseLen, ".fil", 5);
+    }
 
     bool ok = true;
     if(!a.isTotalChannelNumberProvided) { cerr<<"error: missing -n\n"; ok=false; }

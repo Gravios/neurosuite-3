@@ -38,7 +38,7 @@
 #include <QList>
 #include <QDebug>
 
-//kde include files
+// (no KDE includes; Qt6-only build)
 
 
 #include <iomanip> // Required for formated I/O.
@@ -94,7 +94,7 @@ MinMaxThread* Data::minMaxCalculator(){
 bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformation){
 
     // Helper lambda to load fields from any reader that exposes the
-    // KlustersXmlReader-compatible API (both XML and YAML readers do).
+    // KlustersYamlReader-compatible API (both KlustersYamlReader and SessionYamlReader).
     auto loadFromReader = [&](auto& reader) -> bool {
         nbBits = reader.getResolution();
         samplingRate = reader.getSamplingRate();
@@ -120,25 +120,35 @@ bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformati
     };
 
     const QString filePath = parFile.fileName();
+    const bool isYaml = filePath.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
+                     || filePath.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
+
     bool parsed = false;
-    {
+    if (isYaml) {
         KlustersYamlReader reader;
         if (reader.parseFile(filePath))
             parsed = loadFromReader(reader);
+    } else {
+        // Legacy XML parameter files (.xml) are not supported in neurosuite-3.
+        // Convert to YAML using the migration tool or open the .yaml file directly.
+        errorInformation = QObject::tr(
+            "Legacy XML parameter files are not supported. "
+            "Please use the YAML parameter file (.yaml) instead.");
+        return false;
     }
 
     if (!parsed) {
-        errorInformation = QObject::tr("The parameter file (base.xml) could not be parsed.");
+        errorInformation = QObject::tr("The parameter file could not be parsed.");
         return false;
     }
 
     // Validate that required fields were present
     if(nbBits == 0){
-        errorInformation = QObject::tr("In the parameter file (base.xml), the number of bits is missing.");
+        errorInformation = QObject::tr("In the parameter file, the number of bits is missing.");
         return false;
     }
     if(samplingRate == 0){
-        errorInformation = QObject::tr("In the parameter file (base.xml), the sampling rate is missing.");
+        errorInformation = QObject::tr("In the parameter file, the sampling rate is missing.");
         return false;
     }
     if(currentChannels.isEmpty()){
@@ -146,19 +156,19 @@ bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformati
         return false;
     }
     if(nbChannels == 0){
-        errorInformation = QObject::tr("In the parameter file (base.xml), the number of channels could not be determined.");
+        errorInformation = QObject::tr("In the parameter file, the number of channels could not be determined.");
         return false;
     }
     if(nbSamplesInWaveform == 0){
-        errorInformation = QObject::tr("In the parameter file (base.xml), the number of samples per waveform is missing.");
+        errorInformation = QObject::tr("In the parameter file, the number of samples per waveform is missing.");
         return false;
     }
     if(peakPositionInWaveform == 0){
-        errorInformation = QObject::tr("In the parameter file (base.xml), the position of the waveform peak is missing.");
+        errorInformation = QObject::tr("In the parameter file, the position of the waveform peak is missing.");
         return false;
     }
     if(nbFeaturesbyChannel == 0){
-        errorInformation = QObject::tr("In the parameter file (base.xml), the number of features per channel is missings.");
+        errorInformation = QObject::tr("In the parameter file, the number of features per channel is missing.");
         return false;
     }
 
@@ -180,7 +190,7 @@ bool Data::configure(QFile& parXFile,QFile& parFile,QString& errorInformation){
         parXData.append(line.split(" ",Qt::SkipEmptyParts));
         lineCounter ++;
     }
-    //The parX file has to contain at leat 9 lines, otherwise there is a problem
+    //The parX file must contain exactly 9 lines; fewer or more indicates a corrupt/unsupported format.
     if(lineCounter != 9){
         errorInformation = QObject::tr("In the general parameter file (base.par), the number of lines should be 9.");
         return false;
@@ -212,7 +222,7 @@ bool Data::configure(QFile& parXFile,QFile& parFile,QString& errorInformation){
         lineCounter ++;
     }
 
-    //The par file has to contain at leat 3 lines, otherwise there is a problem
+    //The par file must contain at least 3 lines, otherwise there is a problem
     if(lineCounter < 3){
         errorInformation = QObject::tr("In the specific parameter file (base.par.n), there are less than 3 lines.");
         return false;
@@ -252,9 +262,10 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
     }
 
     int32_t nClu = 0;
-    if (fread(&nClu, sizeof(int32_t), 1, f) != 1) {
+    if (fread(&nClu, sizeof(int32_t), 1, f) != 1 || nClu < 0 || nClu > 65536) {
         fclose(f);
-        errorInformation = QObject::tr("Cannot read .clu header from: %1").arg(path);
+        errorInformation = QObject::tr("Invalid or missing .clu header (nClusters=%1) in: %2")
+            .arg(nClu).arg(path);
         return false;
     }
 
@@ -292,9 +303,10 @@ bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
     }
 
     int32_t nDim = 0;
-    if (fread(&nDim, sizeof(int32_t), 1, f) != 1 || nDim <= 0) {
+    if (fread(&nDim, sizeof(int32_t), 1, f) != 1 || nDim <= 0 || nDim > 65536) {
         fclose(f);
-        errorInformation = QObject::tr("Cannot read .fet header from: %1").arg(path);
+        errorInformation = QObject::tr("Invalid or missing .fet header (nDimensions=%1) in: %2")
+            .arg(nDim).arg(path);
         return false;
     }
     nbDimensions = static_cast<int>(nDim);
@@ -458,7 +470,7 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,Q
         index += iterator.value();
     }
 
-    //Reset the clusterUserInformationMap which only ne used from now on to store the information before writting it to the xml parameter file.
+    //Reset the clusterUserInformationMap, which is only needed to store the information before writing it to the YAML parameter file.
     clusterUserInformationMap.clear();
 
     //Fill tmp with the data sorted by cluster and by time (<=> position in the fet file)
@@ -473,7 +485,7 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,Q
 
     //Delete spikesByCluster and assign to the pointer the value of spikesByClusterTemp;
     delete spikesByCluster;
-    spikesByCluster = 0L;
+    spikesByCluster = nullptr;
     spikesByCluster =  spikesByClusterTemp;
 
 
@@ -579,7 +591,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkFi
     return true;
 }
 
-void Data::minMaxDimensionCalculation(QList<int> modifiedClusters){
+void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
     //If an undo or redo has started or the cluster 0 has been changed again, do not do any calculation, it will be done on the new data.
     if(undoRedoInProcess || clusterZeroJustModified) return;
 
@@ -587,13 +599,14 @@ void Data::minMaxDimensionCalculation(QList<int> modifiedClusters){
     //access them at the time.
     ClusterInfoMap clusterInfoMapTemp;
     ClusterInfoMap::Iterator iterator;
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     SortableTable spikesByClusterTemp(*spikesByCluster);
 
     for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
         clusterInfoMapTemp.insert(iterator.key(),iterator.value());
     }
-    mutex.unlock();
+    }
 
     Array<dataType> dimensionMaximaTemp(nbDimensions,1);
     Array<dataType> dimensionMinimaTemp(nbDimensions,1);
@@ -637,7 +650,7 @@ void Data::minMaxDimensionCalculation(QList<int> modifiedClusters){
             dataType lastPosition =  firstSpikePosition + nbSpikesOfCluster;
 
             for(dataType i = firstSpikePosition; i < (lastPosition);++i){
-                dataType spikePosition = spikesByClusterTemp(1,i);
+                dataType spikePosition = (*spikesByCluster)(1,i);
                 dataType currentSpike = features(spikePosition,dimension);
 
                 if(currentSpike < min){
@@ -660,21 +673,21 @@ void Data::minMaxDimensionCalculation(QList<int> modifiedClusters){
         clustersGivingMaximum[dimension - 1] = clusterIdMax;
     }
 
-    //The time is done seperatly because the minimum is the first spike and the maximun the last spike
+    //The time dimension is handled separately: minimum = first spike timestamp, maximum = last spike timestamp.
     dimensionMinimaTemp(nbDimensions,1) = features(1,nbDimensions);
     dimensionMaximaTemp(nbDimensions,1) = features(nbSpikes,nbDimensions);
 
     //Update dimensionMinima and dimensionMaxima
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     dimensionMaxima.setSize(nbDimensions,1);
     dimensionMinima.setSize(nbDimensions,1);
     for(int i = 1; i<=nbDimensions;++i){
         dimensionMinima(i,1) = dimensionMinimaTemp(i,1);
         dimensionMaxima(i,1) = dimensionMaximaTemp(i,1);
     }
-    mutex.unlock();
+    }
 
-    qDebug() << "in minMaxDimensionCalculation end";
 
 }
 
@@ -818,7 +831,8 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
         // and the thread will remove it.
         QList<int>::iterator iterator;
         for(iterator = fromClusters.begin(); iterator != fromClusters.end(); ++iterator){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*iterator)){
                 if(!waveformStatusMap[*iterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -831,12 +845,13 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
                     waveformStatusMap.insert(*iterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-                mutex.unlock();
+                }
             }
         }
 
@@ -1041,7 +1056,8 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
         QMap<int,int>::Iterator fromToNewClusterIdsIterator;
         for(fromToNewClusterIdsIterator = fromToNewClusterIds.begin(); fromToNewClusterIdsIterator != fromToNewClusterIds.end(); ++fromToNewClusterIdsIterator){
             int clusterId = fromToNewClusterIdsIterator.key();
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(clusterId)){
                 if(!waveformStatusMap[clusterId].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
@@ -1054,12 +1070,13 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
                     waveformStatusMap.insert(clusterId,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(clusterId))) cleanCorrelation(static_cast<dataType>(clusterId),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(clusterId),true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -1274,7 +1291,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
             clusterInfoMapTemp->insert(clusterId,ClusterInfo(lowerInsertionIndex,nbSpikesOfCluster,structure,type,iD,quality,notes));
         }
         //Now deal with the clusters which may contain spikes to add to the new cluster
-        //<=> spike in the region. Look up the spikes staring from the last one.
+        //<=> spike in the region. Look up the spikes starting from the last one.
         else{
             dataType newNbSpikesOfCluster = nbSpikesOfCluster;
             dataType lastPosition =  firstSpikePosition - 1;
@@ -1362,7 +1379,8 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
         // and the thread will remove it.
         QList<int>::iterator iterator;
         for(iterator = fromClusters.begin(); iterator != fromClusters.end(); ++iterator){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*iterator)){
                 if(!waveformStatusMap[*iterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -1375,12 +1393,13 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
                     waveformStatusMap.insert(*iterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -1464,7 +1483,7 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
 
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
-    while(!minMaxThread->wait()){qDebug()<<"wait for minMaxThread to finish";};
+    while(!minMaxThread->wait()){};
     //Reset the flag to false so the minMaxThread can do the computation
     clusterZeroJustModified = false;
     minMaxThread->setModifiedClusters(clustersToDelete);
@@ -1475,7 +1494,8 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     // and the thread will remove it.
     QList<int>::iterator iterator;
     for(iterator = clustersToDelete.begin(); iterator != clustersToDelete.end(); ++iterator){
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         if(waveformStatusMap.contains(*iterator)){
             if(!waveformStatusMap[*iterator].isInProcess()){
                 delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -1488,12 +1508,13 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
                 waveformStatusMap.insert(*iterator,waveformStatusCopy);
             }
         }
-        mutex.unlock();
+        }
         if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-            mutex.unlock();
+            }
         }
     }
 
@@ -1501,7 +1522,8 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     //and if there is not a thread working with it, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
     // and the thread will remove it.
     if(!clustersToDelete.empty()){
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         if(!waveformStatusMap[0].isInProcess()){
             delete waveformDict.take("0");
             waveformStatusMap.remove(0);
@@ -1512,12 +1534,13 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
             waveformStatusCopy.setClusterModified(true);
             waveformStatusMap.insert(0,waveformStatusCopy);
         }
-        mutex.unlock();
+        }
         if(!correlationsInProcess.contains(0)) cleanCorrelation(0,currentClusterList);
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.setClusterModified(0,true);
-            mutex.unlock();
+            }
         }
     }
 }
@@ -1623,7 +1646,7 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
     if(dimChanged){
-        while(!minMaxThread->wait()){qDebug()<<"wait for minMaxThread to finish"; };
+        while(!minMaxThread->wait()){};
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         QList<int> modifiedClusters;
@@ -1637,7 +1660,8 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     // and the thread will remove it.
     QList<int>::iterator iterator;
     for(iterator = clustersToDelete.begin(); iterator != clustersToDelete.end(); ++iterator){
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         if(waveformStatusMap.contains(*iterator)){
             if(!waveformStatusMap[*iterator].isInProcess()){
                 delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -1650,12 +1674,13 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
                 waveformStatusMap.insert(*iterator,waveformStatusCopy);
             }
         }
-        mutex.unlock();
+        }
         if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-            mutex.unlock();
+            }
         }
     }
 
@@ -1663,7 +1688,8 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //and if there is not a thread working with it, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
     // and the thread will remove it.
     if(!clustersToDelete.empty()){
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         if(!waveformStatusMap[1].isInProcess()){
             delete waveformDict.take("1");
             waveformStatusMap.remove(1);
@@ -1674,12 +1700,13 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
             waveformStatusCopy.setClusterModified(true);
             waveformStatusMap.insert(1,waveformStatusCopy);
         }
-        mutex.unlock();
+        }
         if(!correlationsInProcess.contains(1)) cleanCorrelation(1,currentClusterList);
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.setClusterModified(1,true);
-            mutex.unlock();
+            }
         }
     }
 }
@@ -1812,7 +1839,8 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     QList<int>::iterator clustersToGroupIterator;
     for(clustersToGroupIterator = clustersToGroup.begin(); clustersToGroupIterator != clustersToGroup.end(); ++clustersToGroupIterator){
 
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         if(waveformStatusMap.contains(*clustersToGroupIterator)){
             if(!waveformStatusMap[*clustersToGroupIterator].isInProcess()){
                 delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToGroupIterator));
@@ -1825,13 +1853,14 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
                 waveformStatusMap.insert(*clustersToGroupIterator,waveformStatusCopy);
             }
         }
-        mutex.unlock();
+        }
 
         if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToGroupIterator))) cleanCorrelation(static_cast<dataType>(*clustersToGroupIterator),currentClusterList);
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToGroupIterator),true);
-            mutex.unlock();
+            }
         }
     }
 
@@ -1849,10 +1878,11 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
     //keeps it in sync with the two data lists.
     dimensionChangedUndo.prepend(dimensionChanged);
 
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     clusterInfoMap = clusterInfoMapTemp;
     spikesByCluster = spikesByClusterTemp;
-    mutex.unlock();
+    }
 
     //if the number of undo has been reached, remove the oldest element from all three lists
     int currentNbUndo = spikesByClusterUndoList.count();
@@ -1962,7 +1992,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     //Inform that an undo is in process
     undoRedoInProcess = true;
 
-    qDebug()<<"in Data::undo 1";
 
     //Get the list of clusters before applying the changes, this will be used in the clean
     //of the correlation.
@@ -1976,8 +2005,8 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = addedClusters.begin(); clustersToRemoveIterator != addedClusters.end(); ++clustersToRemoveIterator){
 
-            qDebug()<<"in Data::undo addedClusters.size() > 0, *clustersToRemoveIterator: "<<*clustersToRemoveIterator;
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
                 if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
@@ -1990,16 +2019,16 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
                     waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
-            qDebug()<<"in Data::undo addedClusters.size() > 0, *clustersToRemoveIterator: "<<*clustersToRemoveIterator<<", correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator): "<<correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator));
+            }
 
 
 
             if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -2007,9 +2036,9 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = updatedClusters.begin(); clustersToRemoveIterator != updatedClusters.end(); ++clustersToRemoveIterator){
 
-            qDebug()<<"in Data::undo updatedClusters.size() > 0, *clustersToRemoveIterator: "<<*clustersToRemoveIterator;
 
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
                 if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
@@ -2022,31 +2051,32 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
                     waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                mutex.unlock();
+                }
             }
         }
     }
 
     //if addedClusters and updatedClusters are both empty, the undo concern the renumbering
-    //Can not do much, all the data will have to be reloaded (it shoud not happen very often)
+    //Can not do much, all the data will have to be reloaded (it should not happen very often)
     if(addedClusters.isEmpty() && updatedClusters.isEmpty()){
         //Gets all the clustersId currently available
         QList<dataType> clusters = clusterIds();
 
-        //Loop on all the clusters and delete the linke information if possible (if a thread is not
-        //working with it) otherwise, modify the status so the thread will be delete the onformation.
+        //Loop on all the clusters and delete the linked information if possible (if a thread is not
+        //working with it), otherwise modify the status so the thread will delete the information.
         QList<dataType>::iterator iterator;
         for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
 
-            qDebug()<<"in Data::undo addedClusters.isEmpty() && updatedClusters.isEmpty(), *iterator: "<<*iterator;
 
 
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(static_cast<int>(*iterator))){
                 if(!waveformStatusMap[static_cast<int>(*iterator)].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -2059,12 +2089,13 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
                     waveformStatusMap.insert(static_cast<int>(*iterator),waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(*iterator)) cleanCorrelation(*iterator,clusters);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(*iterator,true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -2079,22 +2110,20 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         spikesByClusterRedoList.prepend(spikesByCluster);
         SortableTable* spikesByClusterTemp = spikesByClusterUndoList.takeAt(0);
 
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         clusterInfoMap =  clusterInfoMapTemp;
 
-        qDebug()<<"in Data::undo 2, clusterInfoMap updated";
 
         spikesByCluster =  spikesByClusterTemp;
 
-        mutex.unlock();
+        }
 
-        qDebug()<<"in Data::undo 3, spikesByCluster updated";
 
         //If the last action implied a changed of the dimension, change the dimension again
         bool dimChanged = !dimensionChangedUndo.isEmpty() && dimensionChangedUndo.takeFirst();
         if(dimChanged){
 
-            qDebug()<<"in Data::undo dimensionChangedUndo[0] == true";
 
             //If the minMaxThread has not finish, wait until it is done
             while(!minMaxThread->wait()){};
@@ -2112,7 +2141,6 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
             dimensionChangedRedo.prepend(false);
         }
     }
-    qDebug()<<"in Data::undo end";
 }
 
 
@@ -2129,7 +2157,8 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     if(!addedClusters.isEmpty() ){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = addedClusters.begin(); clustersToRemoveIterator != addedClusters.end(); ++clustersToRemoveIterator){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
                 if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
@@ -2142,12 +2171,13 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
                     waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -2155,7 +2185,8 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     if(updatedClusters.size() > 0){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = updatedClusters.begin(); clustersToRemoveIterator != updatedClusters.end(); ++clustersToRemoveIterator){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
                 if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
@@ -2168,12 +2199,13 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
                     waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -2181,7 +2213,8 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     if(!deletedClusters.isEmpty()){
         QList<int>::iterator clustersToRemoveIterator;
         for(clustersToRemoveIterator = deletedClusters.begin(); clustersToRemoveIterator != deletedClusters.end(); ++clustersToRemoveIterator){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(*clustersToRemoveIterator)){
                 if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
@@ -2194,28 +2227,30 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
                     waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                mutex.unlock();
+                }
             }
         }
     }
 
 
     //if addedClusters and updatedClusters are both empty, the undo concern the renumbering
-    //Can do much, all the data will have to be reloaded (it shoud not happen very often)
+    //Can not do much, all the data will have to be reloaded (it should not happen very often)
     if(addedClusters.isEmpty() && updatedClusters.isEmpty()){
         //Gets all the clustersId currently available
         QList<dataType> clusters = clusterIds();
 
-        //Loop on all the clusters and delete the linke information if possible (if a thread is not
-        //working with it) otherwise, modify the status so the thread will be delete the onformation.
+        //Loop on all the clusters and delete the linked information if possible (if a thread is not
+        //working with it), otherwise modify the status so the thread will delete the information.
         QList<dataType>::iterator iterator;
         for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(static_cast<int>(*iterator))){
                 if(!waveformStatusMap[static_cast<int>(*iterator)].isInProcess()){
                     delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -2228,12 +2263,13 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
                     waveformStatusMap.insert(static_cast<int>(*iterator),waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
             if(!correlationsInProcess.contains(*iterator)) cleanCorrelation(*iterator,clusters);
             else{
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 correlationsInProcess.setClusterModified(*iterator,true);
-                mutex.unlock();
+                }
             }
         }
     }
@@ -2247,10 +2283,11 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
         spikesByClusterUndoList.prepend(spikesByCluster);
         SortableTable* spikesByClusterTemp = spikesByClusterRedoList.takeAt(0);
 
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         clusterInfoMap =  clusterInfoMapTemp;
         spikesByCluster =  spikesByClusterTemp;
-        mutex.unlock();
+        }
 
         //If the last redo implied a changed of the dimension, change the dimension again
         bool dimChanged = !dimensionChangedRedo.isEmpty() && dimensionChangedRedo.takeFirst();
@@ -2334,7 +2371,8 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
             //Insert the new cluster id in the second row.
             for(long i = 0; i<nbSpikesOfCluster;++i) (*spikesByClusterTemp)(2,firstSpikePosition + i) = clusterNumber;
             //If waveformDict or correlationDict contain that cluster, change the key for it.
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             if(waveformStatusMap.contains(static_cast<int>(clusterId))){
                 if(!waveformStatusMap[static_cast<int>(clusterId)].isInProcess()){
                     Waveforms* waveforms = waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
@@ -2350,7 +2388,7 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
                     waveformStatusMap.insert(static_cast<int>(clusterId),waveformStatusCopy);
                 }
             }
-            mutex.unlock();
+            }
         }
         //Construct the new clusterInfoMap
         clusterInfoMapTemp->insert(clusterNumber,ClusterInfo(firstSpikePosition,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
@@ -2376,12 +2414,14 @@ bool Data::saveClusters(FILE* clusterFile)
     //   int32_t  nClusters
     //   nSpikes x int32_t  cluster ids in timestamp order
 
-    mutex.lock();
-    SortableTable spikesByClusterTemp(*spikesByCluster);
+    SortableTable spikesByClusterTemp(0,0);
     ClusterInfoMap clusterInfoMapTemp;
-    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it)
-        clusterInfoMapTemp.insert(it.key(), it.value());
-    mutex.unlock();
+    {
+        QMutexLocker lk(&mutex);
+        spikesByClusterTemp = *spikesByCluster;
+        for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it)
+            clusterInfoMapTemp.insert(it.key(), it.value());
+    }
 
     int32_t nClusters = (int32_t)clusterInfoMapTemp.count();
     if (fwrite(&nClusters, sizeof(int32_t), 1, clusterFile) != 1) return false;
@@ -2394,7 +2434,6 @@ bool Data::saveClusters(FILE* clusterFile)
         if (fwrite(&id, sizeof(int32_t), 1, clusterFile) != 1) return false;
     }
 
-    qDebug() << "save clu file (binary):" << Timer();
     return true;
 }
 
@@ -2402,10 +2441,9 @@ bool Data::saveClusters(FILE* clusterFile)
 bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
 
     //Lock the mutex to protect the changes as a whole, including the initial contains check.
-    mutex.lock();
+    QMutexLocker lk(&mutex);
 
     if(!clusterInfoMap->contains(static_cast<dataType>(clusterId))){
-        mutex.unlock();
         return false;
     }
 
@@ -2414,7 +2452,6 @@ bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
     dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
 
     spikesByCluster->subset(subsetTable,1,firstSpikePosition,firstSpikePosition + nbSpikesOfCluster - 1);
-    mutex.unlock();
 
     return true;
 }
@@ -2422,14 +2459,12 @@ bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
 bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
     // Like spikePositions() but atomically also checks isClusterModified().
     // Returns false if the cluster is gone OR has been flagged as modified.
-    mutex.lock();
+    QMutexLocker lk(&mutex);
 
     if(!clusterInfoMap->contains(static_cast<dataType>(clusterId))){
-        mutex.unlock();
         return false;
     }
     if(waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified()){
-        mutex.unlock();
         return false;
     }
 
@@ -2438,7 +2473,6 @@ bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
     dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
 
     spikesByCluster->subset(subsetTable,1,firstSpikePosition,firstSpikePosition + nbSpikesOfCluster - 1);
-    mutex.unlock();
 
     return true;
 }
@@ -2448,9 +2482,11 @@ bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
 Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay){
     //If the cluster has been suppress after the thread calling this function has been launched
     //return this information that the data are not available.
-    mutex.lock();
-    bool clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    mutex.unlock();
+    bool clusterExists = false;
+    {
+        QMutexLocker lk(&mutex);
+        clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    }
     if(!clusterExists) return NOT_AVAILABLE;
 
     //Take a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
@@ -2464,12 +2500,15 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
     // Hold the mutex across the status check AND waveformDict lookup together.
     // Without this, the main thread can delete waveformDict[key] between our status
     // check and the pointer dereference, causing a use-after-free crash.
-    mutex.lock();
-    bool alreadyProcessed = waveformStatusMap.contains(clusterId);
-    Status statusLocked = alreadyProcessed ? waveformStatusMap[clusterId].sampleStatus() : NOT_AVAILABLE;
-    if(alreadyProcessed && statusLocked != IN_PROCESS)
-        waveforms = waveformDict[clusterIdString];
-    mutex.unlock();
+    bool alreadyProcessed = false;
+    Status statusLocked = NOT_AVAILABLE;
+    {
+        QMutexLocker lk(&mutex);
+        alreadyProcessed = waveformStatusMap.contains(clusterId);
+        statusLocked = alreadyProcessed ? waveformStatusMap[clusterId].sampleStatus() : NOT_AVAILABLE;
+        if(alreadyProcessed && statusLocked != IN_PROCESS)
+            waveforms = waveformDict[clusterIdString];
+    }
 
     if(alreadyProcessed){
         Status status = statusLocked;
@@ -2477,35 +2516,39 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         //status == READY with the same number of spikes to present
         if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
         //status == READY with a different number of spikes to present, recollect the data
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap[clusterId].setSampleStatus(IN_PROCESS);
-        mutex.unlock();
+        }
         //Check if there is not a mean calculation in process; if so, wait until it finishes.
         //Use a mutex-protected check to avoid racing with main-thread removal of the entry.
         {
             bool stillInProcess = true;
             while(stillInProcess){
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 stillInProcess = waveformStatusMap.contains(clusterId) &&
                                  (waveformStatusMap[clusterId].sampleMeanStatus() == IN_PROCESS);
-                mutex.unlock();
+                }
                 if(stillInProcess) QThread::yieldCurrentThread();
             }
         }
         //check if the cluster has not been removed while the mean function was running
         //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
         if(!waveformStatusMap.contains(clusterId)) return NOT_AVAILABLE;
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
-        mutex.unlock();
+        }
 
         //Check again that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
         if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
             waveformStatusMap.remove(clusterId);
-            mutex.unlock();
+            }
             return NOT_AVAILABLE;
         }
         waveforms->setNbOfSpikesAsked(nbSpkToDisplay);
@@ -2514,19 +2557,21 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         waveforms->setSize(nbSpikesOfCluster,SAMPLE);
     }
     else{
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap.insert(clusterId,WaveformStatus(IN_PROCESS));
-        mutex.unlock();
+        }
         if(isTwoBytesRecording) waveforms = new WaveformData<short>(*this);
         else waveforms = new WaveformData<long>(*this);
 
         //Check that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
         if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
             waveformStatusMap.remove(clusterId);
-            mutex.unlock();
+            }
             return NOT_AVAILABLE;
         }
 
@@ -2540,7 +2585,8 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
 
     FILE* spikeFile = fopen(qPrintable(spkFileName),"r");
     if(spikeFile == nullptr){
-        // OPEN_ERROR;  ///The openning pb has to be taken into account
+        qCritical() << "getSampleWaveformPoints: cannot open spike file:" << spkFileName;
+        return NOT_AVAILABLE;
     }
 
     //read and store the data
@@ -2549,7 +2595,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
 
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
-    mutex.lock();
+    QMutexLocker lk(&mutex);
     bool clusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
     bool clusterMod  = !clusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
     if(clusterGone || clusterMod){
@@ -2558,14 +2604,12 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
             delete waveformDict.take(clusterIdString);  //not already done by the function which modified the data as the thread is running.
             waveformStatusMap.remove(clusterId);
         }
-        mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
         //Store the information in waveformStatusMap
         if(waveformStatusMap.contains(clusterId))
             waveformStatusMap[clusterId].setSampleStatus(READY);
-        mutex.unlock();
         return READY;
     }
 }
@@ -2573,9 +2617,11 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
 Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataType end){
     //If the cluster has been suppress after the thread calling this function has been launched
     //return this information that the data are not available.
-    mutex.lock();
-    bool clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    mutex.unlock();
+    bool clusterExists = false;
+    {
+        QMutexLocker lk(&mutex);
+        clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    }
     if(!clusterExists) return NOT_AVAILABLE;
 
     //Take all the spikes in a given time frame
@@ -2591,11 +2637,13 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
     if(waveformStatusMap.contains(clusterId)){
         // Hold the mutex across status check AND waveformDict lookup to prevent
         // main thread deleting the Waveforms* between our check and our dereference.
-        mutex.lock();
-        Status status = waveformStatusMap[clusterId].timeFrameStatus();
-        if(status != IN_PROCESS)
-            waveforms = waveformDict[clusterIdString];
-        mutex.unlock();
+        Status status = NOT_AVAILABLE;
+        {
+            QMutexLocker lk(&mutex);
+            status = waveformStatusMap[clusterId].timeFrameStatus();
+            if(status != IN_PROCESS)
+                waveforms = waveformDict[clusterIdString];
+        }
         if(status == IN_PROCESS)return IN_PROCESS;
         dataType timeEndIndex = waveforms->indexOfTimeEnd();
         dataType timeStart = waveforms->startTime();
@@ -2603,34 +2651,38 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
 
         //status == READY with the time frame
         if(timeStart == start && timeEnd == end && status == READY) return READY;
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap[clusterId].setTimeFrameStatus(IN_PROCESS);
-        mutex.unlock();
+        }
         //Check if there is not a mean calculation in process; wait under mutex to avoid racing with main-thread removal.
         {
             bool stillInProcess = true;
             while(stillInProcess){
-                mutex.lock();
+                {
+                    QMutexLocker lk(&mutex);
                 stillInProcess = waveformStatusMap.contains(clusterId) &&
                                  (waveformStatusMap[clusterId].timeFrameMeanStatus() == IN_PROCESS);
-                mutex.unlock();
+                }
                 if(stillInProcess) QThread::yieldCurrentThread();
             }
         }
         //check if the cluster has not been removed while the mean function was running
         //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
         if(!waveformStatusMap.contains(clusterId)) return NOT_AVAILABLE;
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
-        mutex.unlock();
+        }
 
         //Check again that the cluster has not been removed or modifed and get the spikes positions in a one row SortableTable.
         if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
             waveformStatusMap.remove(clusterId);
-            mutex.unlock();
+            }
             return NOT_AVAILABLE;
         }
 
@@ -2643,19 +2695,21 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         if(start == timeEnd) currentSpikeIndex =  timeEndIndex;
     }
     else{
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap.insert(clusterId,WaveformStatus(NOT_AVAILABLE,IN_PROCESS));
-        mutex.unlock();
+        }
         if(isTwoBytesRecording) waveforms = new WaveformData<short>(*this);
         else waveforms = new WaveformData<long>(*this);
 
         //Check that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
         if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             waveformStatusMap[clusterId].setClusterModified(false);
             delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
             waveformStatusMap.remove(clusterId);
-            mutex.unlock();
+            }
             return NOT_AVAILABLE;
         }
         //Get the spikes information
@@ -2679,7 +2733,8 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
 
     FILE* spikeFile = fopen(qPrintable(spkFileName),"r");
     if(spikeFile == nullptr){
-        // OPEN_ERROR;  ///The openning pb has to be taken into account
+        qCritical() << "getTimeFrameWaveformPoints: cannot open spike file:" << spkFileName;
+        return NOT_AVAILABLE;
     }
 
     //read and store the data
@@ -2689,7 +2744,7 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
 
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
-    mutex.lock();
+    QMutexLocker lk(&mutex);
     bool tfClusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
     bool tfClusterMod  = !tfClusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
     if(tfClusterGone || tfClusterMod){
@@ -2698,20 +2753,19 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
             delete waveformDict.take(clusterIdString); //if not already done by the function which modified the data
             waveformStatusMap.remove(clusterId);
         }
-        mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
-        mutex.unlock();
         //Store the information in waveforms and waveformStatusMap
         waveforms->setStartTime(start);
         waveforms->setEndTime(end);
         waveforms->setIndexOfTimeEnd(currentSpikeIndex);
 
         //Store the information in waveformStatusMap
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         waveformStatusMap[clusterId].setTimeFrameStatus(READY);
-        mutex.unlock();
+        }
         return READY;
     }
 }
@@ -2720,25 +2774,15 @@ template <class T>
 void Data::WaveformData<T>::setSize(dataType size,WaveformMode waveformMode){
     mode = waveformMode;
     if(mode == SAMPLE){
-        if(sampleSpikesTable) delete []sampleSpikesTable;
-        sampleSpikesTable = new T[size * nbPtsBySpike];
-        if(sampleMeanTable){
-            delete []sampleMeanTable;
-            sampleMeanTable = 0L;
-            delete []sampleStDeviationTable;
-            sampleStDeviationTable = 0L;
-        }
+        sampleSpikesTable.assign(static_cast<size_t>(size) * nbPtsBySpike, T{});
+        sampleMeanTable.clear();
+        sampleStDeviationTable.clear();
         nbSampleSpikes = 0;
     }
     else{
-        if(timeFrameSpikesTable) delete[]timeFrameSpikesTable;
-        timeFrameSpikesTable = new T[size * nbPtsBySpike];
-        if(timeFrameMeanTable){
-            delete []timeFrameMeanTable;
-            timeFrameMeanTable = 0L;
-            delete []timeFrameStDeviationTable;
-            timeFrameStDeviationTable = 0L;
-        }
+        timeFrameSpikesTable.assign(static_cast<size_t>(size) * nbPtsBySpike, T{});
+        timeFrameMeanTable.clear();
+        timeFrameStDeviationTable.clear();
         nbTimeFrameSpikes = 0;
     }
 }
@@ -2755,10 +2799,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             dataType currentSpikePosition = (positionOfSpikes(1,i) - 1) * nbPtsBySpike ;
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
-            size_t got = fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
-            if(got != static_cast<size_t>(nbPtsBySpike))
-                qWarning("WaveformData::read: short read at spike %lld (got %zu/%lld items)",
-                         static_cast<long long>(i), got, static_cast<long long>(nbPtsBySpike));
+            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
             position += nbPtsBySpike;
             ++nbSampleSpikes;
         }
@@ -2769,10 +2810,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         dataType currentSpikePosition = (positionOfSpikes(1,1) - 1) * nbPtsBySpike ;
         fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
         // copy the spikes into spikePoints.
-        { size_t got = fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile);
-          if(got != static_cast<size_t>(nbPtsBySpike))
-              qWarning("WaveformData::read: short read for single spike (got %zu/%lld items)",
-                       got, static_cast<long long>(nbPtsBySpike)); }
+        fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile);
         nbSampleSpikes = 1;
     }
     else{
@@ -2787,10 +2825,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             dataType currentSpikePosition = (positionOfSpikes(1,spkIndice) - 1) * nbPtsBySpike ;
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
-            size_t got = fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
-            if(got != static_cast<size_t>(nbPtsBySpike))
-                qWarning("WaveformData::read: short read at spike index %lld (got %zu/%lld items)",
-                         static_cast<long long>(spkIndice), got, static_cast<long long>(nbPtsBySpike));
+            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
             position += nbPtsBySpike;
             ++nbSampleSpikes;
             floatSpkIndice += factor;
@@ -2815,10 +2850,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         //go to the spike position
         fseeko64(spikeFile,startPositionInSpk,SEEK_SET);
         // copy the spikes into timeFrameSpikesTable.
-        size_t got = fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
-        if(got != static_cast<size_t>(nbPtsBySpike))
-            qWarning("WaveformData::read: short read in timeframe (got %zu/%lld items)",
-                     got, static_cast<long long>(nbPtsBySpike));
+        fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
         position += nbPtsBySpike;
         ++nbTimeFrameSpikes;
     }
@@ -2827,8 +2859,8 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
 template <class T>
 void Data::WaveformData<T>::calculateMean(WaveformMode waveformMode){
     if(waveformMode == SAMPLE){
-        sampleMeanTable = new T[data.nbSamplesInWaveform * data.nbChannels];
-        sampleStDeviationTable = new T[data.nbSamplesInWaveform * data.nbChannels];
+        sampleMeanTable.assign(static_cast<size_t>(data.nbSamplesInWaveform) * data.nbChannels, T{});
+        sampleStDeviationTable.assign(static_cast<size_t>(data.nbSamplesInWaveform) * data.nbChannels, T{});
         for(int i = 0; i < data.nbSamplesInWaveform; ++i){
             for(int j = 0; j < data.nbChannels; ++j){
                 dataType sum = 0;
@@ -2850,8 +2882,8 @@ void Data::WaveformData<T>::calculateMean(WaveformMode waveformMode){
         }
     }
     else{
-        timeFrameMeanTable = new T[data.nbSamplesInWaveform * data.nbChannels];
-        timeFrameStDeviationTable = new T[data.nbSamplesInWaveform * data.nbChannels];
+        timeFrameMeanTable.assign(static_cast<size_t>(data.nbSamplesInWaveform) * data.nbChannels, T{});
+        timeFrameStDeviationTable.assign(static_cast<size_t>(data.nbSamplesInWaveform) * data.nbChannels, T{});
         for(int i = 0; i < data.nbSamplesInWaveform; ++i){
             for(int j = 0; j < data.nbChannels; ++j){
                 dataType sum = 0;
@@ -2882,39 +2914,35 @@ Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
 
     //Does this cluster already processed?
     // Use mutex around both contains check and waveformDict lookup.
-    mutex.lock();
-    bool sampleExists = waveformStatusMap.contains(clusterId);
-    if(sampleExists){
-        Status status = waveformStatusMap[clusterId].sampleMeanStatus();
-        waveforms = waveformDict[clusterIdString];
-        mutex.unlock();
-        if(status == IN_PROCESS)return IN_PROCESS;
-        else if(waveforms->nbOfSpikesAsked() != nbSpkToDisplay) return NOT_AVAILABLE;
-        //status == READY with the same number of spikes to present
-        else if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
-        else{
-            if(waveformStatusMap[clusterId].sampleStatus() != READY) return NOT_AVAILABLE;
-            if(waveforms->nbOfSpikes(SAMPLE) == 0){
-                mutex.lock();
-                waveformStatusMap[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
-                mutex.unlock();
-                return READY;
+    {
+        QMutexLocker lk(&mutex);
+        bool sampleExists = waveformStatusMap.contains(clusterId);
+        if(sampleExists){
+            Status status = waveformStatusMap[clusterId].sampleMeanStatus();
+            waveforms = waveformDict[clusterIdString];
+            if(status == IN_PROCESS)return IN_PROCESS;
+            else if(waveforms->nbOfSpikesAsked() != nbSpkToDisplay) return NOT_AVAILABLE;
+            //status == READY with the same number of spikes to present
+            else if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
+            else{
+                if(waveformStatusMap[clusterId].sampleStatus() != READY) return NOT_AVAILABLE;
+                if(waveforms->nbOfSpikes(SAMPLE) == 0){
+                    waveformStatusMap[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
+                    return READY;
+                }
+                waveformStatusMap[clusterId].setSampleMeanStatus(IN_PROCESS);
             }
-            mutex.lock();
-            waveformStatusMap[clusterId].setSampleMeanStatus(IN_PROCESS);
-            mutex.unlock();
         }
-    }
-    else{
-        mutex.unlock();
-        return NOT_AVAILABLE;
-    }
+        else{
+            return NOT_AVAILABLE;
+        }
+    } // mutex released before calculateMean
 
     //calculate the mean and the standard deviation and store the data
     waveforms->calculateMean(SAMPLE);
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available.
-    mutex.lock();
+    QMutexLocker lk(&mutex);
     bool smGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
     bool smMod  = !smGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
     if(smGone || smMod){
@@ -2923,14 +2951,12 @@ Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
             delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
             waveformStatusMap.remove(clusterId);
         }
-        mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
         //Store the information in waveformStatusMap
         if(waveformStatusMap.contains(clusterId))
             waveformStatusMap[clusterId].setSampleMeanStatus(READY);
-        mutex.unlock();
         return READY;
     }
 }
@@ -2945,42 +2971,37 @@ Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType 
 
     //Does this cluster already processed?
     // Use mutex around both contains check and waveformDict lookup.
-    mutex.lock();
-    bool frameExists = waveformStatusMap.contains(clusterId);
-    if(frameExists){
-        Status status = waveformStatusMap[clusterId].timeFrameMeanStatus();
-        waveforms = waveformDict[clusterIdString];
-        mutex.unlock();
-        dataType timeStart = waveforms->startTime();
-        dataType timeEnd = waveforms->endTime();
+    {
+        QMutexLocker lk(&mutex);
+        bool frameExists = waveformStatusMap.contains(clusterId);
+        if(frameExists){
+            Status status = waveformStatusMap[clusterId].timeFrameMeanStatus();
+            waveforms = waveformDict[clusterIdString];
+            dataType timeStart = waveforms->startTime();
+            dataType timeEnd = waveforms->endTime();
 
-        if(status == IN_PROCESS)return IN_PROCESS;
-        else if(timeStart == start && timeEnd == end && status == READY) return READY;
-        else{
-            if(waveformStatusMap[clusterId].timeFrameStatus() != READY) return NOT_AVAILABLE;
-            if(waveforms->nbOfSpikes(TIME_FRAME) == 0){
-                mutex.lock();
-                waveformStatusMap[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
-                mutex.unlock();
-                return READY;
+            if(status == IN_PROCESS)return IN_PROCESS;
+            else if(timeStart == start && timeEnd == end && status == READY) return READY;
+            else{
+                if(waveformStatusMap[clusterId].timeFrameStatus() != READY) return NOT_AVAILABLE;
+                if(waveforms->nbOfSpikes(TIME_FRAME) == 0){
+                    waveformStatusMap[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
+                    return READY;
+                }
+                waveformStatusMap[clusterId].setTimeFrameMeanStatus(IN_PROCESS);
             }
-            mutex.lock();
-            waveformStatusMap[clusterId].setTimeFrameMeanStatus(IN_PROCESS);
-            mutex.unlock();
         }
-    }
-    else{
-        mutex.unlock();
-        return NOT_AVAILABLE;
-    }
-
+        else{
+            return NOT_AVAILABLE;
+        }
+    } // mutex released before calculateMean
 
     //calculate the mean and the standard deviation and store the data
     waveforms->calculateMean(TIME_FRAME);
 
     //If the cluster has been suppress or modifed after the thread calling this function has been launched
     //return this information that the data are not available.
-    mutex.lock();
+    QMutexLocker lk(&mutex);
     bool tfmGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
     bool tfmMod  = !tfmGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
     if(tfmGone || tfmMod){
@@ -2989,21 +3010,19 @@ Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType 
             delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
             waveformStatusMap.remove(clusterId);
         }
-        mutex.unlock();
         return NOT_AVAILABLE;
     }
     else{
         //Store the information in waveformStatusMap
         if(waveformStatusMap.contains(clusterId))
             waveformStatusMap[clusterId].setTimeFrameMeanStatus(READY);
-        mutex.unlock();
         return READY;
     }
 }
 
 
-void Data::sortCluster(ClusterInfoMap* clusterInfoMapTemp,SortableTable* spikesByClusterTemp, dataType clusterId,QList<dataType> positions,
-                       QList<dataType> nbOfspikes,int step,bool fromTop){
+void Data::sortCluster(ClusterInfoMap* clusterInfoMapTemp,SortableTable* spikesByClusterTemp, dataType clusterId,const QList<dataType>& positions,
+                       const QList<dataType>& nbOfspikes,int step,bool fromTop){
     uint nbClusters = static_cast<uint>(positions.size());
     uint indice = 0;
 
@@ -3161,19 +3180,19 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
     int cluster1 = pair.getX();
     int cluster2 = pair.getY();
     Pair parameters = Pair(binSize,timeWindow);
-    QHash<QString, Correlation*>* dict = 0L;
+    QHash<QString, Correlation*>* dict = nullptr;
 
     //Test first if the clusters still exist
-    mutex.lock();
+    QMutexLocker lk(&mutex);
     bool cluster1Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster1));
     bool cluster2Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster2));
-    mutex.unlock();
 
     if(cluster1Removed || cluster2Removed)return NOT_AVAILABLE;
 
     //Test if the correlogram is in process or already available.
     Status status = NOT_AVAILABLE;
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     if(correlationDict[pair.toString()] != 0){
         dict = correlationDict[pair.toString()];
         if((*dict)[parameters.toString()] != 0){
@@ -3181,32 +3200,35 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             else if(((*dict)[parameters.toString()])->getStatus(binSize,timeWindow) == READY) status = READY;
         }
     }
-    mutex.unlock();
+    }
 
     if(status != NOT_AVAILABLE) return status;
 
     //Test if the correlogram, for the given parametres, is not available, if so compute it.
     //If the pair does not exist or the binSize and/or the timeFrame are different, the correlogram will have to be computed.
     bool computeCorrelogram = false;
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     dict = correlationDict[pair.toString()];
     if(correlationDict[pair.toString()] == 0 || ((*dict)[parameters.toString()] == 0))
         computeCorrelogram = true;
-    mutex.unlock();
+    }
 
     if(computeCorrelogram){
         //Advice that a correlation is in process on the cluster1 and cluster2.
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         correlationsInProcess.addProcess(static_cast<dataType>(cluster1));
         correlationsInProcess.addProcess(static_cast<dataType>(cluster2));
-        mutex.unlock();
+        }
 
         //Create the correlation object or retrieve it if it already exists.
         //In case several threads, working on the same pair with the same parameters, get to this point, make sure that only one will
         //performs the computation.
         bool correlationAlreadyInProcess = false;
-        Correlation* correlation = 0L;
-        mutex.lock();
+        Correlation* correlation = nullptr;
+        {
+            QMutexLocker lk(&mutex);
         dict = correlationDict[pair.toString()];
         if(dict == 0){
             dict = new QHash<QString, Correlation*>();
@@ -3228,13 +3250,14 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             correlation->setTimeWindow(timeWindow);
         }
         else correlationAlreadyInProcess = true;
-        mutex.unlock();
+        }
 
         if(correlationAlreadyInProcess){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            mutex.unlock();
+            }
             return IN_PROCESS;
         }
 
@@ -3258,29 +3281,32 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             clusterNotAvailable = true;
         }
         if(clusterNotAvailable){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
             delete correlationDict.take(pair.toString()); //if the clusters do not exist anymore they would not have been
             //removed in cleanCorrelation
-            mutex.unlock();
+            }
             return NOT_AVAILABLE;
         }
 
         //Check if either the cluster1 or the cluster2 have been modified since the thread has been launched
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster1))){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             delete correlationDict.take(pair.toString());
-            mutex.unlock();
+            }
 
             clusterNotAvailable = true;
         }
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster2))){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
             delete correlationDict.take(pair.toString());
-            mutex.unlock();
+            }
 
             clusterNotAvailable = true;
         }
@@ -3302,32 +3328,36 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             clusterNotAvailable = true;
         }
         if(clusterNotAvailable){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
             delete correlationDict.take(pair.toString()); //if the clusters do not exist anymore they would not have been
             //removed in cleanCorrelation
-            mutex.unlock();
+            }
             return NOT_AVAILABLE;
         }
 
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster1))){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             delete correlationDict.take(pair.toString());
-            mutex.unlock();
+            }
             clusterNotAvailable = true;
         }
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster2))){
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
             delete correlationDict.take(pair.toString());
-            mutex.unlock();
+            }
             clusterNotAvailable = true;
         }
         if(clusterNotAvailable) return NOT_AVAILABLE;
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
 
             //Update the status
             correlation->setStatus(READY);
@@ -3336,7 +3366,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
 
-            mutex.unlock();
+            }
         }
     }
     return READY;
@@ -3354,10 +3384,9 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
     int totalNbBins = (2 * halfBins) + 1;
     setNbBins(totalNbBins);
     //Initialize the array which will contain the correlogram data.
-    values = new uint[totalNbBins];
+    values.assign(totalNbBins, 0u);
     //One additional bin is used for the upper boundary (and his content is later added to the last bin)
-    uint* tmpValues = new uint[totalNbBins + 1];
-    memset(tmpValues,0,(totalNbBins + 1) * sizeof(uint));
+    std::vector<uint> tmpValues(totalNbBins + 1, 0u);
 
     //Cluster 1 will be the cluster of reference.
     for(dataType spikeOfCluster1 = 1; spikeOfCluster1 < cluster1NbSpikesPlusOne; ++spikeOfCluster1){
@@ -3405,9 +3434,8 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
     //Update last bin (see comment above)
     tmpValues[2 * halfBins] += tmpValues[totalNbBins];
     //Store values
-    memcpy(values,tmpValues,totalNbBins * sizeof(uint));
+    memcpy(values.data(), tmpValues.data(),totalNbBins * sizeof(uint));
 
-    delete []tmpValues;
 
     //Calculate the maximum and the shoulder
     for(int i = 0; i < totalNbBins; ++i)
@@ -3453,7 +3481,7 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
                 T1 = clu2T1;
                 if(clu1T2 < clu2T2){
                     T2 = clu1T2;
-                    //Search the number of spikes of the 2 clusters whithin "time"
+                    //Search the number of spikes of the 2 clusters within "time"
                     clu1Spk1 = data.findSpikePosition(T1,spikesOfCluster1);
                     clu1Spk2 = cluster1NbSpikesPlusOne - 1;
                     clu2Spk1 = 1;
@@ -3461,7 +3489,7 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
                 }
                 else{
                     T2 = clu2T2;
-                    //Search the number of spikes of the 2 clusters whithin "time"
+                    //Search the number of spikes of the 2 clusters within "time"
                     clu1Spk1 = data.findSpikePosition(T1,spikesOfCluster1);
                     clu1Spk2 = data.findSpikePosition(T2,spikesOfCluster1);
                     clu2Spk1 = 1;
@@ -3472,7 +3500,7 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
                 T1 = clu1T1;
                 if(clu1T2 < clu2T2){
                     T2 = clu1T2;
-                    //Search the number of spikes of the 2 clusters whithin "time"
+                    //Search the number of spikes of the 2 clusters within "time"
                     clu1Spk1 = 1;
                     clu1Spk2 = cluster1NbSpikesPlusOne - 1;
                     clu2Spk1 = data.findSpikePosition(T1,spikesOfCluster2);
@@ -3480,7 +3508,7 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
                 }
                 else{
                     T2 = clu2T2;
-                    //Search the number of spikes of the 2 clusters whithin "time"
+                    //Search the number of spikes of the 2 clusters within "time"
                     clu1Spk1 = 1;
                     clu1Spk2 = data.findSpikePosition(T2,spikesOfCluster1);
                     clu2Spk1 = data.findSpikePosition(T1,spikesOfCluster2);
@@ -3497,8 +3525,9 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
     }
 }
 
-void Data::cleanCorrelation(dataType clusterId,QList<dataType> currentClusterList,bool cleanProcess){
-    mutex.lock();
+void Data::cleanCorrelation(dataType clusterId,const QList<dataType>& currentClusterList,bool cleanProcess){
+    {
+        QMutexLocker lk(&mutex);
     if(cleanProcess) correlationsInProcess.removeCluster(clusterId);
 
     //Remove the autocorrelogram separatly as the clusterID has already been removed from
@@ -3508,15 +3537,15 @@ void Data::cleanCorrelation(dataType clusterId,QList<dataType> currentClusterLis
     //Gets all the clustersId currently available
 
     //Remove all the correlations link to clusterId
-    QList<dataType>::iterator iterator;
-    QList<dataType>::iterator end(currentClusterList.end());
+    QList<dataType>::const_iterator iterator;
+    QList<dataType>::const_iterator end(currentClusterList.end());
     for(iterator = currentClusterList.begin(); iterator != end; ++iterator){
         //Search pairs as (clusterId,*iterator) where clusterId > *iterator
         //and (*iterator,clusterId) where *iterator > clusterId
         if(*iterator <= clusterId) delete correlationDict.take(Pair(static_cast<int>(*iterator),static_cast<int>(clusterId)).toString());
         else delete correlationDict.take(Pair(static_cast<int>(clusterId),static_cast<int>(*iterator)).toString());
     }
-    mutex.unlock();
+    }
 }
 
 void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
@@ -3524,14 +3553,15 @@ void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
     QList<int> oldClusterIds = clusterIdsOldNew.keys();
 
     QList<int>::iterator iterator;
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     int i = 0;
     for(iterator = oldClusterIds.begin(); iterator != oldClusterIds.end(); ++iterator){
         if(correlationsInProcess.contains(*iterator)){
             correlationsInProcess.setClusterModified(*iterator,true);
             continue;
         }
-        for(int j = i; j<oldClusterIds.count();j++) {
+        for(int j = i; j<(int)oldClusterIds.count();j++) {
             int val = oldClusterIds.at(i);
             int val2 = oldClusterIds.at(j);
             if(val2 <= val){
@@ -3548,7 +3578,7 @@ void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
         }
         ++i;
     }
-    mutex.unlock();
+    }
 }
 
 long Data::findSpikePosition(double time,SortableTable& spikesOfCluster){
@@ -3611,10 +3641,11 @@ long Data::findSpikePosition(double time,SortableTable& spikesOfCluster){
 void Data::duplicate(SortableTable* & spikesOfClusterTemp,ClusterInfoMap* & clusterInfoMapTemp){
     //The mutex protect spikesByCluster and clusterInfoMap so that only one thread can
     //access them at the time.
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     spikesOfClusterTemp = new SortableTable(*spikesByCluster);
     clusterInfoMapTemp = new ClusterInfoMap(*clusterInfoMap);
-    mutex.unlock();
+    }
 }
 
 void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
@@ -3762,7 +3793,8 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     // and the thread will remove it.
     QList<int>::iterator iterator;
     for(iterator = clustersToRecluster.begin(); iterator != clustersToRecluster.end(); ++iterator){
-        mutex.lock();
+        {
+            QMutexLocker lk(&mutex);
         if(waveformStatusMap.contains(*iterator)){
             if(!waveformStatusMap[*iterator].isInProcess()){
                 delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
@@ -3775,12 +3807,13 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
                 waveformStatusMap.insert(*iterator,waveformStatusCopy);
             }
         }
-        mutex.unlock();
+        }
         if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
         else{
-            mutex.lock();
+            {
+                QMutexLocker lk(&mutex);
             correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-            mutex.unlock();
+            }
         }
     }
 
@@ -3846,11 +3879,12 @@ void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation
     // This method is called from SaveThread (off the main thread) while the main
     // thread may concurrently modify clusterInfoMap via undo/redo/clustering.
     // Take a snapshot of the map under the mutex to avoid a use-after-free.
-    mutex.lock();
-    // Copy the pointer-stable entries we need before releasing the lock.
-    // ClusterInfo is a small value type so copying is cheap.
-    ClusterInfoMap localSnapshot(*clusterInfoMap);
-    mutex.unlock();
+    // Take a snapshot under the mutex; iterate after releasing it.
+    ClusterInfoMap localSnapshot;
+    {
+        QMutexLocker lk(&mutex);
+        localSnapshot = *clusterInfoMap;
+    }
 
     //Iteration on the clusters
     ClusterInfoMap::Iterator iterator;
@@ -3876,7 +3910,7 @@ bool Data::updateFeatureRow(dataType spikeIndex, const QList<dataType>& newValue
 {
     if (spikeIndex < 1 || spikeIndex > nbSpikes) return false;
     int nFeat = nbDimensions - 1; // exclude timestamp column
-    for (int d = 0; d < nFeat && d < newValues.size(); ++d)
+    for (qsizetype d = 0; d < (qsizetype)nFeat && d < newValues.size(); ++d)
         features(spikeIndex, d + 1) = newValues[d];
     return true;
 }
@@ -3916,7 +3950,8 @@ void Data::invalidateWaveformCache(int clusterId)
     // - If a thread is in-flight, set the clusterModified flag instead.
     //   The thread checks this flag after loading and discards its results,
     //   then removes the status entry itself, forcing a fresh load next time.
-    mutex.lock();
+    {
+        QMutexLocker lk(&mutex);
     if (waveformStatusMap.contains(clusterId)) {
         if (!waveformStatusMap[clusterId].isInProcess()) {
             delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
@@ -3927,7 +3962,7 @@ void Data::invalidateWaveformCache(int clusterId)
             waveformStatusMap.insert(clusterId, updated);
         }
     }
-    mutex.unlock();
+    }
 }
 
 void Data::invalidateCorrelogramCache(int clusterId)

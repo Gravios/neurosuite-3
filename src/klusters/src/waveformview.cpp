@@ -76,19 +76,13 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
     Yfactor = static_cast<float>(YsizeForMaxAmp)/static_cast<float>(acquisitionGain);
     gain = 0;
 
-    channelPositions = new int[nbchannels];
-
-    ///Initialize the position of the channels (the positions will be configurable in the settings).
-    //The first one in the file will be the first one (at the top), second one will be beneath and so on.
-    //The channels are counted from 0 to nbchannels - 1.
+    channelPositions.resize(nbchannels);
     if(positions.isEmpty()) {
-        for(int i = 0; i < nbchannels; ++i) {
+        for(int i = 0; i < nbchannels; ++i)
             channelPositions[i] = i;
-        }
     } else {
-        for(int i = 0; i < nbchannels; ++i) {
+        for(int i = 0; i < nbchannels; ++i)
             channelPositions[i] = positions.at(i);
-        }
     }
 
     ordinateMin = -(2 * heightBorder + nbchannels * YsizeForMaxAmp + (nbchannels - 1) * Yspace);
@@ -111,8 +105,6 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
 }
 
 WaveformView::~WaveformView(){
-    delete []channelPositions;
-
     //Ask the threads to stop as soon as possible.
     willBeKilled();
 
