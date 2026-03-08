@@ -66,7 +66,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
       removedClustersRedoList(redoList),
       dimensionX(initialDimensionX),
       dimensionY(initialDimensionY),
-      currentViewWidget(0L),
+      currentViewWidget(nullptr),
       numberUndo(undoList.count()),
       inTimeFrameMode(isTimeFrameMode),
       timeWindow(timeFrameWidth),
@@ -79,7 +79,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
       correlationScale(scale),
       shoulderLine(shoulderLine),
       mainWindow(mainWindow),
-      traceWidget(0L),
+      traceWidget(nullptr),
       startingTime(startingTime),
       duration(duration),
       labelsDisplay(labelsDisplay)
@@ -458,7 +458,7 @@ void KlustersView::traceDockClosed(QObject *traceWidget){
     if(viewCounter["TraceView"] == 1){
         viewCounter.remove("TraceView");
         mainWindow.widgetRemovedFromDisplay(TRACES);
-        traceWidget = 0L;
+        traceWidget = nullptr;
         isThereTraceView = false;
     }
     else viewCounter["TraceView"]--;
@@ -821,7 +821,7 @@ void KlustersView::updateDimensions(int dimensionX,int dimensionY){
 }
 
 
-void KlustersView::shownClustersUpdate(QList<int>& clustersToShow){
+void KlustersView::shownClustersUpdate(const QList<int>& clustersToShow){
     //Try to minimize the number of clusters to draw
     QVector<int> clustersToRemove;
     
@@ -837,7 +837,7 @@ void KlustersView::shownClustersUpdate(QList<int>& clustersToShow){
     removeClustersFromView(clustersToRemove,true);
 
     //If there is a cluster in clustersToShow which is not in shownClusters, add it to the view
-    QList<int>::iterator clustersToShowIterator;
+    QList<int>::const_iterator clustersToShowIterator;
     for(clustersToShowIterator = clustersToShow.begin(); clustersToShowIterator != clustersToShow.end(); ++clustersToShowIterator ){
         if(shownClusters->contains(*clustersToShowIterator) == 0)
             addClusterToView(*clustersToShowIterator,true);
@@ -1394,7 +1394,7 @@ bool KlustersView::isThreadsRunning() const{
 
 QList< QList<int>* > KlustersView::getUndoList(){
     QList< QList<int>* > undoList;
-    for(int i = 0; i<removedClustersUndoList.count();++i) {
+    for(qsizetype i = 0; i<removedClustersUndoList.count();++i) {
         QList<int>* undoCopy = new QList<int>();
         const QList<int>* lst = removedClustersUndoList.at(i);
         for(int j= 0; j<lst->count();++j) {
@@ -1408,7 +1408,7 @@ QList< QList<int>* > KlustersView::getUndoList(){
 
 QList< QList<int>* >  KlustersView::getRedoList(){
     QList< QList<int>* > redoList;
-    for(int i = 0; i<removedClustersRedoList.count();++i) {
+    for(qsizetype i = 0; i<removedClustersRedoList.count();++i) {
         QList<int>* redoCopy = new QList<int>();
         const QList<int>* lst = removedClustersRedoList.at(i);
         for(int j= 0; j<lst->count();++j) {

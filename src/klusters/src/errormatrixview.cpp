@@ -69,8 +69,7 @@ ErrorMatrixView::~ErrorMatrixView(){
 
     //Wait until all the threads have finish before quiting otherwise
     // it may endup in a crash of the application.
-    for(int i = 0 ; i <threadsToBeKill.count();++i) {
-        ErrorMatrixThread* errorMatrixThread = threadsToBeKill.at(i);
+    for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill) {
         while(!errorMatrixThread->wait() && !dataReady){};
     }
     
@@ -366,14 +365,14 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
         previousSelectedClusters.append(cluster1);
     }
     else
-        pair.setX(-1);
+        pair.first  = -1;
 
     if(existingClusters.contains(static_cast<dataType>(cluster2))){
         clustersToShow.append(cluster2);
         previousSelectedClusters.append(cluster2);
     }
     else
-        pair.setY(-1);
+        pair.second = -1;
 
     //If the user control click a second time on a cell of the matrix this will deselect the corresponding pair.
     if((e->modifiers() & Qt::ControlModifier) && selectedPairs.contains(pair)){
@@ -381,8 +380,8 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
         clustersToShow.clear();
         QList<Pair>::iterator iterator;
         for(iterator = selectedPairs.begin(); iterator != selectedPairs.end(); ++iterator){
-            int firstCluster = static_cast<Pair>(*iterator).getX();
-            int secondCluster = static_cast<Pair>(*iterator).getY();
+            int firstCluster = (*iterator).first;
+            int secondCluster = (*iterator).second;
 
             if(firstCluster != -1 && existingClusters.contains(static_cast<dataType>(firstCluster))){
                 clustersToShow.append(firstCluster);
@@ -860,8 +859,7 @@ void ErrorMatrixView::willBeKilled(){
     if(!goingToDie){
         goingToDie = true;
         //inform the running threads to stop processing as soon as possible.
-        for(int i = 0 ; i <threadsToBeKill.count();++i) {
-            ErrorMatrixThread* errorMatrixThread = threadsToBeKill.at(i);
+        for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill) {
             errorMatrixThread->stopProcessing();
         }
     }

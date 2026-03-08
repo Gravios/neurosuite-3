@@ -897,18 +897,19 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,const QLi
     QList<int> currentShownClusters = clusterPalette.selectedClusters();
 
     //Add the clusters which were shown and not part of the previous selected cluster pairs
+    QList<int> mergedClusters = clustersToShow;
     QList<int>::iterator clustersToAdd;
     for(clustersToAdd = currentShownClusters.begin(); clustersToAdd != currentShownClusters.end(); ++clustersToAdd )
-        if(!previousSelectedClusterPairs.contains(*clustersToAdd)) clustersToShow.append(*clustersToAdd);
+        if(!previousSelectedClusterPairs.contains(*clustersToAdd)) mergedClusters.append(*clustersToAdd);
 
     //Update the palette of cluster
-    clusterPalette.selectItems(clustersToShow);
+    clusterPalette.selectItems(mergedClusters);
 
     //Get the active view.
     KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
 
     //The new selection of clusters only means for the active view
-    activeView->shownClustersUpdate(clustersToShow);
+    activeView->shownClustersUpdate(mergedClusters);
 
     //update the TraceView if any
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);
@@ -941,18 +942,19 @@ void KlustersDoc::addClustersToActiveView(const QList<int>& clustersToShow){
     //Get the clusters currently selected
     QList<int> currentShownClusters = clusterPalette.selectedClusters();
 
+    QList<int> mergedClusters = clustersToShow;
     QList<int>::iterator clustersToAdd;
     for(clustersToAdd = currentShownClusters.begin(); clustersToAdd != currentShownClusters.end(); ++clustersToAdd )
-        clustersToShow.append(*clustersToAdd);
+        mergedClusters.append(*clustersToAdd);
 
     //Update the palette of cluster
-    clusterPalette.selectItems(clustersToShow);
+    clusterPalette.selectItems(mergedClusters);
 
     //Get the active view.
     KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
 
     //The new selection of clusters only means for the active view
-    activeView->shownClustersUpdate(clustersToShow);
+    activeView->shownClustersUpdate(mergedClusters);
 
     //update the TraceView if any
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);

@@ -120,15 +120,13 @@ public:
 
     int   MergeChunkModels(std::vector<ChunkModel>& models,
                            int   nSpatialDims,
-                           float mergeThresh,
-                           const std::vector<std::unordered_map<int,int>>& overlapVotes);
+                           float mergeThresh);
 
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,
                         float mergeThresh,
                         int   globalMergeIter,
-                        int   timeMergeIter,
-                        float chunkOverlapMinutes = 0.0f);
+                        int   timeMergeIter);
 
 public:
     // -----------------------------------------------------------------------

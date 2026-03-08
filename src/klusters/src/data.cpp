@@ -2414,7 +2414,7 @@ bool Data::saveClusters(FILE* clusterFile)
     //   int32_t  nClusters
     //   nSpikes x int32_t  cluster ids in timestamp order
 
-    SortableTable spikesByClusterTemp(0,0);
+    SortableTable spikesByClusterTemp;
     ClusterInfoMap clusterInfoMapTemp;
     {
         QMutexLocker lk(&mutex);
@@ -2799,7 +2799,9 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             dataType currentSpikePosition = (positionOfSpikes(1,i) - 1) * nbPtsBySpike ;
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
-            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+            if (            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
+                qWarning("WaveformData::read: short fread — spike data may be truncated");
+
             position += nbPtsBySpike;
             ++nbSampleSpikes;
         }
@@ -2810,7 +2812,9 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         dataType currentSpikePosition = (positionOfSpikes(1,1) - 1) * nbPtsBySpike ;
         fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
         // copy the spikes into spikePoints.
-        fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile);
+        if (        fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
+            qWarning("WaveformData::read: short fread — spike data may be truncated");
+
         nbSampleSpikes = 1;
     }
     else{
@@ -2825,7 +2829,9 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             dataType currentSpikePosition = (positionOfSpikes(1,spkIndice) - 1) * nbPtsBySpike ;
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
-            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+            if (            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
+                qWarning("WaveformData::read: short fread — spike data may be truncated");
+
             position += nbPtsBySpike;
             ++nbSampleSpikes;
             floatSpkIndice += factor;
@@ -2850,7 +2856,9 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         //go to the spike position
         fseeko64(spikeFile,startPositionInSpk,SEEK_SET);
         // copy the spikes into timeFrameSpikesTable.
-        fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile);
+        if (        fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
+            qWarning("WaveformData::read: short fread — spike data may be truncated");
+
         position += nbPtsBySpike;
         ++nbTimeFrameSpikes;
     }
@@ -3021,8 +3029,8 @@ Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType 
 }
 
 
-void Data::sortCluster(ClusterInfoMap* clusterInfoMapTemp,SortableTable* spikesByClusterTemp, dataType clusterId,const QList<dataType>& positions,
-                       const QList<dataType>& nbOfspikes,int step,bool fromTop){
+void Data::sortCluster(ClusterInfoMap* clusterInfoMapTemp,SortableTable* spikesByClusterTemp, dataType clusterId,QList<dataType> positions,
+                       QList<dataType> nbOfspikes,int step,bool fromTop){
     uint nbClusters = static_cast<uint>(positions.size());
     uint indice = 0;
 
@@ -3177,9 +3185,9 @@ void Data::sortCluster(ClusterInfoMap* clusterInfoMapTemp,SortableTable* spikesB
 }
 
 Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double binSizeInRU,float timeWindowInRU,int halfBins){
-    int cluster1 = pair.getX();
-    int cluster2 = pair.getY();
-    Pair parameters = Pair(binSize,timeWindow);
+    int cluster1 = pair.first;
+    int cluster2 = pair.second;
+    Pair parameters{binSize,timeWindow};
     QHash<QString, Correlation*>* dict = nullptr;
 
     //Test first if the clusters still exist
@@ -3193,11 +3201,11 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
     Status status = NOT_AVAILABLE;
     {
         QMutexLocker lk(&mutex);
-    if(correlationDict[pair.toString()] != 0){
-        dict = correlationDict[pair.toString()];
-        if((*dict)[parameters.toString()] != 0){
-            if(((*dict)[parameters.toString()])->getStatus(binSize,timeWindow) == IN_PROCESS) status = IN_PROCESS;
-            else if(((*dict)[parameters.toString()])->getStatus(binSize,timeWindow) == READY) status = READY;
+    if(correlationDict[pairKey(pair)] != 0){
+        dict = correlationDict[pairKey(pair)];
+        if((*dict)[pairKey(parameters)] != 0){
+            if(((*dict)[pairKey(parameters)])->getStatus(binSize,timeWindow) == IN_PROCESS) status = IN_PROCESS;
+            else if(((*dict)[pairKey(parameters)])->getStatus(binSize,timeWindow) == READY) status = READY;
         }
     }
     }
@@ -3209,8 +3217,8 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
     bool computeCorrelogram = false;
     {
         QMutexLocker lk(&mutex);
-    dict = correlationDict[pair.toString()];
-    if(correlationDict[pair.toString()] == 0 || ((*dict)[parameters.toString()] == 0))
+    dict = correlationDict[pairKey(pair)];
+    if(correlationDict[pairKey(pair)] == 0 || ((*dict)[pairKey(parameters)] == 0))
         computeCorrelogram = true;
     }
 
@@ -3229,21 +3237,21 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
         Correlation* correlation = nullptr;
         {
             QMutexLocker lk(&mutex);
-        dict = correlationDict[pair.toString()];
+        dict = correlationDict[pairKey(pair)];
         if(dict == 0){
             dict = new QHash<QString, Correlation*>();
             correlation = new Correlation(*this,binSize,timeWindow);
             correlation->setStatus(IN_PROCESS);
-            dict->insert(parameters.toString(),correlation);
-            correlationDict.insert(pair.toString(),dict);
+            dict->insert(pairKey(parameters),correlation);
+            correlationDict.insert(pairKey(pair),dict);
         }
-        else if((*dict)[parameters.toString()] == 0){
+        else if((*dict)[pairKey(parameters)] == 0){
             correlation = new Correlation(*this,binSize,timeWindow);
             correlation->setStatus(IN_PROCESS);
-            dict->insert(parameters.toString(),correlation);
+            dict->insert(pairKey(parameters),correlation);
         }
-        else if(((*dict)[parameters.toString()] != 0) && (*dict)[parameters.toString()]->getStatus() != IN_PROCESS){
-            correlation = (*dict)[parameters.toString()];
+        else if(((*dict)[pairKey(parameters)] != 0) && (*dict)[pairKey(parameters)]->getStatus() != IN_PROCESS){
+            correlation = (*dict)[pairKey(parameters)];
             correlation->setStatus(IN_PROCESS);
             correlation->reset();
             correlation->setBinSize(binSize);
@@ -3285,7 +3293,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
                 QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pair.toString()); //if the clusters do not exist anymore they would not have been
+            delete correlationDict.take(pairKey(pair)); //if the clusters do not exist anymore they would not have been
             //removed in cleanCorrelation
             }
             return NOT_AVAILABLE;
@@ -3296,7 +3304,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             {
                 QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            delete correlationDict.take(pair.toString());
+            delete correlationDict.take(pairKey(pair));
             }
 
             clusterNotAvailable = true;
@@ -3305,7 +3313,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             {
                 QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pair.toString());
+            delete correlationDict.take(pairKey(pair));
             }
 
             clusterNotAvailable = true;
@@ -3332,7 +3340,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
                 QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pair.toString()); //if the clusters do not exist anymore they would not have been
+            delete correlationDict.take(pairKey(pair)); //if the clusters do not exist anymore they would not have been
             //removed in cleanCorrelation
             }
             return NOT_AVAILABLE;
@@ -3342,7 +3350,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             {
                 QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            delete correlationDict.take(pair.toString());
+            delete correlationDict.take(pairKey(pair));
             }
             clusterNotAvailable = true;
         }
@@ -3350,7 +3358,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             {
                 QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pair.toString());
+            delete correlationDict.take(pairKey(pair));
             }
             clusterNotAvailable = true;
         }
@@ -3532,7 +3540,7 @@ void Data::cleanCorrelation(dataType clusterId,const QList<dataType>& currentClu
 
     //Remove the autocorrelogram separatly as the clusterID has already been removed from
     //the list of clusters.
-    delete correlationDict.take(Pair(static_cast<int>(clusterId),static_cast<int>(clusterId)).toString());
+    delete correlationDict.take(pairKey(static_cast<int>(clusterId),static_cast<int>(clusterId)));
 
     //Gets all the clustersId currently available
 
@@ -3542,8 +3550,8 @@ void Data::cleanCorrelation(dataType clusterId,const QList<dataType>& currentClu
     for(iterator = currentClusterList.begin(); iterator != end; ++iterator){
         //Search pairs as (clusterId,*iterator) where clusterId > *iterator
         //and (*iterator,clusterId) where *iterator > clusterId
-        if(*iterator <= clusterId) delete correlationDict.take(Pair(static_cast<int>(*iterator),static_cast<int>(clusterId)).toString());
-        else delete correlationDict.take(Pair(static_cast<int>(clusterId),static_cast<int>(*iterator)).toString());
+        if(*iterator <= clusterId) delete correlationDict.take(pairKey(static_cast<int>(*iterator),static_cast<int>(clusterId)));
+        else delete correlationDict.take(pairKey(static_cast<int>(clusterId),static_cast<int>(*iterator)));
     }
     }
 }
@@ -3565,14 +3573,14 @@ void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
             int val = oldClusterIds.at(i);
             int val2 = oldClusterIds.at(j);
             if(val2 <= val){
-                QHash<QString, Correlation*>* dict = correlationDict.take(Pair(val2,val).toString());
+                QHash<QString, Correlation*>* dict = correlationDict.take(pairKey(val2,val));
                 if(dict != 0)
-                    correlationDict.insert(Pair(clusterIdsOldNew[val2],clusterIdsOldNew[val]).toString(),dict);
+                    correlationDict.insert(pairKey(clusterIdsOldNew[val2],clusterIdsOldNew[val]),dict);
             }
             else{
-                QHash<QString, Correlation*>* dict = correlationDict.take(Pair(val,val2).toString());
+                QHash<QString, Correlation*>* dict = correlationDict.take(pairKey(val,val2));
                 if(dict != 0)
-                    correlationDict.insert(Pair(clusterIdsOldNew[val],clusterIdsOldNew[val2]).toString(),dict);
+                    correlationDict.insert(pairKey(clusterIdsOldNew[val],clusterIdsOldNew[val2]),dict);
             }
 
         }

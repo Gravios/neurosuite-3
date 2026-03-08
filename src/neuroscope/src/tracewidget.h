@@ -175,7 +175,7 @@ public Q_SLOTS:
   * @param selectedMode new mode of drawing.
   * @param active true if the view is the active one, false otherwise.
   */
-    virtual void setMode(BaseFrame::Mode selectedMode,bool active) override;
+    virtual void setMode(BaseFrame::Mode selectedMode,bool active);
 
     /**
   * Updates the list of channels shown with @p channelsToShow.

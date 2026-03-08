@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.22)
 
 # ---------------------------------------------------------------------------
 # SYCL needs to be declared as a project language before project() if using
@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.25)
 # ---------------------------------------------------------------------------
 project(klusters VERSION 2.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -135,7 +135,6 @@ if(USE_SYCL)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
-qt_standard_project_setup()
 
 # In a monorepo add_subdirectory build the alias target is already present;
 # only call find_package when building klusters standalone.

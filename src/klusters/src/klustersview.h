@@ -195,7 +195,7 @@ public:
     * Makes the different views update their drawing. This method is called only on the active view.
     * @param clustersToShow new list of clusters to be shown.
     */
-    void shownClustersUpdate(QList<int>& clustersToShow);
+    void shownClustersUpdate(const QList<int>& clustersToShow);
 
     /**Updates the view due to a rearrangement of clusters.
     * @param groupedClusters list of clusters having been grouped.
