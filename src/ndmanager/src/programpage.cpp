@@ -23,7 +23,7 @@
 #include <QTabWidget>
 #include <QLineEdit>
 #include "parameterpage.h"
-#include "descriptionwriter.h"
+#include "descriptionyamlwriter.h"
 
 // include files for QT
 #include <QTabWidget>
@@ -230,10 +230,10 @@ void ProgramPage::saveProgramParameters(){
         QString name = parameters->getProgramName();
         name.append(".xml");
         descriptionUrlTmp += QDir::separator() + name;
-        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),descriptionUrlTmp,tr("Xml Files (*.xml)"));
+        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),descriptionUrlTmp,tr("YAML Files (*.yaml)"));
     }
     else{
-        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),descriptionUrl,tr("Xml Files (*.xml)"));
+        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),descriptionUrl,tr("YAML Files (*.yaml)"));
     }
     //a location has been chosen
     if(!descriptionUrl.isEmpty()){
@@ -244,7 +244,7 @@ void ProgramPage::saveProgramParameters(){
         QMap<int, QStringList > parameterInformation = parameters->getParameterInformation();
         programInformation.setParameterInformation(parameterInformation);
         //Create the writer and save the data to disk
-        DescriptionWriter descriptionWriter;
+        DescriptionYamlWriter descriptionWriter;
         descriptionWriter.setProgramInformation(programInformation);
         bool status = descriptionWriter.writeTofile(descriptionUrl);
         if(!status){

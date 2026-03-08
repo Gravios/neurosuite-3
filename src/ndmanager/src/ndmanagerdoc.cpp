@@ -28,8 +28,6 @@
 #include <ndmanagerdoc.h>
 #include "ndmanager.h"
 #include "tags.h"
-#include "xmlreader.h"
-#include "xmlwriter.h"
 #include "ndmanageryamlreader.h"
 #include "ndmanageryamlwriter.h"
 #include "channelcolors.h"
@@ -61,19 +59,9 @@ void ndManagerDoc::closeDocument(){
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openDocument(const QString& url){
     docUrl = url;
 
-    // Dispatch to YAML or XML reader based on file extension
-    const bool isYaml = url.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
-                     || url.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
-
-    if (isYaml) {
-        NdManagerYamlReader reader;
-        if (!reader.parseFile(url)) return PARSE_ERROR;
-        return loadFromReader(reader);
-    } else {
-        XmlReader reader;
-        if (!reader.parseFile(url)) return PARSE_ERROR;
-        return loadFromReader(reader);
-    }
+    NdManagerYamlReader reader;
+    if (!reader.parseFile(url)) return PARSE_ERROR;
+    return loadFromReader(reader);
 }
 
 template<typename Reader>
@@ -160,13 +148,13 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::newDocument(){
     // On Windows, QStandardPaths::ApplicationsLocation returns the user apps path,
     // not the system install prefix — fall back to PROGRAMFILES env var.
     QString path(qgetenv("PROGRAMFILES"));
-    path += QLatin1String("/NDManager/share/applications/ndmanager/ndManagerDefault.xml");
+    path += QLatin1String("/NDManager/share/applications/ndmanager/ndManagerDefault.yaml");
 #else
-    QString path = QStandardPaths::locate(QStandardPaths::ApplicationsLocation, QLatin1String("ndmanager/ndManagerDefault.xml"));
+    QString path = QStandardPaths::locate(QStandardPaths::ApplicationsLocation, QLatin1String("ndmanager/ndManagerDefault.yaml"));
 #endif
     if (path.isEmpty()) {
-       qDebug()<<" ndManagerDefault.xml is not found. Verify install";
-       QMessageBox::critical (0, QObject::tr("Error!"),QObject::tr("The file ndManagerDefault.xml does not exist. Please verify installation"));
+       qDebug()<<" ndManagerDefault.yaml is not found. Verify install";
+       QMessageBox::critical (0, QObject::tr("Error!"),QObject::tr("The file ndManagerDefault.yaml does not exist. Please verify installation"));
     }
     return openDocument(path);
     
@@ -199,10 +187,6 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
     view->getInformation(anatomicalGroups,attributes,spikeGroups,spikeGroupsInformation,units,generalInformation,
                          acquisitionSystemInfo,videoInformation,files,channelColors,channelDefaultOffsets,neuroscopeVideoInfo,programs,lfpRate,screenGain,nbSamples,peakSampleIndex,traceBackgroundImage);
 
-    // create a writer to save the information — dispatch on file extension
-    const bool saveAsYaml = url.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
-                         || url.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
-
     auto doWrite = [&](auto& writer) -> bool {
         writer.setGeneralInformation(generalInformation);
         writer.setAcquisitionSystemInformation(acquisitionSystemInfo);
@@ -223,9 +207,8 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
         return writer.writeTofile(url);
     };
 
-    XmlWriter          xmlWriter;
     NdManagerYamlWriter yamlWriter;
-    const bool status = saveAsYaml ? doWrite(yamlWriter) : doWrite(xmlWriter);
+    const bool status = doWrite(yamlWriter);
     if(!status)
         return CREATION_ERROR;
 
@@ -240,7 +223,7 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveDefault(){
     QString path = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
     QDir dir(path);
     bool ok = dir.mkpath(path);
-    path = path + QDir::separator() + QLatin1String("ndManagerDefault.xml");
+    path = path + QDir::separator() + QLatin1String("ndManagerDefault.yaml");
 
     return save(path);
 }

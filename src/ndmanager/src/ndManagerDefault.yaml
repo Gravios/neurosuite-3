@@ -1,0 +1,32 @@
+generalInfo:
+  date: "2011-08-18"
+  experimenters: ""
+  description: ""
+  notes: ""
+
+acquisitionSystem:
+  nBits: 16
+  offset: 0
+
+fieldPotentials:
+  lfpSamplingRate: 1250
+
+anatomicalDescription:
+  channelGroups: []
+
+spikeDetection: {}
+
+units: {}
+
+neuroscope:
+  version: "3.0.0"
+  miscellaneous:
+    screenGain: 0.2
+    traceBackgroundImage: ""
+  video:
+    rotate: 0
+    flip: 0
+    videoImage: ""
+    positionsBackground: 0
+  spikes: {}
+  channels: {}

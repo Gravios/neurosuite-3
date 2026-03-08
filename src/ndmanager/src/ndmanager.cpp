@@ -669,8 +669,8 @@ void ndManager::slotQuery(){
         const QString program("find");
         QStringList arguments;
         arguments<<queryInputDialog->getPath();
-        arguments<<QString::fromLatin1(" -name '*xml' -exec xpathReader --html {} \"%1\" \\; | sed 'N;s/<tr>/<tr class=\"tr1\">/;s/<tr>/<tr class=\"tr2\">/'").arg(queryInputDialog->getQuery());
-        //process << "find " + queryInputDialog->getPath() + " -name '*xml' -exec xpathReader --html {} \"" + queryInputDialog->getQuery() + "\" \\; | sed 'N;s/<tr>/<tr class=\"tr1\">/;s/<tr>/<tr class=\"tr2\">/'";
+        arguments<<QString::fromLatin1(" -name '*.yaml' -exec xpathReader --html {} \"%1\" \\; | sed 'N;s/<tr>/<tr class=\"tr1\">/;s/<tr>/<tr class=\"tr2\">/'").arg(queryInputDialog->getQuery());
+        //process << "find " + queryInputDialog->getPath() + " -name '*.yaml' -exec xpathReader --html {} \"" + queryInputDialog->getQuery() + "\" \\; | sed 'N;s/<tr>/<tr class=\"tr1\">/;s/<tr>/<tr class=\"tr2\">/'";
         process.start(program, arguments);
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         if (!process.waitForFinished()) {

@@ -53,7 +53,6 @@
 #include "clusterPalette.h"
 #include "types.h"
 #include "autosavethread.h"
-#include "parameterxmlmodifier.h"
 #include "parameteryamlmodifier.h"
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
@@ -180,7 +179,7 @@ void KlustersDoc::closeDocument(){
     viewList->clear();
     docUrl = QString();
     baseName.clear();
-    xmlParameterFile.clear();
+    parameterFile.clear();
     qDeleteAll(clusterColorListUndoList);
     clusterColorListUndoList.clear();
     qDeleteAll(clusterColorListRedoList);
@@ -267,9 +266,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     electrodeGroupID = fileParts[fileParts.count()-1];
 
-    //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.xml)
-    //and store the url (corresponding to the cluster file). If the xml format parameter file does not exist, the parameter files
-    // baseName.par.x,baseName.par will be used otherwise the baseName.xml will be used.
+    //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.yaml)
 
     QString spkFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".spk."+ electrodeGroupID;
 
@@ -281,15 +278,10 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     QString fetFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".fet."+ electrodeGroupID;
     //Parameter files
-    QString xmlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".xml";
-    xmlParameterFile = xmlParFileUrl;
-
-    // Also check for a YAML parameter file (takes precedence over .xml if both exist)
+    // Parameter file: YAML only
     const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
-    if (QFileInfo(yamlParFileUrl).exists()) {
-        xmlParFileUrl  = yamlParFileUrl;
-        xmlParameterFile = yamlParFileUrl;
-    }
+    parameterFile = yamlParFileUrl;
+    QString xmlParFileUrl = yamlParFileUrl;  // alias for legacy variables below
 
 
 
@@ -619,16 +611,15 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         else
             electrodeGroupID = fileParts.at(fileParts.count()-1);
 
-        QString xmlParFileUrl = docUrlFileInfo.absoluteFilePath() + QDir::separator()+ baseName +".xml";
-        xmlParameterFile = xmlParFileUrl;
+        parameterFile = docUrlFileInfo.absoluteFilePath() + QDir::separator() + baseName + ".yaml";
     }
 
-    //Save the cluster user information if the xmlParameterFile exists
+    //Save the cluster user information if the parameterFile exists
     //NB : for the moment, the specific errors are not return to the user, only a generic message (document could not be saved).
     if(clusteringData->isTraceViewVariablesAvailable()){
         //Save the document information
-        qDebug()<<" xmlParameterFile"<<xmlParameterFile;
-        QFileInfo parFileInfo = QFileInfo(xmlParameterFile);
+        qDebug()<<" parameterFile"<<parameterFile;
+        QFileInfo parFileInfo = QFileInfo(parameterFile);
 
         //Check that the file is writable
         if(!parFileInfo.isWritable()) {
@@ -638,21 +629,19 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
         clusteringData->getClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
 
-        const bool saveAsYaml = xmlParameterFile.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
-                             || xmlParameterFile.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
-
-        if (saveAsYaml) {
+        // Always YAML
+        {
             // Build the merged units map: read existing units, overwrite the
             // units for the current electrode group, then write all back.
             ParameterYamlModifier yamlMod;
-            if (!yamlMod.parseFile(xmlParameterFile))
+            if (!yamlMod.parseFile(parameterFile))
                 return PARSE_ERROR;
 
             // Read existing units (all groups)
             QMap<int,QStringList> allUnits;
             {
                 ParameterYamlReader reader;
-                if (reader.parseFile(xmlParameterFile))
+                if (reader.parseFile(parameterFile))
                     reader.getUnits(allUnits);
             }
 
@@ -681,20 +670,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
 
             if (!yamlMod.setUnitsInformation(filtered))
                 return CREATION_ERROR;
-            if (!yamlMod.writeToFile(xmlParameterFile))
-                return CREATION_ERROR;
-        } else {
-            ParameterXmlModifier parameterModifier = ParameterXmlModifier();
-            bool status = parameterModifier.parseFile(xmlParameterFile);
-            if(!status)
-                return PARSE_ERROR;
-
-            status = parameterModifier.setClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
-            if(!status)
-                return CREATION_ERROR;
-
-            status = parameterModifier.writeTofile(xmlParameterFile);
-            if(!status)
+            if (!yamlMod.writeToFile(parameterFile))
                 return CREATION_ERROR;
         }
     }

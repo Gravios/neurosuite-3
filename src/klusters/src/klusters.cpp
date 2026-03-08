@@ -1469,11 +1469,7 @@ void KlustersApp::openDocumentFile(const QString& url)
             QApplication::restoreOverrideCursor();
             slotStatusMsg(tr("Ready."));
             return;
-        } else if(returnStatus == KlustersDoc::PARXML_DOWNLOAD_ERROR)
-        {
-            QApplication::restoreOverrideCursor();
-            QMessageBox::critical (this,tr("Error!"),tr("Could not get the parameter file (base.xml)"));
-            QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        } else if(false) { // PARXML_DOWNLOAD_ERROR removed
             //close the document
             doc->closeDocument();
             resetState();

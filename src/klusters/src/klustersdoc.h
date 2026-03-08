@@ -71,7 +71,7 @@ public:
     /**Information retun after a call to openFile/saveDocument/createFeatureFile*/
     enum OpenSaveCreateReturnMessage {OK=0,OPEN_ERROR=1,DOWNLOAD_ERROR=3,INCORRECT_FILE=4,SAVE_ERROR=5,
                                       UPLOAD_ERROR=6,INCORRECT_CONTENT=7,CREATION_ERROR=8,SPK_DOWNLOAD_ERROR=9,FET_DOWNLOAD_ERROR=10,
-                                      PAR_DOWNLOAD_ERROR=11,PARX_DOWNLOAD_ERROR=12,PARXML_DOWNLOAD_ERROR=13,NOT_WRITABLE=14,PARSE_ERROR=15};
+                                      PAR_DOWNLOAD_ERROR=11,PARX_DOWNLOAD_ERROR=12,NOT_WRITABLE=14,PARSE_ERROR=15};
     
     /** Constructs a document.
     * @param parent the parent QWidget.
@@ -737,7 +737,7 @@ private:
     QString baseName;
 
     /**The path to the xml þarameter file. */
-    QString xmlParameterFile;
+    QString parameterFile;
 
     /**The electrode number*/
     QString electrodeGroupID;

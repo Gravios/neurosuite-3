@@ -116,21 +116,12 @@ void ProgramsPage::loadProgram(){
                 return;
             }
 
-            //Check if the file is an XML file <=> conains the xml declaration
-            QFile file(filePath);
-            if (!file.open(QIODevice::ReadOnly)) {
-                const QString message = tr("The file %1 is not readable.").arg(filePath);
-                QMessageBox::critical (this, tr("IO Error!"),message);
-            } else {
-                QTextStream stream(&file);
-                QString firstLine = stream.readLine();
-                const int i = firstLine.indexOf(QRegularExpression("^<\\?xml version"));
-                file.close();
-                if(i == -1){
-                    QString message = tr("The file %1 is not an xml file.").arg(filePath);
-                    QMessageBox::critical (this, tr("IO Error!"),message);
-                    return;
-                }
+            // Basic extension check: accept .yaml / .yml description files
+            if (!filePath.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive) &&
+                !filePath.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive)) {
+                QMessageBox::critical(this, tr("IO Error!"),
+                    tr("The file %1 is not a YAML description file.").arg(filePath));
+                return;
             }
             if(!programUrl.isEmpty())
                 emit programToLoad(programUrl);

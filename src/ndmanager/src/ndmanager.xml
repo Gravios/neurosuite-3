@@ -3,12 +3,12 @@
 
 	<!-- 	Preprocessing -->
 	
-	<mime-type type="application/nphys-xml">
-		<comment>parameter file</comment>
-		<comment xml:lang="fr">fichier de paramètres</comment>
-		<glob pattern="*.xml"/>
+	<mime-type type="application/nphys-yaml">
+		<comment>YAML parameter file</comment>
+		<comment xml:lang="fr">fichier de paramètres YAML</comment>
+		<glob pattern="*.yaml"/>
 		<magic priority="100">
-			<match type="string" offset="0:200" value="ndManager"/>
+			<match type="string" offset="0:200" value="neuroscope_session:"/>
 		</magic>
 	</mime-type>
 	

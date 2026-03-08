@@ -316,7 +316,7 @@ public:
    /**Gets the channel autocenter status.
   * @param autocenterChannels whether channels should be centered around their offset.
   */
-  inline bool getAutocenterChannels(){return autocenterChannels;};
+  inline bool getAutocenterChannels() const {return autocenterChannels;};
 
   /**Gets the list of TracePosition.
   * @return list of TracePosition.

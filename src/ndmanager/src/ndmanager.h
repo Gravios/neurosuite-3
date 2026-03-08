@@ -22,7 +22,6 @@
 #define _NDMANAGER_H_
 
 //include files for QT
-#include <QDomDocument>
 
 
 #include <QList>

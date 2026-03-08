@@ -1,0 +1,77 @@
+generalInfo:
+  date: ""
+  experimenters: ""
+  description: ""
+  notes: ""
+
+acquisitionSystem:
+  nBits: 16
+  nChannels: 4
+  samplingRate: 20000.0
+  voltageRange: 10
+  amplification: 1000
+  offset: 0
+
+fieldPotentials:
+  lfpSamplingRate: 1250
+
+anatomicalDescription:
+  channelGroups:
+    -
+      - channel: 0
+        skip: 0
+      - channel: 1
+        skip: 0
+      - channel: 2
+        skip: 0
+      - channel: 3
+        skip: 0
+
+spikeDetection:
+  channelGroups:
+    -
+      channels:
+        - 0
+        - 1
+        - 2
+        - 3
+      nSamples: 32
+      peakSampleIndex: 16
+      nFeatures: 3
+
+units: {}
+
+neuroscope:
+  version: "3.0.0"
+  miscellaneous:
+    screenGain: 0.2
+    traceBackgroundImage: ""
+  video:
+    rotate: 0
+    flip: 0
+    videoImage: ""
+    positionsBackground: 0
+  spikes:
+    nSamples: 32
+    peakSampleIndex: 16
+  channels:
+    - channel: 0
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 1
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 2
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 3
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0

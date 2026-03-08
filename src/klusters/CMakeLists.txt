@@ -134,7 +134,7 @@ if(USE_SYCL)
     endif()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Xml PrintSupport)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
 qt_standard_project_setup()
 
 # In a monorepo add_subdirectory build the alias target is already present;
