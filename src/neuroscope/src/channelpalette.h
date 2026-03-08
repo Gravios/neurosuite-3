@@ -161,9 +161,8 @@ protected Q_SLOTS:
     void slotMoveListItem(const QList<int> &, const QString& sourceGroup, const QString& destinationGroup, int index, bool moveAll);
 
 protected:
-    void resizeEvent(QResizeEvent* event);
-    void paintEvent(QPaintEvent* event);
-    
+    void resizeEvent(QResizeEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 Q_SIGNALS:
     void singleChangeColor(int selectedChannel);
     void groupChangeColor(int groupId);
@@ -292,10 +291,8 @@ public:
         setAcceptDrops(true);
     }
 
-    void dropEvent(QDropEvent* event);
-
-    void dragEnterEvent(QDragEnterEvent* event);
-
+    void dropEvent(QDropEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
 public Q_SLOTS:
     void setDragAndDrop(bool dragDrop){drag = dragDrop;}
 
@@ -325,7 +322,7 @@ Q_SIGNALS:
     void leftClickOnLabel(const QString& sourceId);
 
 protected:
-    void mousePressEvent(QMouseEvent* e);
+    void mousePressEvent(QMouseEvent* e) override;
 };
 
 #endif // CHANNELPALETTE_H

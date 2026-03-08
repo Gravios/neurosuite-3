@@ -77,10 +77,10 @@ Q_SIGNALS:
     void rowInsered();
 
 protected:
-    void keyPressEvent(QKeyEvent *event);
+    void keyPressEvent(QKeyEvent *event) override;
     void contentsWheelEvent(QWheelEvent* event){event->accept();}
-    void mousePressEvent(QMouseEvent *event);
-    void wheelEvent ( QWheelEvent * e );
+    void mousePressEvent(QMouseEvent *event) override;
+    void wheelEvent ( QWheelEvent * e ) override;
     QMimeData* mimeData(const QList<QListWidgetItem*> items) const;
     bool dropMimeData(int index, const QMimeData * data, Qt::DropAction action);
     Qt::DropActions supportedDropActions() const
@@ -93,7 +93,7 @@ protected:
     }
     // Skip internal dnd handling in QListWidget ---- how is one supposed to figure this out
     // without reading the QListWidget code !?
-    virtual void dropEvent(QDropEvent* ev) {
+    virtual void dropEvent(QDropEvent* ev) override {
         QAbstractItemView::dropEvent(ev);
     }
 

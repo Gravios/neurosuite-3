@@ -92,13 +92,13 @@ public Q_SLOTS:
   * @param dimensionX
   * @param dimensionY
   */
-    virtual void updatedDimensions(int dimensionX, int dimensionY);
+    virtual void updatedDimensions(int dimensionX, int dimensionY) override;
 
     /**Updates the view only for one cluster for which the color has been changed
   * @param clusterId cluster Id for which the color have changed.
   * @param active true if the view is the active one, false otherwise.
   */
-    virtual void singleColorUpdate(int clusterId,bool active){
+    virtual void singleColorUpdate(int clusterId,bool active) override {
         addClusterToUpdate(clusterId);
     }
 
@@ -165,7 +165,7 @@ public Q_SLOTS:
     /**Change the current mode, call by a selection of a tool
   * @param selectedMode new mode of drawing (selection or zoom)
   */
-    void setMode(BaseFrame::Mode selectedMode);
+    void setMode(BaseFrame::Mode selectedMode) override;
 
     /**
   * Update the clusters which have been modified by the suppression of spikes
@@ -222,23 +222,22 @@ protected:
   * Draws the contents of the frame
   * @param p painter used to draw the contents
   */
-    void paintEvent ( QPaintEvent*);
-
-    virtual void resizeEvent(QResizeEvent* event){
+    void paintEvent ( QPaintEvent*) override;
+    virtual void resizeEvent(QResizeEvent* event) override {
         //Trigger parent event
         ViewWidget::resizeEvent(event);
     }
-    void mouseReleaseEvent(QMouseEvent* event);
-    void mousePressEvent(QMouseEvent* event);
-    void mouseMoveEvent(QMouseEvent* event);
-    virtual  void mouseDoubleClickEvent(QMouseEvent* event){
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    virtual  void mouseDoubleClickEvent(QMouseEvent* event) override {
         //Trigger parent event
         ViewWidget::mouseDoubleClickEvent(event);
     }
     /**Treat the events informing that it is time to compute the new data
   * due to the selection polygon.
   */
-    virtual void customEvent(QEvent* event);
+    virtual void customEvent(QEvent* event) override;
 
 Q_SIGNALS:
     void moveToTime(long startTime);

@@ -16,6 +16,7 @@
  ***************************************************************************/
 
 #ifndef ARRAY_H
+#include <QtGlobal>
 #define ARRAY_H
 
 #include <cstring>
@@ -86,11 +87,15 @@ public:
      */
     [[nodiscard]] T &operator()(long i, long j)
     {
+        Q_ASSERT_X(i >= 1 && i <= nbRows && j >= 1 && j <= nbColumns,
+                   "Array::operator()", "index out of bounds");
         return array[static_cast<std::size_t>((i - 1) * nbColumns + (j - 1))];
     }
 
     [[nodiscard]] const T &operator()(long i, long j) const
     {
+        Q_ASSERT_X(i >= 1 && i <= nbRows && j >= 1 && j <= nbColumns,
+                   "Array::operator()", "index out of bounds");
         return array[static_cast<std::size_t>((i - 1) * nbColumns + (j - 1))];
     }
 

@@ -119,7 +119,7 @@ Q_SIGNALS:
     void processNotStarted();
 
 protected:
-    virtual QSize minimumSizeHint() const;
+    virtual QSize minimumSizeHint() const override;
     
 protected Q_SLOTS:
     void slotProcessExited( int, QProcess::ExitStatus);
@@ -130,7 +130,6 @@ private:
   * will automatic scroll the listbox if it is already at the bottom
   * to prevent automatic scrolling when the user has scrolled up
   */
-   void maybeScrollToBottom();
 
 private:
     QProcess* childproc;

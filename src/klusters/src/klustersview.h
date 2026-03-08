@@ -180,8 +180,7 @@ public:
 
     /**Update all the encapsulated widgets contain in the view. The widgets know how to draw themselves.*/
     void updateViewContents(){
-        emit updateDrawing();
-    }
+        emit updateDrawing();    }
 
     /**Updates the view only for one cluster for which the color has been changed.
     * @param clusterId the cluster id for which the color has been changed.
@@ -585,7 +584,7 @@ public:
     bool containsErrorMatrixView() const {return isThereErrorMatrixView;}
 
     /***Update the background color of the views.*/
-    void updateBackgroundColor(const QColor& color){emit changeBackgroundColor(color);}
+    void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
 
     /**
   * Adds the clusters created by the automatic reclustering program to those already shown and remove
@@ -722,7 +721,7 @@ Q_SIGNALS:
     void changeTimeInterval(int step,bool active);
     void changeChannelPositions(QList<int>& positions);
     void computeProbabilities();
-    void changeBackgroundColor(QColor color);
+    void changeBackgroundColor(const QColor& color);
     void clustersRenumbered(bool active);
     void updateClusters(QString name,QList<int>& clustersToShow,ItemColors* clustersColors,bool active);
     void increaseAllAmplitude();
@@ -736,8 +735,7 @@ protected:
     * KlustersView's are processed by KlustersApp::eventFilter(), so this overwitten closeEvent is necessary
     * and has to be empty. Don't overwrite this method !
     */
-    void closeEvent(QCloseEvent* e);
-
+    void closeEvent(QCloseEvent* e) override;
     /** The document connected to the view, specified in the constructor */
     KlustersDoc& doc;
 

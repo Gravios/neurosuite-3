@@ -205,7 +205,7 @@ bool SpikeRealign::readSpkWaveforms(const QVector<long long>& spikeGlobalIndices
     if (!f) return false;
 
     waveforms.resize(spikeGlobalIndices.size());
-    for (int k = 0; k < spikeGlobalIndices.size(); ++k) {
+    for (qsizetype k = 0; k < spikeGlobalIndices.size(); ++k) {
         long long idx = spikeGlobalIndices[k];  // 1-based chronological index
         off_t offset  = (off_t)(idx - 1) * nPts * sizeof(short);
         if (fseeko(f, offset, SEEK_SET) != 0) { fclose(f); return false; }
@@ -572,12 +572,8 @@ RealignResult SpikeRealign::run()
     //  implicitly from how the .spk was written by process_extractspikes:
     //  each spike row = nChan consecutive channel values per sample).
     // We need the global channel IDs to re-extract from .fil.
-    // They are stored in Data but only accessible via the XML reader.
-    // As a workaround, we expose a new Data accessor: Data::getChannelList().
-    // For now, use the SortableTable to get indices, but we need the channel
-    // mapping. The safest approach: re-read from .xml / .par.
-    // Actually, Data already stores `channelList` but it is private.
-    // We'll add a public accessor getChannelIds() to Data.
+    // Obtained via Data::getChannelIds(), which exposes the private
+    // `channelList` field set during initialization.
     QList<int> channelIds = m_data->getChannelIds();
 
     int processedSinceLastProgress = 0;

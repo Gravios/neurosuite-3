@@ -63,7 +63,7 @@ public:
     ~ErrorMatrixView();
 
     /**Signals that the widget is about to be deleted.*/
-    void willBeKilled();
+    void willBeKilled() override;
 
 public Q_SLOTS:
 
@@ -198,20 +198,18 @@ protected:
   * Draws the contents of the frame
   * @param p painter used to draw the contents
   */
-    void paintEvent ( QPaintEvent*);
-
+    void paintEvent ( QPaintEvent*) override;
     /**Treat the events sent by the groupAssistantThread instances*/
-    void customEvent(QEvent* event);
-
-    inline void resizeEvent(QResizeEvent* event){
+    void customEvent(QEvent* event) override;
+    inline void resizeEvent(QResizeEvent* event) override{
         //Trigger parent event
         ViewWidget::resizeEvent(event);
     }
 
-    inline void mousePressEvent(QMouseEvent* event){}
-    void mouseReleaseEvent(QMouseEvent* event);
-    void mouseMoveEvent(QMouseEvent* event);
-    inline void mouseDoubleClickEvent(QMouseEvent* event){}
+    inline void mousePressEvent(QMouseEvent* event) override {}
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    inline void mouseDoubleClickEvent(QMouseEvent* event)override {}
 
 private:
     /**Color map use to represent the probabilities of the error matrix.*/

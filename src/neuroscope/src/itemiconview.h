@@ -33,7 +33,7 @@
 class ItemWidgetItem : public QListWidgetItem {
 public:
     explicit ItemWidgetItem(const QIcon &icon, const QString &text, QListWidget *view = 0, int type = Type);
-    virtual bool operator<(const QListWidgetItem &other) const;
+    virtual bool operator<(const QListWidgetItem &other) const override;
 };
 
 class ItemIconView : public QListWidget {
@@ -53,12 +53,11 @@ public:
 
 
 protected:
-    void mousePressEvent ( QMouseEvent * event );
-    void mouseMoveEvent ( QMouseEvent * event );
-    void wheelEvent ( QWheelEvent * e );
-    void mouseReleaseEvent ( QMouseEvent * event );
-    void keyPressEvent(QKeyEvent *event);
-
+    void mousePressEvent ( QMouseEvent * event ) override;
+    void mouseMoveEvent ( QMouseEvent * event ) override;
+    void wheelEvent ( QWheelEvent * e ) override;
+    void mouseReleaseEvent ( QMouseEvent * event ) override;
+    void keyPressEvent(QKeyEvent *event) override;
 Q_SIGNALS:
     void mousePressMiddleButton(const QString& sourceGroup,QListWidgetItem*);
     void mousePressWAltButton(const QString &sourceGroup, QListWidgetItem*);

@@ -93,9 +93,8 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
     //Create the pairs for the clusters to show.
     const QList<int>& shownClusters = view.clusters();
     QList<int> clusters;
-    QList<int>::const_iterator clustersIterator;
-    for(clustersIterator = shownClusters.begin(); clustersIterator != shownClusters.end(); ++clustersIterator)
-        clusters.append(*clustersIterator);
+    for (int id : shownClusters)
+        clusters.append(id);
     std::sort(clusters.begin(), clusters.end());
 
     for(int j = 0; j<clusters.size(); ++j) {
@@ -420,8 +419,6 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
     //std::sort(pairList.begin(), pairList.end());
 
     //Loop on the pairs to be drawn.
-    QList<Pair>::iterator pairIterator;
-
     ItemColors& clusterColors = doc.clusterColors();
     Data& clusteringData = doc.data();
 
@@ -444,20 +441,17 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
     QList<int> shownClusters;
     if(drawContentsMode == UPDATE){
         specificPosition = true;
-        QList<int>::const_iterator iterator;
-        QList<int> const clusters = view.clusters();
-        QList<int>::const_iterator end(clusters.end());
-        for(iterator = clusters.begin(); iterator != end; ++iterator)
-            shownClusters.append(*iterator);
+        for (int id : view.clusters())
+            shownClusters.append(id);
         std::sort(shownClusters.begin(), shownClusters.end());
     }
 
-    for(pairIterator = pairList.begin(); pairIterator != pairList.end(); ++pairIterator){
-        int cluster1 = (*pairIterator).getX();
-        int cluster2 = (*pairIterator).getY();
+    for (const Pair& pair : qAsConst(pairList)) {
+        int cluster1 = pair.getX();
+        int cluster2 = pair.getY();
 
         //Get the iterator on the values of the current correlogram.
-        Data::CorrelogramIterator iterator = clusteringData.correlogramIterator(*pairIterator,scaleMode,binSize,timeWindow);
+        Data::CorrelogramIterator iterator = clusteringData.correlogramIterator(pair,scaleMode,binSize,timeWindow);
 
         if(!iterator.isDataAvailable())
             continue;
@@ -730,11 +724,10 @@ void CorrelationView::mouseDoubleClickEvent (QMouseEvent *e){
     ViewWidget::mouseDoubleClickEvent(e);
     if((!view.clusters().isEmpty())){
         Data& clusteringData = doc.data();
-        QList<Pair>::iterator pairIterator;
         bool correlogramsNotAvailable = false;
-        for(pairIterator = pairs.begin(); pairIterator != pairs.end(); ++pairIterator){
-            Data::CorrelogramIterator iterator = clusteringData.correlogramIterator(*pairIterator,scaleMode,binSize,timeWindow);
-            if(!iterator.isDataAvailable()) correlogramsNotAvailable = true;
+        for (const Pair& pair : pairs) {
+            if (!clusteringData.correlogramIterator(pair, scaleMode, binSize, timeWindow).isDataAvailable())
+                correlogramsNotAvailable = true;
         }
         if(correlogramsNotAvailable){
             setCursor(Qt::WaitCursor);
@@ -751,11 +744,9 @@ void CorrelationView::mouseReleaseEvent(QMouseEvent* e){
 
     if((e->button() & Qt::LeftButton) && (!view.clusters().isEmpty())){
         Data& clusteringData = doc.data();
-        QList<Pair>::iterator pairIterator;
         bool correlogramsNotAvailable = false;
-        for(pairIterator = pairs.begin(); pairIterator != pairs.end(); ++pairIterator){
-            Data::CorrelogramIterator iterator = clusteringData.correlogramIterator(*pairIterator,scaleMode,binSize,timeWindow);
-            if(!iterator.isDataAvailable())
+        for (const Pair& pair : pairs) {
+            if (!clusteringData.correlogramIterator(pair, scaleMode, binSize, timeWindow).isDataAvailable())
                 correlogramsNotAvailable = true;
         }
         if(correlogramsNotAvailable){
@@ -773,11 +764,10 @@ void CorrelationView::resizeEvent(QResizeEvent* e){
 
     if(!view.clusters().isEmpty()){
         Data& clusteringData = doc.data();
-        QList<Pair>::iterator pairIterator;
         bool correlogramsNotAvailable = false;
-        for(pairIterator = pairs.begin(); pairIterator != pairs.end(); ++pairIterator){
-            Data::CorrelogramIterator iterator = clusteringData.correlogramIterator(*pairIterator,scaleMode,binSize,timeWindow);
-            if(!iterator.isDataAvailable()) correlogramsNotAvailable = true;
+        for (const Pair& pair : pairs) {
+            if (!clusteringData.correlogramIterator(pair, scaleMode, binSize, timeWindow).isDataAvailable())
+                correlogramsNotAvailable = true;
         }
         if(correlogramsNotAvailable){
             setCursor(Qt::WaitCursor);

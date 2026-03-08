@@ -154,13 +154,18 @@ bool ChannelIconView::dropMimeData(int index, const QMimeData * mimeData, Qt::Dr
     const int numberOfItems = mimeData->data("application/x-channeliconview-number-item").toInt();
 
     if (sourceGroupName!= objectName()) {
-        //TODO this part is buggy
         QList<int> channelIds;
+        // Construct items without a parent widget so the stream-deserialization
+        // does not spuriously add them to this QListWidget before we have
+        // validated/transferred the channel data.  The items are deleted below
+        // after we have extracted the channel IDs we need.
         for (int i=0; i< numberOfItems; ++i) {
-            ChannelIconViewItem *item = new ChannelIconViewItem(this);
-            stream >> *item;
-            channelIds.append(item->text().toInt());
-            delete item;
+            ChannelIconViewItem item(nullptr);
+            stream >> item;
+            bool ok = false;
+            const int channelId = item.text().toInt(&ok);
+            if (ok)
+                channelIds.append(channelId);
         }
         if (!channelIds.isEmpty()) {
             emit moveListItem(channelIds, sourceGroupName, objectName(), index, moveAllGroup);
@@ -174,10 +179,12 @@ bool ChannelIconView::dropMimeData(int index, const QMimeData * mimeData, Qt::Dr
 
         QList<int> channelIds;
         for (int i=0; i< numberOfItems; ++i) {
-            ChannelIconViewItem *item = new ChannelIconViewItem(this);
-            stream >> *item;
-            channelIds.append(item->text().toInt());
-            delete item;
+            ChannelIconViewItem item(nullptr);
+            stream >> item;
+            bool ok = false;
+            const int channelId = item.text().toInt(&ok);
+            if (ok)
+                channelIds.append(channelId);
         }
 
         QListWidgetItem *posItem = item(index);

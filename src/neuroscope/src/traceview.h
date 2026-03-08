@@ -186,7 +186,7 @@ public:
     void groupColorUpdate(int groupId,bool active);
 
     /**Update the information presented in the view.*/
-    void updateDrawing();
+    void updateDrawing() override;
 
     /**Updates of the display due to a change in the display groups if @p active is true,
   * otherwise simply updates the internal variables.
@@ -511,35 +511,30 @@ protected:
   * Draws the contents of the frame
   * @param painter painter used to draw the contents
   */
-    void paintEvent ( QPaintEvent*ainter);
-
+    void paintEvent ( QPaintEvent*ainter) override;
     /**The view responds to a mouse move event.
   * The time is display in the status bar.
   * @param event mouse move event.
   */
-    void mouseMoveEvent(QMouseEvent* event);
+    void mouseMoveEvent(QMouseEvent* event) override;
 
     /**The view responds to a resize event.
   * The window is recomputed.
   * @param event resize event.
   */
-    void resizeEvent(QResizeEvent* event);
-
+    void resizeEvent(QResizeEvent* event) override;
     /**The view responds to a mouse click.
   * @param event mouse release event.
   */
-    void mousePressEvent(QMouseEvent* event);
-
+    void mousePressEvent(QMouseEvent* event) override;
     /**The view responds to a mouse release.
   * @param event mouse event.
   */
-    void mouseReleaseEvent(QMouseEvent* event);
-
+    void mouseReleaseEvent(QMouseEvent* event) override;
     /**The view responds to a double click.
   * @param event mouse event.
   */
-    void mouseDoubleClickEvent(QMouseEvent* event);
-
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
 private:
 
     /**True if the the colors are in grey-scale*/

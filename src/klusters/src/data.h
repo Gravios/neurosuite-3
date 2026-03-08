@@ -72,7 +72,7 @@ public:
   * Loads the features in data.
   * @param featureFile the .fet file
   * @param errorInformation string which, in case of an error, will contain detail about it.
-  * @return true if the loading succed false otherwise
+  * @return true if the loading succeeded, false otherwise
   */
     bool loadFeatures(QFile &featureFile, QString& errorInformation);
 
@@ -81,7 +81,7 @@ public:
   * @param clusterFile the .clu.i file.
   * @param spkFileLength the length of the .spk.i file.
   * @param errorInformation string which, in case of an error, will contain detail about it.
-  * @return true if the loading succed false otherwise.
+  * @return true if the loading succeeded, false otherwise.
   */
     bool loadClusters(QFile &clusterFile, long spkFileLength, QString& errorInformation);
 
@@ -90,16 +90,16 @@ public:
   * @param parXFile the .par.i file
   * @param parFile the .par file
   * @param errorInformation string which, in case of an error, will contain detail about it.
-  * @return true if the loading succed false otherwise.
+  * @return true if the loading succeeded, false otherwise.
   */
     bool configure(QFile& parXFile,QFile& parFile,QString& errorInformation);
 
     /**
-  * Loads the configuration parameters from the xml format parameter file.
-  * @param parFile the .xml parameter file.
+  * Loads the configuration parameters from the YAML parameter file.
+  * @param parFile the YAML parameter file.
   * @param electrodeGroupID the id of the electrode group currently opened.
   * @param errorInformation string which, in case of an error, will contain detail about it.
-  * @return true if the loading succed false otherwise.
+  * @return true if the loading succeeded, false otherwise.
   */
     bool configure(QFile& parFile,int electrodeGroupID,QString& errorInformation);
 
@@ -136,7 +136,7 @@ public:
   * @param featureFile the .fet file
   * @param spkFileLength the length of the .spk.i file
   * @param spkFileName the name of the .spk.i file
-  * @param parFile the .xml parameter file
+  * @param parFile the YAML parameter file
   * @param electrodeGroupID the id of the electrode group currently opened.
   * @param errorInformation string which, in case of an error, will contain detail about it.
   * @return true if the initialization succeded false otherwise
@@ -150,18 +150,13 @@ public:
   * @param clusterFile the .clu.i file
   * @param spkFileLength the length of the .spk.i file
   * @param spkFileName the name of the .spk.i file
-  * @param parFile the .xml parameter file
+  * @param parFile the YAML parameter file
   * @param electrodeGroupID the id of the electrode group currently opened.
   * @param errorInformation string which, in case of an error, will contain detail about it.
   * @return true if the initialization succeded false otherwise
   */
     bool initialize(QFile& featureFile,QFile& clusterFile, long spkFileLength, const QString &spkFileName, QFile& parFile, int electrodeGroupID, QString& errorInformation);
 
-    /**Calculate the minimum and maximum for each dimension and store them in
-  *dimensionMinima and dimensionMaxima respectively.
-  * @param modifiedClusters list of the clusters which have been modified implying
-  * the modification of the cluster 0 this the recalculation of the minima and maxima.
-  */
     /**Returns true if spikeIndex is valid (1-based, <= nbSpikes).*/
     bool isValidSpikeIndex(dataType spikeIndex) const {
         return spikeIndex >= 1 && spikeIndex <= nbSpikes;
@@ -204,7 +199,12 @@ public:
     /**Returns the 0-based peak sample index within a waveform.*/
     int peakSampleIndex() const { return peakPositionInWaveform; }
 
-    void minMaxDimensionCalculation(QList<int> modifiedClusters);
+    /**Calculate the minimum and maximum for each dimension and store them in
+  *dimensionMinima and dimensionMaxima respectively.
+  * @param modifiedClusters list of the clusters which have been modified implying
+  * the modification of the cluster 0, causing the recalculation of the minima and maxima.
+  */
+    void minMaxDimensionCalculation(const QList<int>& modifiedClusters);
 
     /**
   * Creates a new cluster out of existing ones.
@@ -571,7 +571,7 @@ public:
 
     /**
   * Informs if the the variables need it by the traceView are available. Those variables are retrieve only from
-  * the parameter file in xml format (the new for
+  * the YAML parameter file (the current for
   * @return true if the variables are available, false otherwise.*/
     bool isTraceViewVariablesAvailable()const {return traceViewVariablesAvailable;}
 
@@ -581,7 +581,7 @@ public:
     int getResolution()const{return nbBits;}
     /**Returns the total number of channels used during the recording.*/
     int getTotalNbChannels()const{return totalNbChannels;}
-    /**Returns the sampling rate in microseconds.*/
+    /**Returns the sampling rate in Hz.*/
     double getSamplingRate()const{return samplingRate;}
     /**Returns the acquisition system voltage range.*/
     int getVoltageRange()const{return voltageRange;}
@@ -876,20 +876,10 @@ private:
     public:
         WaveformData(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0):
             Waveforms(d,nbSampleSpikes,nbTimeFrameSpikes,index,startTime,endTime){
-            sampleSpikesTable = 0L;
-            timeFrameSpikesTable = 0L;
-            sampleMeanTable = 0L;
-            timeFrameMeanTable = 0L;
-            sampleStDeviationTable = 0L;
-            timeFrameStDeviationTable = 0L;
+            // std::vector members are default-constructed empty
         }
         ~WaveformData(){
-            if(sampleSpikesTable != 0L) delete []sampleSpikesTable;
-            if(timeFrameSpikesTable != 0L) delete []timeFrameSpikesTable;
-            if(sampleMeanTable != 0L) delete []sampleMeanTable;
-            if(timeFrameMeanTable != 0L) delete []timeFrameMeanTable;
-            if(sampleStDeviationTable != 0L) delete []sampleStDeviationTable;
-            if(timeFrameStDeviationTable != 0L) delete []timeFrameStDeviationTable;
+            // std::vector members clean up automatically
         }
         /**Specifies the number of spikes which can be store.*/
         void setSize(dataType size,WaveformMode waveformMode = SAMPLE);
@@ -915,12 +905,12 @@ private:
         void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end);
         void calculateMean(WaveformMode waveformMode = SAMPLE);
     private:
-        T* sampleSpikesTable;
-        T* timeFrameSpikesTable;
-        T* sampleMeanTable;
-        T* timeFrameMeanTable;
-        T* sampleStDeviationTable;
-        T* timeFrameStDeviationTable;
+        std::vector<T> sampleSpikesTable;
+        std::vector<T> timeFrameSpikesTable;
+        std::vector<T> sampleMeanTable;
+        std::vector<T> timeFrameMeanTable;
+        std::vector<T> sampleStDeviationTable;
+        std::vector<T> timeFrameStDeviationTable;
     } ;
 
 
@@ -996,18 +986,14 @@ private:
             reset();
         }
         Correlation(Data& d,int size,int timeWindow):data(d),binSize(size),timeFrame(timeWindow){
-            values = 0L;
             max = 0;
             asymptote = 0;
             nbBins = 0;
             firingRate = 0;
         }
         ~Correlation(){
-            if(values != 0L) delete []values;
         }
         void reset(){
-            if(values != 0L) delete []values;
-            values = 0L;
             max = 0;
             asymptote = 0;
             binSize = 0;
@@ -1039,7 +1025,7 @@ private:
 
     private:
         Data& data;
-        uint* values;
+        std::vector<uint> values;
         Status status;
         int binSize;
         int timeFrame;
@@ -1141,7 +1127,7 @@ private:
   * @param cleanProcess true if the cluster has to be remove from correlationInProcess false otherwise.
   * The default is false.
   */
-    void cleanCorrelation(dataType clusterId,QList<dataType> currentClusterList,bool cleanProcess = false);
+    void cleanCorrelation(dataType clusterId,const QList<dataType>& currentClusterList,bool cleanProcess = false);
 
     /**
   * Renumber all the correlations.
@@ -1233,7 +1219,7 @@ public:
             waveforms = waveformsData;
         }
         void init(){
-            waveforms = 0L;
+            waveforms = nullptr;
             spikesIndex = -1;
             meanIndex = -1;
             stDeviationIndex = -1;
@@ -1512,7 +1498,7 @@ public:
     /**
   * Loads the clusters created by the automatic reclustering program.
   * @param clusterFile the cluster file created by the automatic reclustering program.
-  * @return true if the loading succed false otherwise
+  * @return true if the loading succeeded, false otherwise
   */
     bool loadReclusteredClusters(QFile &clusterFile);
 

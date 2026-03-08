@@ -64,7 +64,7 @@ public:
     ~CorrelationView();
 
     /**Signals that the widget is about to be deleted.*/
-    void willBeKilled();
+    void willBeKilled() override;
 
     /** Returns the size of the bins to use in the correlograms, given in miliseconds.
   *@return size of the bins.
@@ -146,7 +146,7 @@ public Q_SLOTS:
     /**Changes the current mode, call by a selection of a tool
   * @param selectedMode new mode of drawing (selection or zoom)
   */
-    void setMode(BaseFrame::Mode selectedMode){}
+    void setMode(BaseFrame::Mode selectedMode) override {}
 
     /**Sets the mode of presentation to raw mode, meaning that the value of each bin in a
   * correlogram will be the computed value.
@@ -210,7 +210,7 @@ public Q_SLOTS:
     void setShoulderLine(bool b);
 
     /**Update the information presented in the view if need it.*/
-    void updateDrawing();
+    void updateDrawing() override;
 
     /**
  * Update the information presented in the view after a renumbering if need it.
@@ -230,38 +230,36 @@ protected:
   * Draws the contents of the frame
   * @param p painter used to draw the contents
   */
-    void paintEvent ( QPaintEvent *);
-
+    void paintEvent ( QPaintEvent *) override;
     /**Treat the events sent by the CorrelationThread instances.
   * @param event custom event.
   */
-    void customEvent (QEvent* event);
-
+    void customEvent (QEvent* event) override;
     /**The view responds to a double click.
   * The correlograms are retrieve in case the data have changed (an other view has changed its parameters)
   * as all the views are sharing the same data.
   * @param event mouse event.
   */
-    void mouseDoubleClickEvent (QMouseEvent* event);
+    void mouseDoubleClickEvent (QMouseEvent* event) override;
 
     /**The view responds to a mouse click.
   * The correlograms are retrieve in case the data have changed (an other view has chaneg its parameters.
   * @param event mouse release event.
   */
-    void mouseReleaseEvent(QMouseEvent* event);
+    void mouseReleaseEvent(QMouseEvent* event) override;
     
     /**The view responds to a resize event.
   * The correlograms are retrieve in case the data have changed (an other view has changed its parameters)
   * as all the views are sharing the same data.
   * @param event resize event.
   */
-    void resizeEvent(QResizeEvent* event);
+    void resizeEvent(QResizeEvent* event) override;
 
     /**The view responds to a mouse move event.
   * The time is display in the status bar.
   * @param event mouse move event.
   */
-    void mouseMoveEvent(QMouseEvent* event);
+    void mouseMoveEvent(QMouseEvent* event) override;
 
 private:
 

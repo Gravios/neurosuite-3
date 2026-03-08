@@ -107,7 +107,6 @@ int EventsProvider::loadData(){
     }
 
     eventFile.close();
-    qDebug() << "Loading evt file into memory: "<<Timer();
 
 
     //The number of events read has to be coherent with the number of events read.

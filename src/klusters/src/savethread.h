@@ -42,7 +42,7 @@ public:
     explicit SaveThread(KlustersApp* parent):doc(0L),parent(parent),isSaveAs(false){}
 
 
-    virtual void run();
+    virtual void run() override;
 
     /**
   * Begins the execution of the thread which will save the cluster information.

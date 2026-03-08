@@ -123,7 +123,7 @@ protected Q_SLOTS:
     void slotMousePressed(const QString &sourceGroupName, bool shiftKey = false, bool ctrlAlt = false);
     void slotClickRedraw();
     void languageChange();
-    void resizeEvent(QResizeEvent* event);
+    void resizeEvent(QResizeEvent* event) override;
     void slotMouseReleased(const QString &sourceGroupName);
     void slotRowInsered();
 
@@ -238,7 +238,7 @@ Q_SIGNALS:
     void middleClickOnLabel(const QString& sourceId);
 
 protected:
-    void mousePressEvent(QMouseEvent* e){
+    void mousePressEvent(QMouseEvent* e) override{
         if(e->button() == Qt::LeftButton && !(e->modifiers() & Qt::ShiftModifier) && !(e->modifiers() & Qt::ControlModifier) && !(e->modifiers() & Qt::AltModifier)){
             emit leftClickOnLabel(parent()->objectName(),false,false);
         }
