@@ -1,0 +1,343 @@
+generalInfo:
+  date: ""
+  experimenters: ""
+  description: ""
+  notes: ""
+
+acquisitionSystem:
+  nBits: 16
+  nChannels: 32
+  samplingRate: 32552.083
+  voltageRange: 10
+  amplification: 1000
+  offset: 0
+
+fieldPotentials:
+  lfpSamplingRate: 1250
+
+anatomicalDescription:
+  channelGroups:
+    -
+      - channel: 0
+        skip: 0
+      - channel: 1
+        skip: 0
+      - channel: 2
+        skip: 0
+      - channel: 3
+        skip: 0
+    -
+      - channel: 4
+        skip: 0
+      - channel: 5
+        skip: 0
+      - channel: 6
+        skip: 0
+      - channel: 7
+        skip: 0
+    -
+      - channel: 8
+        skip: 0
+      - channel: 9
+        skip: 0
+      - channel: 10
+        skip: 0
+      - channel: 11
+        skip: 0
+    -
+      - channel: 12
+        skip: 0
+      - channel: 13
+        skip: 0
+      - channel: 14
+        skip: 0
+      - channel: 15
+        skip: 0
+    -
+      - channel: 16
+        skip: 0
+      - channel: 17
+        skip: 0
+      - channel: 18
+        skip: 0
+      - channel: 19
+        skip: 0
+    -
+      - channel: 20
+        skip: 0
+      - channel: 21
+        skip: 0
+      - channel: 22
+        skip: 0
+      - channel: 23
+        skip: 0
+    -
+      - channel: 24
+        skip: 0
+      - channel: 25
+        skip: 0
+      - channel: 26
+        skip: 0
+      - channel: 27
+        skip: 0
+    -
+      - channel: 28
+        skip: 0
+      - channel: 29
+        skip: 0
+      - channel: 30
+        skip: 0
+      - channel: 31
+        skip: 0
+
+spikeDetection:
+  channelGroups:
+    -
+      channels:
+        - 0
+        - 1
+        - 2
+        - 3
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 4
+        - 5
+        - 6
+        - 7
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 8
+        - 9
+        - 10
+        - 11
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 12
+        - 13
+        - 14
+        - 15
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 16
+        - 17
+        - 18
+        - 19
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 20
+        - 21
+        - 22
+        - 23
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 24
+        - 25
+        - 26
+        - 27
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+    -
+      channels:
+        - 28
+        - 29
+        - 30
+        - 31
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+
+units: {}
+
+neuroscope:
+  version: "3.0.0"
+  miscellaneous:
+    screenGain: 0.2
+    traceBackgroundImage: ""
+  video:
+    rotate: 0
+    flip: 0
+    videoImage: ""
+    positionsBackground: 0
+  spikes:
+    nSamples: 52
+    peakSampleIndex: 26
+  channels:
+    - channel: 0
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 1
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 2
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 3
+      color: "#46b648"
+      anatomyColor: "#46b648"
+      spikeColor: "#46b648"
+      defaultOffset: 0
+    - channel: 4
+      color: "#aee562"
+      anatomyColor: "#aee562"
+      spikeColor: "#aee562"
+      defaultOffset: 0
+    - channel: 5
+      color: "#aee562"
+      anatomyColor: "#aee562"
+      spikeColor: "#aee562"
+      defaultOffset: 0
+    - channel: 6
+      color: "#aee562"
+      anatomyColor: "#aee562"
+      spikeColor: "#aee562"
+      defaultOffset: 0
+    - channel: 7
+      color: "#aee562"
+      anatomyColor: "#aee562"
+      spikeColor: "#aee562"
+      defaultOffset: 0
+    - channel: 8
+      color: "#d3881f"
+      anatomyColor: "#d3881f"
+      spikeColor: "#d3881f"
+      defaultOffset: 0
+    - channel: 9
+      color: "#d3881f"
+      anatomyColor: "#d3881f"
+      spikeColor: "#d3881f"
+      defaultOffset: 0
+    - channel: 10
+      color: "#d3881f"
+      anatomyColor: "#d3881f"
+      spikeColor: "#d3881f"
+      defaultOffset: 0
+    - channel: 11
+      color: "#d3881f"
+      anatomyColor: "#d3881f"
+      spikeColor: "#d3881f"
+      defaultOffset: 0
+    - channel: 12
+      color: "#ff5b3a"
+      anatomyColor: "#ff5b3a"
+      spikeColor: "#ff5b3a"
+      defaultOffset: 0
+    - channel: 13
+      color: "#ff5b3a"
+      anatomyColor: "#ff5b3a"
+      spikeColor: "#ff5b3a"
+      defaultOffset: 0
+    - channel: 14
+      color: "#ff5b3a"
+      anatomyColor: "#ff5b3a"
+      spikeColor: "#ff5b3a"
+      defaultOffset: 0
+    - channel: 15
+      color: "#ff5b3a"
+      anatomyColor: "#ff5b3a"
+      spikeColor: "#ff5b3a"
+      defaultOffset: 0
+    - channel: 16
+      color: "#6a7eff"
+      anatomyColor: "#6a7eff"
+      spikeColor: "#6a7eff"
+      defaultOffset: 0
+    - channel: 17
+      color: "#6a7eff"
+      anatomyColor: "#6a7eff"
+      spikeColor: "#6a7eff"
+      defaultOffset: 0
+    - channel: 18
+      color: "#6a7eff"
+      anatomyColor: "#6a7eff"
+      spikeColor: "#6a7eff"
+      defaultOffset: 0
+    - channel: 19
+      color: "#6a7eff"
+      anatomyColor: "#6a7eff"
+      spikeColor: "#6a7eff"
+      defaultOffset: 0
+    - channel: 20
+      color: "#c97fff"
+      anatomyColor: "#c97fff"
+      spikeColor: "#c97fff"
+      defaultOffset: 0
+    - channel: 21
+      color: "#c97fff"
+      anatomyColor: "#c97fff"
+      spikeColor: "#c97fff"
+      defaultOffset: 0
+    - channel: 22
+      color: "#c97fff"
+      anatomyColor: "#c97fff"
+      spikeColor: "#c97fff"
+      defaultOffset: 0
+    - channel: 23
+      color: "#c97fff"
+      anatomyColor: "#c97fff"
+      spikeColor: "#c97fff"
+      defaultOffset: 0
+    - channel: 24
+      color: "#ffb347"
+      anatomyColor: "#ffb347"
+      spikeColor: "#ffb347"
+      defaultOffset: 0
+    - channel: 25
+      color: "#ffb347"
+      anatomyColor: "#ffb347"
+      spikeColor: "#ffb347"
+      defaultOffset: 0
+    - channel: 26
+      color: "#ffb347"
+      anatomyColor: "#ffb347"
+      spikeColor: "#ffb347"
+      defaultOffset: 0
+    - channel: 27
+      color: "#ffb347"
+      anatomyColor: "#ffb347"
+      spikeColor: "#ffb347"
+      defaultOffset: 0
+    - channel: 28
+      color: "#40e0d0"
+      anatomyColor: "#40e0d0"
+      spikeColor: "#40e0d0"
+      defaultOffset: 0
+    - channel: 29
+      color: "#40e0d0"
+      anatomyColor: "#40e0d0"
+      spikeColor: "#40e0d0"
+      defaultOffset: 0
+    - channel: 30
+      color: "#40e0d0"
+      anatomyColor: "#40e0d0"
+      spikeColor: "#40e0d0"
+      defaultOffset: 0
+    - channel: 31
+      color: "#40e0d0"
+      anatomyColor: "#40e0d0"
+      spikeColor: "#40e0d0"
+      defaultOffset: 0

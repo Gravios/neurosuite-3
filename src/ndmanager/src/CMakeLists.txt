@@ -8,7 +8,6 @@ set(_srcs
     channelcolorspage.cpp
     channeloffsetspage.cpp
     clusterspage.cpp
-    descriptionwriter.cpp
     fileinformation.cpp
     filepage.cpp
     filespage.cpp
@@ -36,9 +35,9 @@ set(_srcs
     unitlistpage.cpp
     unittable.cpp
     videopage.cpp
-    xmlreader.cpp
     ndmanageryamlreader.cpp
-    xmlwriter.cpp
+    descriptionyamlwriter.cpp
+    descriptionyamlreader.cpp
     safetablewidget.cpp
     ndmanagerutils.cpp
     colortable.cpp
@@ -79,7 +78,8 @@ target_link_libraries(ndmanager PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::Xml)
+    yaml-cpp
+)
 
 # ---------------------------------------------------------------------------
 # Install
@@ -87,7 +87,7 @@ target_link_libraries(ndmanager PRIVATE
 install(TARGETS ndmanager
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
-install(FILES ndManagerDefault.xml
+install(FILES ndManagerDefault.yaml
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications/ndmanager")
 
 # Application and mimetype icons
@@ -95,9 +95,6 @@ foreach(_size IN ITEMS 16 22 32 48 64)
     install(FILES "hi${_size}-app-ndmanager.png"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
         RENAME ndmanager.png)
-    install(FILES "hi${_size}-nphys-xml.png"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/mimetypes"
-        RENAME application-nphys-xml.png)
 endforeach()
 
 install(FILES ndmanager.desktop
@@ -105,6 +102,6 @@ install(FILES ndmanager.desktop
 install(FILES ndmanager.xml
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mime/packages")
 
-file(GLOB _templates "${CMAKE_CURRENT_SOURCE_DIR}/Template*.xml")
+file(GLOB _templates "${CMAKE_CURRENT_SOURCE_DIR}/Template*.yaml")
 install(FILES ${_templates}
     DESTINATION "${CMAKE_INSTALL_DATADIR}/ndmanager/templates")

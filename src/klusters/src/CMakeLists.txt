@@ -29,12 +29,10 @@ set(klusters_SRCS
     klusters.cpp
     klustersdoc.cpp
     klustersview.cpp
-    klustersxmlreader.cpp
     klustersyamlreader.cpp
     main.cpp
     minmaxthread.cpp
     pair.cpp
-    parameterxmlmodifier.cpp
     prefclusterview.cpp
     prefdialog.cpp
     prefgeneral.cpp
@@ -163,7 +161,6 @@ target_link_libraries(klusters
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::Xml
     Qt6::PrintSupport
 )
 

@@ -49,7 +49,7 @@
 #include "ndmanagerdoc.h"
 #include "ndmanager.h"
 #include "tags.h"
-#include "xmlreader.h"
+#include "descriptionyamlreader.h"
 #include "ndmanagerutils.h"
 
 #include "parametertree.h"
@@ -446,7 +446,7 @@ void ParameterView::loadProgram(const QString &programUrl) {
     programId++;
 
     // Get the information concering the program from the file.
-    XmlReader reader = XmlReader();
+    DescriptionYamlReader reader;
     reader.parseFile(programUrl);
     ProgramInformation programInformation;
     reader.getProgramInformation(programInformation);

@@ -5,7 +5,7 @@ install(PROGRAMS
     ndm_ncs2dat ndm_nev2evt ndm_nvt2spots ndm_pca ndm_recolorchannels
     ndm_reorderchannels ndm_resample ndm_smi2sts ndm_smr2dat ndm_smr2evt
     ndm_denoiseuniform ndm_klustakwik ndm_spikegrouper
-    ndm_start ndm_transcodevideo ndm_tsp2sts ndm_xml2yaml
+    ndm_start ndm_transcodevideo ndm_tsp2sts
     ndm_estimatedrift
     ndm_decomposecollisions
     ndm_setupgroups
@@ -22,7 +22,7 @@ install(PROGRAMS
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 foreach(_page IN ITEMS
-        cnt duration ndm ndm_recolorchannels ndm_start ndm_xml2yaml
+        cnt duration ndm ndm_recolorchannels ndm_start
         ndm_estimatedrift ndm_decomposecollisions ndm_setupgroups pad
         process_reorderclusters rn)
     add_manpage(${_page})

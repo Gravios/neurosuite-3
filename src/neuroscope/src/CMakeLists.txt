@@ -24,8 +24,9 @@ set(_srcs
     itemiconview.cpp
     itempalette.cpp
     neuroscopedoc.cpp
-    neuroscopexmlreader.cpp
     neuroscopeyamlreader.cpp
+    sessionyamlwriter.cpp
+    sessionyamlreader.cpp
     positionproperties.cpp
     positionsprovider.cpp
     positionview.cpp
@@ -34,13 +35,9 @@ set(_srcs
     prefgeneral.cpp
     properties.cpp
     propertiesdialog.cpp
-    tags.cpp
     tracesprovider.cpp
     traceview.cpp
     tracewidget.cpp
-    sessionxmlwriter.cpp
-    parameterxmlcreator.cpp
-    parameterxmlmodifier.cpp
     imagecreator.cpp
     globaleventsprovider.cpp
     eventdata.cpp
@@ -65,7 +62,6 @@ target_link_libraries(neuroscope PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::Xml
     Qt6::PrintSupport)
 
 # ---------------------------------------------------------------------------

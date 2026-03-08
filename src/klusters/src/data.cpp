@@ -22,7 +22,6 @@
 #include "minmaxthread.h"
 #include "waveformview.h"
 #include "autosavethread.h"
-#include "klustersxmlreader.h"
 #include "klustersyamlreader.h"
 
 //C include files
@@ -121,17 +120,10 @@ bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformati
     };
 
     const QString filePath = parFile.fileName();
-    const bool isYaml = filePath.endsWith(QLatin1String(".yaml"), Qt::CaseInsensitive)
-                     || filePath.endsWith(QLatin1String(".yml"),  Qt::CaseInsensitive);
-
     bool parsed = false;
-    if (isYaml) {
+    {
         KlustersYamlReader reader;
         if (reader.parseFile(filePath))
-            parsed = loadFromReader(reader);
-    } else {
-        KlustersXmlReader reader;
-        if (reader.parseFile(parFile, KlustersXmlReader::PARAMETER))
             parsed = loadFromReader(reader);
     }
 

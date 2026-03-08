@@ -33,7 +33,7 @@ include(GNUInstallDirs)
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Xml PrintSupport)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
 
 # LibKlustersShared exports KlustersShared::klustersshared via its installed
 # CMake package config.  The cmake/modules/ directory is no longer needed.
