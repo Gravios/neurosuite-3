@@ -1307,7 +1307,262 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 // ---------------------------------------------------------------------------
 // RunChunkedCEM — three-phase temporal-chunk pipeline
 //
-// Phase 0: divide data into temporal chunks of chunkMinutes duration.
+// ---------------------------------------------------------------------------
+// RunChunkedCEM overload — external boundary list (seconds)
+//
+// Converts the caller-supplied boundary times to normalised [0,1] fractions
+// using the same timeRawMin/Max reference used by the uniform variant, then
+// delegates to the core implementation with the pre-built chunkPoints list.
+// Everything from Phase 1 onward is identical to the uniform variant.
+// ---------------------------------------------------------------------------
+float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
+                         float samplingRate,
+                         float mergeThresh,
+                         int   globalMergeIter,
+                         int   timeMergeIter)
+{
+    const int nFullDims    = nDims;
+    const int nSpatialDims = (nDims > 1) ? nDims - 1 : nDims;
+    const int timeDim      = nDims - 1;
+
+    const float sessionSamples = timeRawMax - timeRawMin;
+    if (sessionSamples <= 0.0f || samplingRate <= 0.0f || chunkBoundsSec.size() < 2) {
+        Output("RunChunkedCEM(ext): degenerate boundaries — falling back.\n");
+        return CEMTwoPhase(timeMergeIter);
+    }
+
+    // Convert boundary times (seconds) to normalised [0,1] fractions.
+    // normBounds[i] = boundary_i_seconds * samplingRate / sessionSamples
+    // (timeRawMin is the unnormalized start sample; for normalised data the
+    //  start is 0, but we subtract it just as LoadData() does.)
+    const int nBounds = static_cast<int>(chunkBoundsSec.size());
+    const int nChunks = nBounds - 1;
+
+    std::vector<float> normBounds(nBounds);
+    for (int i = 0; i < nBounds; i++) {
+        // boundary_samples = bound_sec * SR;  norm = boundary_samples / sessionSamples
+        normBounds[i] = (chunkBoundsSec[i] * samplingRate) / sessionSamples;
+        // Clamp to [0,1]
+        if (normBounds[i] < 0.0f) normBounds[i] = 0.0f;
+        if (normBounds[i] > 1.0f) normBounds[i] = 1.0f;
+    }
+
+    Output("RunChunkedCEM(ext): session %.1f min, %d drift-adaptive chunks\n",
+           sessionSamples / samplingRate / 60.0f, nChunks);
+
+    // Assign each point to its chunk by binary search on normBounds.
+    // A point with normalised time t belongs to chunk k where
+    //   normBounds[k] <= t < normBounds[k+1].
+    std::vector<std::vector<int>> chunkPoints(nChunks);
+    for (int p = 0; p < nPoints; p++) {
+        const float t = Data[p * nDims + timeDim];
+        // upper_bound gives the first boundary strictly > t;
+        // subtracting begin() gives the 1-based index of that boundary,
+        // so chunk index = that index - 1, clamped.
+        int k = static_cast<int>(
+            std::upper_bound(normBounds.begin(), normBounds.end(), t)
+            - normBounds.begin()) - 1;
+        if (k < 0)       k = 0;
+        if (k >= nChunks) k = nChunks - 1;
+        chunkPoints[k].push_back(p);
+    }
+
+    // Merge undersized trailing chunks (same logic as the uniform variant).
+    const int minSpikes = nStartingClusters * nSpatialDims * 3;
+    for (int k = nChunks - 1; k >= 1; k--) {
+        if (static_cast<int>(chunkPoints[k].size()) < minSpikes) {
+            Output("  Chunk %d: %d spikes < %d minimum — merging into chunk %d.\n",
+                   k, static_cast<int>(chunkPoints[k].size()), minSpikes, k - 1);
+            for (int p : chunkPoints[k]) chunkPoints[k-1].push_back(p);
+            chunkPoints[k].clear();
+        }
+    }
+    chunkPoints.erase(
+        std::remove_if(chunkPoints.begin(), chunkPoints.end(),
+                       [](const std::vector<int>& v){ return v.empty(); }),
+        chunkPoints.end());
+    const int nActive = static_cast<int>(chunkPoints.size());
+
+    if (nActive <= 1) {
+        Output("Only one chunk after size-check merges — running CEMTwoPhase.\n");
+        return CEMTwoPhase(timeMergeIter);
+    }
+    Output("Active chunks: %d\n", nActive);
+
+    // ── Phases 1 / 2 / 3 are identical to the uniform variant. ─────────────
+    // Rather than duplicating ~250 lines, we delegate: build a temporary
+    // 'chunkMinutes' value that exactly reproduces the chunkPoints assignment
+    // we already computed, then call the uniform variant with that value AND
+    // pass our pre-built chunkPoints via a thin shim.
+    //
+    // Implementation note: we inline the phase 1/2/3 body here because the
+    // uniform variant's phase 0 would re-compute boundaries and might not
+    // reproduce identical chunkPoints.  The phase 1/2/3 code is factored
+    // into a private helper _RunChunkedCEMFromPoints() shared by both
+    // overloads.  Until that refactor lands, we inline the body.
+
+    // ── Phase 1: per-chunk CEMTwoPhase (parallel) ───────────────────────────
+    std::vector<ChunkModel> allModels;
+    std::vector<int>        pointPacked(nPoints, 0);
+
+    std::vector<std::vector<ChunkModel>> perChunkModels(nActive);
+    std::vector<std::vector<std::pair<int,int>>> perChunkAssign(nActive);
+    std::vector<float> perChunkScore(nActive, 0.0f);
+    std::vector<int>   perChunkNClusters(nActive, 0);
+
+    int maxChunkSize = 0;
+    for (int k = 0; k < nActive; k++)
+        maxChunkSize = std::max(maxChunkSize, static_cast<int>(chunkPoints[k].size()));
+
+#ifdef _OPENMP
+    const int nThreads = omp_get_max_threads();
+#else
+    const int nThreads = 1;
+#endif
+    std::vector<KK> threadKc(nThreads);
+    for (int t = 0; t < nThreads; t++) {
+        threadKc[t].nDims             = nFullDims;
+        threadKc[t].nPoints           = maxChunkSize;
+        threadKc[t].nStartingClusters = nStartingClusters;
+        threadKc[t].penaltyMix        = penaltyMix;
+        threadKc[t].suppressBestSave  = true;
+        threadKc[t].minClustersAlive  = nStartingClusters;
+        threadKc[t].AllocateArrays();
+        threadKc[t].AlocateCholeskyVecs();
+    }
+
+    #pragma omp parallel for schedule(dynamic) default(none) \
+        shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
+               chunkPoints, nActive, nFullDims, timeMergeIter, threadKc) \
+        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix)
+    for (int k = 0; k < nActive; k++) {
+        const std::vector<int>& pts = chunkPoints[k];
+        const int nPts = static_cast<int>(pts.size());
+
+        KK& Kc = threadKc[
+#ifdef _OPENMP
+            omp_get_thread_num()
+#else
+            0
+#endif
+        ];
+        Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
+        Kc.nStartingClusters = nStartingClusters;
+        Kc.NoisePoint        = 1;
+
+        for (int i = 0; i < nPts; i++) {
+            const int p = pts[i];
+            for (int d = 0; d < nFullDims; d++)
+                Kc.Data[i * nFullDims + d] = Data[p * nFullDims + d];
+        }
+
+        const float chunkScore = Kc.CEMTwoPhase(timeMergeIter);
+        perChunkScore[k]     = chunkScore;
+        perChunkNClusters[k] = Kc.nClustersAlive;
+
+        auto& models = perChunkModels[k];
+        for (int cc = 0; cc < Kc.nClustersAlive; cc++) {
+            const int c = Kc.AliveIndex[cc];
+            ChunkModel cm;
+            cm.chunkIdx        = k;
+            cm.localClusterId  = c;
+            cm.globalClusterId = -1;
+            cm.nMembers        = 0;
+            cm.mean.assign(nFullDims, 0.0f);
+            cm.cov.assign(nFullDims * nFullDims, 0.0f);
+            for (int d = 0; d < nFullDims; d++)
+                cm.mean[d] = Kc.Mean[c * nFullDims + d];
+            for (int r = 0; r < nFullDims; r++)
+                for (int col = r; col < nFullDims; col++)
+                    cm.cov[r * nFullDims + col] =
+                        Kc.Cov[c * Kc.nDims2 + r * nFullDims + col];
+            for (int i = 0; i < nPts; i++)
+                if (Kc.Class[i] == c) cm.nMembers++;
+            models.push_back(std::move(cm));
+        }
+
+        auto& assign = perChunkAssign[k];
+        assign.reserve(nPts);
+        for (int i = 0; i < nPts; i++)
+            assign.emplace_back(pts[i], k * MaxPossibleClusters + Kc.Class[i]);
+    }
+
+    for (int k = 0; k < nActive; k++) {
+        Output("  Chunk %d / %d  (%d spikes): %d clusters, score %.5g\n",
+               k, nActive - 1, static_cast<int>(chunkPoints[k].size()),
+               perChunkNClusters[k], perChunkScore[k]);
+        for (auto& cm : perChunkModels[k]) allModels.push_back(std::move(cm));
+        for (auto& [p, packed] : perChunkAssign[k]) pointPacked[p] = packed;
+    }
+
+    // ── Phase 2: cross-chunk model matching ─────────────────────────────────
+    {
+        const float d_    = static_cast<float>(nSpatialDims);
+        const float chi2_9999 = d_ * std::pow(1.0f - 2.0f/(9.0f*d_) + 3.719f * std::sqrt(2.0f/(9.0f*d_)), 3.0f);
+        const float chi2_99   = d_ * std::pow(1.0f - 2.0f/(9.0f*d_) + 2.326f * std::sqrt(2.0f/(9.0f*d_)), 3.0f);
+        if (mergeThresh > chi2_9999 * 1.5f) {
+            Output("WARNING: MergeThresh=%.1f is far above chi2(%d, 0.9999)=%.1f.\n"
+                   "  Recommended: MergeThresh=%.1f (chi2(%d, 0.99))\n",
+                   mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
+        }
+    }
+    const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh);
+    if (nGlobal < 1) {
+        Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
+        return CEMTwoPhase(timeMergeIter);
+    }
+    if (nGlobal >= MaxPossibleClusters) {
+        Output("WARNING: MergeChunkModels produced %d global clusters >= "
+               "MaxPossibleClusters (%d).\n"
+               "  Action: set -MergeThresh to ~chi2(nSpatialDims, 0.99)\n"
+               "  Falling back to CEMTwoPhase on the full session.\n",
+               nGlobal, MaxPossibleClusters);
+        return CEMTwoPhase(timeMergeIter);
+    }
+
+    std::unordered_map<int,int> packedToGlobal;
+    packedToGlobal.reserve(allModels.size());
+    for (const auto& cm : allModels)
+        packedToGlobal[cm.chunkIdx * MaxPossibleClusters + cm.localClusterId] =
+            cm.globalClusterId;
+
+    // ── Phase 3: global warm-start EM ───────────────────────────────────────
+    nDims  = nFullDims;
+    nDims2 = nDims * nDims;
+    log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
+
+    for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
+    for (int p = 0; p < nPoints; p++) {
+        auto it = packedToGlobal.find(pointPacked[p]);
+        const int g = (it != packedToGlobal.end()) ? it->second : 0;
+        Class[p] = g;
+        ClassAlive[g] = 1;
+    }
+    Reindex();
+
+    Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
+           nClustersAlive, globalMergeIter);
+
+    int   iter = 0, nChanged;
+    float score = 0.0f;
+    FullStep = 1;
+
+    for (; iter < globalMergeIter; iter++) {
+        MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
+        score = ComputeScore();
+        if (score < kSv.BestScoreSave) { SaveBestMeans(); kSv.BestScoreSave = score; }
+        if (Verbose >= 1)
+            Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
+                   iter, nClustersAlive, score, nChanged);
+        FullStep = 1;
+        if (nChanged == 0) { Output("Phase 3 converged at iter %d\n", iter); break; }
+    }
+
+    Output("RunChunkedCEM(ext) done: %d clusters, score %.7g\n", nClustersAlive, score);
+    return score;
+}
+
+// ---------------------------------------------------------------------------
 // Phase 1: run CEMTwoPhase independently on each chunk.
 // Phase 2: match cluster models across adjacent chunks (MergeChunkModels).
 // Phase 3: global warm-start EM seeded from the matched assignments.

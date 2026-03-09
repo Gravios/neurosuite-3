@@ -45,6 +45,11 @@
 #include <QApplication>
 #include <QInputDialog>
 #include <QActionGroup>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QListWidget>
+#include <QVBoxLayout>
+#include <QLabel>
 #include <QPrinter>
 #include <QSplitter>
 #include <qrecentfileaction.h>
@@ -340,6 +345,26 @@ void KlustersApp::createMenus()
     mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
+
+    actionMenu->addSeparator();
+
+    mGenerateProbeDrift = actionMenu->addAction(tr("&Generate Probe Drift…"));
+    mGenerateProbeDrift->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
+    mGenerateProbeDrift->setToolTip(
+        tr("Run ndm_estimatedrift on the current electrode group to estimate probe "
+           "displacement over time.  Requires that this group is already curated "
+           "(a .clu.N file exists).  Produces SESSION.drift alongside the data files."));
+    connect(mGenerateProbeDrift, &QAction::triggered,
+            this, &KlustersApp::slotGenerateProbeDrift);
+
+    mApplyDriftSiblings = actionMenu->addAction(tr("Apply Drift + &Recluster Siblings…"));
+    mApplyDriftSiblings->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F));
+    mApplyDriftSiblings->setToolTip(
+        tr("Compute drift-adaptive chunk boundaries from SESSION.drift and optionally "
+           "re-run KlustaKwik on the other electrode groups that share this probe.  "
+           "Requires SESSION.drift (generate it first with 'Generate Probe Drift')."));
+    connect(mApplyDriftSiblings, &QAction::triggered,
+            this, &KlustersApp::slotApplyDriftSiblings);
 
 
     //Tools menu
@@ -3376,6 +3401,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        mGenerateProbeDrift->setEnabled(false);
+        mApplyDriftSiblings->setEnabled(false);
         scaleByShouler->setEnabled(false);
         timeFrameMode->setEnabled(false);
         mRenumberClusters->setEnabled(false);
@@ -3429,6 +3456,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
         mRealignSpikes->setEnabled(true);
+        mGenerateProbeDrift->setEnabled(true);
+        mApplyDriftSiblings->setEnabled(true);
         scaleByShouler->setEnabled(true);
         timeFrameMode->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
@@ -3956,4 +3985,192 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 
     // Restore undo/redo state correctly.
     updateUndoRedoDisplay();
+}
+
+// ---------------------------------------------------------------------------
+// slotGenerateProbeDrift
+//
+// Runs ndm_estimatedrift for the current electrode group only.  The tool
+// writes SESSION.drift in the session directory.  Progress streams into a
+// new "Drift estimation" process tab (same ProcessWidget used by Recluster).
+// ---------------------------------------------------------------------------
+void KlustersApp::slotGenerateProbeDrift()
+{
+    if (!doc || doc->documentUrl().isEmpty()) return;
+
+    const QString dir      = doc->documentDirectory();
+    const QString session  = doc->documentBaseName();
+    const QString groupId  = doc->currentElectrodeGroupID();
+
+    // Sanity: the .clu file must exist (curation must have happened).
+    const QString cluPath = dir + QStringLiteral("/") + session
+                          + QStringLiteral(".clu.") + groupId;
+    if (!QFile::exists(cluPath)) {
+        QMessageBox::warning(this, tr("Generate Probe Drift"),
+            tr("No curated cluster file found:\n  %1\n\n"
+               "Please save your curation (Ctrl+S) before generating drift.").arg(cluPath));
+        return;
+    }
+
+    // If SESSION.drift already exists, ask whether to overwrite.
+    const QString driftPath = dir + QStringLiteral("/") + session + QStringLiteral(".drift");
+    if (QFile::exists(driftPath)) {
+        int ret = QMessageBox::question(this, tr("Generate Probe Drift"),
+            tr("%1 already exists.\nOverwrite it?").arg(driftPath),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ret != QMessageBox::Yes) return;
+        QFile::remove(driftPath);
+    }
+
+    // Clean up any old process tab.
+    if (processWidget) {
+        int idx = tabsParent->indexOf(processWidget);
+        if (idx != -1) { tabsParent->removeTab(idx); displayCount--; }
+        delete processWidget;
+        processWidget = nullptr;
+    }
+
+    processWidget = new ProcessWidget(this);
+    processWidget->setFocusPolicy(Qt::NoFocus);
+    connect(processWidget, &ProcessWidget::processOutputsFinished,
+            this, &KlustersApp::slotOutputTreatmentOver);
+    connect(processWidget, &ProcessWidget::processNotStarted,
+            this, &KlustersApp::slotOutputTreatmentOver);
+    connect(tabsParent, &QTabWidget::currentChanged,
+            this, &KlustersApp::slotTabChange);
+    tabsParent->addTab(processWidget, tr("Drift estimation"));
+    displayCount++;
+
+    processFinished        = false;
+    processOutputsFinished = false;
+    processKilled          = false;
+
+    // Invoke ndm_estimatedrift with --source-group so only this shank is
+    // estimated; siblings are cloned from the result inside process_estimatedrift.
+    QStringList args;
+    args << session                          // positional: parameter file / session
+         << QStringLiteral("sourceGroup=") + groupId;  // ndm_estimatedrift reads this
+
+    // ndm_estimatedrift takes the session name; the bash script resolves the YAML.
+    bool ok = processWidget->startJob(dir, QStringLiteral("ndm_estimatedrift"), args);
+    if (!ok) {
+        QMessageBox::critical(this, tr("Generate Probe Drift"),
+            tr("Could not start ndm_estimatedrift.\n"
+               "Ensure ndm_estimatedrift is on PATH and ndmanager-plugins is installed."));
+        processFinished        = true;
+        processOutputsFinished = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// slotApplyDriftSiblings
+//
+// Shows a checklist of sibling electrode groups (same probeId).  For the
+// selected groups, runs ndm_applydrift which:
+//   1. Reads SESSION.drift
+//   2. Computes adaptive chunk boundaries
+//   3. Writes SESSION.chunks.N
+//   4. Optionally re-runs KlustaKwik (controlled by the parameter file)
+// ---------------------------------------------------------------------------
+void KlustersApp::slotApplyDriftSiblings()
+{
+    if (!doc || doc->documentUrl().isEmpty()) return;
+
+    const QString dir     = doc->documentDirectory();
+    const QString session = doc->documentBaseName();
+    const QString groupId = doc->currentElectrodeGroupID();
+    const int     gid     = groupId.toInt();
+
+    // SESSION.drift must exist.
+    const QString driftPath = dir + QStringLiteral("/") + session + QStringLiteral(".drift");
+    if (!QFile::exists(driftPath)) {
+        QMessageBox::warning(this, tr("Apply Drift + Recluster Siblings"),
+            tr("Drift file not found:\n  %1\n\n"
+               "Run 'Generate Probe Drift' first (Actions → Generate Probe Drift…).").arg(driftPath));
+        return;
+    }
+
+    // Get sibling groups from the YAML.
+    const QList<int> siblings = doc->getSiblingElectrodeGroups(gid);
+    if (siblings.isEmpty()) {
+        QMessageBox::information(this, tr("Apply Drift + Recluster Siblings"),
+            tr("No sibling electrode groups found for group %1.\n\n"
+               "Sibling groups share the same probeId in the parameter file.\n"
+               "Add probeId fields to spikeDetection.channelGroups to define probe membership.\n"
+               "When probeId is absent, all groups default to probe 0 and are all siblings.").arg(gid));
+        return;
+    }
+
+    // Build checklist dialog.
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Apply Drift + Recluster Siblings"));
+    QVBoxLayout *vlay = new QVBoxLayout(&dlg);
+    vlay->addWidget(new QLabel(
+        tr("Select sibling groups to update with drift from group %1.\n"
+           "Adaptive chunk boundaries will be computed and written as\n"
+           "SESSION.chunks.N.  KlustaKwik will re-run if 'runKlustaKwik'\n"
+           "is set in the ndm_applydrift section of the parameter file.").arg(gid)));
+
+    QListWidget *list = new QListWidget(&dlg);
+    for (int s : siblings) {
+        QListWidgetItem *item = new QListWidgetItem(
+            tr("Group %1").arg(s), list);
+        item->setCheckState(Qt::Checked);
+        item->setData(Qt::UserRole, s);
+        list->addItem(item);
+    }
+    vlay->addWidget(list);
+
+    QDialogButtonBox *bbox = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(bbox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bbox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    vlay->addWidget(bbox);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QStringList targetGroups;
+    for (int i = 0; i < list->count(); i++) {
+        QListWidgetItem *it = list->item(i);
+        if (it->checkState() == Qt::Checked)
+            targetGroups << QString::number(it->data(Qt::UserRole).toInt());
+    }
+    if (targetGroups.isEmpty()) return;
+
+    // Clean up any old process tab.
+    if (processWidget) {
+        int idx = tabsParent->indexOf(processWidget);
+        if (idx != -1) { tabsParent->removeTab(idx); displayCount--; }
+        delete processWidget;
+        processWidget = nullptr;
+    }
+
+    processWidget = new ProcessWidget(this);
+    processWidget->setFocusPolicy(Qt::NoFocus);
+    connect(processWidget, &ProcessWidget::processOutputsFinished,
+            this, &KlustersApp::slotOutputTreatmentOver);
+    connect(processWidget, &ProcessWidget::processNotStarted,
+            this, &KlustersApp::slotOutputTreatmentOver);
+    connect(tabsParent, &QTabWidget::currentChanged,
+            this, &KlustersApp::slotTabChange);
+    tabsParent->addTab(processWidget, tr("Apply drift"));
+    displayCount++;
+
+    processFinished        = false;
+    processOutputsFinished = false;
+    processKilled          = false;
+
+    // ndm_applydrift  session  source_group  target_group1  [target_group2 ...]
+    QStringList args;
+    args << session << groupId;
+    args << targetGroups;
+
+    bool ok = processWidget->startJob(dir, QStringLiteral("ndm_applydrift"), args);
+    if (!ok) {
+        QMessageBox::critical(this, tr("Apply Drift + Recluster Siblings"),
+            tr("Could not start ndm_applydrift.\n"
+               "Ensure ndm_applydrift is on PATH and ndmanager-plugins is installed."));
+        processFinished        = true;
+        processOutputsFinished = true;
+    }
 }
