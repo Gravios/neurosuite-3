@@ -24,22 +24,15 @@
 
 #include "probelayout.h"    // generated from probelayout.ui
 
+// ProbeEntry is defined in libklustersshared — use that authoritative definition
+// so ProbePage, NdManagerYamlReader, and ParameterYamlWriter all share one type.
+#include <klustersshared/parameteryamlreader_probes.h>
+
 #include <QWidget>
 #include <QMap>
 #include <QList>
 #include <QString>
 #include <QStringList>
-
-/**
- * @brief Data for one probe entry as held by ProbePage.
- */
-struct ProbeEntry {
-    int        id            = 0;
-    QString    probeFile;           ///< relative path inside probe library
-    QString    label;               ///< user-visible label
-    int        channelOffset = 0;   ///< first ADC channel from this probe
-    QList<int> anatomicalGroups;    ///< 1-based group IDs belonging to this probe
-};
 
 /**
  * @brief The Probe tab page in ndmanager.
@@ -86,19 +79,23 @@ signals:
 public slots:
     void addProbe();
     void removeProbe();
+    void moveProbeUp();
+    void moveProbeDown();
     void browseProbeFile();    ///< open a file dialog in the library path
     void browseLibraryPath();  ///< change the probe library root folder
     void cellEdited(int row, int column);
+    void rowSelected();        ///< update diagram when selection changes
     void resetModificationStatus() { m_modified = false; }
 
 private:
     // Table column indices
     enum Col {
-        ColId      = 0,
-        ColFile    = 1,
-        ColLabel   = 2,
-        ColOffset  = 3,
-        ColGroups  = 4
+        ColId          = 0,
+        ColFile        = 1,
+        ColLabel       = 2,
+        ColOffset      = 3,
+        ColGroups      = 4,   ///< anatomical groups
+        ColSpikeGroups = 5    ///< spike-sorting groups (defaults to ColGroups if empty)
     };
 
     void populateRow(int row, const ProbeEntry& entry);

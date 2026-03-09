@@ -36,6 +36,7 @@
 #include <klustersshared/fileinformation.h>
 #include <klustersshared/programinformation.h>
 #include "parameterview.h"
+#include <klustersshared/parameteryamlreader_probes.h>
 
 #include <QStandardPaths>
 
@@ -134,10 +135,19 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::loadFromReader(Reader& r
     //Programs
     reader.getProgramsInformation(programs);
 
+    // Read probe section (optional; backward compatible — missing = empty list)
+    QList<ProbeEntry> probes;
+    QString probeLibraryPath;
+    reader.getProbesInformation(probes, probeLibraryPath);
+
     reader.closeFile();
 
     //Call the parent to create a ParameterView to display the information loaded from the file.
     static_cast<ndManager*>(parent)->createParameterView(anatomicalGroups,attributes,spikeGroups,spikeGroupsInformation,units,generalInformation,acquisitionSystemInfo,videoInformation,files,channelColors,channelDefaultOffsets,neuroscopeVideoInfo,programs,lfpRate,screenGain,nbSamples,peakSampleIndex,traceBackgroundImage);
+
+    // Populate the probe tab (must be after createParameterView which creates the view)
+    ParameterView* pv = static_cast<ndManager*>(parent)->getParameterView();
+    pv->setProbeData(probes, probeLibraryPath);
 
     return OK;
 }
@@ -187,6 +197,11 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
     view->getInformation(anatomicalGroups,attributes,spikeGroups,spikeGroupsInformation,units,generalInformation,
                          acquisitionSystemInfo,videoInformation,files,channelColors,channelDefaultOffsets,neuroscopeVideoInfo,programs,lfpRate,screenGain,nbSamples,peakSampleIndex,traceBackgroundImage);
 
+    // Collect probe tab data
+    QList<ProbeEntry> probes;
+    QString probeLibraryPath;
+    view->getProbeData(probes, probeLibraryPath);
+
     auto doWrite = [&](auto& writer) -> bool {
         writer.setGeneralInformation(generalInformation);
         writer.setAcquisitionSystemInformation(acquisitionSystemInfo);
@@ -204,6 +219,8 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
         writer.setChannelDisplayInformation(channelColors,channelDefaultOffsets);
         if(!programs.isEmpty())
             writer.setProgramsInformation(programs);
+        // Probe section — no-op when list is empty (backward compatible)
+        writer.setProbesInformation(probes, probeLibraryPath);
         return writer.writeTofile(url);
     };
 

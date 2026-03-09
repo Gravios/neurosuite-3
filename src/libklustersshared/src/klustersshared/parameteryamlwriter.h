@@ -32,6 +32,7 @@
 #include <programinformation.h>
 #include <neuroscopevideoinfo.h>
 #include <channelcolorentry.h>
+#include "parameteryamlreader_probes.h"  // ProbeEntry
 
 #include <yaml-cpp/yaml.h>
 
@@ -95,6 +96,19 @@ public:
                                       const QMap<int,int>& channelDefaultOffsets);
 
     void setProgramsInformation(const QList<ProgramInformation>& programs);
+
+    /**
+     * @brief Write the `probes` sequence and optional `probeLibraryPath` field.
+     *
+     * Should be called after setAnatomicalDescription() so the probe entries
+     * can reference anatomical group IDs that are already in the document.
+     * Calling with an empty list writes nothing (no-op, backward compatible).
+     *
+     * @param probes       List of ProbeEntry structs from ProbePage.
+     * @param libraryPath  Absolute path to the probe library root, or empty.
+     */
+    void setProbesInformation(const QList<ProbeEntry>& probes,
+                              const QString& libraryPath);
 
     void setUnitsInformation(const QMap<int,QStringList>& units);
 

@@ -31,7 +31,8 @@ struct ProbeEntry {
     QString    probeFile;           ///< relative path inside probe library
     QString    label;               ///< user-visible label
     int        channelOffset = 0;   ///< first ADC channel from this probe
-    QList<int> anatomicalGroups;    ///< 1-based group IDs belonging to this probe
+    QList<int> anatomicalGroups;    ///< 1-based anatomical group IDs on this probe
+    QList<int> spikeGroups;         ///< 1-based spike-sorting group IDs; empty = same as anatomicalGroups
 };
 
 /**

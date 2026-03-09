@@ -24,6 +24,9 @@
 // ChannelColors container).  It is now a typedef for ChannelColorEntry.
 #include "channelcolors.h"  // ChannelColors = ChannelColorEntry (ndmanager shim)
 
+// Probe section extension — free functions + ProbeEntry/ProbeGroupMeta structs
+#include <klustersshared/parameteryamlreader_probes.h>
+
 /**
  * @brief Reads ndmanager-relevant fields from a YAML parameter file.
  *
@@ -92,6 +95,24 @@ public:
     { m_reader.getProgramsInformation(programs); }
 
     void getProgramInformation(ProgramInformation& pi) const;
+
+    // ---- Probes ----
+    /**
+     * @brief Read the top-level `probes` section and optional `probeLibraryPath`.
+     *
+     * Delegates to readProbesSection() using the raw YAML root exposed by
+     * ParameterYamlReader::getRawRoot().  Returns quietly if the section is
+     * absent (backward-compatible: files without a `probes` section yield an
+     * empty list and empty library path).
+     *
+     * @param probes       Filled with one ProbeEntry per probe in the file.
+     * @param libraryPath  Set to probeLibraryPath field if present, else empty.
+     */
+    void getProbesInformation(QList<ProbeEntry>& probes,
+                              QString& libraryPath) const
+    {
+        readProbesSection(m_reader.getRawRoot(), probes, libraryPath);
+    }
 
 private:
     ParameterYamlReader m_reader;

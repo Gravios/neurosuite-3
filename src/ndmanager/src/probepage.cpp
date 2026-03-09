@@ -7,12 +7,17 @@
 
 #include "probepage.h"
 
+#include <klustersshared/parameteryamlreader_probes.h>
+
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QTableWidgetItem>
 #include <QMessageBox>
 #include <QDir>
 #include <QStandardPaths>
+#include <QPixmap>
+#include <QSvgRenderer>
+#include <QPainter>
 #include <QDebug>
 
 // ---------------------------------------------------------------------------
@@ -23,13 +28,14 @@ ProbePage::ProbePage(QWidget* parent)
     : ProbeLayout(parent)
     , m_modified(false)
 {
-    // Configure table columns
-    probeTable->setColumnCount(5);
-    probeTable->horizontalHeader()->setSectionResizeMode(ColFile,   QHeaderView::Stretch);
-    probeTable->horizontalHeader()->setSectionResizeMode(ColLabel,  QHeaderView::ResizeToContents);
-    probeTable->horizontalHeader()->setSectionResizeMode(ColId,     QHeaderView::ResizeToContents);
-    probeTable->horizontalHeader()->setSectionResizeMode(ColOffset, QHeaderView::ResizeToContents);
-    probeTable->horizontalHeader()->setSectionResizeMode(ColGroups, QHeaderView::Stretch);
+    // Configure table columns (6: ID | File | Label | Ch.Offset | Anat.Groups | Spike Groups)
+    probeTable->setColumnCount(6);
+    probeTable->horizontalHeader()->setSectionResizeMode(ColId,          QHeaderView::ResizeToContents);
+    probeTable->horizontalHeader()->setSectionResizeMode(ColFile,        QHeaderView::Stretch);
+    probeTable->horizontalHeader()->setSectionResizeMode(ColLabel,       QHeaderView::ResizeToContents);
+    probeTable->horizontalHeader()->setSectionResizeMode(ColOffset,      QHeaderView::ResizeToContents);
+    probeTable->horizontalHeader()->setSectionResizeMode(ColGroups,      QHeaderView::Stretch);
+    probeTable->horizontalHeader()->setSectionResizeMode(ColSpikeGroups, QHeaderView::Stretch);
 
     probeTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     probeTable->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -43,11 +49,16 @@ ProbePage::ProbePage(QWidget* parent)
     libraryPathEdit->setPlaceholderText(m_libraryPath + QStringLiteral("  (default)"));
 
     // Wire buttons
-    connect(addProbeButton,    &QPushButton::clicked, this, &ProbePage::addProbe);
-    connect(removeProbeButton, &QPushButton::clicked, this, &ProbePage::removeProbe);
-    connect(browseProbeButton, &QPushButton::clicked, this, &ProbePage::browseProbeFile);
+    connect(addProbeButton,      &QPushButton::clicked, this, &ProbePage::addProbe);
+    connect(removeProbeButton,   &QPushButton::clicked, this, &ProbePage::removeProbe);
+    connect(moveUpButton,        &QPushButton::clicked, this, &ProbePage::moveProbeUp);
+    connect(moveDownButton,      &QPushButton::clicked, this, &ProbePage::moveProbeDown);
+    connect(browseProbeButton,   &QPushButton::clicked, this, &ProbePage::browseProbeFile);
     connect(browseLibraryButton, &QPushButton::clicked, this, &ProbePage::browseLibraryPath);
-    connect(probeTable, &QTableWidget::cellChanged, this, &ProbePage::cellEdited);
+    connect(probeTable, &QTableWidget::cellChanged,
+            this, &ProbePage::cellEdited);
+    connect(probeTable, &QTableWidget::currentRowChanged,
+            this, [this](int) { rowSelected(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +137,90 @@ void ProbePage::removeProbe()
     emit probesModified();
 }
 
+void ProbePage::moveProbeUp()
+{
+    int row = probeTable->currentRow();
+    if (row <= 0) return;
+
+    probeTable->blockSignals(true);
+    // Swap row with row-1 by extracting both entries and repopulating
+    ProbeEntry above = rowToEntry(row - 1);
+    ProbeEntry below = rowToEntry(row);
+    populateRow(row - 1, below);
+    populateRow(row,     above);
+    probeTable->blockSignals(false);
+
+    renumberIds();
+    probeTable->selectRow(row - 1);
+    m_modified = true;
+    emit probesModified();
+}
+
+void ProbePage::moveProbeDown()
+{
+    int row = probeTable->currentRow();
+    if (row < 0 || row >= probeTable->rowCount() - 1) return;
+
+    probeTable->blockSignals(true);
+    ProbeEntry above = rowToEntry(row);
+    ProbeEntry below = rowToEntry(row + 1);
+    populateRow(row,     below);
+    populateRow(row + 1, above);
+    probeTable->blockSignals(false);
+
+    renumberIds();
+    probeTable->selectRow(row + 1);
+    m_modified = true;
+    emit probesModified();
+}
+
+void ProbePage::rowSelected()
+{
+    int row = probeTable->currentRow();
+    if (row < 0) {
+        diagramLabel->setText(tr("Select a row to preview the probe layout"));
+        diagramLabel->setPixmap(QPixmap());
+        return;
+    }
+
+    auto* fileItem = probeTable->item(row, ColFile);
+    QString probeFile = fileItem ? fileItem->text().trimmed() : QString();
+
+    if (probeFile.isEmpty()) {
+        diagramLabel->setText(tr("No probe file set for this entry"));
+        diagramLabel->setPixmap(QPixmap());
+        return;
+    }
+
+    // Resolve path: try as-is, then relative to library
+    QString resolved = probeFile;
+    if (!QFile::exists(resolved)) {
+        resolved = getLibraryPath() + QDir::separator() + probeFile;
+    }
+
+    if (resolved.endsWith(QStringLiteral(".svg"), Qt::CaseInsensitive) &&
+        QFile::exists(resolved))
+    {
+        // Render SVG into a pixmap that fills the label
+        QSvgRenderer renderer(resolved);
+        QSize sz = diagramLabel->size().boundedTo(QSize(300, 300));
+        if (sz.isEmpty()) sz = QSize(200, 200);
+        QPixmap pm(sz);
+        pm.fill(Qt::transparent);
+        QPainter painter(&pm);
+        renderer.render(&painter);
+        painter.end();
+        diagramLabel->setPixmap(pm);
+        diagramLabel->setText(QString());
+    } else {
+        QString shortName = QFileInfo(probeFile).fileName();
+        diagramLabel->setPixmap(QPixmap());
+        diagramLabel->setText(QFile::exists(resolved)
+            ? tr("%1\n(no diagram available)").arg(shortName)
+            : tr("%1\n(file not found)").arg(shortName));
+    }
+}
+
 void ProbePage::browseProbeFile()
 {
     int row = probeTable->currentRow();
@@ -194,6 +289,13 @@ void ProbePage::populateRow(int row, const ProbeEntry& entry)
         groupStrs.append(QString::number(g));
     probeTable->setItem(row, ColGroups,
         new QTableWidgetItem(groupStrs.join(QStringLiteral(", "))));
+
+    // Spike groups: comma-separated; empty string when same as anatomical groups
+    QStringList spikeStrs;
+    for (int g : entry.spikeGroups)
+        spikeStrs.append(QString::number(g));
+    probeTable->setItem(row, ColSpikeGroups,
+        new QTableWidgetItem(spikeStrs.join(QStringLiteral(", "))));
 }
 
 ProbeEntry ProbePage::rowToEntry(int row) const
@@ -223,6 +325,22 @@ ProbeEntry ProbePage::rowToEntry(int row) const
             if (ok && g > 0) e.anatomicalGroups.append(g);
         }
     }
+
+    auto* spikeItem = probeTable->item(row, ColSpikeGroups);
+    if (spikeItem && !spikeItem->text().trimmed().isEmpty()) {
+        const QStringList parts = spikeItem->text().split(
+            QRegularExpression(QStringLiteral("[,\\s]+")),
+            Qt::SkipEmptyParts);
+        for (const QString& s : parts) {
+            bool ok = false;
+            int g = s.toInt(&ok);
+            if (ok && g > 0) e.spikeGroups.append(g);
+        }
+        // If spike groups == anatomical groups, store empty to keep YAML clean
+        if (e.spikeGroups == e.anatomicalGroups)
+            e.spikeGroups.clear();
+    }
+
     return e;
 }
 
