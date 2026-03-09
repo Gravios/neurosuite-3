@@ -3996,7 +3996,7 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 // ---------------------------------------------------------------------------
 void KlustersApp::slotGenerateProbeDrift()
 {
-    if (!doc || doc->documentUrl().isEmpty()) return;
+    if (!doc || doc->url().isEmpty()) return;
 
     const QString dir      = doc->documentDirectory();
     const QString session  = doc->documentBaseName();
@@ -4074,7 +4074,7 @@ void KlustersApp::slotGenerateProbeDrift()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotApplyDriftSiblings()
 {
-    if (!doc || doc->documentUrl().isEmpty()) return;
+    if (!doc || doc->url().isEmpty()) return;
 
     const QString dir     = doc->documentDirectory();
     const QString session = doc->documentBaseName();
