@@ -3,6 +3,7 @@
  ***************************************************************************/
 
 #include "parameteryamlwriter.h"
+#include "parameteryamlreader_probes.h"  // writeProbesSection, ProbeEntry
 
 #include <QDebug>
 #include <QFile>
@@ -388,4 +389,15 @@ void ParameterYamlWriter::setUnitsInformation(const QMap<int,QStringList>& units
         seq.push_back(u);
     }
     m_doc["units"] = seq;
+}
+
+// ---------------------------------------------------------------------------
+// setProbesInformation
+// ---------------------------------------------------------------------------
+
+void ParameterYamlWriter::setProbesInformation(const QList<ProbeEntry>& probes,
+                                               const QString& libraryPath)
+{
+    // writeProbesSection handles the empty-list no-op and the libraryPath field
+    writeProbesSection(m_doc, probes, libraryPath);
 }

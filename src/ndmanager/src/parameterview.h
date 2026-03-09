@@ -52,6 +52,7 @@
 #include <klustersshared/programinformation.h>
 #include <klustersshared/neuroscopevideoinfo.h>
 #include "channeloffsetspage.h"
+#include "probepage.h"
 
 class ndManager;
 class ndManagerDoc;
@@ -188,6 +189,20 @@ public:
  */
     QStringList getFileScriptNames() const;
 
+    // ---- Probe data --------------------------------------------------------
+    /**
+     * Populate the Probe tab from data read by ndmanagerdoc::loadFromReader().
+     * Called after createParameterView() / initialize() because probe data is
+     * stored separately from the main initialize() argument list.
+     */
+    void setProbeData(const QList<ProbeEntry>& probes, const QString& libraryPath);
+
+    /**
+     * Retrieve the current probe table contents and library path for saving.
+     * Called by ndmanagerdoc::save() via getParameterView().
+     */
+    void getProbeData(QList<ProbeEntry>& probes, QString& libraryPath) const;
+
 signals:
     /**
    * This signal is used to change the content of the statusbar;
@@ -311,6 +326,9 @@ private:
 
     /**Pointer on the page containing the channel default offset information for NeuroScope.*/
     ChannelOffsetsPage* channelDefaultOffsets;
+
+    /**Pointer on the probe assignment tab (expert mode; always created).*/
+    ProbePage* probe;
 
     /**Pointer on the page containing information for the programs.*/
     ProgramsPage* programs;

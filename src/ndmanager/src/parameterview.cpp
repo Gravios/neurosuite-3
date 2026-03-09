@@ -131,6 +131,15 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
         spike = new SpikePage();
     }
 
+    // adding page "Probes"
+    // Always created; shown only in expert mode.  The probe list is part of
+    // the session YAML and must be preserved on save even in non-expert mode.
+    probe = new ProbePage;
+    if(expertMode){
+        mStackWidget->addWidget(probe);
+        mParameterTree->addPage(":/icons/probe", tr("Probes"), probe);
+    }
+
     //adding page "Unit List"
     unitList = new UnitListPage;
     mStackWidget->addWidget(unitList);
@@ -196,6 +205,7 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
         connect(this, &ParameterView::resetModificationStatus, anatomy, &AnatomyPage::resetModificationStatus);
         connect(this, &ParameterView::resetModificationStatus, spike, &SpikePage::resetModificationStatus);
         connect(this, &ParameterView::resetModificationStatus, channelDefaultOffsets, &ChannelOffsetsPage::resetModificationStatus);
+        connect(this, &ParameterView::resetModificationStatus, probe, &ProbePage::resetModificationStatus);
     }
 }
 
@@ -207,6 +217,7 @@ ParameterView::~ParameterView()
        delete spike;
        delete channelColors;
        delete channelDefaultOffsets;
+       delete probe;   // not in mStackWidget, so not owned by it
     }
 }
 
@@ -613,6 +624,7 @@ bool ParameterView::isModified(){
                     lfp->isModified()  ||
                     anatomy->isModified() ||
                     spike->isModified() ||
+                    probe->isModified() ||
                     unitList->isModified() ||
                     miscellaneous->isModified() ||
                     neuroscopeVideo->isModified() ||
@@ -748,4 +760,24 @@ void ParameterView::setCurrentPage(int index)
 int ParameterView::currentPage() const
 {
     return mStackWidget->currentIndex();
+}
+
+// ---------------------------------------------------------------------------
+// Probe data — called from ndmanagerdoc after createParameterView/initialize
+// ---------------------------------------------------------------------------
+
+void ParameterView::setProbeData(const QList<ProbeEntry>& probes,
+                                 const QString& libraryPath)
+{
+    probe->setProbes(probes);
+    if (!libraryPath.isEmpty())
+        probe->setLibraryPath(libraryPath);
+    probe->setModified(false);
+}
+
+void ParameterView::getProbeData(QList<ProbeEntry>& probes,
+                                 QString& libraryPath) const
+{
+    probe->getProbes(probes);
+    libraryPath = probe->getLibraryPath();
 }

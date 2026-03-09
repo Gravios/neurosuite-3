@@ -96,6 +96,24 @@ void readProbesSection(const YAML::Node& root,
             }
         }
 
+        // spikeGroups — optional; when absent defaults to anatomicalGroups at use-site
+        const YAML::Node sg = p["spikeGroups"];
+        if (sg) {
+            if (sg.IsSequence()) {
+                for (std::size_t j = 0; j < sg.size(); ++j)
+                    entry.spikeGroups.append(yi(sg[j]));
+            } else if (sg.IsScalar()) {
+                const QString raw = qs(sg);
+                for (const QString& tok : raw.split(
+                         QRegularExpression(QStringLiteral("[,\\s]+")),
+                         Qt::SkipEmptyParts)) {
+                    bool ok = false;
+                    int g = tok.toInt(&ok);
+                    if (ok && g > 0) entry.spikeGroups.append(g);
+                }
+            }
+        }
+
         out.append(entry);
     }
 }
@@ -157,6 +175,14 @@ void writeProbesSection(YAML::Node& root,
         for (int g : e.anatomicalGroups)
             ag.push_back(g);
         entry["anatomicalGroups"] = ag;
+
+        // spikeGroups — only written when different from anatomicalGroups
+        if (!e.spikeGroups.isEmpty() && e.spikeGroups != e.anatomicalGroups) {
+            YAML::Node sg(YAML::NodeType::Sequence);
+            for (int g : e.spikeGroups)
+                sg.push_back(g);
+            entry["spikeGroups"] = sg;
+        }
 
         seq.push_back(entry);
     }

@@ -1,3 +1,131 @@
+# neurosuite-3 — Changelog
+
+## 2026-03-02 → 2026-03-09
+
+---
+
+### KlustaKwik — bug fixes & correctness
+
+#### Chunked CEM boundary normalisation (`KK.cpp`)
+**Symptom:** Early spikes were systematically misassigned to the wrong time chunk.  
+**Root cause:** `normBounds[i]` was computed as `(chunkBoundsSec[i] * SR) / sessionSamples`, which places boundaries in raw-sample space rather than the `[0,1]` range that `Data[p*nDims+timeDim]` actually occupies (which starts at 0, not at `timeRawMin/sessionSamples`).  
+**Fix:** Subtract `timeRawMin` before dividing: `(chunkBoundsSec[i] * SR - timeRawMin) / sessionSamples`. All chunk boundaries now align with the normalised time axis, correcting assignment of spikes at the start of the recording.  
+**Changed file:** `src/klustakwik/KK.cpp`
+
+#### Chunked CEM sentinel initialisation (`KK.cpp`)
+**Symptom:** Spikes that fell through chunked assignment without being written were silently mapped to cluster 0 (first cluster), polluting the global merge step.  
+**Fix:** `pointPacked` is now initialised to `-1` (sentinel) instead of `0`. The subsequent `packedToGlobal` lookup is guarded: `pp >= 0 ? find(pp) : end()`, so unwritten spikes cleanly fall through to noise class (0).  
+**Changed file:** `src/klustakwik/KK.cpp`
+
+#### `MergeThresh` default too large for active feature dimensionality (`KK.cpp`, `KlustaKwik.cpp`)
+**Symptom:** All clusters collapsed into a single unit via MNN union-find.  
+**Root cause:** The hardcoded `MergeThresh=200` (from an earlier default) greatly exceeded `χ²(nActiveDims, 0.99)`, causing every pair of cluster centroids to be considered mergeable. The correct value for 7 dims is ~18.5; for 24–25 dims, 42–44.  
+**Fix:** Runtime warning when `MergeThresh` exceeds `1.5 × χ²(nSpatialDims, 0.9999)`. Recommended value is now `χ²(nActiveDims, 0.99)`. `TimeMergeIter` and `GlobalMergeIter` should also scale with `sqrt(nDims)` (~50 at 25 dims).
+
+#### `UseFeatures` default string too short — zero-duration session (`KK.cpp`, `KlustaKwik.cpp`)
+**Symptom:** Chunked CEM was bypassed entirely; session appeared to have 0-minute duration.  
+**Root cause:** The default `UseFeatures` string `"11111111111100001"` (17 chars) never reached the timestamp feature at position 24 in a 25-feature `.fet` file, so the timestamp dimension remained inactive and `sessionSamples` computed as 0.  
+**Fix:** Default changed to `"all"`. A length-mismatch warning is now emitted in both binary and text `LoadData` paths when the string is shorter than the feature count.
+
+#### GPU shared memory overflow with large `MaxPossibleClusters` (`KK_cuda.cu`, `KK_hip.cpp`, `KK_sycl.cpp`)
+**Symptom:** `cudaErrorInvalidValue` crash in the MStep mean kernel when `UseFeatures=all` (25 dims) × `MaxPossibleClusters=500` on pre-Blackwell hardware (48 KB shared memory limit).  
+**Fix:** Shared memory requirement (`MaxPossibleClusters × nDims × sizeof(float)`) is now computed and compared against `sharedMemPerBlock` at runtime. Falls back to direct global atomics when the shared buffer would overflow. RTX 5070 Ti (Blackwell, 128 KB) is unaffected.
+
+---
+
+### Klusters GUI — new features
+
+#### Toolbar N-features spinbox
+New spinbox in the main toolbar for setting the number of PCA features per channel used for auto-feature selection. Reads/writes `autoSelectNFeatures` in preferences. Initialised correctly from `initializePreferences()` on startup; visibility tied to the `autoSelectFeatures` checkbox.  
+**New/changed files:** `configuration.h/cpp`, `prefgeneral.h/cpp`, `prefgenerallayout.ui`, `klusters.cpp`
+
+#### Cluster palette "S" key multi-selection
+"S" key in the cluster palette toggles persistent multi-cluster selection independently of Qt's visual selection state. Behaviour: first press selects and pins the row; second press on the same row isolates it (clears all others); pressing S on a different already-selected row deselects it.  
+Implementation: explicit `QSet<int> m_sRows` tracks S-pinned clusters. `ShortcutOverride` + `KeyPress` events intercepted in `KlustersApp::eventFilter` to beat the conflicting "Split Clusters" `QAction`. Arrow navigation preserves the S-pinned set via `clearSelection() + setCurrentRow() + visual restore`. `selectedClusters()` returns the union of visual selection and `m_sRows`.  
+**Changed files:** `klusterspalette.h/cpp`, `klusters.cpp`
+
+---
+
+### Klusters GUI — bug fixes
+
+#### Keyboard shortcut conflicts
+- `Key_Plus` caused ambiguous shortcut warnings (conflicts with numpad). Replaced with `Key_Equal` (unshifted `=`) for marker-size increase and `Shift+Key_Equal` for the explicit `+` label.  
+- Added `Alt+S` and `Alt+P` menu bar shortcuts.  
+**Changed file:** `src/klusters/src/klusters.cpp`
+
+#### Abort / recluster slot wiring
+- Phantom `slotAbortReclustering` connect removed; duplicate `slotStopRecluster` connect deduplicated.  
+**Changed file:** `src/klusters/src/klusters.cpp`
+
+#### Preferences dialog tab navigation
+- `tabKeyNavigation` disabled on `QPageListView` to prevent Tab from cycling into the page list instead of the form fields.  
+**Changed files:** `src/klusters/src/qpageview.cpp`, `qpageview_p.cpp`
+
+#### Probe drift slot API fix
+`slotGenerateProbeDrift()` and `slotApplyDriftSiblings()` called the non-existent `doc->documentUrl()`; corrected to `doc->url()`.  
+**Changed file:** `src/klusters/src/klusters.cpp`
+
+#### Debug output cleanup
+Removed extensive `qDebug()` spam from `qpageview.cpp` and `qpageview_p.cpp`. KlustaKwik `fprintf(stderr)` calls routed through `Output()` (respects `Screen`/`Log` config flags).
+
+---
+
+### ndmanager-plugins — new plugins
+
+#### `ndm_denoiseuniform` — uniform noise event removal
+Removes electrically uniform noise events from `.spk.N` / `.res.N` after `ndm_extractspikes`. Detects events where waveform energy is distributed uniformly across all channels (common-mode artefacts, motion, electrical interference).  
+Two previously conflated conditions separated: *flat* waveforms (near-zero AC energy → removed by default, controlled by `removeFlat` parameter) vs. *amplitude-guarded* spikes (raw peak below `minAmplitude` → always kept). Output reports `[flat=N threshold=N amplitude-guarded=N]` per group.  
+**New files:** `scripts/ndm_denoiseuniform`, `scripts/process_denoiseuniform.cpp`, `descriptions/ndm_denoiseuniform.xml`
+
+#### `process_extractspikes_sdiff` — spatial-derivative spike extraction
+Applies all-pairs spatial derivative preprocessing before threshold-based spike detection, suppressing common-mode noise while preserving spatially localised single-unit signals. Formula: `s[i] = n·x[i] − Σⱼx[j]`.  
+Segfault fixed: cross-buffer boundary path computed `sdiff_cur[maxId[grp] - totalChannelCount + spkChanId[grp]]`, producing a negative index (`0 − 128 + 116 = −12`) at buffer boundaries. Non-original block removed; detection logic now matches `process_extractspikes` exactly.  
+**New files:** `scripts/process_extractspikes_sdiff.cpp`, `descriptions/ndm_extractspikes_sdiff.xml`
+
+#### `ndm_klustakwik` — batch KlustaKwik runner
+Zsh/bash script that detects spike groups from `.fet` files, parses sampling rate from YAML, determines CPU thread count, and runs KlustaKwik with sensible defaults. Supports command-line override of all parameters. Parses binary `.fet` headers via `od -An -t d4 -N 4` (avoids null-byte warnings from text-mode read).  
+**New file:** `scripts/ndm_klustakwik`
+
+---
+
+### `neurosuite_compare` — new Python package
+
+Standalone Python package for comparing neurosuite-3 and Kilosort output. Install with `pip install -e .` from the package root.
+
+**Readers:**
+- `NeurosuiteSorting`: loads `.res.N` (`int64` LE, no header), `.spk.N` (`int16`, sample-major layout), `.fet.N` / `.clu.N` (binary with `int32` nDimensions header, auto-detects vs. legacy text)
+- `KilosortSorting`: loads standard Kilosort output directory; `filter_by_channels(group_channels, method)` filters units to a spike group via `"peak"` (peak channel index matching, recommended for tetrodes), `"weight"` (energy-weighted CoM for units straddling boundaries), or `spatial_radius_um` (proximity-based, for high-density probes)
+
+**Metrics:** SNR, peak-to-valley, waveform duration, repolarisation slope, ISI violations, Isolation Distance, L-ratio, silhouette score, presence ratio, firing rate.
+
+**Cross-sorter comparison:** F1 agreement matrix, Hungarian optimal unit matching.
+
+**CLI:** `python -m neurosuite_compare compare session_dir/ kilosort_dir/ --group N`
+
+---
+
+### libklustersshared — build fix (Ubuntu 25 / Qt 6.8+)
+
+`QRecentFileAction` MOC error on Ubuntu 25: generated `moc_qrecentfileaction.cpp` called `_t->d->initializeRecentMenu()` / `_t->d->fileSelected(...)` but the class had no `d` member visible to MOC.  
+Root cause: `Q_PRIVATE_SLOT(d, ...)` declarations in the header require a PIMPL `d` pointer; Qt 6.8+ MOC is stricter about this.  
+**Changed file:** `src/libklustersshared/src/klustersshared/qrecentfileaction.h/cpp`
+
+---
+
+### Parameter sweep recommendations (jg05-20120316, electrode group 7)
+
+For the primary recording (80 min, ~338 k spikes, 8-channel V-config, 32 552 Hz, 25 features):
+
+| Tier | Parameters | Range |
+|---|---|---|
+| 1 (priority) | `MergeThresh` × `PenaltyK` | {35, 42, 50, 58} × {0.5, 1.0, 1.5, 2.0} — 4×4 grid, `nStarts 1` |
+| 2 | `ChunkMinutes`, `SplitEvery` | {5, 10, 15, 20} × {15, 25, 40, 50} |
+| 3 | `PenaltyMix`, `DistThresh` | after Tier 1–2 settled |
+
+Recommended baseline: `-MergeThresh 42 -ChunkMinutes 10 -MaxPossibleClusters 500 -MinClusters 5 -MaxClusters 30 -nStarts 3 -SplitEvery 25 -PenaltyMix 0 -SamplingRate 32552`
+
+---
+
 # Drop-in patch notes — neurosuite-3 probe library, Probe tab, and pipeline plugins
 
 Extract from the neurosuite-3 root:
