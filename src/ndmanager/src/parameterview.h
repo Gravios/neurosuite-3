@@ -270,6 +270,16 @@ private slots:
 
     void scriptHidden();
 
+    /**
+     * Connected to ProbePage::probeLayoutImported.
+     * Merges @p anatomy and @p spike into the existing group maps and pushes
+     * them into AnatomyPage and SpikePage.
+     */
+    void applyProbeLayout(QList<ProbeEntry>     probes,
+                          QMap<int,QList<int>>  anatomy,
+                          QMap<int,QList<int>>  spike,
+                          int                   firstNewGroupId);
+
 private:
 
     /**Adds a program to the subtree under the node Program.

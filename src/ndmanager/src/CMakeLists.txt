@@ -81,6 +81,11 @@ target_link_libraries(ndmanager PRIVATE
     yaml-cpp
 )
 
+if(TARGET Qt6::Svg)
+    target_link_libraries(ndmanager PRIVATE Qt6::Svg)
+    target_compile_definitions(ndmanager PRIVATE ND_HAVE_QT_SVG)
+endif()
+
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------

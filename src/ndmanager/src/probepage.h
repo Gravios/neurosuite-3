@@ -4,17 +4,13 @@
  * ndmanager Probe tab: view/edit the list of probes implanted in this
  * session and their association with anatomical groups.
  *
- * Each row of the table represents one probe entry:
- *   ID | ProbeFile | Label | ChannelOffset | AnatomicalGroups
+ * Each row represents one probe entry:
+ *   ID | ProbeFile | Label | ChannelOffset | AnatomicalGroups | SpikeGroups
  *
- * "AnatomicalGroups" is a comma-separated list of 1-based anatomical group
- * IDs (matching anatomicalDescription.channelGroups entries) that belong to
- * this probe.  The hierarchy becomes:
- *
- *   probe  →  anatomical group (= shank)  →  channels
- *
- * For single-probe sessions the column can simply contain all group IDs,
- * preserving backward compatibility.
+ * When a probe file is imported via Browse, the .probe YAML is parsed and
+ * the anatomy / spike groups are derived automatically.  A signal is then
+ * emitted so ParameterView can push the derived maps into AnatomyPage and
+ * SpikePage immediately.
  *
  * Copyright (C) 2025 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -24,22 +20,20 @@
 
 #include "probelayout.h"    // generated from probelayout.ui
 
-// ProbeEntry is defined in libklustersshared — use that authoritative definition
-// so ProbePage, NdManagerYamlReader, and ParameterYamlWriter all share one type.
 #include <klustersshared/parameteryamlreader_probes.h>
 
-#include <QWidget>
 #include <QMap>
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <QWidget>
 
 /**
- * @brief The Probe tab page in ndmanager.
+ * @brief The Probe tab page in ndmanager's expert-mode parameter view.
  *
- * Inherits ProbeLayout (Qt Designer), mirrors the pattern of AnatomyPage /
- * SpikePage.  The page is inserted into ParameterView::mStackWidget just
- * after the Anatomical Groups entry when expert mode is active.
+ * Mirrors the pattern of AnatomyPage / SpikePage.  Inserted into
+ * ParameterView::mStackWidget just after the Spike Groups entry when expert
+ * mode is active.
  */
 class ProbePage : public ProbeLayout
 {
@@ -51,56 +45,79 @@ public:
 
     // ---- Data setters / getters (called by ParameterView) ----------------
 
-    /**
-     * @brief Populate the table from a list of ProbeEntry structs.
-     * Called by ParameterView::initialize() when a file is loaded.
-     */
     void setProbes(const QList<ProbeEntry>& probes);
-
-    /**
-     * @brief Retrieve the current probe list from the table.
-     * Called by ParameterView::getInformation() before saving.
-     */
     void getProbes(QList<ProbeEntry>& probes) const;
 
-    /** Set the probe library search path shown in the text box. */
     void setLibraryPath(const QString& path);
-
-    /** Return the current library path (empty = use default). */
     QString getLibraryPath() const;
 
-    /** True if any row has been modified since the last resetModificationStatus(). */
     bool isModified() const { return m_modified; }
     void setModified(bool b) { m_modified = b; }
 
 signals:
+    /** Emitted whenever any cell is edited or a row is added/removed. */
     void probesModified();
+
+    /**
+     * Emitted after a .probe file is successfully imported via Browse.
+     *
+     * @param probes         Updated full probe list (all rows).
+     * @param anatomyGroups  groupId → channel list (0-based), derived from
+     *                       the imported probe file.  Ready to pass directly
+     *                       to AnatomyPage::setGroups().
+     * @param spikeGroups    Same shape; equals anatomyGroups when the probe
+     *                       has no separate spike-group override.
+     * @param firstNewGroupId The first 1-based group ID assigned to the
+     *                       newly imported probe (= previous max + 1).
+     */
+    void probeLayoutImported(QList<ProbeEntry>             probes,
+                             QMap<int, QList<int>>         anatomyGroups,
+                             QMap<int, QList<int>>         spikeGroups,
+                             int                           firstNewGroupId);
 
 public slots:
     void addProbe();
     void removeProbe();
     void moveProbeUp();
     void moveProbeDown();
-    void browseProbeFile();    ///< open a file dialog in the library path
+    void browseProbeFile();    ///< open file dialog, import on success
     void browseLibraryPath();  ///< change the probe library root folder
     void cellEdited(int row, int column);
-    void rowSelected();        ///< update diagram when selection changes
+    void rowSelected();        ///< update diagram preview
     void resetModificationStatus() { m_modified = false; }
 
 private:
-    // Table column indices
     enum Col {
         ColId          = 0,
         ColFile        = 1,
         ColLabel       = 2,
         ColOffset      = 3,
         ColGroups      = 4,   ///< anatomical groups
-        ColSpikeGroups = 5    ///< spike-sorting groups (defaults to ColGroups if empty)
+        ColSpikeGroups = 5    ///< spike groups (empty = same as anatomical)
     };
 
     void populateRow(int row, const ProbeEntry& entry);
     ProbeEntry rowToEntry(int row) const;
     void renumberIds();
+
+    /**
+     * Parse a .probe YAML file and fill @p entry (label, probeFile, groups)
+     * and @p derivedAnatomy / @p derivedSpike.
+     *
+     * @param path         Absolute path to the .probe file.
+     * @param entry        ProbeEntry to fill (probeFile, label, channelOffset,
+     *                     anatomicalGroups, spikeGroups already set on entry).
+     * @param nextGroupId  1-based ID for the first new group (caller maintains
+     *                     the counter across probes).
+     * @param outAnatomy   Filled with groupId → 0-based channel list.
+     * @param outSpike     Same; equals outAnatomy when probe has no override.
+     * @return true on success, false if parse failed.
+     */
+    bool importProbeYaml(const QString&        path,
+                         ProbeEntry&           entry,
+                         int                   nextGroupId,
+                         QMap<int,QList<int>>& outAnatomy,
+                         QMap<int,QList<int>>& outSpike);
 
     bool    m_modified  = false;
     QString m_libraryPath;

@@ -120,13 +120,16 @@ public:
 
     int   MergeChunkModels(std::vector<ChunkModel>& models,
                            int   nSpatialDims,
-                           float mergeThresh);
+                           float mergeThresh,
+                           const std::vector<std::unordered_map<int,int>>& overlapVotes);
 
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,
                         float mergeThresh,
                         int   globalMergeIter,
-                        int   timeMergeIter);
+                        int   timeMergeIter,
+                        float chunkOverlapMinutes   = 0.0f,
+                        float chunkPreseedFraction  = 0.0f);
 
     // Overload that accepts externally-computed chunk boundaries (in seconds).
     // Used by KlustaKwik.cpp when -ChunkFile is provided.  The boundaries
@@ -138,6 +141,13 @@ public:
                         float mergeThresh,
                         int   globalMergeIter,
                         int   timeMergeIter);
+
+    // Phase 0 preseed: cluster a random subsample, return centres as a flat
+    // vector [nCentres × nSpatialDims].  Returns empty on failure.
+    std::vector<float> PreseedSubsampleCEM(float preseedFraction,
+                                           int   nCentres,
+                                           int   nSpatialDims,
+                                           int   timeMergeIter);
 
 public:
     // -----------------------------------------------------------------------
@@ -206,7 +216,11 @@ public:
     // When true, CEMTwoPhase inner loops skip SaveBestMeans() and do not
     // update kSv.BestScoreSave.  Set automatically on chunk sub-objects so
     // parallel per-chunk EM cannot corrupt the outer loop's best-score state.
-    bool suppressBestSave = false;
+    bool suppressBestSave  = false;
+    // When non-empty, CEMTwoPhase uses these as initial Voronoi centres
+    // instead of running InitCentresFarthestPoint.
+    // Layout: [nCentres × nDims], spatial dims only (time column = 0).
+    std::vector<float> preseedCentres;
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // GPU context — allocated by LoadData() when a device is present.

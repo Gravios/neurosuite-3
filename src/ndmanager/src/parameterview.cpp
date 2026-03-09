@@ -206,6 +206,8 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
         connect(this, &ParameterView::resetModificationStatus, spike, &SpikePage::resetModificationStatus);
         connect(this, &ParameterView::resetModificationStatus, channelDefaultOffsets, &ChannelOffsetsPage::resetModificationStatus);
         connect(this, &ParameterView::resetModificationStatus, probe, &ProbePage::resetModificationStatus);
+        connect(probe, &ProbePage::probeLayoutImported,
+                this,  &ParameterView::applyProbeLayout);
     }
 }
 
@@ -780,4 +782,41 @@ void ParameterView::getProbeData(QList<ProbeEntry>& probes,
 {
     probe->getProbes(probes);
     libraryPath = probe->getLibraryPath();
+}
+
+// ---------------------------------------------------------------------------
+// applyProbeLayout
+// ---------------------------------------------------------------------------
+
+void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
+                                     QMap<int,QList<int>>  newAnatomy,
+                                     QMap<int,QList<int>>  newSpike,
+                                     int                   /*firstNewGroupId*/)
+{
+    if (!expertMode) return;  // anatomy/spike pages only exist in expert mode
+
+    // Merge new groups into what is already in the anatomy page.
+    // We do NOT replace the existing map — the user may have configured
+    // earlier probes already.  New group IDs (assigned starting at
+    // nextGroupId) are guaranteed not to collide with existing ones.
+    QMap<int, QList<int>> anatomyGroups;
+    anatomy->getGroups(anatomyGroups);
+    for (auto it = newAnatomy.constBegin(); it != newAnatomy.constEnd(); ++it)
+        anatomyGroups.insert(it.key(), it.value());
+
+    anatomy->setGroups(anatomyGroups);
+    anatomy->setModified(true);
+
+    // Same for spike groups.  Existing groups are preserved; new ones appended.
+    QMap<int, QList<int>> spikeGroups;
+    spike->getGroups(spikeGroups);
+    for (auto it = newSpike.constBegin(); it != newSpike.constEnd(); ++it)
+        spikeGroups.insert(it.key(), it.value());
+
+    // SpikePage::setGroups also requires the information map (nSamples etc.).
+    // Pass the current one unchanged so existing spike-group attributes survive.
+    QMap<int, QMap<QString,QString>> spikeInfo;
+    spike->getGroupInformation(spikeInfo);
+    spike->setGroups(spikeGroups, spikeInfo);
+    spike->setModified(true);
 }

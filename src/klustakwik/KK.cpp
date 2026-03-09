@@ -27,7 +27,9 @@
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <random>
 #include <unordered_map>
+#include <unordered_set>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -1092,11 +1094,22 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     nDims      = nSpatialDims;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
-    // Seed with farthest-point centres (in spatial dims)
+    // Seed cluster centres: use preseedCentres if provided, otherwise farthest-point.
     const int nCentres = nStartingClusters - 1;  // noise cluster is always 0
     if (nCentres >= 1) {
-        InitCentresFarthestPoint(nCentres, nSpatialDims);
-        // Set Class[] from Voronoi partition of seeds
+        if (!preseedCentres.empty() &&
+            static_cast<int>(preseedCentres.size()) >= nCentres * nSpatialDims) {
+            // Copy preseed centres into Centres[]; zero the time column.
+            Centres.SetSize(nCentres * nDims);
+            for (int k = 0; k < nCentres; k++) {
+                for (int d = 0; d < nSpatialDims; d++)
+                    Centres[k * nDims + d] = preseedCentres[k * nSpatialDims + d];
+                if (nDims > nSpatialDims)
+                    Centres[k * nDims + nSpatialDims] = 0.0f;  // time column
+            }
+        } else {
+            InitCentresFarthestPoint(nCentres, nSpatialDims);
+        }
         for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
         Reindex();
         InitClassFromCentres(nSpatialDims);
@@ -1170,7 +1183,8 @@ float KK::CEMTwoPhase(int timeMergeIter) {
 // ---------------------------------------------------------------------------
 int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                           int   nSpatialDims,
-                          float mergeThresh)
+                          float mergeThresh,
+                          const std::vector<std::unordered_map<int,int>>& overlapVotes)
 {
     const int n = static_cast<int>(models.size());
 
@@ -1243,43 +1257,103 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         const int nA = (int)vecA.size();
         const int nB = (int)vecB.size();
 
-        // Build full symmetric distance matrix for this chunk pair
-        std::vector<float> D(nA * nB);
+        // localClusterId -> index in vecA / vecB for both passes
+        std::unordered_map<int,int> localToIdxA, localToIdxB;
         for (int a = 0; a < nA; a++)
-            for (int b = 0; b < nB; b++) {
-                const float dAB = mahalDist(models[vecA[a]], models[vecB[b]]);
-                const float dBA = mahalDist(models[vecB[b]], models[vecA[a]]);
-                D[a * nB + b] = 0.5f * (dAB + dBA);
+            localToIdxA[models[vecA[a]].localClusterId] = a;
+        for (int b = 0; b < nB; b++)
+            localToIdxB[models[vecB[b]].localClusterId] = b;
+
+        // ── Pass 1: overlap vote matching (authoritative when overlap > 0) ──
+        //
+        // Overlap spikes were sorted by real EM in both adjacent chunks.
+        // A mutual plurality match (>= 3 shared spikes) is treated as
+        // authoritative and short-circuits the Mahalanobis check.
+        std::unordered_set<int> resolvedA, resolvedB;
+
+        if (k < static_cast<int>(overlapVotes.size()) && !overlapVotes[k].empty()) {
+            const auto& votes = overlapVotes[k];
+            std::unordered_map<int, std::pair<int,int>> bestFromA;
+            std::unordered_map<int, std::pair<int,int>> bestFromB;
+            for (const auto& [key, count] : votes) {
+                const int clsK  = key / MaxPossibleClusters;
+                const int clsK1 = key % MaxPossibleClusters;
+                auto& bA = bestFromA[clsK];
+                if (count > bA.second) bA = {clsK1, count};
+                auto& bB = bestFromB[clsK1];
+                if (count > bB.second) bB = {clsK, count};
             }
-
-        // Nearest neighbour in B for each A
-        std::vector<int> nnA(nA, -1);
-        for (int a = 0; a < nA; a++) {
-            float best = HugeScore; int bestB = -1;
-            for (int b = 0; b < nB; b++)
-                if (D[a * nB + b] < best) { best = D[a * nB + b]; bestB = b; }
-            if (best < mergeThresh) nnA[a] = bestB;
+            for (const auto& [clsK, topB] : bestFromA) {
+                if (topB.second < 3) continue;
+                const int clsK1 = topB.first;
+                auto itB = bestFromB.find(clsK1);
+                if (itB == bestFromB.end() || itB->second.first != clsK) continue;
+                auto itA2 = localToIdxA.find(clsK);
+                auto itB2 = localToIdxB.find(clsK1);
+                if (itA2 == localToIdxA.end() || itB2 == localToIdxB.end()) continue;
+                const int mA = vecA[itA2->second];
+                const int mB = vecB[itB2->second];
+                resolvedA.insert(clsK);
+                resolvedB.insert(clsK1);
+                if (Find(mA) != Find(mB)) {
+                    Union(mA, mB);
+                    Output("  vote-match  chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d\n",
+                           models[mA].chunkIdx, clsK,
+                           models[mB].chunkIdx, clsK1,
+                           topB.second, itB->second.second);
+                } else {
+                    Output("  vote-confirm chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d (already merged)\n",
+                           models[mA].chunkIdx, clsK,
+                           models[mB].chunkIdx, clsK1,
+                           topB.second, itB->second.second);
+                }
+            }
         }
 
-        // Nearest neighbour in A for each B
-        std::vector<int> nnB(nB, -1);
-        for (int b = 0; b < nB; b++) {
-            float best = HugeScore; int bestA = -1;
-            for (int a = 0; a < nA; a++)
-                if (D[a * nB + b] < best) { best = D[a * nB + b]; bestA = a; }
-            if (best < mergeThresh) nnB[b] = bestA;
-        }
+        // ── Pass 2: Mahalanobis MNN for unresolved clusters ──────────────
+        // When ChunkOverlapMinutes == 0, resolvedA/B are empty and this
+        // pass runs on all clusters exactly as before.
+        std::vector<int> uA, uB;
+        for (int a = 0; a < nA; a++)
+            if (!resolvedA.count(models[vecA[a]].localClusterId)) uA.push_back(a);
+        for (int b = 0; b < nB; b++)
+            if (!resolvedB.count(models[vecB[b]].localClusterId)) uB.push_back(b);
 
-        // Merge only mutual nearest neighbours
-        for (int a = 0; a < nA; a++) {
-            const int b = nnA[a];
-            if (b < 0) continue;
-            if (nnB[b] != a) continue;  // not mutual
-            Union(vecA[a], vecB[b]);
-            Output("  match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f\n",
-                   models[vecA[a]].chunkIdx, models[vecA[a]].localClusterId,
-                   models[vecB[b]].chunkIdx, models[vecB[b]].localClusterId,
-                   D[a * nB + b]);
+        const int nUA = static_cast<int>(uA.size());
+        const int nUB = static_cast<int>(uB.size());
+
+        if (nUA > 0 && nUB > 0) {
+            std::vector<float> D(nUA * nUB);
+            for (int ai = 0; ai < nUA; ai++)
+                for (int bi = 0; bi < nUB; bi++) {
+                    const float dAB = mahalDist(models[vecA[uA[ai]]], models[vecB[uB[bi]]]);
+                    const float dBA = mahalDist(models[vecB[uB[bi]]], models[vecA[uA[ai]]]);
+                    D[ai * nUB + bi] = 0.5f * (dAB + dBA);
+                }
+            std::vector<int> nnA(nUA, -1);
+            for (int ai = 0; ai < nUA; ai++) {
+                float best = HugeScore; int bestBi = -1;
+                for (int bi = 0; bi < nUB; bi++)
+                    if (D[ai * nUB + bi] < best) { best = D[ai * nUB + bi]; bestBi = bi; }
+                if (best < mergeThresh) nnA[ai] = bestBi;
+            }
+            std::vector<int> nnB(nUB, -1);
+            for (int bi = 0; bi < nUB; bi++) {
+                float best = HugeScore; int bestAi = -1;
+                for (int ai = 0; ai < nUA; ai++)
+                    if (D[ai * nUB + bi] < best) { best = D[ai * nUB + bi]; bestAi = ai; }
+                if (best < mergeThresh) nnB[bi] = bestAi;
+            }
+            for (int ai = 0; ai < nUA; ai++) {
+                const int bi = nnA[ai];
+                if (bi < 0) continue;
+                if (nnB[bi] != ai) continue;
+                Union(vecA[uA[ai]], vecB[uB[bi]]);
+                Output("  mahal-match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f\n",
+                       models[vecA[uA[ai]]].chunkIdx, models[vecA[uA[ai]]].localClusterId,
+                       models[vecB[uB[bi]]].chunkIdx, models[vecB[uB[bi]]].localClusterId,
+                       D[ai * nUB + bi]);
+            }
         }
     }
 
@@ -1305,6 +1379,90 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// PreseedSubsampleCEM
+//
+// Phase 0 for chunked CEM: randomly sample preseedFraction of all spikes,
+// run a full CEMTwoPhase on the subset, and return the converged spatial
+// cluster centres as a flat vector [nCentres × nSpatialDims].
+//
+// This gives every per-chunk CEM the same globally-informed starting point
+// rather than independent farthest-point seeds.  The key benefit: units that
+// persist across all chunks start near their true centres, so cross-chunk
+// model matching sees more consistent cluster IDs and fewer spurious splits.
+//
+// Returns empty vector on failure (too few spikes, bad fraction, etc.).
+// ---------------------------------------------------------------------------
+std::vector<float> KK::PreseedSubsampleCEM(float preseedFraction,
+                                            int   nCentres,
+                                            int   nSpatialDims,
+                                            int   timeMergeIter)
+{
+    if (preseedFraction <= 0.0f || preseedFraction > 1.0f || nCentres < 1) {
+        Output("PreseedSubsampleCEM: invalid fraction %.3f or nCentres %d\n",
+               preseedFraction, nCentres);
+        return {};
+    }
+
+    const int nSub = std::max(nCentres * nSpatialDims * 3,
+                              static_cast<int>(nPoints * preseedFraction));
+    if (nSub >= nPoints) {
+        Output("PreseedSubsampleCEM: subsample (%d) >= nPoints (%d) — "
+               "skipping preseed, using farthest-point directly.\n", nSub, nPoints);
+        return {};
+    }
+
+    Output("PreseedSubsampleCEM: sampling %d / %d spikes (%.1f%%) for %d centres\n",
+           nSub, nPoints, 100.0f * nSub / nPoints, nCentres);
+
+    // Random subsample without replacement using Fisher-Yates partial shuffle.
+    std::vector<int> idx(nPoints);
+    std::iota(idx.begin(), idx.end(), 0);
+    // Use the global RandomSeed so runs are reproducible.
+    std::mt19937 rng(static_cast<unsigned>(RandomSeed));
+    for (int i = 0; i < nSub; i++) {
+        std::uniform_int_distribution<int> dist(i, nPoints - 1);
+        std::swap(idx[i], idx[dist(rng)]);
+    }
+
+    // Build subsample KK object.
+    // nStartingClusters = nCentres + 1 (noise) so Phase 1 seeds at the target K.
+    // MaxClusters and MaxPossibleClusters are extern globals, visible automatically.
+    KK Ks;
+    Ks.nDims                = nDims;
+    Ks.nPoints              = nSub;
+    Ks.nStartingClusters    = nCentres + 1;
+    Ks.penaltyMix           = penaltyMix;
+    Ks.suppressBestSave     = true;
+    Ks.minClustersAlive     = 2;
+    Ks.AllocateArrays();
+    Ks.AlocateCholeskyVecs();
+
+    for (int i = 0; i < nSub; i++) {
+        const int p = idx[i];
+        for (int d = 0; d < nDims; d++)
+            Ks.Data[i * nDims + d] = Data[p * nDims + d];
+    }
+
+    Ks.CEMTwoPhase(timeMergeIter);
+
+    const int nFound = Ks.nClustersAlive;
+    Output("PreseedSubsampleCEM: converged to %d clusters\n", nFound);
+
+    if (nFound < 1) return {};
+
+    // Extract spatial means from the live clusters.
+    // If fewer clusters found than requested, we return what we have;
+    // CEMTwoPhase in each chunk will add more via splits as needed.
+    std::vector<float> centres(nFound * nSpatialDims, 0.0f);
+    for (int cc = 0; cc < nFound; cc++) {
+        const int c = Ks.AliveIndex[cc];
+        for (int d = 0; d < nSpatialDims; d++)
+            centres[cc * nSpatialDims + d] = Ks.Mean[c * nDims + d];
+    }
+    return centres;
+}
+
 // RunChunkedCEM — three-phase temporal-chunk pipeline
 //
 // ---------------------------------------------------------------------------
@@ -1510,7 +1668,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                    mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
         }
     }
-    const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh);
+    static const std::vector<std::unordered_map<int,int>> noOverlapVotes;
+    const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
         return CEMTwoPhase(timeMergeIter);
@@ -1576,7 +1735,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
                          float samplingRate,
                          float mergeThresh,
                          int   globalMergeIter,
-                         int   timeMergeIter)
+                         int   timeMergeIter,
+                         float chunkOverlapMinutes,
+                         float chunkPreseedFraction)
 {
     const int nFullDims    = nDims;
     const int nSpatialDims = (nDims > 1) ? nDims - 1 : nDims;
@@ -1607,14 +1768,36 @@ float KK::RunChunkedCEM(float chunkMinutes,
         return CEMTwoPhase(timeMergeIter);
     }
 
-    // Assign each point to chunk floor(t / chunkFrac), clamped to [0, nChunks-1]
+    // If chunkOverlapMinutes > 0, spikes within the trailing overlapFrac of
+    // chunk k are also appended to chunk k+1.  After per-chunk EM their
+    // assignments form a vote matrix that supplements Mahalanobis MNN.
+    const float chunkOverlapFrac = (chunkOverlapMinutes > 0.0f)
+        ? (samplingRate * chunkOverlapMinutes * 60.0f) / sessionSamples
+        : 0.0f;
+    if (chunkOverlapFrac >= chunkFrac * 0.5f && chunkOverlapFrac > 0.0f)
+        Output("RunChunkedCEM: WARNING — overlap (%.1f min) >= half chunk size; "
+               "consider reducing ChunkOverlapMinutes.\n", chunkOverlapMinutes);
+
+    struct OverlapEntry { int p; int localK; int localK1; };
+    std::vector<std::vector<OverlapEntry>> overlapForPair(nChunks > 0 ? nChunks - 1 : 0);
+
     std::vector<std::vector<int>> chunkPoints(nChunks);
     for (int p = 0; p < nPoints; p++) {
         const float t = Data[p * nDims + timeDim];
         int k = static_cast<int>(t / chunkFrac);
         if (k < 0) k = 0;
         if (k >= nChunks) k = nChunks - 1;
+        const int localK = static_cast<int>(chunkPoints[k].size());
         chunkPoints[k].push_back(p);
+        // Trailing overlap: if within overlapFrac of k's right boundary, also add to k+1
+        if (chunkOverlapFrac > 0.0f && k + 1 < nChunks) {
+            const float rightBoundary = (k + 1) * chunkFrac;
+            if ((rightBoundary - t) <= chunkOverlapFrac) {
+                const int localK1 = static_cast<int>(chunkPoints[k + 1].size());
+                chunkPoints[k + 1].push_back(p);
+                overlapForPair[k].push_back({p, localK, localK1});
+            }
+        }
     }
 
     // Merge undersized trailing chunks into their predecessor.
@@ -1642,6 +1825,21 @@ float KK::RunChunkedCEM(float chunkMinutes,
     Output("Active chunks: %d\n", nActive);
 
     // -------------------------------------------------------------------
+    // Phase 0.5: global preseed — cluster a random subsample to get
+    // globally-informed starting centres for every chunk.
+    // Only runs when chunkPreseedFraction > 0.
+    // -------------------------------------------------------------------
+    std::vector<float> globalPreseedCentres;
+    if (chunkPreseedFraction > 0.0f) {
+        globalPreseedCentres = PreseedSubsampleCEM(
+            chunkPreseedFraction, MaxClusters - 1,
+            nSpatialDims, timeMergeIter);
+        if (globalPreseedCentres.empty())
+            Output("PreseedSubsampleCEM returned no centres — "
+                   "chunks will use farthest-point seeding.\n");
+    }
+
+    // -------------------------------------------------------------------
     // Phase 1: per-chunk CEMTwoPhase — parallel over chunks
     //
     // Each chunk builds a self-contained KK sub-object with:
@@ -1662,11 +1860,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // section to prevent interleaved log lines; set Verbose=0 to suppress.
     // -------------------------------------------------------------------
     std::vector<ChunkModel> allModels;
-    std::vector<int>        pointPacked(nPoints, 0);
+    std::vector<int>        pointPacked(nPoints, -1);  // -1 sentinel: unwritten -> noise
 
     // Per-chunk accumulators: indexed by chunk k.
     std::vector<std::vector<ChunkModel>> perChunkModels(nActive);
     std::vector<std::vector<std::pair<int,int>>> perChunkAssign(nActive);
+    std::vector<std::vector<int>> perChunkClass(nActive);  // for overlap votes
     // per-chunk score (for logging)
     std::vector<float> perChunkScore(nActive, 0.0f);
     std::vector<int>   perChunkNClusters(nActive, 0);
@@ -1682,28 +1881,34 @@ float KK::RunChunkedCEM(float chunkMinutes,
 #else
     const int nThreads = 1;
 #endif
+    // When preseed succeeded, start each chunk from the preseed's K rather than
+    // the outer loop's nStartingClusters.  The preseed already found a good
+    // partition of the full dataset, so seeding chunks at that K avoids the
+    // slow bottom-up split cascade from K=2.
+    const int chunkStartK = (!globalPreseedCentres.empty())
+        ? static_cast<int>(globalPreseedCentres.size() / nSpatialDims) + 1
+        : nStartingClusters;
+
     std::vector<KK> threadKc(nThreads);
     for (int t = 0; t < nThreads; t++) {
         threadKc[t].nDims             = nFullDims;
         threadKc[t].nPoints           = maxChunkSize;
-        threadKc[t].nStartingClusters = nStartingClusters;
+        threadKc[t].nStartingClusters = chunkStartK;
         threadKc[t].penaltyMix        = penaltyMix;
         threadKc[t].suppressBestSave  = true;
-        // Per-chunk sub-objects use nStartingClusters as their deletion floor,
-        // not the global minClustersAlive (which is MinClusters from the command
-        // line).  This prevents chunks from collapsing below their seeded K, while
-        // still allowing ConsiderDeletion to reclaim genuinely empty clusters.
-        // The global minClustersAlive floor applies only in the Phase 3 global EM
-        // which runs on the outer KK object (which retains minClustersAlive).
-        threadKc[t].minClustersAlive  = nStartingClusters;
+        // Use chunkStartK as the deletion floor so chunks don't collapse below
+        // the preseed K.  minClustersAlive=2 when no preseed (normal behaviour).
+        threadKc[t].minClustersAlive  = std::max(2, chunkStartK - 4);
+        threadKc[t].preseedCentres    = globalPreseedCentres;  // shared read-only
         threadKc[t].AllocateArrays();
         threadKc[t].AlocateCholeskyVecs();
     }
 
     #pragma omp parallel for schedule(dynamic) default(none) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
-               chunkPoints, nActive, nFullDims, timeMergeIter, threadKc) \
-        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix)
+               chunkPoints, perChunkClass, globalPreseedCentres, \
+               nActive, nFullDims, timeMergeIter, threadKc) \
+        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix, chunkStartK)
     for (int k = 0; k < nActive; k++) {
         const std::vector<int>& pts = chunkPoints[k];
         const int nPts = static_cast<int>(pts.size());
@@ -1716,7 +1921,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
 #endif
         ];
         Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
-        Kc.nStartingClusters = nStartingClusters;
+        Kc.nStartingClusters = chunkStartK;
         Kc.NoisePoint        = 1;   // restore default (ReinitForSplit sets 0)
 
         for (int i = 0; i < nPts; i++) {
@@ -1756,6 +1961,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
         assign.reserve(nPts);
         for (int i = 0; i < nPts; i++)
             assign.emplace_back(pts[i], k * MaxPossibleClusters + Kc.Class[i]);
+
+        // Harvest Class[] for overlap vote building (each k writes its own slot)
+        {
+            auto& classArr = perChunkClass[k];
+            classArr.resize(nPts);
+            for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
+        }
     }   // end omp parallel for
 
     // Serial reduction: gather per-chunk results in chunk order
@@ -1766,7 +1978,28 @@ float KK::RunChunkedCEM(float chunkMinutes,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(std::move(cm));
         for (auto& [p, packed] : perChunkAssign[k])
-            pointPacked[p] = packed;
+            if (pointPacked[p] < 0) pointPacked[p] = packed;  // first-write-wins
+    }
+
+    // Build overlap vote matrices for MergeChunkModels.
+    std::vector<std::unordered_map<int,int>> overlapVotes(
+        nActive > 0 ? nActive - 1 : 0);
+    if (chunkOverlapFrac > 0.0f) {
+        for (int k = 0; k < nActive - 1; k++) {
+            auto& votes = overlapVotes[k];
+            for (const auto& oe : overlapForPair[k]) {
+                if (oe.localK  >= static_cast<int>(perChunkClass[k].size()))   continue;
+                if (oe.localK1 >= static_cast<int>(perChunkClass[k+1].size())) continue;
+                const int clsK  = perChunkClass[k][oe.localK];
+                const int clsK1 = perChunkClass[k+1][oe.localK1];
+                if (clsK == 0 || clsK1 == 0) continue;  // noise
+                votes[clsK * MaxPossibleClusters + clsK1]++;
+            }
+            int totalVotes = 0;
+            for (const auto& [key, cnt] : votes) totalVotes += cnt;
+            Output("  Overlap pair %d/%d: %d shared spikes, %d (clsK,clsK1) pairs\n",
+                   k, k + 1, totalVotes, static_cast<int>(votes.size()));
+        }
     }
 
     // -------------------------------------------------------------------
@@ -1794,7 +2027,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                    mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
         }
     }
-    const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh);
+    const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
         return CEMTwoPhase(timeMergeIter);
@@ -1840,7 +2073,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
     for (int p = 0; p < nPoints; p++) {
-        auto it = packedToGlobal.find(pointPacked[p]);
+        const int pp = pointPacked[p];
+        auto it = (pp >= 0) ? packedToGlobal.find(pp) : packedToGlobal.end();
         const int g = (it != packedToGlobal.end()) ? it->second : 0;
         // g is in [0, nGlobal] and nGlobal < MaxPossibleClusters (checked above)
         Class[p] = g;
