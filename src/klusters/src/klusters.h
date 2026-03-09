@@ -403,6 +403,16 @@ private Q_SLOTS:
                              QVector<float> meanBefore, QVector<float> meanAfter,
                              QString backupBase, int nChan, int nSamp);
 
+    /**Run ndm_estimatedrift on the current electrode group to produce
+     * SESSION.drift.  Only the current group is used as the source;
+     * the result can then be propagated to siblings via slotApplyDriftSiblings.*/
+    void slotGenerateProbeDrift();
+
+    /**Open the Drift Siblings dialog, let the user choose which sibling
+     * spike groups to reprocess, then invoke ndm_applydrift (which computes
+     * adaptive chunk boundaries and optionally re-runs KlustaKwik).*/
+    void slotApplyDriftSiblings();
+
     /**Stops the separate process which is reclustering some clusters.*/
     void slotStopRecluster();
 
@@ -565,6 +575,8 @@ private:
     QAction *mAbortReclustering;
     QAction *mAbortRealign;
     QAction *mRealignSpikes;
+    QAction *mGenerateProbeDrift;
+    QAction *mApplyDriftSiblings;
     QAction *mZoomAction;
     QAction *mIncreasePointSize;
     QAction *mDecreasePointSize;

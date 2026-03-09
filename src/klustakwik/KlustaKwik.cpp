@@ -57,6 +57,7 @@ int   TimeMergeIter          = 30;          // Phase 2 iterations; 0 = disabled
 
 // Three-phase chunked CEM parameters
 float ChunkMinutes           = 0.0f;    // 0 = disabled (use two-phase only)
+char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
 float SamplingRate           = 20000.0f;// samples/sec; needed to convert chunk boundaries
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
 int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations
@@ -88,6 +89,7 @@ void SetupParams(int argc, char **argv) {
     STRING_PARAM(InitMethod);
     INT_PARAM(TimeMergeIter);
     FLOAT_PARAM(ChunkMinutes);
+    STRING_PARAM(ChunkFile);
     FLOAT_PARAM(SamplingRate);
     FLOAT_PARAM(MergeThresh);
     INT_PARAM(GlobalMergeIter);
@@ -303,6 +305,59 @@ int main(int argc, char **argv) {
         if (DistDump) Distfp = fopen("DISTDUMP", "w");
 
         // -------------------------------------------------------------------
+        // If a ChunkFile was provided, read the boundary times (seconds) now.
+        // The file may contain comment lines beginning with '#'; all other
+        // lines are float seconds in ascending order.
+        // ChunkFile takes precedence over ChunkMinutes when both are given.
+        // -------------------------------------------------------------------
+        std::vector<float> extChunkBoundsSec;
+        if (*ChunkFile) {
+            FILE *cf = fopen(ChunkFile, "r");
+            if (!cf) {
+                fprintf(stderr, "KlustaKwik: cannot open ChunkFile '%s'\n", ChunkFile);
+                return 1;
+            }
+            char linebuf[256];
+            float prev = -1.0f;
+            int lineNo = 0;
+            while (fgets(linebuf, sizeof(linebuf), cf)) {
+                ++lineNo;
+                // Skip comment / empty lines
+                const char *p = linebuf;
+                while (*p == ' ' || *p == '\t') ++p;
+                if (*p == '#' || *p == '\0' || *p == '\n' || *p == '\r') continue;
+                float t = 0.0f;
+                if (sscanf(p, "%f", &t) != 1) {
+                    fprintf(stderr, "KlustaKwik: ChunkFile line %d not a float — skipped\n", lineNo);
+                    continue;
+                }
+                if (t < prev) {
+                    fprintf(stderr, "KlustaKwik: ChunkFile boundary %.3f < previous %.3f"
+                                    " at line %d — file must be sorted ascending\n",
+                            t, prev, lineNo);
+                    fclose(cf);
+                    return 1;
+                }
+                extChunkBoundsSec.push_back(t);
+                prev = t;
+            }
+            fclose(cf);
+            if (extChunkBoundsSec.size() < 2) {
+                fprintf(stderr, "KlustaKwik: ChunkFile '%s' has fewer than 2 boundaries"
+                                " — ignoring and falling back to ChunkMinutes\n", ChunkFile);
+                extChunkBoundsSec.clear();
+            } else {
+                fprintf(stderr, "KlustaKwik: loaded %zu chunk boundaries from '%s'"
+                                " (%zu chunks)\n",
+                        extChunkBoundsSec.size(), ChunkFile,
+                        extChunkBoundsSec.size() - 1);
+            }
+        }
+
+        const bool useExtChunks = !extChunkBoundsSec.empty();
+        const bool useChunked   = useExtChunks || (ChunkMinutes > 0.0f);
+
+        // -------------------------------------------------------------------
         // Startup banner — always written to stderr regardless of Screen/Log.
         // Gives the user confirmation the binary started, data loaded, and
         // parallelism is active before the first (potentially long) CEM call.
@@ -319,7 +374,28 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "  compute: CPU only (no %s device found)\n", GPU_BACKEND_NAME);
 #endif
 
-            if (ChunkMinutes > 0.0f) {
+            if (useExtChunks) {
+                fprintf(stderr, "  mode: chunked  %zu drift-adaptive chunks  SR=%.0f\n",
+                        extChunkBoundsSec.size() - 1, SamplingRate);
+                fprintf(stderr, "  chunk file: %s\n", ChunkFile);
+#ifndef _OPENMP
+                fprintf(stderr, "  WARNING: built without OpenMP — chunks run serially.\n"
+                                "           Recompile with -fopenmp to enable parallelism.\n");
+#else
+                {
+                    const int nThreads = omp_get_max_threads();
+                    const int nProcs   = omp_get_num_procs();
+                    if (nThreads < nProcs)
+                        fprintf(stderr,
+                                "  parallel: %d of %d cores  "
+                                "(OMP_NUM_THREADS=%d limits parallelism — "
+                                "unset it or set to %d to use all cores)\n",
+                                nThreads, nProcs, nThreads, nProcs);
+                    else
+                        fprintf(stderr, "  parallel: %d OpenMP threads\n", nThreads);
+                }
+#endif
+            } else if (ChunkMinutes > 0.0f) {
                 const float sessionSamples = K1.timeRawMax - K1.timeRawMin;
                 const float chunkSamples   = SamplingRate * ChunkMinutes * 60.0f;
                 const int   nChunksEst     = (sessionSamples > 0 && chunkSamples > 0)
@@ -365,10 +441,15 @@ int main(int argc, char **argv) {
         }
 
         // Dispatch: three-phase chunked > two-phase farthest > original random
-        const bool useChunked   = (ChunkMinutes > 0.0f);
         const bool useFarthest  = (strcmp(InitMethod, "farthest") == 0);
 
-        if (useChunked)
+        if (useExtChunks)
+            Output("Mode: three-phase chunked CEM  "
+                   "(drift-adaptive: %zu chunks, SR=%.0f, mergeThresh=%.1f, "
+                   "globalIter=%d, timeMergeIter=%d)\n",
+                   extChunkBoundsSec.size() - 1, SamplingRate, MergeThresh,
+                   GlobalMergeIter, TimeMergeIter);
+        else if (useChunked)
             Output("Mode: three-phase chunked CEM  "
                    "(chunk=%.1f min, SR=%.0f, mergeThresh=%.1f, "
                    "globalIter=%d, timeMergeIter=%d)\n",
@@ -397,7 +478,11 @@ int main(int argc, char **argv) {
                 Output("Starting from %d clusters...\n", K1.nStartingClusters);
 
                 float score;
-                if (useChunked)
+                if (useExtChunks)
+                    score = K1.RunChunkedCEM(extChunkBoundsSec, SamplingRate,
+                                              MergeThresh, GlobalMergeIter,
+                                              TimeMergeIter);
+                else if (useChunked)
                     score = K1.RunChunkedCEM(ChunkMinutes, SamplingRate,
                                               MergeThresh, GlobalMergeIter,
                                               TimeMergeIter);
