@@ -1341,7 +1341,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     std::vector<float> normBounds(nBounds);
     for (int i = 0; i < nBounds; i++) {
         // boundary_samples = bound_sec * SR;  norm = boundary_samples / sessionSamples
-        normBounds[i] = (chunkBoundsSec[i] * samplingRate) / sessionSamples;
+        // Subtract timeRawMin so the normalised boundary matches the
+        // [0,1] range that Data[p*nDims+timeDim] actually occupies.
+        // Without this offset all boundaries are shifted right by
+        // timeRawMin/sessionSamples, misassigning early spikes.
+        normBounds[i] = (chunkBoundsSec[i] * samplingRate - timeRawMin) / sessionSamples;
         // Clamp to [0,1]
         if (normBounds[i] < 0.0f) normBounds[i] = 0.0f;
         if (normBounds[i] > 1.0f) normBounds[i] = 1.0f;
@@ -1403,7 +1407,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     // ── Phase 1: per-chunk CEMTwoPhase (parallel) ───────────────────────────
     std::vector<ChunkModel> allModels;
-    std::vector<int>        pointPacked(nPoints, 0);
+    std::vector<int>        pointPacked(nPoints, -1);  // -1 sentinel: unwritten spikes become noise
 
     std::vector<std::vector<ChunkModel>> perChunkModels(nActive);
     std::vector<std::vector<std::pair<int,int>>> perChunkAssign(nActive);
@@ -1533,7 +1537,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
     for (int p = 0; p < nPoints; p++) {
-        auto it = packedToGlobal.find(pointPacked[p]);
+        const int pp = pointPacked[p];
+        auto it = (pp >= 0) ? packedToGlobal.find(pp) : packedToGlobal.end();
         const int g = (it != packedToGlobal.end()) ? it->second : 0;
         Class[p] = g;
         ClassAlive[g] = 1;
