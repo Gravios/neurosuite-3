@@ -34,6 +34,7 @@ include(GNUInstallDirs)
 # Dependencies
 # ---------------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 OPTIONAL_COMPONENTS Svg)
 
 # In a monorepo add_subdirectory build the alias target is already present.
 if(NOT TARGET KlustersShared::klustersshared)

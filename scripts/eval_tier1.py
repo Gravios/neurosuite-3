@@ -36,20 +36,28 @@ from pathlib import Path
 def read_fet(path: str):
     """
     Read a .fet.N file (binary or legacy text).
-    Returns (features, n_dims) where features is (n_spikes, n_dims) float32.
+    Returns (features, n_dims) where features is (n_spikes, n_dims) float64.
     The timestamp column (last column) is included.
+
+    Binary format (produced by process_mergefeatures):
+      int32_t  nDimensions
+      nSpikes * nDimensions * int64_t   (row-major, PCA cols then timestamp)
+
+    Legacy text format:
+      line 0:  nDimensions
+      lines 1+: space-separated feature values including timestamp
     """
     with open(path, 'rb') as f:
         header = f.read(4)
-    # Binary format: first 4 bytes are int32 n_dims
+    if len(header) < 4:
+        raise ValueError(f"read_fet: file too short: {path}")
     n_dims = struct.unpack('<i', header)[0]
     if 1 <= n_dims <= 256:
-        # Binary format
-        data = np.fromfile(path, dtype=np.int32)
-        n_dims_read = data[0]
-        payload = data[1:].astype(np.float32)
-        n_spikes = len(payload) // n_dims_read
-        return payload[:n_spikes * n_dims_read].reshape(n_spikes, n_dims_read), n_dims_read
+        # Binary: int32 header then n_spikes * n_dims int64 values
+        payload = np.fromfile(path, dtype=np.int64, offset=4)
+        n_spikes = len(payload) // n_dims
+        features = payload[:n_spikes * n_dims].reshape(n_spikes, n_dims).astype(np.float64)
+        return features, n_dims
     else:
         # Legacy text format
         with open(path, 'r') as f:
@@ -59,19 +67,40 @@ def read_fet(path: str):
                 line = line.strip()
                 if line:
                     rows.append(list(map(float, line.split())))
-        arr = np.array(rows, dtype=np.float32)
+        arr = np.array(rows, dtype=np.float64)
         return arr, n_dims
 
 
 def read_clu(path: str):
     """
-    Read a .clu.N file.
+    Read a .clu.N file (binary or legacy text).
     Returns array of cluster ids (int32), length n_spikes.
-    First line is n_clusters (skipped).
+
+    Binary format: little-endian int32 n_clusters header, then one int32 per spike.
+    Text format:   first line = n_clusters (skipped), one cluster id per line.
+
+    Detection mirrors read_fet: peek at the first 4 bytes as a little-endian
+    int32.  If the value is in [1, 65535] the file is treated as binary.
+    That range covers all plausible cluster counts while being safely above
+    any ASCII digit or whitespace byte that would start a text file.
     """
-    with open(path, 'r') as f:
-        lines = [l.strip() for l in f if l.strip()]
-    return np.array(lines[1:], dtype=np.int32)
+    with open(path, 'rb') as f:
+        header = f.read(4)
+
+    if len(header) == 4:
+        n_clusters_candidate = struct.unpack('<i', header)[0]
+    else:
+        n_clusters_candidate = -1
+
+    if 1 <= n_clusters_candidate <= 65535:
+        # Binary: int32 header (n_clusters) followed by n_spikes int32 cluster ids
+        data = np.fromfile(path, dtype=np.int32)
+        return data[1:]      # skip the n_clusters header word
+    else:
+        # Legacy text format
+        with open(path, 'r') as f:
+            lines = [l.strip() for l in f if l.strip()]
+        return np.array(lines[1:], dtype=np.int32)
 
 
 # ── Quality metrics ──────────────────────────────────────────────────────────
@@ -162,7 +191,22 @@ def compute_metrics(fet_path: str, clu_path: str):
     labels = read_clu(clu_path)
 
     if len(labels) != len(features_all):
-        return dict(n_spikes=len(labels), n_clusters=0, error='spike count mismatch')
+        msg = (f'spike count mismatch: clu={len(labels)} fet={len(features_all)}'
+               f' (fet_dims={n_dims})')
+        return dict(
+            n_spikes     = len(labels),
+            n_clusters   = 0,
+            n_noise      = 0,
+            n_artefact   = 0,
+            noise_frac   = np.nan,
+            iso_dist_mean = np.nan,
+            iso_dist_med  = np.nan,
+            iso_dist_min  = np.nan,
+            l_ratio_mean  = np.nan,
+            l_ratio_med   = np.nan,
+            log10_lr_mean = np.nan,
+            error        = msg,
+        )
 
     # Drop timestamp (last column) for distance metrics
     features = features_all[:, :-1].astype(np.float64)
@@ -276,13 +320,17 @@ def main():
                     m['pm']  = pm
                     m['tag'] = tag
                     rec = m
-                    print(f'  {tag}: {m["n_clusters"]} clusters, '
-                          f'iso={m["iso_dist_mean"]}, '
-                          f'log10(Lr)={m["log10_lr_mean"]}')
                 except Exception as e:
                     print(f'  ERROR {tag}: {e}')
                     rec = dict(mt=mt, pm=pm, tag=tag, n_clusters=np.nan,
                                error=str(e))
+                else:
+                    if 'error' in m:
+                        print(f'  WARN  {tag}: {m["error"]}')
+                    else:
+                        print(f'  {tag}: {m["n_clusters"]} clusters, '
+                              f'iso={m["iso_dist_mean"]}, '
+                              f'log10(Lr)={m["log10_lr_mean"]}')
             records.append(rec)
 
     df = pd.DataFrame(records)

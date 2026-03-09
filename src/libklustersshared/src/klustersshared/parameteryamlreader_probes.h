@@ -19,6 +19,8 @@
 // yaml-cpp forward
 namespace YAML { class Node; }
 
+#include "libklustersshared_export.h"
+
 // ---------------------------------------------------------------------------
 // Data structures
 // ---------------------------------------------------------------------------
@@ -31,8 +33,8 @@ struct ProbeEntry {
     QString    probeFile;           ///< relative path inside probe library
     QString    label;               ///< user-visible label
     int        channelOffset = 0;   ///< first ADC channel from this probe
-    QList<int> anatomicalGroups;    ///< 1-based anatomical group IDs on this probe
-    QList<int> spikeGroups;         ///< 1-based spike-sorting group IDs; empty = same as anatomicalGroups
+    QList<int> anatomicalGroups;    ///< 1-based group IDs belonging to this probe
+    QList<int> spikeGroups;         ///< spike group IDs; empty = same as anatomicalGroups
 };
 
 /**
@@ -55,7 +57,7 @@ struct ProbeGroupMeta {
  * @param out           Filled with one ProbeEntry per probe.
  * @param libraryPathOut  Set to probeLibraryPath if present, empty otherwise.
  */
-void readProbesSection(const YAML::Node& root,
+KLUSTERSSHARED_EXPORT void readProbesSection(const YAML::Node& root,
                        QList<ProbeEntry>& out,
                        QString& libraryPathOut);
 
@@ -75,7 +77,7 @@ void readAnatomyGroupMeta(const YAML::Node& root,
 /**
  * @brief Emit the `probes` sequence into a YAML document node.
  */
-void writeProbesSection(YAML::Node& root,
+KLUSTERSSHARED_EXPORT void writeProbesSection(YAML::Node& root,
                         const QList<ProbeEntry>& probes,
                         const QString& libraryPath);
 

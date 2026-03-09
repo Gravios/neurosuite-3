@@ -57,6 +57,8 @@ int   TimeMergeIter          = 30;          // Phase 2 iterations; 0 = disabled
 
 // Three-phase chunked CEM parameters
 float ChunkMinutes           = 0.0f;    // 0 = disabled (use two-phase only)
+float ChunkOverlapMinutes    = 0.0f;    // trailing overlap appended to next chunk; 0 = disabled
+float ChunkPreseedFraction   = 0.0f;    // fraction of spikes for Phase 0 preseed; 0 = disabled
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
 float SamplingRate           = 20000.0f;// samples/sec; needed to convert chunk boundaries
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
@@ -89,6 +91,8 @@ void SetupParams(int argc, char **argv) {
     STRING_PARAM(InitMethod);
     INT_PARAM(TimeMergeIter);
     FLOAT_PARAM(ChunkMinutes);
+    FLOAT_PARAM(ChunkOverlapMinutes);
+    FLOAT_PARAM(ChunkPreseedFraction);
     STRING_PARAM(ChunkFile);
     FLOAT_PARAM(SamplingRate);
     FLOAT_PARAM(MergeThresh);
@@ -485,7 +489,8 @@ int main(int argc, char **argv) {
                 else if (useChunked)
                     score = K1.RunChunkedCEM(ChunkMinutes, SamplingRate,
                                               MergeThresh, GlobalMergeIter,
-                                              TimeMergeIter);
+                                              TimeMergeIter, ChunkOverlapMinutes,
+                                              ChunkPreseedFraction);
                 else if (useFarthest)
                     score = K1.CEMTwoPhase(TimeMergeIter);
                 else
