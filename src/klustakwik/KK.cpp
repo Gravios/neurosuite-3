@@ -1812,6 +1812,17 @@ float KK::RunChunkedCEM(float chunkMinutes,
             chunkPoints[k].clear();
         }
     }
+    // Build compacted-index → original-index mapping BEFORE erasing empty chunks.
+    // This is required so the overlap vote collection loop can look up
+    // overlapForPair[origK] rather than overlapForPair[k], which diverge
+    // whenever a non-trailing chunk is merged away and the compacted indices
+    // shift relative to the original ones.
+    std::vector<int> activeOrigIdx;
+    activeOrigIdx.reserve(nChunks);
+    for (int k = 0; k < nChunks; k++)
+        if (!chunkPoints[k].empty())
+            activeOrigIdx.push_back(k);
+
     chunkPoints.erase(
         std::remove_if(chunkPoints.begin(), chunkPoints.end(),
                        [](const std::vector<int>& v){ return v.empty(); }),
@@ -1986,8 +1997,16 @@ float KK::RunChunkedCEM(float chunkMinutes,
         nActive > 0 ? nActive - 1 : 0);
     if (chunkOverlapFrac > 0.0f) {
         for (int k = 0; k < nActive - 1; k++) {
+            // Translate compacted chunk index k to the original chunk index that
+            // was used when building overlapForPair.  If the compacted chunks k
+            // and k+1 are NOT consecutive in the original numbering, the boundary
+            // was absorbed by a chunk merge and no overlap entries are valid here.
+            const int origK = activeOrigIdx[k];
+            if (origK + 1 != activeOrigIdx[k + 1]) continue;
+            if (origK >= static_cast<int>(overlapForPair.size())) continue;
+
             auto& votes = overlapVotes[k];
-            for (const auto& oe : overlapForPair[k]) {
+            for (const auto& oe : overlapForPair[origK]) {
                 if (oe.localK  >= static_cast<int>(perChunkClass[k].size()))   continue;
                 if (oe.localK1 >= static_cast<int>(perChunkClass[k+1].size())) continue;
                 const int clsK  = perChunkClass[k][oe.localK];
@@ -1997,8 +2016,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
             }
             int totalVotes = 0;
             for (const auto& [key, cnt] : votes) totalVotes += cnt;
-            Output("  Overlap pair %d/%d: %d shared spikes, %d (clsK,clsK1) pairs\n",
-                   k, k + 1, totalVotes, static_cast<int>(votes.size()));
+            Output("  Overlap pair orig%d/orig%d (active %d/%d): %d shared spikes, %d (clsK,clsK1) pairs\n",
+                   origK, origK + 1, k, k + 1, totalVotes, static_cast<int>(votes.size()));
         }
     }
 

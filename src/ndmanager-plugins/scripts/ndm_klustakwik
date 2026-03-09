@@ -71,8 +71,12 @@ once()
 	samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
 	check_mandatory_variable $samplingRate "missing sampling rate"
 
-	# UseFeatures: one '1' per feature per channel, plus one for the energy feature
-	nTotalFeatures=$(( nElectrodes * nFeatures + 1 ))
+	# UseFeatures: one '1' per PCA feature per channel, plus energy, plus timestamp.
+	# The timestamp MUST be included and be the last '1' so that KlustaKwik's
+	# timeDimIdx = nDims-1 points to the real session timestamps rather than the
+	# energy feature.  Without it, RunChunkedCEM partitions spikes by energy
+	# instead of time, and Phase 3 cluster realignment is meaningless.
+	nTotalFeatures=$(( nElectrodes * nFeatures + 2 ))
 	useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
 
 	# Optional parameters (read from parameter file, with defaults)
@@ -104,7 +108,7 @@ once()
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 
-	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features)"
+	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features incl. timestamp)"
 
 	KlustaKwik $session $electrodeGroup \
 		-MinClusters    $minClusters    \

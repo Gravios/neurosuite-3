@@ -373,12 +373,59 @@ int main(int argc, char *argv[])
     }
 
     // ---- optional: clu ----
-    bool hasClu      = false;
-    int  cluHeader   = -1;
-    FILE *cluIn      = fopen(cluPath.c_str(), "r");
-    if (cluIn && fscanf(cluIn, "%d", &cluHeader) == 1)
-        hasClu = true;
-    else if (cluIn) { fclose(cluIn); cluIn = nullptr; }
+    // Supports both formats:
+    //   Text (legacy / klusters):  ASCII first line = nClusters, one int per spike per line
+    //   Binary (KlustaKwik):       int32_t nClusters header; nSpikes × int32_t clusterIDs
+    //
+    // Detection: if the first byte is an ASCII digit (0x30–0x39) the file is text.
+    // Otherwise it is the KlustaKwik binary format.
+    //
+    // Historically this code only handled text.  When KlustaKwik writes binary
+    // and this plugin is run afterward (e.g. to remove newly-detected noise),
+    // the old text-only path silently treated the binary file as absent (fscanf
+    // returned 0 on the non-ASCII header byte), wrote a filtered .res/.spk but
+    // LEFT the .clu intact — producing a spike-count mismatch between .clu and
+    // .res.  The fix is to detect and handle the binary format explicitly.
+    bool hasClu     = false;
+    bool cluIsBinary = false;
+    int32_t cluHeader = -1;   // nClusters as stored in the file header
+    FILE *cluIn = fopen(cluPath.c_str(), "rb");  // always binary-mode for detection
+    if (cluIn) {
+        unsigned char firstByte = 0;
+        if (fread(&firstByte, 1, 1, cluIn) == 1) {
+            cluIsBinary = (firstByte < 0x30 || firstByte > 0x39);
+            fseeko(cluIn, 0, SEEK_SET);
+
+            if (cluIsBinary) {
+                // Binary: int32_t nClusters; nSpikes × int32_t
+                int32_t nc32 = 0;
+                if (fread(&nc32, sizeof(int32_t), 1, cluIn) == 1) {
+                    // Validate: file size must be exactly 4 + nSpikes * 4 bytes
+                    fseeko(cluIn, 0, SEEK_END);
+                    const off_t expSize = (off_t)sizeof(int32_t) +
+                                          (off_t)nSpikes * sizeof(int32_t);
+                    if (ftello(cluIn) == expSize) {
+                        cluHeader = (int)nc32;
+                        fseeko(cluIn, sizeof(int32_t), SEEK_SET);
+                        hasClu = true;
+                    } else {
+                        fprintf(stderr,
+                                "warning: binary .clu file size mismatch "
+                                "(expected %lld bytes for %lld spikes) — skipping .clu\n",
+                                (long long)expSize, (long long)nSpikes);
+                        fclose(cluIn); cluIn = nullptr;
+                    }
+                } else { fclose(cluIn); cluIn = nullptr; }
+            } else {
+                // Text: re-open in text mode for fscanf
+                fclose(cluIn);
+                cluIn = fopen(cluPath.c_str(), "r");
+                if (cluIn && fscanf(cluIn, "%d", &cluHeader) == 1)
+                    hasClu = true;
+                else if (cluIn) { fclose(cluIn); cluIn = nullptr; }
+            }
+        } else { fclose(cluIn); cluIn = nullptr; }
+    }
 
     // ---- optional: fet ----
     bool    hasFet  = false;
@@ -448,13 +495,27 @@ int main(int argc, char *argv[])
     vector<int>     cluIds((size_t)(hasClu ? nSpikes : 0));
     vector<int64_t> fetRows((size_t)(hasFet ? nSpikes * fetNDim : 0));
 
-    if (hasClu)
-        for (int64_t i = 0; i < nSpikes; ++i)
-            if (fscanf(cluIn, "%d", &cluIds[(size_t)i]) != 1) {
-                fprintf(stderr, "error: short read in .clu at spike %lld\n",
-                        (long long)i);
+    if (hasClu) {
+        if (cluIsBinary) {
+            // Binary .clu: read nSpikes × int32_t directly
+            vector<int32_t> tmp((size_t)nSpikes);
+            if ((int64_t)fread(tmp.data(), sizeof(int32_t),
+                               (size_t)nSpikes, cluIn) != nSpikes) {
+                fprintf(stderr, "error: short read in binary .clu\n");
                 goto fail;
             }
+            for (int64_t i = 0; i < nSpikes; ++i)
+                cluIds[(size_t)i] = (int)tmp[(size_t)i];
+        } else {
+            // Text .clu: one ASCII int per line
+            for (int64_t i = 0; i < nSpikes; ++i)
+                if (fscanf(cluIn, "%d", &cluIds[(size_t)i]) != 1) {
+                    fprintf(stderr, "error: short read in text .clu at spike %lld\n",
+                            (long long)i);
+                    goto fail;
+                }
+        }
+    }
 
     if (hasFet && (int64_t)fread(fetRows.data(), sizeof(int64_t),
                                  (size_t)(nSpikes * fetNDim), fetIn)
@@ -508,10 +569,24 @@ int main(int argc, char *argv[])
     {
         FILE *resOut = xfopen(resTmp, "wb");
         FILE *spkOut = xfopen(spkTmp, "wb");
-        FILE *cluOut = hasClu ? xfopen(cluTmp, "w")  : nullptr;
+        // Preserve the input .clu format: binary in → binary out, text in → text out.
+        FILE *cluOut = hasClu ? xfopen(cluTmp, cluIsBinary ? "wb" : "w") : nullptr;
         FILE *fetOut = hasFet ? xfopen(fetTmp, "wb") : nullptr;
 
-        if (cluOut) fprintf(cluOut, "%d\n", cluHeader);
+        if (cluOut) {
+            if (cluIsBinary) {
+                // Count kept spikes to write the correct header value
+                int64_t nKept = 0;
+                for (int64_t i = 0; i < nSpikes; ++i)
+                    if (scores[(size_t)i].keep) ++nKept;
+                // nClusters header is unchanged (same cluster IDs, just fewer spikes)
+                int32_t hdr = (int32_t)cluHeader;
+                fwrite(&hdr, sizeof(int32_t), 1, cluOut);
+                (void)nKept;  // nClusters label count is preserved, not spike count
+            } else {
+                fprintf(cluOut, "%d\n", cluHeader);
+            }
+        }
         if (fetOut) fwrite(&fetNDim, sizeof(int32_t), 1, fetOut);
 
         for (int64_t i = 0; i < nSpikes; ++i) {
@@ -520,7 +595,14 @@ int main(int argc, char *argv[])
             fwrite(&timestamps[(size_t)i], sizeof(int64_t), 1, resOut);
             fwrite(allWaveforms.data() + i * samplesPerSpike,
                    sizeof(int16_t), (size_t)samplesPerSpike, spkOut);
-            if (cluOut) fprintf(cluOut, "%d\n", cluIds[(size_t)i]);
+            if (cluOut) {
+                if (cluIsBinary) {
+                    int32_t id = (int32_t)cluIds[(size_t)i];
+                    fwrite(&id, sizeof(int32_t), 1, cluOut);
+                } else {
+                    fprintf(cluOut, "%d\n", cluIds[(size_t)i]);
+                }
+            }
             if (fetOut) fwrite(fetRows.data() + i * fetNDim,
                                sizeof(int64_t), (size_t)fetNDim, fetOut);
         }
