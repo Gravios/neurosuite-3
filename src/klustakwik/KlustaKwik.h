@@ -63,6 +63,12 @@ extern float SamplingRate;
 extern float MergeThresh;
 extern int   GlobalMergeIter;
 
+// Phase 1.5 waveform realignment
+// NbChannels > 0 && NbSamplesPerSpike > 0  →  realignment enabled in chunked mode.
+// Pass via -NbChannels and -NbSamplesPerSpike; ndm_klustakwik sets these from the XML.
+extern int   NbChannels;
+extern int   NbSamplesPerSpike;
+
 // Output control
 // SaveIntermediates=1 (default): write .clu whenever a new best is found.
 // SaveIntermediates=0: suppress all mid-run .clu writes; single final write only.
