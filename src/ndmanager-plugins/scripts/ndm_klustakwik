@@ -79,6 +79,11 @@ once()
 	nTotalFeatures=$(( nElectrodes * nFeatures + 2 ))
 	useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
 
+	# Samples per waveform snapshot (needed for Phase 1.5 .spk realignment).
+	# Read from the same XML field that ndm_extractspikes uses.
+	nSamplesPerSpike=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	check_optional_variable $nSamplesPerSpike || nSamplesPerSpike=0
+
 	# Optional parameters (read from parameter file, with defaults)
 	minClusters=$(read_script_parameter $session minClusters)
 	check_optional_variable $minClusters || minClusters=2
@@ -120,7 +125,9 @@ once()
 		-MergeThresh    $mergeThresh    \
 		-GlobalMergeIter $globalMergeIter \
 		-TimeMergeIter  $timeMergeIter  \
-		-SaveIntermediates $saveIntermediates
+		-SaveIntermediates $saveIntermediates \
+		-NbChannels     $nElectrodes    \
+		-NbSamplesPerSpike $nSamplesPerSpike
 
 	check_command_status KlustaKwik
 }

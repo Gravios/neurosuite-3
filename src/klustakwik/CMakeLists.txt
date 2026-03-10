@@ -180,9 +180,19 @@ else()
 endif()
 
 # =============================================================================
+# Shared xcorr kernel (lives in src/shared/xcorr — no Qt/yaml dependency)
+# The OMP + dispatch sources go into every executable via _cpu_srcs.
+# GPU backend sources are added per-target below, matching how KK_cuda.cu
+# and KK_hip.cpp are handled.
+# =============================================================================
+set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../shared/xcorr")
+
+# =============================================================================
 # Common sources and dependencies
 # =============================================================================
-set(_cpu_srcs KlustaKwik.cpp KK.cpp param.c)
+set(_cpu_srcs KlustaKwik.cpp KK.cpp param.c
+    ${_xcorr_dir}/realign_xcorr_omp.cpp
+    ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
 set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
               Array.h KlustaSave.h param.h)
 
@@ -195,6 +205,9 @@ target_compile_options(_kk_cxx_flags INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>)
 target_compile_definitions(_kk_cxx_flags INTERFACE
     $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
+# Shared xcorr header propagates to CPU, HIP, SYCL targets that link _kk_cxx_flags.
+# The CUDA target is wired manually and gets an explicit include_directories below.
+target_include_directories(_kk_cxx_flags INTERFACE "${_xcorr_dir}")
 
 # =============================================================================
 # Helper: configure one KlustaKwik executable (avoids repetition)
@@ -224,7 +237,8 @@ install(TARGETS KlustaKwik_cpu DESTINATION "${CMAKE_INSTALL_BINDIR}")
 if(_CUDA_ACTIVE)
     find_package(CUDAToolkit REQUIRED)
 
-    add_executable(KlustaKwik ${_cpu_srcs} KK_cuda.cu ${_headers})
+    add_executable(KlustaKwik ${_cpu_srcs} KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
+    target_include_directories(KlustaKwik PRIVATE "${_xcorr_dir}")
     target_compile_options(KlustaKwik PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
             $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>>
@@ -269,6 +283,23 @@ if(_HIP_ACTIVE)
         USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
     target_include_directories(kk_hip_kernels PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${_xcorr_dir}"
+        $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
+        /opt/rocm/include)
+
+    # xcorr HIP kernels — compiled the same way as kk_hip_kernels
+    add_library(xcorr_hip_kernels OBJECT ${_xcorr_dir}/realign_xcorr_hip.hip)
+    set_property(TARGET xcorr_hip_kernels PROPERTY CXX_COMPILER "${_HIPCC}")
+    set_target_properties(xcorr_hip_kernels PROPERTIES CXX_COMPILER_LAUNCHER "")
+    target_compile_options(xcorr_hip_kernels PRIVATE
+        -O3 -march=native
+        --offload-arch=${_hip_archs_comma}
+        -fgpu-rdc
+        -Wall -Wextra)
+    target_compile_definitions(xcorr_hip_kernels PRIVATE
+        USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
+    target_include_directories(xcorr_hip_kernels PRIVATE
+        "${_xcorr_dir}"
         $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
         /opt/rocm/include)
 
@@ -280,7 +311,8 @@ if(_HIP_ACTIVE)
         /opt/rocm/include)
     target_link_libraries(KlustaKwik PRIVATE
         _kk_cxx_flags
-        kk_hip_kernels)
+        kk_hip_kernels
+        xcorr_hip_kernels)
     if(hip_FOUND)
         target_link_libraries(KlustaKwik PRIVATE hip::host)
     else()
@@ -338,6 +370,9 @@ if(_SYCL_ACTIVE)
 
     add_executable(KlustaKwik_sycl
         KlustaKwik.cpp KK.cpp KK_sycl.cpp
+        ${_xcorr_dir}/realign_xcorr_omp.cpp
+        ${_xcorr_dir}/realign_xcorr_dispatch.cpp
+        ${_xcorr_dir}/realign_xcorr_sycl.cpp
         $<TARGET_OBJECTS:param_obj>
         ${_headers})
 
@@ -358,6 +393,7 @@ if(_SYCL_ACTIVE)
             -fsycl ${_sycl_target_flag})
     endif()
 
+    target_include_directories(KlustaKwik_sycl PRIVATE "${_xcorr_dir}")
     target_compile_definitions(KlustaKwik_sycl PRIVATE
         USE_SYCL $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
     if(OpenMP_CXX_FOUND)

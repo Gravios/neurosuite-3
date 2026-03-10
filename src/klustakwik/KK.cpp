@@ -20,6 +20,7 @@
 #include <cstdint>
 #include "KlustaKwik.h"
 #include "KlustaSave.h"
+#include "realign_xcorr.h"   // XcorrDispatch::compute — shared normalised circular xcorr
 
 #include <algorithm>
 #include <cmath>
@@ -1378,6 +1379,204 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     return nGlobal;
 }
 
+// RealignChunkWaveforms — Phase 1.5 in-place .spk waveform alignment
+//
+// Called after per-chunk CEM (Phase 1) has produced stable cluster labels,
+// but before Phase 2 cross-chunk model matching.  Each spike's waveform is
+// realigned to its chunk-cluster mean using normalised circular cross-correlation
+// across ALL channels simultaneously (identical algorithm to Klusters interactive
+// realignment, using the shared XcorrDispatch kernel from src/shared/xcorr/).
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// THE CRITICAL CORRECTNESS REQUIREMENT
+// ─────────────────────────────────────────────────────────────────────────────
+// Every .spk slot is addressed by the GLOBAL spike index p, not a sequential
+// counter.  The seek formula is:
+//
+//   fseeko(fp, (off_t)p * waveSamples * sizeof(int16_t), SEEK_SET);
+//
+// chunkPoints[k] may contain duplicate p values (overlap spikes that also
+// appear in chunk k+1).  Using p as the offset writes overlap spikes to the
+// SAME physical slot — last-write-wins is harmless, file size never changes.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Algorithm (matches Klusters SpikeRealign::findBestShift):
+//   For each non-noise cluster in each chunk:
+//     1. Read all member waveforms from .spk (sample-major layout).
+//     2. Compute the cluster mean waveform.
+//     3. Transpose waveforms and template to channel-major for XcorrDispatch.
+//     4. Call XcorrDispatch::compute:
+//          - normalised circular xcorr summed over ALL channels
+//          - full-energy denominator (no lag-bias at large shifts)
+//          - GPU-accelerated when available (CUDA > HIP > SYCL > OMP)
+//     5. For each spike with non-zero shift sh:
+//          aligned[s*nChan+c] = original[((s-sh+N)%N)*nChan+c]
+//        Sign convention: sh=bestLag>0 means spike is late; (s-sh) shifts earlier.
+//     6. Write back at offset p*waveSamples*2 — the invariant.
+//
+// Noise spikes (cid==0) are skipped.
+//
+// NOTE: This pass updates the .spk file only.  Updating Data[] (in-memory
+// feature array) via .evec re-projection is a planned follow-up step.
+// ---------------------------------------------------------------------------
+void KK::RealignChunkWaveforms(
+    const std::vector<std::vector<int>>& chunkPoints,
+    const std::vector<std::vector<int>>& chunkClass,
+    int nChan, int nSamplesPerSpike)
+{
+    if (nChan <= 0 || nSamplesPerSpike <= 0) return;
+
+    char spkFname[STRLEN + 16];
+    snprintf(spkFname, sizeof(spkFname), "%s.spk.%d", FileBase, ElecNo);
+    FILE* fp = fopen(spkFname, "r+b");
+    if (!fp) {
+        Output("RealignChunkWaveforms: cannot open %s for in-place rewrite — skipping\n",
+               spkFname);
+        return;
+    }
+
+    Output("RealignChunkWaveforms: backend = %s\n", XcorrDispatch::backendName());
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int maxShift    = std::max(1, nSamplesPerSpike / 4);
+    int nAligned = 0, nSkipped = 0;
+
+    const int nChunks = static_cast<int>(chunkPoints.size());
+
+    // ── Overlap deferral sets ──────────────────────────────────────────────
+    // An overlap spike (global index p) appears in both chunkPoints[k] and
+    // chunkPoints[k+1].  If we write it back during chunk k's pass, chunk k+1
+    // will read the already-shifted waveform and shift it again (double-align),
+    // and its cluster mean will be a mixture of aligned and unaligned waveforms
+    // (biased template).
+    //
+    // Fix: skip the writeback for p during chunk k's pass.  Chunk k+1 still
+    // reads the original waveform (not yet written), computes a clean mean,
+    // and owns the single authoritative write.  The mean computation for chunk k
+    // is unaffected — we read before we write, so the wave buffer is correct.
+    //
+    // overlapInNext[k] = {p : p in chunkPoints[k] AND p in chunkPoints[k+1]}
+    std::vector<std::unordered_set<int>> overlapInNext(nChunks);
+    for (int k = 0; k + 1 < nChunks; k++) {
+        std::unordered_set<int> nextSet(chunkPoints[k + 1].begin(),
+                                        chunkPoints[k + 1].end());
+        for (int p : chunkPoints[k])
+            if (nextSet.count(p)) overlapInNext[k].insert(p);
+        if (!overlapInNext[k].empty())
+            Output("  Chunk %d: deferring writeback of %d overlap spikes to chunk %d\n",
+                   k, static_cast<int>(overlapInNext[k].size()), k + 1);
+    }
+
+    for (int k = 0; k < nChunks; k++) {
+        const auto& pts = chunkPoints[k];
+        const auto& cls = chunkClass[k];
+        const int   nPts = static_cast<int>(pts.size());
+
+        // ── Cluster membership map ─────────────────────────────────────────
+        // cid -> list of local indices into pts/cls
+        std::unordered_map<int, std::vector<int>> members;
+        members.reserve(MaxPossibleClusters);
+        for (int i = 0; i < nPts; i++)
+            members[cls[i]].push_back(i);
+
+        // ── Read waveforms for this chunk ──────────────────────────────────
+        // Sample-major layout: waves[localIdx*waveSamples + s*nChan + c]
+        std::vector<int16_t> waves(static_cast<size_t>(nPts) * waveSamples, 0);
+        for (int i = 0; i < nPts; i++) {
+            const int p = pts[i];
+            fseeko(fp, static_cast<off_t>(p) * waveSamples * sizeof(int16_t), SEEK_SET);
+            const size_t nRead = fread(
+                waves.data() + static_cast<size_t>(i) * waveSamples,
+                sizeof(int16_t), waveSamples, fp);
+            if (static_cast<int>(nRead) != waveSamples)
+                std::fill(waves.begin() + static_cast<size_t>(i) * waveSamples,
+                          waves.begin() + static_cast<size_t>(i + 1) * waveSamples,
+                          int16_t(0));
+        }
+
+        // ── Per-cluster alignment and writeback ────────────────────────────
+        for (auto& [cid, idxList] : members) {
+            if (cid == 0) { nSkipped += static_cast<int>(idxList.size()); continue; }
+            const int nMem = static_cast<int>(idxList.size());
+
+            // 1. Cluster mean (float, sample-major)
+            std::vector<float> meanWave(waveSamples, 0.0f);
+            for (int idx : idxList) {
+                const int16_t* row = waves.data() + static_cast<size_t>(idx) * waveSamples;
+                for (int s = 0; s < waveSamples; s++)
+                    meanWave[s] += static_cast<float>(row[s]);
+            }
+            for (float& v : meanWave) v /= nMem;
+
+            // 2. Template — channel-major int16 for XcorrDispatch
+            //    tmpl[ch * nSamplesPerSpike + t]
+            //    from: meanWave[t * nChan + ch]
+            std::vector<int16_t> tmplBuf(static_cast<size_t>(nChan) * nSamplesPerSpike);
+            for (int ch = 0; ch < nChan; ch++)
+                for (int s = 0; s < nSamplesPerSpike; s++)
+                    tmplBuf[static_cast<size_t>(ch) * nSamplesPerSpike + s] =
+                        static_cast<int16_t>(std::lroundf(meanWave[s * nChan + ch]));
+
+            // 3. Spike batch — channel-major int16 for XcorrDispatch
+            //    waveBuf[(mi*nChan + ch) * nSamplesPerSpike + t]
+            //    from: waves[localIdx*waveSamples + t*nChan + ch]
+            std::vector<int16_t> waveBuf(
+                static_cast<size_t>(nMem) * nChan * nSamplesPerSpike);
+            for (int mi = 0; mi < nMem; mi++) {
+                const int localIdx = idxList[mi];
+                const int16_t* src = waves.data()
+                                   + static_cast<size_t>(localIdx) * waveSamples;
+                for (int ch = 0; ch < nChan; ch++)
+                    for (int s = 0; s < nSamplesPerSpike; s++)
+                        waveBuf[(static_cast<size_t>(mi) * nChan + ch)
+                                * nSamplesPerSpike + s] = src[s * nChan + ch];
+            }
+
+            // 4. Compute shifts — normalised circular xcorr, all channels summed
+            std::vector<int>   shifts(static_cast<size_t>(nMem), 0);
+            std::vector<float> scores(static_cast<size_t>(nMem), 0.0f);
+            XcorrDispatch::compute(
+                waveBuf.data(), tmplBuf.data(),
+                nMem, nChan, nSamplesPerSpike,
+                maxShift, /*minScore=*/0.0f,
+                shifts.data(), scores.data());
+
+            // 5. Apply circular shift and write back
+            std::vector<int16_t> aligned(waveSamples);
+            for (int mi = 0; mi < nMem; mi++) {
+                const int sh = shifts[mi];
+                if (sh == 0) continue;
+
+                const int localIdx = idxList[mi];
+                const int p        = pts[localIdx];
+                const int16_t* row = waves.data()
+                                   + static_cast<size_t>(localIdx) * waveSamples;
+
+                // sh = bestLag from XcorrDispatch (positive = spike is late).
+                // aligned[s] = original[(s - sh + N) % N] shifts spike earlier.
+                for (int s = 0; s < nSamplesPerSpike; s++) {
+                    const int src = ((s - sh) % nSamplesPerSpike + nSamplesPerSpike)
+                                    % nSamplesPerSpike;
+                    for (int c = 0; c < nChan; c++)
+                        aligned[s * nChan + c] = row[src * nChan + c];
+                }
+
+                // Write at global spike position p — the invariant.
+                // Skip if this spike is deferred to chunk k+1's pass
+                // (it is an overlap spike; chunk k+1 owns the final write).
+                if (overlapInNext[k].count(p)) continue;
+                fseeko(fp, static_cast<off_t>(p) * waveSamples * sizeof(int16_t), SEEK_SET);
+                fwrite(aligned.data(), sizeof(int16_t), waveSamples, fp);
+                nAligned++;
+            }
+        }
+    }
+
+    fclose(fp);
+    Output("RealignChunkWaveforms: aligned %d spikes, skipped %d noise\n",
+           nAligned, nSkipped);
+}
+
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // PreseedSubsampleCEM
@@ -1569,6 +1768,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     std::vector<std::vector<ChunkModel>> perChunkModels(nActive);
     std::vector<std::vector<std::pair<int,int>>> perChunkAssign(nActive);
+    std::vector<std::vector<int>> perChunkClass(nActive);  // for realignment
     std::vector<float> perChunkScore(nActive, 0.0f);
     std::vector<int>   perChunkNClusters(nActive, 0);
 
@@ -1595,7 +1795,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     #pragma omp parallel for schedule(dynamic) default(none) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
-               chunkPoints, nActive, nFullDims, timeMergeIter, threadKc) \
+               chunkPoints, perChunkClass, nActive, nFullDims, timeMergeIter, threadKc) \
         firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix)
     for (int k = 0; k < nActive; k++) {
         const std::vector<int>& pts = chunkPoints[k];
@@ -1647,6 +1847,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         assign.reserve(nPts);
         for (int i = 0; i < nPts; i++)
             assign.emplace_back(pts[i], k * MaxPossibleClusters + Kc.Class[i]);
+
+        // Harvest Class[] for Phase 1.5 realignment
+        auto& classArr = perChunkClass[k];
+        classArr.resize(nPts);
+        for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
 
     for (int k = 0; k < nActive; k++) {
@@ -1655,6 +1860,15 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                perChunkNClusters[k], perChunkScore[k]);
         for (auto& cm : perChunkModels[k]) allModels.push_back(std::move(cm));
         for (auto& [p, packed] : perChunkAssign[k]) pointPacked[p] = packed;
+    }
+
+    // Phase 1.5: waveform realignment (in-place .spk rewrite)
+    if (NbChannels > 0 && NbSamplesPerSpike > 0) {
+        Output("Phase 1.5: waveform realignment  "
+               "(nChan=%d nSamp=%d maxShift=%d)\n",
+               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4);
+        RealignChunkWaveforms(chunkPoints, perChunkClass,
+                              NbChannels, NbSamplesPerSpike);
     }
 
     // ── Phase 2: cross-chunk model matching ─────────────────────────────────
@@ -1990,6 +2204,25 @@ float KK::RunChunkedCEM(float chunkMinutes,
             allModels.push_back(std::move(cm));
         for (auto& [p, packed] : perChunkAssign[k])
             if (pointPacked[p] < 0) pointPacked[p] = packed;  // first-write-wins
+    }
+
+    // -------------------------------------------------------------------
+    // Phase 1.5: waveform realignment (in-place .spk rewrite)
+    //
+    // Must run AFTER the serial reduction (so perChunkClass is fully
+    // populated) and BEFORE MergeChunkModels (so Phase 3 EM starts from
+    // realigned feature vectors if the caller re-runs PCA afterward).
+    //
+    // NbChannels == 0 or NbSamplesPerSpike == 0 → skipped silently.
+    // The guard is intentional: two-phase-only runs and callers that do
+    // not supply .spk parameters are unaffected.
+    // -------------------------------------------------------------------
+    if (NbChannels > 0 && NbSamplesPerSpike > 0) {
+        Output("Phase 1.5: waveform realignment  "
+               "(nChan=%d nSamp=%d maxShift=%d)\n",
+               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4);
+        RealignChunkWaveforms(chunkPoints, perChunkClass,
+                              NbChannels, NbSamplesPerSpike);
     }
 
     // Build overlap vote matrices for MergeChunkModels.

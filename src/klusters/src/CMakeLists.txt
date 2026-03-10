@@ -3,6 +3,11 @@ project(klusters-src)
 # ---------------------------------------------------------------------------
 # Sources
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Shared xcorr kernel sources (live in src/shared/xcorr/ — no Qt dependency)
+# ---------------------------------------------------------------------------
+set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../shared/xcorr")
+
 set(klusters_SRCS
     autosavethread.cpp
     baseframe.cpp
@@ -21,8 +26,8 @@ set(klusters_SRCS
     eventsprovider.cpp
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp
-    realign_xcorr_omp.cpp
-    realign_xcorr_dispatch.cpp
+    ${_xcorr_dir}/realign_xcorr_omp.cpp
+    ${_xcorr_dir}/realign_xcorr_dispatch.cpp
     realignworker.cpp
     realignreviewdialog.cpp
     spikerealigndialog.cpp
@@ -57,15 +62,15 @@ set(klusters_SRCS
 # GPU backend source files — each compiled by its own toolchain.
 if(USE_CUDA)
     list(APPEND klusters_SRCS groupingassistant_cuda.cu)
-    list(APPEND klusters_SRCS realign_xcorr_cuda.cu)
+    list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_cuda.cu)
 endif()
 if(USE_HIP)
     list(APPEND klusters_SRCS groupingassistant_hip.hip)
-    list(APPEND klusters_SRCS realign_xcorr_hip.hip)
+    list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_hip.hip)
 endif()
 if(USE_SYCL)
     list(APPEND klusters_SRCS groupingassistant_sycl.cpp)
-    list(APPEND klusters_SRCS realign_xcorr_sycl.cpp)
+    list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_sycl.cpp)
 endif()
 
 qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc)
@@ -118,7 +123,7 @@ if(USE_HIP)
     # hipcc needs to know the target when compiling .hip files.
     set_source_files_properties(groupingassistant_hip.hip
         PROPERTIES LANGUAGE HIP)
-    set_source_files_properties(realign_xcorr_hip.hip
+    set_source_files_properties(${_xcorr_dir}/realign_xcorr_hip.hip
         PROPERTIES LANGUAGE HIP)
     target_link_libraries(klusters PRIVATE hip::device)
 endif()
@@ -165,7 +170,9 @@ target_link_libraries(klusters
 )
 
 target_include_directories(klusters PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}/../")   # for config-klusters.h and AUTOUIC output
+    "${CMAKE_CURRENT_BINARY_DIR}/../"   # for config-klusters.h and AUTOUIC output
+    "${_xcorr_dir}"                     # for realign_xcorr.h from shared location
+)
 
 # ---------------------------------------------------------------------------
 # Summarise what was enabled

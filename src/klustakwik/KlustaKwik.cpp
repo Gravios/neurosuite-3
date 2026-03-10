@@ -64,6 +64,11 @@ float SamplingRate           = 20000.0f;// samples/sec; needed to convert chunk 
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
 int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations
 int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; final write only
+// Phase 1.5 waveform realignment (requires chunked mode)
+// Both must be > 0 to enable realignment; 0 disables (default, safe for callers
+// that do not pass .spk parameters, e.g. when running in two-phase-only mode).
+int   NbChannels             = 0;       // channels per spike group (matches .spk layout)
+int   NbSamplesPerSpike      = 0;       // samples per channel per spike in .spk file
 int   fSaveModel             = 1;
 FILE *pModelFile             = nullptr;
 int   SplitEvery             = 50;
@@ -98,6 +103,8 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(MergeThresh);
     INT_PARAM(GlobalMergeIter);
     INT_PARAM(SaveIntermediates);
+    INT_PARAM(NbChannels);
+    INT_PARAM(NbSamplesPerSpike);
     INT_PARAM(DistDump);
     FLOAT_PARAM(DistThresh);
     INT_PARAM(FullStepEvery);

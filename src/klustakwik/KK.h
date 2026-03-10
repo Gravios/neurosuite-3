@@ -149,6 +149,28 @@ public:
                                            int   nSpatialDims,
                                            int   timeMergeIter);
 
+    // Phase 1.5 waveform realignment — in-place .spk rewrite.
+    //
+    // Reads each spike's waveform from the .spk file, aligns it to its
+    // chunk-cluster mean via integer circular cross-correlation, and writes
+    // it back at the GLOBAL SPIKE INDEX p as the file offset:
+    //
+    //   offset = (off_t)p * nChan * nSamplesPerSpike * sizeof(int16_t)
+    //
+    // This is the only correct seek formula.  Using a sequential slot counter
+    // (slot++) causes overlap-duplicated spikes to be written past nPoints,
+    // inflating the .spk from nPoints×wavelen to (nPoints+nOverlap)×wavelen —
+    // which is the root cause of the count mismatch Klusters reports.
+    //
+    // Overlap spikes (p appears in two adjacent chunks) are processed twice
+    // and written to the SAME slot; last-write-wins, file size is unchanged.
+    //
+    // nChan == 0 or nSamplesPerSpike == 0 → silently skipped (safe default).
+    void RealignChunkWaveforms(
+        const std::vector<std::vector<int>>& chunkPoints,
+        const std::vector<std::vector<int>>& chunkClass,
+        int nChan, int nSamplesPerSpike);
+
 public:
     // -----------------------------------------------------------------------
     // Dimensions
