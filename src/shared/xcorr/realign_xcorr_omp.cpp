@@ -18,20 +18,16 @@
  * every lag has the same number of contributing samples — no normalization
  * bias.  An already-aligned spike always scores highest at lag 0.
  *
- * Sign: bestLag > 0 means the spike peak is late relative to the template.
- * shifts_out[sp] = -bestLag so the caller subtracts bestLag from the
- * timestamp, moving the spike earlier.
- *
  * Sign convention
  * ---------------
  * A positive score peak at lag τ means the spike's content at position s+τ
- * best matches the template at position s — i.e. the spike is *late* by τ
- * samples relative to the template.  To realign, we must move the spike
- * *earlier* by τ samples, which means subtracting τ from its timestamp.
- * shifts_out[sp] is therefore returned as -bestLag so the caller applies
- *   newTimestamp = oldTimestamp + shifts_out[sp]
- * and the waveform roll in the iterative step shifts samples in the same
- * direction.
+ * best matches the template at position s — i.e. the spike peak is *late* by τ
+ * samples relative to the template.  To realign, the waveform must be rolled
+ * forward by τ: aligned[s] = original[(s + τ) % N].  Equivalently, the spike's
+ * timestamp must advance by τ: newTimestamp = oldTimestamp + τ.
+ *
+ * shifts_out[sp] = +bestLag so the caller can apply both corrections by simply
+ * adding shifts_out to the timestamp AND using (s + sh) % N for the waveform roll.
  *
  * Parallelism
  * -----------
@@ -124,11 +120,9 @@ int xcorr_omp_compute(
             }
         }
 
-        // A peak at bestLag means the spike is shifted +bestLag samples
-        // relative to the template.  Negate so the caller can simply add
-        // shifts_out to the timestamp (moving the spike earlier).
-        // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
-        // caller does newTs = ts + shifts_out to correct.
+        // bestLag > 0: spike peak is late by bestLag samples relative to template.
+        // Caller corrects with: newTimestamp = oldTimestamp + bestLag
+        //                  and: aligned[s]  = original[(s + bestLag) % N]
         shifts_out[sp] = (bestScore >= minScore) ? bestLag : 0;
         scores_out[sp] = bestScore;
     }

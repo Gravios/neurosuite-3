@@ -48,7 +48,8 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     isNotUpToDate(false),
     nbPreviousUndo(0),
     nbPreviousRedo(0),
-    goingToDie(false)
+    goingToDie(false),
+    m_generation(0)
 {
 
 
@@ -97,12 +98,22 @@ void ErrorMatrixView::customEvent(QEvent* event){
         ErrorMatrixThread* errorMatrixThread = errorMatrixEvent->parentThread();
         Array<double>* newProb = errorMatrixThread->getProbabilities();
         // Only accept the result if the thread actually computed something
-        // (it may be null if haveToStopProcessing was set before run() started)
-        if(newProb != nullptr){
+        // (it may be null if haveToStopProcessing was set before run() started),
+        // AND if this thread belongs to the current generation — i.e. it was not
+        // superseded by a later updateMatrixContents() call (e.g. triggered by a
+        // renumber while this thread was still running).  Without the generation
+        // check a slow pre-renumber thread arriving after a fast post-renumber
+        // thread would silently overwrite the correct result with stale data.
+        if(newProb != nullptr && errorMatrixThread->generation() == m_generation){
+            delete probabilities;  // release the previous result before overwriting
             probabilities = newProb;
             clusterList = errorMatrixThread->getClusterList();
             computedClusterList = errorMatrixThread->getComputedClusterList();
             ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
+        } else {
+            // Discard the stale / null result.  newProb ownership stays with us
+            // when non-null; delete it to avoid a leak.
+            delete newProb;
         }
 
         //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
@@ -130,6 +141,16 @@ void ErrorMatrixView::customEvent(QEvent* event){
 
 void ErrorMatrixView::updateMatrixContents(){
     if(!goingToDie){
+        //Bump the generation so that customEvent() can identify — and discard — results
+        //from any threads that were launched before this call.  This prevents a slow
+        //pre-renumber thread from overwriting the result of a faster post-renumber thread.
+        ++m_generation;
+
+        //Ask any already-running threads to stop early; they will still post their
+        //event but customEvent() will discard the stale result via the generation check.
+        for(ErrorMatrixThread* t : threadsToBeKill)
+            t->stopProcessing();
+
         setCursor(Qt::WaitCursor);
         ErrorMatrixThread* thread = computeMatrix();
         threadsToBeKill.append(thread);
@@ -153,7 +174,7 @@ void ErrorMatrixView::updateMatrixContents(){
 
 ErrorMatrixThread* ErrorMatrixView::computeMatrix(){  
     //The creation of a thread automatically start it.
-    return new ErrorMatrixThread(*this,doc.data());
+    return new ErrorMatrixThread(*this,doc.data(),m_generation);
 }
 
 void ErrorMatrixView::updateWindow(){

@@ -68,6 +68,9 @@ extern int   GlobalMergeIter;
 // Pass via -NbChannels and -NbSamplesPerSpike; ndm_klustakwik sets these from the XML.
 extern int   NbChannels;
 extern int   NbSamplesPerSpike;
+// NbBytesPerSample: bytes per sample in the .spk file (2 for 12/14/16-bit, 4 for 32-bit).
+// Defaults to 2. Pass -NbBytesPerSample 4 for 32-bit recordings.
+extern int   NbBytesPerSample;
 
 // Output control
 // SaveIntermediates=1 (default): write .clu whenever a new best is found.

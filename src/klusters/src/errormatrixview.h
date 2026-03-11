@@ -288,6 +288,12 @@ private:
     /**True if the widget is about to be deleted, false otherwise.*/
     bool goingToDie;
 
+    /**Monotonically increasing counter, bumped each time updateMatrixContents() is called.
+     * Each ErrorMatrixThread stores the generation at the time it was created.
+     * customEvent() discards results whose generation != m_generation, preventing
+     * a superseded (pre-renumber) thread from overwriting a more recent result.*/
+    int m_generation;
+
     /**List of the selected pairs.*/
     QList<Pair> selectedPairs;
 

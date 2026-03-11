@@ -53,6 +53,11 @@ public:
     QList<int> getComputedClusterList() const {return computedClusterList;}
     QList<int> getIgnoreClusterIndex() const {return ignoreClusterIndex;}
 
+    /**Returns the generation counter at the time this thread was created.
+     * Used by ErrorMatrixView::customEvent() to discard results from threads
+     * that were superseded by a later updateMatrixContents() call.*/
+    int generation() const {return m_generation;}
+
     /**Asks the thread to stop his work as soon as possible.*/
     void stopProcessing(){
         haveToStopProcessing.store(true, std::memory_order_release);
@@ -91,12 +96,13 @@ protected:
 
 private:
 
-    ErrorMatrixThread(ErrorMatrixView& view,Data& d):errorMatrixView(view),data(d),haveToStopProcessing(false),probabilities(nullptr){
+    ErrorMatrixThread(ErrorMatrixView& view,Data& d, int generation):errorMatrixView(view),data(d),m_generation(generation),haveToStopProcessing(false),probabilities(nullptr){
         start();
     }
 
     ErrorMatrixView& errorMatrixView;
     Data& data;
+    int m_generation;
     Array<double>* probabilities;
     QList<int> clusterList;
     QList<int> computedClusterList;
