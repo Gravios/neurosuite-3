@@ -2523,8 +2523,12 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         //Check if there is not a mean calculation in process; if so, wait until it finishes.
         //Use a mutex-protected check to avoid racing with main-thread removal of the entry.
         {
+            // Spin until the concurrent mean calculation finishes.
+            // Cap at 5000 yields so a stuck mean thread can't block close() forever;
+            // returning NOT_AVAILABLE lets the outer WaveformThread loop recheck
+            // haveToStopProcessing and exit cleanly.
             bool stillInProcess = true;
-            while(stillInProcess){
+            for(int _spinCount = 0; stillInProcess && _spinCount < 5000; ++_spinCount){
                 {
                     QMutexLocker lk(&mutex);
                 stillInProcess = waveformStatusMap.contains(clusterId) &&
@@ -2532,6 +2536,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
                 }
                 if(stillInProcess) QThread::yieldCurrentThread();
             }
+            if(stillInProcess) return NOT_AVAILABLE;  // timed out — let caller recheck stop flag
         }
         //check if the cluster has not been removed while the mean function was running
         //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
@@ -2580,10 +2585,13 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         nbSpikesOfCluster = positionOfSpikes.nbOfColumns();
 
         waveforms->setSize(nbSpikesOfCluster,SAMPLE);
+        {
+            QMutexLocker lk(&mutex);
         waveformDict.insert(clusterIdString,waveforms);
+        }
     }
 
-    FILE* spikeFile = fopen(qPrintable(spkFileName),"r");
+    FILE* spikeFile = fopen(qPrintable(spkFileName),"rb");
     if(spikeFile == nullptr){
         qCritical() << "getSampleWaveformPoints: cannot open spike file:" << spkFileName;
         return NOT_AVAILABLE;
@@ -2657,8 +2665,9 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         }
         //Check if there is not a mean calculation in process; wait under mutex to avoid racing with main-thread removal.
         {
+            // Spin until the concurrent mean calculation finishes (capped, see sample variant).
             bool stillInProcess = true;
-            while(stillInProcess){
+            for(int _spinCount = 0; stillInProcess && _spinCount < 5000; ++_spinCount){
                 {
                     QMutexLocker lk(&mutex);
                 stillInProcess = waveformStatusMap.contains(clusterId) &&
@@ -2666,6 +2675,7 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
                 }
                 if(stillInProcess) QThread::yieldCurrentThread();
             }
+            if(stillInProcess) return NOT_AVAILABLE;  // timed out — let caller recheck stop flag
         }
         //check if the cluster has not been removed while the mean function was running
         //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
@@ -2716,7 +2726,10 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         nbSpikesOfCluster = positionOfSpikes.nbOfColumns();
 
         waveforms->setSize(nbSpikesOfCluster,TIME_FRAME);
+        {
+            QMutexLocker lk(&mutex);
         waveformDict.insert(clusterIdString,waveforms);
+        }
     }
 
     //Look for the starting position if not already known
@@ -2731,7 +2744,7 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         }
     }
 
-    FILE* spikeFile = fopen(qPrintable(spkFileName),"r");
+    FILE* spikeFile = fopen(qPrintable(spkFileName),"rb");
     if(spikeFile == nullptr){
         qCritical() << "getTimeFrameWaveformPoints: cannot open spike file:" << spkFileName;
         return NOT_AVAILABLE;
@@ -2742,9 +2755,15 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
 
     fclose(spikeFile);
 
+    // Store timing info before taking the mutex (pure local work on the Waveforms object).
+    waveforms->setStartTime(start);
+    waveforms->setEndTime(end);
+    waveforms->setIndexOfTimeEnd(currentSpikeIndex);
+
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
-    QMutexLocker lk(&mutex);
+    {
+        QMutexLocker lk(&mutex);
     bool tfClusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
     bool tfClusterMod  = !tfClusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
     if(tfClusterGone || tfClusterMod){
@@ -2756,17 +2775,10 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         return NOT_AVAILABLE;
     }
     else{
-        //Store the information in waveforms and waveformStatusMap
-        waveforms->setStartTime(start);
-        waveforms->setEndTime(end);
-        waveforms->setIndexOfTimeEnd(currentSpikeIndex);
-
         //Store the information in waveformStatusMap
-        {
-            QMutexLocker lk(&mutex);
         waveformStatusMap[clusterId].setTimeFrameStatus(READY);
-        }
         return READY;
+    }
     }
 }
 
@@ -3191,11 +3203,12 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
     QHash<QString, Correlation*>* dict = nullptr;
 
     //Test first if the clusters still exist
-    QMutexLocker lk(&mutex);
-    bool cluster1Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster1));
-    bool cluster2Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster2));
-
-    if(cluster1Removed || cluster2Removed)return NOT_AVAILABLE;
+    {
+        QMutexLocker lk(&mutex);
+        bool cluster1Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster1));
+        bool cluster2Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster2));
+        if(cluster1Removed || cluster2Removed)return NOT_AVAILABLE;
+    }
 
     //Test if the correlogram is in process or already available.
     Status status = NOT_AVAILABLE;
@@ -3300,23 +3313,18 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
         }
 
         //Check if either the cluster1 or the cluster2 have been modified since the thread has been launched
+        {
+            QMutexLocker lk(&mutex);
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster1))){
-            {
-                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             delete correlationDict.take(pairKey(pair));
-            }
-
             clusterNotAvailable = true;
         }
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster2))){
-            {
-                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
             delete correlationDict.take(pairKey(pair));
-            }
-
             clusterNotAvailable = true;
+        }
         }
         if(clusterNotAvailable) return NOT_AVAILABLE;
 
@@ -3346,36 +3354,28 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
             return NOT_AVAILABLE;
         }
 
+        {
+            QMutexLocker lk(&mutex);
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster1))){
-            {
-                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             delete correlationDict.take(pairKey(pair));
-            }
             clusterNotAvailable = true;
         }
         if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster2))){
-            {
-                QMutexLocker lk(&mutex);
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
             delete correlationDict.take(pairKey(pair));
-            }
             clusterNotAvailable = true;
         }
-        if(clusterNotAvailable) return NOT_AVAILABLE;
-        else{
-            {
-                QMutexLocker lk(&mutex);
-
+        if(!clusterNotAvailable){
             //Update the status
             correlation->setStatus(READY);
 
             //Update the correlation status of the cluster1 and cluster2.
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
             correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-
-            }
         }
+        }
+        if(clusterNotAvailable) return NOT_AVAILABLE;
     }
     return READY;
 }

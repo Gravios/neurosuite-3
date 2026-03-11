@@ -33,10 +33,15 @@ SortableTable::SortableTable(const SortableTable& currentSortableTable):
 void SortableTable::subset(SortableTable& subsetTable, dataType row,dataType startColumn,dataType endColumn){
     if(row == 2 && nbRows == 1) return;
 
-    subsetTable.setSize((endColumn - startColumn) + 1,false);
+    dataType count = (endColumn - startColumn) + 1;
+    subsetTable.setSize(count, false);
 
-    memcpy(&(subsetTable.array.get()[(row - 1)*nbColumns]),&array.get()[(row - 1)*nbColumns + (startColumn - 1)],((endColumn - startColumn) + 1) * sizeof(dataType));
-}                      
+    // Source row offset uses this table's nbColumns; dest is always row 1 of the
+    // 1-row result table (flat index 0).
+    memcpy(&(subsetTable.array.get()[0]),
+           &array.get()[(row - 1)*nbColumns + (startColumn - 1)],
+           count * sizeof(dataType));
+}
 
 void SortableTable::SelectionSort(dataType rowToSort,dataType secondRow, dataType left, dataType right){
     for(dataType i = left; i < right; i++) {
