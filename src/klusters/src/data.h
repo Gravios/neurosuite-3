@@ -985,7 +985,7 @@ private:
         Correlation(Data& d):data(d){
             reset();
         }
-        Correlation(Data& d,int size,int timeWindow):data(d),binSize(size),timeFrame(timeWindow){
+        Correlation(Data& d,int size,int timeWindow):data(d),binSize(size),timeFrame(timeWindow),status(IN_PROCESS){
             max = 0;
             asymptote = 0;
             nbBins = 0;
