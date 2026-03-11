@@ -1393,7 +1393,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 // Every .spk slot is addressed by the GLOBAL spike index p, not a sequential
 // counter.  The seek formula is:
 //
-//   fseeko(fp, (off_t)p * waveSamples * sizeof(int16_t), SEEK_SET);
+//   fseeko(fp, (off_t)p * waveSamples * bytesPerSample, SEEK_SET);
 //
 // chunkPoints[k] may contain duplicate p values (overlap spikes that also
 // appear in chunk k+1).  Using p as the offset writes overlap spikes to the
@@ -1422,9 +1422,14 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 void KK::RealignChunkWaveforms(
     const std::vector<std::vector<int>>& chunkPoints,
     const std::vector<std::vector<int>>& chunkClass,
-    int nChan, int nSamplesPerSpike)
+    int nChan, int nSamplesPerSpike, int bytesPerSample)
 {
     if (nChan <= 0 || nSamplesPerSpike <= 0) return;
+    if (bytesPerSample != 2 && bytesPerSample != 4) {
+        Output("RealignChunkWaveforms: unsupported bytesPerSample=%d — skipping\n",
+               bytesPerSample);
+        return;
+    }
 
     char spkFname[STRLEN + 16];
     snprintf(spkFname, sizeof(spkFname), "%s.spk.%d", FileBase, ElecNo);
@@ -1435,7 +1440,8 @@ void KK::RealignChunkWaveforms(
         return;
     }
 
-    Output("RealignChunkWaveforms: backend = %s\n", XcorrDispatch::backendName());
+    Output("RealignChunkWaveforms: backend = %s, bytesPerSample = %d\n",
+           XcorrDispatch::backendName(), bytesPerSample);
 
     const int waveSamples = nChan * nSamplesPerSpike;
     const int maxShift    = std::max(1, nSamplesPerSpike / 4);
@@ -1481,17 +1487,26 @@ void KK::RealignChunkWaveforms(
 
         // ── Read waveforms for this chunk ──────────────────────────────────
         // Sample-major layout: waves[localIdx*waveSamples + s*nChan + c]
+        // Always stored as int16 internally; upsample from int32 if needed.
         std::vector<int16_t> waves(static_cast<size_t>(nPts) * waveSamples, 0);
         for (int i = 0; i < nPts; i++) {
             const int p = pts[i];
-            fseeko(fp, static_cast<off_t>(p) * waveSamples * sizeof(int16_t), SEEK_SET);
-            const size_t nRead = fread(
-                waves.data() + static_cast<size_t>(i) * waveSamples,
-                sizeof(int16_t), waveSamples, fp);
-            if (static_cast<int>(nRead) != waveSamples)
-                std::fill(waves.begin() + static_cast<size_t>(i) * waveSamples,
-                          waves.begin() + static_cast<size_t>(i + 1) * waveSamples,
-                          int16_t(0));
+            fseeko(fp, static_cast<off_t>(p) * waveSamples * bytesPerSample, SEEK_SET);
+            int16_t* dst = waves.data() + static_cast<size_t>(i) * waveSamples;
+            if (bytesPerSample == 2) {
+                const size_t nRead = fread(dst, sizeof(int16_t), waveSamples, fp);
+                if (static_cast<int>(nRead) != waveSamples)
+                    std::fill(dst, dst + waveSamples, int16_t(0));
+            } else {
+                // 32-bit recording: read int32, downcast to int16 for xcorr
+                std::vector<int32_t> tmp(static_cast<size_t>(waveSamples));
+                const size_t nRead = fread(tmp.data(), sizeof(int32_t), waveSamples, fp);
+                if (static_cast<int>(nRead) != waveSamples)
+                    std::fill(dst, dst + waveSamples, int16_t(0));
+                else
+                    for (int s = 0; s < waveSamples; ++s)
+                        dst[s] = static_cast<int16_t>(tmp[s] >> 16);
+            }
         }
 
         // ── Per-cluster alignment and writeback ────────────────────────────
@@ -1552,10 +1567,17 @@ void KK::RealignChunkWaveforms(
                 const int16_t* row = waves.data()
                                    + static_cast<size_t>(localIdx) * waveSamples;
 
-                // sh = bestLag from XcorrDispatch (positive = spike is late).
-                // aligned[s] = original[(s - sh + N) % N] shifts spike earlier.
+                // sh = bestLag from XcorrDispatch (positive = spike is late,
+                // its peak is at peakPos + sh inside the window).
+                //
+                // To land the peak at peakPos we need:
+                //   aligned[peakPos] = original[peakPos + sh]
+                // i.e.  aligned[s] = original[(s + sh) % N]
+                //
+                // The former formula (s - sh) was wrong: it placed the peak at
+                // peakPos + 2*sh, moving it *away* from the template on every pass.
                 for (int s = 0; s < nSamplesPerSpike; s++) {
-                    const int src = ((s - sh) % nSamplesPerSpike + nSamplesPerSpike)
+                    const int src = (s + sh % nSamplesPerSpike + nSamplesPerSpike)
                                     % nSamplesPerSpike;
                     for (int c = 0; c < nChan; c++)
                         aligned[s * nChan + c] = row[src * nChan + c];
@@ -1565,8 +1587,16 @@ void KK::RealignChunkWaveforms(
                 // Skip if this spike is deferred to chunk k+1's pass
                 // (it is an overlap spike; chunk k+1 owns the final write).
                 if (overlapInNext[k].count(p)) continue;
-                fseeko(fp, static_cast<off_t>(p) * waveSamples * sizeof(int16_t), SEEK_SET);
-                fwrite(aligned.data(), sizeof(int16_t), waveSamples, fp);
+                fseeko(fp, static_cast<off_t>(p) * waveSamples * bytesPerSample, SEEK_SET);
+                if (bytesPerSample == 2) {
+                    fwrite(aligned.data(), sizeof(int16_t), waveSamples, fp);
+                } else {
+                    // Expand int16 back to int32 before writing
+                    std::vector<int32_t> tmp32(static_cast<size_t>(waveSamples));
+                    for (int s = 0; s < waveSamples; ++s)
+                        tmp32[s] = static_cast<int32_t>(aligned[s]) << 16;
+                    fwrite(tmp32.data(), sizeof(int32_t), waveSamples, fp);
+                }
                 nAligned++;
             }
         }
@@ -1865,10 +1895,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Phase 1.5: waveform realignment (in-place .spk rewrite)
     if (NbChannels > 0 && NbSamplesPerSpike > 0) {
         Output("Phase 1.5: waveform realignment  "
-               "(nChan=%d nSamp=%d maxShift=%d)\n",
-               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4);
+               "(nChan=%d nSamp=%d maxShift=%d bytesPerSample=%d)\n",
+               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4, NbBytesPerSample);
         RealignChunkWaveforms(chunkPoints, perChunkClass,
-                              NbChannels, NbSamplesPerSpike);
+                              NbChannels, NbSamplesPerSpike, NbBytesPerSample);
     }
 
     // ── Phase 2: cross-chunk model matching ─────────────────────────────────
@@ -2219,10 +2249,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // -------------------------------------------------------------------
     if (NbChannels > 0 && NbSamplesPerSpike > 0) {
         Output("Phase 1.5: waveform realignment  "
-               "(nChan=%d nSamp=%d maxShift=%d)\n",
-               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4);
+               "(nChan=%d nSamp=%d maxShift=%d bytesPerSample=%d)\n",
+               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4, NbBytesPerSample);
         RealignChunkWaveforms(chunkPoints, perChunkClass,
-                              NbChannels, NbSamplesPerSpike);
+                              NbChannels, NbSamplesPerSpike, NbBytesPerSample);
     }
 
     // Build overlap vote matrices for MergeChunkModels.

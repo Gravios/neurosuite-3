@@ -155,7 +155,7 @@ public:
     // chunk-cluster mean via integer circular cross-correlation, and writes
     // it back at the GLOBAL SPIKE INDEX p as the file offset:
     //
-    //   offset = (off_t)p * nChan * nSamplesPerSpike * sizeof(int16_t)
+    //   offset = (off_t)p * nChan * nSamplesPerSpike * bytesPerSample
     //
     // This is the only correct seek formula.  Using a sequential slot counter
     // (slot++) causes overlap-duplicated spikes to be written past nPoints,
@@ -166,10 +166,11 @@ public:
     // and written to the SAME slot; last-write-wins, file size is unchanged.
     //
     // nChan == 0 or nSamplesPerSpike == 0 → silently skipped (safe default).
+    // bytesPerSample: 2 for ≤16-bit recordings (default), 4 for 32-bit.
     void RealignChunkWaveforms(
         const std::vector<std::vector<int>>& chunkPoints,
         const std::vector<std::vector<int>>& chunkClass,
-        int nChan, int nSamplesPerSpike);
+        int nChan, int nSamplesPerSpike, int bytesPerSample = 2);
 
 public:
     // -----------------------------------------------------------------------

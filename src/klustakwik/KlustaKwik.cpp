@@ -13,6 +13,7 @@
 #include "KlustaKwik.h"
 #include "KK.h"
 #include "KlustaSave.h"
+#include "KlustaKwikYaml.h"   // auto-detect spike params from YAML config
 
 #include <cstdio>
 #include <cstdlib>
@@ -60,7 +61,7 @@ float ChunkMinutes           = 0.0f;    // 0 = disabled (use two-phase only)
 float ChunkOverlapMinutes    = 0.0f;    // trailing overlap appended to next chunk; 0 = disabled
 float ChunkPreseedFraction   = 0.0f;    // fraction of spikes for Phase 0 preseed; 0 = disabled
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
-float SamplingRate           = 20000.0f;// samples/sec; needed to convert chunk boundaries
+float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML or defaults to 20000
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
 int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations
 int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; final write only
@@ -69,6 +70,7 @@ int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; fin
 // that do not pass .spk parameters, e.g. when running in two-phase-only mode).
 int   NbChannels             = 0;       // channels per spike group (matches .spk layout)
 int   NbSamplesPerSpike      = 0;       // samples per channel per spike in .spk file
+int   NbBytesPerSample       = 2;       // bytes per sample: 2 for ≤16-bit, 4 for 32-bit
 int   fSaveModel             = 1;
 FILE *pModelFile             = nullptr;
 int   SplitEvery             = 50;
@@ -105,6 +107,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(SaveIntermediates);
     INT_PARAM(NbChannels);
     INT_PARAM(NbSamplesPerSpike);
+    INT_PARAM(NbBytesPerSample);
     INT_PARAM(DistDump);
     FLOAT_PARAM(DistThresh);
     INT_PARAM(FullStepEvery);
@@ -294,6 +297,54 @@ int main(int argc, char **argv) {
 
     try {
         SetupParams(argc, argv);
+
+        // ---------------------------------------------------------------
+        // Auto-detect spike-group parameters from <FileBase>.yaml
+        //
+        // The three globals NbChannels, NbSamplesPerSpike, and SamplingRate
+        // are auto-filled from the YAML parameter file when the user has not
+        // provided them explicitly on the command line.  Command-line values
+        // always win (they are already set by SetupParams above).
+        //
+        // NbBytesPerSample is NOT read from YAML because the ndmanager
+        // pipeline hardcodes int16 for all .spk files regardless of the
+        // acquisition system's ADC resolution — see KlustaKwikYaml.cpp for
+        // the full explanation.  The default value of 2 is always correct
+        // for recordings processed through ndm_hipass + ndm_extractspikes
+        // (or ndm_extractspikes_sdiff).
+        // ---------------------------------------------------------------
+        {
+            const KKYamlSpikeParams yp = kkReadYamlSpikeParams(FileBase, ElecNo);
+            if (yp.valid) {
+                if (NbChannels == 0 && yp.nbChannels > 0) {
+                    NbChannels = yp.nbChannels;
+                    fprintf(stderr,
+                            "KlustaKwik: NbChannels=%d  (from YAML, group %d)\n",
+                            NbChannels, ElecNo);
+                }
+                if (NbSamplesPerSpike == 0 && yp.nbSamples > 0) {
+                    NbSamplesPerSpike = yp.nbSamples;
+                    fprintf(stderr,
+                            "KlustaKwik: NbSamplesPerSpike=%d  (from YAML, group %d)\n",
+                            NbSamplesPerSpike, ElecNo);
+                }
+                // SamplingRate: only override when the user has not provided
+                // a value on the command line (sentinel = 0.0f).
+                if (SamplingRate == 0.0f && yp.samplingRate > 0.0) {
+                    SamplingRate = static_cast<float>(yp.samplingRate);
+                    fprintf(stderr,
+                            "KlustaKwik: SamplingRate=%.0f  (from YAML)\n",
+                            static_cast<double>(SamplingRate));
+                }
+            }
+        }
+        // Last-resort default if neither command line nor YAML provided SR.
+        if (SamplingRate <= 0.0f) {
+            SamplingRate = 20000.0f;
+            fprintf(stderr,
+                    "KlustaKwik: SamplingRate defaulting to 20000 Hz"
+                    " (no YAML found and -SamplingRate not given)\n");
+        }
 
         clock_t clock0 = clock();
 

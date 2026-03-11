@@ -79,10 +79,13 @@ once()
 	nTotalFeatures=$(( nElectrodes * nFeatures + 2 ))
 	useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
 
-	# Samples per waveform snapshot (needed for Phase 1.5 .spk realignment).
-	# Read from the same XML field that ndm_extractspikes uses.
-	nSamplesPerSpike=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-	check_optional_variable $nSamplesPerSpike || nSamplesPerSpike=0
+	# NbChannels, NbSamplesPerSpike, and SamplingRate are now read directly
+	# from <session>.yaml by KlustaKwik at startup (KlustaKwikYaml.cpp).
+	# They no longer need to be passed on the command line.
+	#
+	# NbBytesPerSample is always 2: the ndmanager pipeline hardcodes int16
+	# for .spk files regardless of acquisitionSystem.nBits — process_medianfilter
+	# and process_extractspikes[_sdiff] all use sizeof(short).
 
 	# Optional parameters (read from parameter file, with defaults)
 	minClusters=$(read_script_parameter $session minClusters)
@@ -121,13 +124,10 @@ once()
 		-UseFeatures    $useFeatures    \
 		-ChunkMinutes   $chunkMinutes   \
 		-InitMethod     $initMethod     \
-		-SamplingRate   $samplingRate   \
 		-MergeThresh    $mergeThresh    \
 		-GlobalMergeIter $globalMergeIter \
 		-TimeMergeIter  $timeMergeIter  \
-		-SaveIntermediates $saveIntermediates \
-		-NbChannels     $nElectrodes    \
-		-NbSamplesPerSpike $nSamplesPerSpike
+		-SaveIntermediates $saveIntermediates
 
 	check_command_status KlustaKwik
 }

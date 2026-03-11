@@ -190,13 +190,14 @@ set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../shared/xcorr")
 # =============================================================================
 # Common sources and dependencies
 # =============================================================================
-set(_cpu_srcs KlustaKwik.cpp KK.cpp param.c
+set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp param.c
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
 set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
-              Array.h KlustaSave.h param.h)
+              Array.h KlustaSave.h KlustaKwikYaml.h param.h)
 
 find_package(OpenMP)
+find_package(yaml-cpp REQUIRED)
 
 # Generator-expression compile flags applied per-target via INTERFACE library
 # so they don't accidentally bleed onto CUDA or SYCL compilation units.
@@ -219,6 +220,7 @@ function(kk_configure_exe _tgt)
     if(OpenMP_CXX_FOUND)
         target_link_libraries(${_tgt} PRIVATE OpenMP::OpenMP_CXX)
     endif()
+    target_link_libraries(${_tgt} PRIVATE yaml-cpp)
     foreach(_lib IN LISTS _A_LINK_LIBS)
         target_link_libraries(${_tgt} PRIVATE ${_lib})
     endforeach()
@@ -246,7 +248,7 @@ if(_CUDA_ACTIVE)
             -O3 --use_fast_math -Xptxas -v --extended-lambda>)
     target_compile_definitions(KlustaKwik PRIVATE
         USE_CUDA $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_link_libraries(KlustaKwik PRIVATE CUDA::cudart m)
+    target_link_libraries(KlustaKwik PRIVATE CUDA::cudart m yaml-cpp)
     if(OpenMP_CXX_FOUND)
         target_link_libraries(KlustaKwik PRIVATE OpenMP::OpenMP_CXX)
     endif()
@@ -312,7 +314,8 @@ if(_HIP_ACTIVE)
     target_link_libraries(KlustaKwik PRIVATE
         _kk_cxx_flags
         kk_hip_kernels
-        xcorr_hip_kernels)
+        xcorr_hip_kernels
+        yaml-cpp)
     if(hip_FOUND)
         target_link_libraries(KlustaKwik PRIVATE hip::host)
     else()
@@ -368,12 +371,20 @@ if(_SYCL_ACTIVE)
     target_compile_definitions(param_obj PRIVATE
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
+    # KlustaKwikYaml.cpp is plain C++ (yaml-cpp, no SYCL kernels).
+    # Must NOT be compiled with -fsycl — build as a separate OBJECT library.
+    add_library(yaml_obj OBJECT KlustaKwikYaml.cpp)
+    target_compile_options(yaml_obj PRIVATE -O3 -Wall -Wextra)
+    target_compile_definitions(yaml_obj PRIVATE
+        $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
+
     add_executable(KlustaKwik_sycl
         KlustaKwik.cpp KK.cpp KK_sycl.cpp
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
         ${_xcorr_dir}/realign_xcorr_sycl.cpp
         $<TARGET_OBJECTS:param_obj>
+        $<TARGET_OBJECTS:yaml_obj>
         ${_headers})
 
     # -Xs (ocloc device flag) is link-time only; suppress the noisy warning
@@ -396,6 +407,7 @@ if(_SYCL_ACTIVE)
     target_include_directories(KlustaKwik_sycl PRIVATE "${_xcorr_dir}")
     target_compile_definitions(KlustaKwik_sycl PRIVATE
         USE_SYCL $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
+    target_link_libraries(KlustaKwik_sycl PRIVATE yaml-cpp)
     if(OpenMP_CXX_FOUND)
         target_link_libraries(KlustaKwik_sycl PRIVATE OpenMP::OpenMP_CXX)
     endif()
