@@ -49,7 +49,8 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     nbPreviousUndo(0),
     nbPreviousRedo(0),
     goingToDie(false),
-    m_generation(0)
+    m_generation(0),
+    probabilities(nullptr)
 {
 
 
