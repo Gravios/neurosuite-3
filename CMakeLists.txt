@@ -363,6 +363,14 @@ if(NS_INSTALL_DEPS)
 endif() # NS_INSTALL_DEPS
 
 # ---------------------------------------------------------------------------
+# Host-specific optimizations (Zen 4/5 + Blackwell workstation)
+# Enables -march=native, -ffast-math, IPO/LTO, and nvcc --threads.
+# Pass -DNS_ZEN_OPT=OFF to disable (e.g. when cross-compiling).
+# ---------------------------------------------------------------------------
+include(cmake/ZenOptimizations.cmake OPTIONAL)
+
+
+# ---------------------------------------------------------------------------
 # Helper: add one subdirectory with skip-flag support
 #
 #   ns_add_subdir(<n> <rel_source_path>)

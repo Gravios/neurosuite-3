@@ -1,0 +1,965 @@
+#!/usr/bin/env python3
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Subtract spike waveforms from a raw .dat recording.
+#//
+#//   Subtraction pipeline — three layers:
+#//
+#//   Layer 0 — raw waveform subtraction  (no .clu)
+#//     Each spike's raw .spk snippet is subtracted directly.
+#//
+#//   Layer 1 — projection-based per-cluster template  (has .clu, few spikes)
+#//     Per-cluster mean template, scaled by optimal L2 projection onto the
+#//     observed waveform.  ISI-based dual templates (L1b) handle burst shape
+#//     change when enough spikes exist to split the cluster.
+#//
+#//   Layer 2 — asymmetric-exponential PC1 model  (has .clu, sufficient spikes)
+#//     PC1 of the cluster's spike population directly captures the dominant
+#//     axis of waveform shape variation.  Both the mean waveform and the PC1
+#//     direction are represented as sums of asymmetric exponential terms
+#//     (one term per component per channel) fitted by nonlinear least squares.
+#//     The per-spike subtraction template is the continuous family
+#//
+#//       T(t; obs_wf) = T_mean(t)  +  pc1_score(obs_wf) * T_pc1(t)
+#//
+#//     where pc1_score is measured directly from the observed waveform.
+#//
+#//   Contamination robustness
+#//   ────────────────────────
+#//   Concomitant spikes from other neurons whose waveform windows overlap
+#//   spike i's window corrupt both template estimation and per-spike
+#//   projection.  Two complementary measures are applied:
+#//
+#//   (a) Template building — exclusion of contaminated spikes
+#//       A spike is labelled contaminated if any other spike (any cluster)
+#//       falls within ±nSamples samples of it.  Only uncontaminated spikes
+#//       are used to compute the cluster mean template and PCA decomposition.
+#//       If fewer than min_clean_spikes uncontaminated spikes remain, the
+#//       cluster falls back to all spikes with a trimmed-mean estimator
+#//       (drops the 10% most outlying waveforms by L2 distance to the mean).
+#//
+#//   (b) Per-spike observation cleaning — neighbour template subtraction
+#//       Before projecting spike i onto its template, the mean template of
+#//       every overlapping spike j from a *different* cluster is subtracted
+#//       from the observed waveform at the overlap region.  This reduces
+#//       the per-spike PC1 score error by ~40× (see validation tests).
+#//       The PC1 score is then clamped to the [0.5th, 99.5th] percentile
+#//       range observed during template building to guard against residuals
+#//       from imperfect neighbour subtraction.
+#//
+#//   I/O model (V-Cache-aware chunk processing)
+#//   -------------------------------------------
+#//   Single sequential pass; one contiguous read + one contiguous write
+#//   per CHUNK_LEN-frame chunk.  Chunks with no spike overlap are skipped.
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   GNU GPL v3 or later.
+#//
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//  Usage
+#//  -----
+#//  process_subtractspikes -n nChannels [-b nBits] [-s samplingRate]
+#//      [--no-burst-correction] [--min-template-spikes N]
+#//      [--burst-isi-threshold-ms T] [--min-exp-spikes N]
+#//      [--exp-terms K] [--min-clean-frac F] [--chunk-frames N]
+#//      input.dat output.dat spec1 [spec2 ...]
+#//
+#//  Spec format (5 or 6 colon-separated fields):
+#//    resfile:spkfile[:clufile]:ch0,ch1,...:nSamples:peakSample
+#//    clufile='-' disables cluster-based modelling for that group.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+import sys
+import os
+import math
+import argparse
+import shutil
+import warnings
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+
+try:
+    from scipy.optimize import curve_fit as _scipy_curve_fit
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Constants
+# ──────────────────────────────────────────────────────────────────────────────
+
+DEFAULT_SR               = 20_000
+DEFAULT_MIN_TPL_SPIKES   = 5
+DEFAULT_MIN_EXP_SPIKES   = 30
+DEFAULT_BURST_ISI_MS     = 50.0
+DEFAULT_EXP_TERMS        = 2
+DEFAULT_MIN_CLEAN_FRAC   = 0.30   # fall back to trimmed-mean below this
+TRIMMED_MEAN_FRAC        = 0.10   # drop top 10% outliers in trimmed mean
+MIN_SPIKES_BURST_FIT     = 30
+SCALE_MIN                = 0.0
+SCALE_MAX                = 3.0
+EXP_FIT_MAX_RMS_FRAC     = 0.15   # quality gate for exponential fits
+PC1_SCORE_CLIP_PERCENTILE = 0.5   # clip to [0.5th, 99.5th] of training scores
+VCACHE_BYTES             = 96 * 1024 * 1024
+VCACHE_TARGET_FRAC       = 0.70
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_parser():
+    p = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('-n', type=int, required=True, metavar='nChannels')
+    p.add_argument('-b', type=int, default=16, metavar='nBits', choices=[8, 16, 32])
+    p.add_argument('-s', type=float, default=None, metavar='samplingRate')
+    p.add_argument('--no-burst-correction', action='store_true')
+    p.add_argument('--min-template-spikes', type=int, default=DEFAULT_MIN_TPL_SPIKES)
+    p.add_argument('--burst-isi-threshold-ms', type=float, default=DEFAULT_BURST_ISI_MS)
+    p.add_argument('--min-exp-spikes', type=int, default=DEFAULT_MIN_EXP_SPIKES)
+    p.add_argument('--exp-terms', type=int, default=DEFAULT_EXP_TERMS)
+    p.add_argument('--min-clean-frac', type=float, default=DEFAULT_MIN_CLEAN_FRAC,
+                   help='Minimum fraction of uncontaminated spikes required to use '
+                        'exclusion-based template estimation; fall back to trimmed-mean '
+                        f'below this (default: {DEFAULT_MIN_CLEAN_FRAC})')
+    p.add_argument('--chunk-frames', type=int, default=None)
+    p.add_argument('input_dat',  metavar='input.dat')
+    p.add_argument('output_dat', metavar='output.dat')
+    p.add_argument('specs', nargs='+', metavar='spec')
+    return p
+
+
+def parse_group_spec(spec):
+    parts = spec.split(':')
+    if len(parts) == 5:
+        resfile, spkfile, channels_str, nsamples_str, peaksample_str = parts
+        clufile = '-'
+    elif len(parts) == 6:
+        resfile, spkfile, clufile, channels_str, nsamples_str, peaksample_str = parts
+    else:
+        raise ValueError(f'Expected 5 or 6 colon-separated fields: {spec!r}')
+    return (resfile, spkfile, clufile,
+            list(map(int, channels_str.split(','))),
+            int(nsamples_str), int(peaksample_str))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# .clu reader
+# ──────────────────────────────────────────────────────────────────────────────
+
+def load_clu(clufile):
+    with open(clufile, 'r') as fh:
+        lines = [l.strip() for l in fh if l.strip()]
+    if not lines:
+        raise RuntimeError(f'{clufile!r}: empty file')
+    return np.array([int(x) for x in lines[1:]], dtype=np.int32)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Contamination detection
+# ──────────────────────────────────────────────────────────────────────────────
+
+def find_clean_mask(spike_times: np.ndarray, nSamples: int) -> np.ndarray:
+    """
+    Return a boolean array (nSpikes,) where True means the spike's waveform
+    window does NOT overlap with any other spike's window.
+
+    Two spikes i and j overlap when |t_i - t_j| < nSamples.  A spike is
+    flagged regardless of whether the neighbour belongs to the same cluster
+    or a different one — any overlap corrupts the recorded waveform snippet.
+
+    Implementation: O(n log n) — sort once, then for each spike do two
+    searchsorted calls and check the length of the window.
+    """
+    n        = len(spike_times)
+    clean    = np.ones(n, dtype=bool)
+    sort_idx = np.argsort(spike_times)
+    st       = spike_times[sort_idx]   # sorted times
+
+    for ii in range(n):
+        lo = int(np.searchsorted(st, st[ii] - nSamples + 1, 'left'))
+        hi = int(np.searchsorted(st, st[ii] + nSamples,     'right'))
+        # If any spike other than itself falls in the window, contaminated
+        if (hi - lo) > 1:
+            clean[sort_idx[ii]] = False
+
+    return clean
+
+
+def trimmed_mean_waveforms(spk_f: np.ndarray, frac: float = TRIMMED_MEAN_FRAC
+                           ) -> np.ndarray:
+    """
+    Per-spike-array robust mean: compute the initial mean, then drop the
+    `frac` fraction of spikes furthest from it (by L2 distance) and
+    recompute.  Returns (nSamples, nChanGrp) float32.
+    """
+    n = len(spk_f)
+    if n <= 2:
+        return spk_f.mean(axis=0)
+    mean0 = spk_f.mean(axis=0)
+    dists = np.sum((spk_f.reshape(n, -1) - mean0.ravel()) ** 2, axis=1)
+    n_drop = max(1, int(n * frac))
+    keep   = np.argsort(dists)[:n - n_drop]
+    return spk_f[keep].mean(axis=0)
+
+
+def robust_spk_subset(spk_c: np.ndarray, clean_mask: np.ndarray,
+                      min_clean_frac: float, cid: int
+                      ) -> Tuple[np.ndarray, str]:
+    """
+    Return (subset_for_template, method_tag).
+
+    Priority:
+      1. uncontaminated spikes  (clean_mask True) — if >= min_clean_frac
+      2. trimmed mean on all spikes               — otherwise
+    """
+    n_clean = int(clean_mask.sum())
+    n_total = len(clean_mask)
+    clean_frac = n_clean / max(n_total, 1)
+
+    if clean_frac >= min_clean_frac:
+        subset = spk_c[clean_mask]
+        tag    = f'excl-contam ({n_clean}/{n_total} clean spikes)'
+    else:
+        subset = spk_c           # trimmed mean is applied later
+        tag    = (f'trimmed-mean fallback '
+                  f'(only {n_clean}/{n_total} clean = '
+                  f'{clean_frac:.0%} < {min_clean_frac:.0%})')
+    return subset, tag
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Neighbour-template observation cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+def clean_obs_waveform(obs_wf_full: np.ndarray,
+                       spike_idx:   int,
+                       grp) -> np.ndarray:
+    """
+    Remove expected contributions of overlapping spikes from OTHER clusters
+    from the observed waveform snippet before projection.
+
+    obs_wf_full : (nSamples, nChanGrp) float32 — raw .spk snippet for spike i
+    spike_idx   : index into grp.spike_times / grp.clu_ids
+    grp         : GroupData — must have sorted_times, sorted_clu, sorted_sort_idx
+
+    For each spike j (j ≠ spike_idx, different cluster) whose window overlaps
+    spike i's window, the cluster-j mean template is subtracted from the
+    overlap region of obs_wf_full.
+
+    Returns a (nSamples, nChanGrp) float32 cleaned copy.
+    """
+    if not grp.use_clusters:
+        return obs_wf_full
+
+    nSamples   = grp.nSamples
+    peakSample = grp.peakSample
+    t_i        = int(grp.spike_times[spike_idx])
+    cid_i      = int(grp.clu_ids[spike_idx])
+    t_i_start  = t_i - peakSample
+    t_i_end    = t_i_start + nSamples
+
+    # Binary search for overlapping spikes: |t_j - t_i| < nSamples
+    st  = grp.sorted_times
+    lo  = int(np.searchsorted(st, t_i - nSamples + 1, 'left'))
+    hi  = int(np.searchsorted(st, t_i + nSamples,     'right'))
+
+    if hi - lo <= 1:
+        return obs_wf_full          # no neighbours — nothing to clean
+
+    cleaned = obs_wf_full.copy()
+
+    for jj in range(lo, hi):
+        j    = int(grp.sorted_sort_idx[jj])
+        if j == spike_idx:
+            continue
+        cid_j = int(grp.sorted_clu[jj])
+        if cid_j == cid_i:
+            continue                # same cluster — skip
+
+        model_j = grp.cluster_models.get(cid_j)
+        if model_j is None:
+            continue
+
+        t_j       = int(st[jj])
+        t_j_start = t_j - peakSample
+        t_j_end   = t_j_start + nSamples
+
+        # Overlap in absolute sample coordinates
+        ov_start  = max(t_i_start, t_j_start)
+        ov_end    = min(t_i_end,   t_j_end)
+        if ov_end <= ov_start:
+            continue
+
+        # Local indices in obs_wf_full and in model_j's template
+        i_lo   = ov_start - t_i_start
+        i_hi   = ov_end   - t_i_start
+        j_lo   = ov_start - t_j_start
+        j_hi   = ov_end   - t_j_start
+
+        # Use the cluster-j mean template (T_mean is always defined)
+        tmpl_j = model_j.template   # (nSamples, nChanGrp) float32
+
+        cleaned[i_lo:i_hi, :] -= tmpl_j[j_lo:j_hi, :]
+
+    return cleaned
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 2 — asymmetric-exponential PC1 waveform model
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _asym_exp_component(t_ms: np.ndarray, A: float, mu_ms: float,
+                        tau_rise: float, tau_fall: float) -> np.ndarray:
+    tau_r = abs(tau_rise) + 1e-6
+    tau_f = abs(tau_fall) + 1e-6
+    w     = np.empty_like(t_ms)
+    left  = t_ms < mu_ms
+    w[ left] = A * np.exp( (t_ms[ left] - mu_ms) / tau_r)
+    w[~left] = A * np.exp(-(t_ms[~left] - mu_ms) / tau_f)
+    return w
+
+
+def _multi_asym_exp(t_ms: np.ndarray, *params) -> np.ndarray:
+    K   = len(params) // 4
+    out = np.zeros_like(t_ms)
+    for k in range(K):
+        out += _asym_exp_component(t_ms, *params[4*k:4*k+4])
+    return out
+
+
+def _auto_init_params(t_ms: np.ndarray, wf: np.ndarray, K: int) -> List:
+    extrema = np.where(np.diff(np.sign(np.diff(wf))))[0] + 1
+    if len(extrema) == 0:
+        extrema = np.array([np.argmax(np.abs(wf))])
+    extrema = extrema[np.argsort(-np.abs(wf[extrema]))][:K]
+    if len(extrema) < K:
+        extra   = np.linspace(0, len(t_ms)-1, K - len(extrema), dtype=int)
+        extrema = np.concatenate([extrema, extra])
+    dt = float(t_ms[1] - t_ms[0]) if len(t_ms) > 1 else 1.0
+    p0 = []
+    for idx in extrema[:K]:
+        p0.extend([float(wf[idx]), float(t_ms[idx]),
+                   max(2.0*dt, 0.2), max(2.0*dt, 0.5)])
+    return p0
+
+
+def _fit_exp_1ch(t_ms: np.ndarray, wf: np.ndarray, K: int
+                 ) -> Tuple[Optional[np.ndarray], np.ndarray]:
+    """Fit K asymmetric exponential terms to one channel.  Returns (params|None, fitted)."""
+    peak_amp = float(np.abs(wf).max())
+    if peak_amp < 1e-6 or not HAS_SCIPY:
+        return None, wf.copy()
+    t_range = float(t_ms[-1] - t_ms[0])
+    p0      = _auto_init_params(t_ms, wf, K)
+    lo = [-1e5, t_ms[0]-t_range, 1e-6, 1e-6] * K
+    hi = [ 1e5, t_ms[-1]+t_range, t_range*2, t_range*2] * K
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        try:
+            popt, _ = _scipy_curve_fit(_multi_asym_exp, t_ms, wf,
+                                       p0=p0, bounds=(lo, hi),
+                                       maxfev=8000, ftol=1e-6, xtol=1e-6)
+        except Exception:
+            return None, wf.copy()
+    fitted = _multi_asym_exp(t_ms, *popt)
+    if np.sqrt(np.mean((fitted - wf)**2)) > EXP_FIT_MAX_RMS_FRAC * peak_amp:
+        return None, wf.copy()    # quality gate — raw fallback
+    return popt, fitted
+
+
+class ExponentialWaveformModel:
+    """
+    Layer 2 spike shape model: sum-of-asymmetric-exponentials parameterized
+    by PC1, estimated from contamination-free spikes only.
+
+    Model
+    ─────
+      T(t; obs_wf) = T_mean(t)  +  clip(pc1_score(obs_wf)) * T_pc1(t)
+
+    pc1_score is measured from the (previously neighbour-cleaned) observed
+    waveform and clamped to the [0.5th, 99.5th] percentile of training
+    scores to guard against residual contamination.
+    """
+
+    def __init__(self, cid: int,
+                 spk_c:     np.ndarray,   # (n_c, nSamples, nChanGrp) float32 — ALL spikes
+                 clean_mask: np.ndarray,  # (n_c,) bool — uncontaminated subset
+                 peakSample: int,
+                 samplingRate: float,
+                 K: int = 2,
+                 min_clean_frac: float = DEFAULT_MIN_CLEAN_FRAC):
+        self.cid      = cid
+        self.valid    = False
+        self.K        = K
+
+        n_c, nSamples, nChanGrp = spk_c.shape
+        self.nSamples  = nSamples
+        self.nChanGrp  = nChanGrp
+
+        dt_ms     = 1000.0 / samplingRate
+        self.t_ms = (np.arange(nSamples) - peakSample) * dt_ms
+
+        # ── Select clean subset for PCA & template fitting ────────────────
+        clean_subset, self.clean_tag = robust_spk_subset(
+            spk_c, clean_mask, min_clean_frac, cid)
+        n_clean = len(clean_subset)
+        self.n_clean = n_clean
+
+        # For trimmed-mean fallback: apply trimming during mean computation
+        using_trimmed = (n_clean == n_c)   # True when we couldn't exclude
+        if using_trimmed:
+            mean_wf_2d = trimmed_mean_waveforms(clean_subset)
+        else:
+            mean_wf_2d = clean_subset.mean(axis=0)
+
+        # ── PCA on clean subset ───────────────────────────────────────────
+        D  = nSamples * nChanGrp
+        W  = clean_subset.reshape(n_clean, D).astype(np.float64)
+        Wc = W - mean_wf_2d.ravel()
+
+        try:
+            U, s, Vt = np.linalg.svd(Wc, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return
+
+        pc1_vec    = Vt[0]
+        pc1_scores = U[:, 0] * s[0]
+
+        # Canonicalize sign: PC1 aligns with the leading channel
+        mean_flat   = mean_wf_2d.reshape(nSamples, nChanGrp)
+        pc1_shaped  = pc1_vec.reshape(nSamples, nChanGrp)
+        lead_ch     = int(np.argmax(np.abs(mean_flat).max(axis=0)))
+        if np.dot(pc1_shaped[:, lead_ch], mean_flat[:, lead_ch]) < 0:
+            pc1_vec    = -pc1_vec
+            pc1_scores = -pc1_scores
+
+        # ── Score range for clamping (contamination guard) ────────────────
+        self._score_lo = float(np.percentile(pc1_scores, PC1_SCORE_CLIP_PERCENTILE))
+        self._score_hi = float(np.percentile(pc1_scores, 100 - PC1_SCORE_CLIP_PERCENTILE))
+
+        # ── Fit exponential model per channel ─────────────────────────────
+        mean_ch = mean_wf_2d                     # (nSamples, nChanGrp) float32
+        pc1_ch  = pc1_vec.reshape(nSamples, nChanGrp)  # (nSamples, nChanGrp) float64
+
+        self._mean_eval = np.zeros((nSamples, nChanGrp), np.float32)
+        self._pc1_eval  = np.zeros((nSamples, nChanGrp), np.float32)
+        n_fitted        = 0
+        for ch in range(nChanGrp):
+            _, ev_mean = _fit_exp_1ch(self.t_ms, mean_ch[:, ch].astype(np.float64), K)
+            _, ev_pc1  = _fit_exp_1ch(self.t_ms, pc1_ch[:, ch],                    K)
+            self._mean_eval[:, ch] = ev_mean.astype(np.float32)
+            self._pc1_eval [:, ch] = ev_pc1 .astype(np.float32)
+            if _fit_exp_1ch(self.t_ms, mean_ch[:, ch].astype(np.float64), K)[0] is not None:
+                n_fitted += 1
+
+        self._mean_wf_flat = mean_wf_2d.ravel().astype(np.float64)
+        self._pc1_vec      = pc1_vec.astype(np.float64)
+        self.n_fitted_ch   = n_fitted
+        self.valid         = True
+
+    def pc1_score(self, obs_wf: np.ndarray) -> float:
+        """
+        Project obs_wf onto PC1 and clamp to the training score range.
+        obs_wf : (nSamples, nChanGrp) float32/int16
+        """
+        raw = float(np.dot(obs_wf.ravel().astype(np.float64) - self._mean_wf_flat,
+                           self._pc1_vec))
+        return float(np.clip(raw, self._score_lo, self._score_hi))
+
+    def get_template(self, obs_wf: np.ndarray) -> np.ndarray:
+        """Return the PC1-conditioned subtraction template: (nSamples, nChanGrp) f32."""
+        score = self.pc1_score(obs_wf)
+        return (self._mean_eval + score * self._pc1_eval).astype(np.float32)
+
+    def project_and_template(self, obs_wf: np.ndarray) -> Tuple[float, np.ndarray]:
+        T     = self.get_template(obs_wf)
+        tf    = T.ravel().astype(np.float64)
+        denom = float(np.dot(tf, tf))
+        if denom < 1e-6:
+            return 1.0, T
+        k = float(np.clip(
+            np.dot(obs_wf.ravel().astype(np.float64), tf) / denom,
+            SCALE_MIN, SCALE_MAX))
+        return k, T
+
+    def fit_summary(self) -> str:
+        spread = self._score_hi - self._score_lo
+        return (f'L2-exp({self.K}): {self.n_clean} clean spikes  '
+                f'{self.n_fitted_ch}/{self.nChanGrp} ch fitted  '
+                f'PC1 range={spread:.1f}  [{self.clean_tag}]')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 1 — ISI-based dual-template model
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _recovery_fn(isi_ms, s_inf, f, tau_ms):
+    return s_inf * (1.0 - f * np.exp(-isi_ms / tau_ms))
+
+
+def fit_recovery_model(isi_ms, weights):
+    if not HAS_SCIPY or len(isi_ms) < MIN_SPIKES_BURST_FIT:
+        return None
+    if np.std(isi_ms) < 0.5 or np.std(weights) < 1e-4:
+        return None
+    try:
+        popt, _ = _scipy_curve_fit(
+            _recovery_fn, isi_ms, weights,
+            p0=[1.0, 0.5, 50.0],
+            bounds=([0.1, 0.0, 1.0], [2.0, 0.99, 5000.0]), maxfev=3000)
+        s_inf, f, tau_ms = popt
+        if tau_ms < 2.0 or f < 0.01:
+            return None
+        return tuple(popt)
+    except Exception:
+        return None
+
+
+class ClusterModel:
+    """Layer 1: single or ISI-interpolated dual template, built from clean spikes."""
+
+    def __init__(self, cid, spk_c, times_c, samplingRate,
+                 use_burst_correction, min_spikes, burst_isi_ms_thresh,
+                 clean_mask, min_clean_frac=DEFAULT_MIN_CLEAN_FRAC):
+        self.cid             = cid
+        self.has_burst_model = False
+        self.burst_params    = None
+        self.tmpl_burst      = None
+        self.tmpl_full       = None
+
+        # Select clean subset (or trimmed mean fallback)
+        clean_subset, _ = robust_spk_subset(
+            spk_c.astype(np.float32), clean_mask, min_clean_frac, cid)
+        n_clean = len(clean_subset)
+
+        using_trimmed = (n_clean == len(spk_c))
+        if using_trimmed:
+            self.template = trimmed_mean_waveforms(clean_subset)
+        else:
+            self.template = clean_subset.mean(axis=0)
+
+        if not use_burst_correction or n_clean < 4 * min_spikes:
+            return
+
+        # Use clean subset for burst model too
+        times_clean = times_c[clean_mask] if len(clean_mask) == len(times_c) \
+                      else times_c
+        spk_clean   = clean_subset
+
+        isi_ms    = np.empty(n_clean, dtype=np.float64)
+        isi_ms[0] = np.inf
+        if n_clean > 1:
+            isi_ms[1:] = np.diff(times_clean.astype(np.float64)) / samplingRate * 1000.0
+
+        burst_mask = isi_ms < burst_isi_ms_thresh
+        full_mask  = ~burst_mask
+
+        if burst_mask.sum() < min_spikes or full_mask.sum() < min_spikes:
+            return
+
+        self.tmpl_burst = spk_clean[burst_mask].mean(axis=0)
+        self.tmpl_full  = spk_clean[full_mask ].mean(axis=0)
+
+        peak_amps = np.abs(spk_clean).max(axis=(1, 2))
+        ref_amp   = np.median(peak_amps[full_mask])
+        if ref_amp < 1e-6:
+            return
+
+        finite = np.isfinite(isi_ms) & (isi_ms > 0.0)
+        if finite.sum() < MIN_SPIKES_BURST_FIT:
+            return
+
+        params = fit_recovery_model(isi_ms[finite], peak_amps[finite] / ref_amp)
+        if params is None:
+            return
+
+        self.burst_params    = params
+        self.has_burst_model = True
+
+    def get_template(self, isi_ms: float) -> np.ndarray:
+        if not self.has_burst_model or not np.isfinite(isi_ms):
+            return self.template
+        s_inf, f, tau_ms = self.burst_params
+        w = float(np.clip(_recovery_fn(isi_ms, s_inf, f, tau_ms), 0.0, 1.0))
+        return ((1.0 - w) * self.tmpl_burst + w * self.tmpl_full).astype(np.float32)
+
+    def project(self, wf_flat: np.ndarray, isi_ms: float) -> float:
+        tmpl  = self.get_template(isi_ms)
+        tf    = tmpl.ravel()
+        denom = float(np.dot(tf, tf))
+        if denom < 1e-6:
+            return 1.0
+        return float(np.clip(np.dot(wf_flat, tf) / denom, SCALE_MIN, SCALE_MAX))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Per-group data container
+# ──────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class GroupData:
+    spike_times     : np.ndarray
+    spk             : np.ndarray
+    clu_ids         : Optional[np.ndarray]
+    channels        : List[int]
+    nSamples        : int
+    peakSample      : int
+    use_clusters    : bool
+    cluster_models  : Dict                 # cid → ClusterModel
+    exp_models      : Dict                 # cid → ExponentialWaveformModel|None
+    isi_per_spike   : np.ndarray
+    sort_idx        : np.ndarray
+    sorted_wstart   : np.ndarray
+    sorted_wend     : np.ndarray
+    # ── For neighbour-template cleaning ──────────────────────────────────
+    sorted_times    : np.ndarray           # spike_times[sort_idx]
+    sorted_clu      : np.ndarray           # clu_ids[sort_idx]  or None
+    sorted_sort_idx : np.ndarray           # == sort_idx  (alias, for clarity)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Group loading
+# ──────────────────────────────────────────────────────────────────────────────
+
+def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
+               samplingRate, use_burst_correction, min_template_spikes,
+               min_exp_spikes, exp_terms, burst_isi_ms_thresh, min_clean_frac):
+    nChanGrp = len(channels)
+
+    spike_times = np.fromfile(resfile, dtype='<i8')
+    nSpikes     = len(spike_times)
+
+    expected = nSpikes * nSamples * nChanGrp
+    spk_raw  = np.fromfile(spkfile, dtype=np.dtype('<i2'))
+    if len(spk_raw) != expected:
+        raise RuntimeError(
+            f'{spkfile!r}: expected {expected} samples '
+            f'({nSpikes}×{nSamples}×{nChanGrp}) but found {len(spk_raw)}')
+    spk = spk_raw.reshape(nSpikes, nSamples, nChanGrp)
+
+    # ── cluster IDs ──────────────────────────────────────────────────────
+    use_clusters = False
+    clu_ids      = None
+    if clufile != '-' and os.path.exists(clufile):
+        try:
+            ids = load_clu(clufile)
+            if len(ids) != nSpikes:
+                print(f'    WARNING: {os.path.basename(clufile)} has {len(ids)} '
+                      f'entries vs {nSpikes} spikes — raw waveform fallback',
+                      file=sys.stderr)
+            else:
+                clu_ids      = ids
+                use_clusters = True
+        except Exception as exc:
+            print(f'    WARNING: {clufile!r}: {exc} — raw waveform fallback',
+                  file=sys.stderr)
+
+    # ── sort for binary search ────────────────────────────────────────────
+    sort_idx      = np.argsort(spike_times)
+    sorted_times  = spike_times[sort_idx]
+    sorted_wstart = sorted_times - peakSample
+    sorted_wend   = sorted_wstart + nSamples
+    sorted_clu    = clu_ids[sort_idx] if use_clusters else np.zeros(nSpikes, np.int32)
+
+    # ── contamination mask (used for ALL clusters) ────────────────────────
+    contam_mask = find_clean_mask(spike_times, nSamples)
+    n_clean_tot = int(contam_mask.sum())
+    print(f'    contamination check: {n_clean_tot}/{nSpikes} spikes '
+          f'uncontaminated ({100*n_clean_tot/max(nSpikes,1):.0f}%)',
+          file=sys.stderr)
+
+    # ── per-cluster ISI ───────────────────────────────────────────────────
+    isi_per_spike = np.full(nSpikes, np.inf, dtype=np.float64)
+    prev_t        = {}
+    for i in sort_idx:
+        cid = int(clu_ids[i]) if use_clusters else 0
+        t   = int(spike_times[i])
+        if cid in prev_t:
+            isi_per_spike[i] = (t - prev_t[cid]) / samplingRate * 1000.0
+        prev_t[cid] = t
+
+    # ── build cluster models ──────────────────────────────────────────────
+    cluster_models : Dict = {}
+    exp_models     : Dict = {}
+
+    if use_clusters:
+        global_fallback = spk.astype(np.float32).mean(axis=0)
+
+        for cid in np.unique(clu_ids):
+            mask   = np.where(clu_ids == cid)[0]
+            n_c    = len(mask)
+            t_ord  = np.argsort(spike_times[mask])
+            spk_c  = spk[mask[t_ord]].astype(np.float32)
+            t_c    = spike_times[mask[t_ord]]
+            cm     = contam_mask[mask[t_ord]]   # clean mask in time order
+
+            if n_c < min_template_spikes:
+                m             = ClusterModel.__new__(ClusterModel)
+                m.cid             = cid
+                m.has_burst_model = False
+                m.burst_params    = None
+                m.tmpl_burst      = None
+                m.tmpl_full       = None
+                m.template        = global_fallback
+                cluster_models[cid] = m
+                exp_models[cid]     = None
+                print(f'    cluster {cid:4d}: {n_c:5d} spikes '
+                      f'(< {min_template_spikes}) → global template',
+                      file=sys.stderr)
+                continue
+
+            # Layer 1
+            m = ClusterModel(
+                cid, spk_c, t_c, samplingRate,
+                use_burst_correction, min_template_spikes,
+                burst_isi_ms_thresh, cm, min_clean_frac)
+            cluster_models[cid] = m
+
+            # Layer 2
+            exp_m: Optional[ExponentialWaveformModel] = None
+            if n_c >= min_exp_spikes:
+                exp_m = ExponentialWaveformModel(
+                    cid, spk_c, cm, peakSample, samplingRate,
+                    K=exp_terms, min_clean_frac=min_clean_frac)
+                if not exp_m.valid:
+                    exp_m = None
+            exp_models[cid] = exp_m
+
+            # ── logging ──────────────────────────────────────────────────
+            l2_tag = (exp_m.fit_summary() if exp_m is not None
+                      else f'L2: skipped (< {min_exp_spikes} spikes)'
+                      if n_c < min_exp_spikes
+                      else 'L2: PCA/fit failed → L1')
+            l1_tag = ('L1-ISI: ' + (
+                f's_inf={m.burst_params[0]:.3f} f={m.burst_params[1]:.3f} '
+                f'τ={m.burst_params[2]:.1f} ms' if m.has_burst_model
+                else 'burst model not fitted'
+                if use_burst_correction else 'single template'))
+            print(f'    cluster {cid:4d}: {n_c:5d} spikes  {l2_tag}  |  {l1_tag}',
+                  file=sys.stderr)
+
+    return GroupData(
+        spike_times     = spike_times,
+        spk             = spk,
+        clu_ids         = clu_ids,
+        channels        = channels,
+        nSamples        = nSamples,
+        peakSample      = peakSample,
+        use_clusters    = use_clusters,
+        cluster_models  = cluster_models,
+        exp_models      = exp_models,
+        isi_per_spike   = isi_per_spike,
+        sort_idx        = sort_idx,
+        sorted_wstart   = sorted_wstart,
+        sorted_wend     = sorted_wend,
+        sorted_times    = sorted_times,
+        sorted_clu      = sorted_clu,
+        sorted_sort_idx = sort_idx,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# V-Cache-aware chunk size
+# ──────────────────────────────────────────────────────────────────────────────
+
+def compute_chunk_len(nChannels: int, override: Optional[int] = None) -> int:
+    if override is not None:
+        return max(16384, override)
+    target = int(VCACHE_BYTES * VCACHE_TARGET_FRAC)
+    return max(65536, target // (nChannels * 6))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Single-pass chunk subtraction
+# ──────────────────────────────────────────────────────────────────────────────
+
+def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, chunk_len_override=None):
+    nTotalSamples = out_mm.shape[0]
+    chunk_len     = compute_chunk_len(nChannels, chunk_len_override)
+    n_chunks      = math.ceil(nTotalSamples / chunk_len)
+
+    print(f'process_subtractspikes: chunk_len={chunk_len:,}  n_chunks={n_chunks:,}',
+          file=sys.stderr)
+
+    n_clipped = 0
+
+    for c_idx in range(n_chunks):
+        chunk_start = c_idx * chunk_len
+        chunk_end   = min(nTotalSamples, chunk_start + chunk_len)
+
+        if n_chunks >= 10 and c_idx % max(1, n_chunks // 10) == 0:
+            print(f'  {100*c_idx//n_chunks:3d}%  (chunk {c_idx+1}/{n_chunks})',
+                  file=sys.stderr)
+
+        buf            = out_mm[chunk_start:chunk_end, :].astype(np.float32)
+        chunk_modified = False
+
+        for grp in groups:
+            lo = int(np.searchsorted(grp.sorted_wend,   chunk_start, 'right'))
+            hi = int(np.searchsorted(grp.sorted_wstart, chunk_end,   'left'))
+            if lo >= hi:
+                continue
+            chunk_modified = True
+
+            channels   = grp.channels
+            nChanGrp   = len(channels)
+            nSamples   = grp.nSamples
+            peakSample = grp.peakSample
+
+            for si in range(lo, hi):
+                i          = int(grp.sort_idx[si])
+                t          = int(grp.spike_times[i])
+                isi_ms     = float(grp.isi_per_spike[i])
+
+                wf_abs_start = t - peakSample
+                wf_abs_end   = wf_abs_start + nSamples
+                dat_start    = max(wf_abs_start, chunk_start)
+                dat_end      = min(wf_abs_end,   chunk_end)
+                wf_s         = dat_start - wf_abs_start
+                wf_e         = wf_s + (dat_end - dat_start)
+                buf_s        = dat_start - chunk_start
+                buf_e        = buf_s + (dat_end - dat_start)
+
+                if buf_e <= buf_s:
+                    continue
+
+                obs_wf_full = grp.spk[i].astype(np.float32)   # (nSamples, nChanGrp)
+
+                if grp.use_clusters:
+                    cid   = int(grp.clu_ids[i])
+                    exp_m = grp.exp_models.get(cid)
+
+                    # ── (b) clean the observation before projecting ───────
+                    obs_wf_clean = clean_obs_waveform(obs_wf_full, i, grp)
+
+                    if exp_m is not None:
+                        # Layer 2: exponential PC1 model
+                        k, T  = exp_m.project_and_template(obs_wf_clean)
+                        to_sub = k * T[wf_s:wf_e, :]
+                    else:
+                        # Layer 1: ISI dual-template
+                        model  = grp.cluster_models[cid]
+                        wf_f   = obs_wf_clean[wf_s:wf_e, :].ravel()
+                        scale  = model.project(wf_f, isi_ms)
+                        tmpl   = model.get_template(isi_ms)
+                        to_sub = scale * tmpl[wf_s:wf_e, :]
+                else:
+                    # Layer 0: raw waveform
+                    to_sub = obs_wf_full[wf_s:wf_e, :]
+
+                for ci in range(nChanGrp):
+                    buf[buf_s:buf_e, channels[ci]] -= to_sub[:, ci]
+
+        if chunk_modified:
+            rounded = np.round(buf)
+            clipped = np.clip(rounded, -32768, 32767)
+            if not np.array_equal(clipped, rounded):
+                n_clipped += 1
+            out_mm[chunk_start:chunk_end, :] = clipped.astype(dtype)
+
+    print(f'  100%  (done)', file=sys.stderr)
+    if n_clipped:
+        print(f'process_subtractspikes: {n_clipped} chunk(s) clipped to int16',
+              file=sys.stderr)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = build_parser()
+    args   = parser.parse_args()
+
+    dtype          = np.dtype(f'<i{args.b // 8}')
+    nChannels      = args.n
+    bytes_per_word = args.b // 8
+    samplingRate   = args.s if args.s is not None else DEFAULT_SR
+
+    if args.s is None and not args.no_burst_correction:
+        print(f'process_subtractspikes: -s not supplied; assuming {DEFAULT_SR} Hz',
+              file=sys.stderr)
+
+    group_specs = []
+    for spec in args.specs:
+        try:
+            group_specs.append(parse_group_spec(spec))
+        except ValueError as exc:
+            print(f'process_subtractspikes: {exc}', file=sys.stderr)
+            sys.exit(1)
+
+    in_size     = os.path.getsize(args.input_dat)
+    total_words = in_size // bytes_per_word
+    if total_words % nChannels != 0:
+        print(f'process_subtractspikes: file size {in_size} not divisible by '
+              f'{nChannels}×{bytes_per_word}', file=sys.stderr)
+        sys.exit(1)
+    nTotalSamples = total_words // nChannels
+
+    for resfile, spkfile, clufile, channels, nSamples, peakSample in group_specs:
+        for path in (resfile, spkfile):
+            if not os.path.exists(path):
+                print(f'process_subtractspikes: not found: {path!r}', file=sys.stderr)
+                sys.exit(1)
+        for ch in channels:
+            if ch < 0 or ch >= nChannels:
+                print(f'process_subtractspikes: channel {ch} out of range '
+                      f'[0, {nChannels-1}]', file=sys.stderr)
+                sys.exit(1)
+
+    print(f'process_subtractspikes: copying '
+          f'{os.path.basename(args.input_dat)} → '
+          f'{os.path.basename(args.output_dat)} …', file=sys.stderr)
+    shutil.copy2(args.input_dat, args.output_dat)
+
+    out_mm = np.memmap(args.output_dat, dtype=dtype, mode='r+',
+                       shape=(nTotalSamples, nChannels))
+
+    groups = []
+    for g_idx, (resfile, spkfile, clufile, channels, nSamples, peakSample) in \
+            enumerate(group_specs):
+        nSpikes_est = os.path.getsize(resfile) // 8
+        has_clu     = (clufile != '-' and os.path.exists(clufile))
+        print(f'process_subtractspikes: loading group {g_idx+1}/{len(group_specs)}  '
+              f'ch={channels}  ~{nSpikes_est} spikes  clu={"yes" if has_clu else "no"}',
+              file=sys.stderr)
+        try:
+            grp = load_group(
+                resfile, spkfile, clufile, channels, nSamples, peakSample,
+                samplingRate,
+                not args.no_burst_correction,
+                args.min_template_spikes,
+                args.min_exp_spikes,
+                args.exp_terms,
+                args.burst_isi_threshold_ms,
+                args.min_clean_frac)
+            groups.append(grp)
+        except RuntimeError as exc:
+            print(f'process_subtractspikes: {exc}', file=sys.stderr)
+            del out_mm
+            os.remove(args.output_dat)
+            sys.exit(1)
+
+    try:
+        subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, args.chunk_frames)
+    except Exception as exc:
+        print(f'process_subtractspikes: {exc}', file=sys.stderr)
+        out_mm.flush()
+        del out_mm
+        os.remove(args.output_dat)
+        sys.exit(1)
+
+    out_mm.flush()
+    del out_mm
+    print('process_subtractspikes: done.', file=sys.stderr)
+
+
+if __name__ == '__main__':
+    main()

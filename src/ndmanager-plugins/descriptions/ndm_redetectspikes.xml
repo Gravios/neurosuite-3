@@ -1,0 +1,40 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_redetectspikes</n>
+  <parameters>
+  </parameters>
+  <help>Second-round spike detection on a spike-cleaned .dat file.
+
+Detects spikes missed by the first pass (e.g. spikes occluded by
+larger neighbouring spikes) by running the standard detection pipeline
+on the residual recording produced by ndm_lfp with saveCleanDat=yes.
+
+The newly detected spikes are merged into the existing .res.N/.spk.N/.clu.N
+files; all new spikes receive cluster ID = 0 (unclassified).  Stale .fet.N
+files are removed.
+
+PREREQUISITES
+
+  ndm_lfp must be run first with:
+    subtractSpikes = yes  (or auto with .spk files present)
+    saveCleanDat   = yes
+
+  The following parameters are also used (from the main session file):
+    ndm_hipass/windowHalfLength
+    thresholdFactor
+    refractoryPeriod
+    peakSearchLength
+    start / duration   (for threshold estimation window)
+
+PARAMETERS
+
+None — all parameters are inherited from the session parameter file.
+
+NEXT STEPS
+
+After ndm_redetectspikes completes:
+  1. Re-run ndm_pca   to rebuild .fet.N feature files.
+  2. Re-run ndm_klustakwik or use klusters to sort the merged spike set.</help>
+ </program>
+</parameter>

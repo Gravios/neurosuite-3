@@ -1,20 +1,48 @@
 <?xml version='1.0'?>
 <parameter>
  <program>
-  <name>ndm_lfp</name>
+  <n>ndm_lfp</n>
   <parameters>
    <parameter>
-    <name>samplingRate</name>
+    <n>samplingRate</n>
     <value>1250</value>
     <status>Mandatory</status>
    </parameter>
+   <parameter>
+    <n>subtractSpikes</n>
+    <value>auto</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
-  <help>Downsample a .dat file to create the corresponding LFP file.
+  <help>Downsample a .dat file to create the LFP file.
+
+If &lt;session&gt;-spkclean.dat already exists (produced by a prior run of
+ndm_stripdat), it is used as the resampling source instead of the raw
+.dat.  The LFP will therefore be spike-free without any extra
+configuration.
+
+The subtractSpikes parameter controls what happens when no cleaned dat
+is present:
+
+  auto  Run ndm_stripdat first if .spk.N files exist (default).
+  yes   Always run ndm_stripdat; error if .spk.N files are missing.
+  no    Resample from the raw .dat unconditionally.
+
+When ndm_lfp invokes ndm_stripdat internally, the cleaned dat is removed
+once the LFP file has been written.  If you ran ndm_stripdat manually
+beforehand, ndm_lfp leaves that file in place for ndm_redetectspikes or
+other downstream use.
 
 PARAMETERS
 
 # samplingRate
 
-Target sampling rate (default = 1250Hz)</help>
+Target LFP sampling rate in Hz (default = 1250 Hz).
+
+# subtractSpikes
+
+Whether to subtract spike waveforms before resampling (see above).
+All subtraction parameters (redetectSpikes etc.) are controlled via
+ndm_stripdat.</help>
  </program>
 </parameter>

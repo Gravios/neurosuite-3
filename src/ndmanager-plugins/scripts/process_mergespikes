@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Merge a new set of spike files (from a second detection pass on a
+#//   spike-cleaned .dat) into the existing .res/.spk/.clu files.
+#//
+#//   For each electrode group:
+#//     1. Read existing .res.N / .spk.N (and optionally .clu.N).
+#//     2. Read new .res.N / .spk.N from the second-round detection.
+#//     3. Assign all new spikes cluster ID = 0 (unsorted / unclassified).
+#//     4. Merge, sort by spike time, remove exact-sample duplicates
+#//        (preferring original spikes over new ones when both fire on the
+#//        same sample — this prevents genuine duplicate detection from the
+#//        residual noise floor of the cleaned dat).
+#//     5. Write back .res.N, .spk.N, .clu.N in place (atomically via tmp
+#//        files so originals survive if the process is interrupted).
+#//     6. Delete .fet.N if it exists — it can no longer be trusted because
+#//        the spike count / order has changed.  Re-run ndm_pca to rebuild.
+#//
+#//   Usage
+#//   -----
+#//   process_mergespikes [options] spec [spec ...]
+#//
+#//   Each spec: orig_stem:new_stem:group:nSamples:nChanGrp
+#//
+#//     orig_stem   Base path of existing files: <orig_stem>.res.<group> etc.
+#//     new_stem    Base path of second-round files: <new_stem>.res.<group> etc.
+#//     group       Electrode group number (integer)
+#//     nSamples    Waveform length in samples
+#//     nChanGrp    Number of channels in this group
+#//
+#//   Options
+#//   -------
+#//   --dry-run     Report what would be merged without writing any files.
+#//   --keep-fet    Do not delete .fet.N (only safe if you know what you're doing).
+#//
+#//   Exit codes
+#//   ----------
+#//   0  Success
+#//   1  Error (message to stderr)
+#//   2  Nothing to do (all new .res files empty or missing)
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//   GNU GPL v3 or later.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+import sys
+import os
+import argparse
+
+import numpy as np
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Merge second-round spike detection results into existing '
+                    '.res/.spk/.clu files.')
+    p.add_argument('--dry-run', action='store_true',
+                   help='Report what would be done without writing files')
+    p.add_argument('--keep-fet', action='store_true',
+                   help='Do not delete .fet.N (re-run ndm_pca manually)')
+    p.add_argument('specs', nargs='+', metavar='spec',
+                   help='orig_stem:new_stem:group:nSamples:nChanGrp')
+    return p
+
+
+def parse_spec(s):
+    parts = s.split(':')
+    if len(parts) != 5:
+        raise ValueError(
+            f'Expected orig_stem:new_stem:group:nSamples:nChanGrp, got {s!r}')
+    orig_stem, new_stem, grp, nS, nC = parts
+    return orig_stem, new_stem, int(grp), int(nS), int(nC)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# .clu text I/O
+# ──────────────────────────────────────────────────────────────────────────────
+
+def read_clu(path):
+    """Return (nClusters_header, clu_ids_array) or (0, None) if file absent."""
+    if not os.path.exists(path):
+        return 0, None
+    with open(path, 'r') as fh:
+        lines = [l.strip() for l in fh if l.strip()]
+    if not lines:
+        return 0, None
+    nClusters = int(lines[0])
+    ids = np.array([int(x) for x in lines[1:]], dtype=np.int32)
+    return nClusters, ids
+
+
+def write_clu(path, ids):
+    """Write .clu file.  nClusters = number of distinct non-zero IDs."""
+    unique_nonzero = np.unique(ids[ids != 0])
+    n = len(unique_nonzero)
+    with open(path + '.tmp', 'w') as fh:
+        fh.write(f'{n}\n')
+        for cid in ids:
+            fh.write(f'{cid}\n')
+    os.replace(path + '.tmp', path)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Per-group merge
+# ──────────────────────────────────────────────────────────────────────────────
+
+def merge_group(orig_stem, new_stem, group, nSamples, nChanGrp,
+                dry_run=False, keep_fet=False):
+    """
+    Merge one electrode group.  Returns (n_orig, n_new, n_added, n_dedup).
+    """
+    orig_res = f'{orig_stem}.res.{group}'
+    orig_spk = f'{orig_stem}.spk.{group}'
+    orig_clu = f'{orig_stem}.clu.{group}'
+    orig_fet = f'{orig_stem}.fet.{group}'
+    new_res  = f'{new_stem}.res.{group}'
+    new_spk  = f'{new_stem}.spk.{group}'
+
+    # ── Load original spikes ──────────────────────────────────────────────
+    if not os.path.exists(orig_res):
+        print(f'process_mergespikes: {orig_res} not found — skipping group {group}',
+              file=sys.stderr)
+        return 0, 0, 0, 0
+
+    orig_times = np.fromfile(orig_res, dtype='<i8')
+    n_orig     = len(orig_times)
+
+    orig_words = n_orig * nSamples * nChanGrp
+    orig_spk_data = np.fromfile(orig_spk, dtype=np.dtype('<i2'))
+    if len(orig_spk_data) != orig_words:
+        raise RuntimeError(
+            f'{orig_spk}: expected {orig_words} words '
+            f'({n_orig}×{nSamples}×{nChanGrp}), got {len(orig_spk_data)}')
+    orig_spk_arr = orig_spk_data.reshape(n_orig, nSamples, nChanGrp)
+
+    _, orig_clu_arr = read_clu(orig_clu)
+    if orig_clu_arr is None:
+        # No .clu — treat all as cluster 0
+        orig_clu_arr = np.zeros(n_orig, dtype=np.int32)
+    elif len(orig_clu_arr) != n_orig:
+        print(f'process_mergespikes: WARNING: {orig_clu} has {len(orig_clu_arr)} '
+              f'entries vs {n_orig} spikes — discarding cluster IDs',
+              file=sys.stderr)
+        orig_clu_arr = np.zeros(n_orig, dtype=np.int32)
+
+    # ── Load new spikes ───────────────────────────────────────────────────
+    if not os.path.exists(new_res):
+        print(f'process_mergespikes: {new_res} not found — no new spikes for group {group}',
+              file=sys.stderr)
+        return n_orig, 0, 0, 0
+
+    new_times = np.fromfile(new_res, dtype='<i8')
+    n_new     = len(new_times)
+
+    if n_new == 0:
+        print(f'process_mergespikes: group {group}: 0 new spikes detected',
+              file=sys.stderr)
+        return n_orig, 0, 0, 0
+
+    new_words = n_new * nSamples * nChanGrp
+    new_spk_data = np.fromfile(new_spk, dtype=np.dtype('<i2'))
+    if len(new_spk_data) != new_words:
+        raise RuntimeError(
+            f'{new_spk}: expected {new_words} words '
+            f'({n_new}×{nSamples}×{nChanGrp}), got {len(new_spk_data)}')
+    new_spk_arr = new_spk_data.reshape(n_new, nSamples, nChanGrp)
+
+    # ── Concatenate ───────────────────────────────────────────────────────
+    all_times = np.concatenate([orig_times, new_times])
+    all_spk   = np.concatenate([orig_spk_arr, new_spk_arr], axis=0)
+    all_clu   = np.concatenate([orig_clu_arr,
+                                 np.zeros(n_new, dtype=np.int32)])
+    is_new    = np.concatenate([np.zeros(n_orig, bool),
+                                 np.ones (n_new,  bool)])
+
+    # ── Sort by spike time (stable — preserves relative order of ties) ────
+    order     = np.argsort(all_times, kind='stable')
+    all_times = all_times[order]
+    all_spk   = all_spk  [order]
+    all_clu   = all_clu  [order]
+    is_new    = is_new   [order]
+
+    # ── Deduplicate exact-sample collisions ───────────────────────────────
+    # When an original and a new spike share the same sample, prefer the
+    # original; when two new spikes share a sample, keep the first (stable).
+    n_total  = len(all_times)
+    drop     = np.zeros(n_total, bool)
+    i = 0
+    while i < n_total - 1:
+        if all_times[i] == all_times[i + 1]:
+            # Find the full run of identical times
+            j = i + 1
+            while j < n_total and all_times[j] == all_times[i]:
+                j += 1
+            run = slice(i, j)
+            run_is_new = is_new[run]
+            # If any original exists in this run, drop all new in the run
+            if not run_is_new.all():
+                drop_run = np.zeros(j - i, bool)
+                drop_run[run_is_new] = True
+                drop[run] = drop_run
+            # All new: keep first, drop rest
+            else:
+                drop_run = np.zeros(j - i, bool)
+                drop_run[1:] = True
+                drop[run] = drop_run
+            i = j
+        else:
+            i += 1
+
+    keep         = ~drop
+    n_dedup      = int(drop.sum())
+    merged_times = all_times[keep]
+    merged_spk   = all_spk  [keep]
+    merged_clu   = all_clu  [keep]
+    n_added      = int(is_new[keep].sum())
+
+    print(f'process_mergespikes: group {group}: '
+          f'{n_orig} orig + {n_new} new − {n_dedup} duplicates = '
+          f'{len(merged_times)} total  ({n_added} new spikes incorporated)',
+          file=sys.stderr)
+
+    if dry_run:
+        return n_orig, n_new, n_added, n_dedup
+
+    # ── Write .res (atomic) ───────────────────────────────────────────────
+    tmp = orig_res + '.tmp'
+    merged_times.astype('<i8').tofile(tmp)
+    os.replace(tmp, orig_res)
+
+    # ── Write .spk (atomic) ───────────────────────────────────────────────
+    tmp = orig_spk + '.tmp'
+    merged_spk.reshape(-1).astype('<i2').tofile(tmp)
+    os.replace(tmp, orig_spk)
+
+    # ── Write .clu (atomic) ───────────────────────────────────────────────
+    write_clu(orig_clu, merged_clu)
+
+    # ── Delete .fet (stale) ───────────────────────────────────────────────
+    if not keep_fet and os.path.exists(orig_fet):
+        os.remove(orig_fet)
+        print(f'process_mergespikes: group {group}: removed stale {orig_fet} '
+              f'— re-run ndm_pca to rebuild features', file=sys.stderr)
+
+    return n_orig, n_new, n_added, n_dedup
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = build_parser()
+    args   = parser.parse_args()
+
+    specs = []
+    for s in args.specs:
+        try:
+            specs.append(parse_spec(s))
+        except ValueError as exc:
+            print(f'process_mergespikes: {exc}', file=sys.stderr)
+            sys.exit(1)
+
+    total_added = 0
+    for orig_stem, new_stem, group, nSamples, nChanGrp in specs:
+        try:
+            _, _, n_added, _ = merge_group(
+                orig_stem, new_stem, group, nSamples, nChanGrp,
+                dry_run=args.dry_run, keep_fet=args.keep_fet)
+            total_added += n_added
+        except RuntimeError as exc:
+            print(f'process_mergespikes: {exc}', file=sys.stderr)
+            sys.exit(1)
+
+    if total_added == 0 and not args.dry_run:
+        sys.exit(2)   # nothing to do
+
+
+if __name__ == '__main__':
+    main()

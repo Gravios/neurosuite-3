@@ -1,0 +1,71 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_stripdat</n>
+  <parameters>
+   <parameter>
+    <n>redetectSpikes</n>
+    <value>no</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Strip spike waveforms from the raw .dat file to produce a
+spike-cleaned recording: &lt;session&gt;-spkclean.dat
+
+The original .dat is never modified.
+
+SUBTRACTION MODEL
+
+When .clu.N files are present for an electrode group, per-cluster
+template modelling is used:
+
+  Asymmetric-exponential PC1 waveform model
+    The dominant axis of waveform shape variation (amplitude, tau_fall,
+    and AHP co-vary along PC1 due to Na+ inactivation) is captured as a
+    continuous template family:
+      T(t; obs_wf) = T_mean(t)  +  pc1_score(obs_wf) * T_pc1(t)
+    Both T_mean and T_pc1 are fit as sums of asymmetric exponential terms
+    per channel.  pc1_score is measured directly from the observed waveform.
+
+  Contamination exclusion
+    Spikes whose waveform windows overlap any other spike (within ±nSamples)
+    are excluded from template estimation.  A trimmed-mean fallback is used
+    when too few uncontaminated spikes remain.
+
+  ISI-driven burst shape compensation
+    A dual-template model (full-recovery vs. burst) with an exponential
+    recovery fit handles Na+ inactivation shape changes during bursting.
+
+  Projection-based amplitude scaling
+    The optimal scalar k = dot(obs_wf, T) / dot(T, T) is applied so that
+    only the genuine spike signal is removed without amplifying noise.
+
+When no .clu.N exists for a group, the raw .spk.N waveforms are
+subtracted directly.
+
+PARAMETERS
+
+# redetectSpikes
+
+Whether to run a second round of spike detection on the cleaned dat
+immediately after writing it.
+
+  no   Write session-spkclean.dat and stop (default).
+  yes  Call ndm_redetectspikes, which high-pass filters the cleaned dat,
+       detects missed spikes, merges them into .res.N/.spk.N/.clu.N
+       (new spikes get cluster ID 0), deletes stale .fet.N files, and
+       removes the cleaned dat and its filtered version.
+       After this, re-run ndm_pca and ndm_klustakwik to sort the
+       merged spike set.
+
+TYPICAL WORKFLOW
+
+  ndm_extractspikes          detect spikes from .fil
+  ndm_pca                    compute features
+  ndm_klustakwik             auto-sort clusters
+  (klusters — manual curation)
+  ndm_stripdat               produce session-spkclean.dat
+  ndm_lfp                    create LFP from cleaned dat (auto-detected)
+  ndm_redetectspikes         second-round detection (optional)</help>
+ </program>
+</parameter>
