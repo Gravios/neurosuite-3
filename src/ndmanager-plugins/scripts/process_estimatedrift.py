@@ -615,6 +615,91 @@ def build_probe_entry_map(param: dict) -> dict:
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Binary drift signal output  (session.dat.drift.N)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def write_drift_dat_files(session: str,
+                          probes_out: list,
+                          probe_order: list,
+                          sampling_rate: float,
+                          n_total_samples: int) -> None:
+    """
+    Write one binary int16 file per probe: <session>.dat.drift.<probe_idx>
+
+    probe_idx is the 1-based position of the probe in the YAML probes list.
+    The file contains n_total_samples int16 values, one per recording sample,
+    in µm, relative to the reference window (0 µm at the reference).
+
+    The per-window drift estimates (60-second resolution) are upsampled to
+    full sampling rate by piecewise-linear interpolation between window
+    midpoints, clamped to the first/last value at the recording boundaries.
+
+    Parameters
+    ----------
+    session         : session base name (e.g. 'jg05-20120312')
+    probes_out      : list of per-probe result dicts (from main())
+    probe_order     : ordered list of probeId values matching the YAML
+                      probes list (used to derive the 1-based file index)
+    sampling_rate   : Hz
+    n_total_samples : number of samples in session.dat
+    """
+    # Build probeId → 1-based position from the ordered list
+    probe_idx_map = {pid: i + 1 for i, pid in enumerate(probe_order)}
+
+    for probe_entry in probes_out:
+        pid   = probe_entry["probeId"]
+        idx   = probe_idx_map.get(pid, pid + 1)   # fallback: probeId + 1
+        fname = f"{session}.dat.drift.{idx}"
+
+        # Collect windows from the first shank that has them (shanks of the
+        # same probe are co-registered — they share the same rigid-body drift)
+        windows = []
+        for shank in probe_entry.get("shanks", []):
+            wins = shank.get("windows", [])
+            if wins:
+                windows = wins
+                break
+
+        if not windows:
+            print(f"  [info] probe {pid}: no drift windows — skipping {fname}",
+                  file=sys.stderr)
+            continue
+
+        # Build (t_mid, drift_um) pairs, skipping None drift values
+        t_mid_list:  list[float] = []
+        drift_list:  list[float] = []
+        for w in windows:
+            d = w.get("drift_um")
+            if d is None:
+                continue
+            t_s = float(w.get("t_start", 0.0))
+            t_e = float(w.get("t_end",   t_s + 60.0))
+            t_mid_list.append(0.5 * (t_s + t_e))
+            drift_list.append(float(d))
+
+        if len(t_mid_list) < 1:
+            print(f"  [info] probe {pid}: all windows have null drift — "
+                  f"skipping {fname}", file=sys.stderr)
+            continue
+
+        t_mid    = np.array(t_mid_list, dtype=np.float64)
+        drift_um = np.array(drift_list, dtype=np.float64)
+
+        # Upsample to full sampling rate via piecewise-linear interpolation.
+        # np.interp clamps to first/last value outside the boundary — correct.
+        sample_times = np.arange(n_total_samples, dtype=np.float64) / sampling_rate
+        drift_full   = np.interp(sample_times, t_mid, drift_um)
+
+        # Convert to int16 (µm, round-to-nearest, clamp to ±32767)
+        drift_i16 = np.clip(np.round(drift_full), -32767, 32767).astype('<i2')
+
+        drift_i16.tofile(fname)
+        lo, hi = int(drift_i16.min()), int(drift_i16.max())
+        print(f"  Wrote {fname}  ({n_total_samples} samples, "
+              f"range [{lo}, {hi}] µm)", file=sys.stderr)
+
 def main() -> int:
     args          = parse_args()
     exclude_noise = str(args.exclude_noise).lower() not in ("false", "0", "no")
@@ -706,6 +791,23 @@ def main() -> int:
         yaml.dump(doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     print(f"Wrote {args.output}", file=sys.stderr)
+
+    # ── Write binary drift signal files ──────────────────────────────────
+    dat_path = f"{args.session}.dat"
+    if os.path.isfile(dat_path):
+        n_total = os.path.getsize(dat_path) // (args.n_bits // 8) // args.n_channels
+        # probe_order: probeIds in their YAML list order
+        probe_order = [e.get("probeId", i)
+                       for i, e in enumerate((param or {}).get("probes", []))]
+        # Fallback: if no probes list, use the order they appear in our output
+        if not probe_order:
+            probe_order = [p["probeId"] for p in probes_out]
+        write_drift_dat_files(args.session, probes_out, probe_order,
+                               args.sampling_rate, n_total)
+    else:
+        print(f"  [info] {dat_path} not found — binary drift files not written",
+              file=sys.stderr)
+
     return 0
 
 

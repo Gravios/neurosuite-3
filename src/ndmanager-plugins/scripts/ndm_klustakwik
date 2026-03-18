@@ -37,6 +37,41 @@ print_header "$session - Running KlustaKwik spike sorting"
 # Check required programs
 check_commands_installed KlustaKwik
 
+# ── Three-tier parameter reader ───────────────────────────────────────────────
+# Reads a KlustaKwik parameter for a given electrode group using three tiers:
+#   1. spikeDetection.channelGroups[g].klustakwik.<param>  (per-group, highest priority)
+#   2. programs[ndm_klustakwik].parameters.<param>          (global session override)
+#   3. Caller-supplied default                               (safety net)
+#
+# Usage: read_kk_param <group> <paramName> <default>
+# Outputs the resolved value to stdout.
+read_kk_param()
+{
+	local group=$1
+	local name=$2
+	local default=$3
+
+	# Tier 1: per-group spikeDetection.channelGroups[group].klustakwik.<name>
+	local value
+	value=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$group]/klustakwik/$name")
+	if ! xml_read_failed "$value"
+	then
+		echo "$value"
+		return
+	fi
+
+	# Tier 2: global programs[ndm_klustakwik] block via read_script_parameter
+	value=$(read_script_parameter "$session" "$name")
+	if ! xml_read_failed "$value"
+	then
+		echo "$value"
+		return
+	fi
+
+	# Tier 3: built-in default
+	echo "$default"
+}
+
 # Run KlustaKwik for a single electrode group
 once()
 {
@@ -72,45 +107,40 @@ once()
 	check_mandatory_variable $samplingRate "missing sampling rate"
 
 	# UseFeatures: one '1' per PCA feature per channel, plus energy, plus timestamp.
-	# The timestamp MUST be included and be the last '1' so that KlustaKwik's
-	# timeDimIdx = nDims-1 points to the real session timestamps rather than the
-	# energy feature.  Without it, RunChunkedCEM partitions spikes by energy
-	# instead of time, and Phase 3 cluster realignment is meaningless.
+	# The timestamp MUST be the last '1' so that KlustaKwik's timeDimIdx = nDims-1
+	# points to real session timestamps.  Without it, RunChunkedCEM partitions by
+	# energy instead of time, and Phase 3 cluster realignment is meaningless.
 	nTotalFeatures=$(( nElectrodes * nFeatures + 2 ))
 	useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
 
-	# NbChannels, NbSamplesPerSpike, and SamplingRate are now read directly
-	# from <session>.yaml by KlustaKwik at startup (KlustaKwikYaml.cpp).
-	# They no longer need to be passed on the command line.
-	#
-	# NbBytesPerSample is always 2: the ndmanager pipeline hardcodes int16
-	# for .spk files regardless of acquisitionSystem.nBits — process_medianfilter
-	# and process_extractspikes[_sdiff] all use sizeof(short).
+	# ── Parameter resolution (three tiers) ───────────────────────────────────
+	# Probe-calibrated (usually from tier-1 per-group block):
+	maxClusters=$(read_kk_param $electrodeGroup maxClusters 100)
+	maxPossibleClusters=$(read_kk_param $electrodeGroup maxPossibleClusters 500)
+	mergeThresh=$(read_kk_param $electrodeGroup mergeThresh 42.0)
+	globalMergeIter=$(read_kk_param $electrodeGroup globalMergeIter 50)
+	timeMergeIter=$(read_kk_param $electrodeGroup timeMergeIter 50)
+	nbSamplesPerSpike=$(read_kk_param $electrodeGroup nbSamplesPerSpike 32)
 
-	# Optional parameters (read from parameter file, with defaults)
-	minClusters=$(read_script_parameter $session minClusters)
-	check_optional_variable $minClusters || minClusters=2
-
-	maxClusters=$(read_script_parameter $session maxClusters)
-	check_optional_variable $maxClusters || maxClusters=100
-
-	chunkMinutes=$(read_script_parameter $session chunkMinutes)
-	check_optional_variable $chunkMinutes || chunkMinutes=5
-
-	initMethod=$(read_script_parameter $session initMethod)
-	check_optional_variable $initMethod || initMethod=random
-
-	mergeThresh=$(read_script_parameter $session mergeThresh)
-	check_optional_variable $mergeThresh || mergeThresh=35
-
-	globalMergeIter=$(read_script_parameter $session globalMergeIter)
-	check_optional_variable $globalMergeIter || globalMergeIter=30
-
-	timeMergeIter=$(read_script_parameter $session timeMergeIter)
-	check_optional_variable $timeMergeIter || timeMergeIter=35
-
-	saveIntermediates=$(read_script_parameter $session saveIntermediates)
-	check_optional_variable $saveIntermediates || saveIntermediates=0
+	# Session-level (usually from tier-2 global block or tier-3 defaults):
+	minClusters=$(read_kk_param $electrodeGroup minClusters 2)
+	nStarts=$(read_kk_param $electrodeGroup nStarts 3)
+	initMethod=$(read_kk_param $electrodeGroup initMethod farthest)
+	penaltyMix=$(read_kk_param $electrodeGroup penaltyMix 0)
+	chunkMinutes=$(read_kk_param $electrodeGroup chunkMinutes 10)
+	chunkOverlapMinutes=$(read_kk_param $electrodeGroup chunkOverlapMinutes 2)
+	chunkPreseedFraction=$(read_kk_param $electrodeGroup chunkPreseedFraction 0.05)
+	maxIter=$(read_kk_param $electrodeGroup maxIter 500)
+	splitEvery=$(read_kk_param $electrodeGroup splitEvery 25)
+	distThresh=$(read_kk_param $electrodeGroup distThresh 6.9)
+	fullStepEvery=$(read_kk_param $electrodeGroup fullStepEvery 10)
+	changedThresh=$(read_kk_param $electrodeGroup changedThresh 0.05)
+	postRealign=$(read_kk_param $electrodeGroup postRealign 1)
+	postRealignIter=$(read_kk_param $electrodeGroup postRealignIter 2)
+	log=$(read_kk_param $electrodeGroup log 1)
+	screen=$(read_kk_param $electrodeGroup screen 0)
+	fSaveModel=$(read_kk_param $electrodeGroup fSaveModel 1)
+	saveIntermediates=$(read_kk_param $electrodeGroup saveIntermediates 0)
 
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Process
@@ -119,15 +149,32 @@ once()
 	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features incl. timestamp)"
 
 	KlustaKwik $session $electrodeGroup \
-		-MinClusters    $minClusters    \
-		-MaxClusters    $maxClusters    \
-		-UseFeatures    $useFeatures    \
-		-ChunkMinutes   $chunkMinutes   \
-		-InitMethod     $initMethod     \
-		-MergeThresh    $mergeThresh    \
-		-GlobalMergeIter $globalMergeIter \
-		-TimeMergeIter  $timeMergeIter  \
-		-SaveIntermediates $saveIntermediates
+		-MinClusters             $minClusters             \
+		-MaxClusters             $maxClusters             \
+		-MaxPossibleClusters     $maxPossibleClusters     \
+		-UseFeatures             $useFeatures             \
+		-nStarts                 $nStarts                 \
+		-PenaltyMix              $penaltyMix              \
+		-InitMethod              $initMethod              \
+		-SamplingRate            $samplingRate            \
+		-ChunkMinutes            $chunkMinutes            \
+		-ChunkOverlapMinutes     $chunkOverlapMinutes     \
+		-ChunkPreseedFraction    $chunkPreseedFraction    \
+		-MergeThresh             $mergeThresh             \
+		-GlobalMergeIter         $globalMergeIter         \
+		-TimeMergeIter           $timeMergeIter           \
+		-MaxIter                 $maxIter                 \
+		-SplitEvery              $splitEvery              \
+		-DistThresh              $distThresh              \
+		-FullStepEvery           $fullStepEvery           \
+		-ChangedThresh           $changedThresh           \
+		-PostRealign             $postRealign             \
+		-PostRealignIter         $postRealignIter         \
+		-NbSamplesPerSpike       $nbSamplesPerSpike       \
+		-Log                     $log                     \
+		-Screen                  $screen                  \
+		-fSaveModel              $fSaveModel              \
+		-SaveIntermediates       $saveIntermediates
 
 	check_command_status KlustaKwik
 }

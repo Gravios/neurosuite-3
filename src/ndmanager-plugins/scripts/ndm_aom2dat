@@ -1,0 +1,90 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Convert AlphaOmega .mat (HDF5 v7.3) recording to .dat + session YAML
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+	echo_error "usage: $program [parameter-file]"
+	exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+# Print a header to indicate current processing step
+print_header "$session - Converting AlphaOmega .mat -> .dat + YAML"
+
+# Check required programs
+check_commands_installed process_aomconvert
+
+# Check input parameter file
+inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read Parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+matFile=$(read_script_parameter $session matFile)
+check_mandatory_variable $matFile "missing matFile (path to input .mat file)"
+
+# Check the .mat file exists
+if [ ! -f "$matFile" ]
+then
+	echo_error "input file '$matFile' not found"
+	exit $INPUTS_MISSING
+fi
+
+# Check output files — process_aomconvert writes SESSION.dat and SESSION.yaml
+if outputs_exist $session.dat $session.yaml
+then
+	exit $OUTPUTS_EXIST
+fi
+
+# Optional parameters
+options=""
+
+topology=$(read_script_parameter $session topology)
+if check_optional_variable $topology
+then
+	options="$options -t $topology"
+fi
+
+groups=$(read_script_parameter $session groups)
+if check_optional_variable $groups
+then
+	options="$options -g $groups"
+fi
+
+chunkSamples=$(read_script_parameter $session chunkSamples)
+if check_optional_variable $chunkSamples
+then
+	options="$options -c $chunkSamples"
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Process
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+print_header "$session - Processing $matFile"
+
+process_aomconvert $options "$matFile" "$session"
+check_command_status process_aomconvert
