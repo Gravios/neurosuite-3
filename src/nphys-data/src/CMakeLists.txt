@@ -13,7 +13,7 @@ install(FILES nphys-data.xml
 # .probe files are YAML-format electrode configuration files read at runtime
 # by ndmanager and ndm_estimatedrift.  They are installed to:
 #   ${CMAKE_INSTALL_DATADIR}/neurosuite/probes/<vendor>/
-# which maps to /usr/local/share/neurosuite/probes/neuronexus/ by default.
+# which maps to /usr/local/share/neurosuite/probes/<vendor>/ by default.
 #
 # The runtime search order (lowest to highest priority) is:
 #   /usr/share/neurosuite/probes/
@@ -21,7 +21,11 @@ install(FILES nphys-data.xml
 #   ~/.local/share/neurosuite/probes/
 #   $NEUROSUITE_PROBE_PATH
 #   session_dir/probes/
-#
-file(GLOB _probes "${CMAKE_CURRENT_SOURCE_DIR}/probes/neuronexus/*.probe")
-install(FILES ${_probes}
+
+file(GLOB _probes_neuronexus "${CMAKE_CURRENT_SOURCE_DIR}/probes/neuronexus/*.probe")
+install(FILES ${_probes_neuronexus}
     DESTINATION "${CMAKE_INSTALL_DATADIR}/neurosuite/probes/neuronexus")
+
+file(GLOB _probes_general "${CMAKE_CURRENT_SOURCE_DIR}/probes/general/*.probe")
+install(FILES ${_probes_general}
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/neurosuite/probes/general")

@@ -7,16 +7,24 @@ install(PROGRAMS
     ndm_denoiseuniform ndm_klustakwik ndm_spikegrouper
     ndm_start ndm_transcodevideo ndm_tsp2sts
     ndm_estimatedrift
+    ndm_applydrift
     ndm_decomposecollisions
     ndm_setupgroups
+    ndm_stripdat
+    ndm_redetectspikes
+    ndm_xml2yaml
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn
+    # Spike subtraction pipeline (Python executables without .py extension)
+    process_subtractspikes
+    process_mergespikes
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 # Python helpers installed alongside their bash drivers so each script can
 # find its helper via its own directory; also land on PATH for direct use.
 install(PROGRAMS
     process_estimatedrift.py
+    process_applydrift.py
     process_decomposecollisions.py
     process_setupgroups.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
