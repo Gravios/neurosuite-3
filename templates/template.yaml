@@ -235,6 +235,42 @@ programs:
     (use 'cat' or 'less -R' for correct formatting, default = false)
 
 # == Acquisition format converters ============================================
+- name: ndm_aom2dat
+  parameters:
+  - {name: matFile,      value: ~,          status: Mandatory}
+  - {name: topology,     value: ~,          status: Optional}
+  - {name: groups,       value: 8,          status: Optional}
+  - {name: chunkSamples, value: 10000000,   status: Optional}
+  help: |-
+    Convert an AlphaOmega .mat recording (HDF5 v7.3) to .dat + session YAML.
+
+    Writes SESSION.dat (interleaved int16, sample-major) and SESSION.yaml
+    (full neurosuite-3 schema including calibrated per-group klustakwik blocks).
+    Must be run before ndm_hipass.
+
+    PARAMETERS
+
+    # matFile
+
+    Path to the input .mat file (absolute or relative to session directory).
+
+    OPTIONAL PARAMETERS
+
+    # topology
+
+    Mixed probe topology: 'FIRST-LAST:SIZE,...' (1-based, inclusive).
+    SIZE==4 → tetrode, SIZE==1 → single, other → linear.
+    Example: '1-16:16,17-32:4' → 1 linear group + 4 tetrode groups.
+    When absent, channels are split uniformly into groups of 'groups' channels.
+
+    # groups
+
+    Uniform channels per spike group when topology is absent (default 8).
+
+    # chunkSamples
+
+    Streaming read chunk size in samples (default 10000000 ≈ 610 MB for 32ch).
+
 - name: ndm_ncs2dat
   parameters:
   - {name: reverse,  value: 'false', status: Mandatory}
@@ -833,51 +869,175 @@ programs:
 
 - name: ndm_klustakwik
   parameters:
-  - {name: minClusters,       value: 2,      status: Optional}
-  - {name: maxClusters,       value: 100,    status: Optional}
-  - {name: chunkMinutes,      value: 5,      status: Optional}
-  - {name: initMethod,        value: random, status: Optional}
-  - {name: mergeThresh,       value: 35,     status: Optional}
-  - {name: globalMergeIter,   value: 30,     status: Optional}
-  - {name: timeMergeIter,     value: 35,     status: Optional}
-  - {name: saveIntermediates, value: 0,      status: Optional}
+  # ── Cluster count limits ────────────────────────────────────────────────────
+  - {name: minClusters,          value: 2,        status: Optional}
+  # maxClusters and maxPossibleClusters are normally set per-group in
+  # spikeDetection.channelGroups[g].klustakwik (tier 1, calibrated by ao_mat2dat).
+  # Override here to apply the same value to all groups.
+  - {name: maxClusters,          value: 25,       status: Optional}
+  - {name: maxPossibleClusters,  value: 500,      status: Optional}
+  # ── Feature selection ────────────────────────────────────────────────────────
+  - {name: useFeatures,          value: all,      status: Optional}
+  # ── Initialisation ───────────────────────────────────────────────────────────
+  - {name: nStarts,              value: 3,        status: Optional}
+  - {name: penaltyMix,           value: 0,        status: Optional}
+  - {name: initMethod,           value: farthest, status: Optional}
+  # ── Chunked CEM ──────────────────────────────────────────────────────────────
+  - {name: chunkMinutes,         value: 10.0,     status: Optional}
+  - {name: chunkOverlapMinutes,  value: 2.0,      status: Optional}
+  - {name: chunkPreseedFraction, value: 0.05,     status: Optional}
+  # ── Merge threshold (calibrated per group by ao_mat2dat) ─────────────────────
+  # mergeThresh, globalMergeIter, timeMergeIter are normally set per-group.
+  # Override here to use the same value across all groups.
+  - {name: mergeThresh,          value: 42.0,     status: Optional}
+  - {name: globalMergeIter,      value: 50,       status: Optional}
+  - {name: timeMergeIter,        value: 50,       status: Optional}
+  # ── Convergence ──────────────────────────────────────────────────────────────
+  - {name: maxIter,              value: 500,      status: Optional}
+  - {name: splitEvery,           value: 25,       status: Optional}
+  - {name: distThresh,           value: 6.9,      status: Optional}
+  - {name: fullStepEvery,        value: 10,       status: Optional}
+  - {name: changedThresh,        value: 0.05,     status: Optional}
+  # ── Waveform realignment ─────────────────────────────────────────────────────
+  - {name: postRealign,          value: 1,        status: Optional}
+  - {name: postRealignIter,      value: 2,        status: Optional}
+  - {name: nbSamplesPerSpike,    value: 32,       status: Optional}
+  # ── Output control ───────────────────────────────────────────────────────────
+  - {name: log,                  value: 1,        status: Optional}
+  - {name: screen,               value: 0,        status: Optional}
+  - {name: fSaveModel,           value: 1,        status: Optional}
+  - {name: saveIntermediates,    value: 0,        status: Optional}
   help: |-
     Run KlustaKwik automatic spike sorting for each spikeDetection group.
 
     Reads .fet.N files from ndm_pca and writes .clu.N cluster assignment files.
     Groups for which a .clu.N already exists are skipped.
 
+    PARAMETER RESOLUTION (three tiers)
+
+    Parameters are resolved per group in this priority order:
+
+      1. spikeDetection.channelGroups[g].klustakwik.<param>
+         Per-group calibrated values.  ao_mat2dat writes probe-type-calibrated
+         defaults here (MergeThresh = chi2(nCh*3, 0.9999), MaxClusters scaled
+         by probe type, merge iters scaled by sqrt(nSpatialDims/24)).
+         Edit one group's entry to tune that group individually.
+
+      2. programs[ndm_klustakwik].parameters.<param>  (this block)
+         Global session override.  Edit here to change a parameter for all
+         groups at once without touching each group entry.
+
+      3. Built-in bash defaults in the ndm_klustakwik script.
+
     OPTIONAL PARAMETERS
 
     # minClusters
 
-    Minimum number of clusters passed to KlustaKwik -MinClusters (default 2).
+    Minimum number of clusters (default 2).
 
     # maxClusters
 
-    Maximum number of clusters. For tetrodes 12-20 is typical; for high-density
-    probes 50-100 (default 100).
+    Maximum number of clusters.  Calibrated per group by ao_mat2dat:
+    tetrode = 20, linear/shank = 40, single = 5.  Default here: 25.
 
-    # chunkMinutes
+    # maxPossibleClusters
 
-    Duration (minutes) for temporal chunking mode. 0 disables chunking and uses
-    standard two-phase CEM. Useful for recordings with electrode drift (default 5).
+    Internal KlustaKwik buffer size.  Must be >= ceil(duration/chunkMinutes) *
+    maxClusters.  Calibrated automatically by ao_mat2dat (default 500).
+
+    # useFeatures
+
+    Feature mask passed to KlustaKwik -UseFeatures.  'all' uses every dimension
+    in the .fet file (default).  A string of 0/1 selects individual features.
+
+    # nStarts
+
+    Number of random restarts per chunk (default 3).
+
+    # penaltyMix
+
+    Mixture weight between AIC (0.0) and BIC (1.0) penalty (default 0 = AIC).
 
     # initMethod
 
-    Cluster centre initialisation: "random" (default) or "farthest".
+    Cluster centre initialisation: 'farthest' (default) or 'random'.
+
+    # chunkMinutes
+
+    Duration in minutes for temporal chunking.  0 disables chunking.  10 minutes
+    is appropriate for most recordings at 30 kHz (default 10.0).
+
+    # chunkOverlapMinutes
+
+    Trailing overlap between adjacent chunks in minutes.  Overlap spikes are used
+    as primary evidence for cross-chunk cluster identity via vote matching.
+    Default 2.0.
+
+    # chunkPreseedFraction
+
+    Fraction of all spikes used in the global pre-seed pass (Phase 0) that
+    initialises chunk-level CEM with warm-start centres.  Default 0.05 (5%).
 
     # mergeThresh
 
-    Maximum inter-chunk Mahalanobis distance for merging chunk models (default 35).
+    Mahalanobis distance threshold for merging chunk models.  Calibrated per group
+    by ao_mat2dat to chi2(nSpatialDims, 0.9999).  Default here: 42.0 (8ch group).
 
     # globalMergeIter
 
-    EM iterations run on the globally merged solution (default 30).
+    EM iterations for the global warm-start after cross-chunk merging (Phase 3).
+    Calibrated by ao_mat2dat; scales with sqrt(nSpatialDims/24).  Default 50.
 
     # timeMergeIter
 
-    Phase-2 merge iterations in two-phase CEM mode. Set to 0 to disable (default 35).
+    Phase-2 merge iterations.  Same scaling as globalMergeIter.  Default 50.
+
+    # maxIter
+
+    Maximum EM iterations per chunk start (default 500).
+
+    # splitEvery
+
+    Run a cluster-split attempt every this many iterations (default 25).
+
+    # distThresh
+
+    Mahalanobis distance above which a spike is assigned to the noise cluster
+    (cluster 1) instead of its nearest Gaussian.  Default 6.9.
+
+    # fullStepEvery
+
+    Recompute the full covariance every this many iterations (default 10).
+
+    # changedThresh
+
+    Stop iterating when fewer than this fraction of spikes change assignment
+    (default 0.05 = 5%).
+
+    # postRealign
+
+    Realign spike waveforms to peak after sorting (1 = yes, default 1).
+
+    # postRealignIter
+
+    Number of realignment refinement passes (default 2).
+
+    # nbSamplesPerSpike
+
+    Waveform window length in samples.  Calibrated per group from nSamples
+    in spikeDetection.channelGroups (default 32).
+
+    # log
+
+    Write KlustaKwik .klg.N log file (1 = yes, default 1).
+
+    # screen
+
+    Print progress to stdout during sorting (1 = yes, 0 = no, default 0).
+
+    # fSaveModel
+
+    Save per-chunk Gaussian model parameters (1 = yes, default 1).
 
     # saveIntermediates
 

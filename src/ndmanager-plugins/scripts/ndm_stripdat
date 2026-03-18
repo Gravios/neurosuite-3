@@ -89,6 +89,37 @@ then
 	exit $GENERAL_ERROR
 fi
 
+# ── Map each spikeDetection group to its 1-based probe list position ─────────
+# Reads probeId from each group's YAML entry; finds its position in the
+# top-level probes: list (1-based).  Defaults to 1 on any error so that
+# single-probe sessions work without needing a probes: block.
+mapGroupToProbeIdx()
+{
+	python3 - "$1" "$session" << 'PEOF'
+import sys, yaml, os
+group   = int(sys.argv[1])
+session = sys.argv[2]
+yamlfile = next((session + e for e in ('.yaml', '.yml', '.xml')
+                 if os.path.isfile(session + e)), None)
+if not yamlfile:
+    print(1); sys.exit(0)
+try:
+    with open(yamlfile) as f:
+        param = yaml.safe_load(f)
+except Exception:
+    print(1); sys.exit(0)
+grps   = (param or {}).get('spikeDetection', {}).get('channelGroups', [])
+probes = (param or {}).get('probes', [])
+pid    = grps[group - 1].get('probeId') if 0 < group <= len(grps) else None
+if pid is None or not probes:
+    print(1); sys.exit(0)
+for i, e in enumerate(probes):
+    if int(e.get('id', e.get('probeId', i))) == int(pid):
+        print(i + 1); sys.exit(0)
+print(1)
+PEOF
+}
+
 groupSpecs=""
 for group in $(seq 1 $nElectrodeGroups)
 do
@@ -115,8 +146,18 @@ do
 	cluFile=$session.clu.$group
 	[ ! -f "$cluFile" ] && cluFile="-"
 
+	# Attach the binary drift signal file for this probe (if it exists)
+	probeIdx=$(mapGroupToProbeIdx $group)
+	driftFile=$session.dat.drift.$probeIdx
+	if [ ! -f "$driftFile" ]
+	then
+		driftFile="-"
+	else
+		echo_info "  Group $group: using drift file $driftFile (probe $probeIdx)"
+	fi
+
 	channels=$(echo $channels | tr ' ' ',')
-	groupSpecs="$groupSpecs $resFile:$spkFile:$cluFile:$channels:$nSamples:$peakSample"
+	groupSpecs="$groupSpecs $resFile:$spkFile:$cluFile:$channels:$nSamples:$peakSample:$driftFile"
 done
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////

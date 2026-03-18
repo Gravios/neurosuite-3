@@ -136,17 +136,33 @@ def build_parser():
 
 
 def parse_group_spec(spec):
+    """Parse a group spec.  Accepted formats:
+
+      5 fields: resfile:spkfile:ch0,...:nSamples:peakSample
+      6 fields: resfile:spkfile:clufile:ch0,...:nSamples:peakSample
+      7 fields: resfile:spkfile:clufile:ch0,...:nSamples:peakSample:driftfile
+
+    The optional 7th field is a path to the binary int16 drift signal file
+    (session.dat.drift.N) for this group's probe.  Pass '-' to disable drift
+    correction for this group.
+    """
     parts = spec.split(':')
+    drift_path = None
     if len(parts) == 5:
         resfile, spkfile, channels_str, nsamples_str, peaksample_str = parts
         clufile = '-'
     elif len(parts) == 6:
         resfile, spkfile, clufile, channels_str, nsamples_str, peaksample_str = parts
+    elif len(parts) == 7:
+        resfile, spkfile, clufile, channels_str, nsamples_str, peaksample_str, drift_path = parts
     else:
-        raise ValueError(f'Expected 5 or 6 colon-separated fields: {spec!r}')
+        raise ValueError(f'Expected 5, 6, or 7 colon-separated fields: {spec!r}')
+    if drift_path in ('-', '', None):
+        drift_path = None
     return (resfile, spkfile, clufile,
             list(map(int, channels_str.split(','))),
-            int(nsamples_str), int(peaksample_str))
+            int(nsamples_str), int(peaksample_str),
+            drift_path)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -159,6 +175,93 @@ def load_clu(clufile):
     if not lines:
         raise RuntimeError(f'{clufile!r}: empty file')
     return np.array([int(x) for x in lines[1:]], dtype=np.int32)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Drift interpolation and spatial template correction
+# ──────────────────────────────────────────────────────────────────────────────
+
+def load_drift_signal(drift_path: str,
+                      n_total_samples: int) -> Optional[np.ndarray]:
+    """
+    Load a binary int16 drift signal file (session.dat.drift.N).
+
+    The file contains one int16 value per sample of the recording, in µm,
+    relative to the reference window (0 µm at the reference time).
+    Positive values indicate the probe drifted deeper into tissue.
+
+    Returns a (n_total_samples,) int16 array, or None on error.
+    """
+    if not os.path.exists(drift_path):
+        print(f'process_subtractspikes: drift file not found: {drift_path!r} '
+              '— drift correction disabled for this group', file=sys.stderr)
+        return None
+    arr = np.fromfile(drift_path, dtype='<i2')
+    if len(arr) == 0:
+        print(f'process_subtractspikes: drift file empty: {drift_path!r}',
+              file=sys.stderr)
+        return None
+    if len(arr) != n_total_samples:
+        print(f'process_subtractspikes: drift file {drift_path!r} has '
+              f'{len(arr)} samples, expected {n_total_samples} — '
+              f'truncating/padding', file=sys.stderr)
+        if len(arr) > n_total_samples:
+            arr = arr[:n_total_samples]
+        else:
+            arr = np.pad(arr, (0, n_total_samples - len(arr)),
+                         constant_values=arr[-1])
+    lo, hi = int(arr.min()), int(arr.max())
+    print(f'process_subtractspikes: drift loaded from {os.path.basename(drift_path)}: '
+          f'range [{lo}, {hi}] µm  ({len(arr)} samples)',
+          file=sys.stderr)
+    return arr
+
+
+def shift_template_fast(tmpl: np.ndarray,
+                        delta_um: float,
+                        site_depths: np.ndarray) -> np.ndarray:
+    """
+    Shift a waveform template along the depth (channel) axis by delta_um µm.
+
+    This corrects for the spatial displacement of the probe relative to the
+    neurons since the template reference window.  Positive delta_um means the
+    probe drifted deeper into tissue (neurons appear on shallower channels).
+
+    For each output channel ci at depth d_ci, the template value is
+    interpolated from the depth (d_ci + delta_um) in the original template's
+    coordinate frame.  Channels that map outside the array are zeroed.
+
+    Parameters
+    ----------
+    tmpl        : (nSamples, nChanGrp) float32 template
+    delta_um    : spatial shift in µm  (drift(t_spike) − drift(t_ref))
+    site_depths : (nChanGrp,) electrode site depths in µm (sorted ascending)
+
+    Returns
+    -------
+    shifted : (nSamples, nChanGrp) float32
+    """
+    if abs(delta_um) < 0.1 or len(site_depths) < 2:
+        return tmpl   # sub-0.1 µm shift not worth the compute
+
+    nS, nC = tmpl.shape
+    spacing = float(np.median(np.diff(np.sort(site_depths))))
+    if spacing < 1e-6:
+        return tmpl
+
+    d0    = float(site_depths[0])
+    idx_f = (site_depths + delta_um - d0) / spacing   # (nC,) fractional source index
+    lo    = np.floor(idx_f).astype(int)
+    hi    = lo + 1
+    frac  = (idx_f - lo).astype(np.float32)
+    valid = (lo >= 0) & (hi < nC)
+    lo_c  = np.clip(lo, 0, nC - 1)
+    hi_c  = np.clip(hi, 0, nC - 1)
+
+    # tmpl: (nS, nC); index columns by lo_c and hi_c
+    shifted = tmpl[:, lo_c] * (1.0 - frac) + tmpl[:, hi_c] * frac
+    shifted[:, ~valid] = 0.0
+    return shifted.astype(np.float32)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -622,6 +725,9 @@ class GroupData:
     sorted_times    : np.ndarray           # spike_times[sort_idx]
     sorted_clu      : np.ndarray           # clu_ids[sort_idx]  or None
     sorted_sort_idx : np.ndarray           # == sort_idx  (alias, for clarity)
+    # ── Drift correction ─────────────────────────────────────────────────
+    drift_signal    : Optional[np.ndarray] # (nTotalSamples,) int16 µm, or None
+    site_depths     : np.ndarray           # (nChanGrp,) electrode depths µm
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -630,7 +736,8 @@ class GroupData:
 
 def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
                samplingRate, use_burst_correction, min_template_spikes,
-               min_exp_spikes, exp_terms, burst_isi_ms_thresh, min_clean_frac):
+               min_exp_spikes, exp_terms, burst_isi_ms_thresh, min_clean_frac,
+               drift_path=None, site_depths=None, n_total_samples=0):
     nChanGrp = len(channels)
 
     spike_times = np.fromfile(resfile, dtype='<i8')
@@ -745,6 +852,18 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
             print(f'    cluster {cid:4d}: {n_c:5d} spikes  {l2_tag}  |  {l1_tag}',
                   file=sys.stderr)
 
+    # ── Site depths: uniform 25 µm spacing if not provided ──────────────
+    if site_depths is None or len(site_depths) == 0:
+        _nC = len(channels)
+        site_depths_arr = np.arange(_nC, dtype=np.float32) * 25.0
+    else:
+        site_depths_arr = np.array(site_depths, dtype=np.float32)
+
+    # ── Load drift signal ─────────────────────────────────────────────────
+    drift_sig: Optional[np.ndarray] = None
+    if drift_path and n_total_samples > 0:
+        drift_sig = load_drift_signal(drift_path, n_total_samples)
+
     return GroupData(
         spike_times     = spike_times,
         spk             = spk,
@@ -762,6 +881,8 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
         sorted_times    = sorted_times,
         sorted_clu      = sorted_clu,
         sorted_sort_idx = sort_idx,
+        drift_signal    = drift_sig,
+        site_depths     = site_depths_arr,
     )
 
 
@@ -832,6 +953,15 @@ def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, chunk_len_over
 
                 obs_wf_full = grp.spk[i].astype(np.float32)   # (nSamples, nChanGrp)
 
+                # ── Drift: rigid-body spatial shift of the template ───────
+                # drift_signal[t] is the probe displacement (µm) at this
+                # spike's time relative to the template reference window.
+                # A positive value means the probe drifted deeper; the
+                # neuron therefore appears on shallower channels, so we
+                # shift the template toward channel 0 by that amount.
+                delta_um = (float(grp.drift_signal[t])
+                            if grp.drift_signal is not None else 0.0)
+
                 if grp.use_clusters:
                     cid   = int(grp.clu_ids[i])
                     exp_m = grp.exp_models.get(cid)
@@ -842,16 +972,20 @@ def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, chunk_len_over
                     if exp_m is not None:
                         # Layer 2: exponential PC1 model
                         k, T  = exp_m.project_and_template(obs_wf_clean)
-                        to_sub = k * T[wf_s:wf_e, :]
+                        T_shifted = shift_template_fast(T, delta_um,
+                                                        grp.site_depths)
+                        to_sub = k * T_shifted[wf_s:wf_e, :]
                     else:
                         # Layer 1: ISI dual-template
                         model  = grp.cluster_models[cid]
+                        tmpl   = model.get_template(isi_ms)
+                        tmpl_s = shift_template_fast(tmpl, delta_um,
+                                                     grp.site_depths)
                         wf_f   = obs_wf_clean[wf_s:wf_e, :].ravel()
                         scale  = model.project(wf_f, isi_ms)
-                        tmpl   = model.get_template(isi_ms)
-                        to_sub = scale * tmpl[wf_s:wf_e, :]
+                        to_sub = scale * tmpl_s[wf_s:wf_e, :]
                 else:
-                    # Layer 0: raw waveform
+                    # Layer 0: raw waveform (no template to shift)
                     to_sub = obs_wf_full[wf_s:wf_e, :]
 
                 for ci in range(nChanGrp):
@@ -903,7 +1037,7 @@ def main():
         sys.exit(1)
     nTotalSamples = total_words // nChannels
 
-    for resfile, spkfile, clufile, channels, nSamples, peakSample in group_specs:
+    for resfile, spkfile, clufile, channels, nSamples, peakSample, drift_path in group_specs:
         for path in (resfile, spkfile):
             if not os.path.exists(path):
                 print(f'process_subtractspikes: not found: {path!r}', file=sys.stderr)
@@ -923,12 +1057,14 @@ def main():
                        shape=(nTotalSamples, nChannels))
 
     groups = []
-    for g_idx, (resfile, spkfile, clufile, channels, nSamples, peakSample) in \
+    for g_idx, (resfile, spkfile, clufile, channels, nSamples, peakSample, drift_path) in \
             enumerate(group_specs):
         nSpikes_est = os.path.getsize(resfile) // 8
         has_clu     = (clufile != '-' and os.path.exists(clufile))
+        has_drift   = drift_path is not None
         print(f'process_subtractspikes: loading group {g_idx+1}/{len(group_specs)}  '
-              f'ch={channels}  ~{nSpikes_est} spikes  clu={"yes" if has_clu else "no"}',
+              f'ch={channels}  ~{nSpikes_est} spikes  clu={"yes" if has_clu else "no"}'
+              f'  drift={"yes" if has_drift else "no"}',
               file=sys.stderr)
         try:
             grp = load_group(
@@ -939,7 +1075,9 @@ def main():
                 args.min_exp_spikes,
                 args.exp_terms,
                 args.burst_isi_threshold_ms,
-                args.min_clean_frac)
+                args.min_clean_frac,
+                drift_path      = drift_path,
+                n_total_samples = nTotalSamples)
             groups.append(grp)
         except RuntimeError as exc:
             print(f'process_subtractspikes: {exc}', file=sys.stderr)

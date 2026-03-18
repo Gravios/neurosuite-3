@@ -1,0 +1,57 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_aom2dat</n>
+  <parameters>
+   <parameter>
+    <n>matFile</n>
+    <value></value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <n>topology</n>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>groups</n>
+    <value>8</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>chunkSamples</n>
+    <value>10000000</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Convert an AlphaOmega .mat recording (HDF5 v7.3 format) to the neurosuite-3 .dat binary and a full session YAML parameter file.
+
+PARAMETERS
+
+# matFile
+
+Path to the input AlphaOmega .mat file.  Can be absolute or relative to the session directory (e.g. recording.mat or /data/jg05/recording.mat).
+
+OPTIONAL PARAMETERS
+
+Note: Optional parameters have default values shown.  To override, click 'Add' and enter the parameter name and value.
+
+# topology
+
+Mixed probe topology string defining spike groups.  Format: FIRST-LAST:SIZE,... where FIRST and LAST are 1-based channel numbers (inclusive) and SIZE is the number of channels per spike group.  Group type is inferred from SIZE: SIZE=4 → tetrode, SIZE=1 → single electrode, any other value → linear/silicon shank.
+
+Example for a recording with a 16-channel linear shank on channels 1-16 and four tetrodes on channels 17-32:
+  topology: 1-16:16,17-32:4
+
+When topology is absent, channels are split uniformly into groups of 'groups' channels each.
+
+# groups
+
+Uniform channels per spike group when topology is not specified (default = 8).  Ignored when topology is provided.
+
+# chunkSamples
+
+Number of samples per streaming read chunk (default = 10000000, approximately 610 MB for a 32-channel recording).  Reduce on systems with less than 32 GB RAM.  The default is tuned for systems with 64 GB or more.
+</help>
+ </program>
+</parameter>
