@@ -1,0 +1,151 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Remove spike waveforms from a .dat file to produce a spike-cleaned
+#//   recording: <session>-spkclean.dat
+#//
+#//   Uses process_subtractspikes to subtract each spike's contribution
+#//   from the raw voltage trace.  When .clu.N files are present, a
+#//   per-cluster template model is used:
+#//     - Asymmetric-exponential PC1 waveform model (shape variation)
+#//     - Contamination exclusion (concomitant spike windows excluded
+#//       from template estimation)
+#//     - ISI-driven dual-template burst shape compensation
+#//     - Projection-based amplitude scaling
+#//   When no .clu.N exists for a group, the raw .spk.N waveforms are
+#//   subtracted directly.
+#//
+#//   The original .dat is never modified.
+#//
+#//   Output
+#//   ------
+#//   <session>-spkclean.dat
+#//
+#//   Typical next steps
+#//   ------------------
+#//   ndm_lfp              — downsample the cleaned dat to LFP
+#//                          (auto-detects session-spkclean.dat)
+#//   ndm_redetectspikes   — second-round spike detection on the cleaned dat
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+	echo_error "usage: $program [parameter-file]"
+	exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Stripping spike waveforms from dat"
+
+# ── Input checks ─────────────────────────────────────────────────────────────
+# No outputs_exist guard: session-spkclean.dat is an intermediate product and
+# should always be regenerated on re-run (e.g. after a second sorting pass).
+inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
+
+check_commands_installed xpathReader process_subtractspikes
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read Parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+nBits=$(xml_read $session "//acquisitionSystem/nBits")
+redetectSpikes=$(read_script_parameter $session redetectSpikes)
+
+check_mandatory_variable $nChannels   "missing number of channels"
+check_mandatory_variable $samplingRate "missing sampling rate"
+
+nBits=${nBits:-16}
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Build group specs
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+
+if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]
+then
+	echo_error "no spikeDetection/channelGroups found in parameter file"
+	exit $GENERAL_ERROR
+fi
+
+groupSpecs=""
+for group in $(seq 1 $nElectrodeGroups)
+do
+	resFile=$session.res.$group
+	spkFile=$session.spk.$group
+
+	if [ ! -f "$resFile" ] || [ ! -f "$spkFile" ]
+	then
+		echo_error "  Missing $resFile or $spkFile"
+		exit $INPUTS_MISSING
+	fi
+
+	channels=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/channels/channel")
+	nSamples=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/nSamples")
+	peakSample=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
+
+	check_mandatory_variable $channels   "missing channel list for spike group $group"
+	check_mandatory_variable $nSamples   "missing nSamples for spike group $group"
+	check_mandatory_variable $peakSample "missing peakSampleIndex for spike group $group"
+
+	cluFile=$session.clu.$group
+	[ ! -f "$cluFile" ] && cluFile="-"
+
+	channels=$(echo $channels | tr ' ' ',')
+	groupSpecs="$groupSpecs $resFile:$spkFile:$cluFile:$channels:$nSamples:$peakSample"
+done
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Subtract spikes
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Subtracting spike waveforms from $nElectrodeGroups electrode group(s)"
+echo_info "Output: $session-spkclean.dat"
+
+process_subtractspikes \
+	-n $nChannels -b $nBits \
+	-s $samplingRate \
+	$session.dat $session-spkclean.dat \
+	$groupSpecs
+check_command_status process_subtractspikes
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Optional: second-round spike detection
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+if [ "$redetectSpikes" = "yes" ]
+then
+	check_commands_installed ndm_redetectspikes
+	echo_info "Running second-round spike detection (ndm_redetectspikes)…"
+	ndm_redetectspikes $session
+	check_command_status ndm_redetectspikes
+else
+	echo_info "Spike-cleaned dat written: $session-spkclean.dat"
+	echo_info "Next steps:"
+	echo_info "  ndm_lfp $session              — create LFP (auto-uses spkclean.dat)"
+	echo_info "  ndm_redetectspikes $session   — second-round spike detection"
+fi

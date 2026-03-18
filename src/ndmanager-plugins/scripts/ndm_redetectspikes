@@ -1,0 +1,268 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Second-round spike detection on a spike-cleaned .dat file.
+#//
+#//   Runs the standard spike-detection pipeline (median-filter high-pass,
+#//   threshold detection, waveform extraction) on the spike-cleaned dat
+#//   produced by ndm_lfp with saveCleanDat=yes, then merges the newly
+#//   detected spikes into the existing .res/.spk/.clu files via
+#//   process_mergespikes.
+#//
+#//   After merging, .fet files are deleted because the spike order has
+#//   changed.  Re-run ndm_pca (and then ndm_klustakwik) to rebuild features
+#//   and re-sort the merged spike set.
+#//
+#//   Prerequisites
+#//   -------------
+#//   ndm_lfp must have been run with:
+#//     subtractSpikes = yes  (or auto with .spk files present)
+#//     saveCleanDat   = yes
+#//
+#//   This produces <session>-spkclean.dat.  ndm_redetectspikes uses that
+#//   file as its input.
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//   GNU GPL v3 or later.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+	echo_error "usage: $program [parameter-file]"
+	exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Second-round spike detection on cleaned .dat"
+
+# Check required programs
+check_commands_installed xpathReader process_medianfilter \
+	process_medianthreshold process_extractspikes process_mergespikes
+
+# Check required parameter file
+inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read Parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+resolution=$(xml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+windowHalfLength=$(read_script_parameter -s ndm_hipass $session windowHalfLength)
+thresholdFactor=$(read_script_parameter $session thresholdFactor)
+refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
+peakSearchLength=$(read_script_parameter $session peakSearchLength)
+start=$(read_script_parameter $session start)
+duration=$(read_script_parameter $session duration)
+memCapGB=$(read_script_parameter $session memCapGB)
+
+check_mandatory_variable $nChannels      "missing number of channels"
+check_mandatory_variable $resolution     "missing resolution (nBits)"
+check_mandatory_variable $samplingRate   "missing sampling rate"
+check_mandatory_variable $windowHalfLength "missing windowHalfLength (from ndm_hipass parameters)"
+check_mandatory_variable $thresholdFactor  "missing thresholdFactor"
+check_mandatory_variable $refractoryPeriod "missing refractoryPeriod"
+check_mandatory_variable $peakSearchLength "missing peakSearchLength"
+check_mandatory_variable $start            "missing start"
+check_mandatory_variable $duration         "missing duration"
+
+if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]
+then
+	echo_error "no spikeDetection/channelGroups defined in parameter file"
+	exit $GENERAL_ERROR
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Locate cleaned dat
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+cleanDat=$session-spkclean.dat
+
+inputs_missing "$cleanDat" && exit $INPUTS_MISSING
+
+echo_info "Using spike-cleaned dat: $cleanDat"
+
+cleanStem=$session-spkclean
+cleanFil=$cleanStem.fil
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // High-pass filter the cleaned dat
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "High-pass filtering $cleanDat → $cleanFil"
+
+# Chunk size: read from session XML (same parameter as ndm_hipass), default 128 MiB
+chunkSize=$(xml_read $session \
+	"//program/n[.='ndm_hipass']/../parameters/parameter/n[.='chunkSize']/../value")
+chunkSize=${chunkSize:-134217728}
+maxChunkSize=536870912
+if [ "$chunkSize" -gt "$maxChunkSize" ] 2>/dev/null
+then
+	chunkSize=$maxChunkSize
+fi
+
+process_medianfilter \
+	-n $nChannels -w $windowHalfLength -b $chunkSize \
+	$cleanDat $cleanFil
+check_command_status process_medianfilter
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Build electrode group lists (mirrors ndm_extractspikes)
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+secondsToBytes()
+{
+	unset LANG && echo $1 $samplingRate $nChannels $resolution \
+		| awk '{printf "%f", int($1*$2)/8*$3*$4}' | sed 's/[.].*//'
+}
+
+electrodeList=""
+for group in $(seq 1 $nElectrodeGroups)
+do
+	electrodes=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/channels/channel")
+	check_mandatory_variable $electrodes \
+		"missing electrode list for group $group"
+	electrodes=$(echo $electrodes | sed 's/ /,/g')
+	electrodeList="$electrodeList:$electrodes"
+
+	samplesInWaveform=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/nSamples")
+	peakSample=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
+	check_mandatory_variable $samplesInWaveform \
+		"missing nSamples for group $group"
+	check_mandatory_variable $peakSample \
+		"missing peakSampleIndex for group $group"
+done
+n=$(( ${#electrodeList} - 1 ))
+electrodeList=${electrodeList:1:$n}   # strip leading ':'
+
+startInBytes=$(secondsToBytes $start)
+durationInBytes=$(secondsToBytes $duration)
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Threshold detection & waveform extraction on the cleaned dat
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Computing detection thresholds on $cleanFil"
+echo_info "  start = $start s ($startInBytes bytes)"
+echo_info "  duration = $duration s ($durationInBytes bytes)"
+
+baseline=$(tail -c +$(( startInBytes + 1 )) $cleanFil \
+	| head -c $durationInBytes \
+	| process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
+check_command_status process_medianthreshold
+
+baseline=$(unset LANG && echo $baseline \
+	| awk 'BEGIN{RS=":";FS=","};{for(i=1;i<=NF;i++){printf "%f,",$i*'"$thresholdFactor"'};printf ":"}' \
+	| sed 's/,:/:/g;s/:$//')
+echo_info "  thresholds: $baseline"
+
+echo_info "Extracting spike waveforms from $cleanFil"
+
+# Use the clean stem as the base — process_extractspikes writes
+# $cleanStem-tmp.res.N and $cleanStem-tmp.spk.N
+ln -sf $cleanFil $cleanStem-tmp.fil
+export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
+
+# Build the per-group nSamples / peakSample args
+waveformArgs=""
+for group in $(seq 1 $nElectrodeGroups)
+do
+	samplesInWaveform=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/nSamples")
+	peakSample=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
+	# process_extractspikes uses the single -w and -p for all groups
+	# (they must be the same for all groups — standard ndm convention)
+	# Take the first group's values (same check as ndm_extractspikes)
+	if [ "$group" -eq 1 ]
+	then
+		firstNSamples=$samplesInWaveform
+		firstPeakSample=$peakSample
+	fi
+done
+
+process_extractspikes \
+	-n $nChannels \
+	-c $electrodeList \
+	-w $firstNSamples \
+	-p $firstPeakSample \
+	-t $baseline \
+	-l $peakSearchLength \
+	-r $refractoryPeriod \
+	$cleanStem-tmp
+check_command_status process_extractspikes
+
+rm -f $cleanStem-tmp.fil
+
+# Rename process_extractspikes outputs: cleanStem-tmp.res/spk.i → cleanStem.res/spk.group
+declare -i gi=0
+for group in $(seq 1 $nElectrodeGroups)
+do
+	gi=$gi+1
+	mv $cleanStem-tmp.res.$gi $cleanStem.res.$group
+	mv $cleanStem-tmp.spk.$gi $cleanStem.spk.$group
+done
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Merge new spikes into original files
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Merging new spikes into original .res/.spk/.clu files"
+
+mergeSpecs=""
+for group in $(seq 1 $nElectrodeGroups)
+do
+	samplesInWaveform=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/nSamples")
+	nChInGroup=$(xml_read $session \
+		"//spikeDetection/channelGroups/group[$group]/channels/channel" \
+		| wc -w)
+	mergeSpecs="$mergeSpecs $session:$cleanStem:$group:$samplesInWaveform:$nChInGroup"
+done
+
+process_mergespikes $mergeSpecs
+mergeStatus=$?
+
+# Exit code 2 means zero new spikes — not an error, just report it
+if [ $mergeStatus -eq 2 ]
+then
+	echo_info "No new spikes were detected in the cleaned dat"
+elif [ $mergeStatus -ne 0 ]
+then
+	check_command_status process_mergespikes   # prints error and exits
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Clean up
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Removing temporary cleaned-dat spike files"
+for group in $(seq 1 $nElectrodeGroups)
+do
+	rm -f $cleanStem.res.$group $cleanStem.spk.$group
+done
+rm -f $cleanFil
+
+echo_info ""
+echo_info "Done.  The original .res.N / .spk.N / .clu.N files have been updated."
+echo_info "Stale .fet.N files have been removed."
+echo_info "Next steps:"
+echo_info "  1. Re-run ndm_pca   to rebuild feature files"
+echo_info "  2. Re-run ndm_klustakwik (or use klusters) to sort the merged spike set"

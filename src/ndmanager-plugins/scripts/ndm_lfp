@@ -2,7 +2,12 @@
 
 #////////////////////////////////////////////////////////////////////////////
 #//
-#//   Create LFP files by resampling .dat files
+#//   Create LFP files by downsampling a .dat file.
+#//
+#//   If <session>-spkclean.dat exists (produced by ndm_stripdat), it is
+#//   used as the resampling source in preference to the raw .dat.  The
+#//   subtractSpikes parameter can trigger ndm_stripdat automatically when
+#//   the cleaned dat is not yet present.
 #//
 #//   copyright       (C) 2007-2010 by Michaël Zugaro
 #//   email           michael.zugaro@college-de-france.fr
@@ -31,14 +36,11 @@ session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
 
-# Print a header to indicate current processing step
 print_header "$session - Creating LFP file"
 
-# Check input and output files
 outputs_exist $session.lfp && exit $OUTPUTS_EXIST
 inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
 
-# Check required programs
 check_commands_installed xpathReader process_resample
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -48,14 +50,67 @@ check_commands_installed xpathReader process_resample
 nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
 oldSamplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
 newSamplingRate=$(read_script_parameter $session samplingRate)
+subtractSpikes=$(read_script_parameter $session subtractSpikes)
 
-check_mandatory_variable $nChannels "missing number of channels"
+check_mandatory_variable $nChannels      "missing number of channels"
 check_mandatory_variable $oldSamplingRate "missing source sampling rate"
 check_mandatory_variable $newSamplingRate "missing target sampling rate"
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Process
+# // Select input: spike-cleaned dat takes priority over raw dat
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-process_resample -n $nChannels -f $oldSamplingRate,$newSamplingRate $session.dat $session.lfp
+cleanDat=$session-spkclean.dat
+created_clean_dat=false
+
+if [ -f "$cleanDat" ]
+then
+	echo_info "Using existing spike-cleaned dat: $cleanDat"
+	dat_source=$cleanDat
+else
+	# Resolve subtractSpikes: auto-detect when unset
+	if [ -z "$subtractSpikes" ] || [ "$subtractSpikes" = "auto" ]
+	then
+		if ls $session.spk.* >/dev/null 2>&1
+		then
+			subtractSpikes="yes"
+		else
+			subtractSpikes="no"
+		fi
+	fi
+
+	if [ "$subtractSpikes" = "yes" ]
+	then
+		check_commands_installed ndm_stripdat
+		echo_info "Running ndm_stripdat to produce spike-cleaned dat…"
+		ndm_stripdat $session
+		check_command_status ndm_stripdat
+		created_clean_dat=true
+		dat_source=$cleanDat
+	else
+		dat_source=$session.dat
+	fi
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Resample
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Resampling $dat_source → $session.lfp ($oldSamplingRate → $newSamplingRate Hz)"
+
+process_resample \
+	-n $nChannels -f $oldSamplingRate,$newSamplingRate \
+	$dat_source $session.lfp
 check_command_status process_resample
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Clean up
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+# Remove the cleaned dat only if ndm_lfp created it itself (i.e. ndm_stripdat
+# was called from here).  If the user ran ndm_stripdat separately beforehand,
+# the file is left in place for ndm_redetectspikes or other downstream use.
+if [ "$created_clean_dat" = "true" ]
+then
+	rm -f $cleanDat
+fi
