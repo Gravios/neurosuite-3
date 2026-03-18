@@ -1,5 +1,94 @@
 # neurosuite-3 — Changelog
 
+## 2026-03-18
+
+---
+
+### ndmanager-plugins — new plugin: `ndm_aom2dat` / `process_aomconvert`
+
+#### AlphaOmega .mat (HDF5 v7.3) → .dat + session YAML (`process_aomconvert.cpp`)
+
+New C++ tool that converts AlphaOmega multi-channel recordings to the neurosuite `.dat`
+binary and generates a complete session YAML compatible with the full ndmanager-plugins
+pipeline. Streams HDF5 data via the C API hyperslab interface — peak RAM is
+`chunkSamples × nChannels × 2 bytes` regardless of recording length (default 10M samples
+≈ 610 MB for 32 channels).
+
+**AlphaOmega HDF5 v7.3 structure assumed:**
+- `CRAW_NNN` datasets — int16 sample arrays, one per channel
+- `CRAW_NNN_KHz`, `_BitResolution`, `_Gain`, `_TimeBegin`, `_TimeEnd` — scalar metadata
+- Channels discovered by iterating root-level datasets matching `CRAW_\d+$`
+
+**Mixed probe topology:** `-t "1-16:16,17-32:4"` creates 1 linear group (16ch) + 4 tetrode
+groups (4ch each). Size-to-type inference: `SIZE==4` → tetrode, `SIZE==1` → single,
+other → linear.
+
+**YAML output follows `template.yaml` schema** so all pipeline scripts read it without
+modification: `acquisitionSystem.samplingRate`, `spikeDetection.channelGroups[g].channels`,
+`programs[ndm_klustakwik]`, etc.
+
+**Per-group KlustaKwik calibration written into YAML:**
+- `MergeThresh = χ²(nCh×3, 0.9999)` per group
+- `MaxClusters` scaled by probe type (linear: 40, tetrode: 20, single: 5)
+- `MaxPossibleClusters = ceil(duration/10min) × MaxClusters + 50`
+- `GlobalMergeIter` / `TimeMergeIter` scaled by √(`nSpatialDims`/24) from 8ch baseline
+
+**New files:**
+- `src/process_aomconvert/process_aomconvert.cpp` — 616-line self-contained C++ tool
+- `src/process_aomconvert/CMakeLists.txt` — `find_package(HDF5 REQUIRED)`, `cxx_std_20`, `-O3 -march=native`
+- `scripts/ndm_aom2dat` — bash driver (reads `matFile`, `topology`, `groups`, `chunkSamples` from param file)
+- `descriptions/ndm_aom2dat.xml` — ndmanager UI parameter description
+
+**Modified files:**
+- `src/CMakeLists.txt` — `add_subdirectory(process_aomconvert)` after `process_smrconvert`
+- `scripts/CMakeLists.txt` — `ndm_aom2dat` added to `install(PROGRAMS ...)`
+- `templates/template.yaml` — `ndm_aom2dat` program block added before `ndm_ncs2dat`
+
+**New dependency:** `libhdf5-dev` (Ubuntu) / `hdf5` (Homebrew) / `vcpkg install hdf5` (Windows).
+
+---
+
+### ndmanager-plugins — `ndm_klustakwik` three-tier parameter resolver
+
+#### Three-tier parameter resolution (`scripts/ndm_klustakwik`)
+
+Added `read_kk_param <group> <paramName> <default>` shell function that resolves each
+KlustaKwik parameter through three priority levels using `yaml_read` and
+`read_script_parameter` from `ndm_functions`:
+
+1. `spikeDetection.channelGroups[group].klustakwik.<name>` via
+   `yaml_read "//spikeDetection/channelGroups/group[$group]/klustakwik/$name"` — per-group
+   probe-calibrated values written by `ndm_aom2dat` (tier 1, highest priority)
+2. `programs[ndm_klustakwik].parameters.<name>` via `read_script_parameter` — global
+   session-level override (tier 2)
+3. Caller-supplied default constant — built-in fallback (tier 3)
+
+**New parameters exposed** (were missing from the old single-tier implementation):
+`MaxPossibleClusters`, `nStarts`, `PenaltyMix`, `ChunkOverlapMinutes`,
+`ChunkPreseedFraction`, `MaxIter`, `SplitEvery`, `DistThresh`, `FullStepEvery`,
+`ChangedThresh`, `PostRealign`, `PostRealignIter`, `NbSamplesPerSpike`, `Log`, `Screen`,
+`fSaveModel`.
+
+**Old parameters with updated defaults:**
+- `maxClusters`: 100 → resolved from tier 1 (probe-calibrated) or tier 3 default 25
+- `mergeThresh`: 35 → resolved from tier 1 (χ²-calibrated) or tier 3 default 42.0
+- `chunkMinutes`: 5 → 10.0
+- `globalMergeIter`: 30 → 50
+- `timeMergeIter`: 35 → 50
+- `initMethod`: random → farthest
+
+**Changed file:** `src/ndmanager-plugins/scripts/ndm_klustakwik`
+
+#### `templates/template.yaml` — `ndm_klustakwik` program block updated
+
+All 20 parameters documented with correct defaults, inline comments distinguishing
+probe-calibrated (tier-1) from session-level (tier-2) params, and full help text describing
+the three-tier system.
+
+**Changed file:** `templates/template.yaml`
+
+---
+
 ## 2026-03-02 → 2026-03-09
 
 ---
