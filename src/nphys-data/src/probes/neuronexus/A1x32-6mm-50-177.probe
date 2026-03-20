@@ -1,11 +1,61 @@
+# NeuroNexus A1x32-6mm-50-177 — neurosuite-3 probe configuration
+# Catalog page 37
+# 1 shank, 32 sites/shank, 32 total channels
+# Geometry fully enumerated: all 32 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A1x32-6mm-50-177
   catalogPage: 37
   totalChannels: 32
-  substrate: { material: silicon, thickness_um: 15 }
-  shanks: { count: 1, spacing_um: null, length_mm: 6.0 }
-  sites: { count_per_shank: 32, layout: linear, area_um2: 177, spacing_um: 50 }
-  channelMap: { description: null, map: null }
-  notes: "6 mm shank. 50 µm pitch, 1550 µm active span."
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 1
+    spacing_um: null
+    length_mm: 6.0
+  sites:
+    count_per_shank: 32
+    layout: linear
+    area_um2: 177
+    spacing_um: 50
+    geometry:
+    - [0, 0]
+    - [0, 50]
+    - [0, 100]
+    - [0, 150]
+    - [0, 200]
+    - [0, 250]
+    - [0, 300]
+    - [0, 350]
+    - [0, 400]
+    - [0, 450]
+    - [0, 500]
+    - [0, 550]
+    - [0, 600]
+    - [0, 650]
+    - [0, 700]
+    - [0, 750]
+    - [0, 800]
+    - [0, 850]
+    - [0, 900]
+    - [0, 950]
+    - [0, 1000]
+    - [0, 1050]
+    - [0, 1100]
+    - [0, 1150]
+    - [0, 1200]
+    - [0, 1250]
+    - [0, 1300]
+    - [0, 1350]
+    - [0, 1400]
+    - [0, 1450]
+    - [0, 1500]
+    - [0, 1550]
+  channelMap:
+    description: null
+    map: null
+  notes: 6 mm shank. 50 µm pitch, 1550 µm active span.

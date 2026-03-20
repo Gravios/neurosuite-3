@@ -110,6 +110,17 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
         files = new FilesPage();
     }
 
+    // adding page "Probes"
+    // Always created; shown only in expert mode.  The probe list is part of
+    // the session YAML and must be preserved on save even in non-expert mode.
+    // Probes comes first so that importing a probe immediately populates the
+    // Anatomical Groups and Spike Groups pages below it.
+    probe = new ProbePage;
+    if(expertMode){
+        mStackWidget->addWidget(probe);
+        mParameterTree->addPage(":/icons/probe", tr("Probes"), probe);
+    }
+
     //adding page "Anatomical Groups"
     //This page is added only if the expert mode is set. The page is always created to keep track of the file information
     if(expertMode){
@@ -129,15 +140,6 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
         mParameterTree->addPage(":/icons/spikes", tr("Spike Groups"), spike);
     } else {
         spike = new SpikePage();
-    }
-
-    // adding page "Probes"
-    // Always created; shown only in expert mode.  The probe list is part of
-    // the session YAML and must be preserved on save even in non-expert mode.
-    probe = new ProbePage;
-    if(expertMode){
-        mStackWidget->addWidget(probe);
-        mParameterTree->addPage(":/icons/probe", tr("Probes"), probe);
     }
 
     //adding page "Unit List"
@@ -369,6 +371,8 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
 
 
     //Initialize the anatomical groups page
+    m_nbChannels = static_cast<int>(acquisitionSystemInfo[NB_CHANNELS]);
+    probe->setNbChannels(m_nbChannels);
     anatomy->setNbChannels(static_cast<int>(acquisitionSystemInfo[NB_CHANNELS]));
     anatomy->setGroups(anatomicalGroups);
     anatomy->setAttributes(attributes);
@@ -526,6 +530,15 @@ void ParameterView::loadProgram(const QString &programUrl) {
 
 void ParameterView::nbChannelsModified(int nbChannels){
     //All the parameters which use the number of channels are reset
+    m_nbChannels = nbChannels;
+
+    // ── Probe page: clear all probe entries and update channel count ─────
+    // A channel-count change invalidates all probe-to-channel assignments.
+    probe->setNbChannels(nbChannels);  // always, so importProbeYaml has it
+    if(expertMode){
+        probe->setProbes(QList<ProbeEntry>());
+        probe->setModified(false);
+    }
 
     //the files page
     //remove any channel mapping
@@ -536,9 +549,8 @@ void ParameterView::nbChannelsModified(int nbChannels){
         fileList.at(i)->setChannelMapping(mapping);
     }
 
-    //the anatomical groups page
+    //the anatomical groups page: one group containing all channels 0..(N-1)
     anatomy->setNbChannels(nbChannels);
-    //all the channels are put in the group 1
     QMap<int, QList<int> > anatomicalGroups;
     QList<int> anatomicalGroupOne;
     for(int i = 0; i<nbChannels;++i) anatomicalGroupOne.append(i);
@@ -795,28 +807,34 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
 {
     if (!expertMode) return;  // anatomy/spike pages only exist in expert mode
 
-    // Merge new groups into what is already in the anatomy page.
-    // We do NOT replace the existing map — the user may have configured
-    // earlier probes already.  New group IDs (assigned starting at
-    // nextGroupId) are guaranteed not to collide with existing ones.
-    QMap<int, QList<int>> anatomyGroups;
-    anatomy->getGroups(anatomyGroups);
-    for (auto it = newAnatomy.constBegin(); it != newAnatomy.constEnd(); ++it)
-        anatomyGroups.insert(it.key(), it.value());
+    // Replace anatomy groups entirely with what the probe defines.
+    // The caller (ProbePage::browseProbeFile) has already computed:
+    //   - one group per shank, containing probe channels
+    //   - an optional final group for any leftover channels
+    // We set this as the complete anatomical description.
+    anatomy->setNbChannels(m_nbChannels);
+    anatomy->setGroups(newAnatomy);
 
-    anatomy->setGroups(anatomyGroups);
+    // Rebuild skip attributes for all channels in the new groups
+    QMap<QString, QMap<int,QString>> attributes;
+    QMap<int,QString> skip;
+    for (int i = 0; i < m_nbChannels; ++i)
+        skip.insert(i, QStringLiteral("0"));
+    attributes.insert(QStringLiteral("Skip"), skip);
+    anatomy->setAttributes(attributes);
     anatomy->setModified(true);
 
-    // Same for spike groups.  Existing groups are preserved; new ones appended.
-    QMap<int, QList<int>> spikeGroups;
-    spike->getGroups(spikeGroups);
-    for (auto it = newSpike.constBegin(); it != newSpike.constEnd(); ++it)
-        spikeGroups.insert(it.key(), it.value());
-
-    // SpikePage::setGroups also requires the information map (nSamples etc.).
-    // Pass the current one unchanged so existing spike-group attributes survive.
+    // Replace spike groups with defaults for nSamples, peakSampleIndex, nFeatures.
+    // Pre-populate spikeInfo so setGroups fills all four columns — cells that
+    // remain null in cols 1-3 crash getGroupInformation on save.
     QMap<int, QMap<QString,QString>> spikeInfo;
-    spike->getGroupInformation(spikeInfo);
-    spike->setGroups(spikeGroups, spikeInfo);
+    for (int gid : newSpike.keys()) {
+        QMap<QString,QString> info;
+        info[QStringLiteral("nbSamples")]       = QStringLiteral("52");
+        info[QStringLiteral("peakSampleIndex")] = QStringLiteral("26");
+        info[QStringLiteral("nbFeatures")]      = QStringLiteral("3");
+        spikeInfo[gid] = info;
+    }
+    spike->setGroups(newSpike, spikeInfo);
     spike->setModified(true);
 }

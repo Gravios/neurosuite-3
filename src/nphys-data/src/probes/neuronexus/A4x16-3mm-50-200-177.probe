@@ -1,11 +1,93 @@
+# NeuroNexus A4x16-3mm-50-200-177 — neurosuite-3 probe configuration
+# Catalog page 89
+# 4 shanks, 16 sites/shank, 64 total channels
+# Geometry fully enumerated: all 64 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A4x16-3mm-50-200-177
   catalogPage: 89
   totalChannels: 64
-  substrate: { material: silicon, thickness_um: 15 }
-  shanks: { count: 4, spacing_um: 200, length_mm: 3.0 }
-  sites: { count_per_shank: 16, layout: linear, area_um2: 177, spacing_um: 50 }
-  channelMap: { description: null, map: null }
-  notes: "4-shank 64-ch. 200 µm shank pitch. 750 µm active span per shank."
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 4
+    spacing_um: 200
+    length_mm: 3.0
+  sites:
+    count_per_shank: 16
+    layout: linear
+    area_um2: 177
+    spacing_um: 50
+    geometry:
+    - [0, 0]
+    - [0, 50]
+    - [0, 100]
+    - [0, 150]
+    - [0, 200]
+    - [0, 250]
+    - [0, 300]
+    - [0, 350]
+    - [0, 400]
+    - [0, 450]
+    - [0, 500]
+    - [0, 550]
+    - [0, 600]
+    - [0, 650]
+    - [0, 700]
+    - [0, 750]
+    - [200, 0]
+    - [200, 50]
+    - [200, 100]
+    - [200, 150]
+    - [200, 200]
+    - [200, 250]
+    - [200, 300]
+    - [200, 350]
+    - [200, 400]
+    - [200, 450]
+    - [200, 500]
+    - [200, 550]
+    - [200, 600]
+    - [200, 650]
+    - [200, 700]
+    - [200, 750]
+    - [400, 0]
+    - [400, 50]
+    - [400, 100]
+    - [400, 150]
+    - [400, 200]
+    - [400, 250]
+    - [400, 300]
+    - [400, 350]
+    - [400, 400]
+    - [400, 450]
+    - [400, 500]
+    - [400, 550]
+    - [400, 600]
+    - [400, 650]
+    - [400, 700]
+    - [400, 750]
+    - [600, 0]
+    - [600, 50]
+    - [600, 100]
+    - [600, 150]
+    - [600, 200]
+    - [600, 250]
+    - [600, 300]
+    - [600, 350]
+    - [600, 400]
+    - [600, 450]
+    - [600, 500]
+    - [600, 550]
+    - [600, 600]
+    - [600, 650]
+    - [600, 700]
+    - [600, 750]
+  channelMap:
+    description: null
+    map: null
+  notes: 4-shank 64-ch. 200 µm shank pitch. 750 µm active span per shank.

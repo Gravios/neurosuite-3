@@ -1,6 +1,9 @@
-# NeuroNexus Buzsaki64-sp-100 — NeuroSuite-3 probe configuration
-# Source: 2026 Penetrating Probe Catalog v2.1, page 103
-# Variant with 500 µm group spacing, graded site areas along shank
+# NeuroNexus Buzsaki64-sp-100 — neurosuite-3 probe configuration
+# Catalog page 103
+# 1 shank, 64 sites/shank, 64 total channels
+# Geometry fully enumerated: all 64 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
@@ -17,23 +20,77 @@ probeFile:
   sites:
     count_per_shank: 64
     layout: octrode
-    area_um2: 160           # nominal; actual graded 159-160 µm²
+    area_um2: 160
     spacing_um: null
-    geometry_groups:
-      group_spacing_um: 500
-      n_groups: 8
-      sites_per_group: 8
-      # Graded lateral spread from tip (narrow) to base (wider)
-      within_group:
-        - [0,   0]
-        - [-11, 20]
-        - [11,  40]
-        - [-11, 60]
-        - [11,  80]
-        - [-11, 100]
-        - [11,  120]
-        - [-11, 140]
-  channelMap: { description: "H64LP dual 32-ch Omnetics", map: null }
-  notes: >
-    Graded-area single-shank probe. Site areas range from ~159 µm² at tip to
-    160 µm² near base. Designed for equal signal amplitude across layers.
+    geometry:
+    - [0, 0]
+    - [-11, 20]
+    - [11, 40]
+    - [-11, 60]
+    - [11, 80]
+    - [-11, 100]
+    - [11, 120]
+    - [-11, 140]
+    - [0, 500]
+    - [-11, 520]
+    - [11, 540]
+    - [-11, 560]
+    - [11, 580]
+    - [-11, 600]
+    - [11, 620]
+    - [-11, 640]
+    - [0, 1000]
+    - [-11, 1020]
+    - [11, 1040]
+    - [-11, 1060]
+    - [11, 1080]
+    - [-11, 1100]
+    - [11, 1120]
+    - [-11, 1140]
+    - [0, 1500]
+    - [-11, 1520]
+    - [11, 1540]
+    - [-11, 1560]
+    - [11, 1580]
+    - [-11, 1600]
+    - [11, 1620]
+    - [-11, 1640]
+    - [0, 2000]
+    - [-11, 2020]
+    - [11, 2040]
+    - [-11, 2060]
+    - [11, 2080]
+    - [-11, 2100]
+    - [11, 2120]
+    - [-11, 2140]
+    - [0, 2500]
+    - [-11, 2520]
+    - [11, 2540]
+    - [-11, 2560]
+    - [11, 2580]
+    - [-11, 2600]
+    - [11, 2620]
+    - [-11, 2640]
+    - [0, 3000]
+    - [-11, 3020]
+    - [11, 3040]
+    - [-11, 3060]
+    - [11, 3080]
+    - [-11, 3100]
+    - [11, 3120]
+    - [-11, 3140]
+    - [0, 3500]
+    - [-11, 3520]
+    - [11, 3540]
+    - [-11, 3560]
+    - [11, 3580]
+    - [-11, 3600]
+    - [11, 3620]
+    - [-11, 3640]
+  channelMap:
+    description: H64LP dual 32-ch Omnetics
+    map: null
+  notes: 'Graded-area single-shank probe. Site areas range from ~159 µm² at tip to 160 µm² near base. Designed for equal signal
+    amplitude across layers.
+
+    '

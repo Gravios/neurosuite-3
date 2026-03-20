@@ -1,11 +1,45 @@
+# NeuroNexus A4x4-3mm-100-125-177 — neurosuite-3 probe configuration
+# Catalog page 29
+# 4 shanks, 4 sites/shank, 16 total channels
+# Geometry fully enumerated: all 16 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A4x4-3mm-100-125-177
   catalogPage: 29
   totalChannels: 16
-  substrate: { material: silicon, thickness_um: 15 }
-  shanks: { count: 4, spacing_um: 125, length_mm: 3.0 }
-  sites: { count_per_shank: 4, layout: linear, area_um2: 177, spacing_um: 100 }
-  channelMap: { description: null, map: null }
-  notes: "4-shank 4 ch/shank. 125 µm shank pitch. 300 µm active span per shank."
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 4
+    spacing_um: 125
+    length_mm: 3.0
+  sites:
+    count_per_shank: 4
+    layout: linear
+    area_um2: 177
+    spacing_um: 100
+    geometry:
+    - [0, 0]
+    - [0, 100]
+    - [0, 200]
+    - [0, 300]
+    - [125, 0]
+    - [125, 100]
+    - [125, 200]
+    - [125, 300]
+    - [250, 0]
+    - [250, 100]
+    - [250, 200]
+    - [250, 300]
+    - [375, 0]
+    - [375, 100]
+    - [375, 200]
+    - [375, 300]
+  channelMap:
+    description: null
+    map: null
+  notes: 4-shank 4 ch/shank. 125 µm shank pitch. 300 µm active span per shank.

@@ -1,10 +1,18 @@
+# NeuroNexus A1x64-Edge-6mm-20-177 — neurosuite-3 probe configuration
+# Catalog page 78
+# 1 shank, 64 sites/shank, 64 total channels
+# Geometry fully enumerated: all 64 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A1x64-Edge-6mm-20-177
   catalogPage: 78
   totalChannels: 64
-  substrate: {material: silicon, thickness_um: 15}
+  substrate:
+    material: silicon
+    thickness_um: 15
   shanks:
     count: 1
     spacing_um: null
@@ -14,5 +22,72 @@ probeFile:
     layout: edge
     area_um2: 177
     spacing_um: 20
-  channelMap: {description: null, map: null}
-  notes: "High-density single-shank edge probe. 1260 µm active span. 20 µm pitch."
+    geometry:
+    - [0, 0]
+    - [0, 20]
+    - [0, 40]
+    - [0, 60]
+    - [0, 80]
+    - [0, 100]
+    - [0, 120]
+    - [0, 140]
+    - [0, 160]
+    - [0, 180]
+    - [0, 200]
+    - [0, 220]
+    - [0, 240]
+    - [0, 260]
+    - [0, 280]
+    - [0, 300]
+    - [0, 320]
+    - [0, 340]
+    - [0, 360]
+    - [0, 380]
+    - [0, 400]
+    - [0, 420]
+    - [0, 440]
+    - [0, 460]
+    - [0, 480]
+    - [0, 500]
+    - [0, 520]
+    - [0, 540]
+    - [0, 560]
+    - [0, 580]
+    - [0, 600]
+    - [0, 620]
+    - [0, 640]
+    - [0, 660]
+    - [0, 680]
+    - [0, 700]
+    - [0, 720]
+    - [0, 740]
+    - [0, 760]
+    - [0, 780]
+    - [0, 800]
+    - [0, 820]
+    - [0, 840]
+    - [0, 860]
+    - [0, 880]
+    - [0, 900]
+    - [0, 920]
+    - [0, 940]
+    - [0, 960]
+    - [0, 980]
+    - [0, 1000]
+    - [0, 1020]
+    - [0, 1040]
+    - [0, 1060]
+    - [0, 1080]
+    - [0, 1100]
+    - [0, 1120]
+    - [0, 1140]
+    - [0, 1160]
+    - [0, 1180]
+    - [0, 1200]
+    - [0, 1220]
+    - [0, 1240]
+    - [0, 1260]
+  channelMap:
+    description: null
+    map: null
+  notes: High-density single-shank edge probe. 1260 µm active span. 20 µm pitch.

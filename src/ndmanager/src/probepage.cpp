@@ -26,6 +26,8 @@
 #  include <QPainter>
 #endif
 #include <QDebug>
+#include <QRegularExpression>
+#include <QSet>
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -116,7 +118,8 @@ void ProbePage::addProbe()
     probeTable->blockSignals(false);
     probeTable->setCurrentCell(row, ColFile);
     m_modified = true;
-    emit probesModified();
+    // Auto-fill the offset for the new row (= sum of all probes above it)
+    recalculateAll();
 }
 
 void ProbePage::removeProbe()
@@ -130,7 +133,7 @@ void ProbePage::removeProbe()
     probeTable->removeRow(row);
     renumberIds();
     m_modified = true;
-    emit probesModified();
+    recalculateAll();
 }
 
 void ProbePage::moveProbeUp()
@@ -146,7 +149,7 @@ void ProbePage::moveProbeUp()
     renumberIds();
     probeTable->selectRow(row - 1);
     m_modified = true;
-    emit probesModified();
+    recalculateAll();
 }
 
 void ProbePage::moveProbeDown()
@@ -162,7 +165,7 @@ void ProbePage::moveProbeDown()
     renumberIds();
     probeTable->selectRow(row + 1);
     m_modified = true;
-    emit probesModified();
+    recalculateAll();
 }
 
 void ProbePage::rowSelected()
@@ -232,73 +235,145 @@ void ProbePage::browseProbeFile()
     int row = probeTable->currentRow();
     if (row < 0) row = probeTable->rowCount() - 1;
     if (row < 0) {
-        // No rows yet — ask user to add a probe first
         QMessageBox::information(this, tr("Import Probe"),
             tr("Click \"+\" to add a probe entry first, then use Browse to assign a file."));
         return;
     }
 
-    QString startDir = getLibraryPath();
     QString path = QFileDialog::getOpenFileName(
         this,
         tr("Select Probe Configuration File"),
-        startDir,
+        getLibraryPath(),
         tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
     if (path.isEmpty()) return;
 
-    // Compute next group ID = 1 + max of all existing group IDs across all rows
-    int nextGroupId = 1;
-    for (int r = 0; r < probeTable->rowCount(); ++r) {
-        ProbeEntry e = rowToEntry(r);
-        for (int g : e.anatomicalGroups)
-            nextGroupId = qMax(nextGroupId, g + 1);
-    }
-
-    // Use the channel offset already set in this row (user may have filled it)
-    auto* offsetItem = probeTable->item(row, ColOffset);
-    int channelOffset = offsetItem ? offsetItem->text().toInt() : 0;
-
-    ProbeEntry entry = rowToEntry(row);
-    entry.channelOffset = channelOffset;
-
-    QMap<int,QList<int>> outAnatomy;
-    QMap<int,QList<int>> outSpike;
-
-    if (!importProbeYaml(path, entry, nextGroupId, outAnatomy, outSpike)) {
-        // Parse failed — fall back to just recording the file path
-        QString libPath = getLibraryPath();
-        if (!libPath.isEmpty() && path.startsWith(libPath))
-            path = path.mid(libPath.length()).remove(0, 1);
-        probeTable->blockSignals(true);
-        if (!probeTable->item(row, ColFile))
-            probeTable->setItem(row, ColFile, new QTableWidgetItem(path));
-        else
-            probeTable->item(row, ColFile)->setText(path);
-        probeTable->blockSignals(false);
-        m_modified = true;
-        emit probesModified();
-        return;
-    }
-
-    // Write relative path when inside library
+    // Store the path (relative to library if inside it), then recalculate
+    // offsets and anatomy groups for all rows in one shot.
     QString storedPath = path;
     QString libPath = getLibraryPath();
     if (!libPath.isEmpty() && storedPath.startsWith(libPath))
         storedPath = storedPath.mid(libPath.length()).remove(0, 1);
-    entry.probeFile = storedPath;
 
-    // Update the table row
     probeTable->blockSignals(true);
-    populateRow(row, entry);
+    if (!probeTable->item(row, ColFile))
+        probeTable->setItem(row, ColFile, new QTableWidgetItem(storedPath));
+    else
+        probeTable->item(row, ColFile)->setText(storedPath);
     probeTable->blockSignals(false);
 
     m_modified = true;
+    recalculateAll();
+}
+
+// ---------------------------------------------------------------------------
+// recalculateAll
+// ---------------------------------------------------------------------------
+// Recomputes channel offsets and anatomy/spike groups for every row in the
+// probe table from scratch, in list order.  Called after any structural
+// change: Browse, Add, Remove, Move Up/Down, or editing the file column.
+//
+// Algorithm:
+//   - Walk rows top-to-bottom.
+//   - Each row's offset = cumulative channel count of all rows above it.
+//   - Re-import the probe YAML to derive per-shank channel groups.
+//   - Assign group IDs sequentially across all probes (1, 2, ..., N).
+//   - Write the new offset back into ColOffset so the table stays in sync.
+//   - After processing all rows, compute a leftover group from any channels
+//     0..m_nbChannels-1 not claimed by any probe.
+//   - Emit probeLayoutImported with the complete unified anatomy map.
+
+void ProbePage::recalculateAll()
+{
+    QString libPath = getLibraryPath();
+    int nRows = probeTable->rowCount();
+
+    QMap<int,QList<int>> outAnatomy;
+    QMap<int,QList<int>> outSpike;
+    QSet<int> allProbeChannels;
+    int nextGroupId = 1;
+    int cumOffset   = 0;
+
+    for (int r = 0; r < nRows; ++r) {
+        auto* fi = probeTable->item(r, ColFile);
+        QString pf = fi ? fi->text().trimmed() : QString();
+
+        // Write the computed offset back to the table
+        probeTable->blockSignals(true);
+        if (!probeTable->item(r, ColOffset))
+            probeTable->setItem(r, ColOffset, new QTableWidgetItem(QString::number(cumOffset)));
+        else
+            probeTable->item(r, ColOffset)->setText(QString::number(cumOffset));
+        probeTable->blockSignals(false);
+
+        if (pf.isEmpty()) continue;
+
+        // Resolve path
+        QString resolved = pf;
+        if (!QFile::exists(resolved) && !libPath.isEmpty())
+            resolved = libPath + QDir::separator() + pf;
+
+        int cnt = probeChannelCount(resolved);
+        if (cnt <= 0) {
+            // Unknown probe — can't parse.  Advance offset by 0 (leave as-is).
+            continue;
+        }
+
+        // Re-import at the correct offset to get shank channel maps
+        ProbeEntry entry;
+        entry.channelOffset = cumOffset;
+        // Preserve any label already in the table
+        auto* li = probeTable->item(r, ColLabel);
+        if (li && !li->text().isEmpty()) entry.label = li->text();
+
+        QMap<int,QList<int>> ra, rs;
+        if (importProbeYaml(resolved, entry, nextGroupId, ra, rs)) {
+            // Write derived groups back to the table row
+            QStringList gstrs;
+            for (int gid : ra.keys()) gstrs.append(QString::number(gid));
+            probeTable->blockSignals(true);
+            if (!probeTable->item(r, ColGroups))
+                probeTable->setItem(r, ColGroups, new QTableWidgetItem(gstrs.join(QStringLiteral(", "))));
+            else
+                probeTable->item(r, ColGroups)->setText(gstrs.join(QStringLiteral(", ")));
+            // Fill label from probe file if blank
+            if (entry.label != (li ? li->text() : QString())) {
+                if (!probeTable->item(r, ColLabel))
+                    probeTable->setItem(r, ColLabel, new QTableWidgetItem(entry.label));
+                else if (probeTable->item(r, ColLabel)->text().isEmpty())
+                    probeTable->item(r, ColLabel)->setText(entry.label);
+            }
+            probeTable->blockSignals(false);
+
+            for (auto it = ra.constBegin(); it != ra.constEnd(); ++it) {
+                outAnatomy[it.key()] = it.value();
+                for (int ch : it.value()) allProbeChannels.insert(ch);
+                nextGroupId = qMax(nextGroupId, it.key() + 1);
+            }
+            for (auto it = rs.constBegin(); it != rs.constEnd(); ++it)
+                outSpike[it.key()] = it.value();
+        }
+
+        cumOffset += cnt;
+    }
+
+    // Leftover group: channels 0..m_nbChannels-1 not claimed by any probe
+    if (m_nbChannels > 0) {
+        QList<int> leftover;
+        for (int ch = 0; ch < m_nbChannels; ++ch)
+            if (!allProbeChannels.contains(ch))
+                leftover.append(ch);
+        if (!leftover.isEmpty())
+            outAnatomy[nextGroupId] = leftover;
+            // leftover not added to outSpike
+    }
+
     emit probesModified();
 
-    // Collect full probe list and emit layout signal
-    QList<ProbeEntry> allProbes;
-    getProbes(allProbes);
-    emit probeLayoutImported(allProbes, outAnatomy, outSpike, nextGroupId);
+    if (!outAnatomy.isEmpty()) {
+        QList<ProbeEntry> allProbes;
+        getProbes(allProbes);
+        emit probeLayoutImported(allProbes, outAnatomy, outSpike, 1);
+    }
 }
 
 void ProbePage::browseLibraryPath()
@@ -312,10 +387,15 @@ void ProbePage::browseLibraryPath()
     }
 }
 
-void ProbePage::cellEdited(int /*row*/, int /*column*/)
+void ProbePage::cellEdited(int /*row*/, int column)
 {
     m_modified = true;
-    emit probesModified();
+    // When the probe file path is edited directly, recalculate offsets and
+    // anatomy groups for all rows — same as when Browse is used.
+    if (column == ColFile)
+        recalculateAll();
+    else
+        emit probesModified();
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +574,35 @@ ProbeEntry ProbePage::rowToEntry(int row) const
     }
 
     return e;
+}
+
+// ---------------------------------------------------------------------------
+// probeChannelCount
+// ---------------------------------------------------------------------------
+
+int ProbePage::probeChannelCount(const QString& probePath)
+{
+    if (probePath.isEmpty() || !QFile::exists(probePath)) return 0;
+    try {
+        YAML::Node doc = YAML::LoadFile(probePath.toStdString());
+        const YAML::Node pf = doc["probeFile"];
+        if (!pf || !pf.IsMap()) return 0;
+        if (pf["totalChannels"] && pf["totalChannels"].IsScalar())
+            return pf["totalChannels"].as<int>();
+        // Fallback: nShanks × count_per_shank
+        const YAML::Node shanks = pf["shanks"];
+        const YAML::Node sites  = pf["sites"];
+        if (!shanks || !sites) return 0;
+        int nShanks = shanks["count"] ? shanks["count"].as<int>() : 1;
+        const YAML::Node cps = sites["count_per_shank"];
+        if (!cps) return 0;
+        if (cps.IsSequence()) {
+            int total = 0;
+            for (std::size_t i = 0; i < cps.size(); ++i) total += cps[i].as<int>();
+            return total;
+        }
+        return nShanks * cps.as<int>();
+    } catch (...) { return 0; }
 }
 
 void ProbePage::renumberIds()

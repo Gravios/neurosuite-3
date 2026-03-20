@@ -1,10 +1,18 @@
+# NeuroNexus A1x16-Poly2-5mm-50s-177 — neurosuite-3 probe configuration
+# Catalog page 23
+# 1 shank, 16 sites/shank, 16 total channels
+# Geometry fully enumerated: all 16 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A1x16-Poly2-5mm-50s-177
   catalogPage: 23
   totalChannels: 16
-  substrate: {material: silicon, thickness_um: 15}
+  substrate:
+    material: silicon
+    thickness_um: 15
   shanks:
     count: 1
     spacing_um: null
@@ -13,9 +21,25 @@ probeFile:
     count_per_shank: 16
     layout: poly2
     area_um2: 177
-    spacing_um: 25          # staggered 25 µm vertical pitch, 50 µm column offset
-    geometry_description: >
-      Two staggered columns: left column sites at x=-25 µm, right at x=+25 µm.
-      Vertical (y) spacing 25 µm alternating. Total vertical coverage 375 µm.
-  channelMap: {description: null, map: null}
-  notes: "Poly2 (dual-column staggered) layout. 375 µm active span. 68 µm column separation."
+    spacing_um: 25
+    geometry:
+    - [-25, 0]
+    - [25, 25]
+    - [-25, 50]
+    - [25, 75]
+    - [-25, 100]
+    - [25, 125]
+    - [-25, 150]
+    - [25, 175]
+    - [-25, 200]
+    - [25, 225]
+    - [-25, 250]
+    - [25, 275]
+    - [-25, 300]
+    - [25, 325]
+    - [-25, 350]
+    - [25, 375]
+  channelMap:
+    description: null
+    map: null
+  notes: Poly2 (dual-column staggered) layout. 375 µm active span. 68 µm column separation.

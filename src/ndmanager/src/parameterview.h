@@ -281,6 +281,10 @@ private slots:
                           int                   firstNewGroupId);
 
 private:
+    // Tracks the current total channel count so that applyProbeLayout can
+    // rebuild the skip-attribute map and set anatomy->setNbChannels correctly.
+    int m_nbChannels = 0;
+
 
     /**Adds a program to the subtree under the node Program.
    * @param programName name of the program to add.

@@ -1,5 +1,9 @@
-# NeuroNexus Buzsaki32L — NeuroSuite-3 probe configuration
-# Source: 2026 Penetrating Probe Catalog v2.1, page 71 — long-shank 10 mm variant
+# NeuroNexus Buzsaki32L — neurosuite-3 probe configuration
+# Catalog page 71
+# 4 shanks, 8 sites/shank, 32 total channels
+# Geometry fully enumerated: all 32 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
@@ -19,13 +23,39 @@ probeFile:
     area_um2: 160
     spacing_um: null
     geometry:
-      - [0,    0]
-      - [-11,  20]
-      - [11,   40]
-      - [-11,  60]
-      - [11,   80]
-      - [-11, 100]
-      - [11,  120]
-      - [-11, 140]
-  channelMap: { description: "A32 Omnetics connector", map: null }
-  notes: "Long-shank variant, 600 µm shank pitch, 4.2 mm active depth span."
+    - [0, 0]
+    - [-11, 20]
+    - [11, 40]
+    - [-11, 60]
+    - [11, 80]
+    - [-11, 100]
+    - [11, 120]
+    - [-11, 140]
+    - [600, 0]
+    - [589, 20]
+    - [611, 40]
+    - [589, 60]
+    - [611, 80]
+    - [589, 100]
+    - [611, 120]
+    - [589, 140]
+    - [1200, 0]
+    - [1189, 20]
+    - [1211, 40]
+    - [1189, 60]
+    - [1211, 80]
+    - [1189, 100]
+    - [1211, 120]
+    - [1189, 140]
+    - [1800, 0]
+    - [1789, 20]
+    - [1811, 40]
+    - [1789, 60]
+    - [1811, 80]
+    - [1789, 100]
+    - [1811, 120]
+    - [1789, 140]
+  channelMap:
+    description: A32 Omnetics connector
+    map: null
+  notes: Long-shank variant, 600 µm shank pitch, 4.2 mm active depth span.

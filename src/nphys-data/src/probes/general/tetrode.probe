@@ -20,39 +20,33 @@ probeFile:
     length_mm: null        # cut length is experiment-specific; fill in if known
 
   # ── Electrode sites ──────────────────────────────────────────────────────
-  # Geometry is [x_um, y_um] in the probe reference frame.
-  #   x  — lateral position across the bundle cross-section (µm)
-  #   y  — depth along the axis of tissue penetration (µm, tip = 0)
+  # count_per_shank may be a scalar (all shanks equal) or a list
+  # [n0, n1, ...] for probes with unequal channel counts per shank.
+  # Here all 4 channels are on the single shank.
   #
-  # All four wires are cut at the same depth, so y = 0 for every site.
-  # The x values give the lateral spread of the four wires within the
-  # twisted bundle (~25 µm total span for a standard nichrome tetrode).
-  # The exact x positions are not physically meaningful for sorting, but
-  # are required by ndm_setupgroups and ndm_estimatedrift; the equal-y
-  # values correctly tell ndm_estimatedrift that this tetrode cannot resolve
-  # spatial drift along the recording axis.
+  # geometry lists every site as [x_um, y_um] in the probe reference frame:
+  #   x  — lateral position in the bundle cross-section (µm)
+  #   y  — depth along the penetration axis (µm, tip = 0)
+  # All four wires are cut at the same depth so y = 0 for every site.
+  # The x spread (~36 µm total) reflects a standard nichrome tetrode bundle.
   sites:
-    count_per_shank: 4
+    count_per_shank: 4     # scalar: all shanks (here just one) have 4 sites
     layout: tetrode
     area_um2: 25            # ~5.6 µm diameter (nichrome); use 25-50 for tungsten
     spacing_um: null        # sites are not linearly arranged
-    geometry:               # [x_um, y_um]; all sites at the same recording depth
+    geometry:               # explicit enumeration: one [x_um, y_um] per site
       - [-18, 0]            # wire 1
       - [ -6, 0]            # wire 2
       - [  6, 0]            # wire 3
       - [ 18, 0]            # wire 4
 
   # ── Channel mapping ──────────────────────────────────────────────────────
-  # map: null  →  channels assigned sequentially (0,1,2,3) from channelOffset.
-  # Replace with an explicit list if the physical wire order differs from the
-  # amplifier channel order, e.g. map: [2, 0, 3, 1].
+  # null → sequential from channelOffset (0 → wire1, 1 → wire2, ...)
+  # Replace with [2, 0, 3, 1] etc. if your wiring order differs.
   channelMap:
     description: "Sequential — wire order matches amplifier channel order."
     map: null
 
-  notes: "Vendor-agnostic single tetrode (4-wire bundle).  All four sites
-    are at the same recording depth (y=0); ndm_estimatedrift treats the
-    tetrode as a point sensor and does not attempt to resolve axial drift.
-    Site area and geometry reflect typical nichrome tetrodes (~12.5 µm wire,
-    ~25 µm² recording area).  Adjust area_um2 for tungsten (~25-50 µm²) or
-    platinum-iridium tetrodes.  Shank length should be filled in when known."
+  notes: "Vendor-agnostic single tetrode (4-wire bundle).  All sites at y=0
+    (same recording depth); ndm_estimatedrift treats the tetrode as a point
+    sensor.  For tungsten or PtIr tetrodes adjust area_um2 to 25-50 µm²."

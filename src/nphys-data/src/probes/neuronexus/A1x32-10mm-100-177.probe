@@ -1,10 +1,18 @@
+# NeuroNexus A1x32-10mm-100-177 — neurosuite-3 probe configuration
+# Catalog page 41
+# 1 shank, 32 sites/shank, 32 total channels
+# Geometry fully enumerated: all 32 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A1x32-10mm-100-177
   catalogPage: 41
   totalChannels: 32
-  substrate: {material: silicon, thickness_um: 15}
+  substrate:
+    material: silicon
+    thickness_um: 15
   shanks:
     count: 1
     spacing_um: null
@@ -14,5 +22,40 @@ probeFile:
     layout: linear
     area_um2: 177
     spacing_um: 100
-  channelMap: {description: null, map: null}
-  notes: "Long-shank single-shank. 3100 µm active depth coverage."
+    geometry:
+    - [0, 0]
+    - [0, 100]
+    - [0, 200]
+    - [0, 300]
+    - [0, 400]
+    - [0, 500]
+    - [0, 600]
+    - [0, 700]
+    - [0, 800]
+    - [0, 900]
+    - [0, 1000]
+    - [0, 1100]
+    - [0, 1200]
+    - [0, 1300]
+    - [0, 1400]
+    - [0, 1500]
+    - [0, 1600]
+    - [0, 1700]
+    - [0, 1800]
+    - [0, 1900]
+    - [0, 2000]
+    - [0, 2100]
+    - [0, 2200]
+    - [0, 2300]
+    - [0, 2400]
+    - [0, 2500]
+    - [0, 2600]
+    - [0, 2700]
+    - [0, 2800]
+    - [0, 2900]
+    - [0, 3000]
+    - [0, 3100]
+  channelMap:
+    description: null
+    map: null
+  notes: Long-shank single-shank. 3100 µm active depth coverage.
