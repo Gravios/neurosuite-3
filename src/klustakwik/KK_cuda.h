@@ -117,7 +117,23 @@ void cuda_download_logp(KK_GPU *gpu, float *h_LogP, int nClustersAlive,
 } // extern "C"
 
 // Returns true if at least one CUDA-capable device is present.
+//
+// Sets cudaDeviceScheduleYield before enumerating devices so the CUDA
+// runtime yields to the OS scheduler while waiting for GPU results rather
+// than spinning.  The default (cudaDeviceScheduleSpin) keeps a CPU thread
+// pinned at 100% for polling, which directly starves OpenMP worker threads
+// that run the per-chunk CEM loop in parallel.  Yield scheduling adds a
+// small latency penalty per kernel launch (~microseconds) that is
+// negligible for the second-scale chunk EM workload.
+//
+// cudaSetDeviceFlags must be called before the first CUDA API that
+// initialises the primary context (cudaMalloc, cudaMemcpy, etc.).
+// cudaGetDeviceCount is safe to call first; it does not create a context.
+// We ignore cudaErrorSetOnActiveProcess in case the runtime was somehow
+// already initialised earlier (harmless — the existing schedule is kept).
 inline bool cuda_device_available() {
+    cudaError_t sdf = cudaSetDeviceFlags(cudaDeviceScheduleYield);
+    (void)sdf;  // cudaErrorSetOnActiveProcess is benign
     int count = 0;
     return (cudaGetDeviceCount(&count) == cudaSuccess && count > 0);
 }
