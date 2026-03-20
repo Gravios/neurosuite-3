@@ -157,6 +157,27 @@ once()
 	fSaveModel=$(read_kk_param $electrodeGroup fSaveModel 1)
 	saveIntermediates=$(read_kk_param $electrodeGroup saveIntermediates 0)
 
+	# ── Thread count ────────────────────────────────────────────────────────
+	# nThreads controls OMP_NUM_THREADS for the KlustaKwik subprocess.
+	# KlustaKwik has no -nThreads flag; the OpenMP runtime reads the env var.
+	#
+	# Resolution: read_kk_param (three tiers) → 0 means "use all cores".
+	# Groups run sequentially so all cores are available to each group by
+	# default; set nThreads explicitly only when you need to leave headroom
+	# for other work running in parallel on the same machine.
+	nThreads=$(read_kk_param $electrodeGroup nThreads 0)
+	if [ "$nThreads" -le 0 ] 2>/dev/null
+	then
+		nThreads=$(nproc 2>/dev/null || echo 1)
+	fi
+	export OMP_NUM_THREADS=$nThreads
+	# OMP_WAIT_POLICY=passive: idle workers yield to the OS instead of
+	# spinning. Without this, 16 OMP threads + the CUDA polling thread all
+	# spin simultaneously, exceeding the available core count and causing
+	# the scheduler to time-slice — the parallel chunks then run one at a
+	# time.  Passive wait has negligible overhead for second-scale chunks.
+	export OMP_WAIT_POLICY=passive
+
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -192,6 +213,8 @@ once()
 		-SaveIntermediates       $saveIntermediates
 
 	check_command_status KlustaKwik
+	unset OMP_NUM_THREADS
+	unset OMP_WAIT_POLICY
 }
 
 # Run all groups, or just the one requested

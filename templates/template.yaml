@@ -987,6 +987,8 @@ programs:
   - {name: saveIntermediates,    value: 0,       status: Optional}
   # ── Re-run control ─────────────────────────────────────────────────────────
   - {name: overwrite,            value: 0,       status: Optional}
+  # ── Parallelism ─────────────────────────────────────────────────────────────
+  - {name: nThreads,             value: 0,       status: Optional}
   help: |-
     Run KlustaKwik automatic spike sorting for each spikeDetection group.
 
@@ -1132,7 +1134,17 @@ programs:
     whose .clu.N already exists. Can be set per-group in
     spikeDetection.channelGroups[g].klustakwik.overwrite.
 
-# == Post-sorting analysis ====================================================
+    PARALLELISM
+
+    # nThreads
+
+    Number of OpenMP threads passed to KlustaKwik via OMP_NUM_THREADS.
+    KlustaKwik has no -nThreads flag; the value is exported into its environment
+    before launch and unset afterwards so it does not leak to other tools.
+    0 (default) = use all available cores (nproc). Set explicitly only when you
+    need to leave cores free for other concurrent work.
+
+
 - name: ndm_estimatedrift
   parameters:
   - {name: windowSec,    value: 60,      status: Optional}

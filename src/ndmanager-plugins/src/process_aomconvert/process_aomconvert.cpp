@@ -36,7 +36,9 @@
  *   output_basename.yaml   neurosuite-3 session YAML (template.yaml schema)
  */
 
-#define _LARGEFILE_SOURCE
+#ifndef _LARGEFILE_SOURCE
+#  define _LARGEFILE_SOURCE
+#endif
 #define _FILE_OFFSET_BITS 64
 
 #include <hdf5.h>
@@ -144,6 +146,12 @@ static vector<Group> uniformGroups(int nChannels, int groupSize)
 
 // ── HDF5 helpers ──────────────────────────────────────────────────────────────
 
+// Prefix for all dataset path lookups.
+// Empty string = datasets live at HDF5 root (Layout A: direct export).
+// "groupname/" = datasets live inside a top-level group (Layout B: MATLAB -v7.3 struct).
+// Set once by discoverChannels(); all helpers below use it.
+static string g_channelPrefix;
+
 // Suppress HDF5 error stack printing during probes
 static herr_t silentHdf5Error(hid_t, void*) { return 0; }
 
@@ -186,8 +194,6 @@ static double readHdf5Scalar(hid_t file, const string& name)
 // root-level GROUP and search one level deeper; use the first group
 // that contains CRAW_NNN datasets.  Record the prefix so that all
 // subsequent readHdf5Scalar / readChannelSlice calls use the same path.
-
-static string g_channelPrefix;   // empty = root; otherwise "groupname/"
 
 static bool isCrawChannel(const string& n)
 {
