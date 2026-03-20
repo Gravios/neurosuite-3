@@ -207,11 +207,23 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
 KlustersView::~KlustersView()
 {
     qDebug() << "in ~KlustersView(): ";
+
+    // Sever the destroyed() → *DockClosed() connections on every sub-view
+    // widget before we start tearing down.  Without this, Qt delivers the
+    // destroyed() signal for each sub-dock as its QWidget parent chain is
+    // unwound, which calls clusterDockClosed / waveformDockClosed / … and
+    // those touch mainWindow — which is already mid-destruction when the
+    // application exits.  The resulting use-after-free corrupts the heap and
+    // produces the "corrupted double-linked list" SIGABRT.
+    for (ViewWidget* w : qAsConst(viewList))
+        if (w) QObject::disconnect(w, &QObject::destroyed, this, nullptr);
+    if (traceWidget)
+        QObject::disconnect(traceWidget, &QObject::destroyed, this, nullptr);
+
     qDeleteAll(removedClustersUndoList);
     removedClustersUndoList.clear();
     qDeleteAll(removedClustersRedoList);
     removedClustersRedoList.clear();
-
 
     delete shownClusters;
     delete removedClusters;
@@ -1473,7 +1485,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this, &KlustersView::increaseAmplitudeofCorrelograms, qobject_cast<CorrelationView*>(view), &CorrelationView::increaseAmplitude);
         connect(this, &KlustersView::decreaseAmplitudeofCorrelograms, qobject_cast<CorrelationView*>(view), &CorrelationView::decreaseAmplitude);
         connect(this, &KlustersView::setShoulderLine, qobject_cast<CorrelationView*>(view), &CorrelationView::setShoulderLine);
-        connect(this, &KlustersView::clustersRenumbered, qobject_cast<WaveformView*>(view), &WaveformView::clustersRenumbered);
+        connect(this, &KlustersView::clustersRenumbered, qobject_cast<CorrelationView*>(view), &CorrelationView::clustersRenumbered);
         connect(view, &QObject::destroyed, this, &KlustersView::correlogramDockClosed);
     } else if(displayType == ERROR_MATRIX){ //Connections for ErrorMatrixViews
         connect(this, &KlustersView::computeProbabilities, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::updateMatrixContents);
