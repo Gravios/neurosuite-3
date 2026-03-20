@@ -441,6 +441,36 @@ ns_add_subdir(ndmanager-plugins src/ndmanager-plugins)
 ns_add_subdir(klustakwik src/klustakwik)
 
 # ---------------------------------------------------------------------------
+# Explicit build-time dependencies for parallel builds
+#
+# target_link_libraries() creates a *link-order* dependency between a
+# consumer and a shared library, but NOT a *compile-order* dependency.
+# Under "cmake --build --parallel N" (Ninja or Make -j) the compiler for
+# klusters / neuroscope / ndmanager is allowed to start before klustersshared
+# has finished compiling — the build system only ensures klustersshared.so
+# exists before the consumer's link step runs.
+#
+# That is normally fine, but in a monorepo where every subpackage has its
+# own project() call the autogen targets (klusters_autogen, etc.) are
+# generated in their own scope and Ninja/Make does not automatically chain
+# them to klustersshared_autogen.  On a fast parallel build the consumer
+# autogen can race with klustersshared still being built, and on slower
+# systems the link step occasionally races the .so write.
+#
+# add_dependencies() adds a hard build-time ordering edge that covers both
+# the AUTOGEN and the LINK phases: no consumer target may start until the
+# named dependency target has finished.  This is the canonical CMake
+# solution for inter-project dependency races in monorepos.
+# ---------------------------------------------------------------------------
+if(NOT NS_SKIP_LIBKLUSTERSSHARED)
+    foreach(_consumer klusters klusters_convert_binary neuroscope ndmanager)
+        if(TARGET ${_consumer})
+            add_dependencies(${_consumer} klustersshared)
+        endif()
+    endforeach()
+endif()
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 message(STATUS "")
