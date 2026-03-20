@@ -78,10 +78,25 @@ once()
 	local electrodeGroup=$1
 
 	# Check input files
-	inputs_missing "$session.$param_ext" $session.fet.$electrodeGroup && exit $INPUTS_MISSING
+	inputs_missing "$session.$param_ext" $session.fet.$electrodeGroup && return $INPUTS_MISSING
 
-	# Check output file
-	outputs_exist $session.clu.$electrodeGroup && exit $OUTPUTS_EXIST
+	# Check output file — honour the overwrite flag (default: 0 = skip)
+	# The flag follows the same three-tier resolution as all other KK parameters:
+	#   spikeDetection.channelGroups[g].klustakwik.overwrite   (per-group)
+	#   programs[ndm_klustakwik].parameters.overwrite           (global)
+	#   built-in default: 0
+	# Set overwrite: 1 to force re-sorting a group whose .clu already exists.
+	overwrite=$(read_kk_param $electrodeGroup overwrite 0)
+	if outputs_exist $session.clu.$electrodeGroup
+	then
+		if [ "$overwrite" = "1" ]
+		then
+			echo_warning "overwrite=1: removing existing output '$session.clu.$electrodeGroup' and re-running."
+			rm -f $session.clu.$electrodeGroup
+		else
+			return $OUTPUTS_EXIST
+		fi
+	fi
 
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Read Parameters
