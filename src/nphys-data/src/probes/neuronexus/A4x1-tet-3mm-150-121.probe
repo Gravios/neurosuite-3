@@ -1,16 +1,33 @@
+# NeuroNexus A4x1-tet-3mm-150-121 — neurosuite-3 probe configuration
+# Catalog page 26
+# 4 shanks, 1 sites/shank, 4 total channels
+# Geometry fully enumerated: all 4 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A4x1-tet-3mm-150-121
   catalogPage: 26
   totalChannels: 4
-  substrate: { material: silicon, thickness_um: 15 }
-  shanks: { count: 4, spacing_um: 150, length_mm: 3.0 }
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 4
+    spacing_um: 150
+    length_mm: 3.0
   sites:
     count_per_shank: 1
     layout: tetrode
     area_um2: 121
     spacing_um: null
-    geometry: [[0, 0]]
-  channelMap: { description: null, map: null }
-  notes: "4-shank tetrode, 1 site/shank. 450 µm total span (4×150 µm)."
+    geometry:
+    - [0, 0]
+    - [150, 0]
+    - [300, 0]
+    - [450, 0]
+  channelMap:
+    description: null
+    map: null
+  notes: 4-shank tetrode, 1 site/shank. 450 µm total span (4×150 µm).

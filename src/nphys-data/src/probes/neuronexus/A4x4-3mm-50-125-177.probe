@@ -1,3 +1,9 @@
+# NeuroNexus A4x4-3mm-50-125-177 — neurosuite-3 probe configuration
+# Catalog page 28
+# 4 shanks, 4 sites/shank, 16 total channels
+# Geometry fully enumerated: all 16 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
@@ -16,7 +22,24 @@ probeFile:
     layout: linear
     area_um2: 177
     spacing_um: 50
+    geometry:
+    - [0, 0]
+    - [0, 50]
+    - [0, 100]
+    - [0, 150]
+    - [125, 0]
+    - [125, 50]
+    - [125, 100]
+    - [125, 150]
+    - [250, 0]
+    - [250, 50]
+    - [250, 100]
+    - [250, 150]
+    - [375, 0]
+    - [375, 50]
+    - [375, 100]
+    - [375, 150]
   channelMap:
     description: null
     map: null
-  notes: "4-shank, 4 ch/shank linear. 125 µm shank pitch."
+  notes: 4-shank, 4 ch/shank linear. 125 µm shank pitch.

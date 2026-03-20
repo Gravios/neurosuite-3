@@ -1,10 +1,18 @@
+# NeuroNexus A2x8-5mm-50-200-703 — neurosuite-3 probe configuration
+# Catalog page 25
+# 2 shanks, 8 sites/shank, 16 total channels
+# Geometry fully enumerated: all 16 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A2x8-5mm-50-200-703
   catalogPage: 25
   totalChannels: 16
-  substrate: {material: silicon, thickness_um: 15}
+  substrate:
+    material: silicon
+    thickness_um: 15
   shanks:
     count: 2
     spacing_um: 200
@@ -14,5 +22,24 @@ probeFile:
     layout: linear
     area_um2: 703
     spacing_um: 50
-  channelMap: {description: null, map: null}
-  notes: "Large-site (703 µm²) 2-shank probe. 200 µm shank pitch. LFP-optimized."
+    geometry:
+    - [0, 0]
+    - [0, 50]
+    - [0, 100]
+    - [0, 150]
+    - [0, 200]
+    - [0, 250]
+    - [0, 300]
+    - [0, 350]
+    - [200, 0]
+    - [200, 50]
+    - [200, 100]
+    - [200, 150]
+    - [200, 200]
+    - [200, 250]
+    - [200, 300]
+    - [200, 350]
+  channelMap:
+    description: null
+    map: null
+  notes: Large-site (703 µm²) 2-shank probe. 200 µm shank pitch. LFP-optimized.

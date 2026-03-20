@@ -1,0 +1,76 @@
+probeFile:
+  version: '1.0'
+  vendor: general
+  model: tetrode-array-8
+  totalChannels: 32
+
+  # ── Physical construction ────────────────────────────────────────────────
+  # Eight tetrodes in a bundle array, each tetrode with 4 wires.
+  # Shanks (tetrodes) are spaced 200 µm apart in the x direction.
+  # All wires within each tetrode cluster within ±18 µm of the shank centre.
+  substrate: { material: wire-bundle, thickness_um: null }
+
+  shanks:
+    count: 8
+    spacing_um: 200
+    length_mm: null
+
+  # ── Electrode sites ──────────────────────────────────────────────────────
+  # count_per_shank: scalar — all 8 tetrodes have 4 sites each (32 total).
+  # geometry lists all 32 sites explicitly.  Sites within each tetrode group
+  # are at the same depth (y = 0) spread across x.
+  # Shank s is centred at x = s * 200 µm.
+  sites:
+    count_per_shank: 4
+    layout: tetrode
+    area_um2: 25
+    spacing_um: null
+    geometry:
+      # Tetrode 0  (centre x=0)
+      - [-18, 0]
+      - [ -6, 0]
+      - [  6, 0]
+      - [ 18, 0]
+      # Tetrode 1  (centre x=200)
+      - [182, 0]
+      - [194, 0]
+      - [206, 0]
+      - [218, 0]
+      # Tetrode 2  (centre x=400)
+      - [382, 0]
+      - [394, 0]
+      - [406, 0]
+      - [418, 0]
+      # Tetrode 3  (centre x=600)
+      - [582, 0]
+      - [594, 0]
+      - [606, 0]
+      - [618, 0]
+      # Tetrode 4  (centre x=800)
+      - [782, 0]
+      - [794, 0]
+      - [806, 0]
+      - [818, 0]
+      # Tetrode 5  (centre x=1000)
+      - [982,  0]
+      - [994,  0]
+      - [1006, 0]
+      - [1018, 0]
+      # Tetrode 6  (centre x=1200)
+      - [1182, 0]
+      - [1194, 0]
+      - [1206, 0]
+      - [1218, 0]
+      # Tetrode 7  (centre x=1400)
+      - [1382, 0]
+      - [1394, 0]
+      - [1406, 0]
+      - [1418, 0]
+
+  channelMap:
+    description: "Sequential shank-major: channels 0-3 → tetrode 0, 4-7 → tetrode 1, etc."
+    map: null
+
+  notes: "8-tetrode bundle array, 200 µm inter-tetrode pitch, 32 channels total.
+    All sites at y=0 (same recording depth per tetrode).
+    Adjust channelOffset in the session YAML if this is not the first probe."

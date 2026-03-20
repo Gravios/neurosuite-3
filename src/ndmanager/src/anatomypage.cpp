@@ -95,7 +95,9 @@ void AnatomyPage::getAttributes(QMap<QString, QMap<int,QString> >& attributesMap
     for(int i =0; i<attributesTable->columnCount();++i){
         QMap<int,QString> values;
         for(int j = 0;j<attributesTable->rowCount();++j){
-            QString attribut = attributesTable->item(j,i)->text().simplified();
+            QTableWidgetItem* it = attributesTable->item(j,i);
+            if (!it) continue;  // cell is null if setItem was never called for it
+            QString attribut = it->text().simplified();
             if(attribut != " ")
                 values.insert(j,attribut);
         }
@@ -108,22 +110,24 @@ void AnatomyPage::setGroups(const QMap<int, QList<int> >& groups)
     groupTable->clearContents();
     groupTable->setRowCount(groups.count());
 
+    // Use an explicit row counter rather than (key - 1).  Group keys from the
+    // YAML reader are normally 1..N, but if any group entry is skipped (e.g.
+    // a group with no channels) the reader increments its counter without
+    // inserting a key, producing gaps.  Using key-1 as the row index then
+    // writes past the end of the table, corrupting memory or crashing.
+    int row = 0;
     QMap<int,QList<int> >::const_iterator iterator;
-    //The iterator gives the keys sorted.
-    for (iterator = groups.begin(); iterator != groups.end(); ++iterator) {
+    for (iterator = groups.begin(); iterator != groups.end(); ++iterator, ++row) {
         QList<int> channelIds = iterator.value();
         QList<int>::iterator channelIterator;
 
-        //create the string containing the channel ids
         QString group;
         for(channelIterator = channelIds.begin(); channelIterator != channelIds.end(); ++channelIterator){
             group.append(QString::number(*channelIterator));
             group.append(" ");
         }
 
-        groupTable->setItem(iterator.key() - 1,0,new QTableWidgetItem(group));
-
-        //groupTable->adjustRow(iterator.key() - 1);
+        groupTable->setItem(row, 0, new QTableWidgetItem(group));
     }//end of groups loop
 }
 
@@ -132,8 +136,9 @@ void AnatomyPage::getGroups(QMap<int, QList<int> >& groups)const{
     int groupId = 1;
     for(int i =0; i<groupTable->rowCount();++i){
         QList<int> channels;
-        QString item = groupTable->item(i,0)->text();
-        QString channelList = item.simplified();
+        QTableWidgetItem* it = groupTable->item(i, 0);
+        if (!it) { ++groupId; continue; }  // null if row was added but never populated
+        QString channelList = it->text().simplified();
         if(channelList == " ")
             continue;
         const QStringList channelParts = channelList.split(" ", Qt::SkipEmptyParts);
@@ -242,8 +247,9 @@ void AnatomyPage::slotValidate(){
 }
 
 void AnatomyPage::setNbChannels(int nbChannels){
-    for(int i =0; i<attributesTable->rowCount();++i)
-        attributesTable->removeRow(i);
-
+    // Clear all rows at once. The old loop called removeRow(i) while iterating
+    // 0..rowCount-1: each removal shrinks the table, so odd rows were silently
+    // skipped and the final removeRow could write past the end of the table.
+    attributesTable->setRowCount(0);
     attributesTable->setRowCount(nbChannels);
 }

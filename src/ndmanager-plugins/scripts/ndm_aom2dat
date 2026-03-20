@@ -2,7 +2,15 @@
 
 #////////////////////////////////////////////////////////////////////////////
 #//
-#//   Convert AlphaOmega .mat (HDF5 v7.3) recording to .dat + session YAML
+#//   Convert AlphaOmega .mat (HDF5 v7.3) recording to .dat
+#//
+#//   Produces SESSION.dat only.  Does NOT write anatomical groups or spike
+#//   detection groups — use ndm_setupgroups or the Probes tab in ndmanager
+#//   after conversion.
+#//
+#//   After conversion the script conditionally patches the session YAML:
+#//     - nChannels   updated only if it disagrees with the .dat file size
+#//     - samplingRate updated only if available from the .mat file
 #//
 #//   copyright       (C) 2025 neurosuite-3 contributors
 #//
@@ -13,15 +21,12 @@
 #//
 #////////////////////////////////////////////////////////////////////////////
 
-# Source helper functions
 source ndm_functions
 
-# Parse command-line
 program=$(basename $0)
-if [ $# -gt 1 ]
-then
-	echo_error "usage: $program [parameter-file]"
-	exit $GENERAL_ERROR
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
 fi
 directory=$(basename "$(pwd)")
 session=${1:-$directory}
@@ -30,61 +35,80 @@ session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
 
-# Print a header to indicate current processing step
-print_header "$session - Converting AlphaOmega .mat -> .dat + YAML"
+print_header "$session - Converting AlphaOmega .mat → .dat"
 
-# Check required programs
 check_commands_installed process_aomconvert
 
-# Check input parameter file
 inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Read Parameters
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ── Read parameters ────────────────────────────────────────────────────────────
 
-matFile=$(read_script_parameter $session matFile)
+matFile=$(read_script_parameter $session ndm_aom2dat matFile)
 check_mandatory_variable $matFile "missing matFile (path to input .mat file)"
 
-# Check the .mat file exists
-if [ ! -f "$matFile" ]
-then
-	echo_error "input file '$matFile' not found"
-	exit $INPUTS_MISSING
+if [ ! -f "$matFile" ]; then
+    echo_error "input file '$matFile' not found"
+    exit $INPUTS_MISSING
 fi
 
-# Check output files — process_aomconvert writes SESSION.dat and SESSION.yaml
-if outputs_exist $session.dat $session.yaml
-then
-	exit $OUTPUTS_EXIST
+if outputs_exist "$session.dat"; then
+    exit $OUTPUTS_EXIST
 fi
 
-# Optional parameters
-options=""
+chunkSamples=$(read_script_parameter $session ndm_aom2dat chunkSamples)
 
-topology=$(read_script_parameter $session topology)
-if check_optional_variable $topology
-then
-	options="$options -t $topology"
-fi
+# ── Run conversion (.dat only, no YAML) ──────────────────────────────────────
 
-groups=$(read_script_parameter $session groups)
-if check_optional_variable $groups
-then
-	options="$options -g $groups"
-fi
-
-chunkSamples=$(read_script_parameter $session chunkSamples)
-if check_optional_variable $chunkSamples
-then
-	options="$options -c $chunkSamples"
-fi
-
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Process
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+options="--no-yaml"
+check_optional_variable $chunkSamples && options="$options -c $chunkSamples"
 
 print_header "$session - Processing $matFile"
-
 process_aomconvert $options "$matFile" "$session"
 check_command_status process_aomconvert
+
+# ── Read actual channel count from the .dat file ──────────────────────────────
+# Parse nChannels from the YAML; compute what it should be from dat size.
+
+nChannels_yaml=$(yaml_read "$session" "//acquisitionSystem/nChannels")
+
+dat_bytes=$(stat -c%s "$session.dat" 2>/dev/null || echo 0)
+
+if [ "$dat_bytes" -gt 0 ] && check_optional_variable "$nChannels_yaml" && [ "$nChannels_yaml" -gt 0 ]; then
+    # dat is int16 (2 bytes/sample), sample-major.
+    # nSamples × nChannels × 2 = dat_bytes  →  nChannels must divide evenly.
+    # Use the count from process_aomconvert --dry-run which already parsed the .mat.
+    mat_meta=$(process_aomconvert --dry-run "$matFile" "$session" 2>/dev/null)
+    nChannels_mat=$(echo "$mat_meta" | grep -oP '(?<=Channels\s{10}: )\d+')
+
+    if check_optional_variable "$nChannels_mat" && [ "$nChannels_mat" -ne "$nChannels_yaml" ]; then
+        echo_info "nChannels mismatch: YAML=$nChannels_yaml, .dat=$nChannels_mat — updating YAML"
+        yaml_write "$session" "acquisitionSystem/nChannels" "$nChannels_mat"
+    fi
+elif [ "$dat_bytes" -gt 0 ] && [ -z "$nChannels_yaml" ]; then
+    # No channel count in YAML yet — get it from the .mat metadata
+    mat_meta=$(process_aomconvert --dry-run "$matFile" "$session" 2>/dev/null)
+    nChannels_mat=$(echo "$mat_meta" | grep -oP '(?<=Channels\s{10}: )\d+')
+    if check_optional_variable "$nChannels_mat"; then
+        echo_info "Writing nChannels=$nChannels_mat from .mat metadata"
+        yaml_write "$session" "acquisitionSystem/nChannels" "$nChannels_mat"
+    fi
+fi
+
+# ── Update sampling rate from .mat if available ───────────────────────────────
+
+sr_yaml=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
+
+if [ -z "$sr_yaml" ] || [ "$sr_yaml" = "null" ] || [ "$sr_yaml" = "0" ]; then
+    # samplingRate not yet set — read from .mat
+    mat_meta=${mat_meta:-$(process_aomconvert --dry-run "$matFile" "$session" 2>/dev/null)}
+    sr_mat=$(echo "$mat_meta" | grep -oP '(?<=Sampling rate\s{5}: )\d+')
+    if check_optional_variable "$sr_mat" && [ "$sr_mat" -gt 0 ]; then
+        echo_info "Writing samplingRate=$sr_mat Hz from .mat metadata"
+        yaml_write "$session" "acquisitionSystem/samplingRate" "$sr_mat"
+    fi
+fi
+
+echo_info "Conversion complete: $session.dat"
+echo_info "Next steps:"
+echo_info "  ndmanager $session.yaml  — add probes to configure channel groups"
+echo_info "  ndm_hipass               — high-pass filter for spike detection"

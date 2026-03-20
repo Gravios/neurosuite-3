@@ -1,15 +1,61 @@
+# NeuroNexus A1x32-Poly2-5mm-50s-177 — neurosuite-3 probe configuration
+# Catalog page 48
+# 1 shank, 32 sites/shank, 32 total channels
+# Geometry fully enumerated: all 32 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A1x32-Poly2-5mm-50s-177
   catalogPage: 48
   totalChannels: 32
-  substrate: { material: silicon, thickness_um: 15 }
-  shanks: { count: 1, spacing_um: null, length_mm: 5.0 }
+  substrate:
+    material: silicon
+    thickness_um: 15
+  shanks:
+    count: 1
+    spacing_um: null
+    length_mm: 5.0
   sites:
     count_per_shank: 32
-    layout: poly2      # two staggered columns
+    layout: poly2
     area_um2: 177
-    spacing_um: 50     # column pitch; columns offset 12 µm laterally
-  channelMap: { description: null, map: null }
-  notes: "Polytrode 2-column staggered. Combines linear and tetrode benefits."
+    spacing_um: 50
+    geometry:
+    - [-25, 0]
+    - [25, 50]
+    - [-25, 100]
+    - [25, 150]
+    - [-25, 200]
+    - [25, 250]
+    - [-25, 300]
+    - [25, 350]
+    - [-25, 400]
+    - [25, 450]
+    - [-25, 500]
+    - [25, 550]
+    - [-25, 600]
+    - [25, 650]
+    - [-25, 700]
+    - [25, 750]
+    - [-25, 800]
+    - [25, 850]
+    - [-25, 900]
+    - [25, 950]
+    - [-25, 1000]
+    - [25, 1050]
+    - [-25, 1100]
+    - [25, 1150]
+    - [-25, 1200]
+    - [25, 1250]
+    - [-25, 1300]
+    - [25, 1350]
+    - [-25, 1400]
+    - [25, 1450]
+    - [-25, 1500]
+    - [25, 1550]
+  channelMap:
+    description: null
+    map: null
+  notes: Polytrode 2-column staggered. Combines linear and tetrode benefits.

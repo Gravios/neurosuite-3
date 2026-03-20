@@ -1,5 +1,9 @@
-# NeuroNexus Buzsaki64 — NeuroSuite-3 probe configuration
-# Source: 2026 Penetrating Probe Catalog v2.1, page 101
+# NeuroNexus Buzsaki64 — neurosuite-3 probe configuration
+# Catalog page 101
+# 8 shanks, 8 sites/shank, 64 total channels
+# Geometry fully enumerated: all 64 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
@@ -19,16 +23,74 @@ probeFile:
     area_um2: 160
     spacing_um: null
     geometry:
-      - [0,    0]
-      - [-11,  20]
-      - [11,   40]
-      - [-11,  60]
-      - [11,   80]
-      - [-11, 100]
-      - [11,  120]
-      - [-11, 140]
-  channelMap: { description: "H64LP dual 32-ch Omnetics", map: null }
-  notes: >
-    8-shank 64-ch archetypal hippocampal probe. 1400 µm lateral span.
-    Reference sites 4200 µm² at base. Tip width 8.5 µm.
-    Cite: Berenyi et al. (2014) J Neurophysiol.
+    - [0, 0]
+    - [-11, 20]
+    - [11, 40]
+    - [-11, 60]
+    - [11, 80]
+    - [-11, 100]
+    - [11, 120]
+    - [-11, 140]
+    - [200, 0]
+    - [189, 20]
+    - [211, 40]
+    - [189, 60]
+    - [211, 80]
+    - [189, 100]
+    - [211, 120]
+    - [189, 140]
+    - [400, 0]
+    - [389, 20]
+    - [411, 40]
+    - [389, 60]
+    - [411, 80]
+    - [389, 100]
+    - [411, 120]
+    - [389, 140]
+    - [600, 0]
+    - [589, 20]
+    - [611, 40]
+    - [589, 60]
+    - [611, 80]
+    - [589, 100]
+    - [611, 120]
+    - [589, 140]
+    - [800, 0]
+    - [789, 20]
+    - [811, 40]
+    - [789, 60]
+    - [811, 80]
+    - [789, 100]
+    - [811, 120]
+    - [789, 140]
+    - [1000, 0]
+    - [989, 20]
+    - [1011, 40]
+    - [989, 60]
+    - [1011, 80]
+    - [989, 100]
+    - [1011, 120]
+    - [989, 140]
+    - [1200, 0]
+    - [1189, 20]
+    - [1211, 40]
+    - [1189, 60]
+    - [1211, 80]
+    - [1189, 100]
+    - [1211, 120]
+    - [1189, 140]
+    - [1400, 0]
+    - [1389, 20]
+    - [1411, 40]
+    - [1389, 60]
+    - [1411, 80]
+    - [1389, 100]
+    - [1411, 120]
+    - [1389, 140]
+  channelMap:
+    description: H64LP dual 32-ch Omnetics
+    map: null
+  notes: '8-shank 64-ch archetypal hippocampal probe. 1400 µm lateral span. Reference sites 4200 µm² at base. Tip width 8.5
+    µm. Cite: Berenyi et al. (2014) J Neurophysiol.
+
+    '

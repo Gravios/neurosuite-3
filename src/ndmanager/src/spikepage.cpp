@@ -90,37 +90,33 @@ void SpikePage::setGroups(const QMap<int, QList<int> >& groups,const QMap<int, Q
     groupTable->clearContents();
     groupTable->setRowCount(groups.count());
 
+    // Use an explicit row counter. Group keys from the YAML reader can be
+    // non-contiguous if any channelGroups entry is skipped, making key-1
+    // larger than rowCount-1 and producing an out-of-bounds write.
+    int row = 0;
     QMap<int,QList<int> >::const_iterator iterator;
-    //The iterator gives the keys sorted.
-    for(iterator = groups.begin(); iterator != groups.end(); ++iterator){
+    for(iterator = groups.begin(); iterator != groups.end(); ++iterator, ++row){
         QList<int> channelIds = iterator.value();
         QList<int>::iterator channelIterator;
 
-        //create the string containing the channel ids
         QString group;
         for(channelIterator = channelIds.begin(); channelIterator != channelIds.end(); ++channelIterator){
             group.append(QString::number(*channelIterator));
             group.append(" ");
         }
 
-        groupTable->setItem(iterator.key() - 1,0,new QTableWidgetItem(group));
-
+        groupTable->setItem(row, 0, new QTableWidgetItem(group));
 
         QMap<QString,QString> groupInformation = information[iterator.key()];
         QMap<QString,QString>::Iterator iterator2;
-        //The positions of the information in the table are hard coded (for the moment :0) )
         for(iterator2 = groupInformation.begin(); iterator2 != groupInformation.end(); ++iterator2){
-            if(iterator2.key() == NB_SAMPLES){
-                groupTable->setItem(iterator.key() - 1,1,new QTableWidgetItem(iterator2.value()));
-            }
-            else if(iterator2.key() == PEAK_SAMPLE_INDEX){
-                groupTable->setItem(iterator.key() - 1,2,new QTableWidgetItem(iterator2.value()));
-            }
-            else if(iterator2.key() == NB_FEATURES){
-                groupTable->setItem(iterator.key() - 1,3,new QTableWidgetItem(iterator2.value()));
-            }
+            if(iterator2.key() == NB_SAMPLES)
+                groupTable->setItem(row, 1, new QTableWidgetItem(iterator2.value()));
+            else if(iterator2.key() == PEAK_SAMPLE_INDEX)
+                groupTable->setItem(row, 2, new QTableWidgetItem(iterator2.value()));
+            else if(iterator2.key() == NB_FEATURES)
+                groupTable->setItem(row, 3, new QTableWidgetItem(iterator2.value()));
         }
-        //groupTable->adjustRow(iterator.key() - 1);
     }//end of groups loop
 }
 
@@ -130,8 +126,9 @@ void SpikePage::getGroups(QMap<int, QList<int> >& groups)const{
     int groupId = 1;
     for(int i =0; i<groupTable->rowCount();++i){
         QList<int> channels;
-        QString item = groupTable->item(i,0)->text();
-        QString channelList = item.simplified();
+        QTableWidgetItem* it = groupTable->item(i, 0);
+        if (!it) { ++groupId; continue; }  // null if row was added but never populated
+        QString channelList = it->text().simplified();
         if(channelList == " ")
             continue;
         QStringList channelParts = channelList.split(" ", Qt::SkipEmptyParts);
@@ -146,13 +143,16 @@ void SpikePage::getGroupInformation(QMap<int,  QMap<QString,QString> >& groupInf
     int groupId = 1;
     for(int i =0; i<groupTable->rowCount();++i){
         QMap<QString,QString> information;
-        const QString item = groupTable->item(i,0)->text();
-        QString channelList = item.simplified();
+        QTableWidgetItem* col0 = groupTable->item(i, 0);
+        if (!col0) { ++groupId; continue; }  // unpopulated row
+        QString channelList = col0->text().simplified();
         if(channelList == " ")
             continue;
         //The positions of the information in the table are hard coded
         for(int j = 1;j < groupTable->columnCount(); ++j){
-            const QString infoItem = groupTable->item(i,j)->text().simplified();
+            QTableWidgetItem* cell = groupTable->item(i, j);
+            if (!cell) continue;  // manually added rows may have null cells
+            const QString infoItem = cell->text().simplified();
             if(infoItem == " ")
                 continue;
             if(j == 1)

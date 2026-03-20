@@ -1,10 +1,18 @@
+# NeuroNexus A8x8-Edge-5mm-50-150-177 — neurosuite-3 probe configuration
+# Catalog page 99
+# 8 shanks, 8 sites/shank, 64 total channels
+# Geometry fully enumerated: all 64 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A8x8-Edge-5mm-50-150-177
   catalogPage: 99
   totalChannels: 64
-  substrate: {material: silicon, thickness_um: 15}
+  substrate:
+    material: silicon
+    thickness_um: 15
   shanks:
     count: 8
     spacing_um: 150
@@ -14,5 +22,72 @@ probeFile:
     layout: edge
     area_um2: 177
     spacing_um: 50
-  channelMap: {description: null, map: null}
-  notes: "8-shank edge layout. 150 µm shank pitch, 1050 µm lateral span. 350 µm active depth."
+    geometry:
+    - [0, 0]
+    - [0, 50]
+    - [0, 100]
+    - [0, 150]
+    - [0, 200]
+    - [0, 250]
+    - [0, 300]
+    - [0, 350]
+    - [150, 0]
+    - [150, 50]
+    - [150, 100]
+    - [150, 150]
+    - [150, 200]
+    - [150, 250]
+    - [150, 300]
+    - [150, 350]
+    - [300, 0]
+    - [300, 50]
+    - [300, 100]
+    - [300, 150]
+    - [300, 200]
+    - [300, 250]
+    - [300, 300]
+    - [300, 350]
+    - [450, 0]
+    - [450, 50]
+    - [450, 100]
+    - [450, 150]
+    - [450, 200]
+    - [450, 250]
+    - [450, 300]
+    - [450, 350]
+    - [600, 0]
+    - [600, 50]
+    - [600, 100]
+    - [600, 150]
+    - [600, 200]
+    - [600, 250]
+    - [600, 300]
+    - [600, 350]
+    - [750, 0]
+    - [750, 50]
+    - [750, 100]
+    - [750, 150]
+    - [750, 200]
+    - [750, 250]
+    - [750, 300]
+    - [750, 350]
+    - [900, 0]
+    - [900, 50]
+    - [900, 100]
+    - [900, 150]
+    - [900, 200]
+    - [900, 250]
+    - [900, 300]
+    - [900, 350]
+    - [1050, 0]
+    - [1050, 50]
+    - [1050, 100]
+    - [1050, 150]
+    - [1050, 200]
+    - [1050, 250]
+    - [1050, 300]
+    - [1050, 350]
+  channelMap:
+    description: null
+    map: null
+  notes: 8-shank edge layout. 150 µm shank pitch, 1050 µm lateral span. 350 µm active depth.

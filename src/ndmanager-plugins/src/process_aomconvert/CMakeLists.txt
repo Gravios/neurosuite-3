@@ -21,6 +21,14 @@ target_include_directories(process_aomconvert PRIVATE
 target_link_libraries(process_aomconvert PRIVATE
     ${HDF5_C_LIBRARIES})
 
+# Embed the HDF5 library directory as an RPATH so the installed binary can
+# find libhdf5 at runtime without requiring ldconfig or LD_LIBRARY_PATH.
+# This is safe for a workstation build: the soname is stable across minor
+# HDF5 versions and the library won't move without a full reinstall.
+set_target_properties(process_aomconvert PROPERTIES
+    INSTALL_RPATH_USE_LINK_PATH TRUE
+    BUILD_RPATH_USE_ORIGIN      TRUE)
+
 # HDF5 definitions (e.g. _LARGEFILE_SOURCE, H5_USE_16_API) injected by FindHDF5
 target_compile_definitions(process_aomconvert PRIVATE
     ${HDF5_DEFINITIONS})

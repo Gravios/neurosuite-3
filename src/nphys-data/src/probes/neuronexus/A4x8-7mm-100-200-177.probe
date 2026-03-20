@@ -1,10 +1,18 @@
+# NeuroNexus A4x8-7mm-100-200-177 — neurosuite-3 probe configuration
+# Catalog page 69
+# 4 shanks, 8 sites/shank, 32 total channels
+# Geometry fully enumerated: all 32 sites as [x_um, y_um]
+#   x = lateral position from first shank tip (µm)
+#   y = depth from shank tip (µm); sites ordered tip-to-base
 probeFile:
   version: '1.0'
   vendor: NeuroNexus
   model: A4x8-7mm-100-200-177
   catalogPage: 69
   totalChannels: 32
-  substrate: {material: silicon, thickness_um: 15}
+  substrate:
+    material: silicon
+    thickness_um: 15
   shanks:
     count: 4
     spacing_um: 200
@@ -14,5 +22,40 @@ probeFile:
     layout: linear
     area_um2: 177
     spacing_um: 100
-  channelMap: {description: null, map: null}
-  notes: "4-shank, 7 mm depth. 700 µm active span per shank."
+    geometry:
+    - [0, 0]
+    - [0, 100]
+    - [0, 200]
+    - [0, 300]
+    - [0, 400]
+    - [0, 500]
+    - [0, 600]
+    - [0, 700]
+    - [200, 0]
+    - [200, 100]
+    - [200, 200]
+    - [200, 300]
+    - [200, 400]
+    - [200, 500]
+    - [200, 600]
+    - [200, 700]
+    - [400, 0]
+    - [400, 100]
+    - [400, 200]
+    - [400, 300]
+    - [400, 400]
+    - [400, 500]
+    - [400, 600]
+    - [400, 700]
+    - [600, 0]
+    - [600, 100]
+    - [600, 200]
+    - [600, 300]
+    - [600, 400]
+    - [600, 500]
+    - [600, 600]
+    - [600, 700]
+  channelMap:
+    description: null
+    map: null
+  notes: 4-shank, 7 mm depth. 700 µm active span per shank.

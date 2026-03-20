@@ -235,6 +235,35 @@ programs:
     (use 'cat' or 'less -R' for correct formatting, default = false)
 
 # == Acquisition format converters ============================================
+- name: ndm_aom2dat
+  parameters:
+  - {name: matFile,      value: ~,        status: Mandatory}
+  - {name: chunkSamples, value: 10000000, status: Optional}
+  help: |-
+    Convert an AlphaOmega .mat recording (HDF5 v7.3 format) to SESSION.dat.
+
+    Only the binary .dat file is written.  Anatomical groups and spike
+    detection groups are NOT set — use the Probes tab in ndmanager or
+    ndm_setupgroups after conversion to configure channel groupings.
+
+    After conversion the session YAML is patched conservatively:
+      - nChannels is updated only if it disagrees with the .dat file size
+      - samplingRate is written only if not already set in the YAML
+
+    PARAMETERS
+
+    # matFile
+
+    Path to the AlphaOmega .mat file, absolute or relative to the session
+    directory (e.g. recording.mat).
+
+    OPTIONAL PARAMETERS
+
+    # chunkSamples
+
+    Samples per streaming read chunk (default = 10000000 ≈ 610 MB for
+    32 channels).  Reduce on systems with less than 32 GB RAM.
+
 - name: ndm_ncs2dat
   parameters:
   - {name: reverse,  value: 'false', status: Mandatory}

@@ -53,6 +53,8 @@ public:
 
     bool isModified() const { return m_modified; }
     void setModified(bool b) { m_modified = b; }
+    /** Total recording channels — used to compute the leftover group on import. */
+    void setNbChannels(int n) { m_nbChannels = n; }
 
 signals:
     /** Emitted whenever any cell is edited or a row is added/removed. */
@@ -85,6 +87,13 @@ public slots:
     void cellEdited(int row, int column);
     void rowSelected();        ///< update diagram preview
     void resetModificationStatus() { m_modified = false; }
+
+    /**
+     * Recompute channel offsets and anatomy/spike groups for every row from
+     * scratch.  Called after any structural change (Browse, Add, Remove,
+     * Move, or editing the probe file column directly).
+     */
+    void recalculateAll();
 
 private:
     enum Col {
@@ -119,8 +128,15 @@ private:
                          QMap<int,QList<int>>& outAnatomy,
                          QMap<int,QList<int>>& outSpike);
 
-    bool    m_modified  = false;
+    bool    m_modified   = false;
     QString m_libraryPath;
+    int     m_nbChannels = 0;
+
+    /**
+     * Return totalChannels from a .probe YAML, or 0 on error.
+     * Used to auto-compute channel offsets without a full parse.
+     */
+    static int probeChannelCount(const QString& probePath);
 };
 
 #endif // PROBEPAGE_H
