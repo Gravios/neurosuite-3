@@ -149,9 +149,10 @@ static herr_t silentHdf5Error(hid_t, void*) { return 0; }
 
 static double readHdf5Scalar(hid_t file, const string& name)
 {
-    hid_t ds = H5Dopen2(file, name.c_str(), H5P_DEFAULT);
+    string fullName = g_channelPrefix + name;
+    hid_t ds = H5Dopen2(file, fullName.c_str(), H5P_DEFAULT);
     if (ds < 0)
-        throw runtime_error("HDF5 dataset not found: " + name);
+        throw runtime_error("HDF5 dataset not found: " + fullName);
     double val = 0.0;
     hid_t memType = H5T_NATIVE_DOUBLE;
     // AlphaOmega stores scalars as 1-element arrays; flatten to scalar
@@ -169,39 +170,109 @@ static double readHdf5Scalar(hid_t file, const string& name)
     return val;
 }
 
-// Return sorted list of CRAW_NNN dataset names present in the file
+// Return sorted list of CRAW_NNN dataset names present in the file.
+//
+// Handles two layouts produced by AlphaOmega + MATLAB:
+//
+//   Layout A (direct HDF5 export):
+//     /CRAW_001  /CRAW_001_KHz  ... (top-level datasets)
+//
+//   Layout B (MATLAB struct saved with -v7.3):
+//     MATLAB serialises the struct variable (e.g. 'ds') as an HDF5 group:
+//     /ds/CRAW_001  /ds/CRAW_001_KHz  ...
+//     The struct variable name is arbitrary and unknown in advance.
+//
+// Strategy: collect CRAW_NNN from the root; if none found, open every
+// root-level GROUP and search one level deeper; use the first group
+// that contains CRAW_NNN datasets.  Record the prefix so that all
+// subsequent readHdf5Scalar / readChannelSlice calls use the same path.
+
+static string g_channelPrefix;   // empty = root; otherwise "groupname/"
+
+static bool isCrawChannel(const string& n)
+{
+    if (n.size() < 8 || n.substr(0, 5) != "CRAW_") return false;
+    for (size_t i = 5; i < n.size(); ++i)
+        if (!isdigit(n[i])) return false;
+    return true;
+}
+
+static vector<string> collectCraw(hid_t group)
+{
+    struct Col {
+        vector<string> names;
+        static herr_t cb(hid_t, const char* name, const H5L_info_t*, void* data) {
+            string n(name);
+            if (isCrawChannel(n))
+                static_cast<Col*>(data)->names.push_back(n);
+            return 0;
+        }
+    } col;
+    H5Literate(group, H5_INDEX_NAME, H5_ITER_NATIVE, nullptr, &Col::cb, &col);
+    return col.names;
+}
+
 static vector<string> discoverChannels(hid_t file)
 {
-    // Iterate root-level names via H5Literate
-    struct Collector {
+    g_channelPrefix.clear();
+
+    // Try root first (Layout A)
+    auto names = collectCraw(file);
+    if (!names.empty()) {
+        sort(names.begin(), names.end(),
+             [](const string& a, const string& b){
+                 return stoi(a.substr(5)) < stoi(b.substr(5)); });
+        return names;
+    }
+
+    // Root has no CRAW_* — look one level deep in every root group (Layout B)
+    struct GroupFinder {
+        hid_t       file;
         vector<string> names;
-        static herr_t callback(hid_t, const char* name, const H5L_info_t*, void* data) {
-            auto* c = static_cast<Collector*>(data);
-            string n(name);
-            // Match CRAW_NNN but not CRAW_NNN_Suffix
-            if (n.size() >= 8 && n.substr(0, 5) == "CRAW_") {
-                bool allDigits = true;
-                for (size_t i = 5; i < n.size(); ++i)
-                    if (!isdigit(n[i])) { allDigits = false; break; }
-                if (allDigits) c->names.push_back(n);
+        string      prefix;
+        static herr_t cb(hid_t loc, const char* name,
+                         const H5L_info_t*, void* data)
+        {
+            auto* gf = static_cast<GroupFinder*>(data);
+            if (!gf->names.empty()) return 0;  // already found
+
+            H5O_info_t info;
+            H5Oget_info_by_name(loc, name, &info, H5O_INFO_BASIC, H5P_DEFAULT);
+            if (info.type != H5O_TYPE_GROUP) return 0;
+
+            hid_t grp = H5Gopen2(loc, name, H5P_DEFAULT);
+            if (grp < 0) return 0;
+            auto found = collectCraw(grp);
+            H5Gclose(grp);
+
+            if (!found.empty()) {
+                gf->names  = found;
+                gf->prefix = string(name) + "/";
             }
             return 0;
         }
-    } collector;
+    } gf;
+    gf.file = file;
     H5Literate(file, H5_INDEX_NAME, H5_ITER_NATIVE, nullptr,
-               &Collector::callback, &collector);
-    sort(collector.names.begin(), collector.names.end(),
-         [](const string& a, const string& b) {
-             return stoi(a.substr(5)) < stoi(b.substr(5));
-         });
-    return collector.names;
+               &GroupFinder::cb, &gf);
+
+    if (!gf.names.empty()) {
+        g_channelPrefix = gf.prefix;
+        sort(gf.names.begin(), gf.names.end(),
+             [](const string& a, const string& b){
+                 return stoi(a.substr(5)) < stoi(b.substr(5)); });
+        return gf.names;
+    }
+
+    return {};  // no CRAW channels found
 }
 
 // Get number of samples in a dataset (last dimension)
 static hsize_t datasetNSamples(hid_t file, const string& name)
 {
-    hid_t ds = H5Dopen2(file, name.c_str(), H5P_DEFAULT);
-    if (ds < 0) throw runtime_error("cannot open dataset " + name);
+    string fullName = g_channelPrefix + name;
+    hid_t ds = H5Dopen2(file, fullName.c_str(), H5P_DEFAULT);
+    if (ds < 0) throw runtime_error("cannot open dataset " + fullName);
     hid_t sp = H5Dget_space(ds);
     int ndims = H5Sget_simple_extent_ndims(sp);
     vector<hsize_t> dims(ndims);
@@ -216,8 +287,9 @@ static void readChannelSlice(hid_t file, const string& name,
                               hsize_t offset, hsize_t count,
                               int16_t* dst)
 {
-    hid_t ds = H5Dopen2(file, name.c_str(), H5P_DEFAULT);
-    if (ds < 0) throw runtime_error("cannot open dataset " + name);
+    string fullName = g_channelPrefix + name;
+    hid_t ds = H5Dopen2(file, fullName.c_str(), H5P_DEFAULT);
+    if (ds < 0) throw runtime_error("cannot open dataset " + fullName);
     hid_t filespace = H5Dget_space(ds);
     int ndims = H5Sget_simple_extent_ndims(filespace);
     vector<hsize_t> dims(ndims);
@@ -410,6 +482,17 @@ static void usage(const char* prog, int code = EXIT_SUCCESS)
 
 int main(int argc, char* argv[])
 {
+    // ── Disable HDF5 POSIX file locking FIRST ────────────────────────────
+    // Must happen before ANY HDF5 call. H5Eset_auto2 below triggers library
+    // initialisation, which reads HDF5_USE_FILE_LOCKING at that point.
+    // NTFS/FUSE mounts fail POSIX fcntl locking silently, so H5Fopen returns
+    // -1 on valid files if locking is still active when the lib initialises.
+#if defined(_WIN32)
+    _putenv_s("HDF5_USE_FILE_LOCKING", "FALSE");
+#else
+    setenv("HDF5_USE_FILE_LOCKING", "FALSE", 1);
+#endif
+
     // Silence HDF5 automatic error printing
     H5Eset_auto2(H5E_DEFAULT, &silentHdf5Error, nullptr);
 
