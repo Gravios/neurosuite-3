@@ -1,37 +1,11 @@
-# SpikeRealign — Linux Installation, AMD ROCm / HIP
+# SpikeRealign — Installation
 
-## Step 1 — Install ROCm
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-Follow **[doc/gpu/README.md — AMD ROCm / HIP](../../gpu/README.md#amd-rocm--hip)** for complete ROCm 6.x installation instructions.
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Step 2 — System packages
-
-```bash
-sudo apt install cmake build-essential
-```
-
-## Step 3 — Build
-
-```bash
-cd /path/to/neurosuite-3/src/spikerealign
-
-cmake -B build \
-  -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-sudo cmake --install build
-```
-
-To target specific GPU architectures:
-
-```bash
-cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
-  -DSR_HIP_ARCHS="gfx1100;gfx1030;gfx90a"
-```
-
-## Verify
-
-```bash
-SpikeRealign --help
-SpikeRealign_cpu --help
-```
+- **klusters:** [../../klusters/install/linux-hip.md](../../klusters/install/linux-hip.md)
+- **klustakwik:** [../../klustakwik/install/linux-hip.md](../../klustakwik/install/linux-hip.md)

@@ -1,18 +1,11 @@
-# SpikeRealign — Windows Installation, NVIDIA CUDA
+# SpikeRealign — Installation
 
-The GPU backend setup is identical to KlustaKwik. See [KlustaKwik Windows CUDA](../../klustakwik/install/windows-cuda.md) for CUDA Toolkit and Visual Studio setup, then build SpikeRealign:
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-```bat
-cd path\to\neurosuite-3\src\spikerealign
-rmdir /s /q build
-mkdir build && cd build
-cmake .. -G "Ninja" -DUSE_HIP=OFF -DUSE_SYCL=OFF -DCMAKE_BUILD_TYPE=Release
-ninja
-```
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Verify
-
-```bat
-SpikeRealign.exe --help
-SpikeRealign_cpu.exe --help
-```
+- **klusters:** [../../klusters/install/windows-cuda.md](../../klusters/install/windows-cuda.md)
+- **klustakwik:** [../../klustakwik/install/windows-cuda.md](../../klustakwik/install/windows-cuda.md)

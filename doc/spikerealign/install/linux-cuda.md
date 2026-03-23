@@ -1,39 +1,11 @@
-# SpikeRealign — Linux Installation, NVIDIA CUDA
+# SpikeRealign — Installation
 
-## Step 1 — Install CUDA Toolkit
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)** for complete installation instructions, including CUDA 12.8 for RTX 5000 series (Blackwell / sm_120) and Secure Boot MOK key signing.
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Step 2 — System packages
-
-```bash
-sudo apt install cmake build-essential libgomp1
-```
-
-## Step 3 — Build
-
-```bash
-cd /path/to/neurosuite-3/src/spikerealign
-
-cmake -B build \
-  -DUSE_HIP=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-sudo cmake --install build
-```
-
-`SpikeRealign_cpu` is always built alongside the GPU binary.
-
-To target a specific GPU architecture:
-
-```bash
-cmake -B build -DUSE_HIP=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_CUDA_ARCHITECTURES="86;89;120"
-```
-
-## Verify
-
-```bash
-SpikeRealign --help
-SpikeRealign_cpu --help
-```
+- **klusters:** [../../klusters/install/linux-cuda.md](../../klusters/install/linux-cuda.md)
+- **klustakwik:** [../../klustakwik/install/linux-cuda.md](../../klustakwik/install/linux-cuda.md)

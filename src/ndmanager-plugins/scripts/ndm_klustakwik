@@ -117,10 +117,6 @@ once()
 	nFeatures=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
 	check_mandatory_variable $nFeatures "missing number of features for electrode group $electrodeGroup"
 
-	# Sampling rate
-	samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
-	check_mandatory_variable $samplingRate "missing sampling rate"
-
 	# UseFeatures: one '1' per PCA feature per channel, plus energy, plus timestamp.
 	# The timestamp MUST be the last '1' so that KlustaKwik's timeDimIdx = nDims-1
 	# points to real session timestamps.  Without it, RunChunkedCEM partitions by
@@ -135,7 +131,6 @@ once()
 	mergeThresh=$(read_kk_param $electrodeGroup mergeThresh 42.0)
 	globalMergeIter=$(read_kk_param $electrodeGroup globalMergeIter 50)
 	timeMergeIter=$(read_kk_param $electrodeGroup timeMergeIter 50)
-	nbSamplesPerSpike=$(read_kk_param $electrodeGroup nbSamplesPerSpike 32)
 
 	# Session-level (usually from tier-2 global block or tier-3 defaults):
 	minClusters=$(read_kk_param $electrodeGroup minClusters 2)
@@ -150,8 +145,6 @@ once()
 	distThresh=$(read_kk_param $electrodeGroup distThresh 6.9)
 	fullStepEvery=$(read_kk_param $electrodeGroup fullStepEvery 10)
 	changedThresh=$(read_kk_param $electrodeGroup changedThresh 0.05)
-	postRealign=$(read_kk_param $electrodeGroup postRealign 1)
-	postRealignIter=$(read_kk_param $electrodeGroup postRealignIter 2)
 	log=$(read_kk_param $electrodeGroup log 1)
 	screen=$(read_kk_param $electrodeGroup screen 0)
 	fSaveModel=$(read_kk_param $electrodeGroup fSaveModel 1)
@@ -192,7 +185,6 @@ once()
 		-nStarts                 $nStarts                 \
 		-PenaltyMix              $penaltyMix              \
 		-InitMethod              $initMethod              \
-		-SamplingRate            $samplingRate            \
 		-ChunkMinutes            $chunkMinutes            \
 		-ChunkOverlapMinutes     $chunkOverlapMinutes     \
 		-ChunkPreseedFraction    $chunkPreseedFraction    \
@@ -204,9 +196,6 @@ once()
 		-DistThresh              $distThresh              \
 		-FullStepEvery           $fullStepEvery           \
 		-ChangedThresh           $changedThresh           \
-		-PostRealign             $postRealign             \
-		-PostRealignIter         $postRealignIter         \
-		-NbSamplesPerSpike       $nbSamplesPerSpike       \
 		-Log                     $log                     \
 		-Screen                  $screen                  \
 		-fSaveModel              $fSaveModel              \

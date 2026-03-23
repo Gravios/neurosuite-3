@@ -1,53 +1,11 @@
-# SpikeRealign — macOS Installation
+# SpikeRealign — Installation
 
-## GPU acceleration on macOS
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-CUDA, HIP, and SYCL GPU acceleration are not available on macOS. macOS builds are CPU / OpenMP only. For GPU-accelerated SpikeRealign, use a Linux machine or WSL2 on Windows.
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Package manager
-
-Install [Homebrew](https://brew.sh):
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-## System packages
-
-```bash
-brew install cmake ninja libomp
-```
-
-## Build
-
-```bash
-cd /path/to/neurosuite-3/src/spikerealign
-
-cmake -B build \
-  -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
-  -DOpenMP_CXX_LIB_NAMES="omp" \
-  -DOpenMP_omp_LIBRARY="$(brew --prefix libomp)/lib/libomp.dylib"
-cmake --build build -j$(sysctl -n hw.logicalcpu)
-sudo cmake --install build
-```
-
-Alternatively with GCC (OpenMP included out of the box):
-
-```bash
-brew install gcc
-export CXX=$(brew --prefix gcc)/bin/g++-14
-
-cmake -B build \
-  -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(sysctl -n hw.logicalcpu)
-sudo cmake --install build
-```
-
-## Verify
-
-```bash
-SpikeRealign --help
-```
+- **klusters:** [../../klusters/install/macos.md](../../klusters/install/macos.md)
+- **klustakwik:** [../../klustakwik/install/macos.md](../../klustakwik/install/macos.md)

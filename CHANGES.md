@@ -66,8 +66,7 @@ KlustaKwik parameter through three priority levels using `yaml_read` and
 **New parameters exposed** (were missing from the old single-tier implementation):
 `MaxPossibleClusters`, `nStarts`, `PenaltyMix`, `ChunkOverlapMinutes`,
 `ChunkPreseedFraction`, `MaxIter`, `SplitEvery`, `DistThresh`, `FullStepEvery`,
-`ChangedThresh`, `PostRealign`, `PostRealignIter`, `NbSamplesPerSpike`, `Log`, `Screen`,
-`fSaveModel`.
+`ChangedThresh`, `Log`, `Screen`, `fSaveModel`.
 
 **Old parameters with updated defaults:**
 - `maxClusters`: 100 → resolved from tier 1 (probe-calibrated) or tier 3 default 25

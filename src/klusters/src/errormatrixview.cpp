@@ -98,14 +98,16 @@ void ErrorMatrixView::customEvent(QEvent* event){
         //Get the event information
         ErrorMatrixThread* errorMatrixThread = errorMatrixEvent->parentThread();
         Array<double>* newProb = errorMatrixThread->getProbabilities();
-        // Only accept the result if the thread actually computed something
-        // (it may be null if haveToStopProcessing was set before run() started),
-        // AND if this thread belongs to the current generation — i.e. it was not
-        // superseded by a later updateMatrixContents() call (e.g. triggered by a
-        // renumber while this thread was still running).  Without the generation
-        // check a slow pre-renumber thread arriving after a fast post-renumber
-        // thread would silently overwrite the correct result with stale data.
-        if(newProb != nullptr && errorMatrixThread->generation() == m_generation){
+
+        // Accept the result only if:
+        //  (a) the thread computed a non-null result, AND
+        //  (b) this thread belongs to the current generation (not superseded by a
+        //      later updateMatrixContents() call such as one triggered by renumbering).
+        // Without the generation check a slow pre-renumber thread arriving after a
+        // fast post-renumber thread would silently overwrite the correct result.
+        const bool accepted = (newProb != nullptr
+                               && errorMatrixThread->generation() == m_generation);
+        if(accepted){
             delete probabilities;  // release the previous result before overwriting
             probabilities = newProb;
             clusterList = errorMatrixThread->getClusterList();
@@ -128,14 +130,19 @@ void ErrorMatrixView::customEvent(QEvent* event){
         errorMatrixThread = nullptr;
 
         if(!goingToDie){
-            //Each time the matrix is modified, the size of the window is recalculated.
-            updateWindow();
-            dataReady = true;
-
-            setCursor(Qt::ArrowCursor);
-
-            //Update the widget
-            update();
+            if(accepted){
+                // Each time the matrix is accepted, the window size is recalculated
+                // from the (updated) clusterList before triggering a repaint.
+                updateWindow();
+                dataReady = true;
+                setCursor(Qt::ArrowCursor);
+                update();
+            } else {
+                // Stale result discarded — restore cursor if no other thread is still
+                // computing, so the UI is not stuck in wait-cursor state.
+                if(threadsToBeKill.isEmpty())
+                    setCursor(Qt::ArrowCursor);
+            }
         }
     }
 }

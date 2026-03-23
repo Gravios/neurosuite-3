@@ -14,7 +14,7 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology toolchain.
 | [neuroscope](doc/neuroscope/README.md) | Multi-channel signal visualiser |
 | [klusters](doc/klusters/README.md) | Interactive manual spike-sorting GUI |
 | [klustakwik](doc/klustakwik/README.md) | Automatic spike sorter (Classification EM) |
-| [spikerealign](doc/spikerealign/README.md) | Batch spike waveform realignment tool |
+| [spikerealign](doc/spikerealign/README.md) | Spike waveform realignment engine (used inside klusters and KlustaKwik Phase 1.5) |
 
 ---
 
@@ -177,11 +177,10 @@ The build script installs `yaml-cpp`, `libxml2`, `gsl`, `hdf5`, and (if requeste
 
 ```
 libklustersshared → ndmanager
-                 → klusters
+                 → klusters (includes spikerealign)
 ndmanager-plugins  (independent)
 neuroscope         (independent)
 klustakwik         (independent)
-spikerealign       (independent)
 ```
 
 ---
@@ -282,7 +281,7 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 ### GPU acceleration
 
-- KlustaKwik and SpikeRealign support CUDA, ROCm/HIP, and SYCL (Intel Arc). `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
+- KlustaKwik and klusters support CUDA, ROCm/HIP, and SYCL (Intel Arc) for both the CEM E-step and the waveform realignment xcorr kernel. `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
 
 ### Probe library and setup
 
@@ -333,9 +332,8 @@ Several components use GPU acceleration when the relevant toolkit is present at 
 
 | Component | GPU backends | What is accelerated |
 |---|---|---|
-| `klustakwik` | CUDA / HIP / SYCL | E-step distance computations in CEM |
-| `spikerealign` | CUDA / HIP / SYCL | Cross-correlation across all spikes |
-| `klusters` | CUDA / HIP / SYCL | Grouping Assistant, interactive realignment |
+| `klustakwik` | CUDA / HIP / SYCL | CEM E-step + Phase 1.5 waveform realignment (xcorr) |
+| `klusters` | CUDA / HIP / SYCL | Grouping Assistant, interactive spike realignment (xcorr) |
 | `process_medianfilter` | CUDA | High-pass filter (`ndm_hipass`) |
 | `process_medianthreshold` | CUDA | Threshold estimation (`ndm_extractspikes`) |
 | `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix (`ndm_spikegrouper`) |

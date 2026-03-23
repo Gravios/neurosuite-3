@@ -1,19 +1,11 @@
-# SpikeRealign — Windows Installation, Intel Arc / SYCL
+# SpikeRealign — Installation
 
-The GPU backend setup is identical to KlustaKwik. See [KlustaKwik Windows SYCL](../../klustakwik/install/windows-sycl.md) for oneAPI Toolkit and Visual Studio setup, then build SpikeRealign inside the oneAPI command prompt:
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-```bat
-cd path\to\neurosuite-3\src\spikerealign
-rmdir /s /q build
-mkdir build && cd build
-cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF -DCMAKE_BUILD_TYPE=Release
-ninja
-```
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Verify
-
-```bat
-set ONEAPI_DEVICE_SELECTOR=level_zero:gpu
-SpikeRealign.exe --help
-SpikeRealign_cpu.exe --help
-```
+- **klusters:** [../../klusters/install/windows-sycl.md](../../klusters/install/windows-sycl.md)
+- **klustakwik:** [../../klustakwik/install/windows-sycl.md](../../klustakwik/install/windows-sycl.md)

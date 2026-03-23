@@ -1,14 +1,7 @@
-// KlustaKwik.cpp — C++17 modernisation
+// KlustaKwik.cpp — main entry point, parameter handling, and outer CEM loop.
 //
-// Changes from original v1.7:
-//   - #include <iostream.h>/<fstream.h> → standard headers
-#include <cstdint>
-//   - Error() marked [[noreturn]], const char* signatures
-//   - Cholesky: no longer allocates temporary Array objects — works directly
-//     on the raw float pointers (eliminates 2 heap allocs per cluster per EStep)
-//   - TriSolve: same — direct pointer arithmetic, no Array temporaries
-//   - MatPrint: const-correct
-//   - All global C-string arrays kept as-is for param.c compatibility
+// For a full description of changes from the original v1.7 release see
+// CHANGES.md in this directory.
 
 #include "KlustaKwik.h"
 #include "KK.h"

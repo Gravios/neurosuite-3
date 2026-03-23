@@ -98,4 +98,29 @@ int xcorr_omp_compute(
 
 #ifdef __cplusplus
 }
-#endif
+
+// ---------------------------------------------------------------------------
+// C++ dispatcher — selects the best available backend at runtime.
+// Include this header and link realign_xcorr_dispatch.cpp to use it.
+// ---------------------------------------------------------------------------
+namespace XcorrDispatch {
+
+/**
+ * Run the cross-correlation alignment kernel on the best available backend
+ * (CUDA → HIP → SYCL → OpenMP).  Same parameters as the per-backend
+ * xcorr_*_compute() functions above.
+ */
+int compute(
+    const int16_t* waveforms,
+    const int16_t* tmpl,
+    int nSpikes, int nChannels, int nSamples,
+    int maxShift, float minScore,
+    int*   shifts_out,
+    float* scores_out);
+
+/** Human-readable name of the backend selected at the first compute() call. */
+const char* backendName();
+
+} // namespace XcorrDispatch
+
+#endif /* __cplusplus (second block) */

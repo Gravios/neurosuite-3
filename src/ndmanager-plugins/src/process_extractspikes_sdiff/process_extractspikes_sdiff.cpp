@@ -217,6 +217,12 @@ void computeSdiffThresholds(FILE       *fp,
             }
             sort(v.begin(), v.end());
             const double med = v[v.size() / 2];
+            // Quiroga (2004) threshold: thr = factor × 4 × σ_n
+            // where σ_n = median(|x|) / 0.6745  (robust noise-amplitude estimate;
+            // 0.6745 = Φ⁻¹(0.75) for a unit Gaussian).
+            // factor is the user-supplied -f argument (default 3 in ndm_extractspikes_sdiff);
+            // combined with 4 it matches process_medianthreshold's convention of
+            // "threshold = factor × 4 × sigma_n".
             outThresholds[g][ci] = factor * 4.0 * med / 0.6745;
             if(verbose)
                 cout << "  [sdiff] g=" << g+1

@@ -29,10 +29,16 @@
 #
 #  CHANNEL ORDERING
 #  ----------------
-#  Channels in each spikeDetection group must be listed in their physical
-#  probe order (tip-to-base, or shank-proximal to shank-distal) so that
-#  spatial neighbours are adjacent in the channel list.  This is already
-#  standard practice for tetrode / linear-probe recordings.
+#  For sdiffOrder=1 (first-difference) and sdiffOrder=2 (Laplacian), channels
+#  in each spikeDetection group must be listed in their physical probe order
+#  (tip-to-base, or shank-proximal to shank-distal) so that spatial neighbours
+#  are adjacent in the channel list.
+#
+#  For sdiffOrder=3 (all-pairwise, the default), channel order is irrelevant:
+#  s[i] = n*x[i] − Σx[j] = n*(x[i]−mean(x)), which is invariant to permutation
+#  of the channel list.  This is the recommended mode for tetrode, V-probe, and
+#  Buzsaki-style recordings where physical probe order may not be known or may
+#  vary across shanks.
 #
 #  PARAMETERS  (in addition to the standard ndm_extractspikes parameters)
 #  ----------

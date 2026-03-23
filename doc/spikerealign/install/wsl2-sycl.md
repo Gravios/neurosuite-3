@@ -1,15 +1,11 @@
-# SpikeRealign — WSL2 Installation, Intel Arc / SYCL
+# SpikeRealign — Installation
 
-## Step 1 — Install oneAPI and Level-Zero runtime
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-Follow **[doc/gpu/README.md — Intel SYCL / oneAPI — WSL2](../../gpu/README.md#wsl2-intel-arc-via-wsl2-gpu-passthrough)** for complete installation instructions.
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Step 2 — Build
-
-Identical to bare-metal Linux — see [linux-sycl.md](linux-sycl.md).
-
-## Verify
-
-```bash
-ONEAPI_DEVICE_SELECTOR=level_zero:gpu SpikeRealign --help
-```
+- **klusters:** [../../klusters/install/wsl2-sycl.md](../../klusters/install/wsl2-sycl.md)
+- **klustakwik:** [../../klustakwik/install/wsl2-sycl.md](../../klustakwik/install/wsl2-sycl.md)

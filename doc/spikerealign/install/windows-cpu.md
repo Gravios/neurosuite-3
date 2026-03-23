@@ -1,37 +1,11 @@
-# SpikeRealign — Windows Installation, CPU / OpenMP
+# SpikeRealign — Installation
 
-## Prerequisites
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-1. **Visual Studio 2022** with the **Desktop development with C++** workload. Download: https://visualstudio.microsoft.com/downloads/
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-2. **CMake** ≥ 3.21 and **Ninja**:
-   ```powershell
-   winget install Kitware.CMake
-   winget install Ninja-build.Ninja
-   ```
-
-## Build
-
-Open a **Developer Command Prompt for VS 2022**:
-
-```bat
-cd path\to\neurosuite-3\src\spikerealign
-rmdir /s /q build
-mkdir build && cd build
-cmake .. -G "Ninja" ^
-         -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF ^
-         -DCMAKE_BUILD_TYPE=Release
-ninja
-```
-
-`SpikeRealign_cpu.exe` and `SpikeRealign.exe` (same binary when no GPU backend is selected) are built in the `build\` directory. Install:
-
-```bat
-cmake --install . --prefix C:\neurosuite
-```
-
-## Verify
-
-```bat
-C:\neurosuite\bin\SpikeRealign.exe --help
-```
+- **klusters:** [../../klusters/install/windows-cpu.md](../../klusters/install/windows-cpu.md)
+- **klustakwik:** [../../klustakwik/install/windows-cpu.md](../../klustakwik/install/windows-cpu.md)

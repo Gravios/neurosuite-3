@@ -9,10 +9,14 @@
  * defines: USE_CUDA, USE_HIP, USE_SYCL.  Any combination is valid.
  * The OpenMP CPU path is always compiled and is the final fallback.
  *
- * Public API (used from klustersdoc.cpp)
- * ──────────────────────────────────────
+ * Public API
+ * ──────────
  *   XcorrDispatch::compute(...)  — run the alignment kernel
  *   XcorrDispatch::backendName() — human-readable active backend label
+ *
+ * Consumers:
+ *   KK.cpp (KlustaKwik)          — Phase 1.5 batch realignment after chunked CEM
+ *   klustersdoc.cpp (Klusters)   — interactive per-cluster realignment in the GUI
  ***************************************************************************/
 
 #include "realign_xcorr.h"

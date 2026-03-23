@@ -419,8 +419,7 @@ static void writeYaml(const string& path,
           << "      maxPossibleClusters: " << maxP << "\n"
           << "      mergeThresh: " << fixed << setprecision(2) << mt << "\n"
           << "      globalMergeIter: " << mergeIter << "\n"
-          << "      timeMergeIter: " << mergeIter << "\n"
-          << "      nbSamplesPerSpike: " << WAVEFORM_SAMPS << "\n";
+          << "      timeMergeIter: " << mergeIter << "\n";
     }
     f << "\n";
 
@@ -459,8 +458,6 @@ static void writeYaml(const string& path,
          "  - {name: distThresh,           value: 6.9,      status: Optional}\n"
          "  - {name: fullStepEvery,        value: 10,       status: Optional}\n"
          "  - {name: changedThresh,        value: 0.05,     status: Optional}\n"
-         "  - {name: postRealign,          value: 1,        status: Optional}\n"
-         "  - {name: postRealignIter,      value: 2,        status: Optional}\n"
          "  - {name: log,                  value: 1,        status: Optional}\n"
          "  - {name: screen,               value: 0,        status: Optional}\n"
          "  - {name: fSaveModel,           value: 1,        status: Optional}\n"

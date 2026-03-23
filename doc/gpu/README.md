@@ -4,12 +4,14 @@ Several neurosuite-3 components optionally use GPU acceleration:
 
 | Component | GPU path | What is accelerated |
 |---|---|---|
-| `klustakwik` | CUDA / HIP / SYCL | E-step distance computations in CEM |
-| `spikerealign` | CUDA / HIP / SYCL | Cross-correlation across all spikes in a cluster |
-| `klusters` | CUDA / HIP / SYCL | Grouping Assistant posterior probability matrix |
+| `klustakwik` | CUDA / HIP / SYCL | CEM E-step distance computations + Phase 1.5 waveform realignment (xcorr) |
+| `klusters` | CUDA / HIP / SYCL | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr) |
 | `process_medianfilter` | CUDA | Median-subtraction high-pass filter |
 | `process_medianthreshold` | CUDA | Per-channel noise threshold estimation |
 | `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix construction |
+
+The waveform realignment cross-correlation kernel (`realign_xcorr`) is compiled into both
+`klustakwik` and `klusters` — it is not a separate binary.
 
 GPU backends are auto-detected by CMake at build time. If none is found the build falls back to an OpenMP CPU path automatically — you do not need to set any flag to get a working build. Pass `-DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF` to force a CPU-only build explicitly.
 
@@ -17,7 +19,7 @@ GPU backends are auto-detected by CMake at build time. If none is found the buil
 
 ## NVIDIA CUDA
 
-Supported by klustakwik, spikerealign, klusters, process\_medianfilter, process\_medianthreshold, and process\_spikegrouper.
+Supported by klustakwik, klusters, process\_medianfilter, process\_medianthreshold, and process\_spikegrouper.
 
 ### Driver and toolkit versions
 
@@ -86,7 +88,7 @@ NVIDIA dropped macOS support in macOS 10.14 (Mojave). CUDA is not available on m
 
 ## AMD ROCm / HIP
 
-Supported by klustakwik, spikerealign, and klusters.
+Supported by klustakwik and klusters.
 
 ### Ubuntu 22.04 / 24.04
 
@@ -122,7 +124,7 @@ Install [ROCm for Windows](https://rocm.docs.amd.com/en/latest/deploy/windows/in
 
 ## Intel SYCL / oneAPI (Intel Arc)
 
-Supported by klustakwik and spikerealign. Requires Intel oneAPI Base Toolkit ≥ 2023.1 and the `icpx` compiler. When SYCL is detected at configure time, CMake auto-selects `icpx` as the C++ compiler for those components.
+Supported by klustakwik and klusters. Requires Intel oneAPI Base Toolkit ≥ 2023.1 and the `icpx` compiler. When SYCL is detected at configure time, CMake auto-selects `icpx` as the C++ compiler for those components.
 
 ### Ubuntu 22.04 / 24.04 (bare metal Intel Arc)
 
@@ -170,7 +172,7 @@ After installing the GPU toolkit, run `cmake` on the repository root and check t
 
 ```
 -- KlustaKwik: CUDA available — /usr/local/cuda-12.8/bin/nvcc
--- SpikeRealign: CUDA available — /usr/local/cuda-12.8/bin/nvcc
+-- klusters xcorr: CUDA available
 -- process_medianfilter: CUDA build (86;89;100;120)
 -- process_spikegrouper: CUDA build (86;89;100;120)
 ```
@@ -194,8 +196,7 @@ Each GPU-enabled binary probes for available devices at startup and selects the 
 | Binary | Override |
 |---|---|
 | `KlustaKwik` | `KlustaKwik session N -ForceCPU 1` |
-| `SpikeRealign` | `SpikeRealign session N -ForceCPU 1` |
 | `process_spikegrouper` | `process_spikegrouper ... --cpu` |
 | `process_medianfilter` | CPU-only build; no runtime switch |
 
-Each GPU build also compiles `KlustaKwik_cpu` and `SpikeRealign_cpu` as permanently CPU-only binaries. These are installed alongside the GPU-enabled versions.
+Each GPU build also compiles `KlustaKwik_cpu` as a permanently CPU-only binary installed alongside the GPU-enabled version. For klusters, the xcorr backend is selected at runtime via `KLUSTERS_USE_SYCL=1` (SYCL only; CUDA and HIP are probed automatically).

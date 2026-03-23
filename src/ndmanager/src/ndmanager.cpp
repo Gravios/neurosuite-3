@@ -674,7 +674,8 @@ void ndManager::slotQuery(){
         process.start(program, arguments);
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         if (!process.waitForFinished()) {
-            //TODO
+            // Process timed out or failed to start — nothing to display.
+            // A future improvement could show an error message here.
             delete queryInputDialog;
             return;
         }

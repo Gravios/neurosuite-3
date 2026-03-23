@@ -281,33 +281,6 @@ bool SpikeRealign::projectWaveform(const QVector<short>& waveform,
 }
 
 // ---------------------------------------------------------------------------
-// findBestShift — cross-correlation based optimal shift
-// ---------------------------------------------------------------------------
-
-int SpikeRealign::findBestShift(const QVector<short>& spike,
-                                 const QVector<short>& meanWaveform,
-                                 int nChan, int nSamples, int /*peakChan*/,
-                                 int maxShift)
-{
-    // Use ALL channels: sum cross-correlation across channels
-    int bestShift = 0;
-    double bestCC = -std::numeric_limits<double>::infinity();
-
-    for (int sh = -maxShift; sh <= maxShift; ++sh) {
-        double cc = 0.0;
-        for (int s = 0; s < nSamples; ++s) {
-            int ss = s + sh;
-            if (ss < 0 || ss >= nSamples) continue;
-            for (int ch = 0; ch < nChan; ++ch)
-                cc += (double)spike[ss * nChan + ch]
-                    * (double)meanWaveform[s  * nChan + ch];
-        }
-        if (cc > bestCC) { bestCC = cc; bestShift = sh; }
-    }
-    return bestShift;
-}
-
-// ---------------------------------------------------------------------------
 // swapSpikes — swap two spikes completely: on-disk + in-memory
 // ---------------------------------------------------------------------------
 

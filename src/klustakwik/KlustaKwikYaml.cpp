@@ -95,9 +95,28 @@ KKYamlSpikeParams kkReadYamlSpikeParams(const char* fileBase, int elecNo)
         const auto& grp = groups[idx];
         if (!grp || !grp.IsMap()) return out;
 
-        // channels: sequence of channel IDs → count gives NbChannels
-        if (grp["channels"] && grp["channels"].IsSequence())
-            out.nbChannels = static_cast<int>(grp["channels"].size());
+        // channels: count the channel IDs to obtain NbChannels.
+        //
+        // ndmanager's YAML schema stores channels as a map with a "channel"
+        // sub-sequence:
+        //   channels:
+        //     channel: [0, 1, 2, 3, 4, 5, 6, 7]
+        //
+        // Some hand-authored files use a flat sequence instead:
+        //   channels: [0, 1, 2, 3, 4, 5, 6, 7]
+        //
+        // Both cases are handled here; either gives the correct count.
+        if (grp["channels"]) {
+            const auto& ch = grp["channels"];
+            if (ch.IsSequence()) {
+                // Flat list
+                out.nbChannels = static_cast<int>(ch.size());
+            } else if (ch.IsMap()) {
+                // ndmanager schema: channels.channel is the sequence
+                if (ch["channel"] && ch["channel"].IsSequence())
+                    out.nbChannels = static_cast<int>(ch["channel"].size());
+            }
+        }
 
         // nSamples: scalar
         if (grp["nSamples"])

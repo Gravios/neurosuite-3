@@ -65,7 +65,8 @@ extern int   GlobalMergeIter;
 
 // Phase 1.5 waveform realignment
 // NbChannels > 0 && NbSamplesPerSpike > 0  →  realignment enabled in chunked mode.
-// Pass via -NbChannels and -NbSamplesPerSpike; ndm_klustakwik sets these from the XML.
+// Both are auto-detected from <FileBase>.yaml at startup (see KlustaKwikYaml.cpp).
+// Override explicitly with -NbChannels and -NbSamplesPerSpike if needed.
 extern int   NbChannels;
 extern int   NbSamplesPerSpike;
 // NbBytesPerSample: bytes per sample in the .spk file (2 for 12/14/16-bit, 4 for 32-bit).

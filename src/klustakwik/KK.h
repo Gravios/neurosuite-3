@@ -57,7 +57,7 @@ public:
     // Core EM
     // -----------------------------------------------------------------------
     void  AllocateArrays();
-    void  AlocateCholeskyVecs();
+    void  AllocateCholeskyVecs();
     void  SaveBestMeans();
     void  LoadData();
     float Penalty(int n) const;
@@ -172,7 +172,6 @@ public:
         const std::vector<std::vector<int>>& chunkClass,
         int nChan, int nSamplesPerSpike, int bytesPerSample = 2);
 
-public:
     // -----------------------------------------------------------------------
     // Dimensions
     // -----------------------------------------------------------------------
@@ -230,7 +229,7 @@ public:
     //
     // Moved from KlustaSave (global singleton) onto KK so that chunk
     // sub-objects are fully self-contained and safe to run in parallel
-    // threads.  Allocated by AlocateCholeskyVecs(); freed automatically
+    // threads.  Allocated by AllocateCholeskyVecs(); freed automatically
     // when the KK instance is destroyed (unique_ptr).
     // -----------------------------------------------------------------------
     std::unique_ptr<std::vector<Array<float>>> pChol;
