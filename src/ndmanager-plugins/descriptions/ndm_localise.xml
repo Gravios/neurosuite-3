@@ -1,0 +1,105 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_localise</n>
+  <parameters>
+   <parameter>
+    <n>method</n>
+    <value>monopole</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>clusterFilter</n>
+    <value>good</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>maxDistUm</n>
+    <value>200</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>nBootstrap</n>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>overwrite</n>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>probeLibrary</n>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Inverse model of spike positions relative to the probe shank.
+
+For each spike group, reads the .spk.N waveform file and the probe electrode
+site geometry (from the probes: section of the session YAML), then fits an
+extracellular potential model per spike to estimate where each neuron was
+relative to the probe.
+
+MODEL (monopole)
+  V_i = A / sqrt((x_i - x_s)^2 + (y_i - y_s)^2 + z_s^2)
+
+  (x_i, y_i)  electrode site positions (µm) from probe geometry
+  (x_s, y_s)  source position in the shank plane (µm)
+  z_s         perpendicular distance from shank face (µm)
+  A           unsigned amplitude ∝ source current × tissue resistivity
+
+The observation vector is the per-channel peak-to-peak amplitude of each
+spike.  The fit minimises sum-of-squared residuals in log-amplitude space,
+which stabilises the scale of A relative to position.
+
+PREREQUISITES
+  Run AFTER ndm_pca (needs .spk.N). Probe geometry must be configured via
+  the probes: section of the session YAML.
+
+OUTPUT FILES
+  SESSION.loc.N   binary float32, little-endian, NO HEADER
+                  5 values per spike: x_um y_um z_um amplitude residual_rms
+                  noise spikes (clu ≤ 1) are localised but get residual=NaN
+
+  SESSION.loc.yaml  YAML sidecar with per-group metadata, site positions,
+                    and summary statistics
+
+OPTIONAL PARAMETERS
+
+# method
+Inverse model to use (default = monopole).
+  monopole   Point source model (recommended for single-shank probes).
+  com        Amplitude-weighted centre-of-mass — fast but no z_um estimate.
+
+# clusterFilter
+Which spikes to fully localise (default = good).
+  all        Every spike regardless of cluster assignment.
+  good       Clusters ≥ 2 (excludes noise/MUA). Noise spikes still localised
+             but flagged with residual_rms = NaN.
+  single     As 'good' but restricted to clusters that pass basic isolation
+             (currently an alias for 'good' — reserved for future use).
+
+# maxDistUm
+Reject a fit and output NaN if the estimated source position is further than
+this from the nearest electrode site (µm, default = 200).
+High residual fits that converge far from the array are likely artefacts.
+
+# nBootstrap
+Number of bootstrap replicates per spike for position uncertainty estimation
+(default = 0 = disabled).  When > 0, an additional output SESSION.loc.std.N
+(same layout as SESSION.loc.N) is written with the per-spike standard deviation
+across bootstrap replicates.  Values of 50-200 are typical.
+
+# overwrite
+If 1, delete existing .loc.N files and re-localise.
+If 0 (default), skip groups whose .loc.N already exists.
+
+# probeLibrary
+Override probe library search path.  Default search order:
+  $NEUROSUITE_PROBE_PATH, ~/.local/share/neurosuite/probes/,
+  /usr/local/share/neurosuite/probes/, /usr/share/neurosuite/probes/,
+  probes/ (session-local directory).
+</help>
+ </program>
+</parameter>

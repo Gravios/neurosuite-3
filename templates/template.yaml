@@ -1287,6 +1287,85 @@ programs:
 
     Overwrite existing .col.N files (default = false).
 
+# == Post-sorting analysis (continued) ========================================
+- name: ndm_localise
+  parameters:
+  - {name: method,         value: monopole, status: Optional}
+  - {name: clusterFilter,  value: good,     status: Optional}
+  - {name: maxDistUm,      value: 200,      status: Optional}
+  - {name: nBootstrap,     value: 0,        status: Optional}
+  - {name: overwrite,      value: 0,        status: Optional}
+  - {name: probeLibrary,   value: ~,        status: Optional}
+  help: |-
+    Inverse model of spike positions relative to the probe shank.
+
+    For each spike group reads the .spk.N waveform file and the probe electrode
+    site geometry (from the probes: section of the session YAML), then fits an
+    extracellular potential model per spike to estimate where each neuron was
+    relative to the probe face.
+
+    MODEL (monopole)
+
+      V_i = A / sqrt((x_i - x_s)^2 + (y_i - y_s)^2 + z_s^2)
+
+      (x_i, y_i)  electrode site positions (µm) from probe geometry
+      (x_s, y_s)  source position in the shank plane (µm)
+      z_s         perpendicular distance from shank face (µm)
+      A           amplitude ∝ source current × tissue resistivity
+
+    The observation vector is the per-channel peak-to-peak amplitude of each
+    spike.  The fit minimises sum-of-squared residuals in log-amplitude space.
+
+    Run AFTER ndm_pca (needs .spk.N).  Probe geometry must be configured via
+    the probes: section of the session YAML and ndm_setupgroups must have been
+    run so that probeId and shankIndex are populated in spikeDetection groups.
+
+    OUTPUT FILES
+
+    SESSION.loc.N   binary float32, little-endian, no header.
+                    5 values per spike: x_um  y_um  z_um  amplitude  residual_rms
+                    noise spikes (clu ≤ 1) are localised but get residual_rms = NaN.
+
+    SESSION.loc.yaml  YAML sidecar with per-group metadata, site positions used,
+                      and per-axis summary statistics (mean ± std).
+
+    OPTIONAL PARAMETERS
+
+    # method
+
+    Inverse model (default = monopole).
+      monopole   Point-source model; recovers x, y, z and amplitude per spike.
+      com        Amplitude-weighted centre-of-mass — fast but no z estimate.
+
+    # clusterFilter
+
+    Which spikes to fully localise (default = good).
+      all     Every spike regardless of cluster assignment.
+      good    Clusters ≥ 2 (noise/MUA spikes are localised but flagged
+              with residual_rms = NaN so downstream tools can filter them).
+
+    # maxDistUm
+
+    Reject a fit and output NaN if the estimated source is further than this
+    distance from the nearest electrode site (µm, default = 200).
+
+    # nBootstrap
+
+    Bootstrap replicates per spike for position uncertainty (default = 0 =
+    disabled).  When > 0, writes SESSION.loc.std.N with per-spike standard
+    deviations across replicates.  Values of 50–200 are typical.
+
+    # overwrite
+
+    If 1, delete existing .loc.N and re-localise (default = 0 = skip).
+
+    # probeLibrary
+
+    Override probe library search path.  Default search order:
+      $NEUROSUITE_PROBE_PATH, ~/.local/share/neurosuite/probes/,
+      /usr/local/share/neurosuite/probes/, /usr/share/neurosuite/probes/,
+      probes/ (session-local directory).
+
 # == Housekeeping =============================================================
 - name: ndm_recolorchannels
   parameters: []
