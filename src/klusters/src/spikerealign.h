@@ -7,9 +7,14 @@
  * ------------------
  * 1. Read all waveforms for the selected cluster from the .spk file.
  * 2. Compute the cluster's mean waveform (per sample per channel).
- * 3. For each spike, find the shift in [-maxShift, +maxShift] samples
- *    that maximises cross-correlation with the mean waveform on the
- *    channel with the largest absolute peak amplitude.
+ * 3. Pack all waveforms and the mean into channel-major buffers and compute
+ *    the optimal shift for every spike simultaneously using normalised circular
+ *    cross-correlation summed across ALL channels (XcorrDispatch — routes to
+ *    CUDA, HIP, SYCL, or OpenMP depending on what is available at runtime).
+ *    The mean waveform is pre-shifted so its amplitude peak lands at peakPos
+ *    before the cross-correlation is computed; this ensures lag=0 wins for
+ *    an already-aligned spike regardless of where the mean peak sits in the
+ *    window.
  * 4. For each spike where the optimal shift is non-zero:
  *    a. Update the in-memory features timestamp column by adding the shift.
  *    b. Rewrite the .res file entry for this spike.
@@ -123,11 +128,6 @@ private:
     // Internal helpers
     bool readSpkWaveforms(const QVector<long long>& spikeGlobalIndices,
                           QVector<QVector<short>>&  waveforms);
-
-    int  findBestShift(const QVector<short>& spike,
-                       const QVector<short>& meanWaveform,
-                       int nChan, int nSamples, int peakChan,
-                       int maxShift);
 
     bool rewriteSpkSlot(long long globalIdx1based,
                         const QVector<short>& newWaveform);

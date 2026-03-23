@@ -2348,8 +2348,9 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
             }
             else{
                 float time;
-                //If the data have been browsed for spikes, startTimeInRecordingUnits !=0 and the rounding applied to startTime make the computation
-                // of time wrong. The correct start time has to be recompute using startTimeInRecordingUnits.
+                //If the data have been browsed for spikes, startTimeInRecordingUnits is
+                // non-zero and the rounding applied to startTime introduces an offset error.
+                // Recompute the correct start time directly from startTimeInRecordingUnits.
                 if (startTimeInRecordingUnits !=0){
                     double samplingRate = tracesProvider.getSamplingRate();
                     double computeTime = static_cast<double>(static_cast<double>(startTimeInRecordingUnits) * static_cast<double>(1000) / static_cast<double>(samplingRate));

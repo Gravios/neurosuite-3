@@ -60,9 +60,9 @@ void KK::AllocateArrays() {
 }
 
 // ---------------------------------------------------------------------------
-// AlocateCholeskyVecs (spelling kept for API compat)
+// AllocateCholeskyVecs (spelling kept for API compat)
 // ---------------------------------------------------------------------------
-void KK::AlocateCholeskyVecs() {
+void KK::AllocateCholeskyVecs() {
     // Allocated on this KK instance, not the global kSv, so chunk sub-objects
     // each own their Cholesky matrices and can run in parallel threads.
     // unique_ptr ensures memory is freed when the KK instance is destroyed,
@@ -150,7 +150,7 @@ void KK::LoadData() {
             fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
         }
         AllocateArrays();
-        AlocateCholeskyVecs();
+        AllocateCholeskyVecs();
 
         for (int p = 0; p < nPoints; p++) {
             int j = 0;
@@ -214,7 +214,7 @@ void KK::LoadData() {
             fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
         }
         AllocateArrays();
-        AlocateCholeskyVecs();
+        AllocateCholeskyVecs();
 
         for (int p = 0; p < nPoints; p++) {
             int j = 0;
@@ -328,10 +328,9 @@ void KK::MStep() {
             Mean.m_Data, Cov.m_Data, Weight.m_Data,
             nClustersAlive, MaxPossibleClusters,
             nPoints, nDims, nDims2);
-        goto mstep_debug;
-    }
+    } else
 #endif
-
+    {
     // CPU path
     // Zero only the alive cluster rows — avoids clearing ~250 KB of unused
     // Mean/Cov storage when few clusters are alive (optimisation #3).
@@ -366,10 +365,8 @@ void KK::MStep() {
             for (int j = i; j < nDims; j++)
                 Cov[c * nDims2 + i * nDims + j] *= inv;
     }
+    } // end CPU path
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
-    mstep_debug:
-#endif
     if (Debug) {
         for (int cc = 0; cc < nClustersAlive; cc++) {
             const int c = AliveIndex[cc];
@@ -687,7 +684,7 @@ int KK::TrySplits() {
     KK K3;
     K3.nDims = nDims; K3.nPoints = nPoints;
     K3.AllocateArrays();
-    K3.AlocateCholeskyVecs();
+    K3.AllocateCholeskyVecs();
     K3.suppressBestSave = true;
     K3.penaltyMix = PenaltyMix;
     for (int i = 0; i < nDims * nPoints; i++) K3.Data[i] = Data[i];
@@ -699,7 +696,7 @@ int KK::TrySplits() {
     K2.nDims   = nDims;
     K2.nPoints = nPoints;   // maximum possible; actual count set per cluster
     K2.AllocateArrays();
-    K2.AlocateCholeskyVecs();
+    K2.AllocateCholeskyVecs();
 
     const float Score = ComputeScore();
     int DidSplit = 0;
@@ -1410,9 +1407,10 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 //          - full-energy denominator (no lag-bias at large shifts)
 //          - GPU-accelerated when available (CUDA > HIP > SYCL > OMP)
 //     5. For each spike with non-zero shift sh:
-//          aligned[s*nChan+c] = original[((s-sh+N)%N)*nChan+c]
-//        Sign convention: sh=bestLag>0 means spike is late; (s-sh) shifts earlier.
-//     6. Write back at offset p*waveSamples*2 — the invariant.
+//          aligned[s*nChan+c] = original[((s+sh)%N)*nChan+c]
+//        Sign convention: sh=bestLag>0 means spike peak is late by sh samples;
+//        rolling forward by sh lands the peak at the template's peak position.
+//     6. Write back at offset p*waveSamples*bytesPerSample — the invariant.
 //
 // Noise spikes (cid==0) are skipped.
 //
@@ -1665,7 +1663,7 @@ std::vector<float> KK::PreseedSubsampleCEM(float preseedFraction,
     Ks.suppressBestSave     = true;
     Ks.minClustersAlive     = 2;
     Ks.AllocateArrays();
-    Ks.AlocateCholeskyVecs();
+    Ks.AllocateCholeskyVecs();
 
     for (int i = 0; i < nSub; i++) {
         const int p = idx[i];
@@ -1820,7 +1818,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         threadKc[t].suppressBestSave  = true;
         threadKc[t].minClustersAlive  = nStartingClusters;
         threadKc[t].AllocateArrays();
-        threadKc[t].AlocateCholeskyVecs();
+        threadKc[t].AllocateCholeskyVecs();
     }
 
     #pragma omp parallel for schedule(dynamic) default(none) \
@@ -2156,7 +2154,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         threadKc[t].minClustersAlive  = std::max(2, chunkStartK - 4);
         threadKc[t].preseedCentres    = globalPreseedCentres;  // shared read-only
         threadKc[t].AllocateArrays();
-        threadKc[t].AlocateCholeskyVecs();
+        threadKc[t].AllocateCholeskyVecs();
     }
 
     #pragma omp parallel for schedule(dynamic) default(none) \

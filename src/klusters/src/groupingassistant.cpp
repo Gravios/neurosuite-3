@@ -251,6 +251,12 @@ Array<double>* GroupingAssistant::computeProbabilities(
             usedGpu = true;
 
             if (!existCluster1) {
+                // Cluster 1 (noise/unsorted) was absent from clusterInfoMap.
+                // The downstream ErrorMatrixView always expects column 1 to hold
+                // cluster 1's probabilities, so prepend a synthetic all-zero column
+                // and shift all other indices up by 1.  The row-normalisation loop
+                // is skipped for the GPU path (probabilities are already normalised
+                // by the kernel), so initIndex only affects computeMeanProbabilities.
                 Array<double>* tmp = new Array<double>(nbSpikes, nbClusters + 1);
                 tmp->fillWithZeros();
                 tmp->copyAndPrependColumn(*probabilities);
@@ -324,6 +330,10 @@ Array<double>* GroupingAssistant::computeProbabilities(
 
     if (haveToStopComputing) return probabilities;
 
+    // Same cluster-1 prepend as the GPU path above.  When cluster 1 was absent,
+    // insert a synthetic zero column so the probabilities array has the same
+    // layout regardless of whether the session has a noise cluster.
+    // initIndex is set to 2 so the row-normalisation loop below skips column 1.
     if (!existCluster1) {
         Array<double>* tmp = new Array<double>(nbSpikes, nbClusters + 1);
         tmp->fillWithZeros();

@@ -30,22 +30,21 @@ KlustaKwik FileBase ElecNo [options]
 ### Examples
 
 ```bash
-# Standard two-phase farthest-point mode
+# Standard two-phase farthest-point mode (SamplingRate auto-detected from YAML)
 KlustaKwik session 1 -MinClusters 2 -MaxClusters 12
 
 # Three-phase temporal chunking for long recordings with electrode drift
 KlustaKwik session 1 -MinClusters 2 -MaxClusters 12 \
-    -ChunkMinutes 5 -SamplingRate 32572
+    -ChunkMinutes 10
 
 # Resume from an existing sort
 KlustaKwik session 1 -StartCluFile session.clu.1
 
-# 80-minute silicon probe, chunked mode, all features, suppress intermediate saves
+# 80-minute silicon probe, chunked mode, suppress intermediate saves
 KlustaKwik jg05-20120316 7 \
     -MinClusters 2 -MaxClusters 20 \
-    -UseFeatures 1111111111111111111111111 \
-    -ChunkMinutes 5 -SamplingRate 32572 \
-    -MergeThresh 30 -GlobalMergeIter 20 -TimeMergeIter 30 \
+    -ChunkMinutes 10 \
+    -MergeThresh 42.0 -GlobalMergeIter 50 -TimeMergeIter 50 \
     -SaveIntermediates 0
 ```
 
@@ -67,19 +66,21 @@ KlustaKwik jg05-20120316 7 \
 |---|---|---|
 | `-MinClusters N` | `2` | Minimum number of clusters to try |
 | `-MaxClusters N` | `12` | Maximum number of clusters to try |
-| `-MaxPossibleClusters N` | `1000` | Hard upper bound on cluster count |
-| `-nStarts N` | `3` | Number of random restarts |
+| `-MaxPossibleClusters N` | `100` | Hard upper bound on cluster count |
+| `-nStarts N` | `1` | Number of random restarts |
 | `-RandomSeed N` | `1` | Random seed (use `0` to seed from time) |
-| `-UseFeatures BITS` | all `1`s | Binary mask over feature dimensions; `0` skips that dimension |
-| `-PenaltyMix F` | `1.0` | Blend between BIC (`0`) and CEM (`1`) penalty |
+| `-UseFeatures BITS` | `all` | Binary mask over feature dimensions; `0` skips that dimension. `all` uses every feature in the `.fet` file. |
+| `-PenaltyMix F` | `0.0` | Blend between BIC (`0`) and CEM (`1`) penalty |
 
 ### Convergence
 
 | Parameter | Default | Description |
 |---|---|---|
 | `-MaxIter N` | `500` | Maximum EM iterations per run |
-| `-FullStepEvery N` | `20` | Run a full E-step every N iterations (mini-batch otherwise) |
-| `-ChangedThresh F` | `0.001` | Stop if fewer than this fraction of spikes change class |
+| `-SplitEvery N` | `50` | Attempt a cluster split every N iterations |
+| `-FullStepEvery N` | `10` | Run a full E-step every N iterations (mini-batch otherwise) |
+| `-ChangedThresh F` | `0.05` | Stop if fewer than this fraction of spikes change class |
+| `-DistThresh F` | `6.9` | Mahalanobis distance threshold for spike-to-cluster assignment |
 
 ### Two-phase CEM (default when `ChunkMinutes` is not set)
 
@@ -90,18 +91,23 @@ KlustaKwik uses a two-phase algorithm by default:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-TimeMergeIter N` | `10` | Phase 2 merge iterations (set `0` to disable two-phase mode) |
+| `-TimeMergeIter N` | `30` | Phase 2 merge iterations (set `0` to disable two-phase mode) |
+| `-InitMethod STR` | `"farthest"` | Initialisation method (`"farthest"` or `"random"`) |
 
 ### Three-phase chunked CEM
 
 For long recordings (> ~30 min) where electrode drift causes a cluster to appear as multiple clusters at different time points, the three-phase chunked mode splits the recording into temporal windows, sorts each independently in parallel (OpenMP), and then merges the per-chunk models globally.
 
+`SamplingRate` is auto-detected from `<FileBase>.yaml` at startup. Pass `-SamplingRate` explicitly only when running without a YAML file or to override it.
+
 | Parameter | Default | Description |
 |---|---|---|
 | `-ChunkMinutes F` | `0` (disabled) | Chunk duration in minutes; activates chunked mode when > 0 |
-| `-SamplingRate F` | — | Required when `ChunkMinutes > 0`; used to convert minutes to sample counts |
+| `-ChunkOverlapMinutes F` | `0` | Overlap between adjacent chunks in minutes; reduces boundary artifacts |
+| `-ChunkPreseedFraction F` | `0` | Fraction of spikes used for Phase 0 global preseed; `0` disables |
+| `-SamplingRate F` | auto from YAML | Recording sample rate; used to convert minutes to sample counts |
 | `-MergeThresh F` | `30.0` | Maximum inter-chunk Mahalanobis distance for merging two chunk models |
-| `-GlobalMergeIter N` | `10` | EM iterations run on the globally merged solution |
+| `-GlobalMergeIter N` | `20` | EM iterations run on the globally merged solution |
 
 ### Output
 
@@ -109,7 +115,7 @@ For long recordings (> ~30 min) where electrode drift causes a cluster to appear
 |---|---|---|
 | `-SaveIntermediates N` | `1` | Write `.clu` whenever a new best score is found. Set `0` to suppress mid-run writes and produce only a final file. |
 | `-Log N` | `0` | Write `.klg` log file |
-| `-Screen N` | `1` | Print progress to stdout |
+| `-Screen N` | `0` | Print progress to stdout |
 | `-Verbose N` | `0` | Verbose per-iteration output |
 | `-fSaveModel N` | `1` | Write `.model` file with Gaussian parameters |
 
@@ -118,7 +124,6 @@ For long recordings (> ~30 min) where electrode drift causes a cluster to appear
 | Parameter | Default | Description |
 |---|---|---|
 | `-StartCluFile PATH` | — | Initialise from an existing `.clu` file |
-| `-InitMethod STR` | `"random"` | Initialisation method (`"random"` or `"farthest"`) |
 
 ---
 

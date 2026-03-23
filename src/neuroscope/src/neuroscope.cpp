@@ -655,9 +655,9 @@ void NeuroscopeApp::initActions()
 
 void NeuroscopeApp::initStatusBar()
 {
-    ///////////////////////////////////////////////////////////////////
-    // STATUSBAR
-    // TODO: add your own items you need for displaying current application status.
+    // The status bar currently shows a single "Ready." message.
+    // Per-view or per-operation status updates are handled by individual
+    // slots that call statusBar()->showMessage() as needed.
     statusBar()->showMessage(tr("Ready."));
 }
 

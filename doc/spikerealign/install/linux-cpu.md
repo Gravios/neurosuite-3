@@ -1,26 +1,11 @@
-# SpikeRealign — Linux Installation, CPU / OpenMP
+# SpikeRealign — Installation
 
-## System packages
+SpikeRealign is not a standalone binary. The waveform realignment engine
+(`realign_xcorr`) is compiled into **klusters** (for interactive GUI realignment)
+and **klustakwik** (for Phase 1.5 batch realignment after chunked CEM sorting).
 
-```bash
-sudo apt install cmake build-essential libgomp1
-```
+To get GPU-accelerated realignment, build klusters and/or klustakwik with the
+appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-## Build
-
-```bash
-cd /path/to/neurosuite-3/src/spikerealign
-
-cmake -B build \
-  -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-sudo cmake --install build
-```
-
-## Verify
-
-```bash
-SpikeRealign --help
-ldd $(which SpikeRealign) | grep -i omp    # should show libgomp.so.1
-```
+- **klusters:** [../../klusters/install/linux-cpu.md](../../klusters/install/linux-cpu.md)
+- **klustakwik:** [../../klustakwik/install/linux-cpu.md](../../klustakwik/install/linux-cpu.md)

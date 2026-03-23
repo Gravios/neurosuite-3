@@ -63,10 +63,10 @@ options="--no-yaml"
 check_optional_variable $chunkSamples && options="$options -c $chunkSamples"
 
 print_header "$session - Processing $matFile"
-# HDF5 file locking uses POSIX fcntl which fails on NTFS/FUSE and some NFS
-# mounts (/data is NTFS/fuseblk on this system).  H5Fopen returns -1 when
-# locking fails even though the file is valid.  Disabling locking is safe
-# for read-only access.
+# HDF5 file locking uses POSIX fcntl which fails silently on NTFS/fuseblk
+# and some NFS mounts.  H5Fopen returns -1 on a valid file when fcntl locking
+# cannot be obtained.  Disabling locking is safe for read-only access and
+# for single-writer scenarios where no other process has the file open.
 HDF5_USE_FILE_LOCKING=FALSE process_aomconvert $options "$matFile" "$session"
 check_command_status process_aomconvert
 

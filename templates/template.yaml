@@ -975,11 +975,6 @@ programs:
   - {name: distThresh,           value: 6.9,     status: Optional}
   - {name: fullStepEvery,        value: 10,      status: Optional}
   - {name: changedThresh,        value: 0.05,    status: Optional}
-  # ── Post-sorting realignment ────────────────────────────────────────────────
-  - {name: postRealign,          value: 1,       status: Optional}
-  - {name: postRealignIter,      value: 2,       status: Optional}
-  # ── Waveform ───────────────────────────────────────────────────────────────
-  - {name: nbSamplesPerSpike,    value: 32,      status: Optional}
   # ── Output / logging ───────────────────────────────────────────────────────
   - {name: log,                  value: 1,       status: Optional}
   - {name: screen,               value: 0,       status: Optional}
@@ -1088,24 +1083,6 @@ programs:
 
     Fractional change in cluster assignments below which CEM is considered
     converged (default 0.05).
-
-    POST-SORTING REALIGNMENT
-
-    # postRealign
-
-    Run xcorr-based waveform realignment after sorting (1 = yes, 0 = no,
-    default 1).
-
-    # postRealignIter
-
-    Number of realignment passes (default 2).
-
-    WAVEFORM
-
-    # nbSamplesPerSpike
-
-    Waveform window width in samples; must match nSamples in spikeDetection
-    (default 32).
 
     OUTPUT / LOGGING
 

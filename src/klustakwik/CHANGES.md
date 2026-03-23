@@ -254,10 +254,55 @@ operations — not worth GPU dispatch overhead).
 
 ---
 
+## Phase 1.5: waveform realignment
+
+**Requires:** chunked CEM mode (`-ChunkMinutes > 0`)
+
+After Phase 1 per-chunk EM has assigned stable cluster labels, each spike's
+waveform is realigned to its chunk-cluster mean using normalised circular
+cross-correlation across all channels simultaneously. The aligned waveforms
+are written back to the `.spk` file in-place before Phase 2 model matching.
+
+Alignment uses the shared `XcorrDispatch` kernel from `src/shared/xcorr/`,
+which selects the best available compute backend at runtime (CUDA → HIP → SYCL
+→ OpenMP CPU). The sign convention matches the Klusters interactive realignment:
+a positive lag `τ` means the spike peak is late by `τ` samples relative to the
+template; the waveform is rolled forward by `aligned[s] = original[(s+τ) % N]`.
+
+Overlap spikes (which appear in two adjacent chunks due to `ChunkOverlapMinutes`)
+are deferred: chunk `k` skips the writeback for any spike that also belongs to
+chunk `k+1`, so that chunk `k+1` can compute a clean, unbiased mean before
+writing. This prevents double-alignment artifacts at chunk boundaries.
+
+The realignment is enabled automatically when `NbChannels > 0 && NbSamplesPerSpike > 0`.
+Both are populated by YAML auto-detect (see below); no explicit command-line
+flags are required.
+
+---
+
+## YAML auto-detect for spike-group parameters
+
+`KlustaKwikYaml.cpp` reads three parameters directly from `<FileBase>.yaml`
+(or `.yml`) at startup, removing the need for the calling script to pass them
+explicitly:
+
+- `NbChannels` — from `spikeDetection.channelGroups[ElecNo-1].channels.channel` count
+- `NbSamplesPerSpike` — from `spikeDetection.channelGroups[ElecNo-1].nSamples`
+- `SamplingRate` — from `acquisitionSystem.samplingRate`
+
+Command-line values always override YAML. Startup messages of the form
+`KlustaKwik: NbChannels=8  (from YAML, group 1)` confirm what was detected.
+
+`NbBytesPerSample` is **not** read from YAML; the ndmanager pipeline always
+produces `int16` `.spk` files regardless of ADC bit depth, so the default of 2
+is always correct unless you are using a custom 32-bit extractor.
+
+---
+
 ## Thread safety: Cholesky storage moved to KK instance
 
 `pChol` and `pBestChol` were originally pointers in the `KlustaSave` global
-singleton. Every `KK` instance's `AlocateCholeskyVecs()` wrote to this global,
+singleton. Every `KK` instance's `AllocateCholeskyVecs()` wrote to this global,
 and every `EStep()` read from it, making parallel execution across chunk
 sub-objects a data race.
 
@@ -277,14 +322,22 @@ the global best-score tracking during parallel execution.
 |---|---|---|
 | `KlustaKwik.cpp` | Modified | Main entry point, parameter handling, outer loop, startup banner |
 | `KlustaKwik.h` | Modified | Extern declarations for all globals |
+| `KlustaKwikYaml.cpp` | New | Reads `NbChannels`, `NbSamplesPerSpike`, `SamplingRate` from YAML |
+| `KlustaKwikYaml.h` | New | `KKYamlSpikeParams` struct and `kkReadYamlSpikeParams()` declaration |
 | `KK.cpp` | Modified | EM engine: all algorithm changes live here |
-| `KK.h` | Modified | KK class definition; added per-instance Cholesky members and `suppressBestSave` flag |
+| `KK.h` | Modified | KK class definition; per-instance Cholesky, `suppressBestSave`, `RealignChunkWaveforms` |
 | `KlustaSave.h` | Modified | Removed `pChol`/`pBestChol` (moved to `KK` for thread safety) |
 | `Array.h` | Modified | See C++17 modernisation above |
 | `param.c` / `param.h` | Unchanged | Parameter parsing (original) |
-| `CMakeLists.txt` | New | Replaces `makefile`; CPU-only and CUDA targets |
+| `CMakeLists.txt` | New | Replaces `makefile`; CPU/CUDA/HIP/SYCL targets; yaml-cpp wiring |
 | `KK_cuda.cu` | New | CUDA kernels for E/M/C-step |
 | `KK_cuda.h` | New | Host-callable CUDA wrapper declarations |
+| `KK_hip.cpp` | New | HIP (AMD ROCm) kernels for E/M/C-step |
+| `KK_hip.h` | New | Host-callable HIP wrapper declarations |
+| `KK_sycl.cpp` | New | SYCL (Intel oneAPI) kernels for E/M/C-step |
+| `KK_sycl.h` | New | Host-callable SYCL wrapper declarations |
 | `README.md` | New | User-facing documentation |
 | `CHANGES.md` | New | This file |
 | `ReleaseNotes.txt` | Retained | Original v1.5-v1.7 release notes |
+| `../shared/xcorr/` | New | Shared normalised cross-correlation library (OMP/CUDA/HIP/SYCL) |
+

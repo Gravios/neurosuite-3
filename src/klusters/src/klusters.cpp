@@ -1606,7 +1606,9 @@ void KlustersApp::importDocumentFile(const QString& url)
     //Only one document at the time is allowed.
     else
     {
-        //TODO
+        // Only one document at a time is supported.  Opening a second session
+        // should launch a new application instance, but this is not yet
+        // implemented; restore the cursor and fall through silently for now.
         QApplication::restoreOverrideCursor();
     }
 

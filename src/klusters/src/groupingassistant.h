@@ -82,10 +82,16 @@ private:
   */
     Data::ClusterInfoMap* clusterInfoMap;
 
-    /**True if the cluster 1 is among the clusters to compute, false otherwise.*/
+    /**True if cluster 1 (noise/unsorted) is present in the clusterInfoMap being computed.
+     * When false, a synthetic all-zero column is prepended to the probabilities array
+     * after computation so the caller always receives cluster 1 at column 1.*/
     bool existCluster1;
 
-    /**Index of the first cluster while looping on all the clusters.*/
+    /**First 1-based column index into the probabilities array that corresponds to
+     * a real cluster.  Normally 1, but set to 2 when cluster 1 was absent and a
+     * synthetic zero column was prepended (existCluster1 == false after computation).
+     * The row-normalisation loop uses initIndex as its lower bound so it skips the
+     * synthetic column.*/
     int initIndex;
 
     /**True if has been asked to stop the computation, false otherwise.*/

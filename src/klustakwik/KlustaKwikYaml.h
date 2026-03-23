@@ -7,7 +7,10 @@
  * Phase 1.5 waveform realignment directly from the neurosuite YAML
  * parameter file (<FileBase>.yaml or <FileBase>.yml):
  *
- *   NbChannels       ← spikeDetection.channelGroups[ElecNo-1].channels.size()
+ *   NbChannels       ← spikeDetection.channelGroups[ElecNo-1].channels.channel[].size()
+ *                       (ndmanager YAML schema stores channel IDs under
+ *                        channels.channel as a sequence; a flat channels: []
+ *                        list is also accepted for hand-authored files)
  *   NbSamplesPerSpike← spikeDetection.channelGroups[ElecNo-1].nSamples
  *   SamplingRate     ← acquisitionSystem.samplingRate
  *
