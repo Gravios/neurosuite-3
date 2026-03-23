@@ -1,0 +1,121 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_localise — inverse model of spike positions relative to probe
+#//
+#//  For each spike group, reads the .spk.N waveform file and the probe
+#//  geometry (from the probes: section of the session YAML), then fits a
+#//  point-source (monopole) extracellular potential model per spike to
+#//  estimate the neuron's position in the plane of the shank.
+#//
+#//  Model:
+#//    V_i(x_s, y_s, z_s, A) = A / sqrt((x_i-x_s)^2 + (y_i-y_s)^2 + z_s^2)
+#//  where (x_i, y_i) are the known electrode site positions and
+#//  (x_s, y_s) is the source position in the shank plane, z_s is the
+#//  distance perpendicular to the shank face.  A is an unsigned amplitude
+#//  (proportional to source current × tissue resistivity).
+#//
+#//  Output:
+#//    SESSION.loc.N — binary float32, one record per spike:
+#//      x_um  y_um  z_um  amplitude  residual_rms
+#//    (5 × float32 per spike, little-endian, no header)
+#//
+#//    SESSION.loc.yaml — metadata (group, nSpikes, probe geometry used)
+#//
+#//  copyright (C) 2025 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+    exit $GENERAL_ERROR
+fi
+
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}; session=${session%.yaml}; session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+print_header "$session - Localising spikes from probe geometry"
+
+check_commands_installed python3
+python3 -c "import yaml, numpy, scipy.optimize" 2>/dev/null || {
+    echo_error "Python packages missing: install pyyaml, numpy, scipy"
+    exit $GENERAL_ERROR
+}
+
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No YAML parameter file found for session '$session'"
+    exit $INPUTS_MISSING
+}
+inputs_missing "$yamlfile" && exit $INPUTS_MISSING
+
+# Read parameters (three-tier: per-group YAML > global program block > default)
+method=$(read_script_parameter       "$session" method)         ; method=${method:-monopole}
+clusterFilter=$(read_script_parameter "$session" clusterFilter) ; clusterFilter=${clusterFilter:-good}
+nBootstrap=$(read_script_parameter   "$session" nBootstrap)    ; nBootstrap=${nBootstrap:-0}
+maxDistUm=$(read_script_parameter    "$session" maxDistUm)     ; maxDistUm=${maxDistUm:-200}
+overwrite=$(read_script_parameter    "$session" overwrite)     ; overwrite=${overwrite:-0}
+probeLibrary=$(read_script_parameter "$session" probeLibrary)
+
+samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_localise.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="process_localise.py"
+
+# ── Single group or all groups ────────────────────────────────────────────────
+run_group()
+{
+    local g=$1
+
+    inputs_missing "$session.$param_ext" "$session.spk.$g" && return $INPUTS_MISSING
+
+    if outputs_exist "$session.loc.$g"; then
+        [ "$overwrite" = "1" ] || return $OUTPUTS_EXIST
+        echo_warning "overwrite=1: removing $session.loc.$g"
+        rm -f "$session.loc.$g"
+    fi
+
+    print_header "$session - Group $g — monopole localisation"
+
+    nSites=$(xml_count  "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
+    nSamples=$(xml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
+    nSamples=${nSamples:-32}
+
+    python3 "$PY_HELPER" \
+        --session        "$session" \
+        --param-file     "$yamlfile" \
+        --group          "$g" \
+        --n-sites        "$nSites" \
+        --n-samples      "$nSamples" \
+        --sampling-rate  "$samplingRate" \
+        --method         "$method" \
+        --cluster-filter "$clusterFilter" \
+        --n-bootstrap    "$nBootstrap" \
+        --max-dist-um    "$maxDistUm" \
+        ${probeLibrary:+--probe-library "$probeLibrary"} \
+        --output         "$session.loc.$g"
+
+    check_command_status python3
+}
+
+if [ -z "$electrodeGroup" ]; then
+    nGroups=$(xml_count "$session" "//spikeDetection/channelGroups/group")
+    [ "$nGroups" -eq 0 ] && { echo_error "No spikeDetection groups found"; exit $GENERAL_ERROR; }
+    overallStatus=$NO_ERROR
+    for (( i=1; i<=nGroups; i++ )); do
+        run_group $i
+        s=$?
+        if [ $s -ne $NO_ERROR ] && [ $s -ne $OUTPUTS_EXIST ] && [ $s -ne $INPUTS_MISSING ]; then
+            overallStatus=$s
+        fi
+    done
+    exit $overallStatus
+else
+    run_group "$electrodeGroup"
+    exit $?
+fi

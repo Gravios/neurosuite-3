@@ -62,7 +62,8 @@ public:
         if (this != &other) {
             nbColumns = other.nbColumns;
             nbRows    = other.nbRows;
-            auto n    = static_cast<std::size_t>(nbRows * nbColumns);
+            const long prod = nbRows * nbColumns;
+            auto n    = (prod > 0) ? static_cast<std::size_t>(prod) : std::size_t(0);
             array     = n > 0 ? std::make_unique<T[]>(n) : nullptr;
             if (array)
                 std::memcpy(array.get(), other.array.get(), n * sizeof(T));
@@ -73,12 +74,15 @@ public:
     Array(Array &&) noexcept = default;
     Array &operator=(Array &&) noexcept = default;
 
-    /** Resize the array, discarding previous contents. */
+    /** Resize the array, discarding previous contents.
+     *  Passing zero or negative dimensions produces an empty (null) array. */
     void setSize(long nbOfRows, long nbOfColumns)
     {
         nbColumns = nbOfColumns;
         nbRows    = nbOfRows;
-        array     = std::make_unique<T[]>(static_cast<std::size_t>(nbRows * nbColumns));
+        const long prod = nbRows * nbColumns;
+        const std::size_t n = (prod > 0) ? static_cast<std::size_t>(prod) : std::size_t(0);
+        array = n > 0 ? std::make_unique<T[]>(n) : nullptr;
     }
 
     /**
@@ -206,7 +210,8 @@ public:
         if (this != &source) {
             nbColumns = source.nbColumns;
             nbRows    = source.nbRows;
-            auto n    = static_cast<std::size_t>(nbRows * nbColumns);
+            const long prod = nbRows * nbColumns;
+            const std::size_t n = (prod > 0) ? static_cast<std::size_t>(prod) : std::size_t(0);
             array     = n > 0 ? std::make_unique<T[]>(n) : nullptr;
             for (long i = 0; i < nbRows; ++i)
                 for (long j = 0; j < nbColumns; ++j)
