@@ -2472,9 +2472,19 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const QString base  = documentBaseName();
     const QString grpId = currentElectrodeGroupID();
 
-    const QString spkPath = dir + "/" + base + ".spk." + grpId;
-    const QString resPath = dir + "/" + base + ".res." + grpId;
-    const QString fetPath = dir + "/" + base + ".fet." + grpId;
+    // Read from the pending file when it exists (i.e. after at least one
+    // unsaved realignment pass), otherwise fall back to the original.
+    // Writing always targets the pending files (see spkW/resW/fetW below).
+    // If we always read from the originals, a second realignment pass would
+    // load pre-aligned waveforms, xcorr them against the updated template,
+    // find the same non-zero lags all over again, and write them back —
+    // pushing late spikes further forward and early spikes further backward.
+    auto pendingOrOrig = [](const QString& orig, const QString& pending) {
+        return QFileInfo::exists(pending) ? pending : orig;
+    };
+    const QString spkPath = pendingOrOrig(m_origSpkPath, m_pendingSpkPath);
+    const QString resPath = pendingOrOrig(m_origResPath, m_pendingResPath);
+    const QString fetPath = pendingOrOrig(m_origFetPath, m_pendingFetPath);
     const QString cluPath = dir + "/" + base + ".clu." + grpId;
     const QString pcaPath = dir + "/" + base + ".pca." + grpId;
 
