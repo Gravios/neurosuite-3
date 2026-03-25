@@ -108,7 +108,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to add to the clusters already drawn
   * @param active true if the view is the active one, false otherwise.
   */
-    void addClusterToView(int clusterId,bool active) override {
+    void addClusterToView(int clusterId,bool active){
         addClusterToUpdate(clusterId);
     }
 
@@ -117,7 +117,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to remove.
   * @param active true if the view is the active one, false otherwise.
   */
-    void removeClusterFromView(int clusterId,bool active) override {redraw();}
+    void removeClusterFromView(int clusterId,bool active){redraw();}
 
     /**
   * Adds a newly created cluster to those already shown.
@@ -126,7 +126,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to add to the clusters already drawn
   * @param active true if the view is the active one, false otherwise.
   */
-    void addNewClusterToView(QList<int>& fromClusters,int clusterId,bool active) override {
+    void addNewClusterToView(QList<int>& fromClusters,int clusterId,bool active){
         addClusterToUpdate(clusterId);
     }
 
@@ -136,7 +136,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to add to the clusters already drawn
   * @param active true if the view is the active one, false otherwise.
   */
-    void addNewClusterToView(int clusterId,bool active) override {
+    void addNewClusterToView(int clusterId,bool active){
         addClusterToUpdate(clusterId);
     }
 
@@ -146,7 +146,7 @@ public Q_SLOTS:
   * @param fromClusters list of clusters from which the spikes have been taken.
   * @param active true if the view is the active one, false otherwise.
   */
-    void spikesRemovedFromClusters(QList<int>& fromClusters,bool active) override {redraw();}
+    void spikesRemovedFromClusters(QList<int>& fromClusters,bool active){redraw();}
 
     /**
   * Update the content of the widget due to the addition of spikes in a cluster.
@@ -154,13 +154,13 @@ public Q_SLOTS:
   * @param clusterId cluster Id to which the spikes have been added
   * @param active true if the view is the active one, false otherwise.
   */
-    void spikesAddedToCluster(int clusterId,bool active) override {
+    void spikesAddedToCluster(int clusterId,bool active){
         addClusterToUpdate(clusterId);
     }
 
     /**Method call when no spikes have been found in a polygon of selection
   */
-    void emptySelection() override {drawContentsMode = UPDATE;}
+    void emptySelection(){drawContentsMode = UPDATE;}
 
     /**Change the current mode, call by a selection of a tool
   * @param selectedMode new mode of drawing (selection or zoom)
@@ -177,7 +177,7 @@ public Q_SLOTS:
   * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
   */
-    void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion) override {
+    void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion){
         if(isModifiedByDeletion) redraw();
     }
 
@@ -189,7 +189,7 @@ public Q_SLOTS:
   * @param modifiedClusters list of clusters from which spikes were taken from.
   * @param active true if the view is the active one, false otherwise.
   */
-    void undoUpdateClusters(QList<int>& modifiedClusters,bool active) override {redraw();}
+    void undoUpdateClusters(QList<int>& modifiedClusters,bool active){redraw();}
 
     /**Updates the time interval in second and in recording unit using @p step given in second.
   * @param step the interval to use in second.
@@ -215,7 +215,7 @@ public Q_SLOTS:
   * @param metrics object providing information about the printer.
   * @param whiteBackground true if the printed background has to be white, false otherwise.
   */
-    void print(QPainter& printPainter,int width,int height, bool whiteBackground) override;
+    void print(QPainter& printPainter,int width,int height, bool whiteBackground);
 
 protected:
     /**
@@ -229,6 +229,7 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     virtual  void mouseDoubleClickEvent(QMouseEvent* event) override {
         //Trigger parent event
