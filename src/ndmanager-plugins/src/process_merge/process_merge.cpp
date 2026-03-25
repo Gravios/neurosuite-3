@@ -31,6 +31,7 @@
 #endif
 
 #include <iostream>
+#include <vector>
 #include <fstream>
 #include <stdlib.h>
 #include <string.h>
@@ -85,8 +86,9 @@ int main(int argc, char *argv[])
 	}
 
 	// Parse command line mandatory arguments
-	string   inputFileName[nInputFiles],outputFileName;
-	int      nChannels[nInputFiles];
+	std::vector<string> inputFileName(nInputFiles);
+	string              outputFileName;
+	std::vector<int>    nChannels(nInputFiles);
 	int      totalNChannels = 0;
 	for ( int j = 0 ; j < nInputFiles ; ++j )
 	{
@@ -102,7 +104,7 @@ int main(int argc, char *argv[])
 	outputFileName = argv[argc-1];
 
 	// Open input files
-	ifstream    inputFile[nInputFiles];
+	std::vector<ifstream> inputFile(nInputFiles);
 	long        before,after;
 	long        nRecords,minNRecords;
 	for ( int i = 0 ; i < nInputFiles ; ++i )

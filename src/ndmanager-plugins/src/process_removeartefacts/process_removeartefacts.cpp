@@ -26,6 +26,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <iostream>
+#include <vector>
 #include <fstream>
 #include <stdlib.h>
 #include <string.h>
@@ -145,7 +146,7 @@ int main(int argc,char *argv[])
 	}
 	// Buffer for spk data
 	int bufferLength = nChannels*nSamplesPerWaveform*resolution/(sizeof(char)*8);
-	char buffer[bufferLength];
+	std::vector<char> buffer(bufferLength);
 
 	while ( !cluInputFile.eof() )
 	{
@@ -153,7 +154,7 @@ int main(int argc,char *argv[])
 		if ( res ) resInputFile >> time;
 		cluInputFile >> clusterID;
 		if ( fet ) for ( int i = 0 ; i < nFeatures ; ++i ) fetInputFile >> feature[i];
-		if ( spk ) spkInputFile.read(buffer,bufferLength);
+		if ( spk ) spkInputFile.read(buffer.data(),bufferLength);
 
 		// Check for read errors
 		if ( cluInputFile.eof() || (res && resInputFile.eof()) || (fet && fetInputFile.eof()) || (spk && spkInputFile.eof()) )
@@ -190,7 +191,7 @@ int main(int argc,char *argv[])
 				for ( int i = 0 ; i < nFeatures-1 ; ++i ) fetOutputFile << feature[i] << " ";
 				fetOutputFile << feature[nFeatures-1] << '\n';
 			}
-			if ( spk ) spkOutputFile.write(buffer,bufferLength);
+			if ( spk ) spkOutputFile.write(buffer.data(),bufferLength);
 
 			// Check for write errors
 			if ( cluInputFile.fail() || (res && resInputFile.fail()) || (fet && fetInputFile.fail()) || (spk && spkInputFile.fail()) )

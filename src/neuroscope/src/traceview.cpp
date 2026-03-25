@@ -2218,7 +2218,7 @@ void TraceView::drawTimeLine(QPainter *painter){
                     painter->drawLine(min[i],top,min[i],bottom);//draw a line at min
                 }
                 if (previousDragAbscissa > min[groupIndex])
-                    previousDragAbscissa = previousDragAbscissa;
+                {}
                 else{
                     previousDragAbscissa = min[groupIndex] - linePositions[groupIndex]  + lastClickAbscissa;
                 }
@@ -2239,7 +2239,6 @@ void TraceView::drawTimeLine(QPainter *painter){
                 }
                 //compute previousDragAbscissa in order to have the line drawn at the far rigth of the trace
                 if (previousDragAbscissa <= max[groupIndex]){
-                    previousDragAbscissa = previousDragAbscissa;
                     if (linePositions[groupIndex] + (previousDragAbscissa - lastClickAbscissa) > max[groupIndex])
                         previousDragAbscissa = max[groupIndex] - linePositions[groupIndex]  + lastClickAbscissa;
                 }

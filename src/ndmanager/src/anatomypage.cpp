@@ -67,7 +67,7 @@ bool AnatomyPage::eventFilter(QObject* object,QEvent* event) {
             int row = groupTable->currentRow();
             int column = groupTable->currentColumn();
             QWidget* widget = groupTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == ("QLineEdit")) {
+            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit")) {
                 groupTable->editItem(groupTable->item(row,column));
                 return true;
             }
@@ -192,7 +192,7 @@ void AnatomyPage::groupChanged(int row,int column){
         QWidget* widget = groupTable->cellWidget(incorrectRow,0);
         QString incorrectGroup;
 
-        if(widget != 0 && widget->metaObject()->className() == ("QLineEdit"))
+        if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit"))
             incorrectGroup = static_cast<QLineEdit*>(widget)->text();
         else if(widget == 0)
             incorrectGroup = groupTable->item(incorrectRow,0)->text();

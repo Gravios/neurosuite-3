@@ -54,9 +54,9 @@ public Q_SLOTS:
     void setDragAndDrop(bool dragDrop){drag = dragDrop;}
 
 protected:
-    virtual void dropEvent(QDropEvent* event);
+    virtual void dropEvent(QDropEvent* event) override;
 
-    virtual void dragEnterEvent(QDragEnterEvent* event);
+    virtual void dragEnterEvent(QDragEnterEvent* event) override;
 
 private:
     ChannelIconView* iconView;

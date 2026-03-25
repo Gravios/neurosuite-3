@@ -743,7 +743,7 @@ protected:
     * @param object target object for the event.
     * @param event event sent.
     */
-    bool eventFilter(QObject* object,QEvent* event);
+    bool eventFilter(QObject* object,QEvent* event) override;
 
 private:
     //members

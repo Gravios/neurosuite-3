@@ -1165,6 +1165,7 @@ bool NeuroscopeApp::queryClose()
                                 break;
                             case QMessageBox::Discard:
                                 return false;
+                            default: break;
                             }
                         }
                     }//eventsModified
@@ -1191,6 +1192,7 @@ bool NeuroscopeApp::queryClose()
                             break;
                         case QMessageBox::Discard:
                             return false;
+                        default: break;
                         }
                     }
                     break;
@@ -1198,6 +1200,7 @@ bool NeuroscopeApp::queryClose()
                     break;
                 case QMessageBox::Cancel:
                     return false;
+                default: break;
                 }
             } else {
                 //If neither groups, colors or events have been modified, save the session without asking
@@ -1225,6 +1228,7 @@ bool NeuroscopeApp::queryClose()
                         break;
                     case QMessageBox::Discard:
                         return false;
+                    default: break;
                     }
                 }
             }
@@ -1400,6 +1404,7 @@ void NeuroscopeApp::slotFileClose(){
                                 break;
                             case QMessageBox::No:
                                 return;
+                            default: break;
                             }
                         }
                     }//eventsModified
@@ -1426,6 +1431,7 @@ void NeuroscopeApp::slotFileClose(){
                             break;
                         case QMessageBox::Discard:
                             return;
+                        default: break;
                         }
                     }
                     break;
@@ -1433,6 +1439,7 @@ void NeuroscopeApp::slotFileClose(){
                     break;
                 case QMessageBox::Cancel:
                     return;
+                default: break;
                 }
             } else {
                 //If neither groups, colors or events have been modified, save the session without asking
@@ -1460,6 +1467,7 @@ void NeuroscopeApp::slotFileClose(){
                         break;
                     case QMessageBox::Discard:
                         return;
+                    default: break;
                     }
                 }
             }
@@ -2395,6 +2403,7 @@ void NeuroscopeApp::slotDisplayClose(){
                                 break;
                             case QMessageBox::Discard:
                                 return;
+                            default: break;
                             }
                         }
                     }//eventsModified
@@ -2421,6 +2430,7 @@ void NeuroscopeApp::slotDisplayClose(){
                             break;
                         case QMessageBox::Discard:
                             return;
+                        default: break;
                         }
                     }
                     break;
@@ -2428,6 +2438,7 @@ void NeuroscopeApp::slotDisplayClose(){
                     break;
                 case QMessageBox::Cancel:
                     return;
+                default: break;
                 }
             }
             else{
@@ -2456,6 +2467,7 @@ void NeuroscopeApp::slotDisplayClose(){
                         break;
                     case QMessageBox::Discard:
                         return;
+                    default: break;
                     }
                 }
             }
@@ -2649,7 +2661,7 @@ void NeuroscopeApp::slotIncreaseSelectedChannelsAmplitude(){
     QWidget *current = paletteTabsParent->currentWidget();
 
     ChannelPalette* channelPalette = 0;
-    if( channelPalette = qobject_cast<ChannelPalette*>(current)){
+    if( (channelPalette = qobject_cast<ChannelPalette*>(current)) ){
         activeView()->increaseSelectedChannelsAmplitude(channelPalette->selectedChannels());
     }
     else
@@ -2663,7 +2675,7 @@ void NeuroscopeApp::slotDecreaseSelectedChannelsAmplitude(){
     QWidget *current = paletteTabsParent->currentWidget();
 
     ChannelPalette* channelPalette = 0;
-    if( channelPalette = qobject_cast<ChannelPalette*>(current)){
+    if( (channelPalette = qobject_cast<ChannelPalette*>(current)) ){
         activeView()->decreaseSelectedChannelsAmplitude(channelPalette->selectedChannels());
     }
     else

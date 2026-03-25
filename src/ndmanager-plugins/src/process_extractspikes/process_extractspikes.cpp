@@ -435,8 +435,8 @@ int main(int argc,char *argv[]) {
 					// Searching the max id in cur buffer (RELATIVE index /!\)
 					if(maxEndSpike >= rec_nb) { // end of spike in next buffer
 						// previous record
-						short prevVals[arguments.totalChannelNumber];
-						memcpy(prevVals, cur_buffer+i-arguments.totalChannelNumber,
+						std::vector<short> prevVals(arguments.totalChannelNumber);
+						memcpy(prevVals.data(), cur_buffer+i-arguments.totalChannelNumber,
 							   arguments.totalChannelNumber*sizeof(short));
 						
 						if(arguments.isDisableAbs) {
@@ -446,7 +446,7 @@ int main(int argc,char *argv[]) {
 												channelNb_group[grp], 
 												channelList[grp],
 												arguments.totalChannelNumber,
-												thresList[grp], prevVals,
+												thresList[grp], prevVals.data(),
 												isNegativeMax[grp]);
 							prevBuffer_isNegativeMax[grp] = isNegativeMax[grp];
 							isNegativeMax[grp] = false;
@@ -457,7 +457,7 @@ int main(int argc,char *argv[]) {
 												channelNb_group[grp],
 												channelList[grp],
 												arguments.totalChannelNumber,
-												prevVals);
+												prevVals.data());
 						}
 					
 						if(maxId[grp] != -1) {
@@ -499,14 +499,14 @@ int main(int argc,char *argv[]) {
 					} else {
 						off_t maxFullId = -1;
 						// previous records
-						short prevVals[arguments.totalChannelNumber];
+						std::vector<short> prevVals(arguments.totalChannelNumber);
 						
 						// previous record in current buffer
 						if(i >= arguments.totalChannelNumber) {
-							memcpy(prevVals, cur_buffer+i-arguments.totalChannelNumber,
+							memcpy(prevVals.data(), cur_buffer+i-arguments.totalChannelNumber,
 									arguments.totalChannelNumber*sizeof(short));
 						} else { // previous record is the last of previous buffer
-							memcpy(prevVals, prev_buffer+buffer_size
+							memcpy(prevVals.data(), prev_buffer+buffer_size
 									-arguments.totalChannelNumber, 
 									arguments.totalChannelNumber*sizeof(short));
 						}
@@ -519,7 +519,7 @@ int main(int argc,char *argv[]) {
 												channelNb_group[grp],
 												channelList[grp],
 												arguments.totalChannelNumber,
-												thresList[grp], prevVals,
+												thresList[grp], prevVals.data(),
 												isNegativeMax[grp]);
 							
 							double thr = getThresholdFromChan(spkChanId[grp],
@@ -554,7 +554,7 @@ int main(int argc,char *argv[]) {
 												channelNb_group[grp],
 												channelList[grp],
 												arguments.totalChannelNumber,
-												prevVals);
+												prevVals.data());
 							
 							double thr = getThresholdFromChan(spkChanId[grp],
 												channelNb_group[grp],
@@ -662,8 +662,8 @@ int main(int argc,char *argv[]) {
 										// index of the 1st record > thr
 										x -=  arguments.totalChannelNumber;
 										// previous record
-										short prevVals[arguments.totalChannelNumber];
-										memcpy(prevVals, prev_buffer+x-arguments.totalChannelNumber,
+										std::vector<short> prevVals(arguments.totalChannelNumber);
+										memcpy(prevVals.data(), prev_buffer+x-arguments.totalChannelNumber,
 												arguments.totalChannelNumber*sizeof(short));
 										
 										if(arguments.isDisableAbs) {
@@ -673,7 +673,7 @@ int main(int argc,char *argv[]) {
 												channelNb_group[grp],
 												channelList[grp],
 												arguments.totalChannelNumber,
-												thresList[grp], prevVals,
+												thresList[grp], prevVals.data(),
 												isNegativeMax[grp]);
 											prevBuffer_isNegativeMax[grp] = 
 															isNegativeMax[grp];
@@ -684,7 +684,7 @@ int main(int argc,char *argv[]) {
 												channelNb_group[grp], 
 												channelList[grp],
 												arguments.totalChannelNumber,
-												prevVals);
+												prevVals.data());
 										} // if isDisableAbs
 										
 										if(maxId[grp] != -1) {

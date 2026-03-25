@@ -51,6 +51,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include "process_spikegrouper.h"
+#include <utility>
 
 #include <algorithm>
 #include <cassert>
@@ -659,7 +660,7 @@ static vector<vector<int>> groupChannels(
         b.chs = vector<int>(sortedChs.begin() + l, sortedChs.begin() + r + 1);
         for (int p = l; p <= r; ++p)
             b.idxs.push_back(sortedIdx[p]);
-        blocks.push_back(move(b));
+        blocks.push_back(std::move(b));
     }
 
     // ---- Enforce maxMergedSize: re-split any oversized block ----
@@ -670,7 +671,7 @@ static vector<vector<int>> groupChannels(
         for (auto& b : blocks) {
             int sz = (int)b.chs.size();
             if (sz <= maxMergedSize) {
-                sized.push_back(move(b));
+                sized.push_back(std::move(b));
                 continue;
             }
             // How many pieces do we need?  Round up to keep each piece <= maxMergedSize
@@ -683,11 +684,11 @@ static vector<vector<int>> groupChannels(
                 Block nb;
                 nb.chs  = vector<int>(b.chs.begin()  + pos2, b.chs.begin()  + pos2 + len);
                 nb.idxs = vector<int>(b.idxs.begin() + pos2, b.idxs.begin() + pos2 + len);
-                sized.push_back(move(nb));
+                sized.push_back(std::move(nb));
                 pos2 += len;
             }
         }
-        blocks = move(sized);
+        blocks = std::move(sized);
     }
 
     // ---- Enforce minChannels: absorb undersized blocks into best neighbour ----
@@ -991,7 +992,7 @@ int main(int argc, char* argv[])
                 // Sort and deduplicate
                 sort(extended.begin(), extended.end());
                 extended.erase(unique(extended.begin(), extended.end()), extended.end());
-                overlappedGroups[s] = move(extended);
+                overlappedGroups[s] = std::move(extended);
             }
 
             if (args.verbose) {

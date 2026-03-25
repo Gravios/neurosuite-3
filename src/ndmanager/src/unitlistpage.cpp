@@ -73,7 +73,7 @@ bool UnitListPage::eventFilter(QObject* object,QEvent* event)
             int row = unitTable->currentRow();
             int column = unitTable->currentColumn();
             QWidget* widget = unitTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == ("QLineEdit"))
+            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit"))
             {
                 if(!static_cast<QLineEdit*>(widget)->text().isEmpty())
                     unitTable->setCellWidget(row,column,widget);

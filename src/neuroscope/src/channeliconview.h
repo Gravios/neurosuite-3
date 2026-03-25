@@ -60,7 +60,7 @@ public:
 
     void setNewWidth(int width);
 
-    QSize sizeHint() const;
+    QSize sizeHint() const override;
 
 public Q_SLOTS:
     void setDragAndDrop(bool dragDrop);
@@ -82,12 +82,12 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void wheelEvent ( QWheelEvent * e ) override;
     QMimeData* mimeData(const QList<QListWidgetItem*> items) const;
-    bool dropMimeData(int index, const QMimeData * data, Qt::DropAction action);
-    Qt::DropActions supportedDropActions() const
+    bool dropMimeData(int index, const QMimeData * data, Qt::DropAction action) override;
+    Qt::DropActions supportedDropActions() const override
     {
         return Qt::MoveAction;
     }
-    QStringList mimeTypes() const
+    QStringList mimeTypes() const override
     {
         return QStringList() << "application/x-channeliconview";
     }

@@ -432,6 +432,7 @@ void ndManager::slotFileClose(){
                 case QMessageBox::Cancel:
                     hasBeenCancel = true;
                     break;
+                default: break;
                 }
             }
         }
@@ -448,6 +449,7 @@ void ndManager::slotFileClose(){
                 case QMessageBox::Cancel:
                     hasBeenCancel = true;
                     break;
+                default: break;
                 }
             }
         }
@@ -463,6 +465,7 @@ void ndManager::slotFileClose(){
                     break;
                 case QMessageBox::Cancel:
                     return;
+                default: break;
                 }
             }
             delete parameterView;
@@ -495,6 +498,7 @@ bool ndManager::queryClose()
                 case QMessageBox::Cancel:
                     return false;
                     break;
+                default: break;
                 }
             }
         }
@@ -512,6 +516,7 @@ bool ndManager::queryClose()
                 case QMessageBox::Cancel:
                     return false;
                     break;
+                default: break;
                 }
             }
         }
@@ -526,6 +531,7 @@ bool ndManager::queryClose()
                 break;
             case QMessageBox::Cancel:
                 return false;
+            default: break;
             }
         }
         //close the document

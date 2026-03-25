@@ -74,29 +74,53 @@ endforeach()
 #      before actually enabling IPO; if it is still unresolved, skip silently.
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-    # xiar lives in the same bin directory as icpx.
+    # For the modern LLVM-based Intel compiler (icpx), the LTO archiver is
+    # llvm-ar, located in a "compiler/" subdirectory alongside icpx:
+    #   .../compiler/<version>/bin/icpx
+    #   .../compiler/<version>/bin/compiler/llvm-ar
+    # The old Classic Compiler used xiar; keep it as a fallback.
     get_filename_component(_icpx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    find_program(_xiar_path xiar HINTS "${_icpx_dir}" NO_DEFAULT_PATH)
-    if(_xiar_path)
-        # These must be set in the cache so that check_ipo_supported() and the
-        # actual link step both see the same archiver.
-        set(CMAKE_AR                 "${_xiar_path}" CACHE FILEPATH "Intel LTO archiver" FORCE)
-        set(CMAKE_CXX_COMPILER_AR    "${_xiar_path}" CACHE FILEPATH "Intel LTO archiver (CXX)" FORCE)
-        set(CMAKE_C_COMPILER_AR      "${_xiar_path}" CACHE FILEPATH "Intel LTO archiver (C)"   FORCE)
-        set(CMAKE_RANLIB             "${_icpx_dir}/xranlib" CACHE FILEPATH "" FORCE)
-        message(STATUS "ZenOptimizations: Intel xiar found at ${_xiar_path}")
+    find_program(_intel_ar
+        NAMES llvm-ar xiar
+        HINTS "${_icpx_dir}/compiler" "${_icpx_dir}"
+        NO_DEFAULT_PATH)
+    if(_intel_ar)
+        set(CMAKE_AR              "${_intel_ar}" CACHE FILEPATH "Intel LTO archiver" FORCE)
+        set(CMAKE_CXX_COMPILER_AR "${_intel_ar}" CACHE FILEPATH "Intel LTO archiver (CXX)" FORCE)
+        set(CMAKE_C_COMPILER_AR   "${_intel_ar}" CACHE FILEPATH "Intel LTO archiver (C)"   FORCE)
+        # Matching ranlib: prefer llvm-ranlib next to llvm-ar, fall back to system ranlib.
+        get_filename_component(_ar_dir "${_intel_ar}" DIRECTORY)
+        find_program(_intel_ranlib
+            NAMES llvm-ranlib ranlib
+            HINTS "${_ar_dir}"
+            NO_DEFAULT_PATH)
+        if(_intel_ranlib)
+            set(CMAKE_RANLIB              "${_intel_ranlib}" CACHE FILEPATH "" FORCE)
+            set(CMAKE_CXX_COMPILER_RANLIB "${_intel_ranlib}" CACHE FILEPATH "" FORCE)
+            set(CMAKE_C_COMPILER_RANLIB   "${_intel_ranlib}" CACHE FILEPATH "" FORCE)
+        endif()
+        message(STATUS "ZenOptimizations: Intel LTO archiver: ${_intel_ar}")
+        unset(_ar_dir)
+        unset(_intel_ranlib CACHE)
     else()
-        message(STATUS "ZenOptimizations: xiar not found next to icpx — IPO/LTO disabled for Intel compiler")
+        # Neither llvm-ar nor xiar found — skip the IPO probe entirely.
+        # check_ipo_supported() with icpx compiles with -ipo successfully but
+        # then tries to archive with CMAKE_CXX_COMPILER_AR-NOTFOUND, producing
+        # a noisy failure.  Early-out here to keep the configure log clean.
+        message(STATUS "ZenOptimizations: Intel LTO archiver (llvm-ar/xiar) not found — IPO/LTO disabled")
+        unset(_icpx_dir)
+        unset(_intel_ar CACHE)
+        return()
     endif()
     unset(_icpx_dir)
-    unset(_xiar_path CACHE)
+    unset(_intel_ar CACHE)
 endif()
 
 include(CheckIPOSupported OPTIONAL RESULT_VARIABLE _ipo_module)
 if(_ipo_module)
     check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_msg)
     # Double-check: even if the probe succeeded, the archiver must be resolved.
-    # cmake_CXX_COMPILER_AR can be set to NOTFOUND as a string, not an empty var.
+    # CMAKE_CXX_COMPILER_AR can be set to NOTFOUND as a string, not an empty var.
     if(_ipo_ok
             AND CMAKE_CXX_COMPILER_AR
             AND NOT CMAKE_CXX_COMPILER_AR MATCHES "-NOTFOUND$")
@@ -106,7 +130,7 @@ if(_ipo_module)
     elseif(_ipo_ok)
         message(STATUS "ZenOptimizations: IPO/LTO probe passed but archiver unresolved — skipping")
     else()
-        message(STATUS "ZenOptimizations: IPO/LTO not supported — ${_ipo_msg}")
+        message(STATUS "ZenOptimizations: IPO/LTO not supported — skipped")
     endif()
 endif()
 
