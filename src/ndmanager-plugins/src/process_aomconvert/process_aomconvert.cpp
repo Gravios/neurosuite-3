@@ -42,6 +42,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <hdf5.h>
+#include <utility>
 
 #include <algorithm>
 #include <cassert>
@@ -122,7 +123,7 @@ static vector<Group> parseTopology(const string& spec, int nChannels)
             for (int k = ch; k < min(ch + size, nChannels); ++k)
                 g.channels.push_back(k);
             g.type = probeType(size);
-            groups.push_back(move(g));
+            groups.push_back(std::move(g));
         }
     }
     if (groups.empty())
@@ -139,7 +140,7 @@ static vector<Group> uniformGroups(int nChannels, int groupSize)
         for (int k = i; k < min(i + groupSize, nChannels); ++k)
             g.channels.push_back(k);
         g.type = ptype;
-        groups.push_back(move(g));
+        groups.push_back(std::move(g));
     }
     return groups;
 }

@@ -77,7 +77,7 @@ bool FilePage::eventFilter(QObject* object,QEvent* event){
             int row = mappingTable->currentRow();
             int column = mappingTable->currentColumn();
             QWidget* widget = mappingTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == ("QLineEdit")){
+            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit")){
                 mappingTable->editItem(mappingTable->item(row,column));
                 return true;
             }

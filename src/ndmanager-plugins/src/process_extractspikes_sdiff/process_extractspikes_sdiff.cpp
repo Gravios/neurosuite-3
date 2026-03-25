@@ -912,13 +912,13 @@ int main(int argc, char *argv[])
                     // ── peak window overflows to next buffer ──────────────
                     if(maxEndSpike >= (int)rec_nb) {
 
-                        short prevVals[args.totalChannelNumber];
+                        std::vector<short> prevVals(args.totalChannelNumber);
                         if(i >= args.totalChannelNumber)
-                            memcpy(prevVals,
+                            memcpy(prevVals.data(),
                                    sdiff_cur + i - args.totalChannelNumber,
                                    args.totalChannelNumber * sizeof(short));
                         else
-                            memcpy(prevVals,
+                            memcpy(prevVals.data(),
                                    sdiff_prev + buffer_size - args.totalChannelNumber,
                                    args.totalChannelNumber * sizeof(short));
 
@@ -927,14 +927,14 @@ int main(int argc, char *argv[])
                                 sdiff_cur, i, (int)rec_nb - 1,
                                 spkChanId[grp], nChanGrp, cList,
                                 args.totalChannelNumber, thr,
-                                prevVals, isNegativeMax[grp]);
+                                prevVals.data(), isNegativeMax[grp]);
                             prevBuffer_isNegMax[grp] = isNegativeMax[grp];
                             isNegativeMax[grp] = false;
                         } else {
                             maxId[grp] = lookForMax(
                                 sdiff_cur, i, (int)rec_nb - 1,
                                 spkChanId[grp], nChanGrp, cList,
-                                args.totalChannelNumber, prevVals);
+                                args.totalChannelNumber, prevVals.data());
                         }
 
                         if(maxId[grp] != -1) {
@@ -950,13 +950,13 @@ int main(int argc, char *argv[])
                     // ── peak window fully in current buffer ───────────────
                     } else {
 
-                        short prevVals[args.totalChannelNumber];
+                        std::vector<short> prevVals(args.totalChannelNumber);
                         if(i >= args.totalChannelNumber)
-                            memcpy(prevVals,
+                            memcpy(prevVals.data(),
                                    sdiff_cur + i - args.totalChannelNumber,
                                    args.totalChannelNumber * sizeof(short));
                         else
-                            memcpy(prevVals,
+                            memcpy(prevVals.data(),
                                    sdiff_prev + buffer_size - args.totalChannelNumber,
                                    args.totalChannelNumber * sizeof(short));
 
@@ -968,7 +968,7 @@ int main(int argc, char *argv[])
                                 sdiff_cur, i, maxEndSpike,
                                 spkChanId[grp], nChanGrp, cList,
                                 args.totalChannelNumber, thr,
-                                prevVals, isNegativeMax[grp]);
+                                prevVals.data(), isNegativeMax[grp]);
 
                             double thr2 = getThresholdFromChan(
                                 spkChanId[grp], nChanGrp, cList, thr);
@@ -989,7 +989,7 @@ int main(int argc, char *argv[])
                             maxId[grp] = lookForMax(
                                 sdiff_cur, i, maxEndSpike,
                                 spkChanId[grp], nChanGrp, cList,
-                                args.totalChannelNumber, prevVals);
+                                args.totalChannelNumber, prevVals.data());
 
                             double thr2 = getThresholdFromChan(
                                 spkChanId[grp], nChanGrp, cList, thr);
@@ -1056,8 +1056,8 @@ int main(int argc, char *argv[])
 
                                     if(spkChanId[grp] != -1) {
                                         x -= args.totalChannelNumber;
-                                        short pv2[args.totalChannelNumber];
-                                        memcpy(pv2,
+                                        std::vector<short> pv2(args.totalChannelNumber);
+                                        memcpy(pv2.data(),
                                                sdiff_prev + x - args.totalChannelNumber,
                                                args.totalChannelNumber * sizeof(short));
 
@@ -1066,13 +1066,13 @@ int main(int argc, char *argv[])
                                                 sdiff_prev, x, buffer_size - 1,
                                                 spkChanId[grp], nChanGrp, cList,
                                                 args.totalChannelNumber, thr,
-                                                pv2, isNegativeMax[grp]);
+                                                pv2.data(), isNegativeMax[grp]);
                                             prevBuffer_isNegMax[grp] = isNegativeMax[grp];
                                         } else {
                                             maxId[grp] = lookForMax(
                                                 sdiff_prev, x, buffer_size - 1,
                                                 spkChanId[grp], nChanGrp, cList,
-                                                args.totalChannelNumber, pv2);
+                                                args.totalChannelNumber, pv2.data());
                                         }
 
                                         if(maxId[grp] != -1) {

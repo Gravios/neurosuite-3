@@ -68,7 +68,7 @@ public:
 public Q_SLOTS:
 
     /**Enables the caller to know if there is any thread running launch by the Widget.*/
-    bool isThreadsRunning() const;
+    bool isThreadsRunning() const override;
 
     /**Update the error matrix.*/
     void updateMatrixContents();
@@ -191,7 +191,7 @@ public Q_SLOTS:
   * @param metrics object providing information about the printer.
   * @param whiteBackground true if the printed background has to be white, false otherwise.
   */
-    void print(QPainter& printPainter,int width,int height, bool whiteBackground);
+    void print(QPainter& printPainter,int width,int height, bool whiteBackground) override;
 
 protected:
     /**

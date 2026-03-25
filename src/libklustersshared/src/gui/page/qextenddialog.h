@@ -523,12 +523,12 @@ class KLUSTERSSHARED_EXPORT QExtendDialog : public QDialog
     /**
      * Reimplemented from QDialog.
      */
-    virtual QSize sizeHint() const;
+    virtual QSize sizeHint() const override;
 
     /**
      * Reimplemented from QDialog.
      */
-    virtual QSize minimumSizeHint() const;
+    virtual QSize minimumSizeHint() const override;
 	
 	/**
      * Allow embedding the dialogs based on QExtendDialog into a graphics view. By default embedding is not allowed, dialogs
@@ -793,7 +793,7 @@ class KLUSTERSSHARED_EXPORT QExtendDialog : public QDialog
      * Emits the #hidden signal. You can connect to that signal to
      * detect when a dialog has been closed.
      */
-    virtual void hideEvent( QHideEvent * );
+    virtual void hideEvent( QHideEvent * ) override;
 
     /**
      * Detects when a dialog is being closed from the window manager
@@ -801,12 +801,12 @@ class KLUSTERSSHARED_EXPORT QExtendDialog : public QDialog
      * is activated. Otherwise standard QDialog behavior
      * will take place.
      */
-    virtual void closeEvent( QCloseEvent *e );
+    virtual void closeEvent( QCloseEvent *e ) override;
 
     /**
      * @internal
      */
-    virtual void keyPressEvent( QKeyEvent* );
+    virtual void keyPressEvent( QKeyEvent* ) override;
 
   protected Q_SLOTS:
     /**

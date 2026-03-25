@@ -49,7 +49,7 @@ public:
 
     void setNewWidth(int width);
 
-    QSize sizeHint() const;
+    QSize sizeHint() const override;
 
 
 protected:

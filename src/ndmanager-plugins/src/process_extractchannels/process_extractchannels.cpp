@@ -26,6 +26,7 @@
 #endif
 
 #include <iostream>
+#include <vector>
 #include <fstream>
 #include <stdlib.h>
 #include <string.h>
@@ -87,10 +88,10 @@ int main(int argc,char *argv[])
 
 	int   nChannels;
 	int   nChannelsToExtract = argc - (i+3);
-	int   channelToExtract[nChannelsToExtract];
-	float gain[nChannelsToExtract];
-	int   reference[nChannelsToExtract];
-	bool  gainBefore[nChannelsToExtract];
+	std::vector<int>   channelToExtract(nChannelsToExtract);
+	std::vector<float> gain(nChannelsToExtract);
+	std::vector<int>   reference(nChannelsToExtract);
+	std::vector<bool>  gainBefore(nChannelsToExtract);
 
 	inputFileArgument = i;
 	i += 2;
@@ -153,7 +154,7 @@ int main(int argc,char *argv[])
 			cerr << "error: cannot extract channel " << channelToExtract[j] << " (" << nChannels << " channels, numbered from 0)." << endl;
 			return EXIT_FAILURE;
 		}
-		if ( reference[j] != -1 )
+		if ( reference[j] != -1 ) {
 			if ( reference[j] < 0 )
 			{
 				cerr << "error: negative reference number (" << reference[j] << ")." << endl;
@@ -164,6 +165,7 @@ int main(int argc,char *argv[])
 				cerr << "error: cannot use channel " << reference[j] << " as reference (" << nChannels << " channels, numbered from 0)." << endl;
 				return EXIT_FAILURE;
 			}
+		}
 	}
 
 	// Open the source file

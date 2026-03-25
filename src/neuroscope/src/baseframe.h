@@ -127,27 +127,27 @@ protected:
     /**The view responds to a resize event.
   * @param event resize event.
   */
-    virtual void resizeEvent(QResizeEvent* event);
+    virtual void resizeEvent(QResizeEvent* event) override;
 
     /**The view responds to a mouse click.
   * @param event mouse release event.
   */
-    virtual void mousePressEvent(QMouseEvent* event);
+    virtual void mousePressEvent(QMouseEvent* event) override;
 
     /**The view responds to a mouse release.
   * @param event mouse event.
   */
-    virtual void mouseReleaseEvent(QMouseEvent* event);
+    virtual void mouseReleaseEvent(QMouseEvent* event) override;
 
     /**The view responds to a mouse move.
   * @param event mouse event.
   */
-    virtual void mouseMoveEvent(QMouseEvent* event);
+    virtual void mouseMoveEvent(QMouseEvent* event) override;
 
     /**The view responds to a double click.
   * @param event mouse event.
   */
-    virtual void mouseDoubleClickEvent(QMouseEvent* event);
+    virtual void mouseDoubleClickEvent(QMouseEvent* event) override;
 
     /**
   * Translates a point (@p vx, @p vy) on the viewport to a QPoint in the world

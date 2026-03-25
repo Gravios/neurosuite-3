@@ -74,7 +74,7 @@ bool SpikePage::eventFilter(QObject* object,QEvent* event)
             int row = groupTable->currentRow();
             int column = groupTable->currentColumn();
             QWidget* widget = groupTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == ("QLineEdit")){
+            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit")){
                 groupTable->setCellWidget(row,column,widget);
                 return true;
             }
@@ -198,7 +198,7 @@ void SpikePage::groupChanged(int row,int column){
     if(isIncorrectRow){
         QWidget* widget = groupTable->cellWidget(incorrectRow,incorrectColumn);
         QString incorrectGroup;
-        if(widget != 0 && widget->metaObject()->className() == ("QLineEdit"))
+        if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit"))
             incorrectGroup = static_cast<QLineEdit*>(widget)->text();
         else if(widget == 0)
             incorrectGroup = groupTable->item(incorrectRow,incorrectColumn)->text();

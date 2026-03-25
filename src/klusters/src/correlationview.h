@@ -93,7 +93,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id for which the color have changed.
   * @param active true if the view is the active one, false otherwise.
   */
-    void singleColorUpdate(int clusterId,bool active);
+    void singleColorUpdate(int clusterId,bool active) override;
 
     /**
   * Draws an additional cluster to those already shown.
@@ -101,14 +101,14 @@ public Q_SLOTS:
   * @param clusterId cluster Id to add to the clusters already drawn
   * @param active true if the view is the active one, false otherwise.
   */
-    void addClusterToView(int clusterId,bool active);
+    void addClusterToView(int clusterId,bool active) override;
 
     /**
   * Removes a cluster from those already shown. Which impose to redraw everything
   * @param clusterId cluster Id to remove.
   * @param active true if the view is the active one, false otherwise.
   */
-    void removeClusterFromView(int clusterId,bool active);
+    void removeClusterFromView(int clusterId,bool active) override;
 
     /**
   * Adds a newly created cluster to those already shown.
@@ -117,7 +117,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to add to the clusters already drawn
   * @param active true if the view is the active one, false otherwise.
  */
-    void addNewClusterToView(QList<int>& fromClusters,int clusterId,bool active);
+    void addNewClusterToView(QList<int>& fromClusters,int clusterId,bool active) override;
 
     /**
   * Adds a newly created cluster to those already shown.
@@ -125,7 +125,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to add to the clusters already drawn
   * @param active true if the view is the active one, false otherwise.
   */
-    void addNewClusterToView(int clusterId,bool active){addClusterToView(clusterId,active);}
+    void addNewClusterToView(int clusterId,bool active) override {addClusterToView(clusterId,active);}
 
     /**
   * Updates the content of the widget due to the removal of spikes in a cluster.
@@ -133,7 +133,7 @@ public Q_SLOTS:
   * @param fromClusters list of clusters from which the spikes have been taken.
   * @param active true if the view is the active one, false otherwise.
   */
-    void spikesRemovedFromClusters(QList<int>& fromClusters,bool active);
+    void spikesRemovedFromClusters(QList<int>& fromClusters,bool active) override;
 
     /**
   * Updates the content of the widget due to the addition of spikes in a cluster.
@@ -141,7 +141,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to which the spikes have been added
   * @param active true if the view is the active one, false otherwise.
   */
-    void spikesAddedToCluster(int clusterId,bool active);
+    void spikesAddedToCluster(int clusterId,bool active) override;
 
     /**Changes the current mode, call by a selection of a tool
   * @param selectedMode new mode of drawing (selection or zoom)
@@ -175,7 +175,7 @@ public Q_SLOTS:
     void decreaseAmplitude();
 
     /**Enables the caller to know if there is any thread running launch by the view.*/
-    bool isThreadsRunning() const;
+    bool isThreadsRunning() const override;
 
     /**
   * Update the clusters which have been modified by the suppression of spikes
@@ -185,7 +185,7 @@ public Q_SLOTS:
   * @param modifiedClusters list of clusters from which spikes were taken from.
   * @param active true if the view is the active one, false otherwise.
   */
-    void undoUpdateClusters(QList<int>& modifiedClusters,bool active){
+    void undoUpdateClusters(QList<int>& modifiedClusters,bool active) override {
         spikesRemovedFromClusters(modifiedClusters,active);
     }
 
@@ -198,7 +198,7 @@ public Q_SLOTS:
   * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
   */
-    void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion){
+    void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion) override {
         spikesRemovedFromClusters(modifiedClusters,active);
     }
 
@@ -223,7 +223,7 @@ public Q_SLOTS:
  * @param metrics object providing information about the printer.
  * @param whiteBackground true if the printed background has to be white, false otherwise.
  */
-    void print(QPainter& printPainter,int width,int height, bool whiteBackground);
+    void print(QPainter& printPainter,int width,int height, bool whiteBackground) override;
 
 protected:
     /**
