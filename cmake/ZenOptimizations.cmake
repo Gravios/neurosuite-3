@@ -62,14 +62,49 @@ endforeach()
 
 # ── IPO / LTO ─────────────────────────────────────────────────────────────────
 # Link-time optimisation; check that the toolchain supports it before enabling.
+#
+# With the Intel oneAPI compiler (icpx/icx), CMake's check_ipo_supported() may
+# return TRUE even though CMAKE_CXX_COMPILER_AR was not resolved, because CMake
+# does not automatically locate xiar (Intel's LTO-aware archiver).  Without it
+# the LTO link step fails with a literal "CMAKE_CXX_COMPILER_AR-NOTFOUND"
+# command.  We therefore:
+#   1. For Intel compilers, probe for xiar next to icpx and set CMAKE_AR and
+#      CMAKE_CXX_COMPILER_AR before running check_ipo_supported().
+#   2. After check_ipo_supported() succeeds, verify the archiver is not NOTFOUND
+#      before actually enabling IPO; if it is still unresolved, skip silently.
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+    # xiar lives in the same bin directory as icpx.
+    get_filename_component(_icpx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(_xiar_path xiar HINTS "${_icpx_dir}" NO_DEFAULT_PATH)
+    if(_xiar_path)
+        # These must be set in the cache so that check_ipo_supported() and the
+        # actual link step both see the same archiver.
+        set(CMAKE_AR                 "${_xiar_path}" CACHE FILEPATH "Intel LTO archiver" FORCE)
+        set(CMAKE_CXX_COMPILER_AR    "${_xiar_path}" CACHE FILEPATH "Intel LTO archiver (CXX)" FORCE)
+        set(CMAKE_C_COMPILER_AR      "${_xiar_path}" CACHE FILEPATH "Intel LTO archiver (C)"   FORCE)
+        set(CMAKE_RANLIB             "${_icpx_dir}/xranlib" CACHE FILEPATH "" FORCE)
+        message(STATUS "ZenOptimizations: Intel xiar found at ${_xiar_path}")
+    else()
+        message(STATUS "ZenOptimizations: xiar not found next to icpx — IPO/LTO disabled for Intel compiler")
+    endif()
+    unset(_icpx_dir)
+    unset(_xiar_path CACHE)
+endif()
 
 include(CheckIPOSupported OPTIONAL RESULT_VARIABLE _ipo_module)
 if(_ipo_module)
     check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_msg)
-    if(_ipo_ok)
+    # Double-check: even if the probe succeeded, the archiver must be resolved.
+    # cmake_CXX_COMPILER_AR can be set to NOTFOUND as a string, not an empty var.
+    if(_ipo_ok
+            AND CMAKE_CXX_COMPILER_AR
+            AND NOT CMAKE_CXX_COMPILER_AR MATCHES "-NOTFOUND$")
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE         ON CACHE BOOL "" FORCE)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO  ON CACHE BOOL "" FORCE)
         message(STATUS "ZenOptimizations: IPO/LTO enabled for Release builds")
+    elseif(_ipo_ok)
+        message(STATUS "ZenOptimizations: IPO/LTO probe passed but archiver unresolved — skipping")
     else()
         message(STATUS "ZenOptimizations: IPO/LTO not supported — ${_ipo_msg}")
     endif()
