@@ -1752,17 +1752,20 @@ void KK::RealignChunkWaveforms(
                 const int16_t* row = waves.data()
                                    + static_cast<size_t>(localIdx) * waveSamples;
 
-                // sh = bestLag from XcorrDispatch (positive = spike is late,
-                // its peak is at peakPos + sh inside the window).
+                // sh = bestLag from XcorrDispatch.
+                // The xcorr kernel computes num(τ) = Σ_s tmpl[s] · spike[(s+τ)%N].
+                // This peaks when spike[(s+τ)%N] ≡ tmpl[s], so the spike feature
+                // matching the template at s is at position s+τ in the spike —
+                // i.e. the spike peak is *early* by τ (at peakPos − τ) when τ > 0.
                 //
                 // To land the peak at peakPos we need:
-                //   aligned[peakPos] = original[peakPos + sh]
-                // i.e.  aligned[s] = original[(s + sh) % N]
+                //   aligned[peakPos] = original[peakPos - sh]
+                //   i.e.  aligned[s] = original[(s - sh + N) % N]  (roll right)
                 //
-                // The former formula (s - sh) was wrong: it placed the peak at
-                // peakPos + 2*sh, moving it *away* from the template on every pass.
+                // The former formula (s + sh) was wrong: it doubled the offset,
+                // moving the peak further from the template on every pass.
                 for (int s = 0; s < nSamplesPerSpike; s++) {
-                    const int src = (s + sh % nSamplesPerSpike + nSamplesPerSpike)
+                    const int src = (s - sh % nSamplesPerSpike + nSamplesPerSpike)
                                     % nSamplesPerSpike;
                     for (int c = 0; c < nChan; c++)
                         aligned[s * nChan + c] = row[src * nChan + c];
