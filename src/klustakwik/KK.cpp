@@ -1753,19 +1753,18 @@ void KK::RealignChunkWaveforms(
                                    + static_cast<size_t>(localIdx) * waveSamples;
 
                 // sh = bestLag from XcorrDispatch.
-                // The xcorr kernel computes num(τ) = Σ_s tmpl[s] · spike[(s+τ)%N].
-                // This peaks when spike[(s+τ)%N] ≡ tmpl[s], so the spike feature
-                // matching the template at s is at position s+τ in the spike —
-                // i.e. the spike peak is *early* by τ (at peakPos − τ) when τ > 0.
+                // num(τ)=Σ_s tmpl[s]·spike[(s+τ)%N] peaks at τ=bestLag when
+                // spike[(s+τ)%N]≡tmpl[s] — i.e. the spike peak is *late* by τ
+                // (at peakPos+τ) when τ>0.
                 //
-                // To land the peak at peakPos we need:
-                //   aligned[peakPos] = original[peakPos - sh]
-                //   i.e.  aligned[s] = original[(s - sh + N) % N]  (roll right)
+                // To land the peak at peakPos:
+                //   aligned[peakPos] = original[peakPos + sh]
+                //   i.e. aligned[s] = original[(s + sh + N) % N]  (roll left)
                 //
-                // The former formula (s + sh) was wrong: it doubled the offset,
-                // moving the peak further from the template on every pass.
+                // Timestamp correction is the OPPOSITE sign: newTs = oldTs - sh
+                // (a late-detected spike actually occurred sh samples earlier).
                 for (int s = 0; s < nSamplesPerSpike; s++) {
-                    const int src = (s - sh % nSamplesPerSpike + nSamplesPerSpike)
+                    const int src = (s + sh % nSamplesPerSpike + nSamplesPerSpike)
                                     % nSamplesPerSpike;
                     for (int c = 0; c < nChan; c++)
                         aligned[s * nChan + c] = row[src * nChan + c];
