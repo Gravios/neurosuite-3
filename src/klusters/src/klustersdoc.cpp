@@ -2815,8 +2815,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
             // Circular shift: newSpike[t] = oldSpike[(t + shift) % N].
             // Derivation: score(lag) = Σ tmpl[s]·spike[(s+lag)%N] peaks at
-            // lag = bestLag when spike[(s+bestLag)%N] ≈ tmpl[s], so
-            // newSpike[t] = spike[(t+bestLag)%N] aligns the waveform.
+            // lag = bestLag when spike[(s+bestLag)%N] ≈ tmpl[s], meaning the
+            // spike peak is late by bestLag.  Rolling forward by bestLag
+            // brings the peak back to the template position.  The timestamp
+            // must move in the opposite direction (see newTs below).
             std::vector<int16_t> tmp(spkElems);
             for (int t = 0; t < nSamp; ++t) {
                 const int src = (t + s + nSamp) % nSamp;
@@ -2902,11 +2904,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Compute new timestamps and sort cluster spikes by new timestamp
     // -----------------------------------------------------------------------
+    // Sign convention: xcorr returns bestLag > 0 when the spike peak is
+    // LATE — the detector fired bestLag samples after the true event.
+    // The waveform correction rolls content forward: newSpike[t] = spike[(t+lag)%N],
+    // which is correct for display.  The timestamp correction is the OPPOSITE
+    // sign: the true event occurred bestLag samples BEFORE the recorded timestamp,
+    // so newTs = oldTs - cumShift.  Using + cumShift shifts the re-extraction
+    // window in the wrong direction and moves PCA features by ±shift samples.
     std::vector<int64_t> newTs(static_cast<size_t>(N));
     for (int64_t i = 0; i < N; ++i)
         newTs[static_cast<size_t>(i)] =
             clusterTs[static_cast<size_t>(i)]
-            + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+            - static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
 
     // sortedOrder[j] = which cluster spike goes to sorted position j
     std::vector<int64_t> sortedOrder(static_cast<size_t>(N));

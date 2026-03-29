@@ -20,16 +20,14 @@
  *
  * Sign convention
  * ---------------
- * num(τ) = Σ_s tmpl[s] · spike[(s+τ)%N] peaks when spike[(s+τ)%N] ≡ tmpl[s],
- * meaning the spike feature that matches the template at position s is found at
- * position s+τ in the spike — i.e. the spike peak is *early* by τ samples
- * (at peakPos - τ) when τ > 0.
+ * A positive score peak at lag τ means the spike's content at position s+τ
+ * best matches the template at position s — i.e. the spike peak is *late* by τ
+ * samples relative to the template.  To realign, the waveform must be rolled
+ * forward by τ: aligned[s] = original[(s + τ) % N].  Equivalently, the spike's
+ * timestamp must advance by τ: newTimestamp = oldTimestamp + τ.
  *
- * To realign: aligned[s] = original[(s - τ + N) % N]  (roll right by τ).
- * Equivalently, the spike timestamp must be retarded by τ:
- *   newTimestamp = oldTimestamp - τ.
- *
- * shifts_out[sp] = +bestLag.  The caller corrects with (s - sh + N) % N.
+ * shifts_out[sp] = +bestLag so the caller can apply both corrections by simply
+ * adding shifts_out to the timestamp AND using (s + sh) % N for the waveform roll.
  *
  * Parallelism
  * -----------
@@ -122,9 +120,9 @@ int xcorr_omp_compute(
             }
         }
 
-        // bestLag > 0: spike peak is early by bestLag samples relative to template
-        //              (peak is at peakPos - bestLag inside the window).
-        // Caller corrects with: aligned[s] = original[(s - bestLag + N) % N]
+        // bestLag > 0: spike peak is late by bestLag samples relative to template.
+        // Caller corrects with: newTimestamp = oldTimestamp + bestLag
+        //                  and: aligned[s]  = original[(s + bestLag) % N]
         shifts_out[sp] = (bestScore >= minScore) ? bestLag : 0;
         scores_out[sp] = bestScore;
     }
