@@ -35,6 +35,7 @@ set(_srcs
     prefgeneral.cpp
     properties.cpp
     propertiesdialog.cpp
+    timer.cpp           # ODR-safe definition of tv0 (shared by all timer.h includers)
     tracesprovider.cpp
     traceview.cpp
     tracewidget.cpp

@@ -5,7 +5,7 @@
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 3 of the License, or     *
- *   (at your option) any later version.                                 void addAttributes(QMap<QString QMap<int,QString> > attributes);  *
+ *   (at your option) any later version.                                   *
  *                                                                         *
  *   This program is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
@@ -45,11 +45,10 @@ AnatomyPage::AnatomyPage(QWidget* parent)
 
     connect(addGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::addGroup);
     connect(removeGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::removeGroup);
+    // currentCellChanged fires for keyboard, mouse-click and double-click navigation;
+    // the three finer-grained press/click/double-click signals are redundant here.
     connect(groupTable, &QTableWidget::currentCellChanged, this, &AnatomyPage::slotValidate);
     connect(groupTable, &QTableWidget::cellChanged, this, &AnatomyPage::groupChanged);
-    connect(groupTable, &QTableWidget::cellPressed, this, &AnatomyPage::slotValidate);
-    connect(groupTable, &QTableWidget::cellClicked, this, &AnatomyPage::slotValidate);
-    connect(groupTable, &QTableWidget::cellDoubleClicked, this, &AnatomyPage::slotValidate);
 
     connect(attributesTable, &QTableWidget::cellChanged, this, &AnatomyPage::attributeChanged);
 }

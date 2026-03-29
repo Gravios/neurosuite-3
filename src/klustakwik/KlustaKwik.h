@@ -13,9 +13,6 @@
 #include <cstdarg>
 #include <vector>
 #include <stdexcept>
-#include <iostream>
-#include <fstream>
-#include <string>
 
 #include "param.h"
 #include "Array.h"

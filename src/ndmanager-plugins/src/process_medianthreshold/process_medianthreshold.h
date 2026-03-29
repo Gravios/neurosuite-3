@@ -63,10 +63,6 @@ struct arguments {
 	bool isTotalChannelNumberProvided;
 	bool isChannelListProvided;
 	bool isOffsetProvided;
-#ifdef NBITS
-	int nBits; // Number of bits for datas (resolution)
-	bool isNBitsProvided;
-#endif
 };
 
 

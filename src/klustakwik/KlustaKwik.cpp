@@ -228,7 +228,7 @@ void TriSolve(const float *M, const float *x, float *Out, int D) {
 
 // ---------------------------------------------------------------------------
 // export_model — write cluster model to file (format unchanged)
-// pBestChol now lives on the KK instance, so we take K1 by reference.
+// bestCholFlat lives on the KK instance, so we take K1 by reference.
 // ---------------------------------------------------------------------------
 void export_model(FILE *fp, KK& K1) {
     fprintf(fp, "%d %d %d\n", kSv.nDimsBest, kSv.nBestClustersAlive, kSv.cEStepCallsSave);
@@ -243,10 +243,10 @@ void export_model(FILE *fp, KK& K1) {
         for (int i = 0; i < kSv.nDimsBest; i++) {
             for (int j = 0; j < kSv.nDimsBest; j++) {
                 if (j > i)
-                    (*K1.pBestChol)[c][i * kSv.nDimsBest + j] = 0.0f;
+                    K1.bestCholFlat[static_cast<size_t>(c) * K1.nDims2 + i * kSv.nDimsBest + j] = 0.0f;
                 else if (c == 0)
-                    (*K1.pBestChol)[c][i * kSv.nDimsBest + j] = (i == j) ? 1.0f : 0.0f;
-                fprintf(fp, "%f%c", (*K1.pBestChol)[c][i * kSv.nDimsBest + j],
+                    K1.bestCholFlat[static_cast<size_t>(c) * K1.nDims2 + i * kSv.nDimsBest + j] = (i == j) ? 1.0f : 0.0f;
+                fprintf(fp, "%f%c", K1.bestCholFlat[static_cast<size_t>(c) * K1.nDims2 + i * kSv.nDimsBest + j],
                         (j < kSv.nDimsBest - 1) ? ' ' : '\n');
             }
         }

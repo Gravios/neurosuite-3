@@ -444,7 +444,7 @@ static vector<vector<int>> mergeAdjacentGroups(
     const vector<vector<int>>& groupIdxs,     // coinc-matrix indices per sub-group
     const vector<double>&      coinc,
     int                        n,
-    int                        minChannels,
+    int                        /*minChannels*/, // enforced upstream by groupChannels()
     int                        maxMergedSize,
     bool                       verbose)
 {
@@ -1188,7 +1188,6 @@ static vector<ChannelGroup> readYamlGroups(const string& yamlPath)
     ChannelGroup cur;
     bool inGroup = false;
     bool inChannels = false;
-    int  groupIndent = -1;
 
     for (int i = cgLine+1; i < (int)lines.size(); ++i) {
         const string& line = lines[i];
@@ -1205,7 +1204,6 @@ static vector<ChannelGroup> readYamlGroups(const string& yamlPath)
             cur = ChannelGroup();
             inGroup = true;
             inChannels = true;
-            groupIndent = indent(line);
             continue;
         }
         if (t.rfind("channels:", 0) == 0) {

@@ -71,13 +71,13 @@ static Backend detectBackend()
 {
 #ifdef USE_CUDA
     if (xcorr_cuda_available()) {
-        fprintf(stdout, "[realign] xcorr backend: CUDA\n");
+        fprintf(stderr, "[realign] xcorr backend: CUDA\n");
         return Backend::CUDA;
     }
 #endif
 #ifdef USE_HIP
     if (xcorr_hip_available()) {
-        fprintf(stdout, "[realign] xcorr backend: HIP (AMD ROCm)\n");
+        fprintf(stderr, "[realign] xcorr backend: HIP (AMD ROCm)\n");
         return Backend::HIP;
     }
 #endif
@@ -87,11 +87,11 @@ static Backend detectBackend()
     // during JIT compilation.  Don't probe at all unless the user has
     // explicitly opted in with KLUSTERS_USE_SYCL=1.
     if (std::getenv("KLUSTERS_USE_SYCL") && xcorr_sycl_available()) {
-        fprintf(stdout, "[realign] xcorr backend: SYCL (Intel oneAPI)\n");
+        fprintf(stderr, "[realign] xcorr backend: SYCL (Intel oneAPI)\n");
         return Backend::SYCL;
     }
 #endif
-    fprintf(stdout, "[realign] xcorr backend: OpenMP CPU\n");
+    fprintf(stderr, "[realign] xcorr backend: OpenMP CPU\n");
     return Backend::OMP;
 }
 

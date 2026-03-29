@@ -45,7 +45,6 @@ int main(int argc,char *argv[])
 	bool     timestamps = false;
 	bool     sync = false;
 	bool     restart = false;
-	bool     acquisition = false;
 	Time     threshold = 1;
 	float		videoFrequency = 25;
 	char		*output = 0;

@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
 	typedef short   Data; // The data type is defined as a custom type (easier to read and update)
 
 	long    nRecordsPerChunk = 8192;
-	int     i,inputFileArgument = 1;
+	int     i;
 	bool    truncate = false;
 
 	// Parse command line optional arguments

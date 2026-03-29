@@ -57,12 +57,6 @@ struct arguments {
 	bool isSpikeLengthProvided;
 	bool isTimeBeforeSpikeProvided;
 	bool isDisableAbs;
-#ifdef NBITS
-	int offset; // Offset at the beginning of the datas
-	int nBits; // Number of bits for datas (resolution)
-	bool isOffsetProvided;
-	bool isNBitsProvided;
-#endif
 };
 
 // Write a spike apparition time (in timestamp)

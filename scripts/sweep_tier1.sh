@@ -103,7 +103,11 @@ MaxIter         ${MAX_ITER}
 PARAMS
 
         # Symlink the input files so KlustaKwik can find them by name in RUN_DIR
-        for EXT in fet res spk clu; do
+        # Symlink read-only inputs only — never clu.
+        # KlustaKwik writes its own .clu output; if .clu is symlinked first,
+        # KK follows the symlink and overwrites DATA_DIR/filebase.clu.elec,
+        # corrupting the original and making all sweep runs share one file.
+        for EXT in fet res spk; do
             SRC="${DATA_DIR}/${FILEBASE}.${EXT}.${ELEC}"
             LINK="${RUN_DIR}/${FILEBASE}.${EXT}.${ELEC}"
             [[ -f "$SRC" && ! -e "$LINK" ]] && ln -s "$SRC" "$LINK" || true
@@ -137,7 +141,9 @@ PARAMS
         )
 
         if [[ -f "$CLU_OUT" ]]; then
-            N_CLU=$(head -1 "$CLU_OUT")
+            # Read the int32 cluster-count header from the binary .clu file.
+            # head -1 reads until the first 0x0a byte in binary data, giving garbage.
+            N_CLU=$(od -An -t d4 -N 4 "$CLU_OUT" | tr -d ' ')
             echo "[${RUN}/${TOTAL}] DONE:  MT=${MT} PM=${PM}  →  ${N_CLU} clusters  $(date '+%H:%M:%S')"
         else
             echo "[${RUN}/${TOTAL}] FAIL:  MT=${MT} PM=${PM}  — no .clu output!"

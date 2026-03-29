@@ -282,24 +282,65 @@ outputs_exist()
 
 # Read data from the parameter file for current session (low level)
 #  usage: xml_read file xpath
+#  Transparent YAML fallback: if a .yaml parameter file exists alongside
+#  (or instead of) the .xml file, yaml_read handles the query and
+#  xpathReader is never called.  All existing scripts work unchanged.
 xml_read()
 {
 	local file=$1
 	local xpath=$2
 
-	file=${file%.xml}.xml
-	xpathReader $file $xpath
+	local session=${file%.xml}
+	session=${session%.yaml}
+	local yamlfile
+	yamlfile=$(find_yaml_file "$session")
+	if [ -n "$yamlfile" ]; then
+		yaml_read "$session" "$xpath"
+		return
+	fi
+	xpathReader "${session}.xml" "$xpath"
 }
 
 # Count items in a given list in the parameter file for current session
 #  usage: xml_count file xpath
+#  YAML fallback: counts list length via yaml_read on YAML sessions.
 xml_count()
 {
 	local file=$1
 	local xpath=$2
 
-	file=${file%.xml}.xml
-	xpathReader --count $file $xpath
+	local session=${file%.xml}
+	session=${session%.yaml}
+	local yamlfile
+	yamlfile=$(find_yaml_file "$session")
+	if [ -n "$yamlfile" ]; then
+		# Use Python to count list elements directly — do not use yaml_read
+		# here because yaml_read collects all leaf values, not list items.
+		python3 - "$yamlfile" "$xpath" << 'PYEOF'
+import sys, yaml, re
+def load(p):
+    with open(p) as f: return yaml.safe_load(f)
+def resolve(doc, xpath):
+    parts = re.split(r'/(?![^\[]*\])', re.sub(r'^/+', '', xpath))
+    node = doc
+    for p in parts:
+        if node is None: return None
+        m = re.match(r'^(.+)\[(\d+)\]$', p)
+        if m:
+            key, idx = m.group(1), int(m.group(2))
+            node = node.get(key) if isinstance(node, dict) else None
+            node = node[idx-1] if isinstance(node, list) and 0<idx<=len(node) else None
+        else:
+            node = node.get(p) if isinstance(node, dict) else None
+    return node
+try:
+    node = resolve(load(sys.argv[1]), sys.argv[2])
+    print(len(node) if isinstance(node, list) else (0 if node is None else 1))
+except Exception: print(0)
+PYEOF
+		return
+	fi
+	xpathReader --count "${session}.xml" "$xpath"
 }
 
 # Make sure a variable was assigned after reading the parameter file
