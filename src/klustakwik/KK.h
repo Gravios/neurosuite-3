@@ -173,6 +173,14 @@ public:
         int nChan, int nSamplesPerSpike, int bytesPerSample = 2);
 
     // -----------------------------------------------------------------------
+    // Pre-allocated scratch arrays — sized by AllocateArrays(), reused every
+    // MStep / ConsiderDeletion call.  Eliminates ~125 K short-lived heap
+    // allocs per typical run (one new[100] + delete[] per EM iteration each).
+    // -----------------------------------------------------------------------
+    Array<int>   m_classMembers;   // [MaxPossibleClusters] — point counts per cluster
+    Array<float> m_deletionLoss;   // [MaxPossibleClusters] — score-loss estimate
+
+    // -----------------------------------------------------------------------
     // Dimensions
     // -----------------------------------------------------------------------
     int nDims  = 0;
@@ -225,15 +233,22 @@ public:
     Array<int>   AliveIndex; // [MaxPossibleClusters]
 
     // -----------------------------------------------------------------------
-    // Per-instance Cholesky storage
+    // Per-instance Cholesky storage — flat contiguous allocation
     //
-    // Moved from KlustaSave (global singleton) onto KK so that chunk
-    // sub-objects are fully self-contained and safe to run in parallel
-    // threads.  Allocated by AllocateCholeskyVecs(); freed automatically
-    // when the KK instance is destroyed (unique_ptr).
+    // Previously: unique_ptr<vector<Array<float>>> holding MaxPossibleClusters
+    // separate heap blocks.  100 separate allocations (old design) meant:
+    //   - 100 distinct TLB entries in the EStep hot path
+    //   - pointer-chase overhead on every separate block access
+    //
+    // Now: two flat std::vector<float> of size MaxPossibleClusters * nDims²,
+    // laid out as [cluster 0 | cluster 1 | ... | cluster K-1].
+    // All Cholesky data is contiguous → single TLB entry, cache-line friendly.
+    // Access: cholFlat.data() + c * nDims2
+    //
+    // Allocated by AllocateCholeskyVecs(); sized to MaxPossibleClusters * nDims2.
     // -----------------------------------------------------------------------
-    std::unique_ptr<std::vector<Array<float>>> pChol;
-    std::unique_ptr<std::vector<Array<float>>> pBestChol;
+    std::vector<float> cholFlat;      // [MaxPossibleClusters * nDims²]
+    std::vector<float> bestCholFlat;  // [MaxPossibleClusters * nDims²]
 
     // When true, CEMTwoPhase inner loops skip SaveBestMeans() and do not
     // update kSv.BestScoreSave.  Set automatically on chunk sub-objects so

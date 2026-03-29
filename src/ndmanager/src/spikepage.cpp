@@ -46,13 +46,11 @@ SpikePage::SpikePage(QWidget* parent)
     //install a filter on the groupTable in order to validate the entries
     groupTable->installEventFilter(this);
 
-
+    // currentCellChanged fires for keyboard, mouse-click and double-click navigation;
+    // the three finer-grained press/click/double-click signals are redundant here.
     connect(groupTable, &QTableWidget::currentCellChanged, this, &SpikePage::slotValidate);
     connect(addGroupButton, &QAbstractButton::clicked, this, &SpikePage::addGroup);
     connect(removeGroupButton, &QAbstractButton::clicked, this, &SpikePage::removeGroup);
-    connect(groupTable, &QTableWidget::cellPressed, this, &SpikePage::slotValidate);
-    connect(groupTable, &QTableWidget::cellClicked, this, &SpikePage::slotValidate);
-    connect(groupTable, &QTableWidget::cellDoubleClicked, this, &SpikePage::slotValidate);
     connect(groupTable, &QTableWidget::cellChanged, this, &SpikePage::groupChanged);
 
 }

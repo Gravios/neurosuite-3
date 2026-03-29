@@ -14,24 +14,35 @@
  *   (at your option) any later version.                                   *
  *                                                                         *
  ***************************************************************************/
+#pragma once
+
+// ---- ODR fix (2025-03) -----------------------------------------------
+// The original timer.h defined `static struct timeval tv0` directly in the
+// header.  Because timer.h is included by 5 separate translation units in
+// neuroscope, each TU got its own private copy of tv0 (C++ [basic.def.odr]).
+// That meant RestartTimer() in one file had no effect on Timer() in another —
+// measurements were silently wrong.
+//
+// Fix: tv0 is now declared `extern` here and *defined* exactly once in
+// timer.cpp.  All TUs that include this header share the same object.
+// struct timezone is POSIX-obsolescent; gettimeofday tz arg is now nullptr.
+// -----------------------------------------------------------------------
 
 #include <sys/time.h>
 
-static struct timeval tv0;
+// Defined in timer.cpp — one definition shared by all translation units.
+extern struct timeval tv0;
 
 inline void RestartTimer()
 {
-  struct timezone tz;
-  gettimeofday(&tv0,&tz);
+    gettimeofday(&tv0, nullptr);
 }
 
 inline float Timer()
 {
-  struct timeval tv;
-  struct timezone tz;
-  gettimeofday(&tv,&tz);
-  float msec = static_cast<int>(tv.tv_usec/1000)/1000.0;
-  float msec0 = static_cast<int>(tv0.tv_usec/1000)/1000.0;
-  float time = (tv.tv_sec+msec)-(tv0.tv_sec+msec0);
-  return time;
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    const float msec  = static_cast<int>(tv.tv_usec  / 1000) / 1000.0f;
+    const float msec0 = static_cast<int>(tv0.tv_usec / 1000) / 1000.0f;
+    return (tv.tv_sec + msec) - (tv0.tv_sec + msec0);
 }

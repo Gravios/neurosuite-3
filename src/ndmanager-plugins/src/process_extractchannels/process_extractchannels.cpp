@@ -102,7 +102,6 @@ int main(int argc,char *argv[])
 		string channel(argv[i]);
 		int times = channel.find('*');
 		int minus = channel.find('-');
-		int timesLength,minusLength;
 		if ( times == -1 && minus == -1 )
 		{
 			// No gain, no reference

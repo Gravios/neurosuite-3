@@ -77,9 +77,6 @@ void help(const char* name) {
 	cout << " -s size \t input size in bytes (ex : 32000000)" << endl;
 	cout << " -n nb \t\t Total number of channels (ex : 10)" << endl;
 	cout << " -c list \t Grouped channel list (e.g. 0,1,2:4,5,7 for 2 groups of 3 channels each)" << endl;
-#ifdef NBITS
-	cout << " -r nb \t\t Resolution of the acquisition system (bits)" << endl;
-#endif
 	cout << " -v \t\t verbose mode" << endl;
 	cout << " -d data_file \t data file in text format (output)" << endl;
 	cout << " -h \t\t show this message" << endl;
@@ -103,10 +100,6 @@ int main(int argc,char *argv[]) {
 	arguments.isTotalChannelNumberProvided = false;
 	arguments.isChannelListProvided = false;
 	arguments.isOffsetProvided = false;
-#ifdef NBITS
-	arguments.nBits = int(RECORD_BYTE_SIZE*8);
-	arguments.isNBitsProvided = false;
-#endif
 
 	short *input; // datas
 	FILE *inputFile, *outputFile;
@@ -151,11 +144,6 @@ int main(int argc,char *argv[]) {
 		if (arguments.isInputSizeprovided) cout << arguments.inputSize << endl;
 		else cout << "Not given" << endl;
 
-#ifdef NBITS
-		cout << "The number of bits (resolution) = ";
-		if (arguments.isNBitsProvided) cout << arguments.nBits << " bits" << endl;
-		else cout << "Not given" << endl;
-#endif
 		cout << endl;
 	} // if verbose
 
@@ -412,12 +400,6 @@ bool checkInputs(const arguments arguments) {
 		cerr << "Error : The list of channels has not been provided." << endl;
 		return false;
 	} // if
-#ifdef NBITS
-	if(!arguments.isNBitsProvided) {
-		cerr << "Warning : The number of bits (resolution) has not been provided."
-				<< " Using default value " << int(RECORD_BYTE_SIZE*8) << endl;
-	} // if
-#endif
 	if(!arguments.isInputSizeprovided) {
 		if(!arguments.isInputFileProvided) {
 			cerr << "Error : There is no Input Size for stdin !" << endl;
@@ -479,13 +461,6 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 							arguments.isChannelListProvided = true;
 							break;
 
-#ifdef NBITS
-							case 'r': // Resolution of the acquisition system
-								if ( i+1 > nOptions ) error(argv[0]);
-								arguments.nBits = atoi(argv[++i]);
-								arguments.isNBitsProvided = true;
-								break;
-#endif
 
 								case 'v': // verbose mode
 									verbose = true;

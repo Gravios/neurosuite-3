@@ -313,6 +313,13 @@ def main():
                 print(f'  MISSING: {tag}')
                 rec = dict(mt=mt, pm=pm, tag=tag, n_clusters=np.nan,
                            error='no clu file')
+            elif os.path.islink(clu_path) and os.path.realpath(clu_path) == os.path.realpath(FET_PATH).replace('.fet.', '.clu.'):
+                # Symlink still points at DATA_DIR — KK did not write its own output.
+                # This happens when sweep_tier1.sh symlinked .clu before the run
+                # (old bug) and KK overwrote DATA_DIR/filebase.clu.elec through it.
+                print(f'  SYMLINK {tag}: .clu is a symlink to DATA_DIR — KK output missing')
+                rec = dict(mt=mt, pm=pm, tag=tag, n_clusters=np.nan,
+                           error='clu is symlink to data_dir (sweep bug)')
             else:
                 try:
                     m = compute_metrics(FET_PATH, clu_path)

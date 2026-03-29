@@ -80,10 +80,6 @@ void help(const char* name)
 	cout << " -a length       number of samples to consider for PCA after spike" << endl;
 	cout << " -w length       number of samples per waveform" << endl;
 	cout << " -d components   number of principal components per channel" << endl;
-#ifdef NBITS
-	cout << " -o offset       offset value" << endl;
-	cout << " -r bits         resolution of the acquisition system (in bits)" << endl;
-#endif
 	cout << " -s size         input data size in bytes (ex : 32000000) when reading from standard input" << endl;
 	cout << " -c              use centered data for the projection" << endl;
 	cout << " -x              include extra features in output file (spike peak values)" << endl;
@@ -93,9 +89,6 @@ void help(const char* name)
 	cout << "  -x (-p is necessary if you use it)" << endl;
 	cout << "  -s which is required only when reading from standard input" << endl;
 	cout << "  -b, -a and -p could be not used (all spike length will be considered)" << endl;
-#ifdef NBITS
-	cout << "  -r if the resolution is 16 bits" << endl;
-#endif
 	cout << endl;
 	exit(0);
 } // help
@@ -126,10 +119,6 @@ int main(int argc,char *argv[])
 	arguments.isNComponentsProvided = false;
 	arguments.isExtraFeaturesProvided = false;
 	arguments.isOffsetProvided = false;
-#ifdef NBITS
-	arguments.nBits = int(RECORD_BYTE_SIZE*8);
-	arguments.isNBitsProvided = false;
-#endif
 	
 	parseArgs(argc,argv,arguments); // Parse command-line
 	
@@ -185,11 +174,6 @@ int main(int argc,char *argv[])
 		if ( arguments.isInputSizeProvided ) cout << arguments.inputSize << endl;
 		else cout << "N/A" << endl;
 		
-#ifdef NBITS
-		cout << "Resolution            = ";
-		if ( arguments.isNBitsProvided ) cout << arguments.nBits << " bits" << endl;
-		else cout << "default" << endl;
-#endif
 		cout << endl;
 	} // if verbose
 	
@@ -561,13 +545,6 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 				arguments.isOutputFileProvided = true;
 				break;
 				
-#ifdef NBITS
-			case 'r': // Resolution of the acquisition system
-				if ( i+1 > nOptions ) error(argv[0]);
-				arguments.nBits = atoi(argv[++i]);
-				arguments.isNBitsProvided = true;
-				break;
-#endif
 			
 			case 'c': // use centered data for projection
 				arguments.isCenteredData = true;
@@ -657,13 +634,6 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 			cerr << "error : missing number of samples before peak or peak position." << endl;
 			exit(1);
 		}
-#ifdef NBITS
-	if ( !arguments.isNBitsProvided)
-	{
-		cerr << "warning : missing resolution,"
-				<< " using default value " << int(RECORD_BYTE_SIZE*8) << endl;
-	}
-#endif
 } // parseArgs
 
 

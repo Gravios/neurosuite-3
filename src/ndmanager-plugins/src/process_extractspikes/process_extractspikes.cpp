@@ -89,11 +89,6 @@ void help(const char* name) {
 	cout << " -n nChannels\t\tTotal number of channels in the file" << endl;
 	cout << " -c channels\t\tList of channels for each group "
 	<< "(e.g. 0,1,2:4,5,7 for 2 groups with 3 channels each)" << endl;
-#ifdef NBITS
-	cout << " -o offset\t\tOffset value" << endl;
-	cout << " -b bits\t\tResolution of the acquisition system (in bits)"
-	<< endl;
-#endif
 	cout << " -l peakSearchLength\t(size of the window within which to look for"
 	<< " the peak; do not change this unless you know what you are doing)" 
 	<< endl;
@@ -102,9 +97,6 @@ void help(const char* name) {
 	cout << " -v\t\t\tverbose mode" << endl;
 	cout << " -h\t\t\tdisplay help" << endl;
 	cout << endl << "All arguments are mandatory (except -l peakSearchLength";
-#ifdef NBITS
-	cout << " and -b bits if the resolution is 16bits";
-#endif
 	cout << ")." << endl;
 	exit(0);
 } // help
@@ -129,12 +121,6 @@ int main(int argc,char *argv[]) {
 	arguments.isSpikeLengthProvided = false;
 	arguments.isTimeBeforeSpikeProvided = false;
 	arguments.isDisableAbs = true; // use real value as default
-#ifdef NBITS
-	arguments.offset = 0;
-	arguments.nBits = int(RECORD_BYTE_SIZE*8);
-	arguments.isNBitsProvided = false;
-	arguments.isOffsetProvided = false;
-#endif
 	
 	// buffers with current, previous and next datas value
 	short *cur_buffer, *prev_buffer, *nextRec;
@@ -204,15 +190,6 @@ int main(int argc,char *argv[]) {
 		cout << "Peak Position        = " << arguments.timeBeforeSpike << endl;
 		cout << "Disable absolute value for threshold = "
 		<< arguments.isDisableAbs << endl;
-#ifdef NBITS
-		cout << "Offset                = ";
-		if (arguments.isOffsetProvided) cout << arguments.offset << endl;
-		else cout << "N/A" << endl;
-		cout << "Resolution            = ";
-		if (arguments.isNBitsProvided)
-			cout << arguments.nBits << " bits" << endl;
-		else cout << "N/A" << endl;
-#endif
 		cout << "Buffer Size           = " << BUFFER_CHANNEL_SIZE << endl;
 		cout << endl;
 	} // if verbose
@@ -356,11 +333,11 @@ int main(int argc,char *argv[]) {
 		if(nbLoops == 0) {
 			// Store 1st records in nextRec for the init phase
 			if(arguments.isInputFileProvided) {
-				int nRec = fread(nextRec, sizeof(short), 
-								 arguments.totalChannelNumber, inputFile);
+				(void)fread(nextRec, sizeof(short),
+				            arguments.totalChannelNumber, inputFile);
 			} else {
-				int nRec = fread(nextRec, sizeof(char), 
-								 arguments.totalChannelNumber, stdin);
+				(void)fread(nextRec, sizeof(char),
+				            arguments.totalChannelNumber, stdin);
 			} // else
 		} else {
 			// store previous buffer
@@ -1666,19 +1643,6 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 				arguments.isChannelListProvided = true;
 				break;
 
-#ifdef NBITS
-				case 'o': // OffsetpeakVal
-				if ( i+1 > nOptions ) error(argv[0]);
-				arguments.offset = atoi(argv[++i]);
-				arguments.isOffsetProvided = true;
-				break;
-
-			case 'b': // Resolution of the acquisition system
-				if ( i+1 > nOptions ) error(argv[0]);
-				arguments.nBits = atoi(argv[++i]);
-				arguments.isNBitsProvided = true;
-				break;
-#endif
 			
 			case 'a': // use Absolute value for threshold
 				arguments.isDisableAbs = false;
@@ -1745,12 +1709,6 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 		cerr << "error: missing list of channels." << endl;
 		exit(1);
 	}
-#ifdef NBITS
-	if(!arguments.isNBitsProvided) {
-		cerr << "warning : missing resolution (number of bits). "
-		<< "Using default value " << int(RECORD_BYTE_SIZE*8) << endl;
-	}
-#endif
 } // parseArgs
 
 

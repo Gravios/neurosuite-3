@@ -48,6 +48,7 @@ set(klusters_SRCS
     savethread.cpp
     sortabletable.cpp
     tags.cpp
+    timer.cpp        # ODR-safe definition of tv0 (shared by all timer.h includers)
     tracesprovider.cpp
     traceview.cpp
     tracewidget.cpp

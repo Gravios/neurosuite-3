@@ -148,7 +148,7 @@ static bool loadPcaModel(const char* path, PcaModel& m)
 // out:      nChannels * nComponents output values (written in place).
 // peakOut:  if non-null, receives nChannels peak values.
 // --------------------------------------------------------------------------
-static void projectSpike(const short* waveform, int waveformLength,
+static void projectSpike(const short* waveform, int /*waveformLength*/,
                          const PcaModel& m,
                          double* out, short* peakOut)
 {

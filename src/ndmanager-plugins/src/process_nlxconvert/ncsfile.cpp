@@ -39,7 +39,7 @@ void NCSFile::open()
 */
 void NCSFile::init()
 {
-	long where,before,after;
+	long before,after;
 
 	// Read file header and determine position of first record
 	seekg(0,ios::beg);
