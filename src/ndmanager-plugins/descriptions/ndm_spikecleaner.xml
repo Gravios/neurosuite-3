@@ -1,0 +1,42 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_spikecleaner</n>
+  <parameters>
+   <parameter>
+    <n>removeFlatChannels</n>
+    <value>1</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>dryRun</n>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Remove waveforms with hardware-dropout channels from spike data.
+
+Examines every spikeDetection group and removes any spike waveform where one or more channels are entirely flat — either all-zero (ADC cutout / hardware disconnection) or stuck at a constant non-zero value (railed amplifier / DAC fault).
+
+Must run AFTER ndm_extractspikes or ndm_extractspikes_sdiff and BEFORE ndm_pca / ndm_klustakwik.
+
+Original .res, .spk, .fet, and .clu files are backed up to &lt;session&gt;_spikecleaner_backup/ before modification.
+
+DETECTION CONDITIONS
+
+CUTOUT — every sample on a channel is exactly zero. This is the unambiguous signature of an ADC dropout or a broken wire clamped to the rail by the amplifier.
+
+FLAT — every sample on a channel has the same value (variance == 0 after DC removal). Catches amplifiers stuck at a non-zero constant. Controlled by removeFlatChannels (default: on).
+
+PARAMETERS
+
+# removeFlatChannels
+
+Set to 1 to remove waveforms where any channel has zero variance (constant value, possibly non-zero). Set to 0 to detect only all-zero channels (default 1 — recommended).
+
+# dryRun
+
+Set to 1 to report how many spikes would be removed per group without modifying any files. Useful for assessing data quality before committing (default 0).
+</help>
+ </program>
+</parameter>

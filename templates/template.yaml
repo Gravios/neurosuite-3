@@ -824,6 +824,40 @@ programs:
 
     Memory cap in GB for the process (default = 2).
 
+- name: ndm_spikecleaner
+  parameters:
+  - {name: removeFlatChannels, value: 1, status: Optional}
+  - {name: dryRun,             value: 0, status: Optional}
+  help: |-
+    Remove spike waveforms where one or more channels have dropped out.
+
+    Run AFTER ndm_extractspikes or ndm_extractspikes_sdiff,
+    BEFORE ndm_pca / ndm_klustakwik.
+    Backs up original .res, .spk, .fet, .clu files to
+    SESSION_spikecleaner_backup/ before modifying them.
+
+    Two conditions are detected and removed:
+
+    CUTOUT — any channel where every sample is exactly zero. Signature
+    of an ADC dropout, broken wire, or amplifier rail clamp.
+
+    FLAT — any channel with zero variance after DC removal (constant
+    value, possibly non-zero). Catches amplifiers stuck at a constant
+    output rather than dropping to zero. Controlled by removeFlatChannels.
+
+    OPTIONAL PARAMETERS
+
+    # removeFlatChannels
+
+    Also remove waveforms where any channel has zero variance
+    (constant, possibly non-zero) after DC removal (default 1).
+    Set to 0 to detect only all-zero channels.
+
+    # dryRun
+
+    Report counts without modifying files (default 0).
+    Useful to assess how many spikes are affected before committing.
+
 - name: ndm_stripdat
   parameters:
   - {name: redetectSpikes, value: 'no', status: Optional}

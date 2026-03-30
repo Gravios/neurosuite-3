@@ -1,0 +1,223 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Remove waveforms with hardware-dropout channels from spike data
+#//
+#//   Examines every spikeDetection group and removes spike waveforms where
+#//   one or more channels are entirely flat — either all-zero (ADC cutout,
+#//   hardware disconnection) or stuck at a constant non-zero value (railed
+#//   amplifier, DAC fault).
+#//
+#//   Detection conditions
+#//   --------------------
+#//   CUTOUT  — every sample on a channel is exactly zero.  This is the
+#//              unambiguous signature of an ADC dropout or a broken wire
+#//              whose signal was clamped to the rail by the amplifier.
+#//
+#//   FLAT    — every sample on a channel has the same value after DC removal
+#//              (variance == 0).  Catches amplifiers stuck at a non-zero
+#//              constant.  Enabled by default; disable with removeFlatChannels=0.
+#//
+#//   Pipeline position
+#//   -----------------
+#//   Must run AFTER ndm_extractspikes or ndm_extractspikes_sdiff
+#//   (requires .res and .spk files).
+#//   Should run BEFORE ndm_pca / ndm_klustakwik so that degenerate
+#//   waveforms do not contaminate the feature space or produce artefact
+#//   clusters.
+#//
+#//   Backup
+#//   ------
+#//   Original .res, .spk (and .fet / .clu if present) are copied to
+#//   <session>_spikecleaner_backup/ before modification.
+#//
+#//   Parameter file (YAML or XML)
+#//   ----------------------------
+#//   Optional program-specific parameters under ndm_spikecleaner:
+#//
+#//     removeFlatChannels    1 = also remove constant (non-zero) channels
+#//                           (default 1 — recommended)
+#//     dryRun                1 = report counts without modifying files
+#//                           (default 0)
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 2 ]
+then
+	echo_error "usage: $program [parameter-file] [electrodeGroup]"
+	exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+# Print a header to indicate current processing step
+print_header "$session - Removing dropout/flat-channel spikes"
+
+# Check required programs
+check_commands_installed process_spikecleaner
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read global parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+resolution=$(xml_read $session "//acquisitionSystem/nBits")
+
+check_mandatory_variable $nChannels  "missing total number of channels (acquisitionSystem/nChannels)"
+check_mandatory_variable $resolution "missing ADC resolution (acquisitionSystem/nBits)"
+
+# Number of spike groups
+nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+if [ "$nElectrodeGroups" -eq 0 ]
+then
+	echo_error "no spikeDetection groups found — check parameter file"
+	exit $GENERAL_ERROR
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read optional plugin parameters (with defaults)
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+removeFlatChannels=$(read_script_parameter $session removeFlatChannels)
+check_optional_variable $removeFlatChannels || removeFlatChannels=1
+
+dryRun=$(read_script_parameter $session dryRun)
+check_optional_variable $dryRun || dryRun=0
+
+echo_info "Parameters:"
+echo_info "  removeFlatChannels : $removeFlatChannels"
+echo_info "  dryRun             : $dryRun"
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Process one electrode group
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+once()
+{
+	local electrodeGroup=$1
+
+	# ---- check group index ----
+	if [ "$electrodeGroup" -gt "$nElectrodeGroups" ]
+	then
+		echo_error "spike group $electrodeGroup is undefined (session has $nElectrodeGroups groups)"
+		exit $GENERAL_ERROR
+	fi
+
+	# ---- required input files ----
+	inputs_missing "$session.$param_ext" \
+	               "$session.res.$electrodeGroup" \
+	               "$session.spk.$electrodeGroup" \
+		&& exit $INPUTS_MISSING
+
+	# ---- per-group parameters ----
+	nSamples=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	check_mandatory_variable $nSamples \
+		"missing nSamples for electrode group $electrodeGroup"
+
+	electrodes=($(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	nGroupChannels=${#electrodes[*]}
+
+	echo_info ""
+	print_header "$session - Group $electrodeGroup  ($nGroupChannels channels, $nSamples samples/waveform)" "-"
+
+	# ---- backup directory ----
+	backupDir="${session}_spikecleaner_backup"
+	if [ "$dryRun" -ne 1 ] 2>/dev/null
+	then
+		mkdir -p "$backupDir"
+
+		# Back up all files that may be modified (only if backup doesn't exist)
+		for ext in res spk fet clu
+		do
+			src="$session.$ext.$electrodeGroup"
+			dst="$backupDir/$src.bak"
+			if [ -f "$src" ] && [ ! -f "$dst" ]
+			then
+				cp "$src" "$dst" && echo_info "  backed up: $dst"
+			elif [ -f "$dst" ]
+			then
+				echo_info "  backup exists, skipping: $dst"
+			fi
+		done
+
+		# process_spikecleaner needs the .spk.bak to re-read original waveforms
+		# when writing the filtered output — ensure the backup exists
+		if [ ! -f "$backupDir/$session.spk.$electrodeGroup.bak" ]
+		then
+			echo_error "backup of $session.spk.$electrodeGroup was not created; aborting"
+			exit $GENERAL_ERROR
+		fi
+
+		# Symlink/copy the .spk.bak to the working dir so the binary can find it
+		# (process_spikecleaner looks for basename.spk.group.bak in the cwd)
+		if [ ! -f "$session.spk.$electrodeGroup.bak" ]
+		then
+			cp "$backupDir/$session.spk.$electrodeGroup.bak" \
+			   "$session.spk.$electrodeGroup.bak"
+		fi
+	fi
+
+	# ---- build flags ----
+	extra_args=()
+	[ "$removeFlatChannels" -eq 0 ] 2>/dev/null && extra_args+=(--remove-flat 0)
+	[ "$dryRun"             -eq 1 ] 2>/dev/null && extra_args+=(--dry-run)
+
+	# ---- run process_spikecleaner ----
+	process_spikecleaner \
+		"$session"           \
+		"$electrodeGroup"    \
+		"$nGroupChannels"    \
+		"$nSamples"          \
+		"$resolution"        \
+		"${extra_args[@]}"
+
+	check_command_status process_spikecleaner
+
+	# ---- clean up the local .bak copy ----
+	if [ "$dryRun" -ne 1 ] 2>/dev/null
+	then
+		rm -f "$session.spk.$electrodeGroup.bak"
+	fi
+}
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Run all groups, or just the one requested
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+if [ -z "$electrodeGroup" ]
+then
+	overallStatus=$NO_ERROR
+	for (( i=1; i<=nElectrodeGroups; i++ ))
+	do
+		once $i
+		groupStatus=$?
+		if [ $groupStatus -ne $NO_ERROR ] && \
+		   [ $groupStatus -ne $OUTPUTS_EXIST ] && \
+		   [ $groupStatus -ne $INPUTS_MISSING ]
+		then
+			overallStatus=$groupStatus
+		fi
+	done
+	exit $overallStatus
+else
+	once $electrodeGroup
+	exit $?
+fi

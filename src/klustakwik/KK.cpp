@@ -1593,11 +1593,11 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 //          - normalised circular xcorr summed over ALL channels
 //          - full-energy denominator (no lag-bias at large shifts)
 //          - GPU-accelerated when available (CUDA > HIP > SYCL > OMP)
-//     5. For each spike with non-zero shift sh:
-//          aligned[s*nChan+c] = original[((s+sh)%N)*nChan+c]
-//        Sign convention: sh=bestLag>0 means spike peak is late by sh samples;
-//        rolling forward by sh lands the peak at the template's peak position.
-//     6. Write back at offset p*waveSamples*bytesPerSample — the invariant.
+//     5. Compute alignment shift — circular xcorr gives bestLag per spike.
+//        sh=bestLag>0: spike peak is late; (s+sh)%N roll lands peak at template pos.
+//     6. .spk write-back SUPPRESSED (circular-shift wrap-around would corrupt
+//        waveform edges; .fil re-extraction not yet implemented here).
+//        Phase 2/3 use Data[] from .fet, so clustering is unaffected.
 //
 // Noise spikes (cid==0) are skipped.
 //
@@ -1770,21 +1770,26 @@ void KK::RealignChunkWaveforms(
                         aligned[s * nChan + c] = row[src * nChan + c];
                 }
 
-                // Write at global spike position p — the invariant.
-                // Skip if this spike is deferred to chunk k+1's pass
-                // (it is an overlap spike; chunk k+1 owns the final write).
-                if (overlapInNext[k].count(p)) continue;
-                fseeko(fp, static_cast<off_t>(p) * waveSamples * bytesPerSample, SEEK_SET);
-                if (bytesPerSample == 2) {
-                    fwrite(aligned.data(), sizeof(int16_t), waveSamples, fp);
-                } else {
-                    // Expand int16 back to int32 before writing
-                    std::vector<int32_t> tmp32(static_cast<size_t>(waveSamples));
-                    for (int s = 0; s < waveSamples; ++s)
-                        tmp32[s] = static_cast<int32_t>(aligned[s]) << 16;
-                    fwrite(tmp32.data(), sizeof(int32_t), waveSamples, fp);
-                }
-                nAligned++;
+                // .spk write-back suppressed.
+                //
+                // Circular-shift wrap-around: for a shift of sh samples,
+                // positions [N-sh .. N-1] in the aligned buffer are filled
+                // with window-edge content (noise/baseline) from the
+                // original window's beginning.  For the 5-10 sample shifts
+                // typical of inter-chunk realignment, this corrupts up to
+                // 30% of the waveform samples with irrelevant content.
+                //
+                // Phase 2 and Phase 3 clustering use Data[] loaded from
+                // the .fet file — NOT .spk — so the write-back has no
+                // effect on clustering quality.  The only consumer of .spk
+                // at this stage is Klusters' display and its own realignment
+                // pass; writing corrupted waveforms here causes Klusters to
+                // find large spurious xcorr lags on the second pass.
+                //
+                // TODO: replace with .fil re-extraction at (oldTs + sh) to
+                //       get artifact-free aligned waveforms.
+                (void)aligned;   // suppress unused-variable warning
+                nAligned++;      // still count as processed
             }
         }
     }
