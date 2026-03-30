@@ -37,6 +37,7 @@ extern int   MinClusters;
 extern int   MaxClusters;
 extern int   MaxPossibleClusters;
 extern int   nStarts;
+extern int   ParallelK;
 extern int   RandomSeed;
 extern char  Debug;
 extern int   Verbose;

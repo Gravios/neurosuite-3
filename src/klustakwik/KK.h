@@ -5,6 +5,8 @@
 //   - Three-phase chunked: RunChunkedCEM(...)  — parallel over chunks via OpenMP
 #pragma once
 #include "Array.h"
+#include "KlustaSave.h"
+extern KlustaSave kSv;  // global in KlustaKwik.cpp
 #include "KK_cuda.h"   // no-op when USE_CUDA not defined
 #include "KK_sycl.h"   // no-op when USE_SYCL not defined
 #include "KK_hip.h"    // no-op when USE_HIP  not defined
@@ -59,7 +61,12 @@ public:
     void  AllocateArrays();
     void  AllocateCholeskyVecs();
     void  SaveBestMeans();
+
+    // Return the active KlustaSave: per-worker if pKsv is set, else global kSv.
+    KlustaSave&       ksv()       { return pKsv ? *pKsv : ::kSv; }
+    const KlustaSave& ksv() const { return pKsv ? *pKsv : ::kSv; }
     void  LoadData();
+    KK    CloneForStart() const; // deep-copy for ParallelK workers
     float Penalty(int n) const;
     float ComputeScore() const;
     void  MStep();
@@ -254,6 +261,11 @@ public:
     // update kSv.BestScoreSave.  Set automatically on chunk sub-objects so
     // parallel per-chunk EM cannot corrupt the outer loop's best-score state.
     bool suppressBestSave  = false;
+
+    // Optional per-instance KlustaSave for parallel workers.
+    // When non-null, ksv() returns *pKsv instead of the global kSv.
+    // Null by default — global kSv used in the normal single-worker path.
+    KlustaSave* pKsv       = nullptr;
     // When non-empty, CEMTwoPhase uses these as initial Voronoi centres
     // instead of running InitCentresFarthestPoint.
     // Layout: [nCentres × nDims], spatial dims only (time column = 0).
