@@ -333,11 +333,11 @@ int main(int argc,char *argv[]) {
 		if(nbLoops == 0) {
 			// Store 1st records in nextRec for the init phase
 			if(arguments.isInputFileProvided) {
-				(void)fread(nextRec, sizeof(short),
-				            arguments.totalChannelNumber, inputFile);
+				{ size_t r_ = fread(nextRec, sizeof(short),
+				            arguments.totalChannelNumber, inputFile); (void)r_; }
 			} else {
-				(void)fread(nextRec, sizeof(char),
-				            arguments.totalChannelNumber, stdin);
+				{ size_t r_ = fread(nextRec, sizeof(char),
+				            arguments.totalChannelNumber, stdin); (void)r_; }
 			} // else
 		} else {
 			// store previous buffer
