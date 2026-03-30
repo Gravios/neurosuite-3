@@ -668,7 +668,7 @@ int main(int argc, char **argv) {
                 kSv.BestMean           = workerKsv[j].BestMean;
                 K1.bestCholFlat        = workers[j].bestCholFlat;
                 for (int p2 = 0; p2 < K1.nPoints; p2++)
-                    K1.BestClass[p2]   = workers[j].BestClass[p2];
+                    K1.BestClass[p2]   = workers[j].Class[p2];  // Class[] = final EM state; BestClass[] is never set on workers
                 if (SaveIntermediates) SaveOutput(K1.BestClass);
             }
         }
