@@ -323,7 +323,7 @@ void KK::LoadData() {
 // The caller is also responsible for setting nStartingClusters and
 // minClustersAlive on the returned clone.
 // ---------------------------------------------------------------------------
-KK KK::CloneForStart() const
+KK KK::CloneForStart(int ompTeamSz) const
 {
     KK c;
     // ── scalar fields ─────────────────────────────────────────────────────
@@ -340,6 +340,7 @@ KK KK::CloneForStart() const
     c.timeRawMax          = timeRawMax;
     c.log2piHalf          = log2piHalf;
     c.suppressBestSave    = false;
+    c.ompTeamSize         = ompTeamSz;  // 0 = all threads; >0 = nested team size
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     c.gpu                 = nullptr;   // CPU-only; GPU stays on master K1
 #endif
@@ -2044,7 +2045,12 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         maxChunkSize = std::max(maxChunkSize, static_cast<int>(chunkPoints[k].size()));
 
 #ifdef _OPENMP
-    const int nThreads = omp_get_max_threads();
+    // When running as a ParallelK worker, ompTeamSize limits the inner
+    // team so that multiple workers can share the machine without fighting
+    // for threads.  0 = use all available (normal non-parallel path).
+    const int nThreads = (ompTeamSize > 0)
+        ? ompTeamSize
+        : omp_get_max_threads();
 #else
     const int nThreads = 1;
 #endif
@@ -2061,6 +2067,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     }
 
     #pragma omp parallel for schedule(dynamic) default(none) \
+        num_threads(nThreads) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
                chunkPoints, perChunkClass, nActive, nFullDims, timeMergeIter, threadKc) \
         firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix)
@@ -2374,7 +2381,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     // One pre-allocated KK scratch per OMP thread.
 #ifdef _OPENMP
-    const int nThreads = omp_get_max_threads();
+    // When running as a ParallelK worker, ompTeamSize limits the inner
+    // team so that multiple workers can share the machine without fighting
+    // for threads.  0 = use all available (normal non-parallel path).
+    const int nThreads = (ompTeamSize > 0)
+        ? ompTeamSize
+        : omp_get_max_threads();
 #else
     const int nThreads = 1;
 #endif
@@ -2402,6 +2414,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     }
 
     #pragma omp parallel for schedule(dynamic) default(none) \
+        num_threads(nThreads) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
                chunkPoints, perChunkClass, globalPreseedCentres, \
                nActive, nFullDims, timeMergeIter, threadKc) \
