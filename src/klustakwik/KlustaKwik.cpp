@@ -518,17 +518,65 @@ int main(int argc, char **argv) {
         else
             Output("Mode: original random-init CEM\n");
 
-        // ── ParallelK: flatten all (K, start) pairs into a job queue ──────
+#ifdef _OPENMP
+        const int nCoresAvail = omp_get_max_threads();
+#else
+        const int nCoresAvail = 1;
+#endif
+        const int nWorkers     = (ParallelK > 0) ? std::min(ParallelK, (MaxClusters - MinClusters + 1) * nStarts) : 1;
+        const int threadsPerJob = std::max(1, nCoresAvail / nWorkers);
+
+        // ── Serial path (ParallelK=0): original K/start double loop ────────
         //
-        // Each job is fully independent: independent KK clone, independent
-        // KlustaSave, independent random seed.  GPU is disabled on all clones
-        // (gpu=nullptr); the RTX 6000 Pro Phase-3 contribution (~0.02 ms/call)
-        // is negligible compared to Phase-1 OMP chunk speedup.
+        // This is the original code path — one (K, start) at a time, full
+        // OMP thread count for Phase-1 chunks, GPU active.
+        // Used when ParallelK is not set or equals 0.
+        if (nWorkers == 1) {
+            for (K1.nStartingClusters = MinClusters;
+                 K1.nStartingClusters <= MaxClusters;
+                 K1.nStartingClusters++) {
+                K1.minClustersAlive = MinClusters;
+                for (int i = 0; i < nStarts; i++) {
+                    fprintf(stderr, "  K=%d/%d start=%d/%d\r",
+                            K1.nStartingClusters, MaxClusters, i + 1, nStarts);
+                    fflush(stderr);
+                    Output("Starting from %d clusters...\n", K1.nStartingClusters);
+                    srand(RandomSeed + K1.nStartingClusters * 1000 + i);
+
+                    float score;
+                    if (useExtChunks)
+                        score = K1.RunChunkedCEM(extChunkBoundsSec, SamplingRate,
+                                                  MergeThresh, GlobalMergeIter,
+                                                  TimeMergeIter);
+                    else if (useChunked)
+                        score = K1.RunChunkedCEM(ChunkMinutes, SamplingRate,
+                                                  MergeThresh, GlobalMergeIter,
+                                                  TimeMergeIter, ChunkOverlapMinutes,
+                                                  ChunkPreseedFraction);
+                    else if (useFarthest)
+                        score = K1.CEMTwoPhase(TimeMergeIter);
+                    else
+                        score = K1.CEM();
+
+                    Output("%d->%d Clusters: Score %f, best is %f\n",
+                           K1.nStartingClusters, K1.nClustersAlive, score, BestScore);
+
+                    if (score < BestScore) {
+                        Output("THE BEST YET!\n");
+                        BestScore = score;
+                        kSv.BestScoreSave = BestScore;
+                        for (int p2 = 0; p2 < K1.nPoints; p2++) K1.BestClass[p2] = K1.Class[p2];
+                        if (SaveIntermediates) SaveOutput(K1.BestClass);
+                    }
+                    Output("\n");
+                }
+            }
+        } else {
+        // ── Parallel path (ParallelK>0): flatten all (K, start) pairs ──────
         //
-        // ParallelK controls how many (K,start) jobs run simultaneously.
-        // Each job gets nCores/ParallelK OMP threads for its Phase-1 chunks.
-        // Rule of thumb: ParallelK = nCores / max(1, nChunks/2).
-        // On a 128-thread machine with 9 chunks: ParallelK=32, 4 threads/job.
+        // Each job is an independent KK clone with its own KlustaSave.
+        // GPU is disabled on all clones (cpu-only); Phase-3 GPU runtime is
+        // negligible compared to Phase-1 OMP chunk speedup.
         struct KJob { int K; int start; };
         std::vector<KJob> jobs;
         jobs.reserve((MaxClusters - MinClusters + 1) * nStarts);
@@ -538,41 +586,21 @@ int main(int argc, char **argv) {
 
         const int nJobs = (int)jobs.size();
 
-#ifdef _OPENMP
-        const int nCoresAvail = omp_get_max_threads();
-#else
-        const int nCoresAvail = 1;
-#endif
+        fprintf(stderr,
+                "ParallelK=%d: %d jobs, %d concurrent workers, "
+                "%d OMP threads/job\n",
+                ParallelK, nJobs, nWorkers, threadsPerJob);
 
-        // Clamp ParallelK to [1, nJobs] and compute threads-per-job
-        const int nWorkers = (ParallelK > 0)
-            ? std::min(ParallelK, nJobs)
-            : 1;
-        const int threadsPerJob = std::max(1, nCoresAvail / nWorkers);
-
-#ifdef _OPENMP
-        if (nWorkers > 1) {
-            omp_set_nested(1);
-            omp_set_max_active_levels(2);
-        }
-#endif
-
-        if (nWorkers > 1)
-            fprintf(stderr,
-                    "ParallelK=%d: %d jobs, %d concurrent workers, "
-                    "%d OMP threads/job\n",
-                    ParallelK, nJobs, nWorkers, threadsPerJob);
-
-        // Pre-allocate one KlustaSave per worker slot and one KK clone per job.
-        // Clones share the same Data (deep-copied once; ~33 MB per clone).
-        // On 700 GB RAM this is negligible.
+        // Pre-allocate all nJobs KK clones and KlustaSave objects upfront.
+        // With 700 GB RAM this is fine: 117 jobs × ~700 MB each ≈ 80 GB.
+        // Each worker[j] is fully independent — no shared state during the
+        // parallel loop, so no locks are needed.
         std::vector<KlustaSave> workerKsv(nJobs);
         std::vector<KK>         workers(nJobs);
         for (int j = 0; j < nJobs; j++) {
-            workers[j]                  = K1.CloneForStart(threadsPerJob);
+            workers[j]                   = K1.CloneForStart(threadsPerJob);
             workers[j].nStartingClusters = jobs[j].K;
             workers[j].minClustersAlive  = MinClusters;
-            // Give each worker its own KlustaSave so SaveBestMeans() doesn't race
             workerKsv[j].BestScoreSave   = HugeScore;
             workerKsv[j].BestWeight.SetSize(MaxPossibleClusters);
             workerKsv[j].BestMean.SetSize(MaxPossibleClusters * K1.nDims);
@@ -585,16 +613,14 @@ int main(int argc, char **argv) {
         std::vector<float> jobScores(nJobs, HugeScore);
 
 #ifdef _OPENMP
+        omp_set_nested(1);
+        omp_set_max_active_levels(2);
         #pragma omp parallel for schedule(dynamic) num_threads(nWorkers)
 #endif
         for (int j = 0; j < nJobs; j++) {
             const int K   = jobs[j].K;
             const int run = jobs[j].start;
 
-            // Distinct seed per (K, start) pair — reproducible, non-correlated
-            // (ompTeamSize set on each worker via CloneForStart; no
-            // omp_set_num_threads() here — that call is not safe inside a
-            // parallel region and corrupts OMP state on teardown).
             srand(RandomSeed + K * 1000 + run);
 
             float score;
@@ -620,10 +646,8 @@ int main(int argc, char **argv) {
         }
 
 #ifdef _OPENMP
-        if (nWorkers > 1) {
-            omp_set_nested(0);
-            omp_set_max_active_levels(1);
-        }
+        omp_set_nested(0);
+        omp_set_max_active_levels(1);
 #endif
 
         // ── Reduction: find overall best, update K1 and global kSv ─────────
@@ -634,21 +658,21 @@ int main(int argc, char **argv) {
             if (jobScores[j] < BestScore) {
                 Output("THE BEST YET! (K=%d start=%d)\n",
                        jobs[j].K, jobs[j].start + 1);
-                BestScore             = jobScores[j];
-                kSv.BestScoreSave     = BestScore;
-                kSv.nDimsBest         = workerKsv[j].nDimsBest;
+                BestScore              = jobScores[j];
+                kSv.BestScoreSave      = BestScore;
+                kSv.nDimsBest          = workerKsv[j].nDimsBest;
                 kSv.nBestClustersAlive = workerKsv[j].nBestClustersAlive;
-                kSv.cEStepCallsSave   = workerKsv[j].cEStepCallsSave;
-                kSv.BestAliveIndex    = workerKsv[j].BestAliveIndex;
-                kSv.BestWeight        = workerKsv[j].BestWeight;
-                kSv.BestMean          = workerKsv[j].BestMean;
-                // Copy winner's bestCholFlat into K1 for export_model
-                K1.bestCholFlat       = workers[j].bestCholFlat;
+                kSv.cEStepCallsSave    = workerKsv[j].cEStepCallsSave;
+                kSv.BestAliveIndex     = workerKsv[j].BestAliveIndex;
+                kSv.BestWeight         = workerKsv[j].BestWeight;
+                kSv.BestMean           = workerKsv[j].BestMean;
+                K1.bestCholFlat        = workers[j].bestCholFlat;
                 for (int p2 = 0; p2 < K1.nPoints; p2++)
-                    K1.BestClass[p2]  = workers[j].BestClass[p2];
+                    K1.BestClass[p2]   = workers[j].BestClass[p2];
                 if (SaveIntermediates) SaveOutput(K1.BestClass);
             }
         }
+        }  // end parallel path
 
         SaveOutput(K1.BestClass);   // final write — always runs regardless of SaveIntermediates
         fprintf(stderr, "  done                    \n");  // clear the \r progress line
