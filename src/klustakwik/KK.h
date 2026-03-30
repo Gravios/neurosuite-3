@@ -66,7 +66,7 @@ public:
     KlustaSave&       ksv()       { return pKsv ? *pKsv : ::kSv; }
     const KlustaSave& ksv() const { return pKsv ? *pKsv : ::kSv; }
     void  LoadData();
-    KK    CloneForStart() const; // deep-copy for ParallelK workers
+    KK    CloneForStart(int ompTeamSize = 0) const; // deep-copy for ParallelK workers
     float Penalty(int n) const;
     float ComputeScore() const;
     void  MStep();
@@ -261,6 +261,7 @@ public:
     // update kSv.BestScoreSave.  Set automatically on chunk sub-objects so
     // parallel per-chunk EM cannot corrupt the outer loop's best-score state.
     bool suppressBestSave  = false;
+    int  ompTeamSize       = 0;    // 0 = use all OMP threads; set by ParallelK workers
 
     // Optional per-instance KlustaSave for parallel workers.
     // When non-null, ksv() returns *pKsv instead of the global kSv.

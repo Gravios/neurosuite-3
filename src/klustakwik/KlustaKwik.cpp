@@ -550,6 +550,13 @@ int main(int argc, char **argv) {
             : 1;
         const int threadsPerJob = std::max(1, nCoresAvail / nWorkers);
 
+#ifdef _OPENMP
+        if (nWorkers > 1) {
+            omp_set_nested(1);
+            omp_set_max_active_levels(2);
+        }
+#endif
+
         if (nWorkers > 1)
             fprintf(stderr,
                     "ParallelK=%d: %d jobs, %d concurrent workers, "
@@ -562,7 +569,7 @@ int main(int argc, char **argv) {
         std::vector<KlustaSave> workerKsv(nJobs);
         std::vector<KK>         workers(nJobs);
         for (int j = 0; j < nJobs; j++) {
-            workers[j]                  = K1.CloneForStart();
+            workers[j]                  = K1.CloneForStart(threadsPerJob);
             workers[j].nStartingClusters = jobs[j].K;
             workers[j].minClustersAlive  = MinClusters;
             // Give each worker its own KlustaSave so SaveBestMeans() doesn't race
@@ -584,11 +591,10 @@ int main(int argc, char **argv) {
             const int K   = jobs[j].K;
             const int run = jobs[j].start;
 
-#ifdef _OPENMP
-            // Each job uses a sub-team of threads for its Phase-1 OMP chunk loop
-            omp_set_num_threads(threadsPerJob);
-#endif
             // Distinct seed per (K, start) pair — reproducible, non-correlated
+            // (ompTeamSize set on each worker via CloneForStart; no
+            // omp_set_num_threads() here — that call is not safe inside a
+            // parallel region and corrupts OMP state on teardown).
             srand(RandomSeed + K * 1000 + run);
 
             float score;
@@ -612,6 +618,13 @@ int main(int argc, char **argv) {
                     K, MaxClusters, run + 1, nStarts, (double)score);
             fflush(stderr);
         }
+
+#ifdef _OPENMP
+        if (nWorkers > 1) {
+            omp_set_nested(0);
+            omp_set_max_active_levels(1);
+        }
+#endif
 
         // ── Reduction: find overall best, update K1 and global kSv ─────────
         for (int j = 0; j < nJobs; j++) {
