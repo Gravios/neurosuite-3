@@ -604,7 +604,7 @@ int main(int argc, char **argv) {
             workerKsv[j].BestScoreSave   = HugeScore;
             workerKsv[j].BestWeight.SetSize(MaxPossibleClusters);
             workerKsv[j].BestMean.SetSize(MaxPossibleClusters * K1.nDims);
-            workerKsv[j].BestAliveIndex.reserve(MaxPossibleClusters);
+            workerKsv[j].BestAliveIndex.resize(MaxPossibleClusters);
             workerKsv[j].nDims    = K1.nDims;
             workerKsv[j].FileBase = K1.ksv().FileBase;
             workers[j].pKsv       = &workerKsv[j];

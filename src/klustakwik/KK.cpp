@@ -83,7 +83,7 @@ void KK::AllocateCholeskyVecs() {
     // Replaces MaxPossibleClusters separate heap blocks → better TLB and cache behaviour.
     cholFlat    .assign(MaxPossibleClusters * nDims2, 0.0f);
     bestCholFlat.assign(MaxPossibleClusters * nDims2, 0.0f);
-    ksv().BestAliveIndex.reserve(MaxPossibleClusters);
+    ksv().BestAliveIndex.resize(MaxPossibleClusters);  // must be sized, not just reserved
 }
 
 // ---------------------------------------------------------------------------
@@ -387,8 +387,8 @@ void KK::MStep() {
     // nDims is set from the .fet file and is bounded by nFeatures <= STRLEN,
     // but practically always <= 25 (PCA features + timestamp).
     // This assert fires at compile-time if someone extends nDims beyond 64.
-    static_assert(sizeof(float) * 64 >= sizeof(float) * 64,
-                  "Review v[64]/root[64] if nDims can exceed 64");
+    static_assert(64 >= 64,   // nDims guard: update both arrays if limit raised
+                  "Review v[64]/root[64] stack buffers if nDims can exceed 64");
     // Runtime guard (release build safety):
     if (nDims > 64)
         Error("nDims=%d exceeds stack buffer size 64 in MStep/EStep. "
@@ -426,9 +426,8 @@ void KK::MStep() {
             Mean.m_Data, Cov.m_Data, Weight.m_Data,
             nClustersAlive, MaxPossibleClusters,
             nPoints, nDims, nDims2);
-    } else
+    } else {
 #endif
-    {
     // CPU path
     // Zero only the alive cluster rows — avoids clearing ~250 KB of unused
     // Mean/Cov storage when few clusters are alive (optimisation #3).
@@ -463,7 +462,9 @@ void KK::MStep() {
             for (int j = i; j < nDims; j++)
                 Cov[c * nDims2 + i * nDims + j] *= inv;
     }
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     } // end CPU path
+#endif
 
     if (Debug) {
         for (int cc = 0; cc < nClustersAlive; cc++) {
@@ -1794,7 +1795,7 @@ void KK::RealignChunkWaveforms(
                 if (sh == 0) continue;
 
                 const int localIdx = idxList[mi];
-                const int p        = pts[localIdx];
+                (void)pts[localIdx];  // global spike index — unused since .spk write-back is suppressed
                 const int16_t* row = waves.data()
                                    + static_cast<size_t>(localIdx) * waveSamples;
 
@@ -2659,6 +2660,9 @@ void KK::SaveBestMeans() {
 
     if (ksv().BestWeight.size() < Weight.size())  ksv().BestWeight.SetSize(Weight.size());
     if (ksv().BestMean.size()   < Mean.size())    ksv().BestMean.SetSize(Mean.size());
+    // BestAliveIndex is a std::vector; resize (not just reserve) before indexing.
+    if (static_cast<int>(ksv().BestAliveIndex.size()) < nClustersAlive)
+        ksv().BestAliveIndex.resize(MaxPossibleClusters);
 
     for (int cc = 0; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
