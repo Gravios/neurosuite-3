@@ -83,7 +83,7 @@ void KK::AllocateCholeskyVecs() {
     // Replaces MaxPossibleClusters separate heap blocks → better TLB and cache behaviour.
     cholFlat    .assign(MaxPossibleClusters * nDims2, 0.0f);
     bestCholFlat.assign(MaxPossibleClusters * nDims2, 0.0f);
-    kSv.BestAliveIndex.reserve(MaxPossibleClusters);
+    ksv().BestAliveIndex.reserve(MaxPossibleClusters);
 }
 
 // ---------------------------------------------------------------------------
@@ -158,9 +158,9 @@ void KK::LoadData() {
             nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
 
         if (fSaveModel) {
-            kSv.FileBase = FileBase;
-            kSv.nDims    = nDims;
-            fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
+            ksv().FileBase = FileBase;
+            ksv().nDims    = nDims;
+            fprintf(pModelFile, "%s %d\n", FileBase, ksv().nDims);
         }
         AllocateArrays();
         AllocateCholeskyVecs();
@@ -222,9 +222,9 @@ void KK::LoadData() {
             nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
 
         if (fSaveModel) {
-            kSv.FileBase = FileBase;
-            kSv.nDims    = nDims;
-            fprintf(pModelFile, "%s %d\n", FileBase, kSv.nDims);
+            ksv().FileBase = FileBase;
+            ksv().nDims    = nDims;
+            fprintf(pModelFile, "%s %d\n", FileBase, ksv().nDims);
         }
         AllocateArrays();
         AllocateCholeskyVecs();
@@ -273,8 +273,8 @@ void KK::LoadData() {
     timeRawMax = dimMax[timeDimIdx];
     if (fSaveModel) {
         for (int i = 0; i < nDims; i++) {
-            kSv.dataMin.push_back(dimMin[i]);
-            kSv.dataMax.push_back(dimMax[i]);
+            ksv().dataMin.push_back(dimMin[i]);
+            ksv().dataMax.push_back(dimMax[i]);
             fprintf(pModelFile, "%f %f%c", dimMin[i], dimMax[i],
                     (i < nDims - 1) ? ' ' : '\n');
         }
@@ -313,6 +313,51 @@ void KK::LoadData() {
         }
     }
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// CloneForStart — deep-copy KK for an independent ParallelK worker.
+//
+// All array fields are deep-copied.  gpu is set to nullptr (CPU-only);
+// pKsv is left null and must be set by the caller before running EM.
+// The caller is also responsible for setting nStartingClusters and
+// minClustersAlive on the returned clone.
+// ---------------------------------------------------------------------------
+KK KK::CloneForStart() const
+{
+    KK c;
+    // ── scalar fields ─────────────────────────────────────────────────────
+    c.nDims               = nDims;
+    c.nDims2              = nDims2;
+    c.nPoints             = nPoints;
+    c.nStartingClusters   = nStartingClusters;
+    c.nClustersAlive      = nClustersAlive;
+    c.NoisePoint          = NoisePoint;
+    c.FullStep            = FullStep;
+    c.penaltyMix          = penaltyMix;
+    c.minClustersAlive    = minClustersAlive;
+    c.timeRawMin          = timeRawMin;
+    c.timeRawMax          = timeRawMax;
+    c.log2piHalf          = log2piHalf;
+    c.suppressBestSave    = false;
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    c.gpu                 = nullptr;   // CPU-only; GPU stays on master K1
+#endif
+    c.pKsv                = nullptr;   // caller must set before running EM
+    // ── allocate and deep-copy arrays ─────────────────────────────────────
+    c.AllocateArrays();
+    c.AllocateCholeskyVecs();
+    std::copy(Data.m_Data,       Data.m_Data       + nPoints * nDims,     c.Data.m_Data);
+    std::copy(Class.m_Data,      Class.m_Data      + nPoints,             c.Class.m_Data);
+    std::copy(OldClass.m_Data,   OldClass.m_Data   + nPoints,             c.OldClass.m_Data);
+    std::copy(Class2.m_Data,     Class2.m_Data     + nPoints,             c.Class2.m_Data);
+    std::copy(BestClass.m_Data,  BestClass.m_Data  + nPoints,             c.BestClass.m_Data);
+    std::copy(ClassAlive.m_Data, ClassAlive.m_Data + MaxPossibleClusters, c.ClassAlive.m_Data);
+    std::copy(AliveIndex.m_Data, AliveIndex.m_Data + MaxPossibleClusters, c.AliveIndex.m_Data);
+    c.cholFlat     = cholFlat;
+    c.bestCholFlat = bestCholFlat;
+    c.preseedCentres = preseedCentres;
+    return c;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +494,7 @@ void KK::EStep() {
     // is only used for model-file metadata, so suppress it in sub-objects.
     if (!suppressBestSave) {
         static int cEStepCalls = 0;
-        kSv.cEStepCallsLast = ++cEStepCalls;
+        ksv().cEStepCallsLast = ++cEStepCalls;
     }
 
     // Cluster 0: uniform noise — write into cluster-major row 0
@@ -1068,9 +1113,9 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
 
         if (needScore) {
             score = ComputeScore();
-            if (!suppressBestSave && score < kSv.BestScoreSave) {
+            if (!suppressBestSave && score < ksv().BestScoreSave) {
                 SaveBestMeans();
-                kSv.BestScoreSave = score;
+                ksv().BestScoreSave = score;
             }
             if (Verbose >= 1)
                 Output("  %s iter %d%c: %d clusters score %.7g nChanged %d\n",
@@ -2113,9 +2158,14 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (nGlobal >= MaxPossibleClusters) {
         Output("WARNING: MergeChunkModels produced %d global clusters >= "
                "MaxPossibleClusters (%d).\n"
-               "  Action: set -MergeThresh to ~chi2(nSpatialDims, 0.99)\n"
+               "  The cross-chunk merge succeeded (clusters matched between\n"
+               "  adjacent chunks), but there are more unique global units\n"
+               "  than the MaxPossibleClusters table can hold.\n"
+               "  Fix: increase -MaxPossibleClusters to at least %d\n"
+               "  (nChunks * MaxClusters is a safe upper bound).\n"
                "  Falling back to CEMTwoPhase on the full session.\n",
-               nGlobal, MaxPossibleClusters);
+               nGlobal, MaxPossibleClusters,
+               nGlobal + 10);
         return CEMTwoPhase(timeMergeIter);
     }
 
@@ -2150,7 +2200,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     for (; iter < globalMergeIter; iter++) {
         MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
         score = ComputeScore();
-        if (score < kSv.BestScoreSave) { SaveBestMeans(); kSv.BestScoreSave = score; }
+        if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
         if (Verbose >= 1)
             Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
                    iter, nClustersAlive, score, nChanged);
@@ -2507,22 +2557,24 @@ float KK::RunChunkedCEM(float chunkMinutes,
         return CEMTwoPhase(timeMergeIter);
     }
 
-    // Guard: if nGlobal >= MaxPossibleClusters, the merge found no cross-chunk
-    // matches at all (mergeThresh is too conservative for this data).  Using
-    // globalClusterIds >= MaxPossibleClusters as Class[] indices would write
-    // out-of-bounds into ClassAlive[].  Fall back gracefully so the user gets
-    // a correct result and a clear message about what to adjust.
+    // Guard: if nGlobal >= MaxPossibleClusters, globalClusterIds would write
+    // out-of-bounds into ClassAlive[].  This is NOT a MergeThresh problem —
+    // the merge can succeed perfectly (100% vote-matches) yet produce more
+    // global clusters than MaxPossibleClusters when the table is set too small
+    // relative to nChunks * MaxClusters.  Fall back to CEMTwoPhase and emit
+    // a precise diagnostic so the user knows what to increase.
     if (nGlobal >= MaxPossibleClusters) {
         Output("WARNING: MergeChunkModels produced %d global clusters >= "
                "MaxPossibleClusters (%d).\n"
-               "  This means MergeThresh=%.1f is too small: no cross-chunk\n"
-               "  cluster matches were found, so every chunk-local cluster\n"
-               "  became its own global unit.\n"
-               "  Action: set -MergeThresh to ~chi2(nSpatialDims, 0.99)\n"
-               "  (e.g. ~51 for 30 dims) so genuine same-neuron matches pass.\n"
-               "  Or reduce -ChunkMinutes so clusters drift less between chunks.\n"
+               "  The cross-chunk merge itself succeeded — this is a table-size\n"
+               "  limit, not a MergeThresh problem.  The number of unique\n"
+               "  global units exceeds the pre-allocated cluster table.\n"
+               "  Fix: set -MaxPossibleClusters to at least %d\n"
+               "  (a safe rule: nChunks * MaxClusters; use 300-500 for long\n"
+               "  recordings with many chunks).\n"
                "  Falling back to CEMTwoPhase on the full session.\n",
-               nGlobal, MaxPossibleClusters, mergeThresh);
+               nGlobal, MaxPossibleClusters,
+               nGlobal + 10);
         return CEMTwoPhase(timeMergeIter);
     }
 
@@ -2568,7 +2620,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
         score = ComputeScore();
 
-        if (score < kSv.BestScoreSave) { SaveBestMeans(); kSv.BestScoreSave = score; }
+        if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
 
         if (Verbose >= 1)
             Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
@@ -2588,26 +2640,26 @@ void KK::SaveBestMeans() {
     // cannot corrupt the outer loop's global best-score state.
     if (suppressBestSave) return;
 
-    kSv.cEStepCallsSave     = kSv.cEStepCallsLast;
-    kSv.nDimsBest           = nDims;
-    kSv.nBestClustersAlive  = nClustersAlive;
+    ksv().cEStepCallsSave     = ksv().cEStepCallsLast;
+    ksv().nDimsBest           = nDims;
+    ksv().nBestClustersAlive  = nClustersAlive;
 
-    if (kSv.BestWeight.size() < Weight.size())  kSv.BestWeight.SetSize(Weight.size());
-    if (kSv.BestMean.size()   < Mean.size())    kSv.BestMean.SetSize(Mean.size());
+    if (ksv().BestWeight.size() < Weight.size())  ksv().BestWeight.SetSize(Weight.size());
+    if (ksv().BestMean.size()   < Mean.size())    ksv().BestMean.SetSize(Mean.size());
 
     for (int cc = 0; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
-        kSv.BestAliveIndex[cc] = c;
-        kSv.BestWeight[cc]     = Weight[c];
+        ksv().BestAliveIndex[cc] = c;
+        ksv().BestWeight[cc]     = Weight[c];
         for (int i = 0; i < nDims; i++)
-            kSv.BestMean[cc * nDims + i] = Mean[c * nDims + i];
+            ksv().BestMean[cc * nDims + i] = Mean[c * nDims + i];
     }
 
-    for (int cc = 1; cc < kSv.nBestClustersAlive; cc++) {
-        const int c = kSv.BestAliveIndex[cc];
-        for (int i = 0; i < kSv.nDimsBest; i++)
+    for (int cc = 1; cc < ksv().nBestClustersAlive; cc++) {
+        const int c = ksv().BestAliveIndex[cc];
+        for (int i = 0; i < ksv().nDimsBest; i++)
             for (int j = 0; j <= i; j++)
-                bestCholFlat[static_cast<size_t>(c) * nDims2 + i * kSv.nDimsBest + j] =
-                    cholFlat    [static_cast<size_t>(c) * nDims2 + i * kSv.nDimsBest + j];
+                bestCholFlat[static_cast<size_t>(c) * nDims2 + i * ksv().nDimsBest + j] =
+                    cholFlat    [static_cast<size_t>(c) * nDims2 + i * ksv().nDimsBest + j];
     }
 }

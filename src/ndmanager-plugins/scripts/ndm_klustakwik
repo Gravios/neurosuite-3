@@ -135,6 +135,7 @@ once()
 	# Session-level (usually from tier-2 global block or tier-3 defaults):
 	minClusters=$(read_kk_param $electrodeGroup minClusters 2)
 	nStarts=$(read_kk_param $electrodeGroup nStarts 3)
+	parallelK=$(read_kk_param $electrodeGroup parallelK 0)
 	initMethod=$(read_kk_param $electrodeGroup initMethod farthest)
 	penaltyMix=$(read_kk_param $electrodeGroup penaltyMix 0)
 	chunkMinutes=$(read_kk_param $electrodeGroup chunkMinutes 10)
@@ -199,7 +200,8 @@ once()
 		-Log                     $log                     \
 		-Screen                  $screen                  \
 		-fSaveModel              $fSaveModel              \
-		-SaveIntermediates       $saveIntermediates
+		-SaveIntermediates       $saveIntermediates       \
+		-ParallelK               $parallelK
 
 	check_command_status KlustaKwik
 	unset OMP_NUM_THREADS

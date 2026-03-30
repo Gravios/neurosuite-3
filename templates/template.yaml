@@ -1018,6 +1018,7 @@ programs:
   - {name: overwrite,            value: 0,       status: Optional}
   # ── Parallelism ─────────────────────────────────────────────────────────────
   - {name: nThreads,             value: 0,       status: Optional}
+  - {name: parallelK,            value: 0,       status: Optional}
   help: |-
     Run KlustaKwik automatic spike sorting for each spikeDetection group.
 
@@ -1154,6 +1155,16 @@ programs:
     before launch and unset afterwards so it does not leak to other tools.
     0 (default) = use all available cores (nproc). Set explicitly only when you
     need to leave cores free for other concurrent work.
+
+    # parallelK
+
+    Number of (K-value, start) jobs to run concurrently. Each job is an
+    independent KlustaKwik run with its own cluster count K and random seed.
+    KlustaKwik distributes nCores evenly: threadsPerJob = nCores / parallelK.
+    GPU is disabled on all workers; Phase-3 GPU contribution is <1% of runtime.
+    0 (default) = serial. Recommended for many-core chunked sessions:
+      parallelK = nCores / max(1, nChunks / 2)
+    Example: 128 cores, 9 chunks → parallelK=32, 4 OMP threads/job, ~20x speedup.
 
 
 - name: ndm_estimatedrift
