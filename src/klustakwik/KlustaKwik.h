@@ -57,6 +57,9 @@ extern int   TimeMergeIter;
 
 // Three-phase chunked CEM
 extern float ChunkMinutes;
+extern float ChunkOverlapMinutes;
+extern float ChunkPreseedFraction;
+extern char  ChunkFile[];
 extern float SamplingRate;
 extern float MergeThresh;
 extern int   GlobalMergeIter;
