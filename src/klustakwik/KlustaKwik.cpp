@@ -420,7 +420,7 @@ int main(int argc, char **argv) {
         // parallelism is active before the first (potentially long) CEM call.
         // -------------------------------------------------------------------
         {
-            fprintf(stderr, "KlustaKwik  %s.fet.%d\n", FileBase, ElecNo);
+            fprintf(stderr, "KlustaKwik  %s.fet.%d  [build 2026-03-30 ParallelK+BestClass-fix]\n", FileBase, ElecNo);
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",
                     K1.nPoints, K1.nDims, MinClusters, MaxClusters);
 
