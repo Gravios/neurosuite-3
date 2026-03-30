@@ -2904,18 +2904,32 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Compute new timestamps and sort cluster spikes by new timestamp
     // -----------------------------------------------------------------------
-    // Sign convention: xcorr returns bestLag > 0 when the spike peak is
-    // LATE — the detector fired bestLag samples after the true event.
-    // The waveform correction rolls content forward: newSpike[t] = spike[(t+lag)%N],
-    // which is correct for display.  The timestamp correction is the OPPOSITE
-    // sign: the true event occurred bestLag samples BEFORE the recorded timestamp,
-    // so newTs = oldTs - cumShift.  Using + cumShift shifts the re-extraction
-    // window in the wrong direction and moves PCA features by ±shift samples.
-    std::vector<int64_t> newTs(static_cast<size_t>(N));
-    for (int64_t i = 0; i < N; ++i)
-        newTs[static_cast<size_t>(i)] =
-            clusterTs[static_cast<size_t>(i)]
-            - static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+    // Two timestamp values are needed per spike:
+    //
+    //   resTs   — written to the .res file.  This is the ORIGINAL detection
+    //             sample (the peak in the raw signal), unchanged by realignment.
+    //             The spike fired at the same physical moment regardless of how
+    //             we roll its display waveform.
+    //
+    //   extTs   — used to re-extract from the .fil/.dat file.  Rolling a spike
+    //             waveform by cumShift samples means we want a window centred
+    //             cumShift samples later (for cumShift > 0) in the raw signal:
+    //               extTs = oldTs + cumShift
+    //             so that the new window [extTs - peakSamp0 ... ] captures the
+    //             content that would appear at peakSamp0 after the shift.
+    //             Re-extracting at extTs and writing to .spk avoids the
+    //             wrap-around artifact that circular-shift produces at the
+    //             window edges.
+    //
+    // Sorting is also done by extTs so spikes stay in temporal order after
+    // any shift of their effective window position.
+    std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (for sort + re-extract)
+    std::vector<int64_t> resTs(static_cast<size_t>(N));   // = original ts (for .res write)
+    for (int64_t i = 0; i < N; ++i) {
+        resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
+        newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
+            + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+    }
 
     // sortedOrder[j] = which cluster spike goes to sorted position j
     std::vector<int64_t> sortedOrder(static_cast<size_t>(N));
@@ -3045,7 +3059,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
         const int64_t dest  = targetPos[static_cast<size_t>(j)];
-        const int64_t ts    = newTs[static_cast<size_t>(csIdx)];
+        const int64_t ts         = newTs[static_cast<size_t>(csIdx)]; // extTs: for .fil re-extraction
+        const int64_t ts_for_res = resTs[static_cast<size_t>(csIdx)]; // original: for .res write
 
         int16_t* w = wavBuf.data()
             + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
@@ -3053,7 +3068,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         // Capture original in-memory values before any update (needed for reject)
         PendingSpkRecord rec;
         rec.destPos = dest;
-        rec.ts      = ts;
+        rec.ts      = ts_for_res;
         rec.origTs  = static_cast<int64_t>(
             clusteringData->featureValue(
                 static_cast<dataType>(dest + 1),
@@ -3117,7 +3132,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         fwrite(spkRow.data(), sizeof(int16_t), static_cast<size_t>(spkElems), spkW);
 
         fseeko(resW, static_cast<off_t>(dest) * static_cast<off_t>(sizeof(int64_t)), SEEK_SET);
-        fwrite(&ts, sizeof(int64_t), 1, resW);
+        fwrite(&ts_for_res, sizeof(int64_t), 1, resW);  // original timestamp unchanged
 
         const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
             + static_cast<off_t>(dest) * static_cast<off_t>(timeDim)

@@ -38,8 +38,8 @@ using namespace std;
 int main(int argc,char *argv[])
 {
 	int nClusters,clusterID,time;
+	int feature[1000];
 	int nChannels,nSamplesPerWaveform,nFeatures,resolution;
-	std::vector<int> feature; // sized after reading nFeatures from .fet header
 	string basename,electrodeGroup;
 	bool spk = true,fet = true,res = true;
 
@@ -142,7 +142,6 @@ int main(int argc,char *argv[])
 	if ( fet )
 	{
 		fetInputFile >> nFeatures;
-		feature.resize(nFeatures); // was feature[1000] — sized to actual .fet dimension
 		fetOutputFile << nFeatures << '\n';
 	}
 	// Buffer for spk data
