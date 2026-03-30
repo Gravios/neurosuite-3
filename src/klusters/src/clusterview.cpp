@@ -24,6 +24,7 @@
 
 #include "timer.h"
 #include <QDebug>
+#include <QKeyEvent>
 
 //General C++ include files
 #include <math.h>
@@ -58,6 +59,7 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     mode = ZOOM;
     pointSize = 2;
     selectionLineWidth = 1;
+    setFocusPolicy(Qt::StrongFocus);
 
     //Initialize internal variables
     timeDimension = doc.data().timeDimension();
@@ -374,6 +376,9 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         }
 
         if (e->button() == Qt::LeftButton){
+            // Ensure this widget has keyboard focus so Enter/Return keyPressEvent
+            // is delivered here and not consumed by a parent widget or dialog.
+            setFocus(Qt::MouseFocusReason);
             QPoint selectedPoint = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
 
             if(nbSelectionPoints == 0)
@@ -390,6 +395,25 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
     //Trigger parent event
     ViewWidget::mouseReleaseEvent(event);
     statusBar->clearMessage();
+}
+
+void ClusterView::keyPressEvent(QKeyEvent* e){
+    // Enter or Return closes the selection polygon, same as middle mouse button
+    if((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) &&
+       (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
+        mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) &&
+       selectionPolygon.size() > 2)
+    {
+        eraseTheLastMovingLine();
+        polygonClosed = true;
+        ComputeEvent* event = getComputeEvent(selectionPolygon);
+        QApplication::postEvent(this, event);
+        drawContentsMode = REFRESH;
+        update();
+        statusBar->clearMessage();
+        return;
+    }
+    ViewWidget::keyPressEvent(e);
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){

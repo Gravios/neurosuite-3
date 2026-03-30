@@ -938,11 +938,11 @@ void KlustersApp::applyPreferences() {
     autoSelectFeatures  = configuration().getAutoSelectFeatures();
     autoSelectNFeatures = configuration().getAutoSelectNFeatures();
     if(autoNFeaturesSpinBoxAction){
-        // Visibility follows featureXLabel: show the spinbox only when
-        // the feature selectors are visible AND auto-select is enabled.
-        bool featVisible = featureXLabelAction && featureXLabelAction->isVisible();
-        autoNFeaturesLabelAction->setVisible(autoSelectFeatures && featVisible);
-        autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures && featVisible);
+        // Show the N-feat spinbox whenever autoSelectFeatures is on and a doc is open.
+        // It is used at recluster time regardless of which sub-view is currently active,
+        // so it must not be gated on the scatter-plot X/Y selectors being visible.
+        autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+        autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
         if(!isInit) autoNFeaturesSpinBox->setValue(autoSelectNFeatures);
     }
 }
@@ -2439,8 +2439,10 @@ void KlustersApp::slotTabChange(int index){
                 dimensionXAction->setVisible(false);
                 dimensionYAction->setVisible(false);
                 featureXLabelAction->setVisible(false);
-                autoNFeaturesLabelAction->setVisible(false);
-                autoNFeaturesSpinBoxAction->setVisible(false);
+                // N feat spinbox stays visible whenever auto-select is on,
+                // even when no scatter plot sub-view is active.
+                autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+                autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
             }
 
             if(activeView->containsWaveformView()){
@@ -3236,8 +3238,8 @@ void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType
         dimensionXAction->setVisible(false);
         dimensionYAction->setVisible(false);
         featureXLabelAction->setVisible(false);
-        autoNFeaturesLabelAction->setVisible(false);
-        autoNFeaturesSpinBoxAction->setVisible(false);
+        autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+        autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
         break;
     case KlustersView::WAVEFORMS:
         timeFrameMode->setChecked(false);
