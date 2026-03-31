@@ -2499,19 +2499,19 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // RealignChunkWaveforms can use home-chunk first-write-wins:
     // overlap spikes that appear in both chunk k and k+1 get their
     // shift from chunk k (the first, natural-home chunk), not k+1.
-    std::vector<int> spikeShifts(
-        static_cast<size_t>(nPoints),
-        std::numeric_limits<int>::min());
-
-    if (NbChannels > 0 && NbSamplesPerSpike > 0) {
-        Output("Phase 1.5: xcorr alignment  "
-               "(nChan=%d nSamp=%d maxShift=%d bytesPerSample=%d)\n",
-               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4, NbBytesPerSample);
-        RealignChunkWaveforms(chunkPoints, perChunkClass,
-                              NbChannels, NbSamplesPerSpike, NbBytesPerSample,
-                              spikeShifts);
-        RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-    }
+    //std::vector<int> spikeShifts(
+    //    static_cast<size_t>(nPoints),
+    //    std::numeric_limits<int>::min());
+    //
+    //if (NbChannels > 0 && NbSamplesPerSpike > 0) {
+    //    Output("Phase 1.5: xcorr alignment  "
+    //           "(nChan=%d nSamp=%d maxShift=%d bytesPerSample=%d)\n",
+    //           NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4, NbBytesPerSample);
+    //    RealignChunkWaveforms(chunkPoints, perChunkClass,
+    //                          NbChannels, NbSamplesPerSpike, NbBytesPerSample,
+    //                          spikeShifts);
+    //    RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
+    //}
 
     // Build overlap vote matrices for MergeChunkModels.
     std::vector<std::unordered_map<int,int>> overlapVotes(
