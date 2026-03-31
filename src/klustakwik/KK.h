@@ -4,6 +4,7 @@
 //   - Two-phase CEM:       CEMTwoPhase(timeMergeIter)
 //   - Three-phase chunked: RunChunkedCEM(...)  — parallel over chunks via OpenMP
 #pragma once
+#include <unordered_set>
 #include "Array.h"
 #include "KlustaSave.h"
 extern KlustaSave kSv;  // global in KlustaKwik.cpp
@@ -174,31 +175,35 @@ public:
     //
     // nChan == 0 or nSamplesPerSpike == 0 → silently skipped (safe default).
     // bytesPerSample: 2 for ≤16-bit recordings (default), 4 for 32-bit.
-    // RealignChunkWaveforms: computes xcorr shift for every spike.
-    // spikeShifts[p] is populated with the shift (in samples) for global
-    // spike index p.  Uses home-chunk first-write-wins: the first chunk
-    // that contains a spike sets its shift; overlap duplicates in later
-    // chunks are skipped.  Pass spikeShifts pre-filled with INT_MIN as
-    // the sentinel for "not yet assigned".
+    // RealignChunkWaveforms — Phase 1.5 step 1.
+    // Xcorr-aligns each spike to its per-cluster mean waveform (from .spk).
+    // Home-chunk first-write-wins: spikeShifts[p] is set by the first
+    // chunk that contains spike p; overlap duplicates in later chunks skip it.
     void RealignChunkWaveforms(
         const std::vector<std::vector<int>>& chunkPoints,
         const std::vector<std::vector<int>>& chunkClass,
         int nChan, int nSamplesPerSpike, int bytesPerSample,
         std::vector<int>& spikeShifts);
 
-    // Re-project shifted waveforms through the saved PCA eigenvectors,
-    // updating Data[] in-place before Phase 2 cross-chunk matching.
-    //
-    // For each spike p where spikeShifts[p] != 0:
-    //   1. Reads the original waveform from SESSION.spk.ElecNo
-    //   2. Applies the circular shift (roll-left by spikeShifts[p])
-    //   3. Projects through PCA eigenvectors from SESSION.pca.ElecNo
-    //   4. Re-normalises using dimMin_/dimRange_ from LoadData()
-    //   5. Writes to Data[p * nDims + 0..nPCAFeatures-1]
-    //
-    // Silently returns if the .pca.N file is absent (safe default).
+    // RefeaturizeFromShifts — Phase 1.5 step 2.
+    // For each spike with a non-zero shift, re-extracts its waveform from
+    // the .fil broadband file at (rawTs - shift - PeakSampleIndex), projects
+    // through the PCA eigenvectors in SESSION.pca.N, re-normalises, and
+    // writes back to Data[].  Falls back to circular shift from .spk when
+    // .fil is unavailable.
     void RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
                                int nChan, int nSamplesPerSpike);
+
+    // WritePhase15Checkpoint — write corrected .spk and .fet to .pending
+    // files using the shifts from RealignChunkWaveforms and the features
+    // already updated in Data[] by RefeaturizeFromShifts, then atomically
+    // rename each .pending file over the original.
+    //
+    // .spk: re-extracted from .fil at (rawTs + shift - PeakSampleIndex)
+    // .fet: PCA features from Data[] + extTs (rawTs+shift) in last column
+    // .res: NOT modified (detection timestamp is unchanged)
+    void WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
+                                int nChan, int nSamplesPerSpike);
 
     // -----------------------------------------------------------------------
     // Pre-allocated scratch arrays — sized by AllocateArrays(), reused every

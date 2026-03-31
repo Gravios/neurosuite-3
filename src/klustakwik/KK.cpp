@@ -1616,46 +1616,6 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     return nGlobal;
 }
 
-// RealignChunkWaveforms — Phase 1.5 in-place .spk waveform alignment
-//
-// Called after per-chunk CEM (Phase 1) has produced stable cluster labels,
-// but before Phase 2 cross-chunk model matching.  Each spike's waveform is
-// realigned to its chunk-cluster mean using normalised circular cross-correlation
-// across ALL channels simultaneously (identical algorithm to Klusters interactive
-// realignment, using the shared XcorrDispatch kernel from src/shared/xcorr/).
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// THE CRITICAL CORRECTNESS REQUIREMENT
-// ─────────────────────────────────────────────────────────────────────────────
-// Every .spk slot is addressed by the GLOBAL spike index p, not a sequential
-// counter.  The seek formula is:
-//
-//   fseeko(fp, (off_t)p * waveSamples * bytesPerSample, SEEK_SET);
-//
-// chunkPoints[k] may contain duplicate p values (overlap spikes that also
-// appear in chunk k+1).  Using p as the offset writes overlap spikes to the
-// SAME physical slot — last-write-wins is harmless, file size never changes.
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// Algorithm (matches Klusters SpikeRealign::findBestShift):
-//   For each non-noise cluster in each chunk:
-//     1. Read all member waveforms from .spk (sample-major layout).
-//     2. Compute the cluster mean waveform.
-//     3. Transpose waveforms and template to channel-major for XcorrDispatch.
-//     4. Call XcorrDispatch::compute:
-//          - normalised circular xcorr summed over ALL channels
-//          - full-energy denominator (no lag-bias at large shifts)
-//          - GPU-accelerated when available (CUDA > HIP > SYCL > OMP)
-//     5. Compute alignment shift — circular xcorr gives bestLag per spike.
-//        sh=bestLag>0: spike peak is late; (s+sh)%N roll lands peak at template pos.
-//     6. .spk write-back SUPPRESSED (circular-shift wrap-around would corrupt
-//        waveform edges; .fil re-extraction not yet implemented here).
-//        Phase 2/3 use Data[] from .fet, so clustering is unaffected.
-//
-// Noise spikes (cid==0) are skipped.
-//
-// NOTE: This pass updates the .spk file only.  Updating Data[] (in-memory
-// feature array) via .evec re-projection is a planned follow-up step.
 // ---------------------------------------------------------------------------
 void KK::RealignChunkWaveforms(
     const std::vector<std::vector<int>>& chunkPoints,
@@ -1771,6 +1731,34 @@ void KK::RealignChunkWaveforms(
                     tmplBuf[static_cast<size_t>(ch) * nSamplesPerSpike + s] =
                         static_cast<int16_t>(std::lroundf(meanWave[s * nChan + ch]));
 
+            // Pre-align template: shift its peak to PeakSampleIndex.
+            // Without this the xcorr aligns spikes to wherever the cluster
+            // mean happens to peak (which drifts away from the canonical
+            // peak position), progressively biasing all spikes.
+            // This exactly mirrors the Klusters realignSpikes() logic.
+            if (PeakSampleIndex > 0) {
+                int    tmplPeak = 0;
+                double bestAmp  = -1.0;
+                for (int s = 0; s < nSamplesPerSpike; s++) {
+                    double amp = 0.0;
+                    for (int ch = 0; ch < nChan; ch++)
+                        amp += std::abs(static_cast<double>(
+                            tmplBuf[static_cast<size_t>(ch) * nSamplesPerSpike + s]));
+                    if (amp > bestAmp) { bestAmp = amp; tmplPeak = s; }
+                }
+                const int tShift = PeakSampleIndex - tmplPeak;
+                if (tShift != 0) {
+                    std::vector<int16_t> aligned(tmplBuf.size());
+                    for (int ch = 0; ch < nChan; ch++)
+                        for (int s = 0; s < nSamplesPerSpike; s++) {
+                            const int src = (s - tShift + nSamplesPerSpike) % nSamplesPerSpike;
+                            aligned[static_cast<size_t>(ch * nSamplesPerSpike + s)] =
+                                tmplBuf[static_cast<size_t>(ch * nSamplesPerSpike + src)];
+                        }
+                    tmplBuf = std::move(aligned);
+                }
+            }
+
             // 3. Spike batch — channel-major int16 for XcorrDispatch
             //    waveBuf[(mi*nChan + ch) * nSamplesPerSpike + t]
             //    from: waves[localIdx*waveSamples + t*nChan + ch]
@@ -1824,6 +1812,223 @@ void KK::RealignChunkWaveforms(
     Output("RealignChunkWaveforms: aligned %d spikes, skipped %d noise\n",
            nAligned, nSkipped);
 }
+
+
+
+// ---------------------------------------------------------------------------
+// RefeaturizeFromShifts
+//
+// For each spike with a non-zero xcorr shift (set by RealignChunkWaveforms),
+// re-extracts the aligned waveform from the .fil broadband file at the
+// corrected sample offset, projects through the saved PCA eigenvectors,
+// re-normalises, and writes back into Data[].
+//
+// Re-extracting from .fil rather than circular-shifting the .spk waveform
+// eliminates wrap-around corruption: circular shift of N samples by sh
+// fills positions [N-sh .. N-1] with noise from the beginning of the
+// original window, which corrupts up to 30% of samples for typical
+// 5–10 sample shifts.  Reading from .fil at (rawTs - sh - peakIdx)
+// gives a clean, artifact-free aligned waveform from the broadband signal.
+//
+// Requires NbTotalChannels, GroupChannelIds, and PeakSampleIndex to be
+// set (auto-filled from YAML at startup).  Falls back to circular shift
+// from .spk when .fil is unavailable.
+// ---------------------------------------------------------------------------
+void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
+                                 int nChan, int nSamplesPerSpike)
+{
+    if (spikeShifts.empty() || nChan <= 0 || nSamplesPerSpike <= 0) return;
+
+    // ── Load PCA model ────────────────────────────────────────────────────
+    char pcaPath[STRLEN + 16];
+    snprintf(pcaPath, sizeof(pcaPath), "%s.pca.%d", FileBase, ElecNo);
+    FILE* pf = fopen(pcaPath, "rb");
+    if (!pf) {
+        Output("RefeaturizeFromShifts: %s not found — skipping re-projection\n",
+               pcaPath);
+        return;
+    }
+
+    struct PcaModel {
+        int nChan, data2use, nComp, recShift;
+        bool isCentered;
+        std::vector<std::vector<double>> mean;
+        std::vector<std::vector<double>> eigvec;
+    } pm;
+
+    {
+        int32_t magic, ver, nc, d2u, ncomp, rs, ic;
+        auto rd = [&](int32_t& v) { return fread(&v, 4, 1, pf) == 1; };
+        if (!rd(magic)||!rd(ver)||!rd(nc)||!rd(d2u)||!rd(ncomp)||!rd(rs)||!rd(ic)) {
+            Output("RefeaturizeFromShifts: truncated PCA header in %s\n", pcaPath);
+            fclose(pf); return;
+        }
+        if (magic != static_cast<int32_t>(0x50434145)) {
+            Output("RefeaturizeFromShifts: bad magic in %s — not a PCAE file\n", pcaPath);
+            fclose(pf); return;
+        }
+        pm.nChan = nc; pm.data2use = d2u; pm.nComp = ncomp;
+        pm.recShift = rs; pm.isCentered = (ic != 0);
+
+        if (pm.nChan != nChan) {
+            Output("RefeaturizeFromShifts: PCA has %d channels, spike group has %d — "
+                   "skipping\n", pm.nChan, nChan);
+            fclose(pf); return;
+        }
+
+        pm.mean.resize(static_cast<size_t>(nc));
+        pm.eigvec.resize(static_cast<size_t>(nc));
+        for (int ch = 0; ch < nc; ++ch) {
+            pm.mean[static_cast<size_t>(ch)].resize(static_cast<size_t>(d2u));
+            if (fread(pm.mean[static_cast<size_t>(ch)].data(), 8,
+                      static_cast<size_t>(d2u), pf) != static_cast<size_t>(d2u)) {
+                Output("RefeaturizeFromShifts: truncated PCA means (ch %d)\n", ch);
+                fclose(pf); return;
+            }
+            size_t evSz = static_cast<size_t>(d2u * ncomp);
+            pm.eigvec[static_cast<size_t>(ch)].resize(evSz);
+            if (fread(pm.eigvec[static_cast<size_t>(ch)].data(), 8, evSz, pf) != evSz) {
+                Output("RefeaturizeFromShifts: truncated PCA eigenvectors (ch %d)\n", ch);
+                fclose(pf); return;
+            }
+        }
+    }
+    fclose(pf);
+
+    const int nPCAFeatures = pm.nChan * pm.nComp;
+    if (nPCAFeatures > nDims - 1) {
+        Output("RefeaturizeFromShifts: PCA feature count (%d) exceeds nDims-1 (%d) — "
+               "skipping\n", nPCAFeatures, nDims - 1);
+        return;
+    }
+
+    // ── Prefer .fil re-extraction; fall back to .spk circular shift ───────
+    //
+    // .fil re-extraction: read nSamplesPerSpike time steps starting at
+    //   (rawTs - shift - PeakSampleIndex) from the broadband .fil file,
+    //   selecting only GroupChannelIds columns.  This gives a clean waveform
+    //   with no wrap-around corruption.
+    //
+    // Fallback: open .spk and apply circular shift — used when .fil is absent
+    //   (e.g. cleaned up after ndm_stripdat) or when NbTotalChannels / GroupChannelIds
+    //   were not supplied.
+    const bool canUseFil = (NbTotalChannels > 0 &&
+                            !GroupChannelIds.empty() &&
+                            PeakSampleIndex >= 0);
+    const float sessionSamples = timeRawMax - timeRawMin;
+    const int   timeDimIdx     = nDims - 1;
+    const int   waveSamples    = nChan * nSamplesPerSpike;
+
+    char filPath[STRLEN + 8], spkPath[STRLEN + 16];
+    snprintf(filPath, sizeof(filPath), "%s.fil",     FileBase);
+    snprintf(spkPath, sizeof(spkPath), "%s.spk.%d", FileBase, ElecNo);
+
+    FILE* filFp = canUseFil ? fopen(filPath, "rb") : nullptr;
+    FILE* spkFp = nullptr;
+    if (!filFp) {
+        // .fil unavailable — fall back to .spk circular shift
+        spkFp = fopen(spkPath, "rb");
+        if (!spkFp) {
+            Output("RefeaturizeFromShifts: neither %s nor %s available — "
+                   "skipping re-projection\n", filPath, spkPath);
+            return;
+        }
+        Output("RefeaturizeFromShifts: .fil not available, using circular shift "
+               "from .spk (may have minor wrap-around artefacts)\n");
+    }
+
+    std::vector<int16_t> wave(static_cast<size_t>(waveSamples));
+    std::vector<int16_t> filRow;
+    if (filFp) filRow.resize(static_cast<size_t>(NbTotalChannels));
+
+    int nReproj = 0, nSkipped = 0;
+
+    for (int p = 0; p < nPoints; ++p) {
+        const int sh = (p < static_cast<int>(spikeShifts.size()))
+                     ? spikeShifts[p] : 0;
+        if (sh == 0 || sh == std::numeric_limits<int>::min()) { ++nSkipped; continue; }
+
+        // Recover raw timestamp for this spike (needed for .fil offset and extTs)
+        const float normTs = Data.m_Data[p * nDims + timeDimIdx];
+        const float rawTs  = normTs * sessionSamples + timeRawMin;
+
+        if (filFp) {
+            // ── .fil path: re-extract at corrected timestamp ───────────────
+            // extTs = rawTs + sh: the window that, after rolling forward by sh,
+            // presents the waveform with its peak at PeakSampleIndex.
+            // Matches Klusters: startSample = ts - peakSamp0 where ts = oldTs + cumShift.
+            const int64_t off  = static_cast<int64_t>(rawTs) + sh - PeakSampleIndex;
+            if (off < 0 || off + nSamplesPerSpike >
+                    static_cast<int64_t>(sessionSamples) + 1) { ++nSkipped; continue; }
+
+            fseeko(filFp, off * NbTotalChannels * 2, SEEK_SET);
+            bool ok = true;
+            for (int s = 0; s < nSamplesPerSpike && ok; s++) {
+                if (fread(filRow.data(), 2, NbTotalChannels, filFp) !=
+                        static_cast<size_t>(NbTotalChannels)) { ok = false; break; }
+                for (int c = 0; c < nChan; c++)
+                    wave[s * nChan + c] = filRow[GroupChannelIds[c]];
+            }
+            if (!ok) { ++nSkipped; continue; }
+
+        } else {
+            // ── .spk fallback: circular shift ─────────────────────────────
+            off_t offset = static_cast<off_t>(p) * waveSamples * sizeof(int16_t);
+            if (fseeko(spkFp, offset, SEEK_SET) != 0) { ++nSkipped; continue; }
+            std::vector<int16_t> raw(static_cast<size_t>(waveSamples));
+            if (fread(raw.data(), sizeof(int16_t), waveSamples, spkFp)
+                    != static_cast<size_t>(waveSamples)) { ++nSkipped; continue; }
+            const int N = nSamplesPerSpike;
+            for (int s = 0; s < N; ++s) {
+                const int src = ((s + sh) % N + N) % N;
+                for (int c = 0; c < nChan; ++c)
+                    wave[s * nChan + c] = raw[src * nChan + c];
+            }
+        }
+
+        // ── Project through PCA and update Data[] ─────────────────────────
+        // Eigenvector layout in PCAE file (written by process_pca):
+        //   evecBuf[component * data2use + sample]  (col-major)
+        // Correct indexing: ev[k * pm.data2use + s]
+        // NOT ev[s * pm.nComp + k] — that would be row-major (wrong).
+        float* dataRow = Data.m_Data + p * nDims;
+        for (int ch = 0; ch < pm.nChan; ++ch) {
+            const auto& mu = pm.mean[static_cast<size_t>(ch)];
+            const auto& ev = pm.eigvec[static_cast<size_t>(ch)];
+            for (int k = 0; k < pm.nComp; ++k) {
+                double val = 0.0;
+                for (int s = 0; s < pm.data2use; ++s) {
+                    const int sIdx = pm.recShift + s;
+                    double raw = static_cast<double>(
+                        wave[static_cast<size_t>(sIdx * nChan + ch)]);
+                    if (pm.isCentered) raw -= mu[static_cast<size_t>(s)];
+                    val += ev[static_cast<size_t>(k * pm.data2use + s)] * raw;
+                }
+                const int featIdx = ch * pm.nComp + k;
+                dataRow[featIdx] = (static_cast<float>(val) - dimMin_[featIdx])
+                                   * dimRange_[featIdx];
+            }
+        }
+
+        // Update the .fet timestamp column with extTs = rawTs + sh.
+        // The .res timestamp (spike detection sample) is left unchanged —
+        // the physical spike event did not move; only the extraction window did.
+        // This matches Klusters: resTs = original, .fet last col = extTs.
+        if (sessionSamples > 0.0f) {
+            const float extTs   = rawTs + static_cast<float>(sh);
+            dataRow[timeDimIdx] = (extTs - timeRawMin) / sessionSamples;
+        }
+
+        ++nReproj;
+    }
+
+    if (filFp) fclose(filFp);
+    if (spkFp) fclose(spkFp);
+
+    Output("RefeaturizeFromShifts: re-projected %d spikes via %s, skipped %d\n",
+           nReproj, filFp ? ".fil" : ".spk (circular shift)", nSkipped);
+}
+
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -2116,25 +2321,29 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (auto& [p, packed] : perChunkAssign[k]) pointPacked[p] = packed;
     }
 
-    // Phase 1.5: xcorr shift computation + PCA re-projection.
-    //
-    // spikeShifts[p] = xcorr lag (in samples) for global spike index p.
-    // Pre-filled with INT_MIN as the "unassigned" sentinel so that
-    // RealignChunkWaveforms can use home-chunk first-write-wins:
-    // overlap spikes that appear in both chunk k and k+1 get their
-    // shift from chunk k (the first, natural-home chunk), not k+1.
-    std::vector<int> spikeShifts(
-        static_cast<size_t>(nPoints),
-        std::numeric_limits<int>::min());
 
+    // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
+    //
+    // Step 1 — RealignChunkWaveforms: xcorr each spike against its cluster mean
+    //   waveform (from .spk).  Cheap: .spk is already on disk; XcorrDispatch
+    //   is batched per cluster.  Home-chunk first-write-wins for overlap spikes.
+    //
+    // Step 2 — RefeaturizeFromShifts: re-extract each shifted spike from .fil
+    //   at (rawTs - shift - PeakSampleIndex), project through PCA eigenvectors,
+    //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
+    //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
+    //   Falls back to circular shift when .fil is unavailable.
     if (NbChannels > 0 && NbSamplesPerSpike > 0) {
-        Output("Phase 1.5: xcorr alignment  "
-               "(nChan=%d nSamp=%d maxShift=%d bytesPerSample=%d)\n",
-               NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4, NbBytesPerSample);
+        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d)\n",
+               NbChannels, NbSamplesPerSpike);
+        std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
+                                     std::numeric_limits<int>::min());
         RealignChunkWaveforms(chunkPoints, perChunkClass,
                               NbChannels, NbSamplesPerSpike, NbBytesPerSample,
                               spikeShifts);
         RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
+        // Write corrected .spk and .fet to .pending files, then rename.
+        WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
     }
 
     // ── Phase 2: cross-chunk model matching ─────────────────────────────────
@@ -2491,27 +2700,30 @@ float KK::RunChunkedCEM(float chunkMinutes,
             if (pointPacked[p] < 0) pointPacked[p] = packed;  // first-write-wins
     }
 
-    // -------------------------------------------------------------------
-    // Phase 1.5: xcorr shift computation + PCA re-projection.
+
+    // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
-    // spikeShifts[p] = xcorr lag (in samples) for global spike index p.
-    // Pre-filled with INT_MIN as the "unassigned" sentinel so that
-    // RealignChunkWaveforms can use home-chunk first-write-wins:
-    // overlap spikes that appear in both chunk k and k+1 get their
-    // shift from chunk k (the first, natural-home chunk), not k+1.
-    //std::vector<int> spikeShifts(
-    //    static_cast<size_t>(nPoints),
-    //    std::numeric_limits<int>::min());
+    // Step 1 — RealignChunkWaveforms: xcorr each spike against its cluster mean
+    //   waveform (from .spk).  Cheap: .spk is already on disk; XcorrDispatch
+    //   is batched per cluster.  Home-chunk first-write-wins for overlap spikes.
     //
-    //if (NbChannels > 0 && NbSamplesPerSpike > 0) {
-    //    Output("Phase 1.5: xcorr alignment  "
-    //           "(nChan=%d nSamp=%d maxShift=%d bytesPerSample=%d)\n",
-    //           NbChannels, NbSamplesPerSpike, NbSamplesPerSpike / 4, NbBytesPerSample);
-    //    RealignChunkWaveforms(chunkPoints, perChunkClass,
-    //                          NbChannels, NbSamplesPerSpike, NbBytesPerSample,
-    //                          spikeShifts);
-    //    RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-    //}
+    // Step 2 — RefeaturizeFromShifts: re-extract each shifted spike from .fil
+    //   at (rawTs - shift - PeakSampleIndex), project through PCA eigenvectors,
+    //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
+    //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
+    //   Falls back to circular shift when .fil is unavailable.
+    if (NbChannels > 0 && NbSamplesPerSpike > 0) {
+        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d)\n",
+               NbChannels, NbSamplesPerSpike);
+        std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
+                                     std::numeric_limits<int>::min());
+        RealignChunkWaveforms(chunkPoints, perChunkClass,
+                              NbChannels, NbSamplesPerSpike, NbBytesPerSample,
+                              spikeShifts);
+        RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
+        // Write corrected .spk and .fet to .pending files, then rename.
+        WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+    }
 
     // Build overlap vote matrices for MergeChunkModels.
     std::vector<std::unordered_map<int,int>> overlapVotes(
@@ -2677,140 +2889,186 @@ float KK::RunChunkedCEM(float chunkMinutes,
 // derived from the chunk where it naturally lives.  Overlap spikes that
 // also appeared in a later chunk retain their home-chunk shift here.
 // ---------------------------------------------------------------------------
-void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
-                                 int nChan, int nSamplesPerSpike)
+// ---------------------------------------------------------------------------
+// KK::WritePhase15Checkpoint
+//
+// After RealignChunkWaveforms + RefeaturizeFromShifts, write corrected .spk
+// and .fet files using the pending-file pattern from Klusters:
+//   1. Write to SESSION.spk.N.pending and SESSION.fet.N.pending
+//   2. Rename each .pending file over the original when fully written
+//
+// This ensures the originals are never partially overwritten; on failure
+// the originals remain intact.
+//
+// .spk: for each shifted spike, re-extracts from .fil at
+//       (rawTs + shift - PeakSampleIndex), matching Klusters extTs.
+//       Unshifted spikes are copied from the original .spk unchanged.
+//
+// .fet: for each shifted spike, writes updated PCA features from Data[]
+//       (set by RefeaturizeFromShifts) with extTs = rawTs+shift in the
+//       last (timestamp) column.  Unshifted spikes are copied unchanged.
+//
+// .res: NOT modified.  The spike detection timestamp is the sample of the
+//       peak in the raw signal — that physical event did not move.  Only
+//       the extraction window moved.  Matches Klusters' resTs = original.
+// ---------------------------------------------------------------------------
+void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
+                                  int nChan, int nSamplesPerSpike)
 {
-    if (spikeShifts.empty() || nChan <= 0 || nSamplesPerSpike <= 0) return;
-
-    // ── Load PCA model ────────────────────────────────────────────────────
-    char pcaPath[STRLEN + 16];
-    snprintf(pcaPath, sizeof(pcaPath), "%s.pca.%d", FileBase, ElecNo);
-    FILE* pf = fopen(pcaPath, "rb");
-    if (!pf) {
-        Output("RefeaturizeFromShifts: %s not found — skipping re-projection\n",
-               pcaPath);
+    const int nShifted = static_cast<int>(
+        std::count_if(spikeShifts.begin(), spikeShifts.end(),
+                      [](int s){ return s != 0; }));
+    if (nShifted == 0) {
+        Output("WritePhase15Checkpoint: no shifts — files unchanged\n");
         return;
     }
+    Output("WritePhase15Checkpoint: updating %d / %d spikes\n", nShifted, nPoints);
 
-    struct PcaModel {
-        int nChan, data2use, nComp, recShift;
-        bool isCentered;
-        std::vector<std::vector<double>> mean;    // [nChan][data2use]
-        std::vector<std::vector<double>> eigvec;  // [nChan][data2use * nComp] col-major
-    } pm;
+    char spkOrig[STRLEN+16], fetOrig[STRLEN+16];
+    char spkTmp [STRLEN+32], fetTmp [STRLEN+32];
+    snprintf(spkOrig, sizeof(spkOrig), "%s.spk.%d",         FileBase, ElecNo);
+    snprintf(fetOrig, sizeof(fetOrig), "%s.fet.%d",         FileBase, ElecNo);
+    snprintf(spkTmp,  sizeof(spkTmp),  "%s.spk.%d.pending", FileBase, ElecNo);
+    snprintf(fetTmp,  sizeof(fetTmp),  "%s.fet.%d.pending", FileBase, ElecNo);
 
+    const float sessionSamples = timeRawMax - timeRawMin;
+    const int   timeDimIdx     = nDims - 1;
+    const int   waveSamples    = nChan * nSamplesPerSpike;
+
+    // ── .spk: open original for read, pending for write ──────────────────
+    FILE* spkR = fopen(spkOrig, "rb");
+    FILE* spkW = fopen(spkTmp,  "wb");
+
+    // Open .fil for re-extraction of shifted spikes
+    char filPath[STRLEN + 8];
+    snprintf(filPath, sizeof(filPath), "%s.fil", FileBase);
+    FILE* filF = (NbTotalChannels > 0 && !GroupChannelIds.empty())
+               ? fopen(filPath, "rb") : nullptr;
+    if (!filF)
+        Output("WritePhase15Checkpoint: .fil not available — shifted spikes "
+               "copied from .spk (circular shift artefact possible)\n");
+
+    if (!spkR || !spkW) {
+        if (spkR) fclose(spkR);
+        if (spkW) fclose(spkW);
+        if (filF) fclose(filF);
+        Output("WritePhase15Checkpoint: cannot open .spk files — skipping\n");
+        goto skip_spk;
+    }
     {
-        int32_t magic, ver, nc, d2u, ncomp, rs, ic;
-        auto rd = [&](int32_t& v) { return fread(&v, 4, 1, pf) == 1; };
-        if (!rd(magic)||!rd(ver)||!rd(nc)||!rd(d2u)||!rd(ncomp)||!rd(rs)||!rd(ic)) {
-            Output("RefeaturizeFromShifts: truncated PCA header in %s\n", pcaPath);
-            fclose(pf); return;
-        }
-        if (magic != static_cast<int32_t>(0x50434145)) {
-            Output("RefeaturizeFromShifts: bad magic in %s — not a PCAE file\n", pcaPath);
-            fclose(pf); return;
-        }
-        pm.nChan = nc; pm.data2use = d2u; pm.nComp = ncomp;
-        pm.recShift = rs; pm.isCentered = (ic != 0);
+        std::vector<int16_t> spkRow(static_cast<size_t>(waveSamples));
+        std::vector<int16_t> filRow;
+        if (filF) filRow.resize(static_cast<size_t>(NbTotalChannels));
 
-        if (pm.nChan != nChan) {
-            Output("RefeaturizeFromShifts: PCA has %d channels, spike group has %d — "
-                   "skipping\n", pm.nChan, nChan);
-            fclose(pf); return;
-        }
-
-        pm.mean.resize(static_cast<size_t>(nc));
-        pm.eigvec.resize(static_cast<size_t>(nc));
-        for (int ch = 0; ch < nc; ++ch) {
-            pm.mean[static_cast<size_t>(ch)].resize(static_cast<size_t>(d2u));
-            if (fread(pm.mean[static_cast<size_t>(ch)].data(), 8,
-                      static_cast<size_t>(d2u), pf) != static_cast<size_t>(d2u)) {
-                Output("RefeaturizeFromShifts: truncated PCA means (ch %d)\n", ch);
-                fclose(pf); return;
+        for (int p = 0; p < nPoints; p++) {
+            // Read original waveform
+            if (fread(spkRow.data(), sizeof(int16_t), waveSamples, spkR)
+                    != static_cast<size_t>(waveSamples)) {
+                Output("WritePhase15Checkpoint: .spk short read at spike %d\n", p);
+                break;
             }
-            size_t evSz = static_cast<size_t>(d2u * ncomp);
-            pm.eigvec[static_cast<size_t>(ch)].resize(evSz);
-            if (fread(pm.eigvec[static_cast<size_t>(ch)].data(), 8, evSz, pf) != evSz) {
-                Output("RefeaturizeFromShifts: truncated PCA eigenvectors (ch %d)\n", ch);
-                fclose(pf); return;
-            }
-        }
-    }
-    fclose(pf);
 
-    const int nPCAFeatures = pm.nChan * pm.nComp;  // columns 0..nPCAFeatures-1 in Data[]
-    if (nPCAFeatures > nDims - 1) {
-        Output("RefeaturizeFromShifts: PCA feature count (%d) exceeds nDims-1 (%d) — "
-               "skipping\n", nPCAFeatures, nDims - 1);
-        return;
-    }
-
-    // ── Open .spk file ────────────────────────────────────────────────────
-    char spkPath[STRLEN + 16];
-    snprintf(spkPath, sizeof(spkPath), "%s.spk.%d", FileBase, ElecNo);
-    FILE* sf = fopen(spkPath, "rb");
-    if (!sf) {
-        Output("RefeaturizeFromShifts: %s not found — skipping re-projection\n", spkPath);
-        return;
-    }
-
-    const int waveSamples = nChan * nSamplesPerSpike;
-    std::vector<int16_t> rawWave(static_cast<size_t>(waveSamples));
-    std::vector<int16_t> aligned(static_cast<size_t>(waveSamples));
-
-    int nReproj = 0, nSkipped = 0;
-
-    for (int p = 0; p < nPoints; ++p) {
-        const int sh = (p < static_cast<int>(spikeShifts.size()))
-                     ? spikeShifts[p] : 0;
-        // Skip spikes with no shift or unassigned (INT_MIN sentinel)
-        if (sh == 0 || sh == std::numeric_limits<int>::min()) { ++nSkipped; continue; }
-
-        // Read original waveform from .spk (not the shifted copy — write-back suppressed)
-        off_t offset = static_cast<off_t>(p) * waveSamples * sizeof(int16_t);
-        if (fseeko(sf, offset, SEEK_SET) != 0) { ++nSkipped; continue; }
-        if (fread(rawWave.data(), sizeof(int16_t), static_cast<size_t>(waveSamples), sf)
-                != static_cast<size_t>(waveSamples)) { ++nSkipped; continue; }
-
-        // Apply circular shift (roll left by sh):
-        //   aligned[s * nChan + c] = rawWave[((s + sh) % N + N) % N * nChan + c]
-        const int N = nSamplesPerSpike;
-        for (int s = 0; s < N; ++s) {
-            const int src = ((s + sh) % N + N) % N;
-            for (int c = 0; c < nChan; ++c)
-                aligned[static_cast<size_t>(s * nChan + c)] =
-                    rawWave[static_cast<size_t>(src * nChan + c)];
-        }
-
-        // Project through PCA and update Data[]
-        float* dataRow = Data.m_Data + p * nDims;
-        for (int ch = 0; ch < pm.nChan; ++ch) {
-            const auto& mu = pm.mean[static_cast<size_t>(ch)];
-            const auto& ev = pm.eigvec[static_cast<size_t>(ch)];
-            for (int k = 0; k < pm.nComp; ++k) {
-                double val = 0.0;
-                for (int s = 0; s < pm.data2use; ++s) {
-                    const int sIdx = pm.recShift + s;
-                    double raw = static_cast<double>(
-                        aligned[static_cast<size_t>(sIdx * nChan + ch)]);
-                    if (pm.isCentered) raw -= mu[static_cast<size_t>(s)];
-                    val += ev[static_cast<size_t>(s * pm.nComp + k)] * raw;
+            const int sh = (p < static_cast<int>(spikeShifts.size())) ? spikeShifts[p] : 0;
+            if (sh != 0) {
+                if (filF) {
+                    // Re-extract from .fil at extTs - PeakSampleIndex
+                    const float normTs = Data.m_Data[p * nDims + timeDimIdx];
+                    // Data[] timestamp column was updated by RefeaturizeFromShifts
+                    // to (rawTs + sh - timeRawMin) / sessionSamples.
+                    // Recover extTs: normTs * sessionSamples + timeRawMin = rawTs + sh
+                    const float extTs  = normTs * sessionSamples + timeRawMin;
+                    const int64_t off  = static_cast<int64_t>(extTs) - PeakSampleIndex;
+                    bool ok = (off >= 0);
+                    if (ok) {
+                        fseeko(filF, off * NbTotalChannels * 2, SEEK_SET);
+                        for (int s = 0; s < nSamplesPerSpike && ok; s++) {
+                            if (fread(filRow.data(), 2, NbTotalChannels, filF)
+                                    != static_cast<size_t>(NbTotalChannels)) { ok=false; break; }
+                            for (int c = 0; c < nChan; c++)
+                                spkRow[s * nChan + c] = filRow[GroupChannelIds[c]];
+                        }
+                    }
+                    // If .fil read fails, keep original (already in spkRow)
                 }
-                // Map the projected value into the same normalised [0,1] space
-                // as the original Data[] using the per-dim min/range from LoadData().
-                const int featIdx = ch * pm.nComp + k;
-                const float normVal = (static_cast<float>(val) - dimMin_[featIdx])
-                                      * dimRange_[featIdx];
-                dataRow[featIdx] = normVal;
+                // If no .fil, spkRow already holds the original; the circular
+                // shift applied by RealignChunkWaveforms is NOT in .spk (write-
+                // back was suppressed), so we leave it as-is.
+            }
+
+            if (fwrite(spkRow.data(), sizeof(int16_t), waveSamples, spkW)
+                    != static_cast<size_t>(waveSamples)) {
+                Output("WritePhase15Checkpoint: .spk write failed at spike %d\n", p);
+                break;
             }
         }
-        ++nReproj;
+        fclose(spkR); fclose(spkW);
+        if (filF) fclose(filF);
     }
-    fclose(sf);
+    rename(spkTmp, spkOrig);
+    Output("  .spk updated\n");
+    skip_spk:;
 
-    Output("RefeaturizeFromShifts: re-projected %d spikes, skipped %d (no shift)\n",
-           nReproj, nSkipped);
+    // ── .fet: open original for read (header + all rows), pending for write ──
+    {
+        FILE* fetR = fopen(fetOrig, "rb");
+        FILE* fetW = fopen(fetTmp,  "wb");
+        if (!fetR || !fetW) {
+            if (fetR) fclose(fetR);
+            if (fetW) fclose(fetW);
+            Output("WritePhase15Checkpoint: cannot open .fet files — skipping\n");
+            goto skip_fet;
+        }
+
+        int32_t nFetDims = 0;
+        if (fread(&nFetDims, sizeof(int32_t), 1, fetR) != 1 || nFetDims <= 0) {
+            fclose(fetR); fclose(fetW);
+            Output("WritePhase15Checkpoint: bad .fet header\n");
+            goto skip_fet;
+        }
+        fwrite(&nFetDims, sizeof(int32_t), 1, fetW);
+
+        const int nd = static_cast<int>(nFetDims);
+        std::vector<int64_t> rowBuf(static_cast<size_t>(nd));
+
+        for (int p = 0; p < nPoints; p++) {
+            if (fread(rowBuf.data(), sizeof(int64_t), nd, fetR)
+                    != static_cast<size_t>(nd)) {
+                Output("WritePhase15Checkpoint: .fet short read at spike %d\n", p);
+                break;
+            }
+            const int sh = (p < static_cast<int>(spikeShifts.size())) ? spikeShifts[p] : 0;
+            if (sh != 0) {
+                // PCA feature columns from Data[] (already updated by RefeaturizeFromShifts)
+                const float* row  = Data.m_Data + p * nDims;
+                const int nPCACols = std::min(nDims - 1, nd - 1);
+                for (int d = 0; d < nPCACols; d++) {
+                    // Denormalise: raw = norm / dimRange + dimMin
+                    const float raw = (dimRange_[d] > 0.0f)
+                        ? row[d] / dimRange_[d] + dimMin_[d]
+                        : dimMin_[d];
+                    rowBuf[static_cast<size_t>(d)] = static_cast<int64_t>(std::llroundf(raw));
+                }
+                // Last column: extTs = rawTs + sh = Data[] time col * sessionSamples + timeRawMin
+                if (nd > 1 && sessionSamples > 0.0f) {
+                    const float normTs = row[nDims - 1];
+                    const float extTs  = normTs * sessionSamples + timeRawMin;
+                    rowBuf[static_cast<size_t>(nd - 1)] = static_cast<int64_t>(extTs);
+                }
+            }
+            if (fwrite(rowBuf.data(), sizeof(int64_t), nd, fetW)
+                    != static_cast<size_t>(nd)) {
+                Output("WritePhase15Checkpoint: .fet write failed at spike %d\n", p);
+                break;
+            }
+        }
+        fclose(fetR); fclose(fetW);
+        rename(fetTmp, fetOrig);
+        Output("  .fet updated\n");
+    }
+    skip_fet:;
+    Output("WritePhase15Checkpoint: done\n");
 }
+
 
 // ---------------------------------------------------------------------------
 void KK::SaveBestMeans() {

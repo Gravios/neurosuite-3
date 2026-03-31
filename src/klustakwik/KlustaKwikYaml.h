@@ -34,10 +34,13 @@
 #include <vector>
 
 struct KKYamlSpikeParams {
-    int    nbChannels    = 0;     ///< 0 = not found in YAML
-    int    nbSamples     = 0;     ///< 0 = not found in YAML
-    double samplingRate  = 0.0;   ///< 0.0 = not found in YAML
-    int    nBits         = 0;     ///< acquisitionSystem.nBits (diagnostic only)
+    int    nbChannels      = 0;   ///< spike group channel count (matches .spk layout)
+    int    nbSamples       = 0;   ///< samples per spike window
+    int    peakSampleIndex = 0;   ///< 0-based index of the spike peak within the window
+    int    nTotalChannels  = 0;   ///< acquisitionSystem.nChannels (total in .fil file)
+    double samplingRate    = 0.0; ///< 0.0 = not found in YAML
+    int    nBits           = 0;   ///< acquisitionSystem.nBits (diagnostic only)
+    std::vector<int> channelIds;  ///< 0-based channel indices for this group in the .fil file
     // Probe geometry — used by inline drift estimation
     int    probeId       = -1;    ///< -1 = not present in YAML
     int    shankIndex    = 0;     ///< 0-based shank index on the probe

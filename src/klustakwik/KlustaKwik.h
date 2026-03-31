@@ -65,14 +65,23 @@ extern float MergeThresh;
 extern int   GlobalMergeIter;
 
 // Phase 1.5 waveform realignment
-// NbChannels > 0 && NbSamplesPerSpike > 0  →  realignment enabled in chunked mode.
-// Both are auto-detected from <FileBase>.yaml at startup (see KlustaKwikYaml.cpp).
-// Override explicitly with -NbChannels and -NbSamplesPerSpike if needed.
-extern int   NbChannels;
-extern int   NbSamplesPerSpike;
-// NbBytesPerSample: bytes per sample in the .spk file (2 for 12/14/16-bit, 4 for 32-bit).
-// Defaults to 2. Pass -NbBytesPerSample 4 for 32-bit recordings.
+// Phase 1.5 waveform realignment parameters.
+// NbChannels, NbSamplesPerSpike, PeakSampleIndex, NbTotalChannels and
+// GroupChannelIds are auto-detected from <FileBase>.yaml at startup.
+// Override NbChannels / NbSamplesPerSpike explicitly if needed.
+extern int   NbChannels;       ///< channels in this spike group (.spk layout)
+extern int   NbSamplesPerSpike; ///< waveform window width in samples
+extern int   PeakSampleIndex;  ///< 0-based peak position within the window
+extern int   NbTotalChannels;  ///< total channels in the .fil file
+// NbBytesPerSample: bytes per sample in the .spk file (2 for ≤16-bit, 4 for 32-bit).
 extern int   NbBytesPerSample;
+// GroupChannelIds: 0-based ADC channel indices for this spike group.
+// Used to extract the right columns from the .fil file during Phase 1.5.
+extern std::vector<int> GroupChannelIds;
+// nRuns: when > 0 in chunked mode, replaces the (MaxClusters-MinClusters+1)×nStarts
+// outer loop with nRuns independent runs, each seeded differently.
+// MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
+extern int   nRuns;
 
 // Output control
 // SaveIntermediates=1 (default): write .clu whenever a new best is found.

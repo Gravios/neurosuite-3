@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 #include <cmath>
 #include <ctime>
 #include <cstdarg>
@@ -62,12 +63,14 @@ float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML or
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
 int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations; 0 = skip Phase 3 entirely
 int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; final write only
-// Phase 1.5 waveform realignment (requires chunked mode)
-// Both must be > 0 to enable realignment; 0 disables (default, safe for callers
-// that do not pass .spk parameters, e.g. when running in two-phase-only mode).
-int   NbChannels             = 0;       // channels per spike group (matches .spk layout)
-int   NbSamplesPerSpike      = 0;       // samples per channel per spike in .spk file
-int   NbBytesPerSample       = 2;       // bytes per sample: 2 for ≤16-bit, 4 for 32-bit
+// Phase 1.5 waveform realignment parameters
+int   NbChannels             = 0;    ///< spike group channel count
+int   NbSamplesPerSpike      = 0;    ///< waveform window width
+int   PeakSampleIndex        = 0;    ///< 0-based spike peak within window
+int   NbTotalChannels        = 0;    ///< total channels in .fil file
+int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
+std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
+int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
 int   fSaveModel             = 1;
 FILE *pModelFile             = nullptr;
 int   SplitEvery             = 50;
@@ -105,7 +108,10 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(SaveIntermediates);
     INT_PARAM(NbChannels);
     INT_PARAM(NbSamplesPerSpike);
+    INT_PARAM(PeakSampleIndex);
+    INT_PARAM(NbTotalChannels);
     INT_PARAM(NbBytesPerSample);
+    INT_PARAM(nRuns);
     INT_PARAM(DistDump);
     FLOAT_PARAM(DistThresh);
     INT_PARAM(FullStepEvery);
@@ -526,6 +532,27 @@ int main(int argc, char **argv) {
                             "KlustaKwik: NbSamplesPerSpike=%d  (from YAML, group %d)\n",
                             NbSamplesPerSpike, ElecNo);
                 }
+                if (PeakSampleIndex == 0 && yp.peakSampleIndex > 0) {
+                    PeakSampleIndex = yp.peakSampleIndex;
+                    fprintf(stderr,
+                            "KlustaKwik: PeakSampleIndex=%d  (from YAML, group %d)\n",
+                            PeakSampleIndex, ElecNo);
+                }
+                if (NbTotalChannels == 0 && yp.nTotalChannels > 0) {
+                    NbTotalChannels = yp.nTotalChannels;
+                    fprintf(stderr,
+                            "KlustaKwik: NbTotalChannels=%d  (from YAML)\n",
+                            NbTotalChannels);
+                }
+                if (GroupChannelIds.empty() && !yp.channelIds.empty()) {
+                    GroupChannelIds = yp.channelIds;
+                    fprintf(stderr, "KlustaKwik: GroupChannelIds=[");
+                    for (int i = 0; i < std::min((int)GroupChannelIds.size(), 4); i++)
+                        fprintf(stderr, "%d%s", GroupChannelIds[i],
+                                i + 1 < (int)GroupChannelIds.size() ? "," : "");
+                    if ((int)GroupChannelIds.size() > 4) fprintf(stderr, "...");
+                    fprintf(stderr, "]  (from YAML, group %d)\n", ElecNo);
+                }
                 // SamplingRate: only override when the user has not provided
                 // a value on the command line (sentinel = 0.0f).
                 if (SamplingRate == 0.0f && yp.samplingRate > 0.0) {
@@ -726,25 +753,33 @@ int main(int argc, char **argv) {
 #else
         const int nCoresAvail = 1;
 #endif
-        const int nWorkers     = (ParallelK > 0) ? std::min(ParallelK, (MaxClusters - MinClusters + 1) * nStarts) : 1;
+        // When nRuns > 0 in chunked mode, the outer loop collapses to nRuns
+        // independent runs.  MinClusters/MaxClusters remain as per-chunk
+        // TrySplits bounds only; the K sweep is removed.
+        // When nRuns = 0, fall back to the original (MaxClusters-MinClusters+1)×nStarts
+        // loop for backward compatibility with non-chunked usage.
+        const bool useNRuns = (nRuns > 0) && useChunked;
+        const int  nRunsEff = useNRuns ? nRuns
+                           : (MaxClusters - MinClusters + 1) * nStarts;
+        const int nWorkers     = (ParallelK > 0) ? std::min(ParallelK, nRunsEff) : 1;
         const int threadsPerJob = std::max(1, nCoresAvail / nWorkers);
 
-        // ── Serial path (ParallelK=0): original K/start double loop ────────
-        //
-        // This is the original code path — one (K, start) at a time, full
-        // OMP thread count for Phase-1 chunks, GPU active.
-        // Used when ParallelK is not set or equals 0.
+        // ── Serial path (ParallelK=0) ───────────────────────────────────────
         if (nWorkers == 1) {
-            for (K1.nStartingClusters = MinClusters;
-                 K1.nStartingClusters <= MaxClusters;
-                 K1.nStartingClusters++) {
-                K1.minClustersAlive = MinClusters;
-                for (int i = 0; i < nStarts; i++) {
+            for (int run = 0; run < nRunsEff; run++) {
+                const int K   = useNRuns ? MinClusters
+                              : MinClusters + run / nStarts;
+                const int i   = useNRuns ? run : run % nStarts;
+                K1.nStartingClusters = K;
+                K1.minClustersAlive  = MinClusters;
+                if (useNRuns)
+                    fprintf(stderr, "  run=%d/%d\r", run + 1, nRunsEff);
+                else
                     fprintf(stderr, "  K=%d/%d start=%d/%d\r",
-                            K1.nStartingClusters, MaxClusters, i + 1, nStarts);
-                    fflush(stderr);
-                    Output("Starting from %d clusters...\n", K1.nStartingClusters);
-                    srand(RandomSeed + K1.nStartingClusters * 1000 + i);
+                            K, MaxClusters, i + 1, nStarts);
+                fflush(stderr);
+                Output("Run %d / %d  (K=%d)...\n", run + 1, nRunsEff, K);
+                srand(RandomSeed + run);
 
                     float score;
                     if (useExtChunks)
@@ -761,18 +796,17 @@ int main(int argc, char **argv) {
                     else
                         score = K1.CEM();
 
-                    Output("%d->%d Clusters: Score %f, best is %f\n",
-                           K1.nStartingClusters, K1.nClustersAlive, score, BestScore);
+                Output("%d->%d Clusters: Score %f, best is %f\n",
+                       K1.nStartingClusters, K1.nClustersAlive, score, BestScore);
 
-                    if (score < BestScore) {
-                        Output("THE BEST YET!\n");
-                        BestScore = score;
-                        kSv.BestScoreSave = BestScore;
-                        for (int p2 = 0; p2 < K1.nPoints; p2++) K1.BestClass[p2] = K1.Class[p2];
-                        if (SaveIntermediates) SaveOutput(K1.BestClass);
-                    }
-                    Output("\n");
+                if (score < BestScore) {
+                    Output("THE BEST YET!\n");
+                    BestScore = score;
+                    kSv.BestScoreSave = BestScore;
+                    for (int p2 = 0; p2 < K1.nPoints; p2++) K1.BestClass[p2] = K1.Class[p2];
+                    if (SaveIntermediates) SaveOutput(K1.BestClass);
                 }
+                Output("\n");
             }
         } else {
         // ── Parallel path (ParallelK>0): flatten all (K, start) pairs ──────
@@ -780,12 +814,13 @@ int main(int argc, char **argv) {
         // Each job is an independent KK clone with its own KlustaSave.
         // GPU is disabled on all clones (cpu-only); Phase-3 GPU runtime is
         // negligible compared to Phase-1 OMP chunk speedup.
-        struct KJob { int K; int start; };
+        struct KJob { int K; int run; };
         std::vector<KJob> jobs;
-        jobs.reserve((MaxClusters - MinClusters + 1) * nStarts);
-        for (int K = MinClusters; K <= MaxClusters; K++)
-            for (int i = 0; i < nStarts; i++)
-                jobs.push_back({K, i});
+        jobs.reserve(nRunsEff);
+        for (int run = 0; run < nRunsEff; run++) {
+            const int K = useNRuns ? MinClusters : MinClusters + run / nStarts;
+            jobs.push_back({K, run});
+        }
 
         const int nJobs = (int)jobs.size();
 
@@ -822,9 +857,9 @@ int main(int argc, char **argv) {
 #endif
         for (int j = 0; j < nJobs; j++) {
             const int K   = jobs[j].K;
-            const int run = jobs[j].start;
+            const int run = jobs[j].run;
 
-            srand(RandomSeed + K * 1000 + run);
+            srand(RandomSeed + run);
 
             float score;
             if (useExtChunks)
@@ -860,7 +895,7 @@ int main(int argc, char **argv) {
                    jobScores[j], BestScore);
             if (jobScores[j] < BestScore) {
                 Output("THE BEST YET! (K=%d start=%d)\n",
-                       jobs[j].K, jobs[j].start + 1);
+                       jobs[j].K, jobs[j].run + 1);
                 BestScore              = jobScores[j];
                 kSv.BestScoreSave      = BestScore;
                 kSv.nDimsBest          = workerKsv[j].nDimsBest;

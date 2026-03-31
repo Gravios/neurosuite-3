@@ -54,8 +54,9 @@ KKYamlSpikeParams kkReadYamlSpikeParams(const char* fileBase, int elecNo)
     try {
         const auto& acq = root["acquisitionSystem"];
         if (acq && acq.IsMap()) {
-            if (acq["samplingRate"]) out.samplingRate = acq["samplingRate"].as<double>(0.0);
-            if (acq["nBits"])        out.nBits        = acq["nBits"].as<int>(0);
+            if (acq["samplingRate"]) out.samplingRate    = acq["samplingRate"].as<double>(0.0);
+            if (acq["nBits"])        out.nBits           = acq["nBits"].as<int>(0);
+            if (acq["nChannels"])    out.nTotalChannels  = acq["nChannels"].as<int>(0);
         }
     } catch (...) {}   // missing / wrong-type fields → keep defaults
 
@@ -118,9 +119,24 @@ KKYamlSpikeParams kkReadYamlSpikeParams(const char* fileBase, int elecNo)
             }
         }
 
-        // nSamples: scalar
+        // nSamples and peakSampleIndex: scalars
         if (grp["nSamples"])
             out.nbSamples = grp["nSamples"].as<int>(0);
+        if (grp["peakSampleIndex"])
+            out.peakSampleIndex = grp["peakSampleIndex"].as<int>(0);
+
+        // channelIds: the actual 0-based ADC channel indices for this group,
+        // used to extract the correct columns when re-reading the .fil file.
+        if (grp["channels"]) {
+            const auto& ch = grp["channels"];
+            if (ch.IsSequence()) {
+                for (const auto& c : ch)
+                    if (!c.IsNull()) out.channelIds.push_back(c.as<int>());
+            } else if (ch.IsMap() && ch["channel"] && ch["channel"].IsSequence()) {
+                for (const auto& c : ch["channel"])
+                    if (!c.IsNull()) out.channelIds.push_back(c.as<int>());
+            }
+        }
 
         // ── Probe geometry fields ────────────────────────────────────
         // probeId and shankIndex are set in the YAML by ndm_setupgroups
