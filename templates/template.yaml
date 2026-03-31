@@ -993,6 +993,7 @@ programs:
   - {name: maxPossibleClusters,  value: 500,     status: Optional}
   # ── Initialisation ─────────────────────────────────────────────────────────
   - {name: nStarts,              value: 3,       status: Optional}
+  - {name: nRuns,                value: 0,       status: Optional}
   - {name: initMethod,           value: farthest, status: Optional}
   - {name: penaltyMix,           value: 0,       status: Optional}
   # ── Chunked CEM ────────────────────────────────────────────────────────────
@@ -1050,7 +1051,15 @@ programs:
 
     # nStarts
 
-    Number of random restarts; best log-likelihood solution is kept (default 3).
+    Number of random restarts in non-chunked (two-phase) mode (default 3).
+    In chunked mode, prefer nRuns.
+
+    # nRuns
+
+    Independent chunked-CEM runs (default 0 = legacy (MaxClusters-MinClusters+1)×nStarts
+    loop). When nRuns > 0 and chunkMinutes > 0, MinClusters and MaxClusters only control
+    the per-chunk TrySplits ceiling; the outer K sweep is replaced by nRuns flat runs each
+    seeded differently. Recommended: 3.
 
     # initMethod
 
@@ -1137,6 +1146,20 @@ programs:
 
     Write .clu.N each time a new best score is found during CEM
     (1 = yes, 0 = no, default 0).
+
+    PHASE 1.5 WAVEFORM REALIGNMENT
+
+    Phase 1.5 runs after all per-chunk CEMTwoPhase jobs and before Phase 2.
+
+    Step 1 — xcorr alignment: per-cluster mean waveform from .spk, xcorr each
+    spike against its mean to find the shift. Home-chunk first-write-wins for
+    overlap spikes. Needs NbChannels + nbSamplesPerSpike (auto from YAML).
+
+    Step 2 — .fil re-extraction: re-reads the aligned waveform from the .fil
+    broadband file at (rawTs - shift - PeakSampleIndex), projects through PCA,
+    updates Data[] before Phase 2 matching. Falls back to circular shift from
+    .spk when .fil is absent. Needs NbTotalChannels + GroupChannelIds
+    (auto-detected from acquisitionSystem.nChannels and group channels).
 
     RE-RUN CONTROL
 
