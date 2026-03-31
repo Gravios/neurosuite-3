@@ -71,6 +71,7 @@ int   NbTotalChannels        = 0;    ///< total channels in .fil file
 int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
+int   Phase15Iters           = 2;    ///< xcorr iterations in RealignChunkWaveforms
 int   fSaveModel             = 1;
 FILE *pModelFile             = nullptr;
 int   SplitEvery             = 50;
@@ -112,6 +113,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(NbTotalChannels);
     INT_PARAM(NbBytesPerSample);
     INT_PARAM(nRuns);
+    INT_PARAM(Phase15Iters);
     INT_PARAM(DistDump);
     FLOAT_PARAM(DistThresh);
     INT_PARAM(FullStepEvery);

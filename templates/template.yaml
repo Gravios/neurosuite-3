@@ -994,6 +994,7 @@ programs:
   # ── Initialisation ─────────────────────────────────────────────────────────
   - {name: nStarts,              value: 3,       status: Optional}
   - {name: nRuns,                value: 0,       status: Optional}
+  - {name: phase15Iters,         value: 2,       status: Optional}
   - {name: initMethod,           value: farthest, status: Optional}
   - {name: penaltyMix,           value: 0,       status: Optional}
   # ── Chunked CEM ────────────────────────────────────────────────────────────
