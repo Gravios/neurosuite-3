@@ -70,7 +70,7 @@ param_ext=$(param_file_ext "$session")
 
 print_header "$session - Detecting/extracting spikes (spatial-derivative)"
 
-check_commands_installed xpathReader process_extractspikes_sdiff
+check_commands_installed process_extractspikes_sdiff
 
 inputs_missing "$session.$param_ext" $session.fil && exit $INPUTS_MISSING
 
@@ -122,14 +122,25 @@ do
     electrodes=$(echo $electrodes | sed 's/ /,/g')
     electrodeList="$electrodeList:$electrodes"
 
-    samplesInWaveform=$(yaml_read $session \
+    # Capture waveform params from the first group needing processing;
+    # warn if any later group differs (process_extractspikes_sdiff uses a
+    # single -w / -p for all groups — per-group variation is not supported).
+    _ns=$(yaml_read $session \
         "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-    peakSample=$(yaml_read $session \
+    _ps=$(yaml_read $session \
         "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
-    check_mandatory_variable $samplesInWaveform \
+    check_mandatory_variable $_ns \
         "missing number of samples in waveform for group $electrodeGroup"
-    check_mandatory_variable $peakSample \
+    check_mandatory_variable $_ps \
         "missing peak sample for group $electrodeGroup"
+    if [ -z "$samplesInWaveform" ]; then
+        samplesInWaveform=$_ns
+        peakSample=$_ps
+    elif [ "$_ns" != "$samplesInWaveform" ] || [ "$_ps" != "$peakSample" ]; then
+        echo_warning "Group $electrodeGroup has nSamples=$_ns peakSampleIndex=$_ps"
+        echo_warning "  which differs from first group ($samplesInWaveform/$peakSample)."
+        echo_warning "  process_extractspikes_sdiff uses uniform params; using first group values."
+    fi
 done
 
 n=$((${#electrodeList}-1))
