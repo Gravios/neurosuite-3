@@ -105,10 +105,17 @@ def find_probe_file(probe_rel: str, search_dirs: list[Path]) -> Path | None:
 # Probe file parsing
 # ---------------------------------------------------------------------------
 
-def parse_probe(probe_path: Path, channel_offset: int) -> list[list[int]]:
+def parse_probe(probe_path: Path,
+                channel_offset: int) -> tuple[list[list[int]], list[list[list[float]]]]:
     """
-    Return a list-of-lists: one sublist per shank, each containing the
-    physical (ADC) channel indices for that shank after applying channel_offset.
+    Return (shanks, geometries):
+      shanks     : list of lists of physical (ADC) channel indices per shank
+      geometries : list of lists of [x_um, y_um] per site per shank,
+                   parallel to shanks.  None entries where geometry is absent.
+
+    The geometry is read from probeFile.sites.geometry (flat list of [x,y]
+    for all sites in shank-major order).  When absent, geometries[i] is a
+    list of Nones with the same length as shanks[i].
     """
     with open(probe_path) as fh:
         pf = yaml.safe_load(fh)
@@ -121,16 +128,18 @@ def parse_probe(probe_path: Path, channel_offset: int) -> list[list[int]]:
     n_shanks     = int(shanks_cfg.get("count",          1))
     n_per_shank  = int(sites_cfg.get( "count_per_shank", 1))
 
-    ch_map_cfg = root.get("channelMap", {}) or {}
+    # Full probe geometry: flat list of [x_um, y_um] for all sites,
+    # shank-major order (sites 0..n-1 = shank 0, sites n..2n-1 = shank 1, ...).
+    all_geometry: list = sites_cfg.get("geometry") or []
+
+    ch_map_cfg   = root.get("channelMap", {}) or {}
     explicit_map = ch_map_cfg.get("map")  # None or list
 
-    shanks: list[list[int]] = []
+    shanks:     list[list[int]]         = []
+    geometries: list[list[list[float]]] = []
 
     if explicit_map and isinstance(explicit_map, list):
-        # Expect n_shanks sublists each of length n_per_shank
-        # Also accept a flat list of n_shanks*n_per_shank entries
         if isinstance(explicit_map[0], (int, float)):
-            # flat → reshape
             flat = [int(c) for c in explicit_map]
             if len(flat) != n_shanks * n_per_shank:
                 raise ValueError(
@@ -139,18 +148,32 @@ def parse_probe(probe_path: Path, channel_offset: int) -> list[list[int]]:
                 )
             for i in range(n_shanks):
                 shanks.append([channel_offset + flat[i * n_per_shank + j]
-                                for j in range(n_per_shank)])
+                               for j in range(n_per_shank)])
+                # geometry slice: flat[i*n .. (i+1)*n] indexes into all_geometry
+                geo_slice = []
+                for j in range(n_per_shank):
+                    idx = flat[i * n_per_shank + j]
+                    geo_slice.append(all_geometry[idx]
+                                     if idx < len(all_geometry) else None)
+                geometries.append(geo_slice)
         else:
-            # list of sublists
             for sub in explicit_map:
                 shanks.append([channel_offset + int(c) for c in sub])
+                geometries.append([None] * len(sub))
     else:
-        # Sequential assignment
+        # Sequential assignment: site i of shank k = all_geometry[k*n + i]
         for i in range(n_shanks):
             base = channel_offset + i * n_per_shank
             shanks.append(list(range(base, base + n_per_shank)))
+            geo_slice = []
+            for j in range(n_per_shank):
+                flat_idx = i * n_per_shank + j
+                geo_slice.append(
+                    [float(v) for v in all_geometry[flat_idx]]
+                    if flat_idx < len(all_geometry) else None)
+            geometries.append(geo_slice)
 
-    return shanks
+    return shanks, geometries
 
 
 # ---------------------------------------------------------------------------
@@ -168,13 +191,33 @@ def build_anat_group(channels: list[int], probe_id: int, shank_index: int) -> di
 def build_spike_group(channels: list[int],
                       n_samples: int,
                       peak_sample_index: int,
-                      n_features: int) -> dict:
-    return {
+                      n_features: int,
+                      probe_id: int = -1,
+                      shank_index: int = 0,
+                      site_positions: list | None = None) -> dict:
+    """Build a spikeDetection.channelGroups entry.
+
+    probeId and shankIndex are written alongside the waveform parameters
+    so that KlustaKwik, process_estimatedrift, and process_localise can
+    resolve the electrode site geometry for this group without needing
+    to cross-reference the anatomicalDescription section.
+    """
+    grp: dict = {
         "channels":        channels,
         "nSamples":        n_samples,
         "peakSampleIndex": peak_sample_index,
         "nFeatures":       n_features,
     }
+    if probe_id >= 0:
+        grp["probeId"]    = probe_id
+        grp["shankIndex"] = shank_index
+    if site_positions is not None:
+        # Inline electrode geometry: [[x_um, y_um], ...] parallel to channels[].
+        # None entries mark sites whose position is absent from the probe file.
+        # Consumers (process_estimatedrift, process_localise, KlustaKwik) read this
+        # field if present, falling back to the probe file for backward compat.
+        grp["sitePositions_um"] = site_positions
+    return grp
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +271,8 @@ def main() -> None:
     running_offset = 0   # cumulative channels consumed by preceding probes
 
     for probe_entry in probes_list:
-        probe_id     = int(probe_entry.get("id", 0))
+        probe_id     = int(probe_entry.get("probeId",
+                           probe_entry.get("id", 0)))
         probe_rel    = str(probe_entry.get("probeFile") or "")
         # probes[].channelOffset is an *additional* per-probe base (e.g. to match
         # hardware ADC numbering).  The inter-probe offset is accumulated
@@ -250,11 +294,15 @@ def main() -> None:
             )
             sys.exit(1)
 
+        # Normalise the key: always write 'probeId' (canonical) in the output
+        # regardless of whether the input used 'id' or 'probeId'.
+        probe_entry["probeId"] = probe_id
+        probe_entry.pop("id", None)  # remove legacy 'id' key if present
         print(f"  probe {probe_id}: {probe_path.name}  running_offset={running_offset}"
               f"  extra_off={extra_off}  effective_offset={channel_off}")
 
         try:
-            shanks = parse_probe(probe_path, channel_off)
+            shanks, geometries = parse_probe(probe_path, channel_off)
         except Exception as exc:
             print(f"ERROR parsing {probe_path}: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -273,11 +321,15 @@ def main() -> None:
                   f"  ({len(channels)} ch)")
 
             anat_groups.append(build_anat_group(channels, probe_id, shank_idx))
+            site_pos = geometries[shank_idx] if shank_idx < len(geometries) else None
             spike_groups.append(build_spike_group(
                 channels,
                 args.n_samples,
                 args.peak_sample_index,
                 args.n_features,
+                probe_id=probe_id,
+                shank_index=shank_idx,
+                site_positions=site_pos,
             ))
 
         # Update probes[].anatomicalGroups in-place

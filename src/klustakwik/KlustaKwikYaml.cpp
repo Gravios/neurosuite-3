@@ -122,6 +122,59 @@ KKYamlSpikeParams kkReadYamlSpikeParams(const char* fileBase, int elecNo)
         if (grp["nSamples"])
             out.nbSamples = grp["nSamples"].as<int>(0);
 
+        // ── Probe geometry fields ────────────────────────────────────
+        // probeId and shankIndex are set in the YAML by ndm_setupgroups
+        // when the session was configured with a probe file.  They are
+        // used by the inline drift estimation subprocess to load the
+        // correct electrode site geometry for this spike group.
+        if (grp["probeId"])
+            out.probeId    = grp["probeId"].as<int>(-1);
+        if (grp["shankIndex"])
+            out.shankIndex = grp["shankIndex"].as<int>(0);
+
+        // Cross-reference probeId to the top-level probes: list to get
+        // the probe file path for this group.
+        if (out.probeId >= 0) {
+            try {
+                const auto& probes = root["probes"];
+                if (probes && probes.IsSequence()) {
+                    for (const auto& pe : probes) {
+                        if (!pe.IsMap()) continue;
+                        // Accept both "probeId" (canonical) and legacy "id"
+                        const int pe_pid = pe["probeId"] ? pe["probeId"].as<int>(-1) :
+                                           pe["id"]      ? pe["id"].as<int>(-1) : -1;
+                        if (pe_pid == out.probeId && pe["probeFile"])
+                            out.probeFile = pe["probeFile"].as<std::string>();
+                    }
+                }
+            } catch (...) {}
+        }
+
+        // Optional override for the probe library search path
+        try {
+            if (root["probeLibraryPath"])
+                out.probeLibraryPath = root["probeLibraryPath"].as<std::string>();
+        } catch (...) {}
+
+        // ── Inline site positions ─────────────────────────────────────────
+        // Read sitePositions_um: [[x0,y0],[x1,y1],...] written by ndm_setupgroups.
+        // Null entries (absent geometry) are skipped.
+        try {
+            const auto& sp = grp["sitePositions_um"];
+            if (sp && sp.IsSequence()) {
+                for (const auto& xy : sp) {
+                    if (!xy || xy.IsNull()) continue;
+                    if (xy.IsSequence() && xy.size() >= 2) {
+                        std::array<float,2> pos = {
+                            xy[0].as<float>(0.0f),
+                            xy[1].as<float>(0.0f)
+                        };
+                        out.sitePositions.push_back(pos);
+                    }
+                }
+            }
+        } catch (...) {}
+
     } catch (const YAML::Exception& e) {
         fprintf(stderr,
                 "KlustaKwik: warning — error reading spikeDetection from '%s': %s\n",

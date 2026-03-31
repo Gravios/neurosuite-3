@@ -29,12 +29,23 @@
  ***************************************************************************/
 
 #pragma once
+#include <array>
+#include <string>
+#include <vector>
 
 struct KKYamlSpikeParams {
     int    nbChannels    = 0;     ///< 0 = not found in YAML
     int    nbSamples     = 0;     ///< 0 = not found in YAML
     double samplingRate  = 0.0;   ///< 0.0 = not found in YAML
     int    nBits         = 0;     ///< acquisitionSystem.nBits (diagnostic only)
+    // Probe geometry — used by inline drift estimation
+    int    probeId       = -1;    ///< -1 = not present in YAML
+    int    shankIndex    = 0;     ///< 0-based shank index on the probe
+    std::string probeFile;        ///< probeFile path from probes: list (empty = not set)
+    std::string probeLibraryPath; ///< optional override from YAML probeLibraryPath
+    // Inline electrode site positions from sitePositions_um.
+    // Each entry is {x_um, y_um}.  Empty when not present in YAML.
+    std::vector<std::array<float,2>> sitePositions; ///< [x_um, y_um] per site
     bool   valid         = false; ///< true if YAML was parsed successfully
 };
 

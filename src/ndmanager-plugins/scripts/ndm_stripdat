@@ -67,9 +67,9 @@ check_commands_installed xpathReader process_subtractspikes
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
-samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
-nBits=$(xml_read $session "//acquisitionSystem/nBits")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+nBits=$(yaml_read $session "//acquisitionSystem/nBits")
 redetectSpikes=$(read_script_parameter $session redetectSpikes)
 
 check_mandatory_variable $nChannels   "missing number of channels"
@@ -81,7 +81,7 @@ nBits=${nBits:-16}
 # // Build group specs
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 
 if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]
 then
@@ -132,11 +132,11 @@ do
 		exit $INPUTS_MISSING
 	fi
 
-	channels=$(xml_read $session \
+	channels=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/channels/channel")
-	nSamples=$(xml_read $session \
+	nSamples=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/nSamples")
-	peakSample=$(xml_read $session \
+	peakSample=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
 
 	check_mandatory_variable $channels   "missing channel list for spike group $group"

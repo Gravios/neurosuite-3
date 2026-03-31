@@ -87,14 +87,14 @@ check_commands_installed process_denoiseuniform
 # // Read global parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
-resolution=$(xml_read $session "//acquisitionSystem/nBits")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+resolution=$(yaml_read $session "//acquisitionSystem/nBits")
 
 check_mandatory_variable $nChannels  "missing total number of channels (acquisitionSystem/nChannels)"
 check_mandatory_variable $resolution "missing ADC resolution (acquisitionSystem/nBits)"
 
 # Number of spike groups
-nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 if [ "$nElectrodeGroups" -eq 0 ]
 then
 	echo_error "no spikeDetection groups found — check parameter file"
@@ -151,11 +151,11 @@ once()
 
 	# ---- per-group parameters ----
 	# channels in this group
-	electrodes=($(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	electrodes=($(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
 	nGroupChannels=${#electrodes[*]}
 
 	# samples per waveform for this group
-	nSamples=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	nSamples=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
 	check_mandatory_variable $nSamples \
 		"missing nSamples for electrode group $electrodeGroup"
 

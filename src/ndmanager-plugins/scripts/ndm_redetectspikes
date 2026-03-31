@@ -58,10 +58,10 @@ inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
-resolution=$(xml_read $session "//acquisitionSystem/nBits")
-samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
-nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+resolution=$(yaml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 windowHalfLength=$(read_script_parameter -s ndm_hipass $session windowHalfLength)
 thresholdFactor=$(read_script_parameter $session thresholdFactor)
 refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
@@ -106,7 +106,7 @@ cleanFil=$cleanStem.fil
 echo_info "High-pass filtering $cleanDat → $cleanFil"
 
 # Chunk size: read from session XML (same parameter as ndm_hipass), default 128 MiB
-chunkSize=$(xml_read $session \
+chunkSize=$(yaml_read $session \
 	"//program/n[.='ndm_hipass']/../parameters/parameter/n[.='chunkSize']/../value")
 chunkSize=${chunkSize:-134217728}
 maxChunkSize=536870912
@@ -133,16 +133,16 @@ secondsToBytes()
 electrodeList=""
 for group in $(seq 1 $nElectrodeGroups)
 do
-	electrodes=$(xml_read $session \
+	electrodes=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/channels/channel")
 	check_mandatory_variable $electrodes \
 		"missing electrode list for group $group"
 	electrodes=$(echo $electrodes | sed 's/ /,/g')
 	electrodeList="$electrodeList:$electrodes"
 
-	samplesInWaveform=$(xml_read $session \
+	samplesInWaveform=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/nSamples")
-	peakSample=$(xml_read $session \
+	peakSample=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
 	check_mandatory_variable $samplesInWaveform \
 		"missing nSamples for group $group"
@@ -184,9 +184,9 @@ export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 waveformArgs=""
 for group in $(seq 1 $nElectrodeGroups)
 do
-	samplesInWaveform=$(xml_read $session \
+	samplesInWaveform=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/nSamples")
-	peakSample=$(xml_read $session \
+	peakSample=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
 	# process_extractspikes uses the single -w and -p for all groups
 	# (they must be the same for all groups — standard ndm convention)
@@ -229,9 +229,9 @@ echo_info "Merging new spikes into original .res/.spk/.clu files"
 mergeSpecs=""
 for group in $(seq 1 $nElectrodeGroups)
 do
-	samplesInWaveform=$(xml_read $session \
+	samplesInWaveform=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/nSamples")
-	nChInGroup=$(xml_read $session \
+	nChInGroup=$(yaml_read $session \
 		"//spikeDetection/channelGroups/group[$group]/channels/channel" \
 		| wc -w)
 	mergeSpecs="$mergeSpecs $session:$cleanStem:$group:$samplesInWaveform:$nChInGroup"

@@ -82,10 +82,10 @@ secondsToBytes()
 }
 
 # ── Read parameters ─────────────────────────────────────────────────────────
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
-resolution=$(xml_read $session "//acquisitionSystem/nBits")
-samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
-nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+resolution=$(yaml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 
 # Check output files – only process groups whose outputs are missing.
 for group in $(seq 1 $nElectrodeGroups)
@@ -115,16 +115,16 @@ fi
 # Build per-group waveform parameters.
 for electrodeGroup in $electrodeGroups
 do
-    electrodes=$(xml_read $session \
+    electrodes=$(yaml_read $session \
         "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
     check_mandatory_variable $electrodes \
         "missing electrode list for group $electrodeGroup"
     electrodes=$(echo $electrodes | sed 's/ /,/g')
     electrodeList="$electrodeList:$electrodes"
 
-    samplesInWaveform=$(xml_read $session \
+    samplesInWaveform=$(yaml_read $session \
         "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-    peakSample=$(xml_read $session \
+    peakSample=$(yaml_read $session \
         "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
     check_mandatory_variable $samplesInWaveform \
         "missing number of samples in waveform for group $electrodeGroup"

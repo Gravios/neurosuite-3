@@ -47,8 +47,8 @@ check_commands_installed xpathReader process_resample
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
-oldSamplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+oldSamplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 newSamplingRate=$(read_script_parameter $session samplingRate)
 subtractSpikes=$(read_script_parameter $session subtractSpikes)
 
