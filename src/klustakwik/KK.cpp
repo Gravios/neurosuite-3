@@ -1708,60 +1708,22 @@ void KK::RealignChunkWaveforms(
             }
         }
 
-        // ── Per-cluster alignment and writeback ────────────────────────────
+        // ── Per-cluster iterative alignment (mirrors Klusters realignSpikes) ──
+        //
+        // Phase15Iters iterations, matching Klusters' nIter loop:
+        //   1. Build cluster mean from current waveBuf (updated each iter)
+        //   2. Pre-align template peak to PeakSampleIndex
+        //   3. Xcorr waveBuf against template
+        //   4. Circularly shift waveBuf in-place (cheap; improves next iter's mean)
+        //   5. Accumulate cumulative shift into spikeShifts[]
+        // After all iters, RefeaturizeFromShifts re-extracts from .fil using
+        // the total cumulative shift — no wrap-around artifact.
         for (auto& [cid, idxList] : members) {
             if (cid == 0) { nSkipped += static_cast<int>(idxList.size()); continue; }
             const int nMem = static_cast<int>(idxList.size());
 
-            // 1. Cluster mean (float, sample-major)
-            std::vector<float> meanWave(waveSamples, 0.0f);
-            for (int idx : idxList) {
-                const int16_t* row = waves.data() + static_cast<size_t>(idx) * waveSamples;
-                for (int s = 0; s < waveSamples; s++)
-                    meanWave[s] += static_cast<float>(row[s]);
-            }
-            for (float& v : meanWave) v /= nMem;
-
-            // 2. Template — channel-major int16 for XcorrDispatch
-            //    tmpl[ch * nSamplesPerSpike + t]
-            //    from: meanWave[t * nChan + ch]
-            std::vector<int16_t> tmplBuf(static_cast<size_t>(nChan) * nSamplesPerSpike);
-            for (int ch = 0; ch < nChan; ch++)
-                for (int s = 0; s < nSamplesPerSpike; s++)
-                    tmplBuf[static_cast<size_t>(ch) * nSamplesPerSpike + s] =
-                        static_cast<int16_t>(std::lroundf(meanWave[s * nChan + ch]));
-
-            // Pre-align template: shift its peak to PeakSampleIndex.
-            // Without this the xcorr aligns spikes to wherever the cluster
-            // mean happens to peak (which drifts away from the canonical
-            // peak position), progressively biasing all spikes.
-            // This exactly mirrors the Klusters realignSpikes() logic.
-            if (PeakSampleIndex > 0) {
-                int    tmplPeak = 0;
-                double bestAmp  = -1.0;
-                for (int s = 0; s < nSamplesPerSpike; s++) {
-                    double amp = 0.0;
-                    for (int ch = 0; ch < nChan; ch++)
-                        amp += std::abs(static_cast<double>(
-                            tmplBuf[static_cast<size_t>(ch) * nSamplesPerSpike + s]));
-                    if (amp > bestAmp) { bestAmp = amp; tmplPeak = s; }
-                }
-                const int tShift = PeakSampleIndex - tmplPeak;
-                if (tShift != 0) {
-                    std::vector<int16_t> aligned(tmplBuf.size());
-                    for (int ch = 0; ch < nChan; ch++)
-                        for (int s = 0; s < nSamplesPerSpike; s++) {
-                            const int src = (s - tShift + nSamplesPerSpike) % nSamplesPerSpike;
-                            aligned[static_cast<size_t>(ch * nSamplesPerSpike + s)] =
-                                tmplBuf[static_cast<size_t>(ch * nSamplesPerSpike + src)];
-                        }
-                    tmplBuf = std::move(aligned);
-                }
-            }
-
-            // 3. Spike batch — channel-major int16 for XcorrDispatch
-            //    waveBuf[(mi*nChan + ch) * nSamplesPerSpike + t]
-            //    from: waves[localIdx*waveSamples + t*nChan + ch]
+            // Build channel-major spike batch — updated in-place each iteration
+            //   waveBuf[(mi*nChan + ch) * nSamplesPerSpike + t]
             std::vector<int16_t> waveBuf(
                 static_cast<size_t>(nMem) * nChan * nSamplesPerSpike);
             for (int mi = 0; mi < nMem; mi++) {
@@ -1774,32 +1736,91 @@ void KK::RealignChunkWaveforms(
                                 * nSamplesPerSpike + s] = src[s * nChan + ch];
             }
 
-            // 4. Compute shifts — normalised circular xcorr, all channels summed
-            std::vector<int>   shifts(static_cast<size_t>(nMem), 0);
-            std::vector<float> scores(static_cast<size_t>(nMem), 0.0f);
-            XcorrDispatch::compute(
-                waveBuf.data(), tmplBuf.data(),
-                nMem, nChan, nSamplesPerSpike,
-                maxShift, /*minScore=*/0.0f,
-                shifts.data(), scores.data());
+            // cumIterShift[mi] = total shift accumulated across all iters for spike mi
+            std::vector<int> cumIterShift(static_cast<size_t>(nMem), 0);
 
-            // 5. Store per-spike shifts in spikeShifts[].
-            //
-            // Home-chunk first-write-wins: each spike gets its shift from the
-            // first (lowest-index) chunk it appears in.  Overlap spikes that also
-            // appear in chunk k+1 are already set here in chunk k, so chunk k+1
-            // skips them — their shift was computed against chunk k's template,
-            // which is the most spatially consistent reference for that spike.
-            //
-            // RefeaturizeFromShifts() reads these shifts after RealignChunkWaveforms
-            // returns and re-projects each shifted spike through the PCA eigenvectors
-            // to update Data[] before Phase 2 cross-chunk matching.
+            const int nIter = (Phase15Iters > 0) ? Phase15Iters : 1;
+            for (int iter = 0; iter < nIter; iter++) {
+
+                // 1. Build mean from current waveBuf (channel-major, int64 accumulator)
+                std::vector<int64_t> acc(
+                    static_cast<size_t>(nChan) * nSamplesPerSpike, 0);
+                for (int mi = 0; mi < nMem; mi++) {
+                    const int16_t* w = waveBuf.data()
+                        + static_cast<ptrdiff_t>(mi) * (nChan * nSamplesPerSpike);
+                    for (int e = 0; e < nChan * nSamplesPerSpike; e++)
+                        acc[static_cast<size_t>(e)] += static_cast<int64_t>(w[e]);
+                }
+                std::vector<int16_t> tmplBuf(static_cast<size_t>(nChan) * nSamplesPerSpike);
+                for (int e = 0; e < nChan * nSamplesPerSpike; e++)
+                    tmplBuf[static_cast<size_t>(e)] =
+                        static_cast<int16_t>(acc[static_cast<size_t>(e)] / nMem);
+
+                // 2. Pre-align template peak to PeakSampleIndex
+                if (PeakSampleIndex > 0) {
+                    int    tmplPeak = 0;
+                    double bestAmp  = -1.0;
+                    for (int s = 0; s < nSamplesPerSpike; s++) {
+                        double amp = 0.0;
+                        for (int ch = 0; ch < nChan; ch++)
+                            amp += std::abs(static_cast<double>(
+                                tmplBuf[static_cast<size_t>(ch * nSamplesPerSpike + s)]));
+                        if (amp > bestAmp) { bestAmp = amp; tmplPeak = s; }
+                    }
+                    const int tShift = PeakSampleIndex - tmplPeak;
+                    if (tShift != 0) {
+                        std::vector<int16_t> aligned(tmplBuf.size());
+                        for (int ch = 0; ch < nChan; ch++)
+                            for (int s = 0; s < nSamplesPerSpike; s++) {
+                                const int src = (s - tShift + nSamplesPerSpike) % nSamplesPerSpike;
+                                aligned[static_cast<size_t>(ch * nSamplesPerSpike + s)] =
+                                    tmplBuf[static_cast<size_t>(ch * nSamplesPerSpike + src)];
+                            }
+                        tmplBuf = std::move(aligned);
+                    }
+                }
+
+                // 3. Xcorr waveBuf vs template
+                std::vector<int>   iterShifts(static_cast<size_t>(nMem), 0);
+                std::vector<float> iterScores(static_cast<size_t>(nMem), 0.0f);
+                XcorrDispatch::compute(
+                    waveBuf.data(), tmplBuf.data(),
+                    nMem, nChan, nSamplesPerSpike,
+                    maxShift, /*minScore=*/0.0f,
+                    iterShifts.data(), iterScores.data());
+
+                // 4. Circularly shift waveBuf in-place (channel-major)
+                //    newSpike[ch*N + t] = oldSpike[ch*N + (t + s + N) % N]
+                //    Mirrors Klusters: tmp[ch*N+t] = w[ch*N + (t+s+N)%N]
+                int changed = 0;
+                for (int mi = 0; mi < nMem; mi++) {
+                    const int s = iterShifts[static_cast<size_t>(mi)];
+                    if (s == 0) continue;
+                    int16_t* w = waveBuf.data()
+                        + static_cast<ptrdiff_t>(mi) * (nChan * nSamplesPerSpike);
+                    std::vector<int16_t> tmp(static_cast<size_t>(nChan) * nSamplesPerSpike);
+                    for (int t = 0; t < nSamplesPerSpike; t++) {
+                        const int src = (t + s + nSamplesPerSpike) % nSamplesPerSpike;
+                        for (int ch = 0; ch < nChan; ch++)
+                            tmp[static_cast<size_t>(ch * nSamplesPerSpike + t)] =
+                                w[static_cast<size_t>(ch * nSamplesPerSpike + src)];
+                    }
+                    std::copy(tmp.begin(), tmp.end(), w);
+                    cumIterShift[static_cast<size_t>(mi)] += s;
+                    ++changed;
+                }
+                if (changed == 0) break;   // converged early
+
+            } // end iter loop
+
+            // 5. Write total cumulative shift into spikeShifts[] — home-chunk
+            //    first-write-wins for overlap spikes.
+            //    RefeaturizeFromShifts will re-extract from .fil at
+            //    rawTs + cumShift - PeakSampleIndex (clean, no wrap-around).
             for (int mi = 0; mi < nMem; mi++) {
-                const int sh       = shifts[mi];
+                const int sh       = cumIterShift[static_cast<size_t>(mi)];
                 const int localIdx = idxList[mi];
-                const int p        = pts[localIdx];  // global spike index
-                // Only store if not yet assigned (home-chunk first-write-wins).
-                // spikeShifts is pre-filled with INT_MIN as the "unassigned" sentinel.
+                const int p        = pts[localIdx];
                 if (p < static_cast<int>(spikeShifts.size()) &&
                     spikeShifts[p] == std::numeric_limits<int>::min())
                     spikeShifts[p] = sh;

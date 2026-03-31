@@ -82,6 +82,7 @@ extern std::vector<int> GroupChannelIds;
 // outer loop with nRuns independent runs, each seeded differently.
 // MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
 extern int   nRuns;
+extern int   Phase15Iters; ///< realignment iterations in RealignChunkWaveforms (default 2)
 
 // Output control
 // SaveIntermediates=1 (default): write .clu whenever a new best is found.
