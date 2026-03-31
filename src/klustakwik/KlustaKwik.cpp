@@ -760,8 +760,11 @@ int main(int argc, char **argv) {
         // TrySplits bounds only; the K sweep is removed.
         // When nRuns = 0, fall back to the original (MaxClusters-MinClusters+1)×nStarts
         // loop for backward compatibility with non-chunked usage.
-        const bool useNRuns = (nRuns > 0) && useChunked;
-        const int  nRunsEff = useNRuns ? nRuns
+        // nRuns > 0 in chunked mode means per-chunk restarts inside
+        // RunChunkedCEM; the outer pipeline runs exactly once.
+        // nRuns == 0 in non-chunked mode keeps the K×nStarts outer loop.
+        const bool useChunkedRestarts = (nRuns > 0) && useChunked;
+        const int  nRunsEff = useChunkedRestarts ? 1
                            : (MaxClusters - MinClusters + 1) * nStarts;
         const int nWorkers     = (ParallelK > 0) ? std::min(ParallelK, nRunsEff) : 1;
         const int threadsPerJob = std::max(1, nCoresAvail / nWorkers);
@@ -769,19 +772,15 @@ int main(int argc, char **argv) {
         // ── Serial path (ParallelK=0) ───────────────────────────────────────
         if (nWorkers == 1) {
             for (int run = 0; run < nRunsEff; run++) {
-                const int K   = useNRuns ? MinClusters
-                              : MinClusters + run / nStarts;
-                const int i   = useNRuns ? run : run % nStarts;
+                const int K   = MinClusters + run / nStarts;
+                const int i   = run % nStarts;
                 K1.nStartingClusters = K;
                 K1.minClustersAlive  = MinClusters;
-                if (useNRuns)
-                    fprintf(stderr, "  run=%d/%d\r", run + 1, nRunsEff);
-                else
-                    fprintf(stderr, "  K=%d/%d start=%d/%d\r",
-                            K, MaxClusters, i + 1, nStarts);
+                fprintf(stderr, "  K=%d/%d start=%d/%d\r",
+                        K, MaxClusters, i + 1, nStarts);
                 fflush(stderr);
                 Output("Run %d / %d  (K=%d)...\n", run + 1, nRunsEff, K);
-                srand(RandomSeed + run);
+                srand(RandomSeed + i);
 
                     float score;
                     if (useExtChunks)
@@ -820,7 +819,7 @@ int main(int argc, char **argv) {
         std::vector<KJob> jobs;
         jobs.reserve(nRunsEff);
         for (int run = 0; run < nRunsEff; run++) {
-            const int K = useNRuns ? MinClusters : MinClusters + run / nStarts;
+            const int K = MinClusters + run / nStarts;
             jobs.push_back({K, run});
         }
 

@@ -1057,10 +1057,12 @@ programs:
 
     # nRuns
 
-    Independent chunked-CEM runs (default 0 = legacy (MaxClusters-MinClusters+1)×nStarts
-    loop). When nRuns > 0 and chunkMinutes > 0, MinClusters and MaxClusters only control
-    the per-chunk TrySplits ceiling; the outer K sweep is replaced by nRuns flat runs each
-    seeded differently. Recommended: 3.
+    Per-chunk CEM restarts when using chunked mode (default 0 = single start per chunk).
+    When nRuns > 0 and chunkMinutes > 0, each chunk independently runs CEMTwoPhase nRuns
+    times with different random seeds and keeps its best-scoring result before handing
+    it to Phase 2 cross-chunk matching. Phase 0 preseed, Phase 1.5 realignment, and
+    Phase 2 each still run only once. This is the per-chunk analogue of nStarts in
+    non-chunked mode. Recommended: 3.
 
     # initMethod
 
