@@ -51,7 +51,7 @@ int   MaxIter                = 500;
 char  StartCluFile[STRLEN]   = "";
 float PenaltyMix             = 0.0f;
 char  InitMethod[STRLEN]     = "farthest";  // "farthest" | "random"
-int   TimeMergeIter          = 30;          // Phase 2 iterations; 0 = disabled
+int   TimeMergeIter          = 50;          // Phase 2 iterations; 0 = disabled
 
 // Three-phase chunked CEM parameters
 float ChunkMinutes           = 0.0f;    // 0 = disabled (use two-phase only)
@@ -900,9 +900,9 @@ int main(int argc, char **argv) {
         //
         // The nSamples value is read from the YAML for this group so
         // process_estimatedrift.py uses the correct waveform dimensions.
-        if (useChunked && !(*ChunkFile)) {
-            _RunInlineDriftEstimation(FileBase, ElecNo, K1.nDims - 1);
-        }
+        //if (useChunked && !(*ChunkFile)) {
+        //    _RunInlineDriftEstimation(FileBase, ElecNo, K1.nDims - 1);
+        //}
 
         if (fSaveModel) { export_model(pModelFile, K1); fclose(pModelFile); }
 
