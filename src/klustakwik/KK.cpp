@@ -2296,19 +2296,45 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             0
 #endif
         ];
-        Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
-        Kc.nStartingClusters = nStartingClusters;
-        Kc.NoisePoint        = 1;
+        // ── nRuns restarts per chunk ────────────────────────────────────
+        // nRuns > 0: run CEMTwoPhase nRuns times with different seeds,
+        // keep the best-scoring solution for this chunk before Phase 2.
+        // Mirrors nStarts in non-chunked mode but confined to one chunk
+        // so Phase 0, Phase 1.5 and Phase 2 each still run only once.
+        const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
+        float bestChunkScore = HugeScore;
+        int   bestNClusters  = 0;
+        std::vector<int> bestClass(static_cast<size_t>(nPts), 0);
 
-        for (int i = 0; i < nPts; i++) {
-            const int p = pts[i];
-            for (int d = 0; d < nFullDims; d++)
-                Kc.Data[i * nFullDims + d] = Data[p * nFullDims + d];
+        for (int run = 0; run < runsPerChunk; run++) {
+            srand(static_cast<unsigned>(RandomSeed)
+                  + static_cast<unsigned>(k) * 997u
+                  + static_cast<unsigned>(run));
+            Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
+            Kc.nStartingClusters = nStartingClusters;
+            Kc.NoisePoint        = 1;
+            for (int i2 = 0; i2 < nPts; i2++) {
+                const int p2 = pts[i2];
+                for (int d = 0; d < nFullDims; d++)
+                    Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
+            }
+            const float runScore = Kc.CEMTwoPhase(timeMergeIter);
+            if (runScore < bestChunkScore) {
+                bestChunkScore = runScore;
+                bestNClusters  = Kc.nClustersAlive;
+                for (int i2 = 0; i2 < nPts; i2++) bestClass[i2] = Kc.Class[i2];
+            }
         }
+        // Restore best Class[] for harvesting.
+        for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = bestClass[i2];
+        for (int c = 0; c < MaxPossibleClusters; c++) Kc.ClassAlive[c] = 0;
+        for (int i2 = 0; i2 < nPts; i2++) Kc.ClassAlive[Kc.Class[i2]] = 1;
+        Kc.nClustersAlive = 0;
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            if (Kc.ClassAlive[c]) Kc.AliveIndex[Kc.nClustersAlive++] = c;
 
-        const float chunkScore = Kc.CEMTwoPhase(timeMergeIter);
-        perChunkScore[k]     = chunkScore;
-        perChunkNClusters[k] = Kc.nClustersAlive;
+        perChunkScore[k]     = bestChunkScore;
+        perChunkNClusters[k] = bestNClusters;
 
         auto& models = perChunkModels[k];
         for (int cc = 0; cc < Kc.nClustersAlive; cc++) {
@@ -2669,18 +2695,38 @@ float KK::RunChunkedCEM(float chunkMinutes,
 #endif
         ];
         Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
-        Kc.nStartingClusters = chunkStartK;
-        Kc.NoisePoint        = 1;   // restore default (ReinitForSplit sets 0)
-
-        for (int i = 0; i < nPts; i++) {
-            const int p = pts[i];
-            for (int d = 0; d < nFullDims; d++)
-                Kc.Data[i * nFullDims + d] = Data[p * nFullDims + d];
+        // ── nRuns restarts per chunk ────────────────────────────────────
+        const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
+        float bestChunkScore = HugeScore;
+        int   bestNClusters  = 0;
+        std::vector<int> bestClass(static_cast<size_t>(nPts), 0);
+        for (int run = 0; run < runsPerChunk; run++) {
+            srand(static_cast<unsigned>(RandomSeed)
+                  + static_cast<unsigned>(k) * 997u
+                  + static_cast<unsigned>(run));
+            Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
+            Kc.nStartingClusters = chunkStartK;
+            Kc.NoisePoint        = 1;
+            for (int i2 = 0; i2 < nPts; i2++) {
+                const int p2 = pts[i2];
+                for (int d = 0; d < nFullDims; d++)
+                    Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
+            }
+            const float runScore = Kc.CEMTwoPhase(timeMergeIter);
+            if (runScore < bestChunkScore) {
+                bestChunkScore = runScore;
+                bestNClusters  = Kc.nClustersAlive;
+                for (int i2 = 0; i2 < nPts; i2++) bestClass[i2] = Kc.Class[i2];
+            }
         }
-
-        const float chunkScore = Kc.CEMTwoPhase(timeMergeIter);
-        perChunkScore[k]     = chunkScore;
-        perChunkNClusters[k] = Kc.nClustersAlive;
+        for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = bestClass[i2];
+        for (int c = 0; c < MaxPossibleClusters; c++) Kc.ClassAlive[c] = 0;
+        for (int i2 = 0; i2 < nPts; i2++) Kc.ClassAlive[Kc.Class[i2]] = 1;
+        Kc.nClustersAlive = 0;
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            if (Kc.ClassAlive[c]) Kc.AliveIndex[Kc.nClustersAlive++] = c;
+        perChunkScore[k]     = bestChunkScore;
+        perChunkNClusters[k] = bestNClusters;
 
         // Harvest models into this chunk's private vector
         auto& models = perChunkModels[k];

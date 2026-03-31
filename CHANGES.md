@@ -8,8 +8,12 @@ All changes relative to the original Neurosuite toolchain unless noted.
 
 ### nRuns flag (new)
 
-`-nRuns N` replaces the `(MaxClusters-MinClusters+1) × nStarts` outer loop when
-running in chunked CEM mode (`ChunkMinutes > 0` or `-ChunkFile`).  Setting `nRuns 3`
+`-nRuns N` sets the number of independent CEM restarts **per chunk** in chunked
+mode (`ChunkMinutes > 0`). Each chunk independently runs `CEMTwoPhase` N times
+with different random seeds and keeps its best-scoring result before handing off
+to Phase 2. Phase 0 preseed, Phase 1.5 realignment, and Phase 2 merge each run
+only once per pipeline invocation. This is the per-chunk analogue of `nStarts`
+in non-chunked mode.  Setting `nRuns 3`
 runs three independent pipeline iterations each seeded differently
 (`srand(RandomSeed + run)`).  `MinClusters` and `MaxClusters` revert to their
 intended role: per-chunk `TrySplits` bounds only, not an iteration driver.
