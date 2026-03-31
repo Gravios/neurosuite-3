@@ -16,6 +16,9 @@
 #include <cstdarg>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
+#include <sys/stat.h>   // stat() for file-exists check
+#include <unistd.h>     // readlink()
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -57,7 +60,7 @@ float ChunkPreseedFraction   = 0.0f;    // fraction of spikes for Phase 0 presee
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
 float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML or defaults to 20000
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
-int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations
+int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations; 0 = skip Phase 3 entirely
 int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; final write only
 // Phase 1.5 waveform realignment (requires chunked mode)
 // Both must be > 0 to enable realignment; 0 disables (default, safe for callers
@@ -286,6 +289,206 @@ void SaveOutput(const Array<int> &OutputClass) {
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// _RunInlineDriftEstimation
+//
+// Called after the final .clu write in a chunked-mode run.  Uses the
+// freshly written SESSION.clu.N as input to process_estimatedrift.py
+// (per-unit amplitude-profile xcorr drift estimation) and then
+// process_applydrift.py (adaptive chunk boundary computation), producing:
+//
+//   SESSION.drift          — per-window drift in µm (YAML)
+//   SESSION.chunks.N       — adaptive KlustaKwik chunk boundaries
+//   SESSION.dat.drift.P    — per-sample int16 drift signal (binary)
+//
+// The SESSION.chunks.N file is consumed by the NEXT KlustaKwik invocation
+// via -ChunkFile SESSION.chunks.N, giving drift-corrected chunk boundaries
+// without the user needing to run ndm_estimatedrift separately.
+//
+// Probe geometry (probeId, shankIndex, probeFile, probeLibraryPath) is
+// read from the YAML by KlustaKwikYaml.cpp and passed to the script so
+// it can convert xcorr lags from electrode sites to µm.
+//
+// nSpatialDims is nDims-1 (the time dimension is excluded from the drift
+// estimate; the script uses waveform PTP amplitudes, not PCA features).
+// ---------------------------------------------------------------------------
+static void _RunInlineDriftEstimation(const char* fileBase,
+                                       int         elecNo,
+                                       int         /*nSpatialDims*/)
+{
+    // ── Guard: SESSION.drift already exists → skip ───────────────────────
+    {
+        char driftPath[STRLEN + 16];
+        snprintf(driftPath, sizeof(driftPath), "%s.drift", fileBase);
+        struct stat st;
+        if (stat(driftPath, &st) == 0) {
+            fprintf(stderr,
+                    "KlustaKwik: %s already exists — skipping inline drift estimation.\n"
+                    "  Delete it and re-run to refresh.\n", driftPath);
+            return;
+        }
+    }
+
+    // ── Guard: python3 available ─────────────────────────────────────────
+    if (system("python3 --version > /dev/null 2>&1") != 0) {
+        fprintf(stderr,
+                "KlustaKwik: python3 not found — skipping inline drift estimation.\n"
+                "  Install python3 + pyyaml + numpy to enable automatic drift correction.\n");
+        return;
+    }
+
+    // ── Read probe geometry from YAML ────────────────────────────────────
+    const KKYamlSpikeParams yp = kkReadYamlSpikeParams(fileBase, elecNo);
+    if (!yp.valid || yp.probeId < 0 || yp.probeFile.empty()) {
+        fprintf(stderr,
+                "KlustaKwik: no probe geometry in YAML for group %d — "
+                "skipping inline drift estimation.\n"
+                "  Add probeId/probeFile to spikeDetection.channelGroups[%d] "
+                "and the probes: list to enable.\n",
+                elecNo, elecNo - 1);
+        return;
+    }
+
+    // ── Locate YAML parameter file ────────────────────────────────────────
+    char yamlPath[STRLEN + 8];
+    snprintf(yamlPath, sizeof(yamlPath), "%s.yaml", fileBase);
+    {
+        struct stat st;
+        if (stat(yamlPath, &st) != 0) {
+            snprintf(yamlPath, sizeof(yamlPath), "%s.yml", fileBase);
+            if (stat(yamlPath, &st) != 0) {
+                fprintf(stderr,
+                        "KlustaKwik: YAML file not found for session %s — "
+                        "skipping drift estimation.\n", fileBase);
+                return;
+            }
+        }
+    }
+
+    // ── Locate process_estimatedrift.py and process_applydrift.py ─────────
+    // Search order: same directory as this binary, then PATH.
+    auto findScript = [](const char* name) -> std::string {
+        // Try alongside the running binary (readlink /proc/self/exe)
+        char exePath[4096] = {};
+        ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+        if (len > 0) {
+            exePath[len] = '\0';
+            // Replace binary name with script name
+            char* slash = strrchr(exePath, '/');
+            if (slash) {
+                snprintf(slash + 1, sizeof(exePath) - (slash - exePath) - 1,
+                         "%s", name);
+                struct stat st;
+                if (stat(exePath, &st) == 0) return std::string(exePath);
+            }
+        }
+        // Fall back to PATH lookup
+        return std::string(name);
+    };
+    const std::string estimateScript = findScript("process_estimatedrift.py");
+    const std::string applyScript    = findScript("process_applydrift.py");
+
+    // ── Count spike groups (for --n-groups arg) ─────────────────────────
+    // Read from YAML: acquisitionSystem fields already loaded by SetupParams.
+    // We need nSpikeGroups and nSamples per group for the script.
+    // Use a quick Python one-liner rather than duplicating YAML parsing in C++.
+    int nSpikeGroups = elecNo;  // conservative lower bound
+    {
+        char cmd[STRLEN * 3];
+        snprintf(cmd, sizeof(cmd),
+                 "python3 -c \"import yaml; d=yaml.safe_load(open('%s')); "
+                 "print(len(d.get('spikeDetection',{}).get('channelGroups',[])))\" "
+                 "2>/dev/null",
+                 yamlPath);
+        FILE* fp = popen(cmd, "r");
+        if (fp) {
+            int ng = 0;
+            if (fscanf(fp, "%d", &ng) == 1 && ng > 0) nSpikeGroups = ng;
+            pclose(fp);
+        }
+    }
+
+    // Build --n-samples-per-group: read nSamples for each group from YAML
+    std::string nSamplesArg;
+    for (int g = 1; g <= nSpikeGroups; g++) {
+        const KKYamlSpikeParams gp = kkReadYamlSpikeParams(fileBase, g);
+        int ns = (gp.valid && gp.nbSamples > 0) ? gp.nbSamples : 32;
+        if (!nSamplesArg.empty()) nSamplesArg += ",";
+        nSamplesArg += std::to_string(ns);
+    }
+
+    fprintf(stderr,
+            "KlustaKwik: running inline drift estimation\n"
+            "  probe %d / shank %d / probeFile: %s\n",
+            yp.probeId, yp.shankIndex, yp.probeFile.c_str());
+
+    // ── Step 1: process_estimatedrift.py ────────────────────────────────
+    {
+        std::ostringstream cmd;
+        cmd << "python3 \"" << estimateScript << "\"";
+        cmd << " --session \""       << fileBase  << "\"";
+        cmd << " --param-file \""    << yamlPath  << "\"";
+        cmd << " --sampling-rate "     << SamplingRate;
+        cmd << " --n-channels "        << (NbChannels > 0 ? NbChannels : 1);
+        cmd << " --n-bits "            << 16;
+        cmd << " --n-groups "          << nSpikeGroups;
+        cmd << " --n-samples-per-group \"" << nSamplesArg << "\"";
+        cmd << " --source-group "      << elecNo;
+        cmd << " --output \""        << fileBase << ".drift\"";
+        if (!yp.probeLibraryPath.empty())
+            cmd << " --probe-library \"" << yp.probeLibraryPath << "\"";
+        const std::string cmdStr = cmd.str();
+        fprintf(stderr, "  %s\n", cmdStr.c_str());
+        int rc = system(cmdStr.c_str());
+        if (rc != 0) {
+            fprintf(stderr,
+                    "KlustaKwik: process_estimatedrift.py failed (exit %d)\n"
+                    "  Drift estimation skipped; chunked boundaries not updated.\n", rc);
+            return;
+        }
+    }
+
+    // ── Step 2: process_applydrift.py ────────────────────────────────────
+    // Writes SESSION.chunks.G for all groups on the same probe as elecNo.
+    {
+        // Build target groups: all groups sharing the same probeId
+        std::string targetGroups;
+        for (int g = 1; g <= nSpikeGroups; g++) {
+            if (g == elecNo) continue;  // source group already included by script
+            const KKYamlSpikeParams gp = kkReadYamlSpikeParams(fileBase, g);
+            if (gp.valid && gp.probeId == yp.probeId) {
+                if (!targetGroups.empty()) targetGroups += " ";
+                targetGroups += std::to_string(g);
+            }
+        }
+
+        std::ostringstream cmd;
+        cmd << "python3 \"" << applyScript << "\"";
+        cmd << " --session \""      << fileBase << "\"";
+        cmd << " --drift-file \""   << fileBase << ".drift\"";
+        cmd << " --source-group "     << elecNo;
+        if (!targetGroups.empty())
+            cmd << " --target-groups " << targetGroups;
+        cmd << " --sampling-rate "    << SamplingRate;
+        const std::string cmdStr = cmd.str();
+        fprintf(stderr, "  %s\n", cmdStr.c_str());
+        int rc = system(cmdStr.c_str());
+        if (rc != 0) {
+            fprintf(stderr,
+                    "KlustaKwik: process_applydrift.py failed (exit %d)\n"
+                    "  Chunk boundary files not written.\n", rc);
+            return;
+        }
+    }
+
+    fprintf(stderr,
+            "KlustaKwik: drift estimation complete.\n"
+            "  SESSION.drift written.\n"
+            "  SESSION.chunks.%d written — use -ChunkFile SESSION.chunks.%d\n"
+            "  on the next KlustaKwik run for drift-adaptive chunking.\n",
+            elecNo, elecNo);
+}
+
 int main(int argc, char **argv) {
     float BestScore = HugeScore;
     kSv.BestScoreSave = BestScore;
@@ -676,6 +879,30 @@ int main(int argc, char **argv) {
 
         SaveOutput(K1.BestClass);   // final write — always runs regardless of SaveIntermediates
         fprintf(stderr, "  done                    \n");  // clear the \r progress line
+
+        // ── Inline drift estimation (chunked mode only) ───────────────────────
+        //
+        // When KlustaKwik ran in three-phase chunked mode AND the YAML parameter
+        // file has probe geometry (probeId + probeFile in the probes: list), we
+        // automatically run process_estimatedrift.py + process_applydrift.py as
+        // subprocesses to produce SESSION.drift and SESSION.chunks.N.
+        //
+        // These files are used by the NEXT KlustaKwik invocation via -ChunkFile,
+        // which gives drift-adaptive chunk boundaries derived from the unit
+        // spatial profiles of THIS run's curated output.
+        //
+        // Skipped when:
+        //   - Not running in chunked mode (-ChunkMinutes = 0 and no -ChunkFile)
+        //   - -ChunkFile was already provided (drift-adaptive mode already active)
+        //   - YAML has no probeId / probeFile for this electrode group
+        //   - SESSION.drift already exists (prevents redundant re-estimation)
+        //   - python3 not in PATH
+        //
+        // The nSamples value is read from the YAML for this group so
+        // process_estimatedrift.py uses the correct waveform dimensions.
+        if (useChunked && !(*ChunkFile)) {
+            _RunInlineDriftEstimation(FileBase, ElecNo, K1.nDims - 1);
+        }
 
         if (fSaveModel) { export_model(pModelFile, K1); fclose(pModelFile); }
 

@@ -46,13 +46,13 @@ check_commands_installed xpathReader process_medianfilter
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
 windowHalfLength=$(read_script_parameter $session windowHalfLength)
 # chunkSize: bytes to process per pass (default 64 GiB).
 # Can be overridden per-session in the XML <ndm_hipass> parameters block.
-# Uses xml_read directly with the correct <n> element XPath (not read_script_parameter
+# Uses yaml_read directly with the correct <n> element XPath (not read_script_parameter
 # which incorrectly searches for <name> elements).
-chunkSize=$(xml_read $session "//program/n[.='ndm_hipass']/../parameters/parameter/n[.='chunkSize']/../value")
+chunkSize=$(yaml_read $session "//program/n[.='ndm_hipass']/../parameters/parameter/n[.='chunkSize']/../value")
 chunkSize=${chunkSize:-134217728}   # default: 128 MiB = 128*1024*1024
 
 # Cap at 512 MiB regardless of what the XML says, to prevent OOM on large

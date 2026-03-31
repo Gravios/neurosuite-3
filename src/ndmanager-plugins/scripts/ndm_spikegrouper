@@ -70,17 +70,17 @@ fi
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Read parameters from the YAML file
-# // xml_read() transparently handles YAML files for simple xpaths.
-# // xml_count() is XML-only, so we use yaml_read_key() for list-length queries.
+# // yaml_read() transparently handles YAML files for simple xpaths.
+# // yaml_count() is XML-only, so we use yaml_read_key() for list-length queries.
 # // group[1]-style xpaths are not supported by yaml_read, so we use yaml_read_key()
 # // with dot-notation index (0-based) for per-group metadata.
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
-nBits=$(xml_read $session "//acquisitionSystem/nBits")
-samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+nBits=$(yaml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 
-# Count spikeDetection groups via yaml_read_key (xml_count is XML-only).
+# Count spikeDetection groups via yaml_read_key (yaml_count is XML-only).
 # spikeDetection.channelGroups is a YAML list; python len() gives the count.
 nElectrodeGroups=$(python3 -c "
 import sys, yaml

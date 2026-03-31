@@ -44,7 +44,7 @@ inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-nChannels=$(xml_read $session "//acquisitionSystem/nChannels")
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
 check_mandatory_variable $nChannels "missing number of channels"
 
 channels=$(read_script_parameter $session channels)

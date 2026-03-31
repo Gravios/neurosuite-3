@@ -174,10 +174,31 @@ public:
     //
     // nChan == 0 or nSamplesPerSpike == 0 → silently skipped (safe default).
     // bytesPerSample: 2 for ≤16-bit recordings (default), 4 for 32-bit.
+    // RealignChunkWaveforms: computes xcorr shift for every spike.
+    // spikeShifts[p] is populated with the shift (in samples) for global
+    // spike index p.  Uses home-chunk first-write-wins: the first chunk
+    // that contains a spike sets its shift; overlap duplicates in later
+    // chunks are skipped.  Pass spikeShifts pre-filled with INT_MIN as
+    // the sentinel for "not yet assigned".
     void RealignChunkWaveforms(
         const std::vector<std::vector<int>>& chunkPoints,
         const std::vector<std::vector<int>>& chunkClass,
-        int nChan, int nSamplesPerSpike, int bytesPerSample = 2);
+        int nChan, int nSamplesPerSpike, int bytesPerSample,
+        std::vector<int>& spikeShifts);
+
+    // Re-project shifted waveforms through the saved PCA eigenvectors,
+    // updating Data[] in-place before Phase 2 cross-chunk matching.
+    //
+    // For each spike p where spikeShifts[p] != 0:
+    //   1. Reads the original waveform from SESSION.spk.ElecNo
+    //   2. Applies the circular shift (roll-left by spikeShifts[p])
+    //   3. Projects through PCA eigenvectors from SESSION.pca.ElecNo
+    //   4. Re-normalises using dimMin_/dimRange_ from LoadData()
+    //   5. Writes to Data[p * nDims + 0..nPCAFeatures-1]
+    //
+    // Silently returns if the .pca.N file is absent (safe default).
+    void RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
+                               int nChan, int nSamplesPerSpike);
 
     // -----------------------------------------------------------------------
     // Pre-allocated scratch arrays — sized by AllocateArrays(), reused every
@@ -216,6 +237,12 @@ public:
     // normalised chunk boundaries without needing kSv.dataMin/dataMax.
     float timeRawMin = 0.0f;
     float timeRawMax = 1.0f;
+
+    // Per-dimension normalisation parameters saved by LoadData() so
+    // RefeaturizeFromShifts can apply identical normalisation to
+    // re-projected PCA features.
+    std::vector<float> dimMin_;    // [nDims] raw minima
+    std::vector<float> dimRange_;  // [nDims] 1/(max-min), or 1 if flat
 
     // Precomputed constant: log(2π)^(nDims/2).
     // Set by AllocateArrays() and updated whenever nDims changes (CEMTwoPhase

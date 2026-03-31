@@ -82,8 +82,8 @@ run_group()
 
     print_header "$session - Group $g — monopole localisation"
 
-    nSites=$(xml_count  "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
-    nSamples=$(xml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
+    nSites=$(yaml_count  "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
+    nSamples=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
     nSamples=${nSamples:-32}
 
     python3 "$PY_HELPER" \
@@ -104,7 +104,7 @@ run_group()
 }
 
 if [ -z "$electrodeGroup" ]; then
-    nGroups=$(xml_count "$session" "//spikeDetection/channelGroups/group")
+    nGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
     [ "$nGroups" -eq 0 ] && { echo_error "No spikeDetection groups found"; exit $GENERAL_ERROR; }
     overallStatus=$NO_ERROR
     for (( i=1; i<=nGroups; i++ )); do

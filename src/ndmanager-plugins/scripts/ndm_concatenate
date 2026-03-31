@@ -38,9 +38,9 @@ inputs_missing "$concatenated.$param_ext" && exit $INPUTS_MISSING
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-n_channels=$(xml_read $concatenated "//acquisitionSystem/nChannels")
-samplingRate=$(xml_read $concatenated "//acquisitionSystem/samplingRate")
-resolution=$(xml_read $concatenated "//acquisitionSystem/nBits")
+n_channels=$(yaml_read $concatenated "//acquisitionSystem/nChannels")
+samplingRate=$(yaml_read $concatenated "//acquisitionSystem/samplingRate")
+resolution=$(yaml_read $concatenated "//acquisitionSystem/nBits")
 spots_sampling_rate=$(read_script_parameter $concatenated spotsSamplingRate)
 max_shift=$(read_script_parameter $concatenated maxShift)
 

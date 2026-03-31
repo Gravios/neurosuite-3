@@ -161,24 +161,46 @@ def site_positions_from_probe(probe: dict, n_sites: int,
 
 def site_positions_from_yaml(params: dict, group_idx: int) -> Optional[np.ndarray]:
     """
-    Try to read probe geometry from spikeDetection.channelGroups[g].
-    probeId + shankIndex are cross-referenced to the probes: section.
-    Returns (n_sites, 2) or None.
+    Read site [x_um, y_um] positions for spike group group_idx (0-based).
+
+    Priority 1: sitePositions_um embedded in spikeDetection.channelGroups[g]
+    by ndm_setupgroups.  This is the canonical source and requires no probe
+    file lookup.  None entries in the list mark sites whose geometry is absent.
+
+    Priority 2: probe file via probeId + shankIndex cross-referenced to
+    the top-level probes: list.  Accepts both "probeId" and legacy "id".
+
+    Returns (n_sites, 2) float array, or None if no geometry is available.
     """
     try:
         groups = params["spikeDetection"]["channelGroups"]
         grp    = groups[group_idx]
-        channels = grp.get("channels", [])
-        n_sites  = len(channels)
+
+        # Priority 1: inline sitePositions_um
+        inline = grp.get("sitePositions_um")
+        if inline:
+            valid = [xy for xy in inline if xy is not None]
+            if valid:
+                return np.array([[float(xy[0]), float(xy[1])] for xy in valid],
+                                dtype=float)
+
+        # Priority 2: probe file lookup
         probe_id    = grp.get("probeId")
-        shank_index = grp.get("shankIndex", 0)
+        shank_index = int(grp.get("shankIndex", 0))
         if probe_id is None:
             return None
         probes = params.get("probes", [])
-        probe_entry = next((p for p in probes if p.get("id") == probe_id), None)
+        # Accept both "probeId" (canonical) and legacy "id"
+        probe_entry = next(
+            (pe for pe in probes
+             if pe.get("probeId", pe.get("id")) == probe_id),
+            None)
         if probe_entry is None:
             return None
-        return probe_entry, n_sites, int(shank_index)
+        # Return (probe_entry, n_sites, shank_index) for the caller
+        # to resolve via the probe library
+        n_sites = len(grp.get("channels", []))
+        return probe_entry, n_sites, shank_index
     except (KeyError, IndexError, TypeError):
         return None
 
@@ -381,13 +403,25 @@ def main() -> int:
 
     result = site_positions_from_yaml(params, g - 1)  # 0-based in params
     if result is not None:
-        probe_entry, ns_yaml, shank_idx = result
-        probe_path = probe_entry.get("probeFile", "")
-        if probe_path:
-            probe = load_probe(probe_path, lib_paths)
-            if probe:
-                xy_sites = site_positions_from_probe(probe, n_sites, shank_idx)
-                probe_file_used = probe_path
+        if isinstance(result, np.ndarray):
+            # Inline sitePositions_um: only use if it covers all n_sites.
+            # If nulls caused the array to be shorter, fall through to probe file.
+            if len(result) == n_sites:
+                xy_sites = result
+                probe_file_used = "yaml-inline"
+            else:
+                print(f"  Group {g}: sitePositions_um has {len(result)} entries "
+                      f"but n_sites={n_sites} — falling back to probe file",
+                      file=sys.stderr)
+                result = None  # fall through to probe file path
+        if not isinstance(result, np.ndarray) and result is not None:
+            probe_entry, ns_yaml, shank_idx = result
+            probe_path = probe_entry.get("probeFile", "")
+            if probe_path:
+                probe = load_probe(probe_path, lib_paths)
+                if probe:
+                    xy_sites = site_positions_from_probe(probe, n_sites, shank_idx)
+                    probe_file_used = probe_path
 
     if xy_sites is None or len(xy_sites) < n_sites:
         # Fallback: read raw geometry from YAML spikeDetection block if

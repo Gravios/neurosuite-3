@@ -44,7 +44,7 @@ inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-samplingRate=$(xml_read $session "//acquisitionSystem/samplingRate")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 suffixes=($(read_script_parameter $session suffixes))
 nChannels=($(read_script_parameter $session nChannels))
 samplingRates=($(read_script_parameter $session samplingRates))

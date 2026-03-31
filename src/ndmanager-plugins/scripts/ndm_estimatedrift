@@ -64,19 +64,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY_HELPER="${SCRIPT_DIR}/process_estimatedrift.py"
 [ -f "$PY_HELPER" ] || PY_HELPER="process_estimatedrift.py"
 
+# Build comma-separated nSamples list, one per group (YAML nSamples field)
+nSamplesPerGroup=""
+for (( g=1; g<=nSpikeGroups; g++ )); do
+    ns=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
+    ns=${ns:-32}
+    if [ -z "$nSamplesPerGroup" ]; then
+        nSamplesPerGroup="$ns"
+    else
+        nSamplesPerGroup="${nSamplesPerGroup},${ns}"
+    fi
+done
+
 python3 "$PY_HELPER" \
-    --session        "$session" \
-    --param-file     "$yamlfile" \
-    --sampling-rate  "$samplingRate" \
-    --n-channels     "$nChannels" \
-    --n-bits         "$nBits" \
-    --n-groups       "$nSpikeGroups" \
-    --window-sec     "$windowSec" \
-    --min-units      "$minUnits" \
-    --min-spikes     "$minSpikes" \
-    --exclude-noise  "$excludeNoise" \
+    --session              "$session" \
+    --param-file           "$yamlfile" \
+    --sampling-rate        "$samplingRate" \
+    --n-channels           "$nChannels" \
+    --n-bits               "$nBits" \
+    --n-groups             "$nSpikeGroups" \
+    --window-sec           "$windowSec" \
+    --min-units            "$minUnits" \
+    --min-spikes           "$minSpikes" \
+    --exclude-noise        "$excludeNoise" \
+    --n-samples-per-group  "$nSamplesPerGroup" \
     ${probeLibrary:+--probe-library "$probeLibrary"} \
-    --output         "$session.drift"
+    --output               "$session.drift"
 
 status=$?
 [ $status -ne 0 ] && { echo_error "process_estimatedrift.py failed (exit $status)"; exit $GENERAL_ERROR; }

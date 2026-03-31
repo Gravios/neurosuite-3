@@ -98,6 +98,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--outlier-threshold", type=float, default=5.0,
                    help="Max pairwise distance change (µm) to flag a unit as outlier")
     p.add_argument("--probe-library",     default="")
+    p.add_argument("--n-samples-per-group", default="",
+                   help="Comma-separated list of nSamplesPerSpike for each group "
+                        "(1-based, e.g. '41,41,32').  Falls back to 32 when absent.")
     p.add_argument("--source-group",      type=int, default=0,
                    help="1-based spike group whose curated .clu drives the drift "
                         "estimate. 0 = estimate independently for every group "
@@ -169,10 +172,35 @@ def read_res(path: str) -> np.ndarray:
 
 
 def read_clu(path: str) -> np.ndarray:
-    with open(path) as f:
-        lines = [l.strip() for l in f if l.strip()]
-    return np.array([int(l) for l in lines[1:]], dtype=np.int32) if len(lines) > 1 \
-           else np.array([], dtype=np.int32)
+    """Read .clu file in either binary (int32) or legacy text format.
+
+    Binary format (written by KlustaKwik / Klusters):
+        int32_t  nClusters          (header — discarded here)
+        int32_t  clusterIds[nSpikes] (1-based; 1=noise)
+
+    Text format (legacy ndmanager pipeline):
+        line 0: nClusters
+        lines 1..N: one cluster id per line
+
+    Detection: if the first byte is an ASCII digit (0x30–0x39) the file
+    is text; otherwise it is binary.  Same heuristic used by KlustaKwik
+    and Klusters LoadClu().
+    """
+    import struct
+    with open(path, "rb") as f:
+        first = f.read(1)
+    if not first:
+        return np.array([], dtype=np.int32)
+    if 0x30 <= first[0] <= 0x39:  # ASCII digit → text format
+        with open(path) as f:
+            lines = [l.strip() for l in f if l.strip()]
+        return np.array([int(l) for l in lines[1:]], dtype=np.int32) \
+               if len(lines) > 1 else np.array([], dtype=np.int32)
+    else:  # binary format
+        data = np.fromfile(path, dtype="<i4")  # little-endian int32
+        # data[0] = nClusters header, data[1:] = spike cluster ids
+        return data[1:].astype(np.int32) if len(data) > 1 \
+               else np.array([], dtype=np.int32)
 
 
 def read_spk(path: str, n_sites: int, n_samp: int, n_spk: int) -> np.ndarray:
@@ -191,10 +219,18 @@ def ptp(wf: np.ndarray) -> np.ndarray:
 
 
 def amplitude_com(ptp_arr: np.ndarray, depths: np.ndarray) -> np.ndarray:
-    """Amplitude-weighted CoM per spike. (n_spk,)"""
-    total = ptp_arr.sum(axis=1, keepdims=True)
+    """Amplitude-weighted CoM per spike. (n_spk,)
+
+    Sites with NaN depth (absent from probe geometry) are masked out:
+    their amplitude contributes 0 to both numerator and denominator.
+    """
+    valid_mask = np.isfinite(depths)                  # (n_sites,)
+    ptp_valid  = ptp_arr * valid_mask[np.newaxis, :]  # zero out NaN-depth sites
+    total = ptp_valid.sum(axis=1, keepdims=True)
     total = np.where(total == 0, 1.0, total)
-    return (ptp_arr / total * depths[np.newaxis, :]).sum(axis=1)
+    # Use nan-safe depths: NaN → 0 for multiplication; already zeroed in ptp_valid
+    safe_depths = np.where(valid_mask, depths, 0.0)
+    return (ptp_valid / total * safe_depths[np.newaxis, :]).sum(axis=1)
 
 
 def unit_com(wf: np.ndarray, depths: np.ndarray) -> float:
@@ -383,7 +419,10 @@ def xcorr_shift(ref: np.ndarray, win: np.ndarray, depths: np.ndarray) -> Optiona
         lag   = lags[pk] + frac
     else:
         lag = lags[pk]
-    spacing = float(np.median(np.diff(np.sort(depths)))) if len(depths) > 1 else 50.0
+    # Filter NaN depths (null geometry sites) before computing spacing
+    valid_depths = depths[np.isfinite(depths)] if len(depths) > 0 else depths
+    spacing = float(np.median(np.diff(np.sort(valid_depths)))) \
+              if len(valid_depths) > 1 else 50.0
     return round(float(lag * spacing), 2)
 
 
@@ -396,6 +435,7 @@ def estimate_shank_drift(
         sampling_rate: float, window_sec: float,
         min_units: int, min_spikes: int,
         exclude_noise: bool, outlier_threshold: float,
+        n_samp: int = 32,
 ) -> Optional[dict]:
 
     res_path = f"{session}.res.{group_idx}"
@@ -416,7 +456,8 @@ def estimate_shank_drift(
     good_units      = sorted(set(clu.tolist()) - noise)
 
     n_sites  = len(depths)
-    n_samp   = 52
+    # n_samp is passed in from the YAML nSamples field for this group.
+    # Default 32 is the ndmanager process_extractspikes default.
 
     # Load waveforms
     has_spk = os.path.isfile(spk_path)
@@ -584,17 +625,31 @@ def estimate_shank_drift(
 def build_group_probe_map(param: dict) -> dict:
     """Return {1-based group index: (probe_id, shank_index)}.
 
-    Reads optional ``probeId`` and ``shankIndex`` fields from each entry in
-    ``spikeDetection.channelGroups``.  When the fields are absent the group is
-    assigned to probe 0 with shankIndex = group_index - 1, which preserves full
-    backward compatibility with parameter files that predate this feature.
+    Resolution order (highest to lowest priority):
+    1. probeId/shankIndex directly on spikeDetection.channelGroups[g]
+       (written by ndm_setupgroups >= neurosuite-3 r2)
+    2. Cross-reference via anatomicalDescription.channelGroups[g].probeId/shankIndex
+       (anatomical groups written by ndm_setupgroups but spike groups may predate it)
+    3. Fallback: probe 0, shankIndex = group_index - 1
+       (backward compatibility with pre-ndm_setupgroups YAML files)
     """
     result: dict[int, tuple[int, int]] = {}
-    groups = (param or {}).get("spikeDetection", {}).get("channelGroups", [])
-    for i, grp in enumerate(groups):
-        gnum        = i + 1
-        probe_id    = int(grp.get("probeId",    0))
-        shank_index = int(grp.get("shankIndex", i))
+    spk_groups  = (param or {}).get("spikeDetection",      {}).get("channelGroups", [])
+    anat_groups = (param or {}).get("anatomicalDescription",{}).get("channelGroups", [])
+    for i, grp in enumerate(spk_groups):
+        gnum = i + 1
+        if "probeId" in grp:
+            # canonical: probeId/shankIndex written directly on the spike group
+            probe_id    = int(grp["probeId"])
+            shank_index = int(grp.get("shankIndex", i))
+        elif i < len(anat_groups) and "probeId" in anat_groups[i]:
+            # cross-reference: anatomical group has the geometry fields
+            probe_id    = int(anat_groups[i]["probeId"])
+            shank_index = int(anat_groups[i].get("shankIndex", i))
+        else:
+            # backward compatibility: assume all groups on probe 0
+            probe_id    = 0
+            shank_index = i
         result[gnum] = (probe_id, shank_index)
     return result
 
@@ -603,10 +658,13 @@ def build_probe_entry_map(param: dict) -> dict:
     """Return {probe_id: probe-entry dict} from the optional top-level
     ``probes`` list in the parameter file.  Returns {0: {}} when the list
     is absent so callers always get a valid entry for probe 0.
+
+    Accepts both "probeId" (canonical, written by ndm_setupgroups) and the
+    legacy "id" field used by pre-neurosuite-3 YAML files.
     """
     result: dict[int, dict] = {0: {}}
     for entry in (param or {}).get("probes", []):
-        pid = int(entry.get("probeId", 0))
+        pid = int(entry.get("probeId", entry.get("id", 0)))
         result[pid] = entry
     return result
 
@@ -716,6 +774,21 @@ def main() -> int:
     probe_cache: dict[str, Optional[dict]] = {}
 
     def get_depths(g: int) -> np.ndarray:
+        # Priority 1: sitePositions_um embedded directly in spikeDetection group
+        spk_groups = (param or {}).get("spikeDetection", {}).get("channelGroups", [])
+        if 0 < g <= len(spk_groups):
+            inline = spk_groups[g - 1].get("sitePositions_um")
+            if inline:
+                # Return full-length array (one depth per channel in the group).
+                # Null entries become NaN; estimate_shank_drift will skip NaN sites
+                # when computing CoM / amplitude profiles.
+                # This ensures len(depths) == nChannels in the .spk file.
+                depths = np.array(
+                    [float(xy[1]) if xy is not None else float("nan")
+                     for xy in inline], dtype=float)
+                if np.any(np.isfinite(depths)):
+                    return depths
+        # Priority 2: probe file via probeId/shankIndex
         pid, shk = g_probe_map.get(g, (0, g - 1))
         entry    = p_entry_map.get(pid)
         if entry is None:
@@ -731,17 +804,31 @@ def main() -> int:
     source_group = args.source_group  # 0 = all groups
     source_result: Optional[dict] = None
 
+    # Parse per-group nSamples (comma-separated list, 1-based groups)
+    n_samp_list: list[int] = []
+    if args.n_samples_per_group:
+        try:
+            n_samp_list = [int(x.strip()) for x in
+                           args.n_samples_per_group.split(",")]
+        except ValueError:
+            print(f"  [warn] --n-samples-per-group parse error; "
+                  f"using default 32 for all groups", file=sys.stderr)
+
     for g in range(1, args.n_groups + 1):
         if source_group and g != source_group:
             continue  # only estimate from the nominated shank
         pid, shk = g_probe_map.get(g, (0, g - 1))
         d        = get_depths(g)
-        print(f"  Group {g}: probe={pid} shank={shk} sites={len(d)}", file=sys.stderr)
+        # nSamples for this group (1-based index into the list)
+        n_samp = n_samp_list[g - 1] if g <= len(n_samp_list) else 32
+        print(f"  Group {g}: probe={pid} shank={shk} sites={len(d)} "
+              f"nSamp={n_samp}", file=sys.stderr)
         r = estimate_shank_drift(
             args.session, g, d,
             args.sampling_rate, args.window_sec,
             args.min_units, args.min_spikes,
-            exclude_noise, args.outlier_threshold)
+            exclude_noise, args.outlier_threshold,
+            n_samp=n_samp)
         if r:
             all_results.append((pid, shk, g, r))
             if source_group:

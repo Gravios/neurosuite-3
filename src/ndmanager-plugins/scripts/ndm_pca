@@ -54,7 +54,7 @@ once()
 	# // Read Parameters
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 
-	nElectrodeGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+	nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 	check_mandatory_variable $nElectrodeGroups "missing electrode groups"
 	if [ $electrodeGroup -gt $nElectrodeGroups ]
 	then
@@ -62,19 +62,19 @@ once()
 		exit $GENERAL_ERROR
 	fi
 
-	electrodes=($(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	electrodes=($(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
 	nElectrodes=${#electrodes[*]}
 	electrodeList=$(for ((i=0;i<$nElectrodes;i++)); do echo -n ${electrodes[${i}]}","; done)
 	electrodeList=${electrodeList:0:${#electrodeList}-1}
 
-	waveformLength=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-	nFeatures=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
+	waveformLength=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	nFeatures=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
 
 	check_mandatory_variable $waveformLength "missing number of samples per waveform"
 	check_mandatory_variable $nFeatures "missing number of features"
 
 	# PCA on partial waveform?
-	peak=$(xml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+	peak=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
 	check_optional_variable $peak && options="$options -p $peak"
 	before=($(read_script_parameter $session before))
 	[ ${#before[*]} -eq 1 ] && before=${before[0]} || before=${before[$electrodeGroup-1]}
@@ -104,7 +104,7 @@ once()
 
 if [ -z "$electrodeGroup" ]
 then
-	nGroups=$(xml_count $session "//spikeDetection/channelGroups/group")
+	nGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 	if [ $nGroups -eq 0 ]
 	then
 		echo_error "missing spike groups"
@@ -122,7 +122,7 @@ then
 	#     <parameter><n>threadsPerGroup</n><value>2</value><status>Optional</status></parameter>
 	#   </parameters></program>
 	# If absent, defaults to floor(nCores / nGroups), minimum 1.
-	threadsPerGroup=$(xml_read $session "//program/n[.='ndm_pca']/../parameters/parameter/n[.='threadsPerGroup']/../value")
+	threadsPerGroup=$(yaml_read $session "//program/n[.='ndm_pca']/../parameters/parameter/n[.='threadsPerGroup']/../value")
 	if [ -z "$threadsPerGroup" ]
 	then
 		nCores=$(nproc 2>/dev/null || echo 1)

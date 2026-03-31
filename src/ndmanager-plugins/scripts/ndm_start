@@ -105,7 +105,7 @@ check_optional_variable $log || log=true
 # Make sure spike groups have been defined
 if $spikes
 then
-	nGroups=$(xml_count $template "//spikeDetection/channelGroups/group")
+	nGroups=$(yaml_count $template "//spikeDetection/channelGroups/group")
 	if [ $nGroups -eq 0 ]
 	then
 		echo_error "missing spike groups"
