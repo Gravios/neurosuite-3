@@ -84,6 +84,8 @@ double computeSDiff(const short *record,
 
     case SDIFF_ALLPAIRS:
     default: {
+        // Single-channel group: no neighbours, all-pairwise is undefined.
+        // Detection will find nothing; use order 0 for single-channel groups.
         if(nChanGrp == 1) return 0.0;
         double sum = 0.0;
         for(int j = 0; j < nChanGrp; j++) sum += record[chanList[j]];
@@ -856,6 +858,7 @@ int main(int argc, char *argv[])
 
         if(rec_nb < (unsigned long long)buffer_size || feof(inputFile)) {
             isLastLoop = true;
+            delete[] nextRec;
             nextRec    = nullptr;
             rec_nb    += args.totalChannelNumber;
         } else {
@@ -1229,15 +1232,39 @@ int main(int argc, char *argv[])
                     args.inputFileName); exit(1);
         }
 
+        // Peak-refinement window: half the peak-search length.
+        // After reading the nominal extraction frame centred on the SDIFF
+        // timestamp, search the RAW signal within ±halfSearch samples to
+        // find the actual maximum-amplitude sample across all group channels.
+        // Re-centering on the raw peak eliminates the systematic jitter
+        // between the sdiff peak (detection) and the voltage peak (raw signal)
+        // that causes spreading in the waveform display and degrades PCA.
+        //
+        // The refinement frame is read wide enough to cover both the nominal
+        // extraction window AND the ±halfSearch offset:  frameLen = spikeLength
+        // + 2*halfSearch.  The final extraction copies spikeLength samples
+        // starting at the refined peak offset within the wide frame.
+        const int halfSearch = args.peakLength / 2;
+        const int wideSpikeLen = args.spikeLength + 2 * halfSearch;
+        const int wideRawLen   = wideSpikeLen * args.totalChannelNumber;
+        vector<short> wideFrame(wideRawLen);
+
         off_t filePos = 0;
         for(const SpikeEvent &ev : allEvents) {
             const int grp  = ev.grp;
             const int nCG  = channelNb_grp[grp];
             const int wLen = args.spikeLength * nCG;
+            const int *cL  = channelList[grp];
 
-            if(ev.fileOffset > filePos) {
-                // skip forward
-                off_t gap = ev.fileOffset - filePos;
+            // Wide extraction: start halfSearch samples before the nominal window.
+            const off_t wideOffset = ev.fileOffset
+                - (off_t)halfSearch * args.totalChannelNumber * (off_t)sizeof(short);
+            const off_t safeOffset = (wideOffset >= 0) ? wideOffset : 0;
+            const int   skipHead   = (wideOffset >= 0) ? 0
+                : (int)((-wideOffset) / (args.totalChannelNumber * (off_t)sizeof(short)));
+
+            if(safeOffset > filePos) {
+                off_t gap = safeOffset - filePos;
                 vector<char> skip(65536);
                 while(gap > 0) {
                     size_t chunk = (gap < 65536) ? (size_t)gap : 65536;
@@ -1248,24 +1275,69 @@ int main(int argc, char *argv[])
                 }
             }
 
-            size_t got = fread(frameBuf.data(), sizeof(short), rawLen, seqF);
-            if((int)got != rawLen) break;
-            filePos += (off_t)rawLen * (off_t)sizeof(short);
+            // Zero-fill wide frame (handles boundary clips).
+            std::fill(wideFrame.begin(), wideFrame.end(), short(0));
+            const int readLen = wideRawLen - skipHead * args.totalChannelNumber;
+            size_t got = fread(wideFrame.data() + skipHead * args.totalChannelNumber,
+                               sizeof(short), readLen, seqF);
+            if((int)got <= 0) continue;
+            filePos += (off_t)got * (off_t)sizeof(short);
 
-            const int *cL = channelList[grp];
-            if(useInMemory[grp]) {
-                short *dst = allWaveforms[grp].data()
-                             + (size_t)ev.origIdx * wLen;
-                for(int s = 0; s < args.spikeLength; s++) {
-                    const short *fr = frameBuf.data() + s * args.totalChannelNumber;
-                    for(int c = 0; c < nCG; c++)
-                        dst[s*nCG+c] = fr[cL[c]];
+            // ── Raw-signal peak refinement ─────────────────────────────────
+            // Search within [halfSearch, halfSearch + peakLength) of the wide
+            // frame — this corresponds to ±halfSearch around the nominal peak
+            // position.  Find the sample with maximum absolute amplitude
+            // summed across group channels.
+            int refinedPeakInWide = halfSearch + args.timeBeforeSpike; // nominal
+            double bestAmp = 0.0;
+            const int searchStart = halfSearch;
+            const int searchEnd   = std::min(halfSearch + args.peakLength - 1,
+                                             wideSpikeLen - 1);
+            for(int s = searchStart; s <= searchEnd; s++) {
+                double amp = 0.0;
+                const short *fr = wideFrame.data() + s * args.totalChannelNumber;
+                for(int c = 0; c < nCG; c++)
+                    amp += std::abs(static_cast<double>(fr[cL[c]]));
+                if(amp > bestAmp) { bestAmp = amp; refinedPeakInWide = s; }
+            }
+
+            // Extract spikeLength samples centred on the refined peak.
+            const int extractStart = refinedPeakInWide - args.timeBeforeSpike;
+            if(extractStart < 0 ||
+               extractStart + args.spikeLength > wideSpikeLen) {
+                // Clipped — fall back to nominal offset.
+                // (Happens only at file boundaries; very rare.)
+                const int nomStart = halfSearch;
+                if(useInMemory[grp]) {
+                    short *dst = allWaveforms[grp].data() + (size_t)ev.origIdx * wLen;
+                    for(int s = 0; s < args.spikeLength; s++) {
+                        const short *fr = wideFrame.data()
+                            + (nomStart + s) * args.totalChannelNumber;
+                        for(int c = 0; c < nCG; c++) dst[s*nCG+c] = fr[cL[c]];
+                    }
+                } else {
+                    for(int s = 0; s < args.spikeLength; s++) {
+                        const short *fr = wideFrame.data()
+                            + (nomStart + s) * args.totalChannelNumber;
+                        for(int c = 0; c < nCG; c++)
+                            fwrite(&fr[cL[c]], sizeof(short), 1, streamFiles[grp]);
+                    }
                 }
             } else {
-                for(int s = 0; s < args.spikeLength; s++) {
-                    const short *fr = frameBuf.data() + s * args.totalChannelNumber;
-                    for(int c = 0; c < nCG; c++)
-                        fwrite(&fr[cL[c]], sizeof(short), 1, streamFiles[grp]);
+                if(useInMemory[grp]) {
+                    short *dst = allWaveforms[grp].data() + (size_t)ev.origIdx * wLen;
+                    for(int s = 0; s < args.spikeLength; s++) {
+                        const short *fr = wideFrame.data()
+                            + (extractStart + s) * args.totalChannelNumber;
+                        for(int c = 0; c < nCG; c++) dst[s*nCG+c] = fr[cL[c]];
+                    }
+                } else {
+                    for(int s = 0; s < args.spikeLength; s++) {
+                        const short *fr = wideFrame.data()
+                            + (extractStart + s) * args.totalChannelNumber;
+                        for(int c = 0; c < nCG; c++)
+                            fwrite(&fr[cL[c]], sizeof(short), 1, streamFiles[grp]);
+                    }
                 }
             }
         }

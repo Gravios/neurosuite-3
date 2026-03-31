@@ -1511,6 +1511,14 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 
         if (k < static_cast<int>(overlapVotes.size()) && !overlapVotes[k].empty()) {
             const auto& votes = overlapVotes[k];
+
+            // Scale vote floor with overlap region size so sparse clusters
+            // still match while very common noise pairs are filtered out.
+            // floor = max(3, nOverlapSpikes/500).
+            int nOverlapSpikes = 0;
+            for (const auto& [key, count] : votes) nOverlapSpikes += count;
+            const int voteFloor = std::max(3, nOverlapSpikes / 500);
+
             std::unordered_map<int, std::pair<int,int>> bestFromA;
             std::unordered_map<int, std::pair<int,int>> bestFromB;
             for (const auto& [key, count] : votes) {
@@ -1522,7 +1530,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                 if (count > bB.second) bB = {clsK, count};
             }
             for (const auto& [clsK, topB] : bestFromA) {
-                if (topB.second < 3) continue;
+                if (topB.second < voteFloor) continue;
                 const int clsK1 = topB.first;
                 auto itB = bestFromB.find(clsK1);
                 if (itB == bestFromB.end() || itB->second.first != clsK) continue;
