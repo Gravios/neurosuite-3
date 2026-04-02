@@ -83,6 +83,12 @@ extern std::vector<int> GroupChannelIds;
 // MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
 extern int   nRuns;
 extern int   Phase15Iters; ///< realignment iterations in RealignChunkWaveforms (default 2)
+extern int   SubspaceDims;      ///< top-N eigenvectors for Phase 2 subspace Mahal (0=full-space)
+extern int   SubspaceRecluster;    ///< per-cluster subspace CEM after Phase 2 (0=disabled)
+extern float TemplateMatchScore;       ///< min xcorr for WITHIN-chunk template matching (0=disabled)
+extern int   TemplateMatchIters;       ///< max within-chunk template match iterations (default 10)
+extern int   SplitRecurseDepth;        ///< max TrySplits recursion depth (default 1)
+extern float CrossChunkTemplateScore;  ///< min xcorr for CROSS-chunk template matching in Phase 2 (0=disabled)
 
 // Output control
 // SaveIntermediates=1 (default): write .clu whenever a new best is found.

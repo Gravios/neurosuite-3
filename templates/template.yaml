@@ -994,7 +994,13 @@ programs:
   # ── Initialisation ─────────────────────────────────────────────────────────
   - {name: nStarts,              value: 3,       status: Optional}
   - {name: nRuns,                value: 0,       status: Optional}
-  - {name: phase15Iters,         value: 2,       status: Optional}
+  - {name: phase15Iters,         value: 1,       status: Optional}
+  - {name: subspaceDims,          value: 0,       status: Optional}
+  - {name: subspaceRecluster,     value: 0,       status: Optional}
+  - {name: templateMatchScore,    value: 0.0,     status: Optional}
+  - {name: templateMatchIters,    value: 10,      status: Optional}
+  - {name: splitRecurseDepth,     value: 1,       status: Optional}
+  - {name: crossChunkTemplateScore, value: 0.0,   status: Optional}
   - {name: initMethod,           value: farthest, status: Optional}
   - {name: penaltyMix,           value: 0,       status: Optional}
   # ── Chunked CEM ────────────────────────────────────────────────────────────

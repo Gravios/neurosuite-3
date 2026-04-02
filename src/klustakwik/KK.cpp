@@ -896,7 +896,17 @@ void KK::ReinitForSplit(int newNPoints, int newNDims, float newPenaltyMix) {
 // TrySplits — try splitting each cluster; keep if it improves score
 // C++17: KK objects use move semantics when passed around.
 // ---------------------------------------------------------------------------
+// thread_local depth counter — limits recursive TrySplits nesting to 1 level.
+// Without this, CEM(nullptr,1) inside TrySplits would trigger TrySplits again
+// inside K2, which would trigger it again inside K2b, causing stack overflow.
+static thread_local int _trySplitsDepth = 0;
+
 int KK::TrySplits() {
+    // Guard: sub-trial CEM calls TrySplits at depth 1; their sub-trials must
+    // not recurse further (depth 2+), so they use CEM(nullptr, 0).
+    _trySplitsDepth++;
+    struct _DepthGuard { ~_DepthGuard() { _trySplitsDepth--; } } _dg;
+    (void)_dg;
     if (nClustersAlive >= MaxPossibleClusters - 1) {
         Output("Won't try splitting - already at maximum number of clusters\n");
         return 0;
@@ -1032,18 +1042,22 @@ int KK::TrySplits() {
 
         if (Verbose >= 1) Output("Trying to split cluster %d (%d points)\n", c, clusterSize);
         K2.nStartingClusters = 2;
-        const float unsplitScore = K2.CEM(nullptr, 0);
-        K2.nStartingClusters = 3;
-        const float splitScore   = K2.CEM(nullptr, 0);
+        const float unsplitScore = K2.CEM(nullptr, 0);  // splits disabled: pure 1-cluster baseline
+        K2.nStartingClusters = 13;  // noise + 12 real: gives CEM room to find multi-cluster structure
+        // Allow splits in the sub-CEM only at the first level of recursion;
+        // deeper calls use Recurse=0 to prevent infinite recursion.
+        // Allow recursion up to SplitRecurseDepth levels; deeper calls are non-recursive.
+        const float splitScore   = K2.CEM(nullptr, (_trySplitsDepth <= SplitRecurseDepth) ? 1 : 0);
 
         if (splitScore < unsplitScore) {
             for (int c2 = 0; c2 < MaxPossibleClusters; c2++) K3.ClassAlive[c2] = 0;
             p2 = 0;
             for (int p = 0; p < nPoints; p++) {
                 if (Class[p] == c) {
+                    // Map class 1 → keep original cluster c; all others → unusedCluster.
+                    // K2 CEM may produce >2 clusters in low-dim subspace — that is fine,
+                    // they all collapse to the single "split off" group here.
                     K3.Class[p] = (K2.Class[p2] == 1) ? c : unusedCluster;
-                    if (K2.Class[p2] != 1 && K2.Class[p2] != 2)
-                        Error("split should only produce 2 clusters");
                     p2++;
                 } else K3.Class[p] = Class[p];
                 K3.ClassAlive[K3.Class[p]] = 1;
@@ -1419,6 +1433,74 @@ float KK::CEMTwoPhase(int timeMergeIter) {
 // Noise (localClusterId==0) always maps to globalClusterId==0.
 // Returns the number of distinct real global clusters.
 // ---------------------------------------------------------------------------
+// topKEigen — power iteration with deflation for symmetric matrices
+//
+// Finds the top k eigenvectors and eigenvalues of a symmetric nSpatialDims×nSpatialDims
+// matrix stored in upper-triangular form (cov[r*nDims + c], r<=c, c up to nDims-1).
+//
+// Uses 200 iterations of deflated power iteration — sufficient for convergence
+// of the dominant eigenvectors of typical PCA covariance matrices.
+// ---------------------------------------------------------------------------
+static void topKEigen(const float* covUT, int n, int nDims, int k,
+                      std::vector<float>& evecs,   // k × n, row-major
+                      std::vector<float>& evals)   // k eigenvalues, descending
+{
+    // Expand upper-triangular to full symmetric
+    std::vector<float> A(static_cast<size_t>(n) * n, 0.0f);
+    for (int r = 0; r < n; r++)
+        for (int c = r; c < n; c++) {
+            float v = covUT[r * nDims + c];
+            A[r * n + c] = v;
+            A[c * n + r] = v;
+        }
+
+    evecs.assign(static_cast<size_t>(k) * n, 0.0f);
+    evals.assign(static_cast<size_t>(k), 0.0f);
+
+    std::vector<float> v(n), Av(n);
+    for (int ki = 0; ki < k; ki++) {
+        // Deterministic initialization: unit vector along dimension ki%n
+        std::fill(v.begin(), v.end(), 0.0f);
+        v[static_cast<size_t>(ki % n)] = 1.0f;
+
+        float lambda = 0.0f;
+        for (int iter = 0; iter < 200; iter++) {
+            // Matrix-vector multiply: Av = A * v
+            std::fill(Av.begin(), Av.end(), 0.0f);
+            for (int r = 0; r < n; r++)
+                for (int c = 0; c < n; c++)
+                    Av[static_cast<size_t>(r)] +=
+                        A[static_cast<size_t>(r * n + c)] * v[static_cast<size_t>(c)];
+
+            // Deflate: subtract projections onto previously found eigenvectors
+            for (int j = 0; j < ki; j++) {
+                float dot = 0.0f;
+                for (int d = 0; d < n; d++)
+                    dot += evecs[static_cast<size_t>(j * n + d)] * Av[static_cast<size_t>(d)];
+                for (int d = 0; d < n; d++)
+                    Av[static_cast<size_t>(d)] -= dot * evecs[static_cast<size_t>(j * n + d)];
+            }
+
+            // Compute norm = eigenvalue estimate
+            float norm = 0.0f;
+            for (int d = 0; d < n; d++)
+                norm += Av[static_cast<size_t>(d)] * Av[static_cast<size_t>(d)];
+            norm = std::sqrt(norm);
+            if (norm < 1e-12f) break;
+
+            lambda = norm;
+            for (int d = 0; d < n; d++)
+                v[static_cast<size_t>(d)] = Av[static_cast<size_t>(d)] / norm;
+        }
+
+        for (int d = 0; d < n; d++)
+            evecs[static_cast<size_t>(ki * n + d)] = v[static_cast<size_t>(d)];
+        evals[static_cast<size_t>(ki)] = lambda;
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                           int   nSpatialDims,
                           float mergeThresh,
@@ -1434,9 +1516,10 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
         return x;
     };
+    int _newUnions = 0;  // counts new Union() calls per outer iteration
     auto Union = [&](int a, int b) {
         a = Find(a); b = Find(b);
-        if (a != b) parent[b] = a;
+        if (a != b) { parent[b] = a; _newUnions++; }
     };
 
     // All noise models (localClusterId==0) are unconditionally merged into
@@ -1457,21 +1540,57 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         Output("MergeChunkModels: noise — %d spikes across %d chunks merged to global c=0\n",
                nNoiseMerged, nNoiseChunks);
 
-    // Mahalanobis distance of src.mean under tgt's spatial covariance.
+    // Mahalanobis distance — full-space or subspace depending on SubspaceDims.
+    //
+    // SubspaceDims == 0: standard Mahalanobis under tgt's covariance.
+    //
+    // SubspaceDims > 0: project (μ_A - μ_B) onto the top-SubspaceDims eigenvectors
+    //   of the POOLED covariance (Σ_A + Σ_B)/2, then compute normalised distance
+    //   in that subspace.  The pooled eigenvectors represent the directions of
+    //   maximum shared variance — the features most diagnostic for these two units.
+    //   Units sharing the same primary waveform mode will be close; units with
+    //   orthogonal primary features will be far even with similar cluster centres.
     auto mahalDist = [&](const ChunkModel& src, const ChunkModel& tgt) -> float {
-        float covS[64*64], chol[64*64], diff[64], root[64];
-        for (int r = 0; r < nSpatialDims; r++)
-            for (int c = r; c < nSpatialDims; c++)
-                covS[r * nSpatialDims + c] = tgt.cov[r * nDims + c];
-
-        if (Cholesky(covS, chol, nSpatialDims)) return HugeScore;
-
+        // Build diff vector (spatial dims only)
+        float diff[64];
         for (int d = 0; d < nSpatialDims; d++)
             diff[d] = src.mean[d] - tgt.mean[d];
-        TriSolve(chol, diff, root, nSpatialDims);
 
+        if (SubspaceDims <= 0) {
+            // ── Full-space Mahalanobis (original) ─────────────────────
+            float covS[64*64], chol[64*64], root[64];
+            for (int r = 0; r < nSpatialDims; r++)
+                for (int c = r; c < nSpatialDims; c++)
+                    covS[r * nSpatialDims + c] = tgt.cov[r * nDims + c];
+            if (Cholesky(covS, chol, nSpatialDims)) return HugeScore;
+            TriSolve(chol, diff, root, nSpatialDims);
+            float dist = 0.0f;
+            for (int d = 0; d < nSpatialDims; d++) dist += root[d] * root[d];
+            return dist;
+        }
+
+        // ── Subspace Mahalanobis via pooled covariance eigenvectors ───
+        const int k = std::min(SubspaceDims, nSpatialDims);
+
+        // Pooled covariance: (Σ_src + Σ_tgt) / 2  (upper triangle in nDims layout)
+        std::vector<float> pooledUT(static_cast<size_t>(nSpatialDims) * nDims, 0.0f);
+        for (int r = 0; r < nSpatialDims; r++)
+            for (int c = r; c < nSpatialDims; c++)
+                pooledUT[r * nDims + c] = 0.5f * (src.cov[r * nDims + c]
+                                                 + tgt.cov[r * nDims + c]);
+
+        std::vector<float> evecs, evals;
+        topKEigen(pooledUT.data(), nSpatialDims, nDims, k, evecs, evals);
+
+        // Project diff onto each eigenvector and normalise by eigenvalue
         float dist = 0.0f;
-        for (int d = 0; d < nSpatialDims; d++) dist += root[d] * root[d];
+        for (int ki = 0; ki < k; ki++) {
+            if (evals[static_cast<size_t>(ki)] < 1e-6f) continue;
+            float proj = 0.0f;
+            for (int d = 0; d < nSpatialDims; d++)
+                proj += evecs[static_cast<size_t>(ki * nSpatialDims + d)] * diff[d];
+            dist += (proj * proj) / evals[static_cast<size_t>(ki)];
+        }
         return dist;
     };
 
@@ -1485,7 +1604,13 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         std::max_element(byChunk.begin(), byChunk.end(),
             [](const auto& a, const auto& b){ return a.first < b.first; })->first;
 
-    for (int k = 0; k < maxChunk; k++) {
+    // Iterate the chunk-pair pass until no new merges occur.
+    // Cross-chunk xcorr matches can cascade: a new Union in pair (k,k+1)
+    // may resolve a cluster that was previously unmatched in pair (k+1,k+2).
+    const int _ccMaxIter = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
+    for (int _ccIter = 0; _ccIter < _ccMaxIter; _ccIter++) {
+        _newUnions = 0;
+        for (int k = 0; k < maxChunk; k++) {
         auto itA = byChunk.find(k);
         auto itB = byChunk.find(k + 1);
         if (itA == byChunk.end() || itB == byChunk.end()) continue;
@@ -1601,7 +1726,65 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                        D[ai * nUB + bi]);
             }
         }
-    }
+
+        // ── Pass 3: cross-chunk template matching (unresolved pairs) ──────
+        // Compute normalised xcorr between cluster mean waveforms.
+        // Controlled by CrossChunkTemplateScore (independent of Phase 1.7).
+        if (CrossChunkTemplateScore > 0.0f &&
+            NbChannels > 0 && NbSamplesPerSpike > 0) {
+            const int nCh   = NbChannels;
+            const int nSamp = NbSamplesPerSpike;
+            const int wE    = nCh * nSamp;
+            const int mxSh  = std::max(1, nSamp / 4);
+
+            auto xcorrPair = [&](const ChunkModel& ma, const ChunkModel& mb) -> float {
+                if ((int)ma.meanWav.size() != wE) return -1.0f;
+                if ((int)mb.meanWav.size() != wE) return -1.0f;
+                int sh = 0; float sc = 0.0f;
+                XcorrDispatch::compute(
+                    ma.meanWav.data(), mb.meanWav.data(),
+                    1, nCh, nSamp, mxSh, 0.0f, &sh, &sc);
+                return sc;
+            };
+
+            // Rebuild unresolved lists from current state
+            std::vector<int> tuA, tuB;
+            for (int a = 0; a < nA; a++)
+                if (!resolvedA.count(models[vecA[a]].localClusterId)) tuA.push_back(a);
+            for (int b = 0; b < nB; b++)
+                if (!resolvedB.count(models[vecB[b]].localClusterId)) tuB.push_back(b);
+
+            const int tnA = (int)tuA.size(), tnB = (int)tuB.size();
+            std::unordered_map<int,std::pair<int,float>> bestAtoB, bestBtoA;
+            for (int ai = 0; ai < tnA; ai++) {
+                const ChunkModel& ma = models[vecA[tuA[ai]]];
+                for (int bi = 0; bi < tnB; bi++) {
+                    const ChunkModel& mb = models[vecB[tuB[bi]]];
+                    float sc = xcorrPair(ma, mb);
+                    if (sc < CrossChunkTemplateScore) continue;
+                    if (!bestAtoB.count(ai) || sc > bestAtoB[ai].second)
+                        bestAtoB[ai] = {bi, sc};
+                    if (!bestBtoA.count(bi) || sc > bestBtoA[bi].second)
+                        bestBtoA[bi] = {ai, sc};
+                }
+            }
+            for (auto& [ai, pairB] : bestAtoB) {
+                int bi = pairB.first;
+                auto itBA = bestBtoA.find(bi);
+                if (itBA == bestBtoA.end() || itBA->second.first != ai) continue;
+                int mA2 = vecA[tuA[ai]], mB2 = vecB[tuB[bi]];
+                if (Find(mA2) == Find(mB2)) continue;
+                Union(mA2, mB2);
+                Output("  tmpl-match  chunk%d.c%d <-> chunk%d.c%d  xcorr=%.3f\n",
+                       models[mA2].chunkIdx, models[mA2].localClusterId,
+                       models[mB2].chunkIdx, models[mB2].localClusterId, pairB.second);
+            }
+        }
+        }  // for k (chunk pairs)
+        if (_newUnions == 0) break;  // converged
+        Output("MergeChunkModels: iter %d produced %d new merges\n",
+               _ccIter + 1, _newUnions);
+    }  // for _ccIter
 
     // Assign contiguous globalClusterIds from component roots
     std::unordered_map<int,int> rootToGlobal;
@@ -1747,7 +1930,7 @@ void KK::RealignChunkWaveforms(
             // cumIterShift[mi] = total shift accumulated across all iters for spike mi
             std::vector<int> cumIterShift(static_cast<size_t>(nMem), 0);
 
-            const int nIter = (Phase15Iters > 0) ? Phase15Iters : 1;
+            const int nIter = Phase15Iters;  // always > 0 (guard above)
             for (int iter = 0; iter < nIter; iter++) {
 
                 // 1. Build mean from current waveBuf (channel-major, int64 accumulator)
@@ -1764,40 +1947,26 @@ void KK::RealignChunkWaveforms(
                     tmplBuf[static_cast<size_t>(e)] =
                         static_cast<int16_t>(acc[static_cast<size_t>(e)] / nMem);
 
-                // 2. Pre-align template peak to PeakSampleIndex
-                if (PeakSampleIndex > 0) {
-                    int    tmplPeak = 0;
-                    double bestAmp  = -1.0;
-                    for (int s = 0; s < nSamplesPerSpike; s++) {
-                        double amp = 0.0;
-                        for (int ch = 0; ch < nChan; ch++)
-                            amp += std::abs(static_cast<double>(
-                                tmplBuf[static_cast<size_t>(ch * nSamplesPerSpike + s)]));
-                        if (amp > bestAmp) { bestAmp = amp; tmplPeak = s; }
-                    }
-                    const int tShift = PeakSampleIndex - tmplPeak;
-                    if (tShift != 0) {
-                        std::vector<int16_t> aligned(tmplBuf.size());
-                        for (int ch = 0; ch < nChan; ch++)
-                            for (int s = 0; s < nSamplesPerSpike; s++) {
-                                const int src = (s - tShift + nSamplesPerSpike) % nSamplesPerSpike;
-                                aligned[static_cast<size_t>(ch * nSamplesPerSpike + s)] =
-                                    tmplBuf[static_cast<size_t>(ch * nSamplesPerSpike + src)];
-                            }
-                        tmplBuf = std::move(aligned);
-                    }
-                }
-
-                // 3. Xcorr waveBuf vs template
+                // 2. Xcorr waveBuf vs template
+                // Note: template peak pre-alignment (as used in Klusters) is intentionally
+                // omitted here. On multi-channel probes a single unit may have genuine
+                // temporal offsets between channels (e.g. one channel peaks 2-3 samples
+                // before another). Forcing the summed-amplitude peak to PeakSampleIndex
+                // distorts such templates and causes erroneous shifts. The xcorr finds
+                // the lag maximising correlation without needing the template repositioned.
+                // minScore=0.70 matches Klusters default: only accept shifts
+                // where the normalised xcorr exceeds 0.70. Below this the
+                // correlation is unreliable and the shift would be spurious.
+                const float minXcorrScore = 0.70f;
                 std::vector<int>   iterShifts(static_cast<size_t>(nMem), 0);
                 std::vector<float> iterScores(static_cast<size_t>(nMem), 0.0f);
                 XcorrDispatch::compute(
                     waveBuf.data(), tmplBuf.data(),
                     nMem, nChan, nSamplesPerSpike,
-                    maxShift, /*minScore=*/0.0f,
+                    maxShift, minXcorrScore,
                     iterShifts.data(), iterScores.data());
 
-                // 4. Circularly shift waveBuf in-place (channel-major)
+                // 3. Circularly shift waveBuf in-place (channel-major)
                 //    newSpike[ch*N + t] = oldSpike[ch*N + (t + s + N) % N]
                 //    Mirrors Klusters: tmp[ch*N+t] = w[ch*N + (t+s+N)%N]
                 int changed = 0;
@@ -1821,7 +1990,7 @@ void KK::RealignChunkWaveforms(
 
             } // end iter loop
 
-            // 5. Write total cumulative shift into spikeShifts[] — home-chunk
+            // 4. Write total cumulative shift into spikeShifts[] — home-chunk
             //    first-write-wins for overlap spikes.
             //    RefeaturizeFromShifts will re-extract from .fil at
             //    rawTs + cumShift - PeakSampleIndex (clean, no wrap-around).
@@ -1886,18 +2055,19 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
     } pm;
 
     {
-        int32_t magic, ver, nc, d2u, ncomp, rs, ic;
+        // Header written by process_pca: 5 x int32
+        //   [nChannels, data2use, nComponents, isCentered, recShift]
+        int32_t nc, d2u, ncomp, ic, rs;
         auto rd = [&](int32_t& v) { return fread(&v, 4, 1, pf) == 1; };
-        if (!rd(magic)||!rd(ver)||!rd(nc)||!rd(d2u)||!rd(ncomp)||!rd(rs)||!rd(ic)) {
+        if (!rd(nc)||!rd(d2u)||!rd(ncomp)||!rd(ic)||!rd(rs)) {
             Output("RefeaturizeFromShifts: truncated PCA header in %s\n", pcaPath);
-            fclose(pf); return;
-        }
-        if (magic != static_cast<int32_t>(0x50434145)) {
-            Output("RefeaturizeFromShifts: bad magic in %s — not a PCAE file\n", pcaPath);
             fclose(pf); return;
         }
         pm.nChan = nc; pm.data2use = d2u; pm.nComp = ncomp;
         pm.recShift = rs; pm.isCentered = (ic != 0);
+
+        Output("RefeaturizeFromShifts: PCA model — nChan=%d data2use=%d nComp=%d recShift=%d isCentered=%d\n",
+               pm.nChan, pm.data2use, pm.nComp, pm.recShift, (int)pm.isCentered);
 
         if (pm.nChan != nChan) {
             Output("RefeaturizeFromShifts: PCA has %d channels, spike group has %d — "
@@ -1905,6 +2075,8 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
             fclose(pf); return;
         }
 
+        // process_pca writes ALL means first (all channels), then ALL eigenvectors.
+        // Layout: [mean_ch0..mean_ch(N-1)][evec_ch0..evec_ch(N-1)]
         pm.mean.resize(static_cast<size_t>(nc));
         pm.eigvec.resize(static_cast<size_t>(nc));
         for (int ch = 0; ch < nc; ++ch) {
@@ -1914,6 +2086,8 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
                 Output("RefeaturizeFromShifts: truncated PCA means (ch %d)\n", ch);
                 fclose(pf); return;
             }
+        }
+        for (int ch = 0; ch < nc; ++ch) {
             size_t evSz = static_cast<size_t>(d2u * ncomp);
             pm.eigvec[static_cast<size_t>(ch)].resize(evSz);
             if (fread(pm.eigvec[static_cast<size_t>(ch)].data(), 8, evSz, pf) != evSz) {
@@ -1924,6 +2098,12 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
     }
     fclose(pf);
 
+    // Sanity check: print first mean and eigenvector values
+    if (!pm.mean.empty() && !pm.mean[0].empty())
+        Output("RefeaturizeFromShifts: ch0 mean[0]=%.4g ev[0]=%.4g\n",
+               pm.mean[0][0],
+               (!pm.eigvec.empty() && !pm.eigvec[0].empty()) ? pm.eigvec[0][0] : 0.0);
+
     const int nPCAFeatures = pm.nChan * pm.nComp;
     if (nPCAFeatures > nDims - 1) {
         Output("RefeaturizeFromShifts: PCA feature count (%d) exceeds nDims-1 (%d) — "
@@ -1931,22 +2111,23 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
         return;
     }
 
+    // ── Read raw timestamps directly from .res to avoid float precision loss ──
+    // Recovering rawTs from the normalised float Data[timeDimIdx] introduces
+    // up to ±13 samples of error for late-session spikes (timestamp ~1.17×10^8
+    // at 32552 Hz × 1 hour; float has only ~7 significant digits).
+    // Klusters reads directly from .res as int64 — we do the same.
     // ── Prefer .fil re-extraction; fall back to .spk circular shift ───────
-    //
-    // .fil re-extraction: read nSamplesPerSpike time steps starting at
-    //   (rawTs - shift - PeakSampleIndex) from the broadband .fil file,
-    //   selecting only GroupChannelIds columns.  This gives a clean waveform
-    //   with no wrap-around corruption.
-    //
-    // Fallback: open .spk and apply circular shift — used when .fil is absent
-    //   (e.g. cleaned up after ndm_stripdat) or when NbTotalChannels / GroupChannelIds
-    //   were not supplied.
     const bool canUseFil = (NbTotalChannels > 0 &&
                             !GroupChannelIds.empty() &&
                             PeakSampleIndex >= 0);
     const float sessionSamples = timeRawMax - timeRawMin;
     const int   timeDimIdx     = nDims - 1;
     const int   waveSamples    = nChan * nSamplesPerSpike;
+
+    // Open .res for exact int64 timestamps
+    char resPathRFS[STRLEN + 16];
+    snprintf(resPathRFS, sizeof(resPathRFS), "%s.res.%d", FileBase, ElecNo);
+    FILE* resRFS = fopen(resPathRFS, "rb");
 
     char filPath[STRLEN + 8], spkPath[STRLEN + 16];
     snprintf(filPath, sizeof(filPath), "%s.fil",     FileBase);
@@ -1977,16 +2158,23 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
                      ? spikeShifts[p] : 0;
         if (sh == 0 || sh == std::numeric_limits<int>::min()) { ++nSkipped; continue; }
 
-        // Recover raw timestamp for this spike (needed for .fil offset and extTs)
+        // Read exact int64 timestamp from .res; fall back to float if unavailable
+        int64_t rawTsInt = 0;
+        if (resRFS) {
+            fseeko(resRFS, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
+            (void)fread(&rawTsInt, sizeof(int64_t), 1, resRFS);
+        }
         const float normTs = Data.m_Data[p * nDims + timeDimIdx];
-        const float rawTs  = normTs * sessionSamples + timeRawMin;
+        const float rawTs  = (rawTsInt > 0)
+            ? static_cast<float>(rawTsInt)
+            : normTs * sessionSamples + timeRawMin;
 
         if (filFp) {
             // ── .fil path: re-extract at corrected timestamp ───────────────
             // extTs = rawTs + sh: the window that, after rolling forward by sh,
             // presents the waveform with its peak at PeakSampleIndex.
             // Matches Klusters: startSample = ts - peakSamp0 where ts = oldTs + cumShift.
-            const int64_t off  = static_cast<int64_t>(rawTs) + sh - PeakSampleIndex;
+            const int64_t off  = (rawTsInt > 0 ? rawTsInt : static_cast<int64_t>(rawTs)) + sh - PeakSampleIndex;
             if (off < 0 || off + nSamplesPerSpike >
                     static_cast<int64_t>(sessionSamples) + 1) { ++nSkipped; continue; }
 
@@ -2039,18 +2227,16 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
             }
         }
 
-        // Update the .fet timestamp column with extTs = rawTs + sh.
-        // The .res timestamp (spike detection sample) is left unchanged —
-        // the physical spike event did not move; only the extraction window did.
-        // This matches Klusters: resTs = original, .fet last col = extTs.
+        // Update .fet timestamp with extTs = rawTs + sh (exact int64)
         if (sessionSamples > 0.0f) {
-            const float extTs   = rawTs + static_cast<float>(sh);
-            dataRow[timeDimIdx] = (extTs - timeRawMin) / sessionSamples;
+            const int64_t baseTs = (rawTsInt > 0) ? rawTsInt : static_cast<int64_t>(rawTs);
+            dataRow[timeDimIdx] = (static_cast<float>(baseTs + sh) - timeRawMin) / sessionSamples;
         }
 
         ++nReproj;
     }
 
+    if (resRFS) fclose(resRFS);
     if (filFp) fclose(filFp);
     if (spkFp) fclose(spkFp);
 
@@ -2190,6 +2376,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (normBounds[i] > 1.0f) normBounds[i] = 1.0f;
     }
 
+    fprintf(stderr, "[Phase 0] Preseed (%.0f min, %d drift-adaptive chunks)\n",
+            sessionSamples / samplingRate / 60.0f, nChunks);
     Output("RunChunkedCEM(ext): session %.1f min, %d drift-adaptive chunks\n",
            sessionSamples / samplingRate / 60.0f, nChunks);
 
@@ -2280,11 +2468,15 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         threadKc[t].AllocateCholeskyVecs();
     }
 
+    fprintf(stderr, "[Phase 1] Chunk CEM (%d threads, %d chunks)\n",
+            nThreads, nActive);
     #pragma omp parallel for schedule(dynamic) default(none) \
         num_threads(nThreads) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
                chunkPoints, perChunkClass, nActive, nFullDims, timeMergeIter, threadKc) \
-        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix)
+        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix, \
+                     nRuns, HugeScore, RandomSeed) \
+        shared(stderr)
     for (int k = 0; k < nActive; k++) {
         const std::vector<int>& pts = chunkPoints[k];
         const int nPts = static_cast<int>(pts.size());
@@ -2324,14 +2516,19 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 bestNClusters  = Kc.nClustersAlive;
                 for (int i2 = 0; i2 < nPts; i2++) bestClass[i2] = Kc.Class[i2];
             }
+            #pragma omp critical
+            { fprintf(stderr, "  [chunk %d/%d  run %d/%d] score=%.4g  nclusters=%d\n",
+                      k + 1, nActive, run + 1, runsPerChunk,
+                      runScore, Kc.nClustersAlive); }
         }
-        // Restore best Class[] for harvesting.
+        // Restore best Class[] for harvesting, then recompute Mean/Cov.
         for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = bestClass[i2];
         for (int c = 0; c < MaxPossibleClusters; c++) Kc.ClassAlive[c] = 0;
         for (int i2 = 0; i2 < nPts; i2++) Kc.ClassAlive[Kc.Class[i2]] = 1;
         Kc.nClustersAlive = 0;
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (Kc.ClassAlive[c]) Kc.AliveIndex[Kc.nClustersAlive++] = c;
+        if (runsPerChunk > 1) Kc.MStep();  // recompute Mean/Cov for harvesting
 
         perChunkScore[k]     = bestChunkScore;
         perChunkNClusters[k] = bestNClusters;
@@ -2354,6 +2551,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                         Kc.Cov[c * Kc.nDims2 + r * nFullDims + col];
             for (int i = 0; i < nPts; i++)
                 if (Kc.Class[i] == c) cm.nMembers++;
+
             models.push_back(std::move(cm));
         }
 
@@ -2372,7 +2570,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         Output("  Chunk %d / %d  (%d spikes): %d clusters, score %.5g\n",
                k, nActive - 1, static_cast<int>(chunkPoints[k].size()),
                perChunkNClusters[k], perChunkScore[k]);
-        for (auto& cm : perChunkModels[k]) allModels.push_back(std::move(cm));
+        // Do NOT move models into allModels yet — WithinChunkTemplateMatch
+        // will update perChunkModels (remove merged-away entries) and
+        // perChunkClass (remap IDs). allModels must reflect post-merge state
+        // so that MergeChunkModels vote keys match allModels localClusterIds.
         for (auto& [p, packed] : perChunkAssign[k]) pointPacked[p] = packed;
     }
 
@@ -2388,19 +2589,90 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
     //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
     //   Falls back to circular shift when .fil is unavailable.
-    if (NbChannels > 0 && NbSamplesPerSpike > 0) {
-        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d)\n",
-               NbChannels, NbSamplesPerSpike);
+    // ── Phase 2.5: per-chunk subspace reclustering (pre-realignment) ─────────
+    if (SubspaceRecluster > 0) {
+        fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
+        SubspaceReclusterPerChunk(
+            SubspaceDims > 0 ? SubspaceDims : 3,
+            chunkPoints, perChunkClass, perChunkModels, nFullDims);
+    }
+
+
+    if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
+        fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
+        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
+               NbChannels, NbSamplesPerSpike, Phase15Iters);
         std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
                                      std::numeric_limits<int>::min());
         RealignChunkWaveforms(chunkPoints, perChunkClass,
                               NbChannels, NbSamplesPerSpike, NbBytesPerSample,
                               spikeShifts);
         RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-        // Write corrected .spk and .fet to .pending files, then rename.
         WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
     }
 
+    // ── Serial meanWav harvest (post-realignment) ────────────────────────────
+    // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
+    if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
+        && NbChannels > 0 && NbSamplesPerSpike > 0)
+        fprintf(stderr, "[Phase 1.6] Mean waveform harvest (channel-major xcorr format)\n");
+    // Populate ChunkModel::meanWav for template matching.
+    // Done serially after the parallel chunk loop since all chunks share
+    // the same .spk file handle and fseeko calls cannot be parallelised safely.
+    if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f) &&
+        NbChannels > 0 && NbSamplesPerSpike > 0) {
+        const int wElems = NbChannels * NbSamplesPerSpike;
+        char spkPathTM[STRLEN + 16];
+        snprintf(spkPathTM, sizeof(spkPathTM), "%s.spk.%d", FileBase, ElecNo);
+        FILE* spkTM = fopen(spkPathTM, "rb");
+        if (spkTM) {
+            for (int k = 0; k < nActive; k++) {
+                const auto& pts  = chunkPoints[k];
+                const auto& cls  = perChunkClass[k];
+                const int   nPts = static_cast<int>(pts.size());
+
+                // Build localClusterId → ChunkModel* map for this chunk
+                std::unordered_map<int, ChunkModel*> lcToModel;
+                for (auto& cm : perChunkModels[k])
+                    if (cm.chunkIdx == k)
+                        lcToModel[cm.localClusterId] = &cm;
+
+                // Accumulate per-cluster waveform sums
+                std::unordered_map<int, std::vector<int64_t>> acc;
+                std::unordered_map<int, int> nAcc;
+                std::vector<int16_t> row(static_cast<size_t>(wElems));
+                for (int i = 0; i < nPts; i++) {
+                    const int lc = cls[i];
+                    if (lc == 0) continue;  // skip noise
+                    if (!lcToModel.count(lc)) continue;
+                    const int p2 = pts[i];
+                    fseeko(spkTM,
+                           static_cast<off_t>(p2) * wElems * sizeof(int16_t),
+                           SEEK_SET);
+                    if (fread(row.data(), sizeof(int16_t), wElems, spkTM)
+                            != static_cast<size_t>(wElems)) continue;
+                    auto& a = acc[lc];
+                    if (a.empty()) a.assign(static_cast<size_t>(wElems), 0);
+                    // sample-major (.spk) → channel-major (XcorrDispatch)
+                    for (int ch = 0; ch < NbChannels; ch++)
+                        for (int s = 0; s < NbSamplesPerSpike; s++)
+                            a[static_cast<size_t>(ch * NbSamplesPerSpike + s)]
+                                += row[static_cast<size_t>(s * NbChannels + ch)];
+                    nAcc[lc]++;
+                }
+                for (auto& [lc, a] : acc) {
+                    int n2 = nAcc[lc];
+                    if (n2 == 0) continue;
+                    ChunkModel* cm = lcToModel[lc];
+                    cm->meanWav.resize(static_cast<size_t>(wElems));
+                    for (int e = 0; e < wElems; e++)
+                        cm->meanWav[static_cast<size_t>(e)] =
+                            static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                }
+            }
+            fclose(spkTM);
+        }
+    }
     // ── Phase 2: cross-chunk model matching ─────────────────────────────────
     {
         const float d_    = static_cast<float>(nSpatialDims);
@@ -2413,6 +2685,100 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
     static const std::vector<std::unordered_map<int,int>> noOverlapVotes;
+    // ── Phase 1.7: within-chunk circular xcorr template matching (iterated) ─
+    // Loops until no new merges occur or 10 iterations.  After each merge pass
+    // the surviving clusters need updated meanWav vectors (the merged cluster
+    // mean changes when two sub-clusters are combined), so the Phase 1.6 harvest
+    // re-runs at the top of each iteration before the next xcorr comparison.
+    if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
+        const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
+        for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
+            // Re-harvest meanWav with current perChunkClass
+            if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f) &&
+                NbChannels > 0 && NbSamplesPerSpike > 0) {
+                const int wElems = NbChannels * NbSamplesPerSpike;
+                char spkPathTM2[STRLEN + 16];
+                snprintf(spkPathTM2, sizeof(spkPathTM2), "%s.spk.%d", FileBase, ElecNo);
+                FILE* spkTM2 = fopen(spkPathTM2, "rb");
+                if (spkTM2) {
+                    for (int k = 0; k < nActive; k++) {
+                        const auto& pts2  = chunkPoints[k];
+                        const auto& cls2  = perChunkClass[k];
+                        const int   nPts2 = static_cast<int>(pts2.size());
+                        std::unordered_map<int, ChunkModel*> lcToModel2;
+                        for (auto& cm : perChunkModels[k])
+                            if (cm.chunkIdx == k)
+                                lcToModel2[cm.localClusterId] = &cm;
+                        // Zero existing meanWav for live clusters
+                        for (auto& [lc2, pcm] : lcToModel2)
+                            pcm->meanWav.assign(static_cast<size_t>(wElems), 0);
+                        std::unordered_map<int, std::vector<int64_t>> acc2;
+                        std::unordered_map<int, int> nAcc2;
+                        std::vector<int16_t> row2(static_cast<size_t>(wElems));
+                        for (int i = 0; i < nPts2; i++) {
+                            const int lc2 = cls2[i];
+                            if (lc2 == 0 || !lcToModel2.count(lc2)) continue;
+                            fseeko(spkTM2,
+                                   static_cast<off_t>(pts2[i]) * wElems * sizeof(int16_t),
+                                   SEEK_SET);
+                            if (fread(row2.data(), sizeof(int16_t), wElems, spkTM2)
+                                    != static_cast<size_t>(wElems)) continue;
+                            auto& a2 = acc2[lc2];
+                            if (a2.empty()) a2.assign(static_cast<size_t>(wElems), 0);
+                            for (int ch2 = 0; ch2 < NbChannels; ch2++)
+                                for (int s2 = 0; s2 < NbSamplesPerSpike; s2++)
+                                    a2[static_cast<size_t>(ch2 * NbSamplesPerSpike + s2)]
+                                        += row2[static_cast<size_t>(s2 * NbChannels + ch2)];
+                            nAcc2[lc2]++;
+                        }
+                        for (auto& [lc2, a2] : acc2) {
+                            int n2b = nAcc2[lc2];
+                            if (n2b == 0) continue;
+                            auto* cm2 = lcToModel2[lc2];
+                            cm2->meanWav.resize(static_cast<size_t>(wElems));
+                            for (int e2 = 0; e2 < wElems; e2++)
+                                cm2->meanWav[static_cast<size_t>(e2)] =
+                                    static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
+                        }
+                    }
+                    fclose(spkTM2);
+                }
+            }
+            fprintf(stderr, "[Phase 1.7] Within-chunk circular xcorr template matching (iter %d)\n",
+                    _tmIter + 1);
+            int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
+                                                    NbChannels, NbSamplesPerSpike, TemplateMatchScore);
+            if (_nMerged == 0) break;
+        }
+    }
+
+    // Rebuild pointPacked[] using post-template-merge cluster IDs.
+    // perChunkAssign was built with original Phase 1 IDs; after
+    // WithinChunkTemplateMatch the IDs in perChunkClass differ.
+    // packedToGlobal (built after MergeChunkModels) uses post-merge IDs,
+    // so pointPacked must use the same scheme.
+    std::fill(pointPacked.begin(), pointPacked.end(), -1);
+    for (int k = 0; k < nActive; k++) {
+        const auto& pts = chunkPoints[k];
+        const auto& cls = perChunkClass[k];
+        const int nPts  = static_cast<int>(pts.size());
+        for (int i = 0; i < nPts; i++) {
+            const int p2 = pts[i];
+            if (pointPacked[p2] < 0)  // first-write-wins for overlap spikes
+                pointPacked[p2] = k * MaxPossibleClusters + cls[i];
+        }
+    }
+
+    // Rebuild allModels from perChunkModels now that within-chunk template
+    // matching has finalised the local cluster set.  Cluster IDs in
+    // perChunkClass and in allModels must agree so that MergeChunkModels vote
+    // keys (clsK * MaxPossibleClusters + clsK1) resolve correctly.
+    allModels.clear();
+    for (int k = 0; k < nActive; k++)
+        for (auto& cm : perChunkModels[k])
+            allModels.push_back(cm);  // copy — perChunkModels still needed below
+
+    fprintf(stderr, "[Phase 2]   Cross-chunk model matching (overlap + Mahal + xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -2457,15 +2823,63 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (globalMergeIter <= 0) {
         // GlobalMerge=0: skip Phase 3 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
+        fprintf(stderr, "[Phase 3]   Skipped (GlobalMergeIter=0)\n");
         Output("Phase 3 skipped (GlobalMerge=0) — using Phase 2 assignment directly\n");
-        MStep(); EStep();
+        // Force CPU path for Phase 3 post-merge scoring.
+        // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
+        // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
+        // ComputeScore all run on CPU, where LogP.m_Data is authoritative.
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        void* savedGpu = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+        MStep();
+        // Reassign any spikes whose cluster was deleted by MStep (singular covariance)
+        // to noise (class 0) so EStep and ComputeScore see valid Class[] values.
+        for (int p2 = 0; p2 < nPoints; p2++)
+            if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+        ClassAlive[0] = 1;
+        Reindex();
+        EStep();
+        {
+            int nNan = 0;
+            const float kLargeLogP = 1e15f;
+            for (int p2 = 0; p2 < nPoints; p2++) {
+                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                if (!std::isfinite(lp)) { lp = kLargeLogP; nNan++; }
+            }
+            if (nNan > 0)
+                Output("Phase3-skip: clamped %d non-finite LogP entries\n", nNan);
+        }
         score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        gpu = static_cast<decltype(gpu)>(savedGpu);
+#endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
+        fprintf(stderr, "[Phase 3]   Global warm-start EM\n");
         Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        void* savedGpu2 = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+        MStep();
+        for (int p2 = 0; p2 < nPoints; p2++)
+            if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+        ClassAlive[0] = 1;
+        Reindex();
+        EStep();  // CPU path: populates LogP.m_Data directly
+        {
+            const float kLargeLogP = 1e15f;
+            for (int p2 = 0; p2 < nPoints; p2++) {
+                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                if (!std::isfinite(lp)) lp = kLargeLogP;
+            }
+        }
         score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        gpu = static_cast<decltype(gpu)>(savedGpu2);
+#endif
         FullStep = 1;
         for (; iter < globalMergeIter; iter++) {
             MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
@@ -2517,6 +2931,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
     const float chunkFrac    = chunkSamples / sessionSamples;
     const int   nChunks      = std::max(1, static_cast<int>(std::ceil(1.0f / chunkFrac)));
 
+    fprintf(stderr, "[Phase 0] Preseed (%.0f min, %d chunks, %.0f min/chunk)\n",
+            sessionSamples / samplingRate / 60.0f, nChunks, chunkMinutes);
     Output("RunChunkedCEM: session %.1f min, chunk %.1f min, %d chunks\n",
            sessionSamples / samplingRate / 60.0f, chunkMinutes, nChunks);
 
@@ -2677,12 +3093,16 @@ float KK::RunChunkedCEM(float chunkMinutes,
         threadKc[t].AllocateCholeskyVecs();
     }
 
+    fprintf(stderr, "[Phase 1] Chunk CEM (%d threads, %d chunks)\n",
+            nThreads, nActive);
     #pragma omp parallel for schedule(dynamic) default(none) \
         num_threads(nThreads) \
         shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
                chunkPoints, perChunkClass, globalPreseedCentres, \
                nActive, nFullDims, timeMergeIter, threadKc) \
-        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix, chunkStartK)
+        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix, chunkStartK, \
+                     nRuns, HugeScore, RandomSeed) \
+        shared(stderr)
     for (int k = 0; k < nActive; k++) {
         const std::vector<int>& pts = chunkPoints[k];
         const int nPts = static_cast<int>(pts.size());
@@ -2718,6 +3138,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 bestNClusters  = Kc.nClustersAlive;
                 for (int i2 = 0; i2 < nPts; i2++) bestClass[i2] = Kc.Class[i2];
             }
+            #pragma omp critical
+            { fprintf(stderr, "  [chunk %d/%d  run %d/%d] score=%.4g  nclusters=%d\n",
+                      k + 1, nActive, run + 1, runsPerChunk,
+                      runScore, Kc.nClustersAlive); }
         }
         for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = bestClass[i2];
         for (int c = 0; c < MaxPossibleClusters; c++) Kc.ClassAlive[c] = 0;
@@ -2725,6 +3149,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         Kc.nClustersAlive = 0;
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (Kc.ClassAlive[c]) Kc.AliveIndex[Kc.nClustersAlive++] = c;
+        if (runsPerChunk > 1) Kc.MStep();  // recompute Mean/Cov for harvesting
         perChunkScore[k]     = bestChunkScore;
         perChunkNClusters[k] = bestNClusters;
 
@@ -2747,6 +3172,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                         Kc.Cov[c * Kc.nDims2 + r * nFullDims + col];
             for (int i = 0; i < nPts; i++)
                 if (Kc.Class[i] == c) cm.nMembers++;
+
             models.push_back(std::move(cm));
         }
 
@@ -2769,8 +3195,6 @@ float KK::RunChunkedCEM(float chunkMinutes,
         Output("  Chunk %d / %d  (%d spikes): %d clusters, score %.5g\n",
                k, nActive - 1, static_cast<int>(chunkPoints[k].size()),
                perChunkNClusters[k], perChunkScore[k]);
-        for (auto& cm : perChunkModels[k])
-            allModels.push_back(std::move(cm));
         for (auto& [p, packed] : perChunkAssign[k])
             if (pointPacked[p] < 0) pointPacked[p] = packed;  // first-write-wins
     }
@@ -2787,19 +3211,90 @@ float KK::RunChunkedCEM(float chunkMinutes,
     //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
     //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
     //   Falls back to circular shift when .fil is unavailable.
-    if (NbChannels > 0 && NbSamplesPerSpike > 0) {
-        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d)\n",
-               NbChannels, NbSamplesPerSpike);
+    // ── Phase 2.5: per-chunk subspace reclustering (pre-realignment) ─────────
+    if (SubspaceRecluster > 0) {
+        fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
+        SubspaceReclusterPerChunk(
+            SubspaceDims > 0 ? SubspaceDims : 3,
+            chunkPoints, perChunkClass, perChunkModels, nFullDims);
+    }
+
+
+    if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
+        fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
+        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
+               NbChannels, NbSamplesPerSpike, Phase15Iters);
         std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
                                      std::numeric_limits<int>::min());
         RealignChunkWaveforms(chunkPoints, perChunkClass,
                               NbChannels, NbSamplesPerSpike, NbBytesPerSample,
                               spikeShifts);
         RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-        // Write corrected .spk and .fet to .pending files, then rename.
         WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
     }
 
+    // ── Serial meanWav harvest (post-realignment) ────────────────────────────
+    // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
+    if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
+        && NbChannels > 0 && NbSamplesPerSpike > 0)
+        fprintf(stderr, "[Phase 1.6] Mean waveform harvest (channel-major xcorr format)\n");
+    // Populate ChunkModel::meanWav for template matching.
+    // Done serially after the parallel chunk loop since all chunks share
+    // the same .spk file handle and fseeko calls cannot be parallelised safely.
+    if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f) &&
+        NbChannels > 0 && NbSamplesPerSpike > 0) {
+        const int wElems = NbChannels * NbSamplesPerSpike;
+        char spkPathTM[STRLEN + 16];
+        snprintf(spkPathTM, sizeof(spkPathTM), "%s.spk.%d", FileBase, ElecNo);
+        FILE* spkTM = fopen(spkPathTM, "rb");
+        if (spkTM) {
+            for (int k = 0; k < nActive; k++) {
+                const auto& pts  = chunkPoints[k];
+                const auto& cls  = perChunkClass[k];
+                const int   nPts = static_cast<int>(pts.size());
+
+                // Build localClusterId → ChunkModel* map for this chunk
+                std::unordered_map<int, ChunkModel*> lcToModel;
+                for (auto& cm : perChunkModels[k])
+                    if (cm.chunkIdx == k)
+                        lcToModel[cm.localClusterId] = &cm;
+
+                // Accumulate per-cluster waveform sums
+                std::unordered_map<int, std::vector<int64_t>> acc;
+                std::unordered_map<int, int> nAcc;
+                std::vector<int16_t> row(static_cast<size_t>(wElems));
+                for (int i = 0; i < nPts; i++) {
+                    const int lc = cls[i];
+                    if (lc == 0) continue;  // skip noise
+                    if (!lcToModel.count(lc)) continue;
+                    const int p2 = pts[i];
+                    fseeko(spkTM,
+                           static_cast<off_t>(p2) * wElems * sizeof(int16_t),
+                           SEEK_SET);
+                    if (fread(row.data(), sizeof(int16_t), wElems, spkTM)
+                            != static_cast<size_t>(wElems)) continue;
+                    auto& a = acc[lc];
+                    if (a.empty()) a.assign(static_cast<size_t>(wElems), 0);
+                    // sample-major (.spk) → channel-major (XcorrDispatch)
+                    for (int ch = 0; ch < NbChannels; ch++)
+                        for (int s = 0; s < NbSamplesPerSpike; s++)
+                            a[static_cast<size_t>(ch * NbSamplesPerSpike + s)]
+                                += row[static_cast<size_t>(s * NbChannels + ch)];
+                    nAcc[lc]++;
+                }
+                for (auto& [lc, a] : acc) {
+                    int n2 = nAcc[lc];
+                    if (n2 == 0) continue;
+                    ChunkModel* cm = lcToModel[lc];
+                    cm->meanWav.resize(static_cast<size_t>(wElems));
+                    for (int e = 0; e < wElems; e++)
+                        cm->meanWav[static_cast<size_t>(e)] =
+                            static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                }
+            }
+            fclose(spkTM);
+        }
+    }
     // Build overlap vote matrices for MergeChunkModels.
     std::vector<std::unordered_map<int,int>> overlapVotes(
         nActive > 0 ? nActive - 1 : 0);
@@ -2854,6 +3349,100 @@ float KK::RunChunkedCEM(float chunkMinutes,
                    mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
         }
     }
+    // ── Phase 1.7: within-chunk circular xcorr template matching (iterated) ─
+    // Loops until no new merges occur or 10 iterations.  After each merge pass
+    // the surviving clusters need updated meanWav vectors (the merged cluster
+    // mean changes when two sub-clusters are combined), so the Phase 1.6 harvest
+    // re-runs at the top of each iteration before the next xcorr comparison.
+    if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
+        const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
+        for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
+            // Re-harvest meanWav with current perChunkClass
+            if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f) &&
+                NbChannels > 0 && NbSamplesPerSpike > 0) {
+                const int wElems = NbChannels * NbSamplesPerSpike;
+                char spkPathTM2[STRLEN + 16];
+                snprintf(spkPathTM2, sizeof(spkPathTM2), "%s.spk.%d", FileBase, ElecNo);
+                FILE* spkTM2 = fopen(spkPathTM2, "rb");
+                if (spkTM2) {
+                    for (int k = 0; k < nActive; k++) {
+                        const auto& pts2  = chunkPoints[k];
+                        const auto& cls2  = perChunkClass[k];
+                        const int   nPts2 = static_cast<int>(pts2.size());
+                        std::unordered_map<int, ChunkModel*> lcToModel2;
+                        for (auto& cm : perChunkModels[k])
+                            if (cm.chunkIdx == k)
+                                lcToModel2[cm.localClusterId] = &cm;
+                        // Zero existing meanWav for live clusters
+                        for (auto& [lc2, pcm] : lcToModel2)
+                            pcm->meanWav.assign(static_cast<size_t>(wElems), 0);
+                        std::unordered_map<int, std::vector<int64_t>> acc2;
+                        std::unordered_map<int, int> nAcc2;
+                        std::vector<int16_t> row2(static_cast<size_t>(wElems));
+                        for (int i = 0; i < nPts2; i++) {
+                            const int lc2 = cls2[i];
+                            if (lc2 == 0 || !lcToModel2.count(lc2)) continue;
+                            fseeko(spkTM2,
+                                   static_cast<off_t>(pts2[i]) * wElems * sizeof(int16_t),
+                                   SEEK_SET);
+                            if (fread(row2.data(), sizeof(int16_t), wElems, spkTM2)
+                                    != static_cast<size_t>(wElems)) continue;
+                            auto& a2 = acc2[lc2];
+                            if (a2.empty()) a2.assign(static_cast<size_t>(wElems), 0);
+                            for (int ch2 = 0; ch2 < NbChannels; ch2++)
+                                for (int s2 = 0; s2 < NbSamplesPerSpike; s2++)
+                                    a2[static_cast<size_t>(ch2 * NbSamplesPerSpike + s2)]
+                                        += row2[static_cast<size_t>(s2 * NbChannels + ch2)];
+                            nAcc2[lc2]++;
+                        }
+                        for (auto& [lc2, a2] : acc2) {
+                            int n2b = nAcc2[lc2];
+                            if (n2b == 0) continue;
+                            auto* cm2 = lcToModel2[lc2];
+                            cm2->meanWav.resize(static_cast<size_t>(wElems));
+                            for (int e2 = 0; e2 < wElems; e2++)
+                                cm2->meanWav[static_cast<size_t>(e2)] =
+                                    static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
+                        }
+                    }
+                    fclose(spkTM2);
+                }
+            }
+            fprintf(stderr, "[Phase 1.7] Within-chunk circular xcorr template matching (iter %d)\n",
+                    _tmIter + 1);
+            int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
+                                                    NbChannels, NbSamplesPerSpike, TemplateMatchScore);
+            if (_nMerged == 0) break;
+        }
+    }
+
+    // Rebuild pointPacked[] using post-template-merge cluster IDs.
+    // perChunkAssign was built with original Phase 1 IDs; after
+    // WithinChunkTemplateMatch the IDs in perChunkClass differ.
+    // packedToGlobal (built after MergeChunkModels) uses post-merge IDs,
+    // so pointPacked must use the same scheme.
+    std::fill(pointPacked.begin(), pointPacked.end(), -1);
+    for (int k = 0; k < nActive; k++) {
+        const auto& pts = chunkPoints[k];
+        const auto& cls = perChunkClass[k];
+        const int nPts  = static_cast<int>(pts.size());
+        for (int i = 0; i < nPts; i++) {
+            const int p2 = pts[i];
+            if (pointPacked[p2] < 0)  // first-write-wins for overlap spikes
+                pointPacked[p2] = k * MaxPossibleClusters + cls[i];
+        }
+    }
+
+    // Rebuild allModels from perChunkModels now that within-chunk template
+    // matching has finalised the local cluster set.  Cluster IDs in
+    // perChunkClass and in allModels must agree so that MergeChunkModels vote
+    // keys (clsK * MaxPossibleClusters + clsK1) resolve correctly.
+    allModels.clear();
+    for (int k = 0; k < nActive; k++)
+        for (auto& cm : perChunkModels[k])
+            allModels.push_back(cm);  // copy — perChunkModels still needed below
+
+    fprintf(stderr, "[Phase 2]   Cross-chunk model matching (overlap + Mahal + xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -2916,14 +3505,61 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // GlobalMerge=0: skip Phase 3 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
         Output("Phase 3 skipped (GlobalMerge=0) — using Phase 2 assignment directly\n");
-        MStep(); EStep();
+        // Force CPU path for Phase 3 post-merge scoring.
+        // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
+        // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
+        // ComputeScore all run on CPU, where LogP.m_Data is authoritative.
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        void* savedGpu = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+        MStep();
+        // Reassign any spikes whose cluster was deleted by MStep (singular covariance)
+        // to noise (class 0) so EStep and ComputeScore see valid Class[] values.
+        for (int p2 = 0; p2 < nPoints; p2++)
+            if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+        ClassAlive[0] = 1;
+        Reindex();
+        EStep();
+        {
+            int nNan = 0;
+            const float kLargeLogP = 1e15f;
+            for (int p2 = 0; p2 < nPoints; p2++) {
+                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                if (!std::isfinite(lp)) { lp = kLargeLogP; nNan++; }
+            }
+            if (nNan > 0)
+                Output("Phase3-skip: clamped %d non-finite LogP entries\n", nNan);
+        }
         score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        gpu = static_cast<decltype(gpu)>(savedGpu);
+#endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
+        fprintf(stderr, "[Phase 3]   Global warm-start EM\n");
         Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        void* savedGpu2 = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+        MStep();
+        for (int p2 = 0; p2 < nPoints; p2++)
+            if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+        ClassAlive[0] = 1;
+        Reindex();
+        EStep();  // CPU path: populates LogP.m_Data directly
+        {
+            const float kLargeLogP = 1e15f;
+            for (int p2 = 0; p2 < nPoints; p2++) {
+                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                if (!std::isfinite(lp)) lp = kLargeLogP;
+            }
+        }
         score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+        gpu = static_cast<decltype(gpu)>(savedGpu2);
+#endif
         FullStep = 1;
         for (; iter < globalMergeIter; iter++) {
             MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
@@ -2992,12 +3628,20 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 {
     const int nShifted = static_cast<int>(
         std::count_if(spikeShifts.begin(), spikeShifts.end(),
-                      [](int s){ return s != 0; }));
+                      [](int s){ return s != 0 && s != std::numeric_limits<int>::min(); }));
     if (nShifted == 0) {
         Output("WritePhase15Checkpoint: no shifts — files unchanged\n");
         return;
     }
     Output("WritePhase15Checkpoint: updating %d / %d spikes\n", nShifted, nPoints);
+
+    // Read exact int64 timestamps directly from .res (avoids float precision loss:
+    // a timestamp of ~1e8 samples stored as float has ±13 samples round-trip error).
+    char resPathWPC[STRLEN + 16];
+    snprintf(resPathWPC, sizeof(resPathWPC), "%s.res.%d", FileBase, ElecNo);
+    FILE* resWPC = fopen(resPathWPC, "rb");
+    if (!resWPC)
+        Output("WritePhase15Checkpoint: cannot open .res — falling back to float timestamps\n");
 
     char spkOrig[STRLEN+16], fetOrig[STRLEN+16];
     char spkTmp [STRLEN+32], fetTmp [STRLEN+32];
@@ -3044,15 +3688,19 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
             }
 
             const int sh = (p < static_cast<int>(spikeShifts.size())) ? spikeShifts[p] : 0;
-            if (sh != 0) {
+            if (sh != 0 && sh != std::numeric_limits<int>::min()) {
                 if (filF) {
                     // Re-extract from .fil at extTs - PeakSampleIndex
-                    const float normTs = Data.m_Data[p * nDims + timeDimIdx];
-                    // Data[] timestamp column was updated by RefeaturizeFromShifts
-                    // to (rawTs + sh - timeRawMin) / sessionSamples.
-                    // Recover extTs: normTs * sessionSamples + timeRawMin = rawTs + sh
-                    const float extTs  = normTs * sessionSamples + timeRawMin;
-                    const int64_t off  = static_cast<int64_t>(extTs) - PeakSampleIndex;
+                    int64_t rawTsWPC = 0;
+                    if (resWPC) {
+                        fseeko(resWPC, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
+                        (void)fread(&rawTsWPC, sizeof(int64_t), 1, resWPC);
+                    }
+                    if (rawTsWPC == 0 && sessionSamples > 0.0f) {
+                        const float normTs = Data.m_Data[p * nDims + timeDimIdx];
+                        rawTsWPC = static_cast<int64_t>(normTs * sessionSamples + timeRawMin);
+                    }
+                    const int64_t off  = rawTsWPC + sh - PeakSampleIndex;
                     bool ok = (off >= 0);
                     if (ok) {
                         fseeko(filF, off * NbTotalChannels * 2, SEEK_SET);
@@ -3112,7 +3760,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                 break;
             }
             const int sh = (p < static_cast<int>(spikeShifts.size())) ? spikeShifts[p] : 0;
-            if (sh != 0) {
+            if (sh != 0 && sh != std::numeric_limits<int>::min()) {
                 // PCA feature columns from Data[] (already updated by RefeaturizeFromShifts)
                 const float* row  = Data.m_Data + p * nDims;
                 const int nPCACols = std::min(nDims - 1, nd - 1);
@@ -3123,11 +3771,18 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                         : dimMin_[d];
                     rowBuf[static_cast<size_t>(d)] = static_cast<int64_t>(std::llroundf(raw));
                 }
-                // Last column: extTs = rawTs + sh = Data[] time col * sessionSamples + timeRawMin
-                if (nd > 1 && sessionSamples > 0.0f) {
-                    const float normTs = row[nDims - 1];
-                    const float extTs  = normTs * sessionSamples + timeRawMin;
-                    rowBuf[static_cast<size_t>(nd - 1)] = static_cast<int64_t>(extTs);
+                // Last column: extTs = rawTs + sh (exact int64)
+                if (nd > 1) {
+                    int64_t rawTsF = 0;
+                    if (resWPC) {
+                        fseeko(resWPC, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
+                        (void)fread(&rawTsF, sizeof(int64_t), 1, resWPC);
+                    }
+                    if (rawTsF == 0 && sessionSamples > 0.0f) {
+                        const float normTs = row[nDims - 1];
+                        rawTsF = static_cast<int64_t>(normTs * sessionSamples + timeRawMin);
+                    }
+                    rowBuf[static_cast<size_t>(nd - 1)] = rawTsF + sh;
                 }
             }
             if (fwrite(rowBuf.data(), sizeof(int64_t), nd, fetW)
@@ -3141,7 +3796,863 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
         Output("  .fet updated\n");
     }
     skip_fet:;
+    if (resWPC) fclose(resWPC);
     Output("WritePhase15Checkpoint: done\n");
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::SubspaceReclusterPass
+//
+// Post-Phase-2 refinement: for each global cluster, project its spikes into
+// the top-subspaceDims eigenvector subspace of that cluster's spatial covariance,
+// then run a fresh CEMTwoPhase in that reduced space.  If the reduced-space CEM
+// finds more than one cluster with a better BIC score than the single-cluster
+// null, the global cluster is split and new global IDs are assigned.
+//
+// Rationale: Phase 1 CEM runs in the full feature space (25 dims for an octrode),
+// where the EM is dominated by the highest-variance dimensions globally.  A cluster
+// that is actually two overlapping units may not split in 25D but will split cleanly
+// in the 3D subspace defined by its own primary variance directions.
+//
+// Only clusters with enough spikes to estimate a 3D covariance reliably are
+// processed (threshold: subspaceDims * nDims * 3 spikes minimum).
+// ---------------------------------------------------------------------------
+// KK::SubspaceReclusterPerChunk
+//
+// Per-chunk subspace reclustering — runs BEFORE Phase 1.5 and Phase 2.
+//
+// For each local cluster in each chunk, projects its spikes (by global index)
+// into the top-subspaceDims eigenvector subspace of that cluster's covariance,
+// then runs CEMTwoPhase in that reduced space.  Splits are accepted if the
+// multi-cluster BIC score beats the single-cluster null.  perChunkClass[] and
+// perChunkModels[] are updated in-place so downstream realignment and Phase 2
+// cross-chunk matching see purer, better-separated cluster models.
+//
+// New local cluster IDs are assigned starting from maxLocalId+1 within each
+// chunk so they remain globally unique across chunks.
+// ---------------------------------------------------------------------------
+// KK::WithinChunkMerge
+//
+// Within-chunk merge pass — runs after Phase 1.5 waveform realignment updates
+// Data[] features, before Phase 2 cross-chunk matching.
+//
+// For each chunk: recomputes cluster means and covariances from the updated
+// Data[], then runs a symmetric Mahalanobis MNN merge.  Clusters whose
+// symmetric Mahalanobis distance falls below mergeThresh are merged — exactly
+// the same criterion as Phase 2, but applied locally within each chunk.
+//
+// This cleans up clusters that were over-split in Phase 1 but, after feature
+// updating via realignment, are no longer distinguishable.  Giving Phase 2
+// purer, larger clusters improves cross-chunk matching reliability.
+// ---------------------------------------------------------------------------
+// KK::WithinChunkTemplateMatch
+//
+// Within-chunk xcorr template matching — runs after Phase 1.5 waveform
+// realignment and the Phase 1.6 meanWav harvest, before Phase 2 cross-chunk
+// matching.
+//
+// For each chunk, computes the normalised circular xcorr between every pair of
+// cluster mean waveforms (already in ChunkModel::meanWav, channel-major int16).
+// A mutual-best pair whose xcorr score >= minScore is merged:
+//   - perChunkClass[k] is remapped so both clusters share the lower local ID.
+//   - The surviving ChunkModel accumulates both clusters' members.
+//
+// This is a waveform-level analogue of the Mahalanobis MNN merge — it catches
+// clusters that are separated in feature space but represent the same unit
+// viewed at slightly different times within the chunk.  It also pre-consolidates
+// the model list before Phase 2 so cross-chunk matching has fewer, purer models.
+// ---------------------------------------------------------------------------
+int  KK::WithinChunkTemplateMatch(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nChan, int nSamplesPerSpike, float minScore)
+{
+    const int wElems  = nChan * nSamplesPerSpike;
+    const int maxShft = std::max(1, nSamplesPerSpike / 4);
+    const int nCh     = static_cast<int>(chunkPoints.size());
+    int totalMerged   = 0;
+
+    for (int ck = 0; ck < nCh; ck++) {
+        auto& cls  = perChunkClass[ck];
+        auto& mdls = perChunkModels[ck];
+        const int n = static_cast<int>(mdls.size());
+        if (n < 2) continue;
+
+        // ── Compute all pairwise xcorr scores ─────────────────────────────
+        // score[a][b] = normalised xcorr of mdls[a].meanWav vs mdls[b].meanWav
+        std::vector<float> scoreAB(static_cast<size_t>(n) * n, -1.0f);
+
+        for (int a = 0; a < n; a++) {
+            if (mdls[static_cast<size_t>(a)].localClusterId == 0) continue;
+            if (static_cast<int>(mdls[static_cast<size_t>(a)].meanWav.size()) != wElems) continue;
+            for (int b = a + 1; b < n; b++) {
+                if (mdls[static_cast<size_t>(b)].localClusterId == 0) continue;
+                if (static_cast<int>(mdls[static_cast<size_t>(b)].meanWav.size()) != wElems) continue;
+                int sh = 0; float sc = 0.0f;
+                XcorrDispatch::compute(
+                    mdls[static_cast<size_t>(a)].meanWav.data(),
+                    mdls[static_cast<size_t>(b)].meanWav.data(),
+                    1, nChan, nSamplesPerSpike,
+                    maxShft, 0.0f, &sh, &sc);
+                scoreAB[static_cast<size_t>(a * n + b)] = sc;
+                scoreAB[static_cast<size_t>(b * n + a)] = sc;  // xcorr is symmetric for single spike
+            }
+        }
+
+        // ── Find mutual-best pairs above threshold ─────────────────────────
+        // For each cluster find its highest-scoring partner
+        std::vector<int>   bestB(static_cast<size_t>(n), -1);
+        std::vector<float> bestS(static_cast<size_t>(n), -1.0f);
+        for (int a = 0; a < n; a++) {
+            for (int b = 0; b < n; b++) {
+                if (a == b) continue;
+                float s = scoreAB[static_cast<size_t>(a * n + b)];
+                if (s >= minScore && s > bestS[static_cast<size_t>(a)]) {
+                    bestS[static_cast<size_t>(a)] = s;
+                    bestB[static_cast<size_t>(a)] = b;
+                }
+            }
+        }
+
+        // ── Union-Find for transitive merges ──────────────────────────────
+        std::vector<int> parent(static_cast<size_t>(n));
+        std::iota(parent.begin(), parent.end(), 0);
+        auto Find = [&](int x) -> int {
+            while (parent[static_cast<size_t>(x)] != x) {
+                parent[static_cast<size_t>(x)] = parent[static_cast<size_t>(
+                    parent[static_cast<size_t>(x)])];
+                x = parent[static_cast<size_t>(x)];
+            }
+            return x;
+        };
+        auto Union = [&](int a, int b) {
+            a = Find(a); b = Find(b);
+            if (a != b) parent[static_cast<size_t>(b)] = a;
+        };
+
+        int chunkMerged = 0;
+        for (int a = 0; a < n; a++) {
+            int b = bestB[static_cast<size_t>(a)];
+            if (b < 0) continue;
+            if (bestB[static_cast<size_t>(b)] != a) continue;  // not mutual best
+            if (Find(a) == Find(b)) continue;
+            Union(a, b);
+            Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f\n",
+                   ck,
+                   mdls[static_cast<size_t>(a)].localClusterId,
+                   mdls[static_cast<size_t>(b)].localClusterId,
+                   bestS[static_cast<size_t>(a)]);
+            chunkMerged++;
+            totalMerged++;
+        }
+
+        if (chunkMerged == 0) continue;
+
+        // ── Remap perChunkClass: each component → lowest localClusterId ────
+        // Identify canonical (lowest) ID per component
+        std::unordered_map<int,int> rootToCanonIdx;
+        for (int a = 0; a < n; a++) {
+            int root = Find(a);
+            auto it = rootToCanonIdx.find(root);
+            if (it == rootToCanonIdx.end() ||
+                mdls[static_cast<size_t>(a)].localClusterId <
+                mdls[static_cast<size_t>(it->second)].localClusterId)
+                rootToCanonIdx[root] = a;
+        }
+        // Build localClusterId → canonical localClusterId remap
+        std::unordered_map<int,int> lcRemap;
+        for (int a = 0; a < n; a++) {
+            int canon = mdls[static_cast<size_t>(rootToCanonIdx[Find(a)])].localClusterId;
+            lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canon;
+        }
+        for (auto& lc : cls)
+            if (lcRemap.count(lc)) lc = lcRemap[lc];
+
+        // Remove merged-away ChunkModels; keep canonical ones
+        std::unordered_set<int> keepLc;
+        for (auto& [root, idx2] : rootToCanonIdx)
+            keepLc.insert(mdls[static_cast<size_t>(idx2)].localClusterId);
+        mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
+            [&](const ChunkModel& cm){ return !keepLc.count(cm.localClusterId); }),
+            mdls.end());
+
+        // Update nMembers on surviving models
+        for (auto& cm : mdls) {
+            cm.nMembers = 0;
+            for (const auto& lc : cls)
+                if (lc == cm.localClusterId) cm.nMembers++;
+        }
+    }
+
+    Output("WithinChunkTemplateMatch: %d cluster pair(s) merged across all chunks\n",
+           totalMerged);
+    return totalMerged;
+}
+
+
+// ---------------------------------------------------------------------------
+void KK::WithinChunkMerge(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nSpatialDims, float mergeThresh)
+{
+    const int nCh = static_cast<int>(chunkPoints.size());
+    int totalMerged = 0;
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts  = chunkPoints[ck];
+        auto&       cls  = perChunkClass[ck];
+        auto&       mdls = perChunkModels[ck];
+        const int   nPts = static_cast<int>(pts.size());
+
+        if (nPts == 0 || mdls.size() < 2) continue;
+
+        // ── Recompute means and covariances from updated Data[] ────────────
+        // Index models by localClusterId for fast lookup
+        std::unordered_map<int, int> lcToIdx;
+        for (int i = 0; i < (int)mdls.size(); i++)
+            lcToIdx[mdls[static_cast<size_t>(i)].localClusterId] = i;
+
+        // Ensure all models have mean/cov allocated to the correct size
+        for (auto& cm : mdls) {
+            cm.nMembers = 0;
+            if (cm.mean.size() != static_cast<size_t>(nSpatialDims + 1))
+                cm.mean.assign(static_cast<size_t>(nSpatialDims + 1), 0.0f);
+            else
+                std::fill(cm.mean.begin(), cm.mean.end(), 0.0f);
+            const size_t covSz = static_cast<size_t>(nSpatialDims + 1)
+                               * static_cast<size_t>(nSpatialDims + 1);
+            if (cm.cov.size() != covSz)
+                cm.cov.assign(covSz, 0.0f);
+            else
+                std::fill(cm.cov.begin(), cm.cov.end(), 0.0f);
+        }
+
+        // Accumulate means
+        for (int i = 0; i < nPts; i++) {
+            int lc = cls[static_cast<size_t>(i)];
+            if (lc == 0) continue;
+            auto it = lcToIdx.find(lc);
+            if (it == lcToIdx.end()) continue;
+            auto& cm = mdls[static_cast<size_t>(it->second)];
+            const int p = pts[static_cast<size_t>(i)];
+            for (int d = 0; d < nSpatialDims; d++)
+                cm.mean[static_cast<size_t>(d)] += Data[p * nDims + d];
+            cm.nMembers++;
+        }
+        for (auto& cm : mdls)
+            if (cm.nMembers > 0)
+                for (float& v : cm.mean) v /= cm.nMembers;
+
+        // Accumulate covariances (upper triangle, indexed by nDims)
+        for (int i = 0; i < nPts; i++) {
+            int lc = cls[static_cast<size_t>(i)];
+            if (lc == 0) continue;
+            auto it = lcToIdx.find(lc);
+            if (it == lcToIdx.end()) continue;
+            auto& cm = mdls[static_cast<size_t>(it->second)];
+            const int p = pts[static_cast<size_t>(i)];
+            for (int r = 0; r < nSpatialDims; r++)
+                for (int c2 = r; c2 < nSpatialDims; c2++) {
+                    float dr = Data[p * nDims + r]  - cm.mean[static_cast<size_t>(r)];
+                    float dc = Data[p * nDims + c2] - cm.mean[static_cast<size_t>(c2)];
+                    cm.cov[r * nDims + c2] += dr * dc;
+                }
+        }
+        for (auto& cm : mdls)
+            if (cm.nMembers > 1)
+                for (float& v : cm.cov) v /= static_cast<float>(cm.nMembers - 1);
+
+        // ── Pairwise symmetric Mahalanobis + Union-Find merge ─────────────
+        const int n = static_cast<int>(mdls.size());
+        std::vector<int> parent(static_cast<size_t>(n));
+        std::iota(parent.begin(), parent.end(), 0);
+        // Iterative path-halving Find (avoids stack overflow on deep chains)
+        auto Find = [&](int x) -> int {
+            while (parent[static_cast<size_t>(x)] != x) {
+                parent[static_cast<size_t>(x)] = parent[static_cast<size_t>(
+                    parent[static_cast<size_t>(x)])];
+                x = parent[static_cast<size_t>(x)];
+            }
+            return x;
+        };
+        auto Union = [&](int a, int b) {
+            parent[static_cast<size_t>(Find(a))] = Find(b);
+        };
+
+        // Mahalanobis distance (same formula as MergeChunkModels)
+        auto mahalDist = [&](const ChunkModel& src, const ChunkModel& tgt) -> float {
+            float covS[64*64], chol[64*64], diff[64], root[64];
+            if (nSpatialDims > 64) return HugeScore;
+            for (int r = 0; r < nSpatialDims; r++)
+                for (int c2 = r; c2 < nSpatialDims; c2++)
+                    covS[r * nSpatialDims + c2] = tgt.cov[r * nDims + c2];
+            if (Cholesky(covS, chol, nSpatialDims)) return HugeScore;
+            for (int d = 0; d < nSpatialDims; d++)
+                diff[d] = src.mean[d] - tgt.mean[d];
+            TriSolve(chol, diff, root, nSpatialDims);
+            float dist = 0.0f;
+            for (int d = 0; d < nSpatialDims; d++) dist += root[d] * root[d];
+            return dist;
+        };
+
+        // Build symmetric distance matrix and find MNN pairs
+        std::vector<float> D(static_cast<size_t>(n) * n, HugeScore);
+        for (int a = 0; a < n; a++) {
+            if (mdls[static_cast<size_t>(a)].localClusterId == 0) continue;
+            for (int b = a + 1; b < n; b++) {
+                if (mdls[static_cast<size_t>(b)].localClusterId == 0) continue;
+                float dAB = mahalDist(mdls[static_cast<size_t>(a)], mdls[static_cast<size_t>(b)]);
+                float dBA = mahalDist(mdls[static_cast<size_t>(b)], mdls[static_cast<size_t>(a)]);
+                float d   = 0.5f * (dAB + dBA);
+                D[static_cast<size_t>(a * n + b)] = d;
+                D[static_cast<size_t>(b * n + a)] = d;
+            }
+        }
+
+        // MNN: a merges with b if b is a's nearest and a is b's nearest, dist < thresh
+        std::vector<int> nn(static_cast<size_t>(n), -1);
+        std::vector<float> nnDist(static_cast<size_t>(n), HugeScore);
+        for (int a = 0; a < n; a++) {
+            if (mdls[static_cast<size_t>(a)].localClusterId == 0) continue;
+            for (int b = 0; b < n; b++) {
+                if (a == b) continue;
+                if (mdls[static_cast<size_t>(b)].localClusterId == 0) continue;
+                if (D[static_cast<size_t>(a * n + b)] < nnDist[static_cast<size_t>(a)]) {
+                    nnDist[static_cast<size_t>(a)] = D[static_cast<size_t>(a * n + b)];
+                    nn[static_cast<size_t>(a)] = b;
+                }
+            }
+        }
+
+        int chunkMerged = 0;
+        for (int a = 0; a < n; a++) {
+            int b = nn[static_cast<size_t>(a)];
+            if (b < 0) continue;
+            if (nn[static_cast<size_t>(b)] != a) continue;  // not mutual
+            if (nnDist[static_cast<size_t>(a)] >= mergeThresh) continue;
+            if (Find(a) == Find(b)) continue;
+            Union(a, b);
+            Output("  within-chunk merge: chunk%d c%d+c%d d=%.2f\n",
+                   ck,
+                   mdls[static_cast<size_t>(a)].localClusterId,
+                   mdls[static_cast<size_t>(b)].localClusterId,
+                   nnDist[static_cast<size_t>(a)]);
+            chunkMerged++;
+            totalMerged++;
+        }
+
+        if (chunkMerged == 0) continue;
+
+        // ── Apply merges: remap cluster IDs in perChunkClass ──────────────
+        // For each component, the representative ID is the lowest localClusterId
+        std::unordered_map<int,int> idxToNewLc;
+        for (int a = 0; a < n; a++) {
+            int root = Find(a);
+            if (!idxToNewLc.count(root) ||
+                mdls[static_cast<size_t>(a)].localClusterId <
+                mdls[static_cast<size_t>(idxToNewLc[root])].localClusterId)
+                idxToNewLc[root] = a;
+        }
+        // Build localClusterId → canonical localClusterId map
+        std::unordered_map<int,int> lcRemap;
+        for (int a = 0; a < n; a++) {
+            int canonical = mdls[static_cast<size_t>(idxToNewLc[Find(a)])].localClusterId;
+            lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canonical;
+        }
+        for (auto& lc : cls)
+            if (lcRemap.count(lc)) lc = lcRemap[lc];
+
+        // Rebuild perChunkModels: remove merged-away models, update survivors
+        std::unordered_set<int> keepLc;
+        for (auto& [root, idx2] : idxToNewLc)
+            keepLc.insert(mdls[static_cast<size_t>(idx2)].localClusterId);
+        mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
+            [&](const ChunkModel& cm){ return !keepLc.count(cm.localClusterId); }),
+            mdls.end());
+    }
+
+    Output("WithinChunkMerge: %d cluster pair(s) merged across all chunks\n", totalMerged);
+}
+
+
+// ---------------------------------------------------------------------------
+void KK::SubspaceReclusterPerChunk(
+    int subspaceDims,
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    if (subspaceDims <= 0) return;
+    const int k       = std::min(subspaceDims, nFullDims - 1);
+    const int nCh     = static_cast<int>(chunkPoints.size());
+    const int nSpatial = nFullDims - 1;
+    const int minSpikes = k * nFullDims * 3;
+
+    // ── Phase A: serial pre-processing ─────────────────────────────────────
+    // For each (chunk, cluster) build a projected sub-KK and compute nullScore.
+    // Reads Data[] (read-only) and perChunkClass/perChunkModels (read-only here).
+
+    struct WorkItem {
+        int   ck, lc;
+        int   nMem;
+        std::vector<int>   members;      // local indices into chunkPoints[ck]
+        std::vector<float> ksData;       // projected + normalised subspace data [nMem × k]
+        float timeRawMin, timeRawMax;
+        float nullScore;
+        bool  valid;
+    };
+
+    struct Result {
+        int  ck, lc;
+        bool accepted;
+        int  bestSubK;
+        float bestSubScore;
+        std::vector<int> bestSubClass;   // length nMem
+    };
+
+    std::vector<WorkItem> items;
+    items.reserve(512);
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts  = chunkPoints[ck];
+        const auto& cls  = perChunkClass[ck];
+        const auto& mdls = perChunkModels[ck];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts == 0 || mdls.empty()) continue;
+
+        std::vector<ChunkModel> snapshot = mdls;
+        for (const auto& origCm : snapshot) {
+            const int lc = origCm.localClusterId;
+            if (lc == 0) continue;
+
+            std::vector<int> members;
+            for (int i = 0; i < nPts; i++)
+                if (cls[i] == lc) members.push_back(i);
+
+            const int nMem = static_cast<int>(members.size());
+            if (nMem < minSpikes) continue;
+
+            // Cluster mean
+            std::vector<float> clMean(static_cast<size_t>(nSpatial), 0.0f);
+            for (int li : members) {
+                const int p = pts[static_cast<size_t>(li)];
+                for (int d = 0; d < nSpatial; d++)
+                    clMean[static_cast<size_t>(d)] += Data[p * nDims + d];
+            }
+            for (float& v : clMean) v /= nMem;
+
+            // Upper-triangular covariance
+            std::vector<float> clCovUT(static_cast<size_t>(nSpatial) * nFullDims, 0.0f);
+            for (int li : members) {
+                const int p = pts[static_cast<size_t>(li)];
+                for (int r = 0; r < nSpatial; r++)
+                    for (int cc = r; cc < nSpatial; cc++) {
+                        float dr = Data[p * nDims + r]  - clMean[static_cast<size_t>(r)];
+                        float dc = Data[p * nDims + cc] - clMean[static_cast<size_t>(cc)];
+                        clCovUT[r * nFullDims + cc] += dr * dc;
+                    }
+            }
+            for (auto& v : clCovUT) v /= static_cast<float>(nMem - 1);
+
+            // Top-k eigenvectors
+            std::vector<float> evecs, evals;
+            topKEigen(clCovUT.data(), nSpatial, nFullDims, k, evecs, evals);
+
+            // Project into whitened k-space
+            WorkItem wi;
+            wi.ck = ck; wi.lc = lc; wi.nMem = nMem;
+            wi.members = std::move(members);
+            wi.ksData.resize(static_cast<size_t>(nMem) * k);
+            for (int i = 0; i < nMem; i++) {
+                const int p = pts[static_cast<size_t>(wi.members[static_cast<size_t>(i)])];
+                for (int ki = 0; ki < k; ki++) {
+                    float proj = 0.0f;
+                    for (int d = 0; d < nSpatial; d++)
+                        proj += evecs[static_cast<size_t>(ki * nSpatial + d)]
+                              * (Data[p * nDims + d] - clMean[static_cast<size_t>(d)]);
+                    float scale = (evals[static_cast<size_t>(ki)] > 1e-12f)
+                                ? std::sqrt(evals[static_cast<size_t>(ki)]) : 1.0f;
+                    wi.ksData[static_cast<size_t>(i * k + ki)] = proj / scale;
+                }
+            }
+
+            // Normalise to [0,1]
+            std::vector<float> subMin(static_cast<size_t>(k),  HugeScore);
+            std::vector<float> subMax(static_cast<size_t>(k), -HugeScore);
+            for (int i = 0; i < nMem; i++)
+                for (int ki = 0; ki < k; ki++) {
+                    float v = wi.ksData[static_cast<size_t>(i * k + ki)];
+                    if (v < subMin[static_cast<size_t>(ki)]) subMin[static_cast<size_t>(ki)] = v;
+                    if (v > subMax[static_cast<size_t>(ki)]) subMax[static_cast<size_t>(ki)] = v;
+                }
+            for (int i = 0; i < nMem; i++)
+                for (int ki = 0; ki < k; ki++) {
+                    float range = subMax[static_cast<size_t>(ki)] - subMin[static_cast<size_t>(ki)];
+                    wi.ksData[static_cast<size_t>(i * k + ki)] = (range > 1e-12f)
+                        ? (wi.ksData[static_cast<size_t>(i * k + ki)] - subMin[static_cast<size_t>(ki)]) / range
+                        : 0.5f;
+                }
+            wi.timeRawMin = subMin[static_cast<size_t>(k - 1)];
+            wi.timeRawMax = subMax[static_cast<size_t>(k - 1)];
+
+            // Null score
+            {
+                KK Ks;
+                Ks.nDims = k; Ks.nPoints = nMem;
+                Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
+                Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
+                for (int i = 0; i < nMem * k; i++) Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
+                Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
+                Ks.ReinitForSplit(nMem, k, penaltyMix);
+                Ks.nStartingClusters = 1; Ks.NoisePoint = 0;
+                for (int i2 = 0; i2 < nMem; i2++) Ks.Class[i2] = 1;
+                Ks.ClassAlive[1] = 1; Ks.nClustersAlive = 1; Ks.AliveIndex[0] = 1;
+                Ks.MStep(); Ks.EStep();
+                wi.nullScore = Ks.ComputeScore();
+            }
+            wi.valid = (wi.nullScore != 0.0f);
+            items.push_back(std::move(wi));
+        }
+    }
+
+    const int nItems = static_cast<int>(items.size());
+    if (nItems == 0) {
+        Output("SubspaceReclusterPerChunk: 0 cluster(s) split across all chunks\n");
+        return;
+    }
+
+    // ── Phase B: parallel sub-CEM ───────────────────────────────────────────
+    // Each work item is independent — different KK scratch objects, read-only Data[].
+    // Thread cap: min(nThreads, nItems) avoids idle threads.
+    std::vector<Result> results(static_cast<size_t>(nItems));
+
+#ifdef _OPENMP
+    const int _srcThreads = std::min(
+        (ompTeamSize > 0) ? ompTeamSize : omp_get_max_threads(),
+        nItems);
+#else
+    const int _srcThreads = 1;
+#endif
+
+    #pragma omp parallel for schedule(dynamic) num_threads(_srcThreads) \
+        default(none) \
+        shared(items, results, nItems, k) \
+        firstprivate(penaltyMix, RandomSeed, nRuns, HugeScore)
+    for (int wi_idx = 0; wi_idx < nItems; wi_idx++) {
+        const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
+        Result& res = results[static_cast<size_t>(wi_idx)];
+        res.ck = wi.ck; res.lc = wi.lc;
+        res.accepted = false; res.bestSubK = 1;
+        res.bestSubClass.assign(static_cast<size_t>(wi.nMem), 0);
+
+        if (!wi.valid) continue;
+
+        const int runsPerSubCluster = (nRuns > 0) ? nRuns : 1;
+        float bestSubScore = HugeScore;
+        int   bestSubK = 1;
+
+        KK Ks;
+        Ks.nDims = k; Ks.nPoints = wi.nMem;
+        Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
+        Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
+        Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
+
+        for (int run = 0; run < runsPerSubCluster; run++) {
+            srand(static_cast<unsigned>(RandomSeed
+                  + static_cast<unsigned>(wi.ck) * 997u
+                  + static_cast<unsigned>(wi.lc) * 13u
+                  + static_cast<unsigned>(run) * 7u));
+            Ks.ReinitForSplit(wi.nMem, k, penaltyMix);
+            for (int i = 0; i < wi.nMem * k; i++)
+                Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
+            Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
+            Ks.nStartingClusters = 2; Ks.NoisePoint = 0;
+            const float score = Ks.CEMTwoPhase(0);
+            if (score < bestSubScore && Ks.nClustersAlive > 1) {
+                bestSubScore = score;
+                bestSubK     = Ks.nClustersAlive;
+                for (int i2 = 0; i2 < wi.nMem; i2++)
+                    res.bestSubClass[static_cast<size_t>(i2)] = Ks.Class[i2];
+            }
+        }
+
+        if (bestSubK > 1 && bestSubScore < wi.nullScore) {
+            res.accepted      = true;
+            res.bestSubK      = bestSubK;
+            res.bestSubScore  = bestSubScore;
+        }
+    }
+
+    // ── Phase C: serial result application ─────────────────────────────────
+    // Apply accepted splits to perChunkClass and perChunkModels.
+    // Serial within each chunk because nextLocalId is per-chunk shared state.
+    int totalSplit = 0;
+    for (int ck = 0; ck < nCh; ck++) {
+        auto& cls  = perChunkClass[ck];
+        auto& mdls = perChunkModels[ck];
+        const auto& pts  = chunkPoints[ck];
+        const int   nPts = static_cast<int>(pts.size());
+
+        // Highest existing ID (rebuilt per chunk)
+        int nextLocalId = 0;
+        for (const auto& cm : mdls)
+            if (cm.localClusterId > nextLocalId) nextLocalId = cm.localClusterId;
+        nextLocalId++;
+
+        for (int wi_idx = 0; wi_idx < nItems; wi_idx++) {
+            const WorkItem& wi  = items[static_cast<size_t>(wi_idx)];
+            const Result&   res = results[static_cast<size_t>(wi_idx)];
+            if (res.ck != ck || !res.accepted) continue;
+
+            const int lc   = wi.lc;
+            const int nMem = wi.nMem;
+
+            std::unordered_map<int,int> subToLocal;
+            subToLocal[res.bestSubClass[0]] = lc;
+            for (int i2 = 0; i2 < nMem; i2++) {
+                int sc = res.bestSubClass[static_cast<size_t>(i2)];
+                if (!subToLocal.count(sc)) subToLocal[sc] = nextLocalId++;
+            }
+
+            Output("  SubspaceRecluster: chunk%d cluster%d -> %d sub-clusters "
+                   "(subScore=%.4g < null=%.4g)\n",
+                   ck, lc, res.bestSubK, res.bestSubScore, wi.nullScore);
+
+            for (int i2 = 0; i2 < nMem; i2++)
+                cls[static_cast<size_t>(wi.members[static_cast<size_t>(i2)])] =
+                    subToLocal[res.bestSubClass[static_cast<size_t>(i2)]];
+
+            mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
+                [lc](const ChunkModel& m){ return m.localClusterId == lc; }),
+                mdls.end());
+
+            for (auto& [sc2, newLc] : subToLocal) {
+                ChunkModel cm;
+                cm.chunkIdx = ck; cm.localClusterId = newLc;
+                cm.globalClusterId = -1; cm.nMembers = 0;
+                cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
+                cm.cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+                for (int i2 = 0; i2 < nPts; i2++) {
+                    if (cls[static_cast<size_t>(i2)] != newLc) continue;
+                    const int p2 = pts[static_cast<size_t>(i2)];
+                    for (int d = 0; d < nFullDims; d++)
+                        cm.mean[static_cast<size_t>(d)] += Data[p2 * nDims + d];
+                    cm.nMembers++;
+                }
+                if (cm.nMembers > 0)
+                    for (float& v : cm.mean) v /= cm.nMembers;
+                for (int i2 = 0; i2 < nPts; i2++) {
+                    if (cls[static_cast<size_t>(i2)] != newLc) continue;
+                    const int p2 = pts[static_cast<size_t>(i2)];
+                    for (int r = 0; r < nFullDims; r++)
+                        for (int cc2 = r; cc2 < nFullDims; cc2++) {
+                            float dr = Data[p2 * nDims + r]   - cm.mean[static_cast<size_t>(r)];
+                            float dc = Data[p2 * nDims + cc2] - cm.mean[static_cast<size_t>(cc2)];
+                            cm.cov[r * nFullDims + cc2] += dr * dc;
+                        }
+                }
+                if (cm.nMembers > 1)
+                    for (float& v : cm.cov) v /= static_cast<float>(cm.nMembers - 1);
+                mdls.push_back(std::move(cm));
+            }
+            totalSplit++;
+        }
+    }
+    Output("SubspaceReclusterPerChunk: %d cluster(s) split across all chunks\n", totalSplit);
+}
+
+
+void KK::SubspaceReclusterPass(int subspaceDims)
+{
+    if (subspaceDims <= 0 || nClustersAlive <= 0) return;
+    const int k = std::min(subspaceDims, nDims - 1);   // spatial dims only, not time
+
+    Output("SubspaceReclusterPass: checking %d clusters in top-%d subspace\\n",
+           nClustersAlive, k);
+
+    int nSplit = 0;
+    int nextGlobal = nClustersAlive;  // next fresh global cluster ID
+
+    // Work through a snapshot of current live clusters
+    std::vector<int> liveClusters(AliveIndex.m_Data,
+                                   AliveIndex.m_Data + nClustersAlive);
+
+    for (const int c : liveClusters) {
+        if (!ClassAlive[c]) continue;  // already deleted/split
+
+        // ── Collect spikes in this cluster ──────────────────────────────
+        std::vector<int> members;
+        members.reserve(static_cast<size_t>(nPoints / nClustersAlive + 1));
+        for (int p = 0; p < nPoints; p++)
+            if (Class[p] == c) members.push_back(p);
+
+        const int nMem = static_cast<int>(members.size());
+        const int minSpikes = k * (nDims - 1) * 3;
+        if (nMem < minSpikes) continue;
+
+        // ── Compute cluster mean and covariance (spatial dims) ───────────
+        const int nSpatial = nDims - 1;
+        std::vector<float> clMean(static_cast<size_t>(nSpatial), 0.0f);
+        for (int p : members)
+            for (int d = 0; d < nSpatial; d++)
+                clMean[static_cast<size_t>(d)] += Data[p * nDims + d];
+        for (float& v : clMean) v /= nMem;
+
+        // Upper-triangular covariance in nDims layout
+        std::vector<float> clCovUT(static_cast<size_t>(nSpatial) * nDims, 0.0f);
+        for (int p : members)
+            for (int r = 0; r < nSpatial; r++)
+                for (int cc = r; cc < nSpatial; cc++) {
+                    float dr = Data[p * nDims + r]  - clMean[static_cast<size_t>(r)];
+                    float dc = Data[p * nDims + cc] - clMean[static_cast<size_t>(cc)];
+                    clCovUT[r * nDims + cc] += dr * dc;
+                }
+        for (int r = 0; r < nSpatial; r++)
+            for (int cc = r; cc < nSpatial; cc++)
+                clCovUT[r * nDims + cc] /= static_cast<float>(nMem - 1);
+
+        // ── Top-k eigenvectors of cluster covariance ────────────────────
+        std::vector<float> evecs, evals;
+        topKEigen(clCovUT.data(), nSpatial, nDims, k, evecs, evals);
+
+        // ── Project cluster spikes into k-dimensional subspace ───────────
+        // Sub-KK object: nDims = k (spatial subspace only, no time dim)
+        KK Ks;
+        Ks.nDims             = k;
+        Ks.nPoints           = nMem;
+        Ks.nStartingClusters = 2;
+        Ks.penaltyMix        = penaltyMix;
+        Ks.suppressBestSave  = true;
+        Ks.minClustersAlive  = 1;    // allow single-cluster solution
+        Ks.AllocateArrays();
+        Ks.AllocateCholeskyVecs();
+
+        for (int i = 0; i < nMem; i++) {
+            const int p = members[static_cast<size_t>(i)];
+            for (int ki = 0; ki < k; ki++) {
+                float proj = 0.0f;
+                for (int d = 0; d < nSpatial; d++)
+                    proj += evecs[static_cast<size_t>(ki * nSpatial + d)]
+                          * (Data[p * nDims + d] - clMean[static_cast<size_t>(d)]);
+                // Re-normalise into [0,1] using eigenvalue as scale
+                // proj / sqrt(eval) gives a unit-variance coordinate
+                float scale = (evals[static_cast<size_t>(ki)] > 1e-12f)
+                            ? std::sqrt(evals[static_cast<size_t>(ki)]) : 1.0f;
+                Ks.Data[i * k + ki] = proj / scale;
+            }
+        }
+
+        // Normalise subspace Data[] to [0,1] for the sub-KK EM
+        {
+            std::vector<float> subMin(static_cast<size_t>(k),  HugeScore);
+            std::vector<float> subMax(static_cast<size_t>(k), -HugeScore);
+            for (int i = 0; i < nMem; i++)
+                for (int ki = 0; ki < k; ki++) {
+                    float v = Ks.Data[i * k + ki];
+                    if (v < subMin[static_cast<size_t>(ki)]) subMin[static_cast<size_t>(ki)] = v;
+                    if (v > subMax[static_cast<size_t>(ki)]) subMax[static_cast<size_t>(ki)] = v;
+                }
+            for (int i = 0; i < nMem; i++)
+                for (int ki = 0; ki < k; ki++) {
+                    float range = subMax[static_cast<size_t>(ki)] - subMin[static_cast<size_t>(ki)];
+                    Ks.Data[i * k + ki] = (range > 1e-12f)
+                        ? (Ks.Data[i * k + ki] - subMin[static_cast<size_t>(ki)]) / range
+                        : 0.5f;
+                }
+            // Store range for penaltyMix denominator (match LoadData convention)
+            Ks.timeRawMin = subMin[static_cast<size_t>(k - 1)];
+            Ks.timeRawMax = subMax[static_cast<size_t>(k - 1)];
+        }
+
+        // ── Run CEM in subspace ─────────────────────────────────────────
+        // Single-pass CEMTwoPhase; allow up to 4 clusters
+        const int maxSubClusters = std::min(4, nMem / minSpikes);
+        if (maxSubClusters < 2) continue;
+
+        float bestSubScore = HugeScore;
+        std::vector<int> bestSubClass(static_cast<size_t>(nMem), 0);
+        int bestSubK = 1;
+
+        for (int startK = 2; startK <= maxSubClusters; startK++) {
+            srand(static_cast<unsigned>(RandomSeed + c * 97 + startK));
+            Ks.ReinitForSplit(nMem, k, penaltyMix);
+            Ks.nStartingClusters = startK;
+            Ks.NoisePoint = 0;  // no noise class in subspace CEM
+            // Re-copy (normalised) data (ReinitForSplit zeroes Class but not Data)
+            // (Data was set above and ReinitForSplit doesn't touch it)
+            const float score = Ks.CEMTwoPhase(0);  // no time-merge in subspace
+
+            if (score < bestSubScore && Ks.nClustersAlive > 1) {
+                bestSubScore = score;
+                bestSubK = Ks.nClustersAlive;
+                for (int i = 0; i < nMem; i++)
+                    bestSubClass[static_cast<size_t>(i)] = Ks.Class[i];
+            }
+        }
+
+        if (bestSubK <= 1) continue;
+
+        // Null model: fit a single Gaussian to the whitened subspace data.
+        // Use CEM() directly (no splits) so ComputeScore runs a proper
+        // full EM convergence on the 1-cluster assignment.
+        Ks.ReinitForSplit(nMem, k, penaltyMix);
+        Ks.nStartingClusters = 1;
+        Ks.minClustersAlive  = 1;
+        Ks.NoisePoint        = 0;
+        // Assign all spikes to cluster 1 and run MStep/EStep for a proper score
+        for (int i2 = 0; i2 < nMem; i2++) Ks.Class[i2] = 1;
+        Ks.ClassAlive[1] = 1;
+        Ks.nClustersAlive = 1;
+        Ks.AliveIndex[0] = 1;
+        Ks.MStep();
+        Ks.EStep();
+        const float nullScore = Ks.ComputeScore();
+
+        // Accept split only if BIC strictly improves
+        if (bestSubScore >= nullScore || nullScore == 0.0f) continue;
+
+        // ── Apply split: assign new global IDs ──────────────────────────
+        // Subspace class 0 keeps the original global ID c.
+        // Each new subspace class gets a fresh global ID.
+        std::unordered_map<int,int> subToGlobal;
+        subToGlobal[0] = c;  // cluster 0 keeps old ID
+
+        Output("  SubspaceRecluster: cluster %d split into %d sub-clusters "
+               "(subScore=%.5g < nullScore=%.5g)\\n",
+               c, bestSubK, bestSubScore, nullScore);
+
+        for (int i = 0; i < nMem; i++) {
+            const int subCls = bestSubClass[static_cast<size_t>(i)];
+            if (subToGlobal.find(subCls) == subToGlobal.end()) {
+                // Assign next available global ID
+                while (nextGlobal < MaxPossibleClusters && ClassAlive[nextGlobal])
+                    nextGlobal++;
+                if (nextGlobal >= MaxPossibleClusters) {
+                    Output("  SubspaceRecluster: MaxPossibleClusters reached, stopping\\n");
+                    goto done_recluster;
+                }
+                subToGlobal[subCls] = nextGlobal++;
+            }
+            Class[members[static_cast<size_t>(i)]] = subToGlobal[subCls];
+        }
+        nSplit++;
+    }
+    done_recluster:
+
+    // Rebuild ClassAlive / AliveIndex / nClustersAlive from updated Class[]
+    for (int c2 = 0; c2 < MaxPossibleClusters; c2++) ClassAlive[c2] = 0;
+    for (int p = 0; p < nPoints; p++) ClassAlive[Class[p]] = 1;
+    nClustersAlive = 0;
+    for (int c2 = 0; c2 < MaxPossibleClusters; c2++)
+        if (ClassAlive[c2]) AliveIndex[nClustersAlive++] = c2;
+
+    Output("SubspaceReclusterPass done: %d cluster(s) split, %d total clusters\\n",
+           nSplit, nClustersAlive);
 }
 
 

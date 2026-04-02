@@ -1249,39 +1249,30 @@ int main(int argc, char *argv[])
         const int wideRawLen   = wideSpikeLen * args.totalChannelNumber;
         vector<short> wideFrame(wideRawLen);
 
-        off_t filePos = 0;
         for(const SpikeEvent &ev : allEvents) {
             const int grp  = ev.grp;
             const int nCG  = channelNb_grp[grp];
             const int wLen = args.spikeLength * nCG;
             const int *cL  = channelList[grp];
 
-            // Wide extraction: start halfSearch samples before the nominal window.
+            // Wide extraction: seek to halfSearch samples before the nominal window.
+            // We use fseeko rather than a sequential skip-forward reader because
+            // the wide frame starts BEFORE the nominal offset, which means
+            // consecutive spikes (separated by < halfSearch samples) would require
+            // seeking backward — impossible with a forward-only reader.
             const off_t wideOffset = ev.fileOffset
                 - (off_t)halfSearch * args.totalChannelNumber * (off_t)sizeof(short);
             const off_t safeOffset = (wideOffset >= 0) ? wideOffset : 0;
             const int   skipHead   = (wideOffset >= 0) ? 0
                 : (int)((-wideOffset) / (args.totalChannelNumber * (off_t)sizeof(short)));
 
-            if(safeOffset > filePos) {
-                off_t gap = safeOffset - filePos;
-                vector<char> skip(65536);
-                while(gap > 0) {
-                    size_t chunk = (gap < 65536) ? (size_t)gap : 65536;
-                    size_t got2  = fread(skip.data(), 1, chunk, seqF);
-                    if(got2 == 0) break;
-                    gap     -= (off_t)got2;
-                    filePos += (off_t)got2;
-                }
-            }
-
             // Zero-fill wide frame (handles boundary clips).
             std::fill(wideFrame.begin(), wideFrame.end(), short(0));
+            if(fseeko(seqF, safeOffset, SEEK_SET) != 0) continue;
             const int readLen = wideRawLen - skipHead * args.totalChannelNumber;
             size_t got = fread(wideFrame.data() + skipHead * args.totalChannelNumber,
                                sizeof(short), readLen, seqF);
             if((int)got <= 0) continue;
-            filePos += (off_t)got * (off_t)sizeof(short);
 
             // ── Raw-signal peak refinement ─────────────────────────────────
             // Search within [halfSearch, halfSearch + peakLength) of the wide
