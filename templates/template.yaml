@@ -999,7 +999,8 @@ programs:
   - {name: subspaceRecluster,     value: 0,       status: Optional}
   - {name: templateMatchScore,    value: 0.0,     status: Optional}
   - {name: templateMatchIters,    value: 10,      status: Optional}
-  - {name: splitRecurseDepth,     value: 1,       status: Optional}
+  - {name: splitRecurseDepth,       value: 1,       status: Optional}
+  - {name: subspaceReclusterDepth,  value: 0,       status: Optional}
   - {name: crossChunkTemplateScore, value: 0.0,   status: Optional}
   - {name: initMethod,           value: farthest, status: Optional}
   - {name: penaltyMix,           value: 0,       status: Optional}

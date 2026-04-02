@@ -209,6 +209,7 @@ once()
 		-TemplateMatchScore      $templateMatchScore      \
 		-TemplateMatchIters      $templateMatchIters      \
 		-SplitRecurseDepth       $splitRecurseDepth       \
+		-SubspaceReclusterDepth  $subspaceReclusterDepth  \
 		-CrossChunkTemplateScore $crossChunkTemplateScore                   \
 
 	check_command_status KlustaKwik
