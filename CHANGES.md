@@ -124,3 +124,73 @@ All three can be overridden on the command line.
 - `ndm_klustakwik.nbSamplesPerSpike` corrected: 32 → 41 (matches actual `.spk` files).
 - Probe 1 entry corrected to `A1x32-6mm-50-177.probe` (was `A1x32-6mm-50-177.probe`
   but referenced via the wrong label `A1x32-6mm-50-177`).
+
+---
+
+## KlustaKwik — session 6 (2026-04-02)
+
+### TrySplits: split trial fixes
+
+- `CEM(nullptr, 0)` → `CEM(nullptr, 1)` in the split trial: the split candidate
+  CEM now runs with `enableSplits=true`, letting `TrySplits` find the best
+  multi-cluster solution rather than a single random initialisation. Previously
+  the split trial only got one EM pass from a random seed.
+- Split trial `nStartingClusters` raised from 3 → 13 (noise + 12 real), giving
+  the split CEM sufficient starting clusters to explore the full structure of each
+  candidate cluster.
+- Infinite recursion fix: `static thread_local int _trySplitsDepth` counter added.
+  Split trials at depth > `SplitRecurseDepth` use `CEM(nullptr, 0)` (no further
+  recursion). Safe for OMP parallel regions.
+
+### New parameter: `-SplitRecurseDepth N` (default 1)
+
+Controls how many levels of recursive splitting `TrySplits` explores.
+`0` = original behaviour (no recursive splits); `1` (default) = one level;
+`2` = two levels. Each level multiplies the cost of `TrySplits` proportionally.
+
+### Phase 2.5 SubspaceReclusterPerChunk: 3-phase parallel rewrite
+
+Refactored from a single OMP parallel-for-over-chunks to a three-phase model:
+
+- **Phase A (serial):** For each `(chunk, cluster)` pair, compute cluster mean,
+  covariance, top-k eigenvectors, project into whitened k-space, normalise,
+  compute null score. Produces a flat `WorkItem` list.
+- **Phase B (parallel OMP):** Each work item runs `nRuns` × `startK=2..maxSubK`
+  restarts of `CEMTwoPhase` (splits enabled via depth saturation) in a local `KK`
+  object. Thread cap = `min(nThreads, nItems)`. `schedule(dynamic)` for load balance.
+- **Phase C (serial):** Apply accepted splits to `perChunkClass`/`perChunkModels`.
+  Serial because `nextLocalId` is per-chunk shared state.
+
+**Depth saturation:** Before each Phase B `CEMTwoPhase` call,
+`_trySplitsDepth = SplitRecurseDepth - SubspaceReclusterDepth` is set, so
+`TrySplits` fires once but its split trials are non-recursive.
+
+**ID overflow guard (Phase C):** The packed key `chunkIdx * MaxPossibleClusters +
+localClusterId` overflows into adjacent chunk's range if `localClusterId >=
+MaxPossibleClusters`. Phase C now counts required new IDs before committing each
+split and skips if `nextLocalId + nNewIds >= MaxPossibleClusters`. This was the
+root cause of the "random cluster" bug.
+
+### New parameter: `-SubspaceReclusterDepth N` (default 0)
+
+Controls `TrySplits` recursion depth inside SubspaceRecluster sub-CEMs,
+independently of `-SplitRecurseDepth`. Default `0` = one controlled level of
+splitting (TrySplits fires but split trials are non-recursive).
+
+### MergeChunkModels: iterative cross-chunk passes
+
+The entire chunk-pair loop (votes + Mahal + xcorr) now iterates up to
+`-TemplateMatchIters` times, breaking when no new `Union()` calls occur.
+Enables cascade matching: a new xcorr merge in pair (k, k+1) can unlock
+previously-unresolved clusters in pair (k+1, k+2).
+
+### Progress banners
+
+Phase 1 OMP loop now emits per-run progress to `stderr` inside a critical section:
+```
+  [chunk 3/9  run 2/3] score=-1243.6  nclusters=12
+```
+
+### Build date
+
+Updated to `2026-04-02 chunked-pipeline`.
