@@ -203,7 +203,13 @@ once()
 		-fSaveModel              $fSaveModel              \
 		-SaveIntermediates       $saveIntermediates       \
 		-nRuns                   $nRuns                   \
-		-Phase15Iters            $phase15Iters                   \
+		-Phase15Iters            $phase15Iters            \
+		-SubspaceDims            $subspaceDims            \
+		-SubspaceRecluster       $subspaceRecluster       \
+		-TemplateMatchScore      $templateMatchScore      \
+		-TemplateMatchIters      $templateMatchIters      \
+		-SplitRecurseDepth       $splitRecurseDepth       \
+		-CrossChunkTemplateScore $crossChunkTemplateScore                   \
 
 	check_command_status KlustaKwik
 	unset OMP_NUM_THREADS

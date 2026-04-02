@@ -122,14 +122,58 @@ public:
         int localClusterId;
         int globalClusterId;  // -1 until assigned by MergeChunkModels
         int nMembers;
-        std::vector<float> mean; // [nDims]
-        std::vector<float> cov;  // [nDims*nDims], upper triangle populated
+        std::vector<float>   mean;    // [nDims]
+        std::vector<float>   cov;     // [nDims*nDims], upper triangle populated
+        std::vector<int16_t> meanWav; // [nChan*nSamples] channel-major, for template matching
     };
 
     int   MergeChunkModels(std::vector<ChunkModel>& models,
                            int   nSpatialDims,
                            float mergeThresh,
                            const std::vector<std::unordered_map<int,int>>& overlapVotes);
+
+    // Post-Phase-2 per-cluster subspace reclustering.
+    // Projects each global cluster into its top-subspaceDims eigenvector subspace
+    // and runs CEM to find splits that are hidden in the full feature space.
+    void SubspaceReclusterPass(int subspaceDims);
+
+    // Per-chunk subspace reclustering — runs BEFORE Phase 1.5 and Phase 2.
+    // For each per-chunk local cluster, projects its spikes into the top-subspaceDims
+    // eigenvector subspace and tries to split it.  Updates perChunkClass and
+    // perChunkModels in-place so downstream realignment and cross-chunk matching
+    // see purer cluster models.
+    // Within-chunk merge pass — runs after Phase 1.5 waveform realignment,
+    // before Phase 2 cross-chunk matching.  Uses updated Data[] features to
+    // merge over-split local clusters within each chunk.
+    // Post-Phase-2 global waveform realignment.
+    // Groups spikes by global Class[] assignment, builds per-cluster mean
+    // waveform from .spk, runs xcorr alignment, then re-extracts from .fil.
+    // This is what Klusters does interactively — here it runs automatically
+    // after cross-chunk merging so all downstream analysis sees aligned waveforms.
+    void GlobalRealignPass(int iters, float minXcorrScore,
+                           int nChan, int nSamplesPerSpike, int bytesPerSample);
+
+    // Within-chunk xcorr template matching — merges clusters whose mean
+    // waveforms have normalised xcorr >= minScore (mutual best match).
+    // Runs after Phase 1.5 realignment and meanWav harvest, before Phase 2.
+    int  WithinChunkTemplateMatch(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nChan, int nSamplesPerSpike, float minScore);
+
+    void WithinChunkMerge(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nSpatialDims, float mergeThresh);
+
+    void SubspaceReclusterPerChunk(
+        int subspaceDims,
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
 
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,

@@ -71,7 +71,13 @@ int   NbTotalChannels        = 0;    ///< total channels in .fil file
 int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
-int   Phase15Iters           = 2;    ///< xcorr iterations in RealignChunkWaveforms
+int   Phase15Iters           = 1;    ///< xcorr iterations in RealignChunkWaveforms (1 = single pass, no iteration)
+int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
+int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2
+float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 1.7)
+int   TemplateMatchIters     = 10;   ///< max within-chunk template match iterations
+int   SplitRecurseDepth      = 1;    ///< max TrySplits recursion depth
+float CrossChunkTemplateScore= 0.0f; ///< min xcorr for cross-chunk template matching (Phase 2 Pass 3)
 int   fSaveModel             = 1;
 FILE *pModelFile             = nullptr;
 int   SplitEvery             = 50;
@@ -114,6 +120,12 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(NbBytesPerSample);
     INT_PARAM(nRuns);
     INT_PARAM(Phase15Iters);
+    INT_PARAM(SubspaceDims);
+    INT_PARAM(SubspaceRecluster);
+    FLOAT_PARAM(TemplateMatchScore);
+    INT_PARAM(TemplateMatchIters);
+    INT_PARAM(SplitRecurseDepth);
+    FLOAT_PARAM(CrossChunkTemplateScore);
     INT_PARAM(DistDump);
     FLOAT_PARAM(DistThresh);
     INT_PARAM(FullStepEvery);
@@ -320,7 +332,7 @@ void SaveOutput(const Array<int> &OutputClass) {
 // nSpatialDims is nDims-1 (the time dimension is excluded from the drift
 // estimate; the script uses waveform PTP amplitudes, not PCA features).
 // ---------------------------------------------------------------------------
-static void _RunInlineDriftEstimation(const char* fileBase,
+static void __attribute__((unused)) _RunInlineDriftEstimation(const char* fileBase,
                                        int         elecNo,
                                        int         /*nSpatialDims*/)
 {
@@ -763,8 +775,11 @@ int main(int argc, char **argv) {
         // nRuns > 0 in chunked mode means per-chunk restarts inside
         // RunChunkedCEM; the outer pipeline runs exactly once.
         // nRuns == 0 in non-chunked mode keeps the K×nStarts outer loop.
-        const bool useChunkedRestarts = (nRuns > 0) && useChunked;
-        const int  nRunsEff = useChunkedRestarts ? 1
+        // In chunked mode the outer K sweep is irrelevant — per-chunk TrySplits
+        // handles cluster count variation. The outer loop always runs once;
+        // nRuns controls per-chunk restarts inside RunChunkedCEM.
+        // In non-chunked mode the original K×nStarts sweep is preserved.
+        const int  nRunsEff = useChunked ? 1
                            : (MaxClusters - MinClusters + 1) * nStarts;
         const int nWorkers     = (ParallelK > 0) ? std::min(ParallelK, nRunsEff) : 1;
         const int threadsPerJob = std::max(1, nCoresAvail / nWorkers);
