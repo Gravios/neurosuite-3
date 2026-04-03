@@ -1042,9 +1042,12 @@ int KK::TrySplits() {
 
         if (Verbose >= 1) Output("Trying to split cluster %d (%d points)\n", c, clusterSize);
         K2.nStartingClusters = 2;
-        const float unsplitScore = K2.CEM(nullptr, 0);
-        K2.nStartingClusters = 3;
-        const float splitScore   = K2.CEM(nullptr, 0);
+        const float unsplitScore = K2.CEM(nullptr, 0);  // splits disabled: pure 1-cluster baseline
+        K2.nStartingClusters = 13;  // noise + 12 real: gives CEM room to find multi-cluster structure
+        // Allow splits in the sub-CEM only at the first level of recursion;
+        // deeper calls use Recurse=0 to prevent infinite recursion.
+        // Allow recursion up to SplitRecurseDepth levels; deeper calls are non-recursive.
+        const float splitScore   = K2.CEM(nullptr, (_trySplitsDepth <= SplitRecurseDepth) ? 1 : 0);
 
         if (splitScore < unsplitScore) {
             for (int c2 = 0; c2 < MaxPossibleClusters; c2++) K3.ClassAlive[c2] = 0;
@@ -1513,9 +1516,10 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
         return x;
     };
+    int _newUnions = 0;  // counts new Union() calls per outer iteration
     auto Union = [&](int a, int b) {
         a = Find(a); b = Find(b);
-        if (a != b) parent[b] = a;
+        if (a != b) { parent[b] = a; _newUnions++; }
     };
 
     // All noise models (localClusterId==0) are unconditionally merged into
@@ -1600,7 +1604,13 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         std::max_element(byChunk.begin(), byChunk.end(),
             [](const auto& a, const auto& b){ return a.first < b.first; })->first;
 
-    for (int k = 0; k < maxChunk; k++) {
+    // Iterate the chunk-pair pass until no new merges occur.
+    // Cross-chunk xcorr matches can cascade: a new Union in pair (k,k+1)
+    // may resolve a cluster that was previously unmatched in pair (k+1,k+2).
+    const int _ccMaxIter = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
+    for (int _ccIter = 0; _ccIter < _ccMaxIter; _ccIter++) {
+        _newUnions = 0;
+        for (int k = 0; k < maxChunk; k++) {
         auto itA = byChunk.find(k);
         auto itB = byChunk.find(k + 1);
         if (itA == byChunk.end() || itB == byChunk.end()) continue;
@@ -1719,7 +1729,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 
         // ── Pass 3: cross-chunk template matching (unresolved pairs) ──────
         // Compute normalised xcorr between cluster mean waveforms.
-        // Controlled by CrossChunkTemplateScore (independent of Phase 5).
+        // Controlled by CrossChunkTemplateScore (independent of Phase 1.7).
         if (CrossChunkTemplateScore > 0.0f &&
             NbChannels > 0 && NbSamplesPerSpike > 0) {
             const int nCh   = NbChannels;
@@ -1770,7 +1780,11 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                        models[mB2].chunkIdx, models[mB2].localClusterId, pairB.second);
             }
         }
-    }  // for k (chunk pairs)
+        }  // for k (chunk pairs)
+        if (_newUnions == 0) break;  // converged
+        Output("MergeChunkModels: iter %d produced %d new merges\n",
+               _ccIter + 1, _newUnions);
+    }  // for _ccIter
 
     // Assign contiguous globalClusterIds from component roots
     std::unordered_map<int,int> rootToGlobal;
@@ -2478,7 +2492,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // nRuns > 0: run CEMTwoPhase nRuns times with different seeds,
         // keep the best-scoring solution for this chunk before Phase 2.
         // Mirrors nStarts in non-chunked mode but confined to one chunk
-        // so Phase 0, Phase 3 and Phase 2 each still run only once.
+        // so Phase 0, Phase 1.5 and Phase 2 each still run only once.
         const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
         float bestChunkScore = HugeScore;
         int   bestNClusters  = 0;
@@ -2546,7 +2560,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (int i = 0; i < nPts; i++)
             assign.emplace_back(pts[i], k * MaxPossibleClusters + Kc.Class[i]);
 
-        // Harvest Class[] for Phase 3 realignment
+        // Harvest Class[] for Phase 1.5 realignment
         auto& classArr = perChunkClass[k];
         classArr.resize(nPts);
         for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
@@ -2564,7 +2578,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     }
 
 
-    // ── Phase 7: xcorr alignment + .fil re-extraction + PCA re-projection ─
+    // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
     // Step 1 — RealignChunkWaveforms: xcorr each spike against its cluster mean
     //   waveform (from .spk).  Cheap: .spk is already on disk; XcorrDispatch
@@ -2575,9 +2589,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
     //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
     //   Falls back to circular shift when .fil is unavailable.
-    // ── Phase 6: per-chunk subspace reclustering (pre-realignment) ─────────
+    // ── Phase 2.5: per-chunk subspace reclustering (pre-realignment) ─────────
     if (SubspaceRecluster > 0) {
-        fprintf(stderr, "[Phase 2] Subspace reclustering (per-chunk, pre-alignment)\n");
+        fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
         SubspaceReclusterPerChunk(
             SubspaceDims > 0 ? SubspaceDims : 3,
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
@@ -2585,8 +2599,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
 
     if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
-        fprintf(stderr, "[Phase 3] Xcorr waveform realignment (circular)\n");
-        Output("Phase 3: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
+        fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
+        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
                NbChannels, NbSamplesPerSpike, Phase15Iters);
         std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
                                      std::numeric_limits<int>::min());
@@ -2601,7 +2615,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
     if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
         && NbChannels > 0 && NbSamplesPerSpike > 0)
-        fprintf(stderr, "[Phase 4] Mean waveform harvest (channel-major xcorr format)\n");
+        fprintf(stderr, "[Phase 1.6] Mean waveform harvest (channel-major xcorr format)\n");
     // Populate ChunkModel::meanWav for template matching.
     // Done serially after the parallel chunk loop since all chunks share
     // the same .spk file handle and fseeko calls cannot be parallelised safely.
@@ -2659,7 +2673,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             fclose(spkTM);
         }
     }
-    // ── Phase 6: cross-chunk model matching ─────────────────────────────────
+    // ── Phase 2: cross-chunk model matching ─────────────────────────────────
     {
         const float d_    = static_cast<float>(nSpatialDims);
         const float chi2_9999 = d_ * std::pow(1.0f - 2.0f/(9.0f*d_) + 3.719f * std::sqrt(2.0f/(9.0f*d_)), 3.0f);
@@ -2671,10 +2685,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
     static const std::vector<std::unordered_map<int,int>> noOverlapVotes;
-    // ── Phase 5: within-chunk circular xcorr template matching (iterated) ─
+    // ── Phase 1.7: within-chunk circular xcorr template matching (iterated) ─
     // Loops until no new merges occur or 10 iterations.  After each merge pass
     // the surviving clusters need updated meanWav vectors (the merged cluster
-    // mean changes when two sub-clusters are combined), so the Phase 4 harvest
+    // mean changes when two sub-clusters are combined), so the Phase 1.6 harvest
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
@@ -2730,7 +2744,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     fclose(spkTM2);
                 }
             }
-            fprintf(stderr, "[Phase 5] Within-chunk circular xcorr template matching (iter %d)\n",
+            fprintf(stderr, "[Phase 1.7] Within-chunk circular xcorr template matching (iter %d)\n",
                     _tmIter + 1);
             int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
@@ -2738,20 +2752,6 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
 
-    // Pre-rebuild consistency check: verify every perChunkClass ID has a model.
-    {
-        int _orphan = 0;
-        for (int _k = 0; _k < nActive; _k++) {
-            std::unordered_set<int> _ids;
-            for (const auto& _cm : perChunkModels[_k]) _ids.insert(_cm.localClusterId);
-            for (int _lc : perChunkClass[_k])
-                if (_lc != 0 && !_ids.count(_lc)) _orphan++;
-        }
-        if (_orphan > 0)
-            fprintf(stderr, "PRE-REBUILD: %d orphan class IDs (perChunkClass vs perChunkModels mismatch)\n", _orphan);
-        else
-            fprintf(stderr, "PRE-REBUILD: perChunkClass/perChunkModels consistent\n");
-    }
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
     // perChunkAssign was built with original Phase 1 IDs; after
     // WithinChunkTemplateMatch the IDs in perChunkClass differ.
@@ -2778,7 +2778,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
 
-    fprintf(stderr, "[Phase 6]   Cross-chunk model matching (overlap + Mahal + xcorr)\n");
+    fprintf(stderr, "[Phase 2]   Cross-chunk model matching (overlap + Mahal + xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -2804,44 +2804,18 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         packedToGlobal[cm.chunkIdx * MaxPossibleClusters + cm.localClusterId] =
             cm.globalClusterId;
 
-    // ── Phase 7: global warm-start EM ───────────────────────────────────────
+    // ── Phase 3: global warm-start EM ───────────────────────────────────────
     nDims  = nFullDims;
     nDims2 = nDims * nDims;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
-    {
-        int _nNeg = 0, _nMiss = 0;
-        for (int p = 0; p < nPoints; p++) {
-            const int pp = pointPacked[p];
-            if (pp < 0) { _nNeg++; Class[p] = 0; ClassAlive[0] = 1; continue; }
-            auto it = packedToGlobal.find(pp);
-            if (it == packedToGlobal.end()) { _nMiss++; Class[p] = 0; ClassAlive[0] = 1; continue; }
-            Class[p] = it->second; ClassAlive[it->second] = 1;
-        }
-        fprintf(stderr, "RunChunkedCEM assign: %d total, %d unassigned (pp<0), "
-                        "%d missing keys, map size=%d\n",
-                nPoints, _nNeg, _nMiss, (int)packedToGlobal.size());
-        if (_nMiss > 0) {
-            fprintf(stderr, "WARNING: %d spikes have packed keys missing from packedToGlobal\n", _nMiss);
-            int _shown = 0;
-            for (int p = 0; p < nPoints && _shown < 5; p++) {
-                const int pp = pointPacked[p];
-                if (pp >= 0 && packedToGlobal.find(pp) == packedToGlobal.end()) {
-                    fprintf(stderr, "  spike %d: pp=%d chunk=%d lc=%d\n",
-                            p, pp, pp / MaxPossibleClusters, pp % MaxPossibleClusters);
-                    _shown++;
-                }
-            }
-            fprintf(stderr, "  map sample: ");
-            int _nk = 0;
-            for (auto& [_k, _v] : packedToGlobal) {
-                if (_nk++ >= 8) break;
-                fprintf(stderr, "ck%d/lc%d->g%d  ",
-                        _k / MaxPossibleClusters, _k % MaxPossibleClusters, _v);
-            }
-            fprintf(stderr, "\n");
-        }
+    for (int p = 0; p < nPoints; p++) {
+        const int pp = pointPacked[p];
+        auto it = (pp >= 0) ? packedToGlobal.find(pp) : packedToGlobal.end();
+        const int g = (it != packedToGlobal.end()) ? it->second : 0;
+        Class[p] = g;
+        ClassAlive[g] = 1;
     }
     Reindex();
 
@@ -2849,8 +2823,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (globalMergeIter <= 0) {
         // GlobalMerge=0: skip Phase 3 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
-        fprintf(stderr, "[Phase 7]   Skipped (GlobalMergeIter=0)\n");
-        Output("Phase 7 skipped (GlobalMerge=0) — using Phase 6 assignment directly\n");
+        fprintf(stderr, "[Phase 3]   Skipped (GlobalMergeIter=0)\n");
+        Output("Phase 3 skipped (GlobalMerge=0) — using Phase 2 assignment directly\n");
         // Force CPU path for Phase 3 post-merge scoring.
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
         // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
@@ -2882,8 +2856,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
-        fprintf(stderr, "[Phase 7]   Global warm-start EM\n");
-        Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
+        fprintf(stderr, "[Phase 3]   Global warm-start EM\n");
+        Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
@@ -2915,7 +2889,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
                        iter, nClustersAlive, score, nChanged);
             FullStep = 1;
-            if (nChanged == 0) { Output("Phase 7 converged at iter %d\n", iter); break; }
+            if (nChanged == 0) { Output("Phase 3 converged at iter %d\n", iter); break; }
         }
     }
 
@@ -2926,7 +2900,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 // ---------------------------------------------------------------------------
 // Phase 1: run CEMTwoPhase independently on each chunk.
 // Phase 2: match cluster models across adjacent chunks (MergeChunkModels).
-// Phase 7: global warm-start EM seeded from the matched assignments.
+// Phase 3: global warm-start EM seeded from the matched assignments.
 // ---------------------------------------------------------------------------
 float KK::RunChunkedCEM(float chunkMinutes,
                          float samplingRate,
@@ -3226,7 +3200,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     }
 
 
-    // ── Phase 7: xcorr alignment + .fil re-extraction + PCA re-projection ─
+    // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
     // Step 1 — RealignChunkWaveforms: xcorr each spike against its cluster mean
     //   waveform (from .spk).  Cheap: .spk is already on disk; XcorrDispatch
@@ -3237,9 +3211,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
     //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
     //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
     //   Falls back to circular shift when .fil is unavailable.
-    // ── Phase 6: per-chunk subspace reclustering (pre-realignment) ─────────
+    // ── Phase 2.5: per-chunk subspace reclustering (pre-realignment) ─────────
     if (SubspaceRecluster > 0) {
-        fprintf(stderr, "[Phase 2] Subspace reclustering (per-chunk, pre-alignment)\n");
+        fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
         SubspaceReclusterPerChunk(
             SubspaceDims > 0 ? SubspaceDims : 3,
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
@@ -3247,8 +3221,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
 
     if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
-        fprintf(stderr, "[Phase 3] Xcorr waveform realignment (circular)\n");
-        Output("Phase 3: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
+        fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
+        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
                NbChannels, NbSamplesPerSpike, Phase15Iters);
         std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
                                      std::numeric_limits<int>::min());
@@ -3263,7 +3237,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
     if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
         && NbChannels > 0 && NbSamplesPerSpike > 0)
-        fprintf(stderr, "[Phase 4] Mean waveform harvest (channel-major xcorr format)\n");
+        fprintf(stderr, "[Phase 1.6] Mean waveform harvest (channel-major xcorr format)\n");
     // Populate ChunkModel::meanWav for template matching.
     // Done serially after the parallel chunk loop since all chunks share
     // the same .spk file handle and fseeko calls cannot be parallelised safely.
@@ -3375,10 +3349,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
                    mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
         }
     }
-    // ── Phase 5: within-chunk circular xcorr template matching (iterated) ─
+    // ── Phase 1.7: within-chunk circular xcorr template matching (iterated) ─
     // Loops until no new merges occur or 10 iterations.  After each merge pass
     // the surviving clusters need updated meanWav vectors (the merged cluster
-    // mean changes when two sub-clusters are combined), so the Phase 4 harvest
+    // mean changes when two sub-clusters are combined), so the Phase 1.6 harvest
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
@@ -3434,7 +3408,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     fclose(spkTM2);
                 }
             }
-            fprintf(stderr, "[Phase 5] Within-chunk circular xcorr template matching (iter %d)\n",
+            fprintf(stderr, "[Phase 1.7] Within-chunk circular xcorr template matching (iter %d)\n",
                     _tmIter + 1);
             int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
@@ -3442,20 +3416,6 @@ float KK::RunChunkedCEM(float chunkMinutes,
         }
     }
 
-    // Pre-rebuild consistency check: verify every perChunkClass ID has a model.
-    {
-        int _orphan = 0;
-        for (int _k = 0; _k < nActive; _k++) {
-            std::unordered_set<int> _ids;
-            for (const auto& _cm : perChunkModels[_k]) _ids.insert(_cm.localClusterId);
-            for (int _lc : perChunkClass[_k])
-                if (_lc != 0 && !_ids.count(_lc)) _orphan++;
-        }
-        if (_orphan > 0)
-            fprintf(stderr, "PRE-REBUILD: %d orphan class IDs (perChunkClass vs perChunkModels mismatch)\n", _orphan);
-        else
-            fprintf(stderr, "PRE-REBUILD: perChunkClass/perChunkModels consistent\n");
-    }
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
     // perChunkAssign was built with original Phase 1 IDs; after
     // WithinChunkTemplateMatch the IDs in perChunkClass differ.
@@ -3482,7 +3442,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
 
-    fprintf(stderr, "[Phase 6]   Cross-chunk model matching (overlap + Mahal + xcorr)\n");
+    fprintf(stderr, "[Phase 2]   Cross-chunk model matching (overlap + Mahal + xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -3518,7 +3478,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             cm.globalClusterId;
 
     // -------------------------------------------------------------------
-    // Phase 7: global warm-start EM (full dimensionality including time)
+    // Phase 3: global warm-start EM (full dimensionality including time)
     //
     // Seed Class[] from the matched global labels, then run a short
     // full-dimensional EM pass.  Because the starting assignment is
@@ -3530,38 +3490,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
     for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
-    {
-        int _nNeg = 0, _nMiss = 0;
-        for (int p = 0; p < nPoints; p++) {
-            const int pp = pointPacked[p];
-            if (pp < 0) { _nNeg++; Class[p] = 0; ClassAlive[0] = 1; continue; }
-            auto it = packedToGlobal.find(pp);
-            if (it == packedToGlobal.end()) { _nMiss++; Class[p] = 0; ClassAlive[0] = 1; continue; }
-            Class[p] = it->second; ClassAlive[it->second] = 1;
-        }
-        fprintf(stderr, "RunChunkedCEM assign: %d total, %d unassigned (pp<0), "
-                        "%d missing keys, map size=%d\n",
-                nPoints, _nNeg, _nMiss, (int)packedToGlobal.size());
-        if (_nMiss > 0) {
-            fprintf(stderr, "WARNING: %d spikes have packed keys missing from packedToGlobal\n", _nMiss);
-            int _shown = 0;
-            for (int p = 0; p < nPoints && _shown < 5; p++) {
-                const int pp = pointPacked[p];
-                if (pp >= 0 && packedToGlobal.find(pp) == packedToGlobal.end()) {
-                    fprintf(stderr, "  spike %d: pp=%d chunk=%d lc=%d\n",
-                            p, pp, pp / MaxPossibleClusters, pp % MaxPossibleClusters);
-                    _shown++;
-                }
-            }
-            fprintf(stderr, "  map sample: ");
-            int _nk = 0;
-            for (auto& [_k, _v] : packedToGlobal) {
-                if (_nk++ >= 8) break;
-                fprintf(stderr, "ck%d/lc%d->g%d  ",
-                        _k / MaxPossibleClusters, _k % MaxPossibleClusters, _v);
-            }
-            fprintf(stderr, "\n");
-        }
+    for (int p = 0; p < nPoints; p++) {
+        const int pp = pointPacked[p];
+        auto it = (pp >= 0) ? packedToGlobal.find(pp) : packedToGlobal.end();
+        const int g = (it != packedToGlobal.end()) ? it->second : 0;
+        // g is in [0, nGlobal] and nGlobal < MaxPossibleClusters (checked above)
+        Class[p] = g;
+        ClassAlive[g] = 1;
     }
     Reindex();
 
@@ -3569,7 +3504,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     if (globalMergeIter <= 0) {
         // GlobalMerge=0: skip Phase 3 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
-        Output("Phase 7 skipped (GlobalMerge=0) — using Phase 6 assignment directly\n");
+        Output("Phase 3 skipped (GlobalMerge=0) — using Phase 2 assignment directly\n");
         // Force CPU path for Phase 3 post-merge scoring.
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
         // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
@@ -3601,8 +3536,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
-        fprintf(stderr, "[Phase 7]   Global warm-start EM\n");
-        Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
+        fprintf(stderr, "[Phase 3]   Global warm-start EM\n");
+        Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
@@ -3634,7 +3569,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
                        iter, nClustersAlive, score, nChanged);
             FullStep = 1;
-            if (nChanged == 0) { Output("Phase 7 converged at iter %d\n", iter); break; }
+            if (nChanged == 0) { Output("Phase 3 converged at iter %d\n", iter); break; }
         }
     }
 
@@ -3885,7 +3820,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 // ---------------------------------------------------------------------------
 // KK::SubspaceReclusterPerChunk
 //
-// Per-chunk subspace reclustering — runs BEFORE Phase 3 and Phase 2.
+// Per-chunk subspace reclustering — runs BEFORE Phase 1.5 and Phase 2.
 //
 // For each local cluster in each chunk, projects its spikes (by global index)
 // into the top-subspaceDims eigenvector subspace of that cluster's covariance,
@@ -3899,7 +3834,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 // ---------------------------------------------------------------------------
 // KK::WithinChunkMerge
 //
-// Within-chunk merge pass — runs after Phase 3 waveform realignment updates
+// Within-chunk merge pass — runs after Phase 1.5 waveform realignment updates
 // Data[] features, before Phase 2 cross-chunk matching.
 //
 // For each chunk: recomputes cluster means and covariances from the updated
@@ -3913,8 +3848,8 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 // ---------------------------------------------------------------------------
 // KK::WithinChunkTemplateMatch
 //
-// Within-chunk xcorr template matching — runs after Phase 3 waveform
-// realignment and the Phase 4 meanWav harvest, before Phase 2 cross-chunk
+// Within-chunk xcorr template matching — runs after Phase 1.5 waveform
+// realignment and the Phase 1.6 meanWav harvest, before Phase 2 cross-chunk
 // matching.
 //
 // For each chunk, computes the normalised circular xcorr between every pair of
@@ -4407,8 +4342,7 @@ void KK::SubspaceReclusterPerChunk(
     #pragma omp parallel for schedule(dynamic) num_threads(_srcThreads) \
         default(none) \
         shared(items, results, nItems, k) \
-        firstprivate(penaltyMix, RandomSeed, nRuns, HugeScore, minSpikes, \
-                     SplitRecurseDepth, SubspaceReclusterDepth)
+        firstprivate(penaltyMix, RandomSeed, nRuns, HugeScore)
     for (int wi_idx = 0; wi_idx < nItems; wi_idx++) {
         const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
         Result& res = results[static_cast<size_t>(wi_idx)];
@@ -4418,11 +4352,6 @@ void KK::SubspaceReclusterPerChunk(
 
         if (!wi.valid) continue;
 
-        // Try startK=2..maxSubK; CEM with Recurse=0 (splits disabled) keeps
-        // sub-trials fast and targeted. CEMTwoPhase would enable TrySplits,
-        // which over-splits every cluster into dozens of tiny pieces in kD space.
-        const int maxSubK = std::min(4, wi.nMem / minSpikes);
-        if (maxSubK < 2) continue;
         const int runsPerSubCluster = (nRuns > 0) ? nRuns : 1;
         float bestSubScore = HugeScore;
         int   bestSubK = 1;
@@ -4431,37 +4360,24 @@ void KK::SubspaceReclusterPerChunk(
         Ks.nDims = k; Ks.nPoints = wi.nMem;
         Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
         Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
+        Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
 
-        // Saturate _trySplitsDepth so TrySplits fires (splits ARE enabled) but
-        // the split trials within TrySplits use CEM(nullptr,0) — exactly one
-        // level of splitting without runaway recursion in low-dim subspace.
-        for (int startK = 2; startK <= maxSubK; startK++) {
-            for (int run = 0; run < runsPerSubCluster; run++) {
-                srand(static_cast<unsigned>(RandomSeed
-                      + static_cast<unsigned>(wi.ck) * 997u
-                      + static_cast<unsigned>(wi.lc) * 13u
-                      + static_cast<unsigned>(startK) * 31u
-                      + static_cast<unsigned>(run) * 7u));
-                Ks.ReinitForSplit(wi.nMem, k, penaltyMix);
-                for (int i = 0; i < wi.nMem * k; i++)
-                    Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
-                Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
-                Ks.nStartingClusters = startK; Ks.NoisePoint = 0;
-                // Set depth so sub-CEM TrySplits fires up to SubspaceReclusterDepth
-                // levels of recursion, independently of Phase 1's SplitRecurseDepth.
-                // SubspaceReclusterDepth=0 (default): TrySplits fires once, split
-                //   trials use CEM(nullptr,0) — controlled single-level splitting.
-                // SubspaceReclusterDepth=1: split trials can themselves split once.
-                _trySplitsDepth = SplitRecurseDepth - SubspaceReclusterDepth;
-                if (_trySplitsDepth < 0) _trySplitsDepth = 0;
-                const float score = Ks.CEMTwoPhase(0);
-                _trySplitsDepth = 0;
-                if (score < bestSubScore && Ks.nClustersAlive > 1) {
-                    bestSubScore = score;
-                    bestSubK     = Ks.nClustersAlive;
-                    for (int i2 = 0; i2 < wi.nMem; i2++)
-                        res.bestSubClass[static_cast<size_t>(i2)] = Ks.Class[i2];
-                }
+        for (int run = 0; run < runsPerSubCluster; run++) {
+            srand(static_cast<unsigned>(RandomSeed
+                  + static_cast<unsigned>(wi.ck) * 997u
+                  + static_cast<unsigned>(wi.lc) * 13u
+                  + static_cast<unsigned>(run) * 7u));
+            Ks.ReinitForSplit(wi.nMem, k, penaltyMix);
+            for (int i = 0; i < wi.nMem * k; i++)
+                Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
+            Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
+            Ks.nStartingClusters = 2; Ks.NoisePoint = 0;
+            const float score = Ks.CEMTwoPhase(0);
+            if (score < bestSubScore && Ks.nClustersAlive > 1) {
+                bestSubScore = score;
+                bestSubK     = Ks.nClustersAlive;
+                for (int i2 = 0; i2 < wi.nMem; i2++)
+                    res.bestSubClass[static_cast<size_t>(i2)] = Ks.Class[i2];
             }
         }
 
@@ -4496,27 +4412,6 @@ void KK::SubspaceReclusterPerChunk(
             const int lc   = wi.lc;
             const int nMem = wi.nMem;
 
-            // Count new IDs needed BEFORE committing.  The packed key is
-            // chunkIdx * MaxPossibleClusters + localClusterId; if localClusterId
-            // reaches MaxPossibleClusters the key aliases into the next chunk's
-            // range, silently corrupting packedToGlobal → random cluster assignments.
-            int nNewIds = 0;
-            {
-                std::unordered_set<int> seen;
-                seen.insert(res.bestSubClass[0]);  // first class keeps original lc
-                for (int i2 = 0; i2 < nMem; i2++) {
-                    int sc = res.bestSubClass[static_cast<size_t>(i2)];
-                    if (seen.insert(sc).second) nNewIds++;
-                }
-                nNewIds--;  // first class reuses lc, counts as 0 new IDs
-                if (nNewIds < 0) nNewIds = 0;
-            }
-            if (nextLocalId + nNewIds >= MaxPossibleClusters) {
-                Output("  SubspaceRecluster: chunk%d cluster%d skip — "
-                       "ID overflow (nextLocalId=%d + %d >= MaxPossibleClusters=%d)\n",
-                       ck, lc, nextLocalId, nNewIds, MaxPossibleClusters);
-                continue;
-            }
             std::unordered_map<int,int> subToLocal;
             subToLocal[res.bestSubClass[0]] = lc;
             for (int i2 = 0; i2 < nMem; i2++) {
@@ -4568,19 +4463,7 @@ void KK::SubspaceReclusterPerChunk(
             totalSplit++;
         }
     }
-    // Diagnostic: verify perChunkClass IDs are consistent with perChunkModels
-    int _nOrphan = 0;
-    for (int ck2 = 0; ck2 < nCh; ck2++) {
-        std::unordered_set<int> validIds;
-        for (const auto& cm : perChunkModels[ck2])
-            validIds.insert(cm.localClusterId);
-        for (int lc2 : perChunkClass[ck2])
-            if (lc2 != 0 && !validIds.count(lc2)) _nOrphan++;
-    }
-    Output("SubspaceReclusterPerChunk: %d cluster(s) split, %d orphan class IDs\n",
-           totalSplit, _nOrphan);
-    if (_nOrphan > 0)
-        Output("WARNING: %d spikes in perChunkClass have no matching ChunkModel\n", _nOrphan);
+    Output("SubspaceReclusterPerChunk: %d cluster(s) split across all chunks\n", totalSplit);
 }
 
 
