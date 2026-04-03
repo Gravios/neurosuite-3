@@ -63,7 +63,7 @@ float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML or
 float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
 int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations; 0 = skip Phase 3 entirely
 int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; final write only
-// Phase 3 waveform realignment parameters
+// Phase 1.5 waveform realignment parameters
 int   NbChannels             = 0;    ///< spike group channel count
 int   NbSamplesPerSpike      = 0;    ///< waveform window width
 int   PeakSampleIndex        = 0;    ///< 0-based spike peak within window
@@ -74,10 +74,9 @@ int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat 
 int   Phase15Iters           = 1;    ///< xcorr iterations in RealignChunkWaveforms (1 = single pass, no iteration)
 int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2
-float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 5)
+float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 1.7)
 int   TemplateMatchIters     = 10;   ///< max within-chunk template match iterations
-int   SplitRecurseDepth      = 1;    ///< max TrySplits recursion depth in Phase 1
-int   SubspaceReclusterDepth = 0;    ///< TrySplits recursion depth inside SubspaceRecluster
+int   SplitRecurseDepth      = 1;    ///< max TrySplits recursion depth
 float CrossChunkTemplateScore= 0.0f; ///< min xcorr for cross-chunk template matching (Phase 2 Pass 3)
 int   fSaveModel             = 1;
 FILE *pModelFile             = nullptr;
@@ -126,7 +125,6 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(TemplateMatchScore);
     INT_PARAM(TemplateMatchIters);
     INT_PARAM(SplitRecurseDepth);
-    INT_PARAM(SubspaceReclusterDepth);
     FLOAT_PARAM(CrossChunkTemplateScore);
     INT_PARAM(DistDump);
     FLOAT_PARAM(DistThresh);

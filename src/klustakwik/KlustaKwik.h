@@ -87,8 +87,7 @@ extern int   SubspaceDims;      ///< top-N eigenvectors for Phase 2 subspace Mah
 extern int   SubspaceRecluster;    ///< per-cluster subspace CEM after Phase 2 (0=disabled)
 extern float TemplateMatchScore;       ///< min xcorr for WITHIN-chunk template matching (0=disabled)
 extern int   TemplateMatchIters;       ///< max within-chunk template match iterations (default 10)
-extern int   SplitRecurseDepth;        ///< max TrySplits recursion depth in Phase 1 (default 1)
-extern int   SubspaceReclusterDepth;   ///< TrySplits recursion depth inside SubspaceRecluster (default 0)
+extern int   SplitRecurseDepth;        ///< max TrySplits recursion depth (default 1)
 extern float CrossChunkTemplateScore;  ///< min xcorr for CROSS-chunk template matching in Phase 2 (0=disabled)
 
 // Output control
