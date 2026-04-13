@@ -193,6 +193,13 @@ public:
     */
     void groupClusters(QList<int> clustersToGroup,KlustersView& activeView);
 
+    /** Moves spikes from @p fromCluster whose 0-based .spk indices are in
+     * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */
+    void moveSpikeSubsetToCluster(int fromCluster,
+                                   const QVector<int>& spkFileIndices,
+                                   int toCluster,
+                                   KlustersView& activeView);
+
     /**Moves spikes from @p fromCluster whose 0-based .spk indices are in
      * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */
     void moveSpikeSubsetToCluster(int fromCluster,
@@ -391,6 +398,10 @@ public:
      * @param nSwapped   Set to the number of sort-order swaps performed.
      * @return true on success.
      */
+    /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).
+     *  Updates .res and .fet (time feature column). Marks doc modified. */
+    bool nudgeClusterTimestamps(int clusterId, int deltaSamples);
+
     bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                        std::function<void(const QString&,bool)> liveLog = nullptr,
                        const QString& args = QString(),
