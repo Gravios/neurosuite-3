@@ -2162,7 +2162,7 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
         int64_t rawTsInt = 0;
         if (resRFS) {
             fseeko(resRFS, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
-            (void)fread(&rawTsInt, sizeof(int64_t), 1, resRFS);
+            { size_t _r = fread(&rawTsInt, sizeof(int64_t), 1, resRFS); (void)_r; }
         }
         const float normTs = Data.m_Data[p * nDims + timeDimIdx];
         const float rawTs  = (rawTsInt > 0)
@@ -2468,17 +2468,33 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         threadKc[t].AllocateCholeskyVecs();
     }
 
-    fprintf(stderr, "[Phase 1] Chunk CEM (%d threads, %d chunks)\n",
-            nThreads, nActive);
-    #pragma omp parallel for schedule(dynamic) default(none) \
+    const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
+    const int nFlatPhase1  = nActive * runsPerChunk;
+
+    struct ChunkRunResult {
+        float            score     = HugeScore;
+        int              nClusters = 0;
+        std::vector<int> cls;
+    };
+    std::vector<ChunkRunResult> flatResults(static_cast<size_t>(nFlatPhase1));
+    for (int fi = 0; fi < nFlatPhase1; fi++) {
+        const int k    = fi / runsPerChunk;
+        const int nPts = static_cast<int>(chunkPoints[static_cast<size_t>(k)].size());
+        flatResults[static_cast<size_t>(fi)].cls.assign(static_cast<size_t>(nPts), 0);
+        flatResults[static_cast<size_t>(fi)].score = HugeScore;
+    }
+
+    fprintf(stderr, "[Phase 1] Chunk CEM (%d threads, %d chunks × %d runs = %d units)\n",
+            nThreads, nActive, runsPerChunk, nFlatPhase1);
+        #pragma omp parallel for schedule(dynamic) default(none) \
         num_threads(nThreads) \
-        shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
-               chunkPoints, perChunkClass, nActive, nFullDims, timeMergeIter, threadKc) \
+        shared(flatResults, chunkPoints, nActive, nFullDims, timeMergeIter, threadKc, stderr) \
         firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix, \
-                     nRuns, HugeScore, RandomSeed) \
-        shared(stderr)
-    for (int k = 0; k < nActive; k++) {
-        const std::vector<int>& pts = chunkPoints[k];
+                     runsPerChunk, nFlatPhase1, HugeScore, RandomSeed)
+    for (int fi = 0; fi < nFlatPhase1; fi++) {
+        const int k   = fi / runsPerChunk;
+        const int run = fi % runsPerChunk;
+        const std::vector<int>& pts = chunkPoints[static_cast<size_t>(k)];
         const int nPts = static_cast<int>(pts.size());
 
         KK& Kc = threadKc[
@@ -2488,50 +2504,63 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             0
 #endif
         ];
-        // ── nRuns restarts per chunk ────────────────────────────────────
-        // nRuns > 0: run CEMTwoPhase nRuns times with different seeds,
-        // keep the best-scoring solution for this chunk before Phase 2.
-        // Mirrors nStarts in non-chunked mode but confined to one chunk
-        // so Phase 0, Phase 1.5 and Phase 2 each still run only once.
-        const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
-        float bestChunkScore = HugeScore;
-        int   bestNClusters  = 0;
-        std::vector<int> bestClass(static_cast<size_t>(nPts), 0);
-
-        for (int run = 0; run < runsPerChunk; run++) {
-            srand(static_cast<unsigned>(RandomSeed)
-                  + static_cast<unsigned>(k) * 997u
-                  + static_cast<unsigned>(run));
-            Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
-            Kc.nStartingClusters = nStartingClusters;
-            Kc.NoisePoint        = 1;
-            for (int i2 = 0; i2 < nPts; i2++) {
-                const int p2 = pts[i2];
-                for (int d = 0; d < nFullDims; d++)
-                    Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
-            }
-            const float runScore = Kc.CEMTwoPhase(timeMergeIter);
-            if (runScore < bestChunkScore) {
-                bestChunkScore = runScore;
-                bestNClusters  = Kc.nClustersAlive;
-                for (int i2 = 0; i2 < nPts; i2++) bestClass[i2] = Kc.Class[i2];
-            }
-            #pragma omp critical
-            { fprintf(stderr, "  [chunk %d/%d  run %d/%d] score=%.4g  nclusters=%d\n",
-                      k + 1, nActive, run + 1, runsPerChunk,
-                      runScore, Kc.nClustersAlive); }
+        srand(static_cast<unsigned>(RandomSeed)
+              + static_cast<unsigned>(k) * 997u
+              + static_cast<unsigned>(run));
+        Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
+        Kc.nStartingClusters = nStartingClusters;
+        Kc.NoisePoint        = 1;
+        for (int i2 = 0; i2 < nPts; i2++) {
+            const int p2 = pts[static_cast<size_t>(i2)];
+            for (int d = 0; d < nFullDims; d++)
+                Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
         }
-        // Restore best Class[] for harvesting, then recompute Mean/Cov.
-        for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = bestClass[i2];
+        const float runScore = Kc.CEMTwoPhase(timeMergeIter);
+
+        ChunkRunResult& cr = flatResults[static_cast<size_t>(fi)];
+        cr.score     = runScore;
+        cr.nClusters = Kc.nClustersAlive;
+        for (int i2 = 0; i2 < nPts; i2++)
+            cr.cls[static_cast<size_t>(i2)] = Kc.Class[i2];
+
+        #pragma omp critical
+        { fprintf(stderr, "  [chunk %d/%d  run %d/%d] score=%.4g  nclusters=%d\n",
+                  k + 1, nActive, run + 1, runsPerChunk,
+                  runScore, Kc.nClustersAlive); }
+    }
+
+    // Serial reduction: pick best run per chunk, rebuild KK, harvest models.
+    for (int k = 0; k < nActive; k++) {
+        const std::vector<int>& pts = chunkPoints[static_cast<size_t>(k)];
+        const int nPts = static_cast<int>(pts.size());
+
+        float bestScore = HugeScore;
+        int   bestRun   = 0;
+        for (int run = 0; run < runsPerChunk; run++) {
+            const float s = flatResults[static_cast<size_t>(k * runsPerChunk + run)].score;
+            if (s < bestScore) { bestScore = s; bestRun = run; }
+        }
+        const ChunkRunResult& best = flatResults[
+            static_cast<size_t>(k * runsPerChunk + bestRun)];
+
+        KK& Kc = threadKc[0];
+        Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
+        Kc.nStartingClusters = nStartingClusters;
+        for (int i2 = 0; i2 < nPts; i2++) {
+            const int p2 = pts[static_cast<size_t>(i2)];
+            for (int d = 0; d < nFullDims; d++)
+                Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
+        }
+        for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = best.cls[static_cast<size_t>(i2)];
         for (int c = 0; c < MaxPossibleClusters; c++) Kc.ClassAlive[c] = 0;
         for (int i2 = 0; i2 < nPts; i2++) Kc.ClassAlive[Kc.Class[i2]] = 1;
         Kc.nClustersAlive = 0;
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (Kc.ClassAlive[c]) Kc.AliveIndex[Kc.nClustersAlive++] = c;
-        if (runsPerChunk > 1) Kc.MStep();  // recompute Mean/Cov for harvesting
+        Kc.MStep();
 
-        perChunkScore[k]     = bestChunkScore;
-        perChunkNClusters[k] = bestNClusters;
+        perChunkScore[k]     = bestScore;
+        perChunkNClusters[k] = best.nClusters;
 
         auto& models = perChunkModels[k];
         for (int cc = 0; cc < Kc.nClustersAlive; cc++) {
@@ -2551,32 +2580,19 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                         Kc.Cov[c * Kc.nDims2 + r * nFullDims + col];
             for (int i = 0; i < nPts; i++)
                 if (Kc.Class[i] == c) cm.nMembers++;
-
             models.push_back(std::move(cm));
         }
 
         auto& assign = perChunkAssign[k];
         assign.reserve(nPts);
         for (int i = 0; i < nPts; i++)
-            assign.emplace_back(pts[i], k * MaxPossibleClusters + Kc.Class[i]);
+            assign.emplace_back(pts[static_cast<size_t>(i)],
+                                k * MaxPossibleClusters + Kc.Class[i]);
 
-        // Harvest Class[] for Phase 1.5 realignment
         auto& classArr = perChunkClass[k];
         classArr.resize(nPts);
         for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
-
-    for (int k = 0; k < nActive; k++) {
-        Output("  Chunk %d / %d  (%d spikes): %d clusters, score %.5g\n",
-               k, nActive - 1, static_cast<int>(chunkPoints[k].size()),
-               perChunkNClusters[k], perChunkScore[k]);
-        // Do NOT move models into allModels yet — WithinChunkTemplateMatch
-        // will update perChunkModels (remove merged-away entries) and
-        // perChunkClass (remap IDs). allModels must reflect post-merge state
-        // so that MergeChunkModels vote keys match allModels localClusterIds.
-        for (auto& [p, packed] : perChunkAssign[k]) pointPacked[p] = packed;
-    }
-
 
     // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
@@ -2589,12 +2605,26 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
     //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
     //   Falls back to circular shift when .fil is unavailable.
-    // ── Phase 2.5: per-chunk subspace reclustering (pre-realignment) ─────────
+    // ── Phase 2.5: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
         fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
         SubspaceReclusterPerChunk(
             SubspaceDims > 0 ? SubspaceDims : 3,
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Refractory-period guided split — catches mixtures that the subspace
+        // CEM misses by exploiting the 1-neuron-per-refractory-window constraint.
+        // Absolute refractory = 1.5 ms × sampling rate samples.
+        // Trigger when ISI contamination rate >= 1%.
+        if (SamplingRate > 0.0f) {
+            const float refractSamp    = 1.5f * SamplingRate / 1000.0f;
+            const float sessLenSamp    = timeRawMax - timeRawMin;
+            fprintf(stderr, "[Phase 2.5] Refractory-period split (refract=%.0f samp, "
+                            "contam_thresh=1%%)\n", refractSamp);
+            RefractorySplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels,
+                nFullDims, refractSamp, 0.01f, sessLenSamp);
+        }
     }
 
 
@@ -3093,18 +3123,33 @@ float KK::RunChunkedCEM(float chunkMinutes,
         threadKc[t].AllocateCholeskyVecs();
     }
 
-    fprintf(stderr, "[Phase 1] Chunk CEM (%d threads, %d chunks)\n",
-            nThreads, nActive);
-    #pragma omp parallel for schedule(dynamic) default(none) \
+    const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
+    const int nFlatPhase1  = nActive * runsPerChunk;
+
+    struct ChunkRunResult {
+        float            score     = HugeScore;
+        int              nClusters = 0;
+        std::vector<int> cls;
+    };
+    std::vector<ChunkRunResult> flatResults(static_cast<size_t>(nFlatPhase1));
+    for (int fi = 0; fi < nFlatPhase1; fi++) {
+        const int k    = fi / runsPerChunk;
+        const int nPts = static_cast<int>(chunkPoints[static_cast<size_t>(k)].size());
+        flatResults[static_cast<size_t>(fi)].cls.assign(static_cast<size_t>(nPts), 0);
+        flatResults[static_cast<size_t>(fi)].score = HugeScore;
+    }
+
+    fprintf(stderr, "[Phase 1] Chunk CEM (%d threads, %d chunks × %d runs = %d units)\n",
+            nThreads, nActive, runsPerChunk, nFlatPhase1);
+        #pragma omp parallel for schedule(dynamic) default(none) \
         num_threads(nThreads) \
-        shared(perChunkModels, perChunkAssign, perChunkScore, perChunkNClusters, \
-               chunkPoints, perChunkClass, globalPreseedCentres, \
-               nActive, nFullDims, timeMergeIter, threadKc) \
-        firstprivate(MaxPossibleClusters, nStartingClusters, penaltyMix, chunkStartK, \
-                     nRuns, HugeScore, RandomSeed) \
-        shared(stderr)
-    for (int k = 0; k < nActive; k++) {
-        const std::vector<int>& pts = chunkPoints[k];
+        shared(flatResults, chunkPoints, nActive, nFullDims, timeMergeIter, threadKc, stderr) \
+        firstprivate(MaxPossibleClusters, chunkStartK, penaltyMix, \
+                     runsPerChunk, nFlatPhase1, HugeScore, RandomSeed)
+    for (int fi = 0; fi < nFlatPhase1; fi++) {
+        const int k   = fi / runsPerChunk;
+        const int run = fi % runsPerChunk;
+        const std::vector<int>& pts = chunkPoints[static_cast<size_t>(k)];
         const int nPts = static_cast<int>(pts.size());
 
         KK& Kc = threadKc[
@@ -3114,46 +3159,64 @@ float KK::RunChunkedCEM(float chunkMinutes,
             0
 #endif
         ];
+        srand(static_cast<unsigned>(RandomSeed)
+              + static_cast<unsigned>(k) * 997u
+              + static_cast<unsigned>(run));
         Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
-        // ── nRuns restarts per chunk ────────────────────────────────────
-        const int runsPerChunk = (nRuns > 0) ? nRuns : 1;
-        float bestChunkScore = HugeScore;
-        int   bestNClusters  = 0;
-        std::vector<int> bestClass(static_cast<size_t>(nPts), 0);
-        for (int run = 0; run < runsPerChunk; run++) {
-            srand(static_cast<unsigned>(RandomSeed)
-                  + static_cast<unsigned>(k) * 997u
-                  + static_cast<unsigned>(run));
-            Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
-            Kc.nStartingClusters = chunkStartK;
-            Kc.NoisePoint        = 1;
-            for (int i2 = 0; i2 < nPts; i2++) {
-                const int p2 = pts[i2];
-                for (int d = 0; d < nFullDims; d++)
-                    Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
-            }
-            const float runScore = Kc.CEMTwoPhase(timeMergeIter);
-            if (runScore < bestChunkScore) {
-                bestChunkScore = runScore;
-                bestNClusters  = Kc.nClustersAlive;
-                for (int i2 = 0; i2 < nPts; i2++) bestClass[i2] = Kc.Class[i2];
-            }
-            #pragma omp critical
-            { fprintf(stderr, "  [chunk %d/%d  run %d/%d] score=%.4g  nclusters=%d\n",
-                      k + 1, nActive, run + 1, runsPerChunk,
-                      runScore, Kc.nClustersAlive); }
+        Kc.nStartingClusters = chunkStartK;
+        Kc.NoisePoint        = 1;
+        for (int i2 = 0; i2 < nPts; i2++) {
+            const int p2 = pts[static_cast<size_t>(i2)];
+            for (int d = 0; d < nFullDims; d++)
+                Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
         }
-        for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = bestClass[i2];
+        const float runScore = Kc.CEMTwoPhase(timeMergeIter);
+
+        ChunkRunResult& cr = flatResults[static_cast<size_t>(fi)];
+        cr.score     = runScore;
+        cr.nClusters = Kc.nClustersAlive;
+        for (int i2 = 0; i2 < nPts; i2++)
+            cr.cls[static_cast<size_t>(i2)] = Kc.Class[i2];
+
+        #pragma omp critical
+        { fprintf(stderr, "  [chunk %d/%d  run %d/%d] score=%.4g  nclusters=%d\n",
+                  k + 1, nActive, run + 1, runsPerChunk,
+                  runScore, Kc.nClustersAlive); }
+    }
+
+    // Serial reduction: pick best run per chunk, rebuild KK, harvest models.
+    for (int k = 0; k < nActive; k++) {
+        const std::vector<int>& pts = chunkPoints[static_cast<size_t>(k)];
+        const int nPts = static_cast<int>(pts.size());
+
+        float bestScore = HugeScore;
+        int   bestRun   = 0;
+        for (int run = 0; run < runsPerChunk; run++) {
+            const float s = flatResults[static_cast<size_t>(k * runsPerChunk + run)].score;
+            if (s < bestScore) { bestScore = s; bestRun = run; }
+        }
+        const ChunkRunResult& best = flatResults[
+            static_cast<size_t>(k * runsPerChunk + bestRun)];
+
+        KK& Kc = threadKc[0];
+        Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
+        Kc.nStartingClusters = chunkStartK;
+        for (int i2 = 0; i2 < nPts; i2++) {
+            const int p2 = pts[static_cast<size_t>(i2)];
+            for (int d = 0; d < nFullDims; d++)
+                Kc.Data[i2 * nFullDims + d] = Data[p2 * nFullDims + d];
+        }
+        for (int i2 = 0; i2 < nPts; i2++) Kc.Class[i2] = best.cls[static_cast<size_t>(i2)];
         for (int c = 0; c < MaxPossibleClusters; c++) Kc.ClassAlive[c] = 0;
         for (int i2 = 0; i2 < nPts; i2++) Kc.ClassAlive[Kc.Class[i2]] = 1;
         Kc.nClustersAlive = 0;
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (Kc.ClassAlive[c]) Kc.AliveIndex[Kc.nClustersAlive++] = c;
-        if (runsPerChunk > 1) Kc.MStep();  // recompute Mean/Cov for harvesting
-        perChunkScore[k]     = bestChunkScore;
-        perChunkNClusters[k] = bestNClusters;
+        Kc.MStep();
 
-        // Harvest models into this chunk's private vector
+        perChunkScore[k]     = bestScore;
+        perChunkNClusters[k] = best.nClusters;
+
         auto& models = perChunkModels[k];
         for (int cc = 0; cc < Kc.nClustersAlive; cc++) {
             const int c = Kc.AliveIndex[cc];
@@ -3172,33 +3235,19 @@ float KK::RunChunkedCEM(float chunkMinutes,
                         Kc.Cov[c * Kc.nDims2 + r * nFullDims + col];
             for (int i = 0; i < nPts; i++)
                 if (Kc.Class[i] == c) cm.nMembers++;
-
             models.push_back(std::move(cm));
         }
 
-        // Harvest point assignments into this chunk's private vector
         auto& assign = perChunkAssign[k];
         assign.reserve(nPts);
         for (int i = 0; i < nPts; i++)
-            assign.emplace_back(pts[i], k * MaxPossibleClusters + Kc.Class[i]);
+            assign.emplace_back(pts[static_cast<size_t>(i)],
+                                k * MaxPossibleClusters + Kc.Class[i]);
 
-        // Harvest Class[] for overlap vote building (each k writes its own slot)
-        {
-            auto& classArr = perChunkClass[k];
-            classArr.resize(nPts);
-            for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
-        }
-    }   // end omp parallel for
-
-    // Serial reduction: gather per-chunk results in chunk order
-    for (int k = 0; k < nActive; k++) {
-        Output("  Chunk %d / %d  (%d spikes): %d clusters, score %.5g\n",
-               k, nActive - 1, static_cast<int>(chunkPoints[k].size()),
-               perChunkNClusters[k], perChunkScore[k]);
-        for (auto& [p, packed] : perChunkAssign[k])
-            if (pointPacked[p] < 0) pointPacked[p] = packed;  // first-write-wins
+        auto& classArr = perChunkClass[k];
+        classArr.resize(nPts);
+        for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
-
 
     // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
@@ -3211,12 +3260,26 @@ float KK::RunChunkedCEM(float chunkMinutes,
     //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
     //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
     //   Falls back to circular shift when .fil is unavailable.
-    // ── Phase 2.5: per-chunk subspace reclustering (pre-realignment) ─────────
+    // ── Phase 2.5: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
         fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
         SubspaceReclusterPerChunk(
             SubspaceDims > 0 ? SubspaceDims : 3,
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Refractory-period guided split — catches mixtures that the subspace
+        // CEM misses by exploiting the 1-neuron-per-refractory-window constraint.
+        // Absolute refractory = 1.5 ms × sampling rate samples.
+        // Trigger when ISI contamination rate >= 1%.
+        if (SamplingRate > 0.0f) {
+            const float refractSamp    = 1.5f * SamplingRate / 1000.0f;
+            const float sessLenSamp    = timeRawMax - timeRawMin;
+            fprintf(stderr, "[Phase 2.5] Refractory-period split (refract=%.0f samp, "
+                            "contam_thresh=1%%)\n", refractSamp);
+            RefractorySplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels,
+                nFullDims, refractSamp, 0.01f, sessLenSamp);
+        }
     }
 
 
@@ -3694,7 +3757,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                     int64_t rawTsWPC = 0;
                     if (resWPC) {
                         fseeko(resWPC, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
-                        (void)fread(&rawTsWPC, sizeof(int64_t), 1, resWPC);
+                        { size_t _r = fread(&rawTsWPC, sizeof(int64_t), 1, resWPC); (void)_r; }
                     }
                     if (rawTsWPC == 0 && sessionSamples > 0.0f) {
                         const float normTs = Data.m_Data[p * nDims + timeDimIdx];
@@ -3776,7 +3839,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                     int64_t rawTsF = 0;
                     if (resWPC) {
                         fseeko(resWPC, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
-                        (void)fread(&rawTsF, sizeof(int64_t), 1, resWPC);
+                        { size_t _r = fread(&rawTsF, sizeof(int64_t), 1, resWPC); (void)_r; }
                     }
                     if (rawTsF == 0 && sessionSamples > 0.0f) {
                         const float normTs = row[nDims - 1];
@@ -4188,10 +4251,15 @@ void KK::SubspaceReclusterPerChunk(
     int nFullDims)
 {
     if (subspaceDims <= 0) return;
-    const int k       = std::min(subspaceDims, nFullDims - 1);
-    const int nCh     = static_cast<int>(chunkPoints.size());
+    // kMax: hard ceiling on subspace dimensions extracted per cluster.
+    // The effective per-cluster dimension kEff is chosen automatically
+    // from the eigenvalue gap, so this is just an upper bound.
+    const int kMax     = std::min(subspaceDims, nFullDims - 1);
+    const int nCh      = static_cast<int>(chunkPoints.size());
     const int nSpatial = nFullDims - 1;
-    const int minSpikes = k * nFullDims * 3;
+    // minSpikes based on kMax as upper bound; effective k per cluster
+    // may be smaller, so this is conservative.
+    const int minSpikes = std::max(kMax * 10, 20);
 
     // ── Phase A: serial pre-processing ─────────────────────────────────────
     // For each (chunk, cluster) build a projected sub-KK and compute nullScore.
@@ -4200,8 +4268,9 @@ void KK::SubspaceReclusterPerChunk(
     struct WorkItem {
         int   ck, lc;
         int   nMem;
+        int   kEff;                      // auto-selected subspace dims for this cluster
         std::vector<int>   members;      // local indices into chunkPoints[ck]
-        std::vector<float> ksData;       // projected + normalised subspace data [nMem × k]
+        std::vector<float> ksData;       // projected + normalised subspace data [nMem × kEff]
         float timeRawMin, timeRawMax;
         float nullScore;
         bool  valid;
@@ -4259,56 +4328,72 @@ void KK::SubspaceReclusterPerChunk(
             }
             for (auto& v : clCovUT) v /= static_cast<float>(nMem - 1);
 
-            // Top-k eigenvectors
+            // Extract up to kMax eigenvectors, then auto-select kEff via
+            // the largest normalised eigenvalue gap:
+            //   gap_i = (lambda_i - lambda_{i+1}) / lambda_0
+            // The largest gap marks the signal/noise boundary in the
+            // cluster's own covariance spectrum.
             std::vector<float> evecs, evals;
-            topKEigen(clCovUT.data(), nSpatial, nFullDims, k, evecs, evals);
+            topKEigen(clCovUT.data(), nSpatial, nFullDims, kMax, evecs, evals);
 
-            // Project into whitened k-space
+            int kEff = 2;  // minimum: >= 2 dims needed to detect a split
+            if (kMax >= 2 && evals[0] > 1e-12f) {
+                float maxGap = -1.0f;
+                for (int ki = 0; ki < kMax - 1; ki++) {
+                    float gap = (evals[static_cast<size_t>(ki)]
+                               - evals[static_cast<size_t>(ki + 1)])
+                              / evals[0];
+                    if (gap > maxGap) { maxGap = gap; kEff = ki + 1; }
+                }
+                kEff = std::max(2, std::min(kEff, kMax));
+            }
+
+            // Project into whitened kEff-dimensional subspace
             WorkItem wi;
-            wi.ck = ck; wi.lc = lc; wi.nMem = nMem;
+            wi.ck = ck; wi.lc = lc; wi.nMem = nMem; wi.kEff = kEff;
             wi.members = std::move(members);
-            wi.ksData.resize(static_cast<size_t>(nMem) * k);
+            wi.ksData.resize(static_cast<size_t>(nMem) * kEff);
             for (int i = 0; i < nMem; i++) {
                 const int p = pts[static_cast<size_t>(wi.members[static_cast<size_t>(i)])];
-                for (int ki = 0; ki < k; ki++) {
+                for (int ki = 0; ki < kEff; ki++) {
                     float proj = 0.0f;
                     for (int d = 0; d < nSpatial; d++)
                         proj += evecs[static_cast<size_t>(ki * nSpatial + d)]
                               * (Data[p * nDims + d] - clMean[static_cast<size_t>(d)]);
                     float scale = (evals[static_cast<size_t>(ki)] > 1e-12f)
                                 ? std::sqrt(evals[static_cast<size_t>(ki)]) : 1.0f;
-                    wi.ksData[static_cast<size_t>(i * k + ki)] = proj / scale;
+                    wi.ksData[static_cast<size_t>(i * kEff + ki)] = proj / scale;
                 }
             }
 
             // Normalise to [0,1]
-            std::vector<float> subMin(static_cast<size_t>(k),  HugeScore);
-            std::vector<float> subMax(static_cast<size_t>(k), -HugeScore);
+            std::vector<float> subMin(static_cast<size_t>(kEff),  HugeScore);
+            std::vector<float> subMax(static_cast<size_t>(kEff), -HugeScore);
             for (int i = 0; i < nMem; i++)
-                for (int ki = 0; ki < k; ki++) {
-                    float v = wi.ksData[static_cast<size_t>(i * k + ki)];
+                for (int ki = 0; ki < kEff; ki++) {
+                    float v = wi.ksData[static_cast<size_t>(i * kEff + ki)];
                     if (v < subMin[static_cast<size_t>(ki)]) subMin[static_cast<size_t>(ki)] = v;
                     if (v > subMax[static_cast<size_t>(ki)]) subMax[static_cast<size_t>(ki)] = v;
                 }
             for (int i = 0; i < nMem; i++)
-                for (int ki = 0; ki < k; ki++) {
+                for (int ki = 0; ki < kEff; ki++) {
                     float range = subMax[static_cast<size_t>(ki)] - subMin[static_cast<size_t>(ki)];
-                    wi.ksData[static_cast<size_t>(i * k + ki)] = (range > 1e-12f)
-                        ? (wi.ksData[static_cast<size_t>(i * k + ki)] - subMin[static_cast<size_t>(ki)]) / range
+                    wi.ksData[static_cast<size_t>(i * kEff + ki)] = (range > 1e-12f)
+                        ? (wi.ksData[static_cast<size_t>(i * kEff + ki)] - subMin[static_cast<size_t>(ki)]) / range
                         : 0.5f;
                 }
-            wi.timeRawMin = subMin[static_cast<size_t>(k - 1)];
-            wi.timeRawMax = subMax[static_cast<size_t>(k - 1)];
+            wi.timeRawMin = subMin[static_cast<size_t>(kEff - 1)];
+            wi.timeRawMax = subMax[static_cast<size_t>(kEff - 1)];
 
             // Null score
             {
                 KK Ks;
-                Ks.nDims = k; Ks.nPoints = nMem;
+                Ks.nDims = kEff; Ks.nPoints = nMem;
                 Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
                 Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
-                for (int i = 0; i < nMem * k; i++) Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
+                for (int i = 0; i < nMem * kEff; i++) Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
                 Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
-                Ks.ReinitForSplit(nMem, k, penaltyMix);
+                Ks.ReinitForSplit(nMem, kEff, penaltyMix);
                 Ks.nStartingClusters = 1; Ks.NoisePoint = 0;
                 for (int i2 = 0; i2 < nMem; i2++) Ks.Class[i2] = 1;
                 Ks.ClassAlive[1] = 1; Ks.nClustersAlive = 1; Ks.AliveIndex[0] = 1;
@@ -4326,65 +4411,160 @@ void KK::SubspaceReclusterPerChunk(
         return;
     }
 
-    // ── Phase B: parallel sub-CEM ───────────────────────────────────────────
-    // Each work item is independent — different KK scratch objects, read-only Data[].
-    // Thread cap: min(nThreads, nItems) avoids idle threads.
+    // ── Phase B: parallel sub-CEM ─────────────────────────────────────────────
+    // Flattened over (item × run): nItems*nRuns independent work units.
+    // Each unit is a single (cluster, random-seed) CEMTwoPhase call.
+    // Serial reduction after the parallel block picks the best-scoring run
+    // per cluster and writes it into results[], which Phase C reads unchanged.
+    //
+    // Mapping invariant: runResults[wi_idx * runsPerSubCluster + run].subClass[i2]
+    // = Ks.Class[i2] after CEMTwoPhase on wi.ksData.  This is the sub-cluster
+    // label (1..N) for the i2-th member of work item wi_idx.  Phase C consumes
+    // res.bestSubClass[i2] with the same indexing as before — only the source
+    // (which run) changed, not the meaning of the value.
+    const int runsPerSubCluster = (nRuns > 0) ? nRuns : 1;
+    const int nFlatItems        = nItems * runsPerSubCluster;
+
+    struct RunResult {
+        float            score     = 0.0f;   // 0 = invalid (nClusters <= 1)
+        int              nClusters = 1;
+        std::vector<int> subClass; // [nMem]: sub-cluster labels from Ks.Class[]
+    };
+    std::vector<RunResult> runResults(static_cast<size_t>(nFlatItems));
+    // Pre-size subClass vectors; initialise to 0 (all noise) as a safe default.
+    for (int fi = 0; fi < nFlatItems; fi++) {
+        const int wi_idx = fi / runsPerSubCluster;
+        const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
+        runResults[static_cast<size_t>(fi)].subClass.assign(
+            static_cast<size_t>(wi.nMem), 0);
+    }
+
     std::vector<Result> results(static_cast<size_t>(nItems));
 
 #ifdef _OPENMP
     const int _srcThreads = std::min(
         (ompTeamSize > 0) ? ompTeamSize : omp_get_max_threads(),
-        nItems);
+        nFlatItems);
 #else
     const int _srcThreads = 1;
 #endif
 
+    // Number of farthest-point seeds for the subspace CEM.
+    // We use enough starting clusters that CEM can discover the right number
+    // via splits and deletions, matching the approach in CEMTwoPhase/TrySplits.
+    // min(8, nMem/30) prevents over-seeding tiny clusters; +1 for noise slot.
+    // This is computed per work-item below; the constant here is a ceiling.
+    const int maxSubStart = 9;  // noise + up to 8 real sub-clusters
+
     #pragma omp parallel for schedule(dynamic) num_threads(_srcThreads) \
         default(none) \
-        shared(items, results, nItems, k) \
-        firstprivate(penaltyMix, RandomSeed, nRuns, HugeScore)
+        shared(items, runResults, nItems) \
+        firstprivate(penaltyMix, RandomSeed, runsPerSubCluster, HugeScore, maxSubStart, \
+                     MaxPossibleClusters)
+    for (int fi = 0; fi < nItems * runsPerSubCluster; fi++) {
+        const int wi_idx = fi / runsPerSubCluster;
+        const int run    = fi % runsPerSubCluster;
+        const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
+        RunResult& rr = runResults[static_cast<size_t>(fi)];
+
+        if (!wi.valid) continue;
+
+        // Determine sensible number of starting clusters for this sub-cluster.
+        // Use enough seeds to let CEM find multi-cluster structure via splits,
+        // but cap at min(maxSubStart, nMem/minSpikesPerCluster) to avoid
+        // degenerate fits on small clusters.
+        // +1 for the noise slot (cluster 0).
+        // Use this cluster's auto-selected subspace dimension.
+        const int k = wi.kEff;
+        const int minSpkPerCl = std::max(k * 3, 10);
+        const int nSeeds = std::max(2,
+                           std::min(maxSubStart - 1,
+                                    wi.nMem / minSpkPerCl));
+        const int nSubStart = nSeeds + 1;  // +1 noise slot
+
+        // Each thread has its own KK scratch — no shared mutable state.
+        KK Ks;
+        Ks.nDims = k; Ks.nPoints = wi.nMem;
+        Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
+        Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
+        // MaxClusters and MaxPossibleClusters are globals; the scratch KK
+        // object inherits them via AllocateArrays(). We cap the effective
+        // per-subspace ceiling by clamping nSubStart, not by touching the
+        // global — the global drives array sizing and must not be lowered.
+
+        Ks.ReinitForSplit(wi.nMem, k, penaltyMix);
+        for (int i = 0; i < wi.nMem * k; i++)
+            Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
+        Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
+
+        // Farthest-point seeding: places nSeeds centres spread across the
+        // subspace, giving CEM a principled non-random starting partition.
+        // Different runs vary the seed of the random tie-breaker used by
+        // InitCentresFarthestPoint, producing different initial assignments
+        // when two points are equidistant from the current frontier.
+        srand(static_cast<unsigned>(RandomSeed
+              + static_cast<unsigned>(wi.ck) * 997u
+              + static_cast<unsigned>(wi.lc) * 13u
+              + static_cast<unsigned>(run)   * 7u));
+        // Initialise with farthest-point seeding in the full k-dimensional
+        // subspace (all dimensions are spatial — there is no time column here).
+        Ks.nStartingClusters = nSubStart; Ks.NoisePoint = 0;
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            Ks.ClassAlive[c] = (c < nSubStart) ? 1 : 0;
+        Ks.Reindex();
+        Ks.InitCentresFarthestPoint(nSeeds, k);  // all k dims are spatial
+        Ks.InitClassFromCentres(k);
+
+        // Use CEM (not CEMTwoPhase) because the subspace has no time column.
+        // CEMTwoPhase would reduce to nDims-1 = k-1 in Phase 1, discarding
+        // one real feature dimension.  RunEMLoop with enableSplits=true runs
+        // the full k-dimensional CEM with TrySplits enabled.
+        const float score = Ks.RunEMLoop(
+            /*enableSplits=*/   true,
+            /*enableDistDump=*/ false,
+            /*maxIter=*/        0,
+            /*phaseLabel=*/     "sub");
+
+        // Only record if a genuine split occurred (nClusters > 1).
+        if (Ks.nClustersAlive > 1) {
+            rr.score     = score;
+            rr.nClusters = Ks.nClustersAlive;
+            for (int i2 = 0; i2 < wi.nMem; i2++)
+                rr.subClass[static_cast<size_t>(i2)] = Ks.Class[i2];
+        }
+    }
+
+    // Serial reduction: for each item, pick the run with best score.
+    // Writes into results[] which Phase C reads — same structure as before.
     for (int wi_idx = 0; wi_idx < nItems; wi_idx++) {
         const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
         Result& res = results[static_cast<size_t>(wi_idx)];
         res.ck = wi.ck; res.lc = wi.lc;
         res.accepted = false; res.bestSubK = 1;
+        // Initialise bestSubClass to 0 (all noise) — overwritten on acceptance.
         res.bestSubClass.assign(static_cast<size_t>(wi.nMem), 0);
 
         if (!wi.valid) continue;
 
-        const int runsPerSubCluster = (nRuns > 0) ? nRuns : 1;
-        float bestSubScore = HugeScore;
-        int   bestSubK = 1;
-
-        KK Ks;
-        Ks.nDims = k; Ks.nPoints = wi.nMem;
-        Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
-        Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
-        Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
-
+        float bestScore = HugeScore;
+        int   bestSubK  = 1;
         for (int run = 0; run < runsPerSubCluster; run++) {
-            srand(static_cast<unsigned>(RandomSeed
-                  + static_cast<unsigned>(wi.ck) * 997u
-                  + static_cast<unsigned>(wi.lc) * 13u
-                  + static_cast<unsigned>(run) * 7u));
-            Ks.ReinitForSplit(wi.nMem, k, penaltyMix);
-            for (int i = 0; i < wi.nMem * k; i++)
-                Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
-            Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
-            Ks.nStartingClusters = 2; Ks.NoisePoint = 0;
-            const float score = Ks.CEMTwoPhase(0);
-            if (score < bestSubScore && Ks.nClustersAlive > 1) {
-                bestSubScore = score;
-                bestSubK     = Ks.nClustersAlive;
-                for (int i2 = 0; i2 < wi.nMem; i2++)
-                    res.bestSubClass[static_cast<size_t>(i2)] = Ks.Class[i2];
+            // Index: wi_idx * runsPerSubCluster + run — matches the flat loop above.
+            const RunResult& rr = runResults[
+                static_cast<size_t>(wi_idx * runsPerSubCluster + run)];
+            // rr.score == 0.0f means no valid split for this run (guard above).
+            if (rr.nClusters > 1 && rr.score < bestScore) {
+                bestScore = rr.score;
+                bestSubK  = rr.nClusters;
+                // Copy — not move — so runResults stays valid if we iterate again.
+                res.bestSubClass = rr.subClass;
             }
         }
-
-        if (bestSubK > 1 && bestSubScore < wi.nullScore) {
-            res.accepted      = true;
-            res.bestSubK      = bestSubK;
-            res.bestSubScore  = bestSubScore;
+        // Only accept if at least one run found a better split than the null model.
+        if (bestSubK > 1 && bestScore < wi.nullScore) {
+            res.accepted     = true;
+            res.bestSubK     = bestSubK;
+            res.bestSubScore = bestScore;
         }
     }
 
@@ -4687,4 +4867,293 @@ void KK::SaveBestMeans() {
                 bestCholFlat[static_cast<size_t>(c) * nDims2 + i * ksv().nDimsBest + j] =
                     cholFlat    [static_cast<size_t>(c) * nDims2 + i * ksv().nDimsBest + j];
     }
+}
+
+// ---------------------------------------------------------------------------
+// RefractorySplitPerChunk
+// ---------------------------------------------------------------------------
+// Physiologically-motivated splitting phase, run after SubspaceReclusterPerChunk.
+//
+// Rationale: a single neuron cannot fire twice within the absolute refractory
+// period (~1–1.5 ms).  Any cluster with ISI violations in that window is a
+// mixture of at least two units.  This phase exploits that constraint directly:
+//
+//   1. For each cluster, sort its spike timestamps (normalised time dimension).
+//   2. Find all refractory violations: pairs (i,j) with |t_i - t_j| < refractNorm.
+//   3. Compute the contamination rate = 2 * n_violations / n_spikes.
+//   4. If rate >= minContamRate AND n_spikes >= minSplitSpikes:
+//      a. Partition spikes into "violator" set (at least one in a violating pair)
+//         and "clean" set (no refractory violation partner).
+//      b. Seed two-cluster CEM using violator centroid vs clean centroid.
+//      c. Run full-space CEM in the normalised nFullDims space with splits enabled.
+//      d. Accept the split only if multi-cluster BIC < single-cluster BIC.
+//
+// This handles cases SubspaceRecluster misses because:
+//   a. The mixture of two units with similar but distinct waveforms may not
+//      produce a bimodal subspace projection, yet refractory violations reveal
+//      the contamination directly.
+//   b. It works on clusters too small for subspace CEM (minimum 2*nFullDims).
+//
+// Parameters:
+//   refractSamples  — absolute refractory period in raw samples (e.g. 1.5ms
+//                     × SamplingRate, typically 49 at 32552 Hz)
+//   minContamRate   — contamination rate threshold to trigger a split; 0.01
+//                     means ≥1% violation rate (1 violation per 50 clean ISIs)
+//   sessionSamples  — full recording length in samples (= timeRawMax-timeRawMin)
+// ---------------------------------------------------------------------------
+void KK::RefractorySplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int   nFullDims,
+    float refractSamples,
+    float minContamRate,
+    float sessionSamples)
+{
+    if (refractSamples <= 0.0f || sessionSamples <= 0.0f) return;
+
+    const int nSpatial    = nFullDims - 1;   // dimensions excluding time
+    const int timeDimIdx  = nFullDims - 1;   // normalised time is last dim
+    const float refractNorm = refractSamples / sessionSamples;  // in [0,1]
+
+    // Minimum spike count for a 2-cluster fit: need enough in each half for
+    // a stable nFullDims-dimensional Gaussian.  nFullDims*4 is conservative.
+    const int minSplitSpikes = std::max(nFullDims * 4, 20);
+
+    const int nCh = static_cast<int>(chunkPoints.size());
+    int totalSplit = 0;
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts  = chunkPoints[ck];
+        auto&       cls  = perChunkClass[ck];
+        auto&       mdls = perChunkModels[ck];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts == 0 || mdls.empty()) continue;
+
+        std::vector<ChunkModel> snapshot = mdls;
+        for (const auto& origCm : snapshot) {
+            const int lc = origCm.localClusterId;
+            if (lc == 0) continue;
+
+            // Collect member local-indices and their normalised timestamps
+            std::vector<int>   members;
+            std::vector<float> ts;
+            for (int i = 0; i < nPts; i++) {
+                if (cls[static_cast<size_t>(i)] != lc) continue;
+                members.push_back(i);
+                ts.push_back(Data[pts[static_cast<size_t>(i)] * nDims + timeDimIdx]);
+            }
+            const int nMem = static_cast<int>(members.size());
+            if (nMem < minSplitSpikes) continue;
+
+            // Sort by time for efficient ISI scan
+            std::vector<int> order(static_cast<size_t>(nMem));
+            std::iota(order.begin(), order.end(), 0);
+            std::sort(order.begin(), order.end(),
+                      [&ts](int a, int b){ return ts[static_cast<size_t>(a)]
+                                                < ts[static_cast<size_t>(b)]; });
+
+            // Count refractory violations (forward scan: consecutive sorted spikes)
+            // and mark which spikes are involved in at least one violation.
+            std::vector<bool> isViolator(static_cast<size_t>(nMem), false);
+            int nViol = 0;
+            for (int ii = 0; ii < nMem - 1; ii++) {
+                const int a = order[static_cast<size_t>(ii)];
+                const int b = order[static_cast<size_t>(ii + 1)];
+                if ((ts[static_cast<size_t>(b)] - ts[static_cast<size_t>(a)])
+                        < refractNorm) {
+                    isViolator[static_cast<size_t>(a)] = true;
+                    isViolator[static_cast<size_t>(b)] = true;
+                    ++nViol;
+                }
+            }
+
+            const float contamRate = 2.0f * static_cast<float>(nViol)
+                                   / static_cast<float>(nMem);
+            if (contamRate < minContamRate) continue;
+
+            // Log the violation
+            Output("  RefractorySplit: chunk%d cluster%d  %d spikes  "
+                   "%.1f%% ISI contamination (%.1fms refract)\\n",
+                   ck, lc, nMem, contamRate * 100.0f,
+                   refractSamples / (SamplingRate > 0.0f ? SamplingRate : 30000.0f) * 1000.0f);
+
+            // Partition: violators vs clean.
+            // If all spikes are violators (highly contaminated), fall back to
+            // median split by first spatial dimension.
+            std::vector<int> violIdx, cleanIdx;
+            for (int ii = 0; ii < nMem; ii++) {
+                if (isViolator[static_cast<size_t>(ii)]) violIdx.push_back(ii);
+                else                                      cleanIdx.push_back(ii);
+            }
+            if (violIdx.empty() || cleanIdx.empty()) {
+                // Fallback: split by median of first spatial feature
+                std::vector<float> vals(static_cast<size_t>(nMem));
+                for (int ii = 0; ii < nMem; ii++)
+                    vals[static_cast<size_t>(ii)] =
+                        Data[pts[static_cast<size_t>(members[static_cast<size_t>(ii)])]
+                             * nDims + 0];
+                float med = vals[static_cast<size_t>(nMem / 2)];
+                std::nth_element(vals.begin(), vals.begin() + nMem/2, vals.end());
+                med = vals[static_cast<size_t>(nMem / 2)];
+                for (int ii = 0; ii < nMem; ii++) {
+                    if (Data[pts[static_cast<size_t>(members[static_cast<size_t>(ii)])]
+                             * nDims + 0] < med)
+                        cleanIdx.push_back(ii);
+                    else
+                        violIdx.push_back(ii);
+                }
+            }
+
+            // Compute centroids of violator and clean sets in normalised nFullDims space
+            std::vector<float> centViol(static_cast<size_t>(nFullDims), 0.0f);
+            std::vector<float> centClean(static_cast<size_t>(nFullDims), 0.0f);
+            for (int ii : violIdx) {
+                const int p = pts[static_cast<size_t>(members[static_cast<size_t>(ii)])];
+                for (int d = 0; d < nFullDims; d++)
+                    centViol[static_cast<size_t>(d)] += Data[p * nDims + d];
+            }
+            for (int ii : cleanIdx) {
+                const int p = pts[static_cast<size_t>(members[static_cast<size_t>(ii)])];
+                for (int d = 0; d < nFullDims; d++)
+                    centClean[static_cast<size_t>(d)] += Data[p * nDims + d];
+            }
+            for (float& v : centViol)  v /= static_cast<float>(violIdx.size());
+            for (float& v : centClean) v /= static_cast<float>(cleanIdx.size());
+
+            // Build scratch KK for this cluster's spikes in full nFullDims space
+            KK Ks;
+            Ks.nDims = nFullDims; Ks.nPoints = nMem;
+            Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
+            Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
+            Ks.timeRawMin = timeRawMin; Ks.timeRawMax = timeRawMax;
+
+            Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
+            for (int ii = 0; ii < nMem; ii++) {
+                const int p = pts[static_cast<size_t>(members[static_cast<size_t>(ii)])];
+                for (int d = 0; d < nFullDims; d++)
+                    Ks.Data[ii * nFullDims + d] = Data[p * nDims + d];
+            }
+
+            // Place centroid seeds into Centres[]
+            // Centres layout: [cluster-1 (clean), cluster-2 (violator)] × nFullDims
+            Ks.Centres.SetSize(2 * nFullDims);
+            for (int d = 0; d < nFullDims; d++) {
+                Ks.Centres[0 * nFullDims + d] = centClean[static_cast<size_t>(d)];
+                Ks.Centres[1 * nFullDims + d] = centViol[static_cast<size_t>(d)];
+            }
+            Ks.nStartingClusters = 3;  // noise(0) + clean(1) + violator(2)
+            Ks.NoisePoint = 0;
+            for (int c = 0; c < MaxPossibleClusters; c++)
+                Ks.ClassAlive[c] = (c < 3) ? 1 : 0;
+            Ks.Reindex();
+            // Assign initial classes from centroid proximity
+            Ks.InitClassFromCentres(nSpatial);
+
+            // Null score (single cluster)
+            Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
+            for (int ii = 0; ii < nMem; ii++) {
+                const int p = pts[static_cast<size_t>(members[static_cast<size_t>(ii)])];
+                for (int d = 0; d < nFullDims; d++)
+                    Ks.Data[ii * nFullDims + d] = Data[p * nDims + d];
+            }
+            Ks.nStartingClusters = 1; Ks.NoisePoint = 0;
+            for (int ii = 0; ii < nMem; ii++) Ks.Class[ii] = 1;
+            Ks.ClassAlive[1] = 1; Ks.nClustersAlive = 1; Ks.AliveIndex[0] = 1;
+            Ks.MStep(); Ks.EStep();
+            const float nullScore = Ks.ComputeScore();
+
+            // Multi-cluster CEM seeded from centroids
+            Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
+            for (int ii = 0; ii < nMem; ii++) {
+                const int p = pts[static_cast<size_t>(members[static_cast<size_t>(ii)])];
+                for (int d = 0; d < nFullDims; d++)
+                    Ks.Data[ii * nFullDims + d] = Data[p * nDims + d];
+            }
+            // Re-place centroid seeds
+            Ks.Centres.SetSize(2 * nFullDims);
+            for (int d = 0; d < nFullDims; d++) {
+                Ks.Centres[0 * nFullDims + d] = centClean[static_cast<size_t>(d)];
+                Ks.Centres[1 * nFullDims + d] = centViol[static_cast<size_t>(d)];
+            }
+            Ks.nStartingClusters = 3; Ks.NoisePoint = 0;
+            for (int c = 0; c < MaxPossibleClusters; c++)
+                Ks.ClassAlive[c] = (c < 3) ? 1 : 0;
+            Ks.Reindex();
+            Ks.InitClassFromCentres(nSpatial);
+            Ks.timeRawMin = timeRawMin; Ks.timeRawMax = timeRawMax;
+
+            const float splitScore = Ks.RunEMLoop(
+                /*enableSplits=*/   true,
+                /*enableDistDump=*/ false,
+                /*maxIter=*/        0,
+                /*phaseLabel=*/     "rfsplit");
+
+            if (Ks.nClustersAlive <= 1 || splitScore >= nullScore) {
+                Output("  RefractorySplit: chunk%d cluster%d — no improvement "
+                       "(splitScore=%.4g, null=%.4g), keeping\\n",
+                       ck, lc, splitScore, nullScore);
+                continue;
+            }
+
+            // Apply split
+            Output("  RefractorySplit: chunk%d cluster%d -> %d sub-clusters "
+                   "(splitScore=%.4g < null=%.4g)\\n",
+                   ck, lc, Ks.nClustersAlive, splitScore, nullScore);
+
+            // Find next free local ID
+            int nextLocalId = 0;
+            for (const auto& cm : mdls)
+                if (cm.localClusterId > nextLocalId) nextLocalId = cm.localClusterId;
+            nextLocalId++;
+
+            std::unordered_map<int,int> subToLocal;
+            subToLocal[Ks.Class[0]] = lc;  // first sub-cluster keeps the original ID
+            for (int ii = 0; ii < nMem; ii++) {
+                int sc = Ks.Class[ii];
+                if (!subToLocal.count(sc)) subToLocal[sc] = nextLocalId++;
+            }
+
+            for (int ii = 0; ii < nMem; ii++)
+                cls[static_cast<size_t>(members[static_cast<size_t>(ii)])] =
+                    subToLocal[Ks.Class[ii]];
+
+            // Remove old model entry and build new ones
+            mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
+                [lc](const ChunkModel& m){ return m.localClusterId == lc; }),
+                mdls.end());
+
+            for (auto& [sc2, newLc] : subToLocal) {
+                ChunkModel cm;
+                cm.chunkIdx = ck; cm.localClusterId = newLc;
+                cm.globalClusterId = -1; cm.nMembers = 0;
+                cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
+                cm.cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+                for (int ii = 0; ii < nPts; ii++) {
+                    if (cls[static_cast<size_t>(ii)] != newLc) continue;
+                    const int p2 = pts[static_cast<size_t>(ii)];
+                    for (int d = 0; d < nFullDims; d++)
+                        cm.mean[static_cast<size_t>(d)] += Data[p2 * nDims + d];
+                    cm.nMembers++;
+                }
+                if (cm.nMembers > 0)
+                    for (float& v : cm.mean) v /= cm.nMembers;
+                for (int ii = 0; ii < nPts; ii++) {
+                    if (cls[static_cast<size_t>(ii)] != newLc) continue;
+                    const int p2 = pts[static_cast<size_t>(ii)];
+                    for (int r = 0; r < nFullDims; r++)
+                        for (int cc2 = r; cc2 < nFullDims; cc2++) {
+                            float dr = Data[p2 * nDims + r]   - cm.mean[static_cast<size_t>(r)];
+                            float dc = Data[p2 * nDims + cc2] - cm.mean[static_cast<size_t>(cc2)];
+                            cm.cov[r * nFullDims + cc2] += dr * dc;
+                        }
+                }
+                if (cm.nMembers > 1)
+                    for (float& v : cm.cov) v /= static_cast<float>(cm.nMembers - 1);
+                mdls.push_back(std::move(cm));
+            }
+            ++totalSplit;
+        }
+    }
+    Output("RefractorySplitPerChunk: %d cluster(s) split\\n", totalSplit);
 }

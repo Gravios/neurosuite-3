@@ -29,10 +29,8 @@ PrefGeneral::PrefGeneral(QWidget *parent )
 {
     connect(crashRecoveryCheckBox,&QCheckBox::stateChanged,this,&PrefGeneral::updateCrashRecoveryTimeInterval);
     connect(reclusteringExecutableButton, &QAbstractButton::clicked, this, &PrefGeneral::updateReclusteringExecutable);
-    connect(realignExecutableButton, &QAbstractButton::clicked, this, &PrefGeneral::updateRealignExecutable);
 
     reclusteringExecutableButton->setIcon(QIcon(":/shared-icons/folder-open"));
-    realignExecutableButton->setIcon(QIcon(":/shared-icons/folder-open"));
 }
 PrefGeneral::~PrefGeneral(){
 }
@@ -57,9 +55,9 @@ void PrefGeneral::setReclusteringExecutable(const QString& executable) {recluste
 
 void PrefGeneral::setReclusteringArguments(const QString& arguments) {reclusteringArgsLineEdit->setText(arguments);}
 
-void PrefGeneral::setRealignExecutable(const QString& executable) {realignExecutableLineEdit->setText(executable);}
-
-void PrefGeneral::setRealignArguments(const QString& arguments) {realignArgsLineEdit->setText(arguments);}
+void PrefGeneral::setRealignThreshold(double v)  { realignThresholdSpinBox->setValue(v); }
+void PrefGeneral::setRealignIterations(int n)    { realignIterationsSpinBox->setValue(n); }
+void PrefGeneral::setRealignMaxShift(int n)      { realignMaxShiftSpinBox->setValue(n); }
 
 bool PrefGeneral::isCrashRecovery() const{return crashRecoveryCheckBox->isChecked();}
 
@@ -76,9 +74,9 @@ QString PrefGeneral::getReclusteringExecutable() const{return reclusteringExecut
 
 QString PrefGeneral::getReclusteringArguments() const{return reclusteringArgsLineEdit->text();}
 
-QString PrefGeneral::getRealignExecutable() const{return realignExecutableLineEdit->text();}
-
-QString PrefGeneral::getRealignArguments() const{return realignArgsLineEdit->text();}
+double PrefGeneral::getRealignThreshold()  const { return realignThresholdSpinBox->value(); }
+int    PrefGeneral::getRealignIterations() const { return realignIterationsSpinBox->value(); }
+int    PrefGeneral::getRealignMaxShift()   const { return realignMaxShiftSpinBox->value(); }
 
 void PrefGeneral::updateCrashRecoveryTimeInterval(int state){
     if(state == Qt::Checked)
@@ -93,11 +91,6 @@ void PrefGeneral::updateReclusteringExecutable(){
       setReclusteringExecutable(executable);
 }
 
-void PrefGeneral::updateRealignExecutable(){
-    const QString executable = QFileDialog::getOpenFileName(this, tr("Select the Realignment executable..."));
-    if( !executable.isEmpty() )
-      setRealignExecutable(executable);
-}
 
 bool PrefGeneral::getAutoSelectFeatures() const {
     return autoSelectFeaturesCheckBox->isChecked();
@@ -126,3 +119,16 @@ int  PrefGeneral::getMarkerSize()   const { return markerSizeSpinBox->value(); }
 void PrefGeneral::setSelectionLineWidth(int w) { selectionLineWidthSpinBox->setValue(w); }
 int  PrefGeneral::getSelectionLineWidth() const { return selectionLineWidthSpinBox->value(); }
 
+
+double PrefGeneral::getTemplateThresholdMin() const {
+    return templateThresholdMinSpinBox->value();
+}
+void PrefGeneral::setTemplateThresholdMin(double v) {
+    templateThresholdMinSpinBox->setValue(v);
+}
+double PrefGeneral::getTemplateThresholdMax() const {
+    return templateThresholdMaxSpinBox->value();
+}
+void PrefGeneral::setTemplateThresholdMax(double v) {
+    templateThresholdMaxSpinBox->setValue(v);
+}

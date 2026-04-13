@@ -7,224 +7,14 @@
     <x>0</x>
     <y>0</y>
     <width>450</width>
-    <height>514</height>
+    <height>600</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>General</string>
   </property>
   <layout class="QGridLayout">
-   <item row="6" column="0">
-    <spacer name="spacer1">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeType">
-      <enum>QSizePolicy::Expanding</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>21</width>
-       <height>30</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
-   <item row="1" column="0">
-    <layout class="QHBoxLayout">
-     <item>
-      <spacer name="spacer17">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeType">
-        <enum>QSizePolicy::Fixed</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>16</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QGroupBox" name="groupBox2">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>32767</width>
-         <height>70</height>
-        </size>
-       </property>
-       <property name="title">
-        <string>Undo</string>
-       </property>
-       <layout class="QGridLayout" name="gridLayout_3">
-        <item row="0" column="0">
-         <layout class="QHBoxLayout">
-          <property name="margin">
-           <number>0</number>
-          </property>
-          <item>
-           <widget class="QLabel" name="textLabel4">
-            <property name="text">
-             <string>Number of steps</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QSpinBox" name="undoSpinBox">
-            <property name="wrapping">
-             <bool>true</bool>
-            </property>
-            <property name="maximum">
-             <number>30</number>
-            </property>
-            <property name="value">
-             <number>2</number>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <spacer name="spacer7">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeType">
-             <enum>QSizePolicy::Expanding</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>81</width>
-              <height>20</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
-         </layout>
-        </item>
-       </layout>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item row="3" column="0">
-    <layout class="QHBoxLayout">
-     <item>
-      <spacer name="spacer17_2">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeType">
-        <enum>QSizePolicy::Fixed</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>16</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QGroupBox" name="groupBox_realign">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>32767</width>
-         <height>140</height>
-        </size>
-       </property>
-       <property name="title">
-        <string>Realignment</string>
-       </property>
-       <layout class="QGridLayout" name="gridLayout_realign">
-        <item row="0" column="0">
-         <layout class="QVBoxLayout">
-          <property name="spacing">
-           <number>0</number>
-          </property>
-          <item>
-           <layout class="QHBoxLayout">
-            <item>
-             <widget class="QLabel" name="realignExeLabel">
-              <property name="text">
-               <string>Executable</string>
-              </property>
-              <property name="wordWrap">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLineEdit" name="realignExecutableLineEdit"/>
-            </item>
-            <item>
-             <widget class="QPushButton" name="realignExecutableButton">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>60</width>
-                <height>29</height>
-               </size>
-              </property>
-              <property name="text">
-               <string/>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-          <item>
-           <layout class="QHBoxLayout">
-            <item>
-             <widget class="QLabel" name="realignArgsLabel">
-              <property name="text">
-               <string>Arguments</string>
-              </property>
-              <property name="wordWrap">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLineEdit" name="realignArgsLineEdit">
-              <property name="minimumSize">
-               <size>
-                <width>0</width>
-                <height>0</height>
-               </size>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-         </layout>
-        </item>
-       </layout>
-      </widget>
-     </item>
-    </layout>
-   </item>
+   
    <item row="0" column="0">
     <layout class="QHBoxLayout">
      <property name="spacing">
@@ -367,6 +157,95 @@
      </item>
     </layout>
    </item>
+   
+   <item row="1" column="0">
+    <layout class="QHBoxLayout">
+     <item>
+      <spacer name="spacer17">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeType">
+        <enum>QSizePolicy::Fixed</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>16</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBox2">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>32767</width>
+         <height>70</height>
+        </size>
+       </property>
+       <property name="title">
+        <string>Undo</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_3">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout">
+          <property name="margin">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="textLabel4">
+            <property name="text">
+             <string>Number of steps</string>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="undoSpinBox">
+            <property name="wrapping">
+             <bool>true</bool>
+            </property>
+            <property name="maximum">
+             <number>30</number>
+            </property>
+            <property name="value">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer7">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>81</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   
    <item row="2" column="0">
     <layout class="QHBoxLayout">
      <item>
@@ -476,7 +355,7 @@
                <string>Auto-select features (highest-variance)</string>
               </property>
               <property name="toolTip">
-               <string>When checked, klusters ranks feature dimensions by variance for the selected cluster and passes the top N as 1s in the UseFeatures bit-string sent to KlustaKwik. When unchecked, %features expands to all PCA columns ON (default behaviour).</string>
+               <string>When checked, klusters ranks feature dimensions by variance for the selected cluster and passes the top N as 1s in the UseFeatures bit-string sent to KlustaKwik.</string>
               </property>
              </widget>
             </item>
@@ -492,9 +371,6 @@
             </item>
             <item>
              <widget class="QSpinBox" name="autoSelectNFeaturesSpinBox">
-              <property name="toolTip">
-               <string>Number of highest-variance feature dimensions to pass to KlustaKwik</string>
-              </property>
               <property name="minimum">
                <number>1</number>
               </property>
@@ -524,7 +400,6 @@
             </item>
            </layout>
           </item>
-
          </layout>
         </item>
        </layout>
@@ -532,6 +407,177 @@
      </item>
     </layout>
    </item>
+   
+   <item row="3" column="0">
+    <layout class="QHBoxLayout">
+     <item>
+      <spacer name="spacer17_2">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeType">
+        <enum>QSizePolicy::Fixed</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>16</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBox_realign">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>32767</width>
+         <height>110</height>
+        </size>
+       </property>
+       <property name="title">
+        <string>Realignment (built-in xcorr)</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_realign">
+        <item row="0" column="0">
+         <widget class="QLabel" name="realignBuiltInLabel">
+          <property name="text">
+           <string>Waveform realignment uses built-in cross-correlation. No external program required.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <layout class="QHBoxLayout">
+          <item>
+           <widget class="QLabel" name="realignThresholdLabel">
+            <property name="text">
+             <string>Threshold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="realignThresholdSpinBox">
+            <property name="toolTip">
+             <string>Minimum xcorr score for a spike to be realigned (0.0–1.0)</string>
+            </property>
+            <property name="minimum">
+             <double>0.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="value">
+             <double>0.700000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_1">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignIterationsLabel">
+            <property name="text">
+             <string>Iterations</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignIterationsSpinBox">
+            <property name="toolTip">
+             <string>Number of realignment passes (1–20)</string>
+            </property>
+            <property name="minimum">
+             <number>1</number>
+            </property>
+            <property name="maximum">
+             <number>20</number>
+            </property>
+            <property name="value">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignMaxShiftLabel">
+            <property name="text">
+             <string>Max shift (samples, 0=auto)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignMaxShiftSpinBox">
+            <property name="toolTip">
+             <string>Maximum lag in samples. 0 = automatic (peak/2).</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>100</number>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_3">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   
    <item row="4" column="0">
     <widget class="QGroupBox" name="groupBox3">
      <property name="sizePolicy">
@@ -675,6 +721,153 @@
      </layout>
     </widget>
    </item>
+   
+   <item row="5" column="0">
+    <layout class="QHBoxLayout">
+     <item>
+      <spacer name="spacer17_4">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeType">
+        <enum>QSizePolicy::Fixed</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>16</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBoxTemplateMatrix">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>32767</width>
+         <height>80</height>
+        </size>
+       </property>
+       <property name="title">
+        <string>Template Match Slider</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayoutTM">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout">
+          <item>
+           <widget class="QLabel" name="tmMinLabel">
+            <property name="text">
+             <string>Min threshold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="templateThresholdMinSpinBox">
+            <property name="toolTip">
+             <string>Lower bound of the template match threshold slider (0.0–1.0)</string>
+            </property>
+            <property name="minimum">
+             <double>0.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="value">
+             <double>0.750000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_tm_mid">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="tmMaxLabel">
+            <property name="text">
+             <string>Max threshold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="templateThresholdMaxSpinBox">
+            <property name="toolTip">
+             <string>Upper bound of the template match threshold slider (0.0–1.0)</string>
+            </property>
+            <property name="minimum">
+             <double>0.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="value">
+             <double>1.000000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_tm_end">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>40</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   
+   <item row="6" column="0">
+    <spacer name="spacer1">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeType">
+      <enum>QSizePolicy::Expanding</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>21</width>
+       <height>30</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
   </layout>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
@@ -685,7 +878,6 @@
    <header location="global">qcolorbutton.h</header>
   </customwidget>
  </customwidgets>
-
  <tabstops>
   <tabstop>crashRecoveryCheckBox</tabstop>
   <tabstop>crashRecoveryComboBox</tabstop>
@@ -695,13 +887,15 @@
   <tabstop>reclusteringArgsLineEdit</tabstop>
   <tabstop>autoSelectFeaturesCheckBox</tabstop>
   <tabstop>autoSelectNFeaturesSpinBox</tabstop>
-  <tabstop>realignExecutableLineEdit</tabstop>
-  <tabstop>realignExecutableButton</tabstop>
-  <tabstop>realignArgsLineEdit</tabstop>
+  <tabstop>realignThresholdSpinBox</tabstop>
+  <tabstop>realignIterationsSpinBox</tabstop>
+  <tabstop>realignMaxShiftSpinBox</tabstop>
   <tabstop>backgroundColorButton</tabstop>
   <tabstop>markerSizeSpinBox</tabstop>
   <tabstop>selectionLineWidthSpinBox</tabstop>
   <tabstop>useWhiteColorPrinting</tabstop>
+  <tabstop>templateThresholdMinSpinBox</tabstop>
+  <tabstop>templateThresholdMaxSpinBox</tabstop>
  </tabstops>
  <resources/>
  <connections/>

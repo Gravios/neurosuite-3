@@ -1,0 +1,196 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Compute PCA features on spatial+temporal derivative waveforms
+#//
+#//   copyright       (C) 2025 Gravios / NeuroSuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+#
+#  DESCRIPTION
+#  -----------
+#  Drop-in replacement for ndm_pca that transforms each spike waveform by
+#  applying spatial derivative + temporal first-difference before PCA:
+#
+#    step 1: sdiff[t, ch]   = spatialDerivative(raw[t, ch], sdiffOrder)
+#    step 2: stderiv[t, ch] = sdiff[t, ch] - sdiff[t-1, ch]
+#
+#  This extracts features from the waveform's spatial+temporal derivative
+#  rather than the raw amplitudes.  The resulting .fet files are compatible
+#  with KlustaKwik and Klusters in the usual way.
+#
+#  Usage:
+#    ndm_pca_stderiv [session] [electrodeGroup]
+#
+#  Reads .spk files written by ndm_extractspikes or ndm_extractspikes_sdiff
+#  (or ndm_extractspikes_stderiv).  Does NOT require the detection step to
+#  have used the same derivative — the transformation is applied here on the
+#  raw extracted waveforms.
+#
+#  PARAMETERS
+#  ----------
+#  All standard ndm_pca parameters (nFeatures, peakSampleIndex, before,
+#  after, extra, threadsPerGroup) apply unchanged.
+#
+#  sdiffOrder   Spatial derivative order (default 3, same as ndm_pca_stderiv):
+#                 0 = none  (temporal first-difference only)
+#                 1 = first-order difference
+#                 2 = Laplacian
+#                 3 = all-pairwise (no probe order requirement)
+#
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 2 ]
+then
+    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+print_header "$session - Computing PCA on spatial+temporal derivative waveforms"
+
+check_commands_installed process_pca_stderiv process_pca process_mergefeatures
+
+sdiffOrder=$(read_script_parameter $session sdiffOrder)
+sdiffOrder=${sdiffOrder:-3}
+
+once()
+{
+    local electrodeGroup=$1
+    shift
+
+    inputs_missing "$session.$param_ext" $session.spk.$electrodeGroup && exit $INPUTS_MISSING
+    outputs_exist $session.fet.$electrodeGroup && exit $OUTPUTS_EXIST
+
+    nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+    check_mandatory_variable $nElectrodeGroups "missing electrode groups"
+    if [ $electrodeGroup -gt $nElectrodeGroups ]
+    then
+        echo_error "the spike group $electrodeGroup is undefined."
+        exit $GENERAL_ERROR
+    fi
+
+    electrodes=($(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+    nElectrodes=${#electrodes[*]}
+
+    waveformLength=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+    nFeatures=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
+
+    check_mandatory_variable $waveformLength "missing number of samples per waveform"
+    check_mandatory_variable $nFeatures      "missing number of features"
+
+    # Optional PCA window (same as ndm_pca)
+    local options=""
+    peak=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+    check_optional_variable $peak && options="$options -p $peak"
+    before=($(read_script_parameter $session before))
+    [ ${#before[*]} -eq 1 ] && before=${before[0]} || before=${before[$electrodeGroup-1]}
+    check_optional_variable $before && options="$options -b $before"
+    after=($(read_script_parameter $session after))
+    [ ${#after[*]} -eq 1 ] && after=${after[0]} || after=${after[$electrodeGroup-1]}
+    check_optional_variable $after && options="$options -a $after"
+    extra=$(read_script_parameter $session extra)
+    check_optional_variable $extra || extra=false
+    $extra && options="$options -x"
+
+    # Orders 1 and 3 produce one linearly dependent channel in the spatial
+    # derivative (order 1: last = -penultimate; order 3: sum = 0).
+    # process_pca_stderiv drops that channel, so tell process_pca to
+    # expect nElectrodes-1 channels for those orders.
+    if [ "$sdiffOrder" = "1" ] || [ "$sdiffOrder" = "3" ]; then
+        nEffective=$(( nElectrodes - 1 ))
+    else
+        nEffective=$nElectrodes
+    fi
+
+    # Transform waveforms: spatial+temporal derivative → temp file
+    local tmpspk=$(mktemp /tmp/spk_stderiv_${session}_${electrodeGroup}_XXXXXX)
+    process_pca_stderiv \
+        -n $nElectrodes \
+        -w $waveformLength \
+        -d $sdiffOrder \
+        $session.spk.$electrodeGroup > $tmpspk
+    check_command_status process_pca_stderiv
+
+    # Compute PCA on the transformed waveforms.
+    # Use nEffective (reduced) channel count for rank-deficient derivatives.
+    process_pca \
+        -f $session.fet.$electrodeGroup.tmp \
+        -n $nEffective \
+        -w $waveformLength \
+        -d $nFeatures \
+        $options ${@} \
+        $tmpspk
+    check_command_status process_pca
+
+    rm -f $tmpspk
+
+    # Merge features with timestamps
+    process_mergefeatures \
+        $session.fet.$electrodeGroup.tmp \
+        $session.res.$electrodeGroup \
+        $session.fet.$electrodeGroup
+    check_command_status process_mergefeatures
+    rm $session.fet.$electrodeGroup.tmp
+}
+
+if [ -z "$electrodeGroup" ]
+then
+    nGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+    if [ $nGroups -eq 0 ]
+    then
+        echo_error "missing spike groups"
+        exit $GENERAL_ERROR
+    fi
+
+    threadsPerGroup=$(yaml_read $session \
+        "//program/n[.='ndm_pca_stderiv']/../parameters/parameter/n[.='threadsPerGroup']/../value")
+    if [ -z "$threadsPerGroup" ]
+    then
+        nCores=$(nproc 2>/dev/null || echo 1)
+        threadsPerGroup=$(( nCores / nGroups ))
+        [ $threadsPerGroup -lt 1 ] && threadsPerGroup=1
+    fi
+    PCA_THREAD_OPT="-t $threadsPerGroup"
+
+    pids=()
+    for ((i=1;i<=$nGroups;i++))
+    do
+        (once $i $PCA_THREAD_OPT) > /tmp/ndm_pca_stderiv_${session}_$i.log 2>&1 &
+        pids+=($!)
+    done
+
+    overallStatus=$NO_ERROR
+    for ((i=0;i<${#pids[@]};i++))
+    do
+        wait ${pids[$i]}
+        groupStatus=$?
+        cat /tmp/ndm_pca_stderiv_${session}_$((i+1)).log
+        rm -f /tmp/ndm_pca_stderiv_${session}_$((i+1)).log
+        if [ $groupStatus -ne 0 ] && \
+           [ $groupStatus -ne $OUTPUTS_EXIST ] && \
+           [ $groupStatus -ne $INPUTS_MISSING ]
+        then
+            overallStatus=$groupStatus
+        fi
+    done
+    exit $overallStatus
+else
+    once $electrodeGroup
+    exit $NO_ERROR
+fi

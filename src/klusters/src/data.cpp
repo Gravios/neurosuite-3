@@ -1868,6 +1868,119 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
 }
 
 
+void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
+                            int toCluster,
+                            QList<int>& fromClusters, QList<int>& emptiedClusters)
+{
+    if (featureRowSet.isEmpty()) return;
+    if (!clusterInfoMap->contains(static_cast<dataType>(fromCluster))) return;
+
+    // If toCluster does not yet exist insert an empty placeholder so the
+    // rebuild loop hits the toCluster branch and creates it.
+    const bool toClusterIsNew = !clusterInfoMap->contains(static_cast<dataType>(toCluster));
+    if (toClusterIsNew)
+        clusterInfoMap->insert(static_cast<dataType>(toCluster), ClusterInfo(0, 0));
+
+    // Collect feature-row indices that are actually in fromCluster.
+    QList<dataType> movedRows;
+    {
+        const ClusterInfo& fi = (*clusterInfoMap)[static_cast<dataType>(fromCluster)];
+        for (dataType i = fi.firstSpikePosition();
+             i < fi.firstSpikePosition() + fi.nbSpikes(); ++i) {
+            dataType row1 = (*spikesByCluster)(1, i);
+            if (featureRowSet.contains(row1))
+                movedRows.append(row1);
+        }
+    }
+    if (movedRows.isEmpty()) {
+        if (toClusterIsNew)
+            clusterInfoMap->remove(static_cast<dataType>(toCluster));
+        return;
+    }
+
+    // Count total spikes retained to size the new table.
+    SortableTable* newSpk  = new SortableTable();
+    ClusterInfoMap* newInfo = new ClusterInfoMap();
+    newSpk->setSize(nbSpikes);
+
+    dataType pos = 1;  // 1-based insertion cursor
+
+    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+        const dataType cid      = it.key();
+        const dataType firstPos = it.value().firstSpikePosition();
+        const dataType nSpk     = it.value().nbSpikes();
+
+        if (cid == static_cast<dataType>(fromCluster)) {
+            const dataType clStart = pos;
+            dataType kept = 0;
+            for (dataType i = firstPos; i < firstPos + nSpk; ++i) {
+                const dataType row1 = (*spikesByCluster)(1, i);
+                if (!featureRowSet.contains(row1)) {
+                    (*newSpk)(1, pos) = row1;
+                    (*newSpk)(2, pos) = static_cast<dataType>(fromCluster);
+                    ++pos; ++kept;
+                }
+            }
+            if (kept > 0) {
+                newInfo->insert(cid, ClusterInfo(clStart, kept));
+                fromClusters.append(fromCluster);
+            } else {
+                emptiedClusters.append(fromCluster);
+                fromClusters.append(fromCluster);
+            }
+
+        } else if (cid == static_cast<dataType>(toCluster)) {
+            const dataType clStart = pos;
+            const dataType total   = nSpk + static_cast<dataType>(movedRows.size());
+
+            // Copy existing toCluster spikes
+            for (dataType i = firstPos; i < firstPos + nSpk; ++i) {
+                (*newSpk)(1, pos) = (*spikesByCluster)(1, i);
+                (*newSpk)(2, pos) = static_cast<dataType>(toCluster);
+                ++pos;
+            }
+            // Append moved spikes
+            for (dataType row1 : movedRows) {
+                (*newSpk)(1, pos) = row1;
+                (*newSpk)(2, pos) = static_cast<dataType>(toCluster);
+                ++pos;
+            }
+            // Sort this block by time (row1)
+            std::vector<dataType> tmp(static_cast<size_t>(total));
+            for (dataType j = 0; j < total; ++j)
+                tmp[static_cast<size_t>(j)] = (*newSpk)(1, clStart + j);
+            std::sort(tmp.begin(), tmp.end());
+            for (dataType j = 0; j < total; ++j)
+                (*newSpk)(1, clStart + j) = tmp[static_cast<size_t>(j)];
+
+            newInfo->insert(cid, ClusterInfo(clStart, total));
+
+        } else {
+            // Copy cluster unchanged
+            const dataType clStart = pos;
+            for (dataType i = firstPos; i < firstPos + nSpk; ++i) {
+                (*newSpk)(1, pos) = (*spikesByCluster)(1, i);
+                (*newSpk)(2, pos) = cid;
+                ++pos;
+            }
+            if (nSpk > 0)
+                newInfo->insert(cid, ClusterInfo(clStart, nSpk));
+        }
+    }
+
+    // Swap in the new tables (caller holds any needed locks via QMutexLocker
+    // in higher-level methods; Data itself is not re-locked here).
+    delete spikesByCluster;
+    spikesByCluster = newSpk;
+
+    delete clusterInfoMap;
+    clusterInfoMap = newInfo;
+
+    // Remove emptied clusters from the map
+    for (int cid : emptiedClusters)
+        clusterInfoMap->remove(static_cast<dataType>(cid));
+}
+
 void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged){
     //Store the current spikesByCluster in the undo list and make the temporary becomes the current one.
     spikesByClusterUndoList.prepend(spikesByCluster);

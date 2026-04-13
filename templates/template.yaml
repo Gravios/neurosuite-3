@@ -110,13 +110,21 @@ anatomicalDescription:
 # ─────────────────────────────────────────────────────────────────────────────
 # Spike detection groups
 # Typically one entry per shank, or as updated by ndm_spikegrouper.
-# Read by: ndm_extractspikes, ndm_extractspikes_sdiff, ndm_pca, ndm_klustakwik,
+# Read by: ndm_extractspikes, ndm_extractspikes_sdiff, ndm_extractspikes_stderiv,
+#          ndm_pca, ndm_pca_stderiv, ndm_klustakwik,
 #          ndm_estimatedrift, ndm_decomposecollisions
 #
 # channels        - physical channel indices in physical probe order (tip-to-base)
 # nSamples        - total waveform length in samples (e.g. 52 at 32 kHz)
 # peakSampleIndex - sample index of the expected waveform peak (0-based)
 # nFeatures       - PCA components per channel (used by ndm_pca / ndm_klustakwik)
+#
+# NOTE for ndm_pca_stderiv with sdiffOrder 1 or 3:
+#   The spatial derivative produces one linearly dependent channel (dropped before
+#   PCA), so the .fet file will have (nChannels - 1) * nFeatures feature columns
+#   instead of nChannels * nFeatures.  KlustaKwik and Klusters handle any valid
+#   feature count automatically; no change to nFeatures is needed — the count
+#   reduction is handled internally by process_pca_stderiv.
 # ─────────────────────────────────────────────────────────────────────────────
 spikeDetection:
   channelGroups:
@@ -171,6 +179,33 @@ neuroscope:
 # Parameters with null (shown as ~) must be filled in before running.
 # ─────────────────────────────────────────────────────────────────────────────
 programs:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline variant: spatial+temporal derivative
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline A — standard:
+#   ndm_extractspikes → ndm_pca → ndm_klustakwik
+#   .spk = raw ADC waveforms; features = raw-space PCA
+#
+# Pipeline B — spatial derivative detection, raw PCA:
+#   ndm_extractspikes_sdiff → ndm_pca → ndm_klustakwik
+#   .spk = raw ADC waveforms; features = raw-space PCA
+#
+# Pipeline C — raw detection, stderiv PCA features:
+#   ndm_extractspikes → ndm_pca_stderiv → ndm_klustakwik
+#   .spk = raw ADC waveforms; ndm_pca_stderiv transforms before PCA
+#   For sdiffOrder 1 or 3: .fet has (nChannels-1)*nFeatures columns
+#
+# Pipeline D — stderiv detection + stderiv .spk + stderiv PCA:
+#   ndm_extractspikes_stderiv → ndm_pca → ndm_klustakwik
+#   .spk = stderiv waveforms (detection and storage in same space)
+#   ndm_pca reads .spk directly; no re-transformation needed
+#   For sdiffOrder 1 or 3: nFeatures set for (nChannels-1) channels
+#
+# Klusters refeaturize for Pipelines C/D:
+#   process_refeaturize_stderiv -p session.pca.N -n nEffChan -w wLen spk
+#   (nEffChan = nChannels-1 for orders 1 or 3, else nChannels)
+# ─────────────────────────────────────────────────────────────────────────────
 
 # == Master orchestrator ======================================================
 - name: ndm_start
@@ -823,6 +858,156 @@ programs:
     # memCapGB
 
     Memory cap in GB for the process (default = 2).
+
+- name: ndm_extractspikes_stderiv
+  parameters:
+  - {name: thresholdFactor,  value: 1.5, status: Mandatory}
+  - {name: refractoryPeriod, value: 16,  status: Mandatory}
+  - {name: peakSearchLength, value: 32,  status: Mandatory}
+  - {name: start,            value: 0,   status: Mandatory}
+  - {name: duration,         value: 60,  status: Mandatory}
+  - {name: sdiffOrder,       value: 3,   status: Optional}
+  # - {name: memCapGB, value: 2, status: Optional}
+  help: |-
+    Extract spikes using spatial derivative + temporal first-difference for
+    both detection AND waveform storage.
+
+    Extends ndm_extractspikes_sdiff by applying a temporal first-difference
+    to the spatial-derivative signal before threshold detection:
+
+      step 1: sdiff[t, ch]   = spatialDerivative(raw[t, ch], sdiffOrder)
+      step 2: stderiv[t, ch] = sdiff[t, ch] - sdiff[t-1, ch]
+
+    Detection uses stderiv[].  Pass 2 waveform extraction writes the SAME
+    spatial+temporal derivative signal to .spk (not raw ADC amplitudes).
+    Detection and storage are therefore in the same signal space.
+
+    DOWNSTREAM USAGE (Pipeline D)
+
+    Pair with plain ndm_pca — the .spk already contains transformed
+    waveforms so no re-transformation is needed:
+
+      ndm_extractspikes_stderiv → ndm_pca → ndm_klustakwik
+
+    Do NOT use ndm_pca_stderiv after ndm_extractspikes_stderiv — it would
+    transform the already-transformed waveforms a second time.
+
+    For sdiffOrder 1 or 3: the spatial derivative drops one channel
+    (linearly dependent), so .spk has nChannels-1 channels.  Set
+    nChannels in ndm_pca and nFeatures accordingly.
+
+    Klusters waveform display shows derivative-space waveforms; this is
+    expected and consistent with what the clustering used.
+
+    The temporal first-difference sharpens spike onsets, suppresses slow
+    drift, and adds a second stage of common-mode rejection beyond
+    ndm_extractspikes_sdiff.
+
+    PARAMETERS
+
+    # thresholdFactor
+
+    Threshold = thresholdFactor * noise estimate of the stderiv signal.
+
+    # refractoryPeriod
+
+    Minimum number of samples between consecutive spikes.
+
+    # peakSearchLength
+
+    Length of the peak-search window (samples).
+
+    # start
+
+    Starting point in the file (seconds) for baseline noise computation.
+
+    # duration
+
+    Duration (seconds) for baseline noise computation.
+
+    OPTIONAL PARAMETERS
+
+    # sdiffOrder
+
+    Spatial derivative order applied before temporal differencing:
+      0 = none (temporal first-difference only)
+      1 = first-order difference     s[i] = x[i] - x[i+1]
+      2 = discrete Laplacian         s[i] = x[i] - 0.5*(x[i-1]+x[i+1])
+      3 = all-pairwise (default)     s[i] = n*x[i] - sum(x)
+          Channel-order-invariant; maximum common-mode rejection.
+
+    # memCapGB
+
+    Memory cap in GB for the process (default = 2).
+
+- name: ndm_pca_stderiv
+  parameters:
+  - {name: before,          value: 12,      status: Optional}
+  - {name: after,           value: 12,      status: Optional}
+  - {name: extra,           value: 'false', status: Optional}
+  - {name: sdiffOrder,      value: 3,       status: Optional}
+  # threadsPerGroup: number of OMP threads per group when running all groups in
+  # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
+  # - {name: threadsPerGroup, value: 2,     status: Optional}
+  help: |-
+    Compute PCA features on spatial+temporal derivative waveforms for sorting.
+
+    Compute PCA features in spatial+temporal derivative space from a .spk
+    file that contains RAW waveforms (Pipeline C).
+
+    Use after ndm_extractspikes or ndm_extractspikes_sdiff — both store
+    raw ADC amplitudes in .spk.  This plugin applies the spatial+temporal
+    derivative to each waveform before computing PCA eigenvectors:
+
+      ndm_extractspikes      → ndm_pca_stderiv → ndm_klustakwik
+      ndm_extractspikes_sdiff → ndm_pca_stderiv → ndm_klustakwik
+
+    Do NOT use after ndm_extractspikes_stderiv — that plugin already writes
+    derivative waveforms; use plain ndm_pca instead.
+
+    CHANNEL COUNT REDUCTION
+
+    For sdiffOrder 1 or 3, the spatial derivative yields one linearly
+    dependent output channel (sum = 0 for order 3; last = -penultimate for
+    order 1).  That channel is dropped before PCA, producing
+    (nChannels - 1) independent features per component.
+
+    Example: 8-channel probe, 3 PCA components, sdiffOrder 3:
+      nFeatures (in spikeDetection group) = 3
+      features per channel = 3
+      effective channels for PCA = 7  (8 - 1)
+      total .fet features = 7 * 3 = 21  (not 24)
+
+    Set nFeatures accordingly in the spikeDetection group.  The resulting
+    .fet files are compatible with KlustaKwik and Klusters.
+
+    For Klusters refeaturize (waveform realignment): use
+    process_refeaturize_stderiv with -n nEffectiveChannels instead of
+    process_refeaturize.  Klusters built-in realignment silently skips
+    feature recomputation when pca.nCh != nChan (no corruption, just stale
+    features for realigned spikes).
+
+    PARAMETERS
+
+    # before
+
+    Samples before the waveform peak to include in PCA.  Single value or
+    one per group (space-separated).  Default = 12.
+
+    # after
+
+    Samples after the waveform peak.  Same format as before.  Default = 12.
+
+    # extra
+
+    If true, include the spike peak value as an extra feature.
+
+    OPTIONAL PARAMETERS
+
+    # sdiffOrder
+
+    Spatial derivative order (must match ndm_extractspikes_stderiv):
+      0 = none  1 = first  2 = Laplacian  3 = all-pairwise (default 3)
 
 - name: ndm_spikecleaner
   parameters:

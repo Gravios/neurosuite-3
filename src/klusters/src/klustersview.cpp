@@ -39,6 +39,7 @@
 #include "clusterview.h"
 #include "waveformview.h"
 #include "errormatrixview.h"
+#include "templatematrixview.h"
 #include "tracewidget.h"
 #include "correlationview.h"
 #include "viewwidget.h"
@@ -52,7 +53,8 @@ const QString KlustersView::DisplayTypeNames[]={QObject::tr("Cluster Display"),
                                                 QObject::tr("Overview Display"),
                                                 QObject::tr("Grouping Assistant Display"),
                                                 QObject::tr("Error Matrix Display"),
-                                                QObject::tr("Trace Display")};
+                                                QObject::tr("Trace Display"),
+                                                QObject::tr("Template Matrix Display")};
 
 
 KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColor& backgroundColor,int initialDimensionX,int initialDimensionY,
@@ -104,6 +106,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereClusterView = true;
         isThereCorrelationView = false;
         isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
         isThereTraceView = false;
         mainDock->setWidget(new ClusterView(doc,*this,backgroundColor,timeInterval,statusBar,mainDock));
         currentViewWidget = dynamic_cast<ViewWidget*>(mainDock->widget());
@@ -120,6 +123,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereClusterView = false;
         isThereCorrelationView = false;
         isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
         isThereTraceView = false;
         mainDock->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,mainDock,
                                              inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));
@@ -138,6 +142,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereClusterView = false;
         isThereCorrelationView = true;
         isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
         isThereTraceView = false;
         mainDock->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,mainDock,correlationScale,
                                                 binSize,correlogramTimeFrame,shoulderLine));
@@ -155,6 +160,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereClusterView = true;
         isThereCorrelationView = true;
         isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
         isThereTraceView = false;
         createOverview(backgroundColor,statusBar,timeInterval,maxAmplitude,positions);
         break;
@@ -163,10 +169,19 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereClusterView = true;
         isThereCorrelationView = true;
         isThereErrorMatrixView = true;
+        isThereTemplateMatrixView = false;
         isThereTraceView = false;
         createGroupingAssistantView(backgroundColor,statusBar,timeInterval,maxAmplitude,positions);
         break;
     case ERROR_MATRIX:
+        break;
+    case TEMPLATE_MATRIX:
+        isThereWaveformView = false;
+        isThereClusterView = false;
+        isThereCorrelationView = false;
+        isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
+        isThereTraceView = false;
         break;
     case TRACES:
     {
@@ -174,6 +189,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereClusterView = false;
         isThereCorrelationView = false;
         isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
         isThereTraceView = true;
         //Create the providers (data and cluster) if need it
         if(!doc.isTracesProvider()) doc.createProviders();
@@ -294,6 +310,16 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     errorMatrix->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,errorMatrix);
     setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
+
+    //Create and add the templateMatrixView beneath the errorMatrixView
+    QDockWidget* templateMatrix = new QDockWidget(doc.documentName());
+    templateMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
+    templateMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
+    templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
+    TemplateMatrixView* tmView = qobject_cast<TemplateMatrixView*>(templateMatrix->widget());
+    isThereTemplateMatrixView = true;
+    addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
+    setConnections(TEMPLATE_MATRIX,tmView,templateMatrix);
 }
 
 
@@ -464,6 +490,18 @@ void KlustersView::errorMatrixDockClosed(QObject* errorMatrixView){
     viewList.removeAll(static_cast<ViewWidget*>(errorMatrixView));
     mainWindow.widgetRemovedFromDisplay(ERROR_MATRIX);
     isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
+}
+
+void KlustersView::templateMatrixDockClosed(QObject*){
+    isThereTemplateMatrixView = false;
+}
+
+void KlustersView::updateTemplateMatrixSliderRange(){
+    for(ViewWidget* w : qAsConst(viewList)) {
+        TemplateMatrixView* tmv = qobject_cast<TemplateMatrixView*>(w);
+        if(tmv) { tmv->updateSliderRange(); return; }
+    }
 }
 
 void KlustersView::traceDockClosed(QObject *traceWidget){
@@ -586,7 +624,8 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
             QAction* clusterView = menu.addAction(tr("Add a ClusterView"));
             QAction* waveformView = menu.addAction(tr("Add a WaveformView"));
             QAction* correlationView = menu.addAction(tr("Add a CorrelationView"));
-            QAction* errorMatrixView = menu.addAction(tr("Add an ErrorMatrixView"));
+            QAction* errorMatrixView    = menu.addAction(tr("Add an ErrorMatrixView"));
+            QAction* templateMatrixView = menu.addAction(tr("Add a Template Matrix View"));
             QAction* traceView = menu.addAction(tr("Add a TraceView"));
 
             //A traceView is possible only if the variables it needs are available (provided in the new parameter file) and
@@ -608,6 +647,10 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
             if(mainWindow.isExistAnErrorMatrix())
                 errorMatrixView->setEnabled(false);
 
+            // Only one TemplateMatrixView per application.
+            if(mainWindow.isExistATemplateMatrix())
+                templateMatrixView->setEnabled(false);
+
             menu.setMouseTracking(true);
             QAction* id = menu.exec(QCursor::pos());
 
@@ -625,6 +668,10 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
             }
             else if(id == errorMatrixView){
                 mainWindow.widgetAddToDisplay(ERROR_MATRIX);
+                return true;
+            }
+            else if(id == templateMatrixView){
+                mainWindow.widgetAddToDisplay(TEMPLATE_MATRIX);
                 return true;
             }
             else if(id == traceView){
@@ -655,6 +702,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
     QDockWidget* waveforms;
     QDockWidget* correlations;
     QDockWidget* errorMatrix;
+    QDockWidget* templateMatrix;
     ViewWidget* clusterView;
     ViewWidget* waveformView;
     ViewWidget* correlationView;
@@ -779,6 +827,17 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         errorMatrix->installEventFilter(this);
         addDockWidget(Qt::BottomDockWidgetArea,errorMatrix);
         setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
+        break;
+    case TEMPLATE_MATRIX:
+        newViewType = true;
+        isThereTemplateMatrixView = true;
+        templateMatrix = new QDockWidget(doc.documentName());
+        templateMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
+        templateMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
+        templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
+        templateMatrix->installEventFilter(this);
+        addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
+        setConnections(TEMPLATE_MATRIX,qobject_cast<TemplateMatrixView*>(templateMatrix->widget()),templateMatrix);
         break;
     case TRACES:
         if(!isThereTraceView){
@@ -1508,6 +1567,22 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, &KlustersDoc::redoDeletion, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::redoDeletion);
         connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded), qobject_cast<ErrorMatrixView*>(view), static_cast<void(ErrorMatrixView::*)(QList<int>&)>(&ErrorMatrixView::newClustersAdded));
         connect(this, &KlustersView::changeBackgroundColor, qobject_cast<BaseFrame*>(view), &BaseFrame::changeBackgroundColor);
+    } else if(displayType == TEMPLATE_MATRIX){
+        TemplateMatrixView* tmv = qobject_cast<TemplateMatrixView*>(view);
+        connect(this, &KlustersView::computeTemplateMatrix, tmv, &TemplateMatrixView::updateMatrixContents);
+        connect(view, &QObject::destroyed, this, &KlustersView::templateMatrixDockClosed);
+        connect(&doc, &KlustersDoc::clustersGrouped,          tmv, &TemplateMatrixView::clustersGrouped);
+        connect(&doc, &KlustersDoc::clustersDeleted,          tmv, &TemplateMatrixView::clustersDeleted);
+        connect(&doc, &KlustersDoc::removeSpikesFromClusters, tmv, &TemplateMatrixView::removeSpikesFromClusters);
+        connect(&doc, &KlustersDoc::newClusterAdded,          tmv, &TemplateMatrixView::newClusterAdded);
+        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
+                tmv,  static_cast<void(TemplateMatrixView::*)(QMap<int,int>&,QList<int>&)>(&TemplateMatrixView::newClustersAdded));
+        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
+                tmv,  static_cast<void(TemplateMatrixView::*)(QList<int>&)>(&TemplateMatrixView::newClustersAdded));
+        connect(&doc, &KlustersDoc::renumber,                 tmv, &TemplateMatrixView::renumber);
+        connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
+            QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
+            view->setPalette(pal); view->update(); });
     } else if(displayType == TRACES){ //Connections for TraceViews
     
         connect(this, &KlustersView::updateContents, qobject_cast<TraceWidget*>(view), &TraceWidget::updateContents);

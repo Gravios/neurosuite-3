@@ -175,6 +175,18 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims);
 
+    // Refractory-period guided split: after SubspaceReclusterPerChunk, for
+    // each cluster whose ISI violation rate exceeds minContamRate, attempt a
+    // BIC-checked 2-cluster split seeded by violator vs non-violator centroids.
+    void RefractorySplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims,
+        float refractSamples,   // absolute refractory period in raw samples
+        float minContamRate,    // minimum ISI contamination rate to trigger split (e.g. 0.01)
+        float sessionSamples);  // total recording length in raw samples (for normalisation)
+
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,
                         float mergeThresh,
