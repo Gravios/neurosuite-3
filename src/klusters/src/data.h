@@ -27,6 +27,7 @@
 
 //Include files for QT
 #include <QList>
+#include <QSet>
 #include <QHash>
 #include <QRegion>
 #include <QMap>
@@ -252,6 +253,13 @@ public:
   * with the cluster numbers which became empty because all their spikes were put in the new one.
   */
     void deleteSpikesFromClusters(QRegion& region, const QList <int>& clustersOfOrigin, int destinationCluster, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters);
+
+    /**Moves a subset of spikes from @p fromCluster to @p toCluster.
+     * @p featureRowSet contains the 1-based feature-file row indices of the spikes to move.
+     * Creates @p toCluster if it does not yet exist. */
+    void moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
+                         int toCluster,
+                         QList<int>& fromClusters, QList<int>& emptiedClusters);
 
     /**
   * Deletes the clusters contained in @p clustersToDelete. The correponding spikes are assign to cluster 1 (the noise)

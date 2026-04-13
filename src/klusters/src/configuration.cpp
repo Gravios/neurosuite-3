@@ -27,6 +27,8 @@
 const bool Configuration::crashRecoveryDefault = true;
 const bool Configuration::autoSelectFeaturesDefault = false;
 const int  Configuration::autoSelectNFeaturesDefault = 7;
+const double Configuration::templateThresholdMinDefault = 0.75;
+const double Configuration::templateThresholdMaxDefault = 1.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
 const int  Configuration::timeIntervalDefault = 60;
@@ -35,8 +37,9 @@ const QColor Configuration::backgroundColorDefault = QColor(Qt::black);
 const QString Configuration::reclusteringExecutableDefault = QLatin1String("KlustaKwik");
 const QString Configuration::reclusteringArgsDefault =
         "%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features";
-const QString Configuration::realignExecutableDefault = QLatin1String("");
-const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.70 --iterations 2");
+const double Configuration::realignThresholdDefault  = 0.70;
+const int    Configuration::realignIterationsDefault = 2;
+const int    Configuration::realignMaxShiftDefault   = 0;  // 0 = auto (peakSamp/2)
 const int  Configuration::markerSizeDefault = 2;
 const int  Configuration::selectionLineWidthDefault = 1;
 
@@ -54,13 +57,16 @@ void Configuration::read() {
     backgroundColor = settings.value("backgroundColor", backgroundColorDefault).value<QColor>();
     reclusteringExecutable = settings.value("reclusteringExecutable",reclusteringExecutableDefault).toString();
     reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
-    realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
-    realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
+    templateThresholdMin = settings.value("templateThresholdMin", templateThresholdMinDefault).toDouble();
+    templateThresholdMax = settings.value("templateThresholdMax", templateThresholdMaxDefault).toDouble();
+    realignThreshold  = settings.value("realignThreshold",  realignThresholdDefault).toDouble();
+    realignIterations = settings.value("realignIterations", realignIterationsDefault).toInt();
+    realignMaxShift   = settings.value("realignMaxShift",   realignMaxShiftDefault).toInt();
     settings.endGroup();
 
     //read cluster view options
@@ -84,13 +90,13 @@ void Configuration::write() const {
     settings.setValue("backgroundColor",backgroundColor);
     settings.setValue("reclusteringExecutable",reclusteringExecutable);
     settings.setValue("reclusteringArgs",reclusteringArgs);
-    settings.setValue("realignExecutable",realignExecutable);
-    settings.setValue("realignArgs",realignArgs);
     settings.setValue("markerSize", markerSize);
     settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.setValue("autoSelectFeatures", autoSelectFeatures);
     settings.setValue("autoSelectNFeatures", autoSelectNFeatures);
+    settings.setValue("templateThresholdMin", templateThresholdMin);
+    settings.setValue("templateThresholdMax", templateThresholdMax);
     settings.endGroup();
     
     //write cluster view options

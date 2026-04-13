@@ -199,11 +199,15 @@ protected:
   * @param p painter used to draw the contents
   */
     void paintEvent ( QPaintEvent*) override;
+    void recomputeCellWidth();
     /**Treat the events sent by the groupAssistantThread instances*/
     void customEvent(QEvent* event) override;
-    inline void resizeEvent(QResizeEvent* event) override{
-        //Trigger parent event
+    void resizeEvent(QResizeEvent* event) override {
         ViewWidget::resizeEvent(event);
+        if (!clusterList.isEmpty()) {
+            updateWindow();  // recompute cellWidth for new size
+            update();
+        }
     }
 
     inline void mousePressEvent(QMouseEvent* event) override {}

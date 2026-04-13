@@ -697,6 +697,9 @@ void WaveformView::setDisplayNbSpikes(long nbSpikes){
 
 
 void WaveformView::drawClusterIds(QPainter& painter){
+    // overLayPresentation: caller already guards — this function is only called
+    // when !overLayPresentation, so spike counts are always appropriate here.
+
     QList<int> shownClusters;
     QList<int>::const_iterator iterator;
     QList<int> const clusters = view.clusters();
@@ -706,9 +709,9 @@ void WaveformView::drawClusterIds(QPainter& painter){
 
     QFont f("Helvetica",8);
     painter.setFont(f);
-    painter.setPen(colorLegend); //set the color for the legends.
 
-    //Draw the absciss ids
+    ItemColors& clusterColors = doc.clusterColors();
+    Data& clusteringData = doc.data();
 
     //The abscissa of the legend for the current waveform.
     uint X = widthBorder;
@@ -716,8 +719,18 @@ void WaveformView::drawClusterIds(QPainter& painter){
     uint Y = 0;
 
     for(iterator = shownClusters.begin(); iterator != shownClusters.end(); ++iterator){
-        //the abscissa is increase by the font size to adjust for conversion from world coordinates to viewport coordinates.
-        painter.drawText(worldToViewport(X,-Y).x() + 8,worldToViewport(X,-Y).y() /*+8*/,QString::fromLatin1("%1").arg(*iterator));
+        const int cid = *iterator;
+        // Draw in the cluster's own colour so each label is visually linked
+        // to the waveform traces of that cluster.
+        const QColor clusterColor = clusterColors.color(cid);
+        painter.setPen(clusterColor);
+
+        const long nSpk = static_cast<long>(clusteringData.nbOfSpikes(static_cast<dataType>(cid)));
+        const QString label = QString("%1 (%2)").arg(cid).arg(nSpk);
+
+        painter.drawText(worldToViewport(X,-Y).x() + 8,
+                         worldToViewport(X,-Y).y(),
+                         label);
         X += shift;
     }
 }

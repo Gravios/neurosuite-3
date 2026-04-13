@@ -288,6 +288,9 @@ private Q_SLOTS:
     /**Triggers an update of the dimensions due to a change of the absciss dimension.*/
     void slotUpdateDimensionX(int dimensionX);
     void slotUpdateAutoNFeatures(int n);
+    /** Shift timestamps of the selected cluster by ±1 sample. */
+    void slotNudgeTimestampMinus();
+    void slotNudgeTimestampPlus();
     /**Triggers an update of the dimensions due to a change of the ordinate dimension.*/
     void slotUpdateDimensionY(int dimensionYs);
     /** Closes the display and if it is the last one asks for saving, then closes the actual file and window.*/
@@ -906,6 +909,9 @@ private:
     SpinBox *autoNFeaturesSpinBox;
     QAction *autoNFeaturesLabelAction;
     QAction *autoNFeaturesSpinBoxAction;
+
+    QAction *nudgeMinusAction;  ///< shift timestamps −1 sample
+    QAction *nudgePlusAction;   ///< shift timestamps +1 sample
     QAction *startLabelAction;
     QAction *startAction;
     QAction *durationLabelAction;

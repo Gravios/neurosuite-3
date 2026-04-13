@@ -185,7 +185,26 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     return new ErrorMatrixThread(*this,doc.data(),m_generation);
 }
 
+// ---------------------------------------------------------------------------
+// recomputeCellWidth — derive cellWidth from the current widget size and the
+// number of clusters so the matrix always fills the available space.
+// Must be called before updateWindow() uses cellWidth.
+// ---------------------------------------------------------------------------
+void ErrorMatrixView::recomputeCellWidth()
+{
+    const int n = clusterList.size();
+    if (n <= 0) { cellWidth = 50; return; }
+    QRect cr = contentsRect();
+    // Leave room for the 15-px left legend strip and bottom label strip.
+    const int available = qMin(cr.width() - 15, cr.height() - 15);
+    // Border ≈ 1/30 of total matrix width on each side (2 borders total).
+    // total = 2*border + n*cw  where border = cw*n/30
+    // total = cw*n*(1 + 2/30)  =>  cw = total / (n * 32/30)
+    cellWidth = qMax(4, static_cast<int>(available * 30 / (n * 32)));
+}
+
 void ErrorMatrixView::updateWindow(){
+    recomputeCellWidth();
     int nbOfClusters = clusterList.size();
 
     widthBorder = (cellWidth * nbOfClusters) / 30;
@@ -208,20 +227,18 @@ void ErrorMatrixView::paintEvent ( QPaintEvent*){
         QRect contentsRec = contentsRect();
         viewport = QRect(contentsRec.left() + 15,contentsRec.top(),contentsRec.width() - 15,contentsRec.height() - 15);
 
+        // Recompute cell size from the current viewport every paint so the
+        // matrix fills the widget correctly after resize or cluster count change.
+        if (!clusterList.isEmpty())
+            updateWindow();
+
         //Resize the double buffer with the width and the height of the widget(QFrame)
 
-        if (viewport.size() != doublebuffer.size()) {
-            if(!doublebuffer.isNull()) {
-                QPixmap tmp = QPixmap( viewport.width() +15 ,viewport.height() +15 );
-                tmp.fill( Qt::white );
-                QPainter painter2( &tmp );
-                painter2.drawPixmap( 0,0, doublebuffer );
-                painter2.end();
-                doublebuffer = tmp;
-            } else {
-                doublebuffer = QPixmap(viewport.width() +15 ,viewport.height() + 15);
-            }
-        }
+        // Always allocate the doublebuffer to the current viewport size.
+        // Do NOT copy the old buffer: since cellWidth is recomputed above,
+        // the old content is at the wrong scale and must be fully redrawn.
+        if (viewport.size() != doublebuffer.size())
+            doublebuffer = QPixmap(viewport.width() + 15, viewport.height() + 15);
 
 
         //Create a painter to paint on the double buffer

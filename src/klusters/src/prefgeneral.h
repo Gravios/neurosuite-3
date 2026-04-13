@@ -59,11 +59,9 @@ public:
     /**Sets the arguments for the reclustering.*/
     void setReclusteringArguments(const QString &arguments);
 
-    /**Sets the realignment executable.*/
-    void setRealignExecutable(const QString& executable);
-
-    /**Sets the arguments for the realignment.*/
-    void setRealignArguments(const QString& arguments);
+    void setRealignThreshold(double v);
+    void setRealignIterations(int n);
+    void setRealignMaxShift(int n);
 
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const;
@@ -83,11 +81,9 @@ public:
     /**Returns the arguments for the reclustering.*/
     QString getReclusteringArguments() const;
 
-    /**Returns the realignment executable.*/
-    QString getRealignExecutable() const;
-
-    /**Returns the arguments for the realignment.*/
-    QString getRealignArguments() const;
+    double getRealignThreshold() const;
+    int    getRealignIterations() const;
+    int    getRealignMaxShift() const;
 
     bool useWhiteColorDuringPrinting() const;
 
@@ -108,12 +104,20 @@ public:
 
     /**Returns the selection polygon line width.*/
     int getSelectionLineWidth() const;
+
+    /**Returns the minimum threshold for the template match slider.*/
+    double getTemplateThresholdMin() const;
+    /**Sets the minimum threshold for the template match slider.*/
+    void setTemplateThresholdMin(double v);
+    /**Returns the maximum threshold for the template match slider.*/
+    double getTemplateThresholdMax() const;
+    /**Sets the maximum threshold for the template match slider.*/
+    void setTemplateThresholdMax(double v);
 private Q_SLOTS:
     void updateCrashRecoveryTimeInterval(int state);
 
     void updateReclusteringExecutable();
 
-    void updateRealignExecutable();
 };
 
 #endif

@@ -193,6 +193,13 @@ public:
     */
     void groupClusters(QList<int> clustersToGroup,KlustersView& activeView);
 
+    /**Moves spikes from @p fromCluster whose 0-based .spk indices are in
+     * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */
+    void moveSpikeSubsetToCluster(int fromCluster,
+                                   const QVector<int>& spkFileIndices,
+                                   int toCluster,
+                                   KlustersView& activeView);
+
     /**Manages the deletion of clusters, if @p clusterId is 0, the clusters are moved to cluster 0 (cluster of artefact)
     * if @p clusterId is , the clusters are moved to cluster 1 (cluster of noise).
     * @param clustersToDelete list of clusters to be deleted.

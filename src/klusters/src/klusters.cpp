@@ -836,6 +836,30 @@ void KlustersApp::initSelectionBoxes(){
     //Connect the move function of the parameterBar to slotUpdateParameterBar to always correctly show its contents.
     connect(paramBar, &QToolBar::allowedAreasChanged, this, &KlustersApp::slotUpdateParameterBar);
     connect(paramBar, &QToolBar::orientationChanged, this, &KlustersApp::slotUpdateParameterBar);
+
+    // ── Timestamp nudge buttons (lower-right of toolbar) ─────────────────
+    // Shift the selected cluster's spike timestamps by ±1 sample.
+    // Useful for correcting sub-sample jitter after extraction.
+    paramBar->addSeparator();
+
+    nudgeMinusAction = new QAction(tr("-1 smpl"), this);
+    nudgeMinusAction->setToolTip(
+        tr("Shift timestamps of selected cluster −1 sample (Page Down)"));
+    nudgeMinusAction->setShortcut(Qt::Key_PageDown);
+    nudgeMinusAction->setEnabled(false);
+    connect(nudgeMinusAction, &QAction::triggered,
+            this, &KlustersApp::slotNudgeTimestampMinus);
+
+    nudgePlusAction = new QAction(tr("+1 smpl"), this);
+    nudgePlusAction->setToolTip(
+        tr("Shift timestamps of selected cluster +1 sample (Page Up)"));
+    nudgePlusAction->setShortcut(Qt::Key_PageUp);
+    nudgePlusAction->setEnabled(false);
+    connect(nudgePlusAction, &QAction::triggered,
+            this, &KlustersApp::slotNudgeTimestampPlus);
+
+    paramBar->addAction(nudgeMinusAction);
+    paramBar->addAction(nudgePlusAction);
 }
 
 void KlustersApp::executePreferencesDlg(){
@@ -3368,6 +3392,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         viewClusterInfo->setEnabled(false);
         mDeleteNoisySpikes->setEnabled(false);
         mOpenAction->setEnabled(true);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
         mFileOpenRecent->setEnabled(false);
         mSaveAction->setEnabled(false);
         mSaveAsAction->setEnabled(false);
@@ -3405,6 +3431,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
         mGenerateProbeDrift->setEnabled(false);
         mApplyDriftSiblings->setEnabled(false);
         scaleByShouler->setEnabled(false);
@@ -3460,6 +3488,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
         mRealignSpikes->setEnabled(true);
+        nudgeMinusAction->setEnabled(true);
+        nudgePlusAction->setEnabled(true);
         mGenerateProbeDrift->setEnabled(true);
         mApplyDriftSiblings->setEnabled(true);
         scaleByShouler->setEnabled(true);
@@ -3479,6 +3509,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mIncreaseAmplitude->setEnabled(true);
         mDecreaseAmplitude->setEnabled(true);
         mRenameActiveDisplay->setEnabled(true);
+        nudgeMinusAction->setEnabled(true);
+        nudgePlusAction->setEnabled(true);
     } else if(state == QLatin1String("traceDisplayState")) {
         mNewTraceDisplay->setEnabled(true);
     } else if(state == QLatin1String("noTraceDisplayState")) {
@@ -3491,10 +3523,14 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSaveAction->setEnabled(false);
         mSaveAsAction->setEnabled(false);
         mRenumberAndSave->setEnabled(false);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
     } else if(state == QLatin1String("SavingDoneState")) {
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);
         mRenumberAndSave->setEnabled(true);
+        nudgeMinusAction->setEnabled(true);
+        nudgePlusAction->setEnabled(true);
     } else if(state == QLatin1String("undoState")) {
         mUndo->setEnabled(true);
         mRedo->setEnabled(true);
@@ -3586,6 +3622,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
         scaleByShouler->setEnabled(false);
         timeFrameMode->setEnabled(false);
         noScale->setEnabled(false);
@@ -3614,6 +3652,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
         mRenumberClusters->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
         mAbortReclustering->setEnabled(true);
@@ -3622,6 +3662,8 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("noReclusterState")) {
         mReCluster->setEnabled(true);
         mRealignSpikes->setEnabled(true);
+        nudgeMinusAction->setEnabled(true);
+        nudgePlusAction->setEnabled(true);
         mAbortReclustering->setEnabled(false);
     } else if(state == QLatin1String("stoppedReclusterState")) {
         mAbortReclustering->setEnabled(false);
@@ -3638,6 +3680,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
         mRenumberClusters->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
         mDeleteNoisySpikes->setEnabled(false);
@@ -3652,6 +3696,8 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("noRealignState")) {
         // Restore all actions that realignState locked.
         mRealignSpikes->setEnabled(true);
+        nudgeMinusAction->setEnabled(true);
+        nudgePlusAction->setEnabled(true);
         mAbortRealign->setEnabled(false);
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);
@@ -3689,6 +3735,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        nudgeMinusAction->setEnabled(false);
+        nudgePlusAction->setEnabled(false);
         scaleByShouler->setEnabled(false);
         timeFrameMode->setEnabled(false);
         noScale->setEnabled(false);
@@ -4177,4 +4225,41 @@ void KlustersApp::slotApplyDriftSiblings()
         processFinished        = true;
         processOutputsFinished = true;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Timestamp nudge — shift selected cluster's spike timestamps by ±1 sample
+// ---------------------------------------------------------------------------
+void KlustersApp::slotNudgeTimestampMinus()
+{
+    if (isInit || !doc || !activeView()) return;
+    const QList<int>& shown = activeView()->clusters();
+    if (shown.size() != 1) {
+        statusBar()->showMessage(
+            tr("Select exactly one cluster first."), 3000);
+        return;
+    }
+    const int id = shown.first();
+    if (doc->nudgeClusterTimestamps(id, -1))
+        statusBar()->showMessage(
+            tr("Cluster %1: −1 sample.").arg(id), 2000);
+    else
+        statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
+}
+
+void KlustersApp::slotNudgeTimestampPlus()
+{
+    if (isInit || !doc || !activeView()) return;
+    const QList<int>& shown = activeView()->clusters();
+    if (shown.size() != 1) {
+        statusBar()->showMessage(
+            tr("Select exactly one cluster first."), 3000);
+        return;
+    }
+    const int id = shown.first();
+    if (doc->nudgeClusterTimestamps(id, +1))
+        statusBar()->showMessage(
+            tr("Cluster %1: +1 sample.").arg(id), 2000);
+    else
+        statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
 }

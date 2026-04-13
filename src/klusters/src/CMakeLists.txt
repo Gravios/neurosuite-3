@@ -23,6 +23,9 @@ set(klusters_SRCS
     dataprovider.cpp
     errormatrixthread.cpp
     errormatrixview.cpp
+    templatematrixthread.cpp
+    templatematrixview.cpp
+    pairxcorrthread.cpp
     eventsprovider.cpp
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp

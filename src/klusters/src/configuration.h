@@ -79,11 +79,12 @@ public:
     /**Sets the arguments for the reclustering.*/
     void setReclusteringArguments(const QString& arguments) {reclusteringArgs = arguments;}
 
-    /**Sets the realignment executable.*/
-    void setRealignExecutable(const QString& executable) {realignExecutable = executable;}
-
-    /**Sets the arguments for the realignment.*/
-    void setRealignArguments(const QString& arguments) {realignArgs = arguments;}
+    /**Sets the xcorr threshold for spike realignment (0.0–1.0).*/
+    void setRealignThreshold(double v)   { realignThreshold  = qBound(0.0, v, 1.0); }
+    /**Sets the number of realignment iterations (1–20).*/
+    void setRealignIterations(int n)     { realignIterations = qBound(1, n, 20); }
+    /**Sets the maximum xcorr lag in samples (>=1).*/
+    void setRealignMaxShift(int n)       { realignMaxShift   = (n >= 1 ? n : 1); }
 
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size) {markerSize = qBound(1, size, 10);}
@@ -142,10 +143,17 @@ public:
     QString getReclusteringArguments() const{return reclusteringArgs;}
 
     /**Returns the realignment executable.*/
-    QString getRealignExecutable() const{return realignExecutable;}
+    double getRealignThreshold()  const { return realignThreshold; }
+    int    getRealignIterations() const { return realignIterations; }
+    int    getRealignMaxShift()   const { return realignMaxShift; }
+    /** Assembles the args string consumed by KlustersDoc::realignSpikes(). */
+    QString getRealignArguments() const {
+        return QString("--threshold %1 --iterations %2 --maxshift %3")
+            .arg(realignThreshold, 0, 'f', 2)
+            .arg(realignIterations).arg(realignMaxShift);
+    }
 
     /**Returns the arguments for the realignment.*/
-    QString getRealignArguments() const{return realignArgs;}
 
     /**Returns the scatter plot marker size.*/
     int getMarkerSize() const{return markerSize;}
@@ -180,10 +188,11 @@ public:
     QString getReclusteringArgumentsDefault() const{return reclusteringArgsDefault;}
 
     /**Returns the default realignment executable.*/
-    QString getRealignExecutableDefault() const{return realignExecutableDefault;}
+    double getRealignThresholdDefault()  const { return realignThresholdDefault; }
+    int    getRealignIterationsDefault() const { return realignIterationsDefault; }
+    int    getRealignMaxShiftDefault()   const { return realignMaxShiftDefault; }
 
     /**Returns the default arguments for the realignment.*/
-    QString getRealignArgumentsDefault() const{return realignArgsDefault;}
 
     /**Returns the default scatter plot marker size.*/
     int getMarkerSizeDefault() const{return markerSizeDefault;}
@@ -206,6 +215,17 @@ public:
     /**Sets number of top-variance features to pass to KlustaKwik (clamped 1-25).*/
     void setAutoSelectNFeatures(int n)         { autoSelectNFeatures = qBound(1, n, 25); }
 
+    /**Sets the minimum threshold for the template match slider (0.0–1.0).*/
+    void setTemplateThresholdMin(double v) { templateThresholdMin = qBound(0.0, v, 1.0); }
+    /**Sets the maximum threshold for the template match slider (0.0–1.0).*/
+    void setTemplateThresholdMax(double v) { templateThresholdMax = qBound(0.0, v, 1.0); }
+    /**Returns the minimum threshold for the template match slider.*/
+    double getTemplateThresholdMin() const { return templateThresholdMin; }
+    /**Returns the maximum threshold for the template match slider.*/
+    double getTemplateThresholdMax() const { return templateThresholdMax; }
+    double getTemplateThresholdMinDefault() const { return templateThresholdMinDefault; }
+    double getTemplateThresholdMaxDefault() const { return templateThresholdMaxDefault; }
+
 private:
     /**Boolean indicating if a crash and recovery is ask.*/
     bool crashRecovery;
@@ -227,10 +247,9 @@ private:
     QString reclusteringExecutable;
     /**Arguments for the reclustering executable.*/
     QString reclusteringArgs;
-    /**Path to the realignment executable.*/
-    QString realignExecutable;
-    /**Arguments for the realignment executable.*/
-    QString realignArgs;
+    double realignThreshold;
+    int    realignIterations;
+    int    realignMaxShift;
     /**Scatter plot marker size in pixels.*/
     int markerSize;
     /**Selection polygon line width in pixels.*/
@@ -240,7 +259,11 @@ private:
     bool autoSelectFeatures;
     static const bool autoSelectFeaturesDefault;
     int  autoSelectNFeatures;
+    double templateThresholdMin;
+    double templateThresholdMax;
     static const int  autoSelectNFeaturesDefault;
+    static const double templateThresholdMinDefault;
+    static const double templateThresholdMaxDefault;
     static const bool crashRecoveryDefault;
     static const int  crashRecoveryIndexDefault;
     static const int  gainDefault;
@@ -249,8 +272,9 @@ private:
     static const QColor backgroundColorDefault;
     static const QString reclusteringExecutableDefault;
     static const QString reclusteringArgsDefault;
-    static const QString realignExecutableDefault;
-    static const QString realignArgsDefault;
+    static const double realignThresholdDefault;
+    static const int    realignIterationsDefault;
+    static const int    realignMaxShiftDefault;
     static const int  markerSizeDefault;
     static const int  selectionLineWidthDefault;
 

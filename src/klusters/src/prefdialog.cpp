@@ -87,13 +87,16 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->reclusteringExecutableLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
     //connect(prefGeneral,SIGNAL(reclusteringArgsUpdate()),this,SLOT(enableApply()));
     connect(prefGeneral->reclusteringArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->realignExecutableLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->realignArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->markerSizeSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->selectionLineWidthSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->useWhiteColorPrinting, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectFeaturesCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectNFeaturesSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->realignThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefGeneral->realignIterationsSpinBox, &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefGeneral->realignMaxShiftSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefGeneral->templateThresholdMinSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->templateThresholdMaxSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
     
     connect(prefclusterView->intervalSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
@@ -122,8 +125,9 @@ void PrefDialog::updateDialog() {
   prefGeneral->setBackgroundColor(configuration().getBackgroundColor());
   prefGeneral->setReclusteringExecutable(configuration().getReclusteringExecutable());
   prefGeneral->setReclusteringArguments(configuration().getReclusteringArguments());
-  prefGeneral->setRealignExecutable(configuration().getRealignExecutable());
-  prefGeneral->setRealignArguments(configuration().getRealignArguments());
+  prefGeneral->setRealignThreshold(configuration().getRealignThreshold());
+  prefGeneral->setRealignIterations(configuration().getRealignIterations());
+  prefGeneral->setRealignMaxShift(configuration().getRealignMaxShift());
   prefGeneral->setMarkerSize(configuration().getMarkerSize());
   prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidth());
   prefclusterView->setTimeInterval(configuration().getTimeInterval());
@@ -131,6 +135,8 @@ void PrefDialog::updateDialog() {
   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
   prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
   prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
+  prefGeneral->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
+  prefGeneral->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
   enableButtonApply(false);   // disable apply button
   applyEnable = false;
 }
@@ -143,8 +149,9 @@ void PrefDialog::updateConfiguration(){
   configuration().setBackgroundColor(prefGeneral->getBackgroundColor()); 
   configuration().setReclusteringExecutable(prefGeneral->getReclusteringExecutable());
   configuration().setReclusteringArguments(prefGeneral->getReclusteringArguments());
-  configuration().setRealignExecutable(prefGeneral->getRealignExecutable());
-  configuration().setRealignArguments(prefGeneral->getRealignArguments());
+  configuration().setRealignThreshold(prefGeneral->getRealignThreshold());
+  configuration().setRealignIterations(prefGeneral->getRealignIterations());
+  configuration().setRealignMaxShift(prefGeneral->getRealignMaxShift());
   configuration().setMarkerSize(prefGeneral->getMarkerSize());
   configuration().setSelectionLineWidth(prefGeneral->getSelectionLineWidth());
   configuration().setTimeInterval(prefclusterView->getTimeInterval());
@@ -154,6 +161,8 @@ void PrefDialog::updateConfiguration(){
   configuration().setUseWhiteColorDuringPrinting(prefGeneral->useWhiteColorDuringPrinting());
   configuration().setAutoSelectFeatures(prefGeneral->getAutoSelectFeatures());
   configuration().setAutoSelectNFeatures(prefGeneral->getAutoSelectNFeatures());
+  configuration().setTemplateThresholdMin(prefGeneral->getTemplateThresholdMin());
+  configuration().setTemplateThresholdMax(prefGeneral->getTemplateThresholdMax());
   enableButtonApply(false);   // disable apply button
   applyEnable = false;
 }
@@ -170,8 +179,9 @@ void PrefDialog::slotDefault() {
    prefGeneral->setBackgroundColor(configuration().getBackgroundColorDefault());
    prefGeneral->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
    prefGeneral->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
-   prefGeneral->setRealignExecutable(configuration().getRealignExecutableDefault());
-   prefGeneral->setRealignArguments(configuration().getRealignArgumentsDefault());
+   prefGeneral->setRealignThreshold(configuration().getRealignThresholdDefault());
+   prefGeneral->setRealignIterations(configuration().getRealignIterationsDefault());
+   prefGeneral->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
    prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
    prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
    prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());

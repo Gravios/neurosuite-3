@@ -1024,6 +1024,64 @@ void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeV
 }
 
 
+void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
+                                            const QVector<int>& spkFileIndices,
+                                            int toCluster,
+                                            KlustersView& activeView)
+{
+    if (spkFileIndices.isEmpty()) return;
+
+    // Convert 0-based .spk indices to 1-based feature-row indices.
+    QSet<dataType> featureRowSet;
+    featureRowSet.reserve(spkFileIndices.size());
+    for (int idx : spkFileIndices)
+        featureRowSet.insert(static_cast<dataType>(idx + 1));
+
+    QList<int> fromClusters, emptiedClusters;
+    clusteringData->moveSpikeSubset(fromCluster, featureRowSet,
+                                     toCluster, fromClusters, emptiedClusters);
+
+    if (fromClusters.isEmpty()) {
+        activeView.showAllWidgets();
+        return;
+    }
+
+    QList<int> updatedClusters = {fromCluster, toCluster};
+
+    // Ensure cluster 1 (noise) has its grey colour when first receiving spikes.
+    if (toCluster == 1 && !clusterColorList->contains(1)) {
+        QColor grey;
+        grey.setHsv(0, 0, 220);
+        if (clusterColorList->contains(0)) clusterColorList->insert(1, grey, 1);
+        else                               clusterColorList->insert(1, grey, 0);
+    }
+
+    prepareUndo(updatedClusters, emptiedClusters, true);
+
+    QList<int> clustersToShow = {fromCluster, toCluster};
+    for (int cid : emptiedClusters) {
+        clusterColorList->remove(cid);
+        clustersToShow.removeAll(cid);
+    }
+
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* v = viewList->at(i);
+        const bool isActive = (v == &activeView);
+        v->removeSpikesFromClustersInView(fromClusters, toCluster, emptiedClusters, isActive);
+        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+
+    emit removeSpikesFromClusters(fromClusters, toCluster, emptiedClusters);
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    activeView.showAllWidgets();
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(clustersToShow);
+}
+
+
 void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId){
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);

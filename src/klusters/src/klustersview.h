@@ -63,7 +63,7 @@ public:
     /**
     * Enum indicating wich type of view the user wants.
     */
-    enum DisplayType {CLUSTERS=0,WAVEFORMS=1,CORRELATIONS=2,OVERVIEW=3,GROUPING_ASSISTANT_VIEW=4,ERROR_MATRIX=5,TRACES=6};
+    enum DisplayType {CLUSTERS=0,WAVEFORMS=1,CORRELATIONS=2,OVERVIEW=3,GROUPING_ASSISTANT_VIEW=4,ERROR_MATRIX=5,TRACES=6,TEMPLATE_MATRIX=7};
 
     /** Constructs a view.
       * @param mainWindow a reference on the main window of the application.
@@ -578,10 +578,15 @@ public:
 
     /**Updates the probabilitites in the errorMatrix view.*/
     void updateErrorMatrix(){emit computeProbabilities();}
+    /**Recomputes the template match matrix.*/
+    void updateTemplateMatrix(){emit computeTemplateMatrix();}
+    /**Propagates new slider range from configuration to the template matrix view.*/
+    void updateTemplateMatrixSliderRange();
 
     /**Returns a boolean indicating if the view contains a Grouping Assistant View.
   * @return true if the view contains a Grouping Assistant View, false otherwise.*/
     bool containsErrorMatrixView() const {return isThereErrorMatrixView;}
+    bool containsTemplateMatrixView() const {return isThereTemplateMatrixView;}
 
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
@@ -671,6 +676,7 @@ public Q_SLOTS:
   * @param errorMatrixView the ErrorMatrixView to be closed.
   */
     void errorMatrixDockClosed(QObject* errorMatrixView);
+    void templateMatrixDockClosed(QObject* templateMatrixView);
 
     /**Takes care of the closing of a TraceView.
   * @param traceWidget the traceView to be closed.*/
@@ -721,6 +727,7 @@ Q_SIGNALS:
     void changeTimeInterval(int step,bool active);
     void changeChannelPositions(QList<int>& positions);
     void computeProbabilities();
+    void computeTemplateMatrix();
     void changeBackgroundColor(const QColor& color);
     void clustersRenumbered(bool active);
     void updateClusters(QString name,QList<int>& clustersToShow,ItemColors* clustersColors,bool active);
@@ -790,6 +797,8 @@ private:
 
     /**True if the view contains an ErrorMatrix view, false otherwise.*/
     bool isThereErrorMatrixView;
+    /**True if the view contains a TemplateMatrix view, false otherwise.*/
+    bool isThereTemplateMatrixView;
     
     /**True if the view contains a Trace view, false otherwise.*/
     bool isThereTraceView;
