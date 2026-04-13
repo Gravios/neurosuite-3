@@ -3332,3 +3332,66 @@ void KlustersDoc::rejectLastRealign()
     // viewer immediately reflects the restored state.
     initPendingFiles();
 }
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::nudgeClusterTimestamps
+// ---------------------------------------------------------------------------
+bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
+{
+    if (!clusteringData) return false;
+    if (deltaSamples == 0) return true;
+
+    if (m_pendingResPath.isEmpty()) {
+        if (!initPendingFiles()) return false;
+    }
+
+    const int timeDim  = clusteringData->timeDimension();
+    const dataType maxRaw = static_cast<dataType>(
+        clusteringData->maxDimension(timeDim));
+
+    SortableTable spkTable;
+    if (!clusteringData->spikePositions(clusterId, spkTable)) return false;
+    const int64_t N = static_cast<int64_t>(spkTable.nbOfColumns());
+    if (N == 0) return true;
+
+    FILE* resW = fopen(m_pendingResPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(m_pendingFetPath.toLocal8Bit().constData(), "r+b");
+    if (!resW || !fetW) {
+        if (resW) fclose(resW);
+        if (fetW) fclose(fetW);
+        return false;
+    }
+
+    for (int64_t i = 0; i < N; ++i) {
+        const dataType row  = static_cast<dataType>(
+            spkTable(1, static_cast<dataType>(i + 1)));
+        const int64_t  pos0 = static_cast<int64_t>(row) - 1;
+
+        const dataType oldTs = clusteringData->featureValue(row, timeDim);
+        dataType newTs = oldTs + static_cast<dataType>(deltaSamples);
+        if (newTs < 0)      newTs = 0;
+        if (newTs > maxRaw) newTs = maxRaw;
+
+        const int64_t resTs64 = static_cast<int64_t>(newTs);
+
+        fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)), SEEK_SET);
+        fwrite(&resTs64, sizeof(int64_t), 1, resW);
+
+        const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
+            + static_cast<off_t>(pos0) * static_cast<off_t>(timeDim)
+              * static_cast<off_t>(sizeof(int64_t))
+            + static_cast<off_t>(timeDim - 1) * static_cast<off_t>(sizeof(int64_t));
+        fseeko(fetW, fetOff, SEEK_SET);
+        fwrite(&resTs64, sizeof(int64_t), 1, fetW);
+
+        clusteringData->updateTimestamp(row, newTs);
+    }
+
+    fclose(resW);
+    fclose(fetW);
+
+    setModified(true);
+    forceClusterRefresh(clusterId);
+    refreshAllViews();
+    return true;
+}
