@@ -138,6 +138,10 @@ public:
 
     /**Sends back the directory where is store the document.*/
     QString documentDirectory() const;
+    /** Returns true if this session uses the stderiv pipeline
+     *  (.spkD.N / .fetD.N / .pcaD.N files). */
+    bool isStderivSession() const
+        { return m_origSpkPath.contains(QStringLiteral(".spkD.")); }
 
     /**Returns the reference on the list of ClusterColor objects.
     * @return ItemColors containing the information on the clusters and their associated color.
@@ -194,13 +198,6 @@ public:
     void groupClusters(QList<int> clustersToGroup,KlustersView& activeView);
 
     /** Moves spikes from @p fromCluster whose 0-based .spk indices are in
-     * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */
-    void moveSpikeSubsetToCluster(int fromCluster,
-                                   const QVector<int>& spkFileIndices,
-                                   int toCluster,
-                                   KlustersView& activeView);
-
-    /**Moves spikes from @p fromCluster whose 0-based .spk indices are in
      * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */
     void moveSpikeSubsetToCluster(int fromCluster,
                                    const QVector<int>& spkFileIndices,

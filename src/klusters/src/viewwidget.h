@@ -173,6 +173,10 @@ public Q_SLOTS:
     virtual void undoUpdateClusters(QList<int>& modifiedClusters,bool active) {}
     /**Enables the caller to know if there is any thread running launch by the viewWidget.*/
     virtual bool isThreadsRunning() const {return false;}
+    /** Stop and delete all in-flight data-fetch threads.  Safe to call
+     *  from the main thread before launching new threads, e.g. after a
+     *  nudge.  Default no-op; override in WaveformView. */
+    virtual void stopRunningThreads() {}
     /**Prints the currently display information on a printer via the painter @p printPainter.
   * @param printPainter painter on a printer.
   * @param metrics object providing information about the printer.

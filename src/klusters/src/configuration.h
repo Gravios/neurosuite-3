@@ -85,11 +85,18 @@ public:
     /**Sets the arguments for the realignment.*/
     void setRealignArguments(const QString& arguments) {realignArgs = arguments;}
 
+    void setRealignThreshold(double v)  {realignThreshold = qBound(0.0, v, 1.0);}
+    void setRealignIterations(int n)     {realignIterations = qMax(1, n);}
+    void setRealignMaxShift(int n)        {realignMaxShift = qMax(0, n);}
+
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size) {markerSize = qBound(1, size, 10);}
 
     /**Sets the selection polygon line width.*/
     void setSelectionLineWidth(int w) {selectionLineWidth = qBound(1, w, 10);}
+
+    void setTemplateThresholdMin(double v) {templateThresholdMin = qBound(0.0, v, 1.0);}
+    void setTemplateThresholdMax(double v) {templateThresholdMax = qBound(0.0, v, 1.0);}
     
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
@@ -147,11 +154,18 @@ public:
     /**Returns the arguments for the realignment.*/
     QString getRealignArguments() const{return realignArgs;}
 
+    double getRealignThreshold()  const {return realignThreshold;}
+    int    getRealignIterations() const {return realignIterations;}
+    int    getRealignMaxShift()   const {return realignMaxShift;}
+
     /**Returns the scatter plot marker size.*/
     int getMarkerSize() const{return markerSize;}
 
     /**Returns the selection polygon line width.*/
     int getSelectionLineWidth() const{return selectionLineWidth;}
+
+    double getTemplateThresholdMin() const {return templateThresholdMin;}
+    double getTemplateThresholdMax() const {return templateThresholdMax;}
 
     /**Returns the default value for the crash and recovery mechanism.
     * True if a crash and recovery autosave is performed, false othewise.*/
@@ -184,6 +198,10 @@ public:
 
     /**Returns the default arguments for the realignment.*/
     QString getRealignArgumentsDefault() const{return realignArgsDefault;}
+
+    double getRealignThresholdDefault()  const {return 0.70;}
+    int    getRealignIterationsDefault() const {return 2;}
+    int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
 
     /**Returns the default scatter plot marker size.*/
     int getMarkerSizeDefault() const{return markerSizeDefault;}
@@ -231,10 +249,15 @@ private:
     QString realignExecutable;
     /**Arguments for the realignment executable.*/
     QString realignArgs;
+    double  realignThreshold;
+    int     realignIterations;
+    int     realignMaxShift;
     /**Scatter plot marker size in pixels.*/
     int markerSize;
     /**Selection polygon line width in pixels.*/
     int selectionLineWidth;
+    double templateThresholdMin;
+    double templateThresholdMax;
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;

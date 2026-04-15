@@ -343,6 +343,38 @@ void KlustersView::forceClusterRefresh(int clusterId)
     emit spikesAddedToCluster(clusterId, true);
 }
 
+void KlustersView::stopAllViewThreads()
+{
+    const QList<ViewWidget*>& widgets = getViewList();
+    for (ViewWidget* w : widgets)
+        w->stopRunningThreads();
+}
+
+void KlustersView::invalidateClusterDisplay(int clusterId)
+{
+    if (!shownClusters->contains(clusterId))
+        return;
+
+    // Step 1: stop any in-flight WaveformThreads before launching new ones.
+    stopAllViewThreads();
+
+    // Step 2: tell ClusterView (scatter) to do a full REDRAW so old ghost
+    // points at pre-nudge feature coordinates are erased, then call update()
+    // so Qt actually schedules the repaint. Without update(), ClusterView
+    // sits in REDRAW mode indefinitely because redraw() never calls update().
+    QList<int> tmp{clusterId};
+    emit spikesRemovedFromClusters(tmp, false);
+
+    // Force an immediate repaint on every sub-view widget that is now in
+    // REDRAW mode — covers ClusterView and any others.
+    const QList<ViewWidget*>& widgets = getViewList();
+    for (ViewWidget* w : widgets)
+        w->update();
+
+    // Step 3: relaunch WaveformThread/CorrelogramThread against updated data.
+    emit spikesAddedToCluster(clusterId, true);
+}
+
 void KlustersView::print(QPrinter *pPrinter, const QString& filePath, bool whiteBackground)
 {
     QPainter printPainter;

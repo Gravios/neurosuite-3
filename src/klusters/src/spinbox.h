@@ -34,6 +34,13 @@ public:
 
 public Q_SLOTS:
 	void deselect();
+
+protected:
+    /** Only consume keystrokes the spinbox genuinely needs:
+     *  digits, +/-, Up/Down arrows, PageUp/Down, Home/End, Backspace/Delete,
+     *  Tab, Return/Enter.  Everything else (e.g. Shift+R, Ctrl+Z) is
+     *  forwarded to the parent widget so KlustersApp shortcuts still fire. */
+    void keyPressEvent(QKeyEvent* event) override;
 };
 
 #endif // SPINBOX_H

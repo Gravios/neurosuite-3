@@ -220,6 +220,7 @@ public Q_SLOTS:
 
     /**Enables the caller to know if there is any thread running launch by the view.*/
     bool isThreadsRunning() const override;
+    void stopRunningThreads() override { stopAndClearThreads(); }
 
     /**Update the information presented in the view if need it.*/
     void updateDrawing() override;

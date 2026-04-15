@@ -114,7 +114,8 @@ KlustersApp::KlustersApp()
       realignOutputWidget(nullptr),
       realignRunning(false),
       realignClusterId(-1),
-      errorMatrixExists(false)
+      errorMatrixExists(false),
+      templateMatrixExists(false)
 {
     setObjectName("Klusters");
 
@@ -844,16 +845,14 @@ void KlustersApp::initSelectionBoxes(){
 
     nudgeMinusAction = new QAction(tr("-1 smpl"), this);
     nudgeMinusAction->setToolTip(
-        tr("Shift timestamps of selected cluster −1 sample (Page Down)"));
-    nudgeMinusAction->setShortcut(Qt::Key_PageDown);
+        tr("Shift timestamps of selected cluster −1 sample"));
     nudgeMinusAction->setEnabled(false);
     connect(nudgeMinusAction, &QAction::triggered,
             this, &KlustersApp::slotNudgeTimestampMinus);
 
     nudgePlusAction = new QAction(tr("+1 smpl"), this);
     nudgePlusAction->setToolTip(
-        tr("Shift timestamps of selected cluster +1 sample (Page Up)"));
-    nudgePlusAction->setShortcut(Qt::Key_PageUp);
+        tr("Shift timestamps of selected cluster +1 sample"));
     nudgePlusAction->setEnabled(false);
     connect(nudgePlusAction, &QAction::triggered,
             this, &KlustersApp::slotNudgeTimestampPlus);
@@ -945,8 +944,16 @@ void KlustersApp::applyPreferences() {
     if(realignExecutable != configuration().getRealignExecutable())
         realignExecutable = configuration().getRealignExecutable();
 
-    if(realignArgs != configuration().getRealignArguments())
-        realignArgs = configuration().getRealignArguments();
+    // Rebuild realignArgs from structured prefs (threshold / iterations / maxshift)
+    {
+        const QString newArgs = QString("--threshold %1 --iterations %2%3")
+            .arg(configuration().getRealignThreshold(), 0, 'f', 2)
+            .arg(configuration().getRealignIterations())
+            .arg(configuration().getRealignMaxShift() > 0
+                 ? QString(" --maxshift %1").arg(configuration().getRealignMaxShift())
+                 : QString());
+        if (realignArgs != newArgs) realignArgs = newArgs;
+    }
 
     if(markerSize != configuration().getMarkerSize()){
         markerSize = configuration().getMarkerSize();
@@ -979,7 +986,12 @@ void KlustersApp::initializePreferences(){
     reclusteringExecutable =  configuration().getReclusteringExecutable();
     reclusteringArgs = configuration().getReclusteringArguments();
     realignExecutable = configuration().getRealignExecutable();
-    realignArgs = configuration().getRealignArguments();
+    realignArgs = QString("--threshold %1 --iterations %2%3")
+        .arg(configuration().getRealignThreshold(), 0, 'f', 2)
+        .arg(configuration().getRealignIterations())
+        .arg(configuration().getRealignMaxShift() > 0
+             ? QString(" --maxshift %1").arg(configuration().getRealignMaxShift())
+             : QString());
     markerSize = configuration().getMarkerSize();
     selectionLineWidth = configuration().getSelectionLineWidth();
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
@@ -1025,13 +1037,6 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                     }
                 }
             }
-            // If focus is inside the tab area but the sentinel is tabsParent,
-            // also accept the current tab page as "inside" the tab zone.
-            if(currentZone < 0 && tabsParent && tabsParent->isVisible()){
-                for(int z = 0; z < focusZones.size() && currentZone < 0; ++z){
-                    if(focusZones[z] == tabsParent) currentZone = z;
-                }
-            }
 
             const int n = focusZones.size();
             int next;
@@ -1042,24 +1047,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
 
             QWidget* target = focusZones[next];
 
-            // The tab area is represented by the tabsParent sentinel.
-            // When Tab lands on it, switch to (or stay on) the Overview tab.
-            if(target == tabsParent){
-                // Find the Overview tab — the first one whose title contains
-                // "Overview" (case-insensitive).  Fall back to tab 0.
-                int overviewIdx = 0;
-                for(int i = 0; i < tabsParent->count(); ++i){
-                    if(tabsParent->tabText(i).contains(tr("Overview"),
-                                                        Qt::CaseInsensitive)){
-                        overviewIdx = i; break;
-                    }
-                }
-                tabsParent->setCurrentIndex(overviewIdx);
-                focusTabPage(tabsParent->widget(overviewIdx));
-                return true;
-            }
-
-            // Cluster list or toolbar field — focus directly.
+            // Focus the cluster list or toolbar field directly.
             target->setFocus(Qt::TabFocusReason);
             return true;
         }
@@ -1135,27 +1123,61 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             }
         }
     }
+    // ── PageUp / PageDown — timestamp nudge (±1 sample) ──────────────────
+    // Intercept at both ShortcutOverride and KeyPress so the cluster palette
+    // QListWidget never receives these keys for its own scroll navigation.
+    // Autorepeat is suppressed: for large clusters the synchronous nudge loop
+    // (fread × N + PCA projection) can take long enough that multiple autorepeat
+    // events queue up and fire immediately on return, causing a ×2 (or more)
+    // movement per apparent single press.
+    if(event->type() == QEvent::ShortcutOverride ||
+       event->type() == QEvent::KeyPress) {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if((ke->key() == Qt::Key_PageUp || ke->key() == Qt::Key_PageDown)
+           && ke->modifiers() == Qt::NoModifier
+           && !isInit && doc) {
+            // Always claim ShortcutOverride so QListWidget never scrolls.
+            if(event->type() == QEvent::ShortcutOverride) {
+                ke->accept();
+                return true;
+            }
+            // Suppress autorepeat and any event arriving within
+            // 300 ms of the last nudge completing.  Without the
+            // elapsed-time guard, queued autorepeats that accumulated
+            // during a long (multi-second) nudge loop fire one-by-one
+            // once the event queue drains — the singleShot(0) only
+            // blocks the FIRST one.
+            if(ke->isAutoRepeat())
+                return true;
+            if(m_nudgeInProgress)
+                return true;
+            if(m_lastNudgeTimer.isValid() && m_lastNudgeTimer.elapsed() < 300)
+                return true;
+            if(ke->key() == Qt::Key_PageUp)
+                slotNudgeTimestampPlus();
+            else
+                slotNudgeTimestampMinus();
+            return true;
+        }
+    }
+
     return QWidget::eventFilter(object,event);    // standard event processing
 }
 
 void KlustersApp::buildFocusZones()
 {
-    // Ordered Tab/Shift+Tab stops:
+    // Tab/Shift+Tab stops:
     //   1. Cluster list (left panel)
-    //   2. Tab area (single stop — Tab always lands on Overview when entering)
-    //   3. Toolbar input fields (left-to-right order)
+    //   2. Toolbar spinboxes / line-edits (left-to-right order)
+    // The tab-display area is intentionally excluded so Tab never
+    // moves focus inside the waveform/scatter/correlation views.
     focusZones.clear();
 
     // 1. Cluster list
     if(clusterPanel && clusterPanel->isVisible() && clusterPalette)
         focusZones.append(clusterPalette);
 
-    // 2. Tab area as a single sentinel entry.
-    //    Ctrl+Left/Right cycles the individual tabs once focus is inside.
-    if(tabsParent && tabsParent->isVisible() && tabsParent->count() > 0)
-        focusZones.append(tabsParent);
-
-    // 3. Toolbar fields
+    // 2. Toolbar fields only
     if(paramBar){
         const QList<QAction*> actions = paramBar->actions();
         for(QAction* a : actions){
@@ -1885,6 +1907,9 @@ void KlustersApp::slotDisplayClose()
             if(view->containsErrorMatrixView()){
                 slotStateChanged("groupingAssistantDisplayNotExists");
                 errorMatrixExists = false;
+            }
+            if(view->containsTemplateMatrixView()){
+                templateMatrixExists = false;
             }
             //Delete the view
             delete current;
@@ -3232,6 +3257,9 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             slotStateChanged("groupingAssistantDisplayExists");
             errorMatrixExists = true;
             break;
+        case KlustersView::TEMPLATE_MATRIX:
+            templateMatrixExists = true;
+            break;
         case KlustersView::OVERVIEW:
             break;
         case KlustersView::GROUPING_ASSISTANT_VIEW:
@@ -3288,6 +3316,9 @@ void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType
         slotStateChanged("noErrorMatrixViewState");
         slotStateChanged("groupingAssistantDisplayNotExists");
         errorMatrixExists = false;
+        break;
+    case KlustersView::TEMPLATE_MATRIX:
+        templateMatrixExists = false;
         break;
     case KlustersView::OVERVIEW:
         break;
@@ -4232,7 +4263,7 @@ void KlustersApp::slotApplyDriftSiblings()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotNudgeTimestampMinus()
 {
-    if (isInit || !doc || !activeView()) return;
+    if (m_nudgeInProgress || isInit || !doc || !activeView()) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(
@@ -4240,7 +4271,17 @@ void KlustersApp::slotNudgeTimestampMinus()
         return;
     }
     const int id = shown.first();
-    if (doc->nudgeClusterTimestamps(id, -1))
+    m_nudgeInProgress = true;
+    nudgeMinusAction->setEnabled(false);
+    nudgePlusAction->setEnabled(false);
+    statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const bool ok = doc->nudgeClusterTimestamps(id, -1);
+    m_nudgeInProgress = false;
+    m_lastNudgeTimer.restart();
+    nudgeMinusAction->setEnabled(true);
+    nudgePlusAction->setEnabled(true);
+    if (ok)
         statusBar()->showMessage(
             tr("Cluster %1: −1 sample.").arg(id), 2000);
     else
@@ -4249,7 +4290,7 @@ void KlustersApp::slotNudgeTimestampMinus()
 
 void KlustersApp::slotNudgeTimestampPlus()
 {
-    if (isInit || !doc || !activeView()) return;
+    if (m_nudgeInProgress || isInit || !doc || !activeView()) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(
@@ -4257,7 +4298,17 @@ void KlustersApp::slotNudgeTimestampPlus()
         return;
     }
     const int id = shown.first();
-    if (doc->nudgeClusterTimestamps(id, +1))
+    m_nudgeInProgress = true;
+    nudgeMinusAction->setEnabled(false);
+    nudgePlusAction->setEnabled(false);
+    statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const bool ok = doc->nudgeClusterTimestamps(id, +1);
+    m_nudgeInProgress = false;
+    m_lastNudgeTimer.restart();
+    nudgeMinusAction->setEnabled(true);
+    nudgePlusAction->setEnabled(true);
+    if (ok)
         statusBar()->showMessage(
             tr("Cluster %1: +1 sample.").arg(id), 2000);
     else

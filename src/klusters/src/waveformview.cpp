@@ -165,6 +165,14 @@ void WaveformView::askForWaveformInformation(int clusterId){
 void WaveformView::askForWaveformInformation(const QList<int> &clusterIds){
     //If the widget is not about to be deleted, request the data.
     if(!goingToDie){
+        // Stop any in-flight threads before launching a new full-redraw
+        // request.  Every existing call site (removeClusterFromView,
+        // spikesAddedToCluster, navigation, etc.) that reaches this
+        // overload is replacing the entire waveform display, so keeping
+        // old threads alive only causes racing on waveformStatusMap and
+        // waveformDict.  The single-cluster overload (overlay mode) is
+        // intentionally left alone.
+        stopAndClearThreads();
         dataReady = false;
         //Create a thread to get the waveform data for that clusters.
         WaveformThread* waveformThread = getWaveforms();
@@ -248,6 +256,14 @@ void WaveformView::spikesRemovedFromClusters(QList<int>& fromClusters,bool activ
 
 void WaveformView::spikesAddedToCluster(int clusterId,bool active){  
     isZoomed = false;//Hack because all the tabs share the same data.
+
+    // Stop any in-flight threads before launching new ones.
+    // Every other launch path (setSampleMode, setMeanPresentation, etc.)
+    // calls stopAndClearThreads() first; this path was the only exception.
+    // Without this, rapid cluster navigation accumulates sleeping threads
+    // (each sleeping 1 s in the IN_PROCESS retry loop) that race on
+    // waveformStatusMap/waveformDict and cause a segfault.
+    stopAndClearThreads();
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;

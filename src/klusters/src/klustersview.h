@@ -580,6 +580,17 @@ public:
     void updateErrorMatrix(){emit computeProbabilities();}
     /**Recomputes the template match matrix.*/
     void updateTemplateMatrix(){emit computeTemplateMatrix();}
+
+    /** Stop all in-flight WaveformThreads in every sub-view widget.
+     *  Call before writing to the pending .spk file so no thread is
+     *  mid-fread when the write happens. */
+    void stopAllViewThreads();
+
+    /** Force a full scatter REDRAW and waveform/correlogram reload for
+     *  @p clusterId after an in-place data modification (e.g. timestamp
+     *  nudge).  Unlike forceClusterRefresh() this sets REDRAW mode on
+     *  ClusterView so old ghost points are cleared first. */
+    void invalidateClusterDisplay(int clusterId);
     /**Propagates new slider range from configuration to the template matrix view.*/
     void updateTemplateMatrixSliderRange();
 

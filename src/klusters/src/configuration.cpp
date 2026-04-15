@@ -56,8 +56,13 @@ void Configuration::read() {
     reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
     realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
     realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
+    realignThreshold  = settings.value("realignThreshold",  0.70).toDouble();
+    realignIterations = settings.value("realignIterations",  2).toInt();
+    realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
+    templateThresholdMin = settings.value("templateThresholdMin", 0.5).toDouble();
+    templateThresholdMax = settings.value("templateThresholdMax", 1.0).toDouble();
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
@@ -86,8 +91,13 @@ void Configuration::write() const {
     settings.setValue("reclusteringArgs",reclusteringArgs);
     settings.setValue("realignExecutable",realignExecutable);
     settings.setValue("realignArgs",realignArgs);
+    settings.setValue("realignThreshold",  realignThreshold);
+    settings.setValue("realignIterations", realignIterations);
+    settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("markerSize", markerSize);
     settings.setValue("selectionLineWidth", selectionLineWidth);
+    settings.setValue("templateThresholdMin", templateThresholdMin);
+    settings.setValue("templateThresholdMax", templateThresholdMax);
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.setValue("autoSelectFeatures", autoSelectFeatures);
     settings.setValue("autoSelectNFeatures", autoSelectNFeatures);

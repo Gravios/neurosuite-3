@@ -74,8 +74,8 @@ once()
     local electrodeGroup=$1
     shift
 
-    inputs_missing "$session.$param_ext" $session.spk.$electrodeGroup && exit $INPUTS_MISSING
-    outputs_exist $session.fet.$electrodeGroup && exit $OUTPUTS_EXIST
+    inputs_missing "$session.$param_ext" $session.spkD.$electrodeGroup && exit $INPUTS_MISSING
+    outputs_exist $session.fetD.$electrodeGroup && exit $OUTPUTS_EXIST
 
     nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
     check_mandatory_variable $nElectrodeGroups "missing electrode groups"
@@ -120,17 +120,20 @@ once()
 
     # Transform waveforms: spatial+temporal derivative → temp file
     local tmpspk=$(mktemp /tmp/spk_stderiv_${session}_${electrodeGroup}_XXXXXX)
+    # Use SDIFF_PASS (4): .spkD already contains the transformed waveform.
+    # process_pca_stderiv just does channel-reduction (drops the dependent
+    # last channel for orders 1 and 3) without re-applying the transform.
     process_pca_stderiv \
         -n $nElectrodes \
         -w $waveformLength \
-        -d $sdiffOrder \
-        $session.spk.$electrodeGroup > $tmpspk
+        -d 4 \
+        $session.spkD.$electrodeGroup > $tmpspk
     check_command_status process_pca_stderiv
 
     # Compute PCA on the transformed waveforms.
     # Use nEffective (reduced) channel count for rank-deficient derivatives.
     process_pca \
-        -f $session.fet.$electrodeGroup.tmp \
+        -f $session.fetD.$electrodeGroup.tmp \
         -n $nEffective \
         -w $waveformLength \
         -d $nFeatures \
@@ -142,11 +145,11 @@ once()
 
     # Merge features with timestamps
     process_mergefeatures \
-        $session.fet.$electrodeGroup.tmp \
+        $session.fetD.$electrodeGroup.tmp \
         $session.res.$electrodeGroup \
-        $session.fet.$electrodeGroup
+        $session.fetD.$electrodeGroup
     check_command_status process_mergefeatures
-    rm $session.fet.$electrodeGroup.tmp
+    rm $session.fetD.$electrodeGroup.tmp
 }
 
 if [ -z "$electrodeGroup" ]

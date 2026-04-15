@@ -673,9 +673,21 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
         clustersGivingMaximum[dimension - 1] = clusterIdMax;
     }
 
-    //The time dimension is handled separately: minimum = first spike timestamp, maximum = last spike timestamp.
-    dimensionMinimaTemp(nbDimensions,1) = features(1,nbDimensions);
-    dimensionMaximaTemp(nbDimensions,1) = features(nbSpikes,nbDimensions);
+    // Time dimension: scan all spikes for the true min and max timestamp.
+    // The old shortcut used features(1,...) and features(nbSpikes,...) which
+    // are the globally first/last spikes by feature-table index, not by
+    // timestamp — causing stale world-window bounds after a nudge.
+    {
+        dataType tsMin = features(1, nbDimensions);
+        dataType tsMax = tsMin;
+        for (long k = 2; k <= nbSpikes; ++k) {
+            const dataType ts = features(k, nbDimensions);
+            if (ts < tsMin) tsMin = ts;
+            if (ts > tsMax) tsMax = ts;
+        }
+        dimensionMinimaTemp(nbDimensions, 1) = tsMin;
+        dimensionMaximaTemp(nbDimensions, 1) = tsMax;
+    }
 
     //Update dimensionMinima and dimensionMaxima
     {
@@ -2618,9 +2630,16 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
     {
         QMutexLocker lk(&mutex);
         alreadyProcessed = waveformStatusMap.contains(clusterId);
-        statusLocked = alreadyProcessed ? waveformStatusMap[clusterId].sampleStatus() : NOT_AVAILABLE;
-        if(alreadyProcessed && statusLocked != IN_PROCESS)
-            waveforms = waveformDict[clusterIdString];
+        if (alreadyProcessed) {
+            statusLocked = waveformStatusMap[clusterId].sampleStatus();
+            if (statusLocked != IN_PROCESS)
+                waveforms = waveformDict[clusterIdString];
+        } else {
+            // Claim the slot atomically so concurrent threads see IN_PROCESS
+            // immediately, preventing the check-then-act race that allows
+            // multiple threads to each allocate a new WaveformData object.
+            waveformStatusMap.insert(clusterId, WaveformStatus(IN_PROCESS));
+        }
     }
 
     if(alreadyProcessed){
@@ -2675,10 +2694,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         waveforms->setSize(nbSpikesOfCluster,SAMPLE);
     }
     else{
-        {
-            QMutexLocker lk(&mutex);
-        waveformStatusMap.insert(clusterId,WaveformStatus(IN_PROCESS));
-        }
+        // IN_PROCESS was already inserted atomically in the initial lock above.
         if(isTwoBytesRecording) waveforms = new WaveformData<short>(*this);
         else waveforms = new WaveformData<long>(*this);
 
@@ -2915,6 +2931,9 @@ void Data::WaveformData<T>::setSize(dataType size,WaveformMode waveformMode){
 
 template <class T>
 void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType nbSpkToDisplay){
+    // Capacity of sampleSpikesTable in elements (set by setSize() before this call).
+    const dataType bufCap = static_cast<dataType>(sampleSpikesTable.size());
+
     //Show nbSpkToDisplay spikes or all the spikes if nbSpikesOfCluster < nbSpkToDisplay
     if(nbSpikesOfCluster < nbSpkToDisplay){
         dataType max = nbSpikesOfCluster +1;
@@ -2922,6 +2941,14 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         for(dataType i = 1; i < max; ++i){
             //go to the spike position
             dataType currentSpikePosition = (positionOfSpikes(1,i) - 1) * nbPtsBySpike ;
+            // Guard: skip corrupt entries that would write past the buffer.
+            if (position + nbPtsBySpike > bufCap) {
+                qWarning("WaveformData::read: buffer overrun guard triggered at spike %d"
+                         " (position=%d bufCap=%d) — cluster data may be corrupt",
+                         static_cast<int>(i), static_cast<int>(position),
+                         static_cast<int>(bufCap));
+                break;
+            }
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
             if (            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
@@ -2952,6 +2979,11 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             spkIndice = static_cast<dataType>(floatSpkIndice + 0.5);
             //go to the spike position
             dataType currentSpikePosition = (positionOfSpikes(1,spkIndice) - 1) * nbPtsBySpike ;
+            if (position + nbPtsBySpike > bufCap) {
+                qWarning("WaveformData::read: buffer overrun guard (sampled path) at i=%d",
+                         static_cast<int>(i));
+                break;
+            }
             fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
             // copy the spikes into spikePoints.
             if (            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))

@@ -85,6 +85,17 @@ KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool aut
 KlustersDoc::~KlustersDoc(){
     qDebug() << "~KlustersDoc()";
 
+    // Disconnect all signals between KlustersDoc and KlustersViews before
+    // any object starts being destroyed.  Views are parented to Qt widgets
+    // and deleted later by the parent-child hierarchy; if doc signals are
+    // still connected when those deletions run, Qt dispatches into a dead
+    // object and asserts "class destructor may have already run".
+    for (KlustersView* v : qAsConst(*viewList)) {
+        if (v) {
+            QObject::disconnect(this, nullptr, v, nullptr);
+            QObject::disconnect(v,    nullptr, this, nullptr);
+        }
+    }
     delete viewList;
 
     if(clusterColorList != nullptr){
@@ -268,7 +279,15 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.yaml)
 
-    QString spkFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".spk."+ electrodeGroupID;
+    // Prefer .spkD.N (stderiv pipeline) over .spk.N if it exists.
+    QString spkFileUrl;
+    {
+        const QString spkD = urlFileInfo.absolutePath() + QDir::separator()
+                             + baseName + ".spkD." + electrodeGroupID;
+        const QString spk  = urlFileInfo.absolutePath() + QDir::separator()
+                             + baseName + ".spk."  + electrodeGroupID;
+        spkFileUrl = QFile::exists(spkD) ? spkD : spk;
+    }
 
     QString cluFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".clu."+ electrodeGroupID;
     docUrl = cluFileUrl;
@@ -276,7 +295,15 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + urlFileInfo.fileName() + ".autosave";
 
 
-    QString fetFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".fet."+ electrodeGroupID;
+    // Prefer .fetD.N (stderiv pipeline) over .fet.N if it exists.
+    QString fetFileUrl;
+    {
+        const QString fetD = urlFileInfo.absolutePath() + QDir::separator()
+                             + baseName + ".fetD." + electrodeGroupID;
+        const QString fet  = urlFileInfo.absolutePath() + QDir::separator()
+                             + baseName + ".fet."  + electrodeGroupID;
+        fetFileUrl = QFile::exists(fetD) ? fetD : fet;
+    }
     //Parameter files
     // Parameter file: YAML only
     const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
@@ -680,12 +707,15 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // copies to the correct new location.
     if (isSaveAs) {
         QFileInfo newInfo(docUrl);
+        // Preserve .spkD/.fetD suffix for stderiv sessions.
+        const bool wasSpkD = m_origSpkPath.contains(QStringLiteral(".spkD."));
+        const bool wasFetD = m_origFetPath.contains(QStringLiteral(".fetD."));
         m_origSpkPath = newInfo.absolutePath() + QDir::separator()
-                        + baseName + ".spk." + electrodeGroupID;
+                        + baseName + (wasSpkD ? ".spkD." : ".spk.") + electrodeGroupID;
         m_origResPath = newInfo.absolutePath() + QDir::separator()
                         + baseName + ".res." + electrodeGroupID;
         m_origFetPath = newInfo.absolutePath() + QDir::separator()
-                        + baseName + ".fet." + electrodeGroupID;
+                        + baseName + (wasFetD ? ".fetD." : ".fet.") + electrodeGroupID;
     }
     commitAndRenewPending();
 
@@ -2544,7 +2574,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const QString resPath = pendingOrOrig(m_origResPath, m_pendingResPath);
     const QString fetPath = pendingOrOrig(m_origFetPath, m_pendingFetPath);
     const QString cluPath = dir + "/" + base + ".clu." + grpId;
-    const QString pcaPath = dir + "/" + base + ".pca." + grpId;
+    // Use pcaD.N for stderiv sessions (m_origSpkPath contains .spkD.),
+    // pca.N for raw sessions.
+    const bool isStderivRealign = m_origSpkPath.contains(QStringLiteral(".spkD."));
+    const QString pcaDPath_ra = dir + "/" + base + ".pcaD." + grpId;
+    const QString pcaPath = (isStderivRealign && QFileInfo::exists(pcaDPath_ra))
+                            ? pcaDPath_ra
+                            : dir + "/" + base + ".pca." + grpId;
 
     for (const QString& p : {spkPath, resPath, fetPath}) {
         if (!QFileInfo::exists(p)) {
@@ -2596,6 +2632,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
     } pca;
 
+    log << "PCA file: " << pcaPath
+        << (QFileInfo::exists(pcaPath) ? " [found]" : " [NOT FOUND]") << "\n";
+    if (isStderivRealign && !QFileInfo::exists(pcaDPath_ra))
+        log << "WARNING: .pcaD." << grpId << " not found — "
+            << "run ndm_pca_stderiv to generate it.\n";
+    emitFlush();
     if (QFileInfo::exists(pcaPath)) {
         FILE* fp = fopen(pcaPath.toLocal8Bit().constData(), "rb");
         if (fp) {
@@ -3019,8 +3061,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     {
         std::vector<int64_t> row(static_cast<size_t>(timeDim), int64_t{0});
 
-        if (pca.valid() && pca.nCh == nChan) {
-            // Per-channel PCA: each channel projected independently
+        // wavBuf is loaded from .spkD which already stores the stderiv-
+        // transformed waveform in channel-major layout [ch*nSamp+s].
+        // For stderiv sessions pca.nCh = nChan-1 (last channel is linearly
+        // dependent and excluded); for raw sessions pca.nCh = nChan.
+        // Either way, project wav[ch * nSamp + recShift + j2] directly —
+        // no second stderiv transform needed.
+        const bool canProject = pca.valid() &&
+            (isStderivRealign ? (pca.nCh == nChan - 1) : (pca.nCh == nChan));
+
+        if (canProject) {
             int outCol = 0;
             for (int ch = 0; ch < pca.nCh; ++ch) {
                 const double* E    = pca.evec[static_cast<size_t>(ch)].data();
@@ -3028,11 +3078,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 for (int c = 0; c < pca.nComp; ++c) {
                     double dot = 0.0;
                     for (int j2 = 0; j2 < pca.data2use; ++j2) {
-                        double raw = static_cast<double>(
+                        double x = static_cast<double>(
                             wav[static_cast<size_t>(
                                 ch * nSamp + pca.recShift + j2)]);
-                        const double x = pca.centered
-                                         ? (raw - mean[j2]) : raw;
+                        if (pca.centered) x -= mean[j2];
                         dot += E[j2 + c * pca.data2use] * x;
                     }
                     row[static_cast<size_t>(outCol++)] =
@@ -3045,7 +3094,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     extraFeats[static_cast<size_t>(csIdx)]
                                [static_cast<size_t>(k)];
         } else {
-            // No PCA available: copy existing feature values from in-memory Data
+            // PCA unavailable: copy existing feature values from in-memory Data
             const dataType spikeRow =
                 static_cast<dataType>(
                     gidx[static_cast<size_t>(csIdx)] + 1);  // 1-based
@@ -3149,14 +3198,50 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
                     if (fread(rawFrame.data(), sizeof(short),
                               rawFrame.size(), filF) == rawFrame.size()) {
-                        for (int s = 0; s < nSamp; ++s) {
-                            for (int ci = 0; ci < nChan; ++ci) {
-                                const int16_t v =
+                        // Build channel-major raw waveform for w[]
+                        std::vector<int16_t> rawCM(static_cast<size_t>(nChan * nSamp));
+                        for (int s = 0; s < nSamp; ++s)
+                            for (int ci = 0; ci < nChan; ++ci)
+                                rawCM[static_cast<size_t>(ci * nSamp + s)] =
                                     rawFrame[static_cast<size_t>(
                                         s * totalNbChan + groupChannels[ci])];
-                                spkRow[static_cast<size_t>(s * nChan + ci)] = v;
-                                w[static_cast<size_t>(ci * nSamp + s)] = v;
+                        if (isStderivRealign) {
+                            // Apply stderiv transform: spatial all-pairs derivative
+                            // then temporal first-difference.  Output updates both
+                            // spkRow (sample-major, for .spkD write) and w (channel-
+                            // major, so wavBuf stays in stderiv space for xcorr).
+                            std::vector<int16_t> sdWav(static_cast<size_t>(nSamp * nChan));
+                            std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
+                            for (int s = 0; s < nSamp; ++s) {
+                                int64_t sum = 0;
+                                for (int ci = 0; ci < nChan; ++ci)
+                                    sum += rawCM[static_cast<size_t>(ci * nSamp + s)];
+                                for (int ci = 0; ci < nChan; ++ci) {
+                                    const int v = rawCM[static_cast<size_t>(ci * nSamp + s)];
+                                    const int sd = nChan * v - static_cast<int>(sum);
+                                    const int16_t sdCl = static_cast<int16_t>(
+                                        std::max(-32768, std::min(32767, sd)));
+                                    const int diff = static_cast<int>(sdCl)
+                                        - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
+                                    sdPrev[static_cast<size_t>(ci)] = sdCl;
+                                    const int16_t tdv = static_cast<int16_t>(
+                                        std::max(-32768, std::min(32767, diff)));
+                                    sdWav[static_cast<size_t>(s * nChan + ci)] = tdv;
+                                    // Update wavBuf (channel-major) in stderiv space
+                                    w[static_cast<size_t>(ci * nSamp + s)] = tdv;
+                                }
                             }
+                            // spkRow: sample-major stderiv (what .spkD stores)
+                            spkRow = std::move(sdWav);
+                        } else {
+                            // Raw pipeline: sample-major for .spk, channel-major for w
+                            for (int s = 0; s < nSamp; ++s)
+                                for (int ci = 0; ci < nChan; ++ci) {
+                                    spkRow[static_cast<size_t>(s * nChan + ci)] =
+                                        rawCM[static_cast<size_t>(ci * nSamp + s)];
+                                    w[static_cast<size_t>(ci * nSamp + s)] =
+                                        rawCM[static_cast<size_t>(ci * nSamp + s)];
+                                }
                         }
                     } else {
                         for (int s = 0; s < nSamp; ++s)
@@ -3336,62 +3421,382 @@ void KlustersDoc::rejectLastRealign()
 // ---------------------------------------------------------------------------
 // KlustersDoc::nudgeClusterTimestamps
 // ---------------------------------------------------------------------------
+// Shift every spike in @p clusterId by @p deltaSamples raw samples.
+// Re-extracts waveforms from .fil at the new timestamp and reprojects onto
+// the .pca.N eigenvectors, applying the spatial+temporal derivative if the
+// PCA model has nCh == nChan - 1 (stderiv pipeline detection).
+// ---------------------------------------------------------------------------
 bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 {
     if (!clusteringData) return false;
     if (deltaSamples == 0) return true;
 
+    // ── Stop all in-flight WaveformThreads BEFORE any file writes ─────────
+    // A WaveformThread reads from m_pendingSpkPath (= spkFileName) without
+    // holding any lock around the fread call.  If we write to that file
+    // while the thread is mid-read we get a torn read → garbage waveforms
+    // or, when that data drives an array index, a segfault.  Stop all
+    // threads first so the file is idle before we touch it.
+    for (int i = 0; i < viewList->count(); ++i)
+        viewList->at(i)->stopAllViewThreads();
+
     if (m_pendingResPath.isEmpty()) {
         if (!initPendingFiles()) return false;
     }
 
-    const int timeDim  = clusteringData->timeDimension();
-    const dataType maxRaw = static_cast<dataType>(
-        clusteringData->maxDimension(timeDim));
+    Data& d              = *clusteringData;
+    const int   nChan    = d.nbOfChannels();
+    const int   nSamp    = d.nbSamplesPerWaveform();
+    const int   peakSamp0 = d.peakSampleIndex() - 1;  // 0-based
+    const int   timeDim  = d.timeDimension();
+    const int   nFeatCols = timeDim - 1;
+    const int   totalNbChan = d.getTotalNbChannels();
+    const QList<int>& groupChannels = d.getCurrentChannels();
 
-    SortableTable spkTable;
-    if (!clusteringData->spikePositions(clusterId, spkTable)) return false;
-    const int64_t N = static_cast<int64_t>(spkTable.nbOfColumns());
-    if (N == 0) return true;
+    // ── Load .pca.N / .pcaD.N model ──────────────────────────────────────
+    // .pcaD.N is written by process_pca when its output is .fetD.N.
+    // Its existence definitively identifies a stderiv session — no need
+    // for the nCh==nChan-1 heuristic.
+    // Header format (5 x int32): nCh, data2use, nComp, isCentered, recShift
+    struct PcaBasis {
+        int  nCh=0, data2use=0, nComp=0, recShift=0;
+        bool centered=false;
+        std::vector<std::vector<double>> means, evec;
+        bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
+    } pca;
 
+    // Derive session base: strip ".spkD.N" or ".spk.N" suffix.
+    const QString sessionBase = [&]() -> QString {
+        QString b = m_origSpkPath;
+        b = b.left(b.lastIndexOf(QLatin1Char('.')));  // strip .N
+        b = b.left(b.lastIndexOf(QLatin1Char('.')));  // strip .spk or .spkD
+        return b;
+    }();
+
+    // Determine stderiv session from m_origSpkPath — locked at document open.
+    // Do NOT re-detect from .pcaD.N existence: if the document was opened with
+    // .spk.N (raw) but ndm_pca_stderiv ran later and created .pcaD.N, using
+    // .pcaD.N as the flag would apply the stderiv transform to waveforms from
+    // .spk.N (already raw), producing double-transformed waveforms.  The
+    // document's pipeline identity is definitively encoded in whether
+    // m_origSpkPath contains ".spkD." or ".spk.".
+    const bool isStderivSession = m_origSpkPath.contains(QStringLiteral(".spkD."));
+
+    // Prefer .pcaD.N for stderiv sessions (written by ndm_pca_stderiv), fall
+    // back to .pca.N for raw sessions.
+    const QString pcaDPath = sessionBase + QStringLiteral(".pcaD.") + electrodeGroupID;
+    const QString pcaPath  = sessionBase + QStringLiteral(".pca.")  + electrodeGroupID;
+    const QString chosenPca = (isStderivSession && QFileInfo::exists(pcaDPath))
+                               ? pcaDPath : pcaPath;
+
+    if (QFileInfo::exists(chosenPca)) {
+        FILE* fp = fopen(chosenPca.toLocal8Bit().constData(), "rb");
+        if (fp) {
+            // 5-word header: nCh, data2use, nComp, isCentered, recShift
+            int32_t hdr[5] = {};
+            if (fread(hdr, sizeof(int32_t), 5, fp) == 5) {
+                pca.nCh=hdr[0]; pca.data2use=hdr[1]; pca.nComp=hdr[2];
+                pca.centered=(hdr[3]!=0); pca.recShift=hdr[4];
+                if (pca.nCh>0 && pca.nCh<=64 && pca.data2use>0 && pca.nComp>0) {
+                    pca.means.resize(static_cast<size_t>(pca.nCh));
+                    pca.evec .resize(static_cast<size_t>(pca.nCh));
+                    bool ok=true;
+                    for (int ch=0; ch<pca.nCh && ok; ++ch) {
+                        pca.means[static_cast<size_t>(ch)].resize(static_cast<size_t>(pca.data2use));
+                        ok=(fread(pca.means[static_cast<size_t>(ch)].data(),8,
+                                  static_cast<size_t>(pca.data2use),fp)
+                            == static_cast<size_t>(pca.data2use));
+                    }
+                    for (int ch=0; ch<pca.nCh && ok; ++ch) {
+                        const size_t evSz=static_cast<size_t>(pca.data2use*pca.nComp);
+                        pca.evec[static_cast<size_t>(ch)].resize(evSz);
+                        ok=(fread(pca.evec[static_cast<size_t>(ch)].data(),8,evSz,fp)==evSz);
+                    }
+                    if (!ok) pca=PcaBasis{};
+                } else { pca=PcaBasis{}; }
+            }
+            fclose(fp);
+        }
+    }
+
+    // isStderivSession is set above: true iff .pcaD.N exists.
+    const bool isStderiv = isStderivSession && pca.valid();
+
+    // ── Open .fil/.dat for waveform re-extraction ─────────────────────────
+    // sessionBase is already the bare session path (no .spk/.spkD/.N suffix).
+    QString filPath;
+    if (QFileInfo::exists(sessionBase + QStringLiteral(".fil")))
+        filPath = sessionBase + QStringLiteral(".fil");
+    else
+        filPath = sessionBase + QStringLiteral(".dat");
+    FILE* filF = fopen(filPath.toLocal8Bit().constData(), "rb");
+    const int64_t totalSamples = filF
+        ? (static_cast<int64_t>(QFileInfo(filPath).size())
+           / (static_cast<int64_t>(sizeof(short)) * totalNbChan))
+        : 0LL;
+
+    // Upper bound for timestamps: last sample at which a full waveform window
+    // fits — i.e. the peak can sit at peakSamp0 and the window doesn't
+    // run past the end of the recording.
+    const int64_t maxValidTs = totalSamples > 0
+        ? (totalSamples - static_cast<int64_t>(nSamp)
+           + static_cast<int64_t>(peakSamp0))
+        : static_cast<int64_t>(d.maxDimension(d.timeDimension()));
+
+    // ── Open pending files for writing ────────────────────────────────────
+    FILE* spkW = fopen(m_pendingSpkPath.toLocal8Bit().constData(), "r+b");
     FILE* resW = fopen(m_pendingResPath.toLocal8Bit().constData(), "r+b");
     FILE* fetW = fopen(m_pendingFetPath.toLocal8Bit().constData(), "r+b");
-    if (!resW || !fetW) {
+    if (!resW || !fetW || !spkW) {
+        if (spkW) fclose(spkW);
         if (resW) fclose(resW);
         if (fetW) fclose(fetW);
+        if (filF) fclose(filF);
         return false;
     }
+
+    // ── Per-spike waveform re-extraction helper ───────────────────────────
+    // Reads raw waveform from .fil into channel-major layout [ch*nSamp+s].
+    const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
+
+    auto extractWaveform = [&](int64_t ts, std::vector<int16_t>& wav) -> bool {
+        wav.assign(static_cast<size_t>(nChan * nSamp), 0);
+        if (!filF) return false;
+        const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
+        if (startSample < 0 || startSample + nSamp > totalSamples) return false;
+        const off_t rawOff = static_cast<off_t>(startSample)
+                           * static_cast<off_t>(totalNbChan) * 2;
+        if (fseeko(filF, rawOff, SEEK_SET) != 0) return false;
+        std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
+        if (fread(rawFrame.data(), 2, rawFrame.size(), filF) != rawFrame.size())
+            return false;
+        for (int s = 0; s < nSamp; ++s)
+            for (int ci = 0; ci < nChan; ++ci)
+                wav[static_cast<size_t>(ci * nSamp + s)] =
+                    rawFrame[static_cast<size_t>(s * totalNbChan
+                             + groupChannels[ci])];
+        return true;
+    };
+
+    // ── Stderiv transform: matches ndm_extractspikes_stderiv exactly ──────
+    // Returns transformed waveform in sample-major layout [s*nChan+ch]
+    // (ALL nChan channels, including the linearly-dependent last one).
+    // This is what ndm_extractspikes_stderiv writes to .spk.
+    auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
+                                     std::vector<int16_t>& out) {
+        // wavCM: channel-major [ch*nSamp+s]
+        // out:   sample-major  [s*nChan+ch]
+        out.resize(static_cast<size_t>(nSamp * nChan));
+
+        // Step 1: spatial all-pairs derivative (integer, clamped) into out
+        for (int s = 0; s < nSamp; ++s) {
+            int sum = 0;
+            for (int ci = 0; ci < nChan; ++ci)
+                sum += wavCM[static_cast<size_t>(ci * nSamp + s)];
+            for (int ci = 0; ci < nChan; ++ci) {
+                const int val = wavCM[static_cast<size_t>(ci * nSamp + s)];
+                int sd = nChan * val - sum;
+                if (sd >  32767) sd =  32767;
+                if (sd < -32768) sd = -32768;
+                out[static_cast<size_t>(s * nChan + ci)] = static_cast<int16_t>(sd);
+            }
+        }
+
+        // Step 2: temporal first-difference in-place
+        // Boundary condition: prev = 0 (matches ndm_extractspikes_stderiv)
+        std::vector<int16_t> prev(static_cast<size_t>(nChan), 0);
+        for (int s = 0; s < nSamp; ++s) {
+            int16_t* row = out.data() + s * nChan;
+            for (int ci = 0; ci < nChan; ++ci) {
+                const int16_t sd  = row[ci];
+                int diff = static_cast<int>(sd)
+                         - static_cast<int>(prev[static_cast<size_t>(ci)]);
+                if (diff >  32767) diff =  32767;
+                if (diff < -32768) diff = -32768;
+                prev[static_cast<size_t>(ci)] = sd;  // save SD, not diff
+                row[ci] = static_cast<int16_t>(diff);
+            }
+        }
+    };
+
+    // ── Feature projection helper ─────────────────────────────────────────
+    // wav: channel-major [ch*nSamp+s] — raw OR stderiv depending on isStderiv.
+    // Returns full feature row (nFeatCols int64_t + timestamp placeholder).
+    auto makeFetRow = [&](int64_t ts,
+                          const std::vector<int16_t>& wavRaw,
+                          dataType spikeRow) -> std::vector<int64_t>
+    {
+        std::vector<int64_t> row(static_cast<size_t>(timeDim), 0LL);
+        if (!pca.valid()) return row;
+
+        // For stderiv mode: apply spatial+temporal derivative to raw waveform.
+        // The derivative is applied in sample-major [s*nChan+ci] space then
+        // projected using channel-major indexing into the .pca.N eigenvectors.
+        // We build a compact derivative buffer in sample-major layout.
+        std::vector<double> xform;  // [s * pca.nCh + ch] after derivative
+        if (isStderiv) {
+            // Apply the exact same transform as ndm_extractspikes_stderiv
+            // (integer arithmetic, all nChan channels).
+            // Then use first pca.nCh = nChan-1 channels for projection
+            // (last channel is linearly dependent and excluded from PCA).
+            std::vector<int16_t> sdWav;
+            applyStderivTransform(wavRaw, sdWav);  // sample-major [s*nChan+ch]
+            const int kCh = pca.nCh;  // = nChan - 1
+            xform.resize(static_cast<size_t>(nSamp * kCh));
+            for (int s = 0; s < nSamp; ++s)
+                for (int ci = 0; ci < kCh; ++ci)
+                    xform[static_cast<size_t>(s * kCh + ci)] =
+                        static_cast<double>(sdWav[static_cast<size_t>(s*nChan+ci)]);
+        }
+
+        int outCol = 0;
+        for (int ch = 0; ch < pca.nCh; ++ch) {
+            const double* E    = pca.evec[static_cast<size_t>(ch)].data();
+            const double* mean = pca.means[static_cast<size_t>(ch)].data();
+            for (int c = 0; c < pca.nComp; ++c) {
+                double dot = 0.0;
+                for (int j2 = 0; j2 < pca.data2use; ++j2) {
+                    double x;
+                    if (isStderiv) {
+                        x = xform[static_cast<size_t>(
+                            (pca.recShift + j2) * pca.nCh + ch)];
+                    } else {
+                        x = static_cast<double>(
+                            wavRaw[static_cast<size_t>(
+                                ch * nSamp + pca.recShift + j2)]);
+                    }
+                    if (pca.centered) x -= mean[j2];
+                    dot += E[j2 + c * pca.data2use] * x;
+                }
+                row[static_cast<size_t>(outCol++)] = std::llround(dot);
+            }
+        }
+
+        // Extra feature columns (non-PCA, e.g. peak amplitude): preserve
+        // the existing in-memory values rather than writing zeros.
+        const int nPcaFeats = pca.nCh * pca.nComp;
+        for (int col = nPcaFeats; col < nFeatCols; ++col)
+            row[static_cast<size_t>(col)] =
+                static_cast<int64_t>(clusteringData->featureValue(
+                    spikeRow, static_cast<int>(col + 1)));
+
+        row[static_cast<size_t>(nFeatCols)] = ts;
+        return row;
+    };
+
+    // ── Main loop ─────────────────────────────────────────────────────────
+    SortableTable spkTable;
+    if (!clusteringData->spikePositions(clusterId, spkTable)) {
+        fclose(spkW); fclose(resW); fclose(fetW);
+        if (filF) fclose(filF);
+        return false;
+    }
+    const int64_t N = static_cast<int64_t>(spkTable.nbOfColumns());
 
     for (int64_t i = 0; i < N; ++i) {
         const dataType row  = static_cast<dataType>(
             spkTable(1, static_cast<dataType>(i + 1)));
         const int64_t  pos0 = static_cast<int64_t>(row) - 1;
 
-        const dataType oldTs = clusteringData->featureValue(row, timeDim);
+        // Read the authoritative old timestamp from .res.pending rather than
+        // the .fetD copy in the features array.  The .fetD timestamp column may
+        // have been zeroed by an earlier buggy build (gotWav=false wrote zeros);
+        // .res.pending is always written atomically per spike and is safe to use.
+        int64_t oldTs64 = 0;
+        fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+               SEEK_SET);
+        if (fread(&oldTs64, sizeof(int64_t), 1, resW) != 1)
+            oldTs64 = static_cast<int64_t>(clusteringData->featureValue(row, timeDim));
+        const dataType oldTs = static_cast<dataType>(oldTs64);
         dataType newTs = oldTs + static_cast<dataType>(deltaSamples);
-        if (newTs < 0)      newTs = 0;
-        if (newTs > maxRaw) newTs = maxRaw;
+        if (newTs < 0) newTs = 0;
+        if (maxValidTs > 0 && newTs > static_cast<dataType>(maxValidTs))
+            newTs = static_cast<dataType>(maxValidTs);
 
-        const int64_t resTs64 = static_cast<int64_t>(newTs);
+        const int64_t ts64 = static_cast<int64_t>(newTs);
 
-        fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)), SEEK_SET);
-        fwrite(&resTs64, sizeof(int64_t), 1, resW);
+        // Re-extract waveform at new timestamp
+        std::vector<int16_t> wav;
+        const bool gotWav = extractWaveform(ts64, wav);
 
-        const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
-            + static_cast<off_t>(pos0) * static_cast<off_t>(timeDim)
-              * static_cast<off_t>(sizeof(int64_t))
-            + static_cast<off_t>(timeDim - 1) * static_cast<off_t>(sizeof(int64_t));
-        fseeko(fetW, fetOff, SEEK_SET);
-        fwrite(&resTs64, sizeof(int64_t), 1, fetW);
+        // Write .spk at new position
+        if (gotWav) {
+            fseeko(spkW, static_cast<off_t>(pos0) * static_cast<off_t>(bytesPerSpike),
+                   SEEK_SET);
+            if (isStderiv) {
+                // stderiv pipeline: .spk stores transformed waveform
+                // (all nChan channels, sample-major, matching ndm_extractspikes_stderiv)
+                std::vector<int16_t> spkRow;
+                applyStderivTransform(wav, spkRow);
+                fwrite(spkRow.data(), 2, static_cast<size_t>(nChan * nSamp), spkW);
+            } else {
+                // raw pipeline: convert channel-major → sample-major
+                std::vector<int16_t> spkRow(static_cast<size_t>(nChan * nSamp));
+                for (int s = 0; s < nSamp; ++s)
+                    for (int ch = 0; ch < nChan; ++ch)
+                        spkRow[static_cast<size_t>(s * nChan + ch)] =
+                            wav[static_cast<size_t>(ch * nSamp + s)];
+                fwrite(spkRow.data(), 2, static_cast<size_t>(nChan * nSamp), spkW);
+            }
+        }
 
+        // Write .res
+        fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+               SEEK_SET);
+        fwrite(&ts64, sizeof(int64_t), 1, resW);
+
+        // Reproject and write .fet — only when waveform was successfully read.
+        // When gotWav=false (spike at recording boundary or .fil unreadable),
+        // preserve the existing feature values rather than zeroing them out.
+        if (gotWav) {
+            const auto fetRow = makeFetRow(ts64, wav, row);
+            if (!fetRow.empty()) {
+                // Update on-disk .fetD
+                const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
+                    + static_cast<off_t>(pos0) * static_cast<off_t>(timeDim)
+                      * static_cast<off_t>(sizeof(int64_t));
+                fseeko(fetW, fetOff, SEEK_SET);
+                fwrite(fetRow.data(), sizeof(int64_t), static_cast<size_t>(timeDim), fetW);
+
+                // Update in-memory feature table (PCA dims only)
+                if (pca.valid()) {
+                    QList<dataType> vals;
+                    vals.reserve(nFeatCols);
+                    for (int col = 0; col < nFeatCols; ++col)
+                        vals.append(static_cast<dataType>(fetRow[static_cast<size_t>(col)]));
+                    clusteringData->updateFeatureRow(row, vals);
+                }
+            }
+        }
+        // Always update the timestamp (in-memory + .res), even if waveform
+        // extraction failed — the timestamp itself is valid regardless.
         clusteringData->updateTimestamp(row, newTs);
     }
 
-    fclose(resW);
-    fclose(fetW);
+    fclose(spkW); fclose(resW); fclose(fetW);
+    if (filF) fclose(filF);
 
     setModified(true);
-    forceClusterRefresh(clusterId);
-    refreshAllViews();
+
+    // Recompute per-dimension min/max so the scatter view world-window
+    // axes are correct after feature values have been updated.
+    clusteringData->minMaxDimensionCalculation(QList<int>{clusterId});
+
+    // Invalidate caches so the next thread launch re-reads from disk/memory.
+    invalidateWaveformCache(clusterId);
+    invalidateCorrelogramCache(clusterId);
+
+    // Force every ClusterView to recalculate its world window.
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* v = viewList->at(i);
+        v->updateDimensions(v->abscissaDimension(), v->ordinateDimension());
+    }
+
+    // For each view showing this cluster: set REDRAW mode on the scatter
+    // (ClusterView) to erase ghost points, then relaunch the WaveformThread
+    // and CorrelogramThread against the updated data.
+    for (int i = 0; i < viewList->count(); ++i)
+        viewList->at(i)->invalidateClusterDisplay(clusterId);
+
     return true;
 }
