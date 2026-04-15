@@ -45,7 +45,11 @@ static const char *VERSION = "process_pca_stderiv 1.0";
 // record[ch] is one time-sample across all channels.
 // chanList[ci] = global channel index for local position ci within the group.
 // For PCA, the "group" is all nChan channels.
-enum SdiffOrder { SDIFF_NONE=0, SDIFF_FIRST=1, SDIFF_LAPLACIAN=2, SDIFF_ALLPAIRS=3 };
+enum SdiffOrder { SDIFF_NONE=0, SDIFF_FIRST=1, SDIFF_LAPLACIAN=2,
+                  SDIFF_ALLPAIRS=3, SDIFF_PASS=4 };
+// SDIFF_PASS: no transform — just read nChan and write nOutChan
+// (drops dependent channel if order was 1 or 3 at extraction time).
+// Use when input already contains the transformed waveform (.spkD).
 
 static double computeSDiff(const short *record, int idx, int nChan, SdiffOrder order)
 {
@@ -103,7 +107,10 @@ int main(int argc, char *argv[])
     }
 
     const SdiffOrder order = static_cast<SdiffOrder>(
-        (orderArg >= 0 && orderArg <= 3) ? orderArg : 3);
+        (orderArg >= 0 && orderArg <= 4) ? orderArg : 3);
+    // SDIFF_PASS (4): input is already transformed; just do channel-reduction.
+    // Use -D <origOrder> to specify the original extraction order so we know
+    // whether to drop the last (dependent) channel.
 
     FILE *in = inFile.empty() ? stdin : fopen(inFile.c_str(), "rb");
     if(!in) {
@@ -121,7 +128,14 @@ int main(int argc, char *argv[])
     // process_pca sees only the independent dimensions.
     //   order 1 (first-diff):   s[n-1] = -s[n-2]
     //   order 3 (all-pairwise): sum(s) = 0  →  s[n-1] = -sum(s[0..n-2])
-    const bool dropLast = (order == SDIFF_FIRST || order == SDIFF_ALLPAIRS);
+    // For SDIFF_PASS, drop last channel if the original extraction used
+// an order that produces a linearly dependent channel (1 or 3).
+// For other modes, drop based on current order.
+const SdiffOrder dropCheckOrder = (order == SDIFF_PASS)
+    ? static_cast<SdiffOrder>((orderArg == 4) ? 3 : 3)  // spkD default: allpairs
+    : order;
+const bool dropLast = (dropCheckOrder == SDIFF_FIRST ||
+                       dropCheckOrder == SDIFF_ALLPAIRS);
     const int  nOutChan = dropLast ? nChan - 1 : nChan;
     if(nOutChan < 1) {
         std::cerr << VERSION << " error: need >= 2 channels for spatial derivative\n";
@@ -140,6 +154,20 @@ int main(int argc, char *argv[])
             std::cerr << VERSION << " warning: truncated spike (" << nr
                       << " of " << spkPts << " shorts)\n";
             break;
+        }
+
+        // SDIFF_PASS: no transform, just channel-reduction.
+        if(order == SDIFF_PASS) {
+            if(dropLast) {
+                for(int t = 0; t < wLen; t++)
+                    fwrite(rawSpike.data() + t * nChan, sizeof(short),
+                           static_cast<size_t>(nOutChan), stdout);
+            } else {
+                fwrite(rawSpike.data(), sizeof(short),
+                       static_cast<size_t>(spkPts), stdout);
+            }
+            ++nSpikes;
+            continue;
         }
 
         // Step 1: spatial derivative — each time-sample t, across channels.

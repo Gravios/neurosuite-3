@@ -155,9 +155,19 @@ void SpikeRealignDialog::buildUi()
         nbSpikes = static_cast<int>(st.nbOfRows());
     m_spikeCountLabel->setText(QString::number(nbSpikes));
 
-    QString pcaPath = m_doc.documentDirectory() + QStringLiteral("/")
-                    + m_doc.documentBaseName()   + QStringLiteral(".pca.")
-                    + m_doc.currentElectrodeGroupID();
+    // Prefer .pcaD.N for stderiv sessions, .pca.N otherwise.
+    const QString grpId  = m_doc.currentElectrodeGroupID();
+    const QString pcaDPath = m_doc.documentDirectory() + QStringLiteral("/")
+                           + m_doc.documentBaseName()  + QStringLiteral(".pcaD.")
+                           + grpId;
+    const QString pcaRawPath = m_doc.documentDirectory() + QStringLiteral("/")
+                             + m_doc.documentBaseName()  + QStringLiteral(".pca.")
+                             + grpId;
+    const bool isStderiv = m_doc.isStderivSession();
+    const QString pcaPath = (isStderiv && QFileInfo::exists(pcaDPath))
+                           ? pcaDPath
+                           : (isStderiv ? pcaDPath   // show expected path even when missing
+                                        : pcaRawPath);
 
     bool pcaOk = QFileInfo::exists(pcaPath);
     if (pcaOk)
@@ -167,9 +177,13 @@ void SpikeRealignDialog::buildUi()
             tr("<font color='red'>NOT FOUND: %1</font>").arg(pcaPath));
 
     m_startBtn->setEnabled(pcaOk && nbSpikes > 0);
-    if (!pcaOk)
+    if (!pcaOk) {
+        const QString ext = isStderiv ? QStringLiteral(".pcaD.") : QStringLiteral(".pca.");
+        const QString tool = isStderiv ? QStringLiteral("ndm_pca_stderiv")
+                                       : QStringLiteral("ndm_pca");
         desc->setText(desc->text() +
             tr("<br><br><b><font color='red'>Cannot start: the PCA eigenvector "
-               "file (.pca.%1) was not found. Run ndm_pca first.</font></b>")
-            .arg(m_doc.currentElectrodeGroupID()));
+               "file (%1%2) was not found. Run %3 first.</font></b>")
+            .arg(ext).arg(grpId).arg(tool));
+    }
 }

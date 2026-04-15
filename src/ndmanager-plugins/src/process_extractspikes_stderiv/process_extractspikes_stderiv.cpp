@@ -32,6 +32,7 @@
 #include "process_extractspikes_stderiv.h"
 
 #include <algorithm>
+#include <numeric>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -1442,6 +1443,19 @@ int main(int argc, char *argv[])
                                 ? halfSearch    // clipped: nominal offset
                                 : extractStart; // refined peak
 
+            // Update .res timestamp to the REFINED peak position.
+            // resTimestamps currently holds the detection timestamp (stderiv
+            // peak). The waveform is extracted with the peak at timeBeforeSpike
+            // samples from copyStart, so the refined recording position is:
+            //   refinedTs = nominalTs - halfSearch + copyStart
+            // Using the detection ts for nudging would shift by
+            // (1 + per-spike refinement offset) instead of exactly 1 sample.
+            {
+                const int64_t nominalTs = resTimestamps[ev.grp][ev.origIdx];
+                resTimestamps[ev.grp][ev.origIdx] =
+                    nominalTs - (int64_t)halfSearch + (int64_t)copyStart;
+            }
+
             // Step 1: extract raw nCG-channel waveform into compact buffer.
             std::vector<short> rawWav(static_cast<size_t>(args.spikeLength * nCG));
             for(int s = 0; s < args.spikeLength; s++) {
@@ -1607,6 +1621,75 @@ int main(int argc, char *argv[])
             }
         }
     }
+    // ── Sort spikes by refined timestamp ──────────────────────────────────
+    // Peak refinement may have shifted per-spike timestamps by up to
+    // ±halfSearch samples. Re-sort both timestamps and waveforms together
+    // so the output .res and .spk files are in ascending time order.
+    for(int grp = 0; grp < nbGroups; grp++) {
+        if(channelNb_grp[grp] == 0) continue;
+        const int nCG    = channelNb_grp[grp];
+        const int wavLen = args.spikeLength * nCG;
+        vector<int64_t>& ts = resTimestamps[grp];
+        const int n = (int)ts.size();
+        if(n < 2) continue;
+
+        // Build sort permutation
+        vector<int> idx(n);
+        std::iota(idx.begin(), idx.end(), 0);
+        std::sort(idx.begin(), idx.end(),
+                  [&ts](int a, int b){ return ts[a] < ts[b]; });
+
+        // Check if already sorted
+        bool sorted = true;
+        for(int i = 0; i < n && sorted; i++) sorted = (idx[i] == i);
+        if(sorted) continue;
+
+        // Apply permutation to timestamps
+        vector<int64_t> tsSorted(n);
+        for(int i = 0; i < n; i++) tsSorted[i] = ts[idx[i]];
+        ts = std::move(tsSorted);
+
+        // Write sorted .res
+        FILE *rf = fopen(resFileNames[static_cast<size_t>(grp)].c_str(), "wb");
+        if(rf) {
+            fwrite(ts.data(), sizeof(int64_t), (size_t)n, rf);
+            fclose(rf);
+        }
+
+        // Apply same permutation to waveforms
+        if(useInMemory[grp]) {
+            vector<short>& wbuf = allWaveforms[grp];
+            vector<short> wSorted((size_t)n * wavLen);
+            for(int i = 0; i < n; i++)
+                std::copy(wbuf.data() + (size_t)idx[i] * wavLen,
+                          wbuf.data() + (size_t)idx[i] * wavLen + wavLen,
+                          wSorted.data() + (size_t)i * wavLen);
+            wbuf = std::move(wSorted);
+            // Write sorted waveforms back to the output .spkD file
+            FILE *sf = fopen(spkFileNames[static_cast<size_t>(grp)].c_str(), "wb");
+            if(sf) {
+                fwrite(wbuf.data(), sizeof(short), (size_t)n * wavLen, sf);
+                fclose(sf);
+            }
+        } else {
+            // Re-read, permute, rewrite .spk
+            FILE *sf = fopen(spkFileNames[static_cast<size_t>(grp)].c_str(), "rb");
+            if(sf) {
+                vector<short> raw((size_t)n * wavLen);
+                { size_t _r = fread(raw.data(), sizeof(short),
+                                    (size_t)n * wavLen, sf); (void)_r; }
+                fclose(sf);
+                sf = fopen(spkFileNames[static_cast<size_t>(grp)].c_str(), "wb");
+                if(sf) {
+                    for(int i = 0; i < n; i++)
+                        fwrite(raw.data() + (size_t)idx[i] * wavLen,
+                               sizeof(short), wavLen, sf);
+                    fclose(sf);
+                }
+            }
+        }
+    }
+
     if(totalRejected > 0)
         cerr << "  Total flat/cutout spikes removed: " << totalRejected << "\n";
 

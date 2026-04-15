@@ -110,7 +110,8 @@ public:
     /**Informs of the existance of an Error Matrix View in the application.
     * @return true if an Error Matrix View exists in the application, false otherwise.
     */
-    bool isExistAnErrorMatrix() const {return errorMatrixExists;}
+    bool isExistAnErrorMatrix()   const {return errorMatrixExists;}
+    bool isExistATemplateMatrix() const {return templateMatrixExists;}
 
     /**Updates the dimension spin boxes.
     * @param dimensionX absciss dimension.
@@ -291,6 +292,7 @@ private Q_SLOTS:
     /** Shift timestamps of the selected cluster by ±1 sample. */
     void slotNudgeTimestampMinus();
     void slotNudgeTimestampPlus();
+
     /**Triggers an update of the dimensions due to a change of the ordinate dimension.*/
     void slotUpdateDimensionY(int dimensionYs);
     /** Closes the display and if it is the last one asks for saving, then closes the actual file and window.*/
@@ -622,6 +624,13 @@ private:
 
     /**Boolean used to prevent the trigger of the spin box update during initialization.*/
     bool isInit;
+    /** True while a nudge is executing OR within the post-nudge suppression
+     *  window.  Prevents queued autorepeat KeyPress events from firing
+     *  additional nudges after a long (multi-second) nudge loop. */
+    bool m_nudgeInProgress{false};
+    /** Timestamp of when the last nudge COMPLETED, used to suppress
+     *  autorepeat events that were queued during the nudge loop. */
+    QElapsedTimer m_lastNudgeTimer;
 
     /**The current number of undo used to enable/disable the the undo action.*/
     int currentNbUndo;
@@ -893,6 +902,7 @@ private:
 
     /**True if a Error Martix exists, false otherwise.*/
     bool errorMatrixExists;
+    bool templateMatrixExists;
 
     /**The path of the currently open document.*/
     QString filePath;

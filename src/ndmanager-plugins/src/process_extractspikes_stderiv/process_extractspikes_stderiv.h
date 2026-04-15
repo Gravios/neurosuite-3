@@ -21,7 +21,7 @@
 #define GROUP_SEPARATOR     ":"
 #define CHANNEL_SEPARATOR   ","
 #define SPIKE_TIME_OUT_EXT  "res"
-#define SPIKE_REC_OUT_EXT   "spk"
+#define SPIKE_REC_OUT_EXT   "spkD"
 
 #include <cstdint>
 #include <cstdio>

@@ -392,12 +392,19 @@ int main(int argc,char *argv[])
 		if (pcaPath.size() >= tmpSuffix.size() &&
 		    pcaPath.compare(pcaPath.size()-tmpSuffix.size(), tmpSuffix.size(), tmpSuffix) == 0)
 			pcaPath.erase(pcaPath.size()-tmpSuffix.size());
-		// Replace .fet. with .pca.
+		// Replace .fetD. with .pcaD., or .fet. with .pca.
+		const std::string fetDStr(".fetD.");
+		const std::string pcaDStr(".pcaD.");
 		const std::string fetStr(".fet.");
 		const std::string pcaStr(".pca.");
-		size_t pos = pcaPath.rfind(fetStr);
+		size_t pos = pcaPath.rfind(fetDStr);
 		if (pos != std::string::npos)
-			pcaPath.replace(pos, fetStr.size(), pcaStr);
+			pcaPath.replace(pos, fetDStr.size(), pcaDStr);
+		else {
+			pos = pcaPath.rfind(fetStr);
+			if (pos != std::string::npos)
+				pcaPath.replace(pos, fetStr.size(), pcaStr);
+		}
 
 		FILE *pcaFile = fopen(pcaPath.c_str(), "wb");
 		if (!pcaFile) {

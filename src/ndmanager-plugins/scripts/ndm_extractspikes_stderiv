@@ -74,7 +74,7 @@ nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 
 for group in $(seq 1 $nElectrodeGroups)
 do
-    output=$session.spk.$group
+    output=$session.spkD.$group
     if ! outputs_exist $output
     then
         electrodeGroups="$electrodeGroups $group"
@@ -177,6 +177,6 @@ declare -i i=0
 for group in $electrodeGroups
 do
     i=$i+1
-    mv $session-stderiv-tmp.res.$i $session.res.$group
-    mv $session-stderiv-tmp.spk.$i $session.spk.$group
+    mv $session-stderiv-tmp.res.$i  $session.res.$group
+    mv $session-stderiv-tmp.spkD.$i $session.spkD.$group
 done
