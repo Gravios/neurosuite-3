@@ -167,6 +167,7 @@ KlustersApp::KlustersApp()
 
 KlustersApp::~KlustersApp()
 {
+    NS3_DIAG() << "[~KlustersApp] entering";
     //Clear the memory by deleting all the pointers
     delete doc;
     delete saveThread;
@@ -633,6 +634,10 @@ void KlustersApp::createMenus()
 
     QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
+    QAction *shortcuts = helpMenu->addAction(tr("Keyboard Shortcuts…"));
+    shortcuts->setShortcut(Qt::Key_H);
+    connect(shortcuts, &QAction::triggered, this, &KlustersApp::slotShowShortcutHelp);
+    helpMenu->addSeparator();
     QAction *handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
     connect(handbook,&QAction::triggered, this,&KlustersApp::slotHanbook);
@@ -857,8 +862,6 @@ void KlustersApp::initSelectionBoxes(){
     connect(nudgePlusAction, &QAction::triggered,
             this, &KlustersApp::slotNudgeTimestampPlus);
 
-    paramBar->addAction(nudgeMinusAction);
-    paramBar->addAction(nudgePlusAction);
 }
 
 void KlustersApp::executePreferencesDlg(){
@@ -1016,6 +1019,24 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         const bool ctrlHeld = ke->modifiers() & Qt::ControlModifier;
+
+        // "H" — keyboard shortcut help dialog
+        if(ke->key() == Qt::Key_H && ke->modifiers() == Qt::NoModifier){
+            slotShowShortcutHelp();
+            return true;
+        }
+        // "1" — new cluster mode
+        if(ke->key() == Qt::Key_1 && ke->modifiers() == Qt::NoModifier
+           && !isInit && doc && activeView()){
+            slotSingleNew();
+            return true;
+        }
+        // "2" — split clusters mode
+        if(ke->key() == Qt::Key_2 && ke->modifiers() == Qt::NoModifier
+           && !isInit && doc && activeView()){
+            slotMultipleNew();
+            return true;
+        }
 
         // ── Tab / Shift+Tab ─────────────────────────────────────────────────
         // Cycle: cluster list  →  tab area (single stop, Overview if entering)
@@ -1270,8 +1291,16 @@ void KlustersApp::initDisplay(){
     if(prefDialog != 0L)
         prefDialog->enableChannelSettings(true);
 
-    //No clusters are shown by default.
+    // Pre-select the last real cluster (skip noise=0 and artefact=1)
+    // so the waveform view shows something useful on startup.
     QList<int>* clusterList = new QList<int>();
+    {
+        const QList<dataType> ids = doc->data().clusterIds();
+        // ids is sorted ascending (QMap keys); find last id > 1
+        for (int i = static_cast<int>(ids.size()) - 1; i >= 0; --i) {
+            if (ids[i] > 1) { clusterList->append(static_cast<int>(ids[i])); break; }
+        }
+    }
     
     //Update the dimension and start spine boxes
     dimensionX->setValue(1);
@@ -1307,6 +1336,18 @@ void KlustersApp::initDisplay(){
     clusterPalette->createClusterList(doc);
     clusterPalette->selectItems(*clusterList);
 
+    // Once the view is shown and the WaveformThread has loaded the first
+    // cluster, auto-scale the waveform amplitude. A 350 ms delay is enough
+    // for the thread to complete on a warm cache; on a cold cache the
+    // thread will still be running and autoFitAmplitude() will be a no-op
+    // (no spikes available yet) — acceptable, user can press U to refresh.
+    if (!clusterList->isEmpty()) {
+        KlustersView* v = view; // capture for lambda
+        QPointer<KlustersView> vp = v;
+        QTimer::singleShot(350, this, [vp]{
+            if (vp) vp->autoFitWaveformsAmplitude();
+        });
+    }
 
     //forbit docking abilities of clusterPanel itself
     clusterPanel->setAllowedAreas(Qt::NoDockWidgetArea);
@@ -1713,7 +1754,7 @@ bool KlustersApp::queryExit()
 {
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     //If the saveThread has not finish, wait until id done
-    while(!saveThread->wait()){qDebug()<<"in queryExit";};
+    while(!saveThread->wait()){NS3_DIAG()<<"in queryExit";};
     QApplication::restoreOverrideCursor();
 
     return true;
@@ -2065,6 +2106,25 @@ void KlustersApp::closeEvent(QCloseEvent *event)
     settings.setValue("windowState", saveState());
     settings.endGroup();
     settings.sync();
+
+    // Disconnect ALL signals to/from this object and every KlustersView
+    // BEFORE QMainWindow::closeEvent triggers widget destruction.
+    // This must happen here — by the time ~KlustersApp runs, Qt's
+    // destruction machinery has already begun.
+    NS3_DIAG() << "[closeEvent] disconnecting all";
+    disconnect();
+    if (doc) {
+        // Disconnect all doc<->view and doc<->view-child connections.
+        const QList<KlustersView*> views = doc->viewListCopy();
+        for (KlustersView* v : views) {
+            if (!v) continue;
+            QObject::disconnect(doc, nullptr, v, nullptr);
+            QObject::disconnect(v, nullptr, doc, nullptr);
+            v->disconnectAllChildren();
+            v->disconnect();
+        }
+    }
+
     QMainWindow::closeEvent(event);
 }
 
@@ -2368,6 +2428,7 @@ void KlustersApp::slotSelectTime(){
 
 
 void KlustersApp::slotSingleColorUpdate(int clusterId){
+    if (!doc || !activeView()) return;
     //Trigger the action only if the active display does not contain a ProcessWidget
     if(!doesActiveDisplayContainProcessWidget()){
         KlustersView* view = activeView();
@@ -2454,6 +2515,7 @@ void KlustersApp::slotDelaySelection(){
 }
 
 void KlustersApp::slotTabChange(int index){
+    if (!tabsParent || !doc) return;  // guard against call during teardown
     QWidget *widget = tabsParent->widget(index);
     DockArea *area = dynamic_cast<DockArea*>(widget);
     if(area) {
@@ -2680,7 +2742,6 @@ void KlustersApp::slotTimeFrameMode(){
         if(timeFrameMode->isChecked()){
             timeWindow = activeView()->timeFrameWidth();
             startTime =  activeView()->timeFrameStart();
-            qDebug()<<" ssssssssssssssssssssssssssssssssssssssssssssssssssss";
             start->setValue(startTime);
             start->setSingleStep(timeWindow);
             duration->setText(QString::fromLatin1("%1").arg(timeWindow));
@@ -2854,7 +2915,10 @@ void KlustersApp::slotUpdateParameterBar(){
 
 void KlustersApp::slotUpdateErrorMatrix(){
     KlustersView* view = activeView();
+    if (!view) return;
     view->updateErrorMatrix();
+    if (view->isThereATemplateMatrixView())
+        view->updateTemplateMatrix();
 }
 
 void KlustersApp::slotSelectAll(){
@@ -3165,11 +3229,12 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         for(it = clustersFromReclustering.begin(); it != clustersFromReclustering.end(); ++it){
             info.append(QString::number(*it)); info.append(" ");
         }
-        qDebug() << info;
+        NS3_DIAG() << info;
     }
 
     doc->reclusteringUpdate(clustersToRecluster,clustersFromReclustering);
 
+    if (activeView()) activeView()->focusClusterView();
     processFinished = true;
     processKilled = false;
     // Re-run the full tab-change logic so that every action disabled by
@@ -3802,7 +3867,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNextSpike->setEnabled(false);
         mPreviousSpike->setEnabled(false);
     } else {
-        qDebug() <<" State unknown :"<<state;
+        qWarning() <<" State unknown :"<<state;
     }
 
 }
@@ -3829,7 +3894,7 @@ void KlustersApp::slotSaveRecentFiles()
 /**Informs the active display to present the waveforms for an updated time frame.*/
 void KlustersApp::slotUpdateStartTime(int start)
 {
-    qDebug()<<" void KlustersApp::slotUpdateStartTime(int start)"<<start;
+    NS3_DIAG()<<" void KlustersApp::slotUpdateStartTime(int start)"<<start;
     if(!isInit){
         startTime = start;
         activeView()->updateTimeFrame(static_cast<long>(start),timeWindow);
@@ -4049,6 +4114,7 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
                 clusterPalette->selectItems(QList<int>{realignClusterId});
                 clusterPalette->setFocusToList();
             }
+            if (activeView()) activeView()->focusClusterView();
 
         } else {
             // User rejected: delete pending files, restore original spkFileName,
@@ -4286,6 +4352,7 @@ void KlustersApp::slotNudgeTimestampMinus()
             tr("Cluster %1: −1 sample.").arg(id), 2000);
     else
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
+    if (activeView()) activeView()->focusClusterView();
 }
 
 void KlustersApp::slotNudgeTimestampPlus()
@@ -4313,4 +4380,53 @@ void KlustersApp::slotNudgeTimestampPlus()
             tr("Cluster %1: +1 sample.").arg(id), 2000);
     else
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
+    if (activeView()) activeView()->focusClusterView();
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcut help dialog
+// ---------------------------------------------------------------------------
+void KlustersApp::slotShowShortcutHelp()
+{
+    struct Entry { const char* key; const char* desc; };
+    static const Entry kShortcuts[] = {
+        {"Arrow keys",          "Navigate cluster palette"},
+        {"Page Up / Down",      "Nudge selected cluster timestamps \u00b11 sample"},
+        {"C  or  1",            "New Cluster mode \u2014 draw selection polygon"},
+        {"S  or  2",            "Split Clusters mode \u2014 draw selection polygon"},
+        {"G",                   "Group selected clusters"},
+        {"N",                   "Delete noisy spikes (move to cluster 1)"},
+        {"Z",                   "Zoom mode"},
+        {"U",                   "Update error matrix (+ template matrix if open)"},
+        {"H",                   "Show this keyboard shortcut reference"},
+        {"Ctrl+Z",              "Undo"},
+        {"Ctrl+Y",              "Redo"},
+        {"Ctrl+S",              "Save"},
+        {"Ctrl+Shift+S",        "Renumber and save"},
+        {"Enter / Return",      "Close selection polygon (New / Split modes)"},
+    };
+
+    QString html =
+        QStringLiteral("<style>"
+            "table{border-collapse:collapse;min-width:420px}"
+            "th{background:#2a2a2a;color:#e0e0e0;padding:5px 12px;text-align:left}"
+            "td{padding:3px 12px;border-bottom:1px solid #3a3a3a}"
+            "td:first-child{font-family:monospace;font-weight:bold;white-space:nowrap}"
+            "</style><table>"
+            "<tr><th>Key</th><th>Action</th></tr>");
+    for (const auto& s : kShortcuts)
+        html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
+                .arg(QLatin1String(s.key)).arg(QLatin1String(s.desc));
+    html += QStringLiteral("</table>");
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Keyboard Shortcuts"));
+    QVBoxLayout* vl = new QVBoxLayout(&dlg);
+    QLabel* lbl = new QLabel(html, &dlg);
+    lbl->setTextFormat(Qt::RichText);
+    vl->addWidget(lbl);
+    QDialogButtonBox* bb = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    vl->addWidget(bb);
+    dlg.exec();
 }

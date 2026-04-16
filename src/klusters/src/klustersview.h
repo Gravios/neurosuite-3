@@ -411,6 +411,8 @@ public:
     /**Triggers the increase of the amplitude of the waveforms in the Waveform view.
   */
     void increaseWaveformsAmplitude(){emit increaseAmplitude();}
+    /** Auto-scale waveform display to the tallest spike in current cluster. */
+    void autoFitWaveformsAmplitude(){emit autoFitAmplitude();}
 
     /**Triggers the decrease of the amplitude of the waveforms in the Waveform view.
   */
@@ -581,6 +583,14 @@ public:
     /**Recomputes the template match matrix.*/
     void updateTemplateMatrix(){emit computeTemplateMatrix();}
 
+    /** Gives keyboard focus to the first ClusterView in this display. */
+    void focusClusterView();
+    /** Disconnects all signal connections on every ViewWidget child. */
+    void disconnectAllChildren();
+
+    /** Returns true if a TemplateMatrixView is open in this display. */
+    bool isThereATemplateMatrixView() const { return isThereTemplateMatrixView; }
+
     /** Stop all in-flight WaveformThreads in every sub-view widget.
      *  Call before writing to the pending .spk file so no thread is
      *  mid-fread when the write happens. */
@@ -724,6 +734,7 @@ Q_SIGNALS:
     void overLayPresentation();
     void sideBySidePresentation();
     void increaseAmplitude();
+    void autoFitAmplitude();
     void decreaseAmplitude();
     void updateDisplayNbSpikes(long nbSpikes);
     void increaseAmplitudeofCorrelograms();

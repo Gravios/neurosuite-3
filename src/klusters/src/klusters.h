@@ -18,6 +18,13 @@
 #ifndef KLUSTERS_H
 #define KLUSTERS_H
 
+// Set NS3_VERBOSE=1 at compile time (e.g. -DNS3_VERBOSE=1) to enable
+// verbose qDebug diagnostic output.  Defaults to off.
+#ifndef NS3_VERBOSE
+#  define NS3_VERBOSE 0
+#endif
+#define NS3_DIAG if(NS3_VERBOSE) qDebug
+
 //include files application specific
 #include "spinbox.h"
 #include "klustersview.h"
@@ -385,6 +392,7 @@ private Q_SLOTS:
     /**Triggers the update of the errorMatrix view in the grouping assistant view.
    */
     void slotUpdateErrorMatrix();
+    void slotShowShortcutHelp();
 
     /**Select all the clusters.*/
     void slotSelectAll();

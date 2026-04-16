@@ -69,14 +69,10 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     applyButton->setEnabled(false);
     applyButton->setToolTip("Move above-threshold source spikes into target cluster");
 
-    updateButton = new QPushButton("Update", controlBar);
-    updateButton->setToolTip("Recompute matrix (also: T shortcut)");
-
     bar->addWidget(thresholdLabel);
     bar->addWidget(thresholdSlider, 1);
     bar->addWidget(countLabel);
     bar->addWidget(applyButton);
-    bar->addWidget(updateButton);
 
     mainLayout->addWidget(controlBar, 0);
 
@@ -84,8 +80,6 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
             this, &TemplateMatrixView::onThresholdChanged);
     connect(applyButton, &QPushButton::clicked,
             this, &TemplateMatrixView::onApplyClicked);
-    connect(updateButton, &QPushButton::clicked,
-            this, &TemplateMatrixView::updateMatrixContents);
 
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
     thresholdSlider->setValue(thresholdToSlider(currentThreshold));

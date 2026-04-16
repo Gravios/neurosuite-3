@@ -185,6 +185,11 @@ void WaveformView::askForWaveformInformation(const QList<int> &clusterIds){
 void WaveformView::addClusterToView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
 
+    // Stop any in-flight threads before launching new ones.
+    // Mirrors the invariant in setSampleMode, setTimeFrameMode, etc.
+    // Without this, rapid cluster navigation accumulates sleeping threads.
+    if (active) stopAndClearThreads();
+
     if(active && overLayPresentation){
         if(drawContentsMode == REFRESH){
             clusterUpdateList.append(clusterId);
@@ -927,6 +932,51 @@ void WaveformView::print(QPainter& printPainter,int width,int height, bool white
 
     //Restore the previous state
     viewport = QRect(viewportOld.left(),viewportOld.top(),viewportOld.width(),viewportOld.height());
+}
+
+void WaveformView::autoFitAmplitude()
+{
+    // Scan all loaded waveform samples for the peak absolute value,
+    // then set gain so that peak maps to 75 % of YsizeForMaxAmp.
+    // Formula: Yfactor * peak = 0.75 * YsizeForMaxAmp
+    //          0.75^gain * acquisitionGain = YsizeForMaxAmp / Yfactor (definition)
+    //  => 0.75^gain = peak / acquisitionGain * (100/75)
+    //  => gain = log(peak / (acquisitionGain * 0.75)) / log(0.75)
+    if (view.clusters().isEmpty()) return;
+
+    Data& clusteringData = doc.data();
+    long peakAbs = 0;
+    const QList<int>& clusters = view.clusters();
+    for (int cid : clusters) {
+        Data::WaveformIterator* it =
+            clusteringData.sampleWaveformIterator(
+                static_cast<dataType>(cid), nbSpkToDisplay);
+        if (!it->areSpikesAvailable()) { delete it; continue; }
+        const long nSpk = it->nbOfSpikes();
+        const int  nPts = clusteringData.nbSamplesPerWaveform()
+                        * clusteringData.nbOfChannels();
+        for (long s = 0; s < nSpk; ++s)
+            for (int p = 0; p < nPts; ++p) {
+                const long v = std::abs(static_cast<long>(it->nextSpike()));
+                if (v > peakAbs) peakAbs = v;
+            }
+        delete it;
+    }
+    if (peakAbs <= 0) return;
+
+    // Compute gain: 0.75^gain * acquisitionGain = acquisitionGain * peakAbs / (acquisitionGain * 0.75)
+    // Simplifies to: 0.75^gain = peakAbs / (acquisitionGain * 0.75)
+    const double target = static_cast<double>(peakAbs)
+                        / (static_cast<double>(acquisitionGain) * 0.75);
+    if (target <= 0.0) return;
+    const int newGain = static_cast<int>(std::round(
+        std::log(target) / std::log(0.75)));
+    // Clamp to a sane range to avoid invisible or exploding waveforms.
+    gain = std::max(-20, std::min(40, newGain));
+    Yfactor = static_cast<float>(YsizeForMaxAmp)
+            / static_cast<float>(std::pow(0.75, gain) * acquisitionGain);
+    drawContentsMode = REDRAW;
+    update();
 }
 
 void WaveformView::increaseAmplitude(){

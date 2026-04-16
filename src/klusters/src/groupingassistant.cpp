@@ -124,7 +124,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
         QList<int>& ignoreClusterIndex)
 {
     dataType nbSpikes     = clusteringData.totalNbOfSpikes();
-    int      nbDimensions = clusteringData.totalNbOfPCAs();
+    // Use the actual number of PCA features loaded from the .fetD file
+    // (nbDimensions - 1, excluding the timestamp column) rather than
+    // totalNbOfPCAs() = nbChannels × nbFeatPerChannel, which over-counts
+    // by 1 channel for stderiv sessions (PCA is on nChan-1 channels).
+    int      nbDimensions = clusteringData.nbOfDimensionsTotal() - 1;
 
     clusteringData.duplicate(spikesByCluster, clusterInfoMap);
     if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
