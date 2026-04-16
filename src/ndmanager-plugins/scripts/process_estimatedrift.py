@@ -172,35 +172,16 @@ def read_res(path: str) -> np.ndarray:
 
 
 def read_clu(path: str) -> np.ndarray:
-    """Read .clu file in either binary (int32) or legacy text format.
-
-    Binary format (written by KlustaKwik / Klusters):
-        int32_t  nClusters          (header — discarded here)
-        int32_t  clusterIds[nSpikes] (1-based; 1=noise)
-
-    Text format (legacy ndmanager pipeline):
-        line 0: nClusters
-        lines 1..N: one cluster id per line
-
-    Detection: if the first byte is an ASCII digit (0x30–0x39) the file
-    is text; otherwise it is binary.  Same heuristic used by KlustaKwik
-    and Klusters LoadClu().
     """
-    import struct
-    with open(path, "rb") as f:
-        first = f.read(1)
-    if not first:
+    Read .clu.N — binary format:
+      int32   nClusters  header (discarded)
+      int32[] cluster id per spike in timestamp order
+    """
+    raw = np.fromfile(path, dtype="<i4")
+    if len(raw) < 2:
         return np.array([], dtype=np.int32)
-    if 0x30 <= first[0] <= 0x39:  # ASCII digit → text format
-        with open(path) as f:
-            lines = [l.strip() for l in f if l.strip()]
-        return np.array([int(l) for l in lines[1:]], dtype=np.int32) \
-               if len(lines) > 1 else np.array([], dtype=np.int32)
-    else:  # binary format
-        data = np.fromfile(path, dtype="<i4")  # little-endian int32
-        # data[0] = nClusters header, data[1:] = spike cluster ids
-        return data[1:].astype(np.int32) if len(data) > 1 \
-               else np.array([], dtype=np.int32)
+    return raw[1:]
+
 
 
 def read_spk(path: str, n_sites: int, n_samp: int, n_spk: int) -> np.ndarray:
@@ -440,7 +421,13 @@ def estimate_shank_drift(
 
     res_path = f"{session}.res.{group_idx}"
     clu_path = f"{session}.clu.{group_idx}"
-    spk_path = f"{session}.spk.{group_idx}"
+    # Prefer .spkD.N (stderiv): same layout as .spk.N, but nChan-1 sites
+    _spkD = f"{session}.spkD.{group_idx}"
+    _spk  = f"{session}.spk.{group_idx}"
+    is_stderiv = os.path.isfile(_spkD)
+    spk_path   = _spkD if is_stderiv else _spk
+    if is_stderiv:
+        n_sites -= 1  # spkD stores nChan-1 sites
 
     if not os.path.isfile(res_path) or not os.path.isfile(clu_path):
         return None

@@ -225,25 +225,16 @@ def read_spk(path: str, n_sites: int, n_samp: int) -> np.ndarray:
 
 def read_clu(path: str) -> Optional[np.ndarray]:
     """
-    Read .clu.N in binary (klusters/KlustaKwik) or legacy text format.
-    Binary: int32 nClusters header + nSpikes × int32 ids.
-    Auto-detect: first byte non-ASCII-digit → binary.
+    Read .clu.N — binary format:
+      int32   nClusters  header (discarded)
+      int32[] cluster id per spike in timestamp order
     """
     if not os.path.isfile(path):
         return None
-    with open(path, "rb") as f:
-        first = f.read(1)
-    if not first:
-        return np.array([], dtype=np.int32)
-    if 0x30 <= first[0] <= 0x39:  # ASCII digit → legacy text format
-        with open(path) as f:
-            lines = [l.strip() for l in f if l.strip()]
-        return np.array([int(l) for l in lines[1:]], dtype=np.int32) \
-               if len(lines) > 1 else np.array([], dtype=np.int32)
-    # Binary: skip int32 nClusters header, read remaining int32 ids
     raw = np.fromfile(path, dtype="<i4")
-    return raw[1:].astype(np.int32) if len(raw) >= 2 \
-           else np.array([], dtype=np.int32)
+    if len(raw) < 2:
+        return np.array([], dtype=np.int32)
+    return raw[1:]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -463,7 +454,12 @@ def main() -> int:
     xy_sites = xy_sites[:n_sites].astype(float)
 
     # ── Load spike waveforms ──────────────────────────────────────────────────
-    spk_path = f"{session}.spk.{g}"
+    _spkD = f"{session}.spkD.{g}"
+    _spk  = f"{session}.spk.{g}"
+    is_stderiv = os.path.isfile(_spkD)
+    spk_path   = _spkD if is_stderiv else _spk
+    if is_stderiv:
+        n_sites -= 1  # .spkD stores nChan-1 sites
     if not os.path.isfile(spk_path):
         print(f"ERROR: {spk_path} not found", file=sys.stderr)
         return 1
