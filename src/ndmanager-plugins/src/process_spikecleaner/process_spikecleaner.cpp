@@ -195,15 +195,46 @@ int main(int argc, char *argv[])
     fseeko(spkIn, 0, SEEK_SET);
 
     // ── optional files (.fet, .clu) ────────────────────────────────────────
-    // .fet: text format — int32 nDims header, then nSpikes lines of nDims int64 values
-    // .clu: text format — int32 nClusters header, then nSpikes int32 cluster IDs
-    FILE *fetIn  = fopen(fetPath.c_str(), "r");
-    FILE *cluIn  = fopen(cluPath.c_str(), "r");
+    // Both .fet.N and .clu.N are binary in the neurosuite-3 pipeline:
+    //   .fet.N : int32 nDims header + nSpikes * nDims * int64 row-major
+    //   .clu.N : int32 nClusters header + nSpikes * int32 ids
+    // Legacy text format is auto-detected: if first byte is an ASCII digit
+    // (0x30-0x39) the file is text; otherwise binary.
+
+    // Helper: detect binary vs text by peeking at the first byte.
+    auto isBinaryFormat = [](const std::string& path) -> bool {
+        FILE* f = fopen(path.c_str(), "rb");
+        if (!f) return true;  // does not exist — assume binary
+        int c = fgetc(f); fclose(f);
+        return (c == EOF) || (c < 0x30 || c > 0x39);
+    };
+
+    const bool fetBinary = isBinaryFormat(fetPath);
+    const bool cluBinary = isBinaryFormat(cluPath);
+
+    FILE *fetIn  = fopen(fetPath.c_str(), fetBinary ? "rb" : "r");
+    FILE *cluIn  = fopen(cluPath.c_str(), cluBinary ? "rb" : "r");
 
     int nDims    = 0;
     int nClust   = 0;
-    if (fetIn)  { if (fscanf(fetIn, "%d", &nDims) != 1)  { fclose(fetIn);  fetIn  = nullptr; } }
-    if (cluIn)  { if (fscanf(cluIn, "%d", &nClust) != 1) { fclose(cluIn);  cluIn  = nullptr; } }
+    if (fetIn) {
+        int32_t hdr = 0;
+        if (fetBinary) {
+            if (fread(&hdr, sizeof(int32_t), 1, fetIn) != 1) { fclose(fetIn); fetIn = nullptr; }
+            else nDims = (int)hdr;
+        } else {
+            if (fscanf(fetIn, "%d", &nDims) != 1)  { fclose(fetIn); fetIn = nullptr; }
+        }
+    }
+    if (cluIn) {
+        int32_t hdr = 0;
+        if (cluBinary) {
+            if (fread(&hdr, sizeof(int32_t), 1, cluIn) != 1) { fclose(cluIn); cluIn = nullptr; }
+            else nClust = (int)hdr;
+        } else {
+            if (fscanf(cluIn, "%d", &nClust) != 1) { fclose(cluIn); cluIn = nullptr; }
+        }
+    }
 
     // ── scan all spikes ────────────────────────────────────────────────────
     vector<int16_t>  wav(nChan * nSamples);
@@ -238,18 +269,33 @@ int main(int argc, char *argv[])
         vector<int64_t> fetRow;
         if (fetIn) {
             fetRow.resize(nDims);
-            for (int d = 0; d < nDims; ++d)
-                if (fscanf(fetIn, "%lld", (long long *)&fetRow[d]) != 1) {
-                    fclose(fetIn); fetIn = nullptr; break;
+            if (fetBinary) {
+                if (fread(fetRow.data(), sizeof(int64_t),
+                         static_cast<size_t>(nDims), fetIn)
+                        != static_cast<size_t>(nDims)) {
+                    fclose(fetIn); fetIn = nullptr;
                 }
+            } else {
+                for (int d = 0; d < nDims; ++d)
+                    if (fscanf(fetIn, "%lld", (long long *)&fetRow[d]) != 1) {
+                        fclose(fetIn); fetIn = nullptr; break;
+                    }
+            }
         }
 
         // Read .clu cluster ID (optional)
         int32_t cluId = -1;
-        if (cluIn)
-            if (fscanf(cluIn, "%d", &cluId) != 1) {
-                fclose(cluIn); cluIn = nullptr;
+        if (cluIn) {
+            if (cluBinary) {
+                if (fread(&cluId, sizeof(int32_t), 1, cluIn) != 1) {
+                    fclose(cluIn); cluIn = nullptr;
+                }
+            } else {
+                if (fscanf(cluIn, "%d", &cluId) != 1) {
+                    fclose(cluIn); cluIn = nullptr;
+                }
             }
+        }
 
         // ── classify ──────────────────────────────────────────────────────
         bool drop = false;
@@ -338,27 +384,41 @@ int main(int argc, char *argv[])
         fclose(spkOut);
     }
 
-    // .fet — text format
+    // .fet — preserve input format (binary or text)
     if (!fetKeep.empty()) {
-        FILE *f = fopen(fetPath.c_str(), "w");
+        FILE *f = fopen(fetPath.c_str(), fetBinary ? "wb" : "w");
         if (f) {
-            fprintf(f, "%d\n", nDims);
-            for (const auto &row : fetKeep) {
-                for (int d = 0; d < nDims; ++d)
-                    fprintf(f, "%lld%c", (long long)row[d],
-                            d == nDims - 1 ? '\n' : ' ');
+            if (fetBinary) {
+                int32_t hdr = (int32_t)nDims;
+                fwrite(&hdr, sizeof(int32_t), 1, f);
+                for (const auto &row : fetKeep)
+                    fwrite(row.data(), sizeof(int64_t),
+                           static_cast<size_t>(nDims), f);
+            } else {
+                fprintf(f, "%d\n", nDims);
+                for (const auto &row : fetKeep) {
+                    for (int d = 0; d < nDims; ++d)
+                        fprintf(f, "%lld%c", (long long)row[d],
+                                d == nDims - 1 ? '\n' : ' ');
+                }
             }
             fclose(f);
         }
     }
 
-    // .clu — text format
+    // .clu — preserve input format (binary or text)
     if (!cluKeep.empty()) {
-        FILE *f = fopen(cluPath.c_str(), "w");
+        FILE *f = fopen(cluPath.c_str(), cluBinary ? "wb" : "w");
         if (f) {
-            fprintf(f, "%d\n", nClust);
-            for (int32_t id : cluKeep)
-                fprintf(f, "%d\n", id);
+            if (cluBinary) {
+                int32_t hdr = (int32_t)nClust;
+                fwrite(&hdr, sizeof(int32_t), 1, f);
+                fwrite(cluKeep.data(), sizeof(int32_t), cluKeep.size(), f);
+            } else {
+                fprintf(f, "%d\n", nClust);
+                for (int32_t id : cluKeep)
+                    fprintf(f, "%d\n", id);
+            }
             fclose(f);
         }
     }

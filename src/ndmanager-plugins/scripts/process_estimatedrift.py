@@ -167,8 +167,8 @@ def default_site_depths(n: int, spacing: float = 50.0) -> np.ndarray:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def read_res(path: str) -> np.ndarray:
-    with open(path) as f:
-        return np.array([int(l) for l in f if l.strip()], dtype=np.int64)
+    """Read .res.N — binary little-endian int64 timestamps, no header."""
+    return np.fromfile(path, dtype="<i8")
 
 
 def read_clu(path: str) -> np.ndarray:
