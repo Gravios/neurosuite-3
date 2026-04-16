@@ -1,3 +1,4 @@
+#include "klusters.h"
 #include <algorithm>
 #include <QThread>
 /***************************************************************************
@@ -3985,7 +3986,7 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
     dataType highestClusterId = (*spikesByCluster)(2, nbSpikes);
     const dataType maxK = reclusteringSpikesByCluster.nbOfColumns();
 
-    qDebug() << "loadReclusteredClusters: expecting" << maxK
+    NS3_DIAG() << "loadReclusteredClusters: expecting" << maxK
              << "spike labels, highestClusterId=" << highestClusterId;
 
     const QString path = clusterFile.fileName();
@@ -3993,24 +3994,24 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
 
     FILE* fp = fopen(path.toLocal8Bit().constData(), "rb");
     if (!fp) {
-        qDebug() << "loadReclusteredClusters: cannot open" << path;
+        qWarning() << "loadReclusteredClusters: cannot open" << path;
         return 0;
     }
 
     // Read nClusters header
     int32_t nClusters32 = 0;
     if (fread(&nClusters32, sizeof(int32_t), 1, fp) != 1) {
-        qDebug() << "loadReclusteredClusters: cannot read header";
+        qWarning() << "loadReclusteredClusters: cannot read header";
         fclose(fp); return 0;
     }
-    qDebug() << "loadReclusteredClusters: header nClusters=" << nClusters32;
+    NS3_DIAG() << "loadReclusteredClusters: header nClusters=" << nClusters32;
 
     // Read spike labels
     dataType k = 1;
     int32_t id32 = 0;
     while (fread(&id32, sizeof(int32_t), 1, fp) == 1) {
         if (k > maxK) {
-            qDebug() << "loadReclusteredClusters: too many labels (k="
+            qWarning() << "loadReclusteredClusters: too many labels (k="
                      << k << "> maxK=" << maxK << ") — aborting";
             fclose(fp); return 0;
         }
@@ -4019,7 +4020,7 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
     }
     fclose(fp);
 
-    qDebug() << "loadReclusteredClusters: read" << (k - 1)
+    NS3_DIAG() << "loadReclusteredClusters: read" << (k - 1)
              << "labels, expected" << maxK;
 
     if (k != (maxK + 1))

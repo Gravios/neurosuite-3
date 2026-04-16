@@ -222,7 +222,19 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
 
 KlustersView::~KlustersView()
 {
-    qDebug() << "in ~KlustersView(): ";
+    NS3_DIAG() << "in ~KlustersView(): ";
+
+    // Disconnect all connections on this object before any teardown,
+    // including doc → child-ViewWidget connections that were set up
+    // in setConnections().  If doc was already deleted, those senders
+    // are gone but the ViewWidget receivers still hold dangling entries.
+    // disconnect() removes ALL connections to and from *this* as well as
+    // from every child widget that is a QObject child of this (via the
+    // child-widget disconnect in the loop below).
+    disconnect();
+    // Also disconnect every sub-view ViewWidget from all senders.
+    for (ViewWidget* w : qAsConst(viewList))
+        if (w) w->disconnect();
 
     // Sever the destroyed() → *DockClosed() connections on every sub-view
     // widget before we start tearing down.  Without this, Qt delivers the
@@ -1565,6 +1577,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this, &KlustersView::decreaseAmplitude, qobject_cast<WaveformView*>(view), &WaveformView::decreaseAmplitude);
         connect(this, &KlustersView::updateDisplayNbSpikes, qobject_cast<WaveformView*>(view), &WaveformView::setDisplayNbSpikes);
         connect(this, &KlustersView::changeGain, qobject_cast<WaveformView*>(view), &WaveformView::setGain);
+        connect(this, &KlustersView::autoFitAmplitude, qobject_cast<WaveformView*>(view), &WaveformView::autoFitAmplitude);
         connect(this, &KlustersView::changeChannelPositions, qobject_cast<WaveformView*>(view), &WaveformView::setChannelPositions);
         connect(this, &KlustersView::clustersRenumbered, qobject_cast<WaveformView*>(view), &WaveformView::clustersRenumbered);
         connect(view, &QObject::destroyed, this, &KlustersView::waveformDockClosed);
@@ -1682,6 +1695,21 @@ void KlustersView::updateTimeFrame(long start,long timeFrameWidth)
 {
     startTime = start;
     timeWindow = timeFrameWidth;
-    qDebug()<<" void KlustersView::updateTimeFrame(long start,long timeFrameWidth)";
+    NS3_DIAG()<<" void KlustersView::updateTimeFrame(long start,long timeFrameWidth)";
     emit updatedTimeFrame(start,timeFrameWidth);
+}
+
+void KlustersView::focusClusterView()
+{
+    for (ViewWidget* w : qAsConst(viewList))
+        if (qobject_cast<ClusterView*>(w)) {
+            w->setFocus(Qt::OtherFocusReason);
+            return;
+        }
+}
+
+void KlustersView::disconnectAllChildren()
+{
+    for (ViewWidget* w : qAsConst(viewList))
+        if (w) w->disconnect();
 }

@@ -508,9 +508,11 @@ void ClusterView::customEvent(QEvent* event){
                 break;
             case NEW_CLUSTER:
                 doc.createNewCluster(selectionArea,view.clusters(),Xdimension,Ydimension);
+                setFocus(Qt::OtherFocusReason);
                 break;
             case NEW_CLUSTERS:
                 doc.createNewClusters(selectionArea,view.clusters(),Xdimension,Ydimension);
+                setFocus(Qt::OtherFocusReason);
                 break;
             case ZOOM:
                 break; //nothing to do

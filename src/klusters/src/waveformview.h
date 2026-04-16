@@ -209,6 +209,10 @@ public Q_SLOTS:
     /**Increase of the amplitude of the waveforms.
   */
     void increaseAmplitude();
+    /** Adjusts gain so the tallest loaded waveform spans ~75 %
+     *  of the channel slot height. Safe to call before data loads
+     *  (no-op if no spikes are available yet). */
+    void autoFitAmplitude();
 
     /**Decrease of the amplitude of the waveforms.
   */

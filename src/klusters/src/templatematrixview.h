@@ -41,7 +41,7 @@ class PairXcorrThread;
  *      scores arrive, shows count of source spikes ≥ threshold.
  *   3. Return/Enter or Apply: moves the above-threshold source spikes to the
  *      target cluster.
- *   4. Update button or T shortcut: recomputes everything from scratch.
+ *   4. U key (via KlustersApp) or T shortcut: recomputes everything from scratch.
  */
 class TemplateMatrixView : public QWidget {
     Q_OBJECT
@@ -139,7 +139,6 @@ private:
     QLabel*      thresholdLabel;
     QLabel*      countLabel;
     QPushButton* applyButton;
-    QPushButton* updateButton;
     double       currentThreshold;
     double       sliderMin;
     double       sliderMax;

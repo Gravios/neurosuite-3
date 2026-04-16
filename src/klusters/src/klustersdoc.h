@@ -140,6 +140,9 @@ public:
     QString documentDirectory() const;
     /** Returns true if this session uses the stderiv pipeline
      *  (.spkD.N / .fetD.N / .pcaD.N files). */
+    /** Returns a snapshot copy of the view list safe to iterate during teardown. */
+    QList<KlustersView*> viewListCopy() const
+    { return viewList ? *viewList : QList<KlustersView*>(); }
     bool isStderivSession() const
         { return m_origSpkPath.contains(QStringLiteral(".spkD.")); }
 
