@@ -218,17 +218,20 @@ def read_spike_group_params(param: dict, group_idx: int) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def read_res(path: str) -> np.ndarray:
-    with open(path) as f:
-        return np.array([int(l) for l in f if l.strip()], dtype=np.int64)
+    """Read .res.N — binary little-endian int64 timestamps, no header."""
+    return np.fromfile(path, dtype="<i8")
 
 
 def read_clu(path: str) -> np.ndarray:
-    """Read .clu.N — first line is the cluster count, remaining are labels."""
-    with open(path) as f:
-        lines = [l.strip() for l in f if l.strip()]
-    if len(lines) <= 1:
+    """
+    Read .clu.N — binary format (neurosuite-3 / klusters / KlustaKwik):
+      int32   nClusters  header (discarded)
+      int32[] cluster id per spike in timestamp order
+    """
+    raw = np.fromfile(path, dtype="<i4")
+    if len(raw) < 2:
         return np.array([], dtype=np.int32)
-    return np.array([int(l) for l in lines[1:]], dtype=np.int32)
+    return raw[1:]  # raw[0] = nClusters header
 
 
 def read_spk(path: str, n_sites: int, n_samp: int) -> np.ndarray:
@@ -718,7 +721,11 @@ def decompose_group(
         if not os.path.isfile(path):
             print(f"  group {group_idx}: missing {label} file, skipping", file=sys.stderr)
             return False
-    print(f"  group {group_idx}: using {spk_label} waveforms", file=sys.stderr)
+    # .spkD stores nChan-1 sites (stderiv excludes the linearly-dependent
+    # last channel); .fetD therefore has (nChan-1)*nComp features not nChan*nComp.
+    if is_stderiv:
+        n_sites -= 1
+    print(f"  group {group_idx}: {spk_label} waveforms, n_sites={n_sites}", file=sys.stderr)
 
     # ── Load data ────────────────────────────────────────────────────────────
     res = read_res(res_path)
