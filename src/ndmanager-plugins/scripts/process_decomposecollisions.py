@@ -99,50 +99,46 @@ For each spikeDetection group the algorithm proceeds in four stages:
 
 Output format
 -------------
-SESSION.col.N is a YAML document:
+SESSION.col.N  —  little-endian binary sidecar.
 
-    collisions:
-      format: '1.0'
-      session: jg05-20120316
-      spikeGroup: 1
-      nSpikes: 14302
-      nTemplates: 6
-      nCandidates: 847
-      nDecomposed: 312
-      corrThreshold: 0.85
-      residualThreshold: 0.25
-      maxShiftSamp: 10
-      templates:
-        - unitId: 2
-          nSpikes: 1204
-          dominantChannel: 3
-          meanPtp_uv: 142.3
-          ampPct01: 98.4
-          ampPct99: 201.7
-        ...
-      spikes:
-        - spikeIndex: 47
-          timestamp: 19423
-          bestSingleUnit: 2
-          bestSingleCorr: 0.781
-          collision_accepted: true
-          component1:
-            unitId: 3
-            shiftSamp: -4
-            shiftFrac: -3.82
-            amplitude: 1.03
-            ampInRange: true
-          component2:
-            unitId: 2
-            shiftSamp: 6
-            shiftFrac: 6.14
-            amplitude: 0.97
-            ampInRange: true
-          residualNorm: 0.19
-        ...
+Header (32 bytes):
+  [0:4]   magic           char[4]  b"COL\\x01"
+  [4:8]   n_spikes        uint32
+  [8:12]  n_records       uint32   candidate count
+  [12:16] n_templates     uint32
+  [16:20] group_idx       uint32   1-based
+  [20:24] flags           uint32   bit0=excludeNoise bit1=stderiv
+  [24:32] reserved        uint8[8]
 
-Dependencies:  python3 ≥ 3.10,  pyyaml,  numpy
-Optional:      scipy  (faster correlate; numpy fallback used otherwise)
+Parameter block (32 bytes):
+  corr_threshold(f32) residual_threshold(f32) max_shift(i32)
+  min_snr_rms(f32) min_spikes_template(i32) pad(12)
+
+Template table  n_templates × 24 bytes:
+  unit_id(i32) n_spikes(i32) dominant_ch(i32)
+  mean_ptp(f32) amp_pct01(f32) amp_pct99(f32)
+
+Record table  n_records × 60 bytes:
+  timestamp(i64) spike_index(i32) best_unit(i32) best_corr(f32)
+  flags(u32,bit0=accepted,bit1=amp1ok,bit2=amp2ok) resid_norm(f32)
+  unit1(i32) shift1(i32) shiftfrac1(f32) amp1(f32)
+  unit2(i32) shift2(i32) shiftfrac2(f32) amp2(f32)
+
+Reading in Python:
+  import numpy as np, struct
+  with open("session.col.7","rb") as f:
+      hdr   = struct.unpack("<4sIIIII8s", f.read(32))
+      prm   = struct.unpack("<ffifI12s",  f.read(32))
+      n_tmpl, n_rec = hdr[3], hdr[2]
+      tmpls = np.frombuffer(f.read(n_tmpl*24), dtype="<i4,i4,i4,f4,f4,f4")
+      recs  = np.frombuffer(f.read(n_rec*60), dtype=[
+          ("ts","<i8"),("idx","<i4"),("bsu","<i4"),("bsc","<f4"),
+          ("flags","<u4"),("resnorm","<f4"),
+          ("u1","<i4"),("sh1","<i4"),("sf1","<f4"),("a1","<f4"),
+          ("u2","<i4"),("sh2","<i4"),("sf2","<f4"),("a2","<f4")])
+
+Dependencies:  python3 >= 3.10,  numpy
+Optional:      pyyaml (for reading group params from .yaml)
 
 Copyright (C) 2025 neurosuite-3 contributors
 SPDX-License-Identifier: GPL-3.0-or-later
@@ -152,10 +148,10 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import struct
 import sys
 from typing import Optional
 import numpy as np
-import yaml
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI
@@ -247,6 +243,19 @@ def read_spk(path: str, n_sites: int, n_samp: int) -> np.ndarray:
     if n_spk == 0:
         return np.zeros((0, n_samp, n_sites), dtype=np.float32)
     return raw[:n_spk * stride].reshape(n_spk, n_samp, n_sites).astype(np.float32)
+
+
+def resolve_spk_path(session: str, group_idx: int) -> tuple[str, bool]:
+    """
+    Return (path, is_stderiv).  Prefers .spkD.N (stderiv pipeline) over
+    .spk.N so the same waveforms used for PCA are decomposed.  Both
+    formats share the same on-disk layout (int16 sample-major).
+    """
+    spkD = f"{session}.spkD.{group_idx}"
+    spk  = f"{session}.spk.{group_idx}"
+    if os.path.isfile(spkD):
+        return spkD, True
+    return spk, False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -603,6 +612,76 @@ def amplitude_in_range(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Binary output writer
+# ─────────────────────────────────────────────────────────────────────────────
+
+_HDR_FMT  = "<4sIIIII8s"
+_PRM_FMT  = "<ffifI12s"
+_TMPL_FMT = "<iiifff"
+_REC_FMT  = "<qiifIfiiffiiff"
+
+
+def write_col_binary(
+    out_path:            str,
+    group_idx:           int,
+    n_spikes:            int,
+    is_stderiv:          bool,
+    exclude_noise:       bool,
+    templates:           dict,
+    spike_records:       list[dict],
+    corr_threshold:      float,
+    residual_threshold:  float,
+    max_shift:           int,
+    min_snr_rms:         float,
+    min_spikes_tmpl:     int,
+) -> None:
+    """Write the binary .col.N sidecar file."""
+    flags = (1 if exclude_noise else 0) | (2 if is_stderiv else 0)
+    n_templates = len(templates)
+    n_records   = len(spike_records)
+    with open(out_path, "wb") as f:
+        # Header
+        f.write(struct.pack(_HDR_FMT,
+            b"COL\x01",
+            n_spikes, n_records, n_templates, group_idx, flags,
+            b"\x00" * 8))
+        # Parameter block
+        f.write(struct.pack(_PRM_FMT,
+            corr_threshold, residual_threshold, max_shift,
+            min_snr_rms, min_spikes_tmpl,
+            b"\x00" * 12))
+        # Template table
+        for uid in sorted(templates):
+            td = templates[uid]
+            f.write(struct.pack(_TMPL_FMT,
+                uid, td["n_spikes"], td["dominant_ch"],
+                td["amp_mean"], td["amp_pct01"], td["amp_pct99"]))
+        # Record table
+        for rec in spike_records:
+            c1 = rec.get("component1", {})
+            c2 = rec.get("component2", {})
+            rec_flags = (
+                (1 if rec["collision_accepted"]   else 0) |
+                (2 if c1.get("ampInRange", False) else 0) |
+                (4 if c2.get("ampInRange", False) else 0))
+            f.write(struct.pack(_REC_FMT,
+                rec["timestamp"],
+                rec["spikeIndex"],
+                rec["bestSingleUnit"],
+                rec["bestSingleCorr"],
+                rec_flags,
+                rec["residualNorm"],
+                c1.get("unitId",    -1),
+                c1.get("shiftSamp",  0),
+                c1.get("shiftFrac",  0.0),
+                c1.get("amplitude",  0.0),
+                c2.get("unitId",    -1),
+                c2.get("shiftSamp",  0),
+                c2.get("shiftFrac",  0.0),
+                c2.get("amplitude",  0.0)))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Per-group driver
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -617,25 +696,29 @@ def decompose_group(
     residual_threshold: float,
     min_snr_rms:      float,
     min_spikes_tmpl:  int,
+    exclude_noise:    bool,
     overwrite:        bool,
-) -> Optional[dict]:
+) -> bool:
     """
     Run the full collision-decomposition pipeline for one spikeDetection group.
-    Returns the output document dict, or None if the group should be skipped.
+    Returns True if output was written, False if skipped.
     """
-    res_path = f"{session}.res.{group_idx}"
-    clu_path = f"{session}.clu.{group_idx}"
-    spk_path = f"{session}.spk.{group_idx}"
-    out_path = f"{session}.col.{group_idx}"
+    res_path          = f"{session}.res.{group_idx}"
+    clu_path          = f"{session}.clu.{group_idx}"
+    spk_path, is_stderiv = resolve_spk_path(session, group_idx)
+    out_path          = f"{session}.col.{group_idx}"
 
     if not overwrite and os.path.isfile(out_path):
         print(f"  group {group_idx}: {out_path} exists, skipping", file=sys.stderr)
-        return None
+        return False
 
-    for path, label in [(res_path, ".res"), (clu_path, ".clu"), (spk_path, ".spk")]:
+    spk_label = ".spkD" if is_stderiv else ".spk"
+    for path, label in [(res_path, ".res"), (clu_path, ".clu"),
+                        (spk_path, spk_label)]:
         if not os.path.isfile(path):
             print(f"  group {group_idx}: missing {label} file, skipping", file=sys.stderr)
-            return None
+            return False
+    print(f"  group {group_idx}: using {spk_label} waveforms", file=sys.stderr)
 
     # ── Load data ────────────────────────────────────────────────────────────
     res = read_res(res_path)
@@ -643,16 +726,16 @@ def decompose_group(
     n   = min(len(res), len(clu))
     if n == 0:
         print(f"  group {group_idx}: empty files, skipping", file=sys.stderr)
-        return None
+        return False
     res = res[:n]
     clu = clu[:n]
 
     try:
         wf_all = read_spk(spk_path, n_sites, n_samp)
     except Exception as exc:
-        print(f"  group {group_idx}: cannot read .spk ({exc}), skipping",
+        print(f"  group {group_idx}: cannot read {spk_label} ({exc}), skipping",
               file=sys.stderr)
-        return None
+        return False
 
     k = wf_all.shape[0]
     if k < n:
@@ -671,7 +754,7 @@ def decompose_group(
     if len(templates) < 2:
         print(f"  group {group_idx}: fewer than 2 templates; "
               f"collision decomposition requires ≥2 units, skipping", file=sys.stderr)
-        return None
+        return False
 
     print(f"  group {group_idx}: {n} spikes, {len(templates)} templates, "
           f"RMS noise ≈ {rms_noise:.1f}", file=sys.stderr)
@@ -740,38 +823,24 @@ def decompose_group(
           f"({100*n_decomposed/max(len(candidate_indices),1):.1f} % of candidates)",
           file=sys.stderr)
 
-    # ── Build template metadata for output ────────────────────────────────────
-    template_meta = []
-    for uid in sorted(templates):
-        td = templates[uid]
-        template_meta.append({
-            "unitId":        uid,
-            "nSpikes":       td["n_spikes"],
-            "dominantChannel": td["dominant_ch"],
-            "meanPtp":       round(td["amp_mean"], 2),
-            "ampPct01":      round(td["amp_pct01"], 2),
-            "ampPct99":      round(td["amp_pct99"], 2),
-        })
-
-    return {
-        "collisions": {
-            "format":             "1.0",
-            "session":            session,
-            "spikeGroup":         group_idx,
-            "nSpikes":            n,
-            "nTemplates":         len(templates),
-            "nCandidates":        len(candidate_indices),
-            "nDecomposed":        n_decomposed,
-            "rmsNoise":           round(rms_noise, 2),
-            "corrThreshold":      corr_threshold,
-            "residualThreshold":  residual_threshold,
-            "maxShiftSamp":       max_shift,
-            "minSnrRms":          min_snr_rms,
-            "minSpikesTemplate":  min_spikes_tmpl,
-            "templates":          template_meta,
-            "spikes":             spike_records,
-        }
-    }
+    write_col_binary(
+        out_path        = out_path,
+        group_idx       = group_idx,
+        n_spikes        = n,
+        is_stderiv      = is_stderiv,
+        exclude_noise   = exclude_noise,
+        templates       = templates,
+        spike_records   = spike_records,
+        corr_threshold  = corr_threshold,
+        residual_threshold = residual_threshold,
+        max_shift       = max_shift,
+        min_snr_rms     = min_snr_rms,
+        min_spikes_tmpl = min_spikes_tmpl,
+    )
+    print(f"  Wrote {out_path} "
+          f"({n_decomposed} accepted / {len(candidate_indices)} candidates)",
+          file=sys.stderr)
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -785,8 +854,13 @@ def main() -> int:
     overwrite     = str(args.overwrite).lower()     not in ("false", "0", "no")
     noise_clusters: set[int] = {0, 1} if exclude_noise else set()
 
-    with open(args.param_file) as f:
-        param = yaml.safe_load(f) or {}
+    try:
+        import yaml
+        with open(args.param_file) as f:
+            param = yaml.safe_load(f) or {}
+    except ImportError:
+        print("pyyaml not installed — group params use defaults", file=sys.stderr)
+        param = {}
 
     n_written = 0
 
@@ -797,7 +871,7 @@ def main() -> int:
 
         print(f"  Group {g}: n_samp={n_samp} n_sites={n_sites}", file=sys.stderr)
 
-        result = decompose_group(
+        wrote = decompose_group(
             session            = args.session,
             group_idx          = g,
             n_samp             = n_samp,
@@ -808,20 +882,11 @@ def main() -> int:
             residual_threshold = args.residual_threshold,
             min_snr_rms        = args.min_snr_rms,
             min_spikes_tmpl    = args.min_spikes_template,
+            exclude_noise      = exclude_noise,
             overwrite          = overwrite,
         )
-
-        if result is None:
-            continue
-
-        out_path = f"{args.session}.col.{g}"
-        with open(out_path, "w") as f:
-            yaml.dump(result, f,
-                      default_flow_style=False,
-                      allow_unicode=True,
-                      sort_keys=False)
-        print(f"  Wrote {out_path}", file=sys.stderr)
-        n_written += 1
+        if wrote:
+            n_written += 1
 
     if n_written == 0:
         print("  No output files written.", file=sys.stderr)
