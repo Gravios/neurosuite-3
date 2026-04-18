@@ -79,9 +79,16 @@ def load_col(path: str) -> Optional[dict]:
     """Load a binary .col.N file. Returns a dict or None on error."""
     try:
         with open(path, "rb") as f:
-            hdr = struct.unpack(HEADER_FMT, f.read(32))
-            if hdr[0] != COL_MAGIC:
+            first4 = f.read(4)
+            if first4 == b"coll" or first4[:1] in (b"{", b"-"):
+                print(f"Cannot load {path}: file is in legacy YAML format.\n"
+                      f"  Re-run ndm_decomposecollisions to generate "
+                      f"binary .col files.", file=sys.stderr)
                 return None
+            if first4 != COL_MAGIC:
+                print(f"Cannot load {path}: bad magic {first4!r}", file=sys.stderr)
+                return None
+            hdr = struct.unpack(HEADER_FMT, first4 + f.read(28))
             prm = struct.unpack(PARAM_FMT, f.read(32))
             n_spikes, n_records, n_templates, group_idx, flags = hdr[1:6]
             is_stderiv   = bool(flags & 2)
@@ -114,20 +121,22 @@ def load_col(path: str) -> Optional[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_res(session: str, g: int) -> Optional[np.ndarray]:
+    """Read .res.N — binary little-endian int64, no header."""
     p = f"{session}.res.{g}"
     if not os.path.isfile(p):
         return None
-    with open(p) as f:
-        return np.fromfile(f, dtype=np.int64, count=-1, offset=0)
+    return np.fromfile(p, dtype="<i8")
 
 
 def load_clu(session: str, g: int) -> Optional[np.ndarray]:
+    """Read .clu.N — binary: int32 nClusters header + int32[] ids."""
     p = f"{session}.clu.{g}"
     if not os.path.isfile(p):
         return None
-    with open(p) as f:
-        return np.fromfile(f, dtype=np.int32, count=-1, offset=4)
-
+    raw = np.fromfile(p, dtype="<i4")
+    if len(raw) < 2:
+        return None
+    return raw[1:]  # raw[0] = nClusters header
 
 
 def load_spk(session: str, g: int, n_sites: int, n_samp: int) -> tuple[Optional[np.ndarray], bool]:
@@ -184,14 +193,20 @@ def read_group_params(yaml_path: str, g: int) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def apply_shift(tmpl: np.ndarray, tau: int, n_samp: int) -> np.ndarray:
-    """Shift template by tau samples (positive = later), zero-pad boundaries."""
+    """Linearly shift template by tau samples with zero-padding at the edges.
+    Mirrors exactly the slice convention used in fit_amplitude:
+      tau >= 0: wf[tau:] aligned with tmpl[0:n_samp-tau]  → out[tau:] = tmpl[:n_samp-tau]
+      tau <  0: wf[0:n_samp+tau] aligned with tmpl[-tau:] → out[:n_samp+tau] = tmpl[-tau:]
+    """
     out = np.zeros((n_samp, tmpl.shape[1]), dtype=np.float64)
     if tau >= 0:
-        length = min(n_samp - tau, n_samp, tmpl.shape[0])
-        out[tau:tau + length, :] = tmpl[:length, :]
+        length = min(n_samp - tau, tmpl.shape[0])
+        if length > 0:
+            out[tau:tau + length, :] = tmpl[:length, :]
     else:
-        length = min(n_samp, n_samp + tau, tmpl.shape[0] + tau)
-        out[:length, :] = tmpl[-tau:-tau + length, :]
+        length = min(n_samp + tau, tmpl.shape[0] + tau)
+        if length > 0:
+            out[:length, :] = tmpl[-tau:-tau + length, :]
     return out
 
 
@@ -243,17 +258,18 @@ class SessionData:
         col["n_samp"]  = gp["n_samples"]
         col["peak"]    = gp["peak_sample_idx"]
         col["channels"] = gp["channels"]
-        n_sites = len(gp["channels"])-1
+        n_sites = len(gp["channels"])
+        # .spkD stores the same nCG channels as .spk — channel count is unchanged
+        # by the stderiv transform.  Only .fetD has nChan-1 features.
         if n_sites == 0:
-            # Infer from .spk file size and n_samp
-            spk_p = f"{self.session}.spkD.{g}" if os.path.isfile(f"{self.session}.spkD.{g}") \
+            # Infer directly from .spk/.spkD file size — most reliable fallback
+            spk_p = f"{self.session}.spkD.{g}" if col.get("is_stderiv") \
                     else f"{self.session}.spk.{g}"
-            if os.path.isfile(spk_p):
-                raw_sz = os.path.getsize(spk_p) // 2
+            if os.path.isfile(spk_p) and gp["n_samples"] > 0:
+                raw_sz = os.path.getsize(spk_p) // 2   # int16 samples
                 n_spk  = col["n_spikes"]
                 if n_spk > 0:
-                    stride = raw_sz // n_spk
-                    n_sites = stride // gp["n_samples"] if gp["n_samples"] else 8
+                    n_sites = (raw_sz // n_spk) // gp["n_samples"]
         col["n_sites"] = max(n_sites, 1)
         self._col_data[g] = col
 
@@ -326,42 +342,59 @@ class SessionData:
 # ─────────────────────────────────────────────────────────────────────────────
 
 COLOURS = {
-    "raw":     "#aaaaaa",
-    "comp1":   "#4488ff",
-    "comp2":   "#ff8844",
-    "sum":     "#44cc66",
-    "residual":"#ff3333",
-    "tmpl1":   "#003399",
-    "tmpl2":   "#993300",
+    "raw":   "#999999",
+    "tmpl1": "#4488ff",
+    "tmpl2": "#ff8844",
+    "sum":   "#44cc88",
 }
 
 
+def allchan_corr(
+    wf: np.ndarray,
+    tmpl1: np.ndarray, a1: float, tau1: int,
+    tmpl2: np.ndarray, a2: float, tau2: int,
+) -> float:
+    """Pearson r between raw spike and (a1·T1(τ1) + a2·T2(τ2)) across ALL
+    channels simultaneously (flatten to 1-D before computing).
+    Returns the all-channel correlation coefficient in [-1, 1].
+    """
+    n_samp = wf.shape[0]
+    _, _, fit, _ = compute_residual(wf, tmpl1, a1, tau1, tmpl2, a2, tau2)
+    a = wf.ravel().astype(np.float64)
+    b = fit.ravel()
+    ac, bc = a - a.mean(), b - b.mean()
+    denom = float(np.sqrt((ac**2).sum() * (bc**2).sum()))
+    return float(np.dot(ac, bc) / denom) if denom > 1e-12 else 0.0
+
+
 class WaveformCanvas(FigureCanvas):
+    """Single stacked waveform view — Klusters style.
+    Channels are offset vertically on one axis.  Only raw spike and the
+    two mean templates are drawn; no per-component fits or residuals.
+    """
+
     def __init__(self, parent=None):
         self.fig = Figure(figsize=(8, 6), tight_layout=True)
         super().__init__(self.fig)
         self.setParent(parent)
-        self.axes: list = []
-        self._build_axes(4)
-
-    def _build_axes(self, n_sites: int) -> None:
-        self.fig.clear()
-        ncols = min(n_sites, 4)
-        nrows = math.ceil(n_sites / ncols)
-        self.axes = []
-        for i in range(n_sites):
-            ax = self.fig.add_subplot(nrows, ncols, i + 1)
-            ax.set_facecolor("#0d0d0d")
-            ax.tick_params(colors="#666", labelsize=7)
-            for spine in ax.spines.values():
-                spine.set_color("#333")
-            self.axes.append(ax)
+        self.ax = self.fig.add_subplot(111)
         self.fig.patch.set_facecolor("#111")
+        self._scale_factor = 1.0   # multiplicative scale applied to all traces
+        self._last_args: Optional[tuple] = None  # for redraw on scale change
+        self._setup_ax()
+
+    def _setup_ax(self) -> None:
+        self.ax.set_facecolor("#0d0d0d")
+        self.ax.tick_params(left=False, labelleft=False,
+                            bottom=True, colors="#555", labelsize=7)
+        for spine in self.ax.spines.values():
+            spine.set_color("#222")
+        self.ax.set_xlabel("sample", color="#555", fontsize=8)
         self.draw_idle()
 
     def plot_collision(
         self,
-        wf:    np.ndarray,        # (n_samp, n_sites)
+        wf:    np.ndarray,          # (n_samp, n_sites)
         tmpl1: Optional[np.ndarray],
         a1:    float, tau1: int,
         tmpl2: Optional[np.ndarray],
@@ -370,62 +403,112 @@ class WaveformCanvas(FigureCanvas):
         channel_labels: list[int],
     ) -> None:
         n_samp, n_sites = wf.shape
-        if len(self.axes) != n_sites:
-            self._build_axes(n_sites)
-        for ax in self.axes:
-            ax.clear()
-            ax.set_facecolor("#0d0d0d")
+        self.ax.clear()
+        self._setup_ax()
+
+        # Store args so scale changes can redraw without needing a new record
+        self._last_args = (wf, tmpl1, a1, tau1, tmpl2, a2, tau2,
+                           unit1, unit2, channel_labels)
+
+        # Channel spacing: 3× the global peak-to-peak of the raw spike,
+        # scaled by _scale_factor (I/D keys increase/decrease amplitude).
+        global_ptp = float(np.abs(wf).max()) or 1.0
+        scale      = self._scale_factor
+        spacing    = global_ptp * 3.0 / scale
 
         t = np.arange(n_samp)
 
+        # All-channel correlation of raw vs fitted two-component model
+        fit_corr: Optional[float] = None
         if tmpl1 is not None and tmpl2 is not None:
-            c1, c2, s12, residual = compute_residual(wf, tmpl1, a1, tau1, tmpl2, a2, tau2)
+            try:
+                fit_corr = allchan_corr(wf, tmpl1, a1, tau1, tmpl2, a2, tau2)
+            except Exception:
+                pass
+
+        # Pre-compute shifted templates once for all channels
+        t1_shifted = apply_shift(tmpl1, tau1, n_samp) if tmpl1 is not None else None
+        t2_shifted = apply_shift(tmpl2, tau2, n_samp) if tmpl2 is not None else None
+        if t1_shifted is not None and t2_shifted is not None:
+            combo = t1_shifted * a1 + t2_shifted * a2  # (n_samp, n_sites)
         else:
-            c1 = c2 = s12 = residual = None
+            combo = None
 
-        for ch, ax in enumerate(self.axes):
+        # Amplitude-match templates to raw for visual comparison.
+        # Compute a single normalization factor so the combo peak equals
+        # the raw peak.  Applied only to templates/combo in display;
+        # the raw is always shown at its true amplitude.
+        raw_peak   = float(np.abs(wf).max()) or 1.0
+        combo_peak = float(np.abs(combo).max()) if combo is not None else raw_peak
+        tmpl_disp_scale = raw_peak / combo_peak if combo_peak > 1e-9 else 1.0
+
+        for ch in range(n_sites):
+            # Invert so ch 0 is at top, ch n_sites-1 at bottom
+            offset = (n_sites - 1 - ch) * spacing
             lbl = channel_labels[ch] if ch < len(channel_labels) else ch
-            ax.set_title(f"ch {lbl}", color="#888", fontsize=8, pad=2)
 
-            # Raw spike
-            ax.plot(t, wf[:, ch], color=COLOURS["raw"], lw=1.0, alpha=0.9, label="raw")
+            # Channel label on the left margin
+            self.ax.text(-1.5, offset, f"ch{lbl}",
+                         color="#555", fontsize=6,
+                         ha="right", va="center")
 
-            if c1 is not None:
-                ax.plot(t, c1[:, ch],      color=COLOURS["comp1"],   lw=1.2,
-                        label=f"u{unit1}×{a1:.2f}", alpha=0.85)
-                ax.plot(t, c2[:, ch],      color=COLOURS["comp2"],   lw=1.2,
-                        label=f"u{unit2}×{a2:.2f}", alpha=0.85)
-                ax.plot(t, s12[:, ch],     color=COLOURS["sum"],     lw=1.2,
-                        ls="--", label="sum", alpha=0.8)
-                ax.plot(t, residual[:, ch],color=COLOURS["residual"],lw=1.2,
-                        label="residual", alpha=0.9)
+            # Raw spike — grey
+            self.ax.plot(t, wf[:, ch] * scale + offset,
+                         color=COLOURS["raw"], lw=1.2, alpha=0.9,
+                         label="raw" if ch == 0 else "_")
 
-            if tmpl1 is not None:
-                ax.plot(t, tmpl1[:, ch], color=COLOURS["tmpl1"], lw=1.8,
-                        ls=":", label=f"mean u{unit1}", alpha=0.7)
-            if tmpl2 is not None:
-                ax.plot(t, tmpl2[:, ch], color=COLOURS["tmpl2"], lw=1.8,
-                        ls=":", label=f"mean u{unit2}", alpha=0.7)
+            # Linear combination a1·T1(τ1) + a2·T2(τ2) — green solid
+            # (amplitude-matched to raw peak for visual comparison)
+            if combo is not None:
+                self.ax.plot(t, combo[:, ch] * tmpl_disp_scale * scale + offset,
+                             color=COLOURS["sum"], lw=1.8, alpha=0.9,
+                             label=f"a1·u{unit1}+a2·u{unit2}" if ch == 0 else "_")
 
-            ax.axhline(0, color="#333", lw=0.5)
-            ax.set_xlim(0, n_samp - 1)
-            ax.tick_params(colors="#555", labelsize=6)
-            for spine in ax.spines.values():
-                spine.set_color("#333")
+            # Individual scaled+shifted templates — dashed
+            if t1_shifted is not None:
+                self.ax.plot(t, t1_shifted[:, ch] * a1 * tmpl_disp_scale * scale + offset,
+                             color=COLOURS["tmpl1"], lw=1.2,
+                             ls="--", alpha=0.7,
+                             label=f"u{unit1}" if ch == 0 else "_")
 
-        # Legend on first axis only
-        if self.axes:
-            self.axes[0].legend(
-                fontsize=6, loc="upper right",
-                facecolor="#222", edgecolor="#555", labelcolor="white",
-                framealpha=0.7)
+            if t2_shifted is not None:
+                self.ax.plot(t, t2_shifted[:, ch] * a2 * tmpl_disp_scale * scale + offset,
+                             color=COLOURS["tmpl2"], lw=1.2,
+                             ls="--", alpha=0.7,
+                             label=f"u{unit2}" if ch == 0 else "_")
 
+            # Baseline per channel
+            self.ax.axhline(offset, color="#222", lw=0.5, zorder=0)
+
+        title = f"u{unit1} + u{unit2}"
+        if fit_corr is not None:
+            title += f"   all-ch corr = {fit_corr:.3f}"
+        self.ax.set_title(title, color="#999", fontsize=9, pad=4)
+        self.ax.set_xlim(-2, n_samp)
+        self.ax.legend(
+            fontsize=7, loc="upper right",
+            facecolor="#1a1a1a", edgecolor="#444",
+            labelcolor="white", framealpha=0.8)
         self.draw_idle()
 
+    def scale_up(self) -> None:
+        """Increase waveform amplitude (I key)."""
+        self._scale_factor = min(self._scale_factor * 1.4, 200.0)
+        self._redraw()
+
+    def scale_down(self) -> None:
+        """Decrease waveform amplitude (D key)."""
+        self._scale_factor = max(self._scale_factor / 1.4, 0.01)
+        self._redraw()
+
+    def _redraw(self) -> None:
+        if self._last_args is not None:
+            self.plot_collision(*self._last_args)
+
     def clear_plot(self) -> None:
-        for ax in self.axes:
-            ax.clear()
-            ax.set_facecolor("#0d0d0d")
+        self._last_args = None
+        self.ax.clear()
+        self._setup_ax()
         self.draw_idle()
 
 
@@ -576,8 +659,8 @@ class FeatureCanvas(FigureCanvas):
             sp.set_color("#333")
 
         n = min(len(fet), len(clu))
-        for uid, col, zorder in [(unit1, COLOURS["comp1"], 3),
-                                  (unit2, COLOURS["comp2"], 3)]:
+        for uid, col, zorder in [(unit1, COLOURS["tmpl1"], 3),
+                                  (unit2, COLOURS["tmpl2"], 3)]:
             mask = clu[:n] == uid
             if mask.any():
                 ax.scatter(fet[:n][mask, dim_x], fet[:n][mask, dim_y],
@@ -685,6 +768,9 @@ class CollisionTable(QTableWidget):
                         and (u2, u1) != filter_pair:
                     continue
                 rows.append((g, ri, rec))
+
+        # Sort descending by best-single-template correlation
+        rows.sort(key=lambda x: float(x[2]["bsc"]), reverse=True)
 
         self.setRowCount(len(rows))
         for row, (g, ri, rec) in enumerate(rows):
@@ -1012,6 +1098,10 @@ class CollisionViewer(QMainWindow):
             self._next_record()
         elif k == Qt.Key.Key_P:
             self._prev_record()
+        elif k == Qt.Key.Key_I:
+            self._wf_canvas.scale_up()
+        elif k == Qt.Key.Key_D:
+            self._wf_canvas.scale_down()
         else:
             super().keyPressEvent(event)
 
@@ -1187,9 +1277,10 @@ def main():
     win = CollisionViewer(session_path)
     win.show()
 
-    if args.group:
-        win._grp_combo.setCurrentIndex(
-            win._grp_combo.findData(args.group))
+    if args.group and hasattr(win, "_grp_combo"):
+        idx = win._grp_combo.findData(args.group)
+        if idx >= 0:
+            win._grp_combo.setCurrentIndex(idx)
 
     sys.exit(app.exec())
 
