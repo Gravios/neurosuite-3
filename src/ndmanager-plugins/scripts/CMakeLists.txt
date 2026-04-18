@@ -28,7 +28,6 @@ install(PROGRAMS
 install(PROGRAMS
     process_estimatedrift.py
     process_applydrift.py
-    process_decomposecollisions.py
     process_localise.py
     process_setupgroups.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")

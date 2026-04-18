@@ -8,7 +8,7 @@
 #//  template (collision candidates), and fits two-component matchingpursuit
 #//  decompositions using all pairwise same-shank template combinations.
 #//
-#//  Output: SESSION.col.N  (one per spikeDetection group, YAML sidecar)
+#//  Output: SESSION.col.N  (one per spikeDetection group, binary sidecar)
 #//
 #//  The original .clu.N, .res.N and .spk.N files are never modified.
 #//
@@ -29,9 +29,7 @@ session=${session%.xml}; session=${session%.yaml}; session=${session%.yml}
 
 print_header "$session - Decomposing spike collisions"
 
-check_commands_installed python3
-python3 -c "import yaml, numpy" 2>/dev/null || {
-    echo_error "Python packages missing: install pyyaml and numpy"; exit $GENERAL_ERROR; }
+check_commands_installed process_decomposecollisions
 
 # Resolve the YAML parameter file — required; no XML fallback
 yamlfile=$(find_yaml_file "$session")
@@ -56,11 +54,20 @@ minSnrRms=${minSnrRms:-4.0}
 minSpikesTemplate=$(read_script_parameter "$session" ndm_decomposecollisions minSpikesTemplate)
 minSpikesTemplate=${minSpikesTemplate:-30}
 
+corrWindow=$(read_script_parameter "$session" ndm_decomposecollisions corrWindow)
+corrWindow=${corrWindow:-0}
+
 excludeNoise=$(read_script_parameter "$session" ndm_decomposecollisions excludeNoise)
 excludeNoise=${excludeNoise:-true}
 
 overwrite=$(read_script_parameter "$session" ndm_decomposecollisions overwrite)
 overwrite=${overwrite:-false}
+
+nWorkers=$(read_script_parameter "$session" ndm_decomposecollisions nWorkers)
+nWorkers=${nWorkers:-0}
+
+useGpu=$(read_script_parameter "$session" ndm_decomposecollisions useGpu)
+useGpu=${useGpu:-false}
 
 # Acquisition parameters
 samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
@@ -103,29 +110,25 @@ if [ "$overwrite" != "true" ]; then
     fi
 fi
 
-# Locate the Python helper alongside this script, or in PATH
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_HELPER="${SCRIPT_DIR}/process_decomposecollisions.py"
-[ -f "$PY_HELPER" ] || PY_HELPER="process_decomposecollisions.py"
-
-python3 "$PY_HELPER" \
+process_decomposecollisions \
     --session              "$session"         \
     --param-file           "$yamlfile"        \
-    --sampling-rate        "$samplingRate"    \
     --n-channels           "$nChannels"       \
-    --n-bits               "$nBits"           \
     --n-groups             "$nSpikeGroups"    \
     --max-shift-samp       "$maxShiftSamp"    \
     --corr-threshold       "$corrThreshold"   \
     --residual-threshold   "$residualThreshold" \
     --min-snr-rms          "$minSnrRms"       \
     --min-spikes-template  "$minSpikesTemplate" \
+    --corr-window          "$corrWindow"      \
+    --n-workers            "$nWorkers"        \
+    --gpu                  "$useGpu"          \
     --exclude-noise        "$excludeNoise"    \
     --overwrite            "$overwrite"
 
 status=$?
 [ $status -ne 0 ] && {
-    echo_error "process_decomposecollisions.py failed (exit $status)"
+    echo_error "process_decomposecollisions failed (exit $status)"
     exit $GENERAL_ERROR; }
 
 echo_message "Collision sidecar files written: ${session}.col.1 … ${session}.col.${nSpikeGroups}"
