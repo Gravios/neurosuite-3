@@ -261,23 +261,23 @@ static std::vector<Template> build_templates(
         t.dominant_ch = (int)(std::max_element(mean_ptp.begin(), mean_ptp.end())
                               - mean_ptp.begin());
 
-        // Amplitude distribution on dominant channel (PTP per spike)
-        std::vector<float> ptps(idx.size());
+        // Projection coefficient distribution: a_i = <wf_i, tmpl> / ||tmpl||²
+        // This is the exact same quantity as the fitted amplitude in fit_amplitude
+        // at τ=0, so the clamp is directly calibrated to what a will look like.
+        std::vector<float> projs(idx.size());
         for (size_t ii = 0; ii < idx.size(); ++ii) {
             size_t si = idx[ii];
-            float mn = 1e18f, mx = -1e18f;
-            for (int s = 0; s < n_samp; ++s) {
-                float v = wf_all[si*stride + s*n_sites + t.dominant_ch];
-                mn = std::min(mn, v); mx = std::max(mx, v);
-            }
-            ptps[ii] = mx - mn;
+            float dot = 0.f;
+            for (int k = 0; k < stride; ++k)
+                dot += wf_all[si*stride + k] * t.mean_wf[k];
+            projs[ii] = dot / norm2;
         }
-        std::sort(ptps.begin(), ptps.end());
-        t.amp_mean  = std::accumulate(ptps.begin(), ptps.end(), 0.f) / (float)ptps.size();
-        size_t i01  = std::max<size_t>(0, (size_t)(0.01f * ptps.size()));
-        size_t i99  = std::min(ptps.size()-1, (size_t)(0.99f * ptps.size()));
-        t.amp_pct01 = ptps[i01];
-        t.amp_pct99 = ptps[i99];
+        std::sort(projs.begin(), projs.end());
+        t.amp_mean  = std::accumulate(projs.begin(), projs.end(), 0.f) / (float)projs.size();
+        size_t i01  = std::max<size_t>(0, (size_t)(0.01f * projs.size()));
+        size_t i99  = std::min(projs.size()-1, (size_t)(0.99f * projs.size()));
+        t.amp_pct01 = projs[i01];
+        t.amp_pct99 = projs[i99];
 
         tmpls.push_back(std::move(t));
     }

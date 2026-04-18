@@ -44,7 +44,7 @@ from PyQt6.QtWidgets import (
     QSlider, QGroupBox, QHeaderView, QAbstractItemView, QStatusBar, QSizePolicy,
     QToolBar, QDoubleSpinBox, QSpinBox, QFileDialog, QTabWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal, QObject, QTimer
 from PyQt6.QtGui import QColor, QBrush, QFont
 
 import matplotlib
@@ -434,13 +434,6 @@ class WaveformCanvas(FigureCanvas):
         else:
             combo = None
 
-        # Amplitude-match templates to raw for visual comparison.
-        # Compute a single normalization factor so the combo peak equals
-        # the raw peak.  Applied only to templates/combo in display;
-        # the raw is always shown at its true amplitude.
-        raw_peak   = float(np.abs(wf).max()) or 1.0
-        combo_peak = float(np.abs(combo).max()) if combo is not None else raw_peak
-        tmpl_disp_scale = raw_peak / combo_peak if combo_peak > 1e-9 else 1.0
 
         for ch in range(n_sites):
             # Invert so ch 0 is at top, ch n_sites-1 at bottom
@@ -458,21 +451,20 @@ class WaveformCanvas(FigureCanvas):
                          label="raw" if ch == 0 else "_")
 
             # Linear combination a1·T1(τ1) + a2·T2(τ2) — green solid
-            # (amplitude-matched to raw peak for visual comparison)
             if combo is not None:
-                self.ax.plot(t, combo[:, ch] * tmpl_disp_scale * scale + offset,
+                self.ax.plot(t, combo[:, ch] * scale + offset,
                              color=COLOURS["sum"], lw=1.8, alpha=0.9,
                              label=f"a1·u{unit1}+a2·u{unit2}" if ch == 0 else "_")
 
             # Individual scaled+shifted templates — dashed
             if t1_shifted is not None:
-                self.ax.plot(t, t1_shifted[:, ch] * a1 * tmpl_disp_scale * scale + offset,
+                self.ax.plot(t, t1_shifted[:, ch] * a1 * scale + offset,
                              color=COLOURS["tmpl1"], lw=1.2,
                              ls="--", alpha=0.7,
                              label=f"u{unit1}" if ch == 0 else "_")
 
             if t2_shifted is not None:
-                self.ax.plot(t, t2_shifted[:, ch] * a2 * tmpl_disp_scale * scale + offset,
+                self.ax.plot(t, t2_shifted[:, ch] * a2 * scale + offset,
                              color=COLOURS["tmpl2"], lw=1.2,
                              ls="--", alpha=0.7,
                              label=f"u{unit2}" if ch == 0 else "_")
@@ -840,6 +832,9 @@ class CollisionViewer(QMainWindow):
         self._build_ui()
         self._populate_table()
         self._show_record(self._cur_group, self._cur_rec)
+        # Install on QApplication so key events arrive here even when
+        # the table, spinboxes, or other child widgets hold focus.
+        QApplication.instance().installEventFilter(self)
 
     # ── no data fallback ──────────────────────────────────────────────────
 
@@ -1087,23 +1082,29 @@ class CollisionViewer(QMainWindow):
             f"(update .yaml and re-run ndm_decomposecollisions to apply)")
 
     # ── Keyboard shortcuts ────────────────────────────────────────────
+    # eventFilter is installed on QApplication so shortcuts work
+    # regardless of which child widget currently holds focus.
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            k = event.key()
+            if k == Qt.Key.Key_A:
+                self._accept_current(); return True
+            elif k == Qt.Key.Key_R:
+                self._reject_current(); return True
+            elif k == Qt.Key.Key_N:
+                self._next_record();    return True
+            elif k == Qt.Key.Key_P:
+                self._prev_record();    return True
+            elif k == Qt.Key.Key_I:
+                self._wf_canvas.scale_up();   return True
+            elif k == Qt.Key.Key_D:
+                self._wf_canvas.scale_down(); return True
+        return super().eventFilter(obj, event)
 
     def keyPressEvent(self, event):
-        k = event.key()
-        if k == Qt.Key.Key_A:
-            self._accept_current()
-        elif k == Qt.Key.Key_R:
-            self._reject_current()
-        elif k == Qt.Key.Key_N:
-            self._next_record()
-        elif k == Qt.Key.Key_P:
-            self._prev_record()
-        elif k == Qt.Key.Key_I:
-            self._wf_canvas.scale_up()
-        elif k == Qt.Key.Key_D:
-            self._wf_canvas.scale_down()
-        else:
-            super().keyPressEvent(event)
+        # Fallback — normally handled by eventFilter above
+        self.eventFilter(self, event)
 
     # ── Accept / Reject ───────────────────────────────────────────────
 
