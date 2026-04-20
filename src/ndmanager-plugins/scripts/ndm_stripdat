@@ -22,6 +22,52 @@
 #//   ------
 #//   <session>-spkclean.dat
 #//
+#//   Parameters (read from ndm_stripdat block of the YAML)
+#//   -----------------------------------------------------
+#//     stripClusters   : Which clusters to subtract (per group).
+#//                       "default"  strip every cluster except 0 and 1
+#//                                  (neurosuite convention: 0=artefact,
+#//                                  1=MUA).  This is the default.
+#//                       "all"      strip every cluster including noise/MUA.
+#//                       "2,3,5"    strip only the listed cluster ids.
+#//     subtractionMode : "raw" (default) — subtract the raw .spk.N
+#//                       waveform directly (Layer 0).  Near-exact
+#//                       cancellation at spike windows; skips all
+#//                       template modelling; fast.  Appropriate for
+#//                       the iterative strip-good → re-detect workflow.
+#//                       "model" — Layer 1 (per-cluster mean template +
+#//                       ISI burst correction) or Layer 2 (exponential
+#//                       PC1 shape model) with contamination-aware
+#//                       neighbour cleaning and drift compensation.
+#//                       Preserves the noise baseline at subtracted
+#//                       spike windows.  Appropriate for LFP extraction
+#//                       where you want the residual to look like
+#//                       surrounding noise, not a hole in the trace.
+#//     overwrite       : "true" to re-run even if <session>-spkclean.dat
+#//                       exists; default "false".
+#//     redetectSpikes  : "yes" to chain ndm_redetectspikes afterwards.
+#//
+#//   Per-group sidecar
+#//   -----------------
+#//   For any electrode group g, a file <session>.strip.<g> will override
+#//   the global stripClusters for that group.  The file is a plain text
+#//   list of integer cluster ids (one per line; '#' comments and blanks
+#//   allowed).  This is the recommended place to keep "curated good units"
+#//   lists as you iterate.
+#//
+#//   Iterative strip-good → re-detect workflow
+#//   -----------------------------------------
+#//     1. Sort, curate.  Mark the clusters you trust as real.
+#//     2. Write their ids into <session>.strip.<g> per group.
+#//     3. Run ndm_stripdat      → <session>-spkclean.dat
+#//     4. Run ndm_redetectspikes → new .res/.spk for missed spikes
+#//     5. Sort the new detections, curate newcomers.
+#//     6. Append confirmed newcomers to <session>.strip.<g> and
+#//        re-run ndm_stripdat against the ORIGINAL .dat (the guard
+#//        in this script prevents overwriting the existing clean dat;
+#//        set overwrite=true or delete it first).
+#//     7. Repeat until re-detection finds no new real units.
+#//
 #//   Typical next steps
 #//   ------------------
 #//   ndm_lfp              — downsample the cleaned dat to LFP
@@ -57,11 +103,9 @@ param_ext=$(param_file_ext "$session")
 print_header "$session - Stripping spike waveforms from dat"
 
 # ── Input checks ─────────────────────────────────────────────────────────────
-# No outputs_exist guard: session-spkclean.dat is an intermediate product and
-# should always be regenerated on re-run (e.g. after a second sorting pass).
 inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
 
-check_commands_installed xpathReader process_subtractspikes
+check_commands_installed process_subtractspikes
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Read Parameters
@@ -72,10 +116,59 @@ samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 nBits=$(yaml_read $session "//acquisitionSystem/nBits")
 redetectSpikes=$(read_script_parameter $session redetectSpikes)
 
+# New optional parameters (ndm_stripdat block):
+#   stripClusters : "default" (strip non-noise, excluding 0 and 1 — the
+#                   neurosuite convention), "all" (strip every cluster),
+#                   or a comma-separated list like "2,3,5".  This is the
+#                   global default for every group that does NOT have
+#                   a per-group sidecar file (see below).  Defaults to
+#                   "default".
+#   overwrite     : "true" to re-run even if $session-spkclean.dat exists.
+#                   Defaults to "false".  Stripping a typical 3-hour
+#                   recording takes tens of minutes, so the guard avoids
+#                   accidental re-runs.
+#
+# Per-group override: if the file $session.strip.<g> exists, it is used
+# for that group instead of the global stripClusters value.  The file is
+# a plain text file with one integer cluster id per line; blank lines and
+# lines starting with '#' are ignored.  This is the recommended way to
+# iterate the strip-good-re-detect loop: after each curation round, update
+# each group's $session.strip.<g> file and re-run ndm_stripdat.
+stripClusters=$(read_script_parameter $session stripClusters)
+check_optional_variable $stripClusters || stripClusters="default"
+
+overwrite=$(read_script_parameter $session overwrite)
+check_optional_variable $overwrite || overwrite="false"
+
+# subtractionMode: "model" (Layer 1/2 cluster-aware; preserves baseline
+# noise — appropriate for LFP extraction) or "raw" (Layer 0 raw .spk.N
+# subtraction; near-exact cancellation, skips model fitting entirely —
+# appropriate for the iterative strip-good-re-detect workflow because
+# residual amplitude at subtracted spike windows falls below threshold).
+# Default: "raw" — if you're running ndm_stripdat you're almost certainly
+# either producing input to ndm_redetectspikes or cleaning for LFP; in
+# either case raw is the safer choice (for re-detection it's better; for
+# LFP the difference is invisible after downsampling).
+subtractionMode=$(read_script_parameter $session subtractionMode)
+check_optional_variable $subtractionMode || subtractionMode="raw"
+if [ "$subtractionMode" != "model" ] && [ "$subtractionMode" != "raw" ]
+then
+	echo_error "subtractionMode must be 'model' or 'raw', got '$subtractionMode'"
+	exit $GENERAL_ERROR
+fi
+
 check_mandatory_variable $nChannels   "missing number of channels"
 check_mandatory_variable $samplingRate "missing sampling rate"
 
 nBits=${nBits:-16}
+
+# ── Output guard (before loading anything expensive) ─────────────────────
+outputDat="$session-spkclean.dat"
+if [ -f "$outputDat" ] && [ "$overwrite" != "true" ]
+then
+	echo_message "$outputDat already exists; set overwrite=true to re-run"
+	exit $OUTPUTS_EXIST
+fi
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Build group specs
@@ -156,8 +249,24 @@ do
 		echo_info "  Group $group: using drift file $driftFile (probe $probeIdx)"
 	fi
 
+	# ── Resolve strip spec for this group ────────────────────────────
+	# Priority: per-group sidecar > global YAML stripClusters > default.
+	# The sidecar path is echoed with a literal '@' prefix so the Python
+	# parser reads it as a file reference.
+	sidecar="$session.strip.$group"
+	if [ -f "$sidecar" ]
+	then
+		stripSpec="@$sidecar"
+		echo_info "  Group $group: using strip sidecar $sidecar"
+	elif [ "$stripClusters" = "default" ] || [ -z "$stripClusters" ]
+	then
+		stripSpec="-"
+	else
+		stripSpec="$stripClusters"
+	fi
+
 	channels=$(echo $channels | tr ' ' ',')
-	groupSpecs="$groupSpecs $resFile:$spkFile:$cluFile:$channels:$nSamples:$peakSample:$driftFile"
+	groupSpecs="$groupSpecs $resFile:$spkFile:$cluFile:$channels:$nSamples:$peakSample:$driftFile:$stripSpec"
 done
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -165,12 +274,15 @@ done
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
 echo_info "Subtracting spike waveforms from $nElectrodeGroups electrode group(s)"
-echo_info "Output: $session-spkclean.dat"
+echo_info "Strip mode:       $stripClusters  (per-group sidecar files take priority)"
+echo_info "Subtraction mode: $subtractionMode"
+echo_info "Output:           $outputDat"
 
 process_subtractspikes \
 	-n $nChannels -b $nBits \
 	-s $samplingRate \
-	$session.dat $session-spkclean.dat \
+	--subtraction-mode $subtractionMode \
+	$session.dat $outputDat \
 	$groupSpecs
 check_command_status process_subtractspikes
 
