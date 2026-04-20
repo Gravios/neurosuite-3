@@ -67,9 +67,25 @@
 #//      [--exp-terms K] [--min-clean-frac F] [--chunk-frames N]
 #//      input.dat output.dat spec1 [spec2 ...]
 #//
-#//  Spec format (5 or 6 colon-separated fields):
+#//  Spec format (5, 6, 7, or 8 colon-separated fields):
 #//    resfile:spkfile[:clufile]:ch0,ch1,...:nSamples:peakSample
-#//    clufile='-' disables cluster-based modelling for that group.
+#//                                           [:driftfile[:strip_spec]]
+#//
+#//  clufile   = '-' disables cluster-based modelling for that group
+#//              (Layer 0: raw waveform subtraction only).
+#//  driftfile = '-' or missing disables drift compensation for that group.
+#//  strip_spec controls which clusters get subtracted:
+#//    '-' or missing   strip every cluster except 0 (artefact) and 1 (MUA)
+#//                     — the neurosuite convention default.
+#//    'all'            strip every cluster including noise/MUA.
+#//    '2,3,5'          strip only the listed cluster ids.
+#//    '@file'          read one integer cluster id per line from file.
+#//
+#//  Cluster models are still built for EVERY cluster that appears in
+#//  .clu (not just the ones being stripped), because the neighbour-
+#//  template observation cleaner needs them to subtract overlapping
+#//  contributions from adjacent non-stripped clusters' spikes before
+#//  projecting each stripped spike onto its own template.
 #//
 #////////////////////////////////////////////////////////////////////////////
 
@@ -119,6 +135,14 @@ def build_parser():
     p.add_argument('-n', type=int, required=True, metavar='nChannels')
     p.add_argument('-b', type=int, default=16, metavar='nBits', choices=[8, 16, 32])
     p.add_argument('-s', type=float, default=None, metavar='samplingRate')
+    p.add_argument('--subtraction-mode', choices=['model', 'raw'], default='model',
+                   help='"model" (default): cluster-aware Layer 1/2 template '
+                        'subtraction — preserves noise baseline at spike windows, '
+                        'suitable for LFP extraction.  "raw": subtract the raw '
+                        '.spk.N waveform directly (Layer 0) — near-exact '
+                        'cancellation, optimal for the strip-good-re-detect '
+                        'workflow.  Cluster-id filtering still applies in both '
+                        'modes.')
     p.add_argument('--no-burst-correction', action='store_true')
     p.add_argument('--min-template-spikes', type=int, default=DEFAULT_MIN_TPL_SPIKES)
     p.add_argument('--burst-isi-threshold-ms', type=float, default=DEFAULT_BURST_ISI_MS)
@@ -135,34 +159,97 @@ def build_parser():
     return p
 
 
+def _parse_strip_spec(spec_str, clufile):
+    """
+    Parse the strip-cluster specification for one group.
+
+    Accepts:
+      None, '', '-'      → default: strip every cluster except 0 and 1
+      'all' / 'ALL'      → strip every cluster (including noise/MUA)
+      '2,3,5'            → strip only the listed cluster ids
+      '@path/to/file'    → read one integer cluster id per line from file
+
+    Returns: (strip_set, mode)
+      strip_set : frozenset[int] of cluster ids to strip, or None meaning
+                  "strip every cluster that appears in .clu"
+      mode      : human-readable string for logging
+    """
+    if spec_str is None or spec_str in ('', '-'):
+        return ('NON_NOISE', 'strip non-noise clusters (exclude 0, 1)')
+    if spec_str.lower() == 'all':
+        return (None, 'strip ALL clusters (including noise/MUA)')
+    if spec_str.startswith('@'):
+        path = spec_str[1:]
+        if not os.path.isfile(path):
+            raise ValueError(
+                f'strip-cluster file {path!r} referenced by {clufile!r} '
+                f'not found')
+        ids = []
+        with open(path) as fh:
+            for ln in fh:
+                ln = ln.strip()
+                if not ln or ln.startswith('#'):
+                    continue
+                try:
+                    ids.append(int(ln))
+                except ValueError:
+                    raise ValueError(
+                        f'{path!r}: non-integer line {ln!r}')
+        if not ids:
+            raise ValueError(f'{path!r}: no cluster ids found')
+        return (frozenset(ids), f'strip {len(ids)} ids from {os.path.basename(path)}')
+    # Comma-separated integer list
+    ids = []
+    for tok in spec_str.split(','):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            ids.append(int(tok))
+        except ValueError:
+            raise ValueError(
+                f'invalid cluster id {tok!r} in strip-cluster spec '
+                f'{spec_str!r}')
+    if not ids:
+        raise ValueError(f'empty strip-cluster list {spec_str!r}')
+    return (frozenset(ids), f'strip explicit ids: {sorted(ids)}')
+
+
 def parse_group_spec(spec):
     """Parse a group spec.  Accepted formats:
 
       5 fields: resfile:spkfile:ch0,...:nSamples:peakSample
       6 fields: resfile:spkfile:clufile:ch0,...:nSamples:peakSample
       7 fields: resfile:spkfile:clufile:ch0,...:nSamples:peakSample:driftfile
+      8 fields: resfile:spkfile:clufile:ch0,...:nSamples:peakSample:driftfile:strip_spec
 
-    The optional 7th field is a path to the binary int16 drift signal file
-    (session.dat.drift.N) for this group's probe.  Pass '-' to disable drift
-    correction for this group.
+    driftfile='-' disables drift correction for that group.
+    strip_spec controls which clusters get subtracted; see _parse_strip_spec.
+    When the 8th field is missing, the default is "strip all clusters except
+    0 and 1" — the neurosuite convention for artefact/MUA.
     """
     parts = spec.split(':')
     drift_path = None
-    if len(parts) == 5:
+    strip_spec = None
+    if   len(parts) == 5:
         resfile, spkfile, channels_str, nsamples_str, peaksample_str = parts
         clufile = '-'
     elif len(parts) == 6:
         resfile, spkfile, clufile, channels_str, nsamples_str, peaksample_str = parts
     elif len(parts) == 7:
         resfile, spkfile, clufile, channels_str, nsamples_str, peaksample_str, drift_path = parts
+    elif len(parts) == 8:
+        (resfile, spkfile, clufile, channels_str, nsamples_str,
+         peaksample_str, drift_path, strip_spec) = parts
     else:
-        raise ValueError(f'Expected 5, 6, or 7 colon-separated fields: {spec!r}')
+        raise ValueError(f'Expected 5, 6, 7, or 8 colon-separated fields: {spec!r}')
     if drift_path in ('-', '', None):
         drift_path = None
+    strip_set, strip_mode = _parse_strip_spec(strip_spec, clufile)
     return (resfile, spkfile, clufile,
             list(map(int, channels_str.split(','))),
             int(nsamples_str), int(peaksample_str),
-            drift_path)
+            drift_path, strip_set, strip_mode)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -170,6 +257,37 @@ def parse_group_spec(spec):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def load_clu(clufile):
+    """
+    Read a .clu.N file, handling both formats:
+
+      - Binary (written by KlustaKwik and Klusters since the neurosuite-3
+        modernization): int32 nClusters header + nSpikes × int32 cluster ids.
+      - Legacy text: first line = nClusters, subsequent lines = one id per
+        line as decimal text.
+
+    Auto-detects by peeking the first four bytes: a binary header will
+    always be a small positive integer with high bytes zero, while a text
+    file's first bytes will be ASCII digits.
+    """
+    with open(clufile, 'rb') as fh:
+        first4 = fh.read(4)
+    if len(first4) < 4:
+        raise RuntimeError(f'{clufile!r}: file too short ({len(first4)} bytes)')
+
+    # Heuristic: binary i32 header — high-order bytes are zero for any
+    # plausible cluster-count value (< 2^24 ≈ 16M clusters).  Text files
+    # start with ASCII digits 0x30–0x39, newlines, or whitespace.
+    looks_binary = (first4[1] == 0 and first4[2] == 0 and first4[3] == 0)
+    if not looks_binary:
+        looks_binary = not all(b in b'0123456789 \t\n\r' for b in first4)
+
+    if looks_binary:
+        raw = np.fromfile(clufile, dtype='<i4')
+        if raw.size < 1:
+            raise RuntimeError(f'{clufile!r}: empty file')
+        return raw[1:].copy()            # skip nClusters header
+
+    # Text fallback
     with open(clufile, 'r') as fh:
         lines = [l.strip() for l in fh if l.strip()]
     if not lines:
@@ -277,21 +395,23 @@ def find_clean_mask(spike_times: np.ndarray, nSamples: int) -> np.ndarray:
     flagged regardless of whether the neighbour belongs to the same cluster
     or a different one — any overlap corrupts the recorded waveform snippet.
 
-    Implementation: O(n log n) — sort once, then for each spike do two
-    searchsorted calls and check the length of the window.
+    Vectorized O(n log n) implementation — sort once, then do two
+    searchsorted calls on the entire sorted array at once.  Roughly
+    100-500× faster than the previous per-spike Python loop on typical
+    200k-spike sessions.
     """
-    n        = len(spike_times)
-    clean    = np.ones(n, dtype=bool)
+    n = len(spike_times)
+    if n == 0:
+        return np.zeros(0, dtype=bool)
+
     sort_idx = np.argsort(spike_times)
-    st       = spike_times[sort_idx]   # sorted times
+    st       = spike_times[sort_idx]               # sorted times
+    lo       = np.searchsorted(st, st - nSamples + 1, 'left')
+    hi       = np.searchsorted(st, st + nSamples,     'right')
+    contaminated_sorted = (hi - lo) > 1             # at least one neighbour
 
-    for ii in range(n):
-        lo = int(np.searchsorted(st, st[ii] - nSamples + 1, 'left'))
-        hi = int(np.searchsorted(st, st[ii] + nSamples,     'right'))
-        # If any spike other than itself falls in the window, contaminated
-        if (hi - lo) > 1:
-            clean[sort_idx[ii]] = False
-
+    clean = np.ones(n, dtype=bool)
+    clean[sort_idx] = ~contaminated_sorted
     return clean
 
 
@@ -555,11 +675,13 @@ class ExponentialWaveformModel:
         self._pc1_eval  = np.zeros((nSamples, nChanGrp), np.float32)
         n_fitted        = 0
         for ch in range(nChanGrp):
-            _, ev_mean = _fit_exp_1ch(self.t_ms, mean_ch[:, ch].astype(np.float64), K)
-            _, ev_pc1  = _fit_exp_1ch(self.t_ms, pc1_ch[:, ch],                    K)
+            popt_mean, ev_mean = _fit_exp_1ch(
+                self.t_ms, mean_ch[:, ch].astype(np.float64), K)
+            popt_pc1,  ev_pc1  = _fit_exp_1ch(
+                self.t_ms, pc1_ch[:, ch],                     K)
             self._mean_eval[:, ch] = ev_mean.astype(np.float32)
             self._pc1_eval [:, ch] = ev_pc1 .astype(np.float32)
-            if _fit_exp_1ch(self.t_ms, mean_ch[:, ch].astype(np.float64), K)[0] is not None:
+            if popt_mean is not None:
                 n_fitted += 1
 
         self._mean_wf_flat = mean_wf_2d.ravel().astype(np.float64)
@@ -728,6 +850,12 @@ class GroupData:
     # ── Drift correction ─────────────────────────────────────────────────
     drift_signal    : Optional[np.ndarray] # (nTotalSamples,) int16 µm, or None
     site_depths     : np.ndarray           # (nChanGrp,) electrode depths µm
+    # ── Cluster-id filter ────────────────────────────────────────────────
+    # strip_set : frozenset[int] of cluster ids whose spikes get subtracted,
+    #             sentinel 'NON_NOISE' = strip everything except 0 and 1,
+    #             or None = strip every cluster present.
+    strip_set       : object = None
+    strip_mode      : str = ''
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -737,7 +865,9 @@ class GroupData:
 def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
                samplingRate, use_burst_correction, min_template_spikes,
                min_exp_spikes, exp_terms, burst_isi_ms_thresh, min_clean_frac,
-               drift_path=None, site_depths=None, n_total_samples=0):
+               drift_path=None, site_depths=None, n_total_samples=0,
+               strip_set=None, strip_mode='',
+               subtraction_mode='model'):
     nChanGrp = len(channels)
 
     spike_times = np.fromfile(resfile, dtype='<i8')
@@ -776,81 +906,90 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
     sorted_clu    = clu_ids[sort_idx] if use_clusters else np.zeros(nSpikes, np.int32)
 
     # ── contamination mask (used for ALL clusters) ────────────────────────
-    contam_mask = find_clean_mask(spike_times, nSamples)
-    n_clean_tot = int(contam_mask.sum())
-    print(f'    contamination check: {n_clean_tot}/{nSpikes} spikes '
-          f'uncontaminated ({100*n_clean_tot/max(nSpikes,1):.0f}%)',
-          file=sys.stderr)
-
-    # ── per-cluster ISI ───────────────────────────────────────────────────
-    isi_per_spike = np.full(nSpikes, np.inf, dtype=np.float64)
-    prev_t        = {}
-    for i in sort_idx:
-        cid = int(clu_ids[i]) if use_clusters else 0
-        t   = int(spike_times[i])
-        if cid in prev_t:
-            isi_per_spike[i] = (t - prev_t[cid]) / samplingRate * 1000.0
-        prev_t[cid] = t
-
-    # ── build cluster models ──────────────────────────────────────────────
+    # Skipped entirely in raw-subtraction mode — no template modelling,
+    # no neighbour cleaning, no projection: all the diagnostics about
+    # "which spike windows overlap" are irrelevant because the raw
+    # .spk.N waveform byte-matches the .dat at that window regardless.
     cluster_models : Dict = {}
     exp_models     : Dict = {}
+    isi_per_spike  = np.full(nSpikes, np.inf, dtype=np.float64)
 
-    if use_clusters:
-        global_fallback = spk.astype(np.float32).mean(axis=0)
+    if subtraction_mode == 'raw':
+        print(f'    raw-subtraction mode: skipping contamination check, '
+              f'ISI computation, and cluster model building',
+              file=sys.stderr)
+    else:
+        contam_mask = find_clean_mask(spike_times, nSamples)
+        n_clean_tot = int(contam_mask.sum())
+        print(f'    contamination check: {n_clean_tot}/{nSpikes} spikes '
+              f'uncontaminated ({100*n_clean_tot/max(nSpikes,1):.0f}%)',
+              file=sys.stderr)
 
-        for cid in np.unique(clu_ids):
-            mask   = np.where(clu_ids == cid)[0]
-            n_c    = len(mask)
-            t_ord  = np.argsort(spike_times[mask])
-            spk_c  = spk[mask[t_ord]].astype(np.float32)
-            t_c    = spike_times[mask[t_ord]]
-            cm     = contam_mask[mask[t_ord]]   # clean mask in time order
+        # ── per-cluster ISI ───────────────────────────────────────────────
+        prev_t = {}
+        for i in sort_idx:
+            cid = int(clu_ids[i]) if use_clusters else 0
+            t   = int(spike_times[i])
+            if cid in prev_t:
+                isi_per_spike[i] = (t - prev_t[cid]) / samplingRate * 1000.0
+            prev_t[cid] = t
 
-            if n_c < min_template_spikes:
-                m             = ClusterModel.__new__(ClusterModel)
-                m.cid             = cid
-                m.has_burst_model = False
-                m.burst_params    = None
-                m.tmpl_burst      = None
-                m.tmpl_full       = None
-                m.template        = global_fallback
+        # ── build cluster models ──────────────────────────────────────────
+        if use_clusters:
+            global_fallback = spk.astype(np.float32).mean(axis=0)
+
+            for cid in np.unique(clu_ids):
+                mask   = np.where(clu_ids == cid)[0]
+                n_c    = len(mask)
+                t_ord  = np.argsort(spike_times[mask])
+                spk_c  = spk[mask[t_ord]].astype(np.float32)
+                t_c    = spike_times[mask[t_ord]]
+                cm     = contam_mask[mask[t_ord]]   # clean mask in time order
+
+                if n_c < min_template_spikes:
+                    m             = ClusterModel.__new__(ClusterModel)
+                    m.cid             = cid
+                    m.has_burst_model = False
+                    m.burst_params    = None
+                    m.tmpl_burst      = None
+                    m.tmpl_full       = None
+                    m.template        = global_fallback
+                    cluster_models[cid] = m
+                    exp_models[cid]     = None
+                    print(f'    cluster {cid:4d}: {n_c:5d} spikes '
+                          f'(< {min_template_spikes}) → global template',
+                          file=sys.stderr)
+                    continue
+
+                # Layer 1
+                m = ClusterModel(
+                    cid, spk_c, t_c, samplingRate,
+                    use_burst_correction, min_template_spikes,
+                    burst_isi_ms_thresh, cm, min_clean_frac)
                 cluster_models[cid] = m
-                exp_models[cid]     = None
-                print(f'    cluster {cid:4d}: {n_c:5d} spikes '
-                      f'(< {min_template_spikes}) → global template',
+
+                # Layer 2
+                exp_m: Optional[ExponentialWaveformModel] = None
+                if n_c >= min_exp_spikes:
+                    exp_m = ExponentialWaveformModel(
+                        cid, spk_c, cm, peakSample, samplingRate,
+                        K=exp_terms, min_clean_frac=min_clean_frac)
+                    if not exp_m.valid:
+                        exp_m = None
+                exp_models[cid] = exp_m
+
+                # ── logging ──────────────────────────────────────────────
+                l2_tag = (exp_m.fit_summary() if exp_m is not None
+                          else f'L2: skipped (< {min_exp_spikes} spikes)'
+                          if n_c < min_exp_spikes
+                          else 'L2: PCA/fit failed → L1')
+                l1_tag = ('L1-ISI: ' + (
+                    f's_inf={m.burst_params[0]:.3f} f={m.burst_params[1]:.3f} '
+                    f'τ={m.burst_params[2]:.1f} ms' if m.has_burst_model
+                    else 'burst model not fitted'
+                    if use_burst_correction else 'single template'))
+                print(f'    cluster {cid:4d}: {n_c:5d} spikes  {l2_tag}  |  {l1_tag}',
                       file=sys.stderr)
-                continue
-
-            # Layer 1
-            m = ClusterModel(
-                cid, spk_c, t_c, samplingRate,
-                use_burst_correction, min_template_spikes,
-                burst_isi_ms_thresh, cm, min_clean_frac)
-            cluster_models[cid] = m
-
-            # Layer 2
-            exp_m: Optional[ExponentialWaveformModel] = None
-            if n_c >= min_exp_spikes:
-                exp_m = ExponentialWaveformModel(
-                    cid, spk_c, cm, peakSample, samplingRate,
-                    K=exp_terms, min_clean_frac=min_clean_frac)
-                if not exp_m.valid:
-                    exp_m = None
-            exp_models[cid] = exp_m
-
-            # ── logging ──────────────────────────────────────────────────
-            l2_tag = (exp_m.fit_summary() if exp_m is not None
-                      else f'L2: skipped (< {min_exp_spikes} spikes)'
-                      if n_c < min_exp_spikes
-                      else 'L2: PCA/fit failed → L1')
-            l1_tag = ('L1-ISI: ' + (
-                f's_inf={m.burst_params[0]:.3f} f={m.burst_params[1]:.3f} '
-                f'τ={m.burst_params[2]:.1f} ms' if m.has_burst_model
-                else 'burst model not fitted'
-                if use_burst_correction else 'single template'))
-            print(f'    cluster {cid:4d}: {n_c:5d} spikes  {l2_tag}  |  {l1_tag}',
-                  file=sys.stderr)
 
     # ── Site depths: uniform 25 µm spacing if not provided ──────────────
     if site_depths is None or len(site_depths) == 0:
@@ -863,6 +1002,39 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
     drift_sig: Optional[np.ndarray] = None
     if drift_path and n_total_samples > 0:
         drift_sig = load_drift_signal(drift_path, n_total_samples)
+
+    # ── Resolve strip_set for this group ──────────────────────────────────
+    # The sentinel string 'NON_NOISE' (neurosuite convention: cluster 0 =
+    # artefact, cluster 1 = MUA) gets resolved here to the concrete set of
+    # cluster ids 2+ that appear in .clu.  None means "strip every cluster
+    # present including noise/MUA".  A frozenset is used as-is.
+    if use_clusters and isinstance(strip_set, str) and strip_set == 'NON_NOISE':
+        uniq = set(int(c) for c in np.unique(clu_ids))
+        resolved = frozenset(uniq - {0, 1})
+        if not resolved:
+            print(f'    WARNING: no non-noise clusters (2+) in {clufile!r}; '
+                  f'no spikes will be subtracted for this group',
+                  file=sys.stderr)
+        strip_set = resolved
+    elif not use_clusters:
+        # Without .clu, every spike gets subtracted regardless of strip_set.
+        strip_set = None
+
+    if use_clusters:
+        if strip_set is None:
+            print(f'    strip-mode: {strip_mode} → all clusters',
+                  file=sys.stderr)
+        else:
+            n_ids = len(strip_set)
+            preview = ','.join(str(c) for c in sorted(strip_set)[:10])
+            if n_ids > 10:
+                preview += f',… (+{n_ids-10} more)'
+            print(f'    strip-mode: {strip_mode} → '
+                  f'{n_ids} cluster(s): [{preview}]',
+                  file=sys.stderr)
+    else:
+        print(f'    strip-mode: no .clu → raw waveform subtraction '
+              f'(all spikes)', file=sys.stderr)
 
     return GroupData(
         spike_times     = spike_times,
@@ -883,6 +1055,8 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
         sorted_sort_idx = sort_idx,
         drift_signal    = drift_sig,
         site_depths     = site_depths_arr,
+        strip_set       = strip_set,
+        strip_mode      = strip_mode,
     )
 
 
@@ -901,12 +1075,16 @@ def compute_chunk_len(nChannels: int, override: Optional[int] = None) -> int:
 # Single-pass chunk subtraction
 # ──────────────────────────────────────────────────────────────────────────────
 
-def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, chunk_len_override=None):
+def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype,
+                                 chunk_len_override=None,
+                                 subtraction_mode='model'):
     nTotalSamples = out_mm.shape[0]
     chunk_len     = compute_chunk_len(nChannels, chunk_len_override)
     n_chunks      = math.ceil(nTotalSamples / chunk_len)
 
     print(f'process_subtractspikes: chunk_len={chunk_len:,}  n_chunks={n_chunks:,}',
+          file=sys.stderr)
+    print(f'process_subtractspikes: subtraction_mode={subtraction_mode}',
           file=sys.stderr)
 
     n_clipped = 0
@@ -939,6 +1117,16 @@ def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, chunk_len_over
                 t          = int(grp.spike_times[i])
                 isi_ms     = float(grp.isi_per_spike[i])
 
+                # ── Strip-cluster filter ─────────────────────────────────
+                # When strip_set is populated, only spikes whose cluster id
+                # is in the set actually get subtracted.  Other clusters'
+                # models are still available to clean_obs_waveform for
+                # overlap correction of the stripped spikes.
+                if grp.use_clusters and grp.strip_set is not None:
+                    cid_i = int(grp.clu_ids[i])
+                    if cid_i not in grp.strip_set:
+                        continue
+
                 wf_abs_start = t - peakSample
                 wf_abs_end   = wf_abs_start + nSamples
                 dat_start    = max(wf_abs_start, chunk_start)
@@ -952,6 +1140,18 @@ def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, chunk_len_over
                     continue
 
                 obs_wf_full = grp.spk[i].astype(np.float32)   # (nSamples, nChanGrp)
+
+                # ── Raw subtraction mode ─────────────────────────────────
+                # Bypass all template modelling (Layer 1/2 + drift + contam
+                # cleaning).  Subtract the raw .spk.N waveform directly —
+                # near-exact cancellation at the spike window, optimal for
+                # re-detection workflows where residual spike traces must
+                # fall below the detection threshold.
+                if subtraction_mode == 'raw':
+                    to_sub = obs_wf_full[wf_s:wf_e, :]
+                    for ci in range(nChanGrp):
+                        buf[buf_s:buf_e, channels[ci]] -= to_sub[:, ci]
+                    continue
 
                 # ── Drift: rigid-body spatial shift of the template ───────
                 # drift_signal[t] is the probe displacement (µm) at this
@@ -1012,6 +1212,35 @@ def main():
     parser = build_parser()
     args   = parser.parse_args()
 
+    # ── scipy presence check ─────────────────────────────────────────────
+    # Layer 1 ISI burst fitting and Layer 2 exponential PC1 fitting both
+    # require scipy.optimize.curve_fit.  Without scipy:
+    #   - Layer 2 produces all-zero templates (was silent before this patch)
+    #   - Layer 1 burst model fitting returns None → falls back to single
+    #     per-cluster mean template (graceful)
+    # Raw-subtraction mode needs no scipy regardless — skip the warning.
+    wants_layer_2 = args.min_exp_spikes > 0
+    wants_burst   = not args.no_burst_correction
+    if (args.subtraction_mode == 'model'
+            and not HAS_SCIPY
+            and (wants_layer_2 or wants_burst)):
+        degraded = []
+        if wants_layer_2: degraded.append('Layer 2 exponential PC1')
+        if wants_burst:   degraded.append('Layer 1 ISI burst correction')
+        print('=' * 72,                                      file=sys.stderr)
+        print('process_subtractspikes: WARNING — scipy is not installed.',
+              file=sys.stderr)
+        print(f'  Disabled: {", ".join(degraded)}',          file=sys.stderr)
+        print('  Subtraction will fall back to per-cluster mean templates',
+              file=sys.stderr)
+        print('  (Layer 1 single-template) or raw waveform (Layer 0).',
+              file=sys.stderr)
+        print('  Install scipy to enable waveform shape modelling, or use',
+              file=sys.stderr)
+        print('  --subtraction-mode raw to bypass modelling entirely.',
+              file=sys.stderr)
+        print('=' * 72,                                      file=sys.stderr)
+
     dtype          = np.dtype(f'<i{args.b // 8}')
     nChannels      = args.n
     bytes_per_word = args.b // 8
@@ -1037,7 +1266,7 @@ def main():
         sys.exit(1)
     nTotalSamples = total_words // nChannels
 
-    for resfile, spkfile, clufile, channels, nSamples, peakSample, drift_path in group_specs:
+    for resfile, spkfile, clufile, channels, nSamples, peakSample, drift_path, strip_set, strip_mode in group_specs:
         for path in (resfile, spkfile):
             if not os.path.exists(path):
                 print(f'process_subtractspikes: not found: {path!r}', file=sys.stderr)
@@ -1057,7 +1286,8 @@ def main():
                        shape=(nTotalSamples, nChannels))
 
     groups = []
-    for g_idx, (resfile, spkfile, clufile, channels, nSamples, peakSample, drift_path) in \
+    for g_idx, (resfile, spkfile, clufile, channels, nSamples, peakSample,
+                drift_path, strip_set, strip_mode) in \
             enumerate(group_specs):
         nSpikes_est = os.path.getsize(resfile) // 8
         has_clu     = (clufile != '-' and os.path.exists(clufile))
@@ -1076,8 +1306,11 @@ def main():
                 args.exp_terms,
                 args.burst_isi_threshold_ms,
                 args.min_clean_frac,
-                drift_path      = drift_path,
-                n_total_samples = nTotalSamples)
+                drift_path       = drift_path,
+                n_total_samples  = nTotalSamples,
+                strip_set        = strip_set,
+                strip_mode       = strip_mode,
+                subtraction_mode = args.subtraction_mode)
             groups.append(grp)
         except RuntimeError as exc:
             print(f'process_subtractspikes: {exc}', file=sys.stderr)
@@ -1086,7 +1319,9 @@ def main():
             sys.exit(1)
 
     try:
-        subtract_all_groups_chunked(out_mm, groups, nChannels, dtype, args.chunk_frames)
+        subtract_all_groups_chunked(out_mm, groups, nChannels, dtype,
+                                     args.chunk_frames,
+                                     subtraction_mode=args.subtraction_mode)
     except Exception as exc:
         print(f'process_subtractspikes: {exc}', file=sys.stderr)
         out_mm.flush()
