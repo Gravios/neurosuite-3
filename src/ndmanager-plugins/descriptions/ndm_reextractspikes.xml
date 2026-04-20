@@ -1,0 +1,124 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_reextractspikes</n>
+  <parameters>
+   <parameter>
+    <n>reextractThresholdFactor</n>
+    <value>0.75</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractMaskHalfWidth</n>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractMinClusterSize</n>
+    <value>50</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractChi2</n>
+    <value>0.9999</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractExtraFeat</n>
+    <value>auto</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Second-pass spike detection with mask exclusion and IN-PLACE shadow
+clustering.  Detects additional low-amplitude spikes missed by the main
+detection pass, then classifies each new spike into the "shadow" of its
+nearest existing cluster (by robust Mahalanobis distance) or into a
+single unmatched bin.  The new spikes are merged directly into
+$session.{res,spk,fet,clu}.N — no parallel stem.
+
+PIPELINE
+
+  1. process_reextractspikes scans $session.fil using per-group
+     thresholds derived by scaling process_medianthreshold's baseline
+     by reextractThresholdFactor.  Any candidate peak within
+     ± reextractMaskHalfWidth samples of a timestamp already listed in
+     $session.res.N is rejected.  New spikes land at
+     $session-reextr-tmp.{res,spk}.N.
+
+  2. Originals are copied to $session.<ext>.<N>.bak for crash recovery
+     the first time the script runs.  Subsequent runs preserve the
+     earlier .bak files.
+
+  3. process_shadowcluster merges the new spikes into the primary
+     session files.  Writes go to .tmp files first and are renamed
+     atomically, so a crash mid-write cannot corrupt the originals.
+
+CLUSTER ID CONVENTION
+
+     shadow(k) = maxExistingId + 1 + k     (paired with existing cluster k)
+     unmatched = maxExistingId + 1 + maxExistingId + 1
+
+PREREQUISITES
+
+  The primary detection + PCA + clustering pipeline must have completed
+  first.  Required input files per group N:
+     $session.res.N
+     $session.spk.N
+     $session.fet.N
+     $session.clu.N
+     $session.pca.N
+
+  The following parameters are inherited from ndm_extractspikes:
+     thresholdFactor
+     refractoryPeriod
+     peakSearchLength
+     start / duration  (for baseline estimation)
+
+PARAMETERS
+
+  # reextractThresholdFactor (default: 0.75)
+
+  Scale factor applied to the per-group median-threshold baseline to
+  obtain the re-extraction threshold.  Lower values recover more
+  low-amplitude events but also admit more noise crossings.  Typical
+  range: 0.5 .. 0.9.
+
+  # reextractMaskHalfWidth (default: refractoryPeriod)
+
+  Minimum sample distance a new candidate peak must maintain from every
+  original spike timestamp.  Defaults to the main refractory period.
+
+  # reextractMinClusterSize (default: 50)
+
+  Existing clusters with fewer members are not eligible as parents for
+  shadow assignment (median / MAD statistics unreliable below this).
+
+  # reextractChi2 (default: 0.9999)
+
+  χ² quantile for the squared-Mahalanobis admission threshold.  Lower
+  is stricter; higher is permissive.  The 0.9999 default matches the
+  per-dim-MAD + χ² calibration used elsewhere in neurosuite-3.
+
+  # reextractExtraFeat (default: auto)
+
+  Whether the reference .fet.N includes the per-channel peak features
+  appended by process_pca -x:  auto (inferred from dimensionality), 0,
+  or 1.  Normal users leave this on auto.
+
+OUTPUT
+
+  Merges in-place into $session.{res,spk,fet,clu}.N.  Originals are
+  preserved at $session.<ext>.<N>.bak on first run — rename them back
+  over the primary files to revert.
+
+NEXT STEPS
+
+  Open $session in klusters to review the shadow clusters and either
+  merge them into their parents, tune them as separate units, or reject
+  them.
+
+SEE ALSO
+
+  ndm_reextractspikes_stderiv — spatial+temporal derivative variant.</help>
+ </program>
+</parameter>

@@ -1,0 +1,65 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_shadowcluster">
+
+	<refmeta>
+		<refentrytitle>process_shadowcluster</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_shadowcluster</refname>
+		<refpurpose>assign newly-detected spikes to shadow clusters paired with existing clusters via robust Mahalanobis distance.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+			<command>process_shadowcluster</command>
+			<arg choice="plain"><option>--ref</option> <replaceable>refBase</replaceable></arg>
+			<arg choice="plain"><option>--new</option> <replaceable>newBase</replaceable></arg>
+			<arg choice="plain"><option>--out</option> <replaceable>outBase</replaceable></arg>
+			<arg choice="plain"><option>--grp</option> <replaceable>N</replaceable></arg>
+			<arg choice="plain"><option>--nChan</option> <replaceable>C</replaceable></arg>
+			<arg choice="plain"><option>--wav</option> <replaceable>S</replaceable></arg>
+			<arg choice="opt"><option>--minClusterSize</option> <replaceable>50</replaceable></arg>
+			<arg choice="opt"><option>--chi2</option> <replaceable>0.9999</replaceable></arg>
+			<arg choice="opt"><option>--extraFeat</option> <replaceable>auto|0|1</replaceable></arg>
+			<arg choice="opt"><option>-v</option></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>DESCRIPTION</title>
+		<para>
+			Reads reference <filename>.fet.N</filename> /
+			<filename>.clu.N</filename> / <filename>.spk.N</filename> /
+			<filename>.pca.N</filename> from <replaceable>refBase</replaceable>
+			and newly-detected <filename>.res.N</filename> /
+			<filename>.spk.N</filename> from <replaceable>newBase</replaceable>.
+			For each existing cluster with size
+			≥ <replaceable>minClusterSize</replaceable>, computes a robust
+			per-dimension centroid (median) and scale
+			(MAD × 1.4826) in feature space.  For each new spike, projects
+			its waveform through the existing PCA basis and assigns to the
+			shadow of the argmin-Mahalanobis parent whenever the squared
+			Mahalanobis distance is below the
+			χ²(<replaceable>nFeatDim</replaceable>,<replaceable>chi2</replaceable>)
+			cutoff; otherwise routes to a single unmatched bin.
+		</para>
+		<para>
+			Writes merged, timestamp-sorted
+			<filename>outBase.{res,spk,fet,clu}.N</filename> files.
+			Shadow cluster IDs are assigned as
+			(max_existing_id + 1 + parent_id), so no shadow ID ever
+			collides with an existing ID.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>SEE ALSO</title>
+		<para>
+			<citerefentry><refentrytitle>process_reextractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>ndm_reextractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_pca</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>
