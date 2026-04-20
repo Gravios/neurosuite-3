@@ -478,8 +478,10 @@ static SpikeRecord decompose_one_cpu(
             }
         }
         if (best2_uid == t.uid) {
+            // Pure sub-sample refinement around the winning integer shift.
+            // Convention (shared with comp1): total_shift = shift_samp + shift_frac.
             float frac = parabolic_peak(scores, best2_tau + max_shift);
-            rec.comp2.shift_frac = best2_tau + frac;
+            rec.comp2.shift_frac = frac;
         }
     }
     rec.comp2.unit_id    = best2_uid;
@@ -511,8 +513,13 @@ static std::vector<SpikeRecord> process_group_cpu(
     for (size_t i = 0; i < n_spk * stride; ++i) absvals[i] = std::fabs(wf_all[i]);
     std::nth_element(absvals.begin(), absvals.begin() + absvals.size()/2, absvals.end());
     float rms = absvals[absvals.size()/2] / 0.6745f;
-    float min_amp = (min_amp_abs > 0.f) ? min_amp_abs : rms * 4.f;
-    fprintf(stderr, "  RMS noise ≈ %.1f  min_amp ≈ %.1f\n", rms, min_amp);
+    // min_amp_abs here is interpreted as a MULTIPLIER on the RMS noise
+    // (matches the YAML parameter name minSnrRms = "minimum SNR in units of RMS").
+    // Values ≤ 0 fall back to the 4× RMS default.
+    float snr_mult = (min_amp_abs > 0.f) ? min_amp_abs : 4.f;
+    float min_amp = rms * snr_mult;
+    fprintf(stderr, "  RMS noise ≈ %.1f  min_amp ≈ %.1f  (SNR gate = %.2f × RMS)\n",
+            rms, min_amp, snr_mult);
 
     // Phase 1: screen — check each spike vs its assigned cluster at τ=0
     std::vector<int>   candidates;
@@ -612,8 +619,10 @@ static std::vector<SpikeRecord> process_group_gpu(
     for (size_t i = 0; i < n_spk * stride; ++i) absvals[i] = std::fabs(wf_all[i]);
     std::nth_element(absvals.begin(), absvals.begin() + absvals.size()/2, absvals.end());
     float rms = absvals[absvals.size()/2] / 0.6745f;
-    float min_amp = (min_amp_abs > 0.f) ? min_amp_abs : rms * 4.f;
-    fprintf(stderr, "  RMS noise ≈ %.1f  min_amp ≈ %.1f  [GPU]\n", rms, min_amp);
+    float snr_mult = (min_amp_abs > 0.f) ? min_amp_abs : 4.f;
+    float min_amp = rms * snr_mult;
+    fprintf(stderr, "  RMS noise ≈ %.1f  min_amp ≈ %.1f  (SNR gate = %.2f × RMS)  [GPU]\n",
+            rms, min_amp, snr_mult);
 
     // Correlation window bounds
     int c_lo = 0, c_hi = n_samp;
@@ -822,7 +831,9 @@ static std::vector<SpikeRecord> process_group_gpu(
                 }
             }
             if (best2_uid == t.uid)
-                sf2 = best2_tau + parabolic_peak(scores2, best2_tau + max_shift);
+                // Pure sub-sample refinement around the winning integer shift
+                // (total_shift = shift_samp + shift_frac; matches comp1 semantics).
+                sf2 = parabolic_peak(scores2, best2_tau + max_shift);
         }
 
         float R2_norm = std::sqrt(vector_norm2(best2_R.data(), P));
@@ -1028,14 +1039,14 @@ int main(int argc, char **argv)
                 n_samp, n_sites, n, args.max_shift,
                 args.corr_window, gp.peak_sample,
                 args.corr_threshold, args.resid_threshold,
-                0.f, args.n_workers);
+                args.min_snr_rms, args.n_workers);
         else
 #endif
             records = process_group_cpu(wf_all, res_ts, clu_ids, tmpls,
                 n_samp, n_sites, n, args.max_shift,
                 args.corr_window, gp.peak_sample,
                 args.corr_threshold, args.resid_threshold,
-                0.f, args.n_workers);
+                args.min_snr_rms, args.n_workers);
 
         // Sort by original spike index (GPU imap may reorder)
         std::sort(records.begin(), records.end(),

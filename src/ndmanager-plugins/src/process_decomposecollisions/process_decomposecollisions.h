@@ -16,6 +16,16 @@
 //               flags(u32) resnorm(f32)
 //               u1(i32) sh1(i32) sf1(f32) a1(f32)
 //               u2(i32) sh2(i32) sf2(f32) a2(f32)
+//
+// Shift convention (uniform for comp1 and comp2):
+//     total_shift_samples = shift_samp + shift_frac
+// where shift_samp is the best integer shift found by the coarse search
+// and shift_frac is a pure fractional offset in [-0.5, 0.5] from
+// parabolic interpolation around the three scores nearest shift_samp.
+// Note: prior builds stored sf2 = sh2 + frac (integer included in the
+// fractional field).  Consumers of .col files written before 2026-04-19
+// should subtract sh2 from sf2 to recover the pure sub-sample offset,
+// or re-run process_decomposecollisions.
 
 static constexpr uint8_t  COL_MAGIC[4] = {'C','O','L','\x01'};
 static constexpr uint32_t COL_FLAG_EXCLUDE_NOISE = 1u;
