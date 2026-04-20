@@ -1,0 +1,68 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_reextractspikes">
+
+	<refmeta>
+		<refentrytitle>process_reextractspikes</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_reextractspikes</refname>
+		<refpurpose>second-pass spike detection with timestamp masking and reduced threshold.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+			<command>process_reextractspikes</command>
+			<arg choice="plain"><option>-n</option> <replaceable>nChannels</replaceable></arg>
+			<arg choice="plain"><option>-c</option> <replaceable>channels</replaceable></arg>
+			<arg choice="plain"><option>-t</option> <replaceable>thresholds</replaceable></arg>
+			<arg choice="plain"><option>-w</option> <replaceable>waveformLength</replaceable></arg>
+			<arg choice="plain"><option>-p</option> <replaceable>peakSample</replaceable></arg>
+			<arg choice="plain"><option>-l</option> <replaceable>peakSearchLength</replaceable></arg>
+			<arg choice="plain"><option>-r</option> <replaceable>refractoryPeriod</replaceable></arg>
+			<arg choice="opt"><option>-m</option> <replaceable>maskBase</replaceable></arg>
+			<arg choice="opt"><option>-M</option> <replaceable>maskHalfWidth</replaceable></arg>
+			<arg choice="opt"><option>-i</option> <replaceable>inputFile</replaceable></arg>
+			<arg choice="opt"><option>-v</option></arg>
+			<arg choice="plain"><replaceable>basename</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>DESCRIPTION</title>
+		<para>
+			Second-pass spike detector for the neurosuite-3 re-extraction
+			pipeline. Scans a high-pass filtered <filename>.fil</filename>
+			file for additional threshold crossings while excluding any
+			candidate peak that falls within
+			<replaceable>maskHalfWidth</replaceable> samples of a timestamp
+			already listed in the per-group
+			<filename>maskBase.res.N</filename> files.  Writes new
+			<filename>basename.res.N</filename> and
+			<filename>basename.spk.N</filename> files suitable for
+			downstream processing by
+			<command>process_shadowcluster</command>.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>OPTIONS</title>
+		<para>Options are identical to <command>process_extractspikes</command>
+			except for the addition of <option>-m</option> (mask basename,
+			defaults to <replaceable>basename</replaceable>),
+			<option>-M</option> (mask half-width in samples, defaults to
+			the refractory period), and <option>-i</option> (input file
+			override, defaults to
+			<filename>basename.fil</filename>).</para>
+	</refsect1>
+
+	<refsect1>
+		<title>SEE ALSO</title>
+		<para>
+			<citerefentry><refentrytitle>process_extractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_shadowcluster</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>ndm_reextractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>

@@ -1111,6 +1111,134 @@ programs:
     Re-run ndm_pca and ndm_klustakwik (or use klusters) to sort the merged
     spike set.
 
+- name: ndm_reextractspikes
+  parameters:
+  - {name: reextractThresholdFactor, value: 0.75,   status: Optional}
+  - {name: reextractMaskHalfWidth,   value: '',     status: Optional}
+  - {name: reextractMinClusterSize,  value: 50,     status: Optional}
+  - {name: reextractChi2,            value: 0.9999, status: Optional}
+  - {name: reextractExtraFeat,       value: 'auto', status: Optional}
+  help: |-
+    Second-pass spike detection with mask exclusion and IN-PLACE shadow
+    clustering.
+
+    Detects additional low-amplitude spikes missed by the primary
+    detection pass, then classifies each new spike into the "shadow" of
+    its nearest existing cluster (by robust Mahalanobis distance in
+    feature space) or into a single unmatched bin.
+
+    Unlike ndm_redetectspikes, which requires a spike-cleaned residual
+    .dat from ndm_stripdat, this script works directly on the original
+    $session.fil by masking out ± reextractMaskHalfWidth samples around
+    every existing $session.res.N timestamp, then re-running detection
+    with a reduced threshold.  The new spikes are merged directly into
+    the primary session files (.res / .spk / .fet / .clu), with shadow
+    cluster IDs assigned in the existing .clu.N file — no parallel stem.
+
+    PIPELINE POSITION
+
+      ndm_extractspikes → ndm_pca → ndm_klustakwik → (inspect in klusters)
+      ndm_reextractspikes                               # find missed spikes
+      (inspect shadow clusters in klusters, merge / accept / reject)
+
+    CLUSTER ID CONVENTION
+
+        shadow(k) = maxExistingId + 1 + k     (paired with cluster k)
+        unmatched = maxExistingId + 1 + maxExistingId + 1
+
+    Shadow IDs never collide with existing IDs; the operator sees the
+    new units in Klusters alongside the existing ones and can merge
+    shadow(k) into k, keep them separate (e.g. if the shadow captures
+    a genuinely distinct low-amplitude unit), or reject them.
+
+    PREREQUISITES
+
+      $session.res.N, .spk.N, .fet.N, .clu.N, .pca.N must all exist.
+      Inherited parameters (from ndm_extractspikes):
+        thresholdFactor, refractoryPeriod, peakSearchLength,
+        start, duration.
+
+    SAFETY
+
+      Originals are copied to $session.<ext>.<N>.bak on first run; the
+      shadow-cluster merge writes to .tmp files and renames atomically.
+      A crash between process_reextractspikes and process_shadowcluster
+      leaves the originals intact; a crash during the merge leaves a
+      .tmp alongside the untouched original.
+
+    PARAMETERS
+
+    # reextractThresholdFactor
+
+    Scale factor applied to the per-group median-threshold baseline to
+    obtain the re-extraction threshold.  Lower values recover more
+    low-amplitude events but also admit more noise crossings.  Typical
+    range: 0.5 .. 0.9.  Default 0.75.
+
+    # reextractMaskHalfWidth
+
+    Minimum sample distance a new candidate peak must maintain from
+    every original spike timestamp.  Defaults to refractoryPeriod if
+    left blank.
+
+    # reextractMinClusterSize
+
+    Existing clusters with fewer members are not eligible as parents
+    for shadow assignment (median / MAD statistics unreliable below
+    this).  Default 50.
+
+    # reextractChi2
+
+    χ² quantile for the squared-Mahalanobis admission threshold.  Lower
+    is stricter (more spikes fall into unmatched); higher is permissive.
+    Default 0.9999 matches the calibration used by the Klusters cluster
+    filter.
+
+    # reextractExtraFeat
+
+    Whether the reference .fet.N includes the per-channel peak features
+    appended by process_pca -x:  auto (inferred from dimensionality), 0,
+    or 1.  Leave on auto.
+
+    SEE ALSO
+
+      ndm_reextractspikes_stderiv — spatial+temporal derivative variant
+      ndm_redetectspikes          — residual-dat re-detection pipeline
+
+- name: ndm_reextractspikes_stderiv
+  parameters:
+  - {name: reextractThresholdFactor, value: 0.75,   status: Optional}
+  - {name: reextractMaskHalfWidth,   value: '',     status: Optional}
+  - {name: reextractMinClusterSize,  value: 50,     status: Optional}
+  - {name: reextractChi2,            value: 0.9999, status: Optional}
+  - {name: reextractExtraFeat,       value: 'auto', status: Optional}
+  help: |-
+    Second-pass spike detection variant that runs threshold detection on
+    the spatial-derivative + temporal first-difference signal (matching
+    ndm_extractspikes_stderiv), then applies in-place shadow-cluster
+    assignment.
+
+    Thresholds are computed internally from the stderiv signal over the
+    [start, start+duration) window using the Quiroga (2004) robust
+    formula:  thr = thresholdFactor * 4 * median(|stderiv|) / 0.6745.
+    Waveform extraction writes RAW ADC amplitudes so downstream feature
+    projection sees the same signal space as the main pipeline's .spk.N.
+
+    Inherits thresholdFactor, refractoryPeriod, peakSearchLength, start,
+    duration, and sdiffOrder from ndm_extractspikes_stderiv.  The
+    shadow-clustering parameters are identical to ndm_reextractspikes;
+    see that program for details.
+
+    OUTPUT
+
+      Merges in-place into $session.{res,spk,fet,clu}.N.  Originals
+      preserved at $session.<ext>.<N>.bak on first run.
+
+    SEE ALSO
+
+      ndm_reextractspikes         — raw-signal variant
+      ndm_extractspikes_stderiv   — first-pass stderiv detector
+
 - name: ndm_lfp
   parameters:
   - {name: samplingRate,   value: 1250,   status: Mandatory}

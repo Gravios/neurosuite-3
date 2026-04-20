@@ -15,6 +15,8 @@ install(PROGRAMS
     ndm_setupgroups
     ndm_stripdat
     ndm_redetectspikes
+    ndm_reextractspikes
+    ndm_reextractspikes_stderiv
     ndm_xml2yaml
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn

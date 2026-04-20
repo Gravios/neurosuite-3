@@ -1,0 +1,248 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Second-pass spike detection with mask exclusion and in-place shadow
+#//   clustering.
+#//
+#//   PIPELINE
+#//   --------
+#//   1. process_reextractspikes scans $session.fil using per-group
+#//      thresholds derived from process_medianthreshold's baseline scaled
+#//      by reextractThresholdFactor.  Any candidate peak within
+#//      ± reextractMaskHalfWidth samples of an existing $session.res.N
+#//      entry is rejected.  Output lands at $session-reextr-tmp.*.
+#//
+#//   2. Originals are copied to $session.<ext>.<N>.bak for crash recovery.
+#//
+#//   3. process_shadowcluster merges the new spikes directly into the
+#//      primary $session.{res,spk,fet,clu}.N files, with shadow cluster
+#//      IDs assigned to every new spike.  The merge is crash-safe: each
+#//      output is written to a .tmp file first and renamed atomically on
+#//      completion.
+#//
+#//   CLUSTER ID CONVENTION
+#//   ---------------------
+#//     shadow(k) = maxExistingId + 1 + k    (paired with existing cluster k)
+#//     unmatched = maxExistingId + 1 + maxExistingId + 1
+#//
+#//   copyright       (C) 2026  Gravios / NeuroSuite-3 contributors
+#//   GNU GPL v3 or later.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Second-pass spike re-extraction with in-place shadow clustering"
+
+check_commands_installed process_reextractspikes process_shadowcluster \
+    process_medianthreshold
+
+inputs_missing "$session.$param_ext" "$session.fil" && exit $INPUTS_MISSING
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Session-level parameters
+# ////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+resolution=$(yaml_read $session "//acquisitionSystem/nBits")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+
+check_mandatory_variable $nChannels    "missing number of channels"
+check_mandatory_variable $resolution   "missing resolution (in bits)"
+check_mandatory_variable $samplingRate "missing sampling rate"
+if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]; then
+    echo_error "missing spike groups"
+    exit $GENERAL_ERROR
+fi
+
+# Detection parameters — inherited from ndm_extractspikes.
+thresholdFactor=$(read_script_parameter -a ndm_extractspikes $session thresholdFactor)
+refractoryPeriod=$(read_script_parameter -a ndm_extractspikes $session refractoryPeriod)
+peakSearchLength=$(read_script_parameter -a ndm_extractspikes $session peakSearchLength)
+start=$(read_script_parameter -a ndm_extractspikes $session start)
+duration=$(read_script_parameter -a ndm_extractspikes $session duration)
+
+# Re-extraction-specific parameters, set in the YAML under
+# `program: ndm_reextractspikes` by ndmanager.
+reextractThresholdFactor=$(read_script_parameter $session reextractThresholdFactor)
+reextractMaskHalfWidth=$(read_script_parameter   $session reextractMaskHalfWidth)
+reextractMinClusterSize=$(read_script_parameter  $session reextractMinClusterSize)
+reextractChi2=$(read_script_parameter            $session reextractChi2)
+reextractExtraFeat=$(read_script_parameter       $session reextractExtraFeat)
+
+check_mandatory_variable $thresholdFactor  "missing thresholdFactor"
+check_mandatory_variable $refractoryPeriod "missing refractoryPeriod"
+check_mandatory_variable $peakSearchLength "missing peakSearchLength"
+check_mandatory_variable $start            "missing start"
+check_mandatory_variable $duration         "missing duration"
+
+# Fallback defaults — normally supplied by the XML descriptor's <value/>
+# tags (and therefore present in session YAML after ndmanager generation)
+# but retained here in case a session was created before this plugin
+# shipped.  Keep these in sync with descriptions/ndm_reextractspikes.xml.
+reextractThresholdFactor=${reextractThresholdFactor:-$(unset LANG && echo "$thresholdFactor 0.75" \
+    | awk '{printf "%g", $1 * $2}')}
+reextractMaskHalfWidth=${reextractMaskHalfWidth:-$refractoryPeriod}
+reextractMinClusterSize=${reextractMinClusterSize:-50}
+reextractChi2=${reextractChi2:-0.9999}
+reextractExtraFeat=${reextractExtraFeat:-auto}
+
+echo_info "Re-extraction parameters:"
+echo_info "  reextractThresholdFactor = $reextractThresholdFactor  (main thresholdFactor=$thresholdFactor)"
+echo_info "  reextractMaskHalfWidth   = $reextractMaskHalfWidth samples"
+echo_info "  reextractMinClusterSize  = $reextractMinClusterSize spikes"
+echo_info "  reextractChi2            = $reextractChi2"
+echo_info "  reextractExtraFeat       = $reextractExtraFeat"
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Build per-group channel list, verify pre-requisites
+# ////////////////////////////////////////////////////////////////////////////
+
+secondsToBytes()
+{
+    unset LANG && echo $1 $samplingRate $nChannels $resolution \
+        | awk '{printf "%f", int($1*$2)/8*$3*$4}' | sed 's/[.].*//'
+}
+
+electrodeList=""
+samplesInWaveform=""
+peakSample=""
+for group in $(seq 1 $nElectrodeGroups); do
+    electrodes=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/channels/channel")
+    check_mandatory_variable $electrodes "missing electrode list for group $group"
+    electrodes=$(echo $electrodes | sed 's/ /,/g')
+    electrodeList="$electrodeList:$electrodes"
+
+    _ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/nSamples")
+    _ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
+    check_mandatory_variable $_ns "missing nSamples for group $group"
+    check_mandatory_variable $_ps "missing peakSampleIndex for group $group"
+    if [ -z "$samplesInWaveform" ]; then
+        samplesInWaveform=$_ns
+        peakSample=$_ps
+    elif [ "$_ns" != "$samplesInWaveform" ] || [ "$_ps" != "$peakSample" ]; then
+        echo_warning "Group $group has nSamples=$_ns peakSampleIndex=$_ps differs from group 1"
+        echo_warning "  process_reextractspikes uses uniform values; using group 1's."
+    fi
+
+    for ext in res spk fet clu pca; do
+        if [ ! -f "$session.$ext.$group" ]; then
+            echo_error "$session.$ext.$group is missing — run the primary pipeline "
+            echo_error "  (ndm_extractspikes / ndm_pca / ndm_klustakwik) first."
+            exit $INPUTS_MISSING
+        fi
+    done
+done
+electrodeList=${electrodeList#:}
+
+startInBytes=$(secondsToBytes $start)
+durationInBytes=$(secondsToBytes $duration)
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Compute reduced thresholds
+# ////////////////////////////////////////////////////////////////////////////
+
+echo_info "Computing baseline (median-threshold) and scaling by reextractThresholdFactor"
+
+baseline=$(tail -c +$(( startInBytes + 1 )) $session.fil \
+    | head -c $durationInBytes \
+    | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
+check_command_status process_medianthreshold
+
+thresholds=$(unset LANG && echo "$baseline" \
+    | awk -v f="$reextractThresholdFactor" \
+      'BEGIN{RS=":";FS=","} {for(i=1;i<=NF;i++) printf "%f,", $i*f; printf ":"}' \
+    | sed 's/,:/:/g;s/:$//')
+
+echo_info "  reduced thresholds: $thresholds"
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Pass 1 — re-detection with mask exclusion
+# ////////////////////////////////////////////////////////////////////////////
+
+tmpStem=$session-reextr-tmp
+rm -f $tmpStem.fil
+ln -s $session.fil $tmpStem.fil
+
+process_reextractspikes \
+    -n $nChannels \
+    -c $electrodeList \
+    -t $thresholds \
+    -w $samplesInWaveform \
+    -p $peakSample \
+    -l $peakSearchLength \
+    -r $refractoryPeriod \
+    -m $session \
+    -M $reextractMaskHalfWidth \
+    -v \
+    $tmpStem
+check_command_status process_reextractspikes
+
+rm -f $tmpStem.fil
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Pass 2 — in-place shadow-cluster merge per group
+# ////////////////////////////////////////////////////////////////////////////
+
+for group in $(seq 1 $nElectrodeGroups); do
+    nChInGroup=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/channels/channel" | wc -w)
+    _ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/nSamples")
+
+    # No new spikes for this group — nothing to merge, originals unchanged.
+    if [ ! -s "$tmpStem.res.$group" ]; then
+        echo_info "  group $group: no new spikes — originals unchanged"
+        rm -f "$tmpStem.res.$group" "$tmpStem.spk.$group"
+        continue
+    fi
+
+    echo_info "Shadow-clustering group $group  ($_ns samples × $nChInGroup channels)"
+
+    # Create .bak backups of the originals the first time we touch them.
+    # If .bak already exists (e.g. from a prior run), don't clobber it —
+    # the earlier backup is the operator's safety net.
+    for ext in res spk fet clu; do
+        if [ ! -f "$session.$ext.$group.bak" ]; then
+            cp "$session.$ext.$group" "$session.$ext.$group.bak"
+        else
+            echo_info "  keeping existing $session.$ext.$group.bak"
+        fi
+    done
+
+    # In-place merge.  --out defaults to --ref so the primary session
+    # files are overwritten atomically (temp-write + rename).
+    process_shadowcluster \
+        --ref   "$session" \
+        --new   "$tmpStem" \
+        --grp   "$group" \
+        --nChan "$nChInGroup" \
+        --wav   "$_ns" \
+        --minClusterSize "$reextractMinClusterSize" \
+        --chi2  "$reextractChi2" \
+        --extraFeat "$reextractExtraFeat" \
+        -v
+    check_command_status process_shadowcluster
+
+    rm -f "$tmpStem.res.$group" "$tmpStem.spk.$group"
+done
+
+echo_info ""
+echo_info "Done — new spikes have been merged into $session.{res,spk,fet,clu}.N"
+echo_info "Originals preserved at $session.<ext>.<N>.bak"
+echo_info "To revert, rename the .bak files back over the primary files."
+echo_info "Inspect in Klusters:  klusters $session.$param_ext"

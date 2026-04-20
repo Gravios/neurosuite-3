@@ -1,0 +1,55 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_reextractspikes_stderiv">
+
+	<refmeta>
+		<refentrytitle>process_reextractspikes_stderiv</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_reextractspikes_stderiv</refname>
+		<refpurpose>second-pass spike detection on a spatial+temporal derivative signal with timestamp masking.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+			<command>process_reextractspikes_stderiv</command>
+			<arg choice="plain"><option>-n</option> <replaceable>nChannels</replaceable></arg>
+			<arg choice="plain"><option>-c</option> <replaceable>channels</replaceable></arg>
+			<arg choice="plain"><option>-w</option> <replaceable>waveformLength</replaceable></arg>
+			<arg choice="plain"><option>-p</option> <replaceable>peakSample</replaceable></arg>
+			<arg choice="plain"><option>-l</option> <replaceable>peakSearchLength</replaceable></arg>
+			<arg choice="plain"><option>-r</option> <replaceable>refractoryPeriod</replaceable></arg>
+			<arg choice="plain"><option>-f</option> <replaceable>thresholdFactor</replaceable></arg>
+			<arg choice="plain"><option>-B</option> <replaceable>startByte</replaceable></arg>
+			<arg choice="plain"><option>-Z</option> <replaceable>sizeBytes</replaceable></arg>
+			<arg choice="opt"><option>-d</option> <replaceable>sdiffOrder</replaceable></arg>
+			<arg choice="opt"><option>-m</option> <replaceable>maskBase</replaceable></arg>
+			<arg choice="opt"><option>-M</option> <replaceable>maskHalfWidth</replaceable></arg>
+			<arg choice="plain"><replaceable>basename</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>DESCRIPTION</title>
+		<para>
+			Spatial-derivative + temporal first-difference variant of
+			<command>process_reextractspikes</command>.  Thresholds are
+			computed internally from the stderiv signal over
+			<replaceable>startByte</replaceable>..<replaceable>startByte+sizeBytes</replaceable>
+			using the Quiroga (2004) robust noise estimator.  Detection runs
+			on the stderiv shadow signal; waveform extraction reads the
+			original unmodified <filename>.fil</filename> and writes
+			<filename>.spkD.N</filename> files.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>SEE ALSO</title>
+		<para>
+			<citerefentry><refentrytitle>process_reextractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_extractspikes_stderiv</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_shadowcluster</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>

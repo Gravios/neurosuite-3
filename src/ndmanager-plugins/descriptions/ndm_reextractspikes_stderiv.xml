@@ -1,0 +1,60 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>ndm_reextractspikes_stderiv</n>
+  <parameters>
+   <parameter>
+    <n>reextractThresholdFactor</n>
+    <value>0.75</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractMaskHalfWidth</n>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractMinClusterSize</n>
+    <value>50</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractChi2</n>
+    <value>0.9999</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractExtraFeat</n>
+    <value>auto</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Second-pass spike detection variant that runs threshold detection
+on the spatial-derivative + temporal first-difference signal (matching
+ndm_extractspikes_stderiv), then applies shadow-cluster assignment to
+the detected spikes in-place.
+
+Detection thresholds are computed internally from the stderiv signal
+over the start..start+duration window using the Quiroga (2004) robust
+formula.  Waveform extraction writes RAW ADC amplitudes so downstream
+feature projection matches the main pipeline's .spk.N.
+
+Most parameters are inherited from ndm_extractspikes_stderiv:
+   thresholdFactor, refractoryPeriod, peakSearchLength, start, duration,
+   sdiffOrder.
+
+The shadow-clustering stage is shared with ndm_reextractspikes — see
+that program's help for a description of reextractMinClusterSize,
+reextractChi2, and reextractExtraFeat.
+
+OUTPUT
+
+  Merges in-place into $session.{res,spk,fet,clu}.N.  Originals
+  preserved at $session.<ext>.<N>.bak on first run.
+
+SEE ALSO
+
+  ndm_reextractspikes             — raw-signal variant
+  ndm_extractspikes_stderiv       — first-pass stderiv detector</help>
+ </program>
+</parameter>
