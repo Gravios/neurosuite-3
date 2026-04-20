@@ -4,26 +4,49 @@
 #//
 #//   Subtract spike waveforms from a raw .dat recording.
 #//
-#//   Subtraction pipeline — three layers:
+#//   Subtraction pipeline — four modes:
 #//
-#//   Layer 0 — raw waveform subtraction  (no .clu)
-#//     Each spike's raw .spk snippet is subtracted directly.
+#//   raw (Layer 0) — raw waveform subtraction  (--subtraction-mode raw)
+#//     Each spike's raw .spk snippet is subtracted directly.  Near-exact
+#//     cancellation at spike windows; produces a "hole" in the noise
+#//     baseline.  Optimal for the strip-good → re-detect workflow since
+#//     residuals fall far below detection threshold.  Skips all modelling.
 #//
-#//   Layer 1 — projection-based per-cluster template  (has .clu, few spikes)
-#//     Per-cluster mean template, scaled by optimal L2 projection onto the
-#//     observed waveform.  ISI-based dual templates (L1b) handle burst shape
-#//     change when enough spikes exist to split the cluster.
+#//   model — Layer 1 / Layer 2  (--subtraction-mode model)
 #//
-#//   Layer 2 — asymmetric-exponential PC1 model  (has .clu, sufficient spikes)
-#//     PC1 of the cluster's spike population directly captures the dominant
-#//     axis of waveform shape variation.  Both the mean waveform and the PC1
-#//     direction are represented as sums of asymmetric exponential terms
-#//     (one term per component per channel) fitted by nonlinear least squares.
-#//     The per-spike subtraction template is the continuous family
+#//     Layer 1 — projection-based per-cluster template  (few spikes)
+#//       Per-cluster mean template, scaled by optimal L2 projection onto
+#//       the observed waveform.  ISI-based dual templates (L1b) handle
+#//       burst shape change when enough spikes exist to split.
 #//
-#//       T(t; obs_wf) = T_mean(t)  +  pc1_score(obs_wf) * T_pc1(t)
+#//     Layer 2 — asymmetric-exponential PC1 model  (sufficient spikes)
+#//       PC1 of the cluster's spike population directly captures the
+#//       dominant axis of waveform shape variation.  Both the mean
+#//       waveform and the PC1 direction are represented as sums of
+#//       asymmetric exponential terms (one term per component per
+#//       channel) fitted by nonlinear least squares.  The per-spike
+#//       subtraction template is the continuous family
 #//
-#//     where pc1_score is measured directly from the observed waveform.
+#//         T(t; obs_wf) = T_mean(t)  +  pc1_score(obs_wf) * T_pc1(t)
+#//
+#//       where pc1_score is measured directly from the observed waveform.
+#//     Preserves noise baseline — good for LFP extraction.
+#//
+#//   botm — Bayes-Optimal Template Matching  (--subtraction-mode botm)
+#//     Proepper 2015, §3.4.  Generative model x = Σ_i Σ_τ s^i_{t-τ}·ξ^i_τ
+#//     + η with η ~ N(0, C).  Noise covariance C is estimated from
+#//     between-spike periods using per-period weighted average (Proepper's
+#//     stitching-pitfall avoidance).  Per-cluster matched filter
+#//     f^i := C^(-1)·ξ^i.  Bayes-optimal residual-minimising amplitude
+#//     for spike i at observation x is
+#//
+#//       a(i) = (x^T · f^i) / (ξ^i^T · f^i)
+#//
+#//     with no clamp (the denominator normalises template energy under
+#//     the whitened metric).  Closes the "implicit white noise" gap in
+#//     model mode; preserves baseline.  Slower than model mode because
+#//     of one-time C estimation + inversion per group.  SIC overlap
+#//     handling not included in this version.
 #//
 #//   Contamination robustness
 #//   ────────────────────────
@@ -135,14 +158,24 @@ def build_parser():
     p.add_argument('-n', type=int, required=True, metavar='nChannels')
     p.add_argument('-b', type=int, default=16, metavar='nBits', choices=[8, 16, 32])
     p.add_argument('-s', type=float, default=None, metavar='samplingRate')
-    p.add_argument('--subtraction-mode', choices=['model', 'raw'], default='model',
+    p.add_argument('--subtraction-mode', choices=['model', 'raw', 'botm'],
+                   default='model',
                    help='"model" (default): cluster-aware Layer 1/2 template '
                         'subtraction — preserves noise baseline at spike windows, '
                         'suitable for LFP extraction.  "raw": subtract the raw '
                         '.spk.N waveform directly (Layer 0) — near-exact '
                         'cancellation, optimal for the strip-good-re-detect '
-                        'workflow.  Cluster-id filtering still applies in both '
-                        'modes.')
+                        'workflow.  "botm": Bayes-Optimal Template Matching '
+                        'amplitude subtraction (Proepper 2015) — per-cluster '
+                        'mean template subtracted with a matched-filter amplitude '
+                        '`(obs^T · C^(-1) · ξ) / (ξ^T · C^(-1) · ξ)` computed '
+                        'from the noise covariance.  Closes the "implicit white-noise" '
+                        'gap in model mode at the cost of estimating C once per '
+                        'group.  Cluster-id filtering applies in all modes.')
+    p.add_argument('--botm-ridge', type=float, default=1e-3,
+                   help='Ridge regularization applied to the noise covariance '
+                        'before inversion in BOTM mode (fraction of trace(C)/dim '
+                        'added to the diagonal).  Default 1e-3.')
     p.add_argument('--no-burst-correction', action='store_true')
     p.add_argument('--min-template-spikes', type=int, default=DEFAULT_MIN_TPL_SPIKES)
     p.add_argument('--burst-isi-threshold-ms', type=float, default=DEFAULT_BURST_ISI_MS)
@@ -825,6 +858,197 @@ class ClusterModel:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Layer 3 — Bayes-Optimal Template Matching (BOTM)
+#
+# Reference: Proepper, R. (2015).  "New tools for electrophysiological data
+# analysis and their application to a working memory study."  PhD
+# dissertation, TU Berlin.  §3.4.  Generative model:
+#
+#     x_t = Σ_i Σ_τ s^i_{t-τ} · ξ^i_τ  +  η_t,   η ~ N(0, C)
+#
+# where C is the (Tf·NC)×(Tf·NC) noise covariance.  The Bayes-optimal
+# residual-minimising amplitude of spike i at time t is
+#
+#     a_i(t) = (x(t)^T · C^(-1) · ξ^i) / (ξ^i^T · C^(-1) · ξ^i)
+#
+# which reduces to the raw projection a = x·ξ / ξ·ξ when C = σ²I (white
+# noise).  Real extracellular noise in the spike band is coloured
+# (residual LFP, common-mode, 50/60 Hz); using C from the data closes
+# this gap.  Pre-whitening by C^(-1/2) is implicit in the matched filter
+# f = C^(-1) · ξ used to compute the numerator.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def estimate_noise_covariance(input_dat_path: str,
+                               channels: List[int],
+                               spike_times: np.ndarray,
+                               nSamples: int,
+                               peakSample: int,
+                               nBits: int,
+                               nChannels: int,
+                               ridge: float = 1e-3
+                               ) -> Optional[np.ndarray]:
+    """
+    Estimate the Tf·NC × Tf·NC noise covariance matrix for one electrode
+    group, from between-spike periods of the input .dat file.
+
+    Uses Proepper's per-period weighted average to avoid the "stitching"
+    pitfall: samples at the edges of two different noise periods were
+    originally far apart in time and have expected covariance zero.
+    Simply concatenating noise periods and computing a single covariance
+    over the result under-estimates the true covariance.  Instead, compute
+    C separately per noise period and weight-average by period length.
+
+    Parameters
+    ----------
+    input_dat_path : path to the .dat being stripped
+    channels       : list of channel indices for this electrode group
+    spike_times    : all spike times for this group (any cluster)
+    nSamples, peakSample : waveform geometry
+    nBits, nChannels     : dat format
+    ridge          : fraction of trace(C)/dim to add to the diagonal for
+                     numerical stability before inversion
+
+    Returns
+    -------
+    C : (nSamples*nChanGrp, nSamples*nChanGrp) float64 covariance, or
+        None if no usable noise periods are found.
+    """
+    nChanGrp = len(channels)
+    dim      = nSamples * nChanGrp
+    dtype    = np.dtype(f'<i{nBits // 8}')
+
+    in_size       = os.path.getsize(input_dat_path)
+    bytes_per_word = nBits // 8
+    nTotalSamples = in_size // (bytes_per_word * nChannels)
+
+    dat_mm = np.memmap(input_dat_path, dtype=dtype, mode='r',
+                       shape=(nTotalSamples, nChannels))
+
+    sorted_ts = np.sort(spike_times)
+    # Each spike occupies [t - peakSample, t - peakSample + nSamples)
+    # A noise period between spike i and i+1 is
+    #   [ts[i] - peakSample + nSamples, ts[i+1] - peakSample)
+    if len(sorted_ts) < 2:
+        print('    BOTM: too few spikes to find noise periods — aborting',
+              file=sys.stderr)
+        return None
+
+    C_weighted    = np.zeros((dim, dim), dtype=np.float64)
+    total_weight  = 0.0
+    n_periods     = 0
+    n_windows_tot = 0
+
+    # Also consider the period before the first spike and after the last
+    noise_boundaries = np.concatenate([
+        np.array([0 - peakSample + nSamples], dtype=np.int64),  # virtual
+        sorted_ts - peakSample + nSamples,                      # ends of spikes
+    ])
+    next_starts = np.concatenate([
+        sorted_ts - peakSample,                                 # starts of spikes
+        np.array([nTotalSamples], dtype=np.int64),              # virtual end
+    ])
+
+    # Sliding-window stride: non-overlapping windows within each noise period
+    # gives independent samples for covariance; overlapping would correlate
+    # the observations.  We use stride = nSamples (no overlap).
+    for noise_start, noise_end in zip(noise_boundaries, next_starts):
+        noise_start = max(int(noise_start), 0)
+        noise_end   = min(int(noise_end),   nTotalSamples)
+        noise_len   = noise_end - noise_start
+        if noise_len < 2 * nSamples:
+            continue   # not enough for even 2 windows → unreliable
+
+        noise_data = dat_mm[noise_start:noise_end, channels].astype(np.float64)
+        # shape: (noise_len, nChanGrp)
+
+        n_windows = noise_len // nSamples
+        if n_windows < 2:
+            continue
+
+        # Non-overlapping windows: (n_windows, nSamples, nChanGrp)
+        windows = noise_data[:n_windows * nSamples].reshape(
+            n_windows, nSamples, nChanGrp)
+        # Flatten each window to a dim-vector (same ordering as spk[i].ravel())
+        wf = windows.reshape(n_windows, dim)
+        # Centre each period (remove period-local mean)
+        wf = wf - wf.mean(axis=0, keepdims=True)
+
+        # Per-period covariance (unbiased)
+        C_i = (wf.T @ wf) / max(n_windows - 1, 1)
+
+        # Weight by period length in samples (Proepper's convention)
+        C_weighted    += noise_len * C_i
+        total_weight  += noise_len
+        n_periods     += 1
+        n_windows_tot += n_windows
+
+    del dat_mm
+
+    if total_weight <= 0 or n_periods == 0:
+        print('    BOTM: no usable noise periods — aborting', file=sys.stderr)
+        return None
+
+    C = C_weighted / total_weight
+
+    # Ridge regularisation for numerical stability.  Without this, C can be
+    # singular or near-singular when noise periods are short or few.
+    tr = float(np.trace(C)) / dim
+    C += ridge * tr * np.eye(dim)
+
+    print(f'    BOTM: estimated noise covariance from {n_periods} periods '
+          f'({n_windows_tot} windows, {int(total_weight):,} samples total), '
+          f'dim={dim}, ridge={ridge}', file=sys.stderr)
+    return C
+
+
+class BOTMClusterModel:
+    """
+    Per-cluster BOTM subtraction model.
+
+    Holds the matched filter f = C^(-1) · ξ and the denominator
+    ξ^T · C^(-1) · ξ.  The Bayes-optimal amplitude for an observed spike
+    waveform x is then a = (x^T · f) / (ξ^T · f).  Subtraction is
+    a · ξ, byte-for-byte the cluster mean template scaled.
+
+    No amplitude clamp: under the Gaussian model the formula is
+    well-conditioned.  The ξ^T · f normaliser in the denominator already
+    accounts for template energy under the whitened metric.
+    """
+
+    def __init__(self, cid: int,
+                 template: np.ndarray,      # (nSamples, nChanGrp) float32
+                 C_inv: np.ndarray,          # (dim, dim) float64
+                 n_clean: int):
+        self.cid       = int(cid)
+        self.template  = template.astype(np.float32)
+        self.nSamples  = int(template.shape[0])
+        self.nChanGrp  = int(template.shape[1])
+        self.n_clean   = int(n_clean)
+
+        dim = self.nSamples * self.nChanGrp
+        tmpl_flat = template.ravel().astype(np.float64)
+        # Matched filter f = C^(-1) · ξ
+        self.f         = C_inv @ tmpl_flat
+        # Denominator ξ^T · C^(-1) · ξ  (scalar, > 0 under proper ridge)
+        self.denom     = float(tmpl_flat @ self.f)
+        # Template SNR indicator (ratio of energy in the whitened metric
+        # to ordinary L2 — >> 1 means noise covariance mattered a lot)
+        l2_energy      = float(tmpl_flat @ tmpl_flat)
+        self.whitening_gain = (self.denom / max(l2_energy, 1e-12))
+
+    def amplitude(self, obs_flat: np.ndarray) -> float:
+        """Bayes-optimal residual-minimising amplitude for observation."""
+        if self.denom < 1e-12:
+            return 0.0
+        return float((obs_flat @ self.f) / self.denom)
+
+    def fit_summary(self) -> str:
+        return (f'BOTM: {self.n_clean} clean-template spikes  '
+                f'denom={self.denom:.2e}  '
+                f'whitening-gain={self.whitening_gain:.2f}')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Per-group data container
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -837,8 +1061,9 @@ class GroupData:
     nSamples        : int
     peakSample      : int
     use_clusters    : bool
-    cluster_models  : Dict                 # cid → ClusterModel
+    cluster_models  : Dict                 # cid → ClusterModel (Layer 1)
     exp_models      : Dict                 # cid → ExponentialWaveformModel|None
+    botm_models     : Dict                 # cid → BOTMClusterModel|None
     isi_per_spike   : np.ndarray
     sort_idx        : np.ndarray
     sorted_wstart   : np.ndarray
@@ -867,7 +1092,9 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
                min_exp_spikes, exp_terms, burst_isi_ms_thresh, min_clean_frac,
                drift_path=None, site_depths=None, n_total_samples=0,
                strip_set=None, strip_mode='',
-               subtraction_mode='model'):
+               subtraction_mode='model',
+               input_dat_path=None, nChannels=0, nBits=16,
+               botm_ridge=1e-3):
     nChanGrp = len(channels)
 
     spike_times = np.fromfile(resfile, dtype='<i8')
@@ -912,12 +1139,90 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
     # .spk.N waveform byte-matches the .dat at that window regardless.
     cluster_models : Dict = {}
     exp_models     : Dict = {}
+    botm_models    : Dict = {}
     isi_per_spike  = np.full(nSpikes, np.inf, dtype=np.float64)
 
     if subtraction_mode == 'raw':
         print(f'    raw-subtraction mode: skipping contamination check, '
               f'ISI computation, and cluster model building',
               file=sys.stderr)
+
+    elif subtraction_mode == 'botm':
+        # ── BOTM build path ───────────────────────────────────────────────
+        # 1. estimate noise covariance C from between-spike periods
+        # 2. for each cluster, build a BOTMClusterModel holding the
+        #    matched filter C^(-1)·ξ and the denominator ξ^T·C^(-1)·ξ
+        # 3. per-spike subtraction uses Bayes-optimal amplitude
+        #
+        # Contamination mask is still computed so template estimation
+        # excludes overlap-contaminated spikes (same as Layer 1/2).  ISI
+        # computation is skipped — BOTM doesn't use burst correction.
+        if not use_clusters:
+            print('    BOTM: no .clu file — falling back to raw mode for '
+                  'this group (BOTM requires cluster labels)',
+                  file=sys.stderr)
+            subtraction_mode_effective = 'raw'
+        elif input_dat_path is None or nChannels <= 0:
+            raise RuntimeError('BOTM requires input_dat_path and nChannels')
+        else:
+            subtraction_mode_effective = 'botm'
+
+        if subtraction_mode_effective == 'botm':
+            contam_mask = find_clean_mask(spike_times, nSamples)
+            n_clean_tot = int(contam_mask.sum())
+            print(f'    contamination check: {n_clean_tot}/{nSpikes} spikes '
+                  f'uncontaminated ({100*n_clean_tot/max(nSpikes,1):.0f}%)',
+                  file=sys.stderr)
+
+            C = estimate_noise_covariance(
+                input_dat_path, channels, spike_times, nSamples, peakSample,
+                nBits, nChannels, ridge=botm_ridge)
+            if C is None:
+                raise RuntimeError(
+                    'BOTM noise covariance estimation failed; increase '
+                    '--botm-ridge, reduce nSamples, or fall back to '
+                    '--subtraction-mode raw')
+
+            # Invert C once via Cholesky.  np.linalg.inv is fine here —
+            # matmul C·M is much cheaper than repeated solves and we need
+            # C_inv only once per group for building per-cluster filters.
+            try:
+                C_inv = np.linalg.inv(C)
+            except np.linalg.LinAlgError as exc:
+                raise RuntimeError(
+                    f'BOTM: covariance inversion failed: {exc}; '
+                    f'try larger --botm-ridge')
+
+            for cid in np.unique(clu_ids):
+                mask   = np.where(clu_ids == cid)[0]
+                n_c    = len(mask)
+                t_ord  = np.argsort(spike_times[mask])
+                spk_c  = spk[mask[t_ord]].astype(np.float32)
+                cm     = contam_mask[mask[t_ord]]   # clean mask
+
+                # Robust template build: exclude contaminated spikes when
+                # enough clean spikes remain, else fall back to trimmed mean
+                if n_c < min_template_spikes:
+                    # Too few spikes — use global fallback (rarely stripped)
+                    tmpl = spk.astype(np.float32).mean(axis=0)
+                    print(f'    cluster {cid:4d}: {n_c:5d} spikes '
+                          f'(< {min_template_spikes}) → global template',
+                          file=sys.stderr)
+                else:
+                    subset, _ = robust_spk_subset(
+                        spk_c, cm, min_clean_frac, cid)
+                    if len(subset) == n_c:  # trimmed-mean fallback
+                        tmpl = trimmed_mean_waveforms(subset)
+                    else:
+                        tmpl = subset.mean(axis=0)
+
+                n_clean_c = int(cm.sum())
+                botm_m = BOTMClusterModel(cid, tmpl, C_inv, n_clean_c)
+                botm_models[cid] = botm_m
+                print(f'    cluster {cid:4d}: {n_c:5d} spikes  '
+                      f'{botm_m.fit_summary()}',
+                      file=sys.stderr)
+
     else:
         contam_mask = find_clean_mask(spike_times, nSamples)
         n_clean_tot = int(contam_mask.sum())
@@ -1046,6 +1351,7 @@ def load_group(resfile, spkfile, clufile, channels, nSamples, peakSample,
         use_clusters    = use_clusters,
         cluster_models  = cluster_models,
         exp_models      = exp_models,
+        botm_models     = botm_models,
         isi_per_spike   = isi_per_spike,
         sort_idx        = sort_idx,
         sorted_wstart   = sorted_wstart,
@@ -1149,6 +1455,28 @@ def subtract_all_groups_chunked(out_mm, groups, nChannels, dtype,
                 # fall below the detection threshold.
                 if subtraction_mode == 'raw':
                     to_sub = obs_wf_full[wf_s:wf_e, :]
+                    for ci in range(nChanGrp):
+                        buf[buf_s:buf_e, channels[ci]] -= to_sub[:, ci]
+                    continue
+
+                # ── BOTM mode ────────────────────────────────────────────
+                # Bayes-optimal matched-filter amplitude subtraction.
+                # No drift compensation in this version (templates have a
+                # fixed reference frame; future work would whiten + shift).
+                # No burst correction; BOTM uses a single cluster template.
+                if subtraction_mode == 'botm' and grp.use_clusters:
+                    cid    = int(grp.clu_ids[i])
+                    botm_m = grp.botm_models.get(cid)
+                    if botm_m is None:
+                        # Fallback to raw for this spike if BOTM model is
+                        # missing (e.g. cluster built with < min_template_spikes
+                        # and for which BOTM didn't build a proper model).
+                        to_sub = obs_wf_full[wf_s:wf_e, :]
+                    else:
+                        obs_flat = obs_wf_full.ravel().astype(np.float64)
+                        a        = botm_m.amplitude(obs_flat)
+                        to_sub   = (a * botm_m.template[wf_s:wf_e, :]
+                                   ).astype(np.float32)
                     for ci in range(nChanGrp):
                         buf[buf_s:buf_e, channels[ci]] -= to_sub[:, ci]
                     continue
@@ -1310,7 +1638,11 @@ def main():
                 n_total_samples  = nTotalSamples,
                 strip_set        = strip_set,
                 strip_mode       = strip_mode,
-                subtraction_mode = args.subtraction_mode)
+                subtraction_mode = args.subtraction_mode,
+                input_dat_path   = args.input_dat,
+                nChannels        = args.n,
+                nBits            = args.b,
+                botm_ridge       = args.botm_ridge)
             groups.append(grp)
         except RuntimeError as exc:
             print(f'process_subtractspikes: {exc}', file=sys.stderr)

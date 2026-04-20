@@ -1,10 +1,12 @@
-## ndmanager-plugins — process_subtractspikes fixes (2026-04-19)
+## ndmanager-plugins — process_subtractspikes fixes (2026-04-19, rev 3 2026-04-20)
 
-Seven fixes to the spike-subtraction pipeline.  The headline change is
-that cluster-aware subtraction is now actually happening on
-modern-format `.clu` files, and that `ndm_stripdat` can now target
-specific "good" clusters for the iterative strip-then-re-detect
-workflow.
+Nine fixes/features for the spike-subtraction pipeline.  Since the
+initial 2026-04-19 revision, adds auto-generation of per-group strip
+sidecars from YAML Quality labels (no manual file maintenance between
+curation rounds), and a new `botm` subtraction mode that subtracts
+spikes using Bayes-Optimal Template Matching (Proepper 2015) — ~100×
+better residuals than `model` mode on the synthetic test fixture
+while preserving the noise baseline.
 
 ### Critical — `load_clu` reads binary .clu
 
@@ -114,6 +116,58 @@ benefit proportionally more.
 - Expanded header docstring to document the new parameters and the
   iterative strip/re-detect workflow.
 
+### Auto-generated strip sidecars from YAML Quality labels
+
+After manual curation in Klusters, each sorted unit gets an entry in
+the session YAML's top-level `units:` block with (among others) a
+`quality` free-text field.  `ndm_stripdat` now reads that field and
+auto-generates the per-group strip list when no explicit
+`<session>.strip.<g>` sidecar is present — so the iterative
+curate → strip → re-detect loop requires no manual file
+maintenance between rounds.
+
+**Mechanism.**  For each electrode group `g`:
+
+1. If `<session>.strip.<g>` exists (explicit operator override), it
+   wins and is passed verbatim to `process_subtractspikes` as
+   `@path`.  Unchanged behaviour.
+2. Else, if `autoStrip=true` (default) and the YAML `units:` block
+   has at least one entry for group `g`, the list is built from
+   entries whose `quality` field matches (case-insensitively, after
+   whitespace trimming) any of the configured `qualityTags`.
+   Written to `<session>.autostrip.<g>` with a provenance header
+   (generation date + source YAML + tags used) so the operator can
+   inspect what fed the current run.  Regenerated every run so
+   the list always reflects current YAML curation.
+3. Else, the global `stripClusters` parameter is used (previously
+   existing behaviour).
+4. Else, the built-in default (strip every non-0/1 cluster).
+
+**Two new YAML parameters** in the `ndm_stripdat` block:
+
+  - `autoStrip: "true"|"false"` (default `"true"`).  Master switch.
+    When off, only explicit sidecars and `stripClusters` are
+    consulted — no auto-generation.
+  - `qualityTags: "good,great,excellent"` (default).  Which quality
+    labels count as "strip-worthy".  Labs using a different
+    vocabulary (e.g. `"SU,single-unit,accepted"`) configure here.
+
+**Three-state exit semantics** distinguish the cases cleanly:
+auto-generator exits 0 with output if any units matched, exits 0
+with empty output if the group was curated but no units matched
+the tags (explicit "strip nothing for this group"), and exits 1
+with empty output if the group has no YAML curation at all (caller
+falls back to `stripClusters`).
+
+The Klusters `quality` field is implemented as a free-text
+`QLineEdit` so labs can and do use varying capitalisation and
+surrounding whitespace.  Both are normalised before matching.
+
+Seven unit tests confirm the expected behaviour (mixed
+curation → correct subset; all-bad curation → empty list; no
+curation → fallback signal; custom tag sets; case-insensitive match;
+whitespace-trimmed labels; missing YAML → fallback).
+
 ### Subtraction mode (--subtraction-mode, subtractionMode)
 
 New flag selects between two distinct subtraction strategies:
@@ -147,6 +201,96 @@ primary use case (feeding `ndm_redetectspikes`) requires the
 residual to fall below detection threshold; LFP users who need
 the model-mode baseline preservation can set `subtractionMode:
 "model"` in the YAML.
+
+### Not fixed in this patch → ### BOTM — Bayes-Optimal Template Matching (--subtraction-mode botm)
+
+Third subtraction mode, implementing BOTM from Proepper 2015, §3.4.
+Closes the "implicit white-noise" gap in `model` mode:
+
+**Generative model**: `x_t = Σ_i Σ_τ s^i_{t-τ}·ξ^i_τ + η_t` with
+`η ~ N(0, C)`, C the `(Tf·NC)×(Tf·NC)` noise covariance.
+
+**Build steps** (per group, once):
+
+1. **Noise covariance estimation** — `estimate_noise_covariance()` walks
+   between-spike periods of the input .dat.  For each period of length
+   ≥ `2 · nSamples`, take non-overlapping `nSamples`-wide windows,
+   compute local covariance.  Weight-average by period length:
+
+   ```
+   C = Σ_period (len_period · C_period) / Σ_period len_period
+   ```
+
+   This is Proepper's explicit remedy for the "stitching pitfall"
+   where simply concatenating noise periods and computing a single
+   covariance under-estimates C because samples at period borders,
+   originally far apart, get treated as adjacent.
+
+2. **Ridge regularization**: `C += ridge · trace(C)/dim · I` before
+   inversion.  Default ridge = 1e-3.  Raise if inversion fails on
+   short recordings (exposed as `--botm-ridge` / `botmRidge`).
+
+3. **Per-cluster matched filter**: `f^i = C^(-1) · ξ^i` and denominator
+   `ξ^i^T · C^(-1) · ξ^i` cached in `BOTMClusterModel` at build time.
+   Template ξ^i is the cluster mean waveform from the contamination-
+   excluded subset (falls back to trimmed mean if clean subset is
+   too small), same as Layer 1.
+
+**Per-spike subtraction** uses Bayes-optimal amplitude:
+
+```
+a_i(x) = (x^T · f^i) / (ξ^i^T · f^i)
+```
+
+No clamp — the denominator already normalises template energy under
+the whitened metric.  Subtract `a_i · ξ^i` from the buffer.  No drift
+compensation and no burst correction in this version (deferred).
+
+**Measured performance** on the synthetic 3-cluster test fixture:
+
+```
+Residual comparison on A-cluster (original peak = -398.7):
+  raw mode:       0.0  (  0.0%)      zeros by construction
+  model mode:    37.6  (  9.4%)      Layer 2 PC1 exp-fit
+  botm mode:     -0.3  (  0.1%)      matched-filter amplitude
+```
+
+BOTM achieves ~100× better residual than `model` on this fixture,
+while preserving the noise baseline outside spike windows (byte-
+identical to input — raw mode also does this on this fixture but
+in general raw cancels the whole .spk snippet including its noise
+content).  Both `model` and `botm` are suitable for LFP extraction;
+`botm` is strictly better for LFP unless the model's burst correction
+or shape variability is needed.
+
+**New CLI/YAML**:
+
+- `--subtraction-mode botm` (alongside `model` / `raw`)
+- `--botm-ridge 1e-3` (covariance inversion regulariser)
+- YAML `subtractionMode: "botm"`
+- YAML `botmRidge: "1e-3"` (read only when subtractionMode=botm)
+
+**Deferred**:
+
+- **SIC overlap handling** (Proepper §3.4.4).  The current BOTM mode
+  processes each spike independently using its observation window.
+  Proepper's Subtractive Interference Cancellation iterates: find the
+  highest-discriminant spike, subtract, update remaining discriminants
+  by the cross-term `ξ^i^T · C^(-1) · ξ^j_τ`.  For overlapping spikes
+  of different clusters this improves amplitude estimation.  Not
+  critical for the iterative workflow (the outer operator loop already
+  serves as coarse-grained SIC at the curation level) but it would
+  tighten within-group overlap handling if added later.
+
+- **Drift compensation in BOTM**.  The current BOTM template has a
+  fixed spatial reference frame.  Future work: pre-whiten the
+  drift-shifted template, which requires shifting both ξ and
+  reconstructing C^(-1)·ξ for each shift.  Expensive but tractable.
+
+- **Pre-whitening for Layer 2 PCA** (Option A from the original
+  modelling-recommendations document).  Superseded by BOTM for the
+  main use case; still worth adding to improve Layer 2 if `model`
+  mode remains in use for any pipeline.
 
 ### Not fixed in this patch
 
