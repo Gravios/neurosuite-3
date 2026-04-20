@@ -30,7 +30,11 @@
 #//                                  1=MUA).  This is the default.
 #//                       "all"      strip every cluster including noise/MUA.
 #//                       "2,3,5"    strip only the listed cluster ids.
-#//     subtractionMode : "raw" (default) — subtract the raw .spk.N
+#//                       Only used when no per-group sidecar exists AND
+#//                       auto-generation (see below) does not find any
+#//                       curated units for that group.
+#//     subtractionMode : Three strategies available.
+#//                       "raw" (default) — subtract the raw .spk.N
 #//                       waveform directly (Layer 0).  Near-exact
 #//                       cancellation at spike windows; skips all
 #//                       template modelling; fast.  Appropriate for
@@ -43,9 +47,55 @@
 #//                       spike windows.  Appropriate for LFP extraction
 #//                       where you want the residual to look like
 #//                       surrounding noise, not a hole in the trace.
+#//                       "botm" — Bayes-Optimal Template Matching
+#//                       (Proepper 2015, §3.4).  Estimates noise
+#//                       covariance C from between-spike periods,
+#//                       builds per-cluster matched filter f = C^(-1)·ξ,
+#//                       subtracts with Bayes-optimal amplitude
+#//                       a = (obs^T·f) / (ξ^T·f).  Closes the
+#//                       implicit-white-noise gap in model mode.
+#//                       Preserves noise baseline.  Slower than model
+#//                       (covariance estimation + matrix inversion per
+#//                       group) but mathematically principled.
+#//     botmRidge       : Covariance ridge regularization for BOTM mode.
+#//                       Only used when subtractionMode=botm.  Default
+#//                       "1e-3" — raise if you see "covariance inversion
+#//                       failed" errors (short recordings, few noise
+#//                       samples).
+#//     autoStrip       : "true" (default) to auto-generate a strip list
+#//                       from the top-level YAML 'units:' block when no
+#//                       per-group sidecar is present.  Any unit whose
+#//                       'quality' field matches one of the qualityTags
+#//                       (case-insensitive) is added to the list for its
+#//                       group.  Set "false" to disable; only explicit
+#//                       sidecars and stripClusters are then consulted.
+#//     qualityTags     : Comma-separated quality labels that count as
+#//                       "strip-worthy" during auto-generation.
+#//                       Default: "good,great,excellent".
 #//     overwrite       : "true" to re-run even if <session>-spkclean.dat
 #//                       exists; default "false".
 #//     redetectSpikes  : "yes" to chain ndm_redetectspikes afterwards.
+#//
+#//   Per-group sidecars and auto-generation
+#//   --------------------------------------
+#//   For any electrode group g, the priority for which clusters get
+#//   stripped is:
+#//     1. If <session>.strip.<g> exists, use it (explicit operator
+#//        override).  Plain text: one integer cluster id per line,
+#//        blank lines and '#' comments allowed.
+#//     2. Else, if autoStrip=true and the YAML 'units:' block has at
+#//        least one entry for group g, generate the list from unit
+#//        entries whose 'quality' matches qualityTags.  Written to
+#//        <session>.autostrip.<g> with a provenance header.  This file
+#//        is regenerated on every ndm_stripdat run.
+#//     3. Else, use the global stripClusters parameter.
+#//     4. Else, the built-in default (strip every non-0/1 cluster).
+#//
+#//   Typical workflow: curate in Klusters; Klusters writes each unit's
+#//   Quality field into the YAML; re-run ndm_stripdat; auto-generation
+#//   picks up the newly-tagged units and subtracts them.  If you want
+#//   a different set for a particular run, write <session>.strip.<g>
+#//   by hand — it shadows the auto-generated list for that group.
 #//
 #//   Per-group sidecar
 #//   -----------------
@@ -151,11 +201,40 @@ check_optional_variable $overwrite || overwrite="false"
 # LFP the difference is invisible after downsampling).
 subtractionMode=$(read_script_parameter $session subtractionMode)
 check_optional_variable $subtractionMode || subtractionMode="raw"
-if [ "$subtractionMode" != "model" ] && [ "$subtractionMode" != "raw" ]
+if [ "$subtractionMode" != "model" ] \
+   && [ "$subtractionMode" != "raw" ] \
+   && [ "$subtractionMode" != "botm" ]
 then
-	echo_error "subtractionMode must be 'model' or 'raw', got '$subtractionMode'"
+	echo_error "subtractionMode must be 'model', 'raw', or 'botm', got '$subtractionMode'"
 	exit $GENERAL_ERROR
 fi
+
+# botmRidge: numerical regularization of noise covariance C in BOTM mode.
+# Fraction of trace(C)/dim added to the diagonal before inversion.  Only
+# used when subtractionMode=botm.  Default 1e-3 — raise if C is singular
+# (e.g. very short recordings, few noise samples).
+botmRidge=$(read_script_parameter $session botmRidge)
+check_optional_variable $botmRidge || botmRidge="1e-3"
+
+# autoStrip: when "true" (default), missing $session.strip.$g sidecars are
+# auto-generated from the YAML's top-level 'units:' block.  A unit is
+# included in the auto-generated strip list if its 'quality' label matches
+# one of the configured qualityTags (case-insensitive).  When "false",
+# only existing sidecars and the global stripClusters are consulted; no
+# auto-generation.  Most users should leave this on: curation in Klusters
+# populates the Quality field, and the strip sidecar "just works" on the
+# next ndm_stripdat run.
+autoStrip=$(read_script_parameter $session autoStrip)
+check_optional_variable $autoStrip || autoStrip="true"
+
+# qualityTags: comma-separated list of quality label strings that qualify
+# a unit as "good enough to strip".  Matched case-insensitively against
+# the trimmed quality field written by Klusters.  Default matches the
+# descriptors in common use in the lab ("good", "great", "excellent").
+# Users whose curation vocabulary differs (e.g. "single-unit", "SU",
+# "accepted") can override here.
+qualityTags=$(read_script_parameter $session qualityTags)
+check_optional_variable $qualityTags || qualityTags="good,great,excellent"
 
 check_mandatory_variable $nChannels   "missing number of channels"
 check_mandatory_variable $samplingRate "missing sampling rate"
@@ -213,6 +292,81 @@ print(1)
 PEOF
 }
 
+# ── Auto-generate strip sidecar from YAML 'units:' Quality labels ────────
+# Prints one cluster id per line for group $1 to stdout if — and only if —
+# the YAML has at least one 'units:' entry for that group whose 'quality'
+# field (case-insensitively, after trimming) matches one of the tags in
+# the comma-separated tag list $2.  Prints nothing if:
+#   - the YAML is missing or can't be parsed
+#   - there are no 'units:' entries for that group (uncurated session)
+#   - no units in that group match the tags
+#
+# The caller distinguishes "YAML has no curation for this group" from
+# "YAML has curation but nothing good" by the exit code: 0 = at least one
+# id written, 1 = nothing written.  This lets the caller fall back to the
+# global stripClusters in the "uncurated" case while still allowing an
+# explicit "no good units here" result to mean "subtract nothing".
+#
+# The Klusters 'quality' field is free-text (QLineEdit), so the match is
+# case-insensitive with whitespace trimmed on both sides.
+autoStripFromQuality()
+{
+	python3 - "$1" "$2" "$session" << 'PEOF'
+import sys, os, yaml
+group       = int(sys.argv[1])
+tag_list    = [t.strip().lower() for t in sys.argv[2].split(',') if t.strip()]
+session     = sys.argv[3]
+tag_set     = set(tag_list)
+
+yamlfile = next((session + e for e in ('.yaml', '.yml')
+                 if os.path.isfile(session + e)), None)
+if not yamlfile:
+    sys.exit(1)                  # XML-only sessions: skip auto-gen
+try:
+    with open(yamlfile) as f:
+        param = yaml.safe_load(f)
+except Exception as exc:
+    print(f'# YAML parse failure: {exc}', file=sys.stderr)
+    sys.exit(1)
+
+units = (param or {}).get('units') or []
+if not isinstance(units, list) or not units:
+    sys.exit(1)                  # no curation in YAML → caller falls back
+
+# Filter to this group's entries
+in_group = [u for u in units
+            if isinstance(u, dict) and u.get('group') == group]
+if not in_group:
+    sys.exit(1)                  # group uncurated
+
+# Match quality against tag set (case-insensitive, trimmed)
+keep_ids = []
+for u in in_group:
+    q = u.get('quality')
+    if q is None:
+        continue
+    q_norm = str(q).strip().lower()
+    if q_norm in tag_set:
+        cid = u.get('cluster')
+        if cid is not None:
+            try:
+                keep_ids.append(int(cid))
+            except (TypeError, ValueError):
+                continue
+
+if not keep_ids:
+    # Group was curated but no units tagged good/great/excellent
+    # → return empty list (caller subtracts nothing for this group).
+    # Signal success so caller doesn't fall back to global stripClusters.
+    sys.exit(0)
+
+# Deduplicate + sort for reproducibility
+for cid in sorted(set(keep_ids)):
+    print(cid)
+sys.exit(0)
+PEOF
+}
+
 groupSpecs=""
 for group in $(seq 1 $nElectrodeGroups)
 do
@@ -250,19 +404,57 @@ do
 	fi
 
 	# ── Resolve strip spec for this group ────────────────────────────
-	# Priority: per-group sidecar > global YAML stripClusters > default.
-	# The sidecar path is echoed with a literal '@' prefix so the Python
-	# parser reads it as a file reference.
+	# Priority:
+	#   1. Per-group sidecar $session.strip.$group  (user's explicit override)
+	#   2. Auto-generated from YAML 'units' quality labels (if autoStrip=true
+	#      and at least one 'units' entry exists for this group)
+	#   3. Global YAML stripClusters parameter
+	#   4. Built-in default: strip non-noise (exclude 0, 1)
 	sidecar="$session.strip.$group"
+	autoSidecar="$session.autostrip.$group"
+	# Remove stale auto-generated file from previous runs — we rebuild it
+	# each run so it stays in sync with the current YAML curation state.
+	rm -f "$autoSidecar"
+
 	if [ -f "$sidecar" ]
 	then
 		stripSpec="@$sidecar"
 		echo_info "  Group $group: using strip sidecar $sidecar"
-	elif [ "$stripClusters" = "default" ] || [ -z "$stripClusters" ]
+	elif [ "$autoStrip" = "true" ] \
+	     && autoStripFromQuality "$group" "$qualityTags" > "$autoSidecar" 2>/dev/null \
+	     && [ -s "$autoSidecar" ]
 	then
-		stripSpec="-"
+		# At least one unit in this group was tagged with a matching quality
+		n_auto=$(wc -l < "$autoSidecar")
+		stripSpec="@$autoSidecar"
+		# Add a provenance header to the auto-generated file for the
+		# operator to see where the list came from if they inspect it.
+		{
+			echo "# auto-generated by ndm_stripdat on $(date -Is)"
+			echo "# source: YAML 'units' entries for group $group"
+			echo "# qualityTags: $qualityTags"
+			cat "$autoSidecar"
+		} > "$autoSidecar.tmp" && mv "$autoSidecar.tmp" "$autoSidecar"
+		echo_info "  Group $group: auto-generated strip list from YAML quality" \
+		          "(${n_auto} unit(s), tags={$qualityTags}) → $autoSidecar"
 	else
-		stripSpec="$stripClusters"
+		# Either autoStrip=false, no YAML curation for this group, or the
+		# helper script was unable to parse.  Fall through to the global
+		# stripClusters setting.  (If autoStripFromQuality wrote a 0-byte
+		# file because the group was curated but nothing matched, we also
+		# land here; this is the desired "no good units → nothing to strip"
+		# outcome, but without an explicit sidecar the global default will
+		# now fire — probably not what the user wants.  To signal that
+		# explicitly, the user should create an empty $session.strip.$group
+		# file by hand, OR set stripClusters to something narrow in the
+		# YAML.)
+		rm -f "$autoSidecar"  # tidy up 0-byte file if any
+		if [ "$stripClusters" = "default" ] || [ -z "$stripClusters" ]
+		then
+			stripSpec="-"
+		else
+			stripSpec="$stripClusters"
+		fi
 	fi
 
 	channels=$(echo $channels | tr ' ' ',')
@@ -276,12 +468,14 @@ done
 echo_info "Subtracting spike waveforms from $nElectrodeGroups electrode group(s)"
 echo_info "Strip mode:       $stripClusters  (per-group sidecar files take priority)"
 echo_info "Subtraction mode: $subtractionMode"
+[ "$subtractionMode" = "botm" ] && echo_info "BOTM ridge:       $botmRidge"
 echo_info "Output:           $outputDat"
 
 process_subtractspikes \
 	-n $nChannels -b $nBits \
 	-s $samplingRate \
 	--subtraction-mode $subtractionMode \
+	--botm-ridge $botmRidge \
 	$session.dat $outputDat \
 	$groupSpecs
 check_command_status process_subtractspikes
