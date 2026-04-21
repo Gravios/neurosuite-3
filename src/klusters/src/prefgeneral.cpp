@@ -119,6 +119,9 @@ int  PrefGeneral::getMarkerSize()   const { return markerSizeSpinBox->value(); }
 void PrefGeneral::setSelectionLineWidth(int w) { selectionLineWidthSpinBox->setValue(w); }
 int  PrefGeneral::getSelectionLineWidth() const { return selectionLineWidthSpinBox->value(); }
 
+void   PrefGeneral::setAutoscaleMarginPercent(double p) { autoscaleMarginSpinBox->setValue(p); }
+double PrefGeneral::getAutoscaleMarginPercent() const   { return autoscaleMarginSpinBox->value(); }
+
 
 double PrefGeneral::getTemplateThresholdMin() const {
     return templateThresholdMinSpinBox->value();

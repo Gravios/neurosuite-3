@@ -27,6 +27,7 @@
 const bool Configuration::crashRecoveryDefault = true;
 const bool Configuration::autoSelectFeaturesDefault = false;
 const int  Configuration::autoSelectNFeaturesDefault = 7;
+const double Configuration::autoscaleMarginPercentDefault = 5.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
 const int  Configuration::timeIntervalDefault = 60;
@@ -66,6 +67,7 @@ void Configuration::read() {
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
+    autoscaleMarginPercent = settings.value("autoscaleMarginPercent", autoscaleMarginPercentDefault).toDouble();
     settings.endGroup();
 
     //read cluster view options
@@ -101,6 +103,7 @@ void Configuration::write() const {
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.setValue("autoSelectFeatures", autoSelectFeatures);
     settings.setValue("autoSelectNFeatures", autoSelectNFeatures);
+    settings.setValue("autoscaleMarginPercent", autoscaleMarginPercent);
     settings.endGroup();
     
     //write cluster view options

@@ -1,0 +1,379 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Re-cluster the "unmatched" bin produced by process_shadowcluster.
+#//
+#//   After a ndm_reextractspikes / ndm_reextractspikes_stderiv run,
+#//   each group's .clu.N contains the original cluster IDs plus:
+#//     - shadow(k) = maxExistingId + 1 + k    (new spikes gated into
+#//                   cluster k by robust Mahalanobis distance)
+#//     - unmatched = 2 * maxExistingId + 1    (single bin holding all
+#//                   new spikes that exceeded the χ² threshold from
+#//                   every eligible parent)
+#//
+#//   The unmatched bin is often large (~90% of re-extracted spikes in
+#//   typical sessions) and heterogeneous — it mixes genuinely novel
+#//   low-amplitude units, collision artefacts, mis-masked existing
+#//   spikes, and real noise.  Running KlustaKwik on this bin alone
+#//   recovers the sub-structure so the operator can triage in Klusters
+#//   with actual cluster labels instead of one amorphous pile.
+#//
+#//   Flow:
+#//     1. Read $session.clu.$g, locate rows where clu == unmatched_id.
+#//     2. Extract those rows from $session.fet.$g into a sandbox:
+#//          $session-unmatched-$g.fet.$g
+#//     3. Run KlustaKwik on the sandbox stem → $session-unmatched-$g.clu.$g
+#//     4. Remap sandbox cluster IDs (1..K) to offset IDs
+#//          (unmatched_id + 1) .. (unmatched_id + K)
+#//        and merge back into $session.clu.$g over the unmatched rows.
+#//        The final .clu.N header is updated to reflect the new max ID.
+#//     5. Sandbox files removed on success; originals preserved at
+#//        $session.clu.$g.bak-sub (first-run wins, same policy as the
+#//        re-extract scripts).
+#//
+#//   WAVEFORMS ARE NOT TOUCHED.  Re-clustering only affects the .clu
+#//   file; .spk / .spkD / .fet / .fetD / .res stay exactly as they
+#//   were after shadow-cluster merge.  The Mahalanobis subspace that
+#//   defined "unmatched" is the reference .fet space, so re-clustering
+#//   happens in that same space — no waveform reprocessing required.
+#//
+#//   Arguments:  [parameter-file]  [electrodeGroup]
+#//   If electrodeGroup is omitted, processes every group that has a
+#//   .clu.N containing an unmatched bin; groups without one are skipped.
+#//
+#//   copyright       (C) 2025 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename "$0")
+if [ $# -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+print_header "$session - Re-cluster unmatched bin from shadow-cluster merge"
+
+check_commands_installed KlustaKwik python3
+
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+if [ "$nElectrodeGroups" -eq 0 ]; then
+    echo_error "missing spike groups"
+    exit $GENERAL_ERROR
+fi
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Helper: extract unmatched rows from .fet into a sandbox .fet file.
+# //
+# //  The .fet.N format is:
+# //    int32 nDims header; then nSpikes × nDims × int64 rows.
+# //  The .clu.N format is:
+# //    int32 nClusters header; then nSpikes × int32 IDs.
+# //  The two files are row-aligned (same index).
+# //
+# //  Output is a sandbox stem with the same group suffix so KlustaKwik
+# //  reads it naturally.  Returns the unmatched_id and count on stdout
+# //  (space-separated: "<unmatched_id> <n_unmatched>"), or an empty
+# //  string if no unmatched bin was detected in this group.
+# ////////////////////////////////////////////////////////////////////////////
+
+extract_unmatched()
+{
+    local group=$1
+    local sandboxStem=$2
+
+    python3 - "$session" "$group" "$sandboxStem" <<'PYEOF'
+import struct, sys, os
+session, group, sandboxStem = sys.argv[1], sys.argv[2], sys.argv[3]
+clu_path = f"{session}.clu.{group}"
+fet_path = f"{session}.fet.{group}"
+out_fet  = f"{sandboxStem}.fet.{group}"
+
+with open(clu_path, "rb") as f:
+    clu_buf = f.read()
+nClusters = struct.unpack("<i", clu_buf[:4])[0]
+clu_ids = list(struct.unpack(f"<{(len(clu_buf)-4)//4}i", clu_buf[4:]))
+
+# Detect the unmatched bin.  By shadowcluster convention it's the
+# single largest-id bin, created as (2 * maxExistingId + 1) where
+# maxExistingId is the pre-merge max.  Safer heuristic: the highest
+# id present in the file is the unmatched bin, PROVIDED there's at
+# least one entry with that id.  If the user has already re-clustered
+# and relabeled, the highest id might not be the unmatched bin — but
+# then we'd have nothing to re-cluster anyway, so the caller's
+# idempotence check ($session.clu.$g.bak-sub exists) will bail first.
+if not clu_ids:
+    sys.exit(0)
+unmatched_id = max(clu_ids)
+unmatched_rows = [i for i, c in enumerate(clu_ids) if c == unmatched_id]
+if len(unmatched_rows) == 0:
+    sys.exit(0)
+
+# Extract matching rows from .fet.
+with open(fet_path, "rb") as f:
+    fet_buf = f.read()
+nDims = struct.unpack("<i", fet_buf[:4])[0]
+row_bytes = nDims * 8
+hdr_size  = 4
+total_rows = (len(fet_buf) - hdr_size) // row_bytes
+assert total_rows == len(clu_ids), \
+    f"clu/fet row mismatch: clu={len(clu_ids)} fet={total_rows}"
+
+os.makedirs(os.path.dirname(os.path.abspath(out_fet)) or ".", exist_ok=True)
+with open(out_fet, "wb") as f:
+    f.write(struct.pack("<i", nDims))
+    for row_idx in unmatched_rows:
+        start = hdr_size + row_idx * row_bytes
+        f.write(fet_buf[start:start + row_bytes])
+
+# Report to stdout for the caller.
+print(f"{unmatched_id} {len(unmatched_rows)}")
+PYEOF
+}
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Helper: merge sandbox clu back into live clu with offset IDs.
+# //
+# //  Input:
+# //    $session.clu.$g       live clu with unmatched rows tagged with
+# //                          unmatched_id
+# //    $sandboxStem.clu.$g   KlustaKwik output; IDs are 1..K (or 2..K+1,
+# //                          with cluster 1 being noise in KK convention)
+# //
+# //  Output:
+# //    $session.clu.$g       rewritten with unmatched rows replaced by
+# //                          (unmatched_id + sub_id).  Rows that KK
+# //                          labelled as "noise" (cluster 1) retain the
+# //                          unmatched_id so the operator can still see
+# //                          the residual bin.
+# ////////////////////////////////////////////////////////////////////////////
+
+merge_subcluster()
+{
+    local group=$1
+    local sandboxStem=$2
+    local unmatchedId=$3
+
+    python3 - "$session" "$group" "$sandboxStem" "$unmatchedId" <<'PYEOF'
+import struct, sys
+session, group, sandboxStem, unmatched_id = \
+    sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+live_clu = f"{session}.clu.{group}"
+sub_clu  = f"{sandboxStem}.clu.{group}"
+
+with open(live_clu, "rb") as f:
+    lbuf = f.read()
+with open(sub_clu, "rb") as f:
+    sbuf = f.read()
+
+n_live = struct.unpack("<i", lbuf[:4])[0]
+live_ids = list(struct.unpack(f"<{(len(lbuf)-4)//4}i", lbuf[4:]))
+sub_header = struct.unpack("<i", sbuf[:4])[0]
+sub_ids = list(struct.unpack(f"<{(len(sbuf)-4)//4}i", sbuf[4:]))
+
+unmatched_rows = [i for i, c in enumerate(live_ids) if c == unmatched_id]
+assert len(unmatched_rows) == len(sub_ids), \
+    f"subcluster row count mismatch: live={len(unmatched_rows)} sub={len(sub_ids)}"
+
+# KlustaKwik convention: cluster 1 = noise.  Keep noise-labelled rows
+# in the unmatched bin so the operator sees one consolidated residual
+# (if we promoted them all to distinct offsets they'd fragment the
+# cluster space with tiny bins).  Non-noise sub-IDs k≥2 become
+# (unmatched_id + (k - 1)) so the first real sub-cluster starts at
+# (unmatched_id + 1), not (unmatched_id + 2).
+offset = unmatched_id   # so sub_id=2 → offset+1
+max_sub = max((s for s in sub_ids if s >= 2), default=1)
+max_new_id = offset + (max_sub - 1) if max_sub >= 2 else unmatched_id
+
+for row_idx, sub_id in zip(unmatched_rows, sub_ids):
+    if sub_id <= 1:
+        # KK noise → leave in the unmatched bin
+        continue
+    live_ids[row_idx] = offset + (sub_id - 1)
+
+# Final nClusters = 1 + count of distinct positive IDs (cluster 0 is
+# always counted in the header regardless of presence).  Recompute
+# from scratch to match Klusters' expectation.
+distinct = sorted(set(live_ids))
+new_nClusters = len(distinct)
+
+with open(live_clu, "wb") as f:
+    f.write(struct.pack("<i", new_nClusters))
+    f.write(struct.pack(f"<{len(live_ids)}i", *live_ids))
+
+n_promoted = sum(1 for s in sub_ids if s >= 2)
+n_noise    = len(sub_ids) - n_promoted
+print(f"promoted={n_promoted} noise_kept={n_noise} "
+      f"new_clusters={(max_sub - 1) if max_sub >= 2 else 0} "
+      f"max_new_id={max_new_id} total_nClusters={new_nClusters}")
+PYEOF
+}
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Per-group processing
+# ////////////////////////////////////////////////////////////////////////////
+
+once()
+{
+    local group=$1
+
+    inputs_missing "$session.$param_ext" \
+                   "$session.clu.$group" \
+                   "$session.fet.$group" \
+        && return $INPUTS_MISSING
+
+    # Idempotence: if we've already sub-clustered this group, the backup
+    # .clu.$group.bak-sub exists.  Don't re-process — the operator can
+    # rm the .bak-sub to force a re-run.
+    if [ -f "$session.clu.$group.bak-sub" ]; then
+        echo_info "  group $group: .clu.$group.bak-sub exists — skipping"
+        echo_info "    (remove the .bak-sub file to force a re-sub-cluster)"
+        return $OUTPUTS_EXIST
+    fi
+
+    local sandboxStem=$session-unmatched-$group
+
+    # Clean any stragglers from a previous aborted run.
+    rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group" \
+          "$sandboxStem.klg.$group" "$sandboxStem.temp.clu.$group"
+
+    # Pass 1: extract unmatched rows to sandbox .fet.
+    local extract_out
+    extract_out=$(extract_unmatched "$group" "$sandboxStem")
+    if [ -z "$extract_out" ]; then
+        echo_info "  group $group: no unmatched bin detected — skipping"
+        rm -f "$sandboxStem.fet.$group"
+        return $NO_ERROR
+    fi
+    local unmatchedId=${extract_out% *}
+    local nUnmatched=${extract_out##* }
+
+    echo_info "  group $group: unmatched cluster id=$unmatchedId, $nUnmatched spikes"
+
+    # Pass 2: KlustaKwik on the sandbox stem.  Uses the same three-tier
+    # parameter resolution as ndm_klustakwik by delegating through that
+    # wrapper.  ndm_klustakwik reads session.$param_ext for per-group
+    # KK params; since we run it against the REAL session yaml (not a
+    # sandbox yaml), per-group params are preserved.  But ndm_klustakwik
+    # also expects session.fet.$group to be the full feature file — so
+    # we temporarily point it at the sandbox via symlink, same pattern
+    # as the reextract scripts.
+    #
+    # Actually simpler: call KlustaKwik directly with the sandbox stem,
+    # reading KK params from the real session yaml.  KlustaKwik takes
+    # <session> <group> as positionals — if we pass the sandbox stem it
+    # writes .clu.$group next to the sandbox .fet.
+    #
+    # Parameter resolution mirrors ndm_klustakwik: read from the REAL
+    # session yaml, pass values explicitly on the command line.
+    local electrodes nFeatures
+    electrodes=($(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel"))
+    local nElectrodes=${#electrodes[*]}
+    nFeatures=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/nFeatures")
+    check_mandatory_variable $nFeatures "missing nFeatures for group $group"
+
+    # Read sandbox .fet's actual nDims for logging and sanity.  Use
+    # UseFeatures=all to avoid pipeline-dependent arithmetic: KK parses
+    # the .fet header and selects all dimensions when given "all".
+    # This is robust across raw / stderiv / extra-peak variants.
+    local sandboxDims
+    sandboxDims=$(python3 -c "
+import struct
+with open('$sandboxStem.fet.$group','rb') as f: print(struct.unpack('<i', f.read(4))[0])")
+    echo_info "  group $group: sandbox .fet.$group has $sandboxDims dims"
+    if [ -z "$sandboxDims" ] || [ "$sandboxDims" -le 1 ]; then
+        echo_error "  group $group: unreadable or degenerate sandbox .fet (nDims=$sandboxDims)"
+        rm -f "$sandboxStem.fet.$group"
+        return $GENERAL_ERROR
+    fi
+
+    # Per-group KK parameter read (three-tier, matching ndm_klustakwik's
+    # read_kk_param but simpler because we only need a few).
+    local maxClusters maxPossibleClusters minClusters mergeThresh
+    maxClusters=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/maxClusters")
+    xml_read_failed "$maxClusters"         && maxClusters=30
+    maxPossibleClusters=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/maxPossibleClusters")
+    xml_read_failed "$maxPossibleClusters" && maxPossibleClusters=100
+    minClusters=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/minClusters")
+    xml_read_failed "$minClusters"         && minClusters=2
+    mergeThresh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/mergeThresh")
+    xml_read_failed "$mergeThresh"         && mergeThresh=42.0
+
+    export OMP_NUM_THREADS=$(nproc 2>/dev/null || echo 4)
+    export OMP_WAIT_POLICY=passive
+
+    print_header "  group $group - KlustaKwik on $nUnmatched unmatched spikes"
+
+    KlustaKwik "$sandboxStem" "$group" \
+        -MinClusters         $minClusters         \
+        -MaxClusters         $maxClusters         \
+        -MaxPossibleClusters $maxPossibleClusters \
+        -UseFeatures         all                  \
+        -MergeThresh         $mergeThresh         \
+        -Log                 1                    \
+        -Screen              0                    \
+        -fSaveModel          0                    \
+        -SaveIntermediates   0
+    local kk_status=$?
+
+    unset OMP_NUM_THREADS OMP_WAIT_POLICY
+
+    if [ $kk_status -ne 0 ]; then
+        echo_error "  group $group: KlustaKwik on unmatched bin failed (exit $kk_status); live .clu.$group untouched"
+        rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group"
+        return $kk_status
+    fi
+
+    if [ ! -s "$sandboxStem.clu.$group" ]; then
+        echo_error "  group $group: KlustaKwik produced empty .clu.$group; live .clu.$group untouched"
+        rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group"
+        return $GENERAL_ERROR
+    fi
+
+    # Pass 3: backup live .clu, then merge sandbox IDs back with offset.
+    # Atomic through temp-write + rename inside merge_subcluster.
+    cp "$session.clu.$group" "$session.clu.$group.bak-sub"
+    local merge_report
+    merge_report=$(merge_subcluster "$group" "$sandboxStem" "$unmatchedId")
+    echo_info "  group $group: $merge_report"
+
+    # Cleanup sandbox.
+    rm -f "$sandboxStem.fet.$group" \
+          "$sandboxStem.clu.$group" \
+          "$sandboxStem.klg.$group" \
+          "$sandboxStem.temp.clu.$group"
+
+    return $NO_ERROR
+}
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Driver
+# ////////////////////////////////////////////////////////////////////////////
+
+if [ -z "$electrodeGroup" ]; then
+    overallStatus=$NO_ERROR
+    for (( g=1; g<=nElectrodeGroups; g++ )); do
+        once $g
+        s=$?
+        if [ $s -ne $NO_ERROR ] && [ $s -ne $OUTPUTS_EXIST ] && [ $s -ne $INPUTS_MISSING ]; then
+            overallStatus=$s
+        fi
+    done
+    exit $overallStatus
+else
+    once $electrodeGroup
+    exit $?
+fi
