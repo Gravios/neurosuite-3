@@ -38,42 +38,35 @@ yamlfile=$(find_yaml_file "$session")
     exit $INPUTS_MISSING; }
 inputs_missing "$yamlfile" && exit $INPUTS_MISSING
 
-# Read parameters from the ndm_decomposecollisions block.
-#
-# read_script_parameter's default is to look up under "$program" (the
-# current script's basename), which is exactly what we want.  Passing the
-# script name a second time as a positional argument is wrong — the
-# function then treats the script name as the first parameter NAME to
-# resolve, which fails silently and falls through to the real parameter
-# name in the second position.  Remove the stray script-name argument.
-maxShiftSamp=$(read_script_parameter "$session" maxShiftSamp)
+# Read parameters from the programs block
+maxShiftSamp=$(read_script_parameter "$session" ndm_decomposecollisions maxShiftSamp)
 maxShiftSamp=${maxShiftSamp:-10}
 
-corrThreshold=$(read_script_parameter "$session" corrThreshold)
+corrThreshold=$(read_script_parameter "$session" ndm_decomposecollisions corrThreshold)
 corrThreshold=${corrThreshold:-0.85}
 
-residualThreshold=$(read_script_parameter "$session" residualThreshold)
+residualThreshold=$(read_script_parameter "$session" ndm_decomposecollisions residualThreshold)
 residualThreshold=${residualThreshold:-0.25}
 
-minSnrRms=$(read_script_parameter "$session" minSnrRms)
+minSnrRms=$(read_script_parameter "$session" ndm_decomposecollisions minSnrRms)
 minSnrRms=${minSnrRms:-4.0}
 
-minSpikesTemplate=$(read_script_parameter "$session" minSpikesTemplate)
+minSpikesTemplate=$(read_script_parameter "$session" ndm_decomposecollisions minSpikesTemplate)
 minSpikesTemplate=${minSpikesTemplate:-30}
 
-corrWindow=$(read_script_parameter "$session" corrWindow)
+corrWindow=$(read_script_parameter "$session" ndm_decomposecollisions corrWindow)
 corrWindow=${corrWindow:-0}
 
-excludeNoise=$(read_script_parameter "$session" excludeNoise)
+excludeNoise=$(read_script_parameter "$session" ndm_decomposecollisions excludeNoise)
 excludeNoise=${excludeNoise:-true}
 
-overwrite=$(read_script_parameter "$session" overwrite)
+overwrite=$(read_script_parameter "$session" ndm_decomposecollisions overwrite)
 overwrite=${overwrite:-false}
 
-nWorkers=$(read_script_parameter "$session" nWorkers)
+nWorkers=$(read_script_parameter "$session" ndm_decomposecollisions nWorkers)
 nWorkers=${nWorkers:-0}
 
-useGpu=$(read_script_parameter "$session" useGpu)
+useGpu=$(read_script_parameter "$session" ndm_decomposecollisions useGpu)
 useGpu=${useGpu:-false}
 
 # Acquisition parameters
@@ -95,17 +88,25 @@ done
     exit $INPUTS_MISSING; }
 echo_message "Found $clu_count/$nSpikeGroups curated spike groups"
 
-# Check at least one .spk or .spkD file exists (the C++ binary prefers
-# .spkD when both are present — stderiv pipeline output).
+# Check at least one waveform file (.spk or .spkD) exists.  The C++
+# process_decomposecollisions auto-detects per group, preferring
+# .spkD when present — see process_decomposecollisions.cpp around the
+# per-group loop.  Mirror that policy here so stderiv-only sessions
+# (which have .spkD.N but no .spk.N) are not rejected at this gate.
+# No sdiffOrder handling is needed: .spkD stores the raw channel
+# count (the sdiff transform is in-place same-dimensionality), so the
+# C++ reads it with the group's raw channel count just like .spk.
 spk_count=0
 for (( g=1; g<=nSpikeGroups; g++ )); do
     { [ -f "$session.spk.$g" ] || [ -f "$session.spkD.$g" ]; } && (( spk_count++ ))
 done
 [ "$spk_count" -eq 0 ] && {
-    echo_error "No .spk/.spkD files found. Waveform data is required for collision decomposition."
+    echo_error "No .spk or .spkD files found. Waveform data is required for collision decomposition."
     exit $INPUTS_MISSING; }
 
-# Check outputs (per-group .col files)
+# Check outputs (per-group .col files).  A group is eligible for
+# processing if it has .clu.N AND at least one of .spk.N / .spkD.N,
+# and does NOT yet have a .col.N output.
 if [ "$overwrite" != "true" ]; then
     all_exist=true
     for (( g=1; g<=nSpikeGroups; g++ )); do

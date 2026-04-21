@@ -107,18 +107,94 @@ QString ProbePage::getLibraryPath() const
 // Slots
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// copyProbeIntoSession
+// ---------------------------------------------------------------------------
+// Copy the probe file at @p srcPath into the current working directory
+// (which, by convention, is the session directory — ndmanager is launched
+// from there).  Returns the bare filename the caller should store in the
+// probe table's file column, or an empty string on failure / user cancel.
+//
+// If the selected file is already the local copy (same canonical path),
+// no copy is performed and the bare name is returned directly.  If a
+// different file with the same basename already exists locally, the user
+// is asked whether to overwrite, reuse, or cancel.
+QString ProbePage::copyProbeIntoSession(const QString& srcPath)
+{
+    const QFileInfo srcInfo(srcPath);
+    const QString   baseName   = srcInfo.fileName();
+    const QDir      sessionDir = QDir::current();
+    const QString   localPath  = sessionDir.absoluteFilePath(baseName);
+
+    // Same file already? Nothing to copy.
+    if (QFileInfo(srcPath).canonicalFilePath()
+        == QFileInfo(localPath).canonicalFilePath())
+    {
+        return baseName;
+    }
+
+    if (QFile::exists(localPath)) {
+        const auto reply = QMessageBox::question(
+            this, tr("Probe file exists"),
+            tr("A probe file named\n\n    %1\n\nalready exists in the "
+               "session directory.  Overwrite it with the selected "
+               "file?\n\nChoose \"No\" to reuse the existing local "
+               "copy.").arg(baseName),
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+            QMessageBox::No);
+        if (reply == QMessageBox::Cancel)
+            return QString();
+        if (reply == QMessageBox::No)
+            return baseName;        // reuse existing local copy
+        if (!QFile::remove(localPath)) {
+            QMessageBox::warning(this, tr("Copy Failed"),
+                tr("Cannot remove existing %1").arg(localPath));
+            return QString();
+        }
+    }
+
+    if (!QFile::copy(srcPath, localPath)) {
+        QMessageBox::warning(this, tr("Copy Failed"),
+            tr("Cannot copy\n  %1\ninto the session directory"
+               "\n  %2").arg(srcPath, sessionDir.absolutePath()));
+        return QString();
+    }
+    return baseName;
+}
+
 void ProbePage::addProbe()
 {
-    int row = probeTable->rowCount();
+    // Open a file picker immediately.  The historical flow was:
+    //   1. click + → inserts empty row
+    //   2. click Browse → opens picker, fills row's ColFile
+    // merged here into one step: + opens the picker directly.  On accept
+    // the selected probe file is copied into the session directory (cwd,
+    // since ndmanager is launched from the session directory) and the
+    // new row references the local copy — making the session
+    // self-contained and portable to other machines.
+
+    const QString srcPath = QFileDialog::getOpenFileName(
+        this,
+        tr("Select Probe Configuration File"),
+        getLibraryPath(),
+        tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
+    if (srcPath.isEmpty())
+        return;     // user cancelled — no new row added
+
+    const QString localName = copyProbeIntoSession(srcPath);
+    if (localName.isEmpty())
+        return;     // copy failed or user cancelled the overwrite dialog
+
+    const int row = probeTable->rowCount();
     probeTable->insertRow(row);
     ProbeEntry blank;
-    blank.id = row;
+    blank.id        = row;
+    blank.probeFile = localName;   // relative to session dir
     probeTable->blockSignals(true);
     populateRow(row, blank);
     probeTable->blockSignals(false);
     probeTable->setCurrentCell(row, ColFile);
     m_modified = true;
-    // Auto-fill the offset for the new row (= sum of all probes above it)
     recalculateAll();
 }
 
@@ -236,29 +312,29 @@ void ProbePage::browseProbeFile()
     if (row < 0) row = probeTable->rowCount() - 1;
     if (row < 0) {
         QMessageBox::information(this, tr("Import Probe"),
-            tr("Click \"+\" to add a probe entry first, then use Browse to assign a file."));
+            tr("Click \"+\" to add a probe entry."));
         return;
     }
 
-    QString path = QFileDialog::getOpenFileName(
+    const QString path = QFileDialog::getOpenFileName(
         this,
         tr("Select Probe Configuration File"),
         getLibraryPath(),
         tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
     if (path.isEmpty()) return;
 
-    // Store the path (relative to library if inside it), then recalculate
-    // offsets and anatomy groups for all rows in one shot.
-    QString storedPath = path;
-    QString libPath = getLibraryPath();
-    if (!libPath.isEmpty() && storedPath.startsWith(libPath))
-        storedPath = storedPath.mid(libPath.length()).remove(0, 1);
+    // Copy the selected probe into the session directory (or reuse the
+    // local copy if one already exists), then store its bare filename in
+    // the row.  Same policy as addProbe — keeps the session self-contained.
+    const QString localName = copyProbeIntoSession(path);
+    if (localName.isEmpty())
+        return;     // copy failed or user cancelled
 
     probeTable->blockSignals(true);
     if (!probeTable->item(row, ColFile))
-        probeTable->setItem(row, ColFile, new QTableWidgetItem(storedPath));
+        probeTable->setItem(row, ColFile, new QTableWidgetItem(localName));
     else
-        probeTable->item(row, ColFile)->setText(storedPath);
+        probeTable->item(row, ColFile)->setText(localName);
     probeTable->blockSignals(false);
 
     m_modified = true;

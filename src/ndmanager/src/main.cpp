@@ -69,6 +69,31 @@ int main(int argc, char **argv)
         } else {
             manager->openDocumentFile(file);
         }
+    } else {
+        // No argument given: auto-discover a single *.yaml parameter file
+        // in the current working directory.  This covers the common case
+        // where the user cd's into a session directory and types plain
+        // `ndmanager`.  Behaviour:
+        //   0 yaml files : open the empty ndmanager as before
+        //   1 yaml file  : open it
+        //   N yaml files : open empty, print the candidate list so the
+        //                  user can pick one explicitly
+        QStringList yamls = QDir::current().entryList(
+            QStringList() << QLatin1String("*.yaml") << QLatin1String("*.yml"),
+            QDir::Files, QDir::Name);
+        if (yamls.size() == 1) {
+            const QString url = QDir::currentPath() + QDir::separator() + yamls.first();
+            qInfo() << "ndmanager: no argument given, opening" << url;
+            manager->openDocumentFile(url);
+        } else if (yamls.size() > 1) {
+            qWarning() << "ndmanager: no argument given and"
+                       << yamls.size()
+                       << "candidate .yaml files in" << QDir::currentPath();
+            qWarning() << "  pass one explicitly:";
+            for (const QString& y : yamls) {
+                qWarning().noquote() << "    ndmanager " << y;
+            }
+        }
     }
 
     const int ret = app.exec();

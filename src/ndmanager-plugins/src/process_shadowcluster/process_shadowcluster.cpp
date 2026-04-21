@@ -487,10 +487,29 @@ int main(int argc, char **argv)
     // ── load PCA model ────────────────────────────────────────────────────
     PcaModel pca;
     if (!loadPcaModel(refPca, pca)) return 1;
-    if (pca.nChannels != nChanGroup) {
+    // The PCA basis may have FEWER channels than the group when the
+    // upstream pipeline used a rank-reducing spatial-derivative
+    // transform (process_pca_stderiv with sdiffOrder 1 or 3 drops one
+    // linearly-dependent channel — see ndm_pca_stderiv).  In that case
+    // the projection loop in projectSpike() iterates pca.nChannels and
+    // reads channels 0..pca.nChannels-1 of each sample, which is
+    // exactly the set the PCA basis was trained on (process_pca_stderiv
+    // with SDIFF_PASS + dropLast keeps the leading nChan-1 channels).
+    // We only need to reject the case where PCA wants MORE channels
+    // than the .spk/.spkD layout provides.
+    if (pca.nChannels > nChanGroup) {
         cerr << "error: PCA nChannels=" << pca.nChannels
-             << " != group nChan=" << nChanGroup << endl;
+             << " > group nChan=" << nChanGroup
+             << " (PCA basis cannot have more channels than the waveform layout)"
+             << endl;
         return 1;
+    }
+    if (pca.nChannels < nChanGroup) {
+        cerr << "info: PCA nChannels=" << pca.nChannels
+             << " < group nChan=" << nChanGroup
+             << " (stderiv rank-reduced basis; reading first "
+             << pca.nChannels << " of " << nChanGroup << " channels)"
+             << endl;
     }
 
     // Auto-detect extraFeat by dim arithmetic.

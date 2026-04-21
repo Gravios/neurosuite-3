@@ -181,6 +181,19 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     }
 
     //Set Connection(s).
+    //
+    // Direct connection is required: the dataReady signal passes
+    // Array<dataType>& by non-const reference to a local stack
+    // variable inside TracesProvider's request methods.  Queued
+    // connections would need to serialise the arg into a
+    // QMetaCallEvent (impossible for a reference type and unsafe —
+    // the referent would dangle before the slot runs).  The
+    // synchronous-re-entry issue is mitigated instead by the
+    // allProvidersReady() guard in dataAvailable (see Bug 2 fix)
+    // and by the request loop's setStatus(false) sweep that runs
+    // BEFORE any requestData() call — so only the very last emit
+    // in a given request batch can see all-ready and trigger
+    // update().
     connect(&tracesProvider, &TracesProvider::dataReady, this,
         static_cast<void(TraceView::*)(Array<dataType>&,QObject*)>(&TraceView::dataAvailable));
 
@@ -244,6 +257,41 @@ void TraceView::changeCursor()
 
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Readiness helpers.  See traceview.h for rationale.  These replace the
+// hand-rolled two-loop `bool ready = false; while(iter.hasNext()) { ... }`
+// pattern that had a null-entry bug and, in the two-hash variant, an
+// additional overwrite bug.
+// ─────────────────────────────────────────────────────────────────────────────
+bool TraceView::allClustersReady() const
+{
+    QHashIterator<QString, ClusterData*> it(clustersData);
+    while (it.hasNext()) {
+        it.next();
+        const ClusterData* c = it.value();
+        if (!c || !c->status())
+            return false;
+    }
+    return true;
+}
+
+bool TraceView::allEventsReady() const
+{
+    QHashIterator<QString, EventData*> it(eventsData);
+    while (it.hasNext()) {
+        it.next();
+        const EventData* e = it.value();
+        if (!e || !e->status())
+            return false;
+    }
+    return true;
+}
+
+bool TraceView::allProvidersReady() const
+{
+    return allClustersReady() && allEventsReady();
+}
+
 void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator)
 {
     //If another widget was the initiator of the request, ignore the data.
@@ -271,24 +319,7 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator)
     }
     //Check if the cluster and event data are available
     else{
-        bool ready = false;
-        QHashIterator<QString, ClusterData*> iterator(clustersData);
-        while (iterator.hasNext()) {
-            iterator.next();
-            if (iterator.value())
-              ready = iterator.value()->status();
-            if (!ready)
-                break;
-        }
-        QHashIterator<QString, EventData*> iterator2(eventsData);
-        while (iterator2.hasNext()) {
-            iterator2.next();
-            if (iterator2.value())
-               ready = iterator2.value()->status();
-            if (!ready)
-                break;
-        }
-        if (ready){
+        if (allProvidersReady()){
             changeCursor();
 
             //Everything has to be redraw
@@ -306,26 +337,7 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator,const QSt
     clusterData->setStatus(true);
     clusterData->setData(data);
 
-    //The following code was done in case of threads, without thread the trace data arrive always last
-    bool ready = false;
-
-    QHashIterator<QString, ClusterData*> iterator(clustersData);
-    while (iterator.hasNext()) {
-        iterator.next();
-        if (iterator.value())
-            ready = iterator.value()->status();
-        if (!ready)
-            break;
-    }
-    QHashIterator<QString, EventData*> iterator2(eventsData);
-    while (iterator2.hasNext()) {
-        iterator2.next();
-        if (iterator2.value())
-          ready = iterator2.value()->status();
-        if (!ready)
-            break;
-    }
-    if (dataReady && ready){
+    if (dataReady && allProvidersReady()){
         changeCursor();
 
         //Everything has to be redraw
@@ -342,28 +354,7 @@ void TraceView::dataAvailable(Array<dataType>& times,Array<int>& ids,QObject* in
     eventData->setStatus(true);
     eventData->setData(times,ids);
 
-    //The following code was done in case of threads, without thread the trace data arrive always last
-    bool ready = false;
-    QHashIterator<QString, EventData*> iterator(eventsData);
-    while (iterator.hasNext()) {
-        iterator.next();
-        if (iterator.value())
-          ready = iterator.value()->status();
-        if (!ready)
-            break;
-    }
-    //If all the data for the events are available, send an signal for the listeners interested in it.
-    // if (ready) emit eventsAvailable(eventsData,selectedEvents,providerItemColors);
-
-    QHashIterator<QString, ClusterData*> iterator2(clustersData);
-    while (iterator2.hasNext()) {
-        iterator2.next();
-        if (iterator2.value())
-        ready = iterator2.value()->status();
-        if (!ready)
-            break;
-    }
-    if (dataReady && ready){
+    if (dataReady && allProvidersReady()){
         changeCursor();
 
         //Everything has to be redraw
@@ -1792,28 +1783,55 @@ void TraceView::drawTraces(QPainter& painter){
                     ItemColors* colors = providerItemColors[providerName];
                     Array<dataType>& currentData = static_cast<ClusterData*>(clustersData[providerName])->getData();
                     int nbSpikes = currentData.nbOfColumns();
+
+                    // ── O(S) raster refactor ──────────────────────────────
+                    // Original: for each of K selected clusters, linear-scan
+                    // all S spikes filtering by clusterId.  O(K*S) per
+                    // provider; for a 32-s window with 30k spikes and 8
+                    // selected clusters that is 240k predicate evaluations
+                    // firing on every pan step while a wait-cursor is up.
+                    //
+                    // Rewrite: one pass through the selected-cluster list
+                    // to build a clusterId -> (y, pen) lookup and append
+                    // the order/ordinate/abscissa bookkeeping (same state
+                    // as before), then a single O(S) pass over currentData
+                    // that looks up the pen and y by clusterId and draws.
+                    // QHash lookup is O(1) amortised; net cost per provider
+                    // falls to O(K + S) from O(K*S).
+                    QHash<dataType, QPen> penById;
+                    QHash<dataType, int>  yById;
                     QList<int>::iterator clusterIterator;
                     for(clusterIterator = clusterList.begin(); clusterIterator != clusterList.end(); ++clusterIterator){
                         const QString identifier = QString::fromLatin1("%1-%2").arg(providerName).arg(*clusterIterator);
-
-
                         clustersOrder.append(identifier);
                         rasterOrdinates.append(-y);
                         rasterAbscisses.append(X);
-                        QColor color = colors->color(*clusterIterator);
-                        QPen pen(color);
+
+                        QPen pen(colors->color(*clusterIterator));
                         pen.setCosmetic(true);
-                        painter.setPen(pen);
-                        int bottom = y - rasterHeight;
-                        for(int i = 1; i <= nbSpikes;++i){
-                            dataType index = currentData(1,i);
-                            dataType clusterId = currentData(2,i);
-                            if (clusterId == *clusterIterator){
-                                int abscissa = X + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
-                                painter.drawLine(abscissa,-y,abscissa,-bottom);
-                            }
-                        }
+                        penById.insert(static_cast<dataType>(*clusterIterator), pen);
+                        yById.insert(static_cast<dataType>(*clusterIterator), y);
+
                         y -= (rasterHeight + YRasterSpace);
+                    }
+
+                    // Single O(S) draw pass, keeping the painter pen hot
+                    // for runs of consecutive same-cluster spikes to avoid
+                    // redundant setPen() calls (measurable on very dense
+                    // sessions).
+                    dataType lastClusterId = static_cast<dataType>(-1);
+                    for(int i = 1; i <= nbSpikes; ++i){
+                        const dataType clusterId = currentData(2,i);
+                        if (!penById.contains(clusterId)) continue;
+                        if (clusterId != lastClusterId){
+                            painter.setPen(penById.value(clusterId));
+                            lastClusterId = clusterId;
+                        }
+                        const int spikeY      = yById.value(clusterId);
+                        const int bottomY     = spikeY - rasterHeight;
+                        const dataType index  = currentData(1,i);
+                        const int abscissa    = X + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
+                        painter.drawLine(abscissa, -spikeY, abscissa, -bottomY);
                     }
                 }
             }//raster
@@ -2037,30 +2055,47 @@ void TraceView::drawTraces(QPainter& painter){
                 ItemColors* colors = providerItemColors[providerName];
                 Array<dataType>& currentData = static_cast<ClusterData*>(clustersData[providerName])->getData();
                 int nbSpikes = currentData.nbOfColumns();
+
+                // ── O(S) raster refactor (single-column branch) ─────────
+                // Same rewrite as the multicolumn branch above — build a
+                // cluster-id -> (y, pen) lookup once, then walk the spike
+                // array once.  The original inner loop was K*S per provider
+                // and, because a stray qDebug() sat on the hot path, also
+                // flooded the console during pan (each qDebug call
+                // flushes stderr — single-digit-ms hitch per provider per
+                // redraw was visible on busy sessions).  The qDebug is
+                // removed.
+                QHash<dataType, QPen> penById;
+                QHash<dataType, int>  yById;
                 QList<int>::iterator clusterIterator;
                 QList<int>::iterator clusterIteratorEnd(clusterList.end());
                 for(clusterIterator = clusterList.begin(); clusterIterator != clusterIteratorEnd; ++clusterIterator){
                     const QString identifier = QString("%1-%2").arg(providerName).arg(*clusterIterator);
-
-                    qDebug()<<" *** identifier " <<identifier<<" nbSpikes " <<nbSpikes ;
-
                     clustersOrder.append(identifier);
                     rasterOrdinates.append(-Y);
                     rasterAbscisses.append(0);
-                    QColor color = colors->color(*clusterIterator);
-                    QPen pen(color);
+
+                    QPen pen(colors->color(*clusterIterator));
                     pen.setCosmetic(true);
-                    painter.setPen(pen);
-                    int bottom = Y - rasterHeight;
-                    for(int i = 1; i < nbSpikes + 1;++i){
-                        dataType index = currentData(1,i);
-                        dataType clusterId = currentData(2,i);
-                        if (clusterId == *clusterIterator){
-                            int abscissa = static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
-                            painter.drawLine(abscissa,-Y,abscissa,-bottom);
-                        }
-                    }
+                    penById.insert(static_cast<dataType>(*clusterIterator), pen);
+                    yById.insert(static_cast<dataType>(*clusterIterator), Y);
+
                     Y -= (rasterHeight + YRasterSpace);
+                }
+
+                dataType lastClusterId = static_cast<dataType>(-1);
+                for(int i = 1; i < nbSpikes + 1; ++i){
+                    const dataType clusterId = currentData(2,i);
+                    if (!penById.contains(clusterId)) continue;
+                    if (clusterId != lastClusterId){
+                        painter.setPen(penById.value(clusterId));
+                        lastClusterId = clusterId;
+                    }
+                    const int spikeY      = yById.value(clusterId);
+                    const int bottomY     = spikeY - rasterHeight;
+                    const dataType index  = currentData(1,i);
+                    const int abscissa    = static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
+                    painter.drawLine(abscissa, -spikeY, abscissa, -bottomY);
                 }
             }
         }//raster
@@ -3544,6 +3579,17 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
                                    int nbSamplesBefore,int nbSamplesAfter,const QList<int>& clustersToSkip){
 
     //Set Connection
+    //
+    // Direct connection is required: dataReady passes Array<dataType>&
+    // by non-const reference — queued connection would need to register
+    // the meta-type (impossible for a reference) and would leave the
+    // referent dangling before the slot runs.  The synchronous re-entry
+    // that results is handled by the request loop: setStatus(false) is
+    // called on every provider BEFORE the first requestData() call, so
+    // only the very last emit in a given batch can observe all-ready
+    // and trigger update().  The (allProvidersReady()) check in
+    // dataAvailable is correct (Bug 2 fix) so the earlier emits that
+    // find ready==false simply return without scheduling a paint.
     connect(clustersProvider, &ClustersProvider::dataReady, this,
         static_cast<void(TraceView::*)(Array<dataType>&,QObject*,const QString&)>(&TraceView::dataAvailable));
     connect(clustersProvider,&ClustersProvider::nextClusterDataReady,this,&TraceView::nextClusterDataAvailable);
@@ -3733,6 +3779,9 @@ void TraceView::addEventProvider(EventsProvider* eventsProvider,QString name,Ite
                                  bool active,QList<int>& eventsToShow,const QList<int>& eventsToSkip){
 
     //Set Connections
+    //
+    // Direct connection — queued is incompatible with Array<dataType>&
+    // signal args.  See addClusterProvider for the rationale.
     connect(eventsProvider, &EventsProvider::dataReady, this,
         static_cast<void(TraceView::*)(Array<dataType>&,Array<int>&,QObject*,const QString&)>(&TraceView::dataAvailable));
     connect(eventsProvider,&EventsProvider::nextEventDataReady,this,&TraceView::nextEventDataAvailable);
@@ -3956,15 +4005,7 @@ void TraceView::nextEventDataAvailable(Array<dataType>& times,Array<int>& ids,QO
         nextEventProvider.second = startingTime;
     }
 
-    bool ready = false;
-    QHashIterator<QString, EventData*> iterator(eventsData);
-    while (iterator.hasNext()) {
-        iterator.next();
-        if (iterator.value())
-           ready = iterator.value()->status();
-        if (!ready)
-            break;
-    }
+    const bool ready = allEventsReady();
 
     //if the new start time is equals to the current startTime do not do anything
     if (ready && nextEventProvider.second != startTime && nextEventProvider.second < length){
@@ -4009,15 +4050,7 @@ void TraceView::previousEventDataAvailable(Array<dataType>& times,Array<int>& id
         previousEventProvider.second = startingTime;
     }
 
-    bool ready = false;
-    QHashIterator<QString, EventData*> iterator(eventsData);
-    while (iterator.hasNext()) {
-        iterator.next();
-        if (iterator.value())
-           ready = iterator.value()->status();
-        if (!ready)
-            break;
-    }
+    const bool ready = allEventsReady();
 
     if (ready && previousEventProvider.second != startTime && previousEventProvider.second < length){
         long timeFrameWidth = endTime - startTime;
@@ -4333,14 +4366,7 @@ void TraceView::nextClusterDataAvailable(Array<dataType>& data,QObject* initiato
         spikeBrowsing = true;
     }
 
-    bool ready = false;
-    QHashIterator<QString, ClusterData*> iterator(clustersData);
-    while (iterator.hasNext()) {
-        iterator.next();
-        if (iterator.value())
-           ready = iterator.value()->status();
-        if (!ready) break;
-    }
+    const bool ready = allClustersReady();
 
     //if the new start time is equals to the current startTime (in recording unit) do not do anything
     if (ready && startTimeInRecordingUnits != previousStartTimeInRecordingUnits && nextClusterProvider.second < length){
@@ -4388,15 +4414,7 @@ void TraceView::previousClusterDataAvailable(Array<dataType>& data,QObject* init
         spikeBrowsing = true;
     }
 
-    bool ready = false;
-    QHashIterator<QString, ClusterData*> iterator(clustersData);
-    while (iterator.hasNext()) {
-        iterator.next();
-        if (iterator.value())
-        ready = iterator.value()->status();
-        if (!ready)
-            break;
-    }
+    const bool ready = allClustersReady();
 
     if (ready && startTimeInRecordingUnits != previousStartTimeInRecordingUnits && previousClusterProvider.second < length){
         long timeFrameWidth = endTime - startTime;
