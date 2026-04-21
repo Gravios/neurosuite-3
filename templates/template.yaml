@@ -1045,29 +1045,60 @@ programs:
 
 - name: ndm_stripdat
   parameters:
-  - {name: redetectSpikes, value: 'no', status: Optional}
+  - {name: redetectSpikes,   value: 'no',                    status: Optional}
+  - {name: stripClusters,    value: 'default',               status: Optional}
+  - {name: overwrite,        value: 'false',                 status: Optional}
+  - {name: subtractionMode,  value: 'raw',                   status: Optional}
+  - {name: botmRidge,        value: '1e-3',                  status: Optional}
+  - {name: autoStrip,        value: 'true',                  status: Optional}
+  - {name: qualityTags,      value: 'good,great,excellent',  status: Optional}
   help: |-
     Strip spike waveforms from the raw .dat file to produce a spike-cleaned
     recording: <session>-spkclean.dat
 
     The original .dat is never modified.  Unlike most pipeline outputs,
-    session-spkclean.dat is always overwritten on re-run so the file can be
-    regenerated after each sorting pass without manual cleanup.
+    session-spkclean.dat is regenerated every run by default (opt in to
+    the overwrite guard to protect a hand-curated result).
 
-    Run AFTER spike sorting (.clu.N files must be present for template modelling).
-    ndm_lfp will automatically use session-spkclean.dat when it is present.
+    Run AFTER spike sorting (.clu.N files must be present for any mode
+    except pure Layer 0 on groups without .clu).  ndm_lfp will
+    automatically use session-spkclean.dat when it is present.
 
-    SUBTRACTION MODEL
+    SUBTRACTION MODE
 
-    When .clu.N files are present, per-cluster template modelling is used:
-      - Asymmetric-exponential PC1 waveform model
-      - Contamination exclusion (overlapping spike windows excluded from
-        template estimation; trimmed-mean fallback when too few clean spikes)
-      - ISI-driven dual-template burst shape compensation
-      - Projection-based amplitude scaling
-    When no .clu.N exists for a group, raw .spk.N waveforms are subtracted.
+    Three strategies, selected by subtractionMode:
 
-    OPTIONAL PARAMETERS
+      raw     (default)  Subtract the raw .spk.N waveform directly.
+                         Near-exact cancellation at spike windows; skips
+                         all template modelling; fast.  Best for the
+                         iterative strip → re-detect workflow because
+                         residuals fall far below detection threshold.
+
+      model              Layer 1 (mean template + ISI burst compensation)
+                         or Layer 2 (exponential PC1 shape model) with
+                         contamination-aware neighbour cleaning and
+                         drift compensation.  Preserves the noise baseline
+                         at spike windows.  Suitable for LFP extraction.
+
+      botm               Bayes-Optimal Template Matching (Proepper 2015,
+                         §3.4).  Estimates noise covariance C from
+                         between-spike periods, builds per-cluster
+                         matched filter f = C^(-1)·ξ, subtracts with
+                         Bayes-optimal amplitude a = (obs^T·f)/(ξ^T·f).
+                         ~100× better residual than model on clean
+                         synthetic data while preserving baseline.
+                         Slower than model due to one-time covariance
+                         estimation and inversion per group.
+
+    STRIP LIST RESOLUTION
+
+    For each electrode group g, the list of clusters to strip is resolved
+    in this order (first match wins):
+
+      1. <session>.strip.<g>      # hand-written operator override
+      2. <session>.autostrip.<g>  # auto-generated from YAML units:
+                                  # (only when autoStrip=true)
+      3. stripClusters parameter  # global default
 
     # redetectSpikes
 
@@ -1079,6 +1110,54 @@ programs:
            missed spikes, merges into .res.N/.spk.N/.clu.N (new spikes get
            cluster ID 0), deletes stale .fet.N, removes the cleaned dat.
            After this, re-run ndm_pca and ndm_klustakwik.
+
+    # stripClusters
+
+    Default cluster list used when no per-group sidecar or autostrip file
+    is found.  Accepts:
+
+      default           Strip every cluster except 0 (artefact) and 1 (MUA).
+      all               Strip every cluster including 0 and 1.
+      2,3,5             Comma-separated explicit ID list.
+      -  or  (empty)    Same as default.
+      @/path/to/file    Read the list from the file (one ID per line).
+
+    # overwrite
+
+    If false (default), ndm_stripdat checks whether
+    <session>-spkclean.dat already exists and skips re-running.  Stripping
+    a multi-hour recording can take tens of minutes; this guards against
+    accidental re-runs that would clobber a hand-verified result.  Set to
+    true to force regeneration.
+
+    # subtractionMode
+
+    raw | model | botm — see SUBTRACTION MODE above.  Default is raw.
+
+    # botmRidge
+
+    Covariance-matrix ridge regularisation used in BOTM mode.  Fraction
+    of trace(C)/dim added to the diagonal before inversion.  Only read
+    when subtractionMode = botm.  Default 1e-3; raise if inversion fails
+    on short recordings or if BOTM residuals look unstable.
+
+    # autoStrip
+
+    Master switch for auto-generation of the per-group
+    <session>.autostrip.<g> sidecar from the session YAML's top-level
+    units: block.  When true (default), ndm_stripdat reads every unit's
+    quality: field and emits the cluster IDs whose labels match
+    qualityTags.  Auto-generated files are regenerated every run so they
+    stay in sync with the current YAML curation.  When false, only
+    explicit <session>.strip.<g> sidecars and the global stripClusters
+    parameter are consulted.
+
+    # qualityTags
+
+    Comma-separated list of quality labels that count as "strip-worthy"
+    for autoStrip.  Matching is case-insensitive and whitespace-tolerant.
+    Default: good,great,excellent.  Labs using a different vocabulary
+    (e.g. SU,single-unit,accepted) configure it here.
 
     TYPICAL ITERATIVE WORKFLOW
 
@@ -1626,8 +1705,11 @@ programs:
   - {name: residualThreshold, value: 0.25,    status: Optional}
   - {name: minSnrRms,         value: 4.0,     status: Optional}
   - {name: minSpikesTemplate, value: 30,      status: Optional}
+  - {name: corrWindow,        value: 0,       status: Optional}
   - {name: excludeNoise,      value: 'true',  status: Optional}
   - {name: overwrite,         value: 'false', status: Optional}
+  - {name: nWorkers,          value: 0,       status: Optional}
+  - {name: useGpu,            value: 'false', status: Optional}
   help: |-
     Detect and decompose spike collision waveforms into single-unit components.
 
@@ -1670,6 +1752,12 @@ programs:
 
     Minimum spikes a unit must have to contribute a template (default = 30).
 
+    # corrWindow
+
+    Number of samples around the peak used for correlation scoring (default = 0 = auto,
+    which uses the full waveform width).  A narrower window (e.g. 16 at 32 kHz) focuses
+    the score on the spike peak and reduces sensitivity to baseline drift in the tails.
+
     # excludeNoise
 
     Exclude clusters 0 and 1 from template building (default = true).
@@ -1677,6 +1765,19 @@ programs:
     # overwrite
 
     Overwrite existing .col.N files (default = false).
+
+    # nWorkers
+
+    Number of parallel worker processes for template matching (default = 0 = auto,
+    which uses all available CPU cores).  Set to a positive integer to cap at that
+    number (useful on shared machines).  Set to 1 to disable parallelism entirely.
+
+    # useGpu
+
+    Use GPU-accelerated correlation kernels when available (default = false).
+    Requires CuPy or equivalent.  Falls back to CPU if no compatible GPU is detected.
+    For typical session sizes the CPU path is fast enough; GPU mainly helps with
+    very large sessions (>10M spikes) and dense probes.
 
 # == Post-sorting analysis (continued) ========================================
 - name: ndm_localise

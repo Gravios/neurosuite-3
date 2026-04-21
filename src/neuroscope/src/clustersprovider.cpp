@@ -275,8 +275,20 @@ void ClustersProvider::retrieveData(long startTime,long endTime,QObject* initiat
     else
         endInRecordingUnits =  static_cast<dataType>(endTime * static_cast<double>(static_cast<double>(samplingRate) / static_cast<double>(1000)));
 
-    long startIndex;
-    long endIndex;
+    // Defensive initialisation.  The if/else-if ladder below has four
+    // branches that *should* cover every possible (startTime, endTime)
+    // combination, but the branches depend on cached previousStartTime /
+    // previousEndTime values which are not invariant-checked — a prior
+    // crash or a corner case in a sibling method could leave them in
+    // inconsistent state (e.g. previousEndTime < previousStartTime).
+    // Falling out of the ladder with uninitialised startIndex / endIndex
+    // has been observed causing stalls and occasional crashes during
+    // cluster-raster pan / fast scroll (the dichotomy then walks off the
+    // end of the `clusters` array).  Initialising to a conservative
+    // full-range scan guarantees correctness at the cost of one extra
+    // dichotomy iteration in the pathological case.
+    long startIndex = 1;
+    long endIndex   = nbSpikes;
     long dicotomyBreak = 1000;
     long time;
 
@@ -313,10 +325,32 @@ void ClustersProvider::retrieveData(long startTime,long endTime,QObject* initiat
             endIndex = nbSpikes;
         }
 
+        // Safety clamp: any of the branches above can produce an invalid
+        // range if previousStart/EndIndex are out of sync with nbSpikes
+        // (e.g. nbSpikes shrank after a re-load, or the cache was never
+        // invalidated after updateSamplingRate).  Without this guard, the
+        // dichotomy below will read clusters(2, N) with N out of bounds.
+        if (startIndex < 1)         startIndex = 1;
+        if (endIndex > nbSpikes)    endIndex   = nbSpikes;
+        if (startIndex > endIndex)  startIndex = endIndex;
+
         long newStartIndex = startIndex;
         long newEndIndex = endIndex;
         //dicotomy
         while((newEndIndex - newStartIndex + 1) > dicotomyBreak){
+            // Guard: clusters(2, i) with i outside [1, nbSpikes] reads past
+            // the end of the array (Array<> is 1-indexed, not bounds-checked).
+            // Any transient inversion of [newStartIndex, newEndIndex] here
+            // would step off the array before the next loop condition
+            // check can stop us.
+            if (newStartIndex < 1)         newStartIndex = 1;
+            if (newStartIndex > nbSpikes)  newStartIndex = nbSpikes;
+            if (newEndIndex > nbSpikes)    newEndIndex   = nbSpikes;
+            if (newEndIndex < newStartIndex) {
+                newEndIndex = newStartIndex;
+                break;
+            }
+
             time = clusters(2,newStartIndex);
             if(time == startInRecordingUnits) break;
             else if(time > startInRecordingUnits){
@@ -499,6 +533,19 @@ void ClustersProvider::requestNextClusterData(long startTime, long timeFrame, co
         long newEndIndex = endIndex;
         //dicotomy
         while((newEndIndex - newStartIndex + 1) > dicotomyBreak){
+            // Guard: clusters(2, i) with i outside [1, nbSpikes] reads past
+            // the end of the array (Array<> is 1-indexed, not bounds-checked).
+            // Any transient inversion of [newStartIndex, newEndIndex] here
+            // would step off the array before the next loop condition
+            // check can stop us.
+            if (newStartIndex < 1)         newStartIndex = 1;
+            if (newStartIndex > nbSpikes)  newStartIndex = nbSpikes;
+            if (newEndIndex > nbSpikes)    newEndIndex   = nbSpikes;
+            if (newEndIndex < newStartIndex) {
+                newEndIndex = newStartIndex;
+                break;
+            }
+
             time = clusters(2,newStartIndex);
             if(time == startInRecordingUnits) break;
             else if(time > startInRecordingUnits){
@@ -751,6 +798,19 @@ void ClustersProvider::requestPreviousClusterData(long startTime,long timeFrame,
 
         //dicotomy
         while((newEndIndex - newStartIndex + 1) > dicotomyBreak){
+            // Guard: clusters(2, i) with i outside [1, nbSpikes] reads past
+            // the end of the array (Array<> is 1-indexed, not bounds-checked).
+            // Any transient inversion of [newStartIndex, newEndIndex] here
+            // would step off the array before the next loop condition
+            // check can stop us.
+            if (newStartIndex < 1)         newStartIndex = 1;
+            if (newStartIndex > nbSpikes)  newStartIndex = nbSpikes;
+            if (newEndIndex > nbSpikes)    newEndIndex   = nbSpikes;
+            if (newEndIndex < newStartIndex) {
+                newEndIndex = newStartIndex;
+                break;
+            }
+
             time = clusters(2,newStartIndex);
             if(time == startInRecordingUnits) break;
             else if(time > startInRecordingUnits){

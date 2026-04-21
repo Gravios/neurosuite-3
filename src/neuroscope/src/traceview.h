@@ -537,6 +537,26 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 private:
 
+    /**
+     * Returns true if every ClusterData in clustersData has status() == true,
+     * and false as soon as a null or not-yet-populated entry is encountered.
+     *
+     * Replaces a hand-rolled loop repeated 7× across traceview.cpp whose
+     * logic had a bug: when a hash entry was null the `ready` flag was
+     * not assigned, so it carried the previous iteration's value
+     * (opposite of conjunction).  The events-hash variant additionally
+     * overwrote whatever a preceding clusters-loop had concluded.
+     *
+     * A single null or not-ready entry now correctly returns false.
+     */
+    bool allClustersReady() const;
+
+    /** Same invariant as allClustersReady(), for the eventsData hash. */
+    bool allEventsReady() const;
+
+    /** True iff both allClustersReady() and allEventsReady() are true. */
+    bool allProvidersReady() const;
+
     /**True if the the colors are in grey-scale*/
     bool greyScaleMode;
 
@@ -862,7 +882,7 @@ private:
         }
         void setStatus(bool status){ready = status;}
         void setData(Array<dataType>& d){data = d;}
-        bool status(){return ready;}
+        bool status() const {return ready;}
         Array<dataType>& getData(){return data;}
 
         ~ClusterData(){}

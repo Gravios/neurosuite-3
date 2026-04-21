@@ -110,6 +110,19 @@ private:
     void renumberIds();
 
     /**
+     * Copy the probe file at @p srcPath into the current working directory
+     * (the session directory, since ndmanager runs from there).  Returns
+     * the bare filename the caller should store in the probe table's
+     * file column, or an empty string on failure / user cancel.
+     *
+     * If the selected file is already the local copy, no copy is made and
+     * its bare filename is returned directly.  If a different file with
+     * the same basename already exists, the user is asked whether to
+     * overwrite, reuse the existing local copy, or cancel.
+     */
+    QString copyProbeIntoSession(const QString& srcPath);
+
+    /**
      * Parse a .probe YAML file and fill @p entry (label, probeFile, groups)
      * and @p derivedAnatomy / @p derivedSpike.
      *
