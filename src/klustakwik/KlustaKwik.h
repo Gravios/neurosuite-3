@@ -24,6 +24,29 @@ void SetupParams(int argc, char **argv);
 void Output(const char *fmt, ...);
 int  irand(int min, int max);
 FILE *fopen_safe(const char *fname, const char *mode);
+
+// Build a path for an ndmanager-plugins input file, preferring the canonical
+// extension but falling back to the stderiv "D" variant when the canonical
+// file is absent.  Writes into `out` (caller-provided buffer of `outSize`
+// bytes) and returns:
+//   0 if  `<base>.<ext>.<elec>`  exists (canonical; out = canonical path)
+//   1 if  `<base>.<extD>.<elec>` exists (stderiv;  out = D-variant path)
+//  -1 if neither exists (out = canonical path — caller can use it with
+//      fopen_safe to get the usual "Could not open file" abort with the
+//      expected filename).
+//
+// `ext` should be the canonical extension without leading dot ("fet",
+// "spk", "pca").  `extD` is derived by appending 'D' to `ext`.  The
+// canonical-preferred ordering matches how the reextract scripts symlink
+// stderiv outputs to canonical names before invoking downstream tools:
+// when both files are present the symlinked canonical one wins, which is
+// what the caller expects.
+//
+// Thread-safe: depends only on filesystem state and caller-supplied
+// buffers.  Used by LoadData() and the workflows that rewrite .spk /
+// .fet / .pca in place.
+int pickInputPath(char *out, size_t outSize,
+                  const char *base, const char *ext, int elec);
 void MatPrint(FILE *fp, const float *Mat, int nRows, int nCols);
 int  Cholesky(const float *m_In, float *m_Out, int D);
 void TriSolve(const float *M, const float *x, float *Out, int D);

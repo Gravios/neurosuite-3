@@ -867,3 +867,115 @@ which ndm_subcluster_unmatched            # sanity check
 ### Files
 
 - `src/ndmanager-plugins/scripts/CMakeLists.txt`
+
+---
+
+## Addendum — KlustaKwik accepts .fetD directly (2026-04-21 rev 12)
+
+`KlustaKwik stem N` now transparently consumes the stderiv feature
+file `stem.fetD.N` when the canonical `stem.fet.N` is absent, removing
+the symlink workaround that callers previously needed.
+
+### Motivation
+
+`ndm_reextractspikes_stderiv` and `ndm_pca_stderiv` produce `.fetD.N`
+in stderiv-pipeline sessions; the canonical `.fet.N` may not exist.
+Rev 8's `ndm_subcluster_unmatched` then couldn't hand the feature
+subset to `KlustaKwik` without either symlinking or reading the D
+variant into a `.fet` sandbox.  Fixing KlustaKwik to detect and read
+either name removes that workaround and avoids future repetition in
+downstream tools.
+
+### Scope of this rev (minimal)
+
+Only the `.fet` read path in `KK::LoadData` is converted.  This is
+what `ndm_subcluster_unmatched` hits, and what anyone running
+`KlustaKwik stem N` on a stderiv session hits.  It's enough to close
+the user-visible bug.
+
+**Deferred to a later rev**:
+
+- `.spk.N` read sites in RealignChunkWaveforms, template-match
+  (within-chunk and cross-chunk), WritePhase15Checkpoint, and the
+  Phase-1.5 refeaturize path (9 total call sites)
+- `.pca.N` read in the PCA-basis loader
+- `.res.N` reads in RefeaturizeFromShifts and WritePhase15Checkpoint
+- `.spk.N.pending` / `.fet.N.pending` in WritePhase15Checkpoint —
+  requires stashing the detected variant (e.g., `fetIsD` member) so
+  the atomic-rename target matches the input extension
+
+These are reachable only through the template-match / realign /
+nudge workflows, which the current sub-cluster task doesn't
+exercise.  Converting them is mechanical but needs the write-path
+complication thought through carefully; splitting out saves
+reviewer time and reduces the blast radius of any regression.
+
+### New helper — `pickInputPath`
+
+Declared in `KlustaKwik.h`, implemented in `KlustaKwik.cpp`:
+
+```cpp
+int pickInputPath(char *out, size_t outSize,
+                  const char *base, const char *ext, int elec);
+```
+
+- `ext` is the canonical extension without leading dot: `"fet"`,
+  `"spk"`, `"pca"`.
+- Tries `<base>.<ext>.<elec>` first; returns 0 and writes that path
+  to `out` if it exists.
+- Falls back to `<base>.<ext>D.<elec>`; returns 1 and writes the
+  D-variant path if canonical is absent.
+- If neither exists, returns -1 and leaves `out` = canonical path so
+  the caller's subsequent `fopen_safe()` aborts with the canonical
+  filename in the error message (less confusing than reporting a
+  D-variant the user never had).
+- Canonical wins when both exist — matches the reextract scripts'
+  convention of symlinking `.spkD → .spk` ephemerally before
+  invoking legacy tools.
+
+Tested in isolation with all four cases (neither / canonical-only /
+D-only / both): all pass, no warnings under `-Wall -Wextra`.
+
+### Call site — `KK::LoadData`
+
+```cpp
+char fname[STRLEN + 16];
+const int fetVariant = pickInputPath(fname, sizeof(fname),
+                                     FileBase, "fet", ElecNo);
+if (fetVariant == 1) {
+    Output("LoadData: using .fetD variant (%s)\n", fname);
+}
+FILE *fp = fopen_safe(fname, "rb");
+```
+
+Emits an info log when it falls back to `.fetD` so the user can see
+in the run log which file was actually consumed — saves debugging
+time if the two variants ever disagree.
+
+### Interaction with `ndm_subcluster_unmatched`
+
+Rev 11's bash-side `.fetD` detection in `ndm_subcluster_unmatched`
+(extract from `.fetD.N` when present, write sandbox as `.fet.N`)
+remains in place.  With this rev, the sandbox-always-`.fet`
+convention is no longer required for KlustaKwik to consume the
+file — but keeping the sandbox as `.fet` is still correct because
+other pending changes (e.g., `.pca` / `.spk` reads) haven't been
+converted yet, and because a sandbox named `.fet` can be inspected
+by any pre-rev-12 KlustaKwik build.  Safe to leave as-is.
+
+### Testing
+
+- Isolated helper test: 4 scenarios (neither / canonical / D /
+  both) all behave as spec'd.
+- Brace balance verified on all three KlustaKwik source files.
+- Cannot run end-to-end KlustaKwik test offline — needs your build
+  + a session.
+
+### Files
+
+- `src/klustakwik/KlustaKwik.h`   — `pickInputPath` declaration
+- `src/klustakwik/KlustaKwik.cpp` — `pickInputPath` implementation
+- `src/klustakwik/KK.cpp`         — `LoadData` uses `pickInputPath`
+- `src/ndmanager-plugins/scripts/ndm_subcluster_unmatched`
+  — bash-side `.fetD` detection (redundant after this rev but kept
+  for compatibility with pre-rev-12 KlustaKwik builds)

@@ -200,6 +200,56 @@ FILE *fopen_safe(const char *fname, const char *mode) {
     return fp;
 }
 
+// -----------------------------------------------------------------------------
+// pickInputPath — prefer canonical (.fet / .spk / .pca), fall back to stderiv
+// D variant (.fetD / .spkD / .pcaD) when canonical is absent.
+//
+// Rationale: reextract pipelines produce D-suffixed variants for stderiv
+// sorting.  Rather than requiring callers (ndm_subcluster_unmatched,
+// ndm_reextractspikes{,_stderiv}, etc.) to symlink or rename before every
+// invocation, KlustaKwik itself now walks the two candidates and picks
+// whichever exists.
+//
+// If both exist simultaneously — typically because a script has symlinked
+// the D variant to the canonical name to satisfy legacy tools —  the
+// canonical path wins.  That matches the pre-existing reextract-script
+// convention.
+//
+// If neither exists, the canonical path is returned.  The caller will then
+// invoke fopen_safe() (or open the file directly) and fail with the normal
+// "Could not open file" diagnostic, naming the canonical path that the user
+// was expecting.  Emitting a D-variant name in the error message when the
+// user's session never had a D variant would be confusing.
+//
+// Stat via fopen with mode "rb" rather than stat(2) so symlinked targets
+// are followed transparently and permission errors on the D variant fall
+// through to canonical (matching what would happen in a manual workflow).
+// -----------------------------------------------------------------------------
+int pickInputPath(char *out, size_t outSize,
+                  const char *base, const char *ext, int elec) {
+    // Canonical first
+    snprintf(out, outSize, "%s.%s.%d", base, ext, elec);
+    if (FILE *probe = fopen(out, "rb")) {
+        fclose(probe);
+        return 0;
+    }
+
+    // Try D variant
+    char dPath[STRLEN + 32];
+    snprintf(dPath, sizeof(dPath), "%s.%sD.%d", base, ext, elec);
+    if (FILE *probe = fopen(dPath, "rb")) {
+        fclose(probe);
+        if (outSize > 0) {
+            strncpy(out, dPath, outSize);
+            out[outSize - 1] = '\0';
+        }
+        return 1;
+    }
+
+    // Neither: leave `out` = canonical path, let caller handle the error.
+    return -1;
+}
+
 void MatPrint(FILE *fp, const float *Mat, int nRows, int nCols) {
     for (int i = 0; i < nRows; i++) {
         for (int j = 0; j < nCols; j++)

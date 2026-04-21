@@ -18,10 +18,22 @@
 #//   recovers the sub-structure so the operator can triage in Klusters
 #//   with actual cluster labels instead of one amorphous pile.
 #//
+#//   Pipeline-aware extension detection:
+#//     - Reads from .fetD.N if present (stderiv / sdiffOrder ∈ {1, 3}
+#//       pipeline), otherwise from .fet.N (raw pipeline).  This matches
+#//       the convention established by ndm_reextractspikes_stderiv and
+#//       ndm_reextractspikes.  .clu.N and .res.N are canonical (no D
+#//       variant).
+#//     - Sandbox output is ALWAYS written as .fet (not .fetD) regardless
+#//       of the input variant, because KlustaKwik hard-codes the .fet
+#//       extension when reading (klustakwik/KK.cpp:117).  There's no
+#//       consumer for .fetD once the KK step is reached, so this is just
+#//       a naming choice internal to the sandbox.
+#//
 #//   Flow:
 #//     1. Read $session.clu.$g, locate rows where clu == unmatched_id.
-#//     2. Extract those rows from $session.fet.$g into a sandbox:
-#//          $session-unmatched-$g.fet.$g
+#//     2. Extract those rows from $session.{fet,fetD}.$g into a sandbox:
+#//          $session-unmatched-$g.fet.$g   (always .fet for KK)
 #//     3. Run KlustaKwik on the sandbox stem → $session-unmatched-$g.clu.$g
 #//     4. Remap sandbox cluster IDs (1..K) to offset IDs
 #//          (unmatched_id + 1) .. (unmatched_id + K)
@@ -34,8 +46,9 @@
 #//   WAVEFORMS ARE NOT TOUCHED.  Re-clustering only affects the .clu
 #//   file; .spk / .spkD / .fet / .fetD / .res stay exactly as they
 #//   were after shadow-cluster merge.  The Mahalanobis subspace that
-#//   defined "unmatched" is the reference .fet space, so re-clustering
-#//   happens in that same space — no waveform reprocessing required.
+#//   defined "unmatched" is the reference .fet / .fetD space, so
+#//   re-clustering happens in that same space — no waveform
+#//   reprocessing required.
 #//
 #//   Arguments:  [parameter-file]  [electrodeGroup]
 #//   If electrodeGroup is omitted, processes every group that has a
@@ -76,13 +89,20 @@ if [ "$nElectrodeGroups" -eq 0 ]; then
 fi
 
 # ////////////////////////////////////////////////////////////////////////////
-# //  Helper: extract unmatched rows from .fet into a sandbox .fet file.
+# //  Helper: extract unmatched rows from .fet OR .fetD into a sandbox
+# //  .fet file (output is always .fet because KlustaKwik hard-codes that
+# //  extension when reading its input).
 # //
-# //  The .fet.N format is:
+# //  The .fet.N / .fetD.N format is identical:
 # //    int32 nDims header; then nSpikes × nDims × int64 rows.
 # //  The .clu.N format is:
 # //    int32 nClusters header; then nSpikes × int32 IDs.
 # //  The two files are row-aligned (same index).
+# //
+# //  Caller passes fetExt ∈ {"fet","fetD"} to select which variant to
+# //  read from — detected per-group by the driver based on on-disk
+# //  presence (fetD preferred when both exist, to match the stderiv
+# //  pipeline's output naming).
 # //
 # //  Output is a sandbox stem with the same group suffix so KlustaKwik
 # //  reads it naturally.  Returns the unmatched_id and count on stdout
@@ -94,12 +114,21 @@ extract_unmatched()
 {
     local group=$1
     local sandboxStem=$2
+    local fetExt=$3     # "fet" or "fetD" — which variant to read from
 
-    python3 - "$session" "$group" "$sandboxStem" <<'PYEOF'
+    python3 - "$session" "$group" "$sandboxStem" "$fetExt" <<'PYEOF'
 import struct, sys, os
-session, group, sandboxStem = sys.argv[1], sys.argv[2], sys.argv[3]
+session, group, sandboxStem, fetExt = \
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+
+# .clu.N is canonical (no D variant, per the shadowcluster convention
+# established in reextract rev 1+).  Feature file is the .fetExt variant
+# — could be .fet or .fetD depending on whether the sort ran through
+# the raw or stderiv pipeline.  KlustaKwik, however, hard-codes .fet
+# when reading (klustakwik/KK.cpp:117), so the sandbox OUTPUT must
+# always be .fet regardless of input.
 clu_path = f"{session}.clu.{group}"
-fet_path = f"{session}.fet.{group}"
+fet_path = f"{session}.{fetExt}.{group}"
 out_fet  = f"{sandboxStem}.fet.{group}"
 
 with open(clu_path, "rb") as f:
@@ -122,7 +151,7 @@ unmatched_rows = [i for i, c in enumerate(clu_ids) if c == unmatched_id]
 if len(unmatched_rows) == 0:
     sys.exit(0)
 
-# Extract matching rows from .fet.
+# Extract matching rows from the .fet or .fetD file into the sandbox .fet.
 with open(fet_path, "rb") as f:
     fet_buf = f.read()
 nDims = struct.unpack("<i", fet_buf[:4])[0]
@@ -230,10 +259,25 @@ once()
 {
     local group=$1
 
+    # .clu.N is canonical (no D variant); .param_ext is the session yaml.
     inputs_missing "$session.$param_ext" \
                    "$session.clu.$group" \
-                   "$session.fet.$group" \
         && return $INPUTS_MISSING
+
+    # Feature file: prefer the stderiv variant (.fetD) then fall back to
+    # raw (.fet).  ndm_pca_stderiv writes .fetD for sdiffOrder ∈ {1, 3}
+    # pipelines; ndm_pca writes .fet for the standard raw pipeline.  The
+    # shadowcluster merge (rev 6 onward) leaves whichever extension the
+    # sort was performed in, so the sub-clustering must honour the same.
+    local fetExt
+    if   [ -f "$session.fetD.$group" ]; then
+        fetExt=fetD
+    elif [ -f "$session.fet.$group" ]; then
+        fetExt=fet
+    else
+        echo_warning "  group $group: no .fet or .fetD — skipping"
+        return $INPUTS_MISSING
+    fi
 
     # Idempotence: if we've already sub-clustered this group, the backup
     # .clu.$group.bak-sub exists.  Don't re-process — the operator can
@@ -246,13 +290,16 @@ once()
 
     local sandboxStem=$session-unmatched-$group
 
-    # Clean any stragglers from a previous aborted run.
+    # Clean any stragglers from a previous aborted run.  Sandbox output is
+    # always .fet (not .fetD) because KlustaKwik hard-codes .fet — no
+    # consumer reads .fetD.  The extractor below writes {sandbox}.fet.{g}
+    # regardless of whether input was .fet.{g} or .fetD.{g}.
     rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group" \
           "$sandboxStem.klg.$group" "$sandboxStem.temp.clu.$group"
 
     # Pass 1: extract unmatched rows to sandbox .fet.
     local extract_out
-    extract_out=$(extract_unmatched "$group" "$sandboxStem")
+    extract_out=$(extract_unmatched "$group" "$sandboxStem" "$fetExt")
     if [ -z "$extract_out" ]; then
         echo_info "  group $group: no unmatched bin detected — skipping"
         rm -f "$sandboxStem.fet.$group"
@@ -261,7 +308,7 @@ once()
     local unmatchedId=${extract_out% *}
     local nUnmatched=${extract_out##* }
 
-    echo_info "  group $group: unmatched cluster id=$unmatchedId, $nUnmatched spikes"
+    echo_info "  group $group: unmatched cluster id=$unmatchedId, $nUnmatched spikes (read from .$fetExt.$group)"
 
     # Pass 2: KlustaKwik on the sandbox stem.  Uses the same three-tier
     # parameter resolution as ndm_klustakwik by delegating through that

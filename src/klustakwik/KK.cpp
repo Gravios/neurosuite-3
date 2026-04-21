@@ -114,7 +114,15 @@ void KK::Reindex() {
 // ---------------------------------------------------------------------------
 void KK::LoadData() {
     char fname[STRLEN + 16];
-    snprintf(fname, sizeof(fname), "%s.fet.%d", FileBase, ElecNo);
+    // Prefer canonical .fet.N; fall back to stderiv .fetD.N if the
+    // canonical is absent.  The ndm_reextractspikes_stderiv pipeline
+    // produces .fetD; without this fallback, KlustaKwik would need
+    // the caller to symlink .fetD → .fet before every invocation.
+    const int fetVariant = pickInputPath(fname, sizeof(fname),
+                                         FileBase, "fet", ElecNo);
+    if (fetVariant == 1) {
+        Output("LoadData: using .fetD variant (%s)\n", fname);
+    }
     FILE *fp = fopen_safe(fname, "rb");
 
     // ── Format detection ──────────────────────────────────────────────────
