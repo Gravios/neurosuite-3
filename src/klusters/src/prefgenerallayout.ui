@@ -709,6 +709,57 @@
           </property>
          </spacer>
         </item>
+        <item>
+         <widget class="QLabel" name="autoscaleMarginLabel">
+          <property name="text">
+           <string>Autoscale margin</string>
+          </property>
+          <property name="toolTip">
+           <string>Margin added on each side when the cluster view is autoscaled (press F in the cluster view to toggle autoscale). Expressed as a percent of the data extent.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="autoscaleMarginSpinBox">
+          <property name="suffix">
+           <string> %</string>
+          </property>
+          <property name="decimals">
+           <number>1</number>
+          </property>
+          <property name="minimum">
+           <double>0.0</double>
+          </property>
+          <property name="maximum">
+           <double>50.0</double>
+          </property>
+          <property name="singleStep">
+           <double>0.5</double>
+          </property>
+          <property name="value">
+           <double>5.0</double>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_autoscale">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Expanding</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
        </layout>
       </item>
       <item row="2" column="0">
@@ -893,6 +944,7 @@
   <tabstop>backgroundColorButton</tabstop>
   <tabstop>markerSizeSpinBox</tabstop>
   <tabstop>selectionLineWidthSpinBox</tabstop>
+  <tabstop>autoscaleMarginSpinBox</tabstop>
   <tabstop>useWhiteColorPrinting</tabstop>
   <tabstop>templateThresholdMinSpinBox</tabstop>
   <tabstop>templateThresholdMaxSpinBox</tabstop>

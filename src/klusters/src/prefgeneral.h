@@ -105,6 +105,13 @@ public:
     /**Returns the selection polygon line width.*/
     int getSelectionLineWidth() const;
 
+    /**Sets the autoscale margin percent (used by the cluster view's
+     * F-key autoscale toggle).*/
+    void setAutoscaleMarginPercent(double p);
+
+    /**Returns the autoscale margin percent from the spin box.*/
+    double getAutoscaleMarginPercent() const;
+
     /**Returns the minimum threshold for the template match slider.*/
     double getTemplateThresholdMin() const;
     /**Sets the minimum threshold for the template match slider.*/

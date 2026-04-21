@@ -455,3 +455,352 @@ files would have accumulated between runs.
 - `src/ndmanager-plugins/scripts/ndm_reextractspikes_stderiv`
 
 No C++ changes; no rebuild required.
+
+---
+
+## Addendum — sub-cluster the unmatched bin (2026-04-21 rev 8)
+
+New script: `src/ndmanager-plugins/scripts/ndm_subcluster_unmatched`.
+
+After `ndm_reextractspikes{,_stderiv}` commits its shadow-cluster
+merge, each group's `.clu.N` contains a large "unmatched" bin
+holding every new spike whose robust Mahalanobis distance exceeded
+the χ² threshold from every eligible parent.  In your rev-6 run on
+group 7, this was **186,981 spikes** — 96% of the new spike
+population — sitting in a single cluster ID.
+
+That bin is heterogeneous: it mixes genuinely novel low-amplitude
+units, collision artefacts, mis-masked flanks of existing spikes,
+and noise.  Inspecting it as one cluster in Klusters is unusable.
+
+### What the script does
+
+For each group in a session (or a specific one if passed):
+
+1. **Locate**: read `.clu.N`, find the single highest-ID bin.  That's
+   the unmatched bin by `process_shadowcluster`'s naming convention
+   (`unmatched_id = 2 * maxExistingId + 1`).
+2. **Extract**: copy the `.fet.N` rows whose `.clu.N` value equals
+   `unmatched_id` into a sandbox file
+   (`$session-unmatched-$g.fet.$g`), with its own int32 header.
+3. **Re-cluster**: invoke `KlustaKwik $sandboxStem $g -UseFeatures
+   all` — it reads the sandbox `.fet.N`, writes a sandbox `.clu.N`.
+   Uses the real session YAML's per-group KK parameters
+   (`maxClusters`, `maxPossibleClusters`, `minClusters`,
+   `mergeThresh`) via the standard three-tier resolver.
+4. **Remap & merge**: rewrite the live `.clu.N` with sub-cluster
+   IDs `(unmatched_id + 1) .. (unmatched_id + K)` where K is the
+   number of non-noise sub-clusters KlustaKwik found.  Rows that
+   KlustaKwik labelled as noise (cluster 1 in its convention) stay
+   tagged with `unmatched_id` so the residual bin is still visible
+   in Klusters.
+5. **Backup**: the pre-subcluster `.clu.N` is saved to
+   `.clu.N.bak-sub` (first-run-wins, same policy as `.bak` in
+   reextract).  To re-run, remove `.bak-sub` first.
+
+Waveforms (`.spk / .spkD`), features (`.fet / .fetD`), PCA bases
+(`.pca / .pcaD`), and timestamps (`.res`) are **not touched**.  The
+Mahalanobis subspace that defined "unmatched" is the reference
+`.fet` space, so re-clustering happens in that same space — no
+waveform reprocessing required.
+
+### ID convention (after sub-clustering)
+
+```
+1..maxExistingId              original, pre-shadowcluster clusters
+maxExistingId+1..unmatched-1  shadow clusters (from reextractspikes
+                              Mahalanobis gate)
+unmatched_id                  residual: spikes KlustaKwik labelled
+                              as noise during sub-clustering
+unmatched_id+1..unmatched+K   new sub-clusters extracted from the
+                              previously monolithic unmatched bin
+```
+
+For your group 7 (post-rev-6 state: `shadow offset=17`,
+`unmatched_id=34`), sub-clustering would yield IDs `35..35+K-1`.
+The operator then triages in Klusters alongside existing shadow
+clusters (19, 33) and parents.
+
+### Why a separate script
+
+1. Re-extract itself is already transactional and slow.  Letting
+   the user inspect the shadow-cluster result in Klusters first,
+   then decide whether to sub-cluster, keeps each atomic operation
+   small.
+2. The same script can be run on any `.clu.N` that happens to have
+   a high-cardinality "junk" cluster — not just the one emitted by
+   shadowcluster.
+
+### Implementation notes
+
+- Uses Python 3 inline (via heredocs) for the int32/int64 binary
+  file parsing.  No build dependency — Python 3 is already required
+  by the neurosuite_compare tooling.
+- `UseFeatures all` is passed to `KlustaKwik` rather than a
+  hand-computed `1111...` string because the feature-dim arithmetic
+  differs between raw and stderiv pipelines (extra peak feat vs
+  rank-reduced).  `all` just reads the `.fet` header at runtime.
+- Minimal KK parameter surface exposed: `minClusters`,
+  `maxClusters`, `maxPossibleClusters`, `mergeThresh`.  Others
+  inherit KK's built-in defaults, which are fine for the relatively
+  clean task of splitting a known-residual bin.
+- Sandbox stem is `$session-unmatched-$g` (matches the pattern of
+  `$session-reextr-*-merge` from the reextract scripts).  All
+  sandbox files cleaned up on success or failure.
+
+### Usage
+
+```bash
+# All groups
+cd /path/to/session
+ndm_subcluster_unmatched
+
+# Just one group (recommended workflow: sort → re-extract → inspect → sub-cluster)
+ndm_subcluster_unmatched jg05-20120316.yaml 7
+```
+
+### Testing
+
+Round-trip tested with synthetic 10-spike / 5-dim data in
+`/tmp/subcluster_test`: extraction, KK-simulated output, merge-back
+all produce the expected results.  End-to-end KK invocation needs
+your real jg05-20120316 data to verify; cannot run here.
+
+### Files
+
+- `src/ndmanager-plugins/scripts/ndm_subcluster_unmatched` (new)
+
+No C++ changes.
+
+---
+
+## Addendum — Klusters focus & autoscale (2026-04-21 rev 9)
+
+Three related UX improvements in Klusters.
+
+### 1. Arrow keys no longer steal focus for tab-switching
+
+Previously Left/Right arrows inside a tab page (such as ClusterView)
+were intercepted by the app-level event filter at `klusters.cpp:1081`
+and used to cycle display tabs.  Useful at the tab-bar strip itself,
+wrong inside a page where arrows are needed for cluster navigation.
+
+The gate now checks specifically for a `QTabBar` ancestor via
+`qobject_cast<QTabBar*>` rather than walking up to the `QTabWidget`
+(which includes tab pages).  Behaviour:
+
+- Focus **inside** a tab page + Left/Right → falls through to the
+  page's own handler (no tab switch)
+- Focus **on the tab bar strip** + Left/Right → cycles tabs as
+  before
+- `Ctrl+Left/Right` anywhere → jumps to Overview first, then cycles
+  (unchanged)
+
+Added `#include <QTabBar>`.
+
+### 2. Focus returns to ClusterView after every curation op
+
+The existing `focusClusterView()` helper in `klustersview.cpp:1702`
+was already called from 4 sites: nudge ±, recluster completion,
+realign completion.  Six more call sites added — covering every
+remaining curation operation:
+
+- `slotGroupClusters` (after `doc->groupClusters`)
+- `slotMoveClustersToNoise` (after `doc->deleteClusters(...,1)`)
+- `slotMoveClustersToArtefact` (after `doc->deleteClusters(...,0)`)
+- `slotSpikesDeleted` (end-of-polygon-op completion)
+- `slotUndo`, `slotRedo`
+
+After any of these, the cluster view regains focus so arrow keys
+(combined with fix 1) drive cluster navigation directly instead of
+going to the cluster palette or getting lost on a transient widget.
+
+### 3. 'F' key — autoscale toggle for the feature scatter plot
+
+`ClusterView` now toggles an autoscale-to-visible-clusters mode when
+the user presses plain `F` (no modifier).  `S` was considered but is
+already bound to Split Clusters.  Plain `F` is otherwise unbound
+(Shift+F = Apply Drift Siblings, Ctrl+Shift+F = Next Spike — both
+preserved).
+
+When autoscale is ON:
+- A status-bar message confirms `Autoscale: on (press F to disable)`
+- Immediately re-fits the `(dimensionX, dimensionY)` window to the
+  currently-shown clusters
+- On every subsequent REDRAW (dimension change, cluster show/hide,
+  post-op repaint), re-fits automatically
+- UPDATE paths (incremental redraw of just-changed clusters) are
+  skipped to avoid jittering the window on every tweak
+
+When autoscale is OFF:
+- Status bar shows `Autoscale: off`
+- View reverts to manual-zoom behaviour; existing bounds persist
+  until the user zooms or changes dimensions
+
+The fit geometry matches `updatedDimensions()`:
+- 5 % margin on each side
+- Origin axes always kept in view (so the 0-cross stays visible)
+- Clamped to ±1,000,000 to stay inside Qt's safe coordinate range
+
+Implementation (`clusterview.cpp` / `clusterview.h`):
+
+```cpp
+void ClusterView::autoscaleToVisibleClusters()
+{
+    const QList<int> shown = view.clusters();
+    if (shown.isEmpty()) return;
+
+    Data& clusteringData = doc.data();
+    bool haveAny = false;
+    long xMin = 0, xMax = 0, yMin = 0, yMax = 0;
+
+    for (int clustId : shown) {
+        Data::Iterator it = clusteringData.iterator(
+            static_cast<dataType>(clustId));
+        for (; it.hasNext(); it.next()) {
+            const QPoint p = it(dimensionX, dimensionY);
+            if (!haveAny) {
+                xMin = xMax = p.x(); yMin = yMax = p.y(); haveAny = true;
+            } else {
+                if (p.x() < xMin) xMin = p.x();
+                if (p.x() > xMax) xMax = p.x();
+                if (p.y() < yMin) yMin = p.y();
+                if (p.y() > yMax) yMax = p.y();
+            }
+        }
+    }
+    if (!haveAny) return;
+    // … 5% margin + origin inclusion, matching updatedDimensions() …
+}
+```
+
+Note: `Data::Iterator::operator()(dx, dy)` returns a QPoint with the
+ordinate already negated (Qt graphical orientation, data.h:344),
+so the accumulated bounds are in screen-orientation space — no
+additional flip needed when writing `ordinateMin/Max`.
+
+Cost: O(total shown spikes) per REDRAW, same order as a single
+paint pass, so no performance concern even at 10⁶-spike groups.
+
+### Files touched
+
+- `src/klusters/src/klusters.cpp`      — arrow gate + `#include <QTabBar>`
+                                          + 6 `focusClusterView()` calls
+- `src/klusters/src/clusterview.h`     — `autoscaleEnabled` field +
+                                          `autoscaleToVisibleClusters()` decl
+- `src/klusters/src/clusterview.cpp`   — F-key binding in `keyPressEvent`,
+                                          method implementation,
+                                          REDRAW hook in `paintEvent`
+
+Rebuild `klusters` to pick up.
+
+### Testing
+
+Brace balance verified on all three files.  Cannot `g++
+-fsyntax-only` offline (needs Qt headers + klusters internals); rely
+on your build.  Behaviour test plan:
+
+1. Open a session, click into ClusterView, press Right arrow →
+   cluster palette cycles to next cluster (no tab switch).
+2. Click on the tab bar strip directly, press Right arrow → tabs
+   cycle (preserved).
+3. Select a polygon, delete-noise, observe → cluster view retains
+   focus; Left/Right arrow cycles clusters immediately.
+4. Press F → status bar says "Autoscale: on"; view refits to the
+   current shownClusters.  Change dimensionX via combo box → view
+   re-fits automatically.  Press F again → status bar says "off";
+   view stops auto-fitting on subsequent redraws.
+
+---
+
+## Addendum — autoscale margin preference (2026-04-21 rev 10)
+
+The F-key autoscale introduced in rev 9 used a hard-coded 5 % margin
+per side.  Rev 10 exposes that value as a new general preference so
+the operator can tune how tight the fit is.
+
+### New preference
+
+Preferences → General → "Autoscale margin"
+
+A `QDoubleSpinBox` (suffix " %", range 0.0 – 50.0, step 0.5, default
+5.0).  Placed inline with Marker size and Selection line width —
+all three are scatter-plot rendering knobs and belong together.
+
+### Semantics
+
+The value is a fraction applied per side.  At 5 %, the fit adds
+5 % of the data extent on the left AND right of the abscissa range
+(and top/bottom of the ordinate range), for 10 % total.  At 0 % the
+fit is tight against the spike cloud.  At 50 % the fit is dominated
+by margin and data sits in the middle third — useful for sessions
+with very compact clusters where you want whitespace around them
+for polygon-drawing room.
+
+### Implementation plumbing
+
+Mirrors the existing preference pattern for markerSize /
+selectionLineWidth / templateThresholdMin etc.  Seven file touches:
+
+1. `src/klusters/src/configuration.h` — three public methods
+   (`getAutoscaleMarginPercent`, `getAutoscaleMarginPercentDefault`,
+   `setAutoscaleMarginPercent` with 0–50 clamp), one private field
+   + static default.
+2. `src/klusters/src/configuration.cpp` — `const double
+   autoscaleMarginPercentDefault = 5.0`, one `settings.value()` entry
+   in `read()`, one `settings.setValue()` entry in `write()`.
+3. `src/klusters/src/prefgenerallayout.ui` — new
+   `QDoubleSpinBox autoscaleMarginSpinBox` + matching `QLabel
+   autoscaleMarginLabel` + spacer, all inside the existing
+   row-1 QHBoxLayout.  Tabstop entry added after
+   `selectionLineWidthSpinBox`.
+4. `src/klusters/src/prefgeneral.h` / `prefgeneral.cpp` — two
+   methods delegating to `autoscaleMarginSpinBox->{value,setValue}`.
+5. `src/klusters/src/prefdialog.cpp` — four additions: enableApply
+   connection, `updateDialog()` push, `updateConfiguration()` pull,
+   `slotDefault()` reset.
+6. `src/klusters/src/clusterview.cpp` — `#include "configuration.h"`
+   + replace hard-coded `0.05` with
+   `configuration().getAutoscaleMarginPercent() / 100.0` in
+   `autoscaleToVisibleClusters()`.
+
+### Persistence
+
+Stored in the QSettings `General` group under key
+`autoscaleMarginPercent`.  Survives across Klusters sessions like
+every other preference.
+
+### Backward compatibility
+
+Existing users pick up the default 5.0, matching rev-9 behaviour
+exactly.  No data-file format change; QSettings migrations not
+needed.
+
+### Testing
+
+- Brace balance verified on all 6 C++ files (clusterview.cpp,
+  clusterview.h, configuration.h, configuration.cpp, prefgeneral.h,
+  prefgeneral.cpp, prefdialog.cpp, klusters.cpp).
+- `prefgenerallayout.ui` parses as well-formed XML.
+- Identifier cross-ref: the three new names appear in 3–5 files each,
+  matching the expected wiring topology.
+
+Behaviour test (once built):
+
+1. Preferences → General → find "Autoscale margin" in the Marker
+   size / Selection line width row.  Adjust to e.g. 10.0 % → Apply.
+2. Open a session, click into ClusterView, press F → autoscale
+   enabled; margin around the cluster cloud is now wider than the
+   rev-9 default.  Set to 0 → tight fit, no whitespace.
+3. Close and reopen Klusters → the value persists.
+4. Preferences → Defaults → value resets to 5.0.
+
+### Files
+
+- `src/klusters/src/configuration.h`
+- `src/klusters/src/configuration.cpp`
+- `src/klusters/src/prefgenerallayout.ui`
+- `src/klusters/src/prefgeneral.h`
+- `src/klusters/src/prefgeneral.cpp`
+- `src/klusters/src/prefdialog.cpp`
+- `src/klusters/src/clusterview.cpp`

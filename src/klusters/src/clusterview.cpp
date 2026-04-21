@@ -21,6 +21,7 @@
 #include "klustersdoc.h"
 #include "data.h"
 #include "itemcolors.h"
+#include "configuration.h"
 
 #include "timer.h"
 #include <QDebug>
@@ -131,6 +132,16 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
 
 void ClusterView::paintEvent ( QPaintEvent*){
     QPainter p(this);
+
+    // If autoscale is enabled, refit bounds to the current shownClusters
+    // projection before sampling `window` below.  Done only for the
+    // REDRAW path: UPDATE is an incremental paint of just-changed
+    // clusters and must preserve the existing window to avoid jittering
+    // the plot on every cluster-set tweak.
+    if (autoscaleEnabled && drawContentsMode == REDRAW) {
+        autoscaleToVisibleClusters();
+    }
+
     //set the window (part of the word I want to show)
     QRect r((QRect)window);
     if(drawContentsMode == UPDATE || drawContentsMode == REDRAW){
@@ -413,7 +424,90 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
         statusBar->clearMessage();
         return;
     }
+
+    // 'F' toggles autoscale-to-visible-clusters mode.  When enabled, the
+    // view refits bounds to the current shownClusters projection each
+    // time paintEvent redraws the double buffer — so moving dimensions,
+    // adding/removing clusters, or running ops automatically rescales.
+    // Press F again to return to manual zoom (bounds stay at whatever
+    // the last autoscale produced, then persist under normal zoom ops).
+    if (e->key() == Qt::Key_F && e->modifiers() == Qt::NoModifier) {
+        autoscaleEnabled = !autoscaleEnabled;
+        if (autoscaleEnabled) {
+            autoscaleToVisibleClusters();
+            drawContentsMode = REDRAW;
+            update();
+            statusBar->showMessage(tr("Autoscale: on (press F to disable)"), 3000);
+        } else {
+            statusBar->showMessage(tr("Autoscale: off"), 3000);
+        }
+        return;
+    }
+
     ViewWidget::keyPressEvent(e);
+}
+
+void ClusterView::autoscaleToVisibleClusters()
+{
+    const QList<int> shown = view.clusters();
+    if (shown.isEmpty()) return;    // nothing to fit to — leave bounds alone
+
+    Data& clusteringData = doc.data();
+
+    bool haveAny = false;
+    long xMin = 0, xMax = 0, yMin = 0, yMax = 0;
+
+    // Iterate every spike of every shown cluster at the current
+    // (dimensionX, dimensionY) projection.  spikeIterator(dx, dy) yields
+    // a QPoint with the two coordinates; we reduce to min/max.  The cost
+    // is O(totalShownSpikes); same order as a single paintEvent pass, so
+    // adding this on autoscale toggle is not a performance concern.
+    for (int clustId : shown) {
+        Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId));
+        for (; it.hasNext(); it.next()) {
+            const QPoint p = it(dimensionX, dimensionY);
+            if (!haveAny) {
+                xMin = xMax = p.x();
+                yMin = yMax = p.y();
+                haveAny = true;
+            } else {
+                if (p.x() < xMin) xMin = p.x();
+                if (p.x() > xMax) xMax = p.x();
+                if (p.y() < yMin) yMin = p.y();
+                if (p.y() > yMax) yMax = p.y();
+            }
+        }
+    }
+
+    if (!haveAny) return;   // shownClusters non-empty but no spikes (edge case)
+
+    // Margin fraction per side, pulled from general preferences (default 5%).
+    // The Configuration setter clamps to [0, 50] %, so the value is safe to
+    // use directly without re-validating here.
+    const double marginFrac = configuration().getAutoscaleMarginPercent() / 100.0;
+
+    // Keep axes visible + clamp to the Qt-safe range used throughout the
+    // view (matches updatedDimensions).
+    //
+    // Iterator::operator()(dx, dy) returns a QPoint with the ordinate
+    // ALREADY NEGATED (Qt graphical orientation, see data.h:344–348), so
+    // yMin/yMax are in the same screen-orientation space that
+    // abscissaMin/Max / ordinateMin/Max live in — no extra flip needed.
+    // The qMin(0L, …)/qMax(0L, …) widening keeps the origin (axes) in
+    // view even when the data cluster sits entirely on one side.
+    const long width  = xMax - xMin;
+    const long height = yMax - yMin;
+
+    abscissaMin = static_cast<long>(qMin(0L, xMin) - width  * marginFrac);
+    abscissaMin = qMax(abscissaMin, -1000000L);
+    abscissaMax = static_cast<long>(qMax(0L, xMax) + width  * marginFrac);
+
+    ordinateMin = static_cast<long>(qMin(0L, yMin) - height * marginFrac);
+    ordinateMax = static_cast<long>(qMax(0L, yMax) + height * marginFrac);
+    ordinateMax = qMin(ordinateMax,  1000000L);
+
+    window = ZoomWindow(QRect(QPoint(abscissaMin, ordinateMin),
+                              QPoint(abscissaMax, ordinateMax)));
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){

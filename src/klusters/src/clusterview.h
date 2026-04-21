@@ -240,6 +240,28 @@ protected:
   */
     virtual void customEvent(QEvent* event) override;
 
+private:
+    /**
+  * Fit the view bounds to the currently shown clusters in the current
+  * (dimensionX, dimensionY) projection.  Scans spike coordinates through
+  * Data::Iterator for each shown cluster, computes global min/max with
+  * a 5% margin, and rewrites abscissaMin/Max, ordinateMin/Max, and the
+  * zoom window — matching the bounds convention from updatedDimensions()
+  * but restricted to visible clusters only.
+  *
+  * When called while shownClusters is empty, the method is a no-op
+  * (leaves existing bounds intact — nothing to fit to).
+  */
+    void autoscaleToVisibleClusters();
+
+    /**
+  * When true, autoscaleToVisibleClusters() is called automatically in
+  * paintEvent before redrawing.  Toggled by the 'F' key in
+  * keyPressEvent.  When false, the view uses whatever bounds were last
+  * set manually (via zoom or updatedDimensions).
+  */
+    bool autoscaleEnabled = false;
+
 Q_SIGNALS:
     void moveToTime(long startTime);
 

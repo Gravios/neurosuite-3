@@ -34,6 +34,7 @@
 
 // include files for QT
 #include <QDir>
+#include <QTabBar>
 
 #include <QToolTip>
 #include <QToolButton>
@@ -1074,22 +1075,36 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
 
         // ── Left / Right (plain or Ctrl) — cycle display tabs ───────────────
-        // Plain Left/Right switches tabs when focus is already inside the tab
-        // area (no view consumes these keys, so they always reach here).
-        // Ctrl+Left/Right works from anywhere: from outside, first jumps to
-        // Overview; from inside, cycles tabs just like plain Left/Right.
+        // Plain Left/Right switches tabs ONLY when focus is on the tab bar
+        // itself (i.e. the user tabbed there or just clicked a tab handle) —
+        // never when focus is inside a tab page such as ClusterView,
+        // WaveformView, etc.  Otherwise arrow keys used for cluster
+        // navigation inside those views would steal the event and switch
+        // tabs instead.
+        //
+        // Ctrl+Left/Right works from anywhere: from outside the tab area,
+        // first jumps to Overview; from inside the tab bar, cycles tabs.
         if((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right) &&
            tabsParent && tabsParent->isVisible() && tabsParent->count() > 0){
 
-            bool inTabArea = false;
             QWidget* focused = QApplication::focusWidget();
+            bool focusOnTabBar = false;
             if(focused){
+                // The QTabBar is a child of QTabWidget; walk up only until
+                // we hit the QTabBar (NOT any ancestor — in particular not
+                // the QTabWidget as a whole, which would include tab pages).
                 QObject* w = focused;
-                while(w){ if(w == tabsParent){ inTabArea = true; break; } w = w->parent(); }
+                while(w){
+                    if(qobject_cast<QTabBar*>(w)){
+                        focusOnTabBar = true;
+                        break;
+                    }
+                    w = w->parent();
+                }
             }
 
-            if(ctrlHeld && !inTabArea){
-                // Ctrl+arrow from outside: jump to Overview first.
+            if(ctrlHeld && !focusOnTabBar){
+                // Ctrl+arrow from outside the tab bar: jump to Overview.
                 int overviewIdx = 0;
                 for(int i = 0; i < tabsParent->count(); ++i){
                     if(tabsParent->tabText(i).contains(tr("Overview"),
@@ -1102,8 +1117,9 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                 return true;
             }
 
-            if(inTabArea){
-                // Inside the tab area: Left/Right cycles tabs (with or without Ctrl).
+            if(focusOnTabBar){
+                // Focus is on the tab bar: Left/Right cycles tabs (with or
+                // without Ctrl).
                 const int n    = tabsParent->count();
                 const int cur  = tabsParent->currentIndex();
                 const int next = ke->key() == Qt::Key_Right
@@ -1113,6 +1129,10 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                 focusTabPage(tabsParent->widget(next));
                 return true;
             }
+
+            // Focus is inside a tab page — do NOT consume; let the page
+            // (ClusterView, WaveformView, etc.) handle the arrow normally
+            // for cluster navigation, polygon nudge, etc.
         }
     }
     // ── S key: palette cluster toggle ──────────────────────────────────────
@@ -2147,6 +2167,7 @@ void KlustersApp::slotUndo()
     }
 
     slotStatusMsg(tr("Ready."));
+    if (view) view->focusClusterView();
 }
 
 void KlustersApp::slotRedo()
@@ -2167,6 +2188,7 @@ void KlustersApp::slotRedo()
     }
 
     slotStatusMsg(tr("Ready."));
+    if (view) view->focusClusterView();
 }
 
 void KlustersApp::slotUpdateUndoNb(int undoNb){
@@ -2462,6 +2484,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     doc->groupClusters(selectedClusters,*view);
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
+    if (view) view->focusClusterView();
 }
 
 void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters){
@@ -2481,6 +2504,7 @@ void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters){
 
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
+    if (view) view->focusClusterView();
 }
 
 void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters){
@@ -2499,6 +2523,7 @@ void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters){
 
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
+    if (view) view->focusClusterView();
 }
 
 
@@ -3480,6 +3505,7 @@ void KlustersApp::slotSpikesDeleted(){
 
         slotStateChanged("noTraceViewBrowsingState");
     }
+    if (view) view->focusClusterView();
 }
 
 void KlustersApp::slotStateChanged(const QString& state)

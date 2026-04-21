@@ -89,6 +89,7 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->reclusteringArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->markerSizeSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->selectionLineWidthSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    connect(prefGeneral->autoscaleMarginSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->useWhiteColorPrinting, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectFeaturesCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectNFeaturesSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
@@ -130,6 +131,7 @@ void PrefDialog::updateDialog() {
   prefGeneral->setRealignMaxShift(configuration().getRealignMaxShift());
   prefGeneral->setMarkerSize(configuration().getMarkerSize());
   prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidth());
+  prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
   prefclusterView->setTimeInterval(configuration().getTimeInterval());
   prefWaveformView->setGain(configuration().getGain());
   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
@@ -154,6 +156,7 @@ void PrefDialog::updateConfiguration(){
   configuration().setRealignMaxShift(prefGeneral->getRealignMaxShift());
   configuration().setMarkerSize(prefGeneral->getMarkerSize());
   configuration().setSelectionLineWidth(prefGeneral->getSelectionLineWidth());
+  configuration().setAutoscaleMarginPercent(prefGeneral->getAutoscaleMarginPercent());
   configuration().setTimeInterval(prefclusterView->getTimeInterval());
   configuration().setGain(prefWaveformView->getGain());
   configuration().setNbChannels(prefWaveformView->getNbChannels());
@@ -184,6 +187,7 @@ void PrefDialog::slotDefault() {
    prefGeneral->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
    prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
    prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
+   prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
    prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
    prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
    prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());

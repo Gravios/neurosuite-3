@@ -224,6 +224,19 @@ public:
     /**Sets number of top-variance features to pass to KlustaKwik (clamped 1-25).*/
     void setAutoSelectNFeatures(int n)         { autoSelectNFeatures = qBound(1, n, 25); }
 
+    /**Returns the fractional margin applied to the autoscale fit in
+     * ClusterView (F key), expressed as a percent of the data extent on
+     * each side.  Default 5 (i.e. 5% on each side).  Range 0–50.*/
+    double getAutoscaleMarginPercent()        const { return autoscaleMarginPercent; }
+    /**Returns the default for the autoscale margin (5%).*/
+    double getAutoscaleMarginPercentDefault() const { return autoscaleMarginPercentDefault; }
+    /**Sets the autoscale fit margin (clamped 0–50%).*/
+    void   setAutoscaleMarginPercent(double p)      {
+        if (p < 0.0)  p = 0.0;
+        if (p > 50.0) p = 50.0;
+        autoscaleMarginPercent = p;
+    }
+
 private:
     /**Boolean indicating if a crash and recovery is ask.*/
     bool crashRecovery;
@@ -264,6 +277,10 @@ private:
     static const bool autoSelectFeaturesDefault;
     int  autoSelectNFeatures;
     static const int  autoSelectNFeaturesDefault;
+    /**Margin (percent of data extent) added on each side of the autoscale fit
+     * in ClusterView (F key).  0 = tight fit, 5 = original behaviour.*/
+    double autoscaleMarginPercent;
+    static const double autoscaleMarginPercentDefault;
     static const bool crashRecoveryDefault;
     static const int  crashRecoveryIndexDefault;
     static const int  gainDefault;
