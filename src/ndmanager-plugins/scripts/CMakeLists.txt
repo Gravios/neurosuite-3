@@ -15,8 +15,18 @@ install(PROGRAMS
     ndm_setupgroups
     ndm_stripdat
     ndm_redetectspikes
+    # Second-pass spike re-extraction + shadow clustering.  The _stderiv
+    # variant re-uses the spatial-derivative detection pipeline's
+    # extensions (.spkD / .fetD / .pcaD); the plain variant works on raw
+    # .spk / .fet / .pca.  Both commit atomically via a sandbox --out
+    # stem and preserve .bak backups of the pre-merge files.
     ndm_reextractspikes
     ndm_reextractspikes_stderiv
+    # Re-cluster the unmatched residual bin left by process_shadowcluster.
+    # Runs KlustaKwik on just the .fet rows whose .clu == unmatched_id,
+    # then merges sub-cluster IDs back into the live .clu with an offset
+    # so they don't collide with existing shadow/parent IDs.
+    ndm_subcluster_unmatched
     ndm_xml2yaml
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn

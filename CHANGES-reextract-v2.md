@@ -804,3 +804,66 @@ Behaviour test (once built):
 - `src/klusters/src/prefgeneral.cpp`
 - `src/klusters/src/prefdialog.cpp`
 - `src/klusters/src/clusterview.cpp`
+
+---
+
+## Addendum — CMake install list (2026-04-21 rev 11)
+
+`make install` now copies the new bash scripts alongside the rest of
+the ndmanager-plugins tooling.
+
+### The problem
+
+Three scripts shipped across earlier revs were never registered with
+CMake, so a fresh `cmake --build . --target install` would leave
+them sitting in the source tree — usable only by running them from
+`src/ndmanager-plugins/scripts/` directly, not from `$PATH`:
+
+- `ndm_reextractspikes`            (rev 1 onward)
+- `ndm_reextractspikes_stderiv`    (rev 1 onward)
+- `ndm_subcluster_unmatched`       (rev 8)
+
+The user hit this first with `ndm_subcluster_unmatched` since the
+other two had been dropped into `$PATH` manually.  Fixing the third
+one the same way would just repeat the bug; so all three are
+registered at once.
+
+### Fix
+
+`src/ndmanager-plugins/scripts/CMakeLists.txt` — three new entries
+added to the `install(PROGRAMS … DESTINATION "${CMAKE_INSTALL_BINDIR}")`
+block with brief doc comments explaining what each does.  The
+existing entries are untouched.
+
+No changes to the man-page `foreach` loop — none of the three
+scripts ship a `.docbook` source yet.  If a man-page is desired,
+create the `.docbook` file in the same directory and add the script
+name to the `foreach(_page IN ITEMS …)` list; `add_manpage()` is a
+no-op when the docbook is missing, so listing a name without a
+docbook is harmless but also builds nothing.
+
+### Not addressed
+
+The parent `src/ndmanager-plugins/src/CMakeLists.txt` was NOT
+touched in this rev.  The user reached a working
+`process_shadowcluster` binary in rev 7, which means their local
+tree already has the three missing `add_subdirectory()` entries
+(for `process_reextractspikes`, `process_reextractspikes_stderiv`,
+`process_shadowcluster`) plus each subdirectory's own
+`CMakeLists.txt`.  If you need those re-shipped, say so and I'll
+include them.
+
+### Install recipe
+
+```bash
+# Re-apply the tarball (CMakeLists is picked up), re-configure if needed
+tar xzf ns3-reextract-v2-2026-04-21.tar.gz -C /path/to/neurosuite-3/
+cd /path/to/neurosuite-3/build
+cmake ..                                  # re-run because the install list changed
+cmake --build . --target install          # copies the three new scripts to $BINDIR
+which ndm_subcluster_unmatched            # sanity check
+```
+
+### Files
+
+- `src/ndmanager-plugins/scripts/CMakeLists.txt`
