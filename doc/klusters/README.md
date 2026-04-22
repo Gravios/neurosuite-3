@@ -38,16 +38,43 @@ When opened from a `.fet.N` file, klusters automatically locates the paired `.cl
 
 ## Files read and written
 
+Klusters transparently handles both pipeline variants via extension
+probing at open time. When both a canonical file and its D variant
+exist for a given group, the D variant (stderiv) is preferred. The
+picked variant is remembered for the rest of the session so all edits
+go back to the same format.
+
 | File | Role |
 |---|---|
-| `session.fet.N` | **Required.** Feature vectors — primary input (binary int64 or legacy text) |
+| `session.fet.N` / `session.fetD.N` | **Required.** Feature vectors — primary input (binary int64 or legacy text) |
 | `session.clu.N` | Cluster assignments — read on open, **overwritten on save** |
-| `session.spk.N` | Spike waveforms — optional; enables Waveform View |
+| `session.spk.N` / `session.spkD.N` | Spike waveforms — enables Waveform View. `.spkD.N` contains stderiv-transformed waveforms |
 | `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry, cluster notes) |
-| `session.res.N` | Spike timestamps — used by Trace View for overlay tick marks |
-| `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View |
-| `session.pca.N` | PCA eigenvectors — used by spike realignment to reproject features |
+| `session.res.N` | Spike timestamps — used by Trace View and by nudge/realign |
+| `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View; read by nudge/realign for waveform re-extraction |
+| `session.pca.N` / `session.pcaD.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps |
+| `session.{res,spk,fet,clu}.N.pending` | Transactional working copies — all realign/nudge edits go here first and are atomically renamed on save |
 | `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
+
+### Pipeline variant detection
+
+Two flags govern which transforms to apply during nudge / realign:
+
+- **`spkIsTransformed`** = true iff the `.spk` file loaded has the
+  `.spkD.` suffix. When writing a re-extracted waveform back, the
+  stderiv transform is applied iff this flag is true (Pipeline D) and
+  skipped otherwise (raw `.spk`; Pipelines A and C).
+- **`fetIsStderiv`** = true iff the `.fet` file loaded has the
+  `.fetD.` suffix. When reprojecting features from a re-extracted
+  waveform, the stderiv transform is applied before the PCA projection
+  iff this flag is true, and the `.pcaD.N` eigenvector basis is used
+  rather than `.pca.N`.
+
+These flags are independent. Pipeline C (raw `.spk` + stderiv
+`.fetD`/`.pcaD`) is a real configuration that occurs when features
+are recomputed from a raw `.spk` via `ndm_pca_stderiv` without
+replacing the `.spk` file; klusters handles this correctly by
+consulting the two flags separately.
 
 ### Feature file format (`.fet.N`)
 
@@ -115,6 +142,12 @@ Double-click a cluster button to open a colour picker. Colours are saved to the 
 
 Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. Metadata is persisted in the YAML parameter file's `units` section alongside cluster colours.
 
+### Focus handling after batch operations
+
+After any operation that auto-selects the next cluster in the palette (delete-to-noise, delete-to-artefact, recluster completion, realign accept/reject), focus returns to the palette rather than to the 2-D scatter. This means arrow keys continue to step through clusters without requiring a Tab press to reach the palette.
+
+The one exception is the cluster-editing slots whose natural follow-up is 2-D inspection (undo, redo, group-merge, nudge): these leave focus on the scatter view.
+
 ---
 
 ## Views
@@ -128,6 +161,7 @@ Multiple views can be open simultaneously as tabs. Each view type can be opened 
 | Correlation Display | Displays → New Correlation Display | Auto- and cross-correlograms |
 | Overview Display | Displays → New Overview Display | Scatter + waveform side by side (default on open) |
 | Grouping Assistant | Displays → New Grouping Assistant Display | Misclassification probability matrix |
+| Template Matrix | Displays → New Template Matrix Display | Pairwise waveform cross-correlation matrix |
 | Trace Display | Displays → New Trace Display | Raw signal with spike overlays |
 
 All views are synchronised: selecting a cluster in any view highlights it in all others.
@@ -216,7 +250,17 @@ Entry (r, c) is the mean posterior probability that a spike from cluster r was a
 - High (r, c) alone → spikes of cluster r are frequently misclassified as cluster c (possible contaminant).
 - High (r, c) **and** (c, r) symmetrically → the two clusters are strongly overlapping and are candidates for merging.
 
-**Actions → Update Error Matrix** (`U`) recomputes the matrix after editing.
+**Actions → Update Error Matrix** (`U`) recomputes the matrix after editing. `U` also refreshes the Template Matrix view if both are open.
+
+### Template Matrix Display
+
+Pairwise waveform similarity matrix for the currently-shown clusters. Each cell (r, c) shows the normalised cross-correlation between the mean waveform of cluster r and the mean waveform of cluster c, summed across all channels of the electrode group.
+
+- **High off-diagonal xcorr** (dark cells close to the diagonal value) identifies clusters whose mean waveforms are almost identical — strong merge candidates.
+- **Selection highlighting is asymmetric**: clicking cell (r, c) highlights only that one cell, not the mirror cell (c, r). This lets you trace the direction of a putative merge (for example, when you suspect cluster r is a sub-population of cluster c).
+- Pairwise xcorr is computed **on demand** — when a cell is first clicked, the corresponding pair is computed and cached. This keeps matrix open for large (50+) cluster sets cheap.
+- The matrix auto-recomputes after Apply and after any cluster-editing operation that invalidates waveforms. Parallel computation via OpenMP.
+- The noise cluster (cluster 1) is included in the matrix — useful for identifying clusters that have drifted into MUA.
 
 ### Trace Display
 
@@ -311,14 +355,69 @@ For each spike in the selected clusters:
 
 1. The cluster mean waveform is computed.
 2. The spike's waveform is cross-correlated against the mean template at each lag within ±maxShift samples.
-3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its `.res.N` timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected using the stored `.pca.N` eigenvectors.
+3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the appropriate eigenvector basis (`.pcaD.N` for stderiv features, `.pca.N` for raw).
 4. If a timestamp shift would violate chronological order, the affected `.res`/`.spk`/`.clu`/`.fet` rows are swapped.
 
-After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted and timestamps reordered. The result can be **accepted** (changes written to disk) or **rejected** (full in-memory rollback, no disk writes).
+### Pipeline variant awareness
+
+Realignment and nudge both respect the two-flag variant detection
+described in the Files section above:
+
+- If the loaded `.spk` is the stderiv variant (`.spkD.N`), the
+  re-extracted waveform is transformed (spatial derivative + temporal
+  first-difference, with `sdiff[-1] = 0` boundary) before being written
+  back, so on-disk `.spkD` stays in stderiv space. If the loaded `.spk`
+  is raw, the re-extracted waveform is written back raw.
+- If the loaded `.fet` is the stderiv variant (`.fetD.N`), the
+  re-extracted waveform is transformed before PCA projection, and the
+  `.pcaD.N` eigenvector basis is used. If the loaded `.fet` is raw,
+  the `.pca.N` basis is used and no transform is applied.
+
+This correctly handles Pipeline C (raw `.spk` + stderiv
+`.fetD`/`.pcaD`) where the two flags disagree.
+
+### Transactional pending-file model
+
+All edits from realign and nudge go into `.pending` sidecar files
+(`.spk.N.pending`, `.fetD.N.pending`, etc.) rather than the live
+session files. The session files are updated atomically on save:
+
+- On **Apply** (or save), each `.pending` is renamed over its
+  corresponding session file in one atomic operation per file. The
+  commit window is short (four `mv` calls); an interrupted commit
+  leaves the group indexable by the old cluster labels rather than
+  producing unreadable files.
+- On **Reject**, the `.pending` files are deleted and the in-memory
+  state is rolled back — no on-disk changes.
+- On crash, the autosave-recovery path and the `.bak` files written
+  by upstream scripts (reextract, subcluster) give an independent
+  rollback option.
+
+After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted and timestamps reordered. The result can be **accepted** (pending files renamed; changes persisted) or **rejected** (pending files discarded).
 
 **Actions → Abort Realignment** cancels realignment in progress.
 
-Realignment parameters (executable path and arguments) are set in **Settings → Preferences → General**.
+Realignment parameters (maxShift, minScore) are set in **Settings → Preferences → General → Realignment**.
+
+---
+
+## Timestamp nudge
+
+**Actions → Nudge Timestamp ±1** (toolbar buttons, or `Page Up` /
+`Page Down`) shifts every spike in the selected cluster by ±1 sample.
+Use to correct systematic clock offsets between a cluster and the
+detection peak (for example, after a spike-sorter converted template
+lag from milliseconds with slight rounding).
+
+Nudge is a lighter-weight variant of realign: instead of doing
+normalised cross-correlation, it applies a uniform known shift to every
+spike in the cluster, re-extracts the shifted waveform from `.fil`,
+reprojects through the PCA basis (using the same variant-aware logic as
+realign), and writes the update into the `.pending` files. The Apply /
+Reject cycle is the same as realign — nothing is committed until save.
+
+Focus returns to the cluster palette after nudge completes, so you can
+immediately step to the next cluster with the arrow keys.
 
 ---
 
@@ -360,9 +459,14 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Delete noisy cluster(s) | `Delete` |
 | Group (merge) clusters | `G` |
 | Renumber clusters | `R` |
-| Update error matrix | `U` |
+| Update error matrix + template matrix | `U` |
 | Recluster (KlustaKwik) | `Shift+R` |
 | Realign spikes | `Shift+L` |
+| Nudge timestamps +1 sample | `Page Down` |
+| Nudge timestamps −1 sample | `Page Up` |
+| New cluster (from selection) | `1` |
+| Split selected cluster | `2` |
+| Shortcut help dialog | `H` |
 
 ### Tools
 

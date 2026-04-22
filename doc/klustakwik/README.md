@@ -1,6 +1,15 @@
 # klustakwik — Automatic Spike Sorter
 
-KlustaKwik performs automatic spike sorting via Classification EM (CEM). It reads a `.fet` feature file produced by `ndm_pca` and writes a `.clu` cluster assignment file. GPU acceleration is available for the E-step distance computations via CUDA (NVIDIA), HIP (AMD ROCm), or SYCL (Intel Arc/oneAPI).
+KlustaKwik performs automatic spike sorting via Classification EM (CEM).
+It reads a `.fet.N` or `.fetD.N` feature file produced by `ndm_pca` or
+`ndm_pca_stderiv` and writes a `.clu.N` cluster assignment file. GPU
+acceleration is available for the E-step distance computations via CUDA
+(NVIDIA), HIP (AMD ROCm), or SYCL (Intel Arc/oneAPI).
+
+The pipeline is a five-phase algorithm (Phase 0–2 plus two refinement
+phases 1.5 and 2.5) designed for multi-hour extracellular recordings with
+electrode drift. On shorter recordings, setting `-ChunkMinutes 0` reduces
+the pipeline to the original two-phase CEM.
 
 ---
 
@@ -8,14 +17,17 @@ KlustaKwik performs automatic spike sorting via Classification EM (CEM). It read
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| C++17 compiler | Build | Yes |
+| C++20 compiler | Build | Yes |
 | CMake ≥ 3.21 | Build | Yes |
-| OpenMP | Parallel chunk processing and CPU fallback | Strongly recommended |
-| CUDA Toolkit ≥ 11 | NVIDIA GPU acceleration | Optional |
+| OpenMP | Parallel chunk / run / item processing and CPU fallback | Strongly recommended |
+| yaml-cpp | Session-YAML parsing (`KlustaKwikYaml`) | Yes |
+| CUDA Toolkit ≥ 11 (≥ 12.8 for sm_120 / Blackwell) | NVIDIA GPU acceleration | Optional |
 | ROCm / HIP SDK ≥ 5.0 | AMD GPU acceleration | Optional |
 | Intel oneAPI Base Toolkit ≥ 2023.1 | Intel Arc/Xe GPU acceleration | Optional |
 
-When none of the GPU backend flags are explicitly set, CMake auto-detects in priority order CUDA > HIP > SYCL. Every GPU build also produces `KlustaKwik_cpu` as a CPU-only fallback binary.
+When none of the GPU backend flags are explicitly set, CMake auto-detects
+in priority order CUDA > HIP > SYCL. Every GPU build also produces
+`KlustaKwik_cpu` as a CPU-only fallback binary.
 
 ---
 
@@ -26,24 +38,31 @@ KlustaKwik FileBase ElecNo [options]
 ```
 
 `FileBase` and `ElecNo` together identify the input file `FileBase.fet.ElecNo`.
+If a `FileBase.fetD.ElecNo` exists and a `FileBase.fet.ElecNo` does not,
+the D variant is loaded automatically (`pickInputPath` — see the
+"File extension fallback" section below).
 
 ### Examples
 
 ```bash
 # Standard two-phase farthest-point mode (SamplingRate auto-detected from YAML)
-KlustaKwik session 1 -MinClusters 2 -MaxClusters 12
+KlustaKwik session 1 -MinClusters 2 -MaxClusters 12 -ChunkMinutes 0
 
-# Three-phase temporal chunking for long recordings with electrode drift
+# Three-phase chunked mode for long recordings with electrode drift (default)
 KlustaKwik session 1 -MinClusters 2 -MaxClusters 12 \
-    -ChunkMinutes 10
+    -ChunkMinutes 10 -ChunkOverlapMinutes 2 -ChunkPreseedFraction 0.08
 
-# Resume from an existing sort
+# Resume from an existing sort (e.g., after klusters editing)
 KlustaKwik session 1 -StartCluFile session.clu.1
 
-# 80-minute silicon probe, chunked mode, suppress intermediate saves
+# Chunked 80-minute silicon probe with full pipeline: 3 restarts per chunk,
+# subspace reclustering inside Phase 2.5, and iterative cross-chunk template
+# matching. Suppress intermediate saves.
 KlustaKwik jg05-20120316 7 \
     -MinClusters 2 -MaxClusters 20 \
-    -ChunkMinutes 10 \
+    -ChunkMinutes 10 -ChunkOverlapMinutes 2 \
+    -nRuns 3 -SubspaceRecluster 1 -SubspaceReclusterDepth 2 \
+    -TemplateMatchIters 10 -CrossChunkTemplateScore 0.90 \
     -MergeThresh 42.0 -GlobalMergeIter 50 -TimeMergeIter 50 \
     -SaveIntermediates 0
 ```
@@ -52,9 +71,43 @@ KlustaKwik jg05-20120316 7 \
 
 | File | Contents |
 |---|---|
-| `FileBase.clu.ElecNo` | Cluster assignment per spike (1-based; cluster 1 = noise/unsorted) |
+| `FileBase.clu.ElecNo` | Cluster assignment per spike. `0` = artefact, `1` = noise/MUA, `≥ 2` = single units |
 | `FileBase.klg.ElecNo` | Run log (only when `-Log 1`) |
 | `FileBase.model.ElecNo` | Gaussian model parameters (omit with `-fSaveModel 0`) |
+| `FileBase.fet.ElecNo.pending` / `FileBase.fetD.ElecNo.pending` | Phase 1.5 refeaturization checkpoint; atomically renamed to the original extension on success |
+| `FileBase.spk.ElecNo.pending` / `FileBase.spkD.ElecNo.pending` | Phase 1.5 waveform checkpoint (same rename rule) |
+
+---
+
+## File extension fallback
+
+KlustaKwik auto-detects raw vs stderiv session files. For each session
+file it needs (`.spk`, `.fet`, `.pca`), it resolves the path via
+`pickInputPath`, which prefers the canonical extension and falls back
+to the D variant if canonical is absent:
+
+```
+pickInputPath:  .fet.N   → exists → load
+                         → missing → try .fetD.N
+                .spk.N   → same logic
+                .pca.N   → same logic
+```
+
+The chosen variant is propagated through every subsequent open
+inside KlustaKwik — `LoadData`, `RealignChunkWaveforms`,
+`RefeaturizeFromShifts`, the four template-match mean-waveform harvests,
+and `WritePhase15Checkpoint` — so stderiv-sorted and raw-sorted groups
+can coexist in a single session without cross-contamination.
+
+The `WritePhase15Checkpoint` `.pending` filenames are derived from the
+**picked** path, so a successful rename writes back to `.spkD.N` / `.fetD.N`
+on the D-variant side, not to canonical names.
+
+`.res.N` and `.clu.N` are always read / written under canonical extensions
+— they have no D variant.
+
+Startup banner displays `(stderiv variant)` on stderr when the D variant
+was chosen.
 
 ---
 
@@ -66,10 +119,11 @@ KlustaKwik jg05-20120316 7 \
 |---|---|---|
 | `-MinClusters N` | `2` | Minimum number of clusters to try |
 | `-MaxClusters N` | `12` | Maximum number of clusters to try |
-| `-MaxPossibleClusters N` | `100` | Hard upper bound on cluster count |
-| `-nStarts N` | `1` | Number of random restarts |
+| `-MaxPossibleClusters N` | `100` | Hard upper bound on cluster count (affects cross-chunk packed-ID range; see Phase 2.5 notes below) |
+| `-nStarts N` | `1` | Number of random restarts per pipeline (outer loop) |
+| `-nRuns N` | `0` | Number of independent CEM restarts **per chunk** (chunked mode); each chunk keeps its best-scoring result. `0` disables (preserves original per-chunk loop). |
 | `-RandomSeed N` | `1` | Random seed (use `0` to seed from time) |
-| `-UseFeatures BITS` | `all` | Binary mask over feature dimensions; `0` skips that dimension. `all` uses every feature in the `.fet` file. |
+| `-UseFeatures STR` | `all` | Feature selection. `all` (default) uses every feature in the `.fet` file. A bit string (`"11111111111111110"`) can skip specific dimensions. |
 | `-PenaltyMix F` | `0.0` | Blend between BIC (`0`) and CEM (`1`) penalty |
 
 ### Convergence
@@ -81,39 +135,103 @@ KlustaKwik jg05-20120316 7 \
 | `-FullStepEvery N` | `10` | Run a full E-step every N iterations (mini-batch otherwise) |
 | `-ChangedThresh F` | `0.05` | Stop if fewer than this fraction of spikes change class |
 | `-DistThresh F` | `6.9` | Mahalanobis distance threshold for spike-to-cluster assignment |
+| `-SplitRecurseDepth N` | `1` | How many levels of recursive splitting `TrySplits` explores. `0` = no recursive splits; `1` = one level; higher values multiply the cost of `TrySplits`. |
 
-### Two-phase CEM (default when `ChunkMinutes` is not set)
+### Two-phase CEM (active when `ChunkMinutes = 0`)
 
-KlustaKwik uses a two-phase algorithm by default:
+Spatial-only EM followed by a short merge pass that reintroduces the
+time dimension:
 
-- **Phase 1** — spatial-only EM using all feature dimensions except the last (time). Centres are seeded with the farthest-point heuristic (`InitCentresFarthestPoint`), which gives better initial separation than random assignment.
-- **Phase 2** — short merge pass (`TimeMergeIter` iterations) that reintroduces the time dimension. This allows temporally drifting clusters to be identified without allowing time to dominate the spatial clustering phase.
-
-| Parameter | Default | Description |
-|---|---|---|
-| `-TimeMergeIter N` | `30` | Phase 2 merge iterations (set `0` to disable two-phase mode) |
-| `-InitMethod STR` | `"farthest"` | Initialisation method (`"farthest"` or `"random"`) |
-
-### Three-phase chunked CEM
-
-For long recordings (> ~30 min) where electrode drift causes a cluster to appear as multiple clusters at different time points, the three-phase chunked mode splits the recording into temporal windows, sorts each independently in parallel (OpenMP), and then merges the per-chunk models globally.
-
-`SamplingRate` is auto-detected from `<FileBase>.yaml` at startup. Pass `-SamplingRate` explicitly only when running without a YAML file or to override it.
+- **Phase 1** — spatial-only EM using all feature dimensions except the
+  last (time). Centres seeded with the farthest-point heuristic
+  (`InitCentresFarthestPoint`), which gives better initial separation
+  than random assignment.
+- **Phase 2** — short merge pass (`TimeMergeIter` iterations) with time
+  dimension reintroduced. Allows temporally drifting clusters to be
+  identified without letting time dominate the spatial clustering phase.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-ChunkMinutes F` | `0` (disabled) | Chunk duration in minutes; activates chunked mode when > 0 |
-| `-ChunkOverlapMinutes F` | `0` | Overlap between adjacent chunks in minutes; reduces boundary artifacts |
-| `-ChunkPreseedFraction F` | `0` | Fraction of spikes used for Phase 0 global preseed; `0` disables |
+| `-TimeMergeIter N` | `30` | Phase 2 merge iterations (set `0` to disable two-phase mode entirely) |
+| `-InitMethod STR` | `farthest` | Initialisation method (`farthest` or `random`) |
+
+### Chunked CEM (active when `ChunkMinutes > 0`, default)
+
+Splits the recording into temporal windows, sorts each independently
+(OpenMP across chunks and per-chunk runs), optionally realigns waveforms
+at chunk boundaries (Phase 1.5), optionally reclusters each cluster in a
+reduced subspace (Phase 2.5), and merges per-chunk models globally using
+template matching (Phase 2) plus a final EM refinement.
+
+`SamplingRate` is auto-detected from `<FileBase>.yaml` at startup. Pass
+`-SamplingRate` explicitly only when running without a YAML file or to
+override it.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `-ChunkMinutes F` | `10` | Chunk duration in minutes; `0` disables chunked mode (falls back to two-phase) |
+| `-ChunkOverlapMinutes F` | `2` | Overlap between adjacent chunks in minutes; reduces boundary artefacts and seeds cross-chunk template matching |
+| `-ChunkPreseedFraction F` | `0.05` | Fraction of all spikes used for Phase 0 global preseed; `0` disables |
+| `-ChunkBoundaries PATH` | — | Read adaptive chunk boundaries from a `.chunks.N` file (written by `ndm_applydrift`) instead of computing uniform chunks from `ChunkMinutes` |
 | `-SamplingRate F` | auto from YAML | Recording sample rate; used to convert minutes to sample counts |
-| `-MergeThresh F` | `30.0` | Maximum inter-chunk Mahalanobis distance for merging two chunk models |
-| `-GlobalMergeIter N` | `20` | EM iterations run on the globally merged solution |
+| `-MergeThresh F` | `30.0` | Maximum inter-chunk Mahalanobis distance (d²) for merging two chunk models. Calibrate as `χ²(nSpatialDims, 0.9999)` for a given group — e.g. 54.23 for 21 feature dimensions |
+| `-GlobalMergeIter N` | `20` | EM iterations on the globally merged solution (Phase 3) |
+
+### Phase 1.5: per-chunk realignment + re-featurization
+
+After all per-chunk runs complete, Phase 1.5 realigns waveforms at the
+peak sample using normalised cross-correlation against the per-cluster
+mean template, re-extracts the shifted waveform from the raw `.fil` (or
+circular-shifts from `.spk` if `.fil` is not present), reprojects through
+the saved `.pca.N` / `.pcaD.N` eigenvectors, and writes a transactional
+checkpoint to `.pending` files that are atomically renamed to the session
+files on success.
+
+This phase is always run when `ChunkMinutes > 0`. It has no user-exposed
+parameters — the algorithm is controlled by session geometry (sample
+rate, peak sample index, channels per group) read from the YAML.
+
+See `src/klustakwik/CHANGES.md` for algorithm details and the
+`RefeaturizeFromShifts` fall-back path.
+
+### Phase 2: cross-chunk template matching + merge
+
+Phase 2 iteratively matches per-chunk cluster models across chunk
+boundaries using three criteria: (i) vote matching via shared
+overlap-window spikes, (ii) per-dimension Mahalanobis distance, and (iii)
+normalised cross-correlation of the per-cluster mean waveforms. A
+cross-chunk match causes a `Union()` operation between the two packed
+cluster IDs. The loop iterates until no new unions occur or
+`TemplateMatchIters` is exceeded.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `-TemplateMatchIters N` | `10` | Max cross-chunk match iterations |
+| `-TemplateMatchScore F` | `0.90` | Waveform-xcorr threshold for merging two chunk models |
+| `-CrossChunkTemplateScore F` | `0.90` | Stricter xcorr threshold for non-overlapping chunk pairs (pairs that don't share spikes in an overlap region) |
+
+### Phase 2.5: subspace reclustering (optional)
+
+Every per-chunk cluster is projected into the top-`SubspaceDims`
+eigenvectors of its own covariance, normalised by the eigenvalues
+(whitening), and re-run through a shallow CEM with splits enabled. New
+child clusters that survive are grafted back into `perChunkClass`.
+
+Designed to rescue overmerged clusters from Phase 1 where the global
+feature-space distance doesn't capture the true split (e.g. two units
+with similar PCA footprints but different waveform shapes).
+
+| Parameter | Default | Description |
+|---|---|---|
+| `-SubspaceRecluster N` | `1` | Enable (`1`) or disable (`0`) Phase 2.5 |
+| `-SubspaceReclusterDepth N` | `2` | `TrySplits` recursion depth inside the sub-CEM (independent of `-SplitRecurseDepth`). `0` = one controlled level (TrySplits fires once, split trials are non-recursive). |
+| `-SubspaceDims N` | `3` | Number of top eigenvectors used for the whitened subspace |
 
 ### Output
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-SaveIntermediates N` | `1` | Write `.clu` whenever a new best score is found. Set `0` to suppress mid-run writes and produce only a final file. |
+| `-SaveIntermediates N` | `1` | Write `.clu` whenever a new best score is found. Set `0` to suppress mid-run writes and produce only a final file |
 | `-Log N` | `0` | Write `.klg` log file |
 | `-Screen N` | `0` | Print progress to stdout |
 | `-Verbose N` | `0` | Verbose per-iteration output |
@@ -123,23 +241,85 @@ For long recordings (> ~30 min) where electrode drift causes a cluster to appear
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-StartCluFile PATH` | — | Initialise from an existing `.clu` file |
+| `-StartCluFile PATH` | — | Initialise from an existing `.clu` file. Cluster IDs are renumbered; `0` and `1` retain their noise/artefact meaning. |
 
 ---
 
-## Algorithm phases in detail
+## Pipeline phases in detail
 
-### Classification EM (CEM)
+### Phase 0 — preseed (chunked mode, optional)
 
-CEM extends standard EM by adding a hard classification step (C-step) after each E-step. The penalty term penalises models with too many clusters, providing an automatic model-order selection mechanism that avoids the need to specify the exact number of clusters.
+`ChunkPreseedFraction` of all spikes are sampled globally and fed
+through a fast CEM to produce a pre-seeded cluster set. Each per-chunk
+Phase 1 then starts from this global seed rather than a farthest-point
+initialisation over local spikes, which helps align per-chunk cluster
+identities at chunk boundaries.
 
-The inner loop runs M-step → E-step → C-step → `ConsiderDeletion` until convergence. `ConsiderDeletion` removes clusters that contribute too little to the score, respecting the `MinClusters` floor set by the user.
+Set `ChunkPreseedFraction 0` to disable.
 
-`TrySplits()` is called every `SplitEvery` iterations to attempt splitting poorly-fitting clusters. Split candidates are evaluated by running a mini-CEM on just the spikes of the candidate cluster; the split is kept if it improves the score.
+### Phase 1 — per-chunk two-phase CEM
 
-### GPU dispatch
+Each chunk runs an independent two-phase CEM in a self-contained `KK`
+sub-object. The parallel axis is `(chunk × run)`: if `nRuns = 3`, each
+chunk produces 3 candidate solutions, and the best-scoring one becomes
+that chunk's contribution. Chunk sub-objects own their own Cholesky
+storage and do not share state with the global sort object, so the
+parallel execution is data-race-free.
 
-KlustaKwik's computationally intensive steps (E-step, M-step, C-step, `ConsiderDeletion`) are GPU-parallelisable. The `KK.h` dispatch layer maps generic `gpu_*` function calls to the active backend at compile time:
+Per-chunk cluster IDs are packed as `chunkIdx × MaxPossibleClusters +
+localClusterId`. Raising `MaxPossibleClusters` increases the per-chunk
+ID range but also raises memory use proportionally; if you see "packed
+ID overflow" warnings in verbose logs, raise `MaxPossibleClusters`.
+
+### Phase 1.5 — realignment + refeaturize
+
+See the section above under "Chunked CEM".
+
+### Phase 2 — cross-chunk merge via template matching
+
+Three-criterion iterative merge loop (votes + Mahalanobis + xcorr),
+described above. `Union()` operations happen inside the outer
+`TemplateMatchIters` loop; the loop exits early when no new unions
+occur.
+
+### Phase 2.5 — subspace reclustering (optional)
+
+See the section above.
+
+### Phase 3 — global warm-start EM
+
+After Phase 2's unions have been applied, a final EM run on the merged
+solution refines Gaussian parameters globally. `GlobalMergeIter` bounds
+the iteration count.
+
+---
+
+## CEM algorithm
+
+Classification EM extends standard EM by adding a hard classification
+step (C-step) after each E-step. The penalty term penalises models with
+too many clusters, providing automatic model-order selection without
+requiring an exact cluster count.
+
+Inner loop: `M-step → E-step → C-step → ConsiderDeletion` until
+convergence. `ConsiderDeletion` removes clusters that contribute too
+little to the score, respecting the `MinClusters` floor.
+
+`TrySplits()` is called every `SplitEvery` iterations to attempt
+splitting poorly-fitting clusters. Split candidates are evaluated by
+running a mini-CEM on just the spikes of the candidate cluster; the
+split is kept if it improves the score. `SplitRecurseDepth` controls
+how deep the recursion can go; at the saturation depth, `TrySplits`
+falls back to a single non-recursive split attempt.
+
+---
+
+## GPU dispatch
+
+KlustaKwik's computationally intensive steps (E-step, M-step, C-step,
+`ConsiderDeletion`, `InitCentresFarthestPoint`) are GPU-parallelisable.
+The `KK.h` dispatch layer maps generic `gpu_*` function calls to the
+active backend at compile time:
 
 | Backend | Compile flag | Priority |
 |---|---|---|
@@ -148,9 +328,37 @@ KlustaKwik's computationally intensive steps (E-step, M-step, C-step, `ConsiderD
 | HIP (AMD ROCm) | `USE_HIP` | 3rd |
 | OpenMP (CPU) | always built | fallback |
 
-GPU data layout uses a transposed (dimension-major) format for coalesced memory access: `Data[d * nPoints + p]` instead of the CPU's point-major `Data[p * nDims + d]`.
+GPU data layout uses a transposed (dimension-major) format for coalesced
+memory access: `Data[d * nPoints + p]` instead of the CPU's point-major
+`Data[p * nDims + d]`.
 
-Chunk sub-objects in chunked CEM always run on the CPU (the main sort object holds the GPU context; chunk objects do not), so chunked mode benefits from OpenMP across chunks rather than from the GPU directly.
+Chunk sub-objects in chunked CEM always run on the CPU (the main sort
+object holds the GPU context; chunk objects do not), so chunked mode
+benefits from OpenMP across chunks and runs rather than from the GPU
+directly. Phase 3 (the global merge) runs on the GPU if available.
+
+**Shared memory caveat:** the CUDA M-step mean kernel can exceed the
+48 KB per-SM shared memory cap on pre-Blackwell hardware when
+`MaxPossibleClusters × nDims` is large; a global-atomics fallback
+kernel is always compiled. Blackwell (RTX 5000 series, sm_120) has
+128 KB per SM and does not hit this limit in practice.
+
+---
+
+## Inline drift estimation (disabled by default)
+
+If the session YAML contains both `probeId` and `probeFile` fields in
+the spike-detection group, and a `.fil` file is present,
+`_RunInlineDriftEstimation()` can be invoked to run
+`process_estimatedrift.py` and `process_applydrift.py` as subprocesses
+after the final `.clu` write. Produces `SESSION.drift` and
+`SESSION.chunks.N` so the next KlustaKwik invocation can use adaptive
+chunks.
+
+Not called by default — registered as a post-write hook that can be
+enabled in `KlustaKwikYaml.cpp`. Intended for long chronic recordings
+where drift is severe enough to make uniform chunk boundaries
+counter-productive.
 
 ---
 
@@ -163,7 +371,6 @@ Chunk sub-objects in chunked CEM always run on the CPU (the main sort object hol
 | Linux (Ubuntu / Debian) | AMD ROCm / HIP | [install/linux-hip.md](install/linux-hip.md) |
 | Linux (Ubuntu / Debian) | Intel Arc / SYCL | [install/linux-sycl.md](install/linux-sycl.md) |
 | Linux — WSL2 | Intel Arc / SYCL | [install/wsl2-sycl.md](install/wsl2-sycl.md) |
-| Windows (native) | CPU / OpenMP | [install/windows-cpu.md](install/windows-cpu.md) |
 | Windows (native) | NVIDIA CUDA | [install/windows-cuda.md](install/windows-cuda.md) |
 | Windows (native) | AMD HIP | [install/windows-hip.md](install/windows-hip.md) |
 | Windows (native) | Intel Arc / SYCL | [install/windows-sycl.md](install/windows-sycl.md) |

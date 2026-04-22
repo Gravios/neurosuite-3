@@ -1,9 +1,13 @@
 # ndmanager — Session Manager
 
-ndmanager is a Qt6 GUI for managing electrophysiology recording sessions. It opens a `.xml` or
-`.yaml` parameter file, provides a tabbed interface for editing all acquisition and processing
-parameters, and dispatches the `ndmanager-plugins` preprocessing pipeline — either step by step
-or as a full batch.
+ndmanager is a Qt6 GUI for managing electrophysiology recording sessions. It opens a `.yaml`
+(preferred) or legacy `.xml` parameter file, provides a tabbed interface for editing all
+acquisition and processing parameters, and dispatches the `ndmanager-plugins` preprocessing
+pipeline — either step by step or as a full batch.
+
+> **XML is accepted on open for backward compatibility, but the preprocessing pipeline no
+> longer reads XML directly** — legacy XML files should be converted to YAML with
+> `ndm_xml2yaml` before running the pipeline. ndmanager always saves YAML.
 
 ---
 
@@ -68,8 +72,13 @@ from the neuroscope-specific rotation and flip settings.
 
 **Plugin parameters** — one page per installed `ndm_*` script. Each page exposes the
 parameters that script reads from the parameter file, with Mandatory/Optional/Dynamic status
-indicators. See [ndmanager-plugins](../ndmanager-plugins/README.md) for the complete parameter
-reference per script.
+indicators. Parameters set here land in the `programs[name=...].parameters` section of the
+YAML (tier-2 of the three-tier resolution: per-group override → global session override → bash
+default). For KlustaKwik specifically, each `spikeDetection.channelGroups[g]` entry may also
+carry an embedded `klustakwik:` sub-block with per-group calibrated values (tier-1, highest
+priority) — these are typically written by `ndm_aom2dat` from probe topology. See
+[ndmanager-plugins](../ndmanager-plugins/README.md) for the complete parameter reference per
+script.
 
 ---
 
@@ -82,10 +91,11 @@ any silicon probe session.
 
 | Field | YAML key | Description |
 |---|---|---|
-| Probe ID | `probes[].id` | Integer identifier used by `ndm_setupgroups` and `ndm_estimatedrift` |
+| Probe ID | `probes[].probeId` | Integer identifier used by `ndm_setupgroups`, `ndm_estimatedrift`, `ndm_localise`. Legacy sessions may still use `probes[].id`; both keys are accepted on read, only `probeId` is written |
 | Probe file | `probes[].probeFile` | Path relative to the probe library (e.g. `neuronexus/Buzsaki64.probe`) |
 | Label | `probes[].label` | Free-text label displayed in NeuroScope and Klusters |
 | Channel offset | `probes[].channelOffset` | First ADC channel index for this probe (0-based) |
+| Anatomical groups | `probes[].anatomicalGroups` | List of anatomical group IDs assigned to this probe. Populated automatically by `ndm_setupgroups` |
 | Library path | session-level | Override for the probe library search path (optional; leave blank to use the system default) |
 
 ### Probe library
@@ -112,7 +122,10 @@ Library path field      (set in the Probes tab)
 2. On the **Probes** tab: add one row per physical probe, set `probeFile` and `channelOffset`.
 3. Save the session.
 4. Run `ndm_setupgroups` (from the Plugins tab or command line). This populates the Electrode
-   Groups tab automatically.
+   Groups tab automatically, writing `probeId`, `shankIndex`, and `sitePositions_um` (inline
+   electrode geometry) into each anatomical and spike-detection group so downstream tools
+   (`ndm_estimatedrift`, `ndm_localise`, klustakwik drift-aware chunking) can reconstruct
+   geometry without re-reading the probe file.
 5. Verify channel assignments on the Electrode Groups tab, then proceed with the pipeline.
 
 ---
@@ -173,7 +186,7 @@ files:
   - extension: lfp
     samplingRate: 1250
 probes:
-  - id: 0
+  - probeId: 0
     probeFile: neuronexus/Buzsaki64.probe
     label: "left CA1"
     channelOffset: 0
@@ -191,6 +204,14 @@ spikeDetection:
       nSamples: 52
       peakSampleIndex: 26
       nFeatures: 3
+      probeId: 0
+      shankIndex: 0
+      sitePositions_um: [[0, 0], [22, 0], [0, 20], [22, 20],
+                          [0, 40], [22, 40], [0, 60], [22, 60]]
+      klustakwik:
+        MergeThresh: 39.13      # χ²(12, 0.9999) for a tetrode
+        MaxClusters: 20
+        GlobalMergeIter: 50
 programs:
   - name: ndm_setupgroups
     parameters:
