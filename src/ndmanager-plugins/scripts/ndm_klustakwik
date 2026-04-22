@@ -37,48 +37,32 @@ print_header "$session - Running KlustaKwik spike sorting"
 # Check required programs
 check_commands_installed KlustaKwik
 
-# ── Three-tier parameter reader ───────────────────────────────────────────────
-# Reads a KlustaKwik parameter for a given electrode group using three tiers:
-#   1. spikeDetection.channelGroups[g].klustakwik.<param>  (per-group, highest priority)
-#   2. programs[ndm_klustakwik].parameters.<param>          (global session override)
-#   3. Caller-supplied default                               (safety net)
-#
-# Usage: read_kk_param <group> <paramName> <default>
-# Outputs the resolved value to stdout.
-read_kk_param()
-{
-	local group=$1
-	local name=$2
-	local default=$3
-
-	# Tier 1: per-group spikeDetection.channelGroups[group].klustakwik.<name>
-	local value
-	value=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$group]/klustakwik/$name")
-	if ! xml_read_failed "$value"
-	then
-		echo "$value"
-		return
-	fi
-
-	# Tier 2: global programs[ndm_klustakwik] block via read_script_parameter
-	value=$(read_script_parameter "$session" "$name")
-	if ! xml_read_failed "$value"
-	then
-		echo "$value"
-		return
-	fi
-
-	# Tier 3: built-in default
-	echo "$default"
-}
+# Three-tier KlustaKwik parameter reader (read_kk_param) is now provided by
+# ndm_functions.  Same semantics: tier 1 per-group, tier 2 programs block,
+# tier 3 caller default.  Hoisted so wrapper scripts — ndm_subcluster_unmatched
+# in particular — can reuse identical resolution order against sandbox sessions.
 
 # Run KlustaKwik for a single electrode group
 once()
 {
 	local electrodeGroup=$1
 
-	# Check input files
-	inputs_missing "$session.$param_ext" $session.fet.$electrodeGroup && return $INPUTS_MISSING
+	# Check input files.
+	#
+	# The feature file may live under either extension depending on which
+	# PCA pipeline produced it:
+	#   .fet.N   — canonical (ndm_pca, raw-ADC PCA)
+	#   .fetD.N  — stderiv pipeline (ndm_pca_stderiv or ndm_extractspikes_stderiv
+	#              followed by ndm_pca reading the already-transformed .spk).
+	# KlustaKwik itself resolves either via pickInputPath and prefers canonical
+	# when both exist.  Here we only need to confirm that at least one of the
+	# two is present, plus the parameter file.
+	inputs_missing "$session.$param_ext" && return $INPUTS_MISSING
+	if [ ! -f "$session.fet.$electrodeGroup" ] && [ ! -f "$session.fetD.$electrodeGroup" ]
+	then
+		echo_warning "input file '$session.fet.$electrodeGroup' (or .fetD variant) not found, skipping this step."
+		return $INPUTS_MISSING
+	fi
 
 	# Check output file — honour the overwrite flag (default: 0 = skip)
 	# The flag follows the same three-tier resolution as all other KK parameters:
@@ -151,6 +135,20 @@ once()
 	screen=$(read_kk_param $electrodeGroup screen 0)
 	fSaveModel=$(read_kk_param $electrodeGroup fSaveModel 1)
 	saveIntermediates=$(read_kk_param $electrodeGroup saveIntermediates 0)
+
+	# Subspace-recluster & template-match parameters.  These were
+	# referenced in the KK invocation below but never read — meaning
+	# every session up to now launched KlustaKwik with empty values
+	# (-SubspaceDims '' -SubspaceRecluster '' ... ) and relied on
+	# param.c's silent fall-through to compile-time defaults.  Read
+	# them properly so the three-tier YAML resolution actually works.
+	subspaceDims=$(read_kk_param $electrodeGroup subspaceDims 3)
+	subspaceRecluster=$(read_kk_param $electrodeGroup subspaceRecluster 1)
+	subspaceReclusterDepth=$(read_kk_param $electrodeGroup subspaceReclusterDepth 2)
+	templateMatchScore=$(read_kk_param $electrodeGroup templateMatchScore 0.0)
+	templateMatchIters=$(read_kk_param $electrodeGroup templateMatchIters 10)
+	splitRecurseDepth=$(read_kk_param $electrodeGroup splitRecurseDepth 0)
+	crossChunkTemplateScore=$(read_kk_param $electrodeGroup crossChunkTemplateScore 0.0)
 
 	# ── Thread count ────────────────────────────────────────────────────────
 	# nThreads controls OMP_NUM_THREADS for the KlustaKwik subprocess.

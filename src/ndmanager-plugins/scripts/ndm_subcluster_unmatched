@@ -347,33 +347,109 @@ with open('$sandboxStem.fet.$group','rb') as f: print(struct.unpack('<i', f.read
         return $GENERAL_ERROR
     fi
 
-    # Per-group KK parameter read (three-tier, matching ndm_klustakwik's
-    # read_kk_param but simpler because we only need a few).
-    local maxClusters maxPossibleClusters minClusters mergeThresh
-    maxClusters=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/maxClusters")
-    xml_read_failed "$maxClusters"         && maxClusters=30
-    maxPossibleClusters=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/maxPossibleClusters")
-    xml_read_failed "$maxPossibleClusters" && maxPossibleClusters=100
-    minClusters=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/minClusters")
-    xml_read_failed "$minClusters"         && minClusters=2
-    mergeThresh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/klustakwik/mergeThresh")
-    xml_read_failed "$mergeThresh"         && mergeThresh=42.0
+    # Per-group KK parameter read — full three-tier resolution via the
+    # shared read_kk_param from ndm_functions.  Defaults here mirror
+    # those in ndm_klustakwik so the sandbox benefits from the same
+    # compile-time fallback values when the YAML omits a given knob.
+    #
+    # The sandbox operates on an OUTLIER bin (typically 80-90 %% of
+    # re-extracted spikes), so the parameters most likely to unlock
+    # sub-structure in a pre-collapsed feature space matter the most:
+    #   nStarts              — multiple random inits escape local minima
+    #   ChunkMinutes         — enables time-chunked CEM on long recordings
+    #   SubspaceRecluster /
+    #     SubspaceReclusterDepth — per-cluster subspace CEM splits clusters
+    #                              that coalesced in the full 22-D space
+    #   Phase15Iters         — xcorr realignment sharpens within-cluster
+    #                          structure before the final merge
+    #   TemplateMatchScore   — within-chunk template matching merges over-
+    #                          split chunks more conservatively than χ²
+    local minClusters maxClusters maxPossibleClusters mergeThresh
+    local globalMergeIter timeMergeIter
+    local nStarts nRuns phase15Iters initMethod penaltyMix
+    local chunkMinutes chunkOverlapMinutes chunkPreseedFraction
+    local maxIter splitEvery distThresh fullStepEvery changedThresh
+    local subspaceDims subspaceRecluster subspaceReclusterDepth
+    local templateMatchScore templateMatchIters splitRecurseDepth
+    local crossChunkTemplateScore
 
-    export OMP_NUM_THREADS=$(nproc 2>/dev/null || echo 4)
+    minClusters=$(read_kk_param $group minClusters 2)
+    maxClusters=$(read_kk_param $group maxClusters 100)
+    maxPossibleClusters=$(read_kk_param $group maxPossibleClusters 500)
+    mergeThresh=$(read_kk_param $group mergeThresh 42.0)
+    globalMergeIter=$(read_kk_param $group globalMergeIter 50)
+    timeMergeIter=$(read_kk_param $group timeMergeIter 50)
+    nStarts=$(read_kk_param $group nStarts 3)
+    nRuns=$(read_kk_param $group nRuns 0)
+    phase15Iters=$(read_kk_param $group phase15Iters 2)
+    initMethod=$(read_kk_param $group initMethod farthest)
+    penaltyMix=$(read_kk_param $group penaltyMix 0)
+    chunkMinutes=$(read_kk_param $group chunkMinutes 10)
+    chunkOverlapMinutes=$(read_kk_param $group chunkOverlapMinutes 2)
+    chunkPreseedFraction=$(read_kk_param $group chunkPreseedFraction 0.05)
+    maxIter=$(read_kk_param $group maxIter 500)
+    splitEvery=$(read_kk_param $group splitEvery 25)
+    distThresh=$(read_kk_param $group distThresh 6.9)
+    fullStepEvery=$(read_kk_param $group fullStepEvery 10)
+    changedThresh=$(read_kk_param $group changedThresh 0.05)
+    subspaceDims=$(read_kk_param $group subspaceDims 3)
+    subspaceRecluster=$(read_kk_param $group subspaceRecluster 1)
+    subspaceReclusterDepth=$(read_kk_param $group subspaceReclusterDepth 2)
+    templateMatchScore=$(read_kk_param $group templateMatchScore 0.0)
+    templateMatchIters=$(read_kk_param $group templateMatchIters 10)
+    splitRecurseDepth=$(read_kk_param $group splitRecurseDepth 0)
+    crossChunkTemplateScore=$(read_kk_param $group crossChunkTemplateScore 0.0)
+
+    # Thread count: same strategy as ndm_klustakwik — 0 means "all cores".
+    local nThreads
+    nThreads=$(read_kk_param $group nThreads 0)
+    if [ "$nThreads" -le 0 ] 2>/dev/null; then
+        nThreads=$(nproc 2>/dev/null || echo 1)
+    fi
+    export OMP_NUM_THREADS=$nThreads
     export OMP_WAIT_POLICY=passive
 
     print_header "  group $group - KlustaKwik on $nUnmatched unmatched spikes"
 
+    # Invocation mirrors ndm_klustakwik line-for-line, except:
+    #   -UseFeatures all              — always use every sandbox feature
+    #   -fSaveModel 0                 — no .model.N (sandbox is throw-away)
+    #   -SaveIntermediates 0          — no intermediate .clu.N.M files
+    # Everything else — nStarts, SubspaceRecluster*, TemplateMatch*, ChunkMinutes,
+    # Phase15Iters, etc. — is passed through so the sub-run gets the same
+    # clustering muscle as the main sort.
     KlustaKwik "$sandboxStem" "$group" \
-        -MinClusters         $minClusters         \
-        -MaxClusters         $maxClusters         \
-        -MaxPossibleClusters $maxPossibleClusters \
-        -UseFeatures         all                  \
-        -MergeThresh         $mergeThresh         \
-        -Log                 1                    \
-        -Screen              0                    \
-        -fSaveModel          0                    \
-        -SaveIntermediates   0
+        -MinClusters             $minClusters             \
+        -MaxClusters             $maxClusters             \
+        -MaxPossibleClusters     $maxPossibleClusters     \
+        -UseFeatures             all                      \
+        -nStarts                 $nStarts                 \
+        -PenaltyMix              $penaltyMix              \
+        -InitMethod              $initMethod              \
+        -ChunkMinutes            $chunkMinutes            \
+        -ChunkOverlapMinutes     $chunkOverlapMinutes     \
+        -ChunkPreseedFraction    $chunkPreseedFraction    \
+        -MergeThresh             $mergeThresh             \
+        -GlobalMergeIter         $globalMergeIter         \
+        -TimeMergeIter           $timeMergeIter           \
+        -MaxIter                 $maxIter                 \
+        -SplitEvery              $splitEvery              \
+        -DistThresh              $distThresh              \
+        -FullStepEvery           $fullStepEvery           \
+        -ChangedThresh           $changedThresh           \
+        -nRuns                   $nRuns                   \
+        -Phase15Iters            $phase15Iters            \
+        -SubspaceDims            $subspaceDims            \
+        -SubspaceRecluster       $subspaceRecluster       \
+        -SubspaceReclusterDepth  $subspaceReclusterDepth  \
+        -TemplateMatchScore      $templateMatchScore      \
+        -TemplateMatchIters      $templateMatchIters      \
+        -SplitRecurseDepth       $splitRecurseDepth       \
+        -CrossChunkTemplateScore $crossChunkTemplateScore \
+        -Log                     1                        \
+        -Screen                  0                        \
+        -fSaveModel              0                        \
+        -SaveIntermediates       0
     local kk_status=$?
 
     unset OMP_NUM_THREADS OMP_WAIT_POLICY

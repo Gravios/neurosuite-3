@@ -1829,8 +1829,14 @@ void KK::RealignChunkWaveforms(
         return;
     }
 
+    // Prefer canonical .spk.N; fall back to .spkD.N for stderiv sessions.
+    // pickInputPath probes with "rb"; the actual open below uses "r+b" for
+    // in-place rewrite.  If the file exists but is read-only, the r+b open
+    // will fail and fall through to the graceful "skipping" path below.
     char spkFname[STRLEN + 16];
-    snprintf(spkFname, sizeof(spkFname), "%s.spk.%d", FileBase, ElecNo);
+    const int _spkVarRCW = pickInputPath(spkFname, sizeof(spkFname),
+                                         FileBase, "spk", ElecNo);
+    (void)_spkVarRCW;
     FILE* fp = fopen(spkFname, "r+b");
     if (!fp) {
         Output("RealignChunkWaveforms: cannot open %s for in-place rewrite — skipping\n",
@@ -2046,8 +2052,9 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
     if (spikeShifts.empty() || nChan <= 0 || nSamplesPerSpike <= 0) return;
 
     // ── Load PCA model ────────────────────────────────────────────────────
+    // Prefer canonical .pca.N; fall back to .pcaD.N (stderiv pipeline).
     char pcaPath[STRLEN + 16];
-    snprintf(pcaPath, sizeof(pcaPath), "%s.pca.%d", FileBase, ElecNo);
+    pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
     FILE* pf = fopen(pcaPath, "rb");
     if (!pf) {
         Output("RefeaturizeFromShifts: %s not found — skipping re-projection\n",
@@ -2139,7 +2146,9 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
 
     char filPath[STRLEN + 8], spkPath[STRLEN + 16];
     snprintf(filPath, sizeof(filPath), "%s.fil",     FileBase);
-    snprintf(spkPath, sizeof(spkPath), "%s.spk.%d", FileBase, ElecNo);
+    // Prefer canonical .spk.N; fall back to .spkD.N.  The .spk circular-shift
+    // fallback (used when .fil is unavailable) still uses this handle.
+    pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
 
     FILE* filFp = canUseFil ? fopen(filPath, "rb") : nullptr;
     FILE* spkFp = nullptr;
@@ -2661,7 +2670,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int wElems = NbChannels * NbSamplesPerSpike;
         char spkPathTM[STRLEN + 16];
-        snprintf(spkPathTM, sizeof(spkPathTM), "%s.spk.%d", FileBase, ElecNo);
+        // Prefer canonical .spk.N; fall back to .spkD.N (stderiv).
+        pickInputPath(spkPathTM, sizeof(spkPathTM), FileBase, "spk", ElecNo);
         FILE* spkTM = fopen(spkPathTM, "rb");
         if (spkTM) {
             for (int k = 0; k < nActive; k++) {
@@ -2736,7 +2746,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 NbChannels > 0 && NbSamplesPerSpike > 0) {
                 const int wElems = NbChannels * NbSamplesPerSpike;
                 char spkPathTM2[STRLEN + 16];
-                snprintf(spkPathTM2, sizeof(spkPathTM2), "%s.spk.%d", FileBase, ElecNo);
+                // Prefer canonical .spk.N; fall back to .spkD.N (stderiv).
+                pickInputPath(spkPathTM2, sizeof(spkPathTM2), FileBase, "spk", ElecNo);
                 FILE* spkTM2 = fopen(spkPathTM2, "rb");
                 if (spkTM2) {
                     for (int k = 0; k < nActive; k++) {
@@ -3316,7 +3327,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
         NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int wElems = NbChannels * NbSamplesPerSpike;
         char spkPathTM[STRLEN + 16];
-        snprintf(spkPathTM, sizeof(spkPathTM), "%s.spk.%d", FileBase, ElecNo);
+        // Prefer canonical .spk.N; fall back to .spkD.N (stderiv).
+        pickInputPath(spkPathTM, sizeof(spkPathTM), FileBase, "spk", ElecNo);
         FILE* spkTM = fopen(spkPathTM, "rb");
         if (spkTM) {
             for (int k = 0; k < nActive; k++) {
@@ -3433,7 +3445,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 NbChannels > 0 && NbSamplesPerSpike > 0) {
                 const int wElems = NbChannels * NbSamplesPerSpike;
                 char spkPathTM2[STRLEN + 16];
-                snprintf(spkPathTM2, sizeof(spkPathTM2), "%s.spk.%d", FileBase, ElecNo);
+                // Prefer canonical .spk.N; fall back to .spkD.N (stderiv).
+                pickInputPath(spkPathTM2, sizeof(spkPathTM2), FileBase, "spk", ElecNo);
                 FILE* spkTM2 = fopen(spkPathTM2, "rb");
                 if (spkTM2) {
                     for (int k = 0; k < nActive; k++) {
@@ -3716,10 +3729,14 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 
     char spkOrig[STRLEN+16], fetOrig[STRLEN+16];
     char spkTmp [STRLEN+32], fetTmp [STRLEN+32];
-    snprintf(spkOrig, sizeof(spkOrig), "%s.spk.%d",         FileBase, ElecNo);
-    snprintf(fetOrig, sizeof(fetOrig), "%s.fet.%d",         FileBase, ElecNo);
-    snprintf(spkTmp,  sizeof(spkTmp),  "%s.spk.%d.pending", FileBase, ElecNo);
-    snprintf(fetTmp,  sizeof(fetTmp),  "%s.fet.%d.pending", FileBase, ElecNo);
+    // Pick the variant (canonical .spk.N/.fet.N or stderiv .spkD.N/.fetD.N)
+    // that actually exists on disk, then derive the .pending names from the
+    // picked paths.  On success we rename .pending → original, which must
+    // therefore preserve the variant of the file we read.
+    pickInputPath(spkOrig, sizeof(spkOrig), FileBase, "spk", ElecNo);
+    pickInputPath(fetOrig, sizeof(fetOrig), FileBase, "fet", ElecNo);
+    snprintf(spkTmp,  sizeof(spkTmp),  "%s.pending", spkOrig);
+    snprintf(fetTmp,  sizeof(fetTmp),  "%s.pending", fetOrig);
 
     const float sessionSamples = timeRawMax - timeRawMin;
     const int   timeDimIdx     = nDims - 1;

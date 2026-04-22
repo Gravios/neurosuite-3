@@ -2574,11 +2574,29 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const QString resPath = pendingOrOrig(m_origResPath, m_pendingResPath);
     const QString fetPath = pendingOrOrig(m_origFetPath, m_pendingFetPath);
     const QString cluPath = dir + "/" + base + ".clu." + grpId;
-    // Use pcaD.N for stderiv sessions (m_origSpkPath contains .spkD.),
-    // pca.N for raw sessions.
-    const bool isStderivRealign = m_origSpkPath.contains(QStringLiteral(".spkD."));
+    // Pipeline detection — decouple .spk storage format from .fet feature
+    // space.  These are orthogonal signals in Pipeline C (raw .spk + stderiv
+    // .fetD/.pcaD) and only coincide in Pipeline A (both raw) and Pipeline D
+    // (both stderiv).  Conflating them corrupts .fetD under Pipeline C by
+    // selecting the raw-space .pca basis and skipping the stderiv transform
+    // during feature reprojection.
+    //
+    //   spkIsTransformed — .spk stores stderiv waveforms (Pipeline D).
+    //                      When writing back, apply applyStderivTransform
+    //                      to the raw extraction so .spk stays in stderiv
+    //                      space.  For raw .spk (Pipeline A, C) write the
+    //                      untransformed waveform.
+    //   fetIsStderiv    — .fet features are in stderiv space, built on the
+    //                      .pcaD basis.  Select .pcaD.N, and apply the
+    //                      stderiv transform to the raw waveform before
+    //                      projecting onto eigenvectors.
+    const bool spkIsTransformed = m_origSpkPath.contains(QStringLiteral(".spkD."));
+    const bool fetIsStderiv     = m_origFetPath.contains(QStringLiteral(".fetD."));
+    // Kept as alias for existing legacy-named uses in this function that
+    // really want the feature-space flag, not the .spk storage flag.
+    const bool isStderivRealign = fetIsStderiv;
     const QString pcaDPath_ra = dir + "/" + base + ".pcaD." + grpId;
-    const QString pcaPath = (isStderivRealign && QFileInfo::exists(pcaDPath_ra))
+    const QString pcaPath = (fetIsStderiv && QFileInfo::exists(pcaDPath_ra))
                             ? pcaDPath_ra
                             : dir + "/" + base + ".pca." + grpId;
 
@@ -3205,7 +3223,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                 rawCM[static_cast<size_t>(ci * nSamp + s)] =
                                     rawFrame[static_cast<size_t>(
                                         s * totalNbChan + groupChannels[ci])];
-                        if (isStderivRealign) {
+                        // .spk write path: transform only when the .spk file
+                        // actually stores stderiv waveforms (Pipeline D).  The
+                        // wavBuf `w` parallel update must match the .spk format,
+                        // so xcorr against the on-disk template stays consistent.
+                        if (spkIsTransformed) {
                             // Apply stderiv transform: spatial all-pairs derivative
                             // then temporal first-difference.  Output updates both
                             // spkRow (sample-major, for .spkD write) and w (channel-
@@ -3473,20 +3495,40 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         return b;
     }();
 
-    // Determine stderiv session from m_origSpkPath — locked at document open.
-    // Do NOT re-detect from .pcaD.N existence: if the document was opened with
-    // .spk.N (raw) but ndm_pca_stderiv ran later and created .pcaD.N, using
-    // .pcaD.N as the flag would apply the stderiv transform to waveforms from
-    // .spk.N (already raw), producing double-transformed waveforms.  The
-    // document's pipeline identity is definitively encoded in whether
-    // m_origSpkPath contains ".spkD." or ".spk.".
-    const bool isStderivSession = m_origSpkPath.contains(QStringLiteral(".spkD."));
+    // Pipeline detection — two independent signals.  Decoupling them fixes
+    // Pipeline C (raw .spk + stderiv .fetD/.pcaD) which was previously
+    // misclassified as a raw session because only the .spk variant was
+    // checked: PCA basis selection would fall back to .pca.N and feature
+    // reprojection would skip the stderiv transform, silently corrupting
+    // .fetD rows written by nudge.
+    //
+    //   spkIsTransformed — .spk stores stderiv waveforms (Pipeline D).
+    //                      Apply applyStderivTransform when writing the
+    //                      re-extracted raw waveform back to .spk; for
+    //                      raw .spk (Pipeline A, C) write it unchanged.
+    //                      Do NOT infer this from .pcaD existence — if
+    //                      the session was opened with raw .spk.N and
+    //                      ndm_pca_stderiv ran later producing .pcaD.N,
+    //                      applying the transform to already-raw waveforms
+    //                      would double-transform them.
+    //   fetIsStderiv    — .fet features are stderiv-space, built on the
+    //                      .pcaD basis.  Select .pcaD.N and apply the
+    //                      stderiv transform before projecting the raw
+    //                      waveform onto the eigenvectors.
+    const bool spkIsTransformed = m_origSpkPath.contains(QStringLiteral(".spkD."));
+    const bool fetIsStderiv     = m_origFetPath.contains(QStringLiteral(".fetD."));
+    // Legacy name retained for any downstream use that really means the
+    // feature-space flag; nothing in nudge uses this directly after the
+    // refactor below, but keep it for grep compatibility during review.
+    const bool isStderivSession = fetIsStderiv;
+    (void)isStderivSession;
 
-    // Prefer .pcaD.N for stderiv sessions (written by ndm_pca_stderiv), fall
-    // back to .pca.N for raw sessions.
+    // PCA basis selection is driven by the FEATURE space: .pcaD.N stores
+    // eigenvectors computed on the (nChan-1) stderiv-space channels, so it
+    // must pair with .fetD.N regardless of whether .spk is raw or stderiv.
     const QString pcaDPath = sessionBase + QStringLiteral(".pcaD.") + electrodeGroupID;
     const QString pcaPath  = sessionBase + QStringLiteral(".pca.")  + electrodeGroupID;
-    const QString chosenPca = (isStderivSession && QFileInfo::exists(pcaDPath))
+    const QString chosenPca = (fetIsStderiv && QFileInfo::exists(pcaDPath))
                                ? pcaDPath : pcaPath;
 
     if (QFileInfo::exists(chosenPca)) {
@@ -3519,8 +3561,18 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         }
     }
 
-    // isStderivSession is set above: true iff .pcaD.N exists.
-    const bool isStderiv = isStderivSession && pca.valid();
+    // Feature-reprojection path: requires a valid .pcaD basis AND a .fetD
+    // feature file.  The PCA basis is only meaningful if we know whether it
+    // was computed in stderiv space — fetIsStderiv encodes exactly that.
+    const bool isStderivFet = fetIsStderiv && pca.valid();
+    // .spk write path: transform only if the file on disk is actually in
+    // stderiv space (Pipeline D).  Independent of whether .fet is stderiv.
+    const bool isStderivSpk = spkIsTransformed;
+    // Alias kept for comments / logs / future code that references
+    // "isStderiv".  Do not use it inside the transform branches below —
+    // use the specific flag that matches the branch's output target.
+    const bool isStderiv = isStderivFet || isStderivSpk;
+    (void)isStderiv;
 
     // ── Open .fil/.dat for waveform re-extraction ─────────────────────────
     // sessionBase is already the bare session path (no .spk/.spkD/.N suffix).
@@ -3634,7 +3686,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // projected using channel-major indexing into the .pca.N eigenvectors.
         // We build a compact derivative buffer in sample-major layout.
         std::vector<double> xform;  // [s * pca.nCh + ch] after derivative
-        if (isStderiv) {
+        if (isStderivFet) {
             // Apply the exact same transform as ndm_extractspikes_stderiv
             // (integer arithmetic, all nChan channels).
             // Then use first pca.nCh = nChan-1 channels for projection
@@ -3657,7 +3709,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 double dot = 0.0;
                 for (int j2 = 0; j2 < pca.data2use; ++j2) {
                     double x;
-                    if (isStderiv) {
+                    if (isStderivFet) {
                         x = xform[static_cast<size_t>(
                             (pca.recShift + j2) * pca.nCh + ch)];
                     } else {
@@ -3719,11 +3771,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         std::vector<int16_t> wav;
         const bool gotWav = extractWaveform(ts64, wav);
 
-        // Write .spk at new position
+        // Write .spk at new position.  Use spkIsTransformed (via isStderivSpk),
+        // not the feature-space flag: .spk format is independent of .fet format.
         if (gotWav) {
             fseeko(spkW, static_cast<off_t>(pos0) * static_cast<off_t>(bytesPerSpike),
                    SEEK_SET);
-            if (isStderiv) {
+            if (isStderivSpk) {
                 // stderiv pipeline: .spk stores transformed waveform
                 // (all nChan channels, sample-major, matching ndm_extractspikes_stderiv)
                 std::vector<int16_t> spkRow;
