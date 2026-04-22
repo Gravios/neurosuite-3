@@ -106,6 +106,9 @@ reextractMaskHalfWidth=$(read_script_parameter   $session reextractMaskHalfWidth
 reextractMinClusterSize=$(read_script_parameter  $session reextractMinClusterSize)
 reextractChi2=$(read_script_parameter            $session reextractChi2)
 reextractExtraFeat=$(read_script_parameter       $session reextractExtraFeat)
+reextractInflationRatio=$(read_script_parameter  $session reextractInflationRatio)
+reextractInflationCap=$(read_script_parameter    $session reextractInflationCap)
+reextractAutoSubcluster=$(read_script_parameter  $session reextractAutoSubcluster)
 
 check_mandatory_variable $thresholdFactor  "missing thresholdFactor"
 check_mandatory_variable $refractoryPeriod "missing refractoryPeriod"
@@ -119,8 +122,23 @@ reextractThresholdFactor=${reextractThresholdFactor:-$(unset LANG && echo "$thre
 # reextractMaskHalfWidth default is per-group (= that group's nSamples),
 # resolved in the group loop below.  An explicit YAML value overrides.
 reextractMinClusterSize=${reextractMinClusterSize:-50}
-reextractChi2=${reextractChi2:-0.9999}
+# NB: default lowered from 0.9999 (d²=54.234 on df=21) to 0.999 (d²≈46.80).
+# The tighter gate combined with the inflation guard below is what finally
+# prevents runaway absorption into a single over-dispersed parent cluster.
+reextractChi2=${reextractChi2:-0.999}
 reextractExtraFeat=${reextractExtraFeat:-auto}
+# Inflation guard defaults (process_shadowcluster v1.1+).  A parent may
+# absorb at most max(inflationCap, inflationRatio × |parent|) new spikes;
+# excess spikes (the most distant by Mahalanobis d²) are demoted to the
+# unmatched bin so ndm_subcluster_unmatched can re-cluster them.  Set
+# ratio OR cap to 0 to disable the guard entirely.
+reextractInflationRatio=${reextractInflationRatio:-5.0}
+reextractInflationCap=${reextractInflationCap:-500}
+# Auto-invocation: when 1, ndm_subcluster_unmatched is run automatically
+# at the end of the re-extraction so the unmatched bin (now larger, due
+# to the guard) receives immediate clustering.  Default 0 preserves the
+# manual two-step workflow.
+reextractAutoSubcluster=${reextractAutoSubcluster:-0}
 
 echo_info "Re-extraction parameters (stderiv):"
 echo_info "  reextractThresholdFactor = $reextractThresholdFactor"
@@ -132,6 +150,9 @@ fi
 echo_info "  reextractMinClusterSize  = $reextractMinClusterSize spikes"
 echo_info "  reextractChi2            = $reextractChi2"
 echo_info "  reextractExtraFeat       = $reextractExtraFeat"
+echo_info "  reextractInflationRatio  = $reextractInflationRatio"
+echo_info "  reextractInflationCap    = $reextractInflationCap"
+echo_info "  reextractAutoSubcluster  = $reextractAutoSubcluster"
 echo_info "  sdiffOrder               = $sdiffOrder"
 
 electrodeList=""
@@ -430,6 +451,8 @@ for group in $(seq 1 $nElectrodeGroups); do
         --minClusterSize "$reextractMinClusterSize" \
         --chi2  "$reextractChi2" \
         --extraFeat "$reextractExtraFeat" \
+        --inflationRatio "$reextractInflationRatio" \
+        --inflationCap   "$reextractInflationCap" \
         -v
     sc_status=$?
 
@@ -485,4 +508,34 @@ echo_info ""
 echo_info "Done — $committedCount/$activeCount eligible group(s) had new spikes merged in-place"
 echo_info "       ($noSpikesCount had no new spikes, $skippedCount pre-filtered in pre-scan)"
 echo_info "Originals preserved at $session.<ext>.<N>.bak (for merged groups only)"
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Optional auto-subcluster pass
+# //
+# //  When reextractAutoSubcluster=1, invoke ndm_subcluster_unmatched on
+# //  the merged session immediately so the unmatched bin (now larger,
+# //  due to the inflation guard) receives clustering rather than sitting
+# //  as one amorphous pile.  Uses its own KK parameter section
+# //  (programs[ndm_subcluster_unmatched].parameters.*) via the caller-
+# //  block tier in read_kk_param, so users can tune the outlier-bin KK
+# //  independently of the main sort.  Runs only if at least one group
+# //  was actually committed — nothing to sub-cluster otherwise.
+# ////////////////////////////////////////////////////////////////////////////
+
+if [ "$reextractAutoSubcluster" = "1" ] && [ "$committedCount" -gt 0 ]; then
+    echo_info ""
+    echo_info "reextractAutoSubcluster=1 — invoking ndm_subcluster_unmatched"
+    if command -v ndm_subcluster_unmatched >/dev/null 2>&1; then
+        ndm_subcluster_unmatched "$session"
+        sub_status=$?
+        if [ $sub_status -ne 0 ]; then
+            echo_warning "ndm_subcluster_unmatched exited with status $sub_status;"
+            echo_warning "merged session is intact but unmatched bin was not re-clustered."
+        fi
+    else
+        echo_warning "reextractAutoSubcluster=1 but ndm_subcluster_unmatched not in PATH;"
+        echo_warning "run it manually to cluster the unmatched bin."
+    fi
+fi
+
 echo_info "Inspect in Klusters:  klusters $session.$param_ext"

@@ -20,12 +20,27 @@
    </parameter>
    <parameter>
     <n>reextractChi2</n>
-    <value>0.9999</value>
+    <value>0.999</value>
     <status>Optional</status>
    </parameter>
    <parameter>
     <n>reextractExtraFeat</n>
     <value>auto</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractInflationRatio</n>
+    <value>5.0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractInflationCap</n>
+    <value>500</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractAutoSubcluster</n>
+    <value>0</value>
     <status>Optional</status>
    </parameter>
   </parameters>
@@ -36,8 +51,9 @@ the detected spikes in-place.
 
 Detection thresholds are computed internally from the stderiv signal
 over the start..start+duration window using the Quiroga (2004) robust
-formula.  Waveform extraction writes RAW ADC amplitudes so downstream
-feature projection matches the main pipeline's .spk.N.
+formula.  Waveform extraction writes stderiv-transformed amplitudes so
+downstream PCA / feature projection sees the same signal space as
+ndm_extractspikes_stderiv's .spkD.N output.
 
 Most parameters are inherited from ndm_extractspikes_stderiv:
    thresholdFactor, refractoryPeriod, peakSearchLength, start, duration,
@@ -45,16 +61,18 @@ Most parameters are inherited from ndm_extractspikes_stderiv:
 
 The shadow-clustering stage is shared with ndm_reextractspikes — see
 that program's help for a description of reextractMinClusterSize,
-reextractChi2, and reextractExtraFeat.
+reextractChi2, reextractExtraFeat, reextractInflationRatio,
+reextractInflationCap, and reextractAutoSubcluster.
 
 OUTPUT
 
   Merges in-place into $session.{res,spk,fet,clu}.N.  Originals
-  preserved at $session.<ext>.<N>.bak on first run.
+  preserved at $session.&lt;ext&gt;.&lt;N&gt;.bak on first run.
 
 SEE ALSO
 
   ndm_reextractspikes             — raw-signal variant
-  ndm_extractspikes_stderiv       — first-pass stderiv detector</help>
+  ndm_extractspikes_stderiv       — first-pass stderiv detector
+  ndm_subcluster_unmatched        — re-cluster the unmatched bin</help>
  </program>
 </parameter>

@@ -101,6 +101,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _OPENMP
@@ -110,10 +111,11 @@
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::pair;
 using std::string;
 using std::vector;
 
-static const char *programVersion = "process_shadowcluster 1.0 (2026-04)";
+static const char *programVersion = "process_shadowcluster 1.1 (2026-04 infl-guard)";
 
 // =========================================================================
 // Wilson-Hilferty χ² inverse CDF
@@ -352,11 +354,19 @@ static void usage(const char *n)
          << " --ref <refBase> --new <newBase> --grp <N>"
             " --nChan <chInGroup> --wav <samples>"
             " [--out <outBase>]"
-            " [--minClusterSize 50] [--chi2 0.9999] [--extraFeat auto|0|1]"
+            " [--minClusterSize 50] [--chi2 0.999] [--extraFeat auto|0|1]"
+            " [--inflationRatio 5.0] [--inflationCap 500]"
             " [-v]" << endl;
     cerr << "  --out defaults to --ref (in-place merge).  The output"
             " files are written to temporary .tmp paths first and renamed"
             " atomically on success." << endl;
+    cerr << "  --inflationRatio R (default 5.0): a parent cluster may not"
+            " absorb more than R × |parent| new spikes; excess spikes"
+            " (the most distant by Mahalanobis d²) are demoted to the"
+            " unmatched bin.  --inflationCap C (default 500) is the"
+            " absolute minimum ceiling: a parent always gets to absorb"
+            " at least max(C, R × |parent|).  Set ratio or cap to 0 to"
+            " disable the guard." << endl;
 }
 
 int main(int argc, char **argv)
@@ -366,8 +376,17 @@ int main(int argc, char **argv)
     int    nChanGroup     = -1;
     int    wavSamples     = -1;
     int64_t minClusterSize= 50;
-    double chi2P          = 0.9999;
+    // χ² gate default: 0.999 (d²≈46.80 for df=21).  0.9999 (used in 1.0)
+    // was too permissive on heavy-tailed reference clusters and produced
+    // runaway absorption into a single parent in practice — see the
+    // inflation guard below for the hard backstop, and CHANGES.md.
+    double chi2P          = 0.999;
     int    extraFeatMode  = -1;  // -1 auto, 0 no, 1 yes
+    // Inflation guard: a parent may absorb at most max(inflationCap,
+    // inflationRatio × |parent|) new spikes.  Set either to 0 (or
+    // non-positive) to disable the guard entirely.
+    double inflationRatio = 5.0;
+    int64_t inflationCap  = 500;
     bool   verbose        = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -383,6 +402,10 @@ int main(int argc, char **argv)
         else if (a == "--minClusterSize" && i+1<argc)
                                               minClusterSize = std::atoll(argv[++i]);
         else if (a == "--chi2"  && i+1<argc) chi2P          = std::atof(argv[++i]);
+        else if (a == "--inflationRatio" && i+1<argc)
+                                              inflationRatio = std::atof(argv[++i]);
+        else if (a == "--inflationCap"   && i+1<argc)
+                                              inflationCap   = std::atoll(argv[++i]);
         else if (a == "--extraFeat" && i+1<argc) {
             const string v = argv[++i];
             if (v == "auto") extraFeatMode = -1;
@@ -541,7 +564,12 @@ int main(int argc, char **argv)
              << "extraFeat        : " << (extraFeat ? "yes" : "no") << endl
              << "chi2 quantile    : " << chi2P
              << "  threshold(d²)=" << chi2InvCDF(nFeatDim, chi2P) << endl
-             << "minClusterSize   : " << minClusterSize << endl;
+             << "minClusterSize   : " << minClusterSize << endl
+             << "inflation guard  : "
+             << ((inflationRatio > 0.0 && inflationCap > 0)
+                 ? ("ratio=" + std::to_string(inflationRatio) +
+                    ", cap=" + std::to_string(inflationCap))
+                 : std::string("disabled")) << endl;
     }
 
     // ── compute per-cluster robust stats ─────────────────────────────────
@@ -621,14 +649,36 @@ int main(int argc, char **argv)
     //
     // Shadow cluster id offset: just past the highest existing id.
     // Unmatched bin gets (offset + maxCluId + 1).
+    //
+    // Two-pass design (v1.1):
+    //   Pass 1 (parallel, expensive): for every new spike compute
+    //     bestK and bestD2; record in tentativeBestK / tentativeBestD2.
+    //     Also emit the .fet row that will ultimately be written.
+    //   Pass 2 (serial, cheap):  apply the inflation guard — for every
+    //     parent whose provisional acceptance count exceeds the cap, sort
+    //     the candidate spikes by d² ascending and demote the tail to the
+    //     unmatched bin.  This is essential to keep the parent's shadow
+    //     cluster interpretable: a parent with 1868 reference spikes
+    //     absorbing 108 000 new spikes is diagnostically useless.
+    //
+    // The guard activates iff inflationRatio > 0 AND inflationCap > 0.
+    // Otherwise v1.0 behaviour is preserved exactly (no demotion).
     const int32_t shadowOffset   = maxCluId + 1;
     const int32_t unmatchedShadow= shadowOffset + maxCluId + 1;
     const double  d2Threshold    = chi2InvCDF(nFeatDim, chi2P);
+    const bool    guardEnabled   = (inflationRatio > 0.0 && inflationCap > 0);
 
     vector<int32_t>         newCluIds(nNewSpikes, unmatchedShadow);
     vector<vector<int64_t>> newFetRows(nNewSpikes);
     vector<int64_t>         nAssignedPerParent((size_t)maxCluId + 1, 0);
+    vector<int64_t>         nDemotedPerParent((size_t)maxCluId + 1, 0);
     int64_t                 nUnmatched = 0;
+
+    // Per-spike tentative assignment (used by the guard pass).  bestK=-1
+    // means "no eligible parent within threshold" — spike is already
+    // destined for the unmatched bin and is not part of any demotion list.
+    vector<int32_t> tentativeBestK(nNewSpikes, -1);
+    vector<double>  tentativeBestD2(nNewSpikes, std::numeric_limits<double>::infinity());
 
 #ifdef _OPENMP
     #pragma omp parallel
@@ -676,9 +726,13 @@ int main(int argc, char **argv)
             if (bestK >= 0 && bestD2 < d2Threshold) {
                 cluOut = shadowOffset + bestK;
                 ++localAssigned[(size_t)bestK];
+                tentativeBestK[(size_t)i]  = bestK;
+                tentativeBestD2[(size_t)i] = bestD2;
             } else {
                 cluOut = unmatchedShadow;
                 ++localUnmatched;
+                // tentativeBestK stays -1: this spike is already unmatched
+                // and is not subject to the inflation guard.
             }
             newCluIds[(size_t)i] = cluOut;
 
@@ -696,6 +750,66 @@ int main(int argc, char **argv)
             for (size_t k = 0; k < localAssigned.size(); ++k)
                 nAssignedPerParent[k] += localAssigned[k];
             nUnmatched += localUnmatched;
+        }
+    }
+
+    // ── inflation guard (serial) ─────────────────────────────────────────
+    //
+    // For each parent k with eligible cluster size |parent_k|, the cap is
+    //     cap_k = max(inflationCap, inflationRatio × |parent_k|)
+    // If nAssignedPerParent[k] > cap_k we demote the (assigned - cap_k)
+    // spikes with the LARGEST d² back to the unmatched bin.  The
+    // well-fitting spikes (small d²) stay in the shadow.
+    //
+    // Total cost: O(nAssignedPerParent[k] log nAssignedPerParent[k])
+    // per over-absorbing parent, which is small relative to the main
+    // assignment loop (nFeatDim × nEligible distance evaluations per
+    // spike dominates).  Typically only 1-3 parents trip the cap in a
+    // session, so the practical cost is negligible.
+    if (guardEnabled && nNewSpikes > 0) {
+        // Build per-parent candidate lists: (spikeIdx, d²).  Only parents
+        // whose current count exceeds the cap need a list — skip the rest
+        // to save allocation churn.
+        vector<int64_t> capPerParent((size_t)maxCluId + 1, 0);
+        for (const auto &s : stats) {
+            if (!s.eligible) continue;
+            const double  ratioCap = inflationRatio * (double)s.size;
+            const int64_t cap      = (int64_t)std::max((double)inflationCap,
+                                                        std::ceil(ratioCap));
+            capPerParent[(size_t)s.id] = cap;
+        }
+
+        // Collect candidate spikes per over-capped parent.
+        vector<vector<pair<double, size_t>>> candByParent((size_t)maxCluId + 1);
+        for (int k = 0; k <= maxCluId; ++k) {
+            if (nAssignedPerParent[(size_t)k] > capPerParent[(size_t)k])
+                candByParent[(size_t)k].reserve(
+                    (size_t)nAssignedPerParent[(size_t)k]);
+        }
+        for (size_t i = 0; i < nNewSpikes; ++i) {
+            const int32_t k = tentativeBestK[i];
+            if (k < 0) continue;  // unmatched spike, skip
+            if (nAssignedPerParent[(size_t)k] <= capPerParent[(size_t)k])
+                continue;         // parent within cap — no demotion needed
+            candByParent[(size_t)k].emplace_back(tentativeBestD2[i], i);
+        }
+
+        // For each over-capped parent, sort by d² ascending and demote
+        // the tail past the cap.
+        for (int k = 0; k <= maxCluId; ++k) {
+            auto &cand = candByParent[(size_t)k];
+            if (cand.empty()) continue;
+            const int64_t cap = capPerParent[(size_t)k];
+            std::sort(cand.begin(), cand.end(),
+                      [](const pair<double,size_t> &a,
+                         const pair<double,size_t> &b){ return a.first < b.first; });
+            for (size_t j = (size_t)cap; j < cand.size(); ++j) {
+                const size_t spkIdx = cand[j].second;
+                newCluIds[spkIdx]   = unmatchedShadow;
+                ++nDemotedPerParent[(size_t)k];
+                --nAssignedPerParent[(size_t)k];
+                ++nUnmatched;
+            }
         }
     }
 
@@ -802,6 +916,10 @@ int main(int argc, char **argv)
     atomicRename(outSpkTmp, outSpk);
 
     // ── report ──────────────────────────────────────────────────────────
+    int64_t totalDemoted = 0;
+    for (size_t k = 0; k < nDemotedPerParent.size(); ++k)
+        totalDemoted += nDemotedPerParent[k];
+
     cout << "process_shadowcluster: group " << grp
          << (inPlace ? "  [in-place merge]" : "  [--out stem differs from --ref]")
          << endl
@@ -810,17 +928,32 @@ int main(int argc, char **argv)
          << "  eligible parents     : " << nEligible << endl
          << "  chi2 threshold (d²)  : " << d2Threshold
          << " (q=" << chi2P << ", df=" << nFeatDim << ")" << endl
+         << "  inflation guard      : "
+         << (guardEnabled
+             ? ("ratio=" + std::to_string(inflationRatio) +
+                ", cap=" + std::to_string(inflationCap))
+             : std::string("disabled")) << endl
          << "  shadow offset        : " << shadowOffset << endl
          << "  unmatched bin clu id : " << unmatchedShadow << endl;
     for (const auto &s : stats) {
         if (!s.eligible) continue;
         const int64_t nAssigned = nAssignedPerParent[(size_t)s.id];
-        if (nAssigned > 0)
+        const int64_t nDemoted  = nDemotedPerParent[(size_t)s.id];
+        if (nAssigned > 0 || nDemoted > 0) {
             cout << "    clu " << s.id
                  << "  (size=" << s.size << ")"
                  << "  shadow=" << (shadowOffset + s.id)
-                 << "  +" << nAssigned << " new" << endl;
+                 << "  +" << nAssigned << " new";
+            if (nDemoted > 0)
+                cout << "  (demoted " << nDemoted
+                     << " to unmatched; cap="
+                     << (int64_t)std::max((double)inflationCap,
+                                          std::ceil(inflationRatio * (double)s.size))
+                     << ")";
+            cout << endl;
+        }
     }
+    cout << "  total demoted        : " << totalDemoted << endl;
     cout << "  unmatched            : " << nUnmatched << endl;
     cout << "  combined nClusters   : " << combinedNClusters << endl;
 

@@ -453,26 +453,32 @@ check_empty_variables()
 }
 
 #////////////////////////////////////////////////////////////////////////////
-#//  KlustaKwik three-tier parameter reader (shared)
+#//  KlustaKwik three- or four-tier parameter reader (shared)
 #//
 #//  Resolves a KlustaKwik parameter for a given electrode group using
-#//  three tiers, in order of decreasing priority:
+#//  three (or four, when a caller block is specified) tiers, in order of
+#//  decreasing priority:
 #//
-#//    1. spikeDetection.channelGroups[g].klustakwik.<name>
+#//    1. spikeDetection.channelGroups[g].klustakwik.<n>
 #//       Per-group probe-calibrated value (highest priority).
-#//    2. programs[ndm_klustakwik].parameters.<name>
-#//       Global session override.  Always reads from the ndm_klustakwik
-#//       program block regardless of which script calls read_kk_param —
-#//       this lets ndm_subcluster_unmatched and other wrappers inherit
-#//       the user's KK configuration without duplicating it.
-#//    3. Caller-supplied default (safety net).
+#//    2. programs[<caller_block>].parameters.<n>
+#//       ONLY consulted when -b <caller_block> is passed AND caller_block
+#//       differs from "ndm_klustakwik".  Lets wrapper scripts (e.g.
+#//       ndm_subcluster_unmatched) override KK defaults for their own
+#//       run without touching the main-sort block — or without
+#//       duplicating every knob when only a handful differ.
+#//    3. programs[ndm_klustakwik].parameters.<n>
+#//       Global session default.  Always consulted so wrapper blocks can
+#//       override selectively (set only the parameters that matter; the
+#//       rest fall through to the user's main KK config).
+#//    4. Caller-supplied default (safety net).
 #//
 #//  Lives here (rather than in ndm_klustakwik) so wrapper scripts that
 #//  invoke KlustaKwik against sandbox sessions — ndm_subcluster_unmatched,
 #//  future ndm_resort_bin, etc. — can reuse the identical resolution
 #//  order and parameter set as the main sorter.
 #//
-#//  Usage: read_kk_param <group> <paramName> <default>
+#//  Usage: read_kk_param [-b <caller_block>] <group> <paramName> <default>
 #//  Requires $session to be set in the caller's scope (the session stem
 #//  used by yaml_read, matching the xml_read / read_script_parameter
 #//  convention elsewhere in ndm_functions).
@@ -480,6 +486,13 @@ check_empty_variables()
 
 read_kk_param()
 {
+	local caller_block=""
+	if [ "$1" == "-b" ]
+	then
+		caller_block=$2
+		shift 2
+	fi
+
 	local group=$1
 	local name=$2
 	local default=$3
@@ -493,7 +506,20 @@ read_kk_param()
 		return
 	fi
 
-	# Tier 2: global programs[ndm_klustakwik] block.  Pass -s explicitly so
+	# Tier 2: caller-specific programs[<caller_block>].parameters.<n>.
+	# Skipped if no -b was given or the caller IS ndm_klustakwik (tier 3
+	# would be identical, so skip to avoid a redundant XPath hit).
+	if [ -n "$caller_block" ] && [ "$caller_block" != "ndm_klustakwik" ]
+	then
+		value=$(read_script_parameter -s "$caller_block" "$session" "$name")
+		if ! xml_read_failed "$value"
+		then
+			echo "$value"
+			return
+		fi
+	fi
+
+	# Tier 3: global programs[ndm_klustakwik] block.  Pass -s explicitly so
 	# this works when called from any script, not just ndm_klustakwik —
 	# without -s, read_script_parameter would resolve $program to the
 	# caller's name (e.g. ndm_subcluster_unmatched) and miss the user's
@@ -505,7 +531,7 @@ read_kk_param()
 		return
 	fi
 
-	# Tier 3: built-in default
+	# Tier 4: built-in default
 	echo "$default"
 }
 

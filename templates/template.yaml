@@ -1195,8 +1195,11 @@ programs:
   - {name: reextractThresholdFactor, value: 0.75,   status: Optional}
   - {name: reextractMaskHalfWidth,   value: '',     status: Optional}
   - {name: reextractMinClusterSize,  value: 50,     status: Optional}
-  - {name: reextractChi2,            value: 0.9999, status: Optional}
+  - {name: reextractChi2,            value: 0.999,  status: Optional}
   - {name: reextractExtraFeat,       value: 'auto', status: Optional}
+  - {name: reextractInflationRatio,  value: 5.0,    status: Optional}
+  - {name: reextractInflationCap,    value: 500,    status: Optional}
+  - {name: reextractAutoSubcluster,  value: 0,      status: Optional}
   help: |-
     Second-pass spike detection with mask exclusion and IN-PLACE shadow
     clustering.
@@ -1218,6 +1221,7 @@ programs:
 
       ndm_extractspikes → ndm_pca → ndm_klustakwik → (inspect in klusters)
       ndm_reextractspikes                               # find missed spikes
+      ndm_subcluster_unmatched                           # cluster the unmatched bin
       (inspect shadow clusters in klusters, merge / accept / reject)
 
     CLUSTER ID CONVENTION
@@ -1270,8 +1274,9 @@ programs:
 
     χ² quantile for the squared-Mahalanobis admission threshold.  Lower
     is stricter (more spikes fall into unmatched); higher is permissive.
-    Default 0.9999 matches the calibration used by the Klusters cluster
-    filter.
+    Default 0.999 (down from 0.9999 in 2026-04): 0.9999 on ~20D
+    features proved over-permissive in practice and produced runaway
+    absorption into a single over-dispersed parent cluster.
 
     # reextractExtraFeat
 
@@ -1279,18 +1284,47 @@ programs:
     appended by process_pca -x:  auto (inferred from dimensionality), 0,
     or 1.  Leave on auto.
 
+    # reextractInflationRatio
+
+    Upper bound on per-parent absorption as a multiple of |parent|.  A
+    parent with 1868 reference spikes may absorb at most
+    max(reextractInflationCap, 5.0 × 1868) = 9340 new spikes.  Excess
+    spikes (largest d²) are demoted to the unmatched bin.  Introduced
+    in 2026-04 to fix runaway per-parent shadow inflation.  Set to 0 to
+    disable.  Default 5.0.
+
+    # reextractInflationCap
+
+    Absolute minimum cap on per-parent absorption.  Small reference
+    clusters still get at least this many new spikes regardless of
+    reextractInflationRatio.  Default 500.  Set to 0 to disable the
+    guard.
+
+    # reextractAutoSubcluster
+
+    When 1, ndm_subcluster_unmatched is invoked on the merged session
+    after re-extraction.  The unmatched bin (typically 80-95 % of new
+    spikes) receives KlustaKwik with its own parameter section — see
+    programs[ndm_subcluster_unmatched] — so the operator sees real
+    cluster labels in Klusters, not one amorphous pile.  When 0
+    (default), the operator runs ndm_subcluster_unmatched manually.
+
     SEE ALSO
 
       ndm_reextractspikes_stderiv — spatial+temporal derivative variant
       ndm_redetectspikes          — residual-dat re-detection pipeline
+      ndm_subcluster_unmatched    — re-cluster the unmatched bin
 
 - name: ndm_reextractspikes_stderiv
   parameters:
   - {name: reextractThresholdFactor, value: 0.75,   status: Optional}
   - {name: reextractMaskHalfWidth,   value: '',     status: Optional}
   - {name: reextractMinClusterSize,  value: 50,     status: Optional}
-  - {name: reextractChi2,            value: 0.9999, status: Optional}
+  - {name: reextractChi2,            value: 0.999,  status: Optional}
   - {name: reextractExtraFeat,       value: 'auto', status: Optional}
+  - {name: reextractInflationRatio,  value: 5.0,    status: Optional}
+  - {name: reextractInflationCap,    value: 500,    status: Optional}
+  - {name: reextractAutoSubcluster,  value: 0,      status: Optional}
   help: |-
     Second-pass spike detection variant that runs threshold detection on
     the spatial-derivative + temporal first-difference signal (matching
@@ -1300,13 +1334,16 @@ programs:
     Thresholds are computed internally from the stderiv signal over the
     [start, start+duration) window using the Quiroga (2004) robust
     formula:  thr = thresholdFactor * 4 * median(|stderiv|) / 0.6745.
-    Waveform extraction writes RAW ADC amplitudes so downstream feature
-    projection sees the same signal space as the main pipeline's .spk.N.
+    Waveform extraction writes stderiv-transformed amplitudes so
+    downstream PCA / feature projection sees the same signal space as
+    ndm_extractspikes_stderiv's .spkD.N output.
 
     Inherits thresholdFactor, refractoryPeriod, peakSearchLength, start,
     duration, and sdiffOrder from ndm_extractspikes_stderiv.  The
     shadow-clustering parameters are identical to ndm_reextractspikes;
-    see that program for details.
+    see that program for details on reextractChi2, the inflation guard
+    (reextractInflationRatio / reextractInflationCap), and
+    reextractAutoSubcluster.
 
     OUTPUT
 
@@ -1317,6 +1354,175 @@ programs:
 
       ndm_reextractspikes         — raw-signal variant
       ndm_extractspikes_stderiv   — first-pass stderiv detector
+      ndm_subcluster_unmatched    — re-cluster the unmatched bin
+
+- name: ndm_subcluster_unmatched
+  parameters:
+  # ── Cluster count (tuned for the outlier bin) ──────────────────────────────
+  - {name: minClusters,          value: 2,       status: Optional}
+  - {name: maxClusters,          value: 100,     status: Optional}
+  - {name: maxPossibleClusters,  value: 1000,    status: Optional}
+  # ── Initialisation ─────────────────────────────────────────────────────────
+  - {name: nStarts,              value: 5,       status: Optional}
+  - {name: nRuns,                value: 0,       status: Optional}
+  - {name: phase15Iters,         value: 2,       status: Optional}
+  - {name: subspaceDims,          value: 3,       status: Optional}
+  - {name: subspaceRecluster,     value: 1,       status: Optional}
+  - {name: subspaceReclusterDepth,  value: 2,     status: Optional}
+  - {name: splitRecurseDepth,       value: 1,     status: Optional}
+  - {name: templateMatchScore,    value: 0.85,    status: Optional}
+  - {name: templateMatchIters,    value: 10,      status: Optional}
+  - {name: crossChunkTemplateScore, value: 0.0,   status: Optional}
+  - {name: initMethod,           value: farthest, status: Optional}
+  - {name: penaltyMix,           value: 0.25,    status: Optional}
+  # ── Chunked CEM ────────────────────────────────────────────────────────────
+  - {name: chunkMinutes,         value: 10,      status: Optional}
+  - {name: chunkOverlapMinutes,  value: 2,       status: Optional}
+  - {name: chunkPreseedFraction, value: 0.05,    status: Optional}
+  # ── Merge / split ──────────────────────────────────────────────────────────
+  - {name: mergeThresh,          value: 30.0,    status: Optional}
+  - {name: globalMergeIter,      value: 50,      status: Optional}
+  - {name: timeMergeIter,        value: 50,      status: Optional}
+  - {name: splitEvery,           value: 25,      status: Optional}
+  # ── CEM convergence ────────────────────────────────────────────────────────
+  - {name: maxIter,              value: 500,     status: Optional}
+  - {name: distThresh,           value: 6.9,     status: Optional}
+  - {name: fullStepEvery,        value: 10,      status: Optional}
+  - {name: changedThresh,        value: 0.05,    status: Optional}
+  # ── Parallelism ─────────────────────────────────────────────────────────────
+  - {name: nThreads,             value: 0,       status: Optional}
+  help: |-
+    Re-cluster the "unmatched" bin produced by process_shadowcluster
+    (via ndm_reextractspikes / ndm_reextractspikes_stderiv).
+
+    After a re-extraction pass, each group's .clu.N contains the
+    original cluster IDs plus:
+      - shadow(k) = maxExistingId + 1 + k      (new spikes gated into
+                    cluster k by robust Mahalanobis distance)
+      - unmatched = 2 * maxExistingId + 1      (single bin holding all
+                    new spikes that exceeded the χ² threshold OR were
+                    demoted by the inflation guard in v1.1+)
+
+    The unmatched bin is often large (≥80 % of re-extracted spikes with
+    default thresholds, and even larger when the inflation guard is
+    active) and heterogeneous — it mixes genuinely novel low-amplitude
+    units, collision artefacts, mis-masked existing spikes, and noise.
+    Running KlustaKwik on this bin alone recovers the sub-structure so
+    the operator can triage in Klusters with actual cluster labels
+    instead of one amorphous pile.
+
+    FLOW
+
+      1. Read $session.clu.$g; locate rows where clu == unmatched_id.
+      2. Extract those rows from $session.fet.$g (or .fetD.$g) into a
+         sandbox .fet file next to the real session.
+      3. Run KlustaKwik on the sandbox stem → sandbox .clu.$g.
+      4. Remap sandbox IDs k=1..K to (unmatched_id + 1)..(unmatched_id + K)
+         and merge back into $session.clu.$g over the unmatched rows.
+      5. Backup at $session.clu.$g.bak-sub is idempotence-checked on
+         re-runs (remove it to force a re-sub-cluster).
+
+    Waveforms are not touched.  Re-clustering only affects .clu; the
+    Mahalanobis subspace that defined "unmatched" is the reference .fet
+    space, so re-clustering happens in that same space — no waveform
+    reprocessing required.
+
+    PARAMETER RESOLUTION
+
+    Uses the extended four-tier resolution from ndm_functions's
+    read_kk_param:
+
+      1. spikeDetection.channelGroups[g].klustakwik.<param>
+         Per-group probe-calibrated value (highest priority).
+      2. programs[ndm_subcluster_unmatched].parameters.<param>
+         THIS BLOCK — caller-specific override.  Lets you tune the
+         outlier-bin KK independently of the main sort's.
+      3. programs[ndm_klustakwik].parameters.<param>
+         Fallback to the main-sort config — set parameters here only
+         when you want to override; unset keys fall through.
+      4. Built-in default (in ndm_subcluster_unmatched).
+
+    OUTLIER-BIN-TUNED DEFAULTS
+
+    The defaults in THIS block differ from programs[ndm_klustakwik]
+    because the outlier bin is a structurally different population:
+
+    # maxPossibleClusters: 1000 (vs 500 in ndm_klustakwik)
+
+    The outlier bin can contain dozens of low-SNR units in a single
+    group.  Raising the ceiling prevents KlustaKwik from prematurely
+    capping the cluster table.
+
+    # mergeThresh: 30.0 (vs 42.0 in ndm_klustakwik)
+
+    Tighter Mahalanobis merge threshold: χ²(21, 0.99) ≈ 38.9 for
+    typical 21-dim features; 30.0 sits below this comfortably and
+    prevents two genuinely distinct low-amplitude units from being
+    collapsed by a loose merge.  Main-sort uses 42 to avoid fragmenting
+    dense clusters — the outlier bin has no dense clusters to worry
+    about.
+
+    # nStarts: 5 (vs 3 in ndm_klustakwik)
+
+    Outlier bins have more local minima in the CEM objective; extra
+    starts are cheap here because the bin is smaller than the main
+    spike population.
+
+    # phase15Iters: 2 (vs 1 in ndm_klustakwik)
+
+    Extra xcorr-realignment iterations sharpen within-cluster structure
+    in the low-SNR regime where PCA features are blurred by the
+    sample-wise noise.
+
+    # subspaceDims: 3, subspaceRecluster: 1, subspaceReclusterDepth: 2
+
+    Enables the per-cluster subspace CEM splits described in
+    programs[ndm_klustakwik] help.  Main-sort defaults to off
+    (subspaceRecluster: 0) because dense clusters rarely benefit.
+    Outlier bins routinely contain clusters that coalesce in the full
+    21-D space but separate cleanly in a 3-D subspace, so we turn it
+    on by default with a moderate recursion depth.
+
+    # splitRecurseDepth: 1
+
+    One extra recursive split pass — outlier bins benefit from
+    aggressive splitting that would be too disruptive on the main
+    sort.
+
+    # templateMatchScore: 0.85 (vs 0.0 in ndm_klustakwik)
+
+    Enables within-chunk template matching with a relatively permissive
+    score threshold; helps pull together scattered low-SNR members of
+    the same underlying unit that PCA-Mahalanobis alone can't match.
+    0.0 (= disabled) is the main-sort default because template matching
+    on dense clusters risks over-merging; the outlier bin is sparse
+    enough for this to be a net win.
+
+    # penaltyMix: 0.25 (vs 0 in ndm_klustakwik)
+
+    Slight mix toward AIC over pure BIC.  The outlier bin has low
+    per-cluster evidence, so BIC's logN penalty is disproportionately
+    aggressive there; a small AIC mix admits more clusters without
+    drowning in spurious singletons.
+
+    INVOCATION
+
+    Manually:
+      ndm_subcluster_unmatched [session] [group]
+
+    If electrodeGroup is omitted, every group with an unmatched bin is
+    processed.
+
+    Automatically:
+      Set reextractAutoSubcluster=1 in programs[ndm_reextractspikes]
+      (or the _stderiv variant) and the re-extract script will invoke
+      this script at the end of its merge pass.
+
+    SEE ALSO
+
+      ndm_reextractspikes          — raw-signal re-extraction
+      ndm_reextractspikes_stderiv  — stderiv re-extraction
+      ndm_klustakwik               — primary sort + parameter reference
 
 - name: ndm_lfp
   parameters:
