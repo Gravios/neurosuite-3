@@ -225,6 +225,7 @@ option(NS_SKIP_NEUROSCOPE          "Skip neuroscope"         OFF)
 option(NS_SKIP_NDMANAGER           "Skip ndmanager"          OFF)
 option(NS_SKIP_NDMANAGER_PLUGINS   "Skip ndmanager-plugins"  OFF)
 option(NS_SKIP_KLUSTAKWIK          "Skip klustakwik"         OFF)
+option(NS_SKIP_KLUSTAKWIKEXP       "Skip klustakwikExp"      OFF)
 
 # ---------------------------------------------------------------------------
 # Dependency installation
@@ -439,6 +440,12 @@ ns_add_subdir(ndmanager-plugins src/ndmanager-plugins)
 
 # 7. Standalone spike sorter
 ns_add_subdir(klustakwik src/klustakwik)
+
+# 7b. Experimental KlustaKwik fork — post-split shift-probe refeaturization.
+#     Built as an independent target tree so the canonical klustakwik binary
+#     is never affected by changes here.  See src/klustakwikExp/CHANGES.md
+#     for the algorithmic differences.  Disable with -DNS_SKIP_KLUSTAKWIKEXP=ON.
+ns_add_subdir(klustakwikExp src/klustakwikExp)
 
 # ---------------------------------------------------------------------------
 # Explicit build-time dependencies for parallel builds
