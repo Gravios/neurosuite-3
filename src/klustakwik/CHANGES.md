@@ -9,6 +9,44 @@ The `.clu` output format and all file conventions are unchanged.
 
 ---
 
+## 2026-04-22 — `.fetD`/`.spkD`/`.pcaD` fallback propagated to every session-file open
+
+Prior work introduced `pickInputPath` (prefer canonical, fall back to
+stderiv `D` variant) and wired it into `LoadData` only.  This revision
+completes the propagation to every other session-file open inside
+KlustaKwik so reextract-style pipelines producing only the D variant
+no longer need symlink shims outside the entry point.
+
+Call sites converted from hardcoded `%s.spk.%d` / `%s.fet.%d` /
+`%s.pca.%d` to `pickInputPath`:
+
+- `RealignChunkWaveforms` — in-place `.spk` rewrite resolves whichever
+  variant was loaded.  The `r+b` open and graceful "skipping" fallback
+  on read-only mounts are preserved.
+- `RefeaturizeFromShifts` — both the `.pca` model load and the `.spk`
+  circular-shift fallback (used when `.fil` is unavailable).
+- Four Phase 1.6 and Phase 2 template-match mean-waveform harvests
+  (`KK.cpp` around lines 2674, 2750, 3331, 3449) — each iteration opens
+  the correct variant.
+- `WritePhase15Checkpoint` — the critical one.  `.spk` and `.fet`
+  originals are now resolved via `pickInputPath`; the `.pending` names
+  are derived from the *picked* paths rather than canonical literals.
+  On success, `rename(.pending → original)` commits to `.spkD.N` /
+  `.fetD.N` when that was the variant loaded, instead of leaving a ghost
+  canonical file alongside the real D variant.
+
+Startup banner now shows `(stderiv variant)` when `.fetD.N` was loaded.
+Build tag in the source stderr banner is `[build 2026-04-21 fetD]`
+(search for `fetD` in the log to confirm the new path is active).
+
+`.res.N` reads are intentionally untouched — `.res` has no D variant
+in the canonical extension landscape.  `.clu.N` write in `SaveOutput`
+is also untouched — `.clu` is pipeline-neutral.  GPU backend files
+(`KK_cuda.cpp`, `KK_hip.cpp`, `KK_sycl.cpp`) don't touch session files
+and therefore need no change.
+
+---
+
 ## Correctness fixes
 
 ### `ConsiderDeletion`: uninitialised `candidateClass`

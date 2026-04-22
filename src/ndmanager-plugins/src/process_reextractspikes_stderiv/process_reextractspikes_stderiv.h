@@ -8,9 +8,12 @@
  Companion to process_reextractspikes that runs detection on a spatial-
  derivative + temporal first-difference shadow signal, identically to the
  extraction-stage process_extractspikes_stderiv.  Waveform extraction
- (Pass 2) always reads the ORIGINAL unmodified .fil so downstream PCA and
- clustering see raw amplitudes — exactly as they would with
- process_reextractspikes.
+ (Pass 2) reads from the ORIGINAL unmodified .fil, then writes the
+ stderiv-transformed waveform to the .spkD output — bit-identical in
+ layout and value space to what process_extractspikes_stderiv produces.
+ This keeps the new-spike rows in the same amplitude space as the
+ reference rows, so the .pcaD basis (trained on transformed waveforms)
+ projects them into the same feature space as the reference data.
 
  Mask semantics are identical: candidate peaks within ± maskHalfWidth of
  any timestamp listed in the per-group mask .res.N are rejected.

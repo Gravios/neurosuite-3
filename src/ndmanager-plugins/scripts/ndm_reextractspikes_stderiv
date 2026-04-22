@@ -7,9 +7,13 @@
 #//
 #//   Mirrors ndm_reextractspikes but routes detection through the spatial
 #//   + temporal first-difference transform used by
-#//   ndm_extractspikes_stderiv.  Waveform extraction still writes RAW ADC
-#//   amplitudes, so downstream PCA / feature projection sees the same
-#//   signal space as the main pipeline's .spk.N files.
+#//   ndm_extractspikes_stderiv.  Waveform extraction writes STDERIV-
+#//   TRANSFORMED amplitudes (spatial derivative across group channels +
+#//   temporal first-difference, with sdiff[-1]=0 boundary), so downstream
+#//   PCA / feature projection sees the same signal space as the main
+#//   pipeline's .spkD.N files produced by ndm_extractspikes_stderiv.
+#//   The .pcaD basis is trained on that transformed space, so this keeps
+#//   new-spike rows and reference rows in a single, coherent value space.
 #//
 #//   Output: merges in-place into $session.{res,spk,fet,clu}.N; originals
 #//   backed up to $session.<ext>.<N>.bak on first run.
@@ -300,7 +304,11 @@ check_command_status process_reextractspikes_stderiv
 rm -f $tmpStem.fil
 
 # Rename .spkD → .spk so shadowcluster sees the standard extension.
-# Content is identical: raw ADC amplitudes in sample-major layout.
+# Content is stderiv-transformed waveforms (spatial derivative + temporal
+# first-difference) in sample-major [s*nChanG+ci] layout, bit-identical to
+# what process_extractspikes_stderiv writes to .spkD.  The rename just
+# lets shadowcluster's hard-coded .spk reader see the file; values are
+# unchanged.
 for group in $(seq 1 $nElectrodeGroups); do
     [ "${groupActive[$group]}" != "y" ] && continue
     if [ -f "$tmpStem.spkD.$group" ]; then
@@ -403,9 +411,11 @@ for group in $(seq 1 $nElectrodeGroups); do
     # --out is distinct from --ref, so shadowcluster writes to the sandbox
     # stem only.  If it fails, $session.{spk,fet,clu}.$group are
     # byte-identical to what they were before the call.  --nChan is the
-    # RAW channel count: shadowcluster uses it both for the .spkD stride
-    # (which is always raw; see process_extractspikes_stderiv) and for
-    # the PCA projection loop, which iterates pca.nChannels (effective)
+    # FULL group channel count (not the reduced PCA channel count):
+    # shadowcluster uses it for the .spkD stride (which always stores all
+    # nChanGroup channels, even when the PCA basis was trained on nChan-1
+    # of them — see process_extractspikes_stderiv for the sample-major
+    # layout).  The PCA projection loop iterates pca.nChannels (effective)
     # and correctly skips the dropped dependent channel for sdiff orders
     # 1 and 3.  This requires a shadowcluster that accepts
     # pca.nChannels <= nChanGroup (see process_shadowcluster.cpp patch
