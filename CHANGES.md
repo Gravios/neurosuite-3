@@ -7,6 +7,162 @@ most recent at top.  Deep per-topic technical notes live in the
 
 ---
 
+## 2026-04-22 — process_shadowcluster inflation guard + dedicated KK tier for sub-clustering
+
+**Symptom.** `ndm_reextractspikes_stderiv` on `jg05-20120316` group 7:
+
+```
+  eligible parents : 13 / 16 clusters
+  new spikes       : 162365
+    clu 2  (size=282)  shadow=18  +1257 new
+    clu 4  (size=710)  shadow=20  +19 new
+    clu 6  (size=1868)  shadow=22  +108912 new         ← 60× inflation
+    clu 11 (size=4388) shadow=27  +1 new
+  unmatched        : 52176
+```
+
+108 912 new spikes (67 %) force-matched into a single shadow
+(`clu 6`, whose reference size was 1 868).  These spikes bypass the
+unmatched bin entirely, so `ndm_subcluster_unmatched` can't touch them:
+they surface in Klusters as one giant opaque shadow attached to an
+otherwise unremarkable cluster.
+
+**Root cause.** `process_shadowcluster` v1.0 did pure Mahalanobis 1-NN
+with a global χ² gate (`p=0.9999`, `d²=54.234` on `df=21`).  A
+reference cluster with a heavy-tailed member distribution has its
+per-dim MAD × 1.4826 σ's over-estimated; the resulting ellipsoid is
+over-wide and absorbs whatever falls nearby.  No downstream parameter
+— KlustaKwik or otherwise — can correct this after the fact because
+the absorbed spikes are tagged with the parent's shadow id before any
+clustering step runs.
+
+### Fix — three coordinated changes
+
+**1. Inflation guard in `process_shadowcluster` (v1.1).**
+New CLI args `--inflationRatio R` (default 5.0) and `--inflationCap C`
+(default 500).  A parent may absorb at most
+`max(C, R × |parent|)` new spikes.  Implementation:
+
+- Pass 1 (parallel, expensive): compute `bestK/bestD²` per new spike;
+  record in `tentativeBestK / tentativeBestD2`.
+- Pass 2 (serial, cheap): for each over-absorbing parent, sort
+  candidate spikes by `d²` ascending, keep the closest `cap_k`, demote
+  the tail to the unmatched bin.
+
+Serial cost is `O(n_assigned log n_assigned)` per over-absorbing
+parent; typically 1-3 parents trip the cap per group, so the overhead
+is negligible relative to the main assignment loop (nFeatDim × nEligible
+distance evaluations per spike).  Verbose output now reports both
+accepted and demoted counts per parent and a total-demoted summary.
+Setting either knob to 0 disables the guard (preserves v1.0 behaviour
+bit-for-bit).
+
+**2. Tighter default `chi2P`.**  0.9999 → 0.999.  `d²=54.234` vs
+`d²≈46.80` on `df=21`.  With robust MAD σ's the 0.9999 gate proved
+over-permissive in practice; 0.999 is still generous — robust-stats
+literature typically uses 0.99 for outlier rejection — while being
+significantly more selective.  The inflation guard is the hard
+backstop; this is the per-spike gate.
+
+**3. Caller-block tier in `read_kk_param`.**  `ndm_functions` gains
+an optional `-b <caller_block>` flag.  Resolution order is now four
+tiers when `-b` is given:
+
+```
+  1. spikeDetection.channelGroups[g].klustakwik.<n>    (per-group)
+  2. programs[<caller_block>].parameters.<n>           (caller override)
+  3. programs[ndm_klustakwik].parameters.<n>           (global fallback)
+  4. built-in default                                  (safety net)
+```
+
+Tier 2 is skipped when `-b` is absent or equals `ndm_klustakwik`,
+preserving backward compatibility.  `ndm_subcluster_unmatched` now
+passes `-b ndm_subcluster_unmatched` at every call site (27 retrofit
+sites).
+
+### New YAML block: `programs[ndm_subcluster_unmatched]`
+
+Populated in `templates/template.yaml` with outlier-bin-tuned defaults
+that deliberately diverge from `programs[ndm_klustakwik]`:
+
+| knob                      | ndm_klustakwik | ndm_subcluster_unmatched | rationale |
+|---------------------------|---------------:|-------------------------:|-----------|
+| `maxPossibleClusters`     |            500 |                     1000 | outlier bin holds dozens of low-SNR units |
+| `mergeThresh`             |           42.0 |                     30.0 | below χ²(21, 0.99)≈38.9; prevents collapse of distinct low-SNR units |
+| `nStarts`                 |              3 |                        5 | more CEM local minima in outlier bin |
+| `phase15Iters`            |              1 |                        2 | sharper xcorr realignment in low-SNR regime |
+| `subspaceRecluster`       |              0 |                        1 | split sub-units that coalesce in full 21D |
+| `subspaceReclusterDepth`  |              0 |                        2 | moderate recursion depth |
+| `splitRecurseDepth`       |              1 |                        1 | (unchanged — existing default is already right here) |
+| `templateMatchScore`      |            0.0 |                     0.85 | waveform-similarity assist (safe in sparse bin) |
+| `penaltyMix`              |              0 |                     0.25 | AIC mix counters disproportionate BIC pressure |
+
+Users can override any subset per-session; unset keys fall through to
+`programs[ndm_klustakwik]` (tier 3).
+
+### New re-extract YAML parameters
+
+Added to both `programs[ndm_reextractspikes]` and
+`programs[ndm_reextractspikes_stderiv]`:
+
+| name                        | default | effect |
+|-----------------------------|--------:|--------|
+| `reextractChi2`             |   0.999 | **CHANGED** from 0.9999 |
+| `reextractInflationRatio`   |     5.0 | new — passed as `--inflationRatio` to `process_shadowcluster` |
+| `reextractInflationCap`     |     500 | new — passed as `--inflationCap` |
+| `reextractAutoSubcluster`   |       0 | new — when 1, `ndm_subcluster_unmatched` runs automatically after the merge |
+
+XML descriptors (`descriptions/ndm_reextractspikes{,_stderiv}.xml`)
+updated in lock-step.
+
+### Files touched
+
+```
+src/ndmanager-plugins/src/process_shadowcluster/process_shadowcluster.cpp
+src/ndmanager-plugins/scripts/ndm_functions
+src/ndmanager-plugins/scripts/ndm_subcluster_unmatched
+src/ndmanager-plugins/scripts/ndm_reextractspikes
+src/ndmanager-plugins/scripts/ndm_reextractspikes_stderiv
+src/ndmanager-plugins/descriptions/ndm_reextractspikes.xml
+src/ndmanager-plugins/descriptions/ndm_reextractspikes_stderiv.xml
+templates/template.yaml
+```
+
+### Backward compatibility
+
+- `process_shadowcluster` without `--inflationRatio`/`--inflationCap`
+  on the command line defaults to `5.0`/`500` (guard active).  Sessions
+  that must preserve exact v1.0 behaviour should set
+  `reextractInflationRatio: 0` (or `reextractInflationCap: 0`) in the
+  session YAML.
+- `read_kk_param` without `-b` preserves the prior three-tier order
+  bit-for-bit.
+- Existing sessions with no `programs[ndm_subcluster_unmatched]` block
+  continue to work — tier 2 is empty, tier 3 (`programs[ndm_klustakwik]`)
+  supplies every parameter as before.  Only sessions regenerated from
+  the new `template.yaml` or hand-edited to add the block get the
+  outlier-bin-tuned defaults.
+- `.clu.N` cluster-id convention (shadow-offset and unmatched-bin id)
+  is unchanged.
+
+### Expected post-fix behaviour for the `jg05-20120316` g7 case
+
+- `clu 6` shadow capped at `max(500, 5 × 1868) = 9340` new spikes
+  (down from 108 912; the other ~99 572 are demoted to the unmatched
+  bin).
+- Unmatched bin grows from 52 176 → ~151 748, and now contains the
+  population that was previously hidden inside `clu 6`'s shadow.
+- `ndm_subcluster_unmatched` (auto-invoked if
+  `reextractAutoSubcluster=1`, otherwise manual) runs KlustaKwik with
+  the outlier-bin-tuned parameter block on that 151 748-spike bin and
+  discovers its sub-structure rather than leaving it as one amorphous
+  pile.
+- In Klusters, the operator now sees a realistic distribution of
+  low-amplitude units instead of one giant green shadow attached to
+  cluster 6.
+
+---
+
 ## 2026-04-22 — process_reextractspikes_stderiv writes transformed .spkD (correctness)
 
 **Value-space mismatch** between `.spkD` files produced by the main

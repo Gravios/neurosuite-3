@@ -83,6 +83,9 @@ reextractMaskHalfWidth=$(read_script_parameter   $session reextractMaskHalfWidth
 reextractMinClusterSize=$(read_script_parameter  $session reextractMinClusterSize)
 reextractChi2=$(read_script_parameter            $session reextractChi2)
 reextractExtraFeat=$(read_script_parameter       $session reextractExtraFeat)
+reextractInflationRatio=$(read_script_parameter  $session reextractInflationRatio)
+reextractInflationCap=$(read_script_parameter    $session reextractInflationCap)
+reextractAutoSubcluster=$(read_script_parameter  $session reextractAutoSubcluster)
 
 check_mandatory_variable $thresholdFactor  "missing thresholdFactor"
 check_mandatory_variable $refractoryPeriod "missing refractoryPeriod"
@@ -99,8 +102,16 @@ reextractThresholdFactor=${reextractThresholdFactor:-$(unset LANG && echo "$thre
 # reextractMaskHalfWidth default is per-group (= that group's nSamples),
 # resolved after the group scan below.  An explicit YAML value overrides.
 reextractMinClusterSize=${reextractMinClusterSize:-50}
-reextractChi2=${reextractChi2:-0.9999}
+# NB: default lowered from 0.9999 (d²=54.234 on df=21) to 0.999 (d²≈46.80).
+# The tighter gate combined with the inflation guard below is what finally
+# prevents runaway absorption into a single over-dispersed parent cluster.
+reextractChi2=${reextractChi2:-0.999}
 reextractExtraFeat=${reextractExtraFeat:-auto}
+# Inflation guard defaults (process_shadowcluster v1.1+).  See the stderiv
+# wrapper for the full rationale; identical semantics here.
+reextractInflationRatio=${reextractInflationRatio:-5.0}
+reextractInflationCap=${reextractInflationCap:-500}
+reextractAutoSubcluster=${reextractAutoSubcluster:-0}
 
 echo_info "Re-extraction parameters:"
 echo_info "  reextractThresholdFactor = $reextractThresholdFactor  (main thresholdFactor=$thresholdFactor)"
@@ -112,6 +123,9 @@ fi
 echo_info "  reextractMinClusterSize  = $reextractMinClusterSize spikes"
 echo_info "  reextractChi2            = $reextractChi2"
 echo_info "  reextractExtraFeat       = $reextractExtraFeat"
+echo_info "  reextractInflationRatio  = $reextractInflationRatio"
+echo_info "  reextractInflationCap    = $reextractInflationCap"
+echo_info "  reextractAutoSubcluster  = $reextractAutoSubcluster"
 
 # ////////////////////////////////////////////////////////////////////////////
 # //  Build per-group channel list, verify pre-requisites
@@ -375,6 +389,8 @@ for group in $(seq 1 $nElectrodeGroups); do
         --minClusterSize "$reextractMinClusterSize" \
         --chi2  "$reextractChi2" \
         --extraFeat "$reextractExtraFeat" \
+        --inflationRatio "$reextractInflationRatio" \
+        --inflationCap   "$reextractInflationCap" \
         -v
     sc_status=$?
 
@@ -422,4 +438,28 @@ echo_info "Done — $committedCount/$activeCount eligible group(s) had new spike
 echo_info "       ($noSpikesCount had no new spikes, $skippedCount pre-filtered in pre-scan)"
 echo_info "Originals preserved at $session.<ext>.<N>.bak (for merged groups only)"
 echo_info "To revert, rename the .bak files back over the primary files."
+
+# ////////////////////////////////////////////////////////////////////////////
+# //  Optional auto-subcluster pass
+# //
+# //  See ndm_reextractspikes_stderiv for the rationale; behaviour is
+# //  identical in the raw pipeline.
+# ////////////////////////////////////////////////////////////////////////////
+
+if [ "$reextractAutoSubcluster" = "1" ] && [ "$committedCount" -gt 0 ]; then
+    echo_info ""
+    echo_info "reextractAutoSubcluster=1 — invoking ndm_subcluster_unmatched"
+    if command -v ndm_subcluster_unmatched >/dev/null 2>&1; then
+        ndm_subcluster_unmatched "$session"
+        sub_status=$?
+        if [ $sub_status -ne 0 ]; then
+            echo_warning "ndm_subcluster_unmatched exited with status $sub_status;"
+            echo_warning "merged session is intact but unmatched bin was not re-clustered."
+        fi
+    else
+        echo_warning "reextractAutoSubcluster=1 but ndm_subcluster_unmatched not in PATH;"
+        echo_warning "run it manually to cluster the unmatched bin."
+    fi
+fi
+
 echo_info "Inspect in Klusters:  klusters $session.$param_ext"

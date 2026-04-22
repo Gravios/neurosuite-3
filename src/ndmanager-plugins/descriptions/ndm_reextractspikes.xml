@@ -20,12 +20,27 @@
    </parameter>
    <parameter>
     <n>reextractChi2</n>
-    <value>0.9999</value>
+    <value>0.999</value>
     <status>Optional</status>
    </parameter>
    <parameter>
     <n>reextractExtraFeat</n>
     <value>auto</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractInflationRatio</n>
+    <value>5.0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractInflationCap</n>
+    <value>500</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <n>reextractAutoSubcluster</n>
+    <value>0</value>
     <status>Optional</status>
    </parameter>
   </parameters>
@@ -45,13 +60,21 @@ PIPELINE
      $session.res.N is rejected.  New spikes land at
      $session-reextr-tmp.{res,spk}.N.
 
-  2. Originals are copied to $session.<ext>.<N>.bak for crash recovery
+  2. Originals are copied to $session.&lt;ext&gt;.&lt;N&gt;.bak for crash recovery
      the first time the script runs.  Subsequent runs preserve the
      earlier .bak files.
 
   3. process_shadowcluster merges the new spikes into the primary
      session files.  Writes go to .tmp files first and are renamed
      atomically, so a crash mid-write cannot corrupt the originals.
+     The inflation guard (v1.1+) caps per-parent absorption so one
+     over-dispersed cluster cannot swallow the entire new-spike
+     population; excess spikes are demoted to the unmatched bin.
+
+  4. (optional, reextractAutoSubcluster=1) ndm_subcluster_unmatched is
+     invoked on the merged session so the unmatched bin — now larger
+     due to the inflation guard — receives clustering rather than
+     sitting as one amorphous pile.
 
 CLUSTER ID CONVENTION
 
@@ -93,11 +116,12 @@ PARAMETERS
   Existing clusters with fewer members are not eligible as parents for
   shadow assignment (median / MAD statistics unreliable below this).
 
-  # reextractChi2 (default: 0.9999)
+  # reextractChi2 (default: 0.999)
 
   χ² quantile for the squared-Mahalanobis admission threshold.  Lower
-  is stricter; higher is permissive.  The 0.9999 default matches the
-  per-dim-MAD + χ² calibration used elsewhere in neurosuite-3.
+  is stricter; higher is permissive.  Previously 0.9999 — lowered to
+  0.999 in 2026-04 because 0.9999 × MAD-based σ's proved over-permissive
+  on heavy-tailed reference clusters and produced runaway absorption.
 
   # reextractExtraFeat (default: auto)
 
@@ -105,10 +129,33 @@ PARAMETERS
   appended by process_pca -x:  auto (inferred from dimensionality), 0,
   or 1.  Normal users leave this on auto.
 
+  # reextractInflationRatio (default: 5.0)
+
+  Upper bound on per-parent absorption expressed as a multiple of the
+  parent's reference size.  A parent with |parent|=1868 spikes may
+  absorb at most max(reextractInflationCap, 5.0 × 1868) = 9340 new
+  spikes.  Excess spikes (those with the largest Mahalanobis d²) are
+  demoted to the unmatched bin.  Set to 0 to disable the guard.
+
+  # reextractInflationCap (default: 500)
+
+  Absolute minimum cap on per-parent absorption — small reference
+  clusters (size ~ 50-100) still get to absorb at least this many new
+  spikes regardless of reextractInflationRatio.  Set to 0 to disable
+  the guard (same effect as reextractInflationRatio=0).
+
+  # reextractAutoSubcluster (default: 0)
+
+  When 1, ndm_subcluster_unmatched is invoked automatically on the
+  merged session after re-extraction, clustering the unmatched bin
+  immediately.  When 0 (default), the operator must run
+  ndm_subcluster_unmatched manually after inspecting the intermediate
+  result.
+
 OUTPUT
 
   Merges in-place into $session.{res,spk,fet,clu}.N.  Originals are
-  preserved at $session.<ext>.<N>.bak on first run — rename them back
+  preserved at $session.&lt;ext&gt;.&lt;N&gt;.bak on first run — rename them back
   over the primary files to revert.
 
 NEXT STEPS
@@ -119,6 +166,7 @@ NEXT STEPS
 
 SEE ALSO
 
-  ndm_reextractspikes_stderiv — spatial+temporal derivative variant.</help>
+  ndm_reextractspikes_stderiv — spatial+temporal derivative variant.
+  ndm_subcluster_unmatched    — re-cluster the unmatched bin.</help>
  </program>
 </parameter>
