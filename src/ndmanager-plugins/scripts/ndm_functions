@@ -453,6 +453,63 @@ check_empty_variables()
 }
 
 #////////////////////////////////////////////////////////////////////////////
+#//  KlustaKwik three-tier parameter reader (shared)
+#//
+#//  Resolves a KlustaKwik parameter for a given electrode group using
+#//  three tiers, in order of decreasing priority:
+#//
+#//    1. spikeDetection.channelGroups[g].klustakwik.<name>
+#//       Per-group probe-calibrated value (highest priority).
+#//    2. programs[ndm_klustakwik].parameters.<name>
+#//       Global session override.  Always reads from the ndm_klustakwik
+#//       program block regardless of which script calls read_kk_param —
+#//       this lets ndm_subcluster_unmatched and other wrappers inherit
+#//       the user's KK configuration without duplicating it.
+#//    3. Caller-supplied default (safety net).
+#//
+#//  Lives here (rather than in ndm_klustakwik) so wrapper scripts that
+#//  invoke KlustaKwik against sandbox sessions — ndm_subcluster_unmatched,
+#//  future ndm_resort_bin, etc. — can reuse the identical resolution
+#//  order and parameter set as the main sorter.
+#//
+#//  Usage: read_kk_param <group> <paramName> <default>
+#//  Requires $session to be set in the caller's scope (the session stem
+#//  used by yaml_read, matching the xml_read / read_script_parameter
+#//  convention elsewhere in ndm_functions).
+#////////////////////////////////////////////////////////////////////////////
+
+read_kk_param()
+{
+	local group=$1
+	local name=$2
+	local default=$3
+
+	# Tier 1: per-group spikeDetection.channelGroups[group].klustakwik.<n>
+	local value
+	value=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$group]/klustakwik/$name")
+	if ! xml_read_failed "$value"
+	then
+		echo "$value"
+		return
+	fi
+
+	# Tier 2: global programs[ndm_klustakwik] block.  Pass -s explicitly so
+	# this works when called from any script, not just ndm_klustakwik —
+	# without -s, read_script_parameter would resolve $program to the
+	# caller's name (e.g. ndm_subcluster_unmatched) and miss the user's
+	# ndm_klustakwik configuration block.
+	value=$(read_script_parameter -s ndm_klustakwik "$session" "$name")
+	if ! xml_read_failed "$value"
+	then
+		echo "$value"
+		return
+	fi
+
+	# Tier 3: built-in default
+	echo "$default"
+}
+
+#////////////////////////////////////////////////////////////////////////////
 #//  Read YAML parameter file (parallel to xml_read / read_script_parameter)
 #//
 #//  These functions mirror the XML reading API exactly so that ndm_ scripts

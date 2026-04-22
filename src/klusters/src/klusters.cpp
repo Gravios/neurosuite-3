@@ -2503,8 +2503,15 @@ void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters){
     }
 
     QApplication::restoreOverrideCursor();
-    slotStatusMsg(tr("Ready."));
-    if (view) view->focusClusterView();
+    slotStatusMsg(tr("Ready.")); 
+    // Restore focus to the cluster palette rather than the ClusterView:
+    // deleteClusters() already auto-selects the next cluster in the list
+    // (klustersdoc.cpp via selectItems()), so the user's natural next
+    // action is to continue arrow-key navigation — which requires focus
+    // on the palette's iconView, not the 2D scatter.  focusClusterView()
+    // would steal that focus and silently break arrow-key nav after a
+    // "Delete Noisy" operation.
+    if (clusterPalette) clusterPalette->setFocusToList();
 }
 
 void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters){
@@ -2523,7 +2530,9 @@ void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters){
 
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
-    if (view) view->focusClusterView();
+    // Same reasoning as slotMoveClustersToNoise: keep focus on the palette
+    // so arrow-key navigation continues on the auto-selected next cluster.
+    if (clusterPalette) clusterPalette->setFocusToList();
 }
 
 
@@ -3259,7 +3268,12 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
 
     doc->reclusteringUpdate(clustersToRecluster,clustersFromReclustering);
 
-    if (activeView()) activeView()->focusClusterView();
+    // Restore focus to the palette rather than the 2D ClusterView.  After a
+    // recluster the user's natural next step is usually to pick one of the
+    // new clusters and inspect it — that requires arrow-key navigation in
+    // the palette, which needs iconView focus.  focusClusterView() here
+    // would silently break arrow-key nav (and force a Tab press to recover).
+    if (clusterPalette) clusterPalette->setFocusToList();
     processFinished = true;
     processKilled = false;
     // Re-run the full tab-change logic so that every action disabled by
@@ -4136,11 +4150,17 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 
             // Select the realigned cluster in the palette and put focus there
             // so the user can immediately use arrow keys for further work.
+            //
+            // Do NOT follow this with activeView()->focusClusterView(): that
+            // call would steal focus to the 2D scatter widget the instant
+            // after we granted it to the palette, so arrow-key navigation
+            // would silently require a Tab press to recover.  The scatter
+            // view doesn't need explicit focus here — its repaint was
+            // already triggered by forceClusterRefresh() above.
             if (clusterPalette && realignClusterId >= 0) {
                 clusterPalette->selectItems(QList<int>{realignClusterId});
                 clusterPalette->setFocusToList();
             }
-            if (activeView()) activeView()->focusClusterView();
 
         } else {
             // User rejected: delete pending files, restore original spkFileName,
@@ -4152,6 +4172,16 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
                 doc->invalidateWaveformCache(realignClusterId);
                 doc->invalidateCorrelogramCache(realignClusterId);
                 doc->forceClusterRefresh(realignClusterId);
+            }
+
+            // Restore focus to the palette on the rejected cluster so the
+            // user can continue arrow-key navigation.  Without this, focus
+            // stays on whichever widget had it before the modal review
+            // dialog opened (often the 2D scatter, sometimes nothing
+            // reliable after a tab switch), silently breaking arrow keys.
+            if (clusterPalette && realignClusterId >= 0) {
+                clusterPalette->selectItems(QList<int>{realignClusterId});
+                clusterPalette->setFocusToList();
             }
         }
 

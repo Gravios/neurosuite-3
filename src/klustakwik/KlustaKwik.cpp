@@ -714,7 +714,16 @@ int main(int argc, char **argv) {
         // parallelism is active before the first (potentially long) CEM call.
         // -------------------------------------------------------------------
         {
-            fprintf(stderr, "KlustaKwik  %s.fet.%d  [build 2026-04-03 subspace-parallel]\n", FileBase, ElecNo);
+            {
+                // Print the actual .fet path we loaded.  pickInputPath gives
+                // us the canonical name if it exists, else the .fetD variant;
+                // matching what LoadData() already resolved in K1.
+                char fetBanner[STRLEN + 16];
+                const int _fetVar = pickInputPath(fetBanner, sizeof(fetBanner),
+                                                  FileBase, "fet", ElecNo);
+                fprintf(stderr, "KlustaKwik  %s%s  [build 2026-04-21 fetD]\n",
+                        fetBanner, (_fetVar == 1) ? "  (stderiv variant)" : "");
+            }
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",
                     K1.nPoints, K1.nDims, MinClusters, MaxClusters);
 
