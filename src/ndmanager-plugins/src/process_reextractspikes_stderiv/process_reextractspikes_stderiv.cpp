@@ -436,7 +436,20 @@ int main(int argc, char **argv)
         resPerGroup[g] = std::move(out);
     }
 
-    // Write .res.N (int64) and .spkD.N (int16) using the RAW (not stderiv) signal.
+    // Write .res.N (int64) and .spkD.N (int16) using the STDERIV-TRANSFORMED
+    // signal.  process_extractspikes_stderiv writes the transformed waveform
+    // to .spkD (spatial derivative across group channels + temporal
+    // first-difference with sdiff[-1]=0 boundary), and the .pcaD basis is
+    // trained on these transformed waveforms.  If Pass-2 here wrote raw
+    // waveforms, the new-spike rows in .spkD would be in a different
+    // amplitude space than the reference rows and would project through
+    // .pcaD basis into bogus features — shadowcluster then mis-assigns
+    // them all to a single Mahalanobis shadow, which is exactly the
+    // "green haze at the far right of cluster 5" symptom observed in
+    // Klusters.
+    //
+    // Reuse computeSDiff() (ported unchanged from extractspikes_stderiv)
+    // to keep the transform bit-identical between the two programs.
     for (int g = 0; g < nGroups; ++g) {
         const vector<int> &chans = chGroups[g];
         const int nChanG = (int)chans.size();
@@ -458,15 +471,53 @@ int main(int argc, char **argv)
                      ::munmap(mapped, (size_t)fileBytes); ::close(fd); return 1; }
         if (!res.empty()) {
             const size_t wLen = (size_t)a.spikeLength * (size_t)nChanG;
+            // Two buffers: sdWav holds the intermediate spatial derivative
+            // for all samples (needed for the in-place temporal pass), and
+            // buf is the output written to disk.  Layout is sample-major
+            // [s * nChanG + ci], matching process_extractspikes_stderiv's
+            // .spkD layout exactly.
+            vector<int16_t> sdWav(wLen);
             vector<int16_t> buf(wLen);
             for (int64_t ts : res) {
                 const int64_t start = ts - a.timeBeforeSpike;
+
+                // Step 1 — spatial derivative per sample.
+                // computeSDiff takes a frame pointer and a chanList of
+                // full-probe channel indices; it returns the sdiff value
+                // for channel `ci` within the group.
                 for (int s = 0; s < a.spikeLength; ++s) {
                     const int16_t *frame =
                         data + (int64_t)(start + s) * a.totalChannelNumber;
-                    for (int c = 0; c < nChanG; ++c)
-                        buf[(size_t)s * nChanG + c] = frame[chans[c]];
+                    for (int ci = 0; ci < nChanG; ++ci) {
+                        double sd = computeSDiff(frame, chans.data(),
+                                                  ci, nChanG, a.sdiffOrder);
+                        int iv = (int)std::llround(sd);
+                        if (iv >  32767) iv =  32767;
+                        if (iv < -32768) iv = -32768;
+                        sdWav[(size_t)s * nChanG + ci] = (int16_t)iv;
+                    }
                 }
+
+                // Step 2 — temporal first-difference, in-place into buf[].
+                // Boundary: sdiff[-1] = 0, matching process_extractspikes_
+                // stderiv::Pass 2 exactly.  Walking prev[] forward preserves
+                // the unclamped sdiff for the next iteration's subtrahend
+                // (do not use the already-clamped output).
+                {
+                    vector<int16_t> prev((size_t)nChanG, 0);
+                    for (int s = 0; s < a.spikeLength; ++s) {
+                        int16_t       *dst = buf.data()   + (size_t)s * nChanG;
+                        const int16_t *sd  = sdWav.data() + (size_t)s * nChanG;
+                        for (int ci = 0; ci < nChanG; ++ci) {
+                            int diff = (int)sd[ci] - (int)prev[(size_t)ci];
+                            prev[(size_t)ci] = sd[ci];
+                            if (diff >  32767) diff =  32767;
+                            if (diff < -32768) diff = -32768;
+                            dst[ci] = (int16_t)diff;
+                        }
+                    }
+                }
+
                 std::fwrite(buf.data(), sizeof(int16_t), wLen, fSpk);
             }
         }
