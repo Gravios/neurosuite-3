@@ -45,8 +45,8 @@ NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, 
 | `session.lfp` | LFP signal (same binary format as `.dat`, lower sampling rate) |
 | `session.fil` | High-pass filtered signal (same binary format as `.dat`) |
 | `session.spk.N` | Spike waveforms for electrode group N (int16, sample-major layout) |
-| `session.res.N` | Spike timestamps for electrode group N (int64 sample indices, one per line) |
-| `session.clu.N` | Cluster assignments for electrode group N (text: nClusters header, then one int per spike) |
+| `session.res.N` | Spike timestamps for electrode group N (binary int64 sample indices, no header) |
+| `session.clu.N` | Cluster assignments for electrode group N (binary: int32 nClusters header + int32 cluster IDs; legacy text format still accepted) |
 | `session.evt` / `session.evt.abc` | Event file — millisecond timestamps + text labels |
 | `session.pos` | Animal position — binary x,y pairs at video sampling rate |
 | `session.nrs` | NeuroScope session file — saved viewer state (open files, display config, colours) |

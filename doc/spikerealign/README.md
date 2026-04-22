@@ -19,7 +19,7 @@ The realignment runs once per cluster:
    a. Advance the timestamp by the shift and update the `.res` file.
    b. Re-extract the shifted waveform from the `.fil` (or `.dat`) file at the new timestamp.
    c. Write the new waveform back to the `.spk` file at the same slot.
-   d. Re-project the new waveform through the saved PCA eigenvectors (`.spk.N.evec`) and update the `.fet` file rows.
+   d. Re-project the new waveform through the saved PCA eigenvectors (`.pca.N` or `.pcaD.N`, auto-detected alongside the feature file) and update the `.fet` (or `.fetD`) file rows.
    e. If the updated timestamp is now out of chronological order with a neighbour, swap all on-disk records (`.res`, `.spk`, `.clu`) and the in-memory `spikesByCluster` row.
 
 Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means the spike peak is *late* by `τ` samples relative to the template. Correcting by `newTimestamp = oldTimestamp + τ` moves the spike earlier in the waveform window so its peak aligns with the template.

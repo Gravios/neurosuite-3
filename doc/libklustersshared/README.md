@@ -100,6 +100,15 @@ Free functions that extend `ParameterYamlReader` / `ParameterYamlWriter` to hand
 `probes:` top-level section and `probeId`/`shankIndex` metadata on anatomical group entries.
 These are separate from the main classes to avoid altering their API.
 
+> **YAML key naming inconsistency:** the C++ `ProbeEntry` struct uses the
+> field name `id`, and `readProbesSection` / `writeProbesSection` read and
+> write the YAML key `id`. The Python helper `process_setupgroups.py` and
+> the downstream Python tools (`process_estimatedrift.py`,
+> `process_localise.py`) normalise on the YAML key `probeId` and accept
+> either on read. For interoperability, hand-written YAML should use
+> `probeId` — `ndm_setupgroups` will rewrite `id` to `probeId` on first
+> run. Both reads work, only one key is written per writer.
+
 **Data types:**
 
 | Type | Fields |
@@ -170,7 +179,8 @@ probes:            # list of probe entries (see below)
 anatomicalDescription:
   channelGroups:   # list of {channels: [{id, skip}], probeId?, shankIndex?}
 spikeDetection:
-  channelGroups:   # list of {channels, nSamples, peakSampleIndex, nFeatures}
+  channelGroups:   # list of {channels, nSamples, peakSampleIndex, nFeatures,
+                   #         probeId?, shankIndex?, sitePositions_um?, klustakwik?}
 units:             # list of {group, cluster, structure, type, isolationDistance, quality, notes}
 neuroscope:        # version, miscellaneous, video (rotate/flip/…), spikes, channels
 programs:          # list of {name, parameters: [{name, value, status}], help}
@@ -220,6 +230,47 @@ anatomicalDescription:
 
 These fields are optional: group entries without `probeId`/`shankIndex` are handled correctly
 by all existing readers (the fields are simply absent).
+
+### `spikeDetection.channelGroups` — geometry and per-group KlustaKwik overrides
+
+Each spike-detection group entry may carry three optional extensions beyond the basic
+`channels`/`nSamples`/`peakSampleIndex`/`nFeatures` fields:
+
+```yaml
+spikeDetection:
+  channelGroups:
+    - channels: [0, 1, 2, 3, 4, 5, 6, 7]
+      nSamples: 52
+      peakSampleIndex: 26
+      nFeatures: 3
+      probeId: 0                          # which probe this group belongs to
+      shankIndex: 0                       # which shank within the probe (0-based)
+      sitePositions_um:                   # inline electrode geometry (µm), per channel
+        - [0,  0]
+        - [22, 0]
+        - [0,  20]
+        - [22, 20]
+        - [0,  40]
+        - [22, 40]
+        - [0,  60]
+        - [22, 60]
+      klustakwik:                         # per-group KlustaKwik overrides (tier 1)
+        MergeThresh: 39.13                # χ²(12, 0.9999) for this 12-dim group
+        MaxClusters: 20
+        GlobalMergeIter: 50
+```
+
+`probeId` / `shankIndex` mirror the anatomical-group annotations and are used by
+`ndm_estimatedrift` / `ndm_localise` / `ndm_applydrift` to reconstruct geometry.
+
+`sitePositions_um` is a per-channel `[x_um, y_um]` array in the plane of the shank; when
+present it takes precedence over looking up the geometry from the `.probe` file. Null entries
+(`~`) mark missing or disabled sites.
+
+The `klustakwik:` sub-block is the top tier of the three-tier parameter resolution used by
+`ndm_klustakwik` (see [ndmanager-plugins](../ndmanager-plugins/README.md#ndm_klustakwik) for
+details). Values here override `programs[ndm_klustakwik].parameters.*` and the script's
+built-in defaults.
 
 ### `.probe` file format
 
