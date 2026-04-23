@@ -609,15 +609,22 @@ def main():
     if frac_a > 0.6:
         penalty_mix = 0.05
 
+    # ── Extract electrode group number from filename ─────────────────────────
+    # e.g. session.fet.2  or  session.fetD.3  → group 2 / 3
+    import re as _re
+    _grp_match = _re.search(r'\.fetD?\.([0-9]+)$', str(fet_path.name))
+    _electrode_group = int(_grp_match.group(1)) if _grp_match else 0
+
     # ── Assemble prior YAML ────────────────────────────────────────────────
     prior = {
         "source": {
-            "method":     "raw_feature_estimation",
-            "fet_file":   str(fet_path),
-            "is_stderiv": bool(is_stderiv),
-            "n_spikes":   int(n_spikes),
-            "n_sub":      int(N_sub),
-            "k_coarse":   int(K),
+            "method":          "raw_feature_estimation",
+            "fet_file":        str(fet_path),
+            "is_stderiv":      bool(is_stderiv),
+            "electrode_group": _electrode_group,
+            "n_spikes":        int(n_spikes),
+            "n_sub":           int(N_sub),
+            "k_coarse":        int(K),
             "note": ("Estimated from raw feature-space geometry. "
                      "Refine with kk_build_prior.py after curation sessions."),
         },

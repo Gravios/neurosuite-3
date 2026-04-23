@@ -4463,6 +4463,13 @@ void KlustersApp::slotNudgeTimestampPlus()
 }
 
 // ---------------------------------------------------------------------------
+// Curation quality annotation
+// ---------------------------------------------------------------------------
+void KlustersApp::slotAnnotateGood()      { if (doc) doc->logAnnotation(2); }
+void KlustersApp::slotAnnotateUncertain() { if (doc) doc->logAnnotation(1); }
+void KlustersApp::slotAnnotateBad()       { if (doc) doc->logAnnotation(0); }
+
+// ---------------------------------------------------------------------------
 // Keyboard shortcut help dialog
 // ---------------------------------------------------------------------------
 void KlustersApp::slotShowShortcutHelp()
