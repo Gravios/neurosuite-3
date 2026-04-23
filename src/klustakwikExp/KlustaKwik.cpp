@@ -77,7 +77,7 @@ int   TimeShiftMergeEnable      = 1;  ///< apply min-Mahalanobis probe during cl
 // DipSplit parameters (Phase 1.8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 100;   ///< min spikes per child cluster for accepted split
-float DipSplitBloatFactor       = 1.5f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation
+float DipSplitBloatFactor       = 1.2f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation
 float DipSplitValleyThresh      = 0.15f; ///< min KDE valley depth to flag bimodality
 int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2

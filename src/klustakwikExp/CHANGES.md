@@ -311,6 +311,114 @@ The inherited canonical changelog is preserved as
 
 All other files are byte-identical to their canonical counterparts.
 
+## [2026-04-23f] Time-shift Phase 4 stderiv disk-commit
+
+Completes stderiv support end-to-end.  Prior commit (2026-04-23e) made the
+in-memory probe work for stderiv sessions; this commit makes the disk
+commit work too, so `m_cumShift[]` accumulated during probing actually
+materialises as corrected `.spkD.pending` / `.fetD.pending` files.
+
+### Problem
+
+`RefeaturizeFromShifts` and `WritePhase15Checkpoint` both read raw voltages
+from `.fil` (the broadband continuous recording) at `rawTs + cumShift -
+peakIdx`, then (a) project through the PCA basis to update `Data[]` and
+(b) write the re-extracted spike waveform to `.spk(D).pending`.
+
+For canonical sessions (`.spk`/`.pca`) this is correct — both the basis
+and the output format live in raw-voltage space.
+
+For stderiv sessions (`.spkD`/`.pcaD`) it corrupts the pipeline on two
+fronts:
+1. Projecting raw voltages through a stderiv-space basis gives garbage
+   features.
+2. Writing raw voltages to `.spkD.pending` produces a file with the wrong
+   format — downstream tools that expect stderiv-transformed `.spkD`
+   content see raw voltages.
+
+### Fix
+
+Added `KK::ApplySdiffAllpairsTemporalDiff(wave, nChan, nSamplesPerSpike)`,
+a static helper that performs the exact two-step transform
+`process_extractspikes_stderiv.cpp::fill_sdiff_buffer` uses:
+
+    step 1:  sdiff[t, ch]   = nChan · raw[t, ch] − Σ_ch raw[t, :]   (saturated)
+    step 2:  wave[t, ch]    = sdiff[t, ch] − sdiff[t-1, ch]         (saturated)
+
+Boundary: `sdiff[-1, ch] = 0` per spike.  Int16 saturation at each stage
+matches the reference implementation.
+
+Call sites:
+- `RefeaturizeFromShifts`: after reading `wave[]` from `.fil`, before
+  projecting.  Guarded by `m_timeShiftBasis.isStderiv`.
+- `WritePhase15Checkpoint`: after reading `spkRow[]` from `.fil`, before
+  writing to `.spkD.pending`.  Same guard.
+
+### End-to-end stderiv flow (finally complete)
+
+1. **Init**: `InitTimeShift` detects `.pcaD` (nc = nChan − 1) + loads the
+   basis, opens `.spkD` via mmap, sets `isStderiv = true`.
+2. **Probe**: in-memory projection during clustering uses `.spkD` directly
+   (no transform needed — `.spkD` already holds stderiv waveforms).
+   Pre-shifted basis trick provides δ-shift simulation with small
+   zero-pad approximation at edges (acceptable for |δ| ≤ 5 in a 24-sample
+   window).
+3. **Probe commits**: `m_cumShift[p] += δ` on every accepted shift.
+4. **Phase 4**: `TimeShiftFinalize` invokes `RefeaturizeFromShifts` to
+   re-extract from `.fil` at shifted offsets, apply SDIFF + temporal-diff
+   in place, project through `.pcaD` → fresh features in `Data[]`.
+   Then `WritePhase15Checkpoint` writes the re-extracted-and-transformed
+   waveforms to `.spkD.pending` and the re-projected features to
+   `.fetD.pending`.
+
+The key insight (user's direction): during the hot clustering loop we
+use the approximate shifted-basis projection on pre-transformed `.spkD`
+content; at Phase 4 we spend the extra CPU to re-derive exactly from
+`.fil` for the final disk commit.  Best of both worlds — fast clustering,
+correct output.
+
+## [2026-04-23e] Time-shift probe: stderiv support + mmap-guard fix
+
+Critical fix plus stderiv support rolled together.
+
+### Bug: mmap-path probe silently disabled
+
+`InitTimeShift` was refactored to prefer `mmap(MAP_PRIVATE)` over stdio for
+`.spk` access (kernel page cache amortises cluster-scattered reads).  On
+success the mmap pointer is stored in `m_timeShiftSpkMap` and the `FILE*`
+(`m_timeShiftSpkFp`) is left null.  Unfortunately the three projection
+guards still checked `!m_timeShiftSpkFp` and returned 0 unconditionally —
+silently disabling the entire time-shift probe (Phase 1.5 alignment,
+Phase 2.5 split, Phase 3 merge-tighten).  Also, the actual reads used
+`fseeko(m_timeShiftSpkFp, …)` + `fread` which would fail even if the guard
+didn't stop them.
+
+**Fix**: added `TimeShiftReadSpikeWave(p, waveSamples, dst)` helper that
+transparently branches on mmap vs fp.  All three projection paths now call
+the helper; the guards accept either backing store
+(`!(m_timeShiftSpkMap || m_timeShiftSpkFp)`).
+
+### Stderiv support (`.pcaD.N` / `.spkD.N`)
+
+Per-session acceptance of stderiv basis when `nc == nChan - 1`.  The
+.spkD.N file contains waveforms with `SDIFF_ALLPAIRS` + temporal first-
+difference already applied, and .pcaD.N is the PCA basis built on that
+transformed data (with the sum-to-zero dependent channel dropped).
+Projecting .spkD through a pre-shifted .pcaD basis is mathematically
+correct because both live in the same stderiv space.
+
+The zero-pad approximation at the shifted-basis edges is small for the
+shift magnitudes we use (|δ| ≤ 5 samples within a 20–50-sample spike
+window; PC tails are near zero at window edges).  This approximation is
+acceptable per user direction: "just load the spkD file and perform the
+transform there since the shifts are not too large".
+
+### Files changed
+
+- `KK.h`: added `TimeShiftReadSpikeWave()` declaration.
+- `KK.cpp`: new helper + rewrote three projection paths to use it +
+  relaxed guards in three places.
+
 ## [2026-04-23d] DipSplit — bimodal-cluster splitter (Phase 1.8)
 
 **Summary**: new phase that detects and splits "flat" clusters — CEM failure

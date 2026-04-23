@@ -33,6 +33,12 @@
 #include <unordered_set>
 #ifdef _OPENMP
 #include <omp.h>
+
+// ── mmap for time-shift .spk/.spkD shared-memory access ──────────────────
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 // SIMD intrinsics for the batched EStep kernel (AVX-512 / AVX2 paths).
 // The file is compiled with -march=native, so the right path is selected
@@ -2116,6 +2122,13 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
             }
             if (!ok) { ++nSkipped; continue; }
 
+            // For stderiv sessions the basis lives in SDIFF_ALLPAIRS + temporal
+            // first-difference space, so the raw voltages we just read must be
+            // transformed before projection.  One in-place pass matching
+            // process_extractspikes_stderiv exactly.
+            if (m_timeShiftBasis.isStderiv) {
+                ApplySdiffAllpairsTemporalDiff(wave.data(), nChan, nSamplesPerSpike);
+            }
         } else {
             // ── .spk fallback: circular shift ─────────────────────────────
             off_t offset = static_cast<off_t>(p) * waveSamples * sizeof(int16_t);
@@ -2588,15 +2601,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
 
-    // ── Phase 1.8: DipSplit — bimodal-cluster detection & split ─────────
-    // After cluster alignment has corrected systematic temporal offsets,
-    // look for clusters where CEM's single-Gaussian fit is masking a
-    // bimodal sub-structure.  The two-stage gate (χ²-bloat → KDE-valley)
-    // keeps cost proportional to actually-bimodal clusters.  Runs MStep+
-    // EStep+CStep internally if any split is accepted.
-    if (DipSplitEnable != 0) {
-        DipSplitPhase();
-    }
+    // Note: DipSplit (Phase 1.8) runs AFTER Phase 3 completes — see end of
+    // this function.  Running it here would operate on stale per-chunk
+    // LogP[] values and produce wrong bloat-gate decisions.
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
@@ -2880,6 +2887,16 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             FullStep = 1;
             if (nChanged == 0) { Output("Phase 3 converged at iter %d\n", iter); break; }
         }
+    }
+
+    // ── Phase 1.8: DipSplit (post-Phase-3) ───────────────────────────────
+    // Runs AFTER global MStep/EStep so LogP[c][p] reflects the final
+    // cluster assignments.  Splits a bloated cluster into two if a valley
+    // is found on any of its top-3 PCs and BIC supports it.  No-op if
+    // DipSplitEnable=0 or no clusters pass the bloat gate.
+    if (DipSplitEnable != 0) {
+        const int n_split = DipSplitPhase();
+        if (n_split > 0) score = ComputeScore();
     }
 
     Output("RunChunkedCEM(ext) done: %d clusters, score %.7g\n", nClustersAlive, score);
@@ -3274,15 +3291,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
         }
     }
 
-    // ── Phase 1.8: DipSplit — bimodal-cluster detection & split ─────────
-    // After cluster alignment has corrected systematic temporal offsets,
-    // look for clusters where CEM's single-Gaussian fit is masking a
-    // bimodal sub-structure.  The two-stage gate (χ²-bloat → KDE-valley)
-    // keeps cost proportional to actually-bimodal clusters.  Runs MStep+
-    // EStep+CStep internally if any split is accepted.
-    if (DipSplitEnable != 0) {
-        DipSplitPhase();
-    }
+    // Note: DipSplit (Phase 1.8) runs AFTER Phase 3 completes — see end of
+    // this function.  Running it here would operate on stale per-chunk
+    // LogP[] values and produce wrong bloat-gate decisions.
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
@@ -3626,6 +3637,14 @@ float KK::RunChunkedCEM(float chunkMinutes,
         }
     }
 
+    // ── Phase 1.8: DipSplit (post-Phase-3) ───────────────────────────────
+    // Runs AFTER global MStep/EStep so LogP[c][p] reflects the final
+    // cluster assignments.  See RunChunkedCEM(ext) for details.
+    if (DipSplitEnable != 0) {
+        const int n_split = DipSplitPhase();
+        if (n_split > 0) score = ComputeScore();
+    }
+
     Output("RunChunkedCEM done: %d clusters, score %.7g\n", nClustersAlive, score);
     return score;
 }
@@ -3766,6 +3785,16 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                                     != static_cast<size_t>(NbTotalChannels)) { ok=false; break; }
                             for (int c = 0; c < nChan; c++)
                                 spkRow[s * nChan + c] = filRow[GroupChannelIds[c]];
+                        }
+                        // For stderiv sessions the original .spkD on disk stores
+                        // SDIFF_ALLPAIRS + temporal-diff output — not raw voltages.
+                        // Apply the same transform so our .spkD.pending matches
+                        // the format ndm_extractspikes_stderiv would have written
+                        // at this timestamp.
+                        if (ok && m_timeShiftBasis.isStderiv) {
+                            ApplySdiffAllpairsTemporalDiff(spkRow.data(),
+                                                           nChan,
+                                                           nSamplesPerSpike);
                         }
                     }
                     // If .fil read fails, keep original (already in spkRow)
@@ -3934,17 +3963,35 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
                pcaPath);
         fclose(pf); return false;
     }
-    if (nc != nChan) {
-        Output("InitTimeShift: PCA has %d channels, spike group has %d — "
-               "probe disabled\n", nc, nChan);
+    // Channel-count check — accepts canonical .pca.N (nc == nChan) and
+    // stderiv .pcaD.N variants with channel reduction.  For SDIFF_ALLPAIRS
+    // (order 3) and SDIFF_FIRST (order 1), the last of nChan channels is
+    // linearly dependent; process_pca_stderiv drops it at basis-build time,
+    // so the .pcaD.N file has nc = nChan - 1 channels.  At probe time we
+    // read from .spkD.N (which retains all nChan transformed channels, the
+    // last being redundant) and iterate only the first nc = nChan - 1 in
+    // the projection loop.
+    const bool isStderiv = (nc == nChan - 1);
+    if (nc != nChan && !isStderiv) {
+        Output("InitTimeShift: PCA has %d channels, spike group has %d "
+               "(expected %d for canonical .pca or %d for stderiv .pcaD) "
+               "— probe disabled\n",
+               nc, nChan, nChan, nChan - 1);
         fclose(pf); return false;
     }
-    m_timeShiftBasis.nChan      = nc;
-    m_timeShiftBasis.data2use   = d2u;
-    m_timeShiftBasis.nComp      = ncomp;
-    m_timeShiftBasis.recShift   = rs;
-    m_timeShiftBasis.isCentered = (ic != 0);
-    m_timeShiftBasis.N          = N;
+    if (isStderiv) {
+        Output("InitTimeShift: stderiv mode (.pcaD.%d basis, %d effective "
+               "channels; last-channel-redundant convention)\n",
+               ElecNo, nc);
+    }
+    m_timeShiftBasis.nChan       = nc;
+    m_timeShiftBasis.data2use    = d2u;
+    m_timeShiftBasis.nComp       = ncomp;
+    m_timeShiftBasis.recShift    = rs;
+    m_timeShiftBasis.isCentered  = (ic != 0);
+    m_timeShiftBasis.N           = N;
+    m_timeShiftBasis.isStderiv   = isStderiv;
+    m_timeShiftBasis.rawChannels = nChan;   // .spkD stride uses raw count
 
     // Sanity check: N must be less than the PCA support, otherwise the
     // shifted bases are almost entirely zero and the probe is pointless.
@@ -4029,14 +4076,146 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
         }
     }
 
-    // --- Open .spk once, read-only ---
+    // --- Open .spk or .spkD ---
+    // In stderiv mode the .spkD file holds transformed waveforms that match
+    // the .pcaD basis.  Otherwise canonical .spk.
+    //
+    // Mapping strategy:
+    //   Preferred: mmap(MAP_PRIVATE) — gives random-access shared-memory
+    //   semantics via the kernel page cache, amortising cluster-scattered
+    //   reads across the whole session without per-spike fseeko/fread.
+    //   Fallback: fopen — used when mmap fails (e.g. exotic filesystems,
+    //   NFS with wonky MAP_PRIVATE support).
     char spkPath[STRLEN + 16];
-    pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
-    m_timeShiftSpkFp = fopen(spkPath, "rb");
-    if (!m_timeShiftSpkFp) {
+    if (isStderiv) {
+        std::snprintf(spkPath, sizeof(spkPath), "%s.spkD.%d", FileBase, ElecNo);
+    } else {
+        pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
+    }
+
+    const int spkFd = open(spkPath, O_RDONLY);
+    if (spkFd < 0) {
         Output("InitTimeShift: cannot open %s — probe disabled\n", spkPath);
         m_timeShiftBasis = TimeShiftBasis{};
         return false;
+    }
+    struct stat st;
+    if (fstat(spkFd, &st) != 0 || st.st_size <= 0) {
+        Output("InitTimeShift: cannot stat %s — probe disabled\n", spkPath);
+        close(spkFd);
+        m_timeShiftBasis = TimeShiftBasis{};
+        return false;
+    }
+    const size_t spkBytes = static_cast<size_t>(st.st_size);
+    void* spkMap = mmap(nullptr, spkBytes, PROT_READ, MAP_PRIVATE, spkFd, 0);
+    close(spkFd);   // mmap holds its own reference
+
+    if (spkMap == MAP_FAILED) {
+        // Fallback to stdio.
+        Output("InitTimeShift: mmap(%s) failed (%s) — falling back to stdio\n",
+               spkPath, std::strerror(errno));
+        m_timeShiftSpkFp = fopen(spkPath, "rb");
+        if (!m_timeShiftSpkFp) {
+            Output("InitTimeShift: cannot open %s — probe disabled\n", spkPath);
+            m_timeShiftBasis = TimeShiftBasis{};
+            return false;
+        }
+        m_timeShiftSpkMap = nullptr;
+        m_timeShiftSpkLen = 0;
+    } else {
+        // Advise the kernel that random access is coming so it uses the
+        // page cache aggressively without prefetching whole-file sequences.
+        madvise(spkMap, spkBytes, MADV_RANDOM);
+        m_timeShiftSpkMap = spkMap;
+        m_timeShiftSpkLen = spkBytes;
+        m_timeShiftSpkFp  = nullptr;
+        Output("InitTimeShift: mmap(%s) %.2f MB — random-access page cache active\n",
+               spkPath, spkBytes / (1024.0 * 1024.0));
+    }
+
+    // ── Stderiv mode: mmap .fil so we can re-derive at arbitrary δ-shifts ──
+    //
+    // For canonical .pca sessions, shifting by δ samples in the *.spk domain is
+    // mathematically identical to shifting the raw-voltage window by δ samples
+    // (linear basis, no intra-channel coupling).  For .pcaD (stderiv) the
+    // basis lives in spatial-derivative × temporal-derivative space — a
+    // δ-shift of the RAW waveform in .fil does NOT correspond to a simple
+    // δ-shift of the already-transformed .spkD content; we must re-run the
+    // two-step transform (SDIFF_ALLPAIRS + temporal first-difference, drop
+    // last channel) starting from a freshly-shifted raw window.
+    //
+    // .fil is potentially many GB.  MAP_PRIVATE + MADV_RANDOM lets the
+    // kernel page-cache cold regions transparently; we only pay for pages
+    // we actually touch.  The resulting pointer is thread-safe for read-only
+    // access and requires no per-call fseeko/fread.
+    m_timeShiftIsStderiv  = isStderiv;
+    m_timeShiftFilMap     = nullptr;
+    m_timeShiftFilLen     = 0;
+    m_timeShiftFilSamples = 0;
+
+    if (isStderiv) {
+        if (NbTotalChannels <= 0 || GroupChannelIds.empty()) {
+            Output("InitTimeShift: stderiv mode needs NbTotalChannels + "
+                   "GroupChannelIds (YAML probe geometry) — probe disabled\n");
+            if (m_timeShiftSpkMap) {
+                munmap(m_timeShiftSpkMap, m_timeShiftSpkLen);
+                m_timeShiftSpkMap = nullptr; m_timeShiftSpkLen = 0;
+            }
+            if (m_timeShiftSpkFp) { fclose(m_timeShiftSpkFp); m_timeShiftSpkFp = nullptr; }
+            m_timeShiftBasis = TimeShiftBasis{};
+            return false;
+        }
+        if (static_cast<int>(GroupChannelIds.size()) != nChan) {
+            Output("InitTimeShift: GroupChannelIds size %zu != nChan %d — "
+                   "probe disabled\n", GroupChannelIds.size(), nChan);
+            if (m_timeShiftSpkMap) {
+                munmap(m_timeShiftSpkMap, m_timeShiftSpkLen);
+                m_timeShiftSpkMap = nullptr; m_timeShiftSpkLen = 0;
+            }
+            if (m_timeShiftSpkFp) { fclose(m_timeShiftSpkFp); m_timeShiftSpkFp = nullptr; }
+            m_timeShiftBasis = TimeShiftBasis{};
+            return false;
+        }
+
+        char filPath[STRLEN + 16];
+        std::snprintf(filPath, sizeof(filPath), "%s.fil", FileBase);
+        const int filFd = open(filPath, O_RDONLY);
+        if (filFd < 0) {
+            Output("InitTimeShift: stderiv mode requires %s (not found) — "
+                   "probe disabled.  Canonical .pca path unaffected.\n", filPath);
+            if (m_timeShiftSpkMap) {
+                munmap(m_timeShiftSpkMap, m_timeShiftSpkLen);
+                m_timeShiftSpkMap = nullptr; m_timeShiftSpkLen = 0;
+            }
+            if (m_timeShiftSpkFp) { fclose(m_timeShiftSpkFp); m_timeShiftSpkFp = nullptr; }
+            m_timeShiftBasis = TimeShiftBasis{};
+            return false;
+        }
+        struct stat filSt;
+        if (fstat(filFd, &filSt) != 0 || filSt.st_size <= 0) {
+            Output("InitTimeShift: cannot stat %s — probe disabled\n", filPath);
+            close(filFd);
+            m_timeShiftBasis = TimeShiftBasis{};
+            return false;
+        }
+        const size_t filBytes = static_cast<size_t>(filSt.st_size);
+        void* filMap = mmap(nullptr, filBytes, PROT_READ, MAP_PRIVATE, filFd, 0);
+        close(filFd);
+        if (filMap == MAP_FAILED) {
+            Output("InitTimeShift: mmap(%s) failed (%s) — probe disabled\n",
+                   filPath, std::strerror(errno));
+            m_timeShiftBasis = TimeShiftBasis{};
+            return false;
+        }
+        madvise(filMap, filBytes, MADV_RANDOM);
+        m_timeShiftFilMap     = filMap;
+        m_timeShiftFilLen     = filBytes;
+        m_timeShiftFilSamples = static_cast<int64_t>(filBytes)
+                              / (static_cast<int64_t>(NbTotalChannels) * 2);
+        Output("InitTimeShift: stderiv .fil mmap(%s) %.2f GB "
+               "(%lld samples × %d channels)\n",
+               filPath, filBytes / (1024.0 * 1024.0 * 1024.0),
+               (long long)m_timeShiftFilSamples, NbTotalChannels);
     }
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
@@ -4073,6 +4252,11 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
 void KK::CloseTimeShift()
 {
     if (m_timeShiftSpkFp) { fclose(m_timeShiftSpkFp); m_timeShiftSpkFp = nullptr; }
+    if (m_timeShiftSpkMap) {
+        munmap(m_timeShiftSpkMap, m_timeShiftSpkLen);
+        m_timeShiftSpkMap = nullptr;
+        m_timeShiftSpkLen = 0;
+    }
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (m_timeShiftGpuCtx) {
         extern void gpu_timeshift_free(TimeShiftGpuCtx* ctx);
@@ -4084,18 +4268,125 @@ void KK::CloseTimeShift()
 }
 
 // ---------------------------------------------------------------------------
-// TimeShiftSplit  — primitive operating on an explicit index list
+// TimeShiftReadSpikeWave — read one spike's waveform from .spk / .spkD.
 //
-// Parameters
-//   globalSpikeIndices  — 0-based global indices into Data[] / .spk / m_cumShift
-//   nChan, nSamplesPerSpike — .spk layout dimensions (sample-major)
+// Transparently branches on whichever backing store InitTimeShift chose:
+//   • m_timeShiftSpkMap (preferred): const-cast pointer arithmetic + memcpy
+//   • m_timeShiftSpkFp  (fallback):  fseeko + fread
+//
+// Both paths return `waveSamples` int16_t values starting at byte offset
+// (p * waveSamples * sizeof(int16_t)).  Caller owns dst.  Returns false on
+// bounds failure, I/O error, or when neither backing store is active.
+// ---------------------------------------------------------------------------
+bool KK::TimeShiftReadSpikeWave(int p, int waveSamples, int16_t* dst)
+{
+    if (p < 0 || waveSamples <= 0 || !dst) return false;
+    const size_t byteOff = static_cast<size_t>(p) *
+                           static_cast<size_t>(waveSamples) * sizeof(int16_t);
+    const size_t byteLen = static_cast<size_t>(waveSamples) * sizeof(int16_t);
+
+    if (m_timeShiftSpkMap) {
+        if (byteOff + byteLen > m_timeShiftSpkLen) return false;
+        std::memcpy(dst,
+                    static_cast<const char*>(m_timeShiftSpkMap) + byteOff,
+                    byteLen);
+        return true;
+    }
+    if (m_timeShiftSpkFp) {
+        if (fseeko(m_timeShiftSpkFp, static_cast<off_t>(byteOff), SEEK_SET) != 0)
+            return false;
+        return fread(dst, sizeof(int16_t),
+                     static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
+               == static_cast<size_t>(waveSamples);
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// ApplySdiffAllpairsTemporalDiff — in-place stderiv transform on a spike wave.
+//
+// Mirrors process_extractspikes_stderiv.cpp::fill_sdiff_buffer() exactly:
+//   step 1 per time sample t:  sdiff[t, ch] = nChan * raw[t, ch] − Σ raw[t, :]
+//                              (saturating to int16 range)
+//   step 2 per time sample t:  wave[t, ch] = sdiff[t, ch] − sdiff[t-1, ch]
+//                              (saturating to int16 range)
+// Boundary: sdiff[-1, ch] = 0 per spike.  The streaming extraction uses a
+// persisted chunk boundary; for per-spike re-extraction (what Phase 4 does)
+// sdPrev=0 matches process_pca_stderiv's -d 4 pass-through convention.
+//
+// Called by RefeaturizeFromShifts (before basis projection) and
+// WritePhase15Checkpoint (before writing .spkD.pending) when the basis
+// is stderiv.  Static so it's a pure function of its arguments — no
+// dependence on KK state beyond what's passed in.
+// ---------------------------------------------------------------------------
+void KK::ApplySdiffAllpairsTemporalDiff(int16_t* wave, int nChan,
+                                        int nSamplesPerSpike)
+{
+    if (!wave || nChan <= 0 || nSamplesPerSpike <= 0) return;
+
+    // Reusable scratch: per-channel sdiff for "current" and "previous" samples.
+    // nChan is small (≤ 16 for typical probes), so heap alloc is negligible.
+    std::vector<int32_t> sdiffCur(static_cast<size_t>(nChan), 0);
+    std::vector<int32_t> sdiffPrev(static_cast<size_t>(nChan), 0);
+
+    auto satI16 = [](int32_t v) -> int16_t {
+        if (v >  32767) return  32767;
+        if (v < -32768) return -32768;
+        return static_cast<int16_t>(v);
+    };
+
+    for (int s = 0; s < nSamplesPerSpike; ++s) {
+        // Spatial sum
+        int32_t sum = 0;
+        for (int c = 0; c < nChan; ++c)
+            sum += static_cast<int32_t>(wave[s * nChan + c]);
+
+        // SDIFF_ALLPAIRS + saturate
+        for (int c = 0; c < nChan; ++c) {
+            const int32_t raw = static_cast<int32_t>(wave[s * nChan + c]);
+            int32_t iv = nChan * raw - sum;
+            if (iv >  32767) iv =  32767;
+            if (iv < -32768) iv = -32768;
+            sdiffCur[static_cast<size_t>(c)] = iv;
+        }
+
+        // Temporal first-difference + saturate, write in place
+        for (int c = 0; c < nChan; ++c) {
+            const int32_t diff = sdiffCur[static_cast<size_t>(c)]
+                               - sdiffPrev[static_cast<size_t>(c)];
+            wave[s * nChan + c] = satI16(diff);
+        }
+
+        // Save for next iteration's sdPrev (cannot overwrite before the
+        // temporal-diff loop reads sdiffPrev).
+        std::swap(sdiffCur, sdiffPrev);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TimeShiftSplit
+//
+// Multi-candidate shift-probe applied at split acceptance.  Projects every
+// spike under (2N+1) δ-shifted PCA bases; picks the cluster-wide δ that
+// maximises the per-PC-dim variance sum across the spike set.
+//
+// For stderiv sessions: .spkD contains already-transformed waveforms and
+// .pcaD was built on matching stderiv data, so the pre-shifted-basis trick
+// is applied directly to .spkD content.  The zero-pad approximation at the
+// edges of the shifted basis is small for the shift magnitudes used here
+// (|δ| ≤ 5 samples within a 20–50-sample window).
+//
+// Arguments:
+//   globalSpikeIndices — indices into Data[] identifying the spikes
+//   nChan, nSamplesPerSpike — .spk/.spkD layout dimensions (sample-major)
 //
 // Returns the number of spikes whose committed shift changed this call.
 //
 // Core loop: the (2N+1) candidate deltas share every raw-sample load from
-// .spk.  (2N+1) accumulators per (channel, PC) are stepped through data2use
-// samples in a single pass, reading from (2N+1) pre-shifted basis buffers.
-// No modulo, no branching in the hot loop — maps cleanly to SIMD and GPU.
+// .spk/.spkD.  (2N+1) accumulators per (channel, PC) are stepped through
+// data2use samples in a single pass, reading from (2N+1) pre-shifted basis
+// buffers.  No modulo, no branching in the hot loop — maps cleanly to SIMD
+// and GPU.
 //
 // Selection: cluster-wide max sum-of-per-dim variance across candidates.
 // Winner is committed as a single delta for ALL spikes in the index list.
@@ -4103,9 +4394,10 @@ void KK::CloseTimeShift()
 int KK::TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
                                     int nChan, int nSamplesPerSpike)
 {
-    if (!m_timeShiftReady || !m_timeShiftSpkFp)                   return 0;
+    if (!m_timeShiftReady)                                      return 0;
+    if (!m_timeShiftSpkMap && !m_timeShiftSpkFp)                return 0;
     if (!m_timeShiftBasis.valid())                              return 0;
-    if (nChan <= 0 || nSamplesPerSpike <= 0)                   return 0;
+    if (nChan <= 0 || nSamplesPerSpike <= 0)                    return 0;
     const int nMem = static_cast<int>(globalSpikeIndices.size());
     if (nMem < 2) return 0;   // variance of a single point is 0; skip
 
@@ -4187,12 +4479,10 @@ int KK::TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
             const int p = globalSpikeIndices[static_cast<size_t>(mi)];
             if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
 
-            if (fseeko(m_timeShiftSpkFp,
-                       static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
-                       SEEK_SET) != 0) { ++nSkippedRead; continue; }
-            if (fread(m_timeShiftWaveScratch.data(), sizeof(int16_t),
-                      static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
-                    != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
+            if (!TimeShiftReadSpikeWave(p, waveSamples,
+                                        m_timeShiftWaveScratch.data())) {
+                ++nSkippedRead; continue;
+            }
 
             const int baseCum = m_cumShift[static_cast<size_t>(p)];
             const int16_t* raw = m_timeShiftWaveScratch.data();
@@ -4357,7 +4647,7 @@ int KK::TimeShiftMergeTighten(
     int nChan, int nSamplesPerSpike,
     const float* destMean, const float* destChol)
 {
-    if (!m_timeShiftReady || !m_timeShiftSpkFp)  return 0;
+    if (!m_timeShiftReady || (!m_timeShiftSpkMap && !m_timeShiftSpkFp))  return 0;
     if (!m_timeShiftBasis.valid())             return 0;
     if (!destMean || !destChol)               return 0;
     if (nChan <= 0 || nSamplesPerSpike <= 0)  return 0;
@@ -4401,12 +4691,10 @@ int KK::TimeShiftMergeTighten(
         const int p = globalSpikeIndices[static_cast<size_t>(mi)];
         if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
 
-        if (fseeko(m_timeShiftSpkFp,
-                   static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
-                   SEEK_SET) != 0) { ++nSkippedRead; continue; }
-        if (fread(m_timeShiftWaveScratch.data(), sizeof(int16_t),
-                  static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
-                != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
+        if (!TimeShiftReadSpikeWave(p, waveSamples,
+                                    m_timeShiftWaveScratch.data())) {
+            ++nSkippedRead; continue;
+        }
 
         const int baseCum = m_cumShift[static_cast<size_t>(p)];
         const int16_t* raw = m_timeShiftWaveScratch.data();
@@ -4561,7 +4849,7 @@ bool KK::TimeShiftMergeEvaluate(
     TimeShiftMergePlan& plan)
 {
     plan = TimeShiftMergePlan{};
-    if (!m_timeShiftReady || !m_timeShiftSpkFp) return false;
+    if (!m_timeShiftReady || (!m_timeShiftSpkMap && !m_timeShiftSpkFp)) return false;
     if (!m_timeShiftBasis.valid())            return false;
     if (victim < 0 || victim >= MaxPossibleClusters) return false;
     if (!ClassAlive[victim])                 return false;
@@ -4610,12 +4898,8 @@ bool KK::TimeShiftMergeEvaluate(
     int nRead = 0;
     for (int mi = 0; mi < nMem; ++mi) {
         const int p = idxs[mi];
-        if (fseeko(m_timeShiftSpkFp,
-                   static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
-                   SEEK_SET) != 0) continue;
-        if (fread(m_timeShiftWaveScratch.data(), sizeof(int16_t),
-                  static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
-                != static_cast<size_t>(waveSamples)) continue;
+        if (!TimeShiftReadSpikeWave(p, waveSamples,
+                                    m_timeShiftWaveScratch.data())) continue;
 
         const int baseCum = m_cumShift[static_cast<size_t>(p)];
         const int16_t* raw = m_timeShiftWaveScratch.data();
@@ -4938,9 +5222,21 @@ static double percentile_sorted(std::vector<double>& v, double q)
 //
 // Returns true when the cluster was split and Class[] updated.  Caller is
 // responsible for follow-up MStep+EStep to refresh cluster stats.
+//
+// The `reason_out` parameter (optional) receives a tag describing what
+// happened: one of "split", "small", "not_bloated", "no_valley",
+// "small_child", "bic_worse", "no_free_id".  Used by DipSplitPhase for
+// summary logging.
 // ---------------------------------------------------------------------------
 bool KK::DipSplitAttempt(int clusterId)
 {
+    const char* _dummy = nullptr;
+    return DipSplitAttemptEx(clusterId, _dummy);
+}
+
+bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
+{
+    reason_out = "skip";
     if (clusterId <= 0 || clusterId >= MaxPossibleClusters) return false;
     if (!ClassAlive[clusterId])                             return false;
 
@@ -4950,7 +5246,7 @@ bool KK::DipSplitAttempt(int clusterId)
     for (int p = 0; p < nPoints; ++p)
         if (Class[p] == clusterId) members.push_back(p);
     const int M = static_cast<int>(members.size());
-    if (M < DipSplitMinSize * 2) return false;   // cluster too small to split in two
+    if (M < DipSplitMinSize * 2) { reason_out = "small"; return false; }
 
     // ── Gate A: bloat (cheap, skips ~all single-Gaussian clusters) ─────────
     // mahal²(p, c) = 2·(LogP[c][p] − baseScore_c).  We drop baseScore_c from
@@ -4959,8 +5255,6 @@ bool KK::DipSplitAttempt(int clusterId)
     std::vector<double> mahal2(M);
     for (int i = 0; i < M; ++i) {
         const int p = members[i];
-        // LogP[c][p] = 0.5·mahal² + logRootDet + log2π·d/2 − log(Weight).
-        // Relative mahal² within the cluster is 2·(LogP − median(LogP)).
         mahal2[i] = 2.0 * static_cast<double>(
             LogP.m_Data[static_cast<size_t>(clusterId) * nPoints + p]);
     }
@@ -4975,7 +5269,10 @@ bool KK::DipSplitAttempt(int clusterId)
     const double a   = 1.0 - 2.0 / (9.0 * d_);
     const double b   = 1.2816 * std::sqrt(2.0 / (9.0 * d_));
     const double chi2_90 = d_ * std::pow(a + b, 3.0);
-    if (mahal2_p90 < DipSplitBloatFactor * chi2_90) return false;   // not bloated
+    if (mahal2_p90 < DipSplitBloatFactor * chi2_90) {
+        reason_out = "not_bloated";
+        return false;
+    }
 
     // ── Collect member feature vectors for PCA + dip + k-means ───────────
     // We do NOT use the time dim (last column) — it's a normalized timestamp
@@ -5025,7 +5322,10 @@ bool KK::DipSplitAttempt(int clusterId)
             best_projection = std::move(proj);
         }
     }
-    if (best_pc < 0 || best_depth < DipSplitValleyThresh) return false;
+    if (best_pc < 0 || best_depth < DipSplitValleyThresh) {
+        reason_out = "no_valley";
+        return false;
+    }
 
     // ── Seed k=2 partition at the valley ─────────────────────────────────
     std::vector<int> labels(M, 0);
@@ -5045,7 +5345,10 @@ bool KK::DipSplitAttempt(int clusterId)
             ++n1;
         }
     }
-    if (n0 < DipSplitMinSize || n1 < DipSplitMinSize) return false;
+    if (n0 < DipSplitMinSize || n1 < DipSplitMinSize) {
+        reason_out = "small_child";
+        return false;
+    }
     for (int j = 0; j < dPCA; ++j) { c0[j] /= n0; c1[j] /= n1; }
 
     // ── Refine with k-means k=2 ──────────────────────────────────────────
@@ -5057,19 +5360,25 @@ bool KK::DipSplitAttempt(int clusterId)
     for (int i = 0; i < M; ++i) {
         if (labels[i] == 0) ++n0; else ++n1;
     }
-    if (n0 < DipSplitMinSize || n1 < DipSplitMinSize) return false;
+    if (n0 < DipSplitMinSize || n1 < DipSplitMinSize) {
+        reason_out = "small_child";
+        return false;
+    }
 
     // ── BIC gate ─────────────────────────────────────────────────────────
     const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
         Xmem.data(), M, dPCA, labels.data());
-    if (!(bp.bic_k2 < bp.bic_k1)) return false;
+    if (!(bp.bic_k2 < bp.bic_k1)) {
+        reason_out = "bic_worse";
+        return false;
+    }
 
     // ── Allocate a new cluster ID for the right half ──────────────────────
     int newId = -1;
     for (int c = 1; c < MaxPossibleClusters; ++c) {
         if (!ClassAlive[c]) { newId = c; break; }
     }
-    if (newId < 0) return false;  // no free slot — drop the split
+    if (newId < 0) { reason_out = "no_free_id"; return false; }
 
     // ── Commit split: relabel the right-half members ─────────────────────
     ClassAlive[newId] = 1;
@@ -5078,23 +5387,25 @@ bool KK::DipSplitAttempt(int clusterId)
         if (labels[i] == 1) Class[members[i]] = newId;
     }
 
-    Output("  [dipsplit] cluster %d → %d+%d (depth=%.3f, mahal²₉₀=%.1f vs χ²₉₀=%.1f, "
-           "ΔBIC=%.1f)\n",
-           clusterId, n0, n1, best_depth, mahal2_p90, chi2_90,
-           bp.bic_k1 - bp.bic_k2);
+    Output("  [dipsplit] cluster %d → %d+%d  PC%d depth=%.3f  "
+           "mahal²₉₀=%.1f vs χ²₉₀=%.1f  ΔBIC=%.1f\n",
+           clusterId, n0, n1, best_pc, best_depth,
+           mahal2_p90, chi2_90, bp.bic_k1 - bp.bic_k2);
+    reason_out = "split";
     return true;
 }
 
 // ---------------------------------------------------------------------------
 // DipSplitPhase — iterate alive clusters, attempt dip-split on each.
 //
-// Runs MStep+EStep at the end if any split was accepted, so cluster stats
-// and LogP[] are fresh for the next phase.
+// Always prints a summary line so users can see the phase ran and what
+// gates rejected clusters.  Runs MStep+EStep at the end if any split was
+// accepted, so cluster stats and LogP[] are fresh for the next phase.
 // ---------------------------------------------------------------------------
 int KK::DipSplitPhase()
 {
     if (DipSplitEnable == 0) return 0;
-    if (nDims < 2)           return 0;   // need at least 1 PCA dim + time
+    if (nDims < 2)           return 0;   // need at least 1 feature dim + time
 
     // Snapshot alive clusters — we'll create new ones during iteration and
     // shouldn't probe them recursively this pass.
@@ -5103,21 +5414,47 @@ int KK::DipSplitPhase()
     for (int c = 1; c < MaxPossibleClusters; ++c)
         if (ClassAlive[c]) alive_snapshot.push_back(c);
 
-    int accepted = 0;
+    // Count-by-reason for summary
+    int n_split       = 0;
+    int n_small       = 0;
+    int n_not_bloated = 0;
+    int n_no_valley   = 0;
+    int n_small_child = 0;
+    int n_bic_worse   = 0;
+    int n_no_free_id  = 0;
+
+    fprintf(stderr, "[Phase 1.8] DipSplit: probing %zu alive clusters "
+                    "(factor=%.2f, valley=%.2f, minSize=%d)\n",
+            alive_snapshot.size(), DipSplitBloatFactor,
+            DipSplitValleyThresh, DipSplitMinSize);
+
     for (int c : alive_snapshot) {
         if (!ClassAlive[c]) continue;
-        if (DipSplitAttempt(c)) ++accepted;
+        const char* reason = "skip";
+        DipSplitAttemptEx(c, reason);
+        if      (std::strcmp(reason, "split")       == 0) ++n_split;
+        else if (std::strcmp(reason, "small")       == 0) ++n_small;
+        else if (std::strcmp(reason, "not_bloated") == 0) ++n_not_bloated;
+        else if (std::strcmp(reason, "no_valley")   == 0) ++n_no_valley;
+        else if (std::strcmp(reason, "small_child") == 0) ++n_small_child;
+        else if (std::strcmp(reason, "bic_worse")   == 0) ++n_bic_worse;
+        else if (std::strcmp(reason, "no_free_id")  == 0) ++n_no_free_id;
     }
 
-    if (accepted > 0) {
-        fprintf(stderr, "[Phase 1.8] DipSplit: accepted %d split(s)\n", accepted);
+    fprintf(stderr, "[Phase 1.8] DipSplit: %d accepted  "
+                    "(rejections: %d too-small, %d not-bloated, %d no-valley, "
+                    "%d small-child, %d bic-worse, %d no-free-id)\n",
+            n_split, n_small, n_not_bloated, n_no_valley,
+            n_small_child, n_bic_worse, n_no_free_id);
+
+    if (n_split > 0) {
         // Refresh cluster stats so downstream phases see consistent state.
         MStep();
         EStep();
         CStep();
         Reindex();
     }
-    return accepted;
+    return n_split;
 }
 
 // ---------------------------------------------------------------------------
