@@ -268,16 +268,31 @@ public:
     // parameters loaded once at startup.  Populated by InitShiftProbe() and
     // re-used by every ShiftProbeAndCommitCluster() call (avoids re-reading
     // the .pca.N file on every split).
+    //
+    // Eigenvectors are pre-shifted and zero-padded at basis-build time: for
+    // δ ∈ {-1, 0, +1} we hold a separate copy of the (ch, k, j) tensor whose
+    // row j corresponds to RAW-WAVEFORM sample index (recShift + j).  A
+    // negative δ pulls values in from "above" (earlier samples) with zero
+    // outside the valid range; a positive δ pulls from "below" (later
+    // samples).  Because PCs of biological spike waveforms taper to zero at
+    // the window edges, the dropped/padded entry contributes negligibly.
+    //
+    // With this layout, the hot projection loop reads each raw sample
+    // exactly once and accumulates THREE feature values (one per δ) using
+    // three independent eigenvector rows — no modulo, no branching, three
+    // accumulators fit in ILP-friendly registers.
     struct ShiftProbePcaBasis {
         int nChan       = 0;
         int data2use    = 0;
         int nComp       = 0;
         int recShift    = 0;
         bool isCentered = false;
-        // mean[ch][sample] — per-channel per-sample mean
-        std::vector<std::vector<double>> mean;
-        // eigvec[ch] — col-major (data2use × nComp): element (s, k) at k*data2use + s
-        std::vector<std::vector<double>> eigvec;
+        // Pre-shifted per-channel means (3 copies: δ=-1, 0, +1).
+        // Index: meanShifted[cand][ch][j] where cand∈{0:−1, 1:0, 2:+1}
+        std::vector<std::vector<std::vector<double>>> meanShifted;
+        // Pre-shifted per-channel eigenvectors (3 copies).
+        // Index: eigvecShifted[cand][ch][k*data2use + j]  (col-major per ch)
+        std::vector<std::vector<std::vector<double>>> eigvecShifted;
         bool valid() const { return nChan > 0 && data2use > 0 && nComp > 0; }
     };
 
@@ -290,6 +305,14 @@ public:
     bool               m_shiftProbeReady = false;
     int                m_shiftProbeCallCount = 0;
     int                m_shiftProbeMaxShiftAbs = 1;   // hard clamp on |cumShift|
+
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    // Opaque GPU handle for shift-probe kernels.  Allocated by InitShiftProbe
+    // when a GPU device is available; null otherwise (falls through to CPU
+    // path).  Freed by CloseShiftProbe().
+    struct ShiftProbeGpuCtx;
+    ShiftProbeGpuCtx* m_shiftGpuCtx = nullptr;
+#endif
 
     // Load PCA basis + keep FILE* to .spk open for the duration of the run.
     // Returns true if the basis loaded and .spk is readable — the probe is a

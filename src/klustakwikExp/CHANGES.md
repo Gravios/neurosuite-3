@@ -32,19 +32,34 @@ peak and vice versa, reducing the sub-sample alignment signal that would
 have separated them.  Subsequent splits see features smeared together by
 the very alignment that was meant to help.
 
-### Approach — circular shift at ±1 sample, chosen by max feature variance
+### Approach — pre-shifted PCA bases, three candidates per spike
 
 After every accepted split:
 
 1. For each new child cluster, test δ ∈ {−1, 0, +1}.
-2. For each spike, circularly shift its `.spk` waveform by
-   `m_cumShift[p] + δ` and project through the cached PCA basis.
+2. For each spike, read its `.spk` waveform once and project against THREE
+   pre-shifted eigenvector bases in a single pass — one dot product per δ,
+   all three accumulators stepping through the same raw samples.
 3. For each candidate δ, sum per-spatial-dim variance across the child.
 4. Pick the δ that MAXIMISES total variance, then commit by writing the
    trial features into `Data[]`, shifting the normalised timestamp column,
    and accumulating `m_cumShift[p] += δ`.
 5. Call `MStep()` + `EStep()` so the next split trial sees the refreshed
    model.
+
+### Pre-shifted bases (no modulo in the hot loop)
+
+Circularly shifting a spike's waveform by δ is equivalent to index-shifting
+the eigenvector row by −δ, with zero-padding at the tail.  Since PCs of
+biological spike waveforms taper to zero at the window edges by
+construction, the dropped/padded entry contributes negligibly at ±1 sample.
+
+At `InitShiftProbe` time we build three contiguous basis tensors
+`E_{−1}, E_0, E_{+1}` (and three shifted means `μ_{−1}, μ_0, μ_{+1}`).  At
+projection time the inner loop is a single pass over `j` with three
+accumulators; every raw sample is loaded exactly once and feeds all three
+candidates.  No modulo, no branching — vectorises naturally on CPU, maps
+one thread per (channel × PC) on GPU.
 
 The max-variance criterion is the OPPOSITE of standard realignment.
 Standard realignment minimises within-cluster variance (sharpens the
@@ -149,14 +164,54 @@ The startup banner identifies this binary as:
 KlustaKwikExp  SESSION.fet.N  [build 2026-04-22 shift-probe]
 ```
 
+## GPU backends
+
+The three-accumulator projection maps cleanly onto one thread per
+(channel × PC) in a work-group of one spike.  Kernels exist for all three
+supported backends:
+
+| backend | file                   | launch            | smem used               |
+|---------|------------------------|-------------------|-------------------------|
+| CUDA    | `shiftprobe_cuda.cu`   | `<<<nMem, nPCA>>>`| `nChan × nSamp × int16` |
+| HIP     | `shiftprobe_hip.cpp`   | `hipLaunchKernelGGL` (nMem × nPCA, wavefront-rounded) | same |
+| SYCL    | `shiftprobe_sycl.cpp`  | `parallel_for` over `nd_range` with `local_accessor` | same |
+
+Dispatch: the CPU hot path is always present.  When a GPU context is
+available AND the cluster has ≥ 128 spikes, the kernel dispatcher runs
+the projection on-device and `memcpy`s trial features back for the
+variance-selection step.  Below that threshold the CPU path wins on
+latency, so the dispatcher skips the kernel entirely.  If a GPU call
+returns failure (e.g. transient alloc, smem limit) the code falls through
+to the CPU path — no user-visible error.
+
+After a commit that changes `Data[]`, a full `gpu_upload_data` re-upload
+happens before the next MStep/EStep so the device view stays consistent.
+A scatter-upload would be cheaper; a full upload is simpler and still
+much cheaper than the EM steps that follow it.
+
+Build strings that select a backend:
+
+```
+cmake -B build -DUSE_CUDA=ON                # Blackwell (RTX 5070 Ti etc.)
+cmake -B build -DUSE_HIP=ON                 # ROCm (RDNA/CDNA)
+cmake -B build -DUSE_SYCL=ON                # Intel Arc/Xe, oneAPI
+```
+
+The CPU target `KlustaKwikExp_cpu` is always built.
+
 ## File diff summary versus `src/klustakwik/`
 
 ```
- CMakeLists.txt   — project/target/lib names renamed for coexistence
- KK.h             — +~50 lines: ShiftProbePcaBasis, accumulator, API
- KK.cpp           — +~370 lines: four new functions + three hook sites
- KlustaKwik.cpp   — +~12 lines: Init/Finalize calls + banner string
- CHANGES.md       — this file (new)
+ CMakeLists.txt           — project/target/lib names renamed for coexistence
+ KK.h                     — +~60 lines: ShiftProbePcaBasis (pre-shifted),
+                            accumulator, GPU ctx forward decl, API
+ KK.cpp                   — +~400 lines: four new functions + three hook
+                            sites; GPU dispatch in _AndCommitSpikes
+ KlustaKwik.cpp           — +~12 lines: Init/Finalize calls + banner
+ shiftprobe_cuda.cu       — new: CUDA three-accumulator kernel + host wrappers
+ shiftprobe_hip.cpp       — new: HIP mirror of CUDA kernel
+ shiftprobe_sycl.cpp      — new: SYCL mirror of CUDA kernel
+ CHANGES.md               — this file (new)
 ```
 
 The inherited canonical changelog is preserved as

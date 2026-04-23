@@ -3950,8 +3950,9 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 
 // ---------------------------------------------------------------------------
 // InitShiftProbe
-// Load .pca[D].N once and open .spk (read-only) for the duration of the run.
-// Returns true on success; false makes the probe a no-op for this session.
+// Load .pca[D].N once, build pre-shifted basis tensors for δ∈{-1,0,+1}, and
+// open .spk (read-only) for the duration of the run.  Returns true on
+// success; false makes the probe a no-op for this session.
 // ---------------------------------------------------------------------------
 bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
 {
@@ -3962,7 +3963,7 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
     // --- Allocate cumulative-shift accumulator ---
     m_cumShift.assign(static_cast<size_t>(nPoints), 0);
 
-    // --- Load PCA basis ---
+    // --- Load raw PCA basis from .pca[D].N ---
     char pcaPath[STRLEN + 16];
     pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
     FILE* pf = fopen(pcaPath, "rb");
@@ -3990,21 +3991,23 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
     m_shiftPcaBasis.recShift   = rs;
     m_shiftPcaBasis.isCentered = (ic != 0);
 
-    m_shiftPcaBasis.mean  .assign(static_cast<size_t>(nc), {});
-    m_shiftPcaBasis.eigvec.assign(static_cast<size_t>(nc), {});
+    // Stage the raw (unshifted) basis first — we discard it after building
+    // the three pre-shifted copies.
+    std::vector<std::vector<double>> rawMean  (static_cast<size_t>(nc));
+    std::vector<std::vector<double>> rawEigvec(static_cast<size_t>(nc));
     for (int ch = 0; ch < nc; ++ch) {
-        m_shiftPcaBasis.mean[static_cast<size_t>(ch)]
+        rawMean[static_cast<size_t>(ch)]
             .resize(static_cast<size_t>(d2u));
-        if (fread(m_shiftPcaBasis.mean[static_cast<size_t>(ch)].data(),
+        if (fread(rawMean[static_cast<size_t>(ch)].data(),
                   8, static_cast<size_t>(d2u), pf) != static_cast<size_t>(d2u)) {
             Output("InitShiftProbe: truncated PCA means (ch %d) — probe disabled\n", ch);
             fclose(pf); m_shiftPcaBasis = ShiftProbePcaBasis{}; return false;
         }
     }
+    const size_t evSz = static_cast<size_t>(d2u * ncomp);
     for (int ch = 0; ch < nc; ++ch) {
-        const size_t evSz = static_cast<size_t>(d2u * ncomp);
-        m_shiftPcaBasis.eigvec[static_cast<size_t>(ch)].resize(evSz);
-        if (fread(m_shiftPcaBasis.eigvec[static_cast<size_t>(ch)].data(),
+        rawEigvec[static_cast<size_t>(ch)].resize(evSz);
+        if (fread(rawEigvec[static_cast<size_t>(ch)].data(),
                   8, evSz, pf) != evSz) {
             Output("InitShiftProbe: truncated PCA eigenvectors (ch %d) — probe disabled\n", ch);
             fclose(pf); m_shiftPcaBasis = ShiftProbePcaBasis{}; return false;
@@ -4020,6 +4023,53 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
         return false;
     }
 
+    // --- Build pre-shifted bases for δ ∈ {-1, 0, +1} -----------------------
+    // Reindexing identity (derivation):
+    //   y_δ[k] = Σ_j E[k,j] · (x[(rs+j+δ)*C+c] − μ[c,j])
+    //   let j' = j+δ in the WAVEFORM indexing, so raw sample position is
+    //   (rs+j')*C+c.  The basis row that multiplies raw sample (rs+j')*C+c
+    //   is therefore E[k, j'−δ] with corresponding mean μ[c, j'−δ].
+    //   When j'−δ is outside [0, data2use) we zero-pad (PC tails are near
+    //   zero at the window edges — contribution is negligible).
+    //
+    // Storage layout: eigvecShifted[cand][ch] is a flat vector of length
+    // d2u*ncomp indexed as k*d2u + j'   (j' is the RAW-SAMPLE-relative idx).
+    // meanShifted[cand][ch][j'] likewise.
+    const int kCand = 3;
+    const int deltas[3] = { -1, 0, +1 };
+
+    m_shiftPcaBasis.meanShifted.assign(static_cast<size_t>(kCand), {});
+    m_shiftPcaBasis.eigvecShifted.assign(static_cast<size_t>(kCand), {});
+    for (int ci = 0; ci < kCand; ++ci) {
+        const int delta = deltas[ci];
+        m_shiftPcaBasis.meanShifted  [static_cast<size_t>(ci)]
+            .assign(static_cast<size_t>(nc), {});
+        m_shiftPcaBasis.eigvecShifted[static_cast<size_t>(ci)]
+            .assign(static_cast<size_t>(nc), {});
+        for (int ch = 0; ch < nc; ++ch) {
+            auto& muOut = m_shiftPcaBasis.meanShifted
+                          [static_cast<size_t>(ci)]
+                          [static_cast<size_t>(ch)];
+            auto& evOut = m_shiftPcaBasis.eigvecShifted
+                          [static_cast<size_t>(ci)]
+                          [static_cast<size_t>(ch)];
+            muOut.assign(static_cast<size_t>(d2u), 0.0);
+            evOut.assign(evSz, 0.0);
+            const auto& muIn = rawMean  [static_cast<size_t>(ch)];
+            const auto& evIn = rawEigvec[static_cast<size_t>(ch)];
+
+            for (int jp = 0; jp < d2u; ++jp) {
+                const int src = jp - delta;          // read index into raw basis
+                if (src < 0 || src >= d2u) continue; // zero-pad outside domain
+                muOut[static_cast<size_t>(jp)] =
+                    muIn[static_cast<size_t>(src)];
+                for (int k = 0; k < ncomp; ++k)
+                    evOut[static_cast<size_t>(k * d2u + jp)] =
+                        evIn[static_cast<size_t>(k * d2u + src)];
+            }
+        }
+    }
+
     // --- Open .spk once, read-only ---
     char spkPath[STRLEN + 16];
     pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
@@ -4030,10 +4080,28 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
         return false;
     }
 
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    // Initialise GPU shift-probe context if a GPU is in play.
+    // Implementation lives in shiftprobe_<backend>.{cu,hip,cpp}.
+    // gpu_shift_probe_init returns nullptr on failure; the probe then
+    // falls through to the CPU path (still correct, just slower).
+    if (gpu) {
+        extern ShiftProbeGpuCtx* gpu_shift_probe_init(
+            KK_GPU* base, const ShiftProbePcaBasis& basis, int nChan,
+            int nSamplesPerSpike, int nPoints, const char* spkPath);
+        m_shiftGpuCtx = gpu_shift_probe_init(gpu, m_shiftPcaBasis,
+                                             nChan, nSamplesPerSpike,
+                                             nPoints, spkPath);
+        if (m_shiftGpuCtx)
+            Output("InitShiftProbe: GPU kernel active (backend=%s)\n",
+                   GPU_BACKEND_NAME);
+    }
+#endif
+
     m_shiftProbeReady = true;
     m_shiftProbeCallCount = 0;
     Output("InitShiftProbe: ready (nChan=%d data2use=%d nComp=%d recShift=%d "
-           "isCentered=%d)\n",
+           "isCentered=%d, pre-shifted bases for δ∈{-1,0,+1})\n",
            m_shiftPcaBasis.nChan, m_shiftPcaBasis.data2use,
            m_shiftPcaBasis.nComp, m_shiftPcaBasis.recShift,
            (int)m_shiftPcaBasis.isCentered);
@@ -4046,6 +4114,13 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
 void KK::CloseShiftProbe()
 {
     if (m_spkProbeFp) { fclose(m_spkProbeFp); m_spkProbeFp = nullptr; }
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    if (m_shiftGpuCtx) {
+        extern void gpu_shift_probe_free(ShiftProbeGpuCtx* ctx);
+        gpu_shift_probe_free(m_shiftGpuCtx);
+        m_shiftGpuCtx = nullptr;
+    }
+#endif
     m_shiftProbeReady = false;
 }
 
@@ -4057,6 +4132,11 @@ void KK::CloseShiftProbe()
 //   nChan, nSamplesPerSpike — .spk layout dimensions (sample-major)
 //
 // Returns the number of spikes whose committed shift changed this call.
+//
+// Core loop: the three candidate deltas share every raw-sample load from
+// .spk.  Three accumulators per (channel, PC) are stepped through data2use
+// samples in a single pass, reading from three pre-shifted basis buffers.
+// No modulo, no branching in the hot loop — maps cleanly to SIMD and GPU.
 // ---------------------------------------------------------------------------
 int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
                                     int nChan, int nSamplesPerSpike)
@@ -4069,29 +4149,22 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
 
     const int waveSamples = nChan * nSamplesPerSpike;
     const int timeDimIdx  = nDims - 1;
-    const int nSpatial    = nDims - 1;   // dims to use for variance criterion
+    const int nSpatial    = nDims - 1;
     const int nPCA        = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
     if (nPCA <= 0 || nPCA > nSpatial) return 0;
     const float sessionSamples = timeRawMax - timeRawMin;
     if (!(sessionSamples > 0.0f)) return 0;
 
-    // Three candidate deltas: {-1, 0, +1}
-    const int kCand    = 3;
-    const int deltas[] = { -1, 0, +1 };
+    const int kCand = 3;
+    const int deltas[3] = { -1, 0, +1 };
 
-    // Pre-size scratch: trial features, time, and single waveform.
-    if ((int)m_probeWaveScratch.size() < waveSamples)
+    // Pre-size scratch.
+    if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
         m_probeWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
-    // trialFeats layout: [candIdx][member][featIdx] packed
-    //   offset = ((cand * nMem) + mi) * nPCA + fi
     m_probeTrialFeats.assign(static_cast<size_t>(kCand * nMem * nPCA), 0.0f);
     m_probeTrialTime .assign(static_cast<size_t>(kCand * nMem),        0.0f);
 
-    // Per-candidate per-dim sum and sum-of-squares (we use total spatial
-    // variance = sum over pca dims of Var(d); mean subtracted before square).
-    // To avoid pass-2 over the big trial buffer, compute running sums as
-    // we fill it.
-    std::vector<double> sumPerDim(static_cast<size_t>(kCand * nPCA), 0.0);
+    std::vector<double> sumPerDim  (static_cast<size_t>(kCand * nPCA), 0.0);
     std::vector<double> sumSqPerDim(static_cast<size_t>(kCand * nPCA), 0.0);
 
     const auto& pca = m_shiftPcaBasis;
@@ -4101,97 +4174,147 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     const int   rs       = pca.recShift;
     const bool  isCen    = pca.isCentered;
 
-    // Process one spike at a time: read waveform once, fill all kCand candidate
-    // features.  This bounds memory regardless of cluster size.
-    int nSkippedRead = 0;
-    for (int mi = 0; mi < nMem; ++mi) {
-        const int p = globalSpikeIndices[static_cast<size_t>(mi)];
-        if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
-
-        // Read the spike's waveform from .spk (sample-major layout,
-        // [s * nChan + c]).  The FILE* is shared so we have to fseek each call.
-        if (fseeko(m_spkProbeFp,
-                   static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
-                   SEEK_SET) != 0) { ++nSkippedRead; continue; }
-        if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
-                  static_cast<size_t>(waveSamples), m_spkProbeFp)
-                != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
-
-        const int baseCum = m_cumShift[static_cast<size_t>(p)];
-        const int16_t* raw = m_probeWaveScratch.data();
-        const int N        = nSamplesPerSpike;
-
-        for (int ci = 0; ci < kCand; ++ci) {
-            const int delta    = deltas[ci];
-            // Clamp total shift to [-max, +max] — refuse candidates that would
-            // exceed the global ceiling.  Record the candidate's features as
-            // "unusable" by giving it identical features to cand=0 (no-shift),
-            // so the variance criterion naturally ignores it.  Simpler
-            // alternative: set sumSqPerDim such that this candidate cannot
-            // win.  We implement the clamp by re-using the no-shift features
-            // for out-of-range candidates.
-            int totalShift = baseCum + delta;
-            const int maxAbs = m_shiftProbeMaxShiftAbs;
-            const bool outOfRange = (std::abs(totalShift) > maxAbs);
-            if (outOfRange) totalShift = baseCum;   // fall back to no-change
-
-            // PCA projection under circular shift: x[s*nChan+c] uses sample
-            // ((s + totalShift) mod N) from the raw waveform.
-            //
-            // Loop order: for each channel, build the centred vector of
-            // length data2use starting at pca.recShift, then project.
-            //
-            // Index into the big trial buffer:
-            const size_t featBase =
-                (static_cast<size_t>(ci) * nMem + mi) * nPCA;
-
-            for (int ch = 0; ch < nChanPca; ++ch) {
-                // Per-channel input: x[j] = raw[((rs+j + totalShift) mod N) * nChan + ch]
-                //                          - mean[ch][j]   (if centred)
-                // Inline the projection to avoid a temporary vector.
-                for (int k = 0; k < nComp; ++k) {
-                    double val = 0.0;
-                    const double* ev = pca.eigvec[static_cast<size_t>(ch)].data();
-                    const double* mu = isCen
-                        ? pca.mean[static_cast<size_t>(ch)].data()
-                        : nullptr;
-                    for (int j = 0; j < data2use; ++j) {
-                        // Circular sample index with correct modulo for negative values
-                        int s = rs + j + totalShift;
-                        s = ((s % N) + N) % N;
-                        double v = static_cast<double>(raw[s * nChan + ch]);
-                        if (isCen) v -= mu[j];
-                        val += ev[k * data2use + j] * v;
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    // GPU fast path: dispatcher runs the three-candidate projection on-device
+    // and returns trial features in the same layout as the CPU path.  Falls
+    // back to CPU when the context is null or the cluster is too small to
+    // amortise launch overhead (threshold tuned for typical L2-resident
+    // data2use * nComp * nChan; < 128 spikes almost always lose on GPU).
+    const bool useGpu = (m_shiftGpuCtx != nullptr) && (nMem >= 128);
+    if (useGpu) {
+        extern bool gpu_shift_probe_project_batch(
+            ShiftProbeGpuCtx* ctx,
+            const std::vector<int>& globalSpikeIndices,
+            const std::vector<int>& cumShift,
+            int maxShiftAbs,
+            const std::vector<float>& dimMin, const std::vector<float>& dimRange,
+            float* trialFeatsOut, float* trialTimeOut,
+            const float* timeCol, int nDims, float sessionSamples);
+        const float* timeCol = Data.m_Data + timeDimIdx;   // strided; kernel uses nDims
+        const bool ok = gpu_shift_probe_project_batch(
+            m_shiftGpuCtx,
+            globalSpikeIndices, m_cumShift, m_shiftProbeMaxShiftAbs,
+            dimMin_, dimRange_,
+            m_probeTrialFeats.data(), m_probeTrialTime.data(),
+            timeCol, nDims, sessionSamples);
+        if (ok) {
+            // Fold results into per-candidate moments.
+            for (int ci = 0; ci < kCand; ++ci)
+                for (int mi = 0; mi < nMem; ++mi) {
+                    const size_t base = (static_cast<size_t>(ci) * nMem + mi) * nPCA;
+                    for (int fi = 0; fi < nPCA; ++fi) {
+                        const float fv = m_probeTrialFeats[base + fi];
+                        sumPerDim  [ci * nPCA + fi] += fv;
+                        sumSqPerDim[ci * nPCA + fi] += static_cast<double>(fv) * fv;
                     }
-                    // Apply identical per-dim normalisation used by LoadData()
-                    // so trial features are commensurate with existing Data[].
-                    const int fi  = ch * nComp + k;
-                    const float fv = (static_cast<float>(val) - dimMin_[fi])
-                                   * dimRange_[fi];
-                    m_probeTrialFeats[featBase + fi] = fv;
-                    sumPerDim  [ci * nPCA + fi] += fv;
-                    sumSqPerDim[ci * nPCA + fi] += static_cast<double>(fv) * fv;
+                }
+            goto pick_best_and_commit;
+        }
+        // ok==false → fall through to CPU path (e.g. transient alloc failure)
+    }
+#endif
+
+    // CPU path: pre-shifted bases + 3 accumulators in the inner loop.
+    {
+        int nSkippedRead = 0;
+        for (int mi = 0; mi < nMem; ++mi) {
+            const int p = globalSpikeIndices[static_cast<size_t>(mi)];
+            if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
+
+            if (fseeko(m_spkProbeFp,
+                       static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
+                       SEEK_SET) != 0) { ++nSkippedRead; continue; }
+            if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
+                      static_cast<size_t>(waveSamples), m_spkProbeFp)
+                    != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
+
+            const int baseCum = m_cumShift[static_cast<size_t>(p)];
+            const int16_t* raw = m_probeWaveScratch.data();
+
+            // Per-candidate out-of-range mask (fall back to cand=1 features
+            // when committing a shift of baseCum + delta would exceed the
+            // global clamp).
+            bool candOk[3];
+            for (int ci = 0; ci < kCand; ++ci)
+                candOk[ci] = (std::abs(baseCum + deltas[ci])
+                              <= m_shiftProbeMaxShiftAbs);
+
+            // For each channel, accumulate projections for all three
+            // candidates in one pass over samples.
+            for (int ch = 0; ch < nChanPca; ++ch) {
+                const double* evM = pca.eigvecShifted[0][static_cast<size_t>(ch)].data();
+                const double* ev0 = pca.eigvecShifted[1][static_cast<size_t>(ch)].data();
+                const double* evP = pca.eigvecShifted[2][static_cast<size_t>(ch)].data();
+                const double* muM = pca.meanShifted  [0][static_cast<size_t>(ch)].data();
+                const double* mu0 = pca.meanShifted  [1][static_cast<size_t>(ch)].data();
+                const double* muP = pca.meanShifted  [2][static_cast<size_t>(ch)].data();
+
+                for (int k = 0; k < nComp; ++k) {
+                    double accM = 0.0, acc0 = 0.0, accP = 0.0;
+                    // Triple-accumulator inner loop — reads every raw sample
+                    // exactly once, multiplies against three shifted basis
+                    // rows with three independent means.
+                    for (int j = 0; j < data2use; ++j) {
+                        const int s = rs + j;   // raw sample index (plain, no mod)
+                        const double rawV = static_cast<double>(raw[s * nChan + ch]);
+                        const double vM = isCen ? (rawV - muM[j]) : rawV;
+                        const double v0 = isCen ? (rawV - mu0[j]) : rawV;
+                        const double vP = isCen ? (rawV - muP[j]) : rawV;
+                        accM += evM[k * data2use + j] * vM;
+                        acc0 += ev0[k * data2use + j] * v0;
+                        accP += evP[k * data2use + j] * vP;
+                    }
+                    const int   fi  = ch * nComp + k;
+                    const float min_ = dimMin_  [fi];
+                    const float rng_ = dimRange_[fi];
+                    const float fM = (static_cast<float>(accM) - min_) * rng_;
+                    const float f0 = (static_cast<float>(acc0) - min_) * rng_;
+                    const float fP = (static_cast<float>(accP) - min_) * rng_;
+
+                    const size_t ofsM = (static_cast<size_t>(0) * nMem + mi) * nPCA + fi;
+                    const size_t ofs0 = (static_cast<size_t>(1) * nMem + mi) * nPCA + fi;
+                    const size_t ofsP = (static_cast<size_t>(2) * nMem + mi) * nPCA + fi;
+
+                    // If candidate δ is out of range for this spike we
+                    // substitute the δ=0 features so the variance criterion
+                    // is unaffected by out-of-range spikes in this cluster.
+                    m_probeTrialFeats[ofsM] = candOk[0] ? fM : f0;
+                    m_probeTrialFeats[ofs0] = f0;
+                    m_probeTrialFeats[ofsP] = candOk[2] ? fP : f0;
+
+                    // Running moments per candidate, per dim.
+                    sumPerDim  [0 * nPCA + fi] += m_probeTrialFeats[ofsM];
+                    sumSqPerDim[0 * nPCA + fi] +=
+                        static_cast<double>(m_probeTrialFeats[ofsM]) * m_probeTrialFeats[ofsM];
+                    sumPerDim  [1 * nPCA + fi] += f0;
+                    sumSqPerDim[1 * nPCA + fi] += static_cast<double>(f0) * f0;
+                    sumPerDim  [2 * nPCA + fi] += m_probeTrialFeats[ofsP];
+                    sumSqPerDim[2 * nPCA + fi] +=
+                        static_cast<double>(m_probeTrialFeats[ofsP]) * m_probeTrialFeats[ofsP];
                 }
             }
 
-            // Trial timestamp (normalised).  If out of range we kept the base
-            // shift so the timestamp isn't perturbed for this candidate.
+            // Per-candidate trial timestamps (normalised).  Out-of-range
+            // candidates keep the original timestamp.
             const float rawTsNorm = Data.m_Data[p * nDims + timeDimIdx];
-            // Unnormalise, add totalShift - baseCum = delta (only when
-            // in-range; 0 otherwise), re-normalise.
-            const float deltaSamples = static_cast<float>(totalShift - baseCum);
-            m_probeTrialTime[static_cast<size_t>(ci) * nMem + mi] =
-                rawTsNorm + deltaSamples / sessionSamples;
+            for (int ci = 0; ci < kCand; ++ci) {
+                const float dd = candOk[ci]
+                    ? static_cast<float>(deltas[ci]) / sessionSamples
+                    : 0.0f;
+                m_probeTrialTime[static_cast<size_t>(ci) * nMem + mi] =
+                    rawTsNorm + dd;
+            }
         }
+        if (nSkippedRead == nMem) return 0;
     }
 
-    if (nSkippedRead == nMem) return 0;   // all reads failed
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+pick_best_and_commit:
+#endif
 
     // --- Pick the candidate with the largest total spatial-feature variance ---
-    // Var(d) = E[x^2] - E[x]^2.  Total variance = sum over PCA dims.
-    // We ignore the timestamp dim by construction (not included in nPCA).
     const double invN = 1.0 / static_cast<double>(nMem);
-    int   bestCand = 1;    // default to cand=0 shift (=the no-change direction)
+    int   bestCand = 1;        // default to cand=0 shift
     double bestVar = -1.0;
     for (int ci = 0; ci < kCand; ++ci) {
         double tot = 0.0;
@@ -4206,15 +4329,12 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     }
     const int bestDelta = deltas[bestCand];
 
-    // --- Commit: copy winner's features + timestamp into Data[],
-    //            update m_cumShift, count changes ---
+    // --- Commit winner into Data[] + m_cumShift ---
     int nChanged = 0;
     if (bestDelta != 0) {
         for (int mi = 0; mi < nMem; ++mi) {
             const int p = globalSpikeIndices[static_cast<size_t>(mi)];
             if (p < 0 || p >= nPoints) continue;
-            // Only commit if this candidate actually used the requested delta
-            // (out-of-range spikes silently fell back to baseCum with delta=0).
             const int wouldBe = m_cumShift[static_cast<size_t>(p)] + bestDelta;
             if (std::abs(wouldBe) > m_shiftProbeMaxShiftAbs) continue;
 
@@ -4229,12 +4349,15 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
             ++nChanged;
         }
     }
-    // If bestDelta == 0 we still commit the re-projected features for cand=1
-    // (the no-shift projection).  Skipping this would cause drift between
-    // Data[] and the PCA+dimRange space — but since cand=1 is computed from
-    // the SAME baseCum shift already committed to Data[] earlier (or 0 at
-    // first call), the features should match what's already there to
-    // numerical precision.  We therefore skip the unnecessary writeback.
+
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    // Data[] changed on host.  Re-upload to device so the next MStep/EStep
+    // reads the refreshed features.  Scatter-upload would be cheaper; for
+    // now a full upload is simpler and still substantially cheaper than
+    // the EM steps that follow.
+    if (nChanged > 0 && gpu)
+        gpu_upload_data(gpu, Data.m_Data);
+#endif
 
     ++m_shiftProbeCallCount;
     return nChanged;
