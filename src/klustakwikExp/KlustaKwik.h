@@ -105,7 +105,14 @@ extern std::vector<int> GroupChannelIds;
 // outer loop with nRuns independent runs, each seeded differently.
 // MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
 extern int   nRuns;
-extern int   TimeShiftAlignIter; ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between) (default 1)
+extern int   TimeShiftAlignIter;
+
+// ── Empirical prior ────────────────────────────────────────────────────────
+extern char  PriorFile[];  ///< path to .prior.N.yaml built by kk_build_prior.py
+/** Per-pair adaptive MergeThresh = chi²(d_eff, 0.9999).  Default on. */
+extern int   AdaptiveMerge;
+/** Preseed centres from prior; populated by applyKKPrior(). */
+extern std::vector<float> ExternalPreseedCentres; ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between) (default 1)
 // Post-split shift-probe parameters (klustakwikExp only).
 // MaxTimeShift: the half-width of the pre-shifted PCA basis fan.  The probe
 // builds bases for δ ∈ {-N, …, +N} at session start, and picks the δ that
