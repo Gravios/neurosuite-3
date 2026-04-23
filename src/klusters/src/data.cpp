@@ -768,11 +768,9 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     // ── G. Nearest-cluster isolation ──────────────────────────────────────
     if (allCentroids && allCentroids->size() > 1) {
-        // Own centroid — recompute cheaply from mean (already have it above,
-        // but it's local; recompute from allCentroids which is already O(1) lookup)
-        const QVector<double>* ownCentroid = nullptr;
-        if (allCentroids->contains(clusterId))
-            ownCentroid = &((*allCentroids)[clusterId]);
+        auto it = allCentroids->find(clusterId);
+        const QVector<double>* ownCentroid =
+            (it != allCentroids->end()) ? &it.value() : nullptr;
 
         if (ownCentroid && !ownCentroid->isEmpty()) {
             const int D = ownCentroid->size();
@@ -940,7 +938,8 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     // ── K. Recording-relative temporal position ───────────────────────────
     if (n >= 1) {
-        const double maxTs = static_cast<double>(maxDimension(nbDimensions));
+        // maxDimension() is not declared const; access the backing Array directly.
+        const double maxTs = static_cast<double>(dimensionMaxima(nbDimensions, 1));
         if (maxTs > 0.0) {
             // spikes is sorted by timestamp; first/last are already computed.
             snap.tFirstRel = (spikes.first().ts * samplingRate) / maxTs;

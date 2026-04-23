@@ -40,6 +40,8 @@ KKPrior loadKKPrior(const char* path)
             p.n_sessions  = safeInt(root["source"]["n_sessions"], 0);
             if (root["source"]["is_stderiv"])
                 p.is_stderiv = root["source"]["is_stderiv"].as<bool>(false);
+            if (root["source"]["electrode_group"])
+                p.electrode_group = safeInt(root["source"]["electrode_group"], 0);
         }
 
         // ── Cluster count ──────────────────────────────────────────────
@@ -192,15 +194,23 @@ void applyKKPrior(const KKPrior& prior)
             fprintf(stderr, "  preseedCentres: SKIPPED"
                             " — prior n_pca_dims=%d (malformed; rebuild prior)\n",
                             prior.n_pca_dims);
+        } else if (prior.electrode_group != 0 && prior.electrode_group != ElecNo) {
+            // preseed_centres are PCA-space coordinates specific to the electrode
+            // group the prior was built from.  Each group has its own independent
+            // PCA basis, so centres from group %d are meaningless in group %d.
+            // The transferable fields (MergeThresh, PenaltyMix, d_eff) are
+            // still applied above; only preseed is skipped.
+            fprintf(stderr, "  preseedCentres: SKIPPED"
+                            " — prior electrode_group=%d, running ElecNo=%d\n",
+                            prior.electrode_group, ElecNo);
         } else {
             const int nCentres = static_cast<int>(prior.preseed_centres.size())
                                / prior.n_pca_dims;
             fprintf(stderr, "  preseedCentres <- %d centres x %d dims"
-                            " (is_stderiv=%s)\n",
+                            " (is_stderiv=%s, electrode_group=%d)\n",
                             nCentres, prior.n_pca_dims,
-                            prior.is_stderiv ? "yes" : "no");
-            // CEMTwoPhase size guard will fall back to farthest-point seeding
-            // if n_pca_dims does not match nSpatialDims for this session.
+                            prior.is_stderiv ? "yes" : "no",
+                            prior.electrode_group);
             ExternalPreseedCentres = prior.preseed_centres;
         }
     }

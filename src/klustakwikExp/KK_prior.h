@@ -45,7 +45,11 @@ struct KKPrior {
      *  Preseed centres have n_pca_dims = (nChannels-1)*pcaPerChan when true,
      *  vs nChannels*pcaPerChan for a standard session.  CEMTwoPhase's size
      *  guard will catch a session/prior mismatch; this flag surfaces it. */
-    bool is_stderiv  = false;
+    bool is_stderiv      = false;
+    /** Electrode group this prior was built from (e.g. 1, 2, …).
+     *  0 = unset / built from pooled multi-shank data.
+     *  preseed_centres are only applied when ElecNo matches. */
+    int  electrode_group  = 0;
 
     // ── Probe context ──────────────────────────────────────────────────
     int    n_channels    = 0;

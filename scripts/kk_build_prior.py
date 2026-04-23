@@ -411,6 +411,8 @@ def main():
                     help="Minimum spike count per accepted cluster (default 30)")
     ap.add_argument("--n-types",      type=int,   default=3,
                     help="Number of cluster types for taxonomy (default 3)")
+    ap.add_argument("--electrode-group", type=int, default=0,
+                    help="Electrode group this prior is for (0 = probe-level / ")
     ap.add_argument("--session-preseed", default=None,
                     help="Log file to extract preseed centres from "
                          "(latest session for chronic recording)")
@@ -533,12 +535,12 @@ def main():
             "sample_rate": sample_rate,
         },
         "source": {
-            "n_sessions":  n_sessions,
-            "n_clusters":  n_total,
-            "log_files":   [str(p) for p in args.log_files],
-            # Stderiv detected if any log references a .fetD session
-            "is_stderiv":  any("fetD" in str(p) or "spkD" in str(p)
-                               for p in args.log_files),
+            "n_sessions":      n_sessions,
+            "n_clusters":      n_total,
+            "log_files":       [str(p) for p in args.log_files],
+            "electrode_group": args.electrode_group,
+            "is_stderiv":      any("fetD" in str(p) or "spkD" in str(p)
+                                   for p in args.log_files),
         },
         "n_clusters": {
             "p05":    int(round(_pct(all_counts, 5))),

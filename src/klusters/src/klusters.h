@@ -303,12 +303,10 @@ private Q_SLOTS:
     // ── Curation quality annotation ───────────────────────────────────────
     /** Tag the most recently completed curation action with a quality label.
      *  Keyboard shortcuts: J = good (2), K = uncertain (1), X = bad (0).
-     *  The annotation is appended to the curation log immediately and can be
-     *  issued any time between two curation actions.
-     */
-    void slotAnnotateGood()      { if (doc) doc->logAnnotation(2); }
-    void slotAnnotateUncertain() { if (doc) doc->logAnnotation(1); }
-    void slotAnnotateBad()       { if (doc) doc->logAnnotation(0); }
+     *  Bodies are defined in klusters.cpp — KlustersDoc is incomplete here. */
+    void slotAnnotateGood();
+    void slotAnnotateUncertain();
+    void slotAnnotateBad();
 
     /**Triggers an update of the dimensions due to a change of the ordinate dimension.*/
     void slotUpdateDimensionY(int dimensionYs);
