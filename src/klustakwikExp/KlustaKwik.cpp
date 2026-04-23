@@ -71,10 +71,14 @@ int   NbTotalChannels        = 0;    ///< total channels in .fil file
 int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
-int   Phase15Iters           = 1;    ///< xcorr iterations in RealignChunkWaveforms (1 = single pass, no iteration)
-int   MaxShiftProbe             = 1;  ///< pre-shifted PCA basis half-width (0 disables, max 5)
-int   ShiftProbeReplacesPhase15 = 1;  ///< skip canonical Phase 1.5 xcorr when probe active
-int   ShiftProbeMergeProbe      = 1;  ///< apply min-Mahalanobis probe during cluster deletion
+int   TimeShiftAlignIter           = 1;    ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between)
+int   MaxTimeShift             = 1;  ///< pre-shifted PCA basis half-width (0 disables, max 5)
+int   TimeShiftMergeEnable      = 1;  ///< apply min-Mahalanobis probe during cluster deletion
+// DipSplit parameters (Phase 1.8 bimodal splitter)
+int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
+int   DipSplitMinSize           = 100;   ///< min spikes per child cluster for accepted split
+float DipSplitBloatFactor       = 1.5f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation
+float DipSplitValleyThresh      = 0.15f; ///< min KDE valley depth to flag bimodality
 int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2
 float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 1.7)
@@ -122,10 +126,13 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(NbTotalChannels);
     INT_PARAM(NbBytesPerSample);
     INT_PARAM(nRuns);
-    INT_PARAM(Phase15Iters);
-    INT_PARAM(MaxShiftProbe);
-    INT_PARAM(ShiftProbeReplacesPhase15);
-    INT_PARAM(ShiftProbeMergeProbe);
+    INT_PARAM(TimeShiftAlignIter);
+    INT_PARAM(MaxTimeShift);
+    INT_PARAM(TimeShiftMergeEnable);
+    INT_PARAM(DipSplitEnable);
+    INT_PARAM(DipSplitMinSize);
+    FLOAT_PARAM(DipSplitBloatFactor);
+    FLOAT_PARAM(DipSplitValleyThresh);
     INT_PARAM(SubspaceDims);
     INT_PARAM(SubspaceRecluster);
     FLOAT_PARAM(TemplateMatchScore);
@@ -658,17 +665,21 @@ int main(int argc, char **argv) {
         // Load PCA basis + open .spk read-only once for the run.  If either
         // is unavailable (legacy session without .pca or .spk), the probe
         // silently disables itself and the rest of the clustering runs
-        // identically to the canonical klustakwik.  MaxShiftProbe controls
-        // the half-width of the pre-shifted basis fan (0..5).
-        if (MaxShiftProbe < 0) MaxShiftProbe = 0;
-        if (MaxShiftProbe > 5) {
-            Output("Warning: MaxShiftProbe=%d clamped to 5 (N>5 is excessive; "
+        // identically to the canonical klustakwik.  MaxTimeShift controls
+        // the half-width of the pre-shifted basis fan (0..5) and gates
+        // initialisation entirely — independent of TimeShiftAlignIter, which only
+        // controls the canonical xcorr realignment path.  Setting
+        // TimeShiftAlignIter=0 with MaxTimeShift>0 disables only the xcorr
+        // alignment stage while keeping the split/merge probe stages active.
+        if (MaxTimeShift < 0) MaxTimeShift = 0;
+        if (MaxTimeShift > 5) {
+            Output("Warning: MaxTimeShift=%d clamped to 5 (N>5 is excessive; "
                    "the PCA support is typically <= data2use samples)\n",
-                   MaxShiftProbe);
-            MaxShiftProbe = 5;
+                   MaxTimeShift);
+            MaxTimeShift = 5;
         }
-        if (Phase15Iters > 0 && MaxShiftProbe > 0)
-            K1.InitShiftProbe(NbChannels, NbSamplesPerSpike, MaxShiftProbe);
+        if (MaxTimeShift > 0)
+            K1.InitTimeShift(NbChannels, NbSamplesPerSpike, MaxTimeShift);
 
         kSv.BestWeight.SetSize(MaxPossibleClusters);
         kSv.BestMean.SetSize(MaxPossibleClusters * K1.nDims);
@@ -1018,7 +1029,7 @@ int main(int argc, char **argv) {
         // rewritten — scoped to spikes whose cumulative shift is non-zero.
         // Runs AFTER SaveOutput so the .clu.N already reflects final cluster
         // assignments; WritePhase15Checkpoint only touches .spk and .fet.
-        K1.FinalizeShiftProbe(NbChannels, NbSamplesPerSpike);
+        K1.TimeShiftFinalize(NbChannels, NbSamplesPerSpike);
 
         // ── Inline drift estimation (chunked mode only) ───────────────────────
         //

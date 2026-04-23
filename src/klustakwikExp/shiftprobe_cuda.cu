@@ -5,7 +5,7 @@
 // to zero at window edges, circular-shift-by-δ of a spike is mathematically
 // equivalent to index-shift-by-(−δ) of the basis row, with zero-padding at
 // the tail.  We precompute the three shifted bases once on the host
-// (InitShiftProbe, CPU code) and upload them here at init time.
+// (InitTimeShift, CPU code) and upload them here at init time.
 //
 // Kernel layout: one block per spike, threads cooperate across the
 // (channel × component) product.  Each block reads its spike's waveform
@@ -34,9 +34,9 @@
 } while (0)
 
 // ---------------------------------------------------------------------------
-// GPU context — allocated by gpu_shift_probe_init
+// GPU context — allocated by gpu_timeshift_init
 // ---------------------------------------------------------------------------
-struct KK::ShiftProbeGpuCtx {
+struct KK::TimeShiftGpuCtx {
     // Basis: (2N+1) copies × nChan × data2use*nComp doubles
     double*  d_eig       = nullptr;   // [kCand * nChan * nComp * data2use]
     double*  d_mean      = nullptr;   // [kCand * nChan * data2use]
@@ -71,7 +71,7 @@ struct KK::ShiftProbeGpuCtx {
 
 // ---------------------------------------------------------------------------
 // Compile-time upper bound on the basis-fan half-width.  Matches
-// KK::kShiftProbeNmax.  Used to size thread-local accumulator arrays.
+// KK::kTimeShiftNmax.  Used to size thread-local accumulator arrays.
 // ---------------------------------------------------------------------------
 #define SP_N_MAX   5
 #define SP_CAND_MAX (2 * SP_N_MAX + 1)
@@ -130,7 +130,7 @@ __global__ void shiftprobe_project_kernel(
     const int baseCum = cumShift[mi];
 
     // Pre-compute per-candidate basis base pointers for this (ch, k).
-    // Stride layout (must match InitShiftProbe's flatten order):
+    // Stride layout (must match InitTimeShift's flatten order):
     //   eigAll : [cand][ch][k*data2use + j]
     //   meanAll: [cand][ch][j]
     const size_t candStrideE = static_cast<size_t>(nChan) * nComp * data2use;
@@ -189,16 +189,16 @@ __global__ void shiftprobe_project_kernel(
 }
 
 // ---------------------------------------------------------------------------
-// Forward declaration — gpu_shift_probe_init's cleanup paths call _free
+// Forward declaration — gpu_timeshift_init's cleanup paths call _free
 // before its definition appears later in this TU.
 // ---------------------------------------------------------------------------
-void gpu_shift_probe_free(KK::ShiftProbeGpuCtx* ctx);
+void gpu_timeshift_free(KK::TimeShiftGpuCtx* ctx);
 
 // ---------------------------------------------------------------------------
-// gpu_shift_probe_init — allocate device buffers and upload pre-shifted bases
+// gpu_timeshift_init — allocate device buffers and upload pre-shifted bases
 // ---------------------------------------------------------------------------
-KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
-    KK_GPU* base, const KK::ShiftProbePcaBasis& basis,
+KK::TimeShiftGpuCtx* gpu_timeshift_init(
+    KK_GPU* base, const KK::TimeShiftBasis& basis,
     int nChan, int nSamplesPerSpike, int nPoints, const char* spkPath)
 {
     if (!base || !basis.valid() || nPoints <= 0 || !spkPath) return nullptr;
@@ -213,7 +213,7 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
     const size_t muPerCand   = static_cast<size_t>(nChanB) * data2use;
     const size_t nPCA        = static_cast<size_t>(nChanB) * nComp;
 
-    auto* ctx = new KK::ShiftProbeGpuCtx();
+    auto* ctx = new KK::TimeShiftGpuCtx();
     ctx->nChan            = nChanB;
     ctx->data2use         = data2use;
     ctx->nComp            = nComp;
@@ -269,7 +269,7 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
             static_cast<size_t>(kCand) * ctx->nMemMax * sizeof(float)), "d_trialTime") ||
         !_check_alloc(cudaMalloc(&ctx->d_timeCol,  ctx->nMemMax * sizeof(float)), "d_timeCol"))
     {
-        gpu_shift_probe_free(ctx);
+        gpu_timeshift_free(ctx);
         return nullptr;
     }
 
@@ -282,22 +282,22 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
     if (cudaMallocHost((void**)&ctx->h_waveBatchPinned,
                        ctx->h_waveBatchCap * sizeof(int16_t)) != cudaSuccess) {
         fprintf(stderr, "[shiftprobe_cuda] cudaMallocHost failed — probe disabled\n");
-        gpu_shift_probe_free(ctx); return nullptr;
+        gpu_timeshift_free(ctx); return nullptr;
     }
 
     ctx->spkFp = fopen(spkPath, "rb");
     if (!ctx->spkFp) {
         fprintf(stderr, "[shiftprobe_cuda] cannot open %s — probe disabled\n", spkPath);
-        gpu_shift_probe_free(ctx); return nullptr;
+        gpu_timeshift_free(ctx); return nullptr;
     }
 
     return ctx;
 }
 
 // ---------------------------------------------------------------------------
-// gpu_shift_probe_free
+// gpu_timeshift_free
 // ---------------------------------------------------------------------------
-void gpu_shift_probe_free(KK::ShiftProbeGpuCtx* ctx)
+void gpu_timeshift_free(KK::TimeShiftGpuCtx* ctx)
 {
     if (!ctx) return;
     if (ctx->spkFp) fclose(ctx->spkFp);
@@ -316,12 +316,12 @@ void gpu_shift_probe_free(KK::ShiftProbeGpuCtx* ctx)
 }
 
 // ---------------------------------------------------------------------------
-// gpu_shift_probe_project_batch
+// gpu_timeshift_project_batch
 // Reads spike waveforms from .spk into pinned host memory, DMAs to device,
 // launches the projection kernel, downloads trial features + times.
 // ---------------------------------------------------------------------------
-bool gpu_shift_probe_project_batch(
-    KK::ShiftProbeGpuCtx* ctx,
+bool gpu_timeshift_project_batch(
+    KK::TimeShiftGpuCtx* ctx,
     const std::vector<int>& globalSpikeIndices,
     const std::vector<int>& cumShift,
     int maxShiftAbs,

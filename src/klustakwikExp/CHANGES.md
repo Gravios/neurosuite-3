@@ -19,6 +19,98 @@ Both binaries coexist in the build tree:
 
 The canonical binary is unaffected by anything in this directory.
 
+## Workflow & phase notation (current)
+
+The shift-probe is a cross-cutting mechanism that hooks into the main
+clustering phases.  Each hook reads `.spk` once, projects under the
+pre-shifted PCA basis fan of width `(2·MaxTimeShift + 1)`, applies a
+stage-specific selection criterion, and commits shifts to `Data[]` +
+`m_cumShift[]` in memory.  Only Phase 4 touches disk.
+
+| Phase     | Action                                                          | Hooks                                     |
+|-----------|-----------------------------------------------------------------|-------------------------------------------|
+| 0         | Preseed (chunked mode)                                          | —                                         |
+| 1         | Per-chunk CEM clustering                                        | time-shift split (inside `TrySplits` accept) |
+| **1.5**   | **Cluster alignment** — per-spike min-Mahalanobis² into own cluster | `TimeShiftAlignPhase`                 |
+| 1.6       | Mean waveform harvest (templates)                               | —                                         |
+| 1.7       | Within-chunk template matching                                  | —                                         |
+| **1.8**   | **DipSplit** — bimodal-cluster detection & split                | `DipSplitPhase`                           |
+| 2         | Cross-chunk cluster matching                                    | —                                         |
+| 2.5       | Subspace reclustering + refractory split                        | time-shift split (inside accept hooks)    |
+| 3         | Global warm-start EM                                            | merge-decision + merge-tighten (`ConsiderDeletion`) |
+| **4**     | **Shift commit**: re-extract `.fil` → `.spk`/`.fet`/`.res`      | `TimeShiftFinalize`                       |
+
+Phase 1.5 is no longer the legacy xcorr stage — canonical xcorr realignment
+(`RealignChunkWaveforms`) has been removed.  The slot is now owned by the
+shift-probe: `TimeShiftAlignPhase` iterates alive clusters and runs
+`TimeShiftAlignCluster` on each, doing per-spike min-Mahalanobis² alignment
+against the cluster's own Gaussian.  This is the feature-space analogue of
+xcorr realignment — per-spike shift selection weighted by the cluster's
+Cholesky factor, which automatically favours the discriminative dimensions
+that dominate the spike's identity.
+
+Phase 1.5 and Phase 4 are sequential stages of the same pipeline: 1.5
+accumulates in-memory shifts into `m_cumShift[]`; 4 writes them to disk.
+
+### Log prefix convention
+
+- `[Phase N]` — top-level phase entry, one fprintf per phase invocation
+- `[probe-split]` — split-probe trace inside Phase 1 / 2.5
+- `[probe-merge-decision]` — cluster-wide χ²-gated merge-decision trace inside Phase 3
+- `[probe-merge-tighten]` — per-spike post-merge tightener trace inside Phase 3
+
+### Public API (`KK` class)
+
+```cpp
+// Init/finalize
+bool InitTimeShift(int nChan, int nSamp, int N_halfWidth);
+void CloseTimeShift();
+void TimeShiftFinalize(int nChan, int nSamp);            // Phase 4
+
+// Split stage (max-variance, cluster-wide)
+int  TimeShiftSplit(const std::vector<int>& idxs, int nChan, int nSamp);
+int  TimeShiftSplitCluster(int clusterId, int nChan, int nSamp);
+
+// Cluster alignment (Phase 1.5 — replaces legacy xcorr realignment)
+int  TimeShiftAlignCluster(int clusterId, int nChan, int nSamp);
+int  TimeShiftAlignPhase(int nChan, int nSamp);   // iterates all alive clusters
+
+// Merge decision (cluster-wide per-destination, χ²-gated min-Mahal²)
+struct TimeShiftMergePlan { ... };
+bool TimeShiftMergeEvaluate(int victim, int nChan, int nSamp,
+                              TimeShiftMergePlan& plan);
+void TimeShiftMergeCommit(const TimeShiftMergePlan& plan);
+
+// Merge tightener (per-spike min-Mahal², no threshold)
+int  TimeShiftMergeTighten(const std::vector<int>& idxs, int nChan, int nSamp,
+                             const float* destMean, const float* destChol);
+```
+
+Naming convention: `TimeShift<Stage><Action>`.  `<Stage>` is one of
+`Split` / `Merge` / (session-level) and `<Action>` describes what the
+method does at that stage (`Evaluate`, `Commit`, `Cluster`, `Tighten`,
+`Finalize`).  All methods are no-ops on `KK` instances where
+`m_shiftProbeReady == false`, so callers don't need to check explicitly.
+
+### Parameter reference
+
+| parameter                    | default | meaning |
+|------------------------------|---------|---------|
+| `MaxTimeShift`               | 1       | basis fan half-width N (0–5); time-shift search tests δ ∈ {-N,…,+N} samples.  N=0 disables all time-shift stages. |
+| `TimeShiftAlignIter`         | 1       | Phase 1.5 cluster-alignment passes. 0 = skip alignment; N = run N passes, calling `MStep()` between passes so each pass sees updated cluster means.  Early exit on convergence (zero-shift pass). |
+| `TimeShiftMergeEnable`       | 1       | enable Phase 3's merge-decision + merge-tighten time-shift stages.  Set to 0 to keep only the split-stage and cluster-alignment stages active. |
+
+**Migration notes** (2026-04-23c):
+
+- `-MaxShiftProbe` → `-MaxTimeShift`
+- `-ShiftProbeAlignIter` → `-TimeShiftAlignIter`
+- `-ShiftProbeMergeProbe` → `-TimeShiftMergeEnable`
+
+Old names removed — no backward-compat aliases.  Existing scripts need a
+straight text substitution.  The API rename is part of a broader effort to
+disambiguate "probe" (now: recording hardware only) from "time-shift
+search" (the pre-shifted PCA basis + candidate selection machinery).
+
 ## Algorithm
 
 ### Problem
@@ -54,7 +146,7 @@ the eigenvector row by −δ, with zero-padding at the tail.  Since PCs of
 biological spike waveforms taper to zero at the window edges by
 construction, the dropped/padded entry contributes negligibly at ±1 sample.
 
-At `InitShiftProbe` time we build three contiguous basis tensors
+At `InitTimeShift` time we build three contiguous basis tensors
 `E_{−1}, E_0, E_{+1}` (and three shifted means `μ_{−1}, μ_0, μ_{+1}`).  At
 projection time the inner loop is a single pass over `j` with three
 accumulators; every raw sample is loaded exactly once and feeds all three
@@ -129,8 +221,8 @@ std::vector<int>   m_cumShift;
 bool               m_shiftProbeReady;
 int                m_shiftProbeMaxShiftAbs;   // default 1
 
-bool InitShiftProbe(int nChan, int nSamplesPerSpike);
-void CloseShiftProbe();
+bool InitTimeShift(int nChan, int nSamplesPerSpike);
+void CloseTimeShift();
 int  ShiftProbeAndCommitCluster(int clusterId, int nChan, int nSamplesPerSpike);
 int  ShiftProbeAndCommitSpikes (const std::vector<int>& globalSpikeIndices,
                                 int nChan, int nSamplesPerSpike);
@@ -218,6 +310,129 @@ The inherited canonical changelog is preserved as
 `CHANGES-inherited-from-canonical.md` for historical reference.
 
 All other files are byte-identical to their canonical counterparts.
+
+## [2026-04-23d] DipSplit — bimodal-cluster splitter (Phase 1.8)
+
+**Summary**: new phase that detects and splits "flat" clusters — CEM failure
+mode where a cluster contains two sub-populations separated in some 2D
+projection but whose full-dim moments look approximately Gaussian.
+
+### Algorithm
+
+Two-stage gating + refinement:
+
+1. **Bloat gate** (cheap, no I/O): compute 90th-percentile Mahalanobis² of
+   each alive cluster's members from the already-materialized `LogP[c][p]`.
+   For a true Gaussian this is ≈ χ²(nDims, 0.9); bimodal mixtures fit as
+   unimodal inflate this by 1.5–2×.  Skip unless
+   `mahal²₉₀ > DipSplitBloatFactor · χ²(nDims, 0.9)`.
+
+2. **Dip gate** (mid cost): compute top-3 principal components of the
+   cluster's feature vectors via power iteration with Gram-Schmidt
+   deflation.  Project onto each PC and run a KDE-based valley test
+   (Silverman-rule bandwidth, G=301 grid).  Best valley depth =
+   `1 − v_min / min(peak_left, peak_right)`.  Skip unless deepest depth
+   ≥ `DipSplitValleyThresh`.
+
+3. **Refinement**: seed k=2 partition at the valley location along the
+   winning PC.  Refine with up to 20 Lloyd iterations.
+
+4. **BIC gate**: accept split only if BIC(k=2) < BIC(k=1) under
+   diagonal-Gaussian model AND each child cluster has ≥ `DipSplitMinSize`
+   members.  Hands off to MStep+EStep+CStep+Reindex to refresh cluster
+   stats.
+
+### Integration points
+
+- **Automatic**: `DipSplitPhase()` hooks into:
+  - `CEM()` tail (non-chunked)
+  - `CEMTwoPhase()` tail after Phase 2 (non-chunked)
+  - `RunChunkedCEM` between Phase 1.5 (alignment) and Phase 1.6 (templates)
+
+  Only runs on the main KK instance — scratch `Kc` objects inside chunked
+  processing set `suppressBestSave=true` and are skipped.
+- **Manual** (for future Klusters integration): `DipSplitAttempt(clusterId)`
+  is callable directly on a specific cluster and returns whether a split
+  was accepted.
+
+### Parameters
+
+| parameter               | default | meaning |
+|-------------------------|---------|---------|
+| `DipSplitEnable`        | 1       | 0 disables the automatic DipSplit phase |
+| `DipSplitMinSize`       | 100     | min spikes per child cluster for accepted split; parent must have ≥ 2× this |
+| `DipSplitBloatFactor`   | 1.5     | mahal²₉₀ inflation above χ²(d, 0.9) to trigger evaluation |
+| `DipSplitValleyThresh`  | 0.15    | min KDE valley depth (0..1) to flag bimodality |
+
+### Files added/changed
+
+- **NEW** `src/klustakwikExp/dipsplit.h` — public API for valley test,
+  top-k PC power iteration, k-means refinement, BIC helper.
+- **NEW** `src/klustakwikExp/dipsplit.cpp` — ~300 lines of implementation.
+- `KK.h`: added `DipSplitPhase()` and `DipSplitAttempt(int)` methods.
+- `KK.cpp`: implementations + hook sites in `CEM()`, `CEMTwoPhase()`, and
+  both `RunChunkedCEM` variants.
+- `KlustaKwik.{h,cpp}`: four new parameters declared + registered via
+  `INT_PARAM` / `FLOAT_PARAM`.
+- `CMakeLists.txt`: `dipsplit.cpp` + header added to `_cpu_srcs` / `_headers`.
+
+### Log output
+
+When a split is accepted:
+
+```
+  [dipsplit] cluster 12 → 340+285 (depth=0.342, mahal²₉₀=52.3 vs χ²₉₀=33.2, ΔBIC=47.8)
+[Phase 1.8] DipSplit: accepted 1 split(s)
+```
+
+No output when no splits are accepted — DipSplit runs silently to keep
+logs clean.
+
+## [2026-04-23b] Removed canonical xcorr realignment; Phase 1.5 is now cluster alignment
+
+**Summary**: `RealignChunkWaveforms` and its call sites are deleted.  The
+Phase 1.5 slot is now owned by `TimeShiftAlignPhase`, which runs per-spike
+min-Mahalanobis² alignment against each alive cluster's own Gaussian using
+the pre-shifted PCA basis.  `ShiftProbeReplacesPhase15` parameter is
+removed (there's no legacy path left to replace).
+
+**Why**: the canonical xcorr algorithm aligned spikes to their cluster
+mean in raw-waveform space.  The shift-probe's pre-shifted PCA basis
+already spans the same shift range δ ∈ {-N,…,+N}; doing the alignment in
+feature space via Cholesky-weighted Mahalanobis² naturally weights the
+discriminative dimensions (dimensions that differentiate this cluster
+from neighbours) over noise-dominated ones.  Also avoids xcorr's circular-
+shift wrap-around corruption — Phase 4 commits by re-extracting from .fil.
+
+**New API**:
+- `int TimeShiftAlignCluster(int clusterId, int nChan, int nSamp)` —
+  wrapper over `TimeShiftMergeTighten` pointed at the cluster's own
+  `Mean[c]` + `cholFlat[c]`.
+- `int TimeShiftAlignPhase(int nChan, int nSamp)` — iterates alive
+  clusters (skipping noise and clusters with < 2 spikes), returns total
+  number of spikes shifted.
+
+**Parameter migration**:
+- `-Phase15Iters N` renamed to `-ShiftProbeAlignIter N`.  The new name
+  matches the `ShiftProbeAlign*` API convention; the value now controls
+  the number of alignment PASSES, with `MStep()` refreshing cluster means
+  between passes and early exit on fixed-point convergence.  Default 1.
+- Users with `-Phase15Iters 0` in their script (previously meaning "skip
+  legacy xcorr") should either delete the flag or change it to
+  `-ShiftProbeAlignIter 1` to enable the new alignment stage.  Passing
+  `-ShiftProbeAlignIter 0` explicitly skips alignment entirely.
+- `-ShiftProbeReplacesPhase15` is removed.  Users who explicitly set
+  this will see an "unknown parameter" error — safe to delete from scripts.
+
+**Files changed**:
+- `KK.h`: removed `RealignChunkWaveforms` declaration; added
+  `TimeShiftAlignCluster` + `TimeShiftAlignPhase`.
+- `KK.cpp`: deleted ~210 lines of `RealignChunkWaveforms` body; replaced
+  both Phase 1.5 call sites with `TimeShiftAlignPhase(...)`; updated
+  adjacent flow comments.
+- `KlustaKwik.{h,cpp}`: removed `ShiftProbeReplacesPhase15` declaration,
+  definition, and `INT_PARAM` registration.  Updated `Phase15Iters`
+  docstring to reflect new semantics.
 
 ## [2026-04-23] Parameterised shift range + merge-step probe
 

@@ -231,17 +231,8 @@ public:
     //
     // nChan == 0 or nSamplesPerSpike == 0 → silently skipped (safe default).
     // bytesPerSample: 2 for ≤16-bit recordings (default), 4 for 32-bit.
-    // RealignChunkWaveforms — Phase 1.5 step 1.
-    // Xcorr-aligns each spike to its per-cluster mean waveform (from .spk).
-    // Home-chunk first-write-wins: spikeShifts[p] is set by the first
-    // chunk that contains spike p; overlap duplicates in later chunks skip it.
-    void RealignChunkWaveforms(
-        const std::vector<std::vector<int>>& chunkPoints,
-        const std::vector<std::vector<int>>& chunkClass,
-        int nChan, int nSamplesPerSpike, int bytesPerSample,
-        std::vector<int>& spikeShifts);
 
-    // RefeaturizeFromShifts — Phase 1.5 step 2.
+    // RefeaturizeFromShifts — used by Phase 4 (TimeShiftFinalize).
     // For each spike with a non-zero shift, re-extracts its waveform from
     // the .fil broadband file at (rawTs - shift - PeakSampleIndex), projects
     // through the PCA eigenvectors in SESSION.pca.N, re-normalises, and
@@ -251,9 +242,10 @@ public:
                                int nChan, int nSamplesPerSpike);
 
     // WritePhase15Checkpoint — write corrected .spk and .fet to .pending
-    // files using the shifts from RealignChunkWaveforms and the features
+    // files using the committed shifts from m_cumShift[] and the features
     // already updated in Data[] by RefeaturizeFromShifts, then atomically
-    // rename each .pending file over the original.
+    // rename each .pending file over the original.  Name kept for legacy
+    // on-disk compatibility; function is used by Phase 4 (shift commit).
     //
     // .spk: re-extracted from .fil at (rawTs + shift - PeakSampleIndex)
     // .fet: PCA features from Data[] + extTs (rawTs+shift) in last column
@@ -267,12 +259,12 @@ public:
     // Hard upper bound on the pre-shifted basis fan's half-width.  A fan of
     // (2N+1) candidates means (2*5+1) = 11 worst case, which fits in a
     // small stack array per thread (CPU) / per SIMT lane (GPU).  The
-    // runtime value comes from the MaxShiftProbe parameter.
-    static constexpr int kShiftProbeNmax = 5;
+    // runtime value comes from the MaxTimeShift parameter.
+    static constexpr int kTimeShiftNmax = 5;
 
-    // ShiftProbePcaBasis — cached PCA eigenvectors + per-dim normalisation
-    // parameters loaded once at startup.  Populated by InitShiftProbe() and
-    // re-used by every ShiftProbeAndCommitCluster() call (avoids re-reading
+    // TimeShiftBasis — cached PCA eigenvectors + per-dim normalisation
+    // parameters loaded once at startup.  Populated by InitTimeShift() and
+    // re-used by every TimeShiftSplitCluster() call (avoids re-reading
     // the .pca.N file on every split).
     //
     // Eigenvectors are pre-shifted and zero-padded at basis-build time: for
@@ -287,7 +279,7 @@ public:
     // exactly once and accumulates (2N+1) feature values — no modulo, no
     // branching — via an inner j-loop that fans out over the candidate
     // array.
-    struct ShiftProbePcaBasis {
+    struct TimeShiftBasis {
         int nChan       = 0;
         int data2use    = 0;
         int nComp       = 0;
@@ -308,27 +300,27 @@ public:
     // on the main KK object; K2/K3/Kc scratch objects leave it empty and
     // skip the probe (they operate on projected subspace copies, not the
     // full PCA-backed feature space, so the probe is meaningless there).
-    ShiftProbePcaBasis m_shiftPcaBasis;
+    TimeShiftBasis m_timeShiftBasis;
     std::vector<int>   m_cumShift;           // [nPoints] cumulative sample shift per spike (+ = later)
-    bool               m_shiftProbeReady = false;
-    int                m_shiftProbeCallCount = 0;
-    int                m_shiftProbeMaxShiftAbs = 1;   // hard clamp on |cumShift|; = basis N
+    bool               m_timeShiftReady = false;
+    int                m_timeShiftCallCount = 0;
+    int                m_timeShiftMaxAbs = 1;   // hard clamp on |cumShift|; = basis N
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
-    // Opaque GPU handle for shift-probe kernels.  Allocated by InitShiftProbe
+    // Opaque GPU handle for shift-probe kernels.  Allocated by InitTimeShift
     // when a GPU device is available; null otherwise (falls through to CPU
-    // path).  Freed by CloseShiftProbe().
-    struct ShiftProbeGpuCtx;
-    ShiftProbeGpuCtx* m_shiftGpuCtx = nullptr;
+    // path).  Freed by CloseTimeShift().
+    struct TimeShiftGpuCtx;
+    TimeShiftGpuCtx* m_timeShiftGpuCtx = nullptr;
 #endif
 
     // Load PCA basis + keep FILE* to .spk open for the duration of the run.
-    // N_halfWidth: pre-shifted basis fan half-width (0..kShiftProbeNmax); the
+    // N_halfWidth: pre-shifted basis fan half-width (0..kTimeShiftNmax); the
     // probe will test 2N+1 candidate shifts per call.  Passing 0 disables.
     // Returns true if the basis loaded and .spk is readable — the probe is a
     // no-op when either fails (so a legacy run without .pca/.spk still works).
-    bool InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth);
-    void CloseShiftProbe();
+    bool InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth);
+    void CloseTimeShift();
 
     // Test shifts in {-maxShiftAbs … +maxShiftAbs} (currently only ±1 supported
     // via defaults) on every spike in cluster `cid`.  For each candidate TOTAL
@@ -340,16 +332,16 @@ public:
     // chosen shift by writing the trial features into Data[], updating
     // the normalised timestamp column, and recording the delta in m_cumShift.
     // No disk writes.  Returns the number of spikes whose shift changed.
-    int ShiftProbeAndCommitCluster(int clusterId, int nChan, int nSamplesPerSpike);
+    int TimeShiftSplitCluster(int clusterId, int nChan, int nSamplesPerSpike);
 
-    // Same algorithm as ShiftProbeAndCommitCluster but takes an explicit list
+    // Same algorithm as TimeShiftSplitCluster but takes an explicit list
     // of global spike indices.  Used by per-chunk split paths where the
     // affected spikes are a subset of a chunk's points and the global Class[]
     // has not yet been updated (chunks commit back via MergeChunkModels).
-    int ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
+    int TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
                                   int nChan, int nSamplesPerSpike);
 
-    // Merge-step variant: for each spike, pick the shift δ ∈ {-N, …, +N}
+    // Merge tightener probe: for each spike, pick the shift δ ∈ {-N, …, +N}
     // that MINIMISES its Mahalanobis² distance to the receiving cluster's
     // Gaussian (mean `destMean`, Cholesky factor `destChol` lower-triangular,
     // stored contiguously as [nDims²]).  Per-spike selection (NOT cluster-
@@ -357,11 +349,57 @@ public:
     // ConsiderDeletion after a cluster is deleted and its points reassigned
     // to their second-best cluster — the probe tightens their fit.
     // Returns the number of spikes whose committed shift changed.
-    int ShiftProbeAndCommitSpikesForMerge(
+    int TimeShiftMergeTighten(
         const std::vector<int>& globalSpikeIndices,
         int nChan, int nSamplesPerSpike,
         const float* destMean,     // [nDims]
         const float* destChol);    // [nDims²] lower-triangular
+
+    // ---- Cluster-internal alignment (Phase 1.5 replacement) ---------------
+    // Per-spike min-Mahalanobis² alignment of spikes against their OWN
+    // cluster's Gaussian.  Equivalent problem statement to canonical xcorr
+    // realignment but operates in feature space (using Chol rather than
+    // raw-waveform cross-correlation) — which automatically weights
+    // dimensions by their discriminative power.  Runs at the Phase 1.5
+    // slot in the driver (Phase 1.5), replacing the canonical xcorr pass
+    // that has been removed.
+    //
+    // Returns the number of spikes whose shift changed.  A no-op when the
+    // cluster has < 2 spikes or when the probe isn't ready.
+    int TimeShiftAlignCluster(int clusterId, int nChan, int nSamplesPerSpike);
+
+    // Whole-session alignment pass: iterates alive clusters (skipping the
+    // noise cluster and any cluster with < 5 spikes), calls
+    // TimeShiftAlignCluster on each, and logs a summary.  Cluster stats
+    // (Mean + Cholesky) must be fresh — caller is responsible for running
+    // MStep + EStep beforehand.
+    int TimeShiftAlignPhase(int nChan, int nSamplesPerSpike);
+
+    // ---- DipSplit: bimodal-cluster detection & split (Phase 1.8) ----------
+    //
+    // For each alive cluster that passes a χ²-calibrated bloat gate (its
+    // 90th-percentile Mahalanobis² exceeds F · χ²(nDims, 0.9)), project
+    // onto its top-3 principal components and run a KDE-based valley test
+    // on each.  If the deepest valley depth ≥ DipSplitValleyThresh, seed
+    // a k=2 partition at the valley, refine with a few k-means iterations,
+    // and accept the split only if BIC(k=2) < BIC(k=1) and each child
+    // cluster has ≥ DipSplitMinSize members.
+    //
+    // Addresses the CEM failure mode where a bimodal cluster looks
+    // approximately Gaussian in full-dim but reveals a valley in some 2D
+    // projection.  Caller is responsible for running MStep + EStep before
+    // DipSplitPhase (bloat gate needs fresh LogP[]) and after any accepted
+    // split (cluster stats out of date).
+    //
+    // Returns the number of accepted splits.
+    int  DipSplitPhase();
+
+    // Single-cluster DipSplit attempt.  Used as the backing engine for
+    // DipSplitPhase and also callable directly by interactive tools
+    // (Klusters menu action).  Returns true when the split was accepted
+    // and Class[] has been updated; caller must run MStep + EStep to
+    // refresh cluster stats.
+    bool DipSplitAttempt(int clusterId);
 
     // -----------------------------------------------------------------------
     // Shift-aware merge decision (klustakwikExp)
@@ -386,7 +424,7 @@ public:
     // systematic mis-alignment.  Per-spike scatter of individual best-δs
     // is noise and is suppressed by the χ² threshold.
     // -----------------------------------------------------------------------
-    struct ShiftAwareMergePlan {
+    struct TimeShiftMergePlan {
         bool               valid              = false;
         float              lossReductionTotal = 0.0f;  // always ≤ 0; in natural log units
         // Per-spike commit data, same order as the input list (victim's spikes)
@@ -397,37 +435,37 @@ public:
         int                nPCA = 0;     // PCA feature count (for chosenFeats stride)
     };
 
-    // Build a ShiftAwareMergePlan for a candidate victim cluster.  Returns
+    // Build a TimeShiftMergePlan for a candidate victim cluster.  Returns
     // true when the evaluation succeeded (probe is ready, victim has >=1
     // spike, .spk reads succeeded).  `plan.lossReductionTotal` is the
     // change in DeletionLoss[victim] that would be realised if the plan
     // were committed (always ≤ 0, since δ=0 is among the candidates and
     // we apply the χ² threshold before switching).
-    bool EvaluateShiftAwareMergeDecision(
+    bool TimeShiftMergeEvaluate(
         int victim, int nChan, int nSamplesPerSpike,
-        ShiftAwareMergePlan& plan);
+        TimeShiftMergePlan& plan);
 
     // Commit a plan: write chosen features into Data[], bump m_cumShift[],
     // and re-upload to GPU if needed.  Idempotent — running on an
     // already-committed plan is a no-op.
-    void CommitShiftAwareMergePlan(const ShiftAwareMergePlan& plan);
+    void TimeShiftMergeCommit(const TimeShiftMergePlan& plan);
 
     // After CEM completes, re-run RefeaturizeFromShifts and WritePhase15Checkpoint
     // with m_cumShift as the final shift vector.  This is the ONLY point at
     // which .fil re-extraction and .spk/.fet rewrites occur (the probe itself
     // is pure in-memory circular shift — wrap-around at ±1 sample is
     // negligible relative to the PCA basis vectors).
-    void FinalizeShiftProbe(int nChan, int nSamplesPerSpike);
+    void TimeShiftFinalize(int nChan, int nSamplesPerSpike);
 
 private:
     // Open .spk once and cache the handle for the duration of the probe run.
-    // Opened by InitShiftProbe(), closed by CloseShiftProbe().
-    FILE* m_spkProbeFp = nullptr;
+    // Opened by InitTimeShift(), closed by CloseTimeShift().
+    FILE* m_timeShiftSpkFp = nullptr;
     // Reusable per-cluster scratch buffers.  Resized on demand; cleared between
     // clusters so high-water-mark is retained.
-    std::vector<int16_t> m_probeWaveScratch;        // [waveSamples] one spike
-    std::vector<float>   m_probeTrialFeats;         // [3 candidates × nMem × (nDims-1)]
-    std::vector<float>   m_probeTrialTime;          // [3 candidates × nMem]
+    std::vector<int16_t> m_timeShiftWaveScratch;        // [waveSamples] one spike
+    std::vector<float>   m_timeShiftTrialFeats;         // [3 candidates × nMem × (nDims-1)]
+    std::vector<float>   m_timeShiftTrialTime;          // [3 candidates × nMem]
 
 public:
 
