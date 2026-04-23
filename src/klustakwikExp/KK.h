@@ -286,6 +286,13 @@ public:
         int recShift    = 0;
         bool isCentered = false;
         int  N          = 0;   // half-width; total candidates = 2N+1
+        // Stderiv support: when true, the basis was loaded from .pcaD.N and
+        // operates on spatially-derived waveforms in .spkD.N.  nChan is the
+        // basis channel count (already reduced: nRawChannels − 1 for orders
+        // 1 and 3; equal to nRawChannels for order 0/2).  rawChannels records
+        // the group's raw channel count for .spkD indexing (stride).
+        bool isStderiv  = false;
+        int  rawChannels = 0;
         // Pre-shifted per-channel means (2N+1 copies).
         // Index: meanShifted[cand][ch][j] where cand=0..2N, δ=cand-N
         std::vector<std::vector<std::vector<double>>> meanShifted;
@@ -401,6 +408,12 @@ public:
     // refresh cluster stats.
     bool DipSplitAttempt(int clusterId);
 
+    // Extended form: returns a pointer-to-string-literal describing the
+    // outcome, used by DipSplitPhase for aggregate logging.  Tags:
+    // "split", "small", "not_bloated", "no_valley", "small_child",
+    // "bic_worse", "no_free_id".
+    bool DipSplitAttemptEx(int clusterId, const char*& reason_out);
+
     // -----------------------------------------------------------------------
     // Shift-aware merge decision (klustakwikExp)
     //
@@ -458,14 +471,72 @@ public:
     void TimeShiftFinalize(int nChan, int nSamplesPerSpike);
 
 private:
-    // Open .spk once and cache the handle for the duration of the probe run.
-    // Opened by InitTimeShift(), closed by CloseTimeShift().
-    FILE* m_timeShiftSpkFp = nullptr;
+    // Open .spk/.spkD once and cache either a FILE handle or an mmap
+    // pointer for the duration of the probe run.  Opened by InitTimeShift(),
+    // closed by CloseTimeShift().
+    //
+    // The mmap path (m_timeShiftSpkMap != nullptr) is preferred when
+    // available — the kernel page cache gives us shared memory semantics
+    // across subsequent cluster probes without re-reading the file, and
+    // cluster-scatter random access avoids fseeko/fread overhead.  The
+    // FILE* path is retained as a fallback (e.g. for NFS mounts where
+    // MAP_PRIVATE semantics differ).
+    FILE*   m_timeShiftSpkFp  = nullptr;
+    void*   m_timeShiftSpkMap = nullptr;  // mmap base pointer (or nullptr)
+    size_t  m_timeShiftSpkLen = 0;        // mmap length in bytes
+
+    // Stderiv support: when the time-shift probe is running against a .pcaD
+    // basis (spatial-derivative pipeline), the .spkD / canonical .spk does
+    // NOT reflect the transformation at arbitrary δ-shifts — we need to
+    // re-derive from .fil at the shifted timestamp.
+    //
+    // m_timeShiftFilMap is an mmap of the session's .fil file.  Layout:
+    // row-major int16_t[sessionSamples × NbTotalChannels].  Accessed in
+    // the CPU hot loop via pointer indexing, letting the kernel page
+    // cache amortise reads across spikes that share the same .fil region.
+    //
+    // m_timeShiftIsStderiv toggles the stderiv transform path on.  When
+    // false (canonical .pca), the .fil mmap is not allocated and the hot
+    // loop reads .spk as before.
+    bool    m_timeShiftIsStderiv = false;
+    void*   m_timeShiftFilMap    = nullptr;  // mmap base of .fil (or nullptr)
+    size_t  m_timeShiftFilLen    = 0;        // mmap length in bytes
+    int64_t m_timeShiftFilSamples = 0;       // sessionSamples = len / (nTotalCh * 2)
+    // Per-thread scratch for the stderiv transform: raw window (nChan × data2use × int16)
+    // and the transformed output (nChan × data2use × double).  Sized on first use.
+    std::vector<int16_t> m_stderivRawScratch;
+    std::vector<double>  m_stderivTransformScratch;
     // Reusable per-cluster scratch buffers.  Resized on demand; cleared between
     // clusters so high-water-mark is retained.
     std::vector<int16_t> m_timeShiftWaveScratch;        // [waveSamples] one spike
     std::vector<float>   m_timeShiftTrialFeats;         // [3 candidates × nMem × (nDims-1)]
     std::vector<float>   m_timeShiftTrialTime;          // [3 candidates × nMem]
+
+    // Read one spike's full waveform (nChan × nSamplesPerSpike int16_t values)
+    // into dst.  Branches internally on m_timeShiftSpkMap vs m_timeShiftSpkFp
+    // so callers don't need to know which access mode init chose.  Returns
+    // true on success; false if neither backing store is valid, bounds fail,
+    // or I/O errors out.  Used by all three projection paths (TimeShiftSplit,
+    // TimeShiftMergeTighten, TimeShiftMergeEvaluate).
+    bool TimeShiftReadSpikeWave(int p, int waveSamples, int16_t* dst);
+
+    // Apply SDIFF_ALLPAIRS + temporal first-difference in place to one spike's
+    // waveform (nChan × nSamplesPerSpike int16_t, sample-major layout).  This
+    // is the EXACT transformation process_extractspikes_stderiv applies when
+    // writing .spkD, with saturation at the int16 boundary at both stages.
+    //
+    // Per-spike boundary: sdiff[-1, ch] = 0.  Matches the per-spike convention
+    // of process_pca_stderiv (isolated spike windows) rather than the
+    // streaming boundary used inside process_extractspikes_stderiv.  The
+    // difference is a single-sample effect at t=0 and is far smaller than the
+    // shift-probe approximation we're already accepting.
+    //
+    // Used by RefeaturizeFromShifts (before projection) and
+    // WritePhase15Checkpoint (before writing .spkD.pending) to make the
+    // round-trip .fil → (shifted window) → .spkD.pending produce outputs
+    // bit-compatible with ndm_extractspikes_stderiv's writes.
+    static void ApplySdiffAllpairsTemporalDiff(
+        int16_t* wave, int nChan, int nSamplesPerSpike);
 
 public:
 
