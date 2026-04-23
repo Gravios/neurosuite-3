@@ -218,3 +218,116 @@ The inherited canonical changelog is preserved as
 `CHANGES-inherited-from-canonical.md` for historical reference.
 
 All other files are byte-identical to their canonical counterparts.
+
+## [2026-04-23] Parameterised shift range + merge-step probe
+
+Three new parameters expose and extend the probe:
+
+| parameter                    | default | range | description |
+|------------------------------|---------|-------|-------------|
+| `MaxShiftProbe`              | 1       | 0–5   | half-width `N` of the pre-shifted basis fan.  The probe builds `(2N+1)` pre-shifted copies of the PCA basis (one per δ ∈ {−N,…,+N}) and tests them all in a single fanned inner loop.  `N=0` disables the probe entirely (falls back to canonical KlustaKwik behaviour).  Larger `N` catches wider mis-alignments at `(2N+1)/3×` cost per probe call. |
+| `ShiftProbeReplacesPhase15`  | 1       | 0/1   | When `1`, skip the canonical Phase 1.5 xcorr realignment path in `KK::CEM` — the shift-probe's accumulated `m_cumShift[]` owns Phase 1.5 and `FinalizeShiftProbe` handles the single `.fil` re-extract pass.  Set to `0` to run both (diagnostic / A-B comparison). |
+| `ShiftProbeMergeProbe`       | 1       | 0/1   | When `1`, apply a min-Mahalanobis shift probe to each batch of spikes reassigned during `ConsiderDeletion` (cluster deletion / implicit merge).  Each reassigned spike picks INDEPENDENTLY the δ that best fits its receiving cluster's Gaussian.  Set to `0` to disable just the merge hook while keeping split-probe active. |
+
+### Split-step changes
+
+* Pre-shifted bases now exist for every δ ∈ {−N,…,+N} (was: fixed {−1, 0, +1}).
+  Storage is `[cand][ch][k*data2use + j]` with `cand ∈ [0, 2N]` and `δ = cand − N`.
+* CPU inner loop switched from three named accumulators (`accM/acc0/accP`)
+  to a stack array `double acc[2·kShiftProbeNmax + 1]` (= 11 worst case).
+  The compile-time upper bound keeps the array register-allocatable; the
+  runtime loop count is known loop-invariant so compilers unroll it cleanly.
+* CUDA / HIP / SYCL kernels mirror the CPU change: per-thread
+  `double accs[SP_CAND_MAX]`, fanned inner loop, basis base-pointer
+  reconstruction inside the loop body (cheap; index arithmetic dominated
+  by the FMA chain).  All three kernels now accept `N_basis` as a launch
+  parameter.
+* The `m_shiftProbeMaxShiftAbs` global clamp on cumulative per-spike shift
+  is set equal to `MaxShiftProbe` at init (coupled by default).  Can be
+  decoupled later if the user wants a wider global clamp than the basis
+  fan width.
+
+### Merge-step probe (new)
+
+When `ShiftProbeMergeProbe != 0`, `ConsiderDeletion` now integrates the
+shift probe at TWO stages: a cluster-wide DECISION probe before the merge
+is accepted, and a per-spike TIGHTENER after commitment.
+
+#### Stage 1: shift-aware merge decision
+
+Motivation: a single biological unit can fragment into two clusters when
+the spike detector triggers at different peak samples on different
+instances (sample 14 on some, sample 15 on others).  The mean waveforms
+are then temporally offset and Mahalanobis-inflated relative to each
+other — canonical `ConsiderDeletion` never merges them because the loss
+calculation assumes each spike stays at its current (misaligned) feature
+vector.
+
+Algorithm (`EvaluateShiftAwareMergeDecision`):
+
+1. After the canonical min-loss candidate `victim` is selected, if
+   `minLoss >= deltaPen` (i.e. the merge was rejected at δ=0) but
+   `minLoss < deltaPen + 8·|deltaPen|` (not hopelessly far), load all
+   of `victim`'s spike waveforms and project under every δ ∈ {−N,…,+N}
+   using the same pre-shifted bases as the split probe.
+2. Group victim's spikes by their `Class2[p]` destination.
+3. For each destination sub-batch, compute the AGGREGATE Mahalanobis²
+   at each candidate δ under that destination's Gaussian.
+4. Apply a χ² threshold: accept the best non-zero δ only if it beats
+   δ=0 by more than `χ²(nDims, 0.95) × sub_batch_size`.  This gives
+   each spike a per-spike "improvement budget" equal to the 95th
+   percentile of its null-hypothesis χ² distribution and suppresses
+   noise-driven false shifts.  `χ²(nDims, 0.95)` is computed via the
+   Wilson-Hilferty inverse (matching the existing inline formula at
+   KK.cpp:2811 / :3521 for `MergeThresh` calibration warnings).
+5. Translate the chosen-δ aggregate-Mahal² reductions into the log-
+   probability units used by `DeletionLoss`:
+   `ΔDeletionLoss(dest) = 0.5 × (agg_δ* − agg_δ=0) ≤ 0`.
+6. If `minLoss + ΔDeletionLoss_total < deltaPen`, accept the merge
+   and commit the planned per-destination cluster-wide shifts before
+   the reassignment.
+
+Rationale for cluster-wide (not per-spike) δ in the decision: a true
+temporal duplicate gives a consistent winning δ across all its spikes
+— that consistency is the signal.  Per-spike scatter is noise and is
+suppressed by the χ² threshold.
+
+Computational cost: one .spk read per victim spike, one (2N+1)-candidate
+projection, and O(M × kCand × nDims²) Cholesky forward-substitutions.
+Bounded by the "hopeless candidate" gate.
+
+#### Stage 2: per-spike post-merge tightener
+
+Runs after stage 1's cluster-wide commit and the reassignment.  Each
+reassigned spike independently picks the δ ∈ {−N,…,+N} that minimises
+its Mahalanobis² to its new home, bounded by `m_shiftProbeMaxShiftAbs`.
+No χ² threshold applied — residual per-spike misalignments are expected
+to be small and a tightened fit is always preferable.
+
+Combined semantics (user-selected "both" mode): decision commits the
+systematic cluster-wide offset; tightener cleans up per-spike residuals.
+Total committed shift per spike is bounded by the same hard clamp that
+governs single-call probes.
+
+### Selection criteria summary
+
+|                   | split (max-var)           | merge decision (χ²-gated min-Mahal)  | merge tightener (min-Mahal)       |
+|-------------------|---------------------------|--------------------------------------|-----------------------------------|
+| Scope             | per cluster               | per destination sub-batch            | per spike                         |
+| Objective         | **maximise** Σ var(fᵢ)   | **minimise** Σ mahal²(x,μ_dest)     | **minimise** mahal²(x,μ_dest)     |
+| Threshold         | any improvement           | χ²(nDims,0.95) × sub_batch_size      | any improvement (bounded by clamp)|
+| When              | inside split-accept       | inside ConsiderDeletion (before)     | inside ConsiderDeletion (after)   |
+| Rationale         | expose mixture            | accept temporally-duplicated merges  | polish per-spike fits             |
+
+### Phase 1.5 gating
+
+Both invocation sites of the canonical xcorr realignment inside `KK::CEM`
+(`KK.cpp` line ~2719 and ~3376) are now gated on
+`!m_shiftProbeReady || ShiftProbeReplacesPhase15 == 0`.  When the shift-probe
+is active and `ShiftProbeReplacesPhase15=1` (both defaults), the canonical
+Phase 1.5 is skipped with a log message — `FinalizeShiftProbe` runs the
+single re-extract pass from `.fil` at the end of the driver using the
+probe's accumulated `m_cumShift[]`.  Rationale: running both paths would
+let the canonical xcorr overwrite the probe's committed shifts with
+newly-computed xcorr values, wasting the probe's work.
+

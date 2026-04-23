@@ -106,6 +106,23 @@ extern std::vector<int> GroupChannelIds;
 // MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
 extern int   nRuns;
 extern int   Phase15Iters; ///< realignment iterations in RealignChunkWaveforms (default 2)
+// Post-split shift-probe parameters (klustakwikExp only).
+// MaxShiftProbe: the half-width of the pre-shifted PCA basis fan.  The probe
+// builds bases for δ ∈ {-N, …, +N} at session start, and picks the δ that
+// maximises per-dim variance on split-children (or minimises Mahalanobis
+// distance to the merge target on merge-children).  N=0 disables the probe
+// entirely (equivalent to canonical KlustaKwik behaviour).  Valid range: 0..5.
+extern int   MaxShiftProbe;
+// ShiftProbeReplacesPhase15: when non-zero, the canonical Phase 1.5 xcorr
+// realignment path (RealignChunkWaveforms + RefeaturizeFromShifts +
+// WritePhase15Checkpoint) is skipped when the shift-probe is active.
+// FinalizeShiftProbe still runs the re-extraction from .fil using the
+// probe's accumulated cumShift[] at the end of the session.  Default 1.
+extern int   ShiftProbeReplacesPhase15;
+// ShiftProbeMergeProbe: when non-zero and shift-probe is active, apply a
+// min-Mahalanobis shift probe to spikes reassigned during ConsiderDeletion
+// (cluster deletion/implicit merge).  Default 1.
+extern int   ShiftProbeMergeProbe;
 extern int   SubspaceDims;      ///< top-N eigenvectors for Phase 2 subspace Mahal (0=full-space)
 extern int   SubspaceRecluster;    ///< per-cluster subspace CEM after Phase 2 (0=disabled)
 extern float TemplateMatchScore;       ///< min xcorr for WITHIN-chunk template matching (0=disabled)

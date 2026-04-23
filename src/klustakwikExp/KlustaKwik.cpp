@@ -72,6 +72,9 @@ int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
 int   Phase15Iters           = 1;    ///< xcorr iterations in RealignChunkWaveforms (1 = single pass, no iteration)
+int   MaxShiftProbe             = 1;  ///< pre-shifted PCA basis half-width (0 disables, max 5)
+int   ShiftProbeReplacesPhase15 = 1;  ///< skip canonical Phase 1.5 xcorr when probe active
+int   ShiftProbeMergeProbe      = 1;  ///< apply min-Mahalanobis probe during cluster deletion
 int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2
 float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 1.7)
@@ -120,6 +123,9 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(NbBytesPerSample);
     INT_PARAM(nRuns);
     INT_PARAM(Phase15Iters);
+    INT_PARAM(MaxShiftProbe);
+    INT_PARAM(ShiftProbeReplacesPhase15);
+    INT_PARAM(ShiftProbeMergeProbe);
     INT_PARAM(SubspaceDims);
     INT_PARAM(SubspaceRecluster);
     FLOAT_PARAM(TemplateMatchScore);
@@ -652,9 +658,17 @@ int main(int argc, char **argv) {
         // Load PCA basis + open .spk read-only once for the run.  If either
         // is unavailable (legacy session without .pca or .spk), the probe
         // silently disables itself and the rest of the clustering runs
-        // identically to the canonical klustakwik.
-        if (Phase15Iters > 0)
-            K1.InitShiftProbe(NbChannels, NbSamplesPerSpike);
+        // identically to the canonical klustakwik.  MaxShiftProbe controls
+        // the half-width of the pre-shifted basis fan (0..5).
+        if (MaxShiftProbe < 0) MaxShiftProbe = 0;
+        if (MaxShiftProbe > 5) {
+            Output("Warning: MaxShiftProbe=%d clamped to 5 (N>5 is excessive; "
+                   "the PCA support is typically <= data2use samples)\n",
+                   MaxShiftProbe);
+            MaxShiftProbe = 5;
+        }
+        if (Phase15Iters > 0 && MaxShiftProbe > 0)
+            K1.InitShiftProbe(NbChannels, NbSamplesPerSpike, MaxShiftProbe);
 
         kSv.BestWeight.SetSize(MaxPossibleClusters);
         kSv.BestMean.SetSize(MaxPossibleClusters * K1.nDims);
