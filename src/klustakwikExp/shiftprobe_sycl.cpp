@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <vector>
 
-struct KK::ShiftProbeGpuCtx {
+struct KK::TimeShiftGpuCtx {
     sycl::queue* q           = nullptr;   // borrowed pointer to gpu->q
 
     double*  d_eig           = nullptr;
@@ -39,10 +39,10 @@ struct KK::ShiftProbeGpuCtx {
     int nCand() const { return 2 * N + 1; }
 };
 
-void gpu_shift_probe_free(KK::ShiftProbeGpuCtx* ctx);
+void gpu_timeshift_free(KK::TimeShiftGpuCtx* ctx);
 
-KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
-    KK_GPU* base, const KK::ShiftProbePcaBasis& basis,
+KK::TimeShiftGpuCtx* gpu_timeshift_init(
+    KK_GPU* base, const KK::TimeShiftBasis& basis,
     int nChan, int nSamplesPerSpike, int nPoints, const char* spkPath)
 {
     if (!base || !basis.valid() || nPoints <= 0 || !spkPath) return nullptr;
@@ -56,7 +56,7 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
     const size_t muPerCand = static_cast<size_t>(nChanB) * data2use;
     const size_t nPCA      = static_cast<size_t>(nChanB) * nComp;
 
-    auto* ctx = new KK::ShiftProbeGpuCtx();
+    auto* ctx = new KK::TimeShiftGpuCtx();
     ctx->q                = &base->q;
     ctx->nChan            = nChanB;
     ctx->data2use         = data2use;
@@ -97,21 +97,21 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
     if (!ctx->d_eig || !ctx->d_mean || !ctx->d_dimMin || !ctx->d_dimRange ||
         !ctx->d_waveBatch || !ctx->d_cumShift ||
         !ctx->d_trialFeats || !ctx->d_trialTime || !ctx->d_timeCol) {
-        gpu_shift_probe_free(ctx); return nullptr;
+        gpu_timeshift_free(ctx); return nullptr;
     }
     q.memcpy(ctx->d_eig,  eigFlat.data(),  eigFlat.size()*sizeof(double)).wait();
     q.memcpy(ctx->d_mean, meanFlat.data(), meanFlat.size()*sizeof(double)).wait();
 
     ctx->h_waveBatchCap = static_cast<size_t>(ctx->nMemMax)*nChan*nSamplesPerSpike;
     ctx->h_waveBatchPinned = sycl::malloc_host<int16_t>(ctx->h_waveBatchCap, q);
-    if (!ctx->h_waveBatchPinned) { gpu_shift_probe_free(ctx); return nullptr; }
+    if (!ctx->h_waveBatchPinned) { gpu_timeshift_free(ctx); return nullptr; }
 
     ctx->spkFp = fopen(spkPath, "rb");
-    if (!ctx->spkFp) { gpu_shift_probe_free(ctx); return nullptr; }
+    if (!ctx->spkFp) { gpu_timeshift_free(ctx); return nullptr; }
     return ctx;
 }
 
-void gpu_shift_probe_free(KK::ShiftProbeGpuCtx* ctx)
+void gpu_timeshift_free(KK::TimeShiftGpuCtx* ctx)
 {
     if (!ctx) return;
     if (ctx->spkFp) fclose(ctx->spkFp);
@@ -131,8 +131,8 @@ void gpu_shift_probe_free(KK::ShiftProbeGpuCtx* ctx)
     delete ctx;
 }
 
-bool gpu_shift_probe_project_batch(
-    KK::ShiftProbeGpuCtx* ctx,
+bool gpu_timeshift_project_batch(
+    KK::TimeShiftGpuCtx* ctx,
     const std::vector<int>& globalSpikeIndices,
     const std::vector<int>& cumShift,
     int maxShiftAbs,
@@ -234,7 +234,7 @@ bool gpu_shift_probe_project_batch(
             sycl::range<1>(static_cast<size_t>(nMem) * wgSize),
             sycl::range<1>(static_cast<size_t>(wgSize)));
         h.parallel_for(ndr, [=](sycl::nd_item<1> it) {
-            // Compile-time cap matching KK::kShiftProbeNmax.
+            // Compile-time cap matching KK::kTimeShiftNmax.
             constexpr int SP_N_MAX    = 5;
             constexpr int SP_CAND_MAX = 2 * SP_N_MAX + 1;
 

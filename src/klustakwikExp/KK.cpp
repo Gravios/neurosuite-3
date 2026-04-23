@@ -829,21 +829,21 @@ void KK::ConsiderDeletion() {
     // the merge is accepted at the planned δs; otherwise behaviour is
     // unchanged.
     //
-    // Gated on:  m_shiftProbeReady && ShiftProbeMergeProbe != 0 &&
+    // Gated on:  m_timeShiftReady && TimeShiftMergeEnable != 0 &&
     //            minLoss >= deltaPen   (a merge already accepted at δ=0
     //                                   doesn't need the probe)
     // Also gated: minLoss < deltaPen + 8*|deltaPen|  (skip hopeless
     // candidates to bound probe overhead — at 8× the threshold, even the
     // maximum reduction from χ²-valid shifts is unlikely to close the gap).
-    ShiftAwareMergePlan shiftPlan;
+    TimeShiftMergePlan shiftPlan;
     const bool mergeProbeEnabled =
-        m_shiftProbeReady && ShiftProbeMergeProbe != 0 &&
+        m_timeShiftReady && TimeShiftMergeEnable != 0 &&
         NbChannels > 0 && NbSamplesPerSpike > 0;
     float effectiveMinLoss = minLoss;
     if (mergeProbeEnabled && minLoss >= deltaPen &&
         minLoss < deltaPen + 8.0f * std::fabs(deltaPen))
     {
-        if (EvaluateShiftAwareMergeDecision(
+        if (TimeShiftMergeEvaluate(
                 candidateClass, NbChannels, NbSamplesPerSpike, shiftPlan)
             && shiftPlan.valid)
         {
@@ -862,7 +862,7 @@ void KK::ConsiderDeletion() {
         // the reassigned spikes start their life in the new cluster with
         // shift-corrected feature vectors.
         if (shiftPlan.valid && shiftPlan.lossReductionTotal < 0.0f)
-            CommitShiftAwareMergePlan(shiftPlan);
+            TimeShiftMergeCommit(shiftPlan);
 
         // ── Group + reassign victim's spikes by Class2 destination ────────
         std::vector<std::vector<int>> byDest(
@@ -882,7 +882,7 @@ void KK::ConsiderDeletion() {
         // behaviour): the decision established a cluster-wide δ per sub-
         // batch capturing SYSTEMATIC mis-alignment; the tightener now
         // allows each spike to further refine its fit within the remaining
-        // budget, bounded by m_shiftProbeMaxShiftAbs.  Destinations with
+        // budget, bounded by m_timeShiftMaxAbs.  Destinations with
         // < 5 transferred spikes are skipped (not worth the I/O).
         if (mergeProbeEnabled) {
             int totalShifted = 0;
@@ -891,11 +891,11 @@ void KK::ConsiderDeletion() {
                 if (static_cast<int>(idxs.size()) < 5) continue;
                 const float* destMean = Mean.m_Data     + dest * nDims;
                 const float* destChol = cholFlat.data() + dest * nDims2;
-                totalShifted += ShiftProbeAndCommitSpikesForMerge(
+                totalShifted += TimeShiftMergeTighten(
                     idxs, NbChannels, NbSamplesPerSpike, destMean, destChol);
             }
             if (totalShifted > 0)
-                Output("  merge-tightener: %d spikes shifted per-spike "
+                Output("  [tshift-merge-tighten] %d spikes shifted per-spike "
                        "post-merge\n", totalShifted);
         }
     }
@@ -1163,7 +1163,7 @@ int KK::TrySplits() {
                 // shift that maximises spatial-feature variance to expose any
                 // residual mixture for the next split trial.  Gates below
                 // avoid spending I/O on splits too small to benefit.
-                if (m_shiftProbeReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
+                if (m_timeShiftReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
                     int nA = 0, nB = 0;
                     for (int p = 0; p < nPoints; ++p) {
                         if (Class[p] == c)              ++nA;
@@ -1171,15 +1171,15 @@ int KK::TrySplits() {
                     }
                     const int minChild = std::min(nA, nB);
                     if (minChild >= 20 && minChild * 10 >= clusterSize) {
-                        int chA = ShiftProbeAndCommitCluster(c, NbChannels,
+                        int chA = TimeShiftSplitCluster(c, NbChannels,
                                                              NbSamplesPerSpike);
-                        int chB = ShiftProbeAndCommitCluster(unusedCluster,
+                        int chB = TimeShiftSplitCluster(unusedCluster,
                                                              NbChannels, NbSamplesPerSpike);
                         if ((chA + chB) > 0) {
                             // Features changed → refresh model before next iter
                             MStep(); EStep();
                             if (Verbose >= 1)
-                                Output("  ShiftProbe: cluster %d shifted %d spikes, "
+                                Output("  [tshift-split] cluster %d shifted %d spikes, "
                                        "cluster %d shifted %d spikes\n",
                                        c, chA, unusedCluster, chB);
                         }
@@ -1299,6 +1299,14 @@ float KK::CEM(const char *CluFile, int Recurse) {
         /*phaseLabel=*/     Recurse ? "iter" : "\titer");
 
     if (DistDump) fprintf(Distfp, "\n");
+
+    // klustakwikExp Phase 1.8: DipSplit — bimodal-cluster detection & split.
+    // Runs once on converged clusters.  No-op if DipSplitEnable=0 or no
+    // bloated clusters are found.
+    if (DipSplitEnable != 0 && !suppressBestSave) {
+        DipSplitPhase();
+    }
+
     return score;
 }
 
@@ -1520,6 +1528,14 @@ float KK::CEMTwoPhase(int timeMergeIter) {
             /*maxIter=*/        timeMergeIter,
             /*phaseLabel=*/     "P2");
         Output("Phase 2 done: %d clusters, score %.7g\n", nClustersAlive, score);
+
+        // klustakwikExp Phase 1.8: DipSplit — bimodal-cluster detection.
+        // Only fires on the main instance (scratch Kc's set suppressBestSave
+        // so chunk-local clustering doesn't run it redundantly).
+        if (DipSplitEnable != 0 && !suppressBestSave) {
+            DipSplitPhase();
+            score = ComputeScore();   // refresh since DipSplit may have split
+        }
         return score;
     }
 }
@@ -1922,224 +1938,13 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 }
 
 // ---------------------------------------------------------------------------
-void KK::RealignChunkWaveforms(
-    const std::vector<std::vector<int>>& chunkPoints,
-    const std::vector<std::vector<int>>& chunkClass,
-    int nChan, int nSamplesPerSpike, int bytesPerSample,
-    std::vector<int>& spikeShifts)
-{
-    if (nChan <= 0 || nSamplesPerSpike <= 0) return;
-    if (bytesPerSample != 2 && bytesPerSample != 4) {
-        Output("RealignChunkWaveforms: unsupported bytesPerSample=%d — skipping\n",
-               bytesPerSample);
-        return;
-    }
-
-    // Prefer canonical .spk.N; fall back to .spkD.N for stderiv sessions.
-    // pickInputPath probes with "rb"; the actual open below uses "r+b" for
-    // in-place rewrite.  If the file exists but is read-only, the r+b open
-    // will fail and fall through to the graceful "skipping" path below.
-    char spkFname[STRLEN + 16];
-    const int _spkVarRCW = pickInputPath(spkFname, sizeof(spkFname),
-                                         FileBase, "spk", ElecNo);
-    (void)_spkVarRCW;
-    FILE* fp = fopen(spkFname, "r+b");
-    if (!fp) {
-        Output("RealignChunkWaveforms: cannot open %s for in-place rewrite — skipping\n",
-               spkFname);
-        return;
-    }
-
-    Output("RealignChunkWaveforms: backend = %s, bytesPerSample = %d\n",
-           XcorrDispatch::backendName(), bytesPerSample);
-
-    const int waveSamples = nChan * nSamplesPerSpike;
-    const int maxShift    = std::max(1, nSamplesPerSpike / 4);
-    int nAligned = 0, nSkipped = 0;
-
-    const int nChunks = static_cast<int>(chunkPoints.size());
-
-    // ── Overlap deferral sets ──────────────────────────────────────────────
-    // An overlap spike (global index p) appears in both chunkPoints[k] and
-    // chunkPoints[k+1].  If we write it back during chunk k's pass, chunk k+1
-    // will read the already-shifted waveform and shift it again (double-align),
-    // and its cluster mean will be a mixture of aligned and unaligned waveforms
-    // (biased template).
-    //
-    // Fix: skip the writeback for p during chunk k's pass.  Chunk k+1 still
-    // reads the original waveform (not yet written), computes a clean mean,
-    // and owns the single authoritative write.  The mean computation for chunk k
-    // is unaffected — we read before we write, so the wave buffer is correct.
-    //
-    // overlapInNext[k] = {p : p in chunkPoints[k] AND p in chunkPoints[k+1]}
-    std::vector<std::unordered_set<int>> overlapInNext(nChunks);
-    for (int k = 0; k + 1 < nChunks; k++) {
-        std::unordered_set<int> nextSet(chunkPoints[k + 1].begin(),
-                                        chunkPoints[k + 1].end());
-        for (int p : chunkPoints[k])
-            if (nextSet.count(p)) overlapInNext[k].insert(p);
-        if (!overlapInNext[k].empty())
-            Output("  Chunk %d: deferring writeback of %d overlap spikes to chunk %d\n",
-                   k, static_cast<int>(overlapInNext[k].size()), k + 1);
-    }
-
-    for (int k = 0; k < nChunks; k++) {
-        const auto& pts = chunkPoints[k];
-        const auto& cls = chunkClass[k];
-        const int   nPts = static_cast<int>(pts.size());
-
-        // ── Cluster membership map ─────────────────────────────────────────
-        // cid -> list of local indices into pts/cls
-        std::unordered_map<int, std::vector<int>> members;
-        members.reserve(MaxPossibleClusters);
-        for (int i = 0; i < nPts; i++)
-            members[cls[i]].push_back(i);
-
-        // ── Read waveforms for this chunk ──────────────────────────────────
-        // Sample-major layout: waves[localIdx*waveSamples + s*nChan + c]
-        // Always stored as int16 internally; upsample from int32 if needed.
-        std::vector<int16_t> waves(static_cast<size_t>(nPts) * waveSamples, 0);
-        for (int i = 0; i < nPts; i++) {
-            const int p = pts[i];
-            fseeko(fp, static_cast<off_t>(p) * waveSamples * bytesPerSample, SEEK_SET);
-            int16_t* dst = waves.data() + static_cast<size_t>(i) * waveSamples;
-            if (bytesPerSample == 2) {
-                const size_t nRead = fread(dst, sizeof(int16_t), waveSamples, fp);
-                if (static_cast<int>(nRead) != waveSamples)
-                    std::fill(dst, dst + waveSamples, int16_t(0));
-            } else {
-                // 32-bit recording: read int32, downcast to int16 for xcorr
-                std::vector<int32_t> tmp(static_cast<size_t>(waveSamples));
-                const size_t nRead = fread(tmp.data(), sizeof(int32_t), waveSamples, fp);
-                if (static_cast<int>(nRead) != waveSamples)
-                    std::fill(dst, dst + waveSamples, int16_t(0));
-                else
-                    for (int s = 0; s < waveSamples; ++s)
-                        dst[s] = static_cast<int16_t>(tmp[s] >> 16);
-            }
-        }
-
-        // ── Per-cluster iterative alignment (mirrors Klusters realignSpikes) ──
-        //
-        // Phase15Iters iterations, matching Klusters' nIter loop:
-        //   1. Build cluster mean from current waveBuf (updated each iter)
-        //   2. Pre-align template peak to PeakSampleIndex
-        //   3. Xcorr waveBuf against template
-        //   4. Circularly shift waveBuf in-place (cheap; improves next iter's mean)
-        //   5. Accumulate cumulative shift into spikeShifts[]
-        // After all iters, RefeaturizeFromShifts re-extracts from .fil using
-        // the total cumulative shift — no wrap-around artifact.
-        for (auto& [cid, idxList] : members) {
-            if (cid == 0) { nSkipped += static_cast<int>(idxList.size()); continue; }
-            const int nMem = static_cast<int>(idxList.size());
-
-            // Build channel-major spike batch — updated in-place each iteration
-            //   waveBuf[(mi*nChan + ch) * nSamplesPerSpike + t]
-            std::vector<int16_t> waveBuf(
-                static_cast<size_t>(nMem) * nChan * nSamplesPerSpike);
-            for (int mi = 0; mi < nMem; mi++) {
-                const int localIdx = idxList[mi];
-                const int16_t* src = waves.data()
-                                   + static_cast<size_t>(localIdx) * waveSamples;
-                for (int ch = 0; ch < nChan; ch++)
-                    for (int s = 0; s < nSamplesPerSpike; s++)
-                        waveBuf[(static_cast<size_t>(mi) * nChan + ch)
-                                * nSamplesPerSpike + s] = src[s * nChan + ch];
-            }
-
-            // cumIterShift[mi] = total shift accumulated across all iters for spike mi
-            std::vector<int> cumIterShift(static_cast<size_t>(nMem), 0);
-
-            const int nIter = Phase15Iters;  // always > 0 (guard above)
-            for (int iter = 0; iter < nIter; iter++) {
-
-                // 1. Build mean from current waveBuf (channel-major, int64 accumulator)
-                std::vector<int64_t> acc(
-                    static_cast<size_t>(nChan) * nSamplesPerSpike, 0);
-                for (int mi = 0; mi < nMem; mi++) {
-                    const int16_t* w = waveBuf.data()
-                        + static_cast<ptrdiff_t>(mi) * (nChan * nSamplesPerSpike);
-                    for (int e = 0; e < nChan * nSamplesPerSpike; e++)
-                        acc[static_cast<size_t>(e)] += static_cast<int64_t>(w[e]);
-                }
-                std::vector<int16_t> tmplBuf(static_cast<size_t>(nChan) * nSamplesPerSpike);
-                for (int e = 0; e < nChan * nSamplesPerSpike; e++)
-                    tmplBuf[static_cast<size_t>(e)] =
-                        static_cast<int16_t>(acc[static_cast<size_t>(e)] / nMem);
-
-                // 2. Xcorr waveBuf vs template
-                // Note: template peak pre-alignment (as used in Klusters) is intentionally
-                // omitted here. On multi-channel probes a single unit may have genuine
-                // temporal offsets between channels (e.g. one channel peaks 2-3 samples
-                // before another). Forcing the summed-amplitude peak to PeakSampleIndex
-                // distorts such templates and causes erroneous shifts. The xcorr finds
-                // the lag maximising correlation without needing the template repositioned.
-                // minScore=0.70 matches Klusters default: only accept shifts
-                // where the normalised xcorr exceeds 0.70. Below this the
-                // correlation is unreliable and the shift would be spurious.
-                const float minXcorrScore = 0.70f;
-                std::vector<int>   iterShifts(static_cast<size_t>(nMem), 0);
-                std::vector<float> iterScores(static_cast<size_t>(nMem), 0.0f);
-                XcorrDispatch::compute(
-                    waveBuf.data(), tmplBuf.data(),
-                    nMem, nChan, nSamplesPerSpike,
-                    maxShift, minXcorrScore,
-                    iterShifts.data(), iterScores.data());
-
-                // 3. Circularly shift waveBuf in-place (channel-major)
-                //    newSpike[ch*N + t] = oldSpike[ch*N + (t + s + N) % N]
-                //    Mirrors Klusters: tmp[ch*N+t] = w[ch*N + (t+s+N)%N]
-                int changed = 0;
-                for (int mi = 0; mi < nMem; mi++) {
-                    const int s = iterShifts[static_cast<size_t>(mi)];
-                    if (s == 0) continue;
-                    int16_t* w = waveBuf.data()
-                        + static_cast<ptrdiff_t>(mi) * (nChan * nSamplesPerSpike);
-                    std::vector<int16_t> tmp(static_cast<size_t>(nChan) * nSamplesPerSpike);
-                    for (int t = 0; t < nSamplesPerSpike; t++) {
-                        const int src = (t + s + nSamplesPerSpike) % nSamplesPerSpike;
-                        for (int ch = 0; ch < nChan; ch++)
-                            tmp[static_cast<size_t>(ch * nSamplesPerSpike + t)] =
-                                w[static_cast<size_t>(ch * nSamplesPerSpike + src)];
-                    }
-                    std::copy(tmp.begin(), tmp.end(), w);
-                    cumIterShift[static_cast<size_t>(mi)] += s;
-                    ++changed;
-                }
-                if (changed == 0) break;   // converged early
-
-            } // end iter loop
-
-            // 4. Write total cumulative shift into spikeShifts[] — home-chunk
-            //    first-write-wins for overlap spikes.
-            //    RefeaturizeFromShifts will re-extract from .fil at
-            //    rawTs + cumShift - PeakSampleIndex (clean, no wrap-around).
-            for (int mi = 0; mi < nMem; mi++) {
-                const int sh       = cumIterShift[static_cast<size_t>(mi)];
-                const int localIdx = idxList[mi];
-                const int p        = pts[localIdx];
-                if (p < static_cast<int>(spikeShifts.size()) &&
-                    spikeShifts[p] == std::numeric_limits<int>::min())
-                    spikeShifts[p] = sh;
-                if (sh != 0) nAligned++;
-            }
-        }
-    }
-
-    fclose(fp);
-    Output("RealignChunkWaveforms: aligned %d spikes, skipped %d noise\n",
-           nAligned, nSkipped);
-}
-
-
-
-// ---------------------------------------------------------------------------
 // RefeaturizeFromShifts
 //
-// For each spike with a non-zero xcorr shift (set by RealignChunkWaveforms),
-// re-extracts the aligned waveform from the .fil broadband file at the
-// corrected sample offset, projects through the saved PCA eigenvectors,
-// re-normalises, and writes back into Data[].
+// For each spike with a non-zero cumulative shift (set by the shift
+// probe), re-extracts the aligned waveform from the .fil broadband
+// file at the corrected sample offset, projects through the saved PCA
+// eigenvectors, re-normalises, and writes back into Data[].  Called by
+// Phase 4 (TimeShiftFinalize).
 //
 // Re-extracting from .fil rather than circular-shifting the .spk waveform
 // eliminates wrap-around corruption: circular shift of N samples by sh
@@ -2719,15 +2524,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
-    // Step 1 — RealignChunkWaveforms: xcorr each spike against its cluster mean
-    //   waveform (from .spk).  Cheap: .spk is already on disk; XcorrDispatch
-    //   is batched per cluster.  Home-chunk first-write-wins for overlap spikes.
-    //
-    // Step 2 — RefeaturizeFromShifts: re-extract each shifted spike from .fil
-    //   at (rawTs - shift - PeakSampleIndex), project through PCA eigenvectors,
-    //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
-    //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
-    //   Falls back to circular shift when .fil is unavailable.
+    // Note: canonical Phase 1.5 xcorr has been removed.  Alignment is
+    // now owned by the shift-probe (TimeShiftAlignPhase), with feature
+    // re-projection via RefeaturizeFromShifts at Phase 4.
     // ── Phase 2.5: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
         fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
@@ -2751,31 +2550,52 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     }
 
 
-    if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
-        // ── klustakwikExp: skip canonical Phase 1.5 when shift-probe owns it ──
-        // The post-split shift-probe incrementally refines feature vectors
-        // in Data[] and commits shifts to m_cumShift[] throughout clustering.
-        // FinalizeShiftProbe (called from the driver after SaveOutput) runs
-        // its own RefeaturizeFromShifts + WritePhase15Checkpoint pass using
-        // m_cumShift.  Running the canonical xcorr-based path here would
-        // overwrite the probe's committed shifts with newly-computed xcorr
-        // values, invalidating its work.  ShiftProbeReplacesPhase15 (default
-        // 1) lets the user opt-out of this gating if they want both passes.
-        if (m_shiftProbeReady && ShiftProbeReplacesPhase15 != 0) {
-            Output("Phase 1.5: skipped (shift-probe active; "
-                   "ShiftProbeReplacesPhase15=1)\n");
-        } else {
-            fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
-            Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
-                   NbChannels, NbSamplesPerSpike, Phase15Iters);
-            std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
-                                         std::numeric_limits<int>::min());
-            RealignChunkWaveforms(chunkPoints, perChunkClass,
-                                  NbChannels, NbSamplesPerSpike, NbBytesPerSample,
-                                  spikeShifts);
-            RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-            WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+    // ── Phase 1.5: cluster alignment (shift-probe) ──────────────────────
+    // For each alive cluster, per-spike min-Mahalanobis² alignment against
+    // the cluster's own Gaussian.  Committed shifts accumulate into
+    // m_cumShift[]; Phase 4 (TimeShiftFinalize) re-extracts from .fil and
+    // writes .spk/.fet/.res at the end of the driver.
+    //
+    // TimeShiftAlignIter controls the number of alignment passes.  Multiple
+    // passes are useful because each pass shifts some spikes, which changes
+    // each cluster's mean; the next pass then has an updated reference and
+    // may find different best-δs.  MStep() is run between passes to refresh
+    // Mean[] and cholFlat[].  Early exit when a pass shifts zero spikes
+    // (fixed-point convergence).  Class[] is NOT reassigned between passes —
+    // Phase 1.5 is strictly within-cluster alignment, not re-clustering.
+    if (TimeShiftAlignIter > 0 && m_timeShiftReady &&
+        NbChannels > 0 && NbSamplesPerSpike > 0) {
+        for (int it = 0; it < TimeShiftAlignIter; ++it) {
+            if (TimeShiftAlignIter > 1) {
+                fprintf(stderr,
+                    "[Phase 1.5] Cluster alignment pass %d/%d "
+                    "(shift-probe, per-spike min-Mahal²)\n",
+                    it + 1, TimeShiftAlignIter);
+            } else {
+                fprintf(stderr,
+                    "[Phase 1.5] Cluster alignment "
+                    "(shift-probe, per-spike min-Mahal²)\n");
+            }
+            const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+            if (nShifted == 0) {
+                if (it > 0)
+                    Output("[Phase 1.5] Alignment converged after %d pass(es) "
+                           "— skipping remaining\n", it + 1);
+                break;
+            }
+            // Refresh cluster stats for the next pass (if any).
+            if (it + 1 < TimeShiftAlignIter) MStep();
         }
+    }
+
+    // ── Phase 1.8: DipSplit — bimodal-cluster detection & split ─────────
+    // After cluster alignment has corrected systematic temporal offsets,
+    // look for clusters where CEM's single-Gaussian fit is masking a
+    // bimodal sub-structure.  The two-stage gate (χ²-bloat → KDE-valley)
+    // keeps cost proportional to actually-bimodal clusters.  Runs MStep+
+    // EStep+CStep internally if any split is accepted.
+    if (DipSplitEnable != 0) {
+        DipSplitPhase();
     }
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
@@ -3390,15 +3210,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
     //
-    // Step 1 — RealignChunkWaveforms: xcorr each spike against its cluster mean
-    //   waveform (from .spk).  Cheap: .spk is already on disk; XcorrDispatch
-    //   is batched per cluster.  Home-chunk first-write-wins for overlap spikes.
-    //
-    // Step 2 — RefeaturizeFromShifts: re-extract each shifted spike from .fil
-    //   at (rawTs - shift - PeakSampleIndex), project through PCA eigenvectors,
-    //   update Data[] before Phase 2.  Using .fil eliminates the circular-shift
-    //   wrap-around that corrupts ~30% of samples when shifting in .spk alone.
-    //   Falls back to circular shift when .fil is unavailable.
+    // Note: canonical Phase 1.5 xcorr has been removed.  Alignment is
+    // now owned by the shift-probe (TimeShiftAlignPhase), with feature
+    // re-projection via RefeaturizeFromShifts at Phase 4.
     // ── Phase 2.5: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
         fprintf(stderr, "[Phase 2.5] Subspace reclustering (per-chunk, pre-alignment)\n");
@@ -3422,31 +3236,52 @@ float KK::RunChunkedCEM(float chunkMinutes,
     }
 
 
-    if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
-        // ── klustakwikExp: skip canonical Phase 1.5 when shift-probe owns it ──
-        // The post-split shift-probe incrementally refines feature vectors
-        // in Data[] and commits shifts to m_cumShift[] throughout clustering.
-        // FinalizeShiftProbe (called from the driver after SaveOutput) runs
-        // its own RefeaturizeFromShifts + WritePhase15Checkpoint pass using
-        // m_cumShift.  Running the canonical xcorr-based path here would
-        // overwrite the probe's committed shifts with newly-computed xcorr
-        // values, invalidating its work.  ShiftProbeReplacesPhase15 (default
-        // 1) lets the user opt-out of this gating if they want both passes.
-        if (m_shiftProbeReady && ShiftProbeReplacesPhase15 != 0) {
-            Output("Phase 1.5: skipped (shift-probe active; "
-                   "ShiftProbeReplacesPhase15=1)\n");
-        } else {
-            fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
-            Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
-                   NbChannels, NbSamplesPerSpike, Phase15Iters);
-            std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
-                                         std::numeric_limits<int>::min());
-            RealignChunkWaveforms(chunkPoints, perChunkClass,
-                                  NbChannels, NbSamplesPerSpike, NbBytesPerSample,
-                                  spikeShifts);
-            RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-            WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+    // ── Phase 1.5: cluster alignment (shift-probe) ──────────────────────
+    // For each alive cluster, per-spike min-Mahalanobis² alignment against
+    // the cluster's own Gaussian.  Committed shifts accumulate into
+    // m_cumShift[]; Phase 4 (TimeShiftFinalize) re-extracts from .fil and
+    // writes .spk/.fet/.res at the end of the driver.
+    //
+    // TimeShiftAlignIter controls the number of alignment passes.  Multiple
+    // passes are useful because each pass shifts some spikes, which changes
+    // each cluster's mean; the next pass then has an updated reference and
+    // may find different best-δs.  MStep() is run between passes to refresh
+    // Mean[] and cholFlat[].  Early exit when a pass shifts zero spikes
+    // (fixed-point convergence).  Class[] is NOT reassigned between passes —
+    // Phase 1.5 is strictly within-cluster alignment, not re-clustering.
+    if (TimeShiftAlignIter > 0 && m_timeShiftReady &&
+        NbChannels > 0 && NbSamplesPerSpike > 0) {
+        for (int it = 0; it < TimeShiftAlignIter; ++it) {
+            if (TimeShiftAlignIter > 1) {
+                fprintf(stderr,
+                    "[Phase 1.5] Cluster alignment pass %d/%d "
+                    "(shift-probe, per-spike min-Mahal²)\n",
+                    it + 1, TimeShiftAlignIter);
+            } else {
+                fprintf(stderr,
+                    "[Phase 1.5] Cluster alignment "
+                    "(shift-probe, per-spike min-Mahal²)\n");
+            }
+            const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+            if (nShifted == 0) {
+                if (it > 0)
+                    Output("[Phase 1.5] Alignment converged after %d pass(es) "
+                           "— skipping remaining\n", it + 1);
+                break;
+            }
+            // Refresh cluster stats for the next pass (if any).
+            if (it + 1 < TimeShiftAlignIter) MStep();
         }
+    }
+
+    // ── Phase 1.8: DipSplit — bimodal-cluster detection & split ─────────
+    // After cluster alignment has corrected systematic temporal offsets,
+    // look for clusters where CEM's single-Gaussian fit is masking a
+    // bimodal sub-structure.  The two-stage gate (χ²-bloat → KDE-valley)
+    // keeps cost proportional to actually-bimodal clusters.  Runs MStep+
+    // EStep+CStep internally if any split is accepted.
+    if (DipSplitEnable != 0) {
+        DipSplitPhase();
     }
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
@@ -3814,14 +3649,14 @@ float KK::RunChunkedCEM(float chunkMinutes,
 //     double[data2use*nComponents] eigenvectors (col-major: col=component)
 //
 // Overlap-resolution invariant: spikeShifts[p] was set by home-chunk
-// first-write-wins in RealignChunkWaveforms, so every spike's shift is
+// owned by the shift-probe (m_cumShift[p]), so every spike's shift is
 // derived from the chunk where it naturally lives.  Overlap spikes that
 // also appeared in a later chunk retain their home-chunk shift here.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // KK::WritePhase15Checkpoint
 //
-// After RealignChunkWaveforms + RefeaturizeFromShifts, write corrected .spk
+// After RefeaturizeFromShifts (Phase 4), write corrected .spk
 // and .fet files using the pending-file pattern from Klusters:
 //   1. Write to SESSION.spk.N.pending and SESSION.fet.N.pending
 //   2. Rename each .pending file over the original when fully written
@@ -3936,7 +3771,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                     // If .fil read fails, keep original (already in spkRow)
                 }
                 // If no .fil, spkRow already holds the original; the circular
-                // shift applied by RealignChunkWaveforms is NOT in .spk (write-
+                // shift applied by the shift-probe is NOT in .spk yet (write-
                 // back was suppressed), so we leave it as-is.
             }
 
@@ -4048,36 +3883,36 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 // Finalisation
 // ------------
 // m_cumShift[p] accumulates the chosen δ across all probe calls.  At program
-// end, FinalizeShiftProbe() invokes the existing RefeaturizeFromShifts +
+// end, TimeShiftFinalize() invokes the existing RefeaturizeFromShifts +
 // WritePhase15Checkpoint path, which re-extracts from .fil ONLY for spikes
 // with m_cumShift[p] != 0 and rewrites .spk / .fet / (normalised .res via
 // Data[timeDim]) accordingly.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// InitShiftProbe
+// InitTimeShift
 // Load .pca[D].N once, build pre-shifted basis tensors for δ∈{-N,…,+N}, and
 // open .spk (read-only) for the duration of the run.  Returns true on
 // success; false makes the probe a no-op for this session.
 // ---------------------------------------------------------------------------
-bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
+bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
 {
-    m_shiftProbeReady = false;
+    m_timeShiftReady = false;
     if (nChan <= 0 || nSamplesPerSpike <= 0) return false;
     if (nPoints <= 0 || nDims <= 1)          return false;
     if (N_halfWidth < 0) N_halfWidth = 0;
-    if (N_halfWidth > kShiftProbeNmax) {
-        Output("InitShiftProbe: N_halfWidth=%d exceeds compile-time max %d — "
-               "clamping\n", N_halfWidth, kShiftProbeNmax);
-        N_halfWidth = kShiftProbeNmax;
+    if (N_halfWidth > kTimeShiftNmax) {
+        Output("InitTimeShift: N_halfWidth=%d exceeds compile-time max %d — "
+               "clamping\n", N_halfWidth, kTimeShiftNmax);
+        N_halfWidth = kTimeShiftNmax;
     }
     if (N_halfWidth == 0) {
-        Output("InitShiftProbe: N_halfWidth=0 — probe disabled (no-op)\n");
+        Output("InitTimeShift: N_halfWidth=0 — probe disabled (no-op)\n");
         return false;
     }
     const int N     = N_halfWidth;
     const int kCand = 2 * N + 1;
-    m_shiftProbeMaxShiftAbs = N;
+    m_timeShiftMaxAbs = N;
 
     // --- Allocate cumulative-shift accumulator ---
     m_cumShift.assign(static_cast<size_t>(nPoints), 0);
@@ -4087,7 +3922,7 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
     pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
     FILE* pf = fopen(pcaPath, "rb");
     if (!pf) {
-        Output("InitShiftProbe: %s not found — post-split shift probe disabled\n",
+        Output("InitTimeShift: %s not found — post-split shift probe disabled\n",
                pcaPath);
         return false;
     }
@@ -4095,28 +3930,28 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
     auto rd32 = [&](int32_t& v) { return fread(&v, 4, 1, pf) == 1; };
     int32_t nc, d2u, ncomp, ic, rs;
     if (!rd32(nc) || !rd32(d2u) || !rd32(ncomp) || !rd32(ic) || !rd32(rs)) {
-        Output("InitShiftProbe: truncated PCA header in %s — probe disabled\n",
+        Output("InitTimeShift: truncated PCA header in %s — probe disabled\n",
                pcaPath);
         fclose(pf); return false;
     }
     if (nc != nChan) {
-        Output("InitShiftProbe: PCA has %d channels, spike group has %d — "
+        Output("InitTimeShift: PCA has %d channels, spike group has %d — "
                "probe disabled\n", nc, nChan);
         fclose(pf); return false;
     }
-    m_shiftPcaBasis.nChan      = nc;
-    m_shiftPcaBasis.data2use   = d2u;
-    m_shiftPcaBasis.nComp      = ncomp;
-    m_shiftPcaBasis.recShift   = rs;
-    m_shiftPcaBasis.isCentered = (ic != 0);
-    m_shiftPcaBasis.N          = N;
+    m_timeShiftBasis.nChan      = nc;
+    m_timeShiftBasis.data2use   = d2u;
+    m_timeShiftBasis.nComp      = ncomp;
+    m_timeShiftBasis.recShift   = rs;
+    m_timeShiftBasis.isCentered = (ic != 0);
+    m_timeShiftBasis.N          = N;
 
     // Sanity check: N must be less than the PCA support, otherwise the
     // shifted bases are almost entirely zero and the probe is pointless.
     if (N >= d2u / 2) {
-        Output("InitShiftProbe: N=%d is >= data2use/2=%d; shifted bases would "
+        Output("InitTimeShift: N=%d is >= data2use/2=%d; shifted bases would "
                "be nearly empty — probe disabled\n", N, d2u/2);
-        fclose(pf); m_shiftPcaBasis = ShiftProbePcaBasis{}; return false;
+        fclose(pf); m_timeShiftBasis = TimeShiftBasis{}; return false;
     }
 
     // Stage the raw (unshifted) basis first — we discard it after building
@@ -4128,8 +3963,8 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
             .resize(static_cast<size_t>(d2u));
         if (fread(rawMean[static_cast<size_t>(ch)].data(),
                   8, static_cast<size_t>(d2u), pf) != static_cast<size_t>(d2u)) {
-            Output("InitShiftProbe: truncated PCA means (ch %d) — probe disabled\n", ch);
-            fclose(pf); m_shiftPcaBasis = ShiftProbePcaBasis{}; return false;
+            Output("InitTimeShift: truncated PCA means (ch %d) — probe disabled\n", ch);
+            fclose(pf); m_timeShiftBasis = TimeShiftBasis{}; return false;
         }
     }
     const size_t evSz = static_cast<size_t>(d2u * ncomp);
@@ -4137,17 +3972,17 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
         rawEigvec[static_cast<size_t>(ch)].resize(evSz);
         if (fread(rawEigvec[static_cast<size_t>(ch)].data(),
                   8, evSz, pf) != evSz) {
-            Output("InitShiftProbe: truncated PCA eigenvectors (ch %d) — probe disabled\n", ch);
-            fclose(pf); m_shiftPcaBasis = ShiftProbePcaBasis{}; return false;
+            Output("InitTimeShift: truncated PCA eigenvectors (ch %d) — probe disabled\n", ch);
+            fclose(pf); m_timeShiftBasis = TimeShiftBasis{}; return false;
         }
     }
     fclose(pf);
 
-    const int nPCAFeatures = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
+    const int nPCAFeatures = m_timeShiftBasis.nChan * m_timeShiftBasis.nComp;
     if (nPCAFeatures > nDims - 1) {
-        Output("InitShiftProbe: PCA feature count (%d) exceeds nDims-1 (%d) — "
+        Output("InitTimeShift: PCA feature count (%d) exceeds nDims-1 (%d) — "
                "probe disabled\n", nPCAFeatures, nDims - 1);
-        m_shiftPcaBasis = ShiftProbePcaBasis{};
+        m_timeShiftBasis = TimeShiftBasis{};
         return false;
     }
 
@@ -4162,19 +3997,19 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
     //
     // Storage layout: eigvecShifted[cand][ch] is a flat vector of length
     // d2u*ncomp indexed as k*d2u + j'.  cand=0..2N maps to δ=cand-N.
-    m_shiftPcaBasis.meanShifted.assign(static_cast<size_t>(kCand), {});
-    m_shiftPcaBasis.eigvecShifted.assign(static_cast<size_t>(kCand), {});
+    m_timeShiftBasis.meanShifted.assign(static_cast<size_t>(kCand), {});
+    m_timeShiftBasis.eigvecShifted.assign(static_cast<size_t>(kCand), {});
     for (int ci = 0; ci < kCand; ++ci) {
         const int delta = ci - N;
-        m_shiftPcaBasis.meanShifted  [static_cast<size_t>(ci)]
+        m_timeShiftBasis.meanShifted  [static_cast<size_t>(ci)]
             .assign(static_cast<size_t>(nc), {});
-        m_shiftPcaBasis.eigvecShifted[static_cast<size_t>(ci)]
+        m_timeShiftBasis.eigvecShifted[static_cast<size_t>(ci)]
             .assign(static_cast<size_t>(nc), {});
         for (int ch = 0; ch < nc; ++ch) {
-            auto& muOut = m_shiftPcaBasis.meanShifted
+            auto& muOut = m_timeShiftBasis.meanShifted
                           [static_cast<size_t>(ci)]
                           [static_cast<size_t>(ch)];
-            auto& evOut = m_shiftPcaBasis.eigvecShifted
+            auto& evOut = m_timeShiftBasis.eigvecShifted
                           [static_cast<size_t>(ci)]
                           [static_cast<size_t>(ch)];
             muOut.assign(static_cast<size_t>(d2u), 0.0);
@@ -4197,59 +4032,59 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
     // --- Open .spk once, read-only ---
     char spkPath[STRLEN + 16];
     pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
-    m_spkProbeFp = fopen(spkPath, "rb");
-    if (!m_spkProbeFp) {
-        Output("InitShiftProbe: cannot open %s — probe disabled\n", spkPath);
-        m_shiftPcaBasis = ShiftProbePcaBasis{};
+    m_timeShiftSpkFp = fopen(spkPath, "rb");
+    if (!m_timeShiftSpkFp) {
+        Output("InitTimeShift: cannot open %s — probe disabled\n", spkPath);
+        m_timeShiftBasis = TimeShiftBasis{};
         return false;
     }
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // Initialise GPU shift-probe context if a GPU is in play.
     // Implementation lives in shiftprobe_<backend>.{cu,hip,cpp}.
-    // gpu_shift_probe_init returns nullptr on failure; the probe then
+    // gpu_timeshift_init returns nullptr on failure; the probe then
     // falls through to the CPU path (still correct, just slower).
     if (gpu) {
-        extern ShiftProbeGpuCtx* gpu_shift_probe_init(
-            KK_GPU* base, const ShiftProbePcaBasis& basis, int nChan,
+        extern TimeShiftGpuCtx* gpu_timeshift_init(
+            KK_GPU* base, const TimeShiftBasis& basis, int nChan,
             int nSamplesPerSpike, int nPoints, const char* spkPath);
-        m_shiftGpuCtx = gpu_shift_probe_init(gpu, m_shiftPcaBasis,
+        m_timeShiftGpuCtx = gpu_timeshift_init(gpu, m_timeShiftBasis,
                                              nChan, nSamplesPerSpike,
                                              nPoints, spkPath);
-        if (m_shiftGpuCtx)
-            Output("InitShiftProbe: GPU kernel active (backend=%s)\n",
+        if (m_timeShiftGpuCtx)
+            Output("InitTimeShift: GPU kernel active (backend=%s)\n",
                    GPU_BACKEND_NAME);
     }
 #endif
 
-    m_shiftProbeReady = true;
-    m_shiftProbeCallCount = 0;
-    Output("InitShiftProbe: ready (nChan=%d data2use=%d nComp=%d recShift=%d "
+    m_timeShiftReady = true;
+    m_timeShiftCallCount = 0;
+    Output("InitTimeShift: ready (nChan=%d data2use=%d nComp=%d recShift=%d "
            "isCentered=%d, pre-shifted bases for δ∈{-%d,…,+%d} (%d candidates))\n",
-           m_shiftPcaBasis.nChan, m_shiftPcaBasis.data2use,
-           m_shiftPcaBasis.nComp, m_shiftPcaBasis.recShift,
-           (int)m_shiftPcaBasis.isCentered, N, N, kCand);
+           m_timeShiftBasis.nChan, m_timeShiftBasis.data2use,
+           m_timeShiftBasis.nComp, m_timeShiftBasis.recShift,
+           (int)m_timeShiftBasis.isCentered, N, N, kCand);
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// CloseShiftProbe
+// CloseTimeShift
 // ---------------------------------------------------------------------------
-void KK::CloseShiftProbe()
+void KK::CloseTimeShift()
 {
-    if (m_spkProbeFp) { fclose(m_spkProbeFp); m_spkProbeFp = nullptr; }
+    if (m_timeShiftSpkFp) { fclose(m_timeShiftSpkFp); m_timeShiftSpkFp = nullptr; }
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
-    if (m_shiftGpuCtx) {
-        extern void gpu_shift_probe_free(ShiftProbeGpuCtx* ctx);
-        gpu_shift_probe_free(m_shiftGpuCtx);
-        m_shiftGpuCtx = nullptr;
+    if (m_timeShiftGpuCtx) {
+        extern void gpu_timeshift_free(TimeShiftGpuCtx* ctx);
+        gpu_timeshift_free(m_timeShiftGpuCtx);
+        m_timeShiftGpuCtx = nullptr;
     }
 #endif
-    m_shiftProbeReady = false;
+    m_timeShiftReady = false;
 }
 
 // ---------------------------------------------------------------------------
-// ShiftProbeAndCommitSpikes  — primitive operating on an explicit index list
+// TimeShiftSplit  — primitive operating on an explicit index list
 //
 // Parameters
 //   globalSpikeIndices  — 0-based global indices into Data[] / .spk / m_cumShift
@@ -4265,11 +4100,11 @@ void KK::CloseShiftProbe()
 // Selection: cluster-wide max sum-of-per-dim variance across candidates.
 // Winner is committed as a single delta for ALL spikes in the index list.
 // ---------------------------------------------------------------------------
-int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
+int KK::TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
                                     int nChan, int nSamplesPerSpike)
 {
-    if (!m_shiftProbeReady || !m_spkProbeFp)                   return 0;
-    if (!m_shiftPcaBasis.valid())                              return 0;
+    if (!m_timeShiftReady || !m_timeShiftSpkFp)                   return 0;
+    if (!m_timeShiftBasis.valid())                              return 0;
     if (nChan <= 0 || nSamplesPerSpike <= 0)                   return 0;
     const int nMem = static_cast<int>(globalSpikeIndices.size());
     if (nMem < 2) return 0;   // variance of a single point is 0; skip
@@ -4277,26 +4112,26 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     const int waveSamples = nChan * nSamplesPerSpike;
     const int timeDimIdx  = nDims - 1;
     const int nSpatial    = nDims - 1;
-    const int nPCA        = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
+    const int nPCA        = m_timeShiftBasis.nChan * m_timeShiftBasis.nComp;
     if (nPCA <= 0 || nPCA > nSpatial) return 0;
     const float sessionSamples = timeRawMax - timeRawMin;
     if (!(sessionSamples > 0.0f)) return 0;
 
-    const int N     = m_shiftPcaBasis.N;
-    const int kCand = m_shiftPcaBasis.nCand();
-    // kCand <= 2*kShiftProbeNmax + 1 = 11 by construction
-    constexpr int kCandMax = 2 * kShiftProbeNmax + 1;
+    const int N     = m_timeShiftBasis.N;
+    const int kCand = m_timeShiftBasis.nCand();
+    // kCand <= 2*kTimeShiftNmax + 1 = 11 by construction
+    constexpr int kCandMax = 2 * kTimeShiftNmax + 1;
 
     // Pre-size scratch.
-    if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
-        m_probeWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
-    m_probeTrialFeats.assign(static_cast<size_t>(kCand * nMem * nPCA), 0.0f);
-    m_probeTrialTime .assign(static_cast<size_t>(kCand * nMem),        0.0f);
+    if (static_cast<int>(m_timeShiftWaveScratch.size()) < waveSamples)
+        m_timeShiftWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
+    m_timeShiftTrialFeats.assign(static_cast<size_t>(kCand * nMem * nPCA), 0.0f);
+    m_timeShiftTrialTime .assign(static_cast<size_t>(kCand * nMem),        0.0f);
 
     std::vector<double> sumPerDim  (static_cast<size_t>(kCand * nPCA), 0.0);
     std::vector<double> sumSqPerDim(static_cast<size_t>(kCand * nPCA), 0.0);
 
-    const auto& pca = m_shiftPcaBasis;
+    const auto& pca = m_timeShiftBasis;
     const int   data2use = pca.data2use;
     const int   nComp    = pca.nComp;
     const int   nChanPca = pca.nChan;
@@ -4309,10 +4144,10 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     // back to CPU when the context is null or the cluster is too small to
     // amortise launch overhead (threshold tuned for typical L2-resident
     // data2use * nComp * nChan; < 128 spikes almost always lose on GPU).
-    const bool useGpu = (m_shiftGpuCtx != nullptr) && (nMem >= 128);
+    const bool useGpu = (m_timeShiftGpuCtx != nullptr) && (nMem >= 128);
     if (useGpu) {
-        extern bool gpu_shift_probe_project_batch(
-            ShiftProbeGpuCtx* ctx,
+        extern bool gpu_timeshift_project_batch(
+            TimeShiftGpuCtx* ctx,
             const std::vector<int>& globalSpikeIndices,
             const std::vector<int>& cumShift,
             int maxShiftAbs,
@@ -4320,11 +4155,11 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
             float* trialFeatsOut, float* trialTimeOut,
             const float* timeCol, int nDims, float sessionSamples);
         const float* timeCol = Data.m_Data + timeDimIdx;   // strided; kernel uses nDims
-        const bool ok = gpu_shift_probe_project_batch(
-            m_shiftGpuCtx,
-            globalSpikeIndices, m_cumShift, m_shiftProbeMaxShiftAbs,
+        const bool ok = gpu_timeshift_project_batch(
+            m_timeShiftGpuCtx,
+            globalSpikeIndices, m_cumShift, m_timeShiftMaxAbs,
             dimMin_, dimRange_,
-            m_probeTrialFeats.data(), m_probeTrialTime.data(),
+            m_timeShiftTrialFeats.data(), m_timeShiftTrialTime.data(),
             timeCol, nDims, sessionSamples);
         if (ok) {
             // Fold results into per-candidate moments.
@@ -4332,7 +4167,7 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
                 for (int mi = 0; mi < nMem; ++mi) {
                     const size_t base = (static_cast<size_t>(ci) * nMem + mi) * nPCA;
                     for (int fi = 0; fi < nPCA; ++fi) {
-                        const float fv = m_probeTrialFeats[base + fi];
+                        const float fv = m_timeShiftTrialFeats[base + fi];
                         sumPerDim  [ci * nPCA + fi] += fv;
                         sumSqPerDim[ci * nPCA + fi] += static_cast<double>(fv) * fv;
                     }
@@ -4352,15 +4187,15 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
             const int p = globalSpikeIndices[static_cast<size_t>(mi)];
             if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
 
-            if (fseeko(m_spkProbeFp,
+            if (fseeko(m_timeShiftSpkFp,
                        static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
                        SEEK_SET) != 0) { ++nSkippedRead; continue; }
-            if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
-                      static_cast<size_t>(waveSamples), m_spkProbeFp)
+            if (fread(m_timeShiftWaveScratch.data(), sizeof(int16_t),
+                      static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
                     != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
 
             const int baseCum = m_cumShift[static_cast<size_t>(p)];
-            const int16_t* raw = m_probeWaveScratch.data();
+            const int16_t* raw = m_timeShiftWaveScratch.data();
 
             // Per-candidate out-of-range mask (fall back to the δ=0 features,
             // i.e. cand = N, when committing the candidate shift would exceed
@@ -4368,7 +4203,7 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
             bool candOk[kCandMax];
             for (int ci = 0; ci < kCand; ++ci)
                 candOk[ci] = (std::abs(baseCum + (ci - N))
-                              <= m_shiftProbeMaxShiftAbs);
+                              <= m_timeShiftMaxAbs);
 
             // For each channel, accumulate projections for all (2N+1)
             // candidates in one pass over samples.
@@ -4411,11 +4246,11 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
                         // If candidate δ is out of range for this spike we
                         // substitute the δ=0 features so the variance
                         // criterion is unaffected by out-of-range spikes.
-                        m_probeTrialFeats[ofs] = candOk[ci] ? fv : f0;
-                        sumPerDim  [ci * nPCA + fi] += m_probeTrialFeats[ofs];
+                        m_timeShiftTrialFeats[ofs] = candOk[ci] ? fv : f0;
+                        sumPerDim  [ci * nPCA + fi] += m_timeShiftTrialFeats[ofs];
                         sumSqPerDim[ci * nPCA + fi] +=
-                            static_cast<double>(m_probeTrialFeats[ofs]) *
-                            m_probeTrialFeats[ofs];
+                            static_cast<double>(m_timeShiftTrialFeats[ofs]) *
+                            m_timeShiftTrialFeats[ofs];
                     }
                 }
             }
@@ -4427,7 +4262,7 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
                 const float dd = candOk[ci]
                     ? static_cast<float>(ci - N) / sessionSamples
                     : 0.0f;
-                m_probeTrialTime[static_cast<size_t>(ci) * nMem + mi] =
+                m_timeShiftTrialTime[static_cast<size_t>(ci) * nMem + mi] =
                     rawTsNorm + dd;
             }
         }
@@ -4462,15 +4297,15 @@ pick_best_and_commit:
             const int p = globalSpikeIndices[static_cast<size_t>(mi)];
             if (p < 0 || p >= nPoints) continue;
             const int wouldBe = m_cumShift[static_cast<size_t>(p)] + bestDelta;
-            if (std::abs(wouldBe) > m_shiftProbeMaxShiftAbs) continue;
+            if (std::abs(wouldBe) > m_timeShiftMaxAbs) continue;
 
             const size_t featBase =
                 (static_cast<size_t>(bestCand) * nMem + mi) * nPCA;
             float* dataRow = Data.m_Data + p * nDims;
             for (int fi = 0; fi < nPCA; ++fi)
-                dataRow[fi] = m_probeTrialFeats[featBase + fi];
+                dataRow[fi] = m_timeShiftTrialFeats[featBase + fi];
             dataRow[timeDimIdx] =
-                m_probeTrialTime[static_cast<size_t>(bestCand) * nMem + mi];
+                m_timeShiftTrialTime[static_cast<size_t>(bestCand) * nMem + mi];
             m_cumShift[static_cast<size_t>(p)] = wouldBe;
             ++nChanged;
         }
@@ -4485,12 +4320,12 @@ pick_best_and_commit:
         gpu_upload_data(gpu, Data.m_Data);
 #endif
 
-    ++m_shiftProbeCallCount;
+    ++m_timeShiftCallCount;
     return nChanged;
 }
 
 // ---------------------------------------------------------------------------
-// ShiftProbeAndCommitSpikesForMerge
+// TimeShiftMergeTighten
 //
 // Per-spike shift selection under a Mahalanobis-minimum criterion against a
 // receiving cluster's Gaussian (mean + Cholesky factor of covariance).  Each
@@ -4517,13 +4352,13 @@ pick_best_and_commit:
 //
 // Returns the number of spikes whose cumShift changed this call.
 // ---------------------------------------------------------------------------
-int KK::ShiftProbeAndCommitSpikesForMerge(
+int KK::TimeShiftMergeTighten(
     const std::vector<int>& globalSpikeIndices,
     int nChan, int nSamplesPerSpike,
     const float* destMean, const float* destChol)
 {
-    if (!m_shiftProbeReady || !m_spkProbeFp)  return 0;
-    if (!m_shiftPcaBasis.valid())             return 0;
+    if (!m_timeShiftReady || !m_timeShiftSpkFp)  return 0;
+    if (!m_timeShiftBasis.valid())             return 0;
     if (!destMean || !destChol)               return 0;
     if (nChan <= 0 || nSamplesPerSpike <= 0)  return 0;
     const int nMem = static_cast<int>(globalSpikeIndices.size());
@@ -4531,22 +4366,22 @@ int KK::ShiftProbeAndCommitSpikesForMerge(
 
     const int waveSamples = nChan * nSamplesPerSpike;
     const int timeDimIdx  = nDims - 1;
-    const int nPCA        = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
+    const int nPCA        = m_timeShiftBasis.nChan * m_timeShiftBasis.nComp;
     if (nPCA <= 0 || nPCA > nDims - 1) return 0;
     const float sessionSamples = timeRawMax - timeRawMin;
     if (!(sessionSamples > 0.0f)) return 0;
 
-    const int N     = m_shiftPcaBasis.N;
-    const int kCand = m_shiftPcaBasis.nCand();
-    constexpr int kCandMax = 2 * kShiftProbeNmax + 1;
+    const int N     = m_timeShiftBasis.N;
+    const int kCand = m_timeShiftBasis.nCand();
+    constexpr int kCandMax = 2 * kTimeShiftNmax + 1;
 
     // We reuse the split-probe scratch buffers to avoid a second allocation.
     // Trial features are computed for all candidates; Mahal² is computed on
     // the fly per spike per candidate.
-    if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
-        m_probeWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
+    if (static_cast<int>(m_timeShiftWaveScratch.size()) < waveSamples)
+        m_timeShiftWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
 
-    const auto& pca   = m_shiftPcaBasis;
+    const auto& pca   = m_timeShiftBasis;
     const int   data2use = pca.data2use;
     const int   nComp    = pca.nComp;
     const int   nChanPca = pca.nChan;
@@ -4566,20 +4401,20 @@ int KK::ShiftProbeAndCommitSpikesForMerge(
         const int p = globalSpikeIndices[static_cast<size_t>(mi)];
         if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
 
-        if (fseeko(m_spkProbeFp,
+        if (fseeko(m_timeShiftSpkFp,
                    static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
                    SEEK_SET) != 0) { ++nSkippedRead; continue; }
-        if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
-                  static_cast<size_t>(waveSamples), m_spkProbeFp)
+        if (fread(m_timeShiftWaveScratch.data(), sizeof(int16_t),
+                  static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
                 != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
 
         const int baseCum = m_cumShift[static_cast<size_t>(p)];
-        const int16_t* raw = m_probeWaveScratch.data();
+        const int16_t* raw = m_timeShiftWaveScratch.data();
 
         bool candOk[kCandMax];
         for (int ci = 0; ci < kCand; ++ci)
             candOk[ci] = (std::abs(baseCum + (ci - N))
-                          <= m_shiftProbeMaxShiftAbs);
+                          <= m_timeShiftMaxAbs);
 
         // Project this spike under every candidate δ — same (2N+1)-fanned
         // inner loop as the split probe, but results are kept per-spike in
@@ -4668,7 +4503,7 @@ int KK::ShiftProbeAndCommitSpikesForMerge(
         if (bestDelta == 0) continue;   // no change
 
         const int wouldBe = baseCum + bestDelta;
-        if (std::abs(wouldBe) > m_shiftProbeMaxShiftAbs) continue;
+        if (std::abs(wouldBe) > m_timeShiftMaxAbs) continue;
 
         // Commit the per-spike shift.
         float* dataRow = Data.m_Data + p * nDims;
@@ -4688,7 +4523,7 @@ int KK::ShiftProbeAndCommitSpikesForMerge(
         gpu_upload_data(gpu, Data.m_Data);
 #endif
 
-    ++m_shiftProbeCallCount;
+    ++m_timeShiftCallCount;
     return nChanged;
 }
 
@@ -4710,24 +4545,24 @@ static inline float wilsonHilfertyChi2(int df, float z)
 }
 
 // ---------------------------------------------------------------------------
-// EvaluateShiftAwareMergeDecision
+// TimeShiftMergeEvaluate
 //
-// Build a ShiftAwareMergePlan for the victim cluster.  Does NOT commit any
+// Build a TimeShiftMergePlan for the victim cluster.  Does NOT commit any
 // shifts or reassignments — caller inspects `plan.lossReductionTotal` and
 // decides whether the merge becomes acceptable.  Pairs with
-// CommitShiftAwareMergePlan.
+// TimeShiftMergeCommit.
 //
 // Complexity: O(nVictimSpikes × kCand × nChan × data2use) projection work
 // plus O(nVictimSpikes × kCand × nDims²) Cholesky forward-sub work.
-// I/O: one read per victim spike from .spk (cached via m_spkProbeFp).
+// I/O: one read per victim spike from .spk (cached via m_timeShiftSpkFp).
 // ---------------------------------------------------------------------------
-bool KK::EvaluateShiftAwareMergeDecision(
+bool KK::TimeShiftMergeEvaluate(
     int victim, int nChan, int nSamplesPerSpike,
-    ShiftAwareMergePlan& plan)
+    TimeShiftMergePlan& plan)
 {
-    plan = ShiftAwareMergePlan{};
-    if (!m_shiftProbeReady || !m_spkProbeFp) return false;
-    if (!m_shiftPcaBasis.valid())            return false;
+    plan = TimeShiftMergePlan{};
+    if (!m_timeShiftReady || !m_timeShiftSpkFp) return false;
+    if (!m_timeShiftBasis.valid())            return false;
     if (victim < 0 || victim >= MaxPossibleClusters) return false;
     if (!ClassAlive[victim])                 return false;
 
@@ -4741,17 +4576,17 @@ bool KK::EvaluateShiftAwareMergeDecision(
 
     const int waveSamples = nChan * nSamplesPerSpike;
     const int timeDimIdx  = nDims - 1;
-    const int nPCA        = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
+    const int nPCA        = m_timeShiftBasis.nChan * m_timeShiftBasis.nComp;
     if (nPCA <= 0 || nPCA > nDims - 1) return false;
     const float sessionSamples = timeRawMax - timeRawMin;
     if (!(sessionSamples > 0.0f)) return false;
 
-    const int N     = m_shiftPcaBasis.N;
-    const int kCand = m_shiftPcaBasis.nCand();
-    constexpr int kCandMax = 2 * kShiftProbeNmax + 1;
+    const int N     = m_timeShiftBasis.N;
+    const int kCand = m_timeShiftBasis.nCand();
+    constexpr int kCandMax = 2 * kTimeShiftNmax + 1;
 
-    if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
-        m_probeWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
+    if (static_cast<int>(m_timeShiftWaveScratch.size()) < waveSamples)
+        m_timeShiftWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
 
     // Per-spike trial features under every candidate.  Laid out
     // [mi][ci][fi] so a committed spike's features are contiguous.
@@ -4760,7 +4595,7 @@ bool KK::EvaluateShiftAwareMergeDecision(
     std::vector<uint8_t> okMask(
         static_cast<size_t>(nMem) * kCand, 0);
 
-    const auto& pca    = m_shiftPcaBasis;
+    const auto& pca    = m_timeShiftBasis;
     const int   data2use = pca.data2use;
     const int   nComp    = pca.nComp;
     const int   nChanPca = pca.nChan;
@@ -4768,26 +4603,26 @@ bool KK::EvaluateShiftAwareMergeDecision(
     const bool  isCen    = pca.isCentered;
 
     // --- Project every victim spike under every candidate δ ----------------
-    // Identical math to ShiftProbeAndCommitSpikesForMerge's projection loop,
+    // Identical math to TimeShiftMergeTighten's projection loop,
     // but we save ALL candidates' features per spike (not just compute-and-
     // discard per-candidate Mahal²) so the caller can commit without a
     // second pass.
     int nRead = 0;
     for (int mi = 0; mi < nMem; ++mi) {
         const int p = idxs[mi];
-        if (fseeko(m_spkProbeFp,
+        if (fseeko(m_timeShiftSpkFp,
                    static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
                    SEEK_SET) != 0) continue;
-        if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
-                  static_cast<size_t>(waveSamples), m_spkProbeFp)
+        if (fread(m_timeShiftWaveScratch.data(), sizeof(int16_t),
+                  static_cast<size_t>(waveSamples), m_timeShiftSpkFp)
                 != static_cast<size_t>(waveSamples)) continue;
 
         const int baseCum = m_cumShift[static_cast<size_t>(p)];
-        const int16_t* raw = m_probeWaveScratch.data();
+        const int16_t* raw = m_timeShiftWaveScratch.data();
 
         for (int ci = 0; ci < kCand; ++ci)
             okMask[static_cast<size_t>(mi) * kCand + ci] =
-                (std::abs(baseCum + (ci - N)) <= m_shiftProbeMaxShiftAbs)
+                (std::abs(baseCum + (ci - N)) <= m_timeShiftMaxAbs)
                     ? 1u : 0u;
 
         for (int ch = 0; ch < nChanPca; ++ch) {
@@ -4967,25 +4802,25 @@ bool KK::EvaluateShiftAwareMergeDecision(
     plan.lossReductionTotal = static_cast<float>(totalLossReduction);
 
     if (nDestsShifted > 0)
-        Output("  merge-decision probe: victim=%d, %d destinations shifted, "
+        Output("  [tshift-merge-decision] victim=%d, %d destinations shifted, "
                "ΔDeletionLoss = %.3f\n",
                victim, nDestsShifted, plan.lossReductionTotal);
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// CommitShiftAwareMergePlan
+// TimeShiftMergeCommit
 // Apply the chosen shifts to Data[] and m_cumShift.  Caller is responsible
 // for the subsequent reassignment (Class[p] = Class2[p]) and any follow-up
 // post-merge tightening.
 // ---------------------------------------------------------------------------
-void KK::CommitShiftAwareMergePlan(const ShiftAwareMergePlan& plan)
+void KK::TimeShiftMergeCommit(const TimeShiftMergePlan& plan)
 {
     if (!plan.valid || plan.globalIdx.empty()) return;
     if (plan.nPCA <= 0) return;
 
     const int timeDimIdx = nDims - 1;
-    const int N          = m_shiftPcaBasis.N;
+    const int N          = m_timeShiftBasis.N;
     const int nPCA       = plan.nPCA;
 
     int nWritten = 0;
@@ -4998,7 +4833,7 @@ void KK::CommitShiftAwareMergePlan(const ShiftAwareMergePlan& plan)
 
         const int delta   = cand - N;
         const int wouldBe = m_cumShift[p] + delta;
-        if (std::abs(wouldBe) > m_shiftProbeMaxShiftAbs) continue;
+        if (std::abs(wouldBe) > m_timeShiftMaxAbs) continue;
 
         float* dataRow = Data.m_Data + p * nDims;
         std::memcpy(dataRow,
@@ -5016,45 +4851,333 @@ void KK::CommitShiftAwareMergePlan(const ShiftAwareMergePlan& plan)
 }
 
 // ---------------------------------------------------------------------------
-// ShiftProbeAndCommitCluster — thin wrapper over the primitive
+// TimeShiftAlignCluster — in-cluster per-spike alignment
+//
+// Conceptually replaces canonical xcorr realignment (Phase 1.5).  For each
+// spike in the given cluster, picks the δ ∈ {-N,…,+N} that minimises its
+// Mahalanobis² to the cluster's own Gaussian.  Equivalent to xcorr aligning
+// each spike to its cluster mean, but weighted by the cluster's covariance
+// structure instead of flat waveform overlap — which gives dimensions with
+// high discriminative power (usually low-order PCs) more say.
+//
+// Implementation is a one-line wrapper over TimeShiftMergeTighten, pointed
+// at the cluster's own stats instead of a destination's.  Per-spike scope
+// is appropriate here: within-cluster alignment IS a per-spike operation.
 // ---------------------------------------------------------------------------
-int KK::ShiftProbeAndCommitCluster(int clusterId, int nChan, int nSamplesPerSpike)
+int KK::TimeShiftAlignCluster(int clusterId, int nChan, int nSamplesPerSpike)
 {
-    if (!m_shiftProbeReady) return 0;
+    if (!m_timeShiftReady)                        return 0;
+    if (clusterId <= 0 || clusterId >= MaxPossibleClusters) return 0;
+    if (!ClassAlive[clusterId])                    return 0;
+
     std::vector<int> members;
     members.reserve(256);
     for (int p = 0; p < nPoints; ++p)
         if (Class[p] == clusterId) members.push_back(p);
-    return ShiftProbeAndCommitSpikes(members, nChan, nSamplesPerSpike);
+    if (static_cast<int>(members.size()) < 2) return 0;
+
+    const float* mean = Mean.m_Data     + clusterId * nDims;
+    const float* chol = cholFlat.data() + clusterId * nDims2;
+
+    return TimeShiftMergeTighten(members, nChan, nSamplesPerSpike, mean, chol);
 }
 
 // ---------------------------------------------------------------------------
-// FinalizeShiftProbe
-// Hand off m_cumShift to the existing Phase 1.5 disk-writeback path.
+// TimeShiftAlignPhase — Phase 1.5 driver
+//
+// Iterates alive clusters (skipping noise, and clusters with < 5 spikes
+// that aren't worth the I/O) and calls TimeShiftAlignCluster on each.
+// Called from the driver at the slot that canonical Phase 1.5 xcorr used
+// to occupy.  Expects fresh MStep + EStep output (Mean + cholFlat current).
+//
+// Returns the total number of spikes whose shifts changed across all
+// clusters.
 // ---------------------------------------------------------------------------
-void KK::FinalizeShiftProbe(int nChan, int nSamplesPerSpike)
+int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
 {
-    if (m_cumShift.empty()) { CloseShiftProbe(); return; }
+    if (!m_timeShiftReady) return 0;
+    int totalShifted = 0;
+    int nClustersProcessed = 0;
+    for (int c = 1; c < MaxPossibleClusters; ++c) {
+        if (!ClassAlive[c]) continue;
+        const int shifted = TimeShiftAlignCluster(c, nChan, nSamplesPerSpike);
+        if (shifted > 0) ++nClustersProcessed;
+        totalShifted += shifted;
+    }
+    if (totalShifted > 0)
+        Output("[Phase 1.5] Cluster alignment: %d spikes shifted across "
+               "%d clusters\n", totalShifted, nClustersProcessed);
+    return totalShifted;
+}
+
+// ===========================================================================
+// DipSplit (Phase 1.8) — bimodal-cluster detection & split
+// ===========================================================================
+//
+// See dipsplit.h for the algorithm overview.  This file implements the
+// driver that integrates DipSplit into the CEM flow.  Two-stage gating
+// (bloat → dip) keeps cost proportional to actually-bimodal clusters.
+// ---------------------------------------------------------------------------
+#include "dipsplit.h"
+
+// Helper: nth-percentile of a small double vector (sort-based, O(n log n)).
+// For the bloat gate we call this once per alive cluster; the sort dominates.
+static double percentile_sorted(std::vector<double>& v, double q)
+{
+    if (v.empty()) return 0.0;
+    std::sort(v.begin(), v.end());
+    const double idx = q * (v.size() - 1);
+    const int    lo  = static_cast<int>(std::floor(idx));
+    const int    hi  = static_cast<int>(std::ceil (idx));
+    const double f   = idx - lo;
+    return v[lo] * (1.0 - f) + v[hi] * f;
+}
+
+// ---------------------------------------------------------------------------
+// DipSplitAttempt — try to split a single cluster.
+//
+// Returns true when the cluster was split and Class[] updated.  Caller is
+// responsible for follow-up MStep+EStep to refresh cluster stats.
+// ---------------------------------------------------------------------------
+bool KK::DipSplitAttempt(int clusterId)
+{
+    if (clusterId <= 0 || clusterId >= MaxPossibleClusters) return false;
+    if (!ClassAlive[clusterId])                             return false;
+
+    // ── Collect cluster members ──────────────────────────────────────────
+    std::vector<int> members;
+    members.reserve(256);
+    for (int p = 0; p < nPoints; ++p)
+        if (Class[p] == clusterId) members.push_back(p);
+    const int M = static_cast<int>(members.size());
+    if (M < DipSplitMinSize * 2) return false;   // cluster too small to split in two
+
+    // ── Gate A: bloat (cheap, skips ~all single-Gaussian clusters) ─────────
+    // mahal²(p, c) = 2·(LogP[c][p] − baseScore_c).  We drop baseScore_c from
+    // the comparison because we only need the per-point excess for the 90th-
+    // percentile, and baseScore_c is constant across members of cluster c.
+    std::vector<double> mahal2(M);
+    for (int i = 0; i < M; ++i) {
+        const int p = members[i];
+        // LogP[c][p] = 0.5·mahal² + logRootDet + log2π·d/2 − log(Weight).
+        // Relative mahal² within the cluster is 2·(LogP − median(LogP)).
+        mahal2[i] = 2.0 * static_cast<double>(
+            LogP.m_Data[static_cast<size_t>(clusterId) * nPoints + p]);
+    }
+    // Subtract the within-cluster minimum so values are comparable to the
+    // null χ²(d) distribution (the additive constant from baseScore_c cancels).
+    const double mmin = *std::min_element(mahal2.begin(), mahal2.end());
+    for (double& v : mahal2) v -= mmin;
+
+    const double mahal2_p90 = percentile_sorted(mahal2, 0.90);
+    // χ²(d, 0.9) via Wilson-Hilferty.  z for p=0.9 is 1.2816.
+    const double d_  = static_cast<double>(nDims);
+    const double a   = 1.0 - 2.0 / (9.0 * d_);
+    const double b   = 1.2816 * std::sqrt(2.0 / (9.0 * d_));
+    const double chi2_90 = d_ * std::pow(a + b, 3.0);
+    if (mahal2_p90 < DipSplitBloatFactor * chi2_90) return false;   // not bloated
+
+    // ── Collect member feature vectors for PCA + dip + k-means ───────────
+    // We do NOT use the time dim (last column) — it's a normalized timestamp
+    // that shouldn't drive bimodality decisions.
+    const int dPCA = nDims - 1;
+    std::vector<float> Xmem(static_cast<size_t>(M) * dPCA);
+    for (int i = 0; i < M; ++i) {
+        const int p = members[i];
+        for (int j = 0; j < dPCA; ++j)
+            Xmem[static_cast<size_t>(i) * dPCA + j] =
+                Data.m_Data[p * nDims + j];
+    }
+
+    // ── Compute top-3 PCs ────────────────────────────────────────────────
+    constexpr int kPCA = 3;
+    std::vector<double> pcs(static_cast<size_t>(kPCA) * dPCA, 0.0);
+    dipsplit::top_pcs_power_iteration(Xmem.data(), M, dPCA, kPCA, pcs.data());
+
+    // Compute cluster centroid (for projection centering).
+    std::vector<double> centroid(dPCA, 0.0);
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < dPCA; ++j)
+            centroid[j] += Xmem[static_cast<size_t>(i) * dPCA + j];
+    for (int j = 0; j < dPCA; ++j) centroid[j] /= M;
+
+    // ── Gate B: dip test on each PC ──────────────────────────────────────
+    int    best_pc     = -1;
+    double best_depth  = 0.0;
+    double best_valley = 0.0;
+    std::vector<double> best_projection;
+    for (int pc = 0; pc < kPCA; ++pc) {
+        const double* u = pcs.data() + pc * dPCA;
+        std::vector<double> proj(M);
+        for (int i = 0; i < M; ++i) {
+            double s = 0.0;
+            for (int j = 0; j < dPCA; ++j)
+                s += (Xmem[static_cast<size_t>(i) * dPCA + j] - centroid[j])
+                     * u[j];
+            proj[i] = s;
+        }
+        const dipsplit::ValleyResult vr = dipsplit::valley_test(
+            proj.data(), M, DipSplitValleyThresh);
+        if (vr.depth > best_depth) {
+            best_pc         = pc;
+            best_depth      = vr.depth;
+            best_valley     = vr.valley_loc;
+            best_projection = std::move(proj);
+        }
+    }
+    if (best_pc < 0 || best_depth < DipSplitValleyThresh) return false;
+
+    // ── Seed k=2 partition at the valley ─────────────────────────────────
+    std::vector<int> labels(M, 0);
+    for (int i = 0; i < M; ++i)
+        labels[i] = (best_projection[i] >= best_valley) ? 1 : 0;
+
+    // Compute initial centroids from the valley partition.
+    std::vector<double> c0(dPCA, 0.0), c1(dPCA, 0.0);
+    int n0 = 0, n1 = 0;
+    for (int i = 0; i < M; ++i) {
+        const float* row = Xmem.data() + i * dPCA;
+        if (labels[i] == 0) {
+            for (int j = 0; j < dPCA; ++j) c0[j] += row[j];
+            ++n0;
+        } else {
+            for (int j = 0; j < dPCA; ++j) c1[j] += row[j];
+            ++n1;
+        }
+    }
+    if (n0 < DipSplitMinSize || n1 < DipSplitMinSize) return false;
+    for (int j = 0; j < dPCA; ++j) { c0[j] /= n0; c1[j] /= n1; }
+
+    // ── Refine with k-means k=2 ──────────────────────────────────────────
+    dipsplit::kmeans2_refine(Xmem.data(), M, dPCA, c0.data(), c1.data(),
+                             labels.data(), /*max_iters=*/20);
+
+    // Recount post-refine
+    n0 = n1 = 0;
+    for (int i = 0; i < M; ++i) {
+        if (labels[i] == 0) ++n0; else ++n1;
+    }
+    if (n0 < DipSplitMinSize || n1 < DipSplitMinSize) return false;
+
+    // ── BIC gate ─────────────────────────────────────────────────────────
+    const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
+        Xmem.data(), M, dPCA, labels.data());
+    if (!(bp.bic_k2 < bp.bic_k1)) return false;
+
+    // ── Allocate a new cluster ID for the right half ──────────────────────
+    int newId = -1;
+    for (int c = 1; c < MaxPossibleClusters; ++c) {
+        if (!ClassAlive[c]) { newId = c; break; }
+    }
+    if (newId < 0) return false;  // no free slot — drop the split
+
+    // ── Commit split: relabel the right-half members ─────────────────────
+    ClassAlive[newId] = 1;
+    ++nClustersAlive;
+    for (int i = 0; i < M; ++i) {
+        if (labels[i] == 1) Class[members[i]] = newId;
+    }
+
+    Output("  [dipsplit] cluster %d → %d+%d (depth=%.3f, mahal²₉₀=%.1f vs χ²₉₀=%.1f, "
+           "ΔBIC=%.1f)\n",
+           clusterId, n0, n1, best_depth, mahal2_p90, chi2_90,
+           bp.bic_k1 - bp.bic_k2);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// DipSplitPhase — iterate alive clusters, attempt dip-split on each.
+//
+// Runs MStep+EStep at the end if any split was accepted, so cluster stats
+// and LogP[] are fresh for the next phase.
+// ---------------------------------------------------------------------------
+int KK::DipSplitPhase()
+{
+    if (DipSplitEnable == 0) return 0;
+    if (nDims < 2)           return 0;   // need at least 1 PCA dim + time
+
+    // Snapshot alive clusters — we'll create new ones during iteration and
+    // shouldn't probe them recursively this pass.
+    std::vector<int> alive_snapshot;
+    alive_snapshot.reserve(32);
+    for (int c = 1; c < MaxPossibleClusters; ++c)
+        if (ClassAlive[c]) alive_snapshot.push_back(c);
+
+    int accepted = 0;
+    for (int c : alive_snapshot) {
+        if (!ClassAlive[c]) continue;
+        if (DipSplitAttempt(c)) ++accepted;
+    }
+
+    if (accepted > 0) {
+        fprintf(stderr, "[Phase 1.8] DipSplit: accepted %d split(s)\n", accepted);
+        // Refresh cluster stats so downstream phases see consistent state.
+        MStep();
+        EStep();
+        CStep();
+        Reindex();
+    }
+    return accepted;
+}
+
+// ---------------------------------------------------------------------------
+// TimeShiftSplitCluster — thin wrapper over the primitive
+// ---------------------------------------------------------------------------
+int KK::TimeShiftSplitCluster(int clusterId, int nChan, int nSamplesPerSpike)
+{
+    if (!m_timeShiftReady) return 0;
+    std::vector<int> members;
+    members.reserve(256);
+    for (int p = 0; p < nPoints; ++p)
+        if (Class[p] == clusterId) members.push_back(p);
+    return TimeShiftSplit(members, nChan, nSamplesPerSpike);
+}
+
+// ---------------------------------------------------------------------------
+// TimeShiftFinalize — Phase 4: shift commit
+//
+// Re-extract each shifted spike from .fil at (rawTs - cumShift - PeakSampleIndex),
+// re-project through the PCA basis, and rewrite .spk / .fet (via
+// WritePhase15Checkpoint's .*.pending mechanism).  This is the ONLY point at
+// which disk is touched by the shift-probe — all earlier probe operations
+// work purely in memory on Data[] and m_cumShift[].
+//
+// Using .fil rather than circular-shifting the .spk waveforms eliminates
+// wrap-around corruption that would otherwise poison ~sample/waveform of
+// the shifted window.  For spikes with cumShift == 0, the existing .spk
+// content is preserved (no re-extract).
+//
+// Owns the phase label so log output reflects what's happening in real
+// time.  Phase 1.5 is now cluster alignment (TimeShiftAlignPhase);
+// Phase 4 is the final disk commit that closes the probe session.
+// ---------------------------------------------------------------------------
+void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
+{
+    if (m_cumShift.empty()) { CloseTimeShift(); return; }
 
     const int nShifted = static_cast<int>(
         std::count_if(m_cumShift.begin(), m_cumShift.end(),
                       [](int s){ return s != 0; }));
-    Output("FinalizeShiftProbe: %d probe calls, %d spikes with non-zero "
-           "cumulative shift\n",
-           m_shiftProbeCallCount, nShifted);
 
     if (nShifted > 0) {
+        fprintf(stderr,
+                "[Phase 4] Shift commit: re-extract %d spikes from .fil "
+                "→ .spk/.fet\n", nShifted);
+        Output("[Phase 4] Shift commit: %d probe calls, %d spikes with "
+               "non-zero cumulative shift\n",
+               m_timeShiftCallCount, nShifted);
         // RefeaturizeFromShifts expects shift=0 to mean "skip" — which matches
         // our accumulator.  It re-extracts from .fil for non-zero entries,
-        // projects, and re-normalises; this supersedes the in-memory
-        // circular-shift features with clean .fil-derived ones.  Then
-        // WritePhase15Checkpoint writes the corrected .spk and .fet.
+        // projects, and re-normalises; this supersedes the in-memory features
+        // with clean .fil-derived ones.  WritePhase15Checkpoint then writes
+        // the corrected .spk / .fet / .res via the .*.pending mechanism.
         RefeaturizeFromShifts(m_cumShift, nChan, nSamplesPerSpike);
         WritePhase15Checkpoint(m_cumShift, nChan, nSamplesPerSpike);
     } else {
-        Output("FinalizeShiftProbe: nothing to write back\n");
+        Output("[Phase 4] Shift commit: %d probe calls, 0 spikes shifted "
+               "— nothing to write back\n", m_timeShiftCallCount);
     }
-    CloseShiftProbe();
+    CloseTimeShift();
 }
 
 
@@ -5806,7 +5929,7 @@ void KK::SubspaceReclusterPerChunk(
             // the probe.  This refreshes Data[] for affected rows BEFORE the
             // ChunkModel mean/cov builders below see them, so downstream
             // Phase 2 cross-chunk matching operates on the refined features.
-            if (m_shiftProbeReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
+            if (m_timeShiftReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
                 for (auto& [sc2, newLc] : subToLocal) {
                     std::vector<int> sub;
                     sub.reserve(nMem);
@@ -5814,7 +5937,7 @@ void KK::SubspaceReclusterPerChunk(
                         if (cls[static_cast<size_t>(i2)] == newLc)
                             sub.push_back(pts[static_cast<size_t>(i2)]);
                     if (static_cast<int>(sub.size()) >= 20) {
-                        ShiftProbeAndCommitSpikes(sub, NbChannels, NbSamplesPerSpike);
+                        TimeShiftSplit(sub, NbChannels, NbSamplesPerSpike);
                     }
                 }
             }
@@ -6333,7 +6456,7 @@ void KK::RefractorySplitPerChunk(
             // ── klustakwikExp: per-sub-cluster shift-probe refeaturization ──
             // Same pattern as SubspaceReclusterPerChunk — refresh Data[] for
             // the new sub-clusters before rebuilding ChunkModel statistics.
-            if (m_shiftProbeReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
+            if (m_timeShiftReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
                 for (auto& [sc2, newLc] : subToLocal) {
                     std::vector<int> sub;
                     sub.reserve(nMem);
@@ -6341,7 +6464,7 @@ void KK::RefractorySplitPerChunk(
                         if (cls[static_cast<size_t>(ii)] == newLc)
                             sub.push_back(pts[static_cast<size_t>(ii)]);
                     if (static_cast<int>(sub.size()) >= 20) {
-                        ShiftProbeAndCommitSpikes(sub, NbChannels, NbSamplesPerSpike);
+                        TimeShiftSplit(sub, NbChannels, NbSamplesPerSpike);
                     }
                 }
             }

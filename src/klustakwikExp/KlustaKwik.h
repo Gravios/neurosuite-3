@@ -105,24 +105,33 @@ extern std::vector<int> GroupChannelIds;
 // outer loop with nRuns independent runs, each seeded differently.
 // MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
 extern int   nRuns;
-extern int   Phase15Iters; ///< realignment iterations in RealignChunkWaveforms (default 2)
+extern int   TimeShiftAlignIter; ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between) (default 1)
 // Post-split shift-probe parameters (klustakwikExp only).
-// MaxShiftProbe: the half-width of the pre-shifted PCA basis fan.  The probe
+// MaxTimeShift: the half-width of the pre-shifted PCA basis fan.  The probe
 // builds bases for δ ∈ {-N, …, +N} at session start, and picks the δ that
 // maximises per-dim variance on split-children (or minimises Mahalanobis
 // distance to the merge target on merge-children).  N=0 disables the probe
 // entirely (equivalent to canonical KlustaKwik behaviour).  Valid range: 0..5.
-extern int   MaxShiftProbe;
-// ShiftProbeReplacesPhase15: when non-zero, the canonical Phase 1.5 xcorr
-// realignment path (RealignChunkWaveforms + RefeaturizeFromShifts +
-// WritePhase15Checkpoint) is skipped when the shift-probe is active.
-// FinalizeShiftProbe still runs the re-extraction from .fil using the
-// probe's accumulated cumShift[] at the end of the session.  Default 1.
-extern int   ShiftProbeReplacesPhase15;
-// ShiftProbeMergeProbe: when non-zero and shift-probe is active, apply a
+extern int   MaxTimeShift;
+// TimeShiftMergeEnable: when non-zero and shift-probe is active, apply a
 // min-Mahalanobis shift probe to spikes reassigned during ConsiderDeletion
 // (cluster deletion/implicit merge).  Default 1.
-extern int   ShiftProbeMergeProbe;
+extern int   TimeShiftMergeEnable;
+// ---- DipSplit parameters (bimodal-cluster splitter, Phase 1.8) -----------
+// DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
+extern int   DipSplitEnable;
+// DipSplitMinSize: minimum spike count per child cluster for an accepted
+// split, and minimum per parent cluster for the splitter to even look
+// (parent must have ≥ 2·DipSplitMinSize members).  Default 100.
+extern int   DipSplitMinSize;
+// DipSplitBloatFactor: the bloat gate fires when the cluster's 90th-
+// percentile Mahalanobis² exceeds this factor times χ²(nDims, 0.9).
+// Larger → more conservative (fewer false positives).  Default 1.5.
+extern float DipSplitBloatFactor;
+// DipSplitValleyThresh: minimum valley depth on the KDE of a PC projection
+// for the cluster to be flagged as bimodal.  Depth ∈ [0, 1]; 0.15 means
+// "the valley is at most 85% as high as the shorter peak".  Default 0.15.
+extern float DipSplitValleyThresh;
 extern int   SubspaceDims;      ///< top-N eigenvectors for Phase 2 subspace Mahal (0=full-space)
 extern int   SubspaceRecluster;    ///< per-cluster subspace CEM after Phase 2 (0=disabled)
 extern float TemplateMatchScore;       ///< min xcorr for WITHIN-chunk template matching (0=disabled)

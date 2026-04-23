@@ -191,10 +191,12 @@ set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../shared/xcorr")
 # Common sources and dependencies
 # =============================================================================
 set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp param.c
+    dipsplit.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
 set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
-              Array.h KlustaSave.h KlustaKwikYaml.h param.h)
+              Array.h KlustaSave.h KlustaKwikYaml.h param.h
+              dipsplit.h)
 
 find_package(OpenMP)
 find_package(yaml-cpp REQUIRED)
