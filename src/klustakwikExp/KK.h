@@ -264,36 +264,44 @@ public:
     // -----------------------------------------------------------------------
     // Post-split shift-probe refeaturization  (klustakwikExp)
     // -----------------------------------------------------------------------
+    // Hard upper bound on the pre-shifted basis fan's half-width.  A fan of
+    // (2N+1) candidates means (2*5+1) = 11 worst case, which fits in a
+    // small stack array per thread (CPU) / per SIMT lane (GPU).  The
+    // runtime value comes from the MaxShiftProbe parameter.
+    static constexpr int kShiftProbeNmax = 5;
+
     // ShiftProbePcaBasis — cached PCA eigenvectors + per-dim normalisation
     // parameters loaded once at startup.  Populated by InitShiftProbe() and
     // re-used by every ShiftProbeAndCommitCluster() call (avoids re-reading
     // the .pca.N file on every split).
     //
     // Eigenvectors are pre-shifted and zero-padded at basis-build time: for
-    // δ ∈ {-1, 0, +1} we hold a separate copy of the (ch, k, j) tensor whose
-    // row j corresponds to RAW-WAVEFORM sample index (recShift + j).  A
-    // negative δ pulls values in from "above" (earlier samples) with zero
+    // each δ in {-N, …, +N} we hold a separate copy of the (ch, k, j) tensor
+    // whose row j corresponds to RAW-WAVEFORM sample index (recShift + j).
+    // A negative δ pulls values in from "above" (earlier samples) with zero
     // outside the valid range; a positive δ pulls from "below" (later
     // samples).  Because PCs of biological spike waveforms taper to zero at
     // the window edges, the dropped/padded entry contributes negligibly.
     //
     // With this layout, the hot projection loop reads each raw sample
-    // exactly once and accumulates THREE feature values (one per δ) using
-    // three independent eigenvector rows — no modulo, no branching, three
-    // accumulators fit in ILP-friendly registers.
+    // exactly once and accumulates (2N+1) feature values — no modulo, no
+    // branching — via an inner j-loop that fans out over the candidate
+    // array.
     struct ShiftProbePcaBasis {
         int nChan       = 0;
         int data2use    = 0;
         int nComp       = 0;
         int recShift    = 0;
         bool isCentered = false;
-        // Pre-shifted per-channel means (3 copies: δ=-1, 0, +1).
-        // Index: meanShifted[cand][ch][j] where cand∈{0:−1, 1:0, 2:+1}
+        int  N          = 0;   // half-width; total candidates = 2N+1
+        // Pre-shifted per-channel means (2N+1 copies).
+        // Index: meanShifted[cand][ch][j] where cand=0..2N, δ=cand-N
         std::vector<std::vector<std::vector<double>>> meanShifted;
-        // Pre-shifted per-channel eigenvectors (3 copies).
-        // Index: eigvecShifted[cand][ch][k*data2use + j]  (col-major per ch)
+        // Pre-shifted per-channel eigenvectors (2N+1 copies).
+        // Index: eigvecShifted[cand][ch][k*data2use + j]
         std::vector<std::vector<std::vector<double>>> eigvecShifted;
-        bool valid() const { return nChan > 0 && data2use > 0 && nComp > 0; }
+        bool valid() const { return nChan > 0 && data2use > 0 && nComp > 0 && N >= 0; }
+        int  nCand() const { return 2 * N + 1; }
     };
 
     // Shift-probe state (instance-owned; zero-initialised).  Populated only
@@ -304,7 +312,7 @@ public:
     std::vector<int>   m_cumShift;           // [nPoints] cumulative sample shift per spike (+ = later)
     bool               m_shiftProbeReady = false;
     int                m_shiftProbeCallCount = 0;
-    int                m_shiftProbeMaxShiftAbs = 1;   // hard clamp on |cumShift|
+    int                m_shiftProbeMaxShiftAbs = 1;   // hard clamp on |cumShift|; = basis N
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // Opaque GPU handle for shift-probe kernels.  Allocated by InitShiftProbe
@@ -315,9 +323,11 @@ public:
 #endif
 
     // Load PCA basis + keep FILE* to .spk open for the duration of the run.
+    // N_halfWidth: pre-shifted basis fan half-width (0..kShiftProbeNmax); the
+    // probe will test 2N+1 candidate shifts per call.  Passing 0 disables.
     // Returns true if the basis loaded and .spk is readable — the probe is a
     // no-op when either fails (so a legacy run without .pca/.spk still works).
-    bool InitShiftProbe(int nChan, int nSamplesPerSpike);
+    bool InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth);
     void CloseShiftProbe();
 
     // Test shifts in {-maxShiftAbs … +maxShiftAbs} (currently only ±1 supported
@@ -338,6 +348,69 @@ public:
     // has not yet been updated (chunks commit back via MergeChunkModels).
     int ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
                                   int nChan, int nSamplesPerSpike);
+
+    // Merge-step variant: for each spike, pick the shift δ ∈ {-N, …, +N}
+    // that MINIMISES its Mahalanobis² distance to the receiving cluster's
+    // Gaussian (mean `destMean`, Cholesky factor `destChol` lower-triangular,
+    // stored contiguously as [nDims²]).  Per-spike selection (NOT cluster-
+    // wide): different spikes may commit different deltas.  Used inside
+    // ConsiderDeletion after a cluster is deleted and its points reassigned
+    // to their second-best cluster — the probe tightens their fit.
+    // Returns the number of spikes whose committed shift changed.
+    int ShiftProbeAndCommitSpikesForMerge(
+        const std::vector<int>& globalSpikeIndices,
+        int nChan, int nSamplesPerSpike,
+        const float* destMean,     // [nDims]
+        const float* destChol);    // [nDims²] lower-triangular
+
+    // -----------------------------------------------------------------------
+    // Shift-aware merge decision (klustakwikExp)
+    //
+    // Evaluates whether ConsiderDeletion's candidate victim cluster becomes
+    // mergeable once we allow its spikes to shift temporally into their
+    // second-best clusters.  Addresses the common failure mode of a single
+    // biological unit being fragmented into two clusters because the spike
+    // detector triggered at different peak samples.
+    //
+    // For each destination cluster `dest` that would receive spikes from
+    // the victim, finds the CLUSTER-WIDE δ ∈ {-N,…,+N} that minimises the
+    // sub-batch's aggregate Mahalanobis² under dest's Gaussian.  A non-zero
+    // δ is accepted only when it beats δ=0 by more than
+    //     chi2(nDims, 0.95) × sub_batch_size
+    // which gives each spike a per-spike "improvement budget" of the 95th
+    // percentile of its null-hypothesis χ² distribution.  Otherwise δ=0 is
+    // retained (no shift committed on that sub-batch).
+    //
+    // Selection is CLUSTER-WIDE per destination — a consistent winning δ
+    // across all spikes going to the same destination is the signal of
+    // systematic mis-alignment.  Per-spike scatter of individual best-δs
+    // is noise and is suppressed by the χ² threshold.
+    // -----------------------------------------------------------------------
+    struct ShiftAwareMergePlan {
+        bool               valid              = false;
+        float              lossReductionTotal = 0.0f;  // always ≤ 0; in natural log units
+        // Per-spike commit data, same order as the input list (victim's spikes)
+        std::vector<int>   globalIdx;    // [nMem]       global point indices
+        std::vector<int>   chosenCand;   // [nMem]       cand∈[0,2N]; = N means no shift
+        std::vector<float> chosenFeats;  // [nMem * nPCA] projected features at chosen cand
+        std::vector<float> chosenTime;   // [nMem]       normalised time at chosen cand
+        int                nPCA = 0;     // PCA feature count (for chosenFeats stride)
+    };
+
+    // Build a ShiftAwareMergePlan for a candidate victim cluster.  Returns
+    // true when the evaluation succeeded (probe is ready, victim has >=1
+    // spike, .spk reads succeeded).  `plan.lossReductionTotal` is the
+    // change in DeletionLoss[victim] that would be realised if the plan
+    // were committed (always ≤ 0, since δ=0 is among the candidates and
+    // we apply the χ² threshold before switching).
+    bool EvaluateShiftAwareMergeDecision(
+        int victim, int nChan, int nSamplesPerSpike,
+        ShiftAwareMergePlan& plan);
+
+    // Commit a plan: write chosen features into Data[], bump m_cumShift[],
+    // and re-upload to GPU if needed.  Idempotent — running on an
+    // already-committed plan is a no-op.
+    void CommitShiftAwareMergePlan(const ShiftAwareMergePlan& plan);
 
     // After CEM completes, re-run RefeaturizeFromShifts and WritePhase15Checkpoint
     // with m_cumShift as the final shift vector.  This is the ONLY point at

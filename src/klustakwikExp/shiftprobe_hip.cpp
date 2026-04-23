@@ -38,12 +38,15 @@ struct KK::ShiftProbeGpuCtx {
     size_t   h_waveBatchCap    = 0;
 
     int nChan = 0, data2use = 0, nComp = 0, recShift = 0;
+    int N = 0;                // basis fan half-width; total candidates = 2N+1
     bool isCentered = false;
     int nSamplesPerSpike = 0;
     int nPoints = 0;
     int nMemMax = 0;
 
     FILE* spkFp = nullptr;
+
+    int nCand() const { return 2 * N + 1; }
 };
 
 __global__ void shiftprobe_project_kernel_hip(
@@ -55,15 +58,21 @@ __global__ void shiftprobe_project_kernel_hip(
     const int*     __restrict__ cumShift,
     const float*   __restrict__ timeColIn,
     int maxShiftAbs,
+    int N_basis,                    // kCand = 2*N_basis + 1
     int nChan, int nSamplesPerSpike,
     int data2use, int nComp, int recShift, int isCentered,
     float sessionSamples, int nMem,
     float* __restrict__ trialFeatsOut,
     float* __restrict__ trialTimeOut)
 {
-    const int nPCA = nChan * nComp;
-    const int mi   = blockIdx.x;
-    const int tid  = threadIdx.x;
+    // Compile-time cap matching KK::kShiftProbeNmax.
+    constexpr int SP_N_MAX    = 5;
+    constexpr int SP_CAND_MAX = 2 * SP_N_MAX + 1;
+
+    const int nPCA  = nChan * nComp;
+    const int kCand = 2 * N_basis + 1;
+    const int mi    = blockIdx.x;
+    const int tid   = threadIdx.x;
     if (mi >= nMem) return;
 
     extern __shared__ int16_t smem_raw[];
@@ -80,53 +89,50 @@ __global__ void shiftprobe_project_kernel_hip(
 
     const size_t candStrideE = static_cast<size_t>(nChan) * nComp * data2use;
     const size_t chStrideE   = static_cast<size_t>(nComp) * data2use;
-    const size_t chStrideM   = static_cast<size_t>(data2use);
     const size_t candStrideM = static_cast<size_t>(nChan) * data2use;
+    const size_t chStrideM   = static_cast<size_t>(data2use);
 
-    const double* evM = eigAll  + 0 * candStrideE + ch * chStrideE + k * data2use;
-    const double* ev0 = eigAll  + 1 * candStrideE + ch * chStrideE + k * data2use;
-    const double* evP = eigAll  + 2 * candStrideE + ch * chStrideE + k * data2use;
-    const double* muM = meanAll + 0 * candStrideM + ch * chStrideM;
-    const double* mu0 = meanAll + 1 * candStrideM + ch * chStrideM;
-    const double* muP = meanAll + 2 * candStrideM + ch * chStrideM;
+    // Per-thread stack array — compiler unrolls the kCand loop since
+    // SP_CAND_MAX is a compile-time constant and the runtime kCand is
+    // known loop-invariant.
+    double accs[SP_CAND_MAX];
+    for (int ci = 0; ci < kCand; ++ci) accs[ci] = 0.0;
 
-    double accM = 0.0, acc0 = 0.0, accP = 0.0;
     for (int j = 0; j < data2use; ++j) {
         const int s = recShift + j;
         const double rawV = static_cast<double>(smem_raw[s * nChan + ch]);
-        const double vM = (isCentered != 0) ? (rawV - muM[j]) : rawV;
-        const double v0 = (isCentered != 0) ? (rawV - mu0[j]) : rawV;
-        const double vP = (isCentered != 0) ? (rawV - muP[j]) : rawV;
-        accM += evM[j] * vM;
-        acc0 += ev0[j] * v0;
-        accP += evP[j] * vP;
+        for (int ci = 0; ci < kCand; ++ci) {
+            const double* ev = eigAll  + ci * candStrideE + ch * chStrideE
+                                       + k * data2use;
+            const double  mu = (isCentered != 0)
+                ? meanAll[ci * candStrideM + ch * chStrideM + j]
+                : 0.0;
+            accs[ci] += ev[j] * (rawV - mu);
+        }
     }
 
     const float min_ = dimMin  [tid];
     const float rng_ = dimRange[tid];
-    const float fM   = (static_cast<float>(accM) - min_) * rng_;
-    const float f0   = (static_cast<float>(acc0) - min_) * rng_;
-    const float fP   = (static_cast<float>(accP) - min_) * rng_;
+    const float f0   = (static_cast<float>(accs[N_basis]) - min_) * rng_;
 
-    const int cumM = baseCum - 1;
-    const int cumP = baseCum + 1;
-    const bool okM = (cumM <= maxShiftAbs) && (-cumM <= maxShiftAbs);
-    const bool okP = (cumP <= maxShiftAbs) && (-cumP <= maxShiftAbs);
-
-    const size_t ofsM = (static_cast<size_t>(0) * nMem + mi) * nPCA + tid;
-    const size_t ofs0 = (static_cast<size_t>(1) * nMem + mi) * nPCA + tid;
-    const size_t ofsP = (static_cast<size_t>(2) * nMem + mi) * nPCA + tid;
-    trialFeatsOut[ofsM] = okM ? fM : f0;
-    trialFeatsOut[ofs0] = f0;
-    trialFeatsOut[ofsP] = okP ? fP : f0;
+    for (int ci = 0; ci < kCand; ++ci) {
+        const int   delta = ci - N_basis;
+        const bool  okCi  = (std::abs(baseCum + delta) <= maxShiftAbs);
+        const float fv    = (static_cast<float>(accs[ci]) - min_) * rng_;
+        const size_t ofs  = (static_cast<size_t>(ci) * nMem + mi) * nPCA + tid;
+        trialFeatsOut[ofs] = okCi ? fv : f0;
+    }
 
     if (tid == 0) {
         const float rawTsNorm = timeColIn[mi];
-        const float ddM = okM ? (-1.0f / sessionSamples) : 0.0f;
-        const float ddP = okP ? (+1.0f / sessionSamples) : 0.0f;
-        trialTimeOut[0 * nMem + mi] = rawTsNorm + ddM;
-        trialTimeOut[1 * nMem + mi] = rawTsNorm;
-        trialTimeOut[2 * nMem + mi] = rawTsNorm + ddP;
+        for (int ci = 0; ci < kCand; ++ci) {
+            const int   delta = ci - N_basis;
+            const bool  okCi  = (std::abs(baseCum + delta) <= maxShiftAbs);
+            const float dd    = okCi
+                ? static_cast<float>(delta) / sessionSamples
+                : 0.0f;
+            trialTimeOut[ci * nMem + mi] = rawTsNorm + dd;
+        }
     }
 }
 
@@ -141,6 +147,8 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
     const int data2use = basis.data2use;
     const int nComp    = basis.nComp;
     const int nChanB   = basis.nChan;
+    const int N        = basis.N;
+    const int kCand    = basis.nCand();
     const size_t evPerCand = static_cast<size_t>(nChanB) * nComp * data2use;
     const size_t muPerCand = static_cast<size_t>(nChanB) * data2use;
     const size_t nPCA      = static_cast<size_t>(nChanB) * nComp;
@@ -151,13 +159,14 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
     ctx->nComp            = nComp;
     ctx->recShift         = basis.recShift;
     ctx->isCentered       = basis.isCentered;
+    ctx->N                = N;
     ctx->nSamplesPerSpike = nSamplesPerSpike;
     ctx->nPoints          = nPoints;
     ctx->nMemMax          = 4096;
 
-    std::vector<double> eigFlat (3 * evPerCand, 0.0);
-    std::vector<double> meanFlat(3 * muPerCand, 0.0);
-    for (int cand = 0; cand < 3; ++cand)
+    std::vector<double> eigFlat (static_cast<size_t>(kCand) * evPerCand, 0.0);
+    std::vector<double> meanFlat(static_cast<size_t>(kCand) * muPerCand, 0.0);
+    for (int cand = 0; cand < kCand; ++cand)
         for (int ch = 0; ch < nChanB; ++ch) {
             std::memcpy(
                 eigFlat.data() + cand*evPerCand + ch*nComp*data2use,
@@ -185,9 +194,9 @@ KK::ShiftProbeGpuCtx* gpu_shift_probe_init(
         !_chk(hipMalloc(&ctx->d_spikeIdx, ctx->nMemMax * sizeof(int)),   "d_spikeIdx")  ||
         !_chk(hipMalloc(&ctx->d_cumShift, ctx->nMemMax * sizeof(int)),   "d_cumShift")  ||
         !_chk(hipMalloc(&ctx->d_trialFeats,
-            3 * ctx->nMemMax * nPCA * sizeof(float)), "d_trialFeats") ||
+            static_cast<size_t>(kCand) * ctx->nMemMax * nPCA * sizeof(float)), "d_trialFeats") ||
         !_chk(hipMalloc(&ctx->d_trialTime,
-            3 * ctx->nMemMax * sizeof(float)), "d_trialTime") ||
+            static_cast<size_t>(kCand) * ctx->nMemMax * sizeof(float)), "d_trialTime") ||
         !_chk(hipMalloc(&ctx->d_timeCol,  ctx->nMemMax * sizeof(float)), "d_timeCol"))
     {
         gpu_shift_probe_free(ctx); return nullptr;
@@ -245,6 +254,8 @@ bool gpu_shift_probe_project_batch(
     const int nComp            = ctx->nComp;
     const int nPCA             = nChan * nComp;
     const int waveSamples      = nChan * nSamplesPerSpike;
+    const int N                = ctx->N;
+    const int kCand            = ctx->nCand();
 
     if (nMem > ctx->nMemMax) {
         int newCap = ctx->nMemMax;
@@ -262,9 +273,9 @@ bool gpu_shift_probe_project_batch(
         SP_HIP_CHECK(hipMalloc(&ctx->d_spikeIdx, newCap * sizeof(int)));
         SP_HIP_CHECK(hipMalloc(&ctx->d_cumShift, newCap * sizeof(int)));
         SP_HIP_CHECK(hipMalloc(&ctx->d_trialFeats,
-            3 * static_cast<size_t>(newCap) * nPCA * sizeof(float)));
+            static_cast<size_t>(kCand) * newCap * nPCA * sizeof(float)));
         SP_HIP_CHECK(hipMalloc(&ctx->d_trialTime,
-            3 * static_cast<size_t>(newCap) * sizeof(float)));
+            static_cast<size_t>(kCand) * newCap * sizeof(float)));
         SP_HIP_CHECK(hipMalloc(&ctx->d_timeCol, newCap * sizeof(float)));
 
         ctx->h_waveBatchCap = static_cast<size_t>(newCap) * waveSamples;
@@ -315,7 +326,7 @@ bool gpu_shift_probe_project_batch(
         ctx->d_waveBatch, ctx->d_eig, ctx->d_mean,
         ctx->d_dimMin, ctx->d_dimRange,
         ctx->d_cumShift, ctx->d_timeCol,
-        maxShiftAbs, nChan, nSamplesPerSpike,
+        maxShiftAbs, N, nChan, nSamplesPerSpike,
         data2use, nComp, ctx->recShift, ctx->isCentered ? 1 : 0,
         sessionSamples, nMem,
         ctx->d_trialFeats, ctx->d_trialTime);
@@ -323,10 +334,10 @@ bool gpu_shift_probe_project_batch(
     SP_HIP_CHECK(hipGetLastError());
 
     SP_HIP_CHECK(hipMemcpy(trialFeatsOut, ctx->d_trialFeats,
-        3 * static_cast<size_t>(nMem) * nPCA * sizeof(float),
+        static_cast<size_t>(kCand) * nMem * nPCA * sizeof(float),
         hipMemcpyDeviceToHost));
     SP_HIP_CHECK(hipMemcpy(trialTimeOut, ctx->d_trialTime,
-        3 * static_cast<size_t>(nMem) * sizeof(float),
+        static_cast<size_t>(kCand) * nMem * sizeof(float),
         hipMemcpyDeviceToHost));
     return true;
 }

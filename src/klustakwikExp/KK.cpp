@@ -815,11 +815,89 @@ void KK::ConsiderDeletion() {
     if (nClustersAlive <= minClustersAlive) return;
 
     const float deltaPen = Penalty(nClustersAlive) - Penalty(nClustersAlive - 1);
-    if (minLoss < deltaPen) {
-        Output("Deleting Class %d. Lose %f but Gain %f\n", candidateClass, minLoss, deltaPen);
+
+    // ── klustakwikExp: shift-aware merge decision ───────────────────────────
+    // The canonical minLoss is computed assuming each spike stays at its
+    // current feature vector (no temporal shift into the second-best
+    // cluster).  A cluster that's actually a temporal duplicate of another
+    // unit — same neuron, different peak-detection alignment — has
+    // artificially inflated minLoss because the mean waveforms are offset.
+    //
+    // Evaluate a plan that allows each destination sub-batch to commit a
+    // single cluster-wide δ ∈ {-N,…,+N} before the loss is computed.  The
+    // plan's lossReductionTotal is ≤ 0.  If it brings minLoss below deltaPen,
+    // the merge is accepted at the planned δs; otherwise behaviour is
+    // unchanged.
+    //
+    // Gated on:  m_shiftProbeReady && ShiftProbeMergeProbe != 0 &&
+    //            minLoss >= deltaPen   (a merge already accepted at δ=0
+    //                                   doesn't need the probe)
+    // Also gated: minLoss < deltaPen + 8*|deltaPen|  (skip hopeless
+    // candidates to bound probe overhead — at 8× the threshold, even the
+    // maximum reduction from χ²-valid shifts is unlikely to close the gap).
+    ShiftAwareMergePlan shiftPlan;
+    const bool mergeProbeEnabled =
+        m_shiftProbeReady && ShiftProbeMergeProbe != 0 &&
+        NbChannels > 0 && NbSamplesPerSpike > 0;
+    float effectiveMinLoss = minLoss;
+    if (mergeProbeEnabled && minLoss >= deltaPen &&
+        minLoss < deltaPen + 8.0f * std::fabs(deltaPen))
+    {
+        if (EvaluateShiftAwareMergeDecision(
+                candidateClass, NbChannels, NbSamplesPerSpike, shiftPlan)
+            && shiftPlan.valid)
+        {
+            effectiveMinLoss = minLoss + shiftPlan.lossReductionTotal;
+        }
+    }
+
+    if (effectiveMinLoss < deltaPen) {
+        Output("Deleting Class %d. Lose %f but Gain %f%s\n",
+               candidateClass, effectiveMinLoss, deltaPen,
+               (effectiveMinLoss != minLoss) ? " (shift-aware)" : "");
         ClassAlive[candidateClass] = 0;
-        for (int p = 0; p < nPoints; p++)
-            if (Class[p] == candidateClass) Class[p] = Class2[p];
+
+        // Commit planned per-destination cluster-wide δs BEFORE reassignment.
+        // This writes trial features into Data[] and bumps m_cumShift so
+        // the reassigned spikes start their life in the new cluster with
+        // shift-corrected feature vectors.
+        if (shiftPlan.valid && shiftPlan.lossReductionTotal < 0.0f)
+            CommitShiftAwareMergePlan(shiftPlan);
+
+        // ── Group + reassign victim's spikes by Class2 destination ────────
+        std::vector<std::vector<int>> byDest(
+            static_cast<size_t>(MaxPossibleClusters));
+        for (int p = 0; p < nPoints; p++) {
+            if (Class[p] == candidateClass) {
+                const int dest = Class2[p];
+                if (mergeProbeEnabled && dest > 0 && dest < MaxPossibleClusters
+                    && ClassAlive[dest])
+                    byDest[static_cast<size_t>(dest)].push_back(p);
+                Class[p] = dest;
+            }
+        }
+
+        // ── Post-merge per-spike tightener ────────────────────────────────
+        // Running in addition to the decision-level probe (user-selected
+        // behaviour): the decision established a cluster-wide δ per sub-
+        // batch capturing SYSTEMATIC mis-alignment; the tightener now
+        // allows each spike to further refine its fit within the remaining
+        // budget, bounded by m_shiftProbeMaxShiftAbs.  Destinations with
+        // < 5 transferred spikes are skipped (not worth the I/O).
+        if (mergeProbeEnabled) {
+            int totalShifted = 0;
+            for (int dest = 1; dest < MaxPossibleClusters; ++dest) {
+                const auto& idxs = byDest[dest];
+                if (static_cast<int>(idxs.size()) < 5) continue;
+                const float* destMean = Mean.m_Data     + dest * nDims;
+                const float* destChol = cholFlat.data() + dest * nDims2;
+                totalShifted += ShiftProbeAndCommitSpikesForMerge(
+                    idxs, NbChannels, NbSamplesPerSpike, destMean, destChol);
+            }
+            if (totalShifted > 0)
+                Output("  merge-tightener: %d spikes shifted per-spike "
+                       "post-merge\n", totalShifted);
+        }
     }
     Reindex();
 }
@@ -2674,16 +2752,30 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
 
     if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
-        fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
-        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
-               NbChannels, NbSamplesPerSpike, Phase15Iters);
-        std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
-                                     std::numeric_limits<int>::min());
-        RealignChunkWaveforms(chunkPoints, perChunkClass,
-                              NbChannels, NbSamplesPerSpike, NbBytesPerSample,
-                              spikeShifts);
-        RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-        WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+        // ── klustakwikExp: skip canonical Phase 1.5 when shift-probe owns it ──
+        // The post-split shift-probe incrementally refines feature vectors
+        // in Data[] and commits shifts to m_cumShift[] throughout clustering.
+        // FinalizeShiftProbe (called from the driver after SaveOutput) runs
+        // its own RefeaturizeFromShifts + WritePhase15Checkpoint pass using
+        // m_cumShift.  Running the canonical xcorr-based path here would
+        // overwrite the probe's committed shifts with newly-computed xcorr
+        // values, invalidating its work.  ShiftProbeReplacesPhase15 (default
+        // 1) lets the user opt-out of this gating if they want both passes.
+        if (m_shiftProbeReady && ShiftProbeReplacesPhase15 != 0) {
+            Output("Phase 1.5: skipped (shift-probe active; "
+                   "ShiftProbeReplacesPhase15=1)\n");
+        } else {
+            fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
+            Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
+                   NbChannels, NbSamplesPerSpike, Phase15Iters);
+            std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
+                                         std::numeric_limits<int>::min());
+            RealignChunkWaveforms(chunkPoints, perChunkClass,
+                                  NbChannels, NbSamplesPerSpike, NbBytesPerSample,
+                                  spikeShifts);
+            RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
+            WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+        }
     }
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
@@ -3331,16 +3423,30 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
 
     if (Phase15Iters > 0 && NbChannels > 0 && NbSamplesPerSpike > 0) {
-        fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
-        Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
-               NbChannels, NbSamplesPerSpike, Phase15Iters);
-        std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
-                                     std::numeric_limits<int>::min());
-        RealignChunkWaveforms(chunkPoints, perChunkClass,
-                              NbChannels, NbSamplesPerSpike, NbBytesPerSample,
-                              spikeShifts);
-        RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
-        WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+        // ── klustakwikExp: skip canonical Phase 1.5 when shift-probe owns it ──
+        // The post-split shift-probe incrementally refines feature vectors
+        // in Data[] and commits shifts to m_cumShift[] throughout clustering.
+        // FinalizeShiftProbe (called from the driver after SaveOutput) runs
+        // its own RefeaturizeFromShifts + WritePhase15Checkpoint pass using
+        // m_cumShift.  Running the canonical xcorr-based path here would
+        // overwrite the probe's committed shifts with newly-computed xcorr
+        // values, invalidating its work.  ShiftProbeReplacesPhase15 (default
+        // 1) lets the user opt-out of this gating if they want both passes.
+        if (m_shiftProbeReady && ShiftProbeReplacesPhase15 != 0) {
+            Output("Phase 1.5: skipped (shift-probe active; "
+                   "ShiftProbeReplacesPhase15=1)\n");
+        } else {
+            fprintf(stderr, "[Phase 1.5] Xcorr waveform realignment (circular)\n");
+            Output("Phase 1.5: xcorr alignment (nChan=%d nSamp=%d nIter=%d)\n",
+                   NbChannels, NbSamplesPerSpike, Phase15Iters);
+            std::vector<int> spikeShifts(static_cast<size_t>(nPoints),
+                                         std::numeric_limits<int>::min());
+            RealignChunkWaveforms(chunkPoints, perChunkClass,
+                                  NbChannels, NbSamplesPerSpike, NbBytesPerSample,
+                                  spikeShifts);
+            RefeaturizeFromShifts(spikeShifts, NbChannels, NbSamplesPerSpike);
+            WritePhase15Checkpoint(spikeShifts, NbChannels, NbSamplesPerSpike);
+        }
     }
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
@@ -3950,15 +4056,28 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 
 // ---------------------------------------------------------------------------
 // InitShiftProbe
-// Load .pca[D].N once, build pre-shifted basis tensors for δ∈{-1,0,+1}, and
+// Load .pca[D].N once, build pre-shifted basis tensors for δ∈{-N,…,+N}, and
 // open .spk (read-only) for the duration of the run.  Returns true on
 // success; false makes the probe a no-op for this session.
 // ---------------------------------------------------------------------------
-bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
+bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike, int N_halfWidth)
 {
     m_shiftProbeReady = false;
     if (nChan <= 0 || nSamplesPerSpike <= 0) return false;
     if (nPoints <= 0 || nDims <= 1)          return false;
+    if (N_halfWidth < 0) N_halfWidth = 0;
+    if (N_halfWidth > kShiftProbeNmax) {
+        Output("InitShiftProbe: N_halfWidth=%d exceeds compile-time max %d — "
+               "clamping\n", N_halfWidth, kShiftProbeNmax);
+        N_halfWidth = kShiftProbeNmax;
+    }
+    if (N_halfWidth == 0) {
+        Output("InitShiftProbe: N_halfWidth=0 — probe disabled (no-op)\n");
+        return false;
+    }
+    const int N     = N_halfWidth;
+    const int kCand = 2 * N + 1;
+    m_shiftProbeMaxShiftAbs = N;
 
     // --- Allocate cumulative-shift accumulator ---
     m_cumShift.assign(static_cast<size_t>(nPoints), 0);
@@ -3990,9 +4109,18 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
     m_shiftPcaBasis.nComp      = ncomp;
     m_shiftPcaBasis.recShift   = rs;
     m_shiftPcaBasis.isCentered = (ic != 0);
+    m_shiftPcaBasis.N          = N;
+
+    // Sanity check: N must be less than the PCA support, otherwise the
+    // shifted bases are almost entirely zero and the probe is pointless.
+    if (N >= d2u / 2) {
+        Output("InitShiftProbe: N=%d is >= data2use/2=%d; shifted bases would "
+               "be nearly empty — probe disabled\n", N, d2u/2);
+        fclose(pf); m_shiftPcaBasis = ShiftProbePcaBasis{}; return false;
+    }
 
     // Stage the raw (unshifted) basis first — we discard it after building
-    // the three pre-shifted copies.
+    // the (2N+1) pre-shifted copies.
     std::vector<std::vector<double>> rawMean  (static_cast<size_t>(nc));
     std::vector<std::vector<double>> rawEigvec(static_cast<size_t>(nc));
     for (int ch = 0; ch < nc; ++ch) {
@@ -4023,7 +4151,7 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
         return false;
     }
 
-    // --- Build pre-shifted bases for δ ∈ {-1, 0, +1} -----------------------
+    // --- Build pre-shifted bases for δ ∈ {-N, …, +N} -----------------------
     // Reindexing identity (derivation):
     //   y_δ[k] = Σ_j E[k,j] · (x[(rs+j+δ)*C+c] − μ[c,j])
     //   let j' = j+δ in the WAVEFORM indexing, so raw sample position is
@@ -4033,15 +4161,11 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
     //   zero at the window edges — contribution is negligible).
     //
     // Storage layout: eigvecShifted[cand][ch] is a flat vector of length
-    // d2u*ncomp indexed as k*d2u + j'   (j' is the RAW-SAMPLE-relative idx).
-    // meanShifted[cand][ch][j'] likewise.
-    const int kCand = 3;
-    const int deltas[3] = { -1, 0, +1 };
-
+    // d2u*ncomp indexed as k*d2u + j'.  cand=0..2N maps to δ=cand-N.
     m_shiftPcaBasis.meanShifted.assign(static_cast<size_t>(kCand), {});
     m_shiftPcaBasis.eigvecShifted.assign(static_cast<size_t>(kCand), {});
     for (int ci = 0; ci < kCand; ++ci) {
-        const int delta = deltas[ci];
+        const int delta = ci - N;
         m_shiftPcaBasis.meanShifted  [static_cast<size_t>(ci)]
             .assign(static_cast<size_t>(nc), {});
         m_shiftPcaBasis.eigvecShifted[static_cast<size_t>(ci)]
@@ -4101,10 +4225,10 @@ bool KK::InitShiftProbe(int nChan, int nSamplesPerSpike)
     m_shiftProbeReady = true;
     m_shiftProbeCallCount = 0;
     Output("InitShiftProbe: ready (nChan=%d data2use=%d nComp=%d recShift=%d "
-           "isCentered=%d, pre-shifted bases for δ∈{-1,0,+1})\n",
+           "isCentered=%d, pre-shifted bases for δ∈{-%d,…,+%d} (%d candidates))\n",
            m_shiftPcaBasis.nChan, m_shiftPcaBasis.data2use,
            m_shiftPcaBasis.nComp, m_shiftPcaBasis.recShift,
-           (int)m_shiftPcaBasis.isCentered);
+           (int)m_shiftPcaBasis.isCentered, N, N, kCand);
     return true;
 }
 
@@ -4133,10 +4257,13 @@ void KK::CloseShiftProbe()
 //
 // Returns the number of spikes whose committed shift changed this call.
 //
-// Core loop: the three candidate deltas share every raw-sample load from
-// .spk.  Three accumulators per (channel, PC) are stepped through data2use
-// samples in a single pass, reading from three pre-shifted basis buffers.
+// Core loop: the (2N+1) candidate deltas share every raw-sample load from
+// .spk.  (2N+1) accumulators per (channel, PC) are stepped through data2use
+// samples in a single pass, reading from (2N+1) pre-shifted basis buffers.
 // No modulo, no branching in the hot loop — maps cleanly to SIMD and GPU.
+//
+// Selection: cluster-wide max sum-of-per-dim variance across candidates.
+// Winner is committed as a single delta for ALL spikes in the index list.
 // ---------------------------------------------------------------------------
 int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
                                     int nChan, int nSamplesPerSpike)
@@ -4155,8 +4282,10 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     const float sessionSamples = timeRawMax - timeRawMin;
     if (!(sessionSamples > 0.0f)) return 0;
 
-    const int kCand = 3;
-    const int deltas[3] = { -1, 0, +1 };
+    const int N     = m_shiftPcaBasis.N;
+    const int kCand = m_shiftPcaBasis.nCand();
+    // kCand <= 2*kShiftProbeNmax + 1 = 11 by construction
+    constexpr int kCandMax = 2 * kShiftProbeNmax + 1;
 
     // Pre-size scratch.
     if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
@@ -4175,7 +4304,7 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     const bool  isCen    = pca.isCentered;
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
-    // GPU fast path: dispatcher runs the three-candidate projection on-device
+    // GPU fast path: dispatcher runs the (2N+1)-candidate projection on-device
     // and returns trial features in the same layout as the CPU path.  Falls
     // back to CPU when the context is null or the cluster is too small to
     // amortise launch overhead (threshold tuned for typical L2-resident
@@ -4214,9 +4343,11 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
     }
 #endif
 
-    // CPU path: pre-shifted bases + 3 accumulators in the inner loop.
+    // CPU path: pre-shifted bases + (2N+1) accumulators in the inner loop.
     {
         int nSkippedRead = 0;
+        // Stack-allocated accumulator arrays — size bounded at compile time
+        // by kCandMax so the compiler can allocate them to registers.
         for (int mi = 0; mi < nMem; ++mi) {
             const int p = globalSpikeIndices[static_cast<size_t>(mi)];
             if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
@@ -4231,66 +4362,61 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
             const int baseCum = m_cumShift[static_cast<size_t>(p)];
             const int16_t* raw = m_probeWaveScratch.data();
 
-            // Per-candidate out-of-range mask (fall back to cand=1 features
-            // when committing a shift of baseCum + delta would exceed the
-            // global clamp).
-            bool candOk[3];
+            // Per-candidate out-of-range mask (fall back to the δ=0 features,
+            // i.e. cand = N, when committing the candidate shift would exceed
+            // the global clamp).
+            bool candOk[kCandMax];
             for (int ci = 0; ci < kCand; ++ci)
-                candOk[ci] = (std::abs(baseCum + deltas[ci])
+                candOk[ci] = (std::abs(baseCum + (ci - N))
                               <= m_shiftProbeMaxShiftAbs);
 
-            // For each channel, accumulate projections for all three
+            // For each channel, accumulate projections for all (2N+1)
             // candidates in one pass over samples.
             for (int ch = 0; ch < nChanPca; ++ch) {
-                const double* evM = pca.eigvecShifted[0][static_cast<size_t>(ch)].data();
-                const double* ev0 = pca.eigvecShifted[1][static_cast<size_t>(ch)].data();
-                const double* evP = pca.eigvecShifted[2][static_cast<size_t>(ch)].data();
-                const double* muM = pca.meanShifted  [0][static_cast<size_t>(ch)].data();
-                const double* mu0 = pca.meanShifted  [1][static_cast<size_t>(ch)].data();
-                const double* muP = pca.meanShifted  [2][static_cast<size_t>(ch)].data();
+                // Cache basis pointers for this channel × candidate.
+                const double* evs[kCandMax];
+                const double* mus[kCandMax];
+                for (int ci = 0; ci < kCand; ++ci) {
+                    evs[ci] = pca.eigvecShifted[ci][static_cast<size_t>(ch)].data();
+                    mus[ci] = pca.meanShifted  [ci][static_cast<size_t>(ch)].data();
+                }
 
                 for (int k = 0; k < nComp; ++k) {
-                    double accM = 0.0, acc0 = 0.0, accP = 0.0;
-                    // Triple-accumulator inner loop — reads every raw sample
-                    // exactly once, multiplies against three shifted basis
-                    // rows with three independent means.
+                    double acc[kCandMax] = {0.0};
+                    // Fanned inner loop — reads every raw sample exactly once,
+                    // multiplies against (2N+1) shifted basis rows.
                     for (int j = 0; j < data2use; ++j) {
-                        const int s = rs + j;   // raw sample index (plain, no mod)
+                        const int s = rs + j;
                         const double rawV = static_cast<double>(raw[s * nChan + ch]);
-                        const double vM = isCen ? (rawV - muM[j]) : rawV;
-                        const double v0 = isCen ? (rawV - mu0[j]) : rawV;
-                        const double vP = isCen ? (rawV - muP[j]) : rawV;
-                        accM += evM[k * data2use + j] * vM;
-                        acc0 += ev0[k * data2use + j] * v0;
-                        accP += evP[k * data2use + j] * vP;
+                        if (isCen) {
+                            for (int ci = 0; ci < kCand; ++ci)
+                                acc[ci] += evs[ci][k * data2use + j]
+                                         * (rawV - mus[ci][j]);
+                        } else {
+                            for (int ci = 0; ci < kCand; ++ci)
+                                acc[ci] += evs[ci][k * data2use + j] * rawV;
+                        }
                     }
-                    const int   fi  = ch * nComp + k;
+
+                    const int   fi   = ch * nComp + k;
                     const float min_ = dimMin_  [fi];
                     const float rng_ = dimRange_[fi];
-                    const float fM = (static_cast<float>(accM) - min_) * rng_;
-                    const float f0 = (static_cast<float>(acc0) - min_) * rng_;
-                    const float fP = (static_cast<float>(accP) - min_) * rng_;
+                    const int   cand0 = N;   // the δ=0 candidate index
+                    const float f0   = (static_cast<float>(acc[cand0]) - min_) * rng_;
 
-                    const size_t ofsM = (static_cast<size_t>(0) * nMem + mi) * nPCA + fi;
-                    const size_t ofs0 = (static_cast<size_t>(1) * nMem + mi) * nPCA + fi;
-                    const size_t ofsP = (static_cast<size_t>(2) * nMem + mi) * nPCA + fi;
-
-                    // If candidate δ is out of range for this spike we
-                    // substitute the δ=0 features so the variance criterion
-                    // is unaffected by out-of-range spikes in this cluster.
-                    m_probeTrialFeats[ofsM] = candOk[0] ? fM : f0;
-                    m_probeTrialFeats[ofs0] = f0;
-                    m_probeTrialFeats[ofsP] = candOk[2] ? fP : f0;
-
-                    // Running moments per candidate, per dim.
-                    sumPerDim  [0 * nPCA + fi] += m_probeTrialFeats[ofsM];
-                    sumSqPerDim[0 * nPCA + fi] +=
-                        static_cast<double>(m_probeTrialFeats[ofsM]) * m_probeTrialFeats[ofsM];
-                    sumPerDim  [1 * nPCA + fi] += f0;
-                    sumSqPerDim[1 * nPCA + fi] += static_cast<double>(f0) * f0;
-                    sumPerDim  [2 * nPCA + fi] += m_probeTrialFeats[ofsP];
-                    sumSqPerDim[2 * nPCA + fi] +=
-                        static_cast<double>(m_probeTrialFeats[ofsP]) * m_probeTrialFeats[ofsP];
+                    for (int ci = 0; ci < kCand; ++ci) {
+                        const float fv = (static_cast<float>(acc[ci]) - min_) * rng_;
+                        const size_t ofs =
+                            (static_cast<size_t>(ci) * nMem + mi) * nPCA + fi;
+                        // If candidate δ is out of range for this spike we
+                        // substitute the δ=0 features so the variance
+                        // criterion is unaffected by out-of-range spikes.
+                        m_probeTrialFeats[ofs] = candOk[ci] ? fv : f0;
+                        sumPerDim  [ci * nPCA + fi] += m_probeTrialFeats[ofs];
+                        sumSqPerDim[ci * nPCA + fi] +=
+                            static_cast<double>(m_probeTrialFeats[ofs]) *
+                            m_probeTrialFeats[ofs];
+                    }
                 }
             }
 
@@ -4299,7 +4425,7 @@ int KK::ShiftProbeAndCommitSpikes(const std::vector<int>& globalSpikeIndices,
             const float rawTsNorm = Data.m_Data[p * nDims + timeDimIdx];
             for (int ci = 0; ci < kCand; ++ci) {
                 const float dd = candOk[ci]
-                    ? static_cast<float>(deltas[ci]) / sessionSamples
+                    ? static_cast<float>(ci - N) / sessionSamples
                     : 0.0f;
                 m_probeTrialTime[static_cast<size_t>(ci) * nMem + mi] =
                     rawTsNorm + dd;
@@ -4314,7 +4440,7 @@ pick_best_and_commit:
 
     // --- Pick the candidate with the largest total spatial-feature variance ---
     const double invN = 1.0 / static_cast<double>(nMem);
-    int   bestCand = 1;        // default to cand=0 shift
+    int   bestCand = N;        // default to δ=0 candidate
     double bestVar = -1.0;
     for (int ci = 0; ci < kCand; ++ci) {
         double tot = 0.0;
@@ -4327,7 +4453,7 @@ pick_best_and_commit:
         }
         if (tot > bestVar) { bestVar = tot; bestCand = ci; }
     }
-    const int bestDelta = deltas[bestCand];
+    const int bestDelta = bestCand - N;
 
     // --- Commit winner into Data[] + m_cumShift ---
     int nChanged = 0;
@@ -4361,6 +4487,532 @@ pick_best_and_commit:
 
     ++m_shiftProbeCallCount;
     return nChanged;
+}
+
+// ---------------------------------------------------------------------------
+// ShiftProbeAndCommitSpikesForMerge
+//
+// Per-spike shift selection under a Mahalanobis-minimum criterion against a
+// receiving cluster's Gaussian (mean + Cholesky factor of covariance).  Each
+// spike picks INDEPENDENTLY the δ ∈ {-N, …, +N} that maximises its fit to
+// the destination cluster.
+//
+// Rationale.  Split-probe uses max-variance because we want to EXPOSE
+// mixture structure.  Merge-probe uses min-Mahalanobis because we want to
+// TIGHTEN the fit of newly-transferred points to the cluster that is
+// absorbing them.  Same infrastructure (pre-shifted bases, I/O, GPU) but a
+// different selection criterion and per-spike rather than cluster-wide.
+//
+// Mahalanobis²(x_δ) = ||L^-1 · (x_δ - μ)||²  where L = destChol (lower tri).
+// Forward-substitute to compute y = L^-1 · (x - μ); Mahal² = yᵀy.
+// Constants (logRootDet, log2π, log(weight)) cancel across candidates for
+// the same destination cluster, so we skip them.
+//
+// Parameters
+//   globalSpikeIndices  — 0-based global indices into Data[] / .spk / m_cumShift
+//   nChan, nSamplesPerSpike — .spk layout dimensions
+//   destMean  — cluster mean vector (nDims floats, INCLUDING the time dim)
+//   destChol  — cluster Cholesky factor (nDims² floats, lower triangular
+//               stored row-major; diag positive, super-diag entries 0)
+//
+// Returns the number of spikes whose cumShift changed this call.
+// ---------------------------------------------------------------------------
+int KK::ShiftProbeAndCommitSpikesForMerge(
+    const std::vector<int>& globalSpikeIndices,
+    int nChan, int nSamplesPerSpike,
+    const float* destMean, const float* destChol)
+{
+    if (!m_shiftProbeReady || !m_spkProbeFp)  return 0;
+    if (!m_shiftPcaBasis.valid())             return 0;
+    if (!destMean || !destChol)               return 0;
+    if (nChan <= 0 || nSamplesPerSpike <= 0)  return 0;
+    const int nMem = static_cast<int>(globalSpikeIndices.size());
+    if (nMem < 1) return 0;
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int timeDimIdx  = nDims - 1;
+    const int nPCA        = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
+    if (nPCA <= 0 || nPCA > nDims - 1) return 0;
+    const float sessionSamples = timeRawMax - timeRawMin;
+    if (!(sessionSamples > 0.0f)) return 0;
+
+    const int N     = m_shiftPcaBasis.N;
+    const int kCand = m_shiftPcaBasis.nCand();
+    constexpr int kCandMax = 2 * kShiftProbeNmax + 1;
+
+    // We reuse the split-probe scratch buffers to avoid a second allocation.
+    // Trial features are computed for all candidates; Mahal² is computed on
+    // the fly per spike per candidate.
+    if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
+        m_probeWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
+
+    const auto& pca   = m_shiftPcaBasis;
+    const int   data2use = pca.data2use;
+    const int   nComp    = pca.nComp;
+    const int   nChanPca = pca.nChan;
+    const int   rs       = pca.recShift;
+    const bool  isCen    = pca.isCentered;
+
+    // Stack buffers sized for the worst case.  nDims is small (O(30)) so
+    // these fit comfortably.
+    std::vector<float> trialFeats(static_cast<size_t>(kCand * nPCA));
+    std::vector<float> yVec      (static_cast<size_t>(nDims));  // forward-sub scratch
+    std::vector<float> xMinusMu  (static_cast<size_t>(nDims));
+
+    int nChanged = 0;
+    int nSkippedRead = 0;
+
+    for (int mi = 0; mi < nMem; ++mi) {
+        const int p = globalSpikeIndices[static_cast<size_t>(mi)];
+        if (p < 0 || p >= nPoints) { ++nSkippedRead; continue; }
+
+        if (fseeko(m_spkProbeFp,
+                   static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
+                   SEEK_SET) != 0) { ++nSkippedRead; continue; }
+        if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
+                  static_cast<size_t>(waveSamples), m_spkProbeFp)
+                != static_cast<size_t>(waveSamples)) { ++nSkippedRead; continue; }
+
+        const int baseCum = m_cumShift[static_cast<size_t>(p)];
+        const int16_t* raw = m_probeWaveScratch.data();
+
+        bool candOk[kCandMax];
+        for (int ci = 0; ci < kCand; ++ci)
+            candOk[ci] = (std::abs(baseCum + (ci - N))
+                          <= m_shiftProbeMaxShiftAbs);
+
+        // Project this spike under every candidate δ — same (2N+1)-fanned
+        // inner loop as the split probe, but results are kept per-spike in
+        // the local `trialFeats` scratch (not the cluster-wide buffer).
+        for (int ch = 0; ch < nChanPca; ++ch) {
+            const double* evs[kCandMax];
+            const double* mus[kCandMax];
+            for (int ci = 0; ci < kCand; ++ci) {
+                evs[ci] = pca.eigvecShifted[ci][static_cast<size_t>(ch)].data();
+                mus[ci] = pca.meanShifted  [ci][static_cast<size_t>(ch)].data();
+            }
+
+            for (int k = 0; k < nComp; ++k) {
+                double acc[kCandMax] = {0.0};
+                for (int j = 0; j < data2use; ++j) {
+                    const int s = rs + j;
+                    const double rawV = static_cast<double>(raw[s * nChan + ch]);
+                    if (isCen) {
+                        for (int ci = 0; ci < kCand; ++ci)
+                            acc[ci] += evs[ci][k * data2use + j]
+                                     * (rawV - mus[ci][j]);
+                    } else {
+                        for (int ci = 0; ci < kCand; ++ci)
+                            acc[ci] += evs[ci][k * data2use + j] * rawV;
+                    }
+                }
+                const int   fi   = ch * nComp + k;
+                const float min_ = dimMin_  [fi];
+                const float rng_ = dimRange_[fi];
+                for (int ci = 0; ci < kCand; ++ci)
+                    trialFeats[static_cast<size_t>(ci * nPCA + fi)] =
+                        (static_cast<float>(acc[ci]) - min_) * rng_;
+            }
+        }
+
+        // Trial timestamps for this spike (normalised).
+        const float rawTsNorm = Data.m_Data[p * nDims + timeDimIdx];
+
+        // Evaluate Mahalanobis² under the destination cluster for each
+        // in-range candidate and pick the minimum.
+        int   bestCand = N;
+        float bestMahal = std::numeric_limits<float>::infinity();
+
+        for (int ci = 0; ci < kCand; ++ci) {
+            if (!candOk[ci]) continue;
+
+            // Build x (nDims): first nPCA from trial, remaining spatial dims
+            // from the current Data row (unchanged by the probe), final dim
+            // = candidate-shifted normalised time.
+            const float* trial = trialFeats.data() + ci * nPCA;
+            for (int d = 0; d < nPCA; ++d)
+                xMinusMu[d] = trial[d] - destMean[d];
+            // Pass-through for any non-PCA spatial dims that the cluster
+            // carries — leaves them at their current Data[] values.  The
+            // probe does not perturb these.
+            for (int d = nPCA; d < nDims - 1; ++d)
+                xMinusMu[d] = Data.m_Data[p * nDims + d] - destMean[d];
+            const float dt = candOk[ci]
+                ? static_cast<float>(ci - N) / sessionSamples
+                : 0.0f;
+            xMinusMu[nDims - 1] = (rawTsNorm + dt) - destMean[nDims - 1];
+
+            // Forward substitution: L · y = (x − μ)  →  y
+            // chol is lower-triangular row-major: chol[i*nDims + j] for j<=i.
+            // Any cluster with a zero diagonal entry → singular → skip.
+            float mahal2 = 0.0f;
+            bool  bad    = false;
+            for (int i = 0; i < nDims; ++i) {
+                float s = xMinusMu[i];
+                for (int j = 0; j < i; ++j)
+                    s -= destChol[i * nDims + j] * yVec[j];
+                const float diag = destChol[i * nDims + i];
+                if (!(diag > 0.0f)) { bad = true; break; }
+                yVec[i] = s / diag;
+                mahal2 += yVec[i] * yVec[i];
+            }
+            if (bad) continue;
+
+            if (mahal2 < bestMahal) {
+                bestMahal = mahal2;
+                bestCand  = ci;
+            }
+        }
+
+        const int bestDelta = bestCand - N;
+        if (bestDelta == 0) continue;   // no change
+
+        const int wouldBe = baseCum + bestDelta;
+        if (std::abs(wouldBe) > m_shiftProbeMaxShiftAbs) continue;
+
+        // Commit the per-spike shift.
+        float* dataRow = Data.m_Data + p * nDims;
+        const float* bestTrial = trialFeats.data() + bestCand * nPCA;
+        for (int fi = 0; fi < nPCA; ++fi)
+            dataRow[fi] = bestTrial[fi];
+        dataRow[timeDimIdx] = rawTsNorm +
+            static_cast<float>(bestDelta) / sessionSamples;
+        m_cumShift[static_cast<size_t>(p)] = wouldBe;
+        ++nChanged;
+    }
+
+    (void)nSkippedRead;  // not fatal; partial commits still valid
+
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    if (nChanged > 0 && gpu)
+        gpu_upload_data(gpu, Data.m_Data);
+#endif
+
+    ++m_shiftProbeCallCount;
+    return nChanged;
+}
+
+// ---------------------------------------------------------------------------
+// wilsonHilfertyChi2(df, z) — χ²(df, p) inverse CDF via Wilson-Hilferty.
+// Accurate to < 1% for df ≥ 4.  Matches the inline formula used elsewhere
+// in this file (e.g. KK.cpp:2811, :3521) for MergeThresh calibration
+// warnings.  z is the standard normal quantile corresponding to p:
+//   p=0.95   → z=1.6449
+//   p=0.99   → z=2.326
+//   p=0.9999 → z=3.719
+// ---------------------------------------------------------------------------
+static inline float wilsonHilfertyChi2(int df, float z)
+{
+    const float d = static_cast<float>(df);
+    const float a = 1.0f - 2.0f / (9.0f * d);
+    const float b = z * std::sqrt(2.0f / (9.0f * d));
+    return d * std::pow(a + b, 3.0f);
+}
+
+// ---------------------------------------------------------------------------
+// EvaluateShiftAwareMergeDecision
+//
+// Build a ShiftAwareMergePlan for the victim cluster.  Does NOT commit any
+// shifts or reassignments — caller inspects `plan.lossReductionTotal` and
+// decides whether the merge becomes acceptable.  Pairs with
+// CommitShiftAwareMergePlan.
+//
+// Complexity: O(nVictimSpikes × kCand × nChan × data2use) projection work
+// plus O(nVictimSpikes × kCand × nDims²) Cholesky forward-sub work.
+// I/O: one read per victim spike from .spk (cached via m_spkProbeFp).
+// ---------------------------------------------------------------------------
+bool KK::EvaluateShiftAwareMergeDecision(
+    int victim, int nChan, int nSamplesPerSpike,
+    ShiftAwareMergePlan& plan)
+{
+    plan = ShiftAwareMergePlan{};
+    if (!m_shiftProbeReady || !m_spkProbeFp) return false;
+    if (!m_shiftPcaBasis.valid())            return false;
+    if (victim < 0 || victim >= MaxPossibleClusters) return false;
+    if (!ClassAlive[victim])                 return false;
+
+    // Collect victim's spike indices.
+    std::vector<int> idxs;
+    idxs.reserve(256);
+    for (int p = 0; p < nPoints; ++p)
+        if (Class[p] == victim) idxs.push_back(p);
+    const int nMem = static_cast<int>(idxs.size());
+    if (nMem < 1) return false;
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int timeDimIdx  = nDims - 1;
+    const int nPCA        = m_shiftPcaBasis.nChan * m_shiftPcaBasis.nComp;
+    if (nPCA <= 0 || nPCA > nDims - 1) return false;
+    const float sessionSamples = timeRawMax - timeRawMin;
+    if (!(sessionSamples > 0.0f)) return false;
+
+    const int N     = m_shiftPcaBasis.N;
+    const int kCand = m_shiftPcaBasis.nCand();
+    constexpr int kCandMax = 2 * kShiftProbeNmax + 1;
+
+    if (static_cast<int>(m_probeWaveScratch.size()) < waveSamples)
+        m_probeWaveScratch.assign(static_cast<size_t>(waveSamples), 0);
+
+    // Per-spike trial features under every candidate.  Laid out
+    // [mi][ci][fi] so a committed spike's features are contiguous.
+    std::vector<float> trialFeats(
+        static_cast<size_t>(nMem) * kCand * nPCA, 0.0f);
+    std::vector<uint8_t> okMask(
+        static_cast<size_t>(nMem) * kCand, 0);
+
+    const auto& pca    = m_shiftPcaBasis;
+    const int   data2use = pca.data2use;
+    const int   nComp    = pca.nComp;
+    const int   nChanPca = pca.nChan;
+    const int   rs       = pca.recShift;
+    const bool  isCen    = pca.isCentered;
+
+    // --- Project every victim spike under every candidate δ ----------------
+    // Identical math to ShiftProbeAndCommitSpikesForMerge's projection loop,
+    // but we save ALL candidates' features per spike (not just compute-and-
+    // discard per-candidate Mahal²) so the caller can commit without a
+    // second pass.
+    int nRead = 0;
+    for (int mi = 0; mi < nMem; ++mi) {
+        const int p = idxs[mi];
+        if (fseeko(m_spkProbeFp,
+                   static_cast<off_t>(p) * waveSamples * sizeof(int16_t),
+                   SEEK_SET) != 0) continue;
+        if (fread(m_probeWaveScratch.data(), sizeof(int16_t),
+                  static_cast<size_t>(waveSamples), m_spkProbeFp)
+                != static_cast<size_t>(waveSamples)) continue;
+
+        const int baseCum = m_cumShift[static_cast<size_t>(p)];
+        const int16_t* raw = m_probeWaveScratch.data();
+
+        for (int ci = 0; ci < kCand; ++ci)
+            okMask[static_cast<size_t>(mi) * kCand + ci] =
+                (std::abs(baseCum + (ci - N)) <= m_shiftProbeMaxShiftAbs)
+                    ? 1u : 0u;
+
+        for (int ch = 0; ch < nChanPca; ++ch) {
+            const double* evs[kCandMax];
+            const double* mus[kCandMax];
+            for (int ci = 0; ci < kCand; ++ci) {
+                evs[ci] = pca.eigvecShifted[ci][ch].data();
+                mus[ci] = pca.meanShifted  [ci][ch].data();
+            }
+            for (int k = 0; k < nComp; ++k) {
+                double acc[kCandMax] = {0.0};
+                for (int j = 0; j < data2use; ++j) {
+                    const int s = rs + j;
+                    const double rawV = static_cast<double>(raw[s * nChan + ch]);
+                    if (isCen) {
+                        for (int ci = 0; ci < kCand; ++ci)
+                            acc[ci] += evs[ci][k * data2use + j]
+                                     * (rawV - mus[ci][j]);
+                    } else {
+                        for (int ci = 0; ci < kCand; ++ci)
+                            acc[ci] += evs[ci][k * data2use + j] * rawV;
+                    }
+                }
+                const int   fi   = ch * nComp + k;
+                const float min_ = dimMin_  [fi];
+                const float rng_ = dimRange_[fi];
+                for (int ci = 0; ci < kCand; ++ci)
+                    trialFeats[(static_cast<size_t>(mi) * kCand + ci) * nPCA + fi] =
+                        (static_cast<float>(acc[ci]) - min_) * rng_;
+            }
+        }
+        ++nRead;
+    }
+    if (nRead == 0) return false;
+
+    // --- Group by Class2 destination & evaluate per-destination δ ----------
+    // Per destination: for each candidate δ, aggregate Mahalanobis² over
+    // the sub-batch.  Apply χ² threshold to accept non-zero δ.
+    std::vector<std::vector<int>> byDest(
+        static_cast<size_t>(MaxPossibleClusters));
+    for (int mi = 0; mi < nMem; ++mi) {
+        const int p = idxs[mi];
+        const int d = Class2[p];
+        if (d > 0 && d < MaxPossibleClusters && ClassAlive[d])
+            byDest[static_cast<size_t>(d)].push_back(mi);
+    }
+
+    // χ² threshold per spike (95% quantile of each spike's mahal² under
+    // the null hypothesis that it came from this destination cluster).
+    const float chi2_95 = wilsonHilfertyChi2(nDims, 1.6449f);
+
+    // Output buffers for the plan.
+    plan.globalIdx.assign(static_cast<size_t>(nMem), -1);
+    plan.chosenCand.assign(static_cast<size_t>(nMem), N);  // default: no shift
+    plan.chosenFeats.assign(static_cast<size_t>(nMem) * nPCA, 0.0f);
+    plan.chosenTime.assign(static_cast<size_t>(nMem), 0.0f);
+    plan.nPCA = nPCA;
+
+    for (int mi = 0; mi < nMem; ++mi) plan.globalIdx[mi] = idxs[mi];
+
+    // Scratch for forward-substitution
+    std::vector<float> yVec(static_cast<size_t>(nDims));
+    std::vector<float> xMinusMu(static_cast<size_t>(nDims));
+
+    double totalLossReduction = 0.0;
+    int    nDestsShifted      = 0;
+
+    for (int dest = 1; dest < MaxPossibleClusters; ++dest) {
+        const auto& subIdxs = byDest[dest];
+        const int M = static_cast<int>(subIdxs.size());
+        if (M < 1) continue;
+
+        const float* destMean = Mean.m_Data      + dest * nDims;
+        const float* destChol = cholFlat.data()  + dest * nDims2;
+
+        // Aggregate Mahalanobis² for each candidate δ over this sub-batch.
+        double agg[kCandMax];
+        for (int ci = 0; ci < kCand; ++ci) agg[ci] = 0.0;
+        std::vector<uint8_t> validSpike(M, 1);   // per-spike bad-Chol flag
+
+        for (int im = 0; im < M; ++im) {
+            const int mi = subIdxs[im];
+            const int p  = idxs[mi];
+            const float rawTsNorm = Data.m_Data[p * nDims + timeDimIdx];
+            for (int ci = 0; ci < kCand; ++ci) {
+                if (!okMask[static_cast<size_t>(mi) * kCand + ci]) {
+                    // Out-of-range candidate: substitute δ=0 Mahal² so this
+                    // candidate cannot "win" by exploiting unreachable
+                    // shifts.  Infinite is safer but pollutes aggregates;
+                    // δ=0 substitution is the same convention the split and
+                    // per-spike merge probes use.
+                    // (If δ=0 itself is out-of-range — impossible because
+                    // baseCum is already bounded — we'd mark invalid.)
+                }
+                // Build x = trial features ⊕ pass-through spatial dims ⊕ time_δ
+                const float* trial = trialFeats.data()
+                    + (static_cast<size_t>(mi) * kCand + ci) * nPCA;
+                for (int d = 0; d < nPCA; ++d)
+                    xMinusMu[d] = trial[d] - destMean[d];
+                for (int d = nPCA; d < nDims - 1; ++d)
+                    xMinusMu[d] = Data.m_Data[p * nDims + d] - destMean[d];
+                const float dt = okMask[static_cast<size_t>(mi) * kCand + ci]
+                    ? static_cast<float>(ci - N) / sessionSamples
+                    : 0.0f;
+                xMinusMu[nDims - 1] = (rawTsNorm + dt) - destMean[nDims - 1];
+
+                // Forward substitution: L·y = (x−μ)
+                bool bad = false;
+                float mahal2 = 0.0f;
+                for (int i = 0; i < nDims; ++i) {
+                    float s = xMinusMu[i];
+                    for (int j = 0; j < i; ++j)
+                        s -= destChol[i * nDims + j] * yVec[j];
+                    const float diag = destChol[i * nDims + i];
+                    if (!(diag > 0.0f)) { bad = true; break; }
+                    yVec[i] = s / diag;
+                    mahal2 += yVec[i] * yVec[i];
+                }
+                if (bad) {
+                    validSpike[im] = 0;
+                    break;
+                }
+                agg[ci] += static_cast<double>(mahal2);
+            }
+        }
+
+        // Skip destinations with any singular Chol slab — data hasn't
+        // converged enough for the probe to be meaningful here.
+        int validM = 0;
+        for (int im = 0; im < M; ++im) validM += validSpike[im];
+        if (validM == 0) continue;
+
+        // χ² threshold: a non-zero δ must beat δ=0 by more than
+        // chi2_95 × validM to be accepted.
+        const int    baselineCand = N;
+        const double baselineAgg  = agg[baselineCand];
+        int    bestCand = baselineCand;
+        double bestAgg  = baselineAgg;
+        const double threshold =
+            static_cast<double>(chi2_95) * static_cast<double>(validM);
+        for (int ci = 0; ci < kCand; ++ci) {
+            if (ci == baselineCand) continue;
+            if (agg[ci] < bestAgg - threshold) {
+                bestAgg  = agg[ci];
+                bestCand = ci;
+            }
+        }
+
+        // Record per-spike commit data for this sub-batch.
+        for (int im = 0; im < M; ++im) {
+            const int mi = subIdxs[im];
+            if (!validSpike[im]) continue;
+            plan.chosenCand[mi] = bestCand;
+            const float* trial = trialFeats.data()
+                + (static_cast<size_t>(mi) * kCand + bestCand) * nPCA;
+            std::memcpy(
+                plan.chosenFeats.data() + static_cast<size_t>(mi) * nPCA,
+                trial, sizeof(float) * nPCA);
+            const int p = idxs[mi];
+            const float rawTsNorm = Data.m_Data[p * nDims + timeDimIdx];
+            const float dt = okMask[static_cast<size_t>(mi) * kCand + bestCand]
+                ? static_cast<float>(bestCand - N) / sessionSamples
+                : 0.0f;
+            plan.chosenTime[mi] = rawTsNorm + dt;
+        }
+
+        // Contribution to total loss reduction (in units of log-probability).
+        // LogP uses the convention: higher = worse fit, with the formula
+        // 0.5*mahal² + logRootDet - log(Weight) + const.  The δ-dependent
+        // part is only 0.5*mahal², so the loss change is:
+        //   ΔDeletionLoss(dest) = 0.5 × (bestAgg − baselineAgg)     (≤ 0)
+        totalLossReduction += 0.5 * (bestAgg - baselineAgg);
+        if (bestCand != baselineCand) ++nDestsShifted;
+    }
+
+    plan.valid              = true;
+    plan.lossReductionTotal = static_cast<float>(totalLossReduction);
+
+    if (nDestsShifted > 0)
+        Output("  merge-decision probe: victim=%d, %d destinations shifted, "
+               "ΔDeletionLoss = %.3f\n",
+               victim, nDestsShifted, plan.lossReductionTotal);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// CommitShiftAwareMergePlan
+// Apply the chosen shifts to Data[] and m_cumShift.  Caller is responsible
+// for the subsequent reassignment (Class[p] = Class2[p]) and any follow-up
+// post-merge tightening.
+// ---------------------------------------------------------------------------
+void KK::CommitShiftAwareMergePlan(const ShiftAwareMergePlan& plan)
+{
+    if (!plan.valid || plan.globalIdx.empty()) return;
+    if (plan.nPCA <= 0) return;
+
+    const int timeDimIdx = nDims - 1;
+    const int N          = m_shiftPcaBasis.N;
+    const int nPCA       = plan.nPCA;
+
+    int nWritten = 0;
+    const int nMem = static_cast<int>(plan.globalIdx.size());
+    for (int mi = 0; mi < nMem; ++mi) {
+        const int p = plan.globalIdx[mi];
+        if (p < 0 || p >= nPoints) continue;
+        const int cand = plan.chosenCand[mi];
+        if (cand == N) continue;   // no-shift default; skip
+
+        const int delta   = cand - N;
+        const int wouldBe = m_cumShift[p] + delta;
+        if (std::abs(wouldBe) > m_shiftProbeMaxShiftAbs) continue;
+
+        float* dataRow = Data.m_Data + p * nDims;
+        std::memcpy(dataRow,
+                    plan.chosenFeats.data() + static_cast<size_t>(mi) * nPCA,
+                    sizeof(float) * nPCA);
+        dataRow[timeDimIdx] = plan.chosenTime[mi];
+        m_cumShift[p] = wouldBe;
+        ++nWritten;
+    }
+
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+    if (nWritten > 0 && gpu)
+        gpu_upload_data(gpu, Data.m_Data);
+#endif
 }
 
 // ---------------------------------------------------------------------------
