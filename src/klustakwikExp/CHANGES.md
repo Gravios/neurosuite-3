@@ -311,6 +311,22 @@ The inherited canonical changelog is preserved as
 
 All other files are byte-identical to their canonical counterparts.
 
+## [2026-04-23g] Dead-code cleanup: remove unused .fil mmap infrastructure
+
+The `.fil` mmap plumbing added during stderiv development (members
+`m_timeShiftFilMap`, `m_timeShiftFilLen`, `m_timeShiftFilSamples`,
+`m_timeShiftIsStderiv`, `m_stderivRawScratch`, `m_stderivTransformScratch`
+in `KK.h`, plus the init block that opened + mmap'd `.fil` in
+`InitTimeShift`) was never actually used.  The probe reads from `.spkD`
+via `m_timeShiftSpkMap`; Phase 4 reads from `.fil` via fopen/fread in
+`RefeaturizeFromShifts` and `WritePhase15Checkpoint` (pre-existing code
+paths).  Removed entirely.
+
+Stderiv mode detection now lives solely on `m_timeShiftBasis.isStderiv`
+where it belongs — the basis struct owns its own metadata.
+
+No behavioural change; just less code to maintain.
+
 ## [2026-04-23f] Time-shift Phase 4 stderiv disk-commit
 
 Completes stderiv support end-to-end.  Prior commit (2026-04-23e) made the
