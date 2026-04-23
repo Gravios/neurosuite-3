@@ -485,27 +485,6 @@ private:
     void*   m_timeShiftSpkMap = nullptr;  // mmap base pointer (or nullptr)
     size_t  m_timeShiftSpkLen = 0;        // mmap length in bytes
 
-    // Stderiv support: when the time-shift probe is running against a .pcaD
-    // basis (spatial-derivative pipeline), the .spkD / canonical .spk does
-    // NOT reflect the transformation at arbitrary δ-shifts — we need to
-    // re-derive from .fil at the shifted timestamp.
-    //
-    // m_timeShiftFilMap is an mmap of the session's .fil file.  Layout:
-    // row-major int16_t[sessionSamples × NbTotalChannels].  Accessed in
-    // the CPU hot loop via pointer indexing, letting the kernel page
-    // cache amortise reads across spikes that share the same .fil region.
-    //
-    // m_timeShiftIsStderiv toggles the stderiv transform path on.  When
-    // false (canonical .pca), the .fil mmap is not allocated and the hot
-    // loop reads .spk as before.
-    bool    m_timeShiftIsStderiv = false;
-    void*   m_timeShiftFilMap    = nullptr;  // mmap base of .fil (or nullptr)
-    size_t  m_timeShiftFilLen    = 0;        // mmap length in bytes
-    int64_t m_timeShiftFilSamples = 0;       // sessionSamples = len / (nTotalCh * 2)
-    // Per-thread scratch for the stderiv transform: raw window (nChan × data2use × int16)
-    // and the transformed output (nChan × data2use × double).  Sized on first use.
-    std::vector<int16_t> m_stderivRawScratch;
-    std::vector<double>  m_stderivTransformScratch;
     // Reusable per-cluster scratch buffers.  Resized on demand; cleared between
     // clusters so high-water-mark is retained.
     std::vector<int16_t> m_timeShiftWaveScratch;        // [waveSamples] one spike
