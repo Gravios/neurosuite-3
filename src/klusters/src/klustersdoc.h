@@ -25,6 +25,7 @@
 #include "tracesprovider.h"
 #include <klustersshared/channelcolors.h>
 #include "clustersprovider.h"
+#include "curationlogger.h"
 
 
 // include files for QT
@@ -41,6 +42,7 @@
 #include <QEvent>
 #include <QDebug>
 #include <vector>
+#include <memory>
 
 
 
@@ -563,6 +565,34 @@ public:
     /**Sets the modified status of the current opend document to true .*/
     void clusterInformationModified(){modified = true;}
 
+    // ── Curation logging ──────────────────────────────────────────────────
+    /** Compute a ClusterSnapshot for @p clusterId from the current in-memory
+     *  state.  Returns an invalid snapshot (clusterId == -1) on failure.
+     *  @param allCentroids  Precomputed centroid map; pass nullptr to skip
+     *                       nearest-cluster metrics. */
+    ClusterSnapshot snapshotCluster(int clusterId,
+                                     double isiThreshMs = 3.0,
+                                     const QMap<int,QVector<double>>* allCentroids = nullptr) const {
+        return clusteringData->computeSnapshot(clusterId, isiThreshMs, allCentroids);
+    }
+
+    /** Convenience: snapshot each cluster in @p clusterIds.
+     *  Computes all cluster centroids once and reuses them across the set. */
+    QList<ClusterSnapshot> snapshotClusters(const QList<int>& clusterIds,
+                                             double isiThreshMs = 3.0) const {
+        QList<ClusterSnapshot> snaps;
+        if (clusterIds.isEmpty())
+            return snaps;
+        // Compute all centroids once — amortises the O(N×D) pass across
+        // the entire call.  Each cluster then only does an O(K×D) linear
+        // scan to find its nearest neighbour.
+        const auto centroids = clusteringData->computeAllCentroids();
+        snaps.reserve(clusterIds.size());
+        for (int id : clusterIds)
+            snaps.append(clusteringData->computeSnapshot(id, isiThreshMs, &centroids));
+        return snaps;
+    }
+
 Q_SIGNALS:
     void updateUndoNb(int undoNb);
     void updateRedoNb(int undoNb);
@@ -888,6 +918,36 @@ private:
 
     /** Realignment writes pending until saveDocument() is called. */
     std::vector<PendingRealign> m_pendingRealign;
+
+    // ── Curation logger ───────────────────────────────────────────────────
+    std::unique_ptr<CurationLogger> m_curationLogger;
+
+    /** Snapshot @p clusterIds and open a "before" log block for @p action.
+     *  No-op if the logger is not open.  Returns quietly on empty id list. */
+    void logBefore(CurationLogger::ActionType action, const QList<int>& clusterIds);
+
+    /** Snapshot @p clusterIds and write "after" records for the current block.
+     *  Must follow a matching logBefore() call for the same action. */
+    void logAfter(const QList<int>& clusterIds);
+
+    /// Per-cluster action-touch count for the current session.
+    /// Incremented in logBefore() so every cluster snapshot carries a depth.
+    QMap<int, int> m_clusterActionCount;
+
+    /// action_idx of the most recently begun log action — used by undo/redo
+    /// to record which preceding action index is being reverted or replayed.
+    int m_lastLoggedActionIdx = -1;
+
+public:
+    /** Append a quality annotation for the most recently completed action.
+     *  @param quality  0 = bad/exploratory, 1 = uncertain, 2 = confident.
+     *  Intended to be called from a keyboard shortcut (J/K/X) immediately
+     *  after an action so the curator can tag the decision in-stream.
+     */
+    void logAnnotation(int quality) {
+        if (m_curationLogger && m_curationLogger->isOpen())
+            m_curationLogger->annotateLastAction(quality);
+    }
 
 };
 

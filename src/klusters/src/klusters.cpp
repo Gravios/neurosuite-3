@@ -73,6 +73,7 @@
 #include <QMessageBox>
 #include <QToolBar>
 #include <QKeySequence>
+#include <QShortcut>
 #include <QFileDialog>
 #include <QTime>
 #include <QSettings>
@@ -862,6 +863,28 @@ void KlustersApp::initSelectionBoxes(){
     nudgePlusAction->setEnabled(false);
     connect(nudgePlusAction, &QAction::triggered,
             this, &KlustersApp::slotNudgeTimestampPlus);
+
+    // ── Curation quality annotation shortcuts ─────────────────────────────
+    // J = good (confident keep/action), K = uncertain, X = bad/exploratory
+    // These tag the most recently completed action in the curation log.
+    // They are intentionally simple QShortcuts (not toolbar actions) so they
+    // don't appear in menus and don't add visual clutter.
+    {
+        auto* scGood = new QShortcut(QKeySequence(Qt::Key_J), this);
+        scGood->setContext(Qt::ApplicationShortcut);
+        connect(scGood, &QShortcut::activated,
+                this, &KlustersApp::slotAnnotateGood);
+
+        auto* scUnc  = new QShortcut(QKeySequence(Qt::Key_K), this);
+        scUnc->setContext(Qt::ApplicationShortcut);
+        connect(scUnc, &QShortcut::activated,
+                this, &KlustersApp::slotAnnotateUncertain);
+
+        auto* scBad  = new QShortcut(QKeySequence(Qt::Key_X), this);
+        scBad->setContext(Qt::ApplicationShortcut);
+        connect(scBad, &QShortcut::activated,
+                this, &KlustersApp::slotAnnotateBad);
+    }
 
 }
 
@@ -4454,12 +4477,16 @@ void KlustersApp::slotShowShortcutHelp()
         {"N",                   "Delete noisy spikes (move to cluster 1)"},
         {"Z",                   "Zoom mode"},
         {"U",                   "Update error matrix (+ template matrix if open)"},
+        {"F",                   "Toggle autoscale in cluster view"},
         {"H",                   "Show this keyboard shortcut reference"},
         {"Ctrl+Z",              "Undo"},
         {"Ctrl+Y",              "Redo"},
         {"Ctrl+S",              "Save"},
         {"Ctrl+Shift+S",        "Renumber and save"},
         {"Enter / Return",      "Close selection polygon (New / Split modes)"},
+        {"J",                   "Curation log: annotate last action as Good (confident)"},
+        {"K",                   "Curation log: annotate last action as Uncertain"},
+        {"X",                   "Curation log: annotate last action as Bad / exploratory"},
     };
 
     QString html =
