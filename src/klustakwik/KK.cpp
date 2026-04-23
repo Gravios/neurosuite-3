@@ -378,6 +378,30 @@ KK KK::CloneForStart(int ompTeamSz) const
 // ---------------------------------------------------------------------------
 // Penalty — AIC/BIC mixture
 // ---------------------------------------------------------------------------
+// Adaptive merge threshold helpers
+// ---------------------------------------------------------------------------
+float KK::participationRatio(const std::vector<float>& cov, int nDims, int stride)
+{
+    if (nDims <= 0 || cov.empty()) return 1.0f;
+    float sumV = 0.0f, sumV2 = 0.0f;
+    for (int d = 0; d < nDims; d++) {
+        const float v = std::max(0.0f, cov[static_cast<size_t>(d * stride + d)]);
+        sumV  += v;
+        sumV2 += v * v;
+    }
+    if (sumV2 < 1e-12f) return static_cast<float>(nDims);
+    return (sumV * sumV) / sumV2;
+}
+
+float KK::chi2Quantile9999(float dEff)
+{
+    const float d = std::max(1.0f, std::min(1000.0f, dEff));
+    const float z = 3.719f;
+    const float t = 1.0f - 2.0f / (9.0f * d) + z * std::sqrt(2.0f / (9.0f * d));
+    return d * t * t * t;
+}
+
+// ---------------------------------------------------------------------------
 float KK::Penalty(int n) const {
     if (n == 1) return 0.0f;
     const int nParams = (nDims * (nDims + 1) / 2 + nDims + 1) * (n - 1);
@@ -1709,29 +1733,44 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                     const float dBA = mahalDist(models[vecB[uB[bi]]], models[vecA[uA[ai]]]);
                     D[ai * nUB + bi] = 0.5f * (dAB + dBA);
                 }
+            // Adaptive per-pair MergeThresh = chi²(½(d_eff_A+d_eff_B), 0.9999).
+            // Computed from cov diagonal: tight for Type A (localized),
+            // loose for Type B (distributed).  Falls back to global
+            // mergeThresh when AdaptiveMerge=0.
+            auto dEffOf = [&](int modelIdx) -> float {
+                if (!AdaptiveMerge) return static_cast<float>(nSpatialDims);
+                const auto& cm = models[static_cast<size_t>(modelIdx)];
+                return participationRatio(cm.cov, nSpatialDims,
+                                          static_cast<int>(nDims));
+            };
             std::vector<int> nnA(nUA, -1);
             for (int ai = 0; ai < nUA; ai++) {
                 float best = HugeScore; int bestBi = -1;
                 for (int bi = 0; bi < nUB; bi++)
                     if (D[ai * nUB + bi] < best) { best = D[ai * nUB + bi]; bestBi = bi; }
-                if (best < mergeThresh) nnA[ai] = bestBi;
+                const float thresh = chi2Quantile9999(
+                    0.5f * (dEffOf(vecA[uA[ai]]) + dEffOf(vecB[uB[bestBi < 0 ? 0 : bestBi]])));
+                if (best < thresh) nnA[ai] = bestBi;
             }
             std::vector<int> nnB(nUB, -1);
             for (int bi = 0; bi < nUB; bi++) {
                 float best = HugeScore; int bestAi = -1;
                 for (int ai = 0; ai < nUA; ai++)
                     if (D[ai * nUB + bi] < best) { best = D[ai * nUB + bi]; bestAi = ai; }
-                if (best < mergeThresh) nnB[bi] = bestAi;
+                const float thresh = chi2Quantile9999(
+                    0.5f * (dEffOf(vecB[uB[bi]]) + dEffOf(vecA[uA[bestAi < 0 ? 0 : bestAi]])));
+                if (best < thresh) nnB[bi] = bestAi;
             }
             for (int ai = 0; ai < nUA; ai++) {
                 const int bi = nnA[ai];
                 if (bi < 0) continue;
                 if (nnB[bi] != ai) continue;
                 Union(vecA[uA[ai]], vecB[uB[bi]]);
-                Output("  mahal-match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f\n",
+                const float dEff_ = 0.5f * (dEffOf(vecA[uA[ai]]) + dEffOf(vecB[uB[bi]]));
+                Output("  mahal-match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f  d_eff=%.1f  thresh=%.1f\n",
                        models[vecA[uA[ai]]].chunkIdx, models[vecA[uA[ai]]].localClusterId,
                        models[vecB[uB[bi]]].chunkIdx, models[vecB[uB[bi]]].localClusterId,
-                       D[ai * nUB + bi]);
+                       D[ai * nUB + bi], dEff_, chi2Quantile9999(dEff_));
             }
         }
 
@@ -4221,14 +4260,23 @@ void KK::WithinChunkMerge(
             int b = nn[static_cast<size_t>(a)];
             if (b < 0) continue;
             if (nn[static_cast<size_t>(b)] != a) continue;  // not mutual
-            if (nnDist[static_cast<size_t>(a)] >= mergeThresh) continue;
             if (Find(a) == Find(b)) continue;
+            // Adaptive threshold per pair.
+            float thresh_ = mergeThresh;
+            if (AdaptiveMerge) {
+                const float dA = participationRatio(
+                    mdls[static_cast<size_t>(a)].cov, nSpatialDims, nSpatialDims + 1);
+                const float dB = participationRatio(
+                    mdls[static_cast<size_t>(b)].cov, nSpatialDims, nSpatialDims + 1);
+                thresh_ = chi2Quantile9999(0.5f * (dA + dB));
+            }
+            if (nnDist[static_cast<size_t>(a)] >= thresh_) continue;
             Union(a, b);
-            Output("  within-chunk merge: chunk%d c%d+c%d d=%.2f\n",
+            Output("  within-chunk merge: chunk%d c%d+c%d d=%.2f thresh=%.1f\n",
                    ck,
                    mdls[static_cast<size_t>(a)].localClusterId,
                    mdls[static_cast<size_t>(b)].localClusterId,
-                   nnDist[static_cast<size_t>(a)]);
+                   nnDist[static_cast<size_t>(a)], thresh_);
             chunkMerged++;
             totalMerged++;
         }

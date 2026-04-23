@@ -105,7 +105,14 @@ extern std::vector<int> GroupChannelIds;
 // outer loop with nRuns independent runs, each seeded differently.
 // MinClusters/MaxClusters then act only as per-chunk TrySplits bounds.
 extern int   nRuns;
-extern int   Phase15Iters; ///< realignment iterations in RealignChunkWaveforms (default 2)
+extern int   Phase15Iters;
+
+// ── Empirical prior ────────────────────────────────────────────────────────
+extern char  PriorFile[];  ///< path to .prior.N.yaml built by kk_build_prior.py
+/** Per-pair adaptive MergeThresh = chi²(d_eff, 0.9999).  Default on. */
+extern int   AdaptiveMerge;
+/** Preseed centres from prior; populated by applyKKPrior(). */
+extern std::vector<float> ExternalPreseedCentres; ///< realignment iterations in RealignChunkWaveforms (default 2)
 extern int   SubspaceDims;      ///< top-N eigenvectors for Phase 2 subspace Mahal (0=full-space)
 extern int   SubspaceRecluster;    ///< per-cluster subspace CEM after Phase 2 (0=disabled)
 extern float TemplateMatchScore;       ///< min xcorr for WITHIN-chunk template matching (0=disabled)

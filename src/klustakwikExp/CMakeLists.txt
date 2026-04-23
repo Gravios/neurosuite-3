@@ -190,7 +190,7 @@ set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../shared/xcorr")
 # =============================================================================
 # Common sources and dependencies
 # =============================================================================
-set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp param.c
+set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
     dipsplit.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
@@ -402,7 +402,7 @@ if(_SYCL_ACTIVE)
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
     add_executable(KlustaKwikExp_sycl
-        KlustaKwik.cpp KK.cpp KK_sycl.cpp
+        KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp KlustaKwikYaml.cpp
         shiftprobe_sycl.cpp
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp

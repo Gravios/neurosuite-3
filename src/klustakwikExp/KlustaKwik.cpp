@@ -7,6 +7,7 @@
 #include "KK.h"
 #include "KlustaSave.h"
 #include "KlustaKwikYaml.h"   // auto-detect spike params from YAML config
+#include "KK_prior.h"         // empirical prior loader
 
 #include <cstdio>
 #include <cstdlib>
@@ -72,6 +73,11 @@ int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
 int   TimeShiftAlignIter           = 1;    ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between)
+
+// ── Empirical prior ────────────────────────────────────────────────────────
+char  PriorFile[STRLEN]      = "";   ///< path to .prior.N.yaml
+int   AdaptiveMerge          = 1;    ///< per-pair d_eff-based MergeThresh (default on)
+std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
 int   MaxTimeShift             = 1;  ///< pre-shifted PCA basis half-width (0 disables, max 5)
 int   TimeShiftMergeEnable      = 1;  ///< apply min-Mahalanobis probe during cluster deletion
 // DipSplit parameters (Phase 1.8 bimodal splitter)
@@ -127,6 +133,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(NbBytesPerSample);
     INT_PARAM(nRuns);
     INT_PARAM(TimeShiftAlignIter);
+    STRING_PARAM(PriorFile);
+    INT_PARAM(AdaptiveMerge);
     INT_PARAM(MaxTimeShift);
     INT_PARAM(TimeShiftMergeEnable);
     INT_PARAM(DipSplitEnable);
@@ -680,6 +688,14 @@ int main(int argc, char **argv) {
         }
         if (MaxTimeShift > 0)
             K1.InitTimeShift(NbChannels, NbSamplesPerSpike, MaxTimeShift);
+
+        // ── Empirical prior ────────────────────────────────────────────────────
+        if (PriorFile[0] != '\0') {
+            const KKPrior prior = loadKKPrior(PriorFile);
+            applyKKPrior(prior);
+            if (!ExternalPreseedCentres.empty())
+                K1.preseedCentres = std::move(ExternalPreseedCentres);
+        }
 
         kSv.BestWeight.SetSize(MaxPossibleClusters);
         kSv.BestMean.SetSize(MaxPossibleClusters * K1.nDims);

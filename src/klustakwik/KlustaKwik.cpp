@@ -7,6 +7,7 @@
 #include "KK.h"
 #include "KlustaSave.h"
 #include "KlustaKwikYaml.h"   // auto-detect spike params from YAML config
+#include "KK_prior.h"         // empirical prior loader
 
 #include <cstdio>
 #include <cstdlib>
@@ -72,6 +73,11 @@ int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
 int   Phase15Iters           = 1;    ///< xcorr iterations in RealignChunkWaveforms (1 = single pass, no iteration)
+
+// ── Empirical prior ────────────────────────────────────────────────────────
+char  PriorFile[STRLEN]      = "";   ///< path to .prior.N.yaml
+int   AdaptiveMerge          = 1;    ///< per-pair d_eff-based MergeThresh (default on)
+std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
 int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2
 float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 1.7)
@@ -120,6 +126,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(NbBytesPerSample);
     INT_PARAM(nRuns);
     INT_PARAM(Phase15Iters);
+    STRING_PARAM(PriorFile);
+    INT_PARAM(AdaptiveMerge);
     INT_PARAM(SubspaceDims);
     INT_PARAM(SubspaceRecluster);
     FLOAT_PARAM(TemplateMatchScore);
@@ -647,6 +655,14 @@ int main(int argc, char **argv) {
         }
 
         K1.LoadData();
+
+        // ── Empirical prior ────────────────────────────────────────────────────
+        if (PriorFile[0] != '\0') {
+            const KKPrior prior = loadKKPrior(PriorFile);
+            applyKKPrior(prior);
+            if (!ExternalPreseedCentres.empty())
+                K1.preseedCentres = std::move(ExternalPreseedCentres);
+        }
 
         kSv.BestWeight.SetSize(MaxPossibleClusters);
         kSv.BestMean.SetSize(MaxPossibleClusters * K1.nDims);
