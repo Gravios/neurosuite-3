@@ -24,6 +24,7 @@
 #include "pair.h"
 #include "types.h"
 #include "clusteruserinformation.h"
+#include "curationlogger.h"   // for ClusterSnapshot return type
 
 //Include files for QT
 #include <QList>
@@ -420,6 +421,29 @@ public:
      *  in @p clusterIds.  Returns an empty vector if fewer than 2 spikes are
      *  found in total across all listed clusters. */
     QVector<double> featureVariancesForClusters(const QList<int>& clusterIds) const;
+
+    /** Compute a full ClusterSnapshot for @p clusterId from the current
+     *  in-memory state.  All metrics (ISI violations, firing rate, feature
+     *  variances, anisotropy) are derived from the live features / spikesByCluster
+     *  tables so the snapshot is always consistent with the current curation state.
+     *
+     *  @param clusterId       Cluster to snapshot (1-based, must exist).
+     *  @param isiThreshMs     Refractory period threshold in milliseconds (default 3 ms).
+     *  @param allCentroids    Optional precomputed centroid map from computeAllCentroids().
+     *                         When provided, nearest-cluster metrics are filled in.
+     *                         Pass nullptr to skip nearest-cluster computation.
+     *  @return                Filled ClusterSnapshot; clusterId == -1 on failure.
+     */
+    ClusterSnapshot computeSnapshot(int clusterId,
+                                    double isiThreshMs = 3.0,
+                                    const QMap<int, QVector<double>>* allCentroids = nullptr) const;
+
+    /** Compute the feature-space centroid for every cluster currently in memory.
+     *  Returns a map: clusterId → centroid vector of length (nbDimensions-1).
+     *  Used by callers that snapshot multiple clusters so centroid computation
+     *  is amortised across the full call set rather than repeated per cluster.
+     */
+    QMap<int, QVector<double>> computeAllCentroids() const;
 
     /**Returns the sampling interval (time between two samples) in second.*/
     double intervalOfSampling()const{return samplingInterval;}

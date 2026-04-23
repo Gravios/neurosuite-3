@@ -238,6 +238,10 @@ void KlustersDoc::closeDocument(){
     displayGroupsClusterFile.clear();
     gain = 0;
     acquisitionGain = 0;
+
+    // Flush and close the curation log for this session
+    if (m_curationLogger)
+        m_curationLogger->close();
 }
 
 
@@ -533,6 +537,23 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
     if (!initPendingFiles()) {
         qWarning() << "[openDocument] could not create pending files";
+    }
+
+    // ── Curation logger ─────────────────────────────────────────────────
+    {
+        const QString logPath = urlFileInfo.absolutePath() + QDir::separator()
+                                + baseName + ".curation_log." + electrodeGroupID + ".jl";
+        m_curationLogger = std::make_unique<CurationLogger>();
+        m_curationLogger->open(
+            logPath,
+            baseName + ".clu." + electrodeGroupID,
+            electrodeGroupID,
+            clusteringData->getSamplingRate(),
+            clusteringData->nbOfchannels(),
+            clusteringData->totalNbOfPCAs()
+        );
+        m_clusterActionCount.clear();
+        m_lastLoggedActionIdx = -1;
     }
 
     return OK;
@@ -1002,6 +1023,7 @@ void KlustersDoc::addClustersToActiveView(const QList<int>& clustersToShow){
 
 void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeView){
     //Call data to group the clusters
+    logBefore(CurationLogger::ActionType::GROUP, clustersToGroup);
     float newClusterId = clusteringData->groupClusters(clustersToGroup);
     int newClusterIdint = static_cast<int>(newClusterId);
 
@@ -1051,6 +1073,7 @@ void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeV
     QList<int> clustersToShow;
     clustersToShow.append(newClusterIdint);
     clusterPalette.selectItems(clustersToShow);
+    logAfter(clustersToShow);
 }
 
 
@@ -1060,6 +1083,9 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
                                             KlustersView& activeView)
 {
     if (spkFileIndices.isEmpty()) return;
+
+    logBefore(CurationLogger::ActionType::MOVE_SPIKES,
+              QList<int>{ fromCluster, toCluster });
 
     // Convert 0-based .spk indices to 1-based feature-row indices.
     QSet<dataType> featureRowSet;
@@ -1109,10 +1135,16 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     activeView.showAllWidgets();
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(clustersToShow);
+    logAfter(clustersToShow);
 }
 
 
 void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId){
+    // Log before the spikes move so we capture the source cluster characteristics
+    logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
+                              : CurationLogger::ActionType::DELETE_ARTEFACT,
+              clustersToDelete);
+
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);
 
@@ -1215,15 +1247,23 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         //update the TraceView if any
         activeView.updateTraceView(electrodeGroupID,clusterColorList,true);
     }
+    // Log the resulting state of the destination cluster (noise=1, artefact=0)
+    logAfter(QList<int>{ clusterId });
 }
 
 void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+    logBefore(CurationLogger::ActionType::DELETE_REGION_ARTEFACT,
+              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     deleteSpikesFromClusters(0,region,clustersOfOrigin,dimensionX,dimensionY);
+    logAfter(QList<int>{ 0 });
 }
 
 
 void KlustersDoc::deleteNoise(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+    logBefore(CurationLogger::ActionType::DELETE_REGION_NOISE,
+              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     deleteSpikesFromClusters(1,region,clustersOfOrigin,dimensionX,dimensionY);
+    logAfter(QList<int>{ 1 });
 }
 
 void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
@@ -1319,6 +1359,10 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
     //Get the active view.
     KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
 
+    // Snapshot source clusters before the data mutation
+    logBefore(CurationLogger::ActionType::SPLIT,
+              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+
     float newClusterId = clusteringData->createNewCluster(region,clustersOfOrigin,dimensionX,dimensionY,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
@@ -1373,6 +1417,16 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         //Update the palette of cluster
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
+
+        // Log after: surviving source clusters + the new cluster
+        {
+            QList<int> resultIds;
+            for (int id : fromClusters)
+                if (!emptyClusters.contains(id))
+                    resultIds.append(id);
+            resultIds.append(newClusterIdint);
+            logAfter(resultIds);
+        }
     }
 }
 
@@ -1384,6 +1438,9 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
     QList<int> clustersToShow(clustersOfOrigin);
     //Get the active view.
     KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+
+    logBefore(CurationLogger::ActionType::SPLIT_N,
+              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
     QList <int> newClusters;
     QMap<int,int> fromToNewClusterIds = clusteringData->createNewClusters(region,clustersOfOrigin,dimensionX,dimensionY,emptyClusters);
@@ -1445,6 +1502,17 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         //Update the palette of cluster
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
+
+        // Log after: surviving sources + all newly created clusters
+        {
+            QList<int> resultIds;
+            for (int id : fromClusters)
+                if (!emptyClusters.contains(id))
+                    resultIds.append(id);
+            for (int id : newClusters)
+                resultIds.append(id);
+            logAfter(resultIds);
+        }
     }
 }
 
@@ -1935,6 +2003,21 @@ void KlustersDoc::undo(){
     }
 
     NS3_DIAG()<<"in KlustersDoc::undo 2";
+
+    // Log the undo: snapshot ALL current clusters so the log reflects the
+    // post-revert state.  Reference the action_idx that was just reversed.
+    if (m_curationLogger && m_curationLogger->isOpen() && clusteringData) {
+        const QList<int> allIds = [this]() -> QList<int> {
+            QList<int> ids;
+            for (const auto& id : clusteringData->clusterIds())
+                ids.append(static_cast<int>(id));
+            return ids;
+        }();
+        m_curationLogger->logUndoRedo(CurationLogger::ActionType::UNDO,
+                                       m_lastLoggedActionIdx,
+                                       snapshotClusters(allIds));
+        m_lastLoggedActionIdx--;    // step back so redo re-references correctly
+    }
 }
 
 
@@ -2106,6 +2189,20 @@ void KlustersDoc::redo(){
 
         NS3_DIAG() << "in KlustersDoc::redo, end  : ";
     }
+
+    // Log the redo: snapshot current state, reference the re-applied action.
+    if (m_curationLogger && m_curationLogger->isOpen() && clusteringData) {
+        const QList<int> allIds = [this]() -> QList<int> {
+            QList<int> ids;
+            for (const auto& id : clusteringData->clusterIds())
+                ids.append(static_cast<int>(id));
+            return ids;
+        }();
+        m_lastLoggedActionIdx++;
+        m_curationLogger->logUndoRedo(CurationLogger::ActionType::REDO,
+                                       m_lastLoggedActionIdx,
+                                       snapshotClusters(allIds));
+    }
 }
 
 void KlustersDoc::renumberClusters(){
@@ -2175,6 +2272,9 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
 
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
 
+    // Capture cluster state before KlustaKwik's output is integrated
+    logBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
+
     QString cluFileName(reclusteringFetFileName);
     NS3_DIAG()<<"reclusteringFetFileName "<<reclusteringFetFileName;
     cluFileName.replace(".fet.",".clu.");
@@ -2213,6 +2313,10 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
     if(!QFile::remove(cluFileName))
         QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+
+    // Log the newly created clusters — reclusteredClusterList is populated by
+    // integrateReclusteredClusters() above and contains the KlustaKwik outputs.
+    logAfter(reclusteredClusterList);
 
     return OK;
 }
@@ -2492,6 +2596,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     nShifted = 0;
     nSwapped = 0;
     logOut.clear();
+
+    // Snapshot the cluster before any waveform data is modified
+    logBefore(CurationLogger::ActionType::REALIGN, QList<int>{ clusterId });
 
     // Helper: emit live if callback provided, otherwise buffer in logOut for later.
     auto emitLine = [&](const QString& line, bool isError = false) {
@@ -3346,6 +3453,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         }
     }
 
+    // Log the cluster after realignment — features and timestamps have been updated
+    logAfter(QList<int>{ clusterId });
+
     return true;
 }
 
@@ -3452,6 +3562,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 {
     if (!clusteringData) return false;
     if (deltaSamples == 0) return true;
+
+    logBefore(CurationLogger::ActionType::NUDGE, QList<int>{ clusterId });
 
     // ── Stop all in-flight WaveformThreads BEFORE any file writes ─────────
     // A WaveformThread reads from m_pendingSpkPath (= spkFileName) without
@@ -3851,5 +3963,42 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     for (int i = 0; i < viewList->count(); ++i)
         viewList->at(i)->invalidateClusterDisplay(clusterId);
 
+    logAfter(QList<int>{ clusterId });
+
     return true;
+}
+
+// ============================================================================
+// Curation logger helpers
+// ============================================================================
+
+void KlustersDoc::logBefore(CurationLogger::ActionType action,
+                             const QList<int>& clusterIds)
+{
+    if (!m_curationLogger || !m_curationLogger->isOpen() || clusterIds.isEmpty())
+        return;
+
+    QList<ClusterSnapshot> snaps = snapshotClusters(clusterIds);
+
+    // Stamp each snapshot with this cluster's prior action count, then increment.
+    for (ClusterSnapshot& s : snaps) {
+        s.actionHistoryDepth = m_clusterActionCount.value(s.clusterId, 0);
+        m_clusterActionCount[s.clusterId]++;
+    }
+
+    m_lastLoggedActionIdx = m_curationLogger->beginAction(action, snaps);
+}
+
+void KlustersDoc::logAfter(const QList<int>& clusterIds)
+{
+    if (!m_curationLogger || !m_curationLogger->isOpen() || clusterIds.isEmpty())
+        return;
+
+    QList<ClusterSnapshot> snaps = snapshotClusters(clusterIds);
+    // Preserve action_history_depth for result clusters (they were just created
+    // or modified, so their count is the depth inherited from the action).
+    for (ClusterSnapshot& s : snaps)
+        s.actionHistoryDepth = m_clusterActionCount.value(s.clusterId, 0);
+
+    m_curationLogger->commitAction(snaps);
 }

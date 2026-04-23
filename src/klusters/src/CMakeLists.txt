@@ -19,6 +19,7 @@ set(klusters_SRCS
     configuration.cpp
     correlationthread.cpp
     correlationview.cpp
+    curationlogger.cpp
     data.cpp
     dataprovider.cpp
     errormatrixthread.cpp

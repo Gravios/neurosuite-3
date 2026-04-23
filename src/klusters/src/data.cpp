@@ -1,5 +1,7 @@
 #include "klusters.h"
 #include <algorithm>
+#include <functional>
+#include <limits>
 #include <QThread>
 /***************************************************************************
                           data.cpp  -  description
@@ -431,6 +433,522 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
         var[f] /= (n - 1.0);
 
     return var;
+}
+
+// ---------------------------------------------------------------------------
+// Chi-squared survival function — used for L-ratio computation
+// Schmitzer-Torbert et al. (2005): L = Σ chi2_sf(d²_mahal, D) / n_cluster
+//
+// Implementation: regularized upper incomplete gamma Q(a, x) via the
+// Lanczos lnGamma + Lentz continued fraction / series method.
+// Accurate to ~1e-10 for all a > 0, x >= 0 within 200 iterations.
+// ---------------------------------------------------------------------------
+static double lnGamma_impl(double z)
+{
+    // Lanczos approximation (Numerical Recipes g=5, n=6)
+    static const double c[6] = {
+         76.18009172947146, -86.50532032941677,
+         24.01409824083091,  -1.231739572450155,
+          0.1208650973866179e-2, -0.5395239384953e-5
+    };
+    double y = z, x = z;
+    double tmp = x + 5.5 - (x + 0.5) * std::log(x + 5.5);
+    double ser = 1.000000000190015;
+    for (int j = 0; j < 6; ++j) ser += c[j] / ++y;
+    return -tmp + std::log(2.5066282746310005 * ser / x);
+}
+
+// Series representation of P(a, x)
+static double gammaP_series(double a, double x)
+{
+    if (x <= 0.0) return 0.0;
+    double ap = a, del = 1.0 / a, sum = del;
+    for (int n = 1; n <= 300; ++n) {
+        ap  += 1.0;
+        del *= x / ap;
+        sum += del;
+        if (std::abs(del) < std::abs(sum) * 1e-10) break;
+    }
+    return sum * std::exp(-x + a * std::log(x) - lnGamma_impl(a));
+}
+
+// Continued-fraction representation of Q(a, x) via Lentz method
+static double gammaQ_cf(double a, double x)
+{
+    constexpr double FPMIN = 1e-300;
+    double b = x + 1.0 - a, c = 1.0 / FPMIN, d = 1.0 / b, h = d;
+    for (int i = 1; i <= 300; ++i) {
+        double an = -i * (i - a);
+        b += 2.0;
+        d = an * d + b;  if (std::abs(d) < FPMIN) d = FPMIN;
+        c = b + an / c;  if (std::abs(c) < FPMIN) c = FPMIN;
+        d = 1.0 / d;
+        double del = d * c;
+        h *= del;
+        if (std::abs(del - 1.0) < 1e-10) break;
+    }
+    return std::exp(-x + a * std::log(x) - lnGamma_impl(a)) * h;
+}
+
+/** chi2_sf(x, df) = P(chi²_df > x)  [survival / complementary CDF] */
+static double chi2_sf(double x, int df)
+{
+    if (x <= 0.0) return 1.0;
+    if (df <= 0)  return 0.0;
+    const double a = 0.5 * df;
+    const double y = 0.5 * x;
+    return (y < a + 1.0) ? (1.0 - gammaP_series(a, y)) : gammaQ_cf(a, y);
+}
+
+// ---------------------------------------------------------------------------
+// computeAllCentroids — one pass over all spikes, amortised across snapshots
+// ---------------------------------------------------------------------------
+QMap<int, QVector<double>> Data::computeAllCentroids() const
+{
+    const int nSpk  = static_cast<int>(nbSpikes);
+    const int nFeat = nbDimensions - 1;     // timestamp is last column
+
+    // Accumulate sum and count per cluster
+    QMap<int, QVector<double>> sumMap;
+    QMap<int, int>             cntMap;
+
+    for (int s = 1; s <= nSpk; ++s) {
+        const int cid = static_cast<int>((*spikesByCluster)(2, s));
+        const int row = static_cast<int>((*spikesByCluster)(1, s));
+
+        if (!sumMap.contains(cid)) {
+            sumMap[cid] = QVector<double>(nFeat, 0.0);
+            cntMap[cid] = 0;
+        }
+        QVector<double>& acc = sumMap[cid];
+        for (int f = 1; f <= nFeat; ++f)
+            acc[f - 1] += static_cast<double>(features(row, f));
+        ++cntMap[cid];
+    }
+
+    QMap<int, QVector<double>> result;
+    for (auto it = sumMap.begin(); it != sumMap.end(); ++it) {
+        const int cid = it.key();
+        const int cnt = cntMap[cid];
+        if (cnt == 0) continue;
+        QVector<double> centroid = it.value();
+        for (double& v : centroid) v /= static_cast<double>(cnt);
+        result[cid] = std::move(centroid);
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// ClusterSnapshot — single-call summary for curation logging
+// ---------------------------------------------------------------------------
+ClusterSnapshot Data::computeSnapshot(int clusterId,
+                                       double isiThreshMs,
+                                       const QMap<int, QVector<double>>* allCentroids) const
+{
+    ClusterSnapshot snap;
+    snap.clusterId      = clusterId;
+    snap.isiThreshMs    = isiThreshMs;
+    snap.samplingRateHz = samplingRate;
+    snap.nChannels      = nbChannels;
+    snap.nPcaDims       = totalNbOfPCAs();
+
+    const int nSpkTotal = static_cast<int>(nbSpikes);
+    if (nSpkTotal == 0)
+        return snap;
+
+    // ── F. Global context ─────────────────────────────────────────────────
+    snap.nClustersInGroup = clusterInfoMap->count();
+    const double totalSpikes = static_cast<double>(nSpkTotal);
+
+    // ── Pass 1: collect (timestamp, row) pairs for this cluster ───────────
+    // spikesByCluster row1 = feature-file row (1-based), row2 = cluster id.
+    // We keep rows and timestamps paired so we can split by time for drift.
+    struct SpikeRef { double ts; int row; };
+    QVector<SpikeRef> spikes;
+    spikes.reserve(256);
+
+    const double invFs = (samplingRate > 0.0) ? (1.0 / samplingRate) : 0.0;
+
+    for (int s = 1; s <= nSpkTotal; ++s) {
+        if (static_cast<int>((*spikesByCluster)(2, s)) == clusterId) {
+            const int row = static_cast<int>((*spikesByCluster)(1, s));
+            const double ts = static_cast<double>(features(row, nbDimensions)) * invFs;
+            spikes.append({ ts, row });
+        }
+    }
+
+    const int n = spikes.size();
+    snap.nSpikes      = static_cast<qint64>(n);
+    snap.spikeFraction = (totalSpikes > 0.0) ? (static_cast<double>(n) / totalSpikes) : 0.0;
+
+    if (n == 0)
+        return snap;
+
+    // Sort by timestamp (needed for ISI, temporal drift, rate CV)
+    std::sort(spikes.begin(), spikes.end(),
+              [](const SpikeRef& a, const SpikeRef& b){ return a.ts < b.ts; });
+
+    // ── A. Firing rate ─────────────────────────────────────────────────────
+    if (n >= 2) {
+        const double span = spikes.last().ts - spikes.first().ts;
+        snap.firingRateHz = (span > 0.0) ? (static_cast<double>(n) / span) : 0.0;
+    }
+
+    // ── B. ISI distribution ───────────────────────────────────────────────
+    if (n >= 2) {
+        const int nPairs = n - 1;
+        QVector<double> isi(nPairs);            // ISI in ms
+        for (int i = 0; i < nPairs; ++i)
+            isi[i] = (spikes[i + 1].ts - spikes[i].ts) * 1000.0;
+
+        int nViol3 = 0, nViol1 = 0, nViol2 = 0, nBurst = 0;
+        double sumIsi = 0.0, sumSqIsi = 0.0;
+        for (double v : isi) {
+            if (v < 1.0)  ++nViol1;
+            if (v < 2.0)  ++nViol2;
+            if (v < isiThreshMs) ++nViol3;
+            if (v < 10.0) ++nBurst;
+            sumIsi   += v;
+            sumSqIsi += v * v;
+        }
+
+        snap.isiViolPct    = 100.0 * nViol3 / nPairs;
+        snap.isiViolPct1ms = 100.0 * nViol1 / nPairs;
+        snap.isiViolPct2ms = 100.0 * nViol2 / nPairs;
+        snap.isiBurstPct   = 100.0 * nBurst  / nPairs;
+
+        const double meanIsi = sumIsi / static_cast<double>(nPairs);
+        snap.isiMeanMs = meanIsi;
+
+        // Median: partial sort on a copy
+        QVector<double> isiSorted = isi;
+        const int mid = nPairs / 2;
+        std::nth_element(isiSorted.begin(), isiSorted.begin() + mid, isiSorted.end());
+        snap.isiMedianMs = (nPairs % 2 == 1)
+            ? isiSorted[mid]
+            : 0.5 * (isiSorted[mid] + *std::min_element(isiSorted.begin() + mid + 1, isiSorted.end()));
+
+        // CV = std / mean
+        if (meanIsi > 0.0) {
+            const double varIsi = sumSqIsi / nPairs - meanIsi * meanIsi;
+            snap.isiCv = (varIsi > 0.0) ? (std::sqrt(varIsi) / meanIsi) : 0.0;
+        }
+    }
+
+    // ── E-prep. Temporal rate CV (10 equal-time bins) ─────────────────────
+    if (n >= 2) {
+        const double t0   = spikes.first().ts;
+        const double tEnd = spikes.last().ts;
+        const double span = tEnd - t0;
+        constexpr int kBins = 10;
+        if (span > 0.0) {
+            int counts[kBins] = {};
+            for (const SpikeRef& sr : spikes) {
+                int bin = static_cast<int>((sr.ts - t0) / span * kBins);
+                if (bin >= kBins) bin = kBins - 1;
+                ++counts[bin];
+            }
+            double sumC = 0.0, sumSqC = 0.0;
+            for (int b = 0; b < kBins; ++b) {
+                sumC   += counts[b];
+                sumSqC += counts[b] * counts[b];
+            }
+            const double meanC = sumC / kBins;
+            if (meanC > 0.0) {
+                const double varC = sumSqC / kBins - meanC * meanC;
+                snap.temporalRateCv = (varC > 0.0) ? (std::sqrt(varC) / meanC) : 0.0;
+            }
+        }
+    }
+
+    // ── Pass 2: per-feature statistics (mean, variance, skewness, kurtosis)
+    //           and temporal drift ─────────────────────────────────────────
+    const int nFeat = nbDimensions - 1;
+    if (n >= 2 && nFeat > 0) {
+        const double nd = static_cast<double>(n);
+
+        // ── 2a. Feature means ─────────────────────────────────────────────
+        QVector<double> mean(nFeat, 0.0);
+        for (const SpikeRef& sr : spikes)
+            for (int f = 1; f <= nFeat; ++f)
+                mean[f - 1] += static_cast<double>(features(sr.row, f));
+        for (int f = 0; f < nFeat; ++f)
+            mean[f] /= nd;
+
+        // ── 2b. Central moments: 2nd (variance), 3rd (skewness), 4th (kurtosis)
+        QVector<double> m2(nFeat, 0.0), m3(nFeat, 0.0), m4(nFeat, 0.0);
+        for (const SpikeRef& sr : spikes) {
+            for (int f = 1; f <= nFeat; ++f) {
+                const double d  = static_cast<double>(features(sr.row, f)) - mean[f - 1];
+                const double d2 = d * d;
+                m2[f - 1] += d2;
+                m3[f - 1] += d2 * d;
+                m4[f - 1] += d2 * d2;
+            }
+        }
+        const double nMinus1 = static_cast<double>(n - 1);
+        for (int f = 0; f < nFeat; ++f) {
+            m2[f] /= nMinus1;   // sample variance
+            m3[f] /= nd;        // population 3rd central moment
+            m4[f] /= nd;        // population 4th central moment
+        }
+
+        // ── 2c. Aggregate variance metrics ────────────────────────────────
+        double sumVar = 0.0, sumVarSq = 0.0;
+        double vMax = m2[0], vMin = m2[0];
+        for (double v : m2) {
+            sumVar   += v;
+            sumVarSq += v * v;
+            if (v > vMax) vMax = v;
+            if (v < vMin) vMin = v;
+        }
+        snap.featVarMean      = sumVar / static_cast<double>(nFeat);
+        snap.featVarFrobenius = std::sqrt(sumVarSq);
+        snap.driftRatio       = (vMin > 0.0) ? (vMax / vMin) : 0.0;
+
+        QVector<double> sortedVar = m2;
+        std::sort(sortedVar.begin(), sortedVar.end(), std::greater<double>());
+        const int top = std::min(3, static_cast<int>(sortedVar.size()));
+        double topSum = 0.0;
+        for (int i = 0; i < top; ++i) topSum += sortedVar[i];
+        snap.featVarTop3Mean = topSum / static_cast<double>(top);
+
+        const int nLog = std::min(nFeat, ClusterSnapshot::kMaxLoggedDims);
+        snap.featVarDims.resize(nLog);
+        for (int f = 0; f < nLog; ++f) snap.featVarDims[f] = m2[f];
+
+        // ── 2d. Skewness and kurtosis per dimension ────────────────────────
+        double maxAbsSkew = 0.0, sumKurt = 0.0, maxKurt = -std::numeric_limits<double>::max();
+        for (int f = 0; f < nFeat; ++f) {
+            const double sigma2 = m2[f];
+            if (sigma2 > 0.0) {
+                const double sigma  = std::sqrt(sigma2);
+                const double sigma3 = sigma2 * sigma;
+                const double skew   = m3[f] / sigma3;
+                const double kurt   = m4[f] / (sigma2 * sigma2) - 3.0; // excess
+                if (std::abs(skew) > maxAbsSkew) maxAbsSkew = std::abs(skew);
+                sumKurt += kurt;
+                if (kurt > maxKurt) maxKurt = kurt;
+            }
+        }
+        snap.featSkewnessMax  = maxAbsSkew;
+        snap.featKurtosisMean = sumKurt / static_cast<double>(nFeat);
+        snap.featKurtosisMax  = (maxKurt > -std::numeric_limits<double>::max()) ? maxKurt : 0.0;
+
+        // ── 2e. Temporal drift: first-half vs second-half centroid distance
+        if (n >= 4) {
+            const int half = n / 2;
+            // First-half centroid
+            QVector<double> cEarly(nFeat, 0.0);
+            for (int i = 0; i < half; ++i)
+                for (int f = 1; f <= nFeat; ++f)
+                    cEarly[f - 1] += static_cast<double>(features(spikes[i].row, f));
+            for (double& v : cEarly) v /= static_cast<double>(half);
+
+            // Second-half centroid
+            QVector<double> cLate(nFeat, 0.0);
+            const int nLate = n - half;
+            for (int i = half; i < n; ++i)
+                for (int f = 1; f <= nFeat; ++f)
+                    cLate[f - 1] += static_cast<double>(features(spikes[i].row, f));
+            for (double& v : cLate) v /= static_cast<double>(nLate);
+
+            // L2 distance between centroids
+            double distSq = 0.0;
+            for (int f = 0; f < nFeat; ++f) {
+                const double d = cLate[f] - cEarly[f];
+                distSq += d * d;
+            }
+            const double dist = std::sqrt(distSq);
+            snap.temporalDriftIndex = (snap.featVarFrobenius > 0.0)
+                                      ? (dist / snap.featVarFrobenius)
+                                      : 0.0;
+        }
+    }
+
+    // ── G. Nearest-cluster isolation ──────────────────────────────────────
+    if (allCentroids && allCentroids->size() > 1) {
+        // Own centroid — recompute cheaply from mean (already have it above,
+        // but it's local; recompute from allCentroids which is already O(1) lookup)
+        const QVector<double>* ownCentroid = nullptr;
+        if (allCentroids->contains(clusterId))
+            ownCentroid = &((*allCentroids)[clusterId]);
+
+        if (ownCentroid && !ownCentroid->isEmpty()) {
+            const int D = ownCentroid->size();
+            double minDist = std::numeric_limits<double>::max();
+            int    nearId  = -1;
+
+            for (auto it = allCentroids->begin(); it != allCentroids->end(); ++it) {
+                if (it.key() == clusterId) continue;
+                const QVector<double>& other = it.value();
+                if (other.size() != D) continue;
+                double distSq = 0.0;
+                for (int f = 0; f < D; ++f) {
+                    const double d = (*ownCentroid)[f] - other[f];
+                    distSq += d * d;
+                }
+                if (distSq < minDist) {
+                    minDist = distSq;
+                    nearId  = it.key();
+                }
+            }
+            if (nearId >= 0) {
+                const double dist = std::sqrt(minDist);
+                snap.nearestClusterId        = nearId;
+                snap.nearestCentroidDist     = dist;
+                snap.nearestCentroidDistNorm = (snap.featVarFrobenius > 0.0)
+                                               ? (dist / snap.featVarFrobenius)
+                                               : 0.0;
+            }
+        }
+    }
+
+    // ── H. Waveform morphology (conditional — only if mean is cached) ──────
+    {
+        const int     clusterIdInt    = clusterId;
+        const QString clusterIdString = QString::number(clusterId);
+
+        if (waveformStatusMap.contains(clusterIdInt) &&
+            waveformStatusMap[clusterIdInt].sampleMeanStatus() == READY &&
+            waveformDict.contains(clusterIdString))
+        {
+            const Waveforms* wf    = waveformDict[clusterIdString];
+            const int        nSamp = nbSamplesInWaveform;
+            const int        nChan = nbChannels;
+            const int        peak0 = peakPositionInWaveform - 1;  // 0-based
+            // Mean waveform layout: index = sample * nChan + channel
+            // getSampleMean returns dataType (long int); values are in ADC units.
+
+            // Per-channel peak-to-trough amplitudes
+            QVector<double> chanAmp(nChan, 0.0);
+            QVector<int>    chanPeakIdx(nChan, peak0);
+            QVector<int>    chanTroughIdx(nChan, peak0);
+
+            for (int ch = 0; ch < nChan; ++ch) {
+                double chMax = static_cast<double>(wf->getSampleMean(0 * nChan + ch));
+                double chMin = chMax;
+                int    maxI  = 0, minI = 0;
+                for (int s = 1; s < nSamp; ++s) {
+                    const double v = static_cast<double>(wf->getSampleMean(s * nChan + ch));
+                    if (v > chMax) { chMax = v; maxI = s; }
+                    if (v < chMin) { chMin = v; minI = s; }
+                }
+                chanAmp[ch]       = chMax - chMin;
+                chanPeakIdx[ch]   = maxI;
+                chanTroughIdx[ch] = minI;
+            }
+
+            // Best channel = maximum peak-to-trough
+            int    bestCh  = 0;
+            double bestAmp = chanAmp[0];
+            for (int ch = 1; ch < nChan; ++ch)
+                if (chanAmp[ch] > bestAmp) { bestAmp = chanAmp[ch]; bestCh = ch; }
+
+            snap.waveformAvailable = true;
+            snap.waveformPeakAmp   = bestAmp;
+            snap.waveformChanSpread = 0;
+            if (bestAmp > 0.0)
+                for (int ch = 0; ch < nChan; ++ch)
+                    if (chanAmp[ch] >= 0.25 * bestAmp)
+                        ++snap.waveformChanSpread;
+
+            // Trough-to-repolarisation width on best channel
+            snap.waveformWidthSamp = std::abs(chanPeakIdx[bestCh] - chanTroughIdx[bestCh]);
+
+            // Asymmetry: (posPeak + negTrough) / (posPeak − negTrough)
+            // Extract actual signed peak and trough for the best channel.
+            double posVal = static_cast<double>(wf->getSampleMean(chanPeakIdx[bestCh]   * nChan + bestCh));
+            double negVal = static_cast<double>(wf->getSampleMean(chanTroughIdx[bestCh] * nChan + bestCh));
+            const double denom = posVal - negVal;
+            if (std::abs(denom) > 1e-9)
+                snap.waveformAsymmetry = (posVal + negVal) / denom;
+
+            // SNR: peak-to-trough / (2 × baseline RMS)
+            // Baseline = first 4 samples (pre-spike window, before any deflection)
+            const int nBase = std::min(4, nSamp);
+            double baseRms = 0.0;
+            for (int s = 0; s < nBase; ++s) {
+                const double v = static_cast<double>(wf->getSampleMean(s * nChan + bestCh));
+                baseRms += v * v;
+            }
+            baseRms = std::sqrt(baseRms / static_cast<double>(nBase));
+            if (baseRms > 0.0)
+                snap.waveformSnr = bestAmp / (2.0 * baseRms);
+        }
+    }
+
+    // ── J. L-ratio and isolation distance ────────────────────────────────
+    // Diagonal Mahalanobis approximation — valid because PCA features are
+    // by construction uncorrelated, so the off-diagonal covariance is zero.
+    // Reference: Schmitzer-Torbert et al. (2005) Neuroscience 131(1).
+    if (n >= 2 && nFeat > 0 && snap.featVarFrobenius > 0.0) {
+        // Build inverse-variance vector (1/σ²_f) with epsilon guard.
+        QVector<double> invVar(nFeat);
+        bool anyNonzero = false;
+        for (int f = 0; f < nFeat; ++f) {
+            const double v = (f < snap.featVarDims.size()) ? snap.featVarDims[f] : snap.featVarMean;
+            invVar[f] = (v > 1e-12) ? (1.0 / v) : 0.0;
+            if (invVar[f] > 0.0) anyNonzero = true;
+        }
+
+        if (anyNonzero) {
+            // Centroid of this cluster (reuse the mean we computed above —
+            // retrieve it from allCentroids if available, else recompute).
+            QVector<double> centroid(nFeat, 0.0);
+            if (allCentroids && allCentroids->contains(clusterId)) {
+                centroid = (*allCentroids)[clusterId];
+            } else {
+                for (const SpikeRef& sr : spikes)
+                    for (int f = 1; f <= nFeat; ++f)
+                        centroid[f - 1] += static_cast<double>(features(sr.row, f));
+                for (double& v : centroid) v /= static_cast<double>(n);
+            }
+
+            // Pass over ALL spikes: accumulate L-ratio from non-cluster spikes
+            // and collect their Mahalanobis distances for isolation distance.
+            QVector<double> nonClusterDists;
+            nonClusterDists.reserve(std::max(0, nSpkTotal - n));
+
+            double lSum = 0.0;
+            for (int s = 1; s <= nSpkTotal; ++s) {
+                if (static_cast<int>((*spikesByCluster)(2, s)) == clusterId)
+                    continue;   // skip own spikes
+
+                const int row = static_cast<int>((*spikesByCluster)(1, s));
+                double d2 = 0.0;
+                for (int f = 1; f <= nFeat; ++f) {
+                    const double d = static_cast<double>(features(row, f)) - centroid[f - 1];
+                    d2 += d * d * invVar[f - 1];
+                }
+                lSum += chi2_sf(d2, nFeat);
+                nonClusterDists.append(d2);
+            }
+
+            snap.lRatio = (n > 0) ? (lSum / static_cast<double>(n)) : 0.0;
+
+            // Isolation distance: Mahalanobis distance to the K-th nearest
+            // non-cluster spike (K = n_cluster_spikes).
+            if (static_cast<int>(nonClusterDists.size()) >= n) {
+                std::nth_element(nonClusterDists.begin(),
+                                 nonClusterDists.begin() + n - 1,
+                                 nonClusterDists.end());
+                snap.isolationDist = std::sqrt(nonClusterDists[n - 1]);
+            }
+        }
+    }
+
+    // ── K. Recording-relative temporal position ───────────────────────────
+    if (n >= 1) {
+        const double maxTs = static_cast<double>(maxDimension(nbDimensions));
+        if (maxTs > 0.0) {
+            // spikes is sorted by timestamp; first/last are already computed.
+            snap.tFirstRel = (spikes.first().ts * samplingRate) / maxTs;
+            snap.tLastRel  = (spikes.last().ts  * samplingRate) / maxTs;
+        }
+    }
+
+    return snap;
 }
 
 
