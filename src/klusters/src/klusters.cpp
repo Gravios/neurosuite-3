@@ -350,6 +350,14 @@ void KlustersApp::createMenus()
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
 
+    mDipSplit = actionMenu->addAction(tr("&DipSplit Selected Cluster"));
+    mDipSplit->setShortcut(Qt::Key_S);
+    mDipSplit->setToolTip(
+        tr("Test the selected cluster for hidden bimodality.  If a valley is\n"
+           "detected along one of its top-3 principal components AND the two-\n"
+           "cluster model beats the single-cluster BIC, split the cluster in two."));
+    connect(mDipSplit, &QAction::triggered, this, &KlustersApp::slotDipSplit);
+
     actionMenu->addSeparator();
 
     mGenerateProbeDrift = actionMenu->addAction(tr("&Generate Probe Drift…"));
@@ -387,7 +395,6 @@ void KlustersApp::createMenus()
 
     mSplitClusters = toolsMenu->addAction(tr("&Split Clusters"));
     mSplitClusters->setIcon(QIcon(":/icons/new_clusters"));
-    mSplitClusters->setShortcut(Qt::Key_S);
     connect(mSplitClusters,&QAction::triggered, this,&KlustersApp::slotMultipleNew);
 
     toolsMenu->addSeparator();
@@ -841,6 +848,31 @@ void KlustersApp::initSelectionBoxes(){
     autoNFeaturesLabelAction->setVisible(false);
     autoNFeaturesSpinBoxAction->setVisible(false);
 
+    // Realign top-channels spinbox — 0 means "use all channels".
+    // When > 0, only the N highest-amplitude channels (by template peak)
+    // contribute to alignment, excluding collision/noise on other channels.
+    realignTopChanLabel = new QLabel(tr("  Realign top-ch:"), paramBar);
+    realignTopChanLabel->setFrameStyle(QFrame::StyledPanel|QFrame::Plain);
+    realignTopChanLabel->setFont(font);
+    realignTopChanSpinBox = new SpinBox(paramBar);
+    realignTopChanSpinBox->setObjectName("realignTopChanSpinBox");
+    realignTopChanSpinBox->setMinimum(0);
+    realignTopChanSpinBox->setMaximum(64);
+    realignTopChanSpinBox->setSingleStep(1);
+    realignTopChanSpinBox->setWrapping(false);
+    realignTopChanSpinBox->setFocusPolicy(Qt::StrongFocus);
+    realignTopChanSpinBox->setToolTip(
+        tr("Number of highest-amplitude channels used by spike realignment.\n"
+           "0 = use all channels (legacy behaviour).\n"
+           "Typical values: 3 for octrode, 2 for tetrode.\n"
+           "Limits influence of collisions/noise on non-primary channels."));
+    connect(realignTopChanSpinBox, &SpinBox::valueChanged,
+            realignTopChanSpinBox, &SpinBox::deselect, Qt::QueuedConnection);
+    connect(realignTopChanSpinBox, &SpinBox::valueChanged,
+            this, &KlustersApp::slotUpdateRealignTopChan);
+    realignTopChanLabelAction   = paramBar->addWidget(realignTopChanLabel);
+    realignTopChanSpinBoxAction = paramBar->addWidget(realignTopChanSpinBox);
+
     //Connect the move function of the parameterBar to slotUpdateParameterBar to always correctly show its contents.
     connect(paramBar, &QToolBar::allowedAreasChanged, this, &KlustersApp::slotUpdateParameterBar);
     connect(paramBar, &QToolBar::orientationChanged, this, &KlustersApp::slotUpdateParameterBar);
@@ -1159,8 +1191,9 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
     // ── S key: palette cluster toggle ──────────────────────────────────────
-    // Qt::Key_S is also the Split Clusters shortcut, so it never reaches the
-    // palette's keyPressEvent. Intercept it here when the palette has focus.
+    // Qt::Key_S is the DipSplit shortcut, so it never reaches the palette's
+    // keyPressEvent. Intercept it here when the palette has focus so S toggles
+    // the current cluster selection instead of triggering DipSplit.
     if(event->type() == QEvent::ShortcutOverride){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier){
@@ -2777,6 +2810,20 @@ void KlustersApp::slotUpdateAutoNFeatures(int n){
     if(prefDialog) prefDialog->syncAutoNFeatures(n);
 }
 
+void KlustersApp::slotUpdateRealignTopChan(int n){
+    if(isInit) return;
+    // Rebuild realignArgs with the new --topchannels value.  Preserves
+    // --threshold, --iterations, and --maxshift from current configuration.
+    QString base = QString("--threshold %1 --iterations %2%3")
+        .arg(configuration().getRealignThreshold(), 0, 'f', 2)
+        .arg(configuration().getRealignIterations())
+        .arg(configuration().getRealignMaxShift() > 0
+             ? QString(" --maxshift %1").arg(configuration().getRealignMaxShift())
+             : QString());
+    if (n > 0) base += QString(" --topchannels %1").arg(n);
+    realignArgs = base;
+}
+
 void KlustersApp::slotUpdateDimensionY(int dimensionYValue){
     if(!isInit)updateDimensions(dimensionX->value(),dimensionYValue);
 }
@@ -4216,6 +4263,75 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 }
 
 // ---------------------------------------------------------------------------
+// slotDipSplit
+//
+// Run DipSplit on the currently-selected cluster in the active view.  The
+// algorithm is a fast per-cluster adaptation of KlustaKwikExp's Phase 8
+// (bloat → PCA → valley → k-means → BIC).  If the cluster passes all gates,
+// it's split in two and both views are updated.  Otherwise we show a status
+// message explaining which gate rejected the cluster.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotDipSplit()
+{
+    if (!doc) {
+        QMessageBox::information(this, tr("No document"),
+                                 tr("Please open a file first."));
+        return;
+    }
+
+    const QList<int>& shown = activeView()->clusters();
+    int clusterId = -1;
+    for (int c : shown) {
+        if (c > 1) { clusterId = c; break; }
+    }
+    if (clusterId < 0) {
+        QMessageBox::information(this, tr("DipSplit"),
+            tr("Please select a cluster (cluster > 1) in the active display first."));
+        return;
+    }
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::DipSplitResult r = doc->dipSplitCluster(clusterId);
+    QApplication::restoreOverrideCursor();
+
+    // Compose a one-line status and a longer details block for the log/dialog.
+    QString statusLine;
+    if (r.accepted) {
+        statusLine = tr("DipSplit: cluster %1 → %1 (%2 spikes) + %3 (%4 spikes)   "
+                        "PC%5 depth=%6  ΔBIC=%7")
+            .arg(clusterId).arg(r.n0)
+            .arg(r.newClusterId).arg(r.n1)
+            .arg(r.bestPC)
+            .arg(r.bestDepth, 0, 'f', 3)
+            .arg(r.deltaBIC,  0, 'f', 1);
+        statusBar()->showMessage(statusLine, 10000);
+    } else {
+        const QString why =
+              r.reason == QLatin1String("too_small")      ? tr("cluster too small (< 2×MinSize)")
+            : r.reason == QLatin1String("not_bloated")    ? tr("cluster is already unimodal "
+                                                               "(Mahal²₉₀=%1  χ²₉₀=%2)")
+                                                             .arg(r.mahal2P90, 0, 'f', 1)
+                                                             .arg(r.chi2_90, 0, 'f', 1)
+            : r.reason == QLatin1String("no_valley")      ? tr("no valley deep enough on any of "
+                                                               "the top 3 principal components "
+                                                               "(best depth=%1)")
+                                                             .arg(r.bestDepth, 0, 'f', 3)
+            : r.reason == QLatin1String("small_child")    ? tr("split would produce a child cluster "
+                                                               "smaller than MinSize")
+            : r.reason == QLatin1String("bic_worse")      ? tr("single-Gaussian BIC is better than "
+                                                               "two-cluster BIC (ΔBIC=%1)")
+                                                             .arg(r.deltaBIC, 0, 'f', 1)
+            : r.reason == QLatin1String("cluster_not_found") ? tr("cluster not found")
+            : r.reason == QLatin1String("bad_features")   ? tr("feature matrix is singular "
+                                                               "or has too few dimensions")
+            : r.reason == QLatin1String("no_free_id")     ? tr("no free cluster ID available")
+            :                                               tr("unknown reason (%1)").arg(r.reason);
+        statusLine = tr("DipSplit: no split for cluster %1 — %2").arg(clusterId).arg(why);
+        statusBar()->showMessage(statusLine, 10000);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // slotGenerateProbeDrift
 //
 // Runs ndm_estimatedrift for the current electrode group only.  The tool
@@ -4461,13 +4577,6 @@ void KlustersApp::slotNudgeTimestampPlus()
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
     if (activeView()) activeView()->focusClusterView();
 }
-
-// ---------------------------------------------------------------------------
-// Curation quality annotation
-// ---------------------------------------------------------------------------
-void KlustersApp::slotAnnotateGood()      { if (doc) doc->logAnnotation(2); }
-void KlustersApp::slotAnnotateUncertain() { if (doc) doc->logAnnotation(1); }
-void KlustersApp::slotAnnotateBad()       { if (doc) doc->logAnnotation(0); }
 
 // ---------------------------------------------------------------------------
 // Keyboard shortcut help dialog

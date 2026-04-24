@@ -22,6 +22,7 @@ set(klusters_SRCS
     curationlogger.cpp
     data.cpp
     dataprovider.cpp
+    dipsplit.cpp
     errormatrixthread.cpp
     errormatrixview.cpp
     templatematrixthread.cpp

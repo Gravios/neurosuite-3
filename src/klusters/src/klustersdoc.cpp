@@ -54,6 +54,7 @@
 #include "types.h"
 #include "autosavethread.h"
 #include "parameteryamlmodifier.h"
+#include "dipsplit.h"
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
 
@@ -2643,6 +2644,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     int   maxShift  = std::max(1, peakSamp0 / 2);
     float minScore  = 0.70f;
     int   nIter     = 2;
+    int   nTopChan  = 0;   // 0 = use all channels (legacy behaviour)
     {
         const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
@@ -2659,6 +2661,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     && ti + 1 < tokens.size()) {
                 bool ok2; int v = tokens[++ti].toInt(&ok2);
                 if (ok2 && v >= 1) maxShift = v;
+            } else if ((tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k"))
+                    && ti + 1 < tokens.size()) {
+                bool ok2; int v = tokens[++ti].toInt(&ok2);
+                if (ok2 && v >= 0) nTopChan = v;
             }
         }
     }
@@ -2719,6 +2725,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         << "  nFeatCols=" << nFeatCols
         << "  timeDim=" << timeDim
         << "  maxShift=+-" << maxShift
+        << "  topChan=" << (nTopChan > 0 ? QString::number(nTopChan)
+                                         : QStringLiteral("all"))
         << "  backend=" << XcorrDispatch::backendName() << "\n";
     emitFlush();
 
@@ -2997,14 +3005,46 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
         // Pre-align template: shift so its peak lands at peakSamp0.
         // Without this the xcorr moves every spike away from the true peak.
+        //
+        // Top-K channel selection: when nTopChan > 0 and < nChan, select the
+        // nTopChan channels with the largest absolute amplitude in the
+        // template.  Energy for peak detection is computed only on those.
+        // The same mask is then applied to the template and all waveform
+        // buffers (non-top channels zeroed) so the xcorr ignores them too.
+        // This excludes collision / residual activity on non-primary
+        // channels from influencing alignment.
+        std::vector<uint8_t> chanUse(static_cast<size_t>(nChan), 1);
+        if (nTopChan > 0 && nTopChan < nChan) {
+            std::vector<std::pair<int64_t,int>> chanAmp(static_cast<size_t>(nChan));
+            for (int ch = 0; ch < nChan; ++ch) {
+                int64_t pk = 0;
+                for (int t = 0; t < nSamp; ++t) {
+                    const int64_t v = std::abs(static_cast<int64_t>(
+                        tmpl[static_cast<size_t>(ch * nSamp + t)]));
+                    if (v > pk) pk = v;
+                }
+                chanAmp[static_cast<size_t>(ch)] = {pk, ch};
+            }
+            std::partial_sort(chanAmp.begin(),
+                              chanAmp.begin() + nTopChan,
+                              chanAmp.end(),
+                              [](const auto& a, const auto& b){
+                                  return a.first > b.first;
+                              });
+            std::fill(chanUse.begin(), chanUse.end(), 0);
+            for (int k = 0; k < nTopChan; ++k)
+                chanUse[static_cast<size_t>(chanAmp[static_cast<size_t>(k)].second)] = 1;
+        }
+
         {
             int    tmplPeak = 0;
             double bestAmp  = -1.0;
             for (int t = 0; t < nSamp; ++t) {
                 double amp = 0.0;
                 for (int ch = 0; ch < nChan; ++ch)
-                    amp += std::abs(static_cast<double>(
-                               tmpl[static_cast<size_t>(ch * nSamp + t)]));
+                    if (chanUse[static_cast<size_t>(ch)])
+                        amp += std::abs(static_cast<double>(
+                                   tmpl[static_cast<size_t>(ch * nSamp + t)]));
                 if (amp > bestAmp) { bestAmp = amp; tmplPeak = t; }
             }
             const int tShift = peakSamp0 - tmplPeak;
@@ -3021,10 +3061,44 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             }
         }
 
+        // Apply top-K mask to a SCRATCH copy for the xcorr call only.
+        // Mutating wavBuf would destroy data needed for the next iteration's
+        // template build, the final xcorr pass, and the post-realign mean.
+        // Same reasoning for tmpl — keep the original, mask a copy.
+        //
+        // Layout is channel-major [ch * nSamp + s]; zeroing ranges of
+        // contiguous samples for masked-out channels gives the xcorr
+        // dispatcher zeros on both sides of the correlation for those
+        // channels, so they contribute nothing at any lag.
+        const int16_t* xcorrWav = wavBuf.data();
+        const int16_t* xcorrTmpl = tmpl.data();
+        std::vector<int16_t> wavMasked;
+        std::vector<int16_t> tmplMasked;
+        if (nTopChan > 0 && nTopChan < nChan) {
+            tmplMasked = tmpl;   // copy
+            wavMasked  = wavBuf; // copy (N × spkElems int16 — cheap vs. xcorr)
+            for (int ch = 0; ch < nChan; ++ch) {
+                if (chanUse[static_cast<size_t>(ch)]) continue;
+                std::fill(tmplMasked.begin() + ch * nSamp,
+                          tmplMasked.begin() + (ch + 1) * nSamp,
+                          int16_t(0));
+                for (int64_t i = 0; i < N; ++i) {
+                    int16_t* row = wavMasked.data()
+                                 + static_cast<ptrdiff_t>(i)
+                                 * static_cast<ptrdiff_t>(spkElems);
+                    std::fill(row + ch * nSamp,
+                              row + (ch + 1) * nSamp,
+                              int16_t(0));
+                }
+            }
+            xcorrWav  = wavMasked.data();
+            xcorrTmpl = tmplMasked.data();
+        }
+
         std::vector<int>   sh(static_cast<size_t>(N), 0);
         std::vector<float> sc(static_cast<size_t>(N), 0.0f);
         int rc = XcorrDispatch::compute(
-            wavBuf.data(), tmpl.data(),
+            xcorrWav, xcorrTmpl,
             static_cast<int>(N), nChan, nSamp,
             maxShift, minScore, sh.data(), sc.data());
         if (rc != 0) {
@@ -3085,9 +3159,64 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
         std::vector<int>   dummySh(static_cast<size_t>(N), 0);
         std::vector<float> allScores(static_cast<size_t>(N), 0.0f);
+
+        // Apply top-K mask to scratch copies so the final score reflects the
+        // same channel subset that drove the alignment (consistent with the
+        // iteration-loop xcorr).  Non-destructive — wavBuf and finalTmpl are
+        // still needed below for the post-realign mean accumulation.
+        const int16_t* scoreWav  = wavBuf.data();
+        const int16_t* scoreTmpl = finalTmpl.data();
+        std::vector<int16_t> finalWavMasked;
+        std::vector<int16_t> finalTmplMasked;
+        if (nTopChan > 0 && nTopChan < nChan) {
+            // Recompute chanUse from the final template (cluster mean may
+            // have shifted channel dominance across iterations).
+            std::vector<std::pair<int64_t,int>> chanAmp(
+                static_cast<size_t>(nChan));
+            for (int ch = 0; ch < nChan; ++ch) {
+                int64_t pk = 0;
+                for (int t = 0; t < nSamp; ++t) {
+                    const int64_t v = std::abs(static_cast<int64_t>(
+                        finalTmpl[static_cast<size_t>(ch * nSamp + t)]));
+                    if (v > pk) pk = v;
+                }
+                chanAmp[static_cast<size_t>(ch)] = {pk, ch};
+            }
+            std::partial_sort(chanAmp.begin(),
+                              chanAmp.begin() + nTopChan,
+                              chanAmp.end(),
+                              [](const auto& a, const auto& b){
+                                  return a.first > b.first;
+                              });
+            std::vector<uint8_t> chanUseFinal(
+                static_cast<size_t>(nChan), 0);
+            for (int k = 0; k < nTopChan; ++k)
+                chanUseFinal[static_cast<size_t>(
+                    chanAmp[static_cast<size_t>(k)].second)] = 1;
+
+            finalTmplMasked = finalTmpl;
+            finalWavMasked  = wavBuf;
+            for (int ch = 0; ch < nChan; ++ch) {
+                if (chanUseFinal[static_cast<size_t>(ch)]) continue;
+                std::fill(finalTmplMasked.begin() + ch * nSamp,
+                          finalTmplMasked.begin() + (ch + 1) * nSamp,
+                          int16_t(0));
+                for (int64_t i = 0; i < N; ++i) {
+                    int16_t* row = finalWavMasked.data()
+                                 + static_cast<ptrdiff_t>(i)
+                                 * static_cast<ptrdiff_t>(spkElems);
+                    std::fill(row + ch * nSamp,
+                              row + (ch + 1) * nSamp,
+                              int16_t(0));
+                }
+            }
+            scoreWav  = finalWavMasked.data();
+            scoreTmpl = finalTmplMasked.data();
+        }
+
         // Use maxShift=0 so no shifting occurs — we just want the scores.
         XcorrDispatch::compute(
-            wavBuf.data(), finalTmpl.data(),
+            scoreWav, scoreTmpl,
             static_cast<int>(N), nChan, nSamp,
             0, 0.0f, dummySh.data(), allScores.data());
 
@@ -4001,4 +4130,317 @@ void KlustersDoc::logAfter(const QList<int>& clusterIds)
         s.actionHistoryDepth = m_clusterActionCount.value(s.clusterId, 0);
 
     m_curationLogger->commitAction(snaps);
+}
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::dipSplitCluster
+//
+// Per-cluster bimodality-driven split, ported from KlustaKwikExp Phase 8.
+// No EM model required — bloat gate is computed on-the-fly by fitting a
+// single Gaussian to the cluster's feature vectors.
+//
+// Pipeline:
+//   1.  Collect cluster members (nD-dim feature vectors, time dim excluded)
+//   2.  Gate A (bloat):   fit μ + Σ, Cholesky, compute Mahalanobis² per spike,
+//                          reject if mahal²₉₀ < bloatFactor · χ²(d, 0.9)
+//   3.  Top-3 PCs:        power iteration with deflation on the cluster
+//   4.  Gate B (valley):  project onto each PC, KDE valley test
+//   5.  Seed:             k=2 partition at valley location
+//   6.  Refine:           k-means on full nD features
+//   7.  BIC gate:         accept only if BIC(k=2) < BIC(k=1)
+//   8.  Commit:           moveSpikeSubset() the right half to a new cluster ID
+// ---------------------------------------------------------------------------
+KlustersDoc::DipSplitResult
+KlustersDoc::dipSplitCluster(int   clusterId,
+                              int   minSize,
+                              float bloatFactor,
+                              float valleyThresh)
+{
+    DipSplitResult R;
+    R.reason = QStringLiteral("skip");
+
+    // Validate cluster exists and fetch its spikes.
+    SortableTable spkTable;
+    if (!clusteringData->spikePositions(clusterId, spkTable)) {
+        R.reason = QStringLiteral("cluster_not_found");
+        return R;
+    }
+    const int M = static_cast<int>(spkTable.nbOfColumns());
+    if (M < minSize * 2) {
+        R.reason = QStringLiteral("too_small");
+        return R;
+    }
+
+    // Feature dimensions, excluding the timestamp column.
+    const Data& d = data();
+    const int nDtot = d.nbOfDimensionsTotal();
+    const int dPCA  = nDtot - 1;
+    if (dPCA < 2) {
+        R.reason = QStringLiteral("bad_features");
+        return R;
+    }
+
+    // Build feature matrix X [M × dPCA], row-major.  featureValue() is
+    // 1-based in both spike index and dimension index.
+    std::vector<float> X(static_cast<size_t>(M) * dPCA);
+    for (int i = 0; i < M; ++i) {
+        const dataType row1 = spkTable(1, static_cast<dataType>(i + 1));
+        for (int j = 0; j < dPCA; ++j)
+            X[static_cast<size_t>(i) * dPCA + j] =
+                static_cast<float>(d.featureValue(row1, j + 1));
+    }
+
+    // -------------------------------------------------------------------
+    // Gate A — bloat test
+    // Fit single Gaussian (μ, Σ), compute Mahalanobis² for each member,
+    // compare 90th percentile to χ²(d, 0.9) · bloatFactor.
+    // -------------------------------------------------------------------
+    std::vector<double> mu(dPCA, 0.0);
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < dPCA; ++j)
+            mu[j] += X[static_cast<size_t>(i) * dPCA + j];
+    for (int j = 0; j < dPCA; ++j) mu[j] /= M;
+
+    // Covariance (full, row-major); small-sample ridge on diagonal.
+    std::vector<double> cov(static_cast<size_t>(dPCA) * dPCA, 0.0);
+    for (int i = 0; i < M; ++i) {
+        const float* row = X.data() + static_cast<size_t>(i) * dPCA;
+        for (int r = 0; r < dPCA; ++r) {
+            const double dr = row[r] - mu[r];
+            for (int c = r; c < dPCA; ++c) {
+                const double dc = row[c] - mu[c];
+                cov[static_cast<size_t>(r * dPCA + c)] += dr * dc;
+            }
+        }
+    }
+    const double invN = 1.0 / std::max(1, M - 1);
+    double diagMean = 0.0;
+    for (int r = 0; r < dPCA; ++r) {
+        for (int c = r; c < dPCA; ++c)
+            cov[static_cast<size_t>(r * dPCA + c)] *= invN;
+        diagMean += cov[static_cast<size_t>(r * dPCA + r)];
+    }
+    diagMean /= dPCA;
+    // Mirror upper→lower and add small ridge for numerical stability
+    const double ridge = 1e-6 * diagMean;
+    for (int r = 0; r < dPCA; ++r) {
+        cov[static_cast<size_t>(r * dPCA + r)] += ridge;
+        for (int c = r + 1; c < dPCA; ++c)
+            cov[static_cast<size_t>(c * dPCA + r)] =
+                cov[static_cast<size_t>(r * dPCA + c)];
+    }
+
+    // In-place Cholesky: L such that L·Lᵀ = Σ, stored in lower triangle.
+    std::vector<double> L(static_cast<size_t>(dPCA) * dPCA, 0.0);
+    bool cholOK = true;
+    for (int r = 0; r < dPCA && cholOK; ++r) {
+        for (int c = 0; c <= r && cholOK; ++c) {
+            double s = cov[static_cast<size_t>(r * dPCA + c)];
+            for (int k = 0; k < c; ++k)
+                s -= L[static_cast<size_t>(r * dPCA + k)]
+                   * L[static_cast<size_t>(c * dPCA + k)];
+            if (r == c) {
+                if (s <= 0.0) { cholOK = false; break; }
+                L[static_cast<size_t>(r * dPCA + r)] = std::sqrt(s);
+            } else {
+                L[static_cast<size_t>(r * dPCA + c)] =
+                    s / L[static_cast<size_t>(c * dPCA + c)];
+            }
+        }
+    }
+    if (!cholOK) {
+        R.reason = QStringLiteral("bad_features");
+        return R;
+    }
+
+    // Mahalanobis² per spike via forward substitution L·y = (x-μ), m² = |y|².
+    std::vector<double> mahal2(static_cast<size_t>(M));
+    std::vector<double> yvec(static_cast<size_t>(dPCA));
+    for (int i = 0; i < M; ++i) {
+        const float* row = X.data() + static_cast<size_t>(i) * dPCA;
+        double m2 = 0.0;
+        for (int r = 0; r < dPCA; ++r) {
+            double s = row[r] - mu[r];
+            for (int k = 0; k < r; ++k)
+                s -= L[static_cast<size_t>(r * dPCA + k)] * yvec[k];
+            const double diag = L[static_cast<size_t>(r * dPCA + r)];
+            const double y = s / diag;
+            yvec[r] = y;
+            m2 += y * y;
+        }
+        mahal2[static_cast<size_t>(i)] = m2;
+    }
+
+    // 90th-percentile of Mahalanobis² distribution.
+    {
+        std::vector<double> sorted = mahal2;
+        std::sort(sorted.begin(), sorted.end());
+        const double idx = 0.90 * (sorted.size() - 1);
+        const size_t lo  = static_cast<size_t>(std::floor(idx));
+        const size_t hi  = std::min(sorted.size() - 1, lo + 1);
+        const double frac = idx - lo;
+        R.mahal2P90 = sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
+    }
+    // χ²(d, 0.9) via Wilson-Hilferty (z_0.9 = 1.2816).
+    {
+        const double dD = static_cast<double>(dPCA);
+        const double a  = 1.0 - 2.0 / (9.0 * dD);
+        const double b  = 1.2816 * std::sqrt(2.0 / (9.0 * dD));
+        R.chi2_90 = dD * std::pow(a + b, 3.0);
+    }
+    if (R.mahal2P90 < bloatFactor * R.chi2_90) {
+        R.reason = QStringLiteral("not_bloated");
+        return R;
+    }
+
+    // -------------------------------------------------------------------
+    // Top-3 PCs via power iteration (uses cluster centroid already in mu).
+    // -------------------------------------------------------------------
+    constexpr int kPCA = 3;
+    std::vector<double> pcs(static_cast<size_t>(kPCA) * dPCA, 0.0);
+    dipsplit::top_pcs_power_iteration(X.data(), M, dPCA, kPCA, pcs.data());
+
+    // Gate B — valley test on each PC; keep the deepest valley.
+    int    bestPC         = -1;
+    double bestDepth      = 0.0;
+    double bestValleyLoc  = 0.0;
+    std::vector<double> bestProj;
+    for (int pc = 0; pc < kPCA; ++pc) {
+        const double* u = pcs.data() + pc * dPCA;
+        std::vector<double> proj(static_cast<size_t>(M));
+        for (int i = 0; i < M; ++i) {
+            const float* row = X.data() + static_cast<size_t>(i) * dPCA;
+            double s = 0.0;
+            for (int j = 0; j < dPCA; ++j)
+                s += (row[j] - mu[j]) * u[j];
+            proj[static_cast<size_t>(i)] = s;
+        }
+        const dipsplit::ValleyResult vr =
+            dipsplit::valley_test(proj.data(), M, valleyThresh);
+        if (vr.depth > bestDepth) {
+            bestPC        = pc;
+            bestDepth     = vr.depth;
+            bestValleyLoc = vr.valley_loc;
+            bestProj      = std::move(proj);
+        }
+    }
+    R.bestPC    = bestPC;
+    R.bestDepth = bestDepth;
+    if (bestPC < 0 || bestDepth < valleyThresh) {
+        R.reason = QStringLiteral("no_valley");
+        return R;
+    }
+
+    // -------------------------------------------------------------------
+    // Seed k=2 at the valley; compute initial centroids.
+    // -------------------------------------------------------------------
+    std::vector<int> labels(static_cast<size_t>(M), 0);
+    for (int i = 0; i < M; ++i)
+        labels[static_cast<size_t>(i)] =
+            (bestProj[static_cast<size_t>(i)] >= bestValleyLoc) ? 1 : 0;
+
+    std::vector<double> c0(dPCA, 0.0), c1(dPCA, 0.0);
+    int n0 = 0, n1 = 0;
+    for (int i = 0; i < M; ++i) {
+        const float* row = X.data() + static_cast<size_t>(i) * dPCA;
+        if (labels[static_cast<size_t>(i)] == 0) {
+            for (int j = 0; j < dPCA; ++j) c0[j] += row[j];
+            ++n0;
+        } else {
+            for (int j = 0; j < dPCA; ++j) c1[j] += row[j];
+            ++n1;
+        }
+    }
+    if (n0 < minSize || n1 < minSize) {
+        R.n0 = n0; R.n1 = n1;
+        R.reason = QStringLiteral("small_child");
+        return R;
+    }
+    for (int j = 0; j < dPCA; ++j) { c0[j] /= n0; c1[j] /= n1; }
+
+    // Refine with k-means.
+    dipsplit::kmeans2_refine(X.data(), M, dPCA, c0.data(), c1.data(),
+                             labels.data(), /*max_iters=*/20);
+
+    n0 = n1 = 0;
+    for (int i = 0; i < M; ++i)
+        (labels[static_cast<size_t>(i)] == 0) ? ++n0 : ++n1;
+    R.n0 = n0; R.n1 = n1;
+    if (n0 < minSize || n1 < minSize) {
+        R.reason = QStringLiteral("small_child");
+        return R;
+    }
+
+    // Gate C — BIC: accept only if two-cluster model beats one-cluster.
+    const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
+        X.data(), M, dPCA, labels.data());
+    R.deltaBIC = bp.bic_k1 - bp.bic_k2;
+    if (!(bp.bic_k2 < bp.bic_k1)) {
+        R.reason = QStringLiteral("bic_worse");
+        return R;
+    }
+
+    // -------------------------------------------------------------------
+    // Commit split:  find a free cluster ID, move the label==1 spikes
+    // there, notify all views exactly as createNewCluster does.
+    // -------------------------------------------------------------------
+    int newId = 0;
+    {
+        const QList<dataType> existing = clusteringData->clusterIds();
+        QSet<int> taken;
+        for (dataType c : existing) taken.insert(static_cast<int>(c));
+        for (int c = 2; c < 1'000'000; ++c) {
+            if (!taken.contains(c)) { newId = c; break; }
+        }
+    }
+    if (newId == 0) {
+        R.reason = QStringLiteral("no_free_id");
+        return R;
+    }
+
+    // Snapshot BEFORE the mutation for the curation log.
+    logBefore(CurationLogger::ActionType::SPLIT, QList<int>{ clusterId });
+
+    // Build feature-row set for label==1 spikes.
+    QSet<dataType> rightRows;
+    for (int i = 0; i < M; ++i) {
+        if (labels[static_cast<size_t>(i)] == 1) {
+            const dataType row1 = spkTable(1, static_cast<dataType>(i + 1));
+            rightRows.insert(row1);
+        }
+    }
+
+    QList<int> fromClusters;
+    QList<int> emptyClusters;
+    clusteringData->moveSpikeSubset(clusterId, rightRows, newId,
+                                    fromClusters, emptyClusters);
+    if (!fromClusters.contains(clusterId)) fromClusters.append(clusterId);
+
+    // Undo bookkeeping (mirrors createNewCluster pattern).
+    prepareUndo(newId, fromClusters, emptyClusters);
+
+    // Colour for the new cluster.
+    QColor color;
+    color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10, 200, 255);
+    clusterColorList->append(newId, color);
+
+    // Notify all views.
+    KlustersView* activeView =
+        static_cast<KlustersApp*>(parent)->activeView();
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* view = viewList->at(i);
+        const bool isActive = (view == activeView);
+        view->addNewClusterToView(fromClusters, newId,
+                                  emptyClusters, isActive);
+        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+    emit newClusterAdded(fromClusters, newId, emptyClusters);
+
+    // Snapshot AFTER mutation.
+    logAfter(QList<int>{ clusterId, newId });
+
+    R.accepted     = true;
+    R.newClusterId = newId;
+    R.reason       = QStringLiteral("split");
+    return R;
 }
