@@ -28,6 +28,7 @@
 //include files application specific
 #include "spinbox.h"
 #include "klustersview.h"
+#include "klustersdoc.h"   // needed by inline slot methods that call doc->logAnnotation()
 
 
 // include files for Qt
@@ -296,6 +297,8 @@ private Q_SLOTS:
     /**Triggers an update of the dimensions due to a change of the absciss dimension.*/
     void slotUpdateDimensionX(int dimensionX);
     void slotUpdateAutoNFeatures(int n);
+    void slotUpdateRealignTopChan(int n);
+    void slotDipSplit();
     /** Shift timestamps of the selected cluster by ±1 sample. */
     void slotNudgeTimestampMinus();
     void slotNudgeTimestampPlus();
@@ -303,10 +306,12 @@ private Q_SLOTS:
     // ── Curation quality annotation ───────────────────────────────────────
     /** Tag the most recently completed curation action with a quality label.
      *  Keyboard shortcuts: J = good (2), K = uncertain (1), X = bad (0).
-     *  Bodies are defined in klusters.cpp — KlustersDoc is incomplete here. */
-    void slotAnnotateGood();
-    void slotAnnotateUncertain();
-    void slotAnnotateBad();
+     *  The annotation is appended to the curation log immediately and can be
+     *  issued any time between two curation actions.
+     */
+    void slotAnnotateGood()      { if (doc) doc->logAnnotation(2); }
+    void slotAnnotateUncertain() { if (doc) doc->logAnnotation(1); }
+    void slotAnnotateBad()       { if (doc) doc->logAnnotation(0); }
 
     /**Triggers an update of the dimensions due to a change of the ordinate dimension.*/
     void slotUpdateDimensionY(int dimensionYs);
@@ -596,6 +601,7 @@ private:
     QAction *mAbortReclustering;
     QAction *mAbortRealign;
     QAction *mRealignSpikes;
+    QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
     QAction *mZoomAction;
@@ -935,6 +941,11 @@ private:
     SpinBox *autoNFeaturesSpinBox;
     QAction *autoNFeaturesLabelAction;
     QAction *autoNFeaturesSpinBoxAction;
+
+    QLabel  *realignTopChanLabel;
+    SpinBox *realignTopChanSpinBox;
+    QAction *realignTopChanLabelAction;
+    QAction *realignTopChanSpinBoxAction;
 
     QAction *nudgeMinusAction;  ///< shift timestamps −1 sample
     QAction *nudgePlusAction;   ///< shift timestamps +1 sample

@@ -260,6 +260,35 @@ public:
     */
     void createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
 
+    /** DipSplit result summary — returned by dipSplitCluster(). */
+    struct DipSplitResult {
+        bool    accepted     = false;  ///< true if the split was committed
+        int     newClusterId = 0;      ///< ID of the right-half cluster (0 if none)
+        int     n0           = 0;      ///< # spikes retained in original cluster
+        int     n1           = 0;      ///< # spikes moved to newClusterId
+        int     bestPC       = -1;     ///< which PC (0-2) showed deepest valley
+        double  bestDepth    = 0.0;    ///< valley depth in [0..1]
+        double  mahal2P90    = 0.0;    ///< 90th-percentile Mahalanobis² of cluster
+        double  chi2_90      = 0.0;    ///< reference χ²(d, 0.9)
+        double  deltaBIC     = 0.0;    ///< BIC(k=1) - BIC(k=2);  > 0 ⇒ split better
+        QString reason;                ///< "split", "too_small", "not_bloated",
+                                       ///< "no_valley", "small_child", "bic_worse",
+                                       ///< "cluster_not_found", "bad_features"
+    };
+
+    /** Attempt a DipSplit on a single cluster using the same algorithm as
+     * klustakwikExp Phase 8: bloat gate → top-3 PCA → valley test → k-means
+     * seed/refine → BIC gate.  If accepted, commits the split and fires all
+     * view-update signals exactly as createNewCluster() does.
+     *
+     * Parameters default to the values used by KlustaKwikExp.  Returns a
+     * structured result the UI can log or display.
+     */
+    DipSplitResult dipSplitCluster(int   clusterId,
+                                    int   minSize      = 50,
+                                    float bloatFactor  = 2.0f,
+                                    float valleyThresh = 0.20f);
+
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
 
