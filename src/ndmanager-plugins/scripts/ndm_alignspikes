@@ -76,13 +76,16 @@ check_mandatory_variable $nElectrodeGroups "missing electrode groups"
 # Script-specific parameters from YAML
 maxShift=$(read_script_parameter $session maxShift)
 minScore=$(read_script_parameter $session minScore)
+topChannels=$(read_script_parameter $session topChannels)
 
 maxShift=${maxShift:-3}
 minScore=${minScore:-0.0}
+topChannels=${topChannels:-0}
 
 echo_info "Alignment parameters:"
-echo_info "  maxShift  = $maxShift samples"
-echo_info "  minScore  = $minScore"
+echo_info "  maxShift     = $maxShift samples"
+echo_info "  minScore     = $minScore"
+echo_info "  topChannels  = $topChannels  (0 = use all channels)"
 
 # ── Per-group alignment ───────────────────────────────────────────────────
 
@@ -137,6 +140,7 @@ for group in $(seq 1 $nElectrodeGroups); do
         -p "$peakIdx" \
         -m "$maxShift" \
         --min-score "$minScore" \
+        --top-channels "$topChannels" \
         $stderivFlag \
         -v \
         "$session" "$group"
