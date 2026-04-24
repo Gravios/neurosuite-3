@@ -126,18 +126,49 @@ static std::vector<int> parseIntList(const char* s)
  */
 static int computeShift(const short* wav,
                          int nChan, int nSamp, int target, int maxShift,
+                         int nTopChan,
                          double* score)
 {
     int lo = std::max(0, target - maxShift);
     int hi = std::min(nSamp - 1, target + maxShift);
     int wSz = hi - lo + 1;
 
-    // Energy per sample in window
+    // ── Select top-K channels by absolute peak amplitude within the
+    // search window.  Limiting the energy computation to the dominant
+    // channels for this spike excludes collision/residual activity on
+    // non-primary channels that would otherwise pull the alignment peak
+    // away from the target unit's true peak position.
+    //
+    // nTopChan <= 0 or >= nChan disables the filter (uses all channels).
+    std::vector<uint8_t> chanUse(nChan, 1);
+    if (nTopChan > 0 && nTopChan < nChan) {
+        std::vector<std::pair<int64_t,int>> chanAmp(nChan);
+        for (int c = 0; c < nChan; ++c) {
+            int64_t pk = 0;
+            for (int t = lo; t <= hi; ++t) {
+                const int64_t v = std::abs((int)wav[t * nChan + c]);
+                if (v > pk) pk = v;
+            }
+            chanAmp[c] = {pk, c};
+        }
+        std::partial_sort(chanAmp.begin(),
+                          chanAmp.begin() + nTopChan,
+                          chanAmp.end(),
+                          [](const auto& a, const auto& b){
+                              return a.first > b.first;
+                          });
+        std::fill(chanUse.begin(), chanUse.end(), 0);
+        for (int k = 0; k < nTopChan; ++k)
+            chanUse[chanAmp[k].second] = 1;
+    }
+
+    // Energy per sample in window (dominant channels only)
     std::vector<int64_t> energy(wSz, 0);
     for (int t = lo; t <= hi; ++t) {
         int64_t e = 0;
         for (int c = 0; c < nChan; ++c)
-            e += std::abs((int)wav[t * nChan + c]);
+            if (chanUse[c])
+                e += std::abs((int)wav[t * nChan + c]);
         energy[t - lo] = e;
     }
 
@@ -194,6 +225,9 @@ static void usage(const char* prog)
         "  -m maxShift         Maximum shift in samples [default: 3]\n"
         "  --stderiv           Process .spkD.N with SDIFF_ALLPAIRS re-extraction\n"
         "  --min-score f       Minimum energy score to accept shift [default: 0.0]\n"
+        "  --top-channels N    Use only the N highest-amplitude channels per spike\n"
+        "                      for alignment energy (excludes collision/noise on\n"
+        "                      low-amplitude channels) [default: 0 = use all]\n"
         "  -v                  Verbose\n"
         "  -h                  This help\n",
         prog);
@@ -209,6 +243,7 @@ int main(int argc, char* argv[])
     int         maxShift       = 3;
     bool        stderiv        = false;
     double      minScore       = 0.0;
+    int         nTopChan       = 0;   // 0 = use all channels (legacy behaviour)
     bool        verbose        = false;
     std::string basename;
     int         electrodeGroup = 0;
@@ -230,6 +265,8 @@ int main(int argc, char* argv[])
             stderiv = true;
         else if (strcmp(a, "--min-score") == 0 && i+1 < argc)
             minScore = atof(argv[++i]);
+        else if (strcmp(a, "--top-channels") == 0 && i+1 < argc)
+            nTopChan = atoi(argv[++i]);
         else if (strcmp(a, "-v") == 0)
             verbose = true;
         else if (a[0] != '-') {
@@ -275,6 +312,9 @@ int main(int argc, char* argv[])
         fprintf(stderr, "  peakSampleIdx = %d (0-based)\n", peakSampleIdx);
         fprintf(stderr, "  maxShift      = %d samples\n", maxShift);
         fprintf(stderr, "  minScore      = %.2f\n", minScore);
+        fprintf(stderr, "  nTopChan      = %d%s\n", nTopChan,
+                (nTopChan <= 0 || nTopChan >= static_cast<int>(chanList.size()))
+                    ? " (all channels)" : "");
         fprintf(stderr, "  spk file      = %s\n", spkPath.c_str());
         fprintf(stderr, "  res file      = %s\n", resPath.c_str());
         fprintf(stderr, "  fil file      = %s\n", filPath.c_str());
@@ -324,19 +364,94 @@ int main(int argc, char* argv[])
     fclose(spkF);
 
     // ── Compute shifts ────────────────────────────────────────────────────
+    // For the raw pipeline, compute energy directly from spkBuf (.spk.N).
+    // For the stderiv pipeline, spkBuf holds the spatial+temporal derivative
+    // waveform (.spkD.N).  The temporal first-difference converts the spatial
+    // derivative peak into a zero-crossing with energy lobes at the rising and
+    // falling edges.  Using spkBuf for energy detection in stderiv mode
+    // therefore finds the edge, not the peak, and systematically shifts ALL
+    // spikes by -(maxShift) regardless of whether they are misaligned.
+    //
+    // Fix: in stderiv mode, compute shifts from a raw-equivalent signal read
+    // directly from .fil: the spatial derivative only (SDIFF_ALLPAIRS applied
+    // to raw channels), which has its energy peak at the same sample as the
+    // raw voltage peak.  Only open .fil for the shift pass when stderiv=true.
     std::vector<int>    shifts(nSpikes, 0);
     std::vector<double> scores(nSpikes, 0.0);
     int nToRextract = 0;
 
-    for (int i = 0; i < nSpikes; ++i) {
-        const short* wav = spkBuf.data() + (size_t)i * elemsPerSpike;
-        double sc = 0.0;
-        int  sh = computeShift(wav, nChanGrp, nSamples, peakSampleIdx, maxShift, &sc);
-        scores[i] = sc;
-        if (sc >= minScore) {
-            shifts[i] = sh;
-            if (sh != 0) ++nToRextract;
+    if (!stderiv) {
+        // Raw pipeline: use spkBuf directly (raw ADC waveforms)
+        for (int i = 0; i < nSpikes; ++i) {
+            const short* wav = spkBuf.data() + (size_t)i * elemsPerSpike;
+            double sc = 0.0;
+            int  sh = computeShift(wav, nChanGrp, nSamples, peakSampleIdx,
+                                    maxShift, nTopChan, &sc);
+            scores[i] = sc;
+            if (sc >= minScore) {
+                shifts[i] = sh;
+                if (sh != 0) ++nToRextract;
+            }
         }
+    } else {
+        // Stderiv pipeline: compute energy on spatial-derivative-only signal
+        // read from .fil.  SDIFF_ALLPAIRS has its energy peak at the raw spike
+        // peak; the temporal first-difference step is NOT applied here.
+        FILE* filShift = xfopen(filPath.c_str(), "rb");
+        fseeko(filShift, 0, SEEK_END);
+        const off_t filShiftSize = ftello(filShift);
+        fseeko(filShift, 0, SEEK_SET);
+
+        const int   rawElems  = nSamples * nTotalChannels;
+        const off_t rawBytes  = (off_t)rawElems * sizeof(short);
+        std::vector<short> rawWin(rawElems);
+        // Spatial-derivative waveform for energy computation (nSamples × nChanGrp)
+        std::vector<short> sdiffWin((size_t)nSamples * nChanGrp, 0);
+        off_t filShiftPos = 0;
+
+        // Sort spikes by .fil offset for near-sequential access
+        std::vector<int> order(nSpikes);
+        std::iota(order.begin(), order.end(), 0);
+        std::sort(order.begin(), order.end(), [&](int a, int b){
+            return resTs[a] < resTs[b];
+        });
+
+        for (int oi = 0; oi < nSpikes; ++oi) {
+            const int i = order[oi];
+            const int64_t winStart = resTs[i] - peakSampleIdx;
+            if (winStart < 0) continue;
+            const off_t fileOff = winStart * (off_t)nTotalChannels * (off_t)sizeof(short);
+            if (fileOff + rawBytes > filShiftSize) continue;
+
+            if (fileOff != filShiftPos) {
+                fseeko(filShift, fileOff, SEEK_SET);
+                filShiftPos = fileOff;
+            }
+            if (fread(rawWin.data(), sizeof(short), rawElems, filShift) != (size_t)rawElems)
+                continue;
+            filShiftPos += rawBytes;
+
+            // Apply SDIFF_ALLPAIRS only (no temporal diff) to get sdiff signal
+            for (int s = 0; s < nSamples; ++s) {
+                const short* frame = rawWin.data() + s * nTotalChannels;
+                for (int ci = 0; ci < nChanGrp; ++ci) {
+                    double sd = sdiff_allpairs(frame, chanList.data(), ci, nChanGrp);
+                    if      (sd >  32767.0) sd =  32767.0;
+                    else if (sd < -32768.0) sd = -32768.0;
+                    sdiffWin[(size_t)s * nChanGrp + ci] = (short)sd;
+                }
+            }
+
+            double sc = 0.0;
+            int sh = computeShift(sdiffWin.data(), nChanGrp, nSamples,
+                                  peakSampleIdx, maxShift, nTopChan, &sc);
+            scores[i] = sc;
+            if (sc >= minScore) {
+                shifts[i] = sh;
+                if (sh != 0) ++nToRextract;
+            }
+        }
+        fclose(filShift);
     }
 
     if (verbose)
@@ -417,19 +532,30 @@ int main(int argc, char* argv[])
                         dst[s * nChanGrp + c] = frame[chanList[c]];
                 }
             } else {
-                // Stderiv pipeline: apply SDIFF_ALLPAIRS on each sample frame
-                // then write all nChanGrp derivative channels
-                // (process_pca_stderiv reads only the first nChanGrp-1 channels,
-                // but the file stores all nChanGrp; match the convention from
-                // process_extractspikes_stderiv)
+                // Stderiv pipeline: apply SDIFF_ALLPAIRS + temporal first-difference.
+                //
+                // ndm_extractspikes_stderiv applies two transforms:
+                //   step 1: sdiff[t,c]   = ALLPAIRS(raw[t,c])
+                //   step 2: stderiv[t,c] = sdiff[t,c] - sdiff[t-1,c]
+                //
+                // We must match this exactly so re-extracted spikes are in the same
+                // signal space as spikes that were not realigned.
+                //
+                // For the temporal diff at t=0 the previous sample is outside the
+                // extracted window and is unknown — use zero as the baseline
+                // (sdiff[t=-1,c] = 0), which matches what ndm_extractspikes_stderiv
+                // does at the very first sample of the recording (g_prev_sdiff is
+                // zero-initialised before each detection pass).
+                std::vector<double> prevSdiff(nChanGrp, 0.0);
                 for (int s = 0; s < nSamples; ++s) {
                     const short* frame = rawFrame.data() + s * nTotalChannels;
                     for (int ci = 0; ci < nChanGrp; ++ci) {
-                        double sd = sdiff_allpairs(frame, chanList.data(), ci, nChanGrp);
-                        // Clamp to int16 range
-                        if      (sd >  32767.0) sd =  32767.0;
-                        else if (sd < -32768.0) sd = -32768.0;
-                        dst[s * nChanGrp + ci] = (short)sd;
+                        const double sd = sdiff_allpairs(frame, chanList.data(), ci, nChanGrp);
+                        double stderiv  = sd - prevSdiff[ci];
+                        prevSdiff[ci]   = sd;
+                        if      (stderiv >  32767.0) stderiv =  32767.0;
+                        else if (stderiv < -32768.0) stderiv = -32768.0;
+                        dst[s * nChanGrp + ci] = (short)stderiv;
                     }
                 }
             }

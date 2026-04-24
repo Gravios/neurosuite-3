@@ -618,15 +618,6 @@ public:
     // Layout: [nCentres × nDims], spatial dims only (time column = 0).
     std::vector<float> preseedCentres;
 
-    // ── Adaptive merge threshold helpers ──────────────────────────────────
-    /** Participation ratio: d_eff = (Σσ²)² / Σσ⁴.  Equals D when variance
-     *  is uniform (Type B: weak/distributed); equals 1 when all variance is
-     *  in one dim (Type A: strong/localized).  Used by adaptive MergeThresh. */
-    static float participationRatio(const std::vector<float>& cov, int nDims,
-                                    int stride);
-    /** Wilson-Hilferty chi²(dEff, 0.9999). */
-    static float chi2Quantile9999(float dEff);
-
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // GPU context — allocated by LoadData() when a device is present.
     // nullptr on chunk sub-objects (K2/K3/Kc) which always run on the CPU.
