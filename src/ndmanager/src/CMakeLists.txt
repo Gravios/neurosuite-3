@@ -27,6 +27,7 @@ set(_srcs
     parameterview.cpp
     programspage.cpp
     programpage.cpp
+    pipelinedesignerpage.cpp
     queryinputdialog.cpp
     queryoutputdialog.cpp
     spikepage.cpp
