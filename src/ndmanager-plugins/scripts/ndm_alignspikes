@@ -1,0 +1,181 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Align spike waveform snippets to their true energy peak before PCA.
+#//
+#//   PURPOSE
+#//   ───────
+#//   The spike detector fires a threshold crossing at sample T.  The
+#//   extracted snippet is centred at T, but the true waveform peak may
+#//   sit at T±δ samples (δ ≤ maxShift) due to threshold noise and
+#//   waveform variability.  When δ varies across spikes of the same
+#//   neuron the PCA sees multiple shifted copies as distinct clouds,
+#//   inflating feature-space bimodality and causing KlustaKwik to split
+#//   one unit into 2-3 clusters.
+#//
+#//   This script re-extracts each spike snippet from the raw .fil at the
+#//   true peak position (extTs = originalTs + δ), writes the updated .spk.N
+#//   (or .spkD.N for stderiv pipelines), and deletes the stale .fet.N /
+#//   .pca.N so the caller must re-run ndm_pca / ndm_pca_stderiv.
+#//
+#//   .res.N is NOT modified — detection timestamps are physical events.
+#//
+#//   PIPELINE POSITION
+#//   ─────────────────
+#//   ndm_extractspikes  (or _stderiv)
+#//           ↓
+#//   ndm_alignspikes          ← this script
+#//           ↓
+#//   ndm_pca  (or _stderiv)   ← must re-run after alignment
+#//           ↓
+#//   ndm_klustakwik
+#//
+#//   PARAMETERS (set in session YAML under program: ndm_alignspikes)
+#//   ──────────────────────────────────────────────────────────────────
+#//   maxShift   Maximum shift in samples [default: 3]
+#//              Corresponds to MaxTimeShift in KlustaKwikExp.  Values
+#//              larger than 5 risk merging spikes from different neurons.
+#//   minScore   Minimum relative energy score [0,1] to accept a shift.
+#//              Spikes where the peak is diffuse (score < minScore) are
+#//              left unshifted.  [default: 0.0]
+#//
+#//   copyright       (C) 2026  Gravios / NeuroSuite-3 contributors
+#//   GNU GPL v3 or later.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Spike waveform alignment (pre-PCA)"
+
+check_commands_installed process_alignspikes
+
+inputs_missing "$session.$param_ext" "$session.fil" && exit $INPUTS_MISSING
+
+# ── Session-level parameters ──────────────────────────────────────────────
+
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+
+check_mandatory_variable $nChannels       "missing total channel count"
+check_mandatory_variable $nElectrodeGroups "missing electrode groups"
+
+# Script-specific parameters from YAML
+maxShift=$(read_script_parameter $session maxShift)
+minScore=$(read_script_parameter $session minScore)
+
+maxShift=${maxShift:-3}
+minScore=${minScore:-0.0}
+
+echo_info "Alignment parameters:"
+echo_info "  maxShift  = $maxShift samples"
+echo_info "  minScore  = $minScore"
+
+# ── Per-group alignment ───────────────────────────────────────────────────
+
+nAligned=0
+nSkipped=0
+
+for group in $(seq 1 $nElectrodeGroups); do
+
+    # Read group geometry
+    electrodes=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/channels/channel")
+    nSamples=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/nSamples")
+    peakIdx=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
+
+    check_mandatory_variable $electrodes "missing electrode list for group $group"
+    check_mandatory_variable $nSamples   "missing nSamples for group $group"
+    check_mandatory_variable $peakIdx    "missing peakSampleIndex for group $group"
+
+    # Convert space-separated electrode list to comma-separated for -c
+    chanList=$(echo $electrodes | sed 's/ /,/g')
+
+    # Detect pipeline variant: prefer .spk.N (raw), fall back to .spkD.N (stderiv)
+    stderivFlag=""
+    spkFile="$session.spk.$group"
+    if [ ! -f "$spkFile" ]; then
+        spkFile="$session.spkD.$group"
+        if [ ! -f "$spkFile" ]; then
+            echo_warning "  group $group: no .spk.$group or .spkD.$group — skipping"
+            nSkipped=$((nSkipped + 1))
+            continue
+        fi
+        stderivFlag="--stderiv"
+        echo_info "  group $group: using stderiv pipeline (.spkD.$group)"
+    fi
+
+    # Require .res.N
+    if [ ! -f "$session.res.$group" ]; then
+        echo_warning "  group $group: $session.res.$group missing — skipping"
+        nSkipped=$((nSkipped + 1))
+        continue
+    fi
+
+    echo_info "  aligning group $group  (${nSamples}s × $(echo $electrodes | wc -w)ch" \
+        "peak=$peakIdx maxShift=$maxShift)"
+
+    process_alignspikes \
+        -n "$nChannels" \
+        -c "$chanList" \
+        -w "$nSamples" \
+        -p "$peakIdx" \
+        -m "$maxShift" \
+        --min-score "$minScore" \
+        $stderivFlag \
+        -v \
+        "$session" "$group"
+
+    pa_status=$?
+    if [ $pa_status -ne 0 ]; then
+        echo_error "  group $group: process_alignspikes failed (status $pa_status)"
+        exit $GENERAL_ERROR
+    fi
+
+    # Delete stale feature and PCA basis files so ndm_pca re-computes from scratch.
+    # The extension matches whichever pipeline was used (.fet/.pca or .fetD/.pcaD).
+    if [ -z "$stderivFlag" ]; then
+        fetExt="fet"
+        pcaExt="pca"
+    else
+        fetExt="fetD"
+        pcaExt="pcaD"
+    fi
+
+    for ext in "$fetExt" "$pcaExt"; do
+        f="$session.$ext.$group"
+        if [ -f "$f" ]; then
+            mv "$f" "${f}.prealign"
+            echo_info "  group $group: moved $f → ${f}.prealign (re-run ndm_pca)"
+        fi
+    done
+
+    nAligned=$((nAligned + 1))
+done
+
+# ── Summary ───────────────────────────────────────────────────────────────
+
+echo_info ""
+echo_info "Done — $nAligned group(s) aligned  ($nSkipped skipped)"
+if [ $nAligned -gt 0 ]; then
+    echo_info ""
+    echo_info "IMPORTANT: re-run ndm_pca (or ndm_pca_stderiv) before sorting:"
+    echo_info "  ndm_pca $session"
+    echo_info ""
+    echo_info "Stale .fet/.pca files renamed to .prealign for recovery."
+fi
