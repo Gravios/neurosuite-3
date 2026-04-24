@@ -23,10 +23,9 @@ install(PROGRAMS
     ndm_reextractspikes
     ndm_reextractspikes_stderiv
     # Re-cluster the unmatched residual bin left by process_shadowcluster.
-    # Runs KlustaKwik on just the .fet rows whose .clu == unmatched_id,
-    # then merges sub-cluster IDs back into the live .clu with an offset
-    # so they don't collide with existing shadow/parent IDs.
     ndm_subcluster_unmatched
+    # Spike waveform peak alignment (run between ndm_extractspikes and ndm_pca).
+    ndm_alignspikes
     ndm_xml2yaml
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn
