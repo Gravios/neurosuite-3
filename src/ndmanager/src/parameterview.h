@@ -47,6 +47,7 @@
 #include "neuroscopevideopage.h"
 #include "programspage.h"
 #include "programpage.h"
+#include "pipelinedesignerpage.h"
 #include <klustersshared/generalinformation.h>
 #include <klustersshared/fileinformation.h>
 #include <klustersshared/programinformation.h>
@@ -188,6 +189,13 @@ public:
  * @return script name list.
  */
     QStringList getFileScriptNames() const;
+
+    /**Replaces all programs with @p programs in the order given.
+ * Called by PipelineDesignerPage::applyRequested to push the graph back
+ * into the parameter tree so the change is reflected in the Plugins view
+ * and persisted on the next save.
+ */
+    void setProgramList(const QList<ProgramInformation>& programs);
 
     // ---- Probe data --------------------------------------------------------
     /**
@@ -343,6 +351,9 @@ private:
 
     /**Pointer on the probe assignment tab (expert mode; always created).*/
     ProbePage* probe;
+
+    /**Pointer on the pipeline designer page.*/
+    PipelineDesignerPage* pipelineDesigner;
 
     /**Pointer on the page containing information for the programs.*/
     ProgramsPage* programs;

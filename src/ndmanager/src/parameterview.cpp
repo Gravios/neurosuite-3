@@ -182,6 +182,13 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
     mStackWidget->addWidget(programs);
     mScriptsItem = mParameterTree->addPage(":/icons/programs", tr("Plugins"), programs);
 
+    //adding page "Pipeline Designer"
+    pipelineDesigner = new PipelineDesignerPage;
+    mStackWidget->addWidget(pipelineDesigner);
+    mParameterTree->addPage(":/icons/programs", tr("Pipeline"), pipelineDesigner);
+    connect(pipelineDesigner, &PipelineDesignerPage::applyRequested,
+            this,             &ParameterView::setProgramList);
+
     //set connections
     connect(acquisitionSystem, &AcquisitionSystemPage::nbChannelsModified, this, &ParameterView::nbChannelsModified);
     connect(programs, &ProgramsPage::addNewProgram, this, &ParameterView::addNewProgram);
@@ -455,6 +462,9 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
             programPage->initialisationOver();
         }
     }
+
+    // Seed the Pipeline Designer from the same programs list
+    pipelineDesigner->setPrograms(programList);
 }
 
 void ParameterView::loadProgram(const QString &programUrl) {
@@ -837,4 +847,37 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
     }
     spike->setGroups(newSpike, spikeInfo);
     spike->setModified(true);
+}
+
+// ---------------------------------------------------------------------------
+// ParameterView::setProgramList
+// Called by PipelineDesignerPage::applyRequested to push the graph back
+// into the Plugins tree.  Replaces all existing programs in order.
+// ---------------------------------------------------------------------------
+void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms)
+{
+    // ── 1. Remove all existing programs ────────────────────────────────────
+    const QStringList existing = programDict.keys();
+    for (const QString& name : existing) {
+        ProgramPageId pid = programDict[name];
+        // Remove tree item (deleting a QTreeWidgetItem removes it from its parent)
+        delete pid.item;
+        mStackWidget->removeWidget(pid.page);
+        pid.page->deleteLater();
+    }
+    programDict.clear();
+
+    // ── 2. Add each program from the pipeline designer in order ────────────
+    for (const ProgramInformation& prog : newPrograms) {
+        ProgramPage* page = addProgram(prog.getProgramName(), /*show=*/false);
+        ParameterPage* pp = page->getParameterPage();
+        pp->setProgramName(prog.getProgramName());
+        page->setHelp(prog.getHelp());
+        pp->setParameterInformation(prog.getParameterInformation());
+        page->initialisationOver();
+    }
+
+    mParameterTree->expandItem(mScriptsItem);
+    programsModified = true;
+    emit scriptListHasBeenModified(programDict.keys());
 }
