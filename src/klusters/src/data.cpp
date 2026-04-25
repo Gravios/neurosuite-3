@@ -768,18 +768,22 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     // ── G. Nearest-cluster isolation ──────────────────────────────────────
     if (allCentroids && allCentroids->size() > 1) {
-        auto it = allCentroids->find(clusterId);
-        const QVector<double>* ownCentroid =
-            (it != allCentroids->end()) ? &it.value() : nullptr;
+        // Own centroid — recompute cheaply from mean (already have it above,
+        // but it's local; recompute from allCentroids which is already O(1) lookup)
+        const QVector<double>* ownCentroid = nullptr;
+        auto it = allCentroids->constFind(clusterId);
+        if (it != allCentroids->constEnd())
+            ownCentroid = &it.value();
 
         if (ownCentroid && !ownCentroid->isEmpty()) {
             const int D = ownCentroid->size();
             double minDist = std::numeric_limits<double>::max();
             int    nearId  = -1;
 
-            for (auto it = allCentroids->begin(); it != allCentroids->end(); ++it) {
-                if (it.key() == clusterId) continue;
-                const QVector<double>& other = it.value();
+            for (auto jt = allCentroids->constBegin();
+                       jt != allCentroids->constEnd(); ++jt) {
+                if (jt.key() == clusterId) continue;
+                const QVector<double>& other = jt.value();
                 if (other.size() != D) continue;
                 double distSq = 0.0;
                 for (int f = 0; f < D; ++f) {
@@ -788,7 +792,7 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
                 }
                 if (distSq < minDist) {
                     minDist = distSq;
-                    nearId  = it.key();
+                    nearId  = jt.key();
                 }
             }
             if (nearId >= 0) {
@@ -808,10 +812,10 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
         const QString clusterIdString = QString::number(clusterId);
 
         if (waveformStatusMap.contains(clusterIdInt) &&
-            waveformStatusMap[clusterIdInt].sampleMeanStatus() == READY &&
+            waveformStatusMap.value(clusterIdInt).sampleMeanStatus() == READY &&
             waveformDict.contains(clusterIdString))
         {
-            const Waveforms* wf    = waveformDict[clusterIdString];
+            const Waveforms* wf    = waveformDict.value(clusterIdString);
             const int        nSamp = nbSamplesInWaveform;
             const int        nChan = nbChannels;
             const int        peak0 = peakPositionInWaveform - 1;  // 0-based
@@ -895,7 +899,7 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
             // retrieve it from allCentroids if available, else recompute).
             QVector<double> centroid(nFeat, 0.0);
             if (allCentroids && allCentroids->contains(clusterId)) {
-                centroid = (*allCentroids)[clusterId];
+                centroid = allCentroids->value(clusterId);
             } else {
                 for (const SpikeRef& sr : spikes)
                     for (int f = 1; f <= nFeat; ++f)
@@ -938,8 +942,7 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     // ── K. Recording-relative temporal position ───────────────────────────
     if (n >= 1) {
-        // maxDimension() is not declared const; access the backing Array directly.
-        const double maxTs = static_cast<double>(dimensionMaxima(nbDimensions, 1));
+        const double maxTs = static_cast<double>(maxDimension(nbDimensions));
         if (maxTs > 0.0) {
             // spikes is sorted by timestamp; first/last are already computed.
             snap.tFirstRel = (spikes.first().ts * samplingRate) / maxTs;
@@ -2498,15 +2501,21 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
         }
     }
 
-    // Swap in the new tables (caller holds any needed locks via QMutexLocker
-    // in higher-level methods; Data itself is not re-locked here).
-    delete spikesByCluster;
-    spikesByCluster = newSpk;
+    // Determine whether the noise/artefact cluster (id 0) was a source —
+    // if so, the dimension min/max may have changed.  Mirrors the same
+    // criterion used in createNewCluster / deleteSpikesFromClusters.
+    const bool dimChanged = fromClusters.contains(0);
 
-    delete clusterInfoMap;
-    clusterInfoMap = newInfo;
+    // Hand off the new tables to Data::prepareUndo, which:
+    //   1. pushes the OLD spikesByCluster + clusterInfoMap onto the undo
+    //      stack (essential — the previous version delete'd them outright,
+    //      so Ctrl+Z after a moveSpikeSubset replayed an older snapshot
+    //      instead of the pre-move state);
+    //   2. swaps in the new tables under the data mutex;
+    //   3. trims the undo list and clears the redo lists.
+    prepareUndo(newSpk, newInfo, dimChanged);
 
-    // Remove emptied clusters from the map
+    // Remove emptied clusters from the (now-current) clusterInfoMap.
     for (int cid : emptiedClusters)
         clusterInfoMap->remove(static_cast<dataType>(cid));
 }

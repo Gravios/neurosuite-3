@@ -351,7 +351,7 @@ void KlustersApp::createMenus()
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
 
     mDipSplit = actionMenu->addAction(tr("&DipSplit Selected Cluster"));
-    mDipSplit->setShortcut(Qt::Key_S);
+    mDipSplit->setShortcut(Qt::Key_D);
     mDipSplit->setToolTip(
         tr("Test the selected cluster for hidden bimodality.  If a valley is\n"
            "detected along one of its top-3 principal components AND the two-\n"
@@ -439,11 +439,11 @@ void KlustersApp::createMenus()
 
 
     mIncreaseAmplitude = waveFormsMenu->addAction(tr("&Increase Amplitude"));
-    mIncreaseAmplitude->setShortcut(Qt::Key_I);
+    mIncreaseAmplitude->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
     connect(mIncreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotIncreaseAmplitude);
 
     mDecreaseAmplitude = waveFormsMenu->addAction(tr("&Decrease Amplitude"));
-    mDecreaseAmplitude->setShortcut(Qt::Key_D);
+    mDecreaseAmplitude->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
     connect(mDecreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotDecreaseAmplitude);
 
     timeFrameMode->setChecked(false);
@@ -1191,9 +1191,12 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
     // ── S key: palette cluster toggle ──────────────────────────────────────
-    // Qt::Key_S is the DipSplit shortcut, so it never reaches the palette's
-    // keyPressEvent. Intercept it here when the palette has focus so S toggles
-    // the current cluster selection instead of triggering DipSplit.
+    // Qt::Key_S — palette cluster toggle.  When the cluster palette has
+    // focus, S toggles the current selection instead of being routed to
+    // QListWidget's default handler (which would do nothing useful for S).
+    // Intercepting at ShortcutOverride first ensures no future global
+    // QAction with shortcut S could swallow the key before the palette
+    // sees it.
     if(event->type() == QEvent::ShortcutOverride){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier){
@@ -4291,7 +4294,11 @@ void KlustersApp::slotDipSplit()
     }
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const KlustersDoc::DipSplitResult r = doc->dipSplitCluster(clusterId);
+    const KlustersDoc::DipSplitResult r = doc->dipSplitCluster(
+        clusterId,
+        configuration().getDipSplitMinSize(),
+        static_cast<float>(configuration().getDipSplitBloatFactor()),
+        static_cast<float>(configuration().getDipSplitValleyThresh()));
     QApplication::restoreOverrideCursor();
 
     // Compose a one-line status and a longer details block for the log/dialog.

@@ -21,6 +21,8 @@
 
 #include <QString>
 #include <QList>
+#include <QMap>
+#include <QVariant>
 #include <QVector>
 #include <QFile>
 #include <QTextStream>
@@ -232,6 +234,19 @@ public:
      *  These records are the primary supervised signal for decision-tree training.
      */
     void annotateLastAction(int quality);
+
+    /** Append an algorithm-specific detail record to the most recently begun
+     *  action.  Used by automated curation tools (DipSplit, Realign, …) to
+     *  log the parameters they were called with and the metrics that drove
+     *  their accept/reject decision.  Each value is JSON-serialised
+     *  according to its QVariant type (int → number, double → number,
+     *  bool → true/false, anything else → quoted string).
+     *
+     *  Emits a single ACTION_DETAIL JSON-line record keyed by the most
+     *  recent action_idx.  Safe to call multiple times per action — each
+     *  call produces an independent record.
+     */
+    void recordActionDetails(const QMap<QString, QVariant>& details);
 
     /** Log an UNDO or REDO event referencing the action index it reverts/replays.
      *  @param type         Must be ActionType::UNDO or ActionType::REDO.

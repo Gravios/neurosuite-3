@@ -276,6 +276,38 @@ public:
                                        ///< "cluster_not_found", "bad_features"
     };
 
+    /** Pure-decision output of dipSplitDecide() — captures whether the
+     *  cluster should be split and, if so, exactly which spikes go where.
+     *  Carries no Qt object identities; safe to keep across event-loop
+     *  iterations and inspect for a "preview before commit" UI.
+     */
+    struct DipSplitDecision {
+        bool             accepted     = false;
+        int              clusterId    = -1;   ///< source cluster examined
+        int              n0           = 0;    ///< size of label-0 half
+        int              n1           = 0;    ///< size of label-1 half
+        int              bestPC       = -1;
+        double           bestDepth    = 0.0;
+        double           mahal2P90    = 0.0;
+        double           chi2_90      = 0.0;
+        double           deltaBIC     = 0.0;
+        QString          reason;              ///< same vocabulary as DipSplitResult
+        std::vector<int> labels;              ///< 0/1 per cluster member, in
+                                              ///< the order returned by spikePositions
+        QList<dataType>  rowsByMember;        ///< 1-based feature row for each
+                                              ///< entry in labels
+    };
+
+    /** Pure algorithm core: tests a cluster for hidden bimodality and
+     *  returns a structured decision.  No side effects on KlustersDoc state.
+     *  Used by dipSplitCluster() and exposed for unit testing / future
+     *  preview UI.
+     */
+    DipSplitDecision dipSplitDecide(int   clusterId,
+                                     int   minSize      = 50,
+                                     float bloatFactor  = 0.0f,
+                                     float valleyThresh = 0.20f);
+
     /** Attempt a DipSplit on a single cluster using the same algorithm as
      * klustakwikExp Phase 8: bloat gate → top-3 PCA → valley test → k-means
      * seed/refine → BIC gate.  If accepted, commits the split and fires all
@@ -286,7 +318,7 @@ public:
      */
     DipSplitResult dipSplitCluster(int   clusterId,
                                     int   minSize      = 50,
-                                    float bloatFactor  = 2.0f,
+                                    float bloatFactor  = 0.0f,
                                     float valleyThresh = 0.20f);
 
     /**Returns the number of dimensions of the data.*/
@@ -664,6 +696,30 @@ public Q_SLOTS:
     void launchAutoSave();
 
 private:
+
+    /** Common UI-update tail for any operation that produces ONE new cluster
+     *  derived from existing ones (createNewCluster, dipSplitCluster, …).
+     *
+     *  Call after the underlying Data mutator has run successfully.  Performs:
+     *    - registers a colour for @p newId in the cluster colour list;
+     *    - undo bookkeeping via prepareUndo();
+     *    - removes any clusters in @p emptiedClusters from the colour list;
+     *    - per-view addNewClusterToView() / updateTraceView();
+     *    - emits newClusterAdded();
+     *    - resets the colour-changed flag if needed;
+     *    - refreshes the active view's child widgets and the cluster palette;
+     *    - selects @p newId plus the original visible clusters in the palette.
+     *
+     *  @param newId            the freshly allocated cluster ID
+     *  @param fromClusters     source clusters that contributed spikes (modified
+     *                          in-place by Data mutators; passed straight through)
+     *  @param emptiedClusters  clusters that ended up empty after the mutation
+     *  @param activeView       the currently-active view (may be nullptr)
+     */
+    void commitClusterCreation(int newId,
+                                QList<int>& fromClusters,
+                                QList<int>& emptiedClusters,
+                                KlustersView* activeView);
 
     /** Commit all pending files to the originals, then re-seed the pending
      *  files from the freshly-written originals so the cycle continues.
