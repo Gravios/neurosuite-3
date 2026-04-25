@@ -63,6 +63,10 @@ public:
     void setRealignIterations(int n);
     void setRealignMaxShift(int n);
 
+    void setDipSplitMinSize(int n);
+    void setDipSplitBloatFactor(double v);
+    void setDipSplitValleyThresh(double v);
+
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const;
 
@@ -84,6 +88,10 @@ public:
     double getRealignThreshold() const;
     int    getRealignIterations() const;
     int    getRealignMaxShift() const;
+
+    int    getDipSplitMinSize() const;
+    double getDipSplitBloatFactor() const;
+    double getDipSplitValleyThresh() const;
 
     bool useWhiteColorDuringPrinting() const;
 

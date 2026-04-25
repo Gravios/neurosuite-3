@@ -59,6 +59,10 @@ void PrefGeneral::setRealignThreshold(double v)  { realignThresholdSpinBox->setV
 void PrefGeneral::setRealignIterations(int n)    { realignIterationsSpinBox->setValue(n); }
 void PrefGeneral::setRealignMaxShift(int n)      { realignMaxShiftSpinBox->setValue(n); }
 
+void PrefGeneral::setDipSplitMinSize(int n)         { dipSplitMinSizeSpinBox->setValue(n); }
+void PrefGeneral::setDipSplitBloatFactor(double v)  { dipSplitBloatFactorSpinBox->setValue(v); }
+void PrefGeneral::setDipSplitValleyThresh(double v) { dipSplitValleyThreshSpinBox->setValue(v); }
+
 bool PrefGeneral::isCrashRecovery() const{return crashRecoveryCheckBox->isChecked();}
 
 int PrefGeneral::crashRecoveryIntervalIndex() const{return crashRecoveryComboBox->currentIndex();}
@@ -77,6 +81,10 @@ QString PrefGeneral::getReclusteringArguments() const{return reclusteringArgsLin
 double PrefGeneral::getRealignThreshold()  const { return realignThresholdSpinBox->value(); }
 int    PrefGeneral::getRealignIterations() const { return realignIterationsSpinBox->value(); }
 int    PrefGeneral::getRealignMaxShift()   const { return realignMaxShiftSpinBox->value(); }
+
+int    PrefGeneral::getDipSplitMinSize()      const { return dipSplitMinSizeSpinBox->value(); }
+double PrefGeneral::getDipSplitBloatFactor()  const { return dipSplitBloatFactorSpinBox->value(); }
+double PrefGeneral::getDipSplitValleyThresh()const { return dipSplitValleyThreshSpinBox->value(); }
 
 void PrefGeneral::updateCrashRecoveryTimeInterval(int state){
     if(state == Qt::Checked)

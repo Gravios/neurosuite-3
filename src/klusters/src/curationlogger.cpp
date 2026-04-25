@@ -247,6 +247,50 @@ void CurationLogger::annotateLastAction(int quality)
     m_out.flush();
 }
 
+void CurationLogger::recordActionDetails(const QMap<QString, QVariant>& details)
+{
+    if (!m_file.isOpen() || details.isEmpty()) return;
+    const int aidx = m_actionIdx - 1;   // most recently begun action
+
+    m_out << "{"
+          << "\"event\":\"ACTION_DETAIL\","
+          << "\"session_id\":\"" << m_sessionId << "\","
+          << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
+          << "\"action_idx\":" << aidx;
+
+    for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
+        m_out << ",\"" << jsonEscape(it.key()) << "\":";
+        const QVariant& v = it.value();
+        switch (v.typeId()) {
+            case QMetaType::Int:
+            case QMetaType::UInt:
+            case QMetaType::LongLong:
+            case QMetaType::ULongLong:
+                m_out << v.toLongLong();
+                break;
+            case QMetaType::Double:
+            case QMetaType::Float: {
+                // Use 'g' format — strips trailing zeroes, preserves
+                // ~15 sig figs.  NaN/Inf are not valid JSON; emit null.
+                const double d = v.toDouble();
+                if (std::isfinite(d))
+                    m_out << QString::number(d, 'g', 15);
+                else
+                    m_out << "null";
+                break;
+            }
+            case QMetaType::Bool:
+                m_out << (v.toBool() ? "true" : "false");
+                break;
+            default:
+                m_out << "\"" << jsonEscape(v.toString()) << "\"";
+                break;
+        }
+    }
+    m_out << "}\n";
+    m_out.flush();
+}
+
 void CurationLogger::logUndoRedo(ActionType type, int targetIdx,
                                   const QList<ClusterSnapshot>& clusterState)
 {

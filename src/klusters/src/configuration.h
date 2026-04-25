@@ -89,6 +89,10 @@ public:
     void setRealignIterations(int n)     {realignIterations = qMax(1, n);}
     void setRealignMaxShift(int n)        {realignMaxShift = qMax(0, n);}
 
+    void setDipSplitMinSize(int n)       {dipSplitMinSize     = qMax(2, n);}
+    void setDipSplitBloatFactor(double v){dipSplitBloatFactor = qBound(0.0, v, 10.0);}
+    void setDipSplitValleyThresh(double v){dipSplitValleyThresh = qBound(0.0, v, 1.0);}
+
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size) {markerSize = qBound(1, size, 10);}
 
@@ -158,6 +162,10 @@ public:
     int    getRealignIterations() const {return realignIterations;}
     int    getRealignMaxShift()   const {return realignMaxShift;}
 
+    int    getDipSplitMinSize()     const {return dipSplitMinSize;}
+    double getDipSplitBloatFactor() const {return dipSplitBloatFactor;}
+    double getDipSplitValleyThresh()const {return dipSplitValleyThresh;}
+
     /**Returns the scatter plot marker size.*/
     int getMarkerSize() const{return markerSize;}
 
@@ -202,6 +210,10 @@ public:
     double getRealignThresholdDefault()  const {return 0.70;}
     int    getRealignIterationsDefault() const {return 2;}
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
+
+    int    getDipSplitMinSizeDefault()      const {return 50;}
+    double getDipSplitBloatFactorDefault()  const {return 0.0;}
+    double getDipSplitValleyThreshDefault() const {return 0.20;}
 
     /**Returns the default scatter plot marker size.*/
     int getMarkerSizeDefault() const{return markerSizeDefault;}
@@ -265,6 +277,10 @@ private:
     double  realignThreshold;
     int     realignIterations;
     int     realignMaxShift;
+
+    int     dipSplitMinSize;       ///< minimum cluster size to consider for DipSplit
+    double  dipSplitBloatFactor;   ///< Mahalanobis bloat threshold (× χ²(d, 0.9))
+    double  dipSplitValleyThresh;  ///< minimum KDE valley depth in [0, 1]
     /**Scatter plot marker size in pixels.*/
     int markerSize;
     /**Selection polygon line width in pixels.*/

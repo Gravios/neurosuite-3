@@ -373,17 +373,67 @@ with open('$sandboxStem.fet.$group','rb') as f: print(struct.unpack('<i', f.read
     local templateMatchScore templateMatchIters splitRecurseDepth
     local crossChunkTemplateScore
 
-    minClusters=$(read_kk_param -b ndm_subcluster_unmatched $group minClusters 2)
-    maxClusters=$(read_kk_param -b ndm_subcluster_unmatched $group maxClusters 100)
+    # ── Probe-keyed prior resolution ─────────────────────────────────────────
+    # Try to locate a <probe_id>.<group>.prior.yaml whose probe_id matches
+    # this session's channel-group structure.  When found, it shadows the
+    # session yaml's per-shank defaults below: read_kk_param falls back to
+    # the prior's value when the session yaml has no entry.  The session
+    # yaml STILL wins if it explicitly sets a key, so per-recording overrides
+    # remain possible.
+    #
+    # Resolution is best-effort: if kk_resolve_prior.py is missing, fails to
+    # find a match, or returns a probe_id mismatch, we fall through to the
+    # built-in defaults silently.  No prior == old behaviour exactly.
+    local priorFile priorMinC priorMaxC priorMerge priorPenMix
+    priorFile=""
+    priorMinC=""; priorMaxC=""; priorMerge=""; priorPenMix=""
+    if command -v kk_resolve_prior.py >/dev/null 2>&1; then
+        priorFile=$(kk_resolve_prior.py --session "$session" --group "$group" 2>/dev/null || true)
+    fi
+    if [ -n "$priorFile" ] && [ -f "$priorFile" ]; then
+        # Pull the four headline keys with python — small, no extra deps.
+        # Each fetch prints empty on missing key so the read_kk_param defaults
+        # still work below.
+        local _py
+        _py=$(python3 - "$priorFile" <<'PYEOF'
+import sys, yaml
+p = yaml.safe_load(open(sys.argv[1])) or {}
+nc = p.get("n_clusters", {}) or {}
+ed = p.get("effective_dimensionality", {}) or {}
+print("MINC=%s"   % nc.get("p05",    ""))
+print("MAXC=%s"   % nc.get("p95",    ""))
+print("MERGE=%s"  % ed.get("merge_thresh_from_median_d_eff", ""))
+print("PENMIX=%s" % p.get("penalty_mix_suggested", ""))
+PYEOF
+        )
+        eval "$_py"
+        priorMinC=${MINC:-}
+        priorMaxC=${MAXC:-}
+        priorMerge=${MERGE:-}
+        priorPenMix=${PENMIX:-}
+        echo_info "  group $group: prior $priorFile"
+        echo_info "    minC=$priorMinC maxC=$priorMaxC merge=$priorMerge penaltyMix=$priorPenMix"
+    fi
+
+    # Helper: prefer prior value over the static default when the prior
+    # provided one.  read_kk_param consults the session yaml first, so an
+    # explicit per-shank override there still wins over the prior.
+    local _dMinC=2; [ -n "$priorMinC" ] && _dMinC=$priorMinC
+    local _dMaxC=100; [ -n "$priorMaxC" ] && _dMaxC=$priorMaxC
+    local _dMerge=42.0; [ -n "$priorMerge" ] && _dMerge=$priorMerge
+    local _dPenMix=0; [ -n "$priorPenMix" ] && _dPenMix=$priorPenMix
+
+    minClusters=$(read_kk_param -b ndm_subcluster_unmatched $group minClusters $_dMinC)
+    maxClusters=$(read_kk_param -b ndm_subcluster_unmatched $group maxClusters $_dMaxC)
     maxPossibleClusters=$(read_kk_param -b ndm_subcluster_unmatched $group maxPossibleClusters 500)
-    mergeThresh=$(read_kk_param -b ndm_subcluster_unmatched $group mergeThresh 42.0)
+    mergeThresh=$(read_kk_param -b ndm_subcluster_unmatched $group mergeThresh $_dMerge)
     globalMergeIter=$(read_kk_param -b ndm_subcluster_unmatched $group globalMergeIter 50)
     timeMergeIter=$(read_kk_param -b ndm_subcluster_unmatched $group timeMergeIter 50)
     nStarts=$(read_kk_param -b ndm_subcluster_unmatched $group nStarts 3)
     nRuns=$(read_kk_param -b ndm_subcluster_unmatched $group nRuns 0)
     phase15Iters=$(read_kk_param -b ndm_subcluster_unmatched $group phase15Iters 2)
     initMethod=$(read_kk_param -b ndm_subcluster_unmatched $group initMethod farthest)
-    penaltyMix=$(read_kk_param -b ndm_subcluster_unmatched $group penaltyMix 0)
+    penaltyMix=$(read_kk_param -b ndm_subcluster_unmatched $group penaltyMix $_dPenMix)
     chunkMinutes=$(read_kk_param -b ndm_subcluster_unmatched $group chunkMinutes 10)
     chunkOverlapMinutes=$(read_kk_param -b ndm_subcluster_unmatched $group chunkOverlapMinutes 2)
     chunkPreseedFraction=$(read_kk_param -b ndm_subcluster_unmatched $group chunkPreseedFraction 0.05)

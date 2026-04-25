@@ -1351,12 +1351,96 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 }
 
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::commitClusterCreation
+//
+// Shared post-mutation UI plumbing for any operation that produces ONE new
+// cluster derived from existing ones.  Used by createNewCluster (polygon
+// selection) and dipSplitCluster (bimodality split).  Keeping this in one
+// place ensures these paths can't drift apart and re-introduce bugs like
+// the missing palette refresh that hid DipSplit's freshly-created cluster.
+// ---------------------------------------------------------------------------
+void KlustersDoc::commitClusterCreation(int newId,
+                                         QList<int>& fromClusters,
+                                         QList<int>& emptiedClusters,
+                                         KlustersView* activeView)
+{
+    // Register colour BEFORE prepareUndo so the colour-list undo snapshot
+    // includes the new cluster's entry.
+    QColor color;
+    color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10, 200, 255);
+    clusterColorList->append(newId, color);
+
+    // Undo bookkeeping.
+    prepareUndo(newId, fromClusters, emptiedClusters);
+
+    // Build clustersToShow: active view's current set + new cluster −
+    // emptied clusters.
+    QList<int> clustersToShow;
+    if (activeView) {
+        const QList<int>& cur = activeView->clusters();
+        for (int c : cur) clustersToShow.append(c);
+    }
+    if (!clustersToShow.contains(newId)) clustersToShow.append(newId);
+
+    // Drop emptied clusters from the colour list and to-show list.
+    for (int cid : emptiedClusters) {
+        clusterColorList->remove(cid);
+        clustersToShow.removeAll(cid);
+    }
+
+    // Per-view notification.
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* view = viewList->at(i);
+        const bool isActive = (view == activeView);
+        view->addNewClusterToView(fromClusters, newId,
+                                  emptiedClusters, isActive);
+        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+
+    // Notify the error-matrix / template-matrix views.
+    emit newClusterAdded(fromClusters, newId, emptiedClusters);
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    // Refresh active view widgets + cluster palette.
+    if (activeView) activeView->showAllWidgets();
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(clustersToShow);
+
+    // Invalidate waveform + correlogram caches for every source cluster
+    // that lost spikes — the cached mean waveform / correlogram histogram
+    // no longer matches the on-disk spike list.  Also tell every view to
+    // re-draw these clusters so any cached pixmaps are dropped and the
+    // worker threads re-launch.  The new cluster itself has no caches yet,
+    // so invalidation isn't required for it; its waveform thread is
+    // launched by addNewClusterToView above.
+    //
+    // Data::createNewCluster does equivalent invalidation internally;
+    // Data::moveSpikeSubset does not, so DipSplit needs it here.  Running
+    // both for createNewCluster's path is idempotent — invalidate on an
+    // empty cache is a no-op.
+    for (int cid : fromClusters) {
+        if (emptiedClusters.contains(cid)) continue;   // already removed
+        invalidateWaveformCache(cid);
+        invalidateCorrelogramCache(cid);
+    }
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* v = viewList->at(i);
+        for (int cid : fromClusters) {
+            if (emptiedClusters.contains(cid)) continue;
+            v->invalidateClusterDisplay(cid);
+        }
+    }
+}
+
+
 void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
     QList <int> emptyClusters;
-    QList<int> clustersToShow(clustersOfOrigin);
     //Get the active view.
     KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
 
@@ -1372,62 +1456,20 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         activeView->showAllWidgets();
     }
     else{
-        int newClusterIdint = static_cast<int>(newClusterId);
+        const int newClusterIdint = static_cast<int>(newClusterId);
 
-        //Prepare the undo
-        prepareUndo(newClusterIdint,fromClusters,emptyClusters);
-
-        //Add the cluster in clusterColors and clustersToShow.
-        QColor color;
-        color.setHsv(static_cast<int>(fmod(newClusterId*7,36))*10,200,255);
-        clusterColorList->append(newClusterIdint,color);
-        clustersToShow.append(newClusterIdint);
-        //Remove all the empty clusters from clusterColors and clustersToShow
-        if(!emptyClusters.isEmpty()){
-            QList<int>::iterator clustersToRemove;
-            for (clustersToRemove = emptyClusters.begin(); clustersToRemove != emptyClusters.end(); ++clustersToRemove ){
-                clusterColorList->remove(*clustersToRemove);
-                clustersToShow.removeAll(*clustersToRemove);
-            }
-        }
-
-        //Notify all the views of the modification
-
-        for(int i =0; i<viewList->count();++i){
-            KlustersView *view = viewList->at(i);
-            if(view != activeView){
-                view->addNewClusterToView(fromClusters,newClusterIdint,emptyClusters,false);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,false);
-            }
-            else{
-                view->addNewClusterToView(fromClusters,newClusterIdint,emptyClusters,true);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,true);
-            }
-        }
-
-        //Notify the errorMatrixView of the modification
-        emit newClusterAdded(fromClusters,newClusterIdint,emptyClusters);
-
-        //Reset the color status in clusterColors if need it
-        if(clusterColorList->isColorChanged()) clusterColorList->resetAllColorStatus();
-
-        activeView->showAllWidgets();
-
-        //Update the palette of cluster
-        clusterPalette.updateClusterList();
-        clusterPalette.selectItems(clustersToShow);
+        // All UI plumbing — colour registration, undo, view notifications,
+        // palette refresh — is in the shared helper.
+        commitClusterCreation(newClusterIdint, fromClusters, emptyClusters,
+                              activeView);
 
         // Log after: surviving source clusters + the new cluster
-        {
-            QList<int> resultIds;
-            for (int id : fromClusters)
-                if (!emptyClusters.contains(id))
-                    resultIds.append(id);
-            resultIds.append(newClusterIdint);
-            logAfter(resultIds);
-        }
+        QList<int> resultIds;
+        for (int id : fromClusters)
+            if (!emptyClusters.contains(id))
+                resultIds.append(id);
+        resultIds.append(newClusterIdint);
+        logAfter(resultIds);
     }
 }
 
@@ -3850,32 +3892,63 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // ── Per-spike waveform re-extraction helper ───────────────────────────
     // Reads raw waveform from .fil into channel-major layout [ch*nSamp+s].
+    // Also returns the PRECEDING sample's group-channel values so the
+    // stderiv temporal-difference at output sample 0 has the correct
+    // baseline (matches process_extractspikes_stderiv's streaming behaviour).
+    // prevSample is empty when the spike sits at the very start of the
+    // recording (startSample == 0); the transform falls back to prev=0 there,
+    // which matches the canonical t=0-of-recording boundary case.
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
 
-    auto extractWaveform = [&](int64_t ts, std::vector<int16_t>& wav) -> bool {
+    auto extractWaveform = [&](int64_t ts,
+                                std::vector<int16_t>& wav,
+                                std::vector<int16_t>& prevSample) -> bool {
         wav.assign(static_cast<size_t>(nChan * nSamp), 0);
+        prevSample.clear();
         if (!filF) return false;
         const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
         if (startSample < 0 || startSample + nSamp > totalSamples) return false;
-        const off_t rawOff = static_cast<off_t>(startSample)
+
+        // Read the window plus one preceding raw sample (when available).
+        const bool hasPrev   = (startSample > 0);
+        const int64_t readStart = hasPrev ? (startSample - 1) : startSample;
+        const int     readN     = hasPrev ? (nSamp + 1)        : nSamp;
+        const off_t rawOff = static_cast<off_t>(readStart)
                            * static_cast<off_t>(totalNbChan) * 2;
         if (fseeko(filF, rawOff, SEEK_SET) != 0) return false;
-        std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
+        std::vector<int16_t> rawFrame(
+            static_cast<size_t>(readN) * static_cast<size_t>(totalNbChan));
         if (fread(rawFrame.data(), 2, rawFrame.size(), filF) != rawFrame.size())
             return false;
+
+        // Group-channel slice for the spike window itself
+        const int spkStart = hasPrev ? 1 : 0;
         for (int s = 0; s < nSamp; ++s)
             for (int ci = 0; ci < nChan; ++ci)
                 wav[static_cast<size_t>(ci * nSamp + s)] =
-                    rawFrame[static_cast<size_t>(s * totalNbChan
+                    rawFrame[static_cast<size_t>((spkStart + s) * totalNbChan
                              + groupChannels[ci])];
+
+        // Group-channel slice for the preceding sample (raw, untransformed)
+        if (hasPrev) {
+            prevSample.assign(static_cast<size_t>(nChan), 0);
+            for (int ci = 0; ci < nChan; ++ci)
+                prevSample[static_cast<size_t>(ci)] =
+                    rawFrame[static_cast<size_t>(groupChannels[ci])];
+        }
         return true;
     };
 
     // ── Stderiv transform: matches ndm_extractspikes_stderiv exactly ──────
     // Returns transformed waveform in sample-major layout [s*nChan+ch]
     // (ALL nChan channels, including the linearly-dependent last one).
-    // This is what ndm_extractspikes_stderiv writes to .spk.
+    //
+    // prevRaw (size nChan or empty): raw group-channel values for the sample
+    // immediately PRECEDING the spike window.  Used to seed the temporal
+    // first-difference at output sample 0.  Empty ⇒ prev=0 (matches the
+    // canonical t=0-of-recording boundary in process_extractspikes_stderiv).
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
+                                     const std::vector<int16_t>& prevRaw,
                                      std::vector<int16_t>& out) {
         // wavCM: channel-major [ch*nSamp+s]
         // out:   sample-major  [s*nChan+ch]
@@ -3895,9 +3968,26 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             }
         }
 
-        // Step 2: temporal first-difference in-place
-        // Boundary condition: prev = 0 (matches ndm_extractspikes_stderiv)
+        // Initial `prev` = SD of the sample BEFORE the window.  Computed from
+        // the raw group-channel values of that sample using the same all-pairs
+        // formula.  When no previous sample exists (recording boundary), use
+        // zero, matching the canonical t=0-of-recording behaviour.
         std::vector<int16_t> prev(static_cast<size_t>(nChan), 0);
+        if (static_cast<int>(prevRaw.size()) == nChan) {
+            int sumP = 0;
+            for (int ci = 0; ci < nChan; ++ci)
+                sumP += static_cast<int>(prevRaw[static_cast<size_t>(ci)]);
+            for (int ci = 0; ci < nChan; ++ci) {
+                int sdP = nChan * static_cast<int>(prevRaw[static_cast<size_t>(ci)])
+                        - sumP;
+                if (sdP >  32767) sdP =  32767;
+                if (sdP < -32768) sdP = -32768;
+                prev[static_cast<size_t>(ci)] = static_cast<int16_t>(sdP);
+            }
+        }
+
+        // Step 2: temporal first-difference in-place, using prev as the
+        // baseline for output sample 0.
         for (int s = 0; s < nSamp; ++s) {
             int16_t* row = out.data() + s * nChan;
             for (int ci = 0; ci < nChan; ++ci) {
@@ -3914,9 +4004,13 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // ── Feature projection helper ─────────────────────────────────────────
     // wav: channel-major [ch*nSamp+s] — raw OR stderiv depending on isStderiv.
+    // prevRaw: raw group-channel values for the sample preceding the window
+    //          (passed through to applyStderivTransform; empty when the spike
+    //          sits at the very start of the recording).
     // Returns full feature row (nFeatCols int64_t + timestamp placeholder).
     auto makeFetRow = [&](int64_t ts,
                           const std::vector<int16_t>& wavRaw,
+                          const std::vector<int16_t>& prevRaw,
                           dataType spikeRow) -> std::vector<int64_t>
     {
         std::vector<int64_t> row(static_cast<size_t>(timeDim), 0LL);
@@ -3933,7 +4027,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             // Then use first pca.nCh = nChan-1 channels for projection
             // (last channel is linearly dependent and excluded from PCA).
             std::vector<int16_t> sdWav;
-            applyStderivTransform(wavRaw, sdWav);  // sample-major [s*nChan+ch]
+            applyStderivTransform(wavRaw, prevRaw, sdWav);  // sample-major [s*nChan+ch]
             const int kCh = pca.nCh;  // = nChan - 1
             xform.resize(static_cast<size_t>(nSamp * kCh));
             for (int s = 0; s < nSamp; ++s)
@@ -4008,9 +4102,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
         const int64_t ts64 = static_cast<int64_t>(newTs);
 
-        // Re-extract waveform at new timestamp
+        // Re-extract waveform at new timestamp.  prevSample carries the raw
+        // group-channel values for the sample preceding the spike window —
+        // needed to seed the stderiv temporal-difference at output sample 0.
         std::vector<int16_t> wav;
-        const bool gotWav = extractWaveform(ts64, wav);
+        std::vector<int16_t> prevSample;
+        const bool gotWav = extractWaveform(ts64, wav, prevSample);
 
         // Write .spk at new position.  Use spkIsTransformed (via isStderivSpk),
         // not the feature-space flag: .spk format is independent of .fet format.
@@ -4021,7 +4118,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 // stderiv pipeline: .spk stores transformed waveform
                 // (all nChan channels, sample-major, matching ndm_extractspikes_stderiv)
                 std::vector<int16_t> spkRow;
-                applyStderivTransform(wav, spkRow);
+                applyStderivTransform(wav, prevSample, spkRow);
                 fwrite(spkRow.data(), 2, static_cast<size_t>(nChan * nSamp), spkW);
             } else {
                 // raw pipeline: convert channel-major → sample-major
@@ -4043,7 +4140,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // When gotWav=false (spike at recording boundary or .fil unreadable),
         // preserve the existing feature values rather than zeroing them out.
         if (gotWav) {
-            const auto fetRow = makeFetRow(ts64, wav, row);
+            const auto fetRow = makeFetRow(ts64, wav, prevSample, row);
             if (!fetRow.empty()) {
                 // Update on-disk .fetD
                 const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
@@ -4133,42 +4230,44 @@ void KlustersDoc::logAfter(const QList<int>& clusterIds)
 }
 
 // ---------------------------------------------------------------------------
-// KlustersDoc::dipSplitCluster
+// KlustersDoc::dipSplitDecide
 //
-// Per-cluster bimodality-driven split, ported from KlustaKwikExp Phase 8.
-// No EM model required — bloat gate is computed on-the-fly by fitting a
-// single Gaussian to the cluster's feature vectors.
+// Pure decision function: tests a cluster for hidden bimodality and returns
+// a structured decision (accept/reject + metrics + per-spike labels).  No
+// side effects on KlustersDoc state — safe to call repeatedly, safe to use
+// from a "preview before commit" UI, safe to unit-test in isolation.
 //
-// Pipeline:
-//   1.  Collect cluster members (nD-dim feature vectors, time dim excluded)
-//   2.  Gate A (bloat):   fit μ + Σ, Cholesky, compute Mahalanobis² per spike,
-//                          reject if mahal²₉₀ < bloatFactor · χ²(d, 0.9)
-//   3.  Top-3 PCs:        power iteration with deflation on the cluster
-//   4.  Gate B (valley):  project onto each PC, KDE valley test
-//   5.  Seed:             k=2 partition at valley location
-//   6.  Refine:           k-means on full nD features
-//   7.  BIC gate:         accept only if BIC(k=2) < BIC(k=1)
-//   8.  Commit:           moveSpikeSubset() the right half to a new cluster ID
+// Algorithm (ported from KlustaKwikExp Phase 8):
+//   1. Collect cluster members (nD-dim feature vectors, time dim excluded)
+//   2. Gate A (bloat):   fit μ + Σ, Cholesky, compute Mahalanobis² per spike,
+//                         reject if mahal²₉₀ < bloatFactor · χ²(d, 0.9)
+//                         (skipped when bloatFactor == 0)
+//   3. Top-3 PCs:        power iteration with deflation on the cluster
+//   4. Gate B (valley):  project onto each PC, KDE valley test
+//   5. Seed:             k=2 partition at valley location
+//   6. Refine:           k-means on full nD features
+//   7. BIC gate:         accept only if BIC(k=2) < BIC(k=1)
 // ---------------------------------------------------------------------------
-KlustersDoc::DipSplitResult
-KlustersDoc::dipSplitCluster(int   clusterId,
-                              int   minSize,
-                              float bloatFactor,
-                              float valleyThresh)
+KlustersDoc::DipSplitDecision
+KlustersDoc::dipSplitDecide(int   clusterId,
+                             int   minSize,
+                             float bloatFactor,
+                             float valleyThresh)
 {
-    DipSplitResult R;
-    R.reason = QStringLiteral("skip");
+    DipSplitDecision D;
+    D.clusterId = clusterId;
+    D.reason    = QStringLiteral("skip");
 
     // Validate cluster exists and fetch its spikes.
     SortableTable spkTable;
     if (!clusteringData->spikePositions(clusterId, spkTable)) {
-        R.reason = QStringLiteral("cluster_not_found");
-        return R;
+        D.reason = QStringLiteral("cluster_not_found");
+        return D;
     }
     const int M = static_cast<int>(spkTable.nbOfColumns());
     if (M < minSize * 2) {
-        R.reason = QStringLiteral("too_small");
-        return R;
+        D.reason = QStringLiteral("too_small");
+        return D;
     }
 
     // Feature dimensions, excluding the timestamp column.
@@ -4176,15 +4275,20 @@ KlustersDoc::dipSplitCluster(int   clusterId,
     const int nDtot = d.nbOfDimensionsTotal();
     const int dPCA  = nDtot - 1;
     if (dPCA < 2) {
-        R.reason = QStringLiteral("bad_features");
-        return R;
+        D.reason = QStringLiteral("bad_features");
+        return D;
     }
 
     // Build feature matrix X [M × dPCA], row-major.  featureValue() is
-    // 1-based in both spike index and dimension index.
-    std::vector<float> X(static_cast<size_t>(M) * dPCA);
+    // 1-based in both spike index and dimension index.  We also remember the
+    // 1-based feature row for each member so the caller can map labels back
+    // to spike file rows for the data move.
+    std::vector<float>      X(static_cast<size_t>(M) * dPCA);
+    QList<dataType>         rowsByMember;
+    rowsByMember.reserve(M);
     for (int i = 0; i < M; ++i) {
         const dataType row1 = spkTable(1, static_cast<dataType>(i + 1));
+        rowsByMember.append(row1);
         for (int j = 0; j < dPCA; ++j)
             X[static_cast<size_t>(i) * dPCA + j] =
                 static_cast<float>(d.featureValue(row1, j + 1));
@@ -4249,8 +4353,8 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         }
     }
     if (!cholOK) {
-        R.reason = QStringLiteral("bad_features");
-        return R;
+        D.reason = QStringLiteral("bad_features");
+        return D;
     }
 
     // Mahalanobis² per spike via forward substitution L·y = (x-μ), m² = |y|².
@@ -4279,18 +4383,24 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         const size_t lo  = static_cast<size_t>(std::floor(idx));
         const size_t hi  = std::min(sorted.size() - 1, lo + 1);
         const double frac = idx - lo;
-        R.mahal2P90 = sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
+        D.mahal2P90 = sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
     }
     // χ²(d, 0.9) via Wilson-Hilferty (z_0.9 = 1.2816).
     {
         const double dD = static_cast<double>(dPCA);
         const double a  = 1.0 - 2.0 / (9.0 * dD);
         const double b  = 1.2816 * std::sqrt(2.0 / (9.0 * dD));
-        R.chi2_90 = dD * std::pow(a + b, 3.0);
+        D.chi2_90 = dD * std::pow(a + b, 3.0);
     }
-    if (R.mahal2P90 < bloatFactor * R.chi2_90) {
-        R.reason = QStringLiteral("not_bloated");
-        return R;
+    // bloatFactor == 0 disables the gate.  This is the recommended setting
+    // for interactive Klusters use: the user is already targeting a cluster
+    // they suspect is bimodal, and a fresh-fit Gaussian (no EM context) makes
+    // the gate unreliable for small or low-dimensional clusters.  Non-zero
+    // values enforce the gate as in KlustaKwikExp Phase 8.
+    if (bloatFactor > 0.0f &&
+        D.mahal2P90 < bloatFactor * D.chi2_90) {
+        D.reason = QStringLiteral("not_bloated");
+        return D;
     }
 
     // -------------------------------------------------------------------
@@ -4324,11 +4434,11 @@ KlustersDoc::dipSplitCluster(int   clusterId,
             bestProj      = std::move(proj);
         }
     }
-    R.bestPC    = bestPC;
-    R.bestDepth = bestDepth;
+    D.bestPC    = bestPC;
+    D.bestDepth = bestDepth;
     if (bestPC < 0 || bestDepth < valleyThresh) {
-        R.reason = QStringLiteral("no_valley");
-        return R;
+        D.reason = QStringLiteral("no_valley");
+        return D;
     }
 
     // -------------------------------------------------------------------
@@ -4352,9 +4462,9 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         }
     }
     if (n0 < minSize || n1 < minSize) {
-        R.n0 = n0; R.n1 = n1;
-        R.reason = QStringLiteral("small_child");
-        return R;
+        D.n0 = n0; D.n1 = n1;
+        D.reason = QStringLiteral("small_child");
+        return D;
     }
     for (int j = 0; j < dPCA; ++j) { c0[j] /= n0; c1[j] /= n1; }
 
@@ -4365,25 +4475,90 @@ KlustersDoc::dipSplitCluster(int   clusterId,
     n0 = n1 = 0;
     for (int i = 0; i < M; ++i)
         (labels[static_cast<size_t>(i)] == 0) ? ++n0 : ++n1;
-    R.n0 = n0; R.n1 = n1;
+    D.n0 = n0; D.n1 = n1;
     if (n0 < minSize || n1 < minSize) {
-        R.reason = QStringLiteral("small_child");
-        return R;
+        D.reason = QStringLiteral("small_child");
+        return D;
     }
 
     // Gate C — BIC: accept only if two-cluster model beats one-cluster.
     const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
         X.data(), M, dPCA, labels.data());
-    R.deltaBIC = bp.bic_k1 - bp.bic_k2;
+    D.deltaBIC = bp.bic_k1 - bp.bic_k2;
     if (!(bp.bic_k2 < bp.bic_k1)) {
-        R.reason = QStringLiteral("bic_worse");
-        return R;
+        D.reason = QStringLiteral("bic_worse");
+        return D;
     }
 
-    // -------------------------------------------------------------------
-    // Commit split:  find a free cluster ID, move the label==1 spikes
-    // there, notify all views exactly as createNewCluster does.
-    // -------------------------------------------------------------------
+    // Accepted — return labels and row mapping for the commit.
+    D.accepted     = true;
+    D.reason       = QStringLiteral("split");
+    D.labels       = std::move(labels);
+    D.rowsByMember = std::move(rowsByMember);
+    return D;
+}
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::dipSplitCluster
+//
+// Driver: runs the pure decide function, and if it accepted the split,
+// commits it via Data::moveSpikeSubset + commitClusterCreation.  Logs the
+// algorithm parameters and decision metrics to the curation log alongside
+// the standard before/after cluster snapshots.
+// ---------------------------------------------------------------------------
+KlustersDoc::DipSplitResult
+KlustersDoc::dipSplitCluster(int   clusterId,
+                              int   minSize,
+                              float bloatFactor,
+                              float valleyThresh)
+{
+    // Helper: copy decision metrics into a result struct.  Used both for
+    // accepted splits and rejections so the caller always gets the metrics
+    // even when the algorithm declined to split.
+    auto resultFromDecision = [](const DipSplitDecision& D) {
+        DipSplitResult R;
+        R.accepted   = D.accepted;
+        R.n0         = D.n0;
+        R.n1         = D.n1;
+        R.bestPC     = D.bestPC;
+        R.bestDepth  = D.bestDepth;
+        R.mahal2P90  = D.mahal2P90;
+        R.chi2_90    = D.chi2_90;
+        R.deltaBIC   = D.deltaBIC;
+        R.reason     = D.reason;
+        return R;
+    };
+
+    // Helper: build the metadata dictionary written to the curation log.
+    auto buildLogDetails = [&](const DipSplitDecision& D, int newId) {
+        QMap<QString, QVariant> m;
+        m.insert(QStringLiteral("algorithm"),     QStringLiteral("dipsplit"));
+        m.insert(QStringLiteral("source_cluster"), clusterId);
+        m.insert(QStringLiteral("new_cluster"),    newId);
+        m.insert(QStringLiteral("reason"),         D.reason);
+        // Parameters
+        m.insert(QStringLiteral("min_size"),       minSize);
+        m.insert(QStringLiteral("bloat_factor"),   static_cast<double>(bloatFactor));
+        m.insert(QStringLiteral("valley_thresh"),  static_cast<double>(valleyThresh));
+        // Metrics
+        m.insert(QStringLiteral("n_left"),         D.n0);
+        m.insert(QStringLiteral("n_right"),        D.n1);
+        m.insert(QStringLiteral("best_pc"),        D.bestPC);
+        m.insert(QStringLiteral("best_depth"),     D.bestDepth);
+        m.insert(QStringLiteral("mahal2_p90"),     D.mahal2P90);
+        m.insert(QStringLiteral("chi2_90"),        D.chi2_90);
+        m.insert(QStringLiteral("delta_bic"),      D.deltaBIC);
+        return m;
+    };
+
+    // ── Pure decision ────────────────────────────────────────────────────
+    const DipSplitDecision D =
+        dipSplitDecide(clusterId, minSize, bloatFactor, valleyThresh);
+
+    if (!D.accepted)
+        return resultFromDecision(D);
+
+    // ── Allocate a free cluster ID ───────────────────────────────────────
     int newId = 0;
     {
         const QList<dataType> existing = clusteringData->clusterIds();
@@ -4394,53 +4569,57 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         }
     }
     if (newId == 0) {
-        R.reason = QStringLiteral("no_free_id");
+        DipSplitResult R = resultFromDecision(D);
+        R.accepted = false;
+        R.reason   = QStringLiteral("no_free_id");
         return R;
     }
 
-    // Snapshot BEFORE the mutation for the curation log.
+    // ── Curation-log: open the action ─────────────────────────────────────
     logBefore(CurationLogger::ActionType::SPLIT, QList<int>{ clusterId });
 
-    // Build feature-row set for label==1 spikes.
+    // ── Build the feature-row set for label==1 spikes ────────────────────
     QSet<dataType> rightRows;
+    rightRows.reserve(D.n1);
+    const int M = static_cast<int>(D.labels.size());
     for (int i = 0; i < M; ++i) {
-        if (labels[static_cast<size_t>(i)] == 1) {
-            const dataType row1 = spkTable(1, static_cast<dataType>(i + 1));
-            rightRows.insert(row1);
-        }
+        if (D.labels[static_cast<size_t>(i)] == 1)
+            rightRows.insert(D.rowsByMember.at(i));
     }
 
-    QList<int> fromClusters;
-    QList<int> emptyClusters;
-    clusteringData->moveSpikeSubset(clusterId, rightRows, newId,
-                                    fromClusters, emptyClusters);
-    if (!fromClusters.contains(clusterId)) fromClusters.append(clusterId);
-
-    // Undo bookkeeping (mirrors createNewCluster pattern).
-    prepareUndo(newId, fromClusters, emptyClusters);
-
-    // Colour for the new cluster.
-    QColor color;
-    color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10, 200, 255);
-    clusterColorList->append(newId, color);
-
-    // Notify all views.
+    // ── Mutate ──────────────────────────────────────────────────────────
     KlustersView* activeView =
         static_cast<KlustersApp*>(parent)->activeView();
-    for (int i = 0; i < viewList->count(); ++i) {
-        KlustersView* view = viewList->at(i);
-        const bool isActive = (view == activeView);
-        view->addNewClusterToView(fromClusters, newId,
-                                  emptyClusters, isActive);
-        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
-    }
-    emit newClusterAdded(fromClusters, newId, emptyClusters);
 
-    // Snapshot AFTER mutation.
+    QList<int> fromClusters;
+    QList<int> emptiedClusters;
+    clusteringData->moveSpikeSubset(clusterId, rightRows, newId,
+                                    fromClusters, emptiedClusters);
+    if (fromClusters.isEmpty()) {
+        // moveSpikeSubset rejected (no spikes actually moved) — bail out
+        // cleanly.  Curation log gets the rejection details too.
+        if (activeView) activeView->showAllWidgets();
+        if (m_curationLogger && m_curationLogger->isOpen()) {
+            m_curationLogger->recordActionDetails(buildLogDetails(D, 0));
+        }
+        logAfter(QList<int>{ clusterId });
+        DipSplitResult R = resultFromDecision(D);
+        R.accepted = false;
+        R.reason   = QStringLiteral("small_child");
+        return R;
+    }
+
+    // ── UI plumbing (palette refresh, view updates, undo) ────────────────
+    commitClusterCreation(newId, fromClusters, emptiedClusters, activeView);
+
+    // ── Curation-log: details + after-snapshot ───────────────────────────
+    if (m_curationLogger && m_curationLogger->isOpen()) {
+        m_curationLogger->recordActionDetails(buildLogDetails(D, newId));
+    }
     logAfter(QList<int>{ clusterId, newId });
 
-    R.accepted     = true;
+    // ── Build result ─────────────────────────────────────────────────────
+    DipSplitResult R = resultFromDecision(D);
     R.newClusterId = newId;
-    R.reason       = QStringLiteral("split");
     return R;
 }

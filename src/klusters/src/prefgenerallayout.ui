@@ -579,6 +579,124 @@
    </item>
    
    <item row="4" column="0">
+    <widget class="QGroupBox" name="groupBox_dipsplit">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>32767</width>
+       <height>110</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>DipSplit (bimodality-driven cluster split)</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_dipsplit">
+      <item row="0" column="0">
+       <widget class="QLabel" name="dipSplitDescLabel">
+        <property name="text">
+         <string>Tests the selected cluster for bimodality and splits it on the deepest valley among the top-3 PCs.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <layout class="QHBoxLayout">
+        <item>
+         <widget class="QLabel" name="dipSplitMinSizeLabel">
+          <property name="text">
+           <string>Min size</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="dipSplitMinSizeSpinBox">
+          <property name="toolTip">
+           <string>Minimum spike count for either child cluster after split</string>
+          </property>
+          <property name="minimum"><number>2</number></property>
+          <property name="maximum"><number>100000</number></property>
+          <property name="value"><number>50</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_ds_1">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="dipSplitBloatFactorLabel">
+          <property name="text">
+           <string>Bloat factor</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="dipSplitBloatFactorSpinBox">
+          <property name="toolTip">
+           <string>0 disables the bloat gate (recommended for interactive use). Non-zero: cluster's 90th-percentile Mahalanobis^2 must exceed this multiple of the chi-squared 90th percentile to be considered for splitting (0.0-10.0).</string>
+          </property>
+          <property name="minimum"><double>0.000000000000000</double></property>
+          <property name="maximum"><double>10.000000000000000</double></property>
+          <property name="singleStep"><double>0.100000000000000</double></property>
+          <property name="decimals"><number>2</number></property>
+          <property name="value"><double>0.000000000000000</double></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_ds_2">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="dipSplitValleyThreshLabel">
+          <property name="text">
+           <string>Valley depth</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="dipSplitValleyThreshSpinBox">
+          <property name="toolTip">
+           <string>Minimum KDE valley depth on a top PC to accept a split (0.0-1.0). Higher = stricter.</string>
+          </property>
+          <property name="minimum"><double>0.000000000000000</double></property>
+          <property name="maximum"><double>1.000000000000000</double></property>
+          <property name="singleStep"><double>0.020000000000000</double></property>
+          <property name="decimals"><number>2</number></property>
+          <property name="value"><double>0.200000000000000</double></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_ds_3">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   
+   <item row="5" column="0">
     <widget class="QGroupBox" name="groupBox3">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
@@ -773,7 +891,7 @@
     </widget>
    </item>
    
-   <item row="5" column="0">
+   <item row="6" column="0">
     <layout class="QHBoxLayout">
      <item>
       <spacer name="spacer17_4">
@@ -903,7 +1021,7 @@
     </layout>
    </item>
    
-   <item row="6" column="0">
+   <item row="7" column="0">
     <spacer name="spacer1">
      <property name="orientation">
       <enum>Qt::Vertical</enum>
@@ -941,6 +1059,9 @@
   <tabstop>realignThresholdSpinBox</tabstop>
   <tabstop>realignIterationsSpinBox</tabstop>
   <tabstop>realignMaxShiftSpinBox</tabstop>
+  <tabstop>dipSplitMinSizeSpinBox</tabstop>
+  <tabstop>dipSplitBloatFactorSpinBox</tabstop>
+  <tabstop>dipSplitValleyThreshSpinBox</tabstop>
   <tabstop>backgroundColorButton</tabstop>
   <tabstop>markerSizeSpinBox</tabstop>
   <tabstop>selectionLineWidthSpinBox</tabstop>

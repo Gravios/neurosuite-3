@@ -60,6 +60,9 @@ void Configuration::read() {
     realignThreshold  = settings.value("realignThreshold",  0.70).toDouble();
     realignIterations = settings.value("realignIterations",  2).toInt();
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
+    dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
+    dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
+    dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     templateThresholdMin = settings.value("templateThresholdMin", 0.5).toDouble();
@@ -96,6 +99,9 @@ void Configuration::write() const {
     settings.setValue("realignThreshold",  realignThreshold);
     settings.setValue("realignIterations", realignIterations);
     settings.setValue("realignMaxShift",   realignMaxShift);
+    settings.setValue("dipSplitMinSize",      dipSplitMinSize);
+    settings.setValue("dipSplitBloatFactor",  dipSplitBloatFactor);
+    settings.setValue("dipSplitValleyThresh", dipSplitValleyThresh);
     settings.setValue("markerSize", markerSize);
     settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("templateThresholdMin", templateThresholdMin);

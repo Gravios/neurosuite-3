@@ -96,6 +96,9 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->realignThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefGeneral->realignIterationsSpinBox, &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefGeneral->realignMaxShiftSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefGeneral->dipSplitMinSizeSpinBox,      &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefGeneral->dipSplitBloatFactorSpinBox,  &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefGeneral->dipSplitValleyThreshSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefGeneral->templateThresholdMinSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->templateThresholdMaxSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
     
@@ -129,6 +132,9 @@ void PrefDialog::updateDialog() {
   prefGeneral->setRealignThreshold(configuration().getRealignThreshold());
   prefGeneral->setRealignIterations(configuration().getRealignIterations());
   prefGeneral->setRealignMaxShift(configuration().getRealignMaxShift());
+  prefGeneral->setDipSplitMinSize(configuration().getDipSplitMinSize());
+  prefGeneral->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
+  prefGeneral->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
   prefGeneral->setMarkerSize(configuration().getMarkerSize());
   prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidth());
   prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
@@ -154,6 +160,9 @@ void PrefDialog::updateConfiguration(){
   configuration().setRealignThreshold(prefGeneral->getRealignThreshold());
   configuration().setRealignIterations(prefGeneral->getRealignIterations());
   configuration().setRealignMaxShift(prefGeneral->getRealignMaxShift());
+  configuration().setDipSplitMinSize(prefGeneral->getDipSplitMinSize());
+  configuration().setDipSplitBloatFactor(prefGeneral->getDipSplitBloatFactor());
+  configuration().setDipSplitValleyThresh(prefGeneral->getDipSplitValleyThresh());
   configuration().setMarkerSize(prefGeneral->getMarkerSize());
   configuration().setSelectionLineWidth(prefGeneral->getSelectionLineWidth());
   configuration().setAutoscaleMarginPercent(prefGeneral->getAutoscaleMarginPercent());
@@ -185,6 +194,9 @@ void PrefDialog::slotDefault() {
    prefGeneral->setRealignThreshold(configuration().getRealignThresholdDefault());
    prefGeneral->setRealignIterations(configuration().getRealignIterationsDefault());
    prefGeneral->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
+   prefGeneral->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
+   prefGeneral->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
+   prefGeneral->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());
    prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
    prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
    prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());

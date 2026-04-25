@@ -384,13 +384,13 @@ public:
   * @param dimension for which the maximum is requested. Numbering starts at 1
   * @return maximum of the dimension
   */
-    dataType maxDimension(int dimension){return dimensionMaxima(dimension,1);}
+    dataType maxDimension(int dimension) const {return dimensionMaxima(dimension,1);}
 
     /**Returns the minimum for the dimension
   * @param dimension for which the minimum is requested. Numbering starts at 1
   * @return minimum of the dimension
   */
-    dataType minDimension(int dimension){return dimensionMinima(dimension,1);}
+    dataType minDimension(int dimension) const {return dimensionMinima(dimension,1);}
 
     /**Saves the clusters information to file
   * @param clusterFile the .clu.i file
