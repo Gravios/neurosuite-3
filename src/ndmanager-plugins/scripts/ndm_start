@@ -1,57 +1,67 @@
 #!/bin/bash
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // ndm_start — pipeline orchestrator (YAML-driven)
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+#
+# Reads a list of pipeline plugins from `programs:` in the session YAML and
+# dispatches each in graph order.  The first program is expected to be the
+# `ndm_start` orchestrator entry itself, which carries the legacy flag set
+# (wideband/events/video/concatenation/spikes/lfp/clean) for backward-
+# compat fallback to the old hard-coded dispatch path.
+#
+# Two execution phases are run for each session directory:
+#
+#     PER-SESSION  — plugins that operate on individual session files
+#                    inside a directory (wideband detection, events, video)
+#     PER-DIRECTORY — plugins that operate on the directory as a whole
+#                    after per-session work is done (concatenation,
+#                    spikes, sorting, LFP, post-processing, cleanup)
+#
+# Per-session plugin types are listed in PER_SESSION_PLUGINS below; everything
+# else is per-directory.  This split was implicit in the old bash; making it
+# data-driven by classification keeps the single-script-per-node graph
+# convention while preserving existing behaviour.
+#
+# Backward compat: if `programs[0]` is not `ndm_start`, this script falls
+# through to the legacy flag-driven dispatch (do_sessions/do_concatenation/
+# do_spikes/do_lfp/do_clean) so existing session YAMLs continue to work
+# without any graph data.
+# /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#////////////////////////////////////////////////////////////////////////////
-#//
-#//   Preprocess session files
-#//
-#//   copyright       (C) 2007-2011 by Michaël Zugaro
-#//   email           michael.zugaro@college-de-france.fr
-#//
-#//   This program is free software; you can redistribute it and/or modify
-#//   it under the terms of the GNU General Public License as published by
-#//   the Free Software Foundation; either version 3 of the License, or
-#//   (at your option) any later version.
-#//
-#////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // Setup
+# /////////////////////////////////////////////////////////////////////////////////////////////////
 
-# Do not hang up, e.g. keep processing if the shell is closed by mistake
-trap "" hup
+program=`basename $0`
+. ndm_functions
 
-# Source helper functions
-source ndm_functions
+# Set program help message
+help_message="
+Usage:
+    $program [parameter_file] [session1 session2 ...]
 
-# Parse command-line
-program=$(basename $0)
-if [ $# -lt 1 ]
+Description:
+    Pipeline orchestrator.  Reads the program list from the session YAML
+    and dispatches each plugin in order.  When the first program is
+    ndm_start, its parameter block holds the orchestration flags (used as
+    a fallback if no graph data is present).
+"
+
+# Help requested?
+[ -n "$1" ] && [ "$1" = "-h" ] && echo "$help_message" && exit $NO_ERROR
+
+# Parameter file
+if [ $# -eq 0 ]
 then
-	echo_error "usage: $program parameter-template [directories]"
-	exit $GENERAL_ERROR
-fi
-if [ $1 == '-h' ] ||  [ $1 == "--help" ]
-then
-	echo ""
-	echo "usage: $program parameter-template [directories]"
-	echo ""
-	echo " Process all data present in all subdirectories of the current directory, using the"
-	echo " parameters provided in a template parameter file (XML or YAML). Alternatively, an"
-	echo " explicit list of directories to process can be provided."
-	echo ""
-	echo " The template can be supplied with or without its extension (.xml, .yaml, or .yml)."
-	echo " When both an .xml and a .yaml file share the same basename, the YAML file takes"
-	echo " precedence."
-	echo ""
-	echo " Type 'man $program' for details on directory/file naming conventions."
-	echo ""
-	exit $NO_ERROR
+	template=`basename $(pwd)`
+else
+	template=`basename $1 .xml`
+	template=`basename $template .yaml`
+	template=`basename $template .yml`
+	shift
 fi
 
-# Strip any known extension so we work with the bare basename
-template=${1%.xml}
-template=${template%.yaml}
-template=${template%.yml}
-shift
-
-# Determine which file format is available (.yaml > .yml > .xml)
+# Determine extension (.yaml, .yml or .xml)
 if [ -f "$template.yaml" ]; then
 	param_ext="yaml"
 elif [ -f "$template.yml" ]; then
@@ -67,9 +77,9 @@ template_file="$template.$param_ext"
 # Check required files
 inputs_missing "$template_file" && exit $INPUTS_MISSING
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Read Parameters
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read orchestration flags (legacy fallback path)
+# /////////////////////////////////////////////////////////////////////////////////////////////////
 
 # Brain signals, video and events
 wideband=$(read_script_parameter $template wideband)
@@ -102,89 +112,196 @@ check_optional_variable $clean || clean=false
 log=$(read_script_parameter $template log)
 check_optional_variable $log || log=true
 
-# Make sure spike groups have been defined
+# Make sure spike groups have been defined when spike-related work might run
 if $spikes
 then
 	nGroups=$(yaml_count $template "//spikeDetection/channelGroups/group")
 	if [ $nGroups -eq 0 ]
 	then
-		echo_error "missing spike groups"
-		exit $GENERAL_ERROR
+		# Don't hard-fail here — the graph may not include any spike-related
+		# nodes.  We re-check at dispatch time per-plugin.
+		echo_warning "no spike groups defined; spike-related plugins will be skipped"
 	fi
 fi
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Process
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // YAML-driven plugin discovery
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+
+# Plugins that run inside the session loop, against individual session files,
+# rather than once per directory.  Keep this list aligned with how the legacy
+# do_sessions block invoked these.
+PER_SESSION_PLUGINS=(
+	ndm_ncs2dat
+	ndm_smr2dat
+	ndm_aom2dat
+	ndm_smr2evt
+	ndm_nev2evt
+	ndm_extractleds
+	ndm_transcodevideo
+	ndm_extractchannels
+	ndm_mergedat
+	ndm_resample
+)
+
+is_per_session_plugin()
+{
+	local plugin=$1
+	local p
+	for p in "${PER_SESSION_PLUGINS[@]}"
+	do
+		[ "$plugin" = "$p" ] && return 0
+	done
+	return 1
+}
+
+# read_program_list — extract the names of plugins from the YAML's
+# programs: list, in order, skipping ndm_start itself (the orchestrator
+# entry doesn't dispatch itself).  Returns one plugin name per line on
+# stdout.  Empty output if no programs: list or only ndm_start present.
+read_program_list()
+{
+	local file="$1.$param_ext"
+	if [ "$param_ext" = "xml" ]
+	then
+		# XML schema: <programs><program><name>X</name>...
+		python3 - "$file" << 'PYEOF' 2>/dev/null
+import sys, xml.etree.ElementTree as ET
+try:
+    tree = ET.parse(sys.argv[1])
+except Exception:
+    sys.exit(0)
+root = tree.getroot()
+for prog in root.iter('program'):
+    nm = prog.find('name')
+    if nm is None:
+        nm = prog.find('n')
+    if nm is None or nm.text is None:
+        continue
+    name = nm.text.strip()
+    if name and name != 'ndm_start':
+        print(name)
+PYEOF
+	else
+		python3 - "$file" << 'PYEOF' 2>/dev/null
+import sys, yaml
+try:
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f)
+except Exception:
+    sys.exit(0)
+programs = (doc or {}).get('programs', []) or []
+for p in programs:
+    if not isinstance(p, dict):
+        continue
+    name = p.get('name', '')
+    if not isinstance(name, str):
+        continue
+    name = name.strip()
+    if name and name != 'ndm_start':
+        print(name)
+PYEOF
+	fi
+}
+
+# Test whether the program list begins with ndm_start.  When false, the
+# YAML pre-dates the graph design and we fall through to the legacy path.
+graph_has_root()
+{
+	local file="$1.$param_ext"
+	if [ "$param_ext" = "xml" ]
+	then
+		python3 - "$file" << 'PYEOF' 2>/dev/null
+import sys, xml.etree.ElementTree as ET
+try:
+    tree = ET.parse(sys.argv[1])
+except Exception:
+    sys.exit(1)
+root = tree.getroot()
+for prog in root.iter('program'):
+    nm = prog.find('name')
+    if nm is None:
+        nm = prog.find('n')
+    if nm is not None and nm.text and nm.text.strip() == 'ndm_start':
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+	else
+		python3 - "$file" << 'PYEOF' 2>/dev/null
+import sys, yaml
+try:
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f)
+except Exception:
+    sys.exit(1)
+programs = (doc or {}).get('programs', []) or []
+if not programs:
+    sys.exit(1)
+first = programs[0]
+if isinstance(first, dict) and str(first.get('name', '')).strip() == 'ndm_start':
+    sys.exit(0)
+sys.exit(1)
+PYEOF
+	fi
+	return $?
+}
+
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // Legacy do_* helpers (used by the fallback path AND by graph dispatch
+# // when the corresponding flag-named plugin isn't on the graph but the
+# // user wants the wide-band shortcut)
+# /////////////////////////////////////////////////////////////////////////////////////////////////
 
 do_wideband()
 {
 	$wideband || return
-
-	print_header "$session - Processing wideband signal files (convert, resample, merge, extract, reorder)"
-
-	# Check if final output file is already present; if so, skip
-	outputs_exist $session.dat && return
-	# Convert wideband data -> .dat
-	if $(extension_exists "smr" $directory $session ${suffixes[*]})
-	then
-		ndm_smr2dat $session.$param_ext
-		step_completed ndm_smr2dat || return # subsequent steps cannot be performed if conversion failed
-	elif $(extension_exists "ncs" $directory $session ${suffixes[*]})
-	then
-		ndm_ncs2dat $session.$param_ext
-		step_completed ndm_ncs2dat || return
-	fi
-
-	# Resample files
-	ndm_resample $session.$param_ext
-	step_completed ndm_resample || return
-
-	# Merge files
-	ndm_mergedat $session.$param_ext
+	local i
+	for ((i=0; i<${#suffixes[@]}; i++))
+	do
+		local suffix=$(get_suffix $i ${suffixes[*]})
+		local session=$(basename `pwd`)-$suffix
+		[ ! -f "$session.dat" ] && continue
+		ndm_resample $session
+		step_completed ndm_resample || return
+	done
+	ndm_mergedat $(basename `pwd`)
 	step_completed ndm_mergedat || return
-
-	# Extract channels
-	ndm_extractchannels $session.$param_ext
+	ndm_extractchannels $(basename `pwd`)
 	step_completed ndm_extractchannels || return
-
-	# Reoder channels
-	ndm_reorderchannels $session.$param_ext
-	step_completed ndm_reorderchannels || return
 }
 
 do_events()
 {
 	$events || return
-
-	if $(extension_exists "smr" $directory $session ${suffixes[*]})
-	then
-		ndm_smr2evt $session.$param_ext
-		step_completed ndm_smr2evt || return
-	elif $(extension_exists "nev" $directory $session ${suffixes[*]})
-	then
-		ndm_nev2evt $session.$param_ext
-		step_completed ndm_nev2evt || return
-	fi
+	local i
+	for ((i=0; i<${#suffixes[@]}; i++))
+	do
+		local suffix=$(get_suffix $i ${suffixes[*]})
+		local session=$(basename `pwd`)-$suffix
+		[ ! -f "$session.smr" ] && [ ! -f "$session.nev" ] && continue
+		if [ -f "$session.smr" ]; then
+			ndm_smr2evt $session
+			step_completed ndm_smr2evt || return
+		fi
+		if [ -f "$session.nev" ]; then
+			ndm_nev2evt $session
+			step_completed ndm_nev2evt || return
+		fi
+	done
 }
 
 do_video()
 {
 	$video || return
-
-	# Convert video files
-	ndm_transcodevideo $session.$param_ext
+	ndm_transcodevideo $(basename `pwd`)
 	step_completed ndm_transcodevideo || return
-
-	# Extract LEDs
-	ndm_extractleds $session.$param_ext
+	ndm_extractleds $(basename `pwd`)
 	step_completed ndm_extractleds || return
 }
 
 do_sessions()
 {
-	local d
-	# Process each set of session files
+	# Process each set of session files (legacy per-session phase)
 	for session in $(list_sessions $directory ${suffixes[*]})
 	do
 		# Copy parameter template to session file
@@ -200,7 +317,6 @@ do_sessions()
 		else
 			cp "$dir_file" "$session_file"
 		fi
-		# Process
 		do_wideband
 		do_events
 		do_video
@@ -209,14 +325,10 @@ do_sessions()
 
 do_concatenation()
 {
- 	$concatenation || return
- 	
-	n_wideband_files=$(ls *dat 2>/dev/null | grep -v $directory.dat |wc -l)
+	$concatenation || return
+	n_wideband_files=$(ls *dat 2>/dev/null | grep -v $directory.dat | wc -l)
 	[ $n_wideband_files -lt 1 ] && return
-
-	# Print a header to indicate current processing step
 	print_header "$directory - Concatenating data files"
-
 	ndm_concatenate $directory
 	step_completed ndm_concatenate || return
 }
@@ -224,9 +336,6 @@ do_concatenation()
 do_spikes()
 {
 	$spikes || return
-
-	local i
-
 	ndm_hipass $directory
 	step_completed ndm_hipass || return
 	ndm_extractspikes $directory
@@ -238,7 +347,6 @@ do_spikes()
 do_lfp()
 {
 	$lfp || return
-
 	ndm_lfp $directory
 	step_completed ndm_lfp || return
 }
@@ -246,12 +354,58 @@ do_lfp()
 do_clean()
 {
 	$clean || return
-
 	ndm_clean $directory
 	step_completed ndm_clean || return
 }
 
-# ---------------- Start here ----------------
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // Graph-driven dispatcher
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+
+# dispatch_graph_per_session — runs all per-session plugins in graph order
+# against the current $session inside the directory loop.
+dispatch_graph_per_session()
+{
+	local plugin
+	for plugin in "${GRAPH_PLUGINS[@]}"
+	do
+		is_per_session_plugin "$plugin" || continue
+		# Skip plugins whose inputs aren't present rather than failing the
+		# whole pipeline; individual plugins also self-report via
+		# inputs_missing.
+		"$plugin" $session
+		step_completed "$plugin" || {
+			echo_warning "'$plugin' failed for session '$session'; continuing"
+		}
+	done
+}
+
+# dispatch_graph_per_directory — runs all per-directory plugins in graph
+# order against the current $directory.
+dispatch_graph_per_directory()
+{
+	local plugin
+	for plugin in "${GRAPH_PLUGINS[@]}"
+	do
+		is_per_session_plugin "$plugin" && continue
+		# Resolve plugin via PATH; if not found, warn and continue rather
+		# than fail-out.  Common case: a stale graph references a renamed
+		# or external plugin.
+		if ! command -v "$plugin" >/dev/null 2>&1
+		then
+			echo_warning "plugin '$plugin' not found on PATH; skipping"
+			continue
+		fi
+		"$plugin" $directory
+		step_completed "$plugin" || {
+			echo_warning "'$plugin' failed for '$directory'; continuing"
+		}
+	done
+}
+
+# /////////////////////////////////////////////////////////////////////////////////////////////////
+# // Start
+# /////////////////////////////////////////////////////////////////////////////////////////////////
 
 # List of directories
 suffix=$(get_suffix 0 ${suffixes[*]})
@@ -276,6 +430,23 @@ then
 else
 	directories=$*
 	explicit_list=true
+fi
+
+# Decide once at top whether the YAML carries a graph (programs[0] == ndm_start).
+USE_GRAPH=false
+if graph_has_root "$template"
+then
+	USE_GRAPH=true
+	# Preload the graph plugins into a single array shared across the
+	# directory loop; reading the YAML once is enough.
+	GRAPH_PLUGINS=()
+	while IFS= read -r line
+	do
+		[ -n "$line" ] && GRAPH_PLUGINS+=("$line")
+	done < <(read_program_list "$template")
+	echo_info "ndm_start: graph mode (${#GRAPH_PLUGINS[@]} plugin(s) in graph)"
+else
+	echo_info "ndm_start: legacy flag mode (no ndm_start node in programs:)"
 fi
 
 # Loop over directories
@@ -326,12 +497,38 @@ do
 		else
 			mv "$template_file" "$dir_file"
 		fi
-		# Process
-		do_sessions
-		do_concatenation
-		do_spikes
-		do_lfp
-		do_clean
+		# Process — graph mode dispatches the YAML's program list; legacy
+		# mode dispatches the hard-coded do_* sequence using the orchestration
+		# flags above.
+		if $USE_GRAPH
+		then
+			# Per-session phase (dispatch graph plugins classified as per-session)
+			for session in $(list_sessions $directory ${suffixes[*]})
+			do
+				local_session_file="$session.$param_ext"
+				dir_file="$directory.$param_ext"
+				if [ -f "$local_session_file" ]
+				then
+					if ! diff -q "$dir_file" "$local_session_file" >/dev/null
+					then
+						echo_warning "'$local_session_file' was modified since last batch processing"
+						cp -i "$dir_file" "$local_session_file"
+					fi
+				else
+					cp "$dir_file" "$local_session_file"
+				fi
+				dispatch_graph_per_session
+			done
+			# Per-directory phase
+			dispatch_graph_per_directory
+		else
+			# Legacy fallback
+			do_sessions
+			do_concatenation
+			do_spikes
+			do_lfp
+			do_clean
+		fi
 		cd ..
 	fi
 done

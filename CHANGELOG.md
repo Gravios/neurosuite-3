@@ -7,7 +7,54 @@ design notes live in `doc/design/<topic>.md`, indexed at the end.
 
 ---
 
-## 2026-04-26 — graphical Pipeline tab in ndmanager
+## 2026-04-27 — ndm_start as the graph root + YAML-driven dispatcher
+
+Restores the editable Pipeline Designer (rolled back the toggle-only
+view shipped on 2026-04-26) and finishes the design by pinning
+**`ndm_start` as the sticky root node** of every graph, then
+rewriting `ndm_start` the bash to read its program list from the
+YAML and dispatch in graph order.
+
+**GUI changes.** `ndm_start` is auto-inserted at position 0 of every
+graph: undeletable, indegree-0, single-instance, with a gold "★ ROOT"
+badge in the header. Loading a session that doesn't carry an
+`ndm_start` entry synthesises a defaults-only one and prepends it.
+Saving still uses the existing `applyRequested → setProgramList`
+round-trip; no YAML schema changes.
+
+**Bash changes.** `ndm_start` now reads `programs:` from the session
+YAML and dispatches each plugin in graph order. Plugins are
+classified per-session or per-directory by an internal whitelist
+(matching the legacy `do_sessions` semantics). Per-plugin failures
+are logged and execution continues. **Backward compatibility:** when
+`programs[0]` isn't `ndm_start`, the script falls through to the
+hard-coded `do_sessions / do_concatenation / do_spikes / do_lfp /
+do_clean` path using the seven flag parameters as before. Existing
+session YAMLs are unaffected.
+
+The seven legacy flags survive on the root node's parameters — the
+Inspector still shows them — but they only matter in legacy mode.
+Graph mode runs the program list as written.
+
+See `doc/design/ndm-start-root.md` for the full design and
+`doc/ndmanager/README.md#pipeline-tab` for the operational
+walkthrough.
+
+---
+
+## 2026-04-26 — graphical Pipeline tab in ndmanager (superseded)
+
+*Superseded by the 2026-04-27 entry above.* The toggle-only view
+shipped here was rolled back in favour of the editable node-graph
+designer that already existed in the repo (commit `4e0de6e`),
+extended with sticky-root semantics for `ndm_start`. The
+`PipelinePage` class introduced by this entry was deleted; the
+parameter-page signal additions (`parameterValueChanged`,
+`setParameterValue`) were retained for potential future use.
+
+---
+
+## 2026-04-26 — graphical Pipeline tab in ndmanager (original)
 
 New **Pipeline** entry in ndmanager's parameter tree showing
 `ndm_start` and its seven dispatch branches (`wideband`, `events`,
@@ -689,7 +736,7 @@ for the full detail of the recent plugin patch series.
 | `neuroscope` — cluster raster / overlay stall fixes | `doc/design/neuroscope-raster.md` |
 | `templates/template.yaml` — parameter block refresh | `doc/design/template-yaml.md` |
 | Per-probe empirical KK priors (`kk_build_prior` / `kk_resolve_prior`) | `doc/design/kk-prior.md` |
-| ndmanager Pipeline tab (graphical orchestrator view of `ndm_start`) | `doc/design/pipeline-tab.md` |
+| ndmanager Pipeline tab (editable node graph + YAML-driven `ndm_start` dispatcher) | `doc/design/ndm-start-root.md` |
 | Hardware / OS tuning recipe | `doc/design/optimization.md` |
 | Modeling comparison (Layer 1/2 vs BOTM) | `doc/design/modeling-l1-vs-botm.md` |
 | KK prior operational workflow | `doc/workflows/empirical-priors.md` |

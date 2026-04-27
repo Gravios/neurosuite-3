@@ -21,7 +21,7 @@ the time-ordered index; the design docs are the durable reference.
 | [`neuroscope-raster.md`](neuroscope-raster.md) | NeuroScope cluster raster / overlay stall fixes |
 | [`template-yaml.md`](template-yaml.md) | Session YAML template parameter-block refresh |
 | [`kk-prior.md`](kk-prior.md) | Per-probe empirical KK priors design (probe identity, hashes, friendly names) |
-| [`pipeline-tab.md`](pipeline-tab.md) | ndmanager Pipeline tab (graphical orchestrator view of `ndm_start`) |
+| [`ndm-start-root.md`](ndm-start-root.md) | ndmanager Pipeline tab — editable node graph with `ndm_start` as sticky root, plus YAML-driven dispatcher |
 | [`optimization.md`](optimization.md) | Hardware and OS tuning recipe |
 
 ## Related
