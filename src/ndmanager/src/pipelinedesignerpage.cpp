@@ -41,6 +41,25 @@
 const QVector<NdmScriptDef>& ndmScriptDefs()
 {
     static const QVector<NdmScriptDef> s_defs = {
+        // ── Orchestrator (root) ────────────────────────────────────────────
+        // ndm_start is the pipeline entry point.  When the graph is exported
+        // to a session YAML, ndm_start is always the first entry in the
+        // programs: list; running `ndm_start session` then iterates the rest
+        // of the list in order (graph topology), dispatching each plugin.
+        // Its parameters are the legacy ndm_start orchestration flags —
+        // historically the dispatch gate; under the graph model they survive
+        // as a backwards-compat hint that ndm_start can fall through to its
+        // pre-graph behaviour when no orchestrator node is present.
+        { "ndm_start", "ndm_start ★", "Pipeline orchestrator (root node)", "orchestrator", "",
+          {{ "suffixes",      "nlx",   "Mandatory" },
+           { "log",           "false", "Optional"  },
+           { "wideband",      "true",  "Optional"  },
+           { "events",        "true",  "Optional"  },
+           { "video",         "true",  "Optional"  },
+           { "concatenation", "true",  "Optional"  },
+           { "spikes",        "true",  "Optional"  },
+           { "lfp",           "true",  "Optional"  },
+           { "clean",         "false", "Optional"  }} },
         // ── Conversion ────────────────────────────────────────────────────
         { "ndm_ncs2dat", "NCS → DAT", "Neuralynx .ncs to .dat", "conversion", "wideband",
           {{ "reverse","false","Optional" }, { "suffixes","nlx","Mandatory" }} },
@@ -134,9 +153,26 @@ const NdmScriptDef* ndmScriptDef(const QString& type)
     return nullptr;
 }
 
+// Sticky-root identifier.  ndm_start is the pipeline entry point: always
+// present in the graph, always position 0 of the exported program list,
+// undeletable, and rejects incoming edges.
+static const QString kRootType = QStringLiteral("ndm_start");
+
+/** Returns the index of the ndm_start node in @p nodes, or -1 if absent. */
+static int rootIndexIn(const QList<PipelineNode>& nodes)
+{
+    for (int i = 0; i < nodes.size(); ++i) {
+        if (nodes[i].type == kRootType) return i;
+    }
+    return -1;
+}
+
 const QMap<QString, CategoryStyle>& categoryStyles()
 {
     static const QMap<QString, CategoryStyle> s_styles {
+        // Orchestrator — gold accent, distinct from any other category, so the
+        // ndm_start root node reads as the entry point at a glance.
+        { "orchestrator",{ "Orchestrator",QColor(0x2a,0x1d,0x05), QColor(0xfa,0xc1,0x5c) } },
         { "conversion",  { "Conversion",  QColor(0x1e,0x1a,0x3d), QColor(0x81,0x8c,0xf8) } },
         { "preparation", { "Preparation", QColor(0x0f,0x23,0x3a), QColor(0x60,0xa5,0xfa) } },
         { "grouping",    { "Grouping",    QColor(0x0a,0x28,0x26), QColor(0x2d,0xd4,0xbf) } },
@@ -208,11 +244,20 @@ void PipelineCanvas::loadPreset(const QVector<QString>& types)
     const float startY = 80.f;
     const float stepX  = NW + 60.f;
 
-    for (int i = 0; i < types.size(); ++i) {
-        const NdmScriptDef* def = ndmScriptDef(types[i]);
+    // Build the type list with ndm_start prepended (or hoisted if the
+    // preset already includes it — defensive against future presets).
+    QVector<QString> withRoot;
+    withRoot.reserve(types.size() + 1);
+    withRoot.append(kRootType);
+    for (const QString& t : types) {
+        if (t != kRootType) withRoot.append(t);
+    }
+
+    for (int i = 0; i < withRoot.size(); ++i) {
+        const NdmScriptDef* def = ndmScriptDef(withRoot[i]);
         PipelineNode n;
         n.id      = newId();
-        n.type    = types[i];
+        n.type    = withRoot[i];
         n.pos     = QPointF(startX + i * stepX, startY);
         n.enabled = true;
         if (def)
@@ -232,6 +277,14 @@ void PipelineCanvas::deleteSelected()
 {
     if (!m_nodes) return;
     if (!m_selNodeId.isEmpty()) {
+        // ndm_start is the sticky root.  Silently refuse to delete it —
+        // the user can still remove edges or rearrange children, but the
+        // entry point is permanent.
+        for (const PipelineNode& n : *m_nodes) {
+            if (n.id == m_selNodeId && n.type == kRootType) {
+                return;
+            }
+        }
         // remove edges touching this node
         m_edges->removeIf([&](const PipelineEdge& e) {
             return e.from == m_selNodeId || e.to == m_selNodeId;
@@ -435,17 +488,43 @@ void PipelineCanvas::drawNode(QPainter& p, const PipelineNode& n)
     const QColor portFill   = isSel ? cs.accent : cs.accent.darker(200);
     const QColor portBorder = cs.accent;
 
-    // Input (left)
-    p.setPen(QPen(portBorder, 1.5));
-    p.setBrush(m_connecting && !m_connectFrom.isEmpty() ? portFill.lighter(150) : portFill);
-    p.drawEllipse(w2s(inPort(n)), PR, PR);
+    const bool isRoot = (n.type == kRootType);
+
+    // Input (left) — suppressed for the root node, which can't have
+    // incoming edges by construction.
+    if (!isRoot) {
+        p.setPen(QPen(portBorder, 1.5));
+        p.setBrush(m_connecting && !m_connectFrom.isEmpty() ? portFill.lighter(150) : portFill);
+        p.drawEllipse(w2s(inPort(n)), PR, PR);
+    }
 
     // Output (right)
+    p.setPen(QPen(portBorder, 1.5));
     p.setBrush(m_connecting && m_connectFrom == n.id ? cs.accent : portFill);
     p.drawEllipse(w2s(outPort(n)), PR, PR);
 
-    // Disabled overlay
-    if (!n.enabled) {
+    // Root badge — small "ROOT" pill in the top-right corner of the
+    // header stripe, drawn in the orchestrator accent on a dark backing.
+    if (isRoot) {
+        QFont badgeFont = p.font();
+        badgeFont.setPointSizeF(6.5);
+        badgeFont.setWeight(QFont::Bold);
+        QFontMetricsF bfm(badgeFont);
+        const QString badgeText = QStringLiteral("★ ROOT");
+        const qreal bw = bfm.horizontalAdvance(badgeText) + 10.0;
+        const qreal bh = bfm.height() + 2.0;
+        const QRectF bRect(r.right() - bw - 6.0, r.top() + 4.0, bw, bh);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0, 0, 0, 140));
+        p.drawRoundedRect(bRect, 4.0, 4.0);
+        p.setPen(cs.accent.lighter(120));
+        p.setFont(badgeFont);
+        p.drawText(bRect, Qt::AlignCenter, badgeText);
+    }
+
+    // Disabled overlay — never applied to the root node, which is always
+    // active (it's the orchestrator itself).
+    if (!n.enabled && !isRoot) {
         p.setBrush(QColor(0, 0, 0, 100));
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(r, CR, CR);
@@ -600,6 +679,12 @@ void PipelineCanvas::mouseReleaseEvent(QMouseEvent* ev)
         const QPointF world = s2w(ev->position());
         for (PipelineNode& n : *m_nodes) {
             if (n.id != m_connectFrom && hitIn(n, world)) {
+                // ndm_start is the entry node — it must have indegree 0
+                // so the topological sort always emits it first.  Reject
+                // any attempt to connect *into* it.
+                if (n.type == kRootType) {
+                    break;
+                }
                 // Prevent duplicate edges
                 bool dup = false;
                 for (const PipelineEdge& e : *m_edges)
@@ -644,6 +729,15 @@ void PipelineCanvas::dropEvent(QDropEvent* ev)
     if (!m_nodes || !ev->mimeData()->hasText()) return;
     const QString type = ev->mimeData()->text();
     if (!ndmScriptDef(type)) return;
+
+    // Refuse to add a second ndm_start.  The root is auto-inserted by
+    // setPrograms / loadPreset; the palette entry for it should be
+    // hidden, but if the drop happens anyway (legacy palette, manual
+    // mime payload, etc.) we silently ignore it.
+    if (type == kRootType && rootIndexIn(*m_nodes) >= 0) {
+        ev->ignore();
+        return;
+    }
 
     const NdmScriptDef* def = ndmScriptDef(type);
     const QPointF world = s2w(ev->position());
@@ -982,8 +1076,44 @@ void PipelineDesignerPage::setPrograms(const QList<ProgramInformation>& programs
     clearInspector();
 
     const float startX = 60.f, startY = 80.f, stepX = PipelineCanvas::NW + 60.f;
+
+    // ── Sticky root pre-insertion ─────────────────────────────────────────
+    // Build an internal list ordered with ndm_start first.  If the loaded
+    // programs already include an ndm_start entry, hoist it to position 0
+    // (and copy its params over).  Otherwise prepend a defaults-only one.
+    QList<const ProgramInformation*> ordered;
+    const ProgramInformation* rootProg = nullptr;
+    for (const ProgramInformation& p : programs) {
+        if (p.getProgramName() == kRootType) {
+            rootProg = &p;
+            break;
+        }
+    }
+    // Synthesise a default ndm_start ProgramInformation if the YAML didn't
+    // carry one — happens for legacy sessions that pre-date the graph.
+    ProgramInformation synthesisedRoot;
+    if (!rootProg) {
+        synthesisedRoot.setProgramName(kRootType);
+        QMap<int, QStringList> defParams;
+        if (const NdmScriptDef* def = ndmScriptDef(kRootType)) {
+            int row = 0;
+            for (const NdmParamDef& pd : def->params) {
+                defParams[row++] = QStringList{ pd.name, pd.defaultValue, pd.status };
+            }
+        }
+        synthesisedRoot.setParameterInformation(defParams);
+        rootProg = &synthesisedRoot;
+    }
+    ordered.append(rootProg);
+    for (const ProgramInformation& p : programs) {
+        if (&p == rootProg) continue;
+        if (p.getProgramName() == kRootType) continue;
+        ordered.append(&p);
+    }
+
     int i = 0;
-    for (const ProgramInformation& prog : programs) {
+    for (const ProgramInformation* progPtr : ordered) {
+        const ProgramInformation& prog = *progPtr;
         PipelineNode n;
         n.id      = m_canvas->allocateId();
         n.type    = prog.getProgramName();
@@ -1024,8 +1154,12 @@ QList<ProgramInformation> PipelineDesignerPage::getPrograms() const
 {
     const QList<PipelineNode> ordered = topoSort(m_nodes, m_edges);
     QList<ProgramInformation> result;
+    int rootResultIdx = -1;
+    int idx = 0;
     for (const PipelineNode& n : ordered) {
-        if (!n.enabled) continue;
+        // ndm_start must always be exported, regardless of its `enabled`
+        // flag — it's the orchestrator entry point.
+        if (!n.enabled && n.type != kRootType) continue;
         ProgramInformation pi;
         pi.setProgramName(n.type);
         // Build QMap<int,QStringList>
@@ -1042,7 +1176,17 @@ QList<ProgramInformation> PipelineDesignerPage::getPrograms() const
             pmap[row++] = QStringList{ pv.first, pv.second, status };
         }
         pi.setParameterInformation(pmap);
+        if (n.type == kRootType) rootResultIdx = idx;
         result.append(pi);
+        ++idx;
+    }
+    // Topo-sort emits ndm_start first when it has indegree 0 (which the
+    // canvas enforces by rejecting incoming edges).  Belt-and-braces:
+    // hoist it to position 0 of the output anyway, so a hand-edited graph
+    // or any future loosening of the constraint can't move it later.
+    if (rootResultIdx > 0) {
+        ProgramInformation root = result.takeAt(rootResultIdx);
+        result.prepend(root);
     }
     return result;
 }
@@ -1178,7 +1322,9 @@ void PipelineDesignerPage::populateInspector(const QString& id)
     m_inspEnabled->blockSignals(true);
     m_inspEnabled->setChecked(node->enabled);
     m_inspEnabled->blockSignals(false);
-    m_inspEnabled->setVisible(true);
+    // The orchestrator root is never disable-able — toggling it has no
+    // semantic meaning (the abstraction layer is always part of the run).
+    m_inspEnabled->setVisible(node->type != kRootType);
 
     // Rebuild form
     while (m_inspForm->rowCount() > 0) m_inspForm->removeRow(0);

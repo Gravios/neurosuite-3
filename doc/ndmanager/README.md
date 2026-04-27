@@ -138,8 +138,8 @@ Plugins can be launched from ndmanager in three ways:
   one step after a parameter change.
 - **Full batch** — use **Actions → Run All** to execute the complete pipeline in the correct
   order, equivalent to calling `ndm_start` on the command line.
-- **Graphical pipeline** — see the **Pipeline** tab below for a visual node graph with
-  per-branch toggles synchronised to `ndm_start`'s parameters.
+- **Pipeline Designer** — see the **Pipeline** tab below for an editable node-graph view
+  whose order is what `ndm_start` dispatches at runtime.
 
 Plugin output streams into a docked process widget at the bottom of the window. Exit codes are
 reported; code `10` (output already exists, step skipped) is shown as a notice rather than an
@@ -147,71 +147,82 @@ error.
 
 ---
 
-## Pipeline tab — graphical orchestrator view
+## Pipeline tab — editable node graph
 
-The **Pipeline** entry in the parameter tree (peer to *Plugins*) shows a visual map of
-`ndm_start` and the seven sub-process branches it dispatches to. The root node is `ndm_start`
-itself; below it are clickable branches for each toggle flag, and below those, read-only
-nodes listing the individual `ndm_*` commands that branch invokes.
+The **Pipeline** entry in the parameter tree (peer to *Plugins*) shows the session's plugin
+list as an editable directed graph. The root is **`ndm_start`** — pinned at position 0,
+permanently visible, gold-accented with a "★ ROOT" badge so the entry point is unmistakable.
+Every other node is a freely editable `ndm_*` plugin: drag from the palette to add, drag node
+bodies to position, drag from a node's output port to another's input port to connect, click
+edges to select, **Delete** to remove the selected node or edge. The toolbar carries a preset
+combo (Pipeline A / C / D / Full) and an **Apply Pipeline** button that pushes the graph back
+into the YAML's `programs:` list.
 
 ```
-                       ndm_start
-                          │
-       ┌──────┬───────┬───┴───┬───────────────┬────────┬────────┐
-   wideband events  video  concatenation   spikes     lfp     clean
-       │      │      │         │              │         │        │
-   ndm_smr2dat ndm_smr2evt ndm_transcodevideo ndm_concatenate  ndm_hipass  ndm_lfp  ndm_clean
-   ndm_resample ndm_nev2evt ndm_extractleds                    ndm_extractspikes
-   ndm_mergedat                                                ndm_pca
-   ndm_extractchannels
-   ndm_reorderchannels
+   ┌─────────────┐    ┌──────────┐    ┌───────────────┐    ┌─────────┐    ┌────────────┐
+   │ ndm_start ★ │ ─→ │ ndm_hipass│ ─→ │ ndm_extractspikes│ ─→ │ ndm_pca │ ─→ │ ndm_klustakwik │
+   └─────────────┘    └──────────┘    └───────────────┘    └─────────┘    └────────────┘
+        ROOT
 ```
 
-Each branch box mirrors one of the boolean flags `ndm_start` reads from
-`programs[ndm_start].parameters`:
+### Sticky-root semantics
 
-| Branch | Default | Maps to YAML key |
-|---|---|---|
-| Wideband signal processing | true | `wideband` |
-| Event file conversion | true | `events` |
-| Video processing | true | `video` |
-| Session concatenation | true | `concatenation` |
-| Spike detection + PCA | true | `spikes` |
-| LFP downsampling | true | `lfp` |
-| Cleanup intermediate files | **false** | `clean` |
+`ndm_start` is the orchestrator entry point. The Pipeline canvas enforces four invariants:
 
-### Synchronisation with the YAML
+| Invariant | Why |
+|---|---|
+| Always present, position 0 | Topological sort emits `ndm_start` first; the YAML's `programs[0]` is always `ndm_start` |
+| Never deletable | Backspace/Delete are silently ignored when the root is selected |
+| Indegree 0 | Edge-completion rejects any drag that ends on the root's input port (the input port itself is hidden) |
+| One per graph | The palette doesn't surface `ndm_start`; drops via mime payload are rejected when one already exists |
 
-The Pipeline tab and the **Plugins → ndm_start** parameter table are bidirectionally synced
-in real time:
+Selecting the root in the inspector exposes its seven legacy flag parameters (`wideband`,
+`events`, `video`, `concatenation`, `spikes`, `lfp`, `clean`). These are no longer used to
+gate dispatch — the graph order is authoritative — but they survive as a compatibility hint
+for the bash `ndm_start` falling back to legacy mode (see below).
 
-- **Toggle a branch in the graph** → the corresponding cell in `ndm_start`'s parameter table
-  is updated; the document is marked modified. If the flag was missing (relying on the
-  built-in default), a new optional row is appended so the next save produces an explicit
-  value.
-- **Edit the value cell directly in the parameter table** → the matching branch in the
-  graph updates immediately. Editing a cell whose name doesn't correspond to a known
-  flag has no effect on the graph.
+### Save → YAML round-trip
 
-When the document is saved, the YAML writer reads back from the `ndm_start` ProgramPage as
-it always has — so toggle changes appear under `programs[ndm_start].parameters` in the
-output YAML with no schema changes. Loading a session with custom flag values shows them
-correctly in the graph on open.
+Click **Apply Pipeline**. The canvas topo-sorts the graph (`ndm_start` first, then
+descendants in DAG order), produces a `QList<ProgramInformation>`, and emits
+`applyRequested`. `ParameterView::setProgramList` then **rewrites the entire `programs:`
+block** to match. Saving the document (Ctrl+S) writes that block to the YAML.
 
-### When `ndm_start` isn't present
+Opening a session whose YAML doesn't include `ndm_start` in `programs:` synthesises a
+defaults-only `ndm_start` node and prepends it. Opening a YAML that lists `ndm_start`
+elsewhere in the order hoists it to position 0 silently. Either way, the graph you see is
+always rooted at `ndm_start`.
 
-Sessions that don't include `ndm_start` in their `programs:` block (e.g. minimal templates)
-display the graph with default values, but toggles are disabled. Adding an `ndm_start`
-plugin via **Plugins → Add** activates the toggles; the page rebinds automatically.
-Likewise, removing or renaming `ndm_start` deactivates the graph until it reappears.
+### Runtime behaviour: `ndm_start` reads its own program list
+
+The `ndm_start` bash now operates as an abstraction layer:
+
+1. Reads the `programs:` list from the session YAML.
+2. If `programs[0]` is `ndm_start`, enters **graph mode**: dispatches each remaining
+   plugin in order. Plugins are classified per-session or per-directory inside the bash;
+   per-session plugins run inside the directory loop (one invocation per session file),
+   per-directory plugins run once per directory after the per-session phase.
+3. If `programs[0]` is anything else (or `programs:` is missing entirely), falls through
+   to **legacy mode** — the hard-coded `do_sessions / do_concatenation / do_spikes /
+   do_lfp / do_clean` sequence using the seven flag parameters as before.
+
+This means existing session YAMLs continue to work without any changes. New YAMLs produced
+by the Pipeline Designer get the graph-driven path.
+
+Per-plugin failures inside graph mode are logged as warnings and the next plugin still
+runs; this matches the user expectation that one bad sort shouldn't stop LFP downsampling.
+A plugin name in the graph that isn't on PATH (typo, deleted, external) is also a warning,
+not a fatal error.
 
 ### Notes
 
-- The Pipeline tab is for **flag editing** only. Re-ordering steps or substituting plugins
-  for one another requires editing the bash in `ndm_start` itself; the YAML's `programs:`
-  block holds parameters per step, but the orchestration order lives in the script.
-- The toggles are saved with the rest of the session YAML, so any subsequent CLI run of
-  `ndm_start /path/to/session` will respect the choices made in the GUI.
+- The graph order **is** the runtime order. Re-running `ndm_start /path/to/session` after
+  Apply respects the order saved in the YAML.
+- Disabling a node in the inspector skips it at export time — the YAML's `programs:` list
+  drops it on save. (`ndm_start` itself is never disable-able.)
+- The toolbar's **Preset** combo loads canonical chains (Pipeline A / C / D / Full); each
+  preset prepends `ndm_start` automatically.
+- For the full design, see [`../design/ndm-start-root.md`](../design/ndm-start-root.md).
 
 ---
 

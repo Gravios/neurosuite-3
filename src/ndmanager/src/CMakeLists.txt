@@ -25,9 +25,9 @@ set(_srcs
     neuroscopevideopage.cpp
     parameterpage.cpp
     parameterview.cpp
-    pipelinepage.cpp
     programspage.cpp
     programpage.cpp
+    pipelinedesignerpage.cpp
     queryinputdialog.cpp
     queryoutputdialog.cpp
     spikepage.cpp

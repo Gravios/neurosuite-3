@@ -182,15 +182,12 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
     mStackWidget->addWidget(programs);
     mScriptsItem = mParameterTree->addPage(":/icons/programs", tr("Plugins"), programs);
 
-    // Pipeline view — graphical orchestrator of ndm_start and the do_*
-    // branches it dispatches to.  Inserted at the top level (peer to
-    // "Plugins") so it's discoverable without drilling into a specific
-    // program.  Re-uses the programs icon for now; a dedicated pipeline
-    // icon can replace it once one exists in the resource file.
-    pipelinePage = new PipelinePage;
-    mStackWidget->addWidget(pipelinePage);
-    mParameterTree->addPage(":/icons/programs", tr("Pipeline"), pipelinePage);
-    pipelinePage->clearBinding();   // start in unbound (read-only) state
+    //adding page "Pipeline Designer"
+    pipelineDesigner = new PipelineDesignerPage;
+    mStackWidget->addWidget(pipelineDesigner);
+    mParameterTree->addPage(":/icons/programs", tr("Pipeline"), pipelineDesigner);
+    connect(pipelineDesigner, &PipelineDesignerPage::applyRequested,
+            this,             &ParameterView::setProgramList);
 
     //set connections
     connect(acquisitionSystem, &AcquisitionSystemPage::nbChannelsModified, this, &ParameterView::nbChannelsModified);
@@ -198,12 +195,6 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
     connect(programs, &ProgramsPage::programToLoad, this, &ParameterView::loadProgram);
     connect(spike, &SpikePage::nbGroupsModified, this, &ParameterView::nbSpikeGroupsModified);
     connect(files, &FilesPage::fileModification, this, &ParameterView::fileModification);
-
-    // Pipeline graph → ndm_start parameter table.  When the user clicks
-    // a branch in the graph, slotPipelineFlagToggled writes the new
-    // value back into the parameter row.
-    connect(pipelinePage, &PipelinePage::flagToggled,
-            this, &ParameterView::slotPipelineFlagToggled);
 
 
 
@@ -278,23 +269,9 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
     connect(program, &ProgramPage::programToRemove, this, &ParameterView::removeProgram);
     connect(program, &ProgramPage::scriptHidden, this, &ParameterView::scriptHidden);
 
-    // Forward parameter-value edits from this page's table to the
-    // pipeline graph.  PipelinePage filters by name so calls for
-    // programs other than ndm_start are no-ops.  Connection lives for
-    // the lifetime of the page; removeProgram tears it down via
-    // QObject parent ownership of the ProgramPage.
-    connect(parameterPage, &ParameterPage::parameterValueChanged,
-            this, &ParameterView::slotProgramParameterValueChanged);
-
     //Show the new page
     if(show)
         mStackWidget->setCurrentWidget(program);
-
-    // If we just added ndm_start, refresh the binding immediately so
-    // the graph becomes interactive.
-    if(programName == QLatin1String("ndm_start")) {
-        refreshPipelineBinding();
-    }
 
     return program;
 }
@@ -331,14 +308,6 @@ void ParameterView::changeProgramName(ProgramPage* programPage, const QString& n
         QMessageBox::critical (this,title,message );
 
     emit scriptListHasBeenModified(QStringList()<<programDict.keys());
-
-    // Identity change may make ndm_start appear or disappear from the
-    // dictionary.  Refresh the pipeline binding so the graph reflects
-    // the post-rename state.  Cheap and idempotent when ndm_start
-    // didn't move.
-    if(oldName == QLatin1String("ndm_start") || newName == QLatin1String("ndm_start")) {
-        refreshPipelineBinding();
-    }
 }
 
 
@@ -357,13 +326,6 @@ void ParameterView::removeProgram(ProgramPage* programPage){
     /*if(name.contains("New Program-") || name.contains("Untitled-"))*/ counter--;
     emit scriptListHasBeenModified(QStringList()<<programDict.keys());
     //mParameterTree->setCurrentItem(mScriptsItem);
-
-    // If the removed program was ndm_start, the graphical pipeline
-    // becomes unbound — refresh so it shows defaults read-only.  No-op
-    // when a different program was removed.
-    if(name == QLatin1String("ndm_start")) {
-        refreshPipelineBinding();
-    }
 }
 
 void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QString, QMap<int,QString> >& attributes,
@@ -501,11 +463,8 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
         }
     }
 
-    // After all programs are loaded, sync the pipeline graph to the
-    // ndm_start ProgramPage if one exists.  refreshPipelineBinding is
-    // safe to call even when no ndm_start is present (clears the
-    // binding and shows defaults read-only).
-    refreshPipelineBinding();
+    // Seed the Pipeline Designer from the same programs list
+    pipelineDesigner->setPrograms(programList);
 }
 
 void ParameterView::loadProgram(const QString &programUrl) {
@@ -890,60 +849,35 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
     spike->setModified(true);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Pipeline graph ↔ ndm_start ProgramPage synchronisation
-// ─────────────────────────────────────────────────────────────────────────
-
-void ParameterView::refreshPipelineBinding() {
-    if(!pipelinePage) return;  // defensive — early in construction
-
-    const QString kNdmStart = QStringLiteral("ndm_start");
-    if(!programDict.contains(kNdmStart)) {
-        pipelinePage->clearBinding();
-        return;
+// ---------------------------------------------------------------------------
+// ParameterView::setProgramList
+// Called by PipelineDesignerPage::applyRequested to push the graph back
+// into the Plugins tree.  Replaces all existing programs in order.
+// ---------------------------------------------------------------------------
+void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms)
+{
+    // ── 1. Remove all existing programs ────────────────────────────────────
+    const QStringList existing = programDict.keys();
+    for (const QString& name : existing) {
+        ProgramPageId pid = programDict[name];
+        // Remove tree item (deleting a QTreeWidgetItem removes it from its parent)
+        delete pid.item;
+        mStackWidget->removeWidget(pid.page);
+        pid.page->deleteLater();
     }
-    ProgramPage* program = programDict[kNdmStart].page;
-    if(!program) {
-        pipelinePage->clearBinding();
-        return;
-    }
-    ParameterPage* parameterPage = program->getParameterPage();
-    if(!parameterPage) {
-        pipelinePage->clearBinding();
-        return;
-    }
-    // Push the current parameter values into the graph.  The connection
-    // from this parameterPage's parameterValueChanged signal was made
-    // in addProgram() so subsequent edits propagate live; we don't
-    // need to (re)wire anything here.
-    pipelinePage->setNdmStartParameters(parameterPage->getParameterInformation());
-}
+    programDict.clear();
 
-void ParameterView::slotPipelineFlagToggled(const QString& flagName,
-                                             const QString& newValue) {
-    const QString kNdmStart = QStringLiteral("ndm_start");
-    if(!programDict.contains(kNdmStart)) return;  // no-op when unbound
-    ProgramPage* program = programDict[kNdmStart].page;
-    if(!program) return;
-    ParameterPage* parameterPage = program->getParameterPage();
-    if(!parameterPage) return;
-    // createIfMissing=true — if the user toggles a flag that was relying
-    // on the script default, a new optional row is appended.  This
-    // means saving the YAML produces an explicit value the next time
-    // the session is opened, which is what the user expects after
-    // interacting with the graph.
-    const bool changed = parameterPage->setParameterValue(flagName, newValue,
-                                                            /*createIfMissing=*/true);
-    if(changed) {
-        programsModified = true;
+    // ── 2. Add each program from the pipeline designer in order ────────────
+    for (const ProgramInformation& prog : newPrograms) {
+        ProgramPage* page = addProgram(prog.getProgramName(), /*show=*/false);
+        ParameterPage* pp = page->getParameterPage();
+        pp->setProgramName(prog.getProgramName());
+        page->setHelp(prog.getHelp());
+        pp->setParameterInformation(prog.getParameterInformation());
+        page->initialisationOver();
     }
-}
 
-void ParameterView::slotProgramParameterValueChanged(const QString& parameterName,
-                                                      const QString& newValue) {
-    if(!pipelinePage) return;
-    // Only ndm_start parameters affect the graph; PipelinePage filters
-    // by name internally so calls from other ProgramPages are safe and
-    // cheap (single hash lookup, then return).
-    pipelinePage->setFlagFromExternalEdit(parameterName, newValue);
+    mParameterTree->expandItem(mScriptsItem);
+    programsModified = true;
+    emit scriptListHasBeenModified(programDict.keys());
 }
