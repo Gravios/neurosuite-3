@@ -28,6 +28,11 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStackedWidget>
+#include <QVBoxLayout>
+#include <QLabel>
+
+#include "probemakerpage.h"
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -65,6 +70,48 @@ ProbePage::ProbePage(QWidget* parent)
             this, &ProbePage::cellEdited);
     connect(probeTable->selectionModel(), &QItemSelectionModel::currentRowChanged,
             this, [this](const QModelIndex&, const QModelIndex&) { rowSelected(); });
+
+    // ── Embedded probe-geometry editor ───────────────────────────────────
+    // The original layout (probelayout.ui) carried a `diagramGroupBox`
+    // containing a static QLabel preview ("diagramLabel").  We keep
+    // diagramLabel as the no-selection placeholder, and add a
+    // QStackedWidget alongside it so we can swap to an interactive
+    // ProbeMakerPage when a row is selected and a probe file is loaded.
+    //
+    // Page 0 = diagramLabel (placeholder, the original behaviour)
+    // Page 1 = m_probeMaker (interactive geometry editor)
+    qDebug() << "[ProbeMaker] ctor: diagramGroupBox=" << (void*)diagramGroupBox
+             << "diagramLayout=" << (void*)diagramLayout
+             << "diagramLabel=" << (void*)diagramLabel;
+    if (diagramGroupBox && diagramLayout) {
+        m_makerStack = new QStackedWidget(diagramGroupBox);
+        m_probeMaker = new ProbeMakerPage(diagramGroupBox);
+        qDebug() << "[ProbeMaker] ctor: created stack=" << (void*)m_makerStack
+                 << "probeMaker=" << (void*)m_probeMaker;
+
+        // diagramLabel was already added to diagramLayout by the
+        // .ui-generated setup; move it into the stack so the existing
+        // placeholder text continues to work without rewriting the .ui.
+        if (diagramLabel) {
+            diagramLayout->removeWidget(diagramLabel);
+            m_makerStack->addWidget(diagramLabel);   // index 0
+            qDebug() << "[ProbeMaker] ctor: added diagramLabel as stack page 0";
+        }
+        m_makerStack->addWidget(m_probeMaker);       // index 1
+        m_makerStack->setCurrentIndex(0);
+        diagramLayout->addWidget(m_makerStack);
+        qDebug() << "[ProbeMaker] ctor: stack added to diagramLayout, currentIndex=0"
+                 << "stack count=" << m_makerStack->count();
+
+        // Whenever the maker reports an edit, persist it back to the
+        // session's <session>.probe.<probeId>.probe file and update
+        // the table's File column.
+        connect(m_probeMaker, &ProbeMakerPage::modified,
+                this, &ProbePage::saveMakerToCurrentRow);
+    } else {
+        qWarning() << "[ProbeMaker] ctor: diagramGroupBox or diagramLayout missing"
+                   << "— maker NOT instantiated!";
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -73,12 +120,16 @@ ProbePage::ProbePage(QWidget* parent)
 
 void ProbePage::setProbes(const QList<ProbeEntry>& probes)
 {
+    qDebug() << "[ProbeMaker] setProbes: populating" << probes.size() << "rows";
     probeTable->blockSignals(true);
     probeTable->setRowCount(0);
     for (const ProbeEntry& entry : probes) {
         int row = probeTable->rowCount();
         probeTable->insertRow(row);
         populateRow(row, entry);
+        qDebug() << "[ProbeMaker] setProbes: row" << row
+                 << "id=" << entry.id
+                 << "probeFile=" << entry.probeFile;
     }
     probeTable->blockSignals(false);
     m_modified = false;
@@ -115,18 +166,27 @@ QString ProbePage::getLibraryPath() const
 // from there).  Returns the bare filename the caller should store in the
 // probe table's file column, or an empty string on failure / user cancel.
 //
-// If the selected file is already the local copy (same canonical path),
-// no copy is performed and the bare name is returned directly.  If a
-// different file with the same basename already exists locally, the user
-// is asked whether to overwrite, reuse, or cancel.
-QString ProbePage::copyProbeIntoSession(const QString& srcPath)
+// When @p probeId is non-negative, the destination is renamed to
+//   <session>.probe.<probeId>.probe
+// so the file is unambiguously tied to the row whose ID is probeId.
+// When @p probeId is -1, the source basename is preserved (legacy
+// behaviour; used only by transitional callers that don't yet know
+// the row's ID — currently none).
+//
+// If the source canonical path equals the destination, nothing is
+// copied and the bare destination filename is returned.  If a
+// different file already exists at the destination, the user is asked
+// whether to overwrite, reuse, or cancel.
+QString ProbePage::copyProbeIntoSession(const QString& srcPath, int probeId)
 {
     const QFileInfo srcInfo(srcPath);
-    const QString   baseName   = srcInfo.fileName();
+    const QString   baseName   = (probeId >= 0)
+                                  ? sessionProbeFilename(probeId)
+                                  : srcInfo.fileName();
     const QDir      sessionDir = QDir::current();
     const QString   localPath  = sessionDir.absoluteFilePath(baseName);
 
-    // Same file already? Nothing to copy.
+    // Source already at the destination?  Nothing to copy.
     if (QFileInfo(srcPath).canonicalFilePath()
         == QFileInfo(localPath).canonicalFilePath())
     {
@@ -162,6 +222,22 @@ QString ProbePage::copyProbeIntoSession(const QString& srcPath)
     return baseName;
 }
 
+// ---------------------------------------------------------------------------
+// sessionProbeFilename
+// ---------------------------------------------------------------------------
+// The local filename a probe with @p probeId should have in the
+// session directory: <session>.probe.<probeId>.probe where <session>
+// is the current working directory's basename.  Used by both Browse
+// (to rename imported files) and by the embedded Probe Maker (to
+// place its serialised output).
+QString ProbePage::sessionProbeFilename(int probeId)
+{
+    const QString sessionStem = QDir::current().dirName();
+    return QStringLiteral("%1.probe.%2.probe")
+            .arg(sessionStem)
+            .arg(probeId);
+}
+
 void ProbePage::addProbe()
 {
     // Open a file picker immediately.  The historical flow was:
@@ -181,11 +257,13 @@ void ProbePage::addProbe()
     if (srcPath.isEmpty())
         return;     // user cancelled — no new row added
 
-    const QString localName = copyProbeIntoSession(srcPath);
+    const int row = probeTable->rowCount();
+    // Copy first using the new row's eventual ID so the file gets the
+    // canonical <session>.probe.<row>.probe name from the start.
+    const QString localName = copyProbeIntoSession(srcPath, row);
     if (localName.isEmpty())
         return;     // copy failed or user cancelled the overwrite dialog
 
-    const int row = probeTable->rowCount();
     probeTable->insertRow(row);
     ProbeEntry blank;
     blank.id        = row;
@@ -246,64 +324,232 @@ void ProbePage::moveProbeDown()
 
 void ProbePage::rowSelected()
 {
-    int row = probeTable->currentRow();
+    const int row = probeTable->currentRow();
+    qDebug() << "[ProbeMaker] rowSelected: row=" << row
+             << "rowCount=" << probeTable->rowCount()
+             << "m_currentMakerRow=" << m_currentMakerRow;
+
+    // Save any pending edits from the previously-loaded probe before
+    // we switch.  saveMakerToCurrentRow is a no-op when m_loadingMaker
+    // or when there's no current row.
+    saveMakerToCurrentRow();
+
     if (row < 0) {
-        diagramLabel->setText(tr("Select a row to preview the probe layout"));
-        diagramLabel->setPixmap(QPixmap());
+        qDebug() << "[ProbeMaker] rowSelected: row<0, showing placeholder";
+        if (m_makerStack) m_makerStack->setCurrentIndex(0);   // placeholder
+        if (diagramLabel) {
+            diagramLabel->setText(tr("Select a row to preview the probe layout"));
+            diagramLabel->setPixmap(QPixmap());
+        }
+        m_currentMakerRow = -1;
+        return;
+    }
+
+    loadProbeIntoMaker(row);
+}
+
+// ---------------------------------------------------------------------------
+// loadProbeIntoMaker
+// ---------------------------------------------------------------------------
+// Read row @p row's probeFile cell, resolve it to an absolute path
+// (preferring the session-local copy over the library path), and feed
+// it to the embedded ProbeMakerPage.  When the file is missing or
+// can't be parsed we fall back to the legacy SVG / text placeholder
+// behaviour by leaving the QStackedWidget on page 0.
+//
+// `m_loadingMaker` is raised across the load so the maker's
+// modified() signal — which fires during setConnector() because the
+// scene is rebuilt — does not bounce back through saveMakerToCurrentRow.
+void ProbePage::loadProbeIntoMaker(int row)
+{
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: row=" << row
+             << "m_probeMaker=" << (void*)m_probeMaker
+             << "m_makerStack=" << (void*)m_makerStack;
+
+    if (!m_probeMaker || !m_makerStack) {
+        qWarning() << "[ProbeMaker] loadProbeIntoMaker: maker not instantiated"
+                   << "(diagramGroupBox/diagramLayout missing in ctor) — bailing";
+        // Constructor wiring failed (UI without diagramGroupBox);
+        // nothing more to do.
         return;
     }
 
     auto* fileItem = probeTable->item(row, ColFile);
-    QString probeFile = fileItem ? fileItem->text().trimmed() : QString();
+    const QString probeFile = fileItem ? fileItem->text().trimmed() : QString();
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: probeFile cell=" << probeFile;
 
     if (probeFile.isEmpty()) {
+        qDebug() << "[ProbeMaker] loadProbeIntoMaker: empty file → page 0 (placeholder)";
+        // No probe file → show the placeholder, not the editor.
+        m_makerStack->setCurrentIndex(0);
+        if (diagramLabel) {
 #ifdef ND_HAVE_QT_SVG
-        QSvgRenderer renderer(QStringLiteral(":/icons/probe.svg"));
-        if (renderer.isValid()) {
-            QSize sz = diagramLabel->size().boundedTo(QSize(300, 300));
-            if (sz.isEmpty()) sz = QSize(200, 200);
-            QPixmap pm(sz);
-            pm.fill(Qt::transparent);
-            QPainter painter(&pm);
-            renderer.render(&painter);
-            painter.end();
-            diagramLabel->setPixmap(pm);
-            diagramLabel->setText(QString());
-            return;
-        }
+            QSvgRenderer renderer(QStringLiteral(":/icons/probe.svg"));
+            if (renderer.isValid()) {
+                QSize sz = diagramLabel->size().boundedTo(QSize(300, 300));
+                if (sz.isEmpty()) sz = QSize(200, 200);
+                QPixmap pm(sz);
+                pm.fill(Qt::transparent);
+                QPainter painter(&pm);
+                renderer.render(&painter);
+                painter.end();
+                diagramLabel->setPixmap(pm);
+                diagramLabel->setText(QString());
+            } else
 #endif
-        diagramLabel->setPixmap(QPixmap());
-        diagramLabel->setText(tr("No probe file set for this entry"));
+            {
+                diagramLabel->setPixmap(QPixmap());
+                diagramLabel->setText(tr("No probe file set for this entry"));
+            }
+        }
+        m_currentMakerRow = row;
         return;
     }
 
+    // Resolve the probe file: try the session-local path first, then
+    // the library path.  Library files are typically read-only, so
+    // editing one in the maker triggers a rename to
+    //   <session>.probe.<probeId>.probe
+    // on the next save (handled by saveMakerToCurrentRow).
     QString resolved = probeFile;
-    if (!QFile::exists(resolved))
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: cwd=" << QDir::currentPath();
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: trying" << resolved
+             << "exists?" << QFile::exists(resolved);
+    if (!QFile::exists(resolved)) {
         resolved = getLibraryPath() + QDir::separator() + probeFile;
-
-#ifdef ND_HAVE_QT_SVG
-    if (resolved.endsWith(QStringLiteral(".svg"), Qt::CaseInsensitive) &&
-        QFile::exists(resolved))
-    {
-        QSvgRenderer renderer(resolved);
-        QSize sz = diagramLabel->size().boundedTo(QSize(300, 300));
-        if (sz.isEmpty()) sz = QSize(200, 200);
-        QPixmap pm(sz);
-        pm.fill(Qt::transparent);
-        QPainter painter(&pm);
-        renderer.render(&painter);
-        painter.end();
-        diagramLabel->setPixmap(pm);
-        diagramLabel->setText(QString());
-    } else
-#endif
-    {
-        QString shortName = QFileInfo(probeFile).fileName();
-        diagramLabel->setPixmap(QPixmap());
-        diagramLabel->setText(QFile::exists(resolved)
-            ? tr("%1\n(no diagram available)").arg(shortName)
-            : tr("%1\n(file not found)").arg(shortName));
+        qDebug() << "[ProbeMaker] loadProbeIntoMaker: trying library"
+                 << resolved << "exists?" << QFile::exists(resolved);
     }
+
+    if (!QFile::exists(resolved)) {
+        qWarning() << "[ProbeMaker] loadProbeIntoMaker: file not found, page 0";
+        m_makerStack->setCurrentIndex(0);
+        if (diagramLabel) {
+            diagramLabel->setPixmap(QPixmap());
+            diagramLabel->setText(
+                tr("%1\n(file not found)").arg(QFileInfo(probeFile).fileName()));
+        }
+        m_currentMakerRow = row;
+        return;
+    }
+
+    // Hand off to the maker.  Block re-entrant save while the scene
+    // rebuild emits modified().
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: calling loadFromFile(" << resolved << ")";
+    m_loadingMaker = true;
+    QString err;
+    const bool ok = m_probeMaker->loadFromFile(resolved, &err);
+    m_loadingMaker = false;
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: loadFromFile returned" << ok
+             << "err=" << err;
+
+    if (!ok) {
+        qWarning() << "[ProbeMaker] loadProbeIntoMaker: parse failed → page 0";
+        m_makerStack->setCurrentIndex(0);
+        if (diagramLabel) {
+            diagramLabel->setPixmap(QPixmap());
+            diagramLabel->setText(
+                tr("%1\n(parse error: %2)")
+                    .arg(QFileInfo(probeFile).fileName(),
+                         err.isEmpty() ? tr("unknown") : err));
+        }
+        m_currentMakerRow = -1;
+        return;
+    }
+
+        qDebug() << "[ProbeMaker] loadProbeIntoMaker: success — switching to page 1";
+    m_makerStack->setCurrentIndex(1);
+    m_currentMakerRow = row;
+
+    // Visibility/size diagnostics — useful when the maker is created
+    // but cramped into a too-narrow column.  Reports the actual
+    // rendered size after the layout has settled.  If you see
+    // "page 1 size=" as something like 80x300 (very narrow), the
+    // issue is layout stretch ratios, not visibility.
+    qDebug() << "[ProbeMaker] loadProbeIntoMaker: stack visible="
+             << m_makerStack->isVisible()
+             << "geometry=" << m_makerStack->geometry()
+             << "currentWidget=" << (void*)m_makerStack->currentWidget()
+             << "probeMaker visible=" << m_probeMaker->isVisible()
+             << "probeMaker size=" << m_probeMaker->size()
+             << "probeMaker minimumSize=" << m_probeMaker->minimumSize()
+             << "diagramGroupBox size="
+             << (diagramGroupBox ? diagramGroupBox->size() : QSize());
+}
+
+// ---------------------------------------------------------------------------
+// saveMakerToCurrentRow
+// ---------------------------------------------------------------------------
+// Persist whatever the embedded maker is currently showing back to
+// disk under the session-local <session>.probe.<probeId>.probe name,
+// then update the table's File column to point at it.
+//
+// Triggered by:
+//   - ProbeMakerPage::modified() during interactive editing
+//   - rowSelected() before switching away from the current row
+//
+// Skips when:
+//   - m_loadingMaker is true (the modified() came from setConnector)
+//   - no row is currently tracked (m_currentMakerRow < 0)
+//   - the maker hasn't been instantiated (no diagramGroupBox in the .ui)
+void ProbePage::saveMakerToCurrentRow()
+{
+    qDebug() << "[ProbeMaker] saveMakerToCurrentRow:"
+             << "m_loadingMaker=" << m_loadingMaker
+             << "m_probeMaker=" << (void*)m_probeMaker
+             << "m_currentMakerRow=" << m_currentMakerRow
+             << "rowCount=" << probeTable->rowCount();
+
+    if (m_loadingMaker) {
+        qDebug() << "[ProbeMaker] saveMakerToCurrentRow: skipped — load in progress";
+        return;
+    }
+    if (!m_probeMaker) {
+        qDebug() << "[ProbeMaker] saveMakerToCurrentRow: skipped — no maker";
+        return;
+    }
+    if (m_currentMakerRow < 0) {
+        qDebug() << "[ProbeMaker] saveMakerToCurrentRow: skipped — no current row";
+        return;
+    }
+    if (m_currentMakerRow >= probeTable->rowCount()) {
+        qDebug() << "[ProbeMaker] saveMakerToCurrentRow: skipped — row out of range";
+        return;
+    }
+
+    auto* idItem = probeTable->item(m_currentMakerRow, ColId);
+    const int probeId = idItem ? idItem->text().toInt() : m_currentMakerRow;
+    if (probeId < 0) {
+        qDebug() << "[ProbeMaker] saveMakerToCurrentRow: skipped — negative probeId";
+        return;
+    }
+
+    const QString fname = sessionProbeFilename(probeId);
+    const QString fpath = QDir::current().absoluteFilePath(fname);
+    qDebug() << "[ProbeMaker] saveMakerToCurrentRow: writing to" << fpath;
+
+    QString err;
+    if (!m_probeMaker->saveToFile(fpath, &err)) {
+        qWarning() << "[ProbeMaker] saveMakerToCurrentRow: save failed for"
+                   << fpath << ":" << err;
+        return;
+    }
+    qDebug() << "[ProbeMaker] saveMakerToCurrentRow: save OK";
+
+    // Update the row's File column to the new local filename.  Block
+    // signals so cellEdited isn't re-triggered (it'd call recalculateAll
+    // which re-imports from disk — fine, but redundant).
+    probeTable->blockSignals(true);
+    if (auto* fileItem = probeTable->item(m_currentMakerRow, ColFile)) {
+        if (fileItem->text() != fname) fileItem->setText(fname);
+    } else {
+        probeTable->setItem(m_currentMakerRow, ColFile,
+                            new QTableWidgetItem(fname));
+    }
+    probeTable->blockSignals(false);
+
+    m_modified = true;
+    emit probesModified();
 }
 
 void ProbePage::browseProbeFile()
@@ -323,10 +569,15 @@ void ProbePage::browseProbeFile()
         tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
     if (path.isEmpty()) return;
 
+    // Read the row's probeId from the ID column so the copy is named
+    // <session>.probe.<probeId>.probe (consistent with addProbe).
+    auto* idItem = probeTable->item(row, ColId);
+    const int probeId = idItem ? idItem->text().toInt() : row;
+
     // Copy the selected probe into the session directory (or reuse the
     // local copy if one already exists), then store its bare filename in
     // the row.  Same policy as addProbe — keeps the session self-contained.
-    const QString localName = copyProbeIntoSession(path);
+    const QString localName = copyProbeIntoSession(path, probeId);
     if (localName.isEmpty())
         return;     // copy failed or user cancelled
 
