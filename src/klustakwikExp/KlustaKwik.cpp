@@ -99,6 +99,20 @@ FILE *Distfp                 = nullptr;
 KlustaSave kSv;
 float HugeScore              = 1e32f;
 
+// Returns true if argv contains a flag of the form "-Name" — used to
+// detect whether the user explicitly set a parameter on the command
+// line.  Distinct from change_param() (param.c) which mutates the
+// global; this helper is read-only and safe to call before/after
+// argv processing.  Comparison is case-sensitive to match
+// search_command_line() in param.c.
+static bool cli_has_flag(int argc, char** argv, const char* name) {
+    for (int i = 0; i < argc; ++i) {
+        if (argv[i] && argv[i][0] == '-' && std::strcmp(argv[i] + 1, name) == 0)
+            return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 void SetupParams(int argc, char **argv) {
     char fname[STRLEN + 16];
@@ -170,6 +184,114 @@ void SetupParams(int argc, char **argv) {
 
     strncpy(FileBase, argv[1], STRLEN - 1);
     ElecNo = atoi(argv[2]);
+
+    // -----------------------------------------------------------------
+    // Auto-fill spike-group params from the session YAML
+    // -----------------------------------------------------------------
+    // The session YAML (<FileBase>.yaml) carries authoritative values
+    // for nbChannels / nSamples / peakSampleIndex / nTotalChannels /
+    // samplingRate per spike group.  Reading them here removes the
+    // need for the user to repeat them on every CLI invocation, and
+    // — more importantly — eliminates a class of silent corruption
+    // bugs where the CLI claims (say) 41 samples per spike but the
+    // .spk files were extracted with 32.  KK then reads garbage past
+    // the end of each spike and feature space collapses.
+    //
+    // CLI flags still win when present, both for diagnostic overrides
+    // and for transitional cases where the YAML is missing or
+    // out-of-date.  A flag like "-NbChannels 8" in argv unconditionally
+    // wins; otherwise we fill the global from the YAML, and finally
+    // hard-fail if any required value is still 0 after both passes.
+    //
+    // We use a struct of {global pointer, CLI name, YAML value} pairs
+    // so the printed audit trail enumerates every field in one place.
+    {
+        const KKYamlSpikeParams yp = kkReadYamlSpikeParams(FileBase, ElecNo);
+        if (!yp.valid) {
+            fprintf(stderr,
+                "[YAML] %s.yaml not found or unreadable for group %d — "
+                "every parameter must come from the command line.\n",
+                FileBase, ElecNo);
+        } else {
+            fprintf(stderr, "[YAML] %s.yaml group %d: nChan=%d nSamp=%d "
+                            "peak=%d nTotalChan=%d sampRate=%g\n",
+                    FileBase, ElecNo,
+                    yp.nbChannels, yp.nbSamples, yp.peakSampleIndex,
+                    yp.nTotalChannels, yp.samplingRate);
+        }
+
+        // Overlay YAML → globals only when the user didn't override on
+        // the CLI.  Each fixup logs a one-line provenance note.
+        // When CLI and YAML *both* specify a value and they disagree,
+        // emit a loud warning: that mismatch is exactly the silent
+        // corruption mode that this whole feature exists to avoid
+        // (e.g. CLI says 41 samples per spike but the .spk files were
+        // actually extracted with 32 — KK then reads garbage past
+        // every spike and feature space collapses).  We still honour
+        // the CLI override (escape hatch for transitional cases) but
+        // make the disagreement impossible to miss.
+        auto applyInt = [&](const char* name, int* slot, int yamlVal) {
+            const bool onCli = cli_has_flag(argc, argv, name);
+            if (onCli) {
+                if (yamlVal > 0 && yamlVal != *slot) {
+                    fprintf(stderr,
+                        "  %-18s = %-7d  ⚠️  CLI OVERRIDE: YAML says %d "
+                        "— check this is intentional!\n",
+                        name, *slot, yamlVal);
+                } else {
+                    fprintf(stderr,
+                        "  %-18s = %-7d  (CLI override; YAML had %d)\n",
+                        name, *slot, yamlVal);
+                }
+            } else if (yamlVal > 0) {
+                *slot = yamlVal;
+                fprintf(stderr, "  %-18s = %-7d  (from YAML)\n", name, *slot);
+            } else {
+                fprintf(stderr,
+                    "  %-18s = %-7d  (default — YAML missing)\n",
+                    name, *slot);
+            }
+        };
+        auto applyFloat = [&](const char* name, float* slot, double yamlVal) {
+            const bool onCli = cli_has_flag(argc, argv, name);
+            if (onCli) {
+                const double diff = std::abs(yamlVal - double(*slot));
+                if (yamlVal > 0 && diff > 1e-3) {
+                    fprintf(stderr,
+                        "  %-18s = %-7g  ⚠️  CLI OVERRIDE: YAML says %g "
+                        "— check this is intentional!\n",
+                        name, *slot, yamlVal);
+                } else {
+                    fprintf(stderr,
+                        "  %-18s = %-7g  (CLI override; YAML had %g)\n",
+                        name, *slot, yamlVal);
+                }
+            } else if (yamlVal > 0) {
+                *slot = static_cast<float>(yamlVal);
+                fprintf(stderr, "  %-18s = %-7g  (from YAML)\n", name, *slot);
+            } else {
+                fprintf(stderr,
+                    "  %-18s = %-7g  (default — YAML missing)\n",
+                    name, *slot);
+            }
+        };
+
+        applyInt  ("NbChannels",        &NbChannels,        yp.nbChannels);
+        applyInt  ("NbSamplesPerSpike", &NbSamplesPerSpike, yp.nbSamples);
+        applyInt  ("PeakSampleIndex",   &PeakSampleIndex,   yp.peakSampleIndex);
+        applyInt  ("NbTotalChannels",   &NbTotalChannels,   yp.nTotalChannels);
+        applyFloat("SamplingRate",      &SamplingRate,      yp.samplingRate);
+
+        // Required-value sanity check.  A 0 in any of these silently
+        // produces wrong results (cluster collapse, garbage features,
+        // out-of-bounds .fil reads), so we abort loudly instead.
+        // PeakSampleIndex == 0 is technically legal (peak at sample 0)
+        // but vanishingly unlikely in practice; we still allow it.
+        if (NbChannels        <= 0) Error("NbChannels not set: pass -NbChannels or fix YAML\n");
+        if (NbSamplesPerSpike <= 0) Error("NbSamplesPerSpike not set: pass -NbSamplesPerSpike or fix YAML\n");
+        if (NbTotalChannels   <= 0) Error("NbTotalChannels not set: pass -NbTotalChannels or fix YAML\n");
+        if (SamplingRate      <= 0) Error("SamplingRate not set: pass -SamplingRate or fix YAML\n");
+    }
 
     if (Screen && Verbose) print_params(stdout);
 
