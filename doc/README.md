@@ -212,10 +212,12 @@ KlustaKwik session N         ← automatic cluster assignment
 session.clu.N
         │
         ▼
-klusters session.yaml         ← manual curation (split / merge / realign / nudge)
-        │
+klusters session.yaml         ← manual curation (split / merge / realign / nudge / dipsplit)
+        │  writes session.curation_log.N.jl per-group audit trail
         ▼
 ndm_reextractspikes{,_stderiv} + ndm_subcluster_unmatched
+        │     ↑ kk_resolve_prior.py picks up <probe_id>.<group>.prior.yaml
+        │       (built once via kk_build_prior.py from curation logs)
 ndm_stripdat (raw / model / botm)
 ndm_decomposecollisions
 ndm_estimatedrift + ndm_applydrift
@@ -230,6 +232,17 @@ back into another klusters curation pass. `ndm_stripdat` +
 `ndm_redetectspikes` + `ndm_pca` + `ndm_klustakwik` is a common
 iterative-refinement loop.
 
+For task-oriented walkthroughs of the recipes above, see
+[`workflows/`](workflows/README.md):
+
+- [`workflows/first-time-sort.md`](workflows/first-time-sort.md) — full first pass
+- [`workflows/cluster-curation.md`](workflows/cluster-curation.md) — Klusters operations
+- [`workflows/re-extract-lower-threshold.md`](workflows/re-extract-lower-threshold.md) — recover weak units
+- [`workflows/iterative-refinement.md`](workflows/iterative-refinement.md) — strip → redetect → re-sort
+- [`workflows/empirical-priors.md`](workflows/empirical-priors.md) — per-probe KK priors
+- [`workflows/drift-correction.md`](workflows/drift-correction.md) — chronic-recording drift
+- [`workflows/collision-decomposition.md`](workflows/collision-decomposition.md) — overlapping spikes
+
 ---
 
 ## Parameter file format
@@ -243,15 +256,54 @@ for backward compatibility; they always save YAML.
 
 ---
 
+## Documentation map
+
+```
+doc/
+├── README.md                       ← this file
+├── workflows/                      ← task-oriented recipes
+│   ├── first-time-sort.md
+│   ├── cluster-curation.md
+│   ├── re-extract-lower-threshold.md
+│   ├── iterative-refinement.md
+│   ├── empirical-priors.md
+│   ├── drift-correction.md
+│   └── collision-decomposition.md
+├── design/                         ← deep technical references
+│   ├── reextract-v2.md
+│   ├── decomposecollisions.md
+│   ├── subtractspikes-botm.md
+│   ├── modeling-l1-vs-botm.md
+│   ├── kk-prior.md
+│   ├── optimization.md
+│   └── ...
+├── ndmanager-plugins/
+│   ├── README.md                   ← thin index
+│   ├── pipeline.md                 ← per-acquisition-system pipeline diagrams
+│   ├── commands/<command>.md       ← per-command reference
+│   └── formats/<format>.md         ← binary/YAML format reference
+├── klusters/README.md
+├── klustakwik/README.md
+├── ndmanager/README.md
+├── neuroscope/README.md
+├── spikerealign/README.md
+├── libklustersshared/README.md
+├── gpu/README.md
+└── <component>/install/<platform>.md
+```
+
+---
+
 ## Changelog and migration notes
 
-- `../CHANGES.md` — top-level consolidated changelog, dated entries
-  from most recent at top, with an index of per-topic detail files
-  (`CHANGES-*.md` at the repo root)
-- `../src/klustakwik/CHANGES.md` — KlustaKwik internals: every change
-  from v1.7 → neurosuite-3, including the chunked-CEM pipeline, GPU
-  dispatch, Phase 1.5 realignment, Phase 2.5 subspace reclustering,
-  and the `pickInputPath` fallback
-- `../OPTIMIZE.md` — hardware and OS tuning recipe
-- `../modeling-recommendations.md` — spike-subtraction modelling
-  comparison (Layer 1/2 vs BOTM)
+- [`../CHANGELOG.md`](../CHANGELOG.md) — top-level consolidated
+  changelog. Dated entries from most recent at top, each linking to
+  a `doc/design/<topic>.md` for the design discussion.
+- [`design/`](design/README.md) — durable design references.
+  Indexed in the changelog by date; indexed by topic in
+  [`design/README.md`](design/README.md).
+- [`../src/klustakwik/CHANGES.md`](../src/klustakwik/CHANGES.md) —
+  KlustaKwik-internal changes (v1.7 → neurosuite-3 diff). Lives in
+  the source tree because it tracks code-internal changes.
+- [`../src/klustakwikExp/CHANGES.md`](../src/klustakwikExp/CHANGES.md) —
+  KlustaKwikExp-internal changes (DipSplit, time-shift merging).

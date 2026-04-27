@@ -54,6 +54,7 @@ go back to the same format.
 | `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View; read by nudge/realign for waveform re-extraction |
 | `session.pca.N` / `session.pcaD.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps |
 | `session.{res,spk,fet,clu}.N.pending` | Transactional working copies — all realign/nudge edits go here first and are atomically renamed on save |
+| `session.curation_log.N.jl` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
 | `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
 
 ### Pipeline variant detection
@@ -281,6 +282,7 @@ All operations push onto the undo stack. The full session history is preserved u
 |---|---|---|
 | Group (merge) clusters | `G` | Merges all selected clusters into the lowest-numbered one |
 | Split clusters | `S` | Draw a lasso in the scatter plot; `S` assigns the enclosed spikes to a new cluster |
+| Auto bimodal split (DipSplit) | `D` | Tests the active cluster for bimodality on its top PCs; if a clean valley is found, splits into two new clusters automatically |
 | New cluster from lasso | `C` | Creates a new cluster ID and assigns the lasso-enclosed spikes to it |
 | Delete selected spikes → artefact (0) | `A` | Moves lasso-enclosed spikes to cluster 0 (artefact) |
 | Delete selected spikes → noise (1) | `N` | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
@@ -293,6 +295,92 @@ All operations push onto the undo stack. The full session history is preserved u
 | Update Display | — | Forces all views to recompute from current cluster assignments |
 
 **Cluster 0** is the artefact pseudo-cluster (waveforms that are not spikes). **Cluster 1** is the noise/MUA pseudo-cluster. Both are always shown at the top of the palette. Spikes sent to these clusters are not deleted — they remain in the feature file and can be retrieved by undo.
+
+### DipSplit — automatic bimodal split
+
+DipSplit (`D`) tests the active cluster for bimodality and splits it
+when the test is clear. The pipeline:
+
+1. Compute the cluster's top PCA directions in feature space.
+2. Project members onto each top direction; run a kernel-density
+   estimate on the 1D projection to detect a valley between two modes.
+3. If a valley is found and is deeper than `DipSplit valley depth`
+   (preference, default 0.3), refine the split via 2-means in the
+   plane of the top two PCs.
+4. Apply a **bloat gate**: re-fit a single Gaussian to the cluster and
+   check that ≥10% of members fall outside the χ²(d, 0.9) ellipsoid.
+   Bloated clusters split; tight ones do not. Disable the gate by
+   setting `DipSplit bloat factor` to `0` (the default in Klusters).
+5. Apply a BIC two-vs-one gate as a final sanity check.
+
+If all gates pass, the new cluster is created via the same
+`commitClusterCreation` plumbing as a manual lasso split, with full
+undo support and source-cluster waveform/correlogram cache invalidation.
+Every gate decision is recorded in the curation log (see below) for
+later analysis.
+
+Preferences live under **Settings → Preferences → General**:
+
+| Preference | Default | Effect |
+|---|---|---|
+| `DipSplit min size` | 30 | Minimum cluster size to consider |
+| `DipSplit bloat factor` | 0 | χ²(d, 0.9) bloat gate; `0` skips it |
+| `DipSplit valley depth` | 0.3 | KDE valley depth threshold (0–1) |
+| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`F` key) |
+
+DipSplit is intentionally conservative — it errs toward not splitting.
+Manual lasso split (`S`) remains the primary tool for ambiguous cases.
+
+---
+
+## Curation logging
+
+Every editing operation in Klusters writes a JSON-line record to
+`session.curation_log.<group>.jl` alongside the `.clu.N` file. The log
+is the audit trail for both crash forensics and the empirical-prior
+training pipeline (`kk_build_prior.py` in ndmanager-plugins; see
+[that workflow](../workflows/empirical-priors.md)).
+
+Schema (one JSON object per line):
+
+| Field | Description |
+|---|---|
+| `event` | `SESSION_OPEN`, `ANNOTATE`, `UNDO`, `ACTION_DETAIL`, or empty for action records |
+| `action` | `SPLIT`, `SPLIT_N`, `GROUP`, `RECLUSTER`, `REALIGN`, `NUDGE`, `DIPSPLIT`, … |
+| `phase` | `before`, `after`, or empty (for events) |
+| `role` | `result`, `source`, or empty |
+| `action_idx` | Monotonic index — `before` and `after` records share an index, allowing pairing |
+| `cluster_id` | Cluster touched by this record |
+| `n_spikes`, `n_clusters_in_group` | State after the action |
+| `n_pca_dims`, `n_feat_dims` | Feature-space dimensionality |
+| `feat_var_dims` | Per-PCA-dim within-cluster variance |
+| `feat_var_frobenius`, `feat_var_top3_mean`, `feat_var_mean` | Aggregate variance stats |
+| `l_ratio`, `isolation_dist` | Isolation metrics |
+| `nearest_centroid_dist_norm` | Mahalanobis distance to nearest neighbouring cluster |
+| `waveform_snr`, `waveform_chan_spread`, `waveform_width_samp` | Waveform morphology |
+| `isi_cv` | Inter-spike interval coefficient of variation |
+
+`ACTION_DETAIL` records carry algorithm-internal state for actions
+that benefit from per-decision metadata. DipSplit, for example, logs
+its inputs and outputs:
+
+```json
+{"event":"ACTION_DETAIL","action_idx":47,"algorithm":"dipsplit",
+ "source_cluster":12,"new_cluster":47,"reason":"bimodal_split",
+ "min_size":30,"bloat_factor":0.0,"valley_thresh":0.3,
+ "n_left":342,"n_right":418,"best_pc":0,"best_depth":0.51,
+ "mahal2_p90":7.8,"chi2_90":7.78,"delta_bic":-12.4}
+```
+
+Logs are append-only within a session; reopening Klusters in the same
+working copy continues the same log. Logs from many sessions on the
+same shank can be combined into a single prior YAML via
+`kk_build_prior.py`.
+
+Annotating cluster quality (cluster info panel: Good / Uncertain / Bad)
+emits an `ANNOTATE` event that gates which clusters are eligible for
+prior training. **Annotate as you go** — the prior pipeline filters
+out un-annotated clusters by default.
 
 ---
 
@@ -466,6 +554,7 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Nudge timestamps −1 sample | `Page Up` |
 | New cluster (from selection) | `1` |
 | Split selected cluster | `2` |
+| DipSplit (auto bimodal split) | `D` |
 | Shortcut help dialog | `H` |
 
 ### Tools
