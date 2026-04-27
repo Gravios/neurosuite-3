@@ -552,7 +552,7 @@ void ProbeMakerPage::onAddShankClicked()
     ProbeShank sh;
     sh.id    = QStringLiteral("shank%1").arg(m_data.shanks.size() + 1);
     sh.label = QStringLiteral("Shank %1")
-                   .arg(QChar('A' + m_data.shanks.size()));
+                   .arg(QChar(static_cast<char>('A' + static_cast<int>(m_data.shanks.size()))));
     sh.lengthUm = 1500.0;
     sh.widthUm  = 70.0;
     sh.tipAngle = 90.0;
