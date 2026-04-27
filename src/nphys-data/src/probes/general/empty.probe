@@ -1,0 +1,42 @@
+probeFile:
+  version: '1.0'
+  vendor: ''
+  model: ''
+  totalChannels: 1
+
+  # ── Physical construction ────────────────────────────────────────────────
+  # This is a minimal scaffold for a new probe.  Edit the values below in
+  # the ndmanager Probe Geometry editor (or this file directly).  A single
+  # shank with one site is the smallest topologically-valid probe; expand
+  # by raising shanks.count and adding entries to sites.geometry.
+  substrate: { material: silicon, thickness_um: null }
+
+  shanks:
+    count: 1
+    spacing_um: null         # single shank → no inter-shank spacing
+    length_mm: null          # set in mm, e.g. 1.5 for a 1500 µm shank
+
+  # ── Electrode sites ──────────────────────────────────────────────────────
+  # Each entry in geometry is [x_um, y_um] in the probe reference frame:
+  #   x — lateral position on the shank face (µm)
+  #   y — depth from the shank head (µm; tip is at y = length)
+  # The single starter site sits 100 µm from the tip on the shank centreline.
+  # Replace with the real layout from your probe's datasheet.
+  sites:
+    count_per_shank: 1
+    layout: linear
+    area_um2: 100             # circular pad ≈ 11 µm radius
+    spacing_um: null
+    geometry:
+      - [0, 100]               # one site, on the centreline, 100 µm from tip
+
+  # ── Channel mapping ──────────────────────────────────────────────────────
+  # null → sequential: site 0 wired to channel 0, site 1 to channel 1, etc.
+  # If your headstage scrambles the order, list the permutation here as
+  # [hardware_channel_for_site_0, hardware_channel_for_site_1, ...].
+  channelMap:
+    description: 'Sequential — site order matches amplifier channel order.'
+    map: null
+
+  notes: 'Empty starter probe.  Edit shank dimensions, site count, and
+    geometry in the Probe Geometry editor before using for spike sorting.'
