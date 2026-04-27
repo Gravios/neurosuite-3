@@ -7,6 +7,39 @@ design notes live in `doc/design/<topic>.md`, indexed at the end.
 
 ---
 
+## 2026-04-26 — graphical Pipeline tab in ndmanager
+
+New **Pipeline** entry in ndmanager's parameter tree showing
+`ndm_start` and its seven dispatch branches (`wideband`, `events`,
+`video`, `concatenation`, `spikes`, `lfp`, `clean`) as a clickable
+node graph. Each branch corresponds to one of the boolean flags
+read by `ndm_start`'s bash, with the sub-step plugins it invokes
+(`ndm_resample`, `ndm_extractspikes`, `ndm_pca`, …) shown as
+read-only context nodes underneath.
+
+**Bidirectional sync.** Toggle a branch in the graph and the
+matching cell in the `ndm_start` ProgramPage's parameter table
+updates immediately; edit the table cell directly and the graph
+follows. Saving the document writes the new flag values under
+`programs[ndm_start].parameters` — no schema changes.
+
+**Default handling.** Sessions that don't include `ndm_start` in
+their `programs:` block show the graph in defaults-only read-only
+mode. Adding `ndm_start` via Plugins → Add binds the page
+automatically. Toggling a flag that was relying on the script
+default (e.g. `clean` not present) appends an explicit row so the
+next CLI run sees the GUI's choice.
+
+The orchestration order itself stays hard-coded in `ndm_start`'s
+bash — only the on/off flags are GUI-editable. Re-ordering would
+require making `ndm_start` data-driven and is intentionally deferred.
+
+See `doc/design/pipeline-tab.md` for the full design and
+`doc/ndmanager/README.md#pipeline-tab` for the operational
+walkthrough.
+
+---
+
 ## 2026-04-25 — per-probe empirical KlustaKwik priors
 
 Adds `kk_build_prior.py` / `kk_resolve_prior.py` and wires them into
@@ -656,6 +689,7 @@ for the full detail of the recent plugin patch series.
 | `neuroscope` — cluster raster / overlay stall fixes | `doc/design/neuroscope-raster.md` |
 | `templates/template.yaml` — parameter block refresh | `doc/design/template-yaml.md` |
 | Per-probe empirical KK priors (`kk_build_prior` / `kk_resolve_prior`) | `doc/design/kk-prior.md` |
+| ndmanager Pipeline tab (graphical orchestrator view of `ndm_start`) | `doc/design/pipeline-tab.md` |
 | Hardware / OS tuning recipe | `doc/design/optimization.md` |
 | Modeling comparison (Layer 1/2 vs BOTM) | `doc/design/modeling-l1-vs-botm.md` |
 | KK prior operational workflow | `doc/workflows/empirical-priors.md` |

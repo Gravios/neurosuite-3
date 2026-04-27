@@ -132,16 +132,86 @@ Library path field      (set in the Probes tab)
 
 ## Running the preprocessing pipeline
 
-Plugins can be launched from ndmanager in two ways:
+Plugins can be launched from ndmanager in three ways:
 
 - **Individual step** — right-click a plugin page and select *Run*. Useful for reprocessing
   one step after a parameter change.
 - **Full batch** — use **Actions → Run All** to execute the complete pipeline in the correct
   order, equivalent to calling `ndm_start` on the command line.
+- **Graphical pipeline** — see the **Pipeline** tab below for a visual node graph with
+  per-branch toggles synchronised to `ndm_start`'s parameters.
 
 Plugin output streams into a docked process widget at the bottom of the window. Exit codes are
 reported; code `10` (output already exists, step skipped) is shown as a notice rather than an
 error.
+
+---
+
+## Pipeline tab — graphical orchestrator view
+
+The **Pipeline** entry in the parameter tree (peer to *Plugins*) shows a visual map of
+`ndm_start` and the seven sub-process branches it dispatches to. The root node is `ndm_start`
+itself; below it are clickable branches for each toggle flag, and below those, read-only
+nodes listing the individual `ndm_*` commands that branch invokes.
+
+```
+                       ndm_start
+                          │
+       ┌──────┬───────┬───┴───┬───────────────┬────────┬────────┐
+   wideband events  video  concatenation   spikes     lfp     clean
+       │      │      │         │              │         │        │
+   ndm_smr2dat ndm_smr2evt ndm_transcodevideo ndm_concatenate  ndm_hipass  ndm_lfp  ndm_clean
+   ndm_resample ndm_nev2evt ndm_extractleds                    ndm_extractspikes
+   ndm_mergedat                                                ndm_pca
+   ndm_extractchannels
+   ndm_reorderchannels
+```
+
+Each branch box mirrors one of the boolean flags `ndm_start` reads from
+`programs[ndm_start].parameters`:
+
+| Branch | Default | Maps to YAML key |
+|---|---|---|
+| Wideband signal processing | true | `wideband` |
+| Event file conversion | true | `events` |
+| Video processing | true | `video` |
+| Session concatenation | true | `concatenation` |
+| Spike detection + PCA | true | `spikes` |
+| LFP downsampling | true | `lfp` |
+| Cleanup intermediate files | **false** | `clean` |
+
+### Synchronisation with the YAML
+
+The Pipeline tab and the **Plugins → ndm_start** parameter table are bidirectionally synced
+in real time:
+
+- **Toggle a branch in the graph** → the corresponding cell in `ndm_start`'s parameter table
+  is updated; the document is marked modified. If the flag was missing (relying on the
+  built-in default), a new optional row is appended so the next save produces an explicit
+  value.
+- **Edit the value cell directly in the parameter table** → the matching branch in the
+  graph updates immediately. Editing a cell whose name doesn't correspond to a known
+  flag has no effect on the graph.
+
+When the document is saved, the YAML writer reads back from the `ndm_start` ProgramPage as
+it always has — so toggle changes appear under `programs[ndm_start].parameters` in the
+output YAML with no schema changes. Loading a session with custom flag values shows them
+correctly in the graph on open.
+
+### When `ndm_start` isn't present
+
+Sessions that don't include `ndm_start` in their `programs:` block (e.g. minimal templates)
+display the graph with default values, but toggles are disabled. Adding an `ndm_start`
+plugin via **Plugins → Add** activates the toggles; the page rebinds automatically.
+Likewise, removing or renaming `ndm_start` deactivates the graph until it reappears.
+
+### Notes
+
+- The Pipeline tab is for **flag editing** only. Re-ordering steps or substituting plugins
+  for one another requires editing the bash in `ndm_start` itself; the YAML's `programs:`
+  block holds parameters per step, but the orchestration order lives in the script.
+- The toggles are saved with the rest of the session YAML, so any subsequent CLI run of
+  `ndm_start /path/to/session` will respect the choices made in the GUI.
 
 ---
 
