@@ -73,6 +73,16 @@ public:
  */
     QMap<int, QStringList > getParameterInformation();
 
+    /**Sets the value cell of the parameter named @p parameterName to
+   * @p newValue.  No-op when no row matches.  When @p createIfMissing is
+   * true and the name doesn't exist, a new optional row is appended.
+   * Used by PipelinePage to write toggle state back into ndm_start's
+   * parameter table.  Returns true if anything was changed.
+   */
+    bool setParameterValue(const QString& parameterName,
+                           const QString& newValue,
+                           bool createIfMissing = false);
+
     /**True if at least one of the description property has been modified, false otherwise.*/
     bool isDescriptionModified()const{return descriptionModified;}
 
@@ -81,6 +91,14 @@ public:
 
 signals:
     void nameChanged(const QString& extension);
+
+    /**Emitted whenever a parameter VALUE cell (column 1) is committed.
+   * Carries the parameter name and its new value as strings.  Used by
+   * PipelinePage to keep the graphical pipeline view in sync with the
+   * ndm_start flags without polling.  Description-only edits do not
+   * fire this signal.
+   */
+    void parameterValueChanged(const QString& parameterName, const QString& newValue);
 
 public slots:
     /**Handles the change of the program's name.*/

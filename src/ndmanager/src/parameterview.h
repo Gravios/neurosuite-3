@@ -47,7 +47,7 @@
 #include "neuroscopevideopage.h"
 #include "programspage.h"
 #include "programpage.h"
-#include "pipelinedesignerpage.h"
+#include "pipelinepage.h"
 #include <klustersshared/generalinformation.h>
 #include <klustersshared/fileinformation.h>
 #include <klustersshared/programinformation.h>
@@ -190,13 +190,6 @@ public:
  */
     QStringList getFileScriptNames() const;
 
-    /**Replaces all programs with @p programs in the order given.
- * Called by PipelineDesignerPage::applyRequested to push the graph back
- * into the parameter tree so the change is reflected in the Plugins view
- * and persisted on the next save.
- */
-    void setProgramList(const QList<ProgramInformation>& programs);
-
     // ---- Probe data --------------------------------------------------------
     /**
      * Populate the Probe tab from data read by ndmanagerdoc::loadFromReader().
@@ -288,6 +281,20 @@ private slots:
                           QMap<int,QList<int>>  spike,
                           int                   firstNewGroupId);
 
+    /**Routes a flag toggle from the graphical PipelinePage back into
+   * the ndm_start ProgramPage's parameter table.  Creates the row if
+   * the flag is missing (typical for sessions whose ndm_start block
+   * relies on defaults).  Marks the document modified.
+   */
+    void slotPipelineFlagToggled(const QString& flagName, const QString& newValue);
+
+    /**Routes a value-cell edit from any ProgramPage to PipelinePage.
+   * The connection is only meaningful for the ndm_start page; for
+   * other programs the call is a no-op (PipelinePage filters by name).
+   */
+    void slotProgramParameterValueChanged(const QString& parameterName,
+                                          const QString& newValue);
+
 private:
     // Tracks the current total channel count so that applyProbeLayout can
     // rebuild the skip-attribute map and set anatomy->setNbChannels correctly.
@@ -306,6 +313,13 @@ private:
    * @return a pointer on the added ProgramPage.
    */
     ProgramPage* addProgram(const QString &programName, bool show);
+
+    /**Refreshes PipelinePage's binding to whatever ProgramPage currently
+   * represents ndm_start.  Pushes the page's parameter values into the
+   * graph and re-establishes the parameter→graph signal connection.
+   * Called on document load, on plugin add, and on plugin remove.
+   */
+    void refreshPipelineBinding();
 
     /** The document connected to the view, specified in the constructor */
     ndManagerDoc& doc;
@@ -352,11 +366,14 @@ private:
     /**Pointer on the probe assignment tab (expert mode; always created).*/
     ProbePage* probe;
 
-    /**Pointer on the pipeline designer page.*/
-    PipelineDesignerPage* pipelineDesigner;
-
     /**Pointer on the page containing information for the programs.*/
     ProgramsPage* programs;
+
+    /**Graphical pipeline view, bound to the ndm_start ProgramPage's
+   * parameter table.  When no ndm_start plugin is present in the
+   * session, the page renders defaults read-only.
+   */
+    PipelinePage* pipelinePage;
 
     struct ProgramPageId {
         ProgramPageId() {

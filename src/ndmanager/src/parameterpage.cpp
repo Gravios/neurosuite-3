@@ -20,6 +20,7 @@
 //include files for the application
 #include "parameterpage.h"
 #include <QTableWidget>
+#include <QComboBox>
 #include <QLineEdit>
 #include <QSpinBox>
 
@@ -81,10 +82,62 @@ ParameterPage::~ParameterPage(){}
 
 void ParameterPage::itemModified(QTableWidgetItem* item){
     if(!item) return;
-    if(item->column() == 1)
+    if(item->column() == 1) {
         valueModified = true;
-    else
+        // Look up the name (column 0) for the same row and emit the
+        // value-changed signal so PipelinePage (and any other listener)
+        // can react.  Guard against a missing name cell defensively.
+        const int row = item->row();
+        QTableWidgetItem* nameItem = parameterTable->item(row, 0);
+        if(nameItem) {
+            emit parameterValueChanged(nameItem->text(), item->text());
+        }
+    } else {
         descriptionModified = true;
+    }
+}
+
+bool ParameterPage::setParameterValue(const QString& parameterName,
+                                       const QString& newValue,
+                                       bool createIfMissing){
+    // Linear scan — the parameter table is short (typically <30 rows).
+    for(int row = 0; row < parameterTable->rowCount(); ++row) {
+        QTableWidgetItem* nameItem = parameterTable->item(row, 0);
+        if(!nameItem || nameItem->text() != parameterName) continue;
+        QTableWidgetItem* valueItem = parameterTable->item(row, 1);
+        if(!valueItem) {
+            valueItem = new QTableWidgetItem();
+            parameterTable->setItem(row, 1, valueItem);
+        }
+        if(valueItem->text() == newValue) return false;
+        // Block the itemChanged → itemModified → parameterValueChanged
+        // signal chain so we don't bounce back to whoever called us.
+        const bool wasBlocked = parameterTable->blockSignals(true);
+        valueItem->setText(newValue);
+        parameterTable->blockSignals(wasBlocked);
+        valueModified = true;
+        return true;
+    }
+    if(!createIfMissing) return false;
+    // Append a new optional row.  Match the layout addParameter() uses.
+    descriptionModified = true;
+    int row = parameterTable->rowCount();
+    parameterTable->insertRow(row);
+    const bool wasBlocked = parameterTable->blockSignals(true);
+    parameterTable->setItem(row, 0, new QTableWidgetItem(parameterName));
+    parameterTable->setItem(row, 1, new QTableWidgetItem(newValue));
+    QTableWidgetItem* statusItem = new QTableWidgetItem();
+    statusItem->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+    parameterTable->setItem(row, 2, statusItem);
+    parameterTable->setCellWidget(row, 2, createCombobox());
+    // Set the combo to "Optional" (assumed first item; fall back to text match).
+    if(QComboBox* combo = qobject_cast<QComboBox*>(parameterTable->cellWidget(row, 2))) {
+        const int idx = combo->findText(QStringLiteral("Optional"));
+        combo->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+    parameterTable->blockSignals(wasBlocked);
+    valueModified = true;
+    return true;
 }
 
 QMap<int, QStringList > ParameterPage::getParameterInformation(){
