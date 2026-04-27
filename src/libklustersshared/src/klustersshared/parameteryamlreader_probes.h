@@ -12,6 +12,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QPointF>
 #include <QString>
 #include <QStringList>
 #include <QRegularExpression>
@@ -44,6 +45,70 @@ struct ProbeGroupMeta {
     int groupId    = -1;
     int probeId    = -1;   ///< index into probes[], -1 = unset
     int shankIndex = -1;   ///< 0-based shank within probe, -1 = unset
+};
+
+// ---------------------------------------------------------------------------
+// Probe geometry data — used by ndmanager's Probe Maker page.
+// These types describe the *contents* of a `.probe` file (one connector,
+// N shanks, M channels per shank).  ProbeEntry above describes how a
+// probe is *referenced* from a session YAML; the two are complementary.
+// See doc/design/probe-maker.md for the design.
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief A single recording site — one electrode pad on a shank.
+ *
+ *  Coordinates are µm in the parent shank's local frame: x is lateral
+ *  across the shank face, y is depth from the shank head (y = 0 at the
+ *  top, y = lengthUm at the tip).  This matches the convention in the
+ *  canonical probe library files (src/nphys-data/src/probes/).
+ */
+struct ProbeChannel {
+    int     hardwareId    = 0;     ///< 0-based hardware channel index
+    QPointF posUm;                 ///< (x, y) on the shank, µm
+    int     siteIndex     = -1;    ///< probe-numbered site (display only)
+    qreal   areaUm2       = 177.0; ///< pad area, µm²
+    bool    enabled       = true;
+};
+
+/**
+ * @brief A single shank — substrate carrying recording sites.
+ *
+ *  originUm is the shank's origin in connector coordinates (where the
+ *  shank head sits relative to the connector).  Multi-shank probes
+ *  (Neuropixels 2.0, Buzsáki silicon arrays) store inter-shank pitch
+ *  via originUm.x() differences.
+ */
+struct ProbeShank {
+    QString id;                    ///< "shank1" — local identifier
+    QString label;                 ///< "Shank A" — user-facing
+    QPointF originUm;              ///< origin in connector coords, µm
+    qreal   lengthUm  = 1500.0;    ///< shank length, µm
+    qreal   widthUm   =   70.0;    ///< shank width, µm
+    qreal   tipAngle  =   90.0;    ///< degrees; 90° = blunt, 60° = sharp
+    QString layout    = QStringLiteral("linear");  ///< "linear", "tetrode", "poly2", ...
+    QList<ProbeChannel> channels;
+};
+
+/**
+ * @brief A whole probe — connector header plus shanks plus channel map.
+ *
+ *  Mirrors the canonical `.probe` file's `probeFile:` schema 1:1.
+ *  The Probe Maker page edits one of these in place; round-tripping
+ *  through saveToFile() / loadFromFile() preserves all fields.
+ */
+struct ProbeConnector {
+    QString version              = QStringLiteral("1.0");
+    QString vendor;
+    QString model;
+    QString catalogPage;
+    int     totalChannels        = 0;
+    QString substrateMaterial    = QStringLiteral("silicon");
+    qreal   substrateThicknessUm = 0.0;
+    QList<ProbeShank> shanks;
+    QString channelMapDescription;
+    QList<int> channelMap;        ///< empty = sequential (hw == site)
+    QString notes;
 };
 
 // ---------------------------------------------------------------------------

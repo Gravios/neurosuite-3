@@ -28,6 +28,9 @@ set(_srcs
     programspage.cpp
     programpage.cpp
     pipelinedesignerpage.cpp
+    probemakerpage.cpp
+    probemakeritems.cpp
+    probemakerviews.cpp
     queryinputdialog.cpp
     queryoutputdialog.cpp
     spikepage.cpp
