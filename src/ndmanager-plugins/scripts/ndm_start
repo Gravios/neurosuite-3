@@ -155,6 +155,67 @@ is_per_session_plugin()
 	return 1
 }
 
+# read_pipeline_file — extract plugin names (in order) from a
+# `<session>.ndm.<name>.pipeline` file produced by ndmanager's
+# Pipeline Designer.  Schema is documented in
+# src/ndmanager/src/pipelinedesignerpage.cpp.  Outputs one plugin
+# name per line on stdout, in topological order, skipping ndm_start
+# itself.
+read_pipeline_file()
+{
+	local pipefile="$1"
+	[ -f "$pipefile" ] || return 1
+	python3 - "$pipefile" << 'PYEOF' 2>/dev/null
+import sys, yaml
+try:
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f) or {}
+except Exception:
+    sys.exit(0)
+nodes = doc.get('nodes', []) or []
+edges = doc.get('edges', []) or []
+# Topological sort: build adjacency, run Kahn's algorithm.
+node_by_id = {}
+node_enabled = {}
+indeg = {}
+adj = {}
+for n in nodes:
+    if not isinstance(n, dict): continue
+    nid = n.get('id', '')
+    typ = n.get('type', '')
+    if not nid: continue
+    node_by_id[nid] = typ
+    # Disabled nodes still participate in topology (so the order is
+    # deterministic) but are filtered out before printing.  ndm_start is
+    # never disable-able.
+    node_enabled[nid] = bool(n.get('enabled', True))
+    indeg.setdefault(nid, 0)
+    adj.setdefault(nid, [])
+for e in edges:
+    if not isinstance(e, dict): continue
+    a, b = e.get('from'), e.get('to')
+    if a in node_by_id and b in node_by_id:
+        adj[a].append(b)
+        indeg[b] = indeg.get(b, 0) + 1
+# Kahn's: queue of indeg-0 nodes, in YAML insertion order.
+queue = [nid for nid in node_by_id if indeg.get(nid, 0) == 0]
+emitted = []
+while queue:
+    nid = queue.pop(0)
+    typ = node_by_id[nid]
+    if node_enabled.get(nid, True) or typ == 'ndm_start':
+        emitted.append(typ)
+    for nxt in adj.get(nid, []):
+        indeg[nxt] -= 1
+        if indeg[nxt] == 0:
+            queue.append(nxt)
+# Drop ndm_start (orchestrator entry — never dispatched by itself).
+for t in emitted:
+    if t and t != 'ndm_start':
+        print(t)
+PYEOF
+}
+
 # read_program_list — extract the names of plugins from the YAML's
 # programs: list, in order, skipping ndm_start itself (the orchestrator
 # entry doesn't dispatch itself).  Returns one plugin name per line on
@@ -432,20 +493,53 @@ else
 	explicit_list=true
 fi
 
-# Decide once at top whether the YAML carries a graph (programs[0] == ndm_start).
+# Decide once at top which dispatch source to use.  Priority:
+#   1. `<template>.ndm.<NDM_PIPELINE>.pipeline`  if env var is set
+#      (lets a CI runner choose between named variants without
+#      touching files)
+#   2. `<template>.ndm.default.pipeline`         the standard
+#      auto-loaded pipeline file produced by ndmanager
+#   3. YAML `programs:` block with ndm_start at position 0
+#      (legacy in-YAML pipeline form, kept for backward compat)
+#   4. Fall through to flag-driven legacy mode (no graph at all)
 USE_GRAPH=false
-if graph_has_root "$template"
+GRAPH_SOURCE=""
+GRAPH_PLUGINS=()
+
+# Resolve a candidate pipeline file path.
+pipeline_default="$template.ndm.${NDM_PIPELINE:-default}.pipeline"
+
+if [ -f "$pipeline_default" ]
+then
+	# Named-pipeline mode.  Plugin order comes from the topological
+	# sort of the .pipeline file's nodes/edges, not from the YAML.
+	while IFS= read -r line
+	do
+		[ -n "$line" ] && GRAPH_PLUGINS+=("$line")
+	done < <(read_pipeline_file "$pipeline_default")
+	if [ ${#GRAPH_PLUGINS[@]} -gt 0 ]
+	then
+		USE_GRAPH=true
+		GRAPH_SOURCE="$pipeline_default"
+		echo_info "ndm_start: pipeline file '$pipeline_default' (${#GRAPH_PLUGINS[@]} plugin(s))"
+	else
+		echo_warning "pipeline file '$pipeline_default' parsed empty; falling back to YAML"
+	fi
+fi
+
+if ! $USE_GRAPH && graph_has_root "$template"
 then
 	USE_GRAPH=true
-	# Preload the graph plugins into a single array shared across the
-	# directory loop; reading the YAML once is enough.
-	GRAPH_PLUGINS=()
+	GRAPH_SOURCE="programs: block"
 	while IFS= read -r line
 	do
 		[ -n "$line" ] && GRAPH_PLUGINS+=("$line")
 	done < <(read_program_list "$template")
-	echo_info "ndm_start: graph mode (${#GRAPH_PLUGINS[@]} plugin(s) in graph)"
-else
+	echo_info "ndm_start: in-YAML graph mode (${#GRAPH_PLUGINS[@]} plugin(s) in programs:)"
+fi
+
+if ! $USE_GRAPH
+then
 	echo_info "ndm_start: legacy flag mode (no ndm_start node in programs:)"
 fi
 

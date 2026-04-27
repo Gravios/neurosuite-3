@@ -223,6 +223,26 @@ public:
     /** Populate the canvas from a programs list (called by initialize()). */
     void setPrograms(const QList<ProgramInformation>& programs);
 
+    /** Empty-out the graph and synthesise a single ndm_start root node.
+     *  Used when no pipeline file exists for the current session — the
+     *  user starts from a clean slate with just the orchestrator entry,
+     *  not a graph pre-populated from the YAML's parameter-only
+     *  programs: block. */
+    void clearGraphToRoot();
+
+    /** Serialise the current graph to a YAML pipeline file at @p path.
+     *  Schema: { nodes: [{id, type, pos, enabled, params{}}],
+     *            edges: [{from, to}] }.
+     *  Returns true on success.  On failure, @p error (if non-null) is
+     *  populated with a human-readable description and false is returned. */
+    bool savePipelineFile(const QString& path, QString* error = nullptr) const;
+
+    /** Replace the current graph with the contents of a pipeline file.
+     *  Validates ndm_start presence (auto-prepends if absent), drops
+     *  unknown node types with a warning into @p error, and rewires the
+     *  inspector / Apply state.  Returns true on success. */
+    bool loadPipelineFile(const QString& path, QString* error = nullptr);
+
     /** Read current graph back as an ordered ProgramInformation list.
      *  Emits nothing — purely a data accessor. */
     QList<ProgramInformation> getPrograms() const;
@@ -235,6 +255,17 @@ signals:
     void applyRequested(const QList<ProgramInformation>& programs);
 
     void graphModified();
+
+    /** Emitted when the user clicks the toolbar Save button (or hits the
+     *  Ctrl+Alt+P shortcut routed through ndManager).  ParameterView
+     *  resolves the session base path and writes
+     *  <session>.default.pipeline. */
+    void savePipelineRequested();
+
+    /** Emitted when the user clicks Save As… (Ctrl+Alt+Shift+P).
+     *  ParameterView prompts for a name and writes
+     *  <session>.<n>.pipeline. */
+    void saveAsPipelineRequested();
 
 private slots:
     void onNodeSelected(const QString& id);
