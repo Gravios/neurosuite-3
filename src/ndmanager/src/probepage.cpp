@@ -17,6 +17,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <QDebug>
+#include <QAction>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -27,12 +28,14 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSet>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStandardPaths>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -90,15 +93,41 @@ void ProbePage::buildUi()
 
     auto* btnRow = new QHBoxLayout;
     btnRow->setSpacing(4);
-    m_addBtn    = new QPushButton(QStringLiteral("+"));
+
+    // The + button uses QToolButton with MenuButtonPopup so the icon
+    // area and the drop-down arrow are separate hit targets:
+    //   click "+"      → primary action (new empty probe)
+    //   click  arrow   → menu with library / file alternatives
+    // QPushButton::setMenu() would route both clicks to the menu,
+    // making the primary action unreachable in one click.
+    auto* addToolBtn = new QToolButton;
+    addToolBtn->setText(QStringLiteral("+"));
+    addToolBtn->setPopupMode(QToolButton::MenuButtonPopup);
+    addToolBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    addToolBtn->setToolTip(tr(
+        "Add a new probe.  Click + for the empty template, or use the "
+        "drop-down arrow for library/file imports."));
+    addToolBtn->setMaximumWidth(56);
+
     m_removeBtn = new QPushButton(QStringLiteral("−"));
-    m_browseBtn = new QPushButton(tr("Browse Library…"));
-    m_addBtn   ->setToolTip(tr("Add a new probe (clones empty.probe template)"));
+    m_browseBtn = new QPushButton(tr("Replace Geometry…"));
     m_removeBtn->setToolTip(tr("Remove the selected probe"));
-    m_browseBtn->setToolTip(tr("Import a .probe file from the library"));
-    m_addBtn   ->setMaximumWidth(32);
+    m_browseBtn->setToolTip(tr(
+        "Replace the current probe's geometry with a .probe file you choose.  "
+        "Asks for confirmation if you've edited the existing geometry."));
     m_removeBtn->setMaximumWidth(32);
-    btnRow->addWidget(m_addBtn);
+
+    auto* addMenu = new QMenu(addToolBtn);
+    QAction* addEmptyAct   = addMenu->addAction(tr("New (empty template)"));
+    QAction* addLibraryAct = addMenu->addAction(tr("From library…"));
+    QAction* addFileAct    = addMenu->addAction(tr("From file…"));
+    addToolBtn->setMenu(addMenu);
+    // The default (primary-button-click) action is "new empty probe",
+    // matching the menu's first entry.  We don't use setDefaultAction
+    // because that would make the button text track the action text;
+    // the static "+" label is more recognisable.
+
+    btnRow->addWidget(addToolBtn);
     btnRow->addWidget(m_removeBtn);
     btnRow->addWidget(m_browseBtn);
     btnRow->addStretch();
@@ -124,6 +153,12 @@ void ProbePage::buildUi()
 
     m_inspLabel  = new QLineEdit;
     m_inspFile   = new QLineEdit;
+    m_inspFile->setReadOnly(true);
+    m_inspFile->setToolTip(tr(
+        "Set automatically by Add / Browse Library… / Load from file….  "
+        "Cannot be edited directly — change the path via those actions."));
+    m_inspFile->setStyleSheet(
+        "QLineEdit:read-only{color:#9ca3af;background:#0d1117;}");
     m_inspOffset = new QSpinBox;
     m_inspOffset->setRange(0, 100000);
     m_inspOffset->setToolTip(tr(
@@ -145,6 +180,13 @@ void ProbePage::buildUi()
     inspVbox->addLayout(inspForm);
     inspVbox->addStretch(1);
 
+    // Status line — transient feedback from Browse / Add / Save.
+    m_status = new QLabel;
+    m_status->setStyleSheet("color:#9ca3af;font-size:11px;");
+    m_status->setWordWrap(true);
+    m_status->setMinimumHeight(28);
+    inspVbox->addWidget(m_status);
+
     m_split->addWidget(inspPane);
 
     // ── Pane 3: embedded ProbeMakerPage ─────────────────────────────────
@@ -161,14 +203,25 @@ void ProbePage::buildUi()
     // ── Signals ────────────────────────────────────────────────────────
     connect(m_list,     &QListWidget::currentRowChanged,
             this,       [this](int){ onListSelectionChanged(); });
-    connect(m_addBtn,   &QPushButton::clicked, this, &ProbePage::onAddClicked);
+
+    // QToolButton::clicked fires only when the icon-area is clicked
+    // (not when the drop-down arrow is clicked — that opens the menu).
+    // So routing both the button click and the "New (empty template)"
+    // menu action to onAddClicked gives a consistent default.
+    connect(addToolBtn,    &QToolButton::clicked,
+            this, &ProbePage::onAddClicked);
+    connect(addEmptyAct,   &QAction::triggered,
+            this, &ProbePage::onAddClicked);
+    connect(addLibraryAct, &QAction::triggered,
+            this, &ProbePage::onAddFromLibraryClicked);
+    connect(addFileAct,    &QAction::triggered,
+            this, &ProbePage::onAddFromFileClicked);
     connect(m_removeBtn,&QPushButton::clicked, this, &ProbePage::onRemoveClicked);
     connect(m_browseBtn,&QPushButton::clicked, this, &ProbePage::onBrowseLibraryClicked);
 
     connect(m_inspLabel,  &QLineEdit::editingFinished,
             this, &ProbePage::onLabelEdited);
-    connect(m_inspFile,   &QLineEdit::editingFinished,
-            this, &ProbePage::onFileEdited);
+    // m_inspFile is read-only — no editingFinished connection.
     connect(m_inspOffset, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int){ onOffsetEdited(); });
 
@@ -245,71 +298,139 @@ void ProbePage::onListSelectionChanged()
 
 void ProbePage::onAddClicked()
 {
-    // Allocate a fresh probe id: max existing + 1 (or 0 if list empty).
+    // Default + button click — create from empty template.  Status
+    // line confirms the action so the user sees that something happened
+    // even when the geometry editor is at its default zoom.
+    const int newId = appendProbe(QString());
+    if (newId < 0) return;
+    setStatus(tr("Added probe %1 (empty template).  "
+                 "Edit geometry on the right, or use the + drop-down "
+                 "to import a different probe instead.")
+                .arg(newId));
+}
+
+void ProbePage::onAddFromLibraryClicked()
+{
+    // Filtered to the library directory so the dialog opens in the
+    // right place; user can still navigate elsewhere.
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        tr("Add Probe — Select File from Library"),
+        getLibraryPath(),
+        tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
+    if (path.isEmpty()) return;
+
+    const int newId = appendProbe(path);
+    if (newId < 0) return;
+    setStatus(tr("Added probe %1 from library: %2 → %3")
+                .arg(newId)
+                .arg(QFileInfo(path).fileName())
+                .arg(sessionProbeFilename(newId)));
+}
+
+void ProbePage::onAddFromFileClicked()
+{
+    // Like Add From Library but opens at the user's home directory by
+    // default (or wherever they last browsed) — for one-off probes
+    // that aren't in the canonical library tree.
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        tr("Add Probe — Select File"),
+        QString(),     // platform default location
+        tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
+    if (path.isEmpty()) return;
+
+    const int newId = appendProbe(path);
+    if (newId < 0) return;
+    setStatus(tr("Added probe %1 from file: %2 → %3")
+                .arg(newId)
+                .arg(QFileInfo(path).fileName())
+                .arg(sessionProbeFilename(newId)));
+}
+
+// ---------------------------------------------------------------------------
+// appendProbe — common path for + / +-from-library / +-from-file
+// ---------------------------------------------------------------------------
+// Allocates a fresh probe id, materialises the new <session>.probe.<id>.probe
+// file (either by copying the empty template's content or copying @p sourcePath),
+// appends a ProbeEntry, selects it in the list, and runs recalculateAll.
+// Returns the new id, or -1 on failure.
+int ProbePage::appendProbe(const QString& sourcePath)
+{
     int newId = 0;
     for (const ProbeEntry& e : m_probes) newId = qMax(newId, e.id + 1);
 
-    // Resolve the empty template path.  If absent, fall back to a tiny
-    // hardcoded skeleton string so the user still ends up with a usable
-    // probe file even when the system-wide template hasn't been
-    // installed (CI builds, dev checkouts).
-    const QString templatePath = emptyTemplatePath();
-    QString srcContent;
-    if (QFile::exists(templatePath)) {
-        QFile f(templatePath);
-        if (f.open(QIODevice::ReadOnly | QIODevice::Text))
-            srcContent = QString::fromUtf8(f.readAll());
-    }
-    if (srcContent.isEmpty()) {
-        // Hardcoded minimal fallback: 1 shank, 1 site.
-        srcContent = QStringLiteral(
-            "probeFile:\n"
-            "  version: '1.0'\n"
-            "  vendor: ''\n"
-            "  model: ''\n"
-            "  totalChannels: 1\n"
-            "  substrate: { material: silicon, thickness_um: null }\n"
-            "  shanks:\n"
-            "    count: 1\n"
-            "    spacing_um: null\n"
-            "    length_mm: null\n"
-            "  sites:\n"
-            "    count_per_shank: 1\n"
-            "    layout: linear\n"
-            "    area_um2: 100\n"
-            "    spacing_um: null\n"
-            "    geometry:\n"
-            "      - [0, 100]\n"
-            "  channelMap:\n"
-            "    description: 'Sequential.'\n"
-            "    map: null\n"
-            "  notes: 'Empty starter probe — edit before use.'\n"
-        );
-    }
-
-    // Write to <session>.probe.<newId>.probe
     const QString fname = sessionProbeFilename(newId);
     const QString fpath = QDir::current().absoluteFilePath(fname);
-    QFile out(fpath);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-        QMessageBox::warning(this, tr("Add Probe"),
-            tr("Cannot create %1: %2").arg(fpath, out.errorString()));
-        return;
+
+    if (sourcePath.isEmpty()) {
+        // Empty-template path.  Read content once; if installed
+        // template is missing, fall back to a hardcoded skeleton so
+        // the user always ends up with a valid file.
+        QString srcContent;
+        const QString templatePath = emptyTemplatePath();
+        if (QFile::exists(templatePath)) {
+            QFile f(templatePath);
+            if (f.open(QIODevice::ReadOnly | QIODevice::Text))
+                srcContent = QString::fromUtf8(f.readAll());
+        }
+        if (srcContent.isEmpty()) {
+            srcContent = QStringLiteral(
+                "probeFile:\n"
+                "  version: '1.0'\n"
+                "  vendor: ''\n"
+                "  model: ''\n"
+                "  totalChannels: 1\n"
+                "  substrate: { material: silicon, thickness_um: null }\n"
+                "  shanks:\n"
+                "    count: 1\n"
+                "    spacing_um: null\n"
+                "    length_mm: null\n"
+                "  sites:\n"
+                "    count_per_shank: 1\n"
+                "    layout: linear\n"
+                "    area_um2: 100\n"
+                "    spacing_um: null\n"
+                "    geometry:\n"
+                "      - [0, 100]\n"
+                "  channelMap:\n"
+                "    description: 'Sequential.'\n"
+                "    map: null\n"
+                "  notes: 'Empty starter probe — edit before use.'\n");
+        }
+        QFile out(fpath);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            QMessageBox::warning(this, tr("Add Probe"),
+                tr("Cannot create %1: %2").arg(fpath, out.errorString()));
+            setStatus(tr("Failed to create %1").arg(fname), /*err=*/true);
+            return -1;
+        }
+        out.write(srcContent.toUtf8());
+        out.close();
+    } else {
+        // Copy a chosen file.  copyProbeIntoSession handles the
+        // "destination already exists" overwrite/cancel prompt; for a
+        // brand-new id the destination won't exist so the prompt is
+        // dormant.
+        const QString localName = copyProbeIntoSession(sourcePath, newId);
+        if (localName.isEmpty()) {
+            setStatus(tr("Import cancelled or failed."), /*err=*/true);
+            return -1;
+        }
     }
-    out.write(srcContent.toUtf8());
-    out.close();
 
     ProbeEntry e;
     e.id            = newId;
     e.probeFile     = fname;
-    e.label         = QString();   // user fills via inspector
-    e.channelOffset = 0;            // recalculateAll will fix
+    e.label         = QString();
+    e.channelOffset = 0;
     m_probes.append(e);
 
     rebuildList();
     m_list->setCurrentRow(m_probes.size() - 1);
     m_modified = true;
     recalculateAll();
+    return newId;
 }
 
 void ProbePage::onRemoveClicked()
@@ -349,15 +470,40 @@ void ProbePage::onRemoveClicked()
         refreshInspector();
     m_modified = true;
     recalculateAll();
+    setStatus(tr("Removed probe %1.").arg(victim.id));
 }
 
+// ---------------------------------------------------------------------------
+// onBrowseLibraryClicked — Replace Geometry…
+// ---------------------------------------------------------------------------
+// Replaces the *currently selected* probe's geometry with a chosen
+// .probe file.  Confirms first when the existing geometry is non-
+// trivial (more than just the empty template), so a careless click
+// can't wipe out hand-edited probe layouts.
 void ProbePage::onBrowseLibraryClicked()
 {
     if (m_currentIndex < 0) {
-        QMessageBox::information(this, tr("Browse Library"),
-            tr("Select a probe in the list (or click \"+\" to add one) "
-               "before importing from the library."));
+        setStatus(tr("Select a probe first, or use + to add one."), /*err=*/true);
         return;
+    }
+
+    ProbeEntry& e = m_probes[m_currentIndex];
+
+    // Confirm if the current probe is non-empty.  We use a content
+    // heuristic rather than a "saved-to-file" flag so the check
+    // survives session reloads and works across runs.
+    const QString currentResolved = resolveProbePath(e.probeFile);
+    if (!currentResolved.isEmpty() && !probeIsUntouched(currentResolved)) {
+        const auto reply = QMessageBox::question(
+            this, tr("Replace Geometry"),
+            tr("Probe %1 already has non-template geometry.  Replacing "
+               "it will discard the current shanks/channels and load the "
+               "new file in their place.\n\nContinue?").arg(e.id),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply != QMessageBox::Yes) {
+            setStatus(tr("Replace cancelled — current geometry kept."));
+            return;
+        }
     }
 
     const QString path = QFileDialog::getOpenFileName(
@@ -365,17 +511,69 @@ void ProbePage::onBrowseLibraryClicked()
         tr("Select Probe Configuration File"),
         getLibraryPath(),
         tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
-    if (path.isEmpty()) return;
+    if (path.isEmpty()) {
+        setStatus(tr("Replace cancelled."));
+        return;
+    }
 
-    ProbeEntry& e = m_probes[m_currentIndex];
     const QString localName = copyProbeIntoSession(path, e.id);
-    if (localName.isEmpty()) return;
+    if (localName.isEmpty()) {
+        setStatus(tr("Replace failed during file copy."), /*err=*/true);
+        return;
+    }
 
     e.probeFile = localName;
     rebuildList();
     m_list->setCurrentRow(m_currentIndex);
     m_modified = true;
     recalculateAll();
+    loadProbeIntoMaker(m_currentIndex);
+
+    setStatus(tr("Imported %1 → probe %2 (%3).")
+                .arg(QFileInfo(path).fileName())
+                .arg(e.id)
+                .arg(localName));
+}
+
+// ---------------------------------------------------------------------------
+// probeIsUntouched
+// ---------------------------------------------------------------------------
+// Heuristic: a probe is considered "untouched" if it byte-matches the
+// installed empty.probe template (or, when that's missing, has the same
+// totalChannels/shanks/sites layout the hardcoded fallback produces).
+//
+// The byte comparison is the cheap, exact path that catches the common
+// case ("user just clicked + and hasn't edited yet").  For the fallback,
+// we look for telltale signs of the 1-shank/1-site skeleton.  This is
+// only used to decide whether to *prompt* — false negatives just mean
+// the user gets a confirmation they could have skipped.
+bool ProbePage::probeIsUntouched(const QString& path) const
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    const QByteArray content = f.readAll();
+    f.close();
+
+    const QString templatePath = emptyTemplatePath();
+    if (QFile::exists(templatePath)) {
+        QFile t(templatePath);
+        if (t.open(QIODevice::ReadOnly)) {
+            const QByteArray templ = t.readAll();
+            if (content == templ) return true;
+        }
+    }
+
+    // Fallback heuristic: 1 shank, 1 site at [0, 100].  Exact match of
+    // the hardcoded skeleton's distinguishing strings (totalChannels: 1
+    // AND a single [0, 100] geometry entry).
+    if (content.contains("totalChannels: 1") &&
+        content.contains("- [0, 100]") &&
+        !content.contains("- [0, 0]") &&    // not a real probe with extra sites
+        content.size() < 1024)              // template is ~700 bytes
+    {
+        return true;
+    }
+    return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -437,16 +635,6 @@ void ProbePage::onLabelEdited()
     emit probesModified();
 }
 
-void ProbePage::onFileEdited()
-{
-    if (m_currentIndex < 0) return;
-    m_probes[m_currentIndex].probeFile = m_inspFile->text().trimmed();
-    m_modified = true;
-    recalculateAll();
-    // Reload geometry too — the file may have changed.
-    loadProbeIntoMaker(m_currentIndex);
-}
-
 void ProbePage::onOffsetEdited()
 {
     if (m_currentIndex < 0) return;
@@ -499,6 +687,7 @@ void ProbePage::saveCurrentProbeFile()
     QString err;
     if (!m_maker->saveToFile(fpath, &err)) {
         qWarning() << "ProbePage: maker save failed for" << fpath << ":" << err;
+        setStatus(tr("Save failed for %1: %2").arg(fname, err), /*err=*/true);
         return;
     }
 
@@ -509,6 +698,21 @@ void ProbePage::saveCurrentProbeFile()
     }
     m_modified = true;
     recalculateAll();   // geometry changed → recompute group memberships
+    setStatus(tr("Saved geometry → %1").arg(fname));
+}
+
+// ---------------------------------------------------------------------------
+// setStatus
+// ---------------------------------------------------------------------------
+// Updates the inspector's bottom status line.  Errors get red text;
+// neutral messages get the default grey.  Pass an empty string to clear.
+void ProbePage::setStatus(const QString& msg, bool isError)
+{
+    if (!m_status) return;
+    m_status->setText(msg);
+    m_status->setStyleSheet(isError
+        ? QStringLiteral("color:#f87171;font-size:11px;")
+        : QStringLiteral("color:#9ca3af;font-size:11px;"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
