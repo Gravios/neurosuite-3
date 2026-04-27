@@ -69,16 +69,27 @@ void ProbePage::buildUi()
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
 
-    // ── Three-pane splitter ─────────────────────────────────────────────
+    // ── Outer two-pane splitter ─────────────────────────────────────────
+    // Left pane stacks the probe list above the inspector vertically;
+    // packing the inspector under the list (instead of beside it) gives
+    // the geometry editor on the right ~70% of the page width to work
+    // in.  The outer splitter lets the user resize the left vs right
+    // proportion; an inner vertical splitter on the left lets them
+    // resize list vs inspector.
     m_split = new QSplitter(Qt::Horizontal, this);
     m_split->setHandleWidth(2);
     m_split->setChildrenCollapsible(false);
     outer->addWidget(m_split, /*stretch=*/1);
 
-    // ── Pane 1: probe list + add/remove buttons ─────────────────────────
+    // ── Left column: list (top) above inspector (bottom) ────────────────
+    auto* leftSplit = new QSplitter(Qt::Vertical);
+    leftSplit->setHandleWidth(2);
+    leftSplit->setChildrenCollapsible(false);
+
+    // ── List pane ──────────────────────────────────────────────────────
     auto* listPane = new QWidget;
     auto* listVbox = new QVBoxLayout(listPane);
-    listVbox->setContentsMargins(8, 8, 4, 8);
+    listVbox->setContentsMargins(8, 8, 8, 4);
     listVbox->setSpacing(6);
 
     auto* listHdr = new QLabel(tr("PROBES"));
@@ -98,8 +109,6 @@ void ProbePage::buildUi()
     // area and the drop-down arrow are separate hit targets:
     //   click "+"      → primary action (new empty probe)
     //   click  arrow   → menu with library / file alternatives
-    // QPushButton::setMenu() would route both clicks to the menu,
-    // making the primary action unreachable in one click.
     auto* addToolBtn = new QToolButton;
     addToolBtn->setText(QStringLiteral("+"));
     addToolBtn->setPopupMode(QToolButton::MenuButtonPopup);
@@ -110,7 +119,7 @@ void ProbePage::buildUi()
     addToolBtn->setMaximumWidth(56);
 
     m_removeBtn = new QPushButton(QStringLiteral("−"));
-    m_browseBtn = new QPushButton(tr("Replace Geometry…"));
+    m_browseBtn = new QPushButton(tr("Replace…"));
     m_removeBtn->setToolTip(tr("Remove the selected probe"));
     m_browseBtn->setToolTip(tr(
         "Replace the current probe's geometry with a .probe file you choose.  "
@@ -122,10 +131,6 @@ void ProbePage::buildUi()
     QAction* addLibraryAct = addMenu->addAction(tr("From library…"));
     QAction* addFileAct    = addMenu->addAction(tr("From file…"));
     addToolBtn->setMenu(addMenu);
-    // The default (primary-button-click) action is "new empty probe",
-    // matching the menu's first entry.  We don't use setDefaultAction
-    // because that would make the button text track the action text;
-    // the static "+" label is more recognisable.
 
     btnRow->addWidget(addToolBtn);
     btnRow->addWidget(m_removeBtn);
@@ -133,12 +138,12 @@ void ProbePage::buildUi()
     btnRow->addStretch();
     listVbox->addLayout(btnRow);
 
-    m_split->addWidget(listPane);
+    leftSplit->addWidget(listPane);
 
-    // ── Pane 2: inspector form ──────────────────────────────────────────
+    // ── Inspector pane (under the list) ────────────────────────────────
     auto* inspPane = new QWidget;
     auto* inspVbox = new QVBoxLayout(inspPane);
-    inspVbox->setContentsMargins(8, 8, 8, 8);
+    inspVbox->setContentsMargins(8, 4, 8, 8);
     inspVbox->setSpacing(8);
 
     auto* inspHdr = new QLabel(tr("INSPECTOR"));
@@ -155,7 +160,7 @@ void ProbePage::buildUi()
     m_inspFile   = new QLineEdit;
     m_inspFile->setReadOnly(true);
     m_inspFile->setToolTip(tr(
-        "Set automatically by Add / Browse Library… / Load from file….  "
+        "Set automatically by Add / Replace….  "
         "Cannot be edited directly — change the path via those actions."));
     m_inspFile->setStyleSheet(
         "QLineEdit:read-only{color:#9ca3af;background:#0d1117;}");
@@ -187,18 +192,25 @@ void ProbePage::buildUi()
     m_status->setMinimumHeight(28);
     inspVbox->addWidget(m_status);
 
-    m_split->addWidget(inspPane);
+    leftSplit->addWidget(inspPane);
 
-    // ── Pane 3: embedded ProbeMakerPage ─────────────────────────────────
+    // Inner-split sizing: the list takes the bulk; inspector is just
+    // tall enough for its 5 rows + status line (~190px).  User can
+    // drag the handle to redistribute.
+    leftSplit->setStretchFactor(0, 3);
+    leftSplit->setStretchFactor(1, 2);
+    leftSplit->setSizes({280, 200});
+
+    m_split->addWidget(leftSplit);
+
+    // ── Right column: embedded ProbeMakerPage ───────────────────────────
     m_maker = new ProbeMakerPage;
     m_split->addWidget(m_maker);
 
-    // Stretch ratios — list narrow, inspector mid, geometry wide.  These
-    // are initial sizes; QSplitter handles user resize.
-    m_split->setStretchFactor(0, 1);   // list
-    m_split->setStretchFactor(1, 2);   // inspector
-    m_split->setStretchFactor(2, 5);   // geometry
-    m_split->setSizes({140, 280, 800});
+    // Outer split: narrow left column (~25%), wide geometry editor (~75%).
+    m_split->setStretchFactor(0, 1);
+    m_split->setStretchFactor(1, 3);
+    m_split->setSizes({280, 900});
 
     // ── Signals ────────────────────────────────────────────────────────
     connect(m_list,     &QListWidget::currentRowChanged,

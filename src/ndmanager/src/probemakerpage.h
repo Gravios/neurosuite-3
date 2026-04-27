@@ -115,6 +115,7 @@ private slots:
     void onPhysicalSelectionChanged();
     void onAddShankClicked();
     void onAddChannelClicked();
+    void onAddArrayClicked();    ///< add a linear array of N sites
     void onDeleteSelectedClicked();
 
     /** Inspector commit handlers — bound to editingFinished on each
@@ -178,6 +179,8 @@ private:
     QDoubleSpinBox*m_shankLength   = nullptr;
     QDoubleSpinBox*m_shankWidth    = nullptr;
     QDoubleSpinBox*m_shankTipAngle = nullptr;
+    QDoubleSpinBox*m_shankOriginX  = nullptr;
+    QDoubleSpinBox*m_shankOriginY  = nullptr;
     QLineEdit*     m_shankLayout   = nullptr;
 
     // Channel field group
@@ -194,6 +197,7 @@ private:
     QPushButton* m_loadBtn       = nullptr;
     QPushButton* m_addShankBtn   = nullptr;
     QPushButton* m_addChannelBtn = nullptr;
+    QPushButton* m_addArrayBtn   = nullptr;
     QPushButton* m_deleteBtn     = nullptr;
 
     /** Selection state.  Each field is non-null only when an item of
@@ -203,4 +207,11 @@ private:
     ProbeShank*    m_selectedShank   = nullptr;
     ProbeChannel*  m_selectedChannel = nullptr;
     bool           m_connectorSelected = false;
+
+    /** Set true the first time the user zooms or pans the physical
+     *  view; suppresses fitAll() on subsequent scene rebuilds so a
+     *  drag/edit doesn't snap their view back to the default.  Cleared
+     *  by loadFromFile (fresh content gets a fresh fit) and by the
+     *  Fit toolbar button (explicit re-fit). */
+    bool           m_userZoomedOrPanned = false;
 };

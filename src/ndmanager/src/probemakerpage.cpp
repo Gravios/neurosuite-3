@@ -22,13 +22,19 @@
 #include "probemakeritems.h"
 #include "probemakerviews.h"
 
+#include <algorithm>
+
+#include <QApplication>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGraphicsScene>
+#include <QGraphicsPathItem>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QLabel>
+#include <QPainterPath>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QScrollArea>
@@ -92,9 +98,14 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
 
     m_addShankBtn   = new QPushButton(tr("+ Shank"));
     m_addChannelBtn = new QPushButton(tr("+ Channel"));
+    m_addArrayBtn   = new QPushButton(tr("+ Array…"));
     m_deleteBtn     = new QPushButton(tr("Delete"));
     m_addShankBtn->setStyleSheet(neutralBtn);
     m_addChannelBtn->setStyleSheet(neutralBtn);
+    m_addArrayBtn->setStyleSheet(neutralBtn);
+    m_addArrayBtn->setToolTip(tr(
+        "Add a linear array of channels to the selected shank.  Asks "
+        "for site count, pitch, and lateral offset."));
     m_deleteBtn->setStyleSheet(
         "QPushButton{background:#180404;border:1px solid #f87171;color:#f87171;"
         "font-size:11px;padding:3px 10px;border-radius:3px;}"
@@ -112,8 +123,24 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
             this, &ProbeMakerPage::onAddShankClicked);
     connect(m_addChannelBtn, &QPushButton::clicked,
             this, &ProbeMakerPage::onAddChannelClicked);
+    connect(m_addArrayBtn,   &QPushButton::clicked,
+            this, &ProbeMakerPage::onAddArrayClicked);
     connect(m_deleteBtn,     &QPushButton::clicked,
             this, &ProbeMakerPage::onDeleteSelectedClicked);
+
+    auto* fitBtn = new QPushButton(tr("Fit"));
+    fitBtn->setStyleSheet(neutralBtn);
+    fitBtn->setToolTip(tr(
+        "Reset zoom and pan to fit the entire probe in view.  "
+        "Auto-fit also runs on every fresh load until you start "
+        "panning or zooming."));
+    connect(fitBtn, &QPushButton::clicked, this, [this]{
+        // Explicit re-fit: clear the user-touched flag so subsequent
+        // rebuilds will once again auto-fit.  The user's intent here
+        // is "go back to the default view".
+        m_userZoomedOrPanned = false;
+        m_physicalView->fitAll();
+    });
 
     tbox->addWidget(m_loadBtn);
     tbox->addWidget(m_saveBtn);
@@ -121,28 +148,55 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
     tbox->addSpacing(16);
     tbox->addWidget(m_addShankBtn);
     tbox->addWidget(m_addChannelBtn);
+    tbox->addWidget(m_addArrayBtn);
     tbox->addWidget(m_deleteBtn);
+    tbox->addSpacing(16);
+    tbox->addWidget(fitBtn);
     tbox->addStretch();
 
     auto* helpLabel = new QLabel(
-        tr("Ctrl+wheel to zoom · middle-drag to pan · drag pads to reposition"));
+        tr("Wheel to zoom · middle-drag to pan · drag pads to reposition"));
     helpLabel->setStyleSheet("color:#2a3a50;font-size:10px;");
     tbox->addWidget(helpLabel);
 
     outerVbox->addWidget(toolbar);
 
-    // ── Splitter: logical | physical | inspector ─────────────────────────
+    // ── Layout: logical view on left, physical view + inspector
+    //    stacked vertically on the right.  Putting the inspector under
+    //    the physical view (instead of beside it) gives the canvas
+    //    much more horizontal room to lay out wide multi-shank probes,
+    //    and matches the user's expected reading order:
+    //      1. SEE the geometry (large, top-right)
+    //      2. EDIT the selected item's fields (compact, bottom-right)
+    //
+    //    The outer horizontal split is logical | rightSide.  The inner
+    //    vertical split on the right is physical-view | inspector.
     auto* splitter = new QSplitter(Qt::Horizontal);
     splitter->setHandleWidth(2);
     splitter->setStyleSheet("QSplitter::handle{background:#1e2736;}");
 
     buildLogicalPane(splitter);
-    buildPhysicalPane(splitter);
-    buildInspector(splitter);
 
+    auto* rightSplit = new QSplitter(Qt::Vertical);
+    rightSplit->setHandleWidth(2);
+    rightSplit->setStyleSheet("QSplitter::handle{background:#1e2736;}");
+    rightSplit->setChildrenCollapsible(false);
+
+    buildPhysicalPane(rightSplit);
+    buildInspector(rightSplit);
+
+    // Right-split sizing: physical view dominates (looking at the
+    // probe is the main task); inspector takes just enough for its
+    // five form rows + a stretch.
+    rightSplit->setStretchFactor(0, 4);
+    rightSplit->setStretchFactor(1, 1);
+    rightSplit->setSizes({600, 220});
+
+    splitter->addWidget(rightSplit);
+
+    // Outer split: logical narrower than the right column.
     splitter->setStretchFactor(0, 2);    // logical
-    splitter->setStretchFactor(1, 4);    // physical (largest)
-    splitter->setStretchFactor(2, 2);    // inspector
+    splitter->setStretchFactor(1, 5);    // right column (physical + inspector)
 
     outerVbox->addWidget(splitter, /*stretch=*/1);
 
@@ -200,6 +254,30 @@ void ProbeMakerPage::buildPhysicalPane(QSplitter* inner)
     m_physicalView->setScene(physicalScene);
     connect(physicalScene, &QGraphicsScene::selectionChanged,
             this, &ProbeMakerPage::onPhysicalSelectionChanged);
+
+    // Live inspector polling: QGraphicsScene::changed fires whenever
+    // any item's geometry changes (e.g. while a channel pad is being
+    // dragged).  We refresh the inspector spinboxes on every fire so
+    // the X/Y values track the drag in real time.  refreshInspector
+    // is cheap (≤10 spinboxes) and idempotent.
+    //
+    // Skip the refresh while the user is actively typing in an
+    // inspector field — otherwise QSignalBlocker-wrapped setValue()
+    // calls would clobber whatever they're entering, since the scene
+    // also fires `changed` on selection updates and paints.
+    connect(physicalScene, &QGraphicsScene::changed,
+            this, [this](const QList<QRectF>&){
+                if (m_inspWidget && m_inspWidget->isAncestorOf(QApplication::focusWidget()))
+                    return;
+                refreshInspector();
+            });
+
+    // Stop auto-fitting on every rebuild once the user has manually
+    // zoomed or panned.  fitAll() (button + initial load) clears the
+    // flag again so users can opt back into auto-fit at any time.
+    connect(m_physicalView, &ProbePhysicalView::userInteracted,
+            this, [this]{ m_userZoomedOrPanned = true; });
+
     v->addWidget(m_physicalView, /*stretch=*/1);
 
     inner->addWidget(wrap);
@@ -273,11 +351,22 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     m_shankLength   = new QDoubleSpinBox;  m_shankLength->setRange(1, 50000);   m_shankLength->setSuffix(" µm");
     m_shankWidth    = new QDoubleSpinBox;  m_shankWidth->setRange(1, 5000);     m_shankWidth->setSuffix(" µm");
     m_shankTipAngle = new QDoubleSpinBox;  m_shankTipAngle->setRange(30, 180);  m_shankTipAngle->setSuffix("°");
+    m_shankOriginX  = new QDoubleSpinBox;  m_shankOriginX->setRange(-50000, 50000); m_shankOriginX->setSuffix(" µm");
+    m_shankOriginY  = new QDoubleSpinBox;  m_shankOriginY->setRange(-50000, 50000); m_shankOriginY->setSuffix(" µm");
+    m_shankOriginX->setToolTip(tr("Lateral position of this shank's centreline "
+                                   "in the global probe frame (e.g. shank N at "
+                                   "N × spacing_um for evenly-spaced multi-"
+                                   "shank arrays)."));
+    m_shankOriginY->setToolTip(tr("Vertical offset of this shank's head in the "
+                                   "global probe frame.  Usually 0; non-zero only "
+                                   "for staggered designs."));
     m_shankLayout   = new QLineEdit;
     for (auto* w : { static_cast<QWidget*>(m_shankLabel),
                      static_cast<QWidget*>(m_shankLength),
                      static_cast<QWidget*>(m_shankWidth),
                      static_cast<QWidget*>(m_shankTipAngle),
+                     static_cast<QWidget*>(m_shankOriginX),
+                     static_cast<QWidget*>(m_shankOriginY),
                      static_cast<QWidget*>(m_shankLayout) }) {
         w->setStyleSheet(fldStyle);
     }
@@ -285,12 +374,15 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     sf->addRow(mkLbl(tr("Length")),     m_shankLength);
     sf->addRow(mkLbl(tr("Width")),      m_shankWidth);
     sf->addRow(mkLbl(tr("Tip angle")),  m_shankTipAngle);
+    sf->addRow(mkLbl(tr("Origin x")),   m_shankOriginX);
+    sf->addRow(mkLbl(tr("Origin y")),   m_shankOriginY);
     sf->addRow(mkLbl(tr("Layout")),     m_shankLayout);
     connect(m_shankLabel,    &QLineEdit::editingFinished,
             this, &ProbeMakerPage::onShankFieldEdited);
     connect(m_shankLayout,   &QLineEdit::editingFinished,
             this, &ProbeMakerPage::onShankFieldEdited);
-    for (QDoubleSpinBox* sb : { m_shankLength, m_shankWidth, m_shankTipAngle }) {
+    for (QDoubleSpinBox* sb : { m_shankLength, m_shankWidth, m_shankTipAngle,
+                                 m_shankOriginX, m_shankOriginY }) {
         connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                 this, &ProbeMakerPage::onShankFieldEdited);
     }
@@ -347,58 +439,105 @@ void ProbeMakerPage::rebuildLogicalScene()
     QGraphicsScene* s = m_logicalView->scene();
     s->clear();   // deletes all items, including children
 
-    constexpr qreal connW = 240.0;
-    constexpr qreal yConn = 0.0;
-    constexpr qreal yShank = yConn + ConnectorItem::NodeHeight + 60.0;
-    constexpr qreal shankW = 200.0;
-    constexpr qreal shankH = 56.0;
+    // Layout constants for the logical (DAG-style) view.
+    constexpr qreal connW    = 240.0;
+    constexpr qreal yConn    = 0.0;
+    constexpr qreal yShank   = yConn + ConnectorItem::NodeHeight + 80.0;
+    constexpr qreal shankW   = 200.0;
+    constexpr qreal shankH   = 56.0;
     constexpr qreal shankGap = 60.0;
-    constexpr qreal chanW = 40.0;
-    constexpr qreal chanH = 32.0;
-    constexpr qreal chanGap = 8.0;
+    constexpr qreal chanW    = 40.0;
+    constexpr qreal chanH    = 26.0;
+    constexpr qreal chanGap  = 6.0;
+    // How many channel pills fit in one row under a shank (= shankW).
+    // Channels overflow into additional rows below.  We size to fit
+    // cleanly: 4 pills × 40px + 3 gaps × 6px = 178px ≤ shankW=200.
+    constexpr int   chansPerRow = 4;
+    constexpr qreal chanRowGap  = 4.0;       // vertical gap between channel rows
+    const     qreal chanFirstY  = yShank + shankH + 18.0;
 
-    // Connector at top, centred horizontally over the shank row
-    const int nShanks = m_data.shanks.size();
-    const qreal totalShankRowW = nShanks > 0
+    const int    nShanks         = m_data.shanks.size();
+    const qreal  totalShankRowW  = nShanks > 0
         ? nShanks * shankW + (nShanks - 1) * shankGap
         : shankW;
-    const qreal sceneW = qMax(connW, totalShankRowW);
-    auto* connItem = new ConnectorItem(&m_data, connW);
-    connItem->setPos((sceneW - connW) * 0.5, yConn);
-    s->addItem(connItem);
+    const qreal  sceneW          = qMax(connW, totalShankRowW);
 
-    qreal x = (sceneW - totalShankRowW) * 0.5;
+    // ── Connector at top, centred horizontally over the shank row ─────
+    const qreal  connX = (sceneW - connW) * 0.5;
+    auto* connItem = new ConnectorItem(&m_data, connW);
+    connItem->setPos(connX, yConn);
+    s->addItem(connItem);
+    const QPointF connBottomCentre(connX + connW * 0.5,
+                                    yConn + ConnectorItem::NodeHeight);
+
+    // Edge style: warm yellow, thicker than before, drawn on top of
+    // the scene background but underneath nodes.  Nodes paint with
+    // their own brush so the edge appears to "tuck under" them.
+    const QPen edgePen(QColor(0xfa, 0xc1, 0x5c), 1.4);
+
+    qreal shankX = (sceneW - totalShankRowW) * 0.5;
+    qreal maxYBottom = chanFirstY;   // tracks the lowest content for sceneRect
+
     for (int si = 0; si < nShanks; ++si) {
         ProbeShank& sh = m_data.shanks[si];
+
+        // Shank node
         auto* shankItem = new ShankItem(&sh);
         shankItem->setLogicalMode(true);
-        shankItem->setPos(x, yShank);
+        shankItem->setPos(shankX, yShank);
         s->addItem(shankItem);
 
-        // Channels as a horizontal row underneath (capped at 6 visible
-        // pills + ellipsis, since the logical view is for structure
-        // not for showing every site).
+        // Connector → shank edge.  Draw a polyline with a small
+        // vertical stub at each end so the visual contact is obvious
+        // even when the shanks fan out horizontally.
+        {
+            const QPointF shankTopCentre(shankX + shankW * 0.5, yShank);
+            const QPointF connStub  = connBottomCentre + QPointF(0, 12);
+            const QPointF shankStub = shankTopCentre   - QPointF(0, 12);
+            QPainterPath p;
+            p.moveTo(connBottomCentre);
+            p.lineTo(connStub);
+            p.lineTo(shankStub);
+            p.lineTo(shankTopCentre);
+            auto* edge = new QGraphicsPathItem(p);
+            edge->setPen(edgePen);
+            edge->setZValue(-1.0);
+            s->addItem(edge);
+        }
+
+        // Channels: lay out in rows under the shank, wrapping every
+        // chansPerRow pills.  Every channel is rendered (no "+N more"
+        // truncation) so every site is selectable for editing.  Edges
+        // run from the shank-bottom-centre to each channel-top-centre.
+        const QPointF shankBottomCentre(shankX + shankW * 0.5,
+                                         yShank + shankH);
         const int nch = sh.channels.size();
-        const int maxVis = 5;
-        const int nVis = qMin(nch, maxVis);
-        const qreal chanRowW = nVis * chanW + qMax(0, nVis - 1) * chanGap;
-        qreal cx = x + (shankW - chanRowW) * 0.5;
-        const qreal cy = yShank + shankH + 16.0;
-        for (int ci = 0; ci < nVis; ++ci) {
+        for (int ci = 0; ci < nch; ++ci) {
             ProbeChannel& ch = sh.channels[ci];
+            const int row = ci / chansPerRow;
+            const int col = ci % chansPerRow;
+
+            // Effective row width: the number of pills actually in
+            // *this* row (the last row may be partial).  Centred under
+            // the shank.
+            const int colsThisRow = qMin(chansPerRow, nch - row * chansPerRow);
+            const qreal rowW = colsThisRow * chanW
+                             + (colsThisRow - 1) * chanGap;
+            const qreal rowX0 = shankX + (shankW - rowW) * 0.5;
+            const qreal cx = rowX0 + col * (chanW + chanGap);
+            const qreal cy = chanFirstY + row * (chanH + chanRowGap);
+
             auto* chItem = new QGraphicsRectItem(0, 0, chanW, chanH);
             chItem->setBrush(QColor(0x07, 0x12, 0x22));
             chItem->setPen(QPen(QColor(0x37, 0x8a, 0xdd), 0.5));
             chItem->setData(RoleItemKind, QStringLiteral("channel"));
-            chItem->setData(RoleObjectId,
-                            QString::number(ch.hardwareId));
+            chItem->setData(RoleObjectId, QString::number(ch.hardwareId));
             chItem->setData(RoleModelPtr,
                             QVariant::fromValue(static_cast<void*>(&ch)));
             chItem->setFlag(QGraphicsItem::ItemIsSelectable, true);
-            chItem->setPos(cx + ci * (chanW + chanGap), cy);
+            chItem->setPos(cx, cy);
             s->addItem(chItem);
-            // Label is added as a child text item — small enough to
-            // ignore the no-rotated-text rule.  We use a plain label.
+
             auto* txt = new QGraphicsSimpleTextItem(
                 QStringLiteral("ch %1").arg(ch.hardwareId), chItem);
             txt->setBrush(QColor(0x85, 0xb7, 0xeb));
@@ -406,31 +545,29 @@ void ProbeMakerPage::rebuildLogicalScene()
             f.setPointSizeF(8.0);
             txt->setFont(f);
             const QRectF tb = txt->boundingRect();
-            txt->setPos((chanW - tb.width()) * 0.5, (chanH - tb.height()) * 0.5);
-        }
-        if (nch > maxVis) {
-            // "…" trailing pill
-            auto* dots = new QGraphicsSimpleTextItem(
-                QStringLiteral("+%1 more").arg(nch - maxVis));
-            dots->setBrush(QColor(0x4a, 0x60, 0x80));
-            QFont f = dots->font();
-            f.setPointSizeF(8.0);
-            dots->setFont(f);
-            dots->setPos(cx + nVis * (chanW + chanGap), cy + 8.0);
-            s->addItem(dots);
+            txt->setPos((chanW - tb.width()) * 0.5,
+                        (chanH - tb.height()) * 0.5);
+
+            // Shank → channel edge.  For wrapped rows we still draw
+            // from the shank's bottom centre to each pill — visually
+            // a bundle of fanned lines, which is what you want for a
+            // 1-to-many relationship.
+            const QPointF chTop(cx + chanW * 0.5, cy);
+            QPainterPath ep;
+            ep.moveTo(shankBottomCentre);
+            ep.lineTo(QPointF(shankBottomCentre.x(),
+                              shankBottomCentre.y() + 8));
+            ep.lineTo(QPointF(chTop.x(), chTop.y() - 8));
+            ep.lineTo(chTop);
+            auto* edge = new QGraphicsPathItem(ep);
+            edge->setPen(edgePen);
+            edge->setZValue(-1.0);
+            s->addItem(edge);
+
+            maxYBottom = qMax(maxYBottom, cy + chanH);
         }
 
-        // Connector → shank line
-        auto* line = new QGraphicsLineItem(
-            connW * 0.5 + (sceneW - connW) * 0.5,
-            yConn + ConnectorItem::NodeHeight,
-            x + shankW * 0.5,
-            yShank);
-        line->setPen(QPen(QColor(0xfa, 0xc1, 0x5c), 0.5));
-        line->setZValue(-1.0);
-        s->addItem(line);
-
-        x += shankW + shankGap;
+        shankX += shankW + shankGap;
     }
 
     s->setSceneRect(s->itemsBoundingRect().marginsAdded(QMarginsF(40, 40, 40, 40)));
@@ -484,7 +621,13 @@ void ProbeMakerPage::rebuildPhysicalScene()
     }
 
     s->setSceneRect(s->itemsBoundingRect().marginsAdded(QMarginsF(40, 40, 40, 40)));
-    m_physicalView->fitAll();
+    // Auto-fit only on the first rebuild after a load (when no user
+    // transform has been applied yet); subsequent rebuilds (from
+    // adding a channel, editing a field, etc.) preserve the user's
+    // current zoom/pan so they don't have to re-orient after every
+    // edit.  Manual fit is available via the "Fit" toolbar button.
+    if (!m_userZoomedOrPanned)
+        m_physicalView->fitAll();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -557,30 +700,154 @@ void ProbeMakerPage::onAddShankClicked()
     sh.widthUm  = 70.0;
     sh.tipAngle = 90.0;
     sh.layout   = QStringLiteral("linear");
+    // Place the new shank to the right of any existing ones, 200 µm
+    // apart on its own centreline, so it shows up off-screen of any
+    // existing shanks rather than overlapping them.
+    qreal originX = 0.0;
+    if (!m_data.shanks.isEmpty())
+        originX = m_data.shanks.last().originUm.x() + 200.0;
+    sh.originUm = QPointF(originX, 0.0);
     m_data.shanks.append(sh);
+
+    // Select the new shank so subsequent + Channel / Delete / inspector
+    // actions target it without an extra click.
+    m_selectedShank   = &m_data.shanks.last();
+    m_selectedChannel = nullptr;
+
     rebuildLogicalScene();
     rebuildPhysicalScene();
+    refreshInspector();
     setModified(true);
 }
 
 void ProbeMakerPage::onAddChannelClicked()
 {
-    if (!m_selectedShank) return;   // need a shank context
+    // Without an explicit selection, target the last (most recently
+    // added) shank so the user can append channels with a single click.
+    // Silent no-op was the previous behaviour and was too easy to mistake
+    // for a broken button when the user had just clicked + Channel right
+    // after Add Probe — the new probe's lone shank wasn't yet selected.
+    ProbeShank* targetShank = m_selectedShank;
+    if (!targetShank && !m_data.shanks.isEmpty())
+        targetShank = &m_data.shanks.last();
+    if (!targetShank) {
+        // No shanks at all — nothing to attach a channel to.  Add a
+        // shank first; the user gets visible feedback (the new shank
+        // appears) and can click + Channel again.
+        onAddShankClicked();
+        targetShank = &m_data.shanks.last();
+    }
+
     ProbeChannel ch;
-    // Hardware id: highest existing + 1, across all shanks
+    // Hardware id: highest existing + 1, across all shanks.
     int maxHw = -1;
     for (const ProbeShank& s : m_data.shanks)
         for (const ProbeChannel& c : s.channels)
             maxHw = qMax(maxHw, c.hardwareId);
     ch.hardwareId = maxHw + 1;
-    // Default position: stack down the shank centre line at 50 µm pitch
-    const qreal y = 25.0 + 50.0 * m_selectedShank->channels.size();
-    ch.posUm = QPointF(m_selectedShank->widthUm * 0.5, y);
-    ch.areaUm2 = 177.0;
-    m_selectedShank->channels.append(ch);
-    m_data.totalChannels = qMax(m_data.totalChannels, ch.hardwareId + 1);
+    ch.areaUm2    = 177.0;
+    ch.siteIndex  = targetShank->channels.size();
+
+    // Default position: centreline (x = 0 in shank-local coords) near
+    // the tip, stacking upward as more channels are added.  Most real
+    // probes have sites concentrated near the tip; this matches user
+    // expectations and keeps the new site on-shank regardless of width.
+    constexpr qreal pitch    = 50.0;     // µm between successive defaults
+    constexpr qreal tipMargin = 25.0;    // µm above the tip wedge
+    const qreal idx = static_cast<qreal>(targetShank->channels.size());
+    const qreal y   = targetShank->lengthUm - (tipMargin + pitch * idx);
+    ch.posUm = QPointF(0.0, qMax<qreal>(tipMargin, y));   // clamp away from head
+
+    targetShank->channels.append(ch);
+    int totalSites = 0;
+    for (const ProbeShank& s : m_data.shanks) totalSites += s.channels.size();
+    m_data.totalChannels = qMax(m_data.totalChannels, totalSites);
+
+    // Update selection so the inspector immediately shows the new
+    // channel and Delete acts on it.  Using the model pointer directly
+    // is safe here because the rebuilds below recreate all graphics
+    // items from scratch using fresh pointers from the same QVector.
+    m_selectedShank   = nullptr;
+    m_selectedChannel = &targetShank->channels.last();
+
     rebuildLogicalScene();
     rebuildPhysicalScene();
+    refreshInspector();
+    setModified(true);
+}
+
+void ProbeMakerPage::onAddArrayClicked()
+{
+    // Same shank-targeting logic as + Channel: prefer the explicitly
+    // selected shank, fall back to the most recently added one, create
+    // a new shank if there are none yet.  This keeps the array action
+    // usable on a fresh probe with one click.
+    ProbeShank* targetShank = m_selectedShank;
+    if (!targetShank && !m_data.shanks.isEmpty())
+        targetShank = &m_data.shanks.last();
+    if (!targetShank) {
+        onAddShankClicked();
+        targetShank = &m_data.shanks.last();
+    }
+
+    // Three quick prompts.  QInputDialog is intentional — it keeps the
+    // tarball small (no extra .ui file) and the parameters are
+    // independent enough that a single multi-field dialog wouldn't add
+    // much.  Cancel at any point aborts cleanly.
+    bool ok = false;
+    const int count = QInputDialog::getInt(
+        this, tr("Add Linear Array"),
+        tr("Number of sites:"),
+        /*default*/ 16, /*min*/ 1, /*max*/ 1024, /*step*/ 1, &ok);
+    if (!ok) return;
+
+    const double pitchUm = QInputDialog::getDouble(
+        this, tr("Add Linear Array"),
+        tr("Pitch between sites (µm):"),
+        /*default*/ 50.0, /*min*/ 1.0, /*max*/ 10000.0, /*decimals*/ 2, &ok);
+    if (!ok) return;
+
+    const double xOffsetUm = QInputDialog::getDouble(
+        this, tr("Add Linear Array"),
+        tr("Lateral offset from centreline (µm):  (negative = left, positive = right)"),
+        /*default*/ 0.0, /*min*/ -5000.0, /*max*/ 5000.0, /*decimals*/ 2, &ok);
+    if (!ok) return;
+
+    // Highest hardware id so far, for sequential numbering.
+    int maxHw = -1;
+    for (const ProbeShank& s : m_data.shanks)
+        for (const ProbeChannel& c : s.channels)
+            maxHw = qMax(maxHw, c.hardwareId);
+
+    // Lay out tip-up: the first new site goes 25 µm above the tip
+    // wedge, subsequent sites march toward the head with the requested
+    // pitch.  This matches the convention in the canonical probe
+    // library (sites concentrate near the tip).
+    constexpr qreal tipMargin = 25.0;
+    const qreal lengthUm = targetShank->lengthUm;
+    int siteIdxBase = targetShank->channels.size();
+    for (int i = 0; i < count; ++i) {
+        ProbeChannel ch;
+        ch.hardwareId = ++maxHw;
+        ch.areaUm2    = 177.0;
+        ch.siteIndex  = siteIdxBase + i;
+        const qreal y = lengthUm - tipMargin - i * pitchUm;
+        ch.posUm      = QPointF(xOffsetUm, qMax<qreal>(tipMargin, y));
+        targetShank->channels.append(ch);
+    }
+
+    int totalSites = 0;
+    for (const ProbeShank& s : m_data.shanks) totalSites += s.channels.size();
+    m_data.totalChannels = qMax(m_data.totalChannels, totalSites);
+
+    // Select the last channel of the new array so the inspector shows
+    // a representative member; user can navigate from there.
+    m_selectedShank   = nullptr;
+    m_selectedChannel = &targetShank->channels.last();
+
+    rebuildLogicalScene();
+    rebuildPhysicalScene();
+    refreshInspector();
     setModified(true);
 }
 
@@ -639,11 +906,14 @@ void ProbeMakerPage::refreshInspector()
     QSignalBlocker bSL(m_shankLabel);    QSignalBlocker bSLn(m_shankLength);
     QSignalBlocker bSW(m_shankWidth);    QSignalBlocker bST(m_shankTipAngle);
     QSignalBlocker bSY(m_shankLayout);
+    QSignalBlocker bSOX(m_shankOriginX); QSignalBlocker bSOY(m_shankOriginY);
     if (m_selectedShank) {
         m_shankLabel->setText(m_selectedShank->label);
         m_shankLength->setValue(m_selectedShank->lengthUm);
         m_shankWidth->setValue(m_selectedShank->widthUm);
         m_shankTipAngle->setValue(m_selectedShank->tipAngle);
+        m_shankOriginX->setValue(m_selectedShank->originUm.x());
+        m_shankOriginY->setValue(m_selectedShank->originUm.y());
         m_shankLayout->setText(m_selectedShank->layout);
     }
 
@@ -685,6 +955,8 @@ void ProbeMakerPage::onShankFieldEdited()
     m_selectedShank->lengthUm = m_shankLength->value();
     m_selectedShank->widthUm  = m_shankWidth->value();
     m_selectedShank->tipAngle = m_shankTipAngle->value();
+    m_selectedShank->originUm = QPointF(m_shankOriginX->value(),
+                                         m_shankOriginY->value());
     m_selectedShank->layout   = m_shankLayout->text();
     // Geometry change → rebuild physical scene; logical labels need
     // a refresh (channel-count subtitle) too.
@@ -721,6 +993,11 @@ void ProbeMakerPage::onChannelFieldEdited()
 void ProbeMakerPage::setConnector(const ProbeConnector& connector)
 {
     m_data = connector;
+    // New connector data → re-enable auto-fit on the next rebuild.
+    // This is the "load a probe file" path; user expects to see the
+    // whole new probe centred and scaled regardless of any prior
+    // manual zoom.
+    m_userZoomedOrPanned = false;
     rebuildLogicalScene();
     rebuildPhysicalScene();
     setModified(false);
@@ -735,6 +1012,9 @@ void ProbeMakerPage::clearToConnector()
 {
     m_data = ProbeConnector{};
     m_data.version = QStringLiteral("1.0");
+    // New content → re-enable auto-fit on the next rebuild so the
+    // user sees the fresh probe centred and scaled appropriately.
+    m_userZoomedOrPanned = false;
     rebuildLogicalScene();
     rebuildPhysicalScene();
     setModified(false);
@@ -828,34 +1108,92 @@ bool ProbeMakerPage::loadFromFile(const QString& path, QString* error)
     }
 
     // Sites: walk the geometry, distributing into shanks per perShank.
+    //
+    // Schema conventions (see canonical files in nphys-data/.../probes):
+    //   x = lateral position from FIRST shank's centreline, in a single
+    //       global frame across all shanks.  Multi-shank probes have
+    //       sites at x = k * spacing_um ± (within-shank lateral offset)
+    //       for shank k.  Single-shank probes have x in a small range
+    //       (typically -W/2 to +W/2) around the shank's centreline.
+    //   y = depth from the TIP of the shank, growing toward the head.
+    //       Sites are typically listed tip-to-base (y ascending).
+    //
+    // Internal model conventions (see ProbeShank/ProbeChannel docs):
+    //   Each ProbeChannel::posUm is in the shank's LOCAL frame, with
+    //   x = 0 at the centreline and y = 0 at the head growing toward
+    //   the tip (y = lengthUm at the tip).  This matches Qt's natural
+    //   "y grows downward in screen coords" so the polygon renders
+    //   head-up and tip-down without any inversion.
+    //
+    // The translation is therefore:
+    //   localX = schemaX - shankOriginX   (shank k centreline is at k * spacing_um)
+    //   localY = lengthUm - schemaY       (flip "depth from tip" → "depth from head")
+    //
+    // When no spacing_um is given (single-shank probes, or files that
+    // omit the field), we derive each shank's origin from the median
+    // x of its assigned sites — that's robust to both centred and
+    // off-centre lateral layouts.
     if (pf["sites"] && pf["sites"]["geometry"] && pf["sites"]["geometry"].IsSequence()) {
-        int nextHw = 0;
-        int siteCursor = 0;
-        int shankIdx = 0;
+        // First pass: distribute raw [x, y] pairs into per-shank buckets
+        // by simple cursor advance using count_per_shank.
+        struct RawSite { double x; double y; };
+        QVector<QVector<RawSite>> rawByShank(nShanks);
+        {
+            int shankIdx = 0;
+            for (auto it = pf["sites"]["geometry"].begin();
+                 it != pf["sites"]["geometry"].end(); ++it) {
+                const YAML::Node& pair = *it;
+                if (!pair.IsSequence() || pair.size() < 2) continue;
+                while (shankIdx < nShanks
+                       && rawByShank[shankIdx].size() >= perShank.value(shankIdx, 0))
+                    shankIdx++;
+                if (shankIdx >= nShanks) shankIdx = nShanks - 1;   // overflow
+                rawByShank[shankIdx].append(
+                    { pair[0].as<double>(), pair[1].as<double>() });
+            }
+        }
+
+        // Second pass: derive shank origins.  spacing_um wins if set;
+        // otherwise we use the median x of each shank's sites as its
+        // centreline (robust against ±-staggered designs).
+        for (int si = 0; si < nShanks; ++si) {
+            qreal originX;
+            if (spacingUm > 0.0) {
+                originX = spacingUm * si;
+            } else if (!rawByShank[si].isEmpty()) {
+                QVector<double> xs;
+                xs.reserve(rawByShank[si].size());
+                for (const auto& r : rawByShank[si]) xs.append(r.x);
+                std::sort(xs.begin(), xs.end());
+                // Median: average of the two middle values (or the
+                // single middle value for odd-sized lists).
+                const int n = xs.size();
+                originX = (n % 2 == 0) ? 0.5 * (xs[n/2 - 1] + xs[n/2])
+                                       : xs[n/2];
+            } else {
+                originX = 0.0;
+            }
+            c.shanks[si].originUm = QPointF(originX, 0.0);
+        }
+
+        // Third pass: emit ProbeChannel objects in shank-local coords,
+        // flipping y from depth-from-tip to depth-from-head.
         const qreal area = pf["sites"]["area_um2"]
             ? pf["sites"]["area_um2"].as<double>()
             : 177.0;
-        for (auto it = pf["sites"]["geometry"].begin();
-             it != pf["sites"]["geometry"].end(); ++it) {
-            const YAML::Node& pair = *it;
-            if (!pair.IsSequence() || pair.size() < 2) continue;
-            ProbeChannel ch;
-            ch.hardwareId = nextHw++;
-            ch.posUm   = QPointF(pair[0].as<double>(), pair[1].as<double>());
-            ch.areaUm2 = area;
-            ch.siteIndex = siteCursor;
-            // Advance shank cursor when we've filled the current one.
-            while (shankIdx < c.shanks.size()
-                   && c.shanks[shankIdx].channels.size() >= perShank.value(shankIdx, 0)) {
-                shankIdx++;
-                siteCursor = 0;
+        int nextHw = 0;
+        for (int si = 0; si < nShanks; ++si) {
+            const qreal originX = c.shanks[si].originUm.x();
+            const qreal lengthUm = c.shanks[si].lengthUm;
+            int siteCursor = 0;
+            for (const auto& r : rawByShank[si]) {
+                ProbeChannel ch;
+                ch.hardwareId = nextHw++;
+                ch.posUm = QPointF(r.x - originX, lengthUm - r.y);
+                ch.areaUm2 = area;
+                ch.siteIndex = siteCursor++;
+                c.shanks[si].channels.append(ch);
             }
-            if (shankIdx >= c.shanks.size()) {
-                // overflow — append to last shank
-                shankIdx = c.shanks.size() - 1;
-            }
-            c.shanks[shankIdx].channels.append(ch);
-            siteCursor++;
         }
     }
 
@@ -968,9 +1306,17 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     out << "    area_um2: " << area << "\n";
     out << "    spacing_um: null\n";
     out << "    geometry:\n";
+    // Convert each site from internal shank-local (x = lateral from
+    // centreline, y = depth from head) back to the schema's global
+    // frame (x = lateral from first-shank centreline, y = depth from
+    // tip).  This is the inverse of the loadFromFile transformation.
     for (const ProbeShank& s : m_data.shanks) {
+        const qreal originX = s.originUm.x();
+        const qreal lengthUm = s.lengthUm;
         for (const ProbeChannel& ch : s.channels) {
-            out << "      - [" << ch.posUm.x() << ", " << ch.posUm.y() << "]\n";
+            const qreal globalX = ch.posUm.x() + originX;
+            const qreal schemaY = lengthUm - ch.posUm.y();
+            out << "      - [" << globalX << ", " << schemaY << "]\n";
         }
     }
 
