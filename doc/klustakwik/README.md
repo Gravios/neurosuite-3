@@ -113,6 +113,18 @@ was chosen.
 
 ## Parameters
 
+> **Empirical priors.** When KlustaKwik is invoked from
+> `ndm_subcluster_unmatched`, the four headline parameters
+> (`MinClusters`, `MaxClusters`, `MergeThresh`, `PenaltyMix`) can be
+> taken from a per-probe prior YAML built once via `kk_build_prior.py`
+> from accumulated curation logs. See
+> [`../workflows/empirical-priors.md`](../workflows/empirical-priors.md)
+> for the workflow. Per-shank overrides in the session yaml
+> (`extraInfos`) still win over the prior; the prior wins over the
+> static defaults below. Direct `KlustaKwik`-on-the-CLI invocations
+> always use the static defaults — priors are only consumed by the
+> `ndm_*` orchestrator scripts that call `kk_resolve_prior.py`.
+
 ### Clustering control
 
 | Parameter | Default | Description |
