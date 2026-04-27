@@ -280,3 +280,132 @@ CHANGELOG.md                                    (dated entry)
   practice, but if you need explicit `&` backgrounding between
   independent sub-pipelines, do it as a separate ndm_start
   invocation rather than within one graph.
+
+---
+
+## Pipeline files (`<session>.ndm.<n>.pipeline`)
+
+The graph itself doesn't live in the session YAML's `programs:` block.
+It lives in a separate `<session>.ndm.<n>.pipeline` YAML file alongside
+the session, with a minimal schema:
+
+```yaml
+nodes:
+  - id: n1
+    type: ndm_start
+    pos: [60, 80]
+    enabled: true
+    params:
+      wideband: 'true'
+      events:   'true'
+      ...
+  - id: n2
+    type: ndm_hipass
+    pos: [320, 80]
+    enabled: true
+    params:
+      windowHalfLength: '16'
+      chunkSize: '134217728'
+edges:
+  - {from: n1, to: n2}
+```
+
+### Why a separate file?
+
+- **Independence from session schema.** Pipeline editing doesn't dirty
+  the session YAML — saving a pipeline doesn't trigger session
+  re-validation, doesn't show up in `git diff session.yaml`, doesn't
+  conflict with parameter overrides recorded by individual plugin runs.
+- **Named variants.** A user can keep a `default`, an `experimental`,
+  and a `best` pipeline alongside one another and switch between them
+  without copying YAMLs. The Save As menu writes
+  `<session>.ndm.<n>.pipeline`; Load Pipeline lets the user pick.
+- **CI friendliness.** A workflow runner can override which pipeline to
+  use via `NDM_PIPELINE=experimental ndm_start session.yaml` without
+  modifying the session.
+- **Namespace cleanliness.** The `.ndm.` infix is intentional. Other
+  tools in the same session directory might also produce `.pipeline`
+  files (Klusters export, snakemake workflow descriptions, nextflow
+  metadata). The infix prevents collisions.
+
+### Naming
+
+```
+<session>.ndm.<n>.pipeline
+
+  session-name.ndm.default.pipeline       ← auto-loaded on document open
+  session-name.ndm.best.pipeline          ← named variant via Save As
+  session-name.ndm.experimental.pipeline
+  session-name.ndm.pipeline-A.pipeline
+```
+
+Sanitisation rule for `<n>`: lowercased, whitespace collapsed to
+underscore, only `[a-z0-9_-]` retained. The empty result is rejected
+with a re-prompt.
+
+### Load order on document open
+
+`ParameterView::initialize` calls `pipelineDesigner->setPrograms(programList)`
+to seed the empty graph + root, then opportunistically calls
+`loadPipelineFile("<session>.ndm.default.pipeline")` if it exists.
+File-exists is the only signal — every session starts without a
+pipeline file the first time.
+
+### Save / Save As / Load actions
+
+| Action | Where | Shortcut | Behaviour |
+|---|---|---|---|
+| Save Pipeline | File menu, page toolbar | Ctrl+Alt+P | Overwrite `<session>.ndm.default.pipeline` |
+| Save Pipeline As… | File menu, page toolbar | Ctrl+Alt+Shift+P | Prompt for `<n>`, write `<session>.ndm.<n>.pipeline`, confirm overwrite if file exists |
+| Load Pipeline… | File menu | — | File dialog filtered to `*.pipeline` beside the session directory |
+
+### Apply Pipeline vs Save Pipeline
+
+These are two separate operations with different semantics:
+
+- **Apply Pipeline** (existing button) → writes the topo-sorted plugin
+  list back into `parameterView->programDict`, replacing whatever was
+  in the Plugins tab. The next document save (Ctrl+S) writes them to
+  the session YAML's `programs:` block. Used when the user wants the
+  session YAML to reflect the graph.
+
+- **Save Pipeline / Save As** (new) → writes the graph itself
+  (positions, edges, params) to a `.pipeline` file. Doesn't touch
+  the session YAML, doesn't change anything in the Plugins tab. Used
+  for keeping the graph as a reusable artefact.
+
+A typical workflow: design a graph, **Save Pipeline** it as `default`,
+then run the bash `ndm_start session.yaml` and the dispatcher reads
+`session.ndm.default.pipeline` directly. **Apply Pipeline** is only
+needed when integrating with the Run-All flow that walks
+`programDict` rather than the dispatch script.
+
+### Bash dispatch priority
+
+The new `ndm_start` chooses its source of plugin order in this order:
+
+1. `<template>.ndm.${NDM_PIPELINE:-default}.pipeline` — pipeline file
+2. In-YAML graph (`programs[0]==ndm_start`) — legacy form, kept for
+   backward compatibility with the earlier in-YAML design
+3. Hard-coded flag-driven `do_*` sequence — original ndm_start, kept
+   for sessions with no graph at all
+
+The `NDM_PIPELINE` environment variable lets a CI run select between
+named variants without editing files:
+
+```sh
+NDM_PIPELINE=best ndm_start session/             # uses .ndm.best.pipeline
+NDM_PIPELINE=experimental ndm_start session/     # uses .ndm.experimental.pipeline
+ndm_start session/                                # uses .ndm.default.pipeline
+```
+
+When the file pointed at by `$NDM_PIPELINE` doesn't exist, ndm_start
+falls through to priority 2/3 with a warning.
+
+### Topological sort in the bash
+
+The `read_pipeline_file` helper does a Kahn's-algorithm topological
+sort in Python: indegree-0 nodes go on the queue, each emit decrements
+successor indegrees, ties break by YAML insertion order. This matches
+the GUI's `topoSort` (used by `getPrograms` for Apply) so the runtime
+order is identical to what the user sees.

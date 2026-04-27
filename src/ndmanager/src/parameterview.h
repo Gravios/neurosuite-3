@@ -197,6 +197,22 @@ public:
  */
     void setProgramList(const QList<ProgramInformation>& programs);
 
+    /** Save the current Pipeline Designer graph to
+     *  `<session-base>.default.pipeline`.  Invoked from the page's Save
+     *  button and from ndManager's File menu (Ctrl+Alt+P). */
+    void savePipelineDefault();
+
+    /** Save under a custom name.  Prompts the user for `<n>` and writes
+     *  `<session-base>.<n>.pipeline`.  Sanitises the name to a safe
+     *  filesystem-friendly form.  Bound to File → Save Pipeline As… and
+     *  Ctrl+Alt+Shift+P. */
+    void savePipelineAs();
+
+    /** Open a file dialog filtered to *.pipeline beside the session
+     *  directory and load the selected file into the graph.  Bound to
+     *  File → Load Pipeline. */
+    void loadPipelineDialog();
+
     // ---- Probe data --------------------------------------------------------
     /**
      * Populate the Probe tab from data read by ndmanagerdoc::loadFromReader().
@@ -292,6 +308,12 @@ private:
     // Tracks the current total channel count so that applyProbeLayout can
     // rebuild the skip-attribute map and set anatomy->setNbChannels correctly.
     int m_nbChannels = 0;
+
+    /** Returns "/path/to/session" — the doc URL with its parameter-file
+     *  extension stripped.  Used to build pipeline-file paths
+     *  (e.g. session-base + ".default.pipeline").  Empty string if the
+     *  document has no URL yet. */
+    QString sessionBasePath() const;
 
 
     /**Adds a program to the subtree under the node Program.

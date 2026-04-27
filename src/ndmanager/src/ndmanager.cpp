@@ -139,6 +139,27 @@ void ndManager::setupActions()
     mSaveAsDefaultAction = fileMenu->addAction(tr("Save as &Default"));
     connect(mSaveAsDefaultAction, &QAction::triggered, this, &ndManager::slotSaveDefault);
 
+    fileMenu->addSeparator();
+
+    // Pipeline file actions — separate from the main Save flow because
+    // pipelines are independent artefacts (`<session>.ndm.<n>.pipeline`)
+    // not part of the session YAML.
+    mSavePipelineAction = fileMenu->addAction(tr("Save &Pipeline"));
+    mSavePipelineAction->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_P));
+    mSavePipelineAction->setToolTip(tr("Save the Pipeline Designer graph to "
+                                       "<session>.ndm.default.pipeline"));
+    connect(mSavePipelineAction, &QAction::triggered, this, &ndManager::slotSavePipeline);
+
+    mSavePipelineAsAction = fileMenu->addAction(tr("Save Pipeline &As…"));
+    mSavePipelineAsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_P));
+    mSavePipelineAsAction->setToolTip(tr("Save the Pipeline Designer graph under a "
+                                          "user-chosen name"));
+    connect(mSavePipelineAsAction, &QAction::triggered, this, &ndManager::slotSavePipelineAs);
+
+    mLoadPipelineAction = fileMenu->addAction(tr("Load Pipeline…"));
+    mLoadPipelineAction->setToolTip(tr("Load a *.pipeline file into the Pipeline Designer"));
+    connect(mLoadPipelineAction, &QAction::triggered, this, &ndManager::slotLoadPipeline);
+
     mReloadAction = fileMenu->addAction(tr("&Reload"));
     mReloadAction->setShortcut(Qt::Key_F5);
     connect(mReloadAction, &QAction::triggered, this, &ndManager::slotReload);
@@ -617,6 +638,41 @@ void ndManager::slotSaveDefault(){
     slotStatusMsg(tr("Ready."));
 }
 
+// ── Pipeline-file slots ─────────────────────────────────────────────────
+//
+// These delegate to ParameterView, which holds both the document URL
+// (needed to derive the session base path) and the pipelineDesigner
+// page (which carries the graph).  Guard against the no-document state
+// since the actions are global and the user might trigger them via
+// shortcut before opening anything.
+
+void ndManager::slotSavePipeline(){
+    if(!parameterView){
+        QMessageBox::information(this, tr("Save Pipeline"),
+            tr("Open a session document first."));
+        return;
+    }
+    parameterView->savePipelineDefault();
+}
+
+void ndManager::slotSavePipelineAs(){
+    if(!parameterView){
+        QMessageBox::information(this, tr("Save Pipeline As"),
+            tr("Open a session document first."));
+        return;
+    }
+    parameterView->savePipelineAs();
+}
+
+void ndManager::slotLoadPipeline(){
+    if(!parameterView){
+        QMessageBox::information(this, tr("Load Pipeline"),
+            tr("Open a session document first."));
+        return;
+    }
+    parameterView->loadPipelineDialog();
+}
+
 void ndManager::slotReload(){
     slotStatusMsg(tr("reloading..."));
 
@@ -800,6 +856,9 @@ void ndManager::slotStateChanged(const QString& state)
         mSaveAction->setEnabled(false);
         mCloseAction->setEnabled(false);
         mSaveAsDefaultAction->setEnabled(false);
+        mSavePipelineAction->setEnabled(false);
+        mSavePipelineAsAction->setEnabled(false);
+        mLoadPipelineAction->setEnabled(false);
         //mProcessingManager->setEnabled(false);
         mExpertMode->setEnabled(false);
         mOpenAction->setEnabled(true);
@@ -813,6 +872,9 @@ void ndManager::slotStateChanged(const QString& state)
         mSaveAction->setEnabled(true);
         mCloseAction->setEnabled(true);
         mSaveAsDefaultAction->setEnabled(true);
+        mSavePipelineAction->setEnabled(true);
+        mSavePipelineAsAction->setEnabled(true);
+        mLoadPipelineAction->setEnabled(true);
         //mProcessingManager->setEnabled(true);
         mExpertMode->setEnabled(true);
     } else if(state == QLatin1String("showManager")) {

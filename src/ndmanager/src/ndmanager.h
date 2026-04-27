@@ -180,6 +180,17 @@ private slots:
     /***Saves the current parameter file with a new name.*/
     void slotSaveAs();
 
+    /**Save the current Pipeline Designer graph to
+     *  <session>.ndm.default.pipeline.  Bound to Ctrl+Alt+P. */
+    void slotSavePipeline();
+
+    /**Save under a user-chosen name.  Prompts via QInputDialog.
+     *  Bound to Ctrl+Alt+Shift+P. */
+    void slotSavePipelineAs();
+
+    /**Load a pipeline file selected via file dialog. */
+    void slotLoadPipeline();
+
 
     /**Shift between the user and expert mode.*/
     void slotExpertMode();
@@ -238,6 +249,15 @@ private:
     QAction* mSaveAsDefaultAction;
     QAction* mNewAction;
     QAction* mQueryAction;
+    /** Save current pipeline graph to <session>.ndm.default.pipeline.
+     *  Bound to File → Save Pipeline (Ctrl+Alt+P).  Requires an open
+     *  document and pipelineDesigner to be live; checks both. */
+    QAction* mSavePipelineAction;
+    /** Save under a custom name.  Bound to File → Save Pipeline As… and
+     *  Ctrl+Alt+Shift+P.  Prompts via parameterView->savePipelineAs(). */
+    QAction* mSavePipelineAsAction;
+    /** Load a pipeline file via dialog.  Bound to File → Load Pipeline. */
+    QAction* mLoadPipelineAction;
     //QAction* mProcessingManager;
 
     QAction* mExpertMode;

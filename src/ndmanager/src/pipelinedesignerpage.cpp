@@ -863,6 +863,34 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
     tbox->addWidget(helpLabel);
     tbox->addSpacing(12);
 
+    // Save / Save As — write the current graph to a `.pipeline` YAML
+    // alongside the session.  Save targets `<session>.default.pipeline`;
+    // Save As prompts for a name (e.g. "best", "experimental") and
+    // writes `<session>.<name>.pipeline`.  The actual filesystem path
+    // resolution and prompting happen in ParameterView, which knows
+    // doc->url(); we just emit signals.
+    auto* saveBtn = new QPushButton(tr("💾 Save"));
+    saveBtn->setToolTip(tr("Save pipeline as <session>.default.pipeline (Ctrl+Alt+P)"));
+    saveBtn->setStyleSheet(
+        "QPushButton{background:#102a18;border:1px solid #2dd4bf;color:#2dd4bf;"
+        "font-size:11px;padding:3px 10px;border-radius:3px;}"
+        "QPushButton:hover{background:#163d20;}");
+    connect(saveBtn, &QPushButton::clicked,
+            this, &PipelineDesignerPage::savePipelineRequested);
+    tbox->addWidget(saveBtn);
+
+    auto* saveAsBtn = new QPushButton(tr("Save As…"));
+    saveAsBtn->setToolTip(tr("Save pipeline under a custom name (Ctrl+Alt+Shift+P)"));
+    saveAsBtn->setStyleSheet(
+        "QPushButton{background:#102a18;border:1px solid #2dd4bf;color:#2dd4bf;"
+        "font-size:11px;padding:3px 10px;border-radius:3px;}"
+        "QPushButton:hover{background:#163d20;}");
+    connect(saveAsBtn, &QPushButton::clicked,
+            this, &PipelineDesignerPage::saveAsPipelineRequested);
+    tbox->addWidget(saveAsBtn);
+
+    tbox->addSpacing(8);
+
     m_applyBtn = new QPushButton(tr("▶  Apply Pipeline"));
     m_applyBtn->setFixedWidth(150);
     m_applyBtn->setEnabled(false);
@@ -1077,10 +1105,34 @@ void PipelineDesignerPage::setPrograms(const QList<ProgramInformation>& programs
 
     const float startX = 60.f, startY = 80.f, stepX = PipelineCanvas::NW + 60.f;
 
-    // ── Sticky root pre-insertion ─────────────────────────────────────────
-    // Build an internal list ordered with ndm_start first.  If the loaded
-    // programs already include an ndm_start entry, hoist it to position 0
-    // (and copy its params over).  Otherwise prepend a defaults-only one.
+    // ── When does the YAML carry a pipeline? ─────────────────────────────
+    // The session YAML's programs: list is primarily a parameter store —
+    // historically every plugin in the toolchain has had an entry there,
+    // independent of which subset is actually wired into the pipeline.
+    // To distinguish "this is a saved graph" from "this is just a parameter
+    // pool", we use a single signal: programs[0].name == "ndm_start".
+    //
+    //  * Yes → treat the list as a graph in legacy in-YAML form.  Hoist
+    //          ndm_start to position 0 (it should already be there) and
+    //          load every other entry as a node, chained linearly.
+    //  * No  → start with an empty graph containing only the synthesised
+    //          ndm_start root.  The user's pipeline lives in a separate
+    //          .pipeline file (loaded via loadPipelineFile) or is yet to
+    //          be built; the YAML's other programs: entries hold per-plugin
+    //          parameter overrides, not graph membership.
+    bool yamlCarriesPipeline = false;
+    if (!programs.isEmpty() && programs.first().getProgramName() == kRootType) {
+        yamlCarriesPipeline = true;
+    }
+
+    if (!yamlCarriesPipeline) {
+        // Empty graph + synthesised root.  Same code path as
+        // clearGraphToRoot() — share the implementation by delegating.
+        clearGraphToRoot();
+        return;
+    }
+
+    // ── Legacy in-YAML pipeline: load every entry, root first ────────────
     QList<const ProgramInformation*> ordered;
     const ProgramInformation* rootProg = nullptr;
     for (const ProgramInformation& p : programs) {
@@ -1089,8 +1141,8 @@ void PipelineDesignerPage::setPrograms(const QList<ProgramInformation>& programs
             break;
         }
     }
-    // Synthesise a default ndm_start ProgramInformation if the YAML didn't
-    // carry one — happens for legacy sessions that pre-date the graph.
+    // (yamlCarriesPipeline guarantees rootProg != nullptr, but keep the
+    // synthesise path for safety against a future schema change.)
     ProgramInformation synthesisedRoot;
     if (!rootProg) {
         synthesisedRoot.setProgramName(kRootType);
@@ -1144,6 +1196,31 @@ void PipelineDesignerPage::setPrograms(const QList<ProgramInformation>& programs
     // Chain everything
     for (int j = 0; j + 1 < m_nodes.size(); ++j)
         m_edges.append({ m_nodes[j].id, m_nodes[j+1].id });
+
+    if (m_canvas) m_canvas->update();
+    m_modified = false;
+    refreshApplyState();
+}
+
+void PipelineDesignerPage::clearGraphToRoot()
+{
+    m_nodes.clear();
+    m_edges.clear();
+    m_inspectedId.clear();
+    clearInspector();
+
+    // Synthesise a single root node with default flag values.
+    PipelineNode root;
+    root.id      = m_canvas->allocateId();
+    root.type    = kRootType;
+    root.pos     = QPointF(60.0, 80.0);
+    root.enabled = true;
+    if (const NdmScriptDef* def = ndmScriptDef(kRootType)) {
+        for (const NdmParamDef& pd : def->params) {
+            root.params.append({ pd.name, pd.defaultValue });
+        }
+    }
+    m_nodes.append(root);
 
     if (m_canvas) m_canvas->update();
     m_modified = false;
@@ -1376,4 +1453,250 @@ void PipelineDesignerPage::refreshApplyState()
         "font-size:11px;font-weight:bold;padding:4px 10px;border-radius:3px;}"
         "QPushButton:hover{background:#143060;}"
         "QPushButton:disabled{background:#0a0f18;border-color:#2a3650;color:#2a3650;}");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline file I/O
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Pipeline files live alongside the session YAML as `<session>.<name>.pipeline`
+// (default name is "default", e.g. session.default.pipeline).  They are
+// minimal YAML carrying only the graph — node positions, edges, parameter
+// values — independent of the session-wide schema in session.yaml.  This
+// lets a user maintain multiple named pipelines per session
+// (default / new / best / experimental etc.) and switch between them
+// without touching the session YAML's parameter pool.
+//
+// Schema:
+//   nodes:
+//     - id: n1
+//       type: ndm_start
+//       pos: [60, 80]
+//       enabled: true
+//       params:
+//         wideband: 'true'
+//         events:   'true'
+//         ...
+//     - id: n2
+//       type: ndm_hipass
+//       ...
+//   edges:
+//     - {from: n1, to: n2}
+//
+// Implementation note: we hand-roll the writer/reader rather than pulling
+// in yaml-cpp because the schema is simple, the bash side already uses
+// PyYAML for its own reads, and the format is human-editable enough that
+// adding a third parser dependency just for the GUI would be overkill.
+
+#include <QFile>
+#include <QFileInfo>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QTextStream>
+
+namespace {
+
+// Quote a string for safe YAML scalar output.  Always single-quoted for
+// determinism — the values are short flag-like strings (true, false, 0.75)
+// so we don't need block-scalar handling.  Escapes embedded single quotes
+// per YAML 1.2 §7.3.2.
+QString yamlQuote(const QString& s) {
+    QString out = s;
+    out.replace(QLatin1String("'"), QLatin1String("''"));
+    return QLatin1Char('\'') + out + QLatin1Char('\'');
+}
+
+// Strip a leading/trailing pair of matching quote characters and undo
+// the YAML doubled-single-quote escape used by yamlQuote().
+QString yamlUnquote(QString s) {
+    s = s.trimmed();
+    if (s.size() >= 2) {
+        const QChar q = s.front();
+        if ((q == QLatin1Char('\'') || q == QLatin1Char('"')) && s.back() == q) {
+            s = s.mid(1, s.size() - 2);
+            if (q == QLatin1Char('\'')) {
+                s.replace(QLatin1String("''"), QLatin1String("'"));
+            }
+        }
+    }
+    return s;
+}
+
+}  // namespace
+
+bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error) const
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        if (error) {
+            *error = QStringLiteral("Could not open '%1' for writing: %2")
+                        .arg(path, f.errorString());
+        }
+        return false;
+    }
+    QTextStream out(&f);
+    out << "# neurosuite-3 pipeline file — generated by ndmanager\n";
+    out << "# Loadable via File → Load Pipeline.\n";
+    out << "#\n";
+    out << "# Schema: nodes[id, type, pos, enabled, params{...}] + edges[from,to]\n";
+    out << "\n";
+
+    // Nodes ──────────────────────────────────────────────────────────────
+    out << "nodes:\n";
+    for (const PipelineNode& n : m_nodes) {
+        out << "  - id: "      << n.id   << "\n";
+        out << "    type: "    << n.type << "\n";
+        out << "    pos: ["    << QString::number(n.pos.x(), 'f', 1)
+            << ", "            << QString::number(n.pos.y(), 'f', 1) << "]\n";
+        out << "    enabled: " << (n.enabled ? "true" : "false") << "\n";
+        if (n.params.isEmpty()) {
+            out << "    params: {}\n";
+        } else {
+            out << "    params:\n";
+            for (const auto& pv : n.params) {
+                out << "      " << pv.first << ": " << yamlQuote(pv.second) << "\n";
+            }
+        }
+    }
+
+    // Edges ──────────────────────────────────────────────────────────────
+    if (m_edges.isEmpty()) {
+        out << "edges: []\n";
+    } else {
+        out << "edges:\n";
+        for (const PipelineEdge& e : m_edges) {
+            out << "  - {from: " << e.from << ", to: " << e.to << "}\n";
+        }
+    }
+
+    out.flush();
+    if (f.error() != QFile::NoError) {
+        if (error) *error = QStringLiteral("Write failed: %1").arg(f.errorString());
+        return false;
+    }
+    return true;
+}
+
+bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (error) {
+            *error = QStringLiteral("Could not open '%1' for reading: %2")
+                        .arg(path, f.errorString());
+        }
+        return false;
+    }
+
+    // Use Python (already a hard dep of the toolchain) to parse the YAML
+    // robustly, including comments and multi-line params blocks.  The
+    // helper on stdout emits a flat key=value listing that's trivial to
+    // walk in C++.  Falls back to a plain failure if Python is missing.
+    QProcess py;
+    py.start(QStringLiteral("python3"), QStringList{
+        QStringLiteral("-c"),
+        QStringLiteral(
+            "import sys, yaml\n"
+            "doc = yaml.safe_load(open(sys.argv[1])) or {}\n"
+            "for n in doc.get('nodes', []) or []:\n"
+            "    nid = n.get('id', '')\n"
+            "    typ = n.get('type', '')\n"
+            "    pos = n.get('pos', [0, 0]) or [0, 0]\n"
+            "    en  = bool(n.get('enabled', True))\n"
+            "    print(f'NODE\\t{nid}\\t{typ}\\t{pos[0]}\\t{pos[1]}\\t{int(en)}')\n"
+            "    for k, v in (n.get('params') or {}).items():\n"
+            "        print(f'PARAM\\t{nid}\\t{k}\\t{v}')\n"
+            "for e in doc.get('edges', []) or []:\n"
+            "    print(f'EDGE\\t{e.get(\"from\",\"\")}\\t{e.get(\"to\",\"\")}')\n"),
+        path
+    });
+    if (!py.waitForFinished(5000)) {
+        if (error) *error = QStringLiteral("Pipeline file parser timed out");
+        return false;
+    }
+    if (py.exitCode() != 0) {
+        if (error) {
+            *error = QStringLiteral("Failed to parse '%1':\n%2")
+                        .arg(path, QString::fromUtf8(py.readAllStandardError()));
+        }
+        return false;
+    }
+
+    // Replace the graph atomically — only mutate m_nodes/m_edges if the
+    // parse succeeds.
+    QList<PipelineNode> newNodes;
+    QList<PipelineEdge> newEdges;
+    QHash<QString, int> nodeIdx;  // id → index in newNodes
+    QStringList unknownTypes;
+
+    const QString output = QString::fromUtf8(py.readAllStandardOutput());
+    for (const QString& line : output.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+        const QStringList parts = line.split(QLatin1Char('\t'));
+        if (parts.isEmpty()) continue;
+        if (parts[0] == QLatin1String("NODE") && parts.size() >= 6) {
+            // Drop unknown types with a warning rather than failing the load —
+            // this can happen when a pipeline file references a plugin that
+            // was renamed or removed since it was saved.
+            if (!ndmScriptDef(parts[2])) {
+                unknownTypes.append(parts[2]);
+                continue;
+            }
+            PipelineNode n;
+            n.id      = parts[1];
+            n.type    = parts[2];
+            n.pos     = QPointF(parts[3].toDouble(), parts[4].toDouble());
+            n.enabled = (parts[5] == QLatin1String("1"));
+            nodeIdx.insert(n.id, newNodes.size());
+            newNodes.append(n);
+        } else if (parts[0] == QLatin1String("PARAM") && parts.size() >= 4) {
+            if (!nodeIdx.contains(parts[1])) continue;  // unknown-type drop
+            const QString val = yamlUnquote(parts[3]);
+            newNodes[nodeIdx.value(parts[1])].params.append({ parts[2], val });
+        } else if (parts[0] == QLatin1String("EDGE") && parts.size() >= 3) {
+            // Skip edges that reference a dropped (unknown-type) node.
+            if (!nodeIdx.contains(parts[1])) continue;
+            if (!nodeIdx.contains(parts[2])) continue;
+            newEdges.append({ parts[1], parts[2] });
+        }
+    }
+
+    // Ensure ndm_start is present and at position 0.  A hand-edited pipeline
+    // file might have lost the root; we silently re-insert it rather than
+    // failing the load.
+    int rootIdx = -1;
+    for (int i = 0; i < newNodes.size(); ++i) {
+        if (newNodes[i].type == kRootType) { rootIdx = i; break; }
+    }
+    if (rootIdx < 0) {
+        PipelineNode root;
+        root.id      = QStringLiteral("nroot");
+        root.type    = kRootType;
+        root.pos     = QPointF(60.0, 80.0);
+        root.enabled = true;
+        if (const NdmScriptDef* def = ndmScriptDef(kRootType)) {
+            for (const NdmParamDef& pd : def->params) {
+                root.params.append({ pd.name, pd.defaultValue });
+            }
+        }
+        newNodes.prepend(root);
+    } else if (rootIdx > 0) {
+        newNodes.move(rootIdx, 0);
+    }
+
+    // Apply.
+    m_nodes = newNodes;
+    m_edges = newEdges;
+    m_inspectedId.clear();
+    clearInspector();
+
+    if (m_canvas) m_canvas->update();
+    m_modified = false;
+    refreshApplyState();
+
+    if (error && !unknownTypes.isEmpty()) {
+        *error = QStringLiteral("Loaded with %1 unknown plugin type(s) dropped: %2")
+                    .arg(unknownTypes.size())
+                    .arg(unknownTypes.join(QStringLiteral(", ")));
+    }
+    return true;
 }
