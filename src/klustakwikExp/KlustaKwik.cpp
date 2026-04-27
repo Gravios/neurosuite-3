@@ -35,8 +35,8 @@ char HelpString[] =
 char  FileBase[STRLEN]       = "tetrode";
 int   ElecNo                 = 1;
 int   MinClusters            = 2;
-int   MaxClusters            = 10;
-int   MaxPossibleClusters    = 100;
+int   MaxClusters            = 200;       // canonical jg05/eb05 sweep value
+int   MaxPossibleClusters    = 500;       // ≈ 2.5× MaxClusters; hard cap on cluster ID space
 int   nStarts                = 1;
 int   ParallelK              = 0;    // 0 = serial; N = concurrent (K,start) workers
 int   RandomSeed             = 1;
@@ -53,17 +53,17 @@ int   MaxIter                = 500;
 char  StartCluFile[STRLEN]   = "";
 float PenaltyMix             = 0.0f;
 char  InitMethod[STRLEN]     = "farthest";  // "farthest" | "random"
-int   TimeMergeIter          = 50;          // Phase 2 iterations; 0 = disabled
+int   TimeMergeIter          = 100;         // Phase 2 iterations; 0 = disabled
 
 // Three-phase chunked CEM parameters
-float ChunkMinutes           = 0.0f;    // 0 = disabled (use two-phase only)
-float ChunkOverlapMinutes    = 0.0f;    // trailing overlap appended to next chunk; 0 = disabled
-float ChunkPreseedFraction   = 0.0f;    // fraction of spikes for Phase 0 preseed; 0 = disabled
+float ChunkMinutes           = 7.0f;    // chunk size; 0 disables chunking
+float ChunkOverlapMinutes    = 4.0f;    // trailing overlap appended to next chunk; 0 disables
+float ChunkPreseedFraction   = 0.1f;    // fraction of spikes for Phase 0 preseed; 0 disables
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
-float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML or defaults to 20000
-float MergeThresh            = 30.0f;   // symmetric Mahalanobis² threshold for cluster matching
-int   GlobalMergeIter        = 20;      // Phase 3 warm-start EM iterations; 0 = skip Phase 3 entirely
-int   SaveIntermediates      = 1;       // 0 = suppress mid-run .clu writes; final write only
+float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML at startup
+float MergeThresh            = 0.0f;    // 0 = auto-calibrate to χ²(nDims, 0.99) at runtime
+int   GlobalMergeIter        = 0;       // Phase 3 warm-start EM iterations; 0 skips Phase 3 entirely
+int   SaveIntermediates      = 0;       // 0 = final-write only; 1 = also write per-phase .clu
 // Phase 1.5 waveform realignment parameters
 int   NbChannels             = 0;    ///< spike group channel count
 int   NbSamplesPerSpike      = 0;    ///< waveform window width
@@ -71,29 +71,29 @@ int   PeakSampleIndex        = 0;    ///< 0-based spike peak within window
 int   NbTotalChannels        = 0;    ///< total channels in .fil file
 int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
-int   nRuns                  = 0;    ///< 0 = legacy K×nStarts loop; >0 = flat nRuns loop
-int   TimeShiftAlignIter           = 1;    ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between)
+int   nRuns                  = 20;   ///< flat run count; 0 = legacy K×nStarts loop
+int   TimeShiftAlignIter     = 5;    ///< Phase 1.5 alignment passes (0=skip; N runs with MStep between)
 
 // ── Empirical prior ────────────────────────────────────────────────────────
 char  PriorFile[STRLEN]      = "";   ///< path to .prior.N.yaml
 int   AdaptiveMerge          = 1;    ///< per-pair d_eff-based MergeThresh (default on)
 std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
-int   MaxTimeShift             = 1;  ///< pre-shifted PCA basis half-width (0 disables, max 5)
-int   TimeShiftMergeEnable      = 1;  ///< apply min-Mahalanobis probe during cluster deletion
+int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 disables, max 5)
+int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
 // DipSplit parameters (Phase 1.8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
-int   DipSplitMinSize           = 100;   ///< min spikes per child cluster for accepted split
-float DipSplitBloatFactor       = 1.2f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation
-float DipSplitValleyThresh      = 0.15f; ///< min KDE valley depth to flag bimodality
-int   SubspaceDims           = 0;    ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
-int   SubspaceRecluster      = 0;    ///< 1=run per-cluster subspace CEM after Phase 2
-float TemplateMatchScore     = 0.0f; ///< min xcorr for within-chunk template matching (Phase 1.7)
-int   TemplateMatchIters     = 10;   ///< max within-chunk template match iterations
-int   SplitRecurseDepth      = 1;    ///< max TrySplits recursion depth
-float CrossChunkTemplateScore= 0.0f; ///< min xcorr for cross-chunk template matching (Phase 2 Pass 3)
-int   fSaveModel             = 1;
+int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
+float DipSplitBloatFactor       = 2.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation
+float DipSplitValleyThresh      = 0.0f;  ///< min KDE valley depth to flag bimodality
+int   SubspaceDims              = 8;     ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
+int   SubspaceRecluster         = 1;     ///< 1=run per-cluster subspace CEM after Phase 2
+float TemplateMatchScore        = 0.85f; ///< min xcorr for within-chunk template matching (Phase 1.7)
+int   TemplateMatchIters        = 10;    ///< max within-chunk template match iterations
+int   SplitRecurseDepth         = 8;     ///< max TrySplits recursion depth
+float CrossChunkTemplateScore   = 0.80f; ///< min xcorr for cross-chunk template matching (Phase 2 Pass 3)
+int   fSaveModel             = 0;        ///< 1 = write .model.N (debug only)
 FILE *pModelFile             = nullptr;
-int   SplitEvery             = 50;
+int   SplitEvery             = 8;        ///< split-probe cadence in CEM iterations
 FILE *logfp                  = nullptr;
 FILE *Distfp                 = nullptr;
 KlustaSave kSv;
@@ -710,72 +710,28 @@ int main(int argc, char **argv) {
         SetupParams(argc, argv);
 
         // ---------------------------------------------------------------
-        // Auto-detect spike-group parameters from <FileBase>.yaml
+        // Populate GroupChannelIds from the YAML.
         //
-        // The three globals NbChannels, NbSamplesPerSpike, and SamplingRate
-        // are auto-filled from the YAML parameter file when the user has not
-        // provided them explicitly on the command line.  Command-line values
-        // always win (they are already set by SetupParams above).
-        //
-        // NbBytesPerSample is NOT read from YAML because the ndmanager
-        // pipeline hardcodes int16 for all .spk files regardless of the
-        // acquisition system's ADC resolution — see KlustaKwikYaml.cpp for
-        // the full explanation.  The default value of 2 is always correct
-        // for recordings processed through ndm_hipass + ndm_extractspikes
-        // (or ndm_extractspikes_sdiff).
+        // The five scalar fields (NbChannels, NbSamplesPerSpike,
+        // PeakSampleIndex, NbTotalChannels, SamplingRate) are now filled
+        // earlier in SetupParams() with full provenance reporting and
+        // hard-fail on missing values.  GroupChannelIds is a vector-
+        // valued field consumed only by .fil-reading paths (drift
+        // estimation, re-extraction); it lives here because some
+        // downstream code expects it to be available before LoadData()
+        // but after argument parsing.
         // ---------------------------------------------------------------
         {
             const KKYamlSpikeParams yp = kkReadYamlSpikeParams(FileBase, ElecNo);
-            if (yp.valid) {
-                if (NbChannels == 0 && yp.nbChannels > 0) {
-                    NbChannels = yp.nbChannels;
-                    fprintf(stderr,
-                            "KlustaKwik: NbChannels=%d  (from YAML, group %d)\n",
-                            NbChannels, ElecNo);
-                }
-                if (NbSamplesPerSpike == 0 && yp.nbSamples > 0) {
-                    NbSamplesPerSpike = yp.nbSamples;
-                    fprintf(stderr,
-                            "KlustaKwik: NbSamplesPerSpike=%d  (from YAML, group %d)\n",
-                            NbSamplesPerSpike, ElecNo);
-                }
-                if (PeakSampleIndex == 0 && yp.peakSampleIndex > 0) {
-                    PeakSampleIndex = yp.peakSampleIndex;
-                    fprintf(stderr,
-                            "KlustaKwik: PeakSampleIndex=%d  (from YAML, group %d)\n",
-                            PeakSampleIndex, ElecNo);
-                }
-                if (NbTotalChannels == 0 && yp.nTotalChannels > 0) {
-                    NbTotalChannels = yp.nTotalChannels;
-                    fprintf(stderr,
-                            "KlustaKwik: NbTotalChannels=%d  (from YAML)\n",
-                            NbTotalChannels);
-                }
-                if (GroupChannelIds.empty() && !yp.channelIds.empty()) {
-                    GroupChannelIds = yp.channelIds;
-                    fprintf(stderr, "KlustaKwik: GroupChannelIds=[");
-                    for (int i = 0; i < std::min((int)GroupChannelIds.size(), 4); i++)
-                        fprintf(stderr, "%d%s", GroupChannelIds[i],
-                                i + 1 < (int)GroupChannelIds.size() ? "," : "");
-                    if ((int)GroupChannelIds.size() > 4) fprintf(stderr, "...");
-                    fprintf(stderr, "]  (from YAML, group %d)\n", ElecNo);
-                }
-                // SamplingRate: only override when the user has not provided
-                // a value on the command line (sentinel = 0.0f).
-                if (SamplingRate == 0.0f && yp.samplingRate > 0.0) {
-                    SamplingRate = static_cast<float>(yp.samplingRate);
-                    fprintf(stderr,
-                            "KlustaKwik: SamplingRate=%.0f  (from YAML)\n",
-                            static_cast<double>(SamplingRate));
-                }
+            if (yp.valid && GroupChannelIds.empty() && !yp.channelIds.empty()) {
+                GroupChannelIds = yp.channelIds;
+                fprintf(stderr, "[YAML] GroupChannelIds=[");
+                for (int i = 0; i < std::min((int)GroupChannelIds.size(), 4); i++)
+                    fprintf(stderr, "%d%s", GroupChannelIds[i],
+                            i + 1 < (int)GroupChannelIds.size() ? "," : "");
+                if ((int)GroupChannelIds.size() > 4) fprintf(stderr, "...");
+                fprintf(stderr, "]  (from YAML, group %d)\n", ElecNo);
             }
-        }
-        // Last-resort default if neither command line nor YAML provided SR.
-        if (SamplingRate <= 0.0f) {
-            SamplingRate = 20000.0f;
-            fprintf(stderr,
-                    "KlustaKwik: SamplingRate defaulting to 20000 Hz"
-                    " (no YAML found and -SamplingRate not given)\n");
         }
 
         clock_t clock0 = clock();
@@ -790,6 +746,52 @@ int main(int argc, char **argv) {
         }
 
         K1.LoadData();
+
+        // ── MergeThresh auto-calibration ─────────────────────────────────
+        // MergeThresh is a Mahalanobis² threshold; the natural scale is
+        // the chi-square distribution.  χ²(d, 0.99) means "two clusters
+        // whose Mahal² distance exceeds this are >99% unlikely to be
+        // the same Gaussian" — a sensible default that scales with
+        // feature dimensionality.  The previous fixed default of 30
+        // was right for ~17 dims and catastrophically large for
+        // smaller feature spaces (everything merges into one).
+        //
+        // Wilson-Hilferty cube-root approximation: cheap, monotonic,
+        // accurate to <1% for d ≥ 3.  Same formula used by the
+        // existing "MergeThresh too large" warning in KK.cpp:2673,
+        // kept consistent so the recommendation matches what we
+        // auto-pick.  z_0.99 = 2.326347874.
+        //
+        // CLI -MergeThresh wins.  YAML doesn't carry MergeThresh.
+        if (!cli_has_flag(argc, argv, "MergeThresh") && MergeThresh <= 0.0f) {
+            const float d = static_cast<float>(K1.nDims);
+            const float t = d * std::pow(
+                1.0f - 2.0f / (9.0f * d) + 2.326347874f * std::sqrt(2.0f / (9.0f * d)),
+                3.0f);
+            MergeThresh = t;
+            fprintf(stderr,
+                    "[auto] MergeThresh = %.2f  (χ²(%d, 0.99); auto-calibrated "
+                    "from .fet header)\n", MergeThresh, K1.nDims);
+        } else if (cli_has_flag(argc, argv, "MergeThresh")) {
+            // Sanity-check the user's override against χ²(d, 0.99) so a
+            // wildly miscalibrated value is at least flagged here
+            // (in addition to KK.cpp's existing 0.9999 warning).
+            const float d = static_cast<float>(K1.nDims);
+            const float t99 = d * std::pow(
+                1.0f - 2.0f / (9.0f * d) + 2.326347874f * std::sqrt(2.0f / (9.0f * d)),
+                3.0f);
+            const float ratio = MergeThresh / t99;
+            if (ratio < 0.5f || ratio > 3.0f) {
+                fprintf(stderr,
+                        "[warn] MergeThresh=%.2f is %s χ²(%d, 0.99)=%.2f "
+                        "by %.1f×.  Auto-default would be %.2f.\n",
+                        MergeThresh,
+                        ratio < 1.0f ? "below" : "above",
+                        K1.nDims, t99,
+                        ratio < 1.0f ? 1.0f / ratio : ratio,
+                        t99);
+            }
+        }
 
         // ── klustakwikExp: post-split shift-probe refeaturization ───────────
         // Load PCA basis + open .spk read-only once for the run.  If either
