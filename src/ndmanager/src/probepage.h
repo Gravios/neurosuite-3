@@ -1,50 +1,72 @@
 /***************************************************************************
  * probepage.h
  *
- * ndmanager Probe tab: view/edit the list of probes implanted in this
- * session and their association with anatomical groups.
+ * ndmanager Probe tab — list of probes implanted in this session, with
+ * inspector and embedded geometry editor.
  *
- * Each row represents one probe entry:
- *   ID | ProbeFile | Label | ChannelOffset | AnatomicalGroups | SpikeGroups
+ * Layout (single wide page, no sub-tabs):
  *
- * When a probe file is imported via Browse, the .probe YAML is parsed and
- * the anatomy / spike groups are derived automatically.  A signal is then
- * emitted so ParameterView can push the derived maps into AnatomyPage and
- * SpikePage immediately.
+ *   ┌──────────┬──────────────────────────┬─────────────────────────────┐
+ *   │ Probes   │ Inspector                │ Probe Geometry              │
+ *   │ ──────   │ ─────────                │ (ProbeMakerPage)            │
+ *   │ • 1      │ Label:  [_______]        │   ★ ROOT                    │
+ *   │ • 2  ◄   │ File:   [_______]        │     │                       │
+ *   │ • 3      │ Channel offset: [16]     │  Shank A   Shank B          │
+ *   │   +      │                          │     │        │              │
+ *   │   −      │ Anatomical groups: 1, 2  │   ch 0..7  ch 8..15         │
+ *   │          │ Spike groups:      1, 2  │                             │
+ *   └──────────┴──────────────────────────┴─────────────────────────────┘
  *
- * Copyright (C) 2025 neurosuite-3 contributors
+ * Selecting a probe in the list loads its .probe file into the right-
+ * hand ProbeMakerPage; edits there are persisted to
+ *   <session>.probe.<id>.probe
+ * automatically.  Adding a probe (+) clones the system-wide
+ *   /usr/local/share/neurosuite/probes/empty.probe
+ * template so the user has a working starter file to edit immediately.
+ *
+ * The data model still uses ProbeEntry from libklustersshared.  Anat/
+ * spike group lists are computed by importProbeYaml from the probe
+ * geometry on import or save; the inspector shows them read-only.
+ *
+ * Copyright (C) 2025–2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #ifndef PROBEPAGE_H
 #define PROBEPAGE_H
 
-#include "probelayout.h"    // generated from probelayout.ui
-
 #include <klustersshared/parameteryamlreader_probes.h>
 
-#include <QMap>
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 #include <QWidget>
 
-class QStackedWidget;
+class QListWidget;
+class QListWidgetItem;
+class QLineEdit;
+class QSpinBox;
+class QLabel;
+class QPushButton;
+class QSplitter;
+
 class ProbeMakerPage;
 
 /**
- * @brief The Probe tab page in ndmanager's expert-mode parameter view.
+ * @brief The Probe tab in ndmanager's expert-mode parameter view.
  *
- * Mirrors the pattern of AnatomyPage / SpikePage.  Inserted into
- * ParameterView::mStackWidget just after the Spike Groups entry when expert
- * mode is active.
+ * Replaces the original ProbeLayout (.ui-driven QTableWidget) with a
+ * three-pane single-page layout: probe-id list on the left, inspector
+ * form in the middle, embedded ProbeMakerPage geometry editor on the
+ * right.  No tabs, no sub-pages — everything is on one wide canvas.
  */
-class ProbePage : public ProbeLayout
+class ProbePage : public QWidget
 {
     Q_OBJECT
 
 public:
     explicit ProbePage(QWidget* parent = nullptr);
-    ~ProbePage() override = default;
+    ~ProbePage() override;
 
     // ---- Data setters / getters (called by ParameterView) ----------------
 
@@ -60,20 +82,21 @@ public:
     void setNbChannels(int n) { m_nbChannels = n; }
 
 signals:
-    /** Emitted whenever any cell is edited or a row is added/removed. */
+    /** Emitted whenever any inspector field is edited or a probe is
+     *  added/removed/reordered. */
     void probesModified();
 
     /**
-     * Emitted after a .probe file is successfully imported via Browse.
+     * Emitted after a probe geometry is imported or saved.
      *
-     * @param probes         Updated full probe list (all rows).
+     * @param probes         Updated full probe list.
      * @param anatomyGroups  groupId → channel list (0-based), derived from
-     *                       the imported probe file.  Ready to pass directly
-     *                       to AnatomyPage::setGroups().
+     *                       the probe geometry.  Ready to pass directly to
+     *                       AnatomyPage::setGroups().
      * @param spikeGroups    Same shape; equals anatomyGroups when the probe
      *                       has no separate spike-group override.
-     * @param firstNewGroupId The first 1-based group ID assigned to the
-     *                       newly imported probe (= previous max + 1).
+     * @param firstNewGroupId 1-based group ID assigned to the first new
+     *                       group on import (= previous max + 1).
      */
     void probeLayoutImported(QList<ProbeEntry>             probes,
                              QMap<int, QList<int>>         anatomyGroups,
@@ -81,80 +104,57 @@ signals:
                              int                           firstNewGroupId);
 
 public slots:
-    void addProbe();
-    void removeProbe();
-    void moveProbeUp();
-    void moveProbeDown();
-    void browseProbeFile();    ///< open file dialog, import on success
-    void browseLibraryPath();  ///< change the probe library root folder
-    void cellEdited(int row, int column);
-    void rowSelected();        ///< update diagram preview
     void resetModificationStatus() { m_modified = false; }
 
     /**
-     * Recompute channel offsets and anatomy/spike groups for every row from
-     * scratch.  Called after any structural change (Browse, Add, Remove,
-     * Move, or editing the probe file column directly).
+     * Recompute anatomical/spike group memberships for every probe from
+     * scratch by re-parsing each .probe file.  Called after Browse,
+     * Add, Remove, or any inspector edit that affects channelOffset.
+     * Propagates the result via probeLayoutImported.
      */
     void recalculateAll();
 
+private slots:
+    void onListSelectionChanged();
+    void onAddClicked();          ///< clone empty.probe into a new entry
+    void onRemoveClicked();       ///< delete current entry + its session-local file
+    void onBrowseLibraryClicked();///< import a .probe file from the library
+    void onLabelEdited();
+    void onFileEdited();
+    void onOffsetEdited();
+    void onMakerModified();       ///< maker reports an edit → save .probe.N
+
 private:
-    enum Col {
-        ColId          = 0,
-        ColFile        = 1,
-        ColLabel       = 2,
-        ColOffset      = 3,
-        ColGroups      = 4,   ///< anatomical groups
-        ColSpikeGroups = 5    ///< spike groups (empty = same as anatomical)
-    };
-
-    void populateRow(int row, const ProbeEntry& entry);
-    ProbeEntry rowToEntry(int row) const;
-    void renumberIds();
-
-    /**
-     * Copy the probe file at @p srcPath into the session directory.
-     * When @p probeId is non-negative the file is renamed to
-     * <session>.probe.<probeId>.probe so the file is unambiguously
-     * associated with the row whose ID is @p probeId.  When @p probeId
-     * is -1 the legacy "keep source basename" behaviour is used (only
-     * for callers that pre-date the renumberIds flow).
-     *
-     * Returns the bare filename to store in the table's File column,
-     * or an empty string on failure / user cancel.  If the file
-     * already exists at the destination, the user is asked whether
-     * to overwrite, reuse, or cancel.
-     */
-    QString copyProbeIntoSession(const QString& srcPath, int probeId = -1);
+    void buildUi();
+    void rebuildList();           ///< redraw the probe list from m_probes
+    void loadProbeIntoMaker(int probeIndex);
+    void refreshInspector();      ///< populate inspector fields from the current selection
+    void updateGroupsLabels();    ///< populate the anat/spike read-only labels
+    void saveCurrentProbeFile();  ///< write maker state to <session>.probe.<id>.probe
 
     /** Returns the local filename a probe with @p probeId should have
-     *  in the session directory: <session>.probe.<probeId>.probe where
-     *  <session> is the current working directory's basename. */
+     *  in the session directory: <session>.probe.<probeId>.probe. */
     static QString sessionProbeFilename(int probeId);
 
-    /** Load the probe file referenced by row @p row into the embedded
-     *  ProbeMakerPage and show the maker frame.  When the file is
-     *  missing, hides the maker frame and shows the no-probe placeholder. */
-    void loadProbeIntoMaker(int row);
+    /** Resolve a probeFile cell value (absolute, session-local, or
+     *  library basename) to an existing absolute path.  Returns empty
+     *  string if neither candidate exists. */
+    QString resolveProbePath(const QString& cellValue) const;
 
-    /** Save the embedded maker's current connector state to
-     *  <session>.probe.<probeId>.probe for the currently-tracked row,
-     *  and update the table's File column to point at it.  Called on
-     *  row-change and on the maker's modified() signal. */
-    void saveMakerToCurrentRow();
+    /** Returns the path to the system-wide empty.probe template,
+     *  honouring an optional NS3_PROBE_LIBRARY_PATH env var override. */
+    QString emptyTemplatePath() const;
 
     /**
-     * Parse a .probe YAML file and fill @p entry (label, probeFile, groups)
-     * and @p derivedAnatomy / @p derivedSpike.
-     *
-     * @param path         Absolute path to the .probe file.
-     * @param entry        ProbeEntry to fill (probeFile, label, channelOffset,
-     *                     anatomicalGroups, spikeGroups already set on entry).
-     * @param nextGroupId  1-based ID for the first new group (caller maintains
-     *                     the counter across probes).
-     * @param outAnatomy   Filled with groupId → 0-based channel list.
-     * @param outSpike     Same; equals outAnatomy when probe has no override.
-     * @return true on success, false if parse failed.
+     * Copy @p srcPath into the session directory, renamed to
+     * <session>.probe.<probeId>.probe.  Returns the bare filename to
+     * store on the entry, or empty on failure / cancel.
+     */
+    QString copyProbeIntoSession(const QString& srcPath, int probeId);
+
+    /**
+     * Parse a .probe YAML, fill @p entry's anatomicalGroups/spikeGroups,
+     * and populate the channel-list maps.
      */
     bool importProbeYaml(const QString&        path,
                          ProbeEntry&           entry,
@@ -162,38 +162,33 @@ private:
                          QMap<int,QList<int>>& outAnatomy,
                          QMap<int,QList<int>>& outSpike);
 
-    bool    m_modified   = false;
-    QString m_libraryPath;
-    int     m_nbChannels = 0;
-
-    /** Embedded probe-geometry editor.  Lives inside the existing
-     *  diagramGroupBox area on the right side of the page; replaces
-     *  the static SVG preview when a row is selected and a probe
-     *  file is loaded.  The page owns its lifetime via Qt parent. */
-    class ProbeMakerPage* m_probeMaker = nullptr;
-
-    /** Container that wraps m_probeMaker plus the placeholder QLabel
-     *  ("Select a row to edit").  Toggled visible/hidden as
-     *  selection changes; m_probeMaker is shown when a probe is
-     *  loaded, the placeholder otherwise. */
-    class QStackedWidget* m_makerStack = nullptr;
-
-    /** Row whose probe is currently loaded into m_probeMaker.  -1
-     *  when no probe is loaded.  Used to know which file to save
-     *  back to when the maker emits modified(). */
-    int m_currentMakerRow = -1;
-
-    /** Suppresses re-entrant load when the page is updating the maker
-     *  programmatically (e.g. during setProbes population).  Without
-     *  this the maker's modified() signal would bounce back through
-     *  saveMakerToCurrentRow() on every load. */
-    bool m_loadingMaker = false;
-
-    /**
-     * Return totalChannels from a .probe YAML, or 0 on error.
-     * Used to auto-compute channel offsets without a full parse.
-     */
+    /** totalChannels from a .probe YAML, or 0 on error. */
     static int probeChannelCount(const QString& probePath);
+
+    // ── Data ─────────────────────────────────────────────────────────────
+    QList<ProbeEntry> m_probes;
+    int               m_currentIndex = -1;     ///< -1 = no selection
+    bool              m_modified     = false;
+    QString           m_libraryPath;
+    int               m_nbChannels   = 0;
+    bool              m_loadingMaker = false;  ///< suppress save during programmatic load
+
+    // ── UI ───────────────────────────────────────────────────────────────
+    QSplitter*       m_split          = nullptr;
+    QListWidget*     m_list           = nullptr;
+    QPushButton*     m_addBtn         = nullptr;
+    QPushButton*     m_removeBtn      = nullptr;
+    QPushButton*     m_browseBtn      = nullptr;
+
+    // Inspector
+    QLineEdit*       m_inspLabel      = nullptr;
+    QLineEdit*       m_inspFile       = nullptr;
+    QSpinBox*        m_inspOffset     = nullptr;
+    QLabel*          m_inspAnatomy    = nullptr;   ///< read-only display
+    QLabel*          m_inspSpike      = nullptr;   ///< read-only display
+
+    // Geometry editor
+    ProbeMakerPage*  m_maker          = nullptr;
 };
 
 #endif // PROBEPAGE_H
