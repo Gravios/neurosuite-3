@@ -41,7 +41,9 @@ protected:
  *        (drag a shank to reposition it on the connector; drag a pad
  *        to reposition it on its shank).
  *
- *        Mouse: Ctrl+wheel zooms; middle-drag pans; left-drag selects.
+ *        Mouse: wheel zooms (no modifier required); middle-drag pans;
+ *        left-drag selects.  Ctrl+wheel also zooms for compatibility
+ *        with the old binding.
  */
 class ProbePhysicalView : public QGraphicsView
 {
@@ -49,8 +51,17 @@ class ProbePhysicalView : public QGraphicsView
 public:
     explicit ProbePhysicalView(QWidget* parent = nullptr);
 
-    /** Reset the view to fit the entire scene with a 10% margin. */
+    /** Reset the view to fit the entire scene with a 10% margin.
+     *  Calling this clears the userInteracted flag (which controls
+     *  whether the page rebuilds auto-fit) so the next rebuild also
+     *  re-fits, giving the user a clean reset. */
     void fitAll();
+
+signals:
+    /** Emitted the first time the user zooms or pans, signalling that
+     *  the page should stop auto-fitting on every scene rebuild and
+     *  preserve the user's current view transform instead. */
+    void userInteracted();
 
 protected:
     void wheelEvent(QWheelEvent* e) override;
@@ -59,7 +70,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
 
 private:
-    bool   m_panning = false;
+    bool   m_panning   = false;
     QPoint m_lastPan;
 };
 

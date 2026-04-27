@@ -88,13 +88,13 @@ void ProbePhysicalView::fitAll()
 
 void ProbePhysicalView::wheelEvent(QWheelEvent* e)
 {
-    if (e->modifiers() & Qt::ControlModifier) {
-        const qreal factor = (e->angleDelta().y() > 0) ? 1.15 : 1.0 / 1.15;
-        scale(factor, factor);
-        e->accept();
-        return;
-    }
-    QGraphicsView::wheelEvent(e);
+    // Bare wheel zooms — no modifier required.  Holding Ctrl still works
+    // (it has the same effect) for compatibility with the old binding
+    // and with users who reflexively hold Ctrl when zooming.
+    const qreal factor = (e->angleDelta().y() > 0) ? 1.15 : 1.0 / 1.15;
+    scale(factor, factor);
+    emit userInteracted();
+    e->accept();
 }
 
 void ProbePhysicalView::mousePressEvent(QMouseEvent* e)
@@ -103,6 +103,7 @@ void ProbePhysicalView::mousePressEvent(QMouseEvent* e)
         m_panning = true;
         m_lastPan = e->pos();
         QApplication::setOverrideCursor(Qt::ClosedHandCursor);
+        emit userInteracted();
         e->accept();
         return;
     }

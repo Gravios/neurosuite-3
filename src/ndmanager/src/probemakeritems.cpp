@@ -172,28 +172,35 @@ void ShankItem::rebuildPolygon()
     QPolygonF poly;
     if (m_logicalMode || !m_model) {
         // Logical view: 200×56 rounded rect, identical to the
-        // Pipeline Designer's node footprint.
+        // Pipeline Designer's node footprint.  Origin at top-left
+        // because logical-view positions are arbitrary anyway.
         poly << QPointF(0.0,    0.0)
              << QPointF(200.0,  0.0)
              << QPointF(200.0, 56.0)
              << QPointF(0.0,   56.0);
     } else {
         // Physical view: rect body (width × length) with a triangular
-        // tip wedge at the bottom (y = lengthUm).  Tip half-angle is
-        // (180° - tipAngle) / 2; at 90° we get a flat tip (no wedge).
-        const qreal w = m_model->widthUm;
-        const qreal h = m_model->lengthUm;
+        // tip wedge at the bottom (y = lengthUm).  The polygon is
+        // centred on x=0 — i.e. the local origin is at the top of the
+        // shank's CENTRELINE — so that a child ChannelItem with
+        // posUm.x() == 0 lands on the centreline.  Sites at ±halfW
+        // sit on the edges.  This matches the canonical .probe file
+        // convention where each shank's geometry is referenced to its
+        // own centreline (e.g. Buzsaki sites at x=±11 µm).
+        //
+        // Tip half-angle is (180° − tipAngle) / 2; at 90° the tip is
+        // flat (no wedge).  Lower angles produce sharp points.
+        const qreal w     = m_model->widthUm;
+        const qreal h     = m_model->lengthUm;
         const qreal halfW = w * 0.5;
         const qreal tipDeg = m_model->tipAngle;
-        // Wedge height: tan((180 - tipAngle)/2) × halfW.  A 60° tip
-        // becomes a sharp point; a 90° tip is blunt.
         const qreal halfApex = (180.0 - tipDeg) * 0.5 * M_PI / 180.0;
         const qreal wedge = std::tan(halfApex) * halfW;
-        poly << QPointF(0.0,        0.0)
-             << QPointF(w,          0.0)
-             << QPointF(w,          h)
-             << QPointF(halfW,      h + wedge)
-             << QPointF(0.0,        h);
+        poly << QPointF(-halfW, 0.0)
+             << QPointF( halfW, 0.0)
+             << QPointF( halfW, h)
+             << QPointF( 0.0,   h + wedge)
+             << QPointF(-halfW, h);
     }
     setPolygon(poly);
 }
