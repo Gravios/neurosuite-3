@@ -117,10 +117,11 @@ public slots:
 private slots:
     void onListSelectionChanged();
     void onAddClicked();          ///< clone empty.probe into a new entry
+    void onAddFromLibraryClicked();///< new entry, geometry copied from a library file
+    void onAddFromFileClicked();  ///< new entry, geometry copied from a chosen path
     void onRemoveClicked();       ///< delete current entry + its session-local file
-    void onBrowseLibraryClicked();///< import a .probe file from the library
+    void onBrowseLibraryClicked();///< replace current probe's geometry from a chosen file
     void onLabelEdited();
-    void onFileEdited();
     void onOffsetEdited();
     void onMakerModified();       ///< maker reports an edit → save .probe.N
 
@@ -131,6 +132,23 @@ private:
     void refreshInspector();      ///< populate inspector fields from the current selection
     void updateGroupsLabels();    ///< populate the anat/spike read-only labels
     void saveCurrentProbeFile();  ///< write maker state to <session>.probe.<id>.probe
+
+    /** Show a transient feedback line in the inspector status area.
+     *  @p isError styles the text in red so failed operations stand
+     *  out from successful ones.  Pass an empty string to clear. */
+    void setStatus(const QString& msg, bool isError = false);
+
+    /** Helper used by Add/Add-from-library/Add-from-file: allocates a
+     *  fresh probe id, copies @p sourcePath (or the empty template if
+     *  empty) into the session, appends a ProbeEntry, selects it, and
+     *  triggers recalculateAll.  Returns the new id, or -1 on failure. */
+    int  appendProbe(const QString& sourcePath);
+
+    /** True when the file at @p path is byte-equivalent to the empty
+     *  template (or close to it — same size and a valid parse).  Used
+     *  by onBrowseLibraryClicked to skip the "overwrite?" confirmation
+     *  when the current probe is still the unmodified starter file. */
+    bool probeIsUntouched(const QString& path) const;
 
     /** Returns the local filename a probe with @p probeId should have
      *  in the session directory: <session>.probe.<probeId>.probe. */
@@ -176,7 +194,6 @@ private:
     // ── UI ───────────────────────────────────────────────────────────────
     QSplitter*       m_split          = nullptr;
     QListWidget*     m_list           = nullptr;
-    QPushButton*     m_addBtn         = nullptr;
     QPushButton*     m_removeBtn      = nullptr;
     QPushButton*     m_browseBtn      = nullptr;
 
@@ -186,6 +203,12 @@ private:
     QSpinBox*        m_inspOffset     = nullptr;
     QLabel*          m_inspAnatomy    = nullptr;   ///< read-only display
     QLabel*          m_inspSpike      = nullptr;   ///< read-only display
+
+    /** Transient status line at the bottom of the inspector pane.
+     *  Populated by setStatus() with feedback from Browse/Add/Save
+     *  actions; cleared (or overwritten) on the next action.  Two
+     *  flavours: neutral (#9ca3af) and error (#f87171). */
+    QLabel*          m_status         = nullptr;
 
     // Geometry editor
     ProbeMakerPage*  m_maker          = nullptr;
