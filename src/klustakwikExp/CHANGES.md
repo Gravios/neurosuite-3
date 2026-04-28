@@ -32,13 +32,18 @@ stage-specific selection criterion, and commits shifts to `Data[]` +
 | 0         | Preseed (chunked mode)                                          | —                                         |
 | 1         | Per-chunk CEM clustering                                        | time-shift split (inside `TrySplits` accept) |
 | **1.5**   | **Cluster alignment** — per-spike min-Mahalanobis² into own cluster | `TimeShiftAlignPhase`                 |
-| 1.6       | Mean waveform harvest (templates)                               | —                                         |
-| 1.7       | Within-chunk template matching                                  | —                                         |
-| **1.8**   | **DipSplit** — bimodal-cluster detection & split                | `DipSplitPhase`                           |
-| 2         | Cross-chunk cluster matching                                    | —                                         |
-| 2.5       | Subspace reclustering + refractory split                        | time-shift split (inside accept hooks)    |
-| 3         | Global warm-start EM                                            | merge-decision + merge-tighten (`ConsiderDeletion`) |
-| **4**     | **Shift commit**: re-extract `.fil` → `.spk`/`.fet`/`.res`      | `TimeShiftFinalize`                       |
+| 2         | Subspace reclustering + refractory split (per-chunk)            | time-shift split (inside accept hooks)    |
+| 4         | Mean waveform harvest (templates)                               | —                                         |
+| 5         | Within-chunk xcorr template matching                            | —                                         |
+| 6         | Cross-chunk model matching (overlap-vote + Mahal + xcorr)       | —                                         |
+| 7         | Global warm-start EM                                            | merge-decision + merge-tighten (`ConsiderDeletion`) |
+| 8         | **DipSplit** — bimodal-cluster detection & split                | `DipSplitPhase`                           |
+| (post)    | **Shift commit**: re-extract `.fil` → `.spk`/`.fet`/`.res`      | `TimeShiftFinalize`                       |
+
+Phase numbers 3 (between Phase 2 and Phase 4) and decimal sub-phases
+older than 1.5 are historical — the runtime jumps from Phase 2 directly
+to Phase 4.  The sequence is what is actually printed at runtime; this
+table now matches stderr and can be cross-referenced when debugging.
 
 Phase 1.5 is no longer the legacy xcorr stage — canonical xcorr realignment
 (`RealignChunkWaveforms`) has been removed.  The slot is now owned by the
@@ -310,6 +315,457 @@ The inherited canonical changelog is preserved as
 `CHANGES-inherited-from-canonical.md` for historical reference.
 
 All other files are byte-identical to their canonical counterparts.
+
+## [2026-04-28e] Quality warning removed — mass distribution can't detect failures
+
+The `gini > 0.7 && maxFrac > 0.4` warning introduced in 2026-04-28d was
+firing on healthy interneuron biology.
+
+### The category error
+
+A fast-spiking interneuron firing at modest rates (~3-4 Hz) over an
+80-minute session produces ~17 000 spikes — easily 40% of the spike
+count in a tetrode group.  That gives `(gini, maxFrac) = (0.83, 0.42)`,
+identical to the signature I was using to flag absorbed-bimodal
+failures.
+
+The failure mode I was originally targeting (jg05-group-6 cluster 3,
+pre-elongation-gate) had ONE specific waveform-shape signature:
+bimodal valley in a top-PC projection AND elongated covariance.
+Those are exactly what DipSplit's bloat and elongation gates measure
+on a per-cluster basis.  The cluster-size distribution doesn't carry
+the failure signal — it's a downstream symptom that's also produced
+by completely normal physiology.
+
+If DipSplit's gates pass on a high-mass cluster (the cluster sits in
+the "not-flagged" rejection bucket), that cluster IS a real unit.  No
+amount of post-hoc Gini/maxFrac inspection changes that.  The warning
+was telling users to "check for absorbed-bimodal failures" on real
+interneurons.
+
+### Resolution
+
+The conjunction warning is removed.  The metrics line itself stays:
+
+```
+[final quality]  alive=23  spikes=40377  gini=0.807  maxFrac=0.422  condMax=6.5e+04 (cluster 45)
+```
+
+— gini and maxFrac are still useful informational diagnostics.  An
+expert reading the log can interpret a 42% maxFrac with full context
+(channel count, expected unit composition, drift behaviour).  But the
+automated warning that conflates biology with failure is gone.
+
+`condMax > 1e6` warning stays — borderline-singular covariance is a
+structural concern that doesn't have a benign biological explanation.
+
+### Methodological note
+
+This was a useful object lesson in heuristic calibration.  My initial
+warning was synthesised from a single failure case (jg05 group 6
+cluster 3) and treated as if cluster-size distribution carried the
+signal.  In fact, the failure case had a *waveform* signature; the
+size signature was incidental.  When I deployed it more broadly, it
+fired on the case it was designed to flag PLUS every interneuron-rich
+session.  Adding the conjunction with maxFrac in 28d narrowed the
+false positives but kept the same category error.
+
+The actionable failure signal is already where it belongs: in
+DipSplit's per-cluster bloat/elongation outputs.  When those reject a
+candidate as `not-flagged`, that's the cluster confirming itself as a
+real unit; when they accept and DipSplit splits it, the failure has
+already been corrected by the time the user sees the result.
+
+## [2026-04-28d] Diagnostics polish — Gini false-alarm + MergeThresh auto-trigger
+
+Three fixes for issues surfaced by running the Stage 1 + subspace-fix
+build on jg05-20120316 group 6.
+
+### Gini-only quality warning was a false alarm
+
+`ReportClusterQuality` printed:
+
+```
+  WARNING: gini 0.778 > 0.7 — one cluster dominates;
+           check for absorbed-bimodal failures
+```
+
+…on a session with `maxFrac = 0.163` (16% in the largest cluster).
+That isn't "one cluster dominates" — it's a healthy long-tailed
+distribution typical of extracellular spike sorting: a few high-rate
+units, many low-rate units.  A long tail naturally produces high Gini
+even when no single cluster is large.
+
+The actual absorbed-bimodal failure signature (jg05 group 6 cluster 3
+pre-fix) was BOTH high Gini AND `maxFrac > 0.4` — a single cluster
+holding most of the mass.  The combined `gini > 0.7 && maxFrac > 0.4`
+test catches the failure case without firing on healthy long tails.
+
+The standalone `maxFrac > 0.4 with ≥ 8 clusters` warning ("likely
+under-split") was redundant once Gini was added to the conjunction —
+it overlapped with the absorbed-bimodal warning on the same data.
+Removed.  `condMax > 1e6` warning is independent and stays.
+
+### `-MergeThresh 0` now triggers auto-calibration
+
+The recommended CLI command included `-MergeThresh 0` with the
+intention of auto-calibration to χ²(d, 0.99).  But the auto-set guard
+was `!cli_has_flag("MergeThresh") && MergeThresh <= 0.0f` — passing
+the flag at all bypassed auto-set, leaving MergeThresh=0 throughout
+the run.
+
+Fixed: explicit `-MergeThresh 0` is now treated as the sentinel value
+and triggers the same auto-calibration as omitting the flag.  The auto
+log line includes a hint when the user passed 0 explicitly:
+
+```
+[auto] MergeThresh = 40.31  (χ²(22, 0.99); auto-calibrated from .fet
+       header — user passed -MergeThresh 0)
+```
+
+Any positive `-MergeThresh N` continues to bypass auto and use N
+directly, as before.
+
+### MergeThresh sanity warning — divide-by-zero + AdaptiveMerge awareness
+
+The legacy warn branch printed:
+
+```
+[warn] MergeThresh=0.00 is below χ²(22, 0.99)=40.31 by inf×.
+```
+
+Two issues:
+
+1. The `inf×` came from `1.0f / ratio` where `ratio = MergeThresh /
+   t99 = 0`.  The auto-trigger fix above prevents `MergeThresh=0`
+   from reaching this branch, but as defence-in-depth the warning is
+   now guarded with `MergeThresh > 0.0f && t99 > 0.0f`.
+2. With `AdaptiveMerge=1` (the default), per-pair calibration handles
+   miscalibration at runtime regardless of the global MergeThresh —
+   so the global being out of `[0.5×, 3×] χ²(d, 0.99)` is not actually
+   a problem.  Warning suppressed when `AdaptiveMerge=1`.
+
+### Files touched
+
+- `KK.cpp`: `ReportClusterQuality` warnings consolidated.
+- `KlustaKwik.cpp`: MergeThresh auto-trigger semantics + warn branch
+  guards.
+- `CHANGES.md`: this entry.
+
+### Not addressed here (next step)
+
+`RefractorySplitPerChunk` accepted 0 / 7 splits on this run.  The
+seeding (centroid of refractory-violators vs centroid of clean spikes)
+can put both centroids at the same place when contamination is
+feature-uniform (every spike in the cluster is a violator with respect
+to its temporal neighbour, but their feature distribution doesn't
+separate violators from clean).  CEM then gets a degenerate two-seed
+start.  A more robust approach is farthest-point seeding from the
+mean — same as Phase 0/1.  Documented for evaluation; no behaviour
+change here.
+
+## [2026-04-28c] Subcluster routines — silent-failure diagnostics + off-by-one fix
+
+User-reported symptom: "the subcluster routine seems to be completing too
+quickly, may be failing silently."
+
+Investigation found three real issues in `SubspaceReclusterPerChunk` and
+the parallel `RefractorySplitPerChunk`, plus a class of silent skips that
+made the whole phase look like a no-op when in fact most candidate clusters
+were filtered out before the parallel CEM ever ran.
+
+### Off-by-one in nClustersAlive guard
+
+Both routines run a sub-CEM with `NoisePoint=0`.  Under that setting, the
+noise slot (cluster 0) is structurally alive even when empty (`Reindex`
+always counts it).  So:
+
+- `nClustersAlive == 1` → only noise alive (everything killed)
+- `nClustersAlive == 2` → noise + 1 real cluster (parent intact, no split)
+- `nClustersAlive >= 3` → noise + ≥2 real clusters (genuine split)
+
+Both routines guarded with `> 1` (subspace) or `<= 1` (refractory):
+
+```cpp
+// SubspaceReclusterPerChunk — line 6489 (before)
+if (Ks.nClustersAlive > 1) { rr.score = score; ... }
+//                     ^ accepts the "noise + 1 real" no-split case
+
+// RefractorySplitPerChunk — line 7133 (before)
+if (Ks.nClustersAlive <= 1 || splitScore >= nullScore) { ...keep; }
+//                     ^ same off-by-one — the no-split case fell through
+//                       to the second condition and was rejected as
+//                       "no improvement" rather than "no split"
+```
+
+Fixed to `> 2` (subspace) and `<= 2` (refractory).  Real impact in the
+subspace path: a sub-CEM that converges to the parent intact would
+sometimes produce a `bestScore` slightly less than `wi.nullScore` due to
+numerical noise + slightly different post-MStep statistics, get accepted
+as a "split into 2 sub-clusters", and trigger Phase C remapping.  Phase
+C's `subToLocal` then mapped the single sub-class back to the parent ID,
+so no actual split happened — but the routine reported "split" success
+and the user couldn't tell.
+
+### Silent skip on degenerate covariance
+
+`SubspaceReclusterPerChunk` line 6363:
+
+```cpp
+wi.valid = (wi.nullScore != 0.0f);
+items.push_back(std::move(wi));
+```
+
+`nullScore == 0` happens when the single-cluster setup's Cholesky fails
+(rank-deficient covariance in the kEff-dim subspace) — EStep kills the
+cluster, leaves its `LogP` row at zero, `ComputeScore()` returns 0,
+`wi.valid` becomes false, and the parallel block silently skips it via
+`if (!wi.valid) continue;`.  The Cholesky failure logs to `Output()`
+which is suppressed under `Log=0`.
+
+Now logs to stderr explicitly:
+
+```
+  [Phase 2] chunk 3 cluster 12: nullScore=0 (degenerate covariance in
+            5-dim subspace, 87 members) — skipped
+```
+
+And the work item is no longer pushed into `items[]` at all — saves a
+parallel iteration that would early-exit on the validity check anyway.
+
+### Diagnostic accounting
+
+Both routines now track and emit a single-line stderr summary covering
+the full filter funnel:
+
+```
+[Phase 2]  Per-chunk subspace recluster: 4 split / 23 queued
+           (visited 67, skipped: 38 too-small <70 / 6 degenerate;
+            rejected: 12 no-split / 7 worse-than-null)
+[Phase 2]  Per-chunk refractory split: 1 split / 3 attempted
+           (visited 67, skipped: 38 too-small <32 / 26 low-contam <1%;
+            rejected: 1 no-split / 1 worse-than-null)
+```
+
+The reader can now see exactly why the phase did or didn't do work.
+"Completes too quickly" answers itself — if `visited=67` and 38 of those
+went to "too-small", you know to lower the floor.  Previously this
+information existed only in `Output()` calls that got suppressed under
+`Log=0`.
+
+### `minSpikes` floor in subspace recluster
+
+For an 8-channel session, `kMax = min(SubspaceDims, nFullDims-1) = 7`,
+giving `minSpikes = max(7*10, 20) = 70`.  Many low-rate units in
+8-channel data will sit below 70 spikes per chunk and be silently
+filtered.  No code change here — the floor is principled (you need
+enough spikes for a stable kEff-dim covariance) — but the new summary
+makes the filter visible so the user can choose to lower
+`SubspaceDims` (which lowers `kMax`, which lowers the floor) when
+small clusters matter.
+
+### Files touched
+
+- `KK.cpp`: `SubspaceReclusterPerChunk` and `RefractorySplitPerChunk`
+  — accounting, stderr diagnostics, off-by-one fix.
+- `CHANGES.md`: this entry.
+
+### Pre-existing latent issue (not fixed here)
+
+`srand()` at line 6465 of the parallel block sets global RNG state per
+(chunk, cluster, run) tuple, but the calls race across threads — by
+the time `rand()` is reached downstream (inside `TrySplits` →
+`K2.CEM`), another thread has overwritten the seed.  Bounded impact
+(only affects sub-CEM seed randomisation, which is later overwritten
+by EM convergence anyway) but reproducibility across runs is broken.
+Replacing `srand`/`rand` with a thread-local `std::mt19937` is on the
+queue for Stage 2.
+
+## [2026-04-28b] Audit cleanup pass — Stage 1
+
+Six items from the KKE audit folded into one cumulative patch.  No
+algorithmic behaviour change for default invocations; users opt in to
+new features (`-InitMethod kmeans++`) or see new diagnostic output
+(per-phase quality lines).
+
+### §1.1 Phase numbering reconciliation
+
+The `CHANGES.md` table previously documented phases as 0, 1, 1.5, 1.6,
+1.7, 1.8, 2, 2.5, 3, 4 while the runtime stderr emits Phase 0, 1, 1.5,
+2, 4, 5, 6, 7, 8.  Anyone reading a build log couldn't cross-reference
+with the design doc.  Picked the runtime numbering as canonical (it's
+what users actually see) and updated the doc + every in-source comment
+to match.
+
+| documented (was) | now    | name                                       |
+|------------------|--------|--------------------------------------------|
+| 0                | 0      | Preseed                                    |
+| 1                | 1      | Per-chunk CEM clustering                   |
+| 1.5              | 1.5    | Cluster alignment (TimeShiftAlignPhase)    |
+| 1.6              | **4**  | Mean-waveform harvest                      |
+| 1.7              | **5**  | Within-chunk template matching             |
+| 1.8              | **8**  | DipSplit                                   |
+| 2                | **6**  | Cross-chunk model matching                 |
+| 2.5              | **2**  | Subspace recluster + refractory split      |
+| 3                | **7**  | Global warm-start EM                       |
+| 4                | (post) | Shift commit (TimeShiftFinalize)           |
+
+About 30 in-source comments touched.  Doc-blocks for
+`SubspaceReclusterPerChunk`, `WithinChunkMerge`, and
+`WithinChunkTemplateMatch` rewritten to match the new ordering (the
+old "runs BEFORE Phase 1.5 and Phase 2" was already inconsistent with
+runtime under either numbering).
+
+### §1.3 `TimeShiftAlignIter` — make it actually loop
+
+`TimeShiftAlignIter` (default 5) was documented as the number of Phase
+1.5 alignment passes ("0=skip; N runs with MStep between") but
+`TimeShiftAlignPhase` was a single-pass implementation that never
+consulted the parameter.  Two `(void)TimeShiftAlignIter;` casts in the
+chunked driver (one per `RunChunkedCEM` overload) explicitly suppressed
+it.
+
+The function now correctly loops: runs a pass, calls `MStep()` between
+passes so the next pass aligns against post-shift cluster means, and
+exits early when a pass produces zero shifts (converged).
+
+```
+[Phase 1.5] pass 1/5: 234 spikes shifted across 8 clusters
+[Phase 1.5] pass 2/5: 41 spikes shifted across 5 clusters
+[Phase 1.5] pass 3/5: 3 spikes shifted across 1 clusters
+[Phase 1.5] converged after 4 pass(es)
+[Phase 1.5] Cluster alignment: 278 total spike-shifts
+```
+
+**Discovered while implementing this**: `TimeShiftAlignPhase()` is
+**never called from anywhere**.  The Phase 1.5 slot in both
+`RunChunkedCEM` overloads is empty — your runs have never executed
+cluster alignment despite the documentation saying the canonical xcorr
+realignment was replaced by the shift-probe.  The slot comment was
+accurate about the *intent* but the wire-in was missing.
+
+This patch does NOT auto-wire it — that would change runtime behaviour
+on existing users' sessions.  Each call site now has a clear status
+comment plus an "uncomment to enable" snippet:
+
+```cpp
+// To re-enable Phase 1.5 alignment, uncomment the line below.
+//   if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
+//       TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+```
+
+The function is correct now; whether to enable it is a session-by-
+session call.
+
+### §2.1 KK rule of three — non-copyable, non-movable
+
+`KK` had a destructor that owns `gpu` (a raw pointer) but no `=delete`
+on the implicit copy/move ops.  A default copy would shallow-copy the
+pointer, leading to a double-free when both copies destruct.  Today's
+call sites are safe by convention (`vector<KK>(N)` default-constructs
++ field-fills), but accidentally adding `vector::push_back` of a
+populated `KK` would silently introduce UB.
+
+Now:
+
+```cpp
+KK() = default;
+KK(const KK&)            = delete;
+KK& operator=(const KK&) = delete;
+KK(KK&&)            = delete;
+KK& operator=(KK&&) = delete;
+```
+
+`KK CloneForStart() const` previously returned by value and required
+move semantics.  Replaced with `void cloneInto(KK& out, ...) const`
+out-param style — works without copy or move and keeps the class
+strictly default-constructible.  Single caller (`KlustaKwik.cpp:1110`)
+updated.
+
+Any future accidental copy or move of a `KK` is now a compile error
+rather than a runtime double-free.
+
+### §2.2 `kMaxStackDims` constant
+
+Replaced the tautological `static_assert(64 >= 64, ...)` in MStep with
+a real named constant:
+
+```cpp
+// At file scope in KK.cpp
+static constexpr int kMaxStackDims = 64;
+```
+
+13 sites of `[64]` literals (single-dim and `[64*64]` matrix scratch)
+now use the constant.  The runtime guard at the top of MStep references
+`kMaxStackDims` too, so bumping the limit only requires changing one
+number.  Bonus: added a previously-missing `nSpatialDims > kMaxStackDims`
+guard to the first `mahalDist` lambda in `MergeChunkModels`.
+
+### §7.4 K-means++ centre seeding
+
+New `InitCentresKMeansPP(nCentres, nSpatialDims)`, opt-in via
+`-InitMethod kmeans++` (alongside the existing `farthest` and `random`).
+D²-weighted random sampling per Arthur & Vassilvitskii 2007.
+
+| seeding           | randomised | outlier-robust | guarantee     |
+|-------------------|------------|----------------|---------------|
+| farthest (default)| no         | no (picks them)| —             |
+| kmeans++          | yes        | yes (stochastic)| O(log k) E[cost]|
+| random (canonical)| yes        | yes            | none          |
+
+Useful when running with `-nRuns >1`: farthest-point produces identical
+seeds across runs (same data → same centres), so the only "diversity"
+across runs comes from CEM's later random pieces.  K-means++ diversifies
+the seeds themselves.  Cost is identical to farthest-point.
+
+PRNG is seeded from the global `RandomSeed` plus a per-call counter
+(reproducible) so a given `-RandomSeed` produces deterministic output.
+
+### §7.9 Per-phase quality metrics
+
+New `ReportClusterQuality(phaseLabel)` prints diagnostic metrics to
+stderr at phase boundaries.  Currently wired in at end of Phase 7
+(Global EM) and end of pipeline (after Phase 8) in both `RunChunkedCEM`
+overloads.
+
+Metrics:
+
+- **gini** of cluster sizes (Lorenz-curve coefficient).  Range [0, 1].
+  0 = perfectly equal sizes, 1 = one cluster has all spikes.  > 0.7
+  triggers a warning ("one cluster dominates — check for absorbed-
+  bimodal failures").
+- **maxFrac** = fraction of spikes in the single largest cluster.
+  Complements Gini for simple sanity.  > 0.4 with ≥ 8 alive clusters
+  triggers a warning.
+- **condMax** = largest cluster condition number across alive clusters,
+  computed as `(max(diag(L)) / min(diag(L)))²` from the Cholesky
+  factor (cheap proxy for λ_max/λ_min of Σ).  > 1e6 triggers a warning.
+
+Sample output:
+
+```
+[Phase 7 quality]  alive=24  spikes=40649  gini=0.523  maxFrac=0.506  condMax=4.2e+05 (cluster 3)
+  WARNING: 51% of spikes in the single largest cluster — likely under-split
+[final quality]    alive=27  spikes=40649  gini=0.481  maxFrac=0.342  condMax=8.7e+04 (cluster 12)
+```
+
+The cluster-3 case from jg05 group 6 (~50% of mass in one cluster)
+would have triggered both Gini and maxFrac warnings before manual
+inspection in Klusters.
+
+### Files touched
+
+- `KK.cpp`: kMaxStackDims declaration; rewritten `cloneInto` (was
+  `CloneForStart`); rewritten `TimeShiftAlignPhase` (now loops);
+  new `InitCentresKMeansPP`; new `ReportClusterQuality`; phase-
+  numbering renames in comments; quality hooks at Phase 7 + final
+  in both `RunChunkedCEM` overloads.
+- `KK.h`: rule-of-three deletions; `cloneInto` declaration replacing
+  `CloneForStart`; `InitCentresKMeansPP` and `ReportClusterQuality`
+  declarations; doc-block updates.
+- `KlustaKwik.{h,cpp}`: `InitMethod` doc updated for `kmeans++`;
+  driver dispatch and stderr mode message updated.
+- `CHANGES.md`: this entry.
 
 ## [2026-04-28] DipSplit — elongation gate for absorbed-bimodal clusters
 
