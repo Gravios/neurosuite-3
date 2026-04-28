@@ -124,7 +124,7 @@ extern int   MaxTimeShift;
 // min-Mahalanobis shift probe to spikes reassigned during ConsiderDeletion
 // (cluster deletion/implicit merge).  Default 1.
 extern int   TimeShiftMergeEnable;
-// ---- DipSplit parameters (bimodal-cluster splitter, Phase 1.8) -----------
+// ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;
 // DipSplitMinSize: minimum spike count per child cluster for an accepted

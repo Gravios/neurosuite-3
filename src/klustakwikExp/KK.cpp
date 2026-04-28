@@ -23,6 +23,7 @@
 #include "realign_xcorr.h"   // XcorrDispatch::compute — shared normalised circular xcorr
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -46,6 +47,29 @@
 #if defined(__AVX512F__) || defined(__AVX2__)
 #  include <immintrin.h>
 #endif
+
+// ---------------------------------------------------------------------------
+// kMaxStackDims — compile-time ceiling on nDims for the fixed-size stack
+// scratch buffers used in MStep / EStep (float v[kMaxStackDims], root[...],
+// and the SIMD-batched dim-major variants `v[kMaxStackDims][BATCH]`).
+//
+// Real spike-feature configurations have nDims ≤ ~25 (PCA features +
+// timestamp).  64 leaves headroom for high-channel-count sessions and is
+// the value the codebase has used historically.  A runtime guard at the
+// top of MStep/EStep refuses to run when nDims > kMaxStackDims, so a
+// session that would overflow these buffers fails loudly rather than
+// silently corrupting memory.
+//
+// If you need to raise this:
+//   1. Bump the constant here.
+//   2. The stack arrays will resize automatically (every site uses
+//      kMaxStackDims, not the literal `64`, after the 2026-04-28 cleanup).
+//   3. Re-evaluate stack-frame size: 64*16*4 = 4 KB per dim-major scratch;
+//      doubling makes it 8 KB.  Each call has 2 scratches (v + root), and
+//      OpenMP threads each have their own stack, so total stack pressure
+//      scales with kMaxStackDims² · nThreads.
+// ---------------------------------------------------------------------------
+static constexpr int kMaxStackDims = 64;
 
 // ---------------------------------------------------------------------------
 // AllocateArrays
@@ -336,49 +360,55 @@ void KK::LoadData() {
 }
 
 // ---------------------------------------------------------------------------
-// CloneForStart — deep-copy KK for an independent ParallelK worker.
+// cloneInto — deep-copy clustering state into a worker KK.
 //
-// All array fields are deep-copied.  gpu is set to nullptr (CPU-only);
-// pKsv is left null and must be set by the caller before running EM.
-// The caller is also responsible for setting nStartingClusters and
-// minClustersAlive on the returned clone.
+// Used by ParallelK to build N independent worker objects from a single
+// "master" KK that owns the loaded data.  Each worker runs its own CEM
+// trial in parallel; results are ranked at the end and the best is
+// selected.
+//
+// Replaces the older return-by-value CloneForStart, which required KK
+// to be movable.  Out-param form lets KK stay non-copyable AND non-movable,
+// which is the safest configuration for a class that owns a raw `gpu`
+// pointer (no risk of accidental shallow-copy double-free).
+//
+// `out` MUST be a default-constructed KK (gpu==nullptr, empty Arrays).
+// After this call, out is fully set up for CPU-only EM.
 // ---------------------------------------------------------------------------
-KK KK::CloneForStart(int ompTeamSz) const
+void KK::cloneInto(KK& out, int ompTeamSz) const
 {
-    KK c;
     // ── scalar fields ─────────────────────────────────────────────────────
-    c.nDims               = nDims;
-    c.nDims2              = nDims2;
-    c.nPoints             = nPoints;
-    c.nStartingClusters   = nStartingClusters;
-    c.nClustersAlive      = nClustersAlive;
-    c.NoisePoint          = NoisePoint;
-    c.FullStep            = FullStep;
-    c.penaltyMix          = penaltyMix;
-    c.minClustersAlive    = minClustersAlive;
-    c.timeRawMin          = timeRawMin;
-    c.timeRawMax          = timeRawMax;
-    c.log2piHalf          = log2piHalf;
-    c.suppressBestSave    = false;
-    c.ompTeamSize         = ompTeamSz;  // 0 = all threads; >0 = nested team size
+    out.nDims               = nDims;
+    out.nDims2              = nDims2;
+    out.nPoints             = nPoints;
+    out.nStartingClusters   = nStartingClusters;
+    out.nClustersAlive      = nClustersAlive;
+    out.NoisePoint          = NoisePoint;
+    out.FullStep            = FullStep;
+    out.penaltyMix          = penaltyMix;
+    out.minClustersAlive    = minClustersAlive;
+    out.timeRawMin          = timeRawMin;
+    out.timeRawMax          = timeRawMax;
+    out.log2piHalf          = log2piHalf;
+    out.suppressBestSave    = false;
+    out.ompTeamSize         = ompTeamSz;  // 0 = all threads; >0 = nested team size
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
-    c.gpu                 = nullptr;   // CPU-only; GPU stays on master K1
+    out.gpu                 = nullptr;   // CPU-only; GPU stays on master K1
 #endif
-    c.pKsv                = nullptr;   // caller must set before running EM
+    out.pKsv                = nullptr;   // caller must set before running EM
     // ── allocate and deep-copy arrays ─────────────────────────────────────
-    c.AllocateArrays();
-    c.AllocateCholeskyVecs();
-    std::copy(Data.m_Data,       Data.m_Data       + nPoints * nDims,     c.Data.m_Data);
-    std::copy(Class.m_Data,      Class.m_Data      + nPoints,             c.Class.m_Data);
-    std::copy(OldClass.m_Data,   OldClass.m_Data   + nPoints,             c.OldClass.m_Data);
-    std::copy(Class2.m_Data,     Class2.m_Data     + nPoints,             c.Class2.m_Data);
-    std::copy(BestClass.m_Data,  BestClass.m_Data  + nPoints,             c.BestClass.m_Data);
-    std::copy(ClassAlive.m_Data, ClassAlive.m_Data + MaxPossibleClusters, c.ClassAlive.m_Data);
-    std::copy(AliveIndex.m_Data, AliveIndex.m_Data + MaxPossibleClusters, c.AliveIndex.m_Data);
-    c.cholFlat     = cholFlat;
-    c.bestCholFlat = bestCholFlat;
-    c.preseedCentres = preseedCentres;
-    return c;
+    out.AllocateArrays();
+    out.AllocateCholeskyVecs();
+    std::copy(Data.m_Data,       Data.m_Data       + nPoints * nDims,     out.Data.m_Data);
+    std::copy(Class.m_Data,      Class.m_Data      + nPoints,             out.Class.m_Data);
+    std::copy(OldClass.m_Data,   OldClass.m_Data   + nPoints,             out.OldClass.m_Data);
+    std::copy(Class2.m_Data,     Class2.m_Data     + nPoints,             out.Class2.m_Data);
+    std::copy(BestClass.m_Data,  BestClass.m_Data  + nPoints,             out.BestClass.m_Data);
+    std::copy(ClassAlive.m_Data, ClassAlive.m_Data + MaxPossibleClusters, out.ClassAlive.m_Data);
+    std::copy(AliveIndex.m_Data, AliveIndex.m_Data + MaxPossibleClusters, out.AliveIndex.m_Data);
+    out.cholFlat       = cholFlat;
+    out.bestCholFlat   = bestCholFlat;
+    out.preseedCentres = preseedCentres;
 }
 
 // ---------------------------------------------------------------------------
@@ -403,16 +433,15 @@ float KK::Penalty(int n) const {
 //   Covariance outer product: nDims²=289 elements, easily fits in shared mem.
 // ---------------------------------------------------------------------------
 void KK::MStep() {
-    // MStep/EStep use fixed-size stack arrays float v[64] and root[64].
-    // nDims is set from the .fet file and is bounded by nFeatures <= STRLEN,
-    // but practically always <= 25 (PCA features + timestamp).
-    // This assert fires at compile-time if someone extends nDims beyond 64.
-    static_assert(64 >= 64,   // nDims guard: update both arrays if limit raised
-                  "Review v[64]/root[64] stack buffers if nDims can exceed 64");
-    // Runtime guard (release build safety):
-    if (nDims > 64)
-        Error("nDims=%d exceeds stack buffer size 64 in MStep/EStep. "
-              "Rebuild with larger fixed arrays or use VLA.\n", nDims);
+    // MStep/EStep use fixed-size stack arrays float v[kMaxStackDims] and
+    // root[kMaxStackDims].  Real configurations have nDims ≤ ~25 (PCA
+    // features + timestamp); the buffer is sized at kMaxStackDims = 64
+    // for headroom.  See the comment block atop this file for sizing
+    // notes.
+    if (nDims > kMaxStackDims)
+        Error("nDims=%d exceeds stack buffer size %d in MStep/EStep. "
+              "Bump kMaxStackDims at the top of KK.cpp and rebuild.\n",
+              nDims, kMaxStackDims);
 
     // Use the pre-allocated scratch array; zero it before use.
     std::memset(m_classMembers.m_Data, 0, sizeof(int) * MaxPossibleClusters);
@@ -468,7 +497,7 @@ void KK::MStep() {
     }
     for (int p = 0; p < nPoints; p++) {
         const int c = Class[p];
-        float v[64];
+        float v[kMaxStackDims];
         for (int i = 0; i < nDims; i++) v[i] = Data[p * nDims + i] - Mean[c * nDims + i];
         for (int i = 0; i < nDims; i++)
             for (int j = i; j < nDims; j++)
@@ -598,7 +627,7 @@ void KK::EStep() {
         const float baseScore = logRootDet - std::log(Weight[c]) + log2piHalf;
 
         // Precompute reciprocals of diagonal: avoids nDims divisions per batch
-        float inv_diag[64];
+        float inv_diag[kMaxStackDims];
         for (int i = 0; i < nDims; i++) inv_diag[i] = 1.0f / chol[i * nDims + i];
 
         // ── SIMD batch loop ─────────────────────────────────────────────
@@ -607,8 +636,8 @@ void KK::EStep() {
         constexpr int BATCH = 16;
         {
             // Dim-major scratch: v[dim][BATCH], root[dim][BATCH]
-            alignas(64) float v   [64][BATCH];
-            alignas(64) float root[64][BATCH];
+            alignas(64) float v   [kMaxStackDims][BATCH];
+            alignas(64) float root[kMaxStackDims][BATCH];
 
             int p = 0;
             for (; p + BATCH - 1 < nPoints; p += BATCH) {
@@ -641,7 +670,7 @@ void KK::EStep() {
             }
             // Scalar tail (< BATCH remaining points)
             for (; p < nPoints; p++) {
-                float sv[64], sroot[64];
+                float sv[kMaxStackDims], sroot[kMaxStackDims];
                 const float *dp = Data.m_Data + p * nDims;
                 for (int i = 0; i < nDims; i++) sv[i] = dp[i] - mp[i];
                 for (int i = 0; i < nDims; i++) {
@@ -658,8 +687,8 @@ void KK::EStep() {
         // AVX2: 8 points per iteration
         constexpr int BATCH = 8;
         {
-            alignas(32) float v   [64][BATCH];
-            alignas(32) float root[64][BATCH];
+            alignas(32) float v   [kMaxStackDims][BATCH];
+            alignas(32) float root[kMaxStackDims][BATCH];
 
             int p = 0;
             for (; p + BATCH - 1 < nPoints; p += BATCH) {
@@ -687,7 +716,7 @@ void KK::EStep() {
                 _mm256_storeu_ps(clusterLogP + p, result);
             }
             for (; p < nPoints; p++) {
-                float sv[64], sroot[64];
+                float sv[kMaxStackDims], sroot[kMaxStackDims];
                 const float *dp = Data.m_Data + p * nDims;
                 for (int i = 0; i < nDims; i++) sv[i] = dp[i] - mp[i];
                 for (int i = 0; i < nDims; i++) {
@@ -712,7 +741,7 @@ void KK::EStep() {
                     nSkipped++;
                     continue;
                 }
-                float sv[64], sroot[64];
+                float sv[kMaxStackDims], sroot[kMaxStackDims];
                 const float *dp = Data.m_Data + p * nDims;
                 for (int i = 0; i < nDims; i++) sv[i] = dp[i] - mp[i];
                 for (int i = 0; i < nDims; i++) {
@@ -1216,6 +1245,132 @@ float KK::ComputeScore() const {
 }
 
 // ---------------------------------------------------------------------------
+// ReportClusterQuality — print per-phase diagnostics to stderr
+//
+// Computes a compact summary of cluster-quality metrics and prints them as
+// a table.  Designed to be called at phase boundaries (e.g. end of Phase 1,
+// end of Phase 7) so a degenerate clustering shows up in the log instead of
+// only in the final visual review.
+//
+// Metrics:
+//
+//   - **Gini** of cluster sizes.  Range [0, 1].  Gini=0 means perfectly
+//     equal cluster sizes; Gini=1 means one cluster has all the spikes.
+//     Real recordings have a long tail of low-rate units, so Gini ~ 0.5
+//     is normal.  Gini ≥ 0.7 with a known mostly-balanced session is a
+//     red flag for an absorbed-bimodal cluster (cluster 3 in jg05 group 6
+//     gives Gini ~ 0.55 with 50%-of-spikes in one cluster).
+//
+//   - **maxFrac** — the fraction of spikes in the single largest cluster.
+//     Complements Gini for very simple sanity checks.  > 0.4 with > 10
+//     alive clusters is very suspicious.
+//
+//   - **CondMax** — the largest cluster condition number across alive
+//     clusters.  Computed as λ_max(Σ_c) / λ_min(Σ_c) on the diagonal of
+//     the Cholesky factor (cheap proxy: ratio of max² to min² of diag(L)).
+//     A well-conditioned Gaussian has CondMax < ~1e3; > 1e6 means at
+//     least one cluster is borderline-singular.
+//
+// Cost: O(nClusters) for size stats, O(nClusters · nDims) for condition
+// numbers.  Negligible relative to MStep/EStep.
+// ---------------------------------------------------------------------------
+void KK::ReportClusterQuality(const char* phaseLabel) const {
+    if (nClustersAlive < 2) return;   // nothing to report
+
+    // ── Cluster sizes ────────────────────────────────────────────────────
+    std::vector<int> sizes;
+    sizes.reserve(nClustersAlive);
+    for (int cc = 0; cc < nClustersAlive; ++cc) {
+        const int c = AliveIndex[cc];
+        if (c == 0) continue;          // skip noise
+        int n = 0;
+        for (int p = 0; p < nPoints; ++p)
+            if (Class[p] == c) ++n;
+        if (n > 0) sizes.push_back(n);
+    }
+    if (sizes.empty()) return;
+    std::sort(sizes.begin(), sizes.end());
+
+    // Gini coefficient via the standard sorted formula:
+    //   G = (Σ (2i − n − 1) · x_i) / (n · Σ x_i)
+    // where x_i is the i-th sorted value (1-indexed).
+    double sum_xi = 0.0, weighted = 0.0;
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        sum_xi   += static_cast<double>(sizes[i]);
+        weighted += static_cast<double>(2 * (int)(i + 1) - (int)sizes.size() - 1)
+                  * static_cast<double>(sizes[i]);
+    }
+    const double gini    = (sum_xi > 0.0)
+                         ? weighted / (static_cast<double>(sizes.size()) * sum_xi)
+                         : 0.0;
+    const int    sumAll  = std::accumulate(sizes.begin(), sizes.end(), 0);
+    const double maxFrac = static_cast<double>(sizes.back())
+                         / static_cast<double>(std::max(1, sumAll));
+
+    // ── Condition numbers via the Cholesky diagonal ──────────────────────
+    // For a symmetric positive-definite Σ = L Lᵀ, the eigenvalues of Σ are
+    // bounded by [d_min², d_max²] where d_min = min(diag(L)).  This is a
+    // cheap upper bound on the condition number; for diagonal-dominant Σ
+    // it is exact.  Sufficient for the "is anything borderline-singular"
+    // diagnostic.
+    double maxCond = 0.0;
+    int    worstCluster = -1;
+    for (int cc = 0; cc < nClustersAlive; ++cc) {
+        const int c = AliveIndex[cc];
+        if (c == 0) continue;
+        const float* chol = cholFlat.data() + static_cast<size_t>(c) * nDims2;
+        float dmin =  std::numeric_limits<float>::infinity();
+        float dmax = -std::numeric_limits<float>::infinity();
+        for (int i = 0; i < nDims; ++i) {
+            const float dii = chol[i * nDims + i];
+            if (dii < dmin) dmin = dii;
+            if (dii > dmax) dmax = dii;
+        }
+        if (!(dmin > 0.0f) || !std::isfinite(dmax)) continue;
+        const double cond = static_cast<double>(dmax / dmin)
+                          * static_cast<double>(dmax / dmin);  // λ-ratio ≈ (d_max/d_min)²
+        if (cond > maxCond) { maxCond = cond; worstCluster = c; }
+    }
+
+    fprintf(stderr,
+            "[%s quality]  alive=%d  spikes=%d  gini=%.3f  maxFrac=%.3f  "
+            "condMax=%.2g (cluster %d)\n",
+            phaseLabel ? phaseLabel : "phase",
+            nClustersAlive - 1,           // exclude noise from "alive" count
+            sumAll, gini, maxFrac, maxCond,
+            worstCluster);
+
+    // Heuristic warnings — calibrated for typical extracellular spike-sorting
+    // output, which has a long-tailed cluster-size distribution (a few high-
+    // rate units, many low-rate units).  A long tail naturally produces high
+    // Gini even when no single cluster dominates, so high-Gini alone is NOT
+    // a failure signature.
+    //
+    // We previously warned on `gini > 0.7 && maxFrac > 0.4`, intending to
+    // catch the absorbed-bimodal failure (e.g. jg05-group-6 cluster 3
+    // pre-fix).  But the mass distribution alone can't distinguish that
+    // failure from a fast-spiking interneuron legitimately holding most
+    // of the mass — both produce identical (gini, maxFrac) signatures.
+    // The actual failure-mode signature lives in the WAVEFORM (bimodal
+    // valley in a PC projection, elongated covariance), which is exactly
+    // what DipSplit's bloat + elongation gates measure.  If those gates
+    // pass on a high-mass cluster, the cluster is a real unit, not a
+    // failure — and the gini/maxFrac warning was firing on biology.
+    //
+    // The metrics themselves (gini, maxFrac, condMax) remain in the
+    // header line above as informational diagnostics.  Only the false-
+    // alarm warning is removed.
+    //
+    // condMax warns independently — borderline-singular covariance is
+    // always a structural concern regardless of cluster-size distribution
+    // or any biological interpretation.
+    if (maxCond > 1e6)
+        fprintf(stderr, "  WARNING: cluster %d condition number ≈ %.2g — "
+                        "borderline-singular covariance\n",
+                        worstCluster, maxCond);
+}
+
+// ---------------------------------------------------------------------------
 // CEM — main EM loop
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -1412,6 +1567,122 @@ void KK::InitCentresFarthestPoint(int nCentres, int nSpatialDims) {
 }
 
 // ---------------------------------------------------------------------------
+// InitCentresKMeansPP — k-means++ D²-weighted random seeding
+//
+// Algorithm (Arthur & Vassilvitskii 2007):
+//
+//   1. Pick centre 0 uniformly at random from the points.
+//   2. For each subsequent centre k = 1..nCentres-1:
+//        a. For every point p, let D(p) = distance from p to the nearest
+//           already-chosen centre, measured in `nSpatialDims` Euclidean dims.
+//        b. Pick the next centre with probability proportional to D(p)².
+//
+// Compared to InitCentresFarthestPoint, this:
+//   - Is randomised (uses RandomSeed-derived state).  Different runs over
+//     identical data produce different seeds.  Useful for `-nRuns >1`.
+//   - Has a proven O(log k) expected-cost approximation guarantee.
+//   - Is more robust to single far-away outliers (farthest-point ALWAYS
+//     picks the outlier as a centre; D²-sampling is biased toward far
+//     points but doesn't lock in the most extreme one).
+//
+// Cost is identical to InitCentresFarthestPoint — same nCentres·nPoints
+// distance computations, plus one O(nPoints) random sample per centre.
+// ---------------------------------------------------------------------------
+void KK::InitCentresKMeansPP(int nCentres, int nSpatialDims) {
+    Centres.SetSize(nCentres * nDims);
+    if (nCentres < 1 || nPoints < 1) return;
+
+    // Seed the RNG from RandomSeed plus an instance-side counter so each
+    // call within a process gets a different stream.  RandomSeed comes
+    // from KlustaKwik.h (extern int).  The static counter advances every
+    // call, giving a different stream per call within a single -nRuns
+    // session even when RandomSeed is fixed.
+    static std::atomic<unsigned> kmppCallCount{0};
+    const unsigned seed = static_cast<unsigned>(RandomSeed)
+                        + 0xC0FFEEu * kmppCallCount.fetch_add(1);
+    std::mt19937 rng(seed);
+
+    // ── Pick centre 0 uniformly at random ────────────────────────────────
+    {
+        std::uniform_int_distribution<int> uni(0, nPoints - 1);
+        const int p0 = uni(rng);
+        for (int d = 0; d < nDims; d++)
+            Centres[0 * nDims + d] = Data[p0 * nDims + d];
+    }
+
+    // minDistToSet[p] = squared Euclidean distance (in spatial dims) from
+    // point p to its nearest chosen centre.  Maintained incrementally —
+    // after each new centre, we update only points where the new centre
+    // is closer than the previous best.
+    std::vector<float> minDistToSet(nPoints, HugeScore);
+
+    // Initialise against centre 0.
+    for (int p = 0; p < nPoints; p++) {
+        float dist = 0.0f;
+        for (int d = 0; d < nSpatialDims; d++) {
+            const float dx = Data[p * nDims + d] - Centres[0 * nDims + d];
+            dist += dx * dx;
+        }
+        minDistToSet[p] = dist;
+    }
+
+    // ── Pick centres 1..nCentres-1 by D²-weighted sampling ───────────────
+    for (int k = 1; k < nCentres; k++) {
+        // Total "mass" = sum of squared distances; sample u ∈ [0, total).
+        // Walk the points until cumulative mass crosses u; that's the
+        // chosen centre.  Equivalent to inverse-CDF sampling on a
+        // discrete distribution, O(nPoints) per centre.
+        double total = 0.0;
+        for (int p = 0; p < nPoints; p++)
+            total += static_cast<double>(minDistToSet[p]);
+
+        int nextIdx = 0;
+        if (total <= 0.0) {
+            // All points coincide with existing centres — degenerate.
+            // Fall back to the farthest point (which would be picked
+            // by farthest-point seeding too).
+            float maxMin = -1.0f;
+            for (int p = 0; p < nPoints; p++)
+                if (minDistToSet[p] > maxMin) {
+                    maxMin = minDistToSet[p]; nextIdx = p;
+                }
+        } else {
+            std::uniform_real_distribution<double> ud(0.0, total);
+            const double u = ud(rng);
+            double cum = 0.0;
+            for (int p = 0; p < nPoints; p++) {
+                cum += static_cast<double>(minDistToSet[p]);
+                if (cum >= u) { nextIdx = p; break; }
+            }
+        }
+
+        for (int d = 0; d < nDims; d++)
+            Centres[k * nDims + d] = Data[nextIdx * nDims + d];
+
+        // Update minDistToSet against the newly added centre.
+        for (int p = 0; p < nPoints; p++) {
+            float dist = 0.0f;
+            for (int d = 0; d < nSpatialDims; d++) {
+                const float dx = Data[p * nDims + d] - Centres[k * nDims + d];
+                dist += dx * dx;
+            }
+            if (dist < minDistToSet[p]) minDistToSet[p] = dist;
+        }
+    }
+
+    if (Verbose >= 1) {
+        Output("KMeans++ seeds (%d centres, %d spatial dims, seed=%u):\n",
+               nCentres, nSpatialDims, seed);
+        for (int k = 0; k < nCentres; k++) {
+            Output("  centre %d:", k);
+            for (int d = 0; d < nSpatialDims; d++)
+                Output(" %.3f", Centres[k * nDims + d]);
+            Output("\n");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // InitClassFromCentres
 //
 // Assigns each point to the nearest centre by Euclidean distance computed
@@ -1474,7 +1745,8 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     nDims      = nSpatialDims;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
-    // Seed cluster centres: use preseedCentres if provided, otherwise farthest-point.
+    // Seed cluster centres: preseedCentres if provided, otherwise the
+    // method selected by `-InitMethod` (default farthest).
     const int nCentres = nStartingClusters - 1;  // noise cluster is always 0
     if (nCentres >= 1) {
         if (!preseedCentres.empty() &&
@@ -1487,7 +1759,13 @@ float KK::CEMTwoPhase(int timeMergeIter) {
                 if (nDims > nSpatialDims)
                     Centres[k * nDims + nSpatialDims] = 0.0f;  // time column
             }
+        } else if (std::strcmp(InitMethod, "kmeans++") == 0) {
+            InitCentresKMeansPP(nCentres, nSpatialDims);
         } else {
+            // Default: deterministic farthest-point.  Selected explicitly
+            // by `-InitMethod farthest` and as the fallback for any other
+            // value (preserves canonical KlustaKwik behaviour for the
+            // unrecognised `random` option).
             InitCentresFarthestPoint(nCentres, nSpatialDims);
         }
         for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
@@ -1687,14 +1965,15 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     //   Units sharing the same primary waveform mode will be close; units with
     //   orthogonal primary features will be far even with similar cluster centres.
     auto mahalDist = [&](const ChunkModel& src, const ChunkModel& tgt) -> float {
+        if (nSpatialDims > kMaxStackDims) return HugeScore;
         // Build diff vector (spatial dims only)
-        float diff[64];
+        float diff[kMaxStackDims];
         for (int d = 0; d < nSpatialDims; d++)
             diff[d] = src.mean[d] - tgt.mean[d];
 
         if (SubspaceDims <= 0) {
             // ── Full-space Mahalanobis (original) ─────────────────────
-            float covS[64*64], chol[64*64], root[64];
+            float covS[kMaxStackDims*kMaxStackDims], chol[kMaxStackDims*kMaxStackDims], root[kMaxStackDims];
             for (int r = 0; r < nSpatialDims; r++)
                 for (int c = r; c < nSpatialDims; c++)
                     covS[r * nSpatialDims + c] = tgt.cov[r * nDims + c];
@@ -1865,7 +2144,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
 
         // ── Pass 3: cross-chunk template matching (unresolved pairs) ──────
         // Compute normalised xcorr between cluster mean waveforms.
-        // Controlled by CrossChunkTemplateScore (independent of Phase 1.7).
+        // Controlled by CrossChunkTemplateScore (independent of Phase 5).
         if (CrossChunkTemplateScore > 0.0f &&
             NbChannels > 0 && NbSamplesPerSpike > 0) {
             const int nCh   = NbChannels;
@@ -2565,12 +2844,26 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         Output("Provisional Class[] seeded: %d alive clusters\n", nClustersAlive);
     }
 
-    // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
+    // ── Phase 1.5 slot: cluster alignment ────────────────────────────────────
     //
-    // Note: canonical Phase 1.5 xcorr has been removed.  Alignment is
-    // now owned by the shift-probe (TimeShiftAlignPhase), with feature
-    // re-projection via RefeaturizeFromShifts at Phase 4.
-    // ── Phase 2.5: per-chunk subspace reclustering + refractory split ────────
+    // STATUS: currently DISABLED.  The canonical xcorr realignment that used
+    // to occupy this slot has been removed.  The replacement, the shift-probe
+    // method `TimeShiftAlignPhase()` (defined in this file ~line 5105), is
+    // implemented and honours `-TimeShiftAlignIter` but is NOT WIRED IN here
+    // — the slot is empty.  Feature re-projection via RefeaturizeFromShifts
+    // happens at Phase 4 (mean-waveform harvest); cluster alignment per se
+    // is skipped.
+    //
+    // To re-enable Phase 1.5 alignment, uncomment the line below.  Note that
+    // the chunked Phase 1 results in this driver are already separated per
+    // chunk; per-spike alignment against per-cluster Cholesky factors may
+    // produce spurious shifts on overlapping units, which is one reason the
+    // call was left out.
+    //
+    //   if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
+    //       TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+
+    // ── Phase 2: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
         fprintf(stderr, "[Phase 2]  Per-chunk subspace reclustering (per-chunk, pre-alignment)\n");
         SubspaceReclusterPerChunk(
@@ -2593,13 +2886,15 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     }
 
 
-    // Phase 3 alignment disabled: chunk means from CEMTwoPhase are
-    // blended by timeMergeIter and produce spurious shifts on clean data.
-    // ConsiderDeletion/TimeShiftMergeEvaluate handles genuine time-shift merges.
-    (void)TimeShiftAlignIter;
+    // Phase 7 (Global EM) alignment also disabled: chunk means from
+    // CEMTwoPhase are already blended by timeMergeIter and would produce
+    // spurious shifts on clean data.  ConsiderDeletion / TimeShiftMergeEvaluate
+    // handle the time-shift cases that actually occur (genuine same-unit
+    // mergers across drift).
+    (void)TimeShiftAlignIter;  // honoured by TimeShiftAlignPhase if wired in
 
 
-    // Note: DipSplit (Phase 1.8) runs AFTER Phase 3 completes — see end of
+    // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
     // this function.  Running it here would operate on stale per-chunk
     // LogP[] values and produce wrong bloat-gate decisions.
 
@@ -2666,7 +2961,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             fclose(spkTM);
         }
     }
-    // ── Phase 2: cross-chunk model matching ─────────────────────────────────
+    // ── Phase 6: cross-chunk model matching ─────────────────────────────────
     {
         const float d_    = static_cast<float>(nSpatialDims);
         const float chi2_9999 = d_ * std::pow(1.0f - 2.0f/(9.0f*d_) + 3.719f * std::sqrt(2.0f/(9.0f*d_)), 3.0f);
@@ -2678,10 +2973,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
     static const std::vector<std::unordered_map<int,int>> noOverlapVotes;
-    // ── Phase 1.7: within-chunk circular xcorr template matching (iterated) ─
+    // ── Phase 5: within-chunk circular xcorr template matching (iterated) ─
     // Loops until no new merges occur or 10 iterations.  After each merge pass
     // the surviving clusters need updated meanWav vectors (the merged cluster
-    // mean changes when two sub-clusters are combined), so the Phase 1.6 harvest
+    // mean changes when two sub-clusters are combined), so the Phase 4 harvest
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
@@ -2798,7 +3093,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         packedToGlobal[cm.chunkIdx * MaxPossibleClusters + cm.localClusterId] =
             cm.globalClusterId;
 
-    // ── Phase 3: global warm-start EM ───────────────────────────────────────
+    // ── Phase 7: global warm-start EM ───────────────────────────────────────
     nDims  = nFullDims;
     nDims2 = nDims * nDims;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
@@ -2815,11 +3110,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     float score;
     if (globalMergeIter <= 0) {
-        // GlobalMerge=0: skip Phase 3 entirely.  Emit one MStep/EStep so
+        // GlobalMerge=0: skip Phase 7 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
         fprintf(stderr, "[Phase 7]  Global EM: skipped (GlobalMergeIter=0)\n");
-        Output("Phase 7 skipped (GlobalMerge=0) — using Phase 2 assignment directly\n");
-        // Force CPU path for Phase 3 post-merge scoring.
+        Output("Phase 7 skipped (GlobalMerge=0) — using Phase 6 assignment directly\n");
+        // Force CPU path for Phase 7 post-merge scoring.
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
         // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
         // ComputeScore all run on CPU, where LogP.m_Data is authoritative.
@@ -2851,7 +3146,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
         fprintf(stderr, "[Phase 7]  Global warm-start EM\n");
-        Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
+        Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
@@ -2887,6 +3182,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
 
+    // Per-phase quality summary after Phase 7 (Global EM) — gives a
+    // checkpoint before DipSplit potentially mutates the cluster set.
+    ReportClusterQuality("Phase 7");
+
     // ── Phase 8: DipSplit (post-Phase-3) ───────────────────────────────
     // Runs AFTER global MStep/EStep so LogP[c][p] reflects the final
     // cluster assignments.  Splits a bloated cluster into two if a valley
@@ -2897,14 +3196,19 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (n_split > 0) score = ComputeScore();
     }
 
+    // Per-phase quality summary at end of pipeline (after DipSplit).  Catches
+    // failures like "one cluster ate everything" before the user sees it in
+    // the GUI.  See KK::ReportClusterQuality for metric definitions.
+    ReportClusterQuality("final");
+
     Output("RunChunkedCEM(ext) done: %d clusters, score %.7g\n", nClustersAlive, score);
     return score;
 }
 
 // ---------------------------------------------------------------------------
 // Phase 1: run CEMTwoPhase independently on each chunk.
-// Phase 2: match cluster models across adjacent chunks (MergeChunkModels).
-// Phase 3: global warm-start EM seeded from the matched assignments.
+// Phase 6: match cluster models across adjacent chunks (MergeChunkModels).
+// Phase 7: global warm-start EM seeded from the matched assignments.
 // ---------------------------------------------------------------------------
 float KK::RunChunkedCEM(float chunkMinutes,
                          float samplingRate,
@@ -3253,12 +3557,26 @@ float KK::RunChunkedCEM(float chunkMinutes,
         Output("Provisional Class[] seeded: %d alive clusters\n", nClustersAlive);
     }
 
-    // ── Phase 1.5: xcorr alignment + .fil re-extraction + PCA re-projection ─
+    // ── Phase 1.5 slot: cluster alignment ────────────────────────────────────
     //
-    // Note: canonical Phase 1.5 xcorr has been removed.  Alignment is
-    // now owned by the shift-probe (TimeShiftAlignPhase), with feature
-    // re-projection via RefeaturizeFromShifts at Phase 4.
-    // ── Phase 2.5: per-chunk subspace reclustering + refractory split ────────
+    // STATUS: currently DISABLED.  The canonical xcorr realignment that used
+    // to occupy this slot has been removed.  The replacement, the shift-probe
+    // method `TimeShiftAlignPhase()` (defined in this file ~line 5105), is
+    // implemented and honours `-TimeShiftAlignIter` but is NOT WIRED IN here
+    // — the slot is empty.  Feature re-projection via RefeaturizeFromShifts
+    // happens at Phase 4 (mean-waveform harvest); cluster alignment per se
+    // is skipped.
+    //
+    // To re-enable Phase 1.5 alignment, uncomment the line below.  Note that
+    // the chunked Phase 1 results in this driver are already separated per
+    // chunk; per-spike alignment against per-cluster Cholesky factors may
+    // produce spurious shifts on overlapping units, which is one reason the
+    // call was left out.
+    //
+    //   if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
+    //       TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+
+    // ── Phase 2: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
         fprintf(stderr, "[Phase 2]  Per-chunk subspace reclustering (per-chunk, pre-alignment)\n");
         SubspaceReclusterPerChunk(
@@ -3281,13 +3599,15 @@ float KK::RunChunkedCEM(float chunkMinutes,
     }
 
 
-    // Phase 3 alignment disabled: chunk means from CEMTwoPhase are
-    // blended by timeMergeIter and produce spurious shifts on clean data.
-    // ConsiderDeletion/TimeShiftMergeEvaluate handles genuine time-shift merges.
-    (void)TimeShiftAlignIter;
+    // Phase 7 (Global EM) alignment also disabled: chunk means from
+    // CEMTwoPhase are already blended by timeMergeIter and would produce
+    // spurious shifts on clean data.  ConsiderDeletion / TimeShiftMergeEvaluate
+    // handle the time-shift cases that actually occur (genuine same-unit
+    // mergers across drift).
+    (void)TimeShiftAlignIter;  // honoured by TimeShiftAlignPhase if wired in
 
 
-    // Note: DipSplit (Phase 1.8) runs AFTER Phase 3 completes — see end of
+    // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
     // this function.  Running it here would operate on stale per-chunk
     // LogP[] values and produce wrong bloat-gate decisions.
 
@@ -3384,7 +3704,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     }
 
     // -------------------------------------------------------------------
-    // Phase 2: cross-chunk model matching
+    // Phase 6: cross-chunk model matching
     // -------------------------------------------------------------------
     // Sanity-check mergeThresh against the chi²(nSpatialDims) distribution.
     // The symmetric Mahalanobis² distance between two draws from the SAME
@@ -3408,10 +3728,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
                    mergeThresh, nSpatialDims, chi2_9999, chi2_99, nSpatialDims);
         }
     }
-    // ── Phase 1.7: within-chunk circular xcorr template matching (iterated) ─
+    // ── Phase 5: within-chunk circular xcorr template matching (iterated) ─
     // Loops until no new merges occur or 10 iterations.  After each merge pass
     // the surviving clusters need updated meanWav vectors (the merged cluster
-    // mean changes when two sub-clusters are combined), so the Phase 1.6 harvest
+    // mean changes when two sub-clusters are combined), so the Phase 4 harvest
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
@@ -3538,7 +3858,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             cm.globalClusterId;
 
     // -------------------------------------------------------------------
-    // Phase 3: global warm-start EM (full dimensionality including time)
+    // Phase 7: global warm-start EM (full dimensionality including time)
     //
     // Seed Class[] from the matched global labels, then run a short
     // full-dimensional EM pass.  Because the starting assignment is
@@ -3562,10 +3882,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     float score;
     if (globalMergeIter <= 0) {
-        // GlobalMerge=0: skip Phase 3 entirely.  Emit one MStep/EStep so
+        // GlobalMerge=0: skip Phase 7 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
-        Output("Phase 7 skipped (GlobalMerge=0) — using Phase 2 assignment directly\n");
-        // Force CPU path for Phase 3 post-merge scoring.
+        Output("Phase 7 skipped (GlobalMerge=0) — using Phase 6 assignment directly\n");
+        // Force CPU path for Phase 7 post-merge scoring.
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
         // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
         // ComputeScore all run on CPU, where LogP.m_Data is authoritative.
@@ -3597,7 +3917,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
         fprintf(stderr, "[Phase 7]  Global warm-start EM\n");
-        Output("Phase 3: global warm-start EM — %d clusters, max %d iters\n",
+        Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
@@ -3633,6 +3953,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
         }
     }
 
+    // Per-phase quality summary after Phase 7 (Global EM) — gives a
+    // checkpoint before DipSplit potentially mutates the cluster set.
+    ReportClusterQuality("Phase 7");
+
     // ── Phase 8: DipSplit (post-Phase-3) ───────────────────────────────
     // Runs AFTER global MStep/EStep so LogP[c][p] reflects the final
     // cluster assignments.  See RunChunkedCEM(ext) for details.
@@ -3640,6 +3964,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
         const int n_split = DipSplitPhase();
         if (n_split > 0) score = ComputeScore();
     }
+
+    // Per-phase quality summary at end of pipeline (after DipSplit).
+    // See KK::ReportClusterQuality for metric definitions.
+    ReportClusterQuality("final");
 
     Output("RunChunkedCEM done: %d clusters, score %.7g\n", nClustersAlive, score);
     return score;
@@ -5085,28 +5413,65 @@ int KK::TimeShiftAlignCluster(int clusterId, int nChan, int nSamplesPerSpike)
 // Called from the driver at the slot that canonical Phase 1.5 xcorr used
 // to occupy.  Expects fresh MStep + EStep output (Mean + cholFlat current).
 //
-// Returns the total number of spikes whose shifts changed across all
-// clusters.
+// Loops up to TimeShiftAlignIter times.  Each pass:
+//   1. Iterate alive clusters, calling TimeShiftAlignCluster on each.
+//   2. If any spikes shifted, run MStep so the next pass sees updated
+//      cluster means (a spike that moved into cluster A now contributes
+//      to A's mean before the next per-spike alignment decision).
+//   3. Exit early when a pass produces zero shifts (converged).
+//
+// MStep between passes — not EStep — because TimeShiftAlignCluster reads
+// Mean[] and cholFlat[] (refreshed by MStep) but writes nothing that EStep
+// needs to see; EStep would just be wasted work.  An EStep is needed
+// before the NEXT phase that consumes LogP, but that's the caller's
+// responsibility (the chunked-CEM driver runs MStep+EStep after Phase 1.5
+// in any case).
+//
+// Returns the cumulative count of spikes whose shifts changed across
+// all passes and clusters.
 // ---------------------------------------------------------------------------
 int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
 {
     if (!m_timeShiftReady) return 0;
+    if (TimeShiftAlignIter <= 0) return 0;
+
     int totalShifted = 0;
-    int nClustersProcessed = 0;
-    for (int c = 1; c < MaxPossibleClusters; ++c) {
-        if (!ClassAlive[c]) continue;
-        const int shifted = TimeShiftAlignCluster(c, nChan, nSamplesPerSpike);
-        if (shifted > 0) ++nClustersProcessed;
-        totalShifted += shifted;
+
+    for (int pass = 0; pass < TimeShiftAlignIter; ++pass) {
+        int passShifted = 0;
+        int nClustersProcessed = 0;
+        for (int c = 1; c < MaxPossibleClusters; ++c) {
+            if (!ClassAlive[c]) continue;
+            const int shifted = TimeShiftAlignCluster(c, nChan, nSamplesPerSpike);
+            if (shifted > 0) ++nClustersProcessed;
+            passShifted += shifted;
+        }
+        totalShifted += passShifted;
+
+        if (passShifted > 0) {
+            Output("[Phase 1.5] pass %d/%d: %d spikes shifted across "
+                   "%d clusters\n",
+                   pass + 1, TimeShiftAlignIter, passShifted, nClustersProcessed);
+            // Refresh cluster means so next pass aligns spikes against
+            // the post-shift centres rather than the pre-shift centres.
+            MStep();
+        } else {
+            // Converged — no spikes changed shift; further passes can't
+            // change anything either.
+            if (pass > 0)
+                Output("[Phase 1.5] converged after %d pass(es)\n", pass + 1);
+            break;
+        }
     }
+
     if (totalShifted > 0)
-        Output("[Phase 1.5] Cluster alignment: %d spikes shifted across "
-               "%d clusters\n", totalShifted, nClustersProcessed);
+        Output("[Phase 1.5] Cluster alignment: %d total spike-shifts\n",
+               totalShifted);
     return totalShifted;
 }
 
 // ===========================================================================
-// DipSplit (Phase 1.8) — bimodal-cluster detection & split
+// DipSplit (Phase 8) — bimodal-cluster detection & split
 // ===========================================================================
 //
 // See dipsplit.h for the algorithm overview.  This file implements the
@@ -5490,37 +5855,41 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
 // ---------------------------------------------------------------------------
 // KK::SubspaceReclusterPerChunk
 //
-// Per-chunk subspace reclustering — runs BEFORE Phase 1.5 and Phase 2.
+// Per-chunk subspace reclustering — Phase 2 of the runtime pipeline.
+// Runs after Phase 1 (per-chunk CEM) on the per-chunk model lists,
+// before Phase 4 (mean-waveform harvest) and Phase 6 (cross-chunk
+// model matching).
 //
 // For each local cluster in each chunk, projects its spikes (by global index)
 // into the top-subspaceDims eigenvector subspace of that cluster's covariance,
 // then runs CEMTwoPhase in that reduced space.  Splits are accepted if the
 // multi-cluster BIC score beats the single-cluster null.  perChunkClass[] and
-// perChunkModels[] are updated in-place so downstream realignment and Phase 2
-// cross-chunk matching see purer, better-separated cluster models.
+// perChunkModels[] are updated in-place so downstream Phase 6 cross-chunk
+// matching sees purer, better-separated cluster models.
 //
 // New local cluster IDs are assigned starting from maxLocalId+1 within each
 // chunk so they remain globally unique across chunks.
 // ---------------------------------------------------------------------------
 // KK::WithinChunkMerge
 //
-// Within-chunk merge pass — runs after Phase 1.5 waveform realignment updates
-// Data[] features, before Phase 2 cross-chunk matching.
+// Within-chunk merge pass — runs after waveform realignment updates Data[]
+// features, before Phase 6 cross-chunk matching.
 //
 // For each chunk: recomputes cluster means and covariances from the updated
 // Data[], then runs a symmetric Mahalanobis MNN merge.  Clusters whose
 // symmetric Mahalanobis distance falls below mergeThresh are merged — exactly
-// the same criterion as Phase 2, but applied locally within each chunk.
+// the same criterion as Phase 6 (cross-chunk match), but applied locally
+// within each chunk.
 //
 // This cleans up clusters that were over-split in Phase 1 but, after feature
-// updating via realignment, are no longer distinguishable.  Giving Phase 2
+// updating via realignment, are no longer distinguishable.  Giving Phase 6
 // purer, larger clusters improves cross-chunk matching reliability.
 // ---------------------------------------------------------------------------
 // KK::WithinChunkTemplateMatch
 //
-// Within-chunk xcorr template matching — runs after Phase 1.5 waveform
-// realignment and the Phase 1.6 meanWav harvest, before Phase 2 cross-chunk
-// matching.
+// Within-chunk xcorr template matching — Phase 5 of the runtime pipeline.
+// Runs after Phase 4 (mean-waveform harvest), before Phase 6 (cross-chunk
+// matching).
 //
 // For each chunk, computes the normalised circular xcorr between every pair of
 // cluster mean waveforms (already in ChunkModel::meanWav, channel-major int16).
@@ -5531,7 +5900,7 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
 // This is a waveform-level analogue of the Mahalanobis MNN merge — it catches
 // clusters that are separated in feature space but represent the same unit
 // viewed at slightly different times within the chunk.  It also pre-consolidates
-// the model list before Phase 2 so cross-chunk matching has fewer, purer models.
+// the model list before Phase 6 so cross-chunk matching has fewer, purer models.
 // ---------------------------------------------------------------------------
 int  KK::WithinChunkTemplateMatch(
     const std::vector<std::vector<int>>& chunkPoints,
@@ -5755,8 +6124,8 @@ void KK::WithinChunkMerge(
 
         // Mahalanobis distance (same formula as MergeChunkModels)
         auto mahalDist = [&](const ChunkModel& src, const ChunkModel& tgt) -> float {
-            float covS[64*64], chol[64*64], diff[64], root[64];
-            if (nSpatialDims > 64) return HugeScore;
+            float covS[kMaxStackDims*kMaxStackDims], chol[kMaxStackDims*kMaxStackDims], diff[kMaxStackDims], root[kMaxStackDims];
+            if (nSpatialDims > kMaxStackDims) return HugeScore;
             for (int r = 0; r < nSpatialDims; r++)
                 for (int c2 = r; c2 < nSpatialDims; c2++)
                     covS[r * nSpatialDims + c2] = tgt.cov[r * nDims + c2];
@@ -5868,6 +6237,21 @@ void KK::SubspaceReclusterPerChunk(
     // may be smaller, so this is conservative.
     const int minSpikes = std::max(kMax * 10, 20);
 
+    // ── Diagnostic accounting ────────────────────────────────────────────────
+    // Without this, the routine's silent skips (small clusters, degenerate
+    // covariance) make it look like Phase 2 "completed too quickly" when in
+    // fact most candidate clusters were filtered out before the parallel
+    // CEM.  All counts are tracked here and printed at end-of-phase to
+    // stderr, regardless of `Log`.
+    int nVisited      = 0;   // alive non-noise clusters considered
+    int nSkipNoise    = 0;   // localClusterId == 0
+    int nSkipTooSmall = 0;   // nMem < minSpikes
+    int nSkipBadNull  = 0;   // nullScore == 0 (degenerate Ks)
+    int nQueued       = 0;   // pushed to items[] for parallel CEM
+    int nAccepted     = 0;   // passed BIC gate AND nullSplit
+    int nRejNoSplit   = 0;   // best run had no real split
+    int nRejWorseNull = 0;   // best run worse than nullScore
+
     // ── Phase A: serial pre-processing ─────────────────────────────────────
     // For each (chunk, cluster) build a projected sub-KK and compute nullScore.
     // Reads Data[] (read-only) and perChunkClass/perChunkModels (read-only here).
@@ -5904,14 +6288,15 @@ void KK::SubspaceReclusterPerChunk(
         std::vector<ChunkModel> snapshot = mdls;
         for (const auto& origCm : snapshot) {
             const int lc = origCm.localClusterId;
-            if (lc == 0) continue;
+            if (lc == 0) { ++nSkipNoise; continue; }
+            ++nVisited;
 
             std::vector<int> members;
             for (int i = 0; i < nPts; i++)
                 if (cls[i] == lc) members.push_back(i);
 
             const int nMem = static_cast<int>(members.size());
-            if (nMem < minSpikes) continue;
+            if (nMem < minSpikes) { ++nSkipTooSmall; continue; }
 
             // Cluster mean
             std::vector<float> clMean(static_cast<size_t>(nSpatial), 0.0f);
@@ -6008,13 +6393,35 @@ void KK::SubspaceReclusterPerChunk(
                 wi.nullScore = Ks.ComputeScore();
             }
             wi.valid = (wi.nullScore != 0.0f);
+            if (!wi.valid) {
+                // nullScore == 0 indicates the single-cluster fit collapsed.
+                // Common cause: covariance matrix is rank-deficient in the
+                // kEff-dimensional subspace (members lie on a degenerate
+                // manifold), so EStep killed the cluster and only the empty
+                // noise row contributed to ComputeScore.  This work item
+                // cannot be evaluated for splitting; flag it for the summary.
+                ++nSkipBadNull;
+                fprintf(stderr,
+                        "  [Phase 2] chunk %d cluster %d: nullScore=0 "
+                        "(degenerate covariance in %d-dim subspace, %d members) "
+                        "— skipped\n",
+                        ck, lc, wi.kEff, nMem);
+                continue;  // do NOT push to items[]; nothing to recluster
+            }
+            ++nQueued;
             items.push_back(std::move(wi));
         }
     }
 
     const int nItems = static_cast<int>(items.size());
     if (nItems == 0) {
-        Output("SubspaceReclusterPerChunk: 0 cluster(s) split across all chunks\n");
+        // Nothing to recluster — but report WHY so the user can see whether
+        // they hit the small-cluster filter, the degenerate-covariance
+        // filter, or simply had no real clusters.
+        fprintf(stderr,
+                "[Phase 2]  Per-chunk subspace recluster: 0/%d clusters queued "
+                "(skipped: %d noise, %d too-small <%d, %d degenerate)\n",
+                nVisited, nSkipNoise, nSkipTooSmall, minSpikes, nSkipBadNull);
         return;
     }
 
@@ -6132,8 +6539,15 @@ void KK::SubspaceReclusterPerChunk(
             /*maxIter=*/        0,
             /*phaseLabel=*/     "sub");
 
-        // Only record if a genuine split occurred (nClusters > 1).
-        if (Ks.nClustersAlive > 1) {
+        // Only record if a genuine split occurred — i.e. at least 2 REAL
+        // sub-clusters survived.  Ks.nClustersAlive INCLUDES the noise slot
+        // (always alive even when empty under NoisePoint=0), so the
+        // pre-split parent corresponds to nClustersAlive == 2 (noise + 1
+        // real cluster) and a real split needs nClustersAlive >= 3.
+        // The previous `> 1` guard accepted the no-split case as a "split
+        // into 2 sub-clusters" of which one was always noise — silently
+        // bypassing the BIC gate's intent.
+        if (Ks.nClustersAlive > 2) {
             rr.score     = score;
             rr.nClusters = Ks.nClustersAlive;
             for (int i2 = 0; i2 < wi.nMem; i2++)
@@ -6159,7 +6573,8 @@ void KK::SubspaceReclusterPerChunk(
             // Index: wi_idx * runsPerSubCluster + run — matches the flat loop above.
             const RunResult& rr = runResults[
                 static_cast<size_t>(wi_idx * runsPerSubCluster + run)];
-            // rr.score == 0.0f means no valid split for this run (guard above).
+            // rr.nClusters defaults to 1 (no real split this run) and is set
+            // to >= 3 only when the parallel block found a genuine split.
             if (rr.nClusters > 1 && rr.score < bestScore) {
                 bestScore = rr.score;
                 bestSubK  = rr.nClusters;
@@ -6167,11 +6582,16 @@ void KK::SubspaceReclusterPerChunk(
                 res.bestSubClass = rr.subClass;
             }
         }
-        // Only accept if at least one run found a better split than the null model.
-        if (bestSubK > 1 && bestScore < wi.nullScore) {
+        // Categorise outcome for the end-of-phase summary.
+        if (bestSubK <= 1) {
+            ++nRejNoSplit;     // no run produced a real split
+        } else if (bestScore >= wi.nullScore) {
+            ++nRejWorseNull;   // best split is worse than the unsplit null
+        } else {
             res.accepted     = true;
             res.bestSubK     = bestSubK;
             res.bestSubScore = bestScore;
+            ++nAccepted;
         }
     }
 
@@ -6218,7 +6638,7 @@ void KK::SubspaceReclusterPerChunk(
             // Build global-spike-index lists for each new sub-cluster and run
             // the probe.  This refreshes Data[] for affected rows BEFORE the
             // ChunkModel mean/cov builders below see them, so downstream
-            // Phase 2 cross-chunk matching operates on the refined features.
+            // Phase 6 cross-chunk matching operates on the refined features.
             if (m_timeShiftReady && NbChannels > 0 && NbSamplesPerSpike > 0) {
                 for (auto& [sc2, newLc] : subToLocal) {
                     std::vector<int> sub;
@@ -6266,7 +6686,21 @@ void KK::SubspaceReclusterPerChunk(
             totalSplit++;
         }
     }
-    Output("SubspaceReclusterPerChunk: %d cluster(s) split across all chunks\n", totalSplit);
+
+    // End-of-phase stderr summary — always visible regardless of Log setting.
+    // Counts cover the full filter funnel:
+    //   visited = alive non-noise clusters seen by the outer loop
+    //   skipped = filtered out before parallel CEM (too-small, degenerate)
+    //   queued  = made it into the parallel CEM pool
+    //   accepted = passed BIC gate AND beat the unsplit null
+    //   rejected = explored but didn't produce a usable split
+    fprintf(stderr,
+            "[Phase 2]  Per-chunk subspace recluster: %d split / %d queued "
+            "(visited %d, skipped: %d too-small <%d / %d degenerate; "
+            "rejected: %d no-split / %d worse-than-null)\n",
+            totalSplit, nQueued,
+            nVisited, nSkipTooSmall, minSpikes, nSkipBadNull,
+            nRejNoSplit, nRejWorseNull);
 }
 
 
@@ -6546,6 +6980,19 @@ void KK::RefractorySplitPerChunk(
     const int nCh = static_cast<int>(chunkPoints.size());
     int totalSplit = 0;
 
+    // ── Diagnostic accounting ────────────────────────────────────────────────
+    // Mirrors the accounting in SubspaceReclusterPerChunk so the user can see
+    // the filter funnel: how many candidate clusters were visited, how many
+    // were filtered before the CEM call, and why.  Printed at end-of-phase
+    // to stderr regardless of `Log`.
+    int nVisited      = 0;   // alive non-noise clusters considered
+    int nSkipNoise    = 0;
+    int nSkipTooSmall = 0;   // nMem < minSplitSpikes
+    int nSkipLowContam= 0;   // contamRate < minContamRate (intentional: no need to split)
+    int nAttempted    = 0;   // ran the CEM split trial
+    int nRejNoSplit   = 0;   // CEM didn't split the cluster
+    int nRejWorseNull = 0;   // splitScore >= nullScore
+
     for (int ck = 0; ck < nCh; ck++) {
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];
@@ -6556,7 +7003,8 @@ void KK::RefractorySplitPerChunk(
         std::vector<ChunkModel> snapshot = mdls;
         for (const auto& origCm : snapshot) {
             const int lc = origCm.localClusterId;
-            if (lc == 0) continue;
+            if (lc == 0) { ++nSkipNoise; continue; }
+            ++nVisited;
 
             // Collect member local-indices and their normalised timestamps
             std::vector<int>   members;
@@ -6567,7 +7015,7 @@ void KK::RefractorySplitPerChunk(
                 ts.push_back(Data[pts[static_cast<size_t>(i)] * nDims + timeDimIdx]);
             }
             const int nMem = static_cast<int>(members.size());
-            if (nMem < minSplitSpikes) continue;
+            if (nMem < minSplitSpikes) { ++nSkipTooSmall; continue; }
 
             // Sort by time for efficient ISI scan
             std::vector<int> order(static_cast<size_t>(nMem));
@@ -6593,7 +7041,8 @@ void KK::RefractorySplitPerChunk(
 
             const float contamRate = 2.0f * static_cast<float>(nViol)
                                    / static_cast<float>(nMem);
-            if (contamRate < minContamRate) continue;
+            if (contamRate < minContamRate) { ++nSkipLowContam; continue; }
+            ++nAttempted;
 
             // Log the violation
             Output("  RefractorySplit: chunk%d cluster%d  %d spikes  "
@@ -6712,10 +7161,25 @@ void KK::RefractorySplitPerChunk(
                 /*maxIter=*/        0,
                 /*phaseLabel=*/     "rfsplit");
 
-            if (Ks.nClustersAlive <= 1 || splitScore >= nullScore) {
-                Output("  RefractorySplit: chunk%d cluster%d — no improvement "
+            // nClustersAlive INCLUDES the noise slot (always alive even when
+            // empty under NoisePoint=0).  A genuine 2-way split has noise +
+            // ≥2 real clusters = nClustersAlive >= 3.  The previous `<= 1`
+            // guard let the no-split case (noise + 1 real) through, which
+            // then failed the splitScore < nullScore comparison anyway —
+            // but the rejection was logged as "no improvement" rather than
+            // "no split", masking what actually happened.
+            if (Ks.nClustersAlive <= 2) {
+                Output("  RefractorySplit: chunk%d cluster%d — CEM did not split "
+                       "(splitScore=%.4g, null=%.4g)\\n",
+                       ck, lc, splitScore, nullScore);
+                ++nRejNoSplit;
+                continue;
+            }
+            if (splitScore >= nullScore) {
+                Output("  RefractorySplit: chunk%d cluster%d — split worse than null "
                        "(splitScore=%.4g, null=%.4g), keeping\\n",
                        ck, lc, splitScore, nullScore);
+                ++nRejWorseNull;
                 continue;
             }
 
@@ -6792,5 +7256,14 @@ void KK::RefractorySplitPerChunk(
             ++totalSplit;
         }
     }
-    Output("RefractorySplitPerChunk: %d cluster(s) split\\n", totalSplit);
+
+    // End-of-phase stderr summary — always visible regardless of Log setting.
+    fprintf(stderr,
+            "[Phase 2]  Per-chunk refractory split: %d split / %d attempted "
+            "(visited %d, skipped: %d too-small <%d / %d low-contam <%.0f%%; "
+            "rejected: %d no-split / %d worse-than-null)\n",
+            totalSplit, nAttempted,
+            nVisited, nSkipTooSmall, minSplitSpikes,
+            nSkipLowContam, minContamRate * 100.0f,
+            nRejNoSplit, nRejWorseNull);
 }

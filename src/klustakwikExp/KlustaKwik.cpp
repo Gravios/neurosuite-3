@@ -52,7 +52,10 @@ char  Screen                 = 0;
 int   MaxIter                = 500;
 char  StartCluFile[STRLEN]   = "";
 float PenaltyMix             = 0.0f;
-char  InitMethod[STRLEN]     = "farthest";  // "farthest" | "random"
+char  InitMethod[STRLEN]     = "farthest";  // "farthest" (default, deterministic),
+                                            // "kmeans++" (D²-weighted random, useful
+                                            // for diversifying nRuns), or "random"
+                                            // (canonical KlustaKwik random init).
 int   TimeMergeIter          = 100;         // Phase 2 iterations; 0 = disabled
 
 // Three-phase chunked CEM parameters
@@ -62,7 +65,7 @@ float ChunkPreseedFraction   = 0.1f;    // fraction of spikes for Phase 0 presee
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
 float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML at startup
 float MergeThresh            = 0.0f;    // 0 = auto-calibrate to χ²(nDims, 0.99) at runtime
-int   GlobalMergeIter        = 0;       // Phase 3 warm-start EM iterations; 0 skips Phase 3 entirely
+int   GlobalMergeIter        = 0;       // Phase 7 warm-start EM iterations; 0 skips Phase 7 entirely
 int   SaveIntermediates      = 0;       // 0 = final-write only; 1 = also write per-phase .clu
 // Phase 1.5 waveform realignment parameters
 int   NbChannels             = 0;    ///< spike group channel count
@@ -80,7 +83,7 @@ int   AdaptiveMerge          = 1;    ///< per-pair d_eff-based MergeThresh (defa
 std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
 int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 disables, max 5)
 int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
-// DipSplit parameters (Phase 1.8 bimodal splitter)
+// DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
 float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
@@ -109,7 +112,7 @@ float DipSplitElongationFactor  = 4.0f;  ///< secondary gate (OR with bloat): if
 float DipSplitValleyThresh      = 0.0f;  ///< min KDE valley depth to flag bimodality
 int   SubspaceDims              = 8;     ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster         = 1;     ///< 1=run per-cluster subspace CEM after Phase 2
-float TemplateMatchScore        = 0.85f; ///< min xcorr for within-chunk template matching (Phase 1.7)
+float TemplateMatchScore        = 0.85f; ///< min xcorr for within-chunk template matching (Phase 5)
 int   TemplateMatchIters        = 10;    ///< max within-chunk template match iterations
 int   SplitRecurseDepth         = 8;     ///< max TrySplits recursion depth
 float CrossChunkTemplateScore   = 0.80f; ///< min xcorr for cross-chunk template matching (Phase 2 Pass 3)
@@ -785,8 +788,13 @@ int main(int argc, char **argv) {
         // kept consistent so the recommendation matches what we
         // auto-pick.  z_0.99 = 2.326347874.
         //
-        // CLI -MergeThresh wins.  YAML doesn't carry MergeThresh.
-        if (!cli_has_flag(argc, argv, "MergeThresh") && MergeThresh <= 0.0f) {
+        // CLI -MergeThresh wins UNLESS the user explicitly passes 0, which
+        // is the documented "auto-calibrate" sentinel.  Any positive value
+        // bypasses auto-calibration entirely; negative is treated like 0.
+        const bool cliMerge   = cli_has_flag(argc, argv, "MergeThresh");
+        const bool wantAuto   = (!cliMerge && MergeThresh <= 0.0f)
+                             || ( cliMerge && MergeThresh <= 0.0f);
+        if (wantAuto) {
             const float d = static_cast<float>(K1.nDims);
             const float t = d * std::pow(
                 1.0f - 2.0f / (9.0f * d) + 2.326347874f * std::sqrt(2.0f / (9.0f * d)),
@@ -794,25 +802,31 @@ int main(int argc, char **argv) {
             MergeThresh = t;
             fprintf(stderr,
                     "[auto] MergeThresh = %.2f  (χ²(%d, 0.99); auto-calibrated "
-                    "from .fet header)\n", MergeThresh, K1.nDims);
-        } else if (cli_has_flag(argc, argv, "MergeThresh")) {
-            // Sanity-check the user's override against χ²(d, 0.99) so a
-            // wildly miscalibrated value is at least flagged here
-            // (in addition to KK.cpp's existing 0.9999 warning).
+                    "from .fet header%s)\n",
+                    MergeThresh, K1.nDims,
+                    cliMerge ? " — user passed -MergeThresh 0" : "");
+        } else if (cliMerge) {
+            // Sanity-check the user's positive override against χ²(d, 0.99)
+            // so a wildly miscalibrated value is at least flagged here.
+            // With AdaptiveMerge=1 the per-pair calibration handles
+            // miscalibration anyway, so the warning is suppressed in that
+            // case to avoid false alarms.
             const float d = static_cast<float>(K1.nDims);
             const float t99 = d * std::pow(
                 1.0f - 2.0f / (9.0f * d) + 2.326347874f * std::sqrt(2.0f / (9.0f * d)),
                 3.0f);
-            const float ratio = MergeThresh / t99;
-            if (ratio < 0.5f || ratio > 3.0f) {
-                fprintf(stderr,
-                        "[warn] MergeThresh=%.2f is %s χ²(%d, 0.99)=%.2f "
-                        "by %.1f×.  Auto-default would be %.2f.\n",
-                        MergeThresh,
-                        ratio < 1.0f ? "below" : "above",
-                        K1.nDims, t99,
-                        ratio < 1.0f ? 1.0f / ratio : ratio,
-                        t99);
+            if (!AdaptiveMerge && t99 > 0.0f && MergeThresh > 0.0f) {
+                const float ratio = MergeThresh / t99;
+                if (ratio < 0.5f || ratio > 3.0f) {
+                    fprintf(stderr,
+                            "[warn] MergeThresh=%.2f is %s χ²(%d, 0.99)=%.2f "
+                            "by %.1f×.  Auto-default would be %.2f.\n",
+                            MergeThresh,
+                            ratio < 1.0f ? "below" : "above",
+                            K1.nDims, t99,
+                            ratio < 1.0f ? 1.0f / ratio : ratio,
+                            t99);
+                }
             }
         }
 
@@ -978,6 +992,8 @@ int main(int argc, char **argv) {
 #endif
             } else if (strcmp(InitMethod, "farthest") == 0) {
                 fprintf(stderr, "  mode: two-phase farthest-point\n");
+            } else if (strcmp(InitMethod, "kmeans++") == 0) {
+                fprintf(stderr, "  mode: two-phase k-means++\n");
             } else {
                 fprintf(stderr, "  mode: original random-init\n");
             }
@@ -996,8 +1012,9 @@ int main(int argc, char **argv) {
             K1.SaveBestMeans();
         }
 
-        // Dispatch: three-phase chunked > two-phase farthest > original random
-        const bool useFarthest  = (strcmp(InitMethod, "farthest") == 0);
+        // Dispatch: three-phase chunked > two-phase (farthest|kmeans++) > original random
+        const bool useFarthest  = (strcmp(InitMethod, "farthest") == 0)
+                              || (strcmp(InitMethod, "kmeans++") == 0);
 
         if (useExtChunks)
             Output("Mode: three-phase chunked CEM  "
@@ -1107,7 +1124,7 @@ int main(int argc, char **argv) {
         std::vector<KlustaSave> workerKsv(nJobs);
         std::vector<KK>         workers(nJobs);
         for (int j = 0; j < nJobs; j++) {
-            workers[j]                   = K1.CloneForStart(threadsPerJob);
+            K1.cloneInto(workers[j], threadsPerJob);
             workers[j].nStartingClusters = jobs[j].K;
             workers[j].minClustersAlive  = MinClusters;
             workerKsv[j].BestScoreSave   = HugeScore;

@@ -67,9 +67,18 @@ public:
     KlustaSave&       ksv()       { return pKsv ? *pKsv : ::kSv; }
     const KlustaSave& ksv() const { return pKsv ? *pKsv : ::kSv; }
     void  LoadData();
-    KK    CloneForStart(int ompTeamSize = 0) const; // deep-copy for ParallelK workers
+    // Deep-copy this KK's clustering state into `out` for use as an
+    // independent ParallelK worker.  `out` must be a default-constructed
+    // KK (so its `gpu` is null and arrays are empty).  After the call,
+    // `out` is set up identically to *this for an independent CEM run
+    // on the CPU (gpu is left null, so all EM math runs on the host).
+    void  cloneInto(KK& out, int ompTeamSize = 0) const;
     float Penalty(int n) const;
     float ComputeScore() const;
+    // Per-phase quality summary printed to stderr.  See ReportClusterQuality
+    // implementation in KK.cpp for metric definitions.  `phaseLabel` is a
+    // short tag that appears in the log line, e.g. "Phase 1", "Phase 7".
+    void  ReportClusterQuality(const char* phaseLabel) const;
     void  MStep();
     void  EStep();
     int   CStep();   // returns number of points that changed class
@@ -93,9 +102,18 @@ private:
 public:
 
     // -----------------------------------------------------------------------
-    // Farthest-point seeding
+    // Centre seeding for CEMTwoPhase
     // -----------------------------------------------------------------------
     void InitCentresFarthestPoint(int nCentres, int nSpatialDims);
+    // K-means++ D²-weighted random seeding.  Picks centre 0 uniformly at
+    // random; each subsequent centre is sampled with probability proportional
+    // to its squared distance from the nearest already-chosen centre.
+    // Compared with farthest-point, this is randomised (different seeds on
+    // different runs even for identical data) but keeps the spread that makes
+    // farthest-point work — the D²-weighting is the original Arthur & Vassilvitskii
+    // 2007 algorithm, which has an O(log k) expected approximation guarantee.
+    // Selected via -InitMethod kmeans++ at the driver level.
+    void InitCentresKMeansPP(int nCentres, int nSpatialDims);
     void InitClassFromCentres(int nSpatialDims);
 
     // -----------------------------------------------------------------------
@@ -382,7 +400,7 @@ public:
     // MStep + EStep beforehand.
     int TimeShiftAlignPhase(int nChan, int nSamplesPerSpike);
 
-    // ---- DipSplit: bimodal-cluster detection & split (Phase 1.8) ----------
+    // ---- DipSplit: bimodal-cluster detection & split (Phase 8) ----------
     //
     // For each alive cluster that passes a χ²-calibrated bloat gate (its
     // 90th-percentile Mahalanobis² exceeds F · χ²(nDims, 0.9)), project
@@ -626,4 +644,25 @@ public:
 
     ~KK() { if (gpu) { gpu->free_all(); delete gpu; } }
 #endif
+
+    // ── Rule of three / five: explicit non-copyable, non-movable ─────────────
+    // KK owns a `gpu` resource through ~KK(); a default copy would alias
+    // the pointer, leading to a double-free when both copies are destroyed.
+    // The default move would shallow-copy `gpu` and leave the source's
+    // pointer non-null, with the same hazard.
+    //
+    // The codebase initialises worker KKs via `vector<KK>(N)` (default
+    // ctor, no copy/move) and configures them via field assignment or via
+    // the `cloneInto(out, ...)` helper.  All currently-needed paths work
+    // without copy or move, so we delete both to make accidental copies
+    // (or `vector<KK>::push_back`) a compile error rather than a runtime
+    // double-free.
+    //
+    // Default ctor is restored explicitly because = delete on copies/moves
+    // would otherwise also suppress the implicit default ctor.
+    KK() = default;
+    KK(const KK&)            = delete;
+    KK& operator=(const KK&) = delete;
+    KK(KK&&)            = delete;
+    KK& operator=(KK&&) = delete;
 };
