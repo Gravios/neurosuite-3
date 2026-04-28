@@ -92,6 +92,12 @@ public:
     
     /** Returns the first view instance. */
     KlustersView* firstView(){return viewList->isEmpty() ? 0 : viewList->first();}
+
+    /** Convenience: cast `parent` to KlustersApp.  Constructed always with
+     *  a KlustersApp parent (see ctor in klusters.cpp), so the cast is
+     *  unconditional.  Folds 16 occurrences of
+     *  `static_cast<KlustersApp*>(parent)->...` across this file. */
+    KlustersApp* app() const { return reinterpret_cast<KlustersApp*>(parent); }
     
     /**Returns true, if the requested view is the last view of the document. */
     bool isLastView();
@@ -216,6 +222,17 @@ public:
     * @param clusterId the id of the cluster to where the clusteres in clustersToDelete will be moved.
     */
     void deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId);
+
+    /**
+    * Moves the given cluster to the end of the palette display order.
+    * Snapshots the cluster-colour list onto the undo stack first so the
+    * action can be reversed with Ctrl+Z.  Triggers a palette refresh and
+    * returns the user's previous selection unchanged.
+    * @param clusterId the cluster to move to the end.
+    * @return true if the cluster existed and was moved (or was already at
+    *         the end); false if no such cluster.
+    */
+    bool moveClusterToEnd(int clusterId);
 
     /**
     * Removes spikes from some clusters and assign them to the cluster 1, the cluster for the noise.

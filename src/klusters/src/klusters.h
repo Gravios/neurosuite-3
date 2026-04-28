@@ -302,6 +302,10 @@ private Q_SLOTS:
     /** Shift timestamps of the selected cluster by ±1 sample. */
     void slotNudgeTimestampMinus();
     void slotNudgeTimestampPlus();
+    /** Move currently-selected palette cluster(s) to the end of the
+     *  cluster-palette display order.  Bound to T when the palette has
+     *  focus; undo-able. */
+    void slotMoveSelectedClustersToEnd();
 
     // ── Curation quality annotation ───────────────────────────────────────
     /** Tag the most recently completed curation action with a quality label.
@@ -509,6 +513,12 @@ private:
     void buildFocusZones();
     /** Give keyboard focus to the most appropriate widget inside a tab page. */
     void focusTabPage(QWidget* page);
+
+    /** Returns true when the cluster palette (or any of its descendants —
+     *  the inner QListWidget, the dock-widget shell, etc.) currently holds
+     *  keyboard focus.  Used by the palette-context shortcut handlers
+     *  (S, T, PageUp, PageDown) to decide whether to claim the key. */
+    bool paletteHasFocus() const;
     
     /** Creates a new display.
      * @param type enum representing the type of view to be created.

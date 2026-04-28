@@ -23,8 +23,15 @@
  *      Array-rolling is intentionally avoided — re-extraction is the
  *      only artifact-free method.
  *
- *   5. Write the updated .spk.N sorted by extTs.  .res.N is not modified
- *      (detection times are physical spike times, not extraction times).
+ *   5. Write the updated .spk.N sorted by extTs.  .res.N is also updated
+ *      so .res[i] = extTs[i] = originalTs[i] + shift[i] — i.e. .res points
+ *      to the file sample where the peak now lands in the corresponding
+ *      .spk[i].  Downstream tools (Klusters' nudge, process_refeaturize,
+ *      any code that re-reads .fil at the .res offset) require this
+ *      invariant; without it, re-extracted windows are mispositioned by
+ *      shift[i] samples.  The pre-alignment .res.N is archived as
+ *      .res.N.prealign so the original detection timestamps can be
+ *      recovered if needed.
  *
  * USAGE
  * ─────
@@ -43,10 +50,11 @@
  *
  * OUTPUT FILES
  * ────────────
- *   basename.spk.G   overwritten in-place (aligned snippets, reordered by extTs)
- *   basename.res.G   UNCHANGED
- *   basename.fet.G   caller must delete and re-run process_pca
- *   basename.pca.G   caller must delete and re-run process_pca
+ *   basename.spk.G          overwritten in-place (aligned snippets, reordered by extTs)
+ *   basename.res.G          overwritten in-place (.res[i] = extTs[i] after alignment)
+ *   basename.res.G.prealign archived copy of pre-alignment .res
+ *   basename.fet.G          caller must delete and re-run process_pca
+ *   basename.pca.G          caller must delete and re-run process_pca
  *
  * copyright   (C) 2026 Gravios / NeuroSuite-3 contributors
  * GNU GPL v3 or later.
@@ -66,6 +74,7 @@
 #include <numeric>
 #include <climits>
 #include <stdexcept>
+#include <unistd.h>     // access(F_OK) for prealign archive
 
 // ── SDIFF_ALLPAIRS kernel (same as process_extractspikes_stderiv) ─────────
 
@@ -595,6 +604,60 @@ int main(int argc, char* argv[])
     if (rename(spkTmp.c_str(), spkPath.c_str()) != 0) {
         remove(spkTmp.c_str());
         die("rename of .spk.aligntmp failed");
+    }
+
+    // ── Archive original .res, then write updated .res atomically ─────────
+    // Klusters' nudge — and any other tool that re-reads .fil at the .res
+    // offset to reconstruct the spike window — assumes
+    //
+    //     .spk[i] peak  ≡  .fil at file-sample .res[i]
+    //
+    // i.e. .res[i] is the file sample where the peak of .spk[i] resides.
+    // Before alignment this holds (canonical extractspikes writes the
+    // refined-peak position to .res; see process_extractspikes_stderiv
+    // line 1456).  After alignment the .spk[i] peak is at extTs[i] =
+    // resTs[i] + shifts[i], so .res must be updated to match — otherwise
+    // every downstream tool that re-extracts from .fil reads a window
+    // that is shifts[i] samples off from the actual peak.
+    //
+    // The pre-alignment .res is archived to .res.G.prealign so the
+    // original detection-threshold timestamps can be recovered.  This
+    // mirrors how the script archives stale .fet/.pca to .prealign.
+    {
+        const std::string resPrealign = resPath + ".prealign";
+        // Best-effort copy: ignore failure (the file may already exist
+        // from a previous invocation; we don't want to clobber the
+        // original archive).
+        if (access(resPrealign.c_str(), F_OK) != 0) {
+            FILE* aIn  = fopen(resPath.c_str(),     "rb");
+            FILE* aOut = fopen(resPrealign.c_str(), "wb");
+            if (aIn && aOut) {
+                std::vector<char> copyBuf(1 << 16);
+                size_t n;
+                while ((n = fread(copyBuf.data(), 1, copyBuf.size(), aIn)) > 0)
+                    if (fwrite(copyBuf.data(), 1, n, aOut) != n) break;
+            }
+            if (aIn)  fclose(aIn);
+            if (aOut) fclose(aOut);
+        }
+
+        const std::string resTmp = resPath + ".aligntmp";
+        FILE* resOutF = xfopen(resTmp.c_str(), "wb");
+        for (int j = 0; j < nSpikes; ++j) {
+            const int     i     = sortOrder[j];
+            const int64_t newTs = resTs[i] + (int64_t)shifts[i];
+            if (fwrite(&newTs, sizeof(int64_t), 1, resOutF) != 1) {
+                fclose(resOutF);
+                remove(resTmp.c_str());
+                die("write error on .res output");
+            }
+        }
+        fclose(resOutF);
+
+        if (rename(resTmp.c_str(), resPath.c_str()) != 0) {
+            remove(resTmp.c_str());
+            die("rename of .res.aligntmp failed");
+        }
     }
 
     // ── Statistics ────────────────────────────────────────────────────────

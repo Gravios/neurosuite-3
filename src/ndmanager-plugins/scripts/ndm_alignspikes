@@ -16,10 +16,13 @@
 #//
 #//   This script re-extracts each spike snippet from the raw .fil at the
 #//   true peak position (extTs = originalTs + δ), writes the updated .spk.N
-#//   (or .spkD.N for stderiv pipelines), and deletes the stale .fet.N /
-#//   .pca.N so the caller must re-run ndm_pca / ndm_pca_stderiv.
+#//   (or .spkD.N for stderiv pipelines), updates .res.N so .res[i] = extTs[i]
+#//   (preserving the .res ↔ .spk peak invariant required by Klusters' nudge
+#//   and by any tool that re-reads .fil at .res offsets), and deletes the
+#//   stale .fet.N / .pca.N so the caller must re-run ndm_pca / ndm_pca_stderiv.
 #//
-#//   .res.N is NOT modified — detection timestamps are physical events.
+#//   The pre-alignment .res.N is archived to .res.N.prealign so the
+#//   original detection-threshold timestamps can be recovered if needed.
 #//
 #//   PIPELINE POSITION
 #//   ─────────────────
