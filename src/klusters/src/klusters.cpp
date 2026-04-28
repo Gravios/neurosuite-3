@@ -49,6 +49,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QListWidget>
+#include <QScrollArea>
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QPrinter>
@@ -361,7 +362,13 @@ void KlustersApp::createMenus()
     actionMenu->addSeparator();
 
     mGenerateProbeDrift = actionMenu->addAction(tr("&Generate Probe Drift…"));
-    mGenerateProbeDrift->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
+    // Shortcut: Shift+P (P for Probe). Previously Shift+D, which clashed with
+    // mDecreaseAmplitudeCorrelation in the Correlations menu — Qt resolved it
+    // as an ambiguous overload and dispatched neither, producing
+    // "QAction::event: Ambiguous shortcut overload: Shift+D" on every press.
+    // The Shift+I/Shift+D Increase/Decrease pair is preserved, in line with
+    // Ctrl+I/Ctrl+D (waveforms) and Ctrl+Shift+I/Ctrl+Shift+D (channels).
+    mGenerateProbeDrift->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
     mGenerateProbeDrift->setToolTip(
         tr("Run ndm_estimatedrift on the current electrode group to estimate probe "
            "displacement over time.  Requires that this group is already curated "
@@ -489,7 +496,7 @@ void KlustersApp::createMenus()
     connect(mIncreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotIncreaseCorrelogramsAmplitude);
 
     mDecreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Decrease Amplitude"));
-    mDecreaseAmplitudeCorrelation->setShortcut(QKeySequence(Qt::SHIFT |  Qt::Key_D));
+    mDecreaseAmplitudeCorrelation->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
     connect(mDecreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotDecreaseCorrelogramsAmplitude);
 
 
@@ -665,6 +672,27 @@ void KlustersApp::createMenus()
     connect(doc, &KlustersDoc::updateUndoNb, this, &KlustersApp::slotUpdateUndoNb);
     connect(doc, &KlustersDoc::updateRedoNb, this, &KlustersApp::slotUpdateRedoNb);
     connect(doc, &KlustersDoc::spikesDeleted, this, &KlustersApp::slotSpikesDeleted);
+
+    // After a polygon-driven new-cluster operation in any 2D scatter view,
+    // hand keyboard focus back to the cluster palette's iconView so the
+    // user can arrow-navigate to (or away from) the freshly-created cluster
+    // without first having to Tab or click.  The matching ClusterView
+    // setFocus(self) calls were removed in NEW_CLUSTER / NEW_CLUSTERS to
+    // stop the scatter from grabbing focus back synchronously after this
+    // signal handler runs.  newClustersAdded is overloaded
+    // (QMap-and-QList for createNewClusters; bare QList for recluster);
+    // we want only the polygon-completion overload here.
+    connect(doc, &KlustersDoc::newClusterAdded, this,
+        [this](QList<int>&, int, QList<int>&) {
+            if (clusterPalette) clusterPalette->setFocusToList();
+        });
+    connect(doc,
+        static_cast<void (KlustersDoc::*)(QMap<int,int>&, QList<int>&)>(
+            &KlustersDoc::newClustersAdded),
+        this,
+        [this](QMap<int,int>&, QList<int>&) {
+            if (clusterPalette) clusterPalette->setFocusToList();
+        });
 }
 
 
@@ -1199,28 +1227,41 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     // sees it.
     if(event->type() == QEvent::ShortcutOverride){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier){
-            QWidget* focused = QApplication::focusWidget();
-            QObject* w = focused;
-            bool paletteHasFocus = false;
-            while(w){ if(w == clusterPalette){ paletteHasFocus = true; break; } w = w->parent(); }
-            if(paletteHasFocus){
-                ke->accept(); // claim the shortcut so the QAction doesn't fire
-                return true;
-            }
+        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
+           && paletteHasFocus()){
+            ke->accept(); // claim the shortcut so the QAction doesn't fire
+            return true;
         }
     }
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier){
-            QWidget* focused = QApplication::focusWidget();
-            QObject* w = focused;
-            bool paletteHasFocus = false;
-            while(w){ if(w == clusterPalette){ paletteHasFocus = true; break; } w = w->parent(); }
-            if(paletteHasFocus){
-                clusterPalette->toggleCurrentSelection();
-                return true;
-            }
+        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
+           && paletteHasFocus()){
+            clusterPalette->toggleCurrentSelection();
+            return true;
+        }
+    }
+    // ── T key: palette move-to-end ─────────────────────────────────────────
+    // Qt::Key_T is normally bound to the "Time Frame" waveform-display
+    // toggle.  When the cluster palette has focus, T re-orders the
+    // currently-selected cluster(s) to the end of the palette list — same
+    // intercept pattern as Key_S (toggle current selection).  Without the
+    // ShortcutOverride claim, the QAction with the T shortcut would fire
+    // first and toggle the waveform mode instead.
+    if(event->type() == QEvent::ShortcutOverride){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
+           && paletteHasFocus()){
+            ke->accept();
+            return true;
+        }
+    }
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
+           && doc && paletteHasFocus()){
+            slotMoveSelectedClustersToEnd();
+            return true;
         }
     }
     // ── PageUp / PageDown — timestamp nudge (±1 sample) ──────────────────
@@ -1315,6 +1356,18 @@ void KlustersApp::focusTabPage(QWidget* page)
         focusable->setFocus(Qt::OtherFocusReason);
     else
         page->setFocus(Qt::OtherFocusReason);
+}
+
+bool KlustersApp::paletteHasFocus() const
+{
+    // Walk up from the currently-focused widget; clusterPalette is a
+    // QWidget container, and its inner iconView (a QListWidget) is what
+    // actually receives the keypresses.  Any ancestor of the focus widget
+    // matching clusterPalette means the palette tree owns focus.
+    if (!clusterPalette) return false;
+    for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget())
+        if (w == clusterPalette) return true;
+    return false;
 }
 
 
@@ -2543,7 +2596,10 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     doc->groupClusters(selectedClusters,*view);
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
-    if (view) view->focusClusterView();
+    // Group is a keyboard-driven palette operation (G key from the palette
+    // context); keep focus on the palette so the user can keep
+    // arrow-navigating without having to Tab back.
+    if (clusterPalette) clusterPalette->setFocusToList();
 }
 
 void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters){
@@ -3024,8 +3080,14 @@ void KlustersApp::slotUpdateErrorMatrix(){
     KlustersView* view = activeView();
     if (!view) return;
     view->updateErrorMatrix();
-    if (view->isThereATemplateMatrixView())
-        view->updateTemplateMatrix();
+    // Always emit the template-matrix update.  Qt auto-disconnects the
+    // computeTemplateMatrix → TemplateMatrixView::updateMatrixContents
+    // wiring when the template view is destroyed, so emitting with no
+    // listener is a no-op.  Gating on isThereATemplateMatrixView() was
+    // fragile: the flag is cleared in several teardown paths (notably
+    // errorMatrixDockClosed) that don't actually destroy the template
+    // dock, leaving a visible template view orphaned from the U key.
+    view->updateTemplateMatrix();
 }
 
 void KlustersApp::slotSelectAll(){
@@ -4312,6 +4374,15 @@ void KlustersApp::slotDipSplit()
             .arg(r.bestDepth, 0, 'f', 3)
             .arg(r.deltaBIC,  0, 'f', 1);
         statusBar()->showMessage(statusLine, 10000);
+        // Select the freshly-created child cluster and return focus to the
+        // palette's iconView so arrow-key navigation works immediately.
+        // See slotRealignFinished for why setFocusToList() is the right
+        // method here (a plain setFocus() on the palette dock wouldn't
+        // propagate to the QListWidget that owns arrow-key handling).
+        if (clusterPalette && r.newClusterId > 0) {
+            clusterPalette->selectItems(QList<int>{r.newClusterId});
+            clusterPalette->setFocusToList();
+        }
     } else {
         const QString why =
               r.reason == QLatin1String("too_small")      ? tr("cluster too small (< 2×MinSize)")
@@ -4554,7 +4625,14 @@ void KlustersApp::slotNudgeTimestampMinus()
             tr("Cluster %1: −1 sample.").arg(id), 2000);
     else
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
-    if (activeView()) activeView()->focusClusterView();
+    // Nudge is a keyboard-triggered op (PageUp/PageDown or 3/4) initiated
+    // from the cluster palette.  Keep palette focus so the user can keep
+    // arrow-navigating between clusters without having to Tab back.
+    // setFocusToList() targets the palette's inner iconView (which owns
+    // arrow-key navigation); a plain setFocus() on the QDockWidget shell
+    // would not propagate and arrow keys would still go to the active
+    // view widget.
+    if (clusterPalette) clusterPalette->setFocusToList();
 }
 
 void KlustersApp::slotNudgeTimestampPlus()
@@ -4582,7 +4660,48 @@ void KlustersApp::slotNudgeTimestampPlus()
             tr("Cluster %1: +1 sample.").arg(id), 2000);
     else
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
-    if (activeView()) activeView()->focusClusterView();
+    // See slotNudgeTimestampMinus for rationale: keep palette focus.
+    if (clusterPalette) clusterPalette->setFocusToList();
+}
+
+// ---------------------------------------------------------------------------
+// Move-selected-clusters-to-end (palette T key)
+// ---------------------------------------------------------------------------
+void KlustersApp::slotMoveSelectedClustersToEnd()
+{
+    if (!doc || !clusterPalette) return;
+    const QList<int> sel = clusterPalette->selectedClusters();
+    if (sel.isEmpty()) {
+        statusBar()->showMessage(
+            tr("Select a cluster in the palette first."), 3000);
+        return;
+    }
+
+    // Move each selected cluster to the end, preserving their relative
+    // order among themselves.  Iterating in palette order means the
+    // first-selected ends up earliest among the moved entries (and last
+    // among the whole list); iterating in reverse would invert that.
+    // doc->moveClusterToEnd snapshots the colour list once per call —
+    // each move is its own undo step.  For "T" specifically, the user
+    // typically has one cluster selected, so this is rarely an issue.
+    for (int cid : sel) {
+        if (!doc->moveClusterToEnd(cid)) {
+            statusBar()->showMessage(
+                tr("Could not move cluster %1.").arg(cid), 3000);
+            break;
+        }
+    }
+
+    // Re-select the moved clusters (palette refresh inside moveClusterToEnd
+    // preserved active-view selection but lost the multi-select highlight)
+    // and keep palette focus so arrow-nav resumes.
+    clusterPalette->selectItems(sel);
+    clusterPalette->setFocusToList();
+    statusBar()->showMessage(
+        tr("Cluster %1 moved to end.").arg(
+            sel.size() == 1 ? QString::number(sel.first())
+                            : tr("%1 clusters").arg(sel.size())),
+        2000);
 }
 
 // ---------------------------------------------------------------------------
@@ -4591,46 +4710,100 @@ void KlustersApp::slotNudgeTimestampPlus()
 void KlustersApp::slotShowShortcutHelp()
 {
     struct Entry { const char* key; const char* desc; };
-    static const Entry kShortcuts[] = {
-        {"Arrow keys",          "Navigate cluster palette"},
-        {"Page Up / Down",      "Nudge selected cluster timestamps \u00b11 sample"},
-        {"C  or  1",            "New Cluster mode \u2014 draw selection polygon"},
-        {"S  or  2",            "Split Clusters mode \u2014 draw selection polygon"},
-        {"G",                   "Group selected clusters"},
-        {"N",                   "Delete noisy spikes (move to cluster 1)"},
-        {"Z",                   "Zoom mode"},
-        {"U",                   "Update error matrix (+ template matrix if open)"},
-        {"F",                   "Toggle autoscale in cluster view"},
-        {"H",                   "Show this keyboard shortcut reference"},
-        {"Ctrl+Z",              "Undo"},
-        {"Ctrl+Y",              "Redo"},
-        {"Ctrl+S",              "Save"},
-        {"Ctrl+Shift+S",        "Renumber and save"},
-        {"Enter / Return",      "Close selection polygon (New / Split modes)"},
-        {"J",                   "Curation log: annotate last action as Good (confident)"},
-        {"K",                   "Curation log: annotate last action as Uncertain"},
-        {"X",                   "Curation log: annotate last action as Bad / exploratory"},
+    struct Section { const char* title; std::initializer_list<Entry> entries; };
+    static const Section kSections[] = {
+        {"Cluster palette", {
+            {"Arrow keys",     "Navigate cluster palette"},
+            {"S",              "Toggle current selection (palette focus)"},
+            {"T",              "Move selected cluster(s) to end of palette (palette focus)"},
+            {"Page Up / Page Down", "Nudge selected cluster timestamps \u00b11 sample"},
+            {"H",              "Show this keyboard shortcut reference"},
+        }},
+        {"Cluster operations", {
+            {"C  or  1",       "New Cluster mode \u2014 draw selection polygon"},
+            {"S  or  2",       "Split Clusters mode \u2014 draw selection polygon"},
+            {"D",              "DipSplit \u2014 split current cluster on bimodality"},
+            {"G",              "Group selected clusters"},
+            {"R",              "Renumber clusters"},
+            {"Shift+R",        "Recluster selected (KlustaKwik)"},
+            {"Shift+L",        "Realign spikes for selected cluster"},
+            {"N  or  Delete",  "Delete noisy spikes (move to cluster 1)"},
+            {"A",              "Delete artefact spikes (move to cluster 0)"},
+            {"Shift+Delete",   "Move whole selected cluster to artefact"},
+            {"Z",              "Zoom mode"},
+            {"W",              "Select time region"},
+            {"U",              "Update error matrix (+ template matrix if open)"},
+            {"F",              "Toggle autoscale in cluster view"},
+            {"Enter / Return", "Close selection polygon (New / Split modes)"},
+            {"Shift+P",        "Generate probe-drift estimate (current group)"},
+            {"Shift+F",        "Apply drift to sibling sessions"},
+        }},
+        {"File", {
+            {"Ctrl+O",         "Open"},
+            {"Ctrl+S",         "Save"},
+            {"Ctrl+Shift+S",   "Renumber and save"},
+            {"Ctrl+I",         "Import file"},
+            {"Ctrl+P",         "Print"},
+            {"Ctrl+Q",         "Quit"},
+        }},
+        {"Edit / Selection", {
+            {"Ctrl+Z",         "Undo"},
+            {"Ctrl+Y",         "Redo"},
+            {"Ctrl+A",         "Select all clusters"},
+            {"Ctrl+Shift+A",   "Select all except 0/1 (artefact / noise)"},
+        }},
+        {"Waveform display", {
+            {"T",              "Time-frame mode (when waveform view has focus)"},
+            {"O",              "Overlay presentation"},
+            {"M",              "Mean and standard deviation"},
+            {"Ctrl+I / Ctrl+D","Increase / decrease waveform amplitude"},
+            {"Ctrl+Shift+I / Ctrl+Shift+D",
+                               "Increase / decrease per-channel amplitudes"},
+            {"L",              "Show shoulder-line"},
+            {"Shift+M / Shift+A / Shift+U",
+                               "Scale by max / shoulder / no scale"},
+        }},
+        {"Correlograms", {
+            {"Shift+I / Shift+D", "Increase / decrease correlogram amplitude"},
+            {"Ctrl+Shift+F / Ctrl+Shift+B",
+                               "Next / previous spike (in trace view)"},
+        }},
+        {"Curation log annotation", {
+            {"J",              "Annotate last action as Good (confident)"},
+            {"K",              "Annotate last action as Uncertain"},
+            {"X",              "Annotate last action as Bad / exploratory"},
+        }},
     };
 
     QString html =
         QStringLiteral("<style>"
-            "table{border-collapse:collapse;min-width:420px}"
+            "body{font-family:sans-serif}"
+            "h3{margin:14px 0 4px 0;color:#a0c0ff;font-size:11pt}"
+            "table{border-collapse:collapse;min-width:520px;margin:0 0 4px 0}"
             "th{background:#2a2a2a;color:#e0e0e0;padding:5px 12px;text-align:left}"
             "td{padding:3px 12px;border-bottom:1px solid #3a3a3a}"
-            "td:first-child{font-family:monospace;font-weight:bold;white-space:nowrap}"
-            "</style><table>"
-            "<tr><th>Key</th><th>Action</th></tr>");
-    for (const auto& s : kShortcuts)
-        html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
-                .arg(QLatin1String(s.key)).arg(QLatin1String(s.desc));
-    html += QStringLiteral("</table>");
+            "td:first-child{font-family:monospace;font-weight:bold;white-space:nowrap;min-width:140px}"
+            "</style>");
+    for (const auto& sec : kSections) {
+        html += QStringLiteral("<h3>%1</h3><table>")
+                .arg(QLatin1String(sec.title));
+        for (const auto& e : sec.entries)
+            html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
+                    .arg(QLatin1String(e.key)).arg(QLatin1String(e.desc));
+        html += QStringLiteral("</table>");
+    }
 
     QDialog dlg(this);
     dlg.setWindowTitle(tr("Keyboard Shortcuts"));
+    dlg.resize(640, 720);
     QVBoxLayout* vl = new QVBoxLayout(&dlg);
-    QLabel* lbl = new QLabel(html, &dlg);
+    QScrollArea* scroll = new QScrollArea(&dlg);
+    QLabel* lbl = new QLabel(html);
     lbl->setTextFormat(Qt::RichText);
-    vl->addWidget(lbl);
+    lbl->setMargin(8);
+    scroll->setWidget(lbl);
+    scroll->setWidgetResizable(true);
+    vl->addWidget(scroll);
     QDialogButtonBox* bb = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     vl->addWidget(bb);

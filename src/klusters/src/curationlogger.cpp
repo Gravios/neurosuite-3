@@ -228,6 +228,7 @@ QString CurationLogger::actionName(ActionType t)
     case ActionType::MOVE_SPIKES:            return QStringLiteral("MOVE_SPIKES");
     case ActionType::UNDO:                   return QStringLiteral("UNDO");
     case ActionType::REDO:                   return QStringLiteral("REDO");
+    case ActionType::REORDER_PALETTE:        return QStringLiteral("REORDER_PALETTE");
     }
     return QStringLiteral("UNKNOWN");
 }

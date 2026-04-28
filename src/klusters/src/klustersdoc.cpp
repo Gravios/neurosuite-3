@@ -829,7 +829,7 @@ void KlustersDoc::setGain(int acquisitionGain){
     }
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //Ask the active view to take the modification into account immediately
     activeView->showAllWidgets();
@@ -843,7 +843,7 @@ void KlustersDoc::setBackgroundColor(const QColor &backgroundColor){
     }
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //Ask the active view to take the modification into account immediately
     activeView->showAllWidgets();
@@ -871,14 +871,11 @@ void KlustersDoc::setSelectionLineWidth(int w){
 
 void KlustersDoc::setTimeStepInSecond(int step){
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //Notify all the views of the modification
-    for(int i =0; i<viewList->count();++i){
-        KlustersView *view = viewList->at(i);
-        if(view != activeView) view->setTimeStepInSecond(step,false);
-        else view->setTimeStepInSecond(step,true);
-    }
+    for (KlustersView* view : *viewList)
+        view->setTimeStepInSecond(step, view == activeView);
 
     //Ask the active view to take the modification into account immediately
     activeView->showAllWidgets();
@@ -893,7 +890,7 @@ void KlustersDoc::setChannelPositions(QList<int>& positions){
     }
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //Ask the active view to take the modification into account immediately
     activeView->showAllWidgets();
@@ -902,12 +899,8 @@ void KlustersDoc::setChannelPositions(QList<int>& positions){
 void KlustersDoc::singleColorUpdate(int clusterId,KlustersView& activeView){
     //Notify all the views of the modification
 
-    for(int i =0; i<viewList->count();++i)
-    {
-        KlustersView *view = viewList->at(i);
-        if(view != &activeView) view->singleColorUpdate(clusterId,false);
-        else view->singleColorUpdate(clusterId,true);
-    }
+    for (KlustersView* view : *viewList)
+        view->singleColorUpdate(clusterId, view == &activeView);
 
     //Ask the active view to take the modification into account immediately
     activeView.showAllWidgets();
@@ -918,12 +911,8 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersV
     if(clusterColorList->isColorChanged()){
         //Notify all the views of the modification
 
-        for(int i =0; i<viewList->count();++i)
-        {
-            KlustersView *view = viewList->at(i);
-            if(view != &activeView) view->updateColors(false);
-            else view->updateColors(true);
-        }
+        for (KlustersView* view : *viewList)
+            view->updateColors(view == &activeView);
 
         //Reset the color status in clusterColors
         clusterColorList->resetAllColorStatus();
@@ -945,7 +934,7 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){
     clusterPalette.selectItems(clustersToShow);
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //The new selection of clusters only means for the active view
     activeView->shownClustersUpdate(clustersToShow);
@@ -960,15 +949,14 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,const QLi
 
     //Add the clusters which were shown and not part of the previous selected cluster pairs
     QList<int> mergedClusters = clustersToShow;
-    QList<int>::iterator clustersToAdd;
-    for(clustersToAdd = currentShownClusters.begin(); clustersToAdd != currentShownClusters.end(); ++clustersToAdd )
-        if(!previousSelectedClusterPairs.contains(*clustersToAdd)) mergedClusters.append(*clustersToAdd);
+    for (int c : currentShownClusters)
+        if (!previousSelectedClusterPairs.contains(c)) mergedClusters.append(c);
 
     //Update the palette of cluster
     clusterPalette.selectItems(mergedClusters);
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //The new selection of clusters only means for the active view
     activeView->shownClustersUpdate(mergedClusters);
@@ -991,7 +979,7 @@ void KlustersDoc::showAllClustersExcept(const QList<int>& clustersToHide){
     clusterPalette.selectItems(clustersToShow);
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //The new selection of clusters only means for the active view
     activeView->shownClustersUpdate(clustersToShow);
@@ -1005,15 +993,14 @@ void KlustersDoc::addClustersToActiveView(const QList<int>& clustersToShow){
     QList<int> currentShownClusters = clusterPalette.selectedClusters();
 
     QList<int> mergedClusters = clustersToShow;
-    QList<int>::iterator clustersToAdd;
-    for(clustersToAdd = currentShownClusters.begin(); clustersToAdd != currentShownClusters.end(); ++clustersToAdd )
-        mergedClusters.append(*clustersToAdd);
+    for (int v : currentShownClusters)
+        mergedClusters.append(v);
 
     //Update the palette of cluster
     clusterPalette.selectItems(mergedClusters);
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //The new selection of clusters only means for the active view
     activeView->shownClustersUpdate(mergedClusters);
@@ -1045,18 +1032,10 @@ void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeV
 
     //Notify all the views of the modification
 
-    for(int i =0; i<viewList->count();++i){
-        KlustersView *view = viewList->at(i);
-        if(view != &activeView){
-            view->groupedClustersUpdate(clustersToGroup,newClusterIdint,false);
-            //update the TraceView if any
-            view->updateTraceView(electrodeGroupID,clusterColorList,false);
-        }
-        else{
-            view->groupedClustersUpdate(clustersToGroup,newClusterIdint,true);
-            //update the TraceView if any
-            view->updateTraceView(electrodeGroupID,clusterColorList,true);
-        }
+    for (KlustersView* view : *viewList) {
+        const bool isActive = (view == &activeView);
+        view->groupedClustersUpdate(clustersToGroup, newClusterIdint, isActive);
+        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
     }
 
     //Notify the errorMatrixView of the modification
@@ -1210,18 +1189,10 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //Notify all the views of the modification
 
-    for(int i =0; i<viewList->count();++i){
-        KlustersView *view = viewList->at(i);
-        if(view != &activeView){
-            view->clustersDeletionUpdate(clustersToDelete,clusterId,false);
-            //update the TraceView if any
-            view->updateTraceView(electrodeGroupID,clusterColorList,false);
-        }
-        else{
-            view->clustersDeletionUpdate(clustersToDelete,clusterId,true);
-            //update the TraceView if any
-            view->updateTraceView(electrodeGroupID,clusterColorList,true);
-        }
+    for (KlustersView* view : *viewList) {
+        const bool isActive = (view == &activeView);
+            view->clustersDeletionUpdate(clustersToDelete,clusterId, isActive);
+            view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
     }
 
     //Notify the errorMatrixView of the modification
@@ -1277,7 +1248,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
     clusteringData->deleteSpikesFromClusters(region,clustersOfOrigin,destination,dimensionX,dimensionY,fromClusters,emptyClusters);
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //check if any spikes have been selected
     if(fromClusters.isEmpty()){
@@ -1319,18 +1290,10 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 
         //Notify all the views of the modification
 
-        for(int i =0; i<viewList->count();++i){
-            KlustersView *view = viewList->at(i);
-            if(view != activeView){
-                view->removeSpikesFromClustersInView(fromClusters,destination,emptyClusters,false);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,false);
-            }
-            else{
-                view->removeSpikesFromClustersInView(fromClusters,destination,emptyClusters,true);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,true);
-            }
+        for (KlustersView* view : *viewList) {
+            const bool isActive = (view == activeView);
+                view->removeSpikesFromClustersInView(fromClusters,destination,emptyClusters, isActive);
+                view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
         }
 
         //Notify the errorMatrixView of the modification
@@ -1360,19 +1323,82 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 // place ensures these paths can't drift apart and re-introduce bugs like
 // the missing palette refresh that hid DipSplit's freshly-created cluster.
 // ---------------------------------------------------------------------------
+bool KlustersDoc::moveClusterToEnd(int clusterId)
+{
+    if (!clusterColorList || !clusterColorList->contains(clusterId))
+        return false;
+    // No-op if already at the end.  itemId() is BY_INDEX, so the last
+    // element's itemId equals clusterId iff it's already at the end.
+    const int n = clusterColorList->numberOfItems();
+    if (n > 0 && clusterColorList->itemId(n - 1) == clusterId)
+        return true;
+
+    // Snapshot pre-action state for undo.  prepareUndo() (no args) pushes
+    // empty added/modified/deleted lists onto the undo stack and snapshots
+    // clusterColorList — exactly what we need: the spike table is unchanged
+    // by a re-order, so no Data::prepareUndo is required.  The matching
+    // KlustersDoc::undo path will see empty data lists and skip the spike
+    // table swap (clearing caches as a side-effect, which is fine).
+    logBefore(CurationLogger::ActionType::REORDER_PALETTE,
+              QList<int>{ clusterId });
+    prepareUndo();
+
+    clusterColorList->moveItemToEnd(clusterId);
+
+    // Refresh the palette to reflect the new order.  Preserve the user's
+    // current selection; the palette itself stays focussed (caller's
+    // responsibility).
+    QList<int> shown;
+    KlustersView* activeView =
+        app()->activeView();
+    if (activeView) {
+        const QList<int>& cur = activeView->clusters();
+        for (int c : cur) shown.append(c);
+    }
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(shown);
+
+    logAfter(QList<int>{ clusterId });
+    return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::commitClusterCreation
+//
+// Shared post-mutation UI plumbing for any operation that produces ONE new
+// cluster derived from existing ones.  Used by createNewCluster (polygon
+// selection) and dipSplitCluster (bimodality split).  Keeping this in one
+// place ensures these paths can't drift apart and re-introduce bugs like
+// the missing palette refresh that hid DipSplit's freshly-created cluster.
+// ---------------------------------------------------------------------------
 void KlustersDoc::commitClusterCreation(int newId,
                                          QList<int>& fromClusters,
                                          QList<int>& emptiedClusters,
                                          KlustersView* activeView)
 {
-    // Register colour BEFORE prepareUndo so the colour-list undo snapshot
-    // includes the new cluster's entry.
+    // Undo bookkeeping FIRST — before mutating clusterColorList.
+    //
+    // prepareUndo() deep-copies the current clusterColorList onto the undo
+    // stack and swaps in a fresh copy as the new "current".  If we append
+    // the new cluster's colour BEFORE this snapshot, both the snapshot AND
+    // the new current contain the new cluster — so when the user later
+    // undoes the action, the colour-list rolls back to a state that still
+    // has the new cluster's entry, even though Data::undo has rolled the
+    // spike table back to a state where the new cluster has no spikes.
+    // The palette then renders an icon for a cluster that no longer
+    // exists in Data; clicking it dereferences nothing → segfault.
+    //
+    // The matching pattern in groupClusters (line 1032) gets this right:
+    // prepareUndo is called BEFORE clusterColorList->append.
+    prepareUndo(newId, fromClusters, emptiedClusters);
+
+    // Register colour AFTER the snapshot is captured — this puts newId
+    // into the post-action clusterColorList, which is what the view
+    // notifications below need to look up its colour.
     QColor color;
     color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10, 200, 255);
     clusterColorList->append(newId, color);
-
-    // Undo bookkeeping.
-    prepareUndo(newId, fromClusters, emptiedClusters);
 
     // Build clustersToShow: active view's current set + new cluster −
     // emptied clusters.
@@ -1442,7 +1468,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
     QList <int> emptyClusters;
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     // Snapshot source clusters before the data mutation
     logBefore(CurationLogger::ActionType::SPLIT,
@@ -1480,7 +1506,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
     QList <int> emptyClusters;
     QList<int> clustersToShow(clustersOfOrigin);
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     logBefore(CurationLogger::ActionType::SPLIT_N,
               QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
@@ -1519,18 +1545,10 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
 
         //Notify all the views of the modification
 
-        for(int i =0; i<viewList->count();++i){
-            KlustersView *view = viewList->at(i);
-            if(view != activeView){
-                view->addNewClustersToView(fromToNewClusterIds,emptyClusters,false);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,false);
-            }
-            else{
-                view->addNewClustersToView(fromToNewClusterIds,emptyClusters,true);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,true);
-            }
+        for (KlustersView* view : *viewList) {
+            const bool isActive = (view == activeView);
+                view->addNewClustersToView(fromToNewClusterIds,emptyClusters, isActive);
+                view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
         }
 
         //Notify the errorMatrixView of the modification
@@ -1858,9 +1876,8 @@ void KlustersDoc::prepareUndo(QMap<int,int> clusterIdsOldNew,QMap<int,int> clust
 void KlustersDoc::prepareReclusteringUndo(QList<int>& newClusters,QList<int>& deletedClusters){
     //Create a new list of created clusters
     QList<int>* addedClustersTemp = new QList<int>();
-    QList<int>::iterator iterator;
-    for(iterator = newClusters.begin(); iterator != newClusters.end(); ++iterator)
-        addedClustersTemp->append(*iterator);
+    for (int v : newClusters)
+        addedClustersTemp->append(v);
 
     //Create a new list of modified clusters
     QList<int>* modifiedClustersTemp = new QList<int>();
@@ -1882,7 +1899,7 @@ void KlustersDoc::undo(){
     modified = true;
 
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     if(!activeView)
         return;
@@ -1913,18 +1930,10 @@ void KlustersDoc::undo(){
 
             //Notify all the views of the undo
 
-            for(int i =0; i<viewList->count();++i) {
-                KlustersView *view = viewList->at(i);
-                if(view != activeView){
-                    view->undoRenumbering(clusterIdsNewOldMap[nbUndo + 1],false);
-                    //update the TraceView if any
-                    view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                }
-                else{
-                    view->undoRenumbering(clusterIdsNewOldMap[nbUndo + 1],true);
-                    //update the TraceView if any
-                    view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                }
+            for (KlustersView* view : *viewList) {
+                const bool isActive = (view == activeView);
+                    view->undoRenumbering(clusterIdsNewOldMap[nbUndo + 1], isActive);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
             }
 
             //Notify the errorMatrixView of the modification
@@ -1940,18 +1949,10 @@ void KlustersDoc::undo(){
             //Notify all the views of the undo
             if(addedClusters->size() > 0 && modifiedClusters->size() > 0){
                 NS3_DIAG() << "addedClusters->size() > 0 && modifiedClusters->size() > 0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->undo(*addedClusters,*modifiedClusters,false);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->undo(*addedClusters,*modifiedClusters,true);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                        view->undo(*addedClusters,*modifiedClusters, isActive);
+                        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -1959,18 +1960,10 @@ void KlustersDoc::undo(){
             }
             else if(!addedClusters->isEmpty() && modifiedClusters->isEmpty()){
                 NS3_DIAG() << "addedClusters->size() > 0 && modifiedClusters->size() == 0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->undoAddedClusters(*addedClusters,false);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->undoAddedClusters(*addedClusters,true);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                        view->undoAddedClusters(*addedClusters, isActive);
+                        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -1978,18 +1971,10 @@ void KlustersDoc::undo(){
             }
             else if(addedClusters->isEmpty() && !modifiedClusters->isEmpty()){
                 NS3_DIAG() << "addedClusters->size() == 0 && modifiedClusters->size() > 0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->undoModifiedClusters(*modifiedClusters,false);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->undoModifiedClusters(*modifiedClusters,true);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                        view->undoModifiedClusters(*modifiedClusters, isActive);
+                        view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -1998,18 +1983,10 @@ void KlustersDoc::undo(){
             //////!!!!This last condition should not be reach anymore, to test and remove.!!!!!////
             else if(addedClusters->size() == 0 && modifiedClusters->size() == 0){
                 NS3_DIAG() << "addedClusters->size() == 0 && modifiedClusters->size() == 0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->undo(false);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->undo(true);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                    view->undo(isActive);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
             }
         }
@@ -2066,7 +2043,7 @@ void KlustersDoc::undo(){
 
 void KlustersDoc::redo(){
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     //Update the boolean modified here as every redo action implies a call to the function.
     //The user can save and make an redo just behind, in that case the document is modified.
@@ -2105,18 +2082,10 @@ void KlustersDoc::redo(){
             renumberingRedoList.removeAll(nbUndo);
 
             //Notify all the views of the undo
-            for(int i =0; i<viewList->count();++i) {
-                KlustersView *view = viewList->at(i);
-                if(view != activeView){
-                    view->redoRenumbering(clusterIdsOldNewMap[nbUndo],false);
-                    //update the TraceView if any
-                    view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                }
-                else{
-                    view->redoRenumbering(clusterIdsOldNewMap[nbUndo],true);
-                    //update the TraceView if any
-                    view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                }
+            for (KlustersView* view : *viewList) {
+                const bool isActive = (view == activeView);
+                    view->redoRenumbering(clusterIdsOldNewMap[nbUndo], isActive);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
             }
 
             //Notify the errorMatrixView of the modification
@@ -2135,18 +2104,10 @@ void KlustersDoc::redo(){
             //Notify all the views of the undo
             if(addedClusters->size() > 0 && modifiedClusters->size() > 0){
                 NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() > 0 && modifiedClusters->size()>0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->redo(*addedClusters,*modifiedClusters,isModifiedByDeletion,false,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->redo(*addedClusters,*modifiedClusters,isModifiedByDeletion,true,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                    view->redo(*addedClusters, *modifiedClusters, isModifiedByDeletion, isActive, *deletedClusters);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -2154,18 +2115,10 @@ void KlustersDoc::redo(){
             }
             else if(addedClusters->size() > 0 && modifiedClusters->size() == 0){
                 NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() > 0 && modifiedClusters->size()==0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->redoAddedClusters(*addedClusters,false,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->redoAddedClusters(*addedClusters,true,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                    view->redoAddedClusters(*addedClusters, isActive, *deletedClusters);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -2173,18 +2126,10 @@ void KlustersDoc::redo(){
             }
             else if(addedClusters->size() == 0 && modifiedClusters->size() > 0){
                 NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() == 0 && modifiedClusters->size()>0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->redoModifiedClusters(*modifiedClusters,isModifiedByDeletion,false,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->redoModifiedClusters(*modifiedClusters,isModifiedByDeletion,true,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                    view->redoModifiedClusters(*modifiedClusters, isModifiedByDeletion, isActive, *deletedClusters);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -2192,18 +2137,10 @@ void KlustersDoc::redo(){
             }
             else if(addedClusters->size() == 0 && modifiedClusters->size() == 0){
                 NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() == 0 && modifiedClusters->size() ==0";
-                for(int i =0; i<viewList->count();++i) {
-                    KlustersView *view = viewList->at(i);
-                    if(view != activeView){
-                        view->redo(false,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,false);
-                    }
-                    else{
-                        view->redo(true,*deletedClusters);
-                        //update the TraceView if any
-                        view->updateTraceView(electrodeGroupID,clusterColorList,true);
-                    }
+                for (KlustersView* view : *viewList) {
+                    const bool isActive = (view == activeView);
+                    view->redo(isActive, *deletedClusters);
+                    view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
@@ -2250,7 +2187,7 @@ void KlustersDoc::redo(){
 
 void KlustersDoc::renumberClusters(){
     //Get the active view.
-    KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+    KlustersView* activeView = app()->activeView();
 
     QMap<int,int> clusterIdsOldNew;
     QMap<int,int> clusterIdsNewOld;
@@ -2373,7 +2310,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
 
     if(!isProcessWidget){
         //Get the active view.
-        KlustersView* activeView = static_cast<KlustersApp*>(parent)->activeView();
+        KlustersView* activeView = app()->activeView();
 
         QList<int> clustersToShow;
         QList<int>::const_iterator iterator;
@@ -2398,18 +2335,10 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         }
 
         //Notify all the views of the modification
-        for(int i =0; i<viewList->count();++i){
-            KlustersView* view = viewList->at(i);
-            if(view != activeView){
-                view->addNewClustersToView(clustersToRecluster,reclusteredClusterList,false);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,false);
-            }
-            else{
-                view->addNewClustersToView(clustersToRecluster,reclusteredClusterList,true);
-                //update the TraceView if any
-                view->updateTraceView(electrodeGroupID,clusterColorList,true);
-            }
+        for (KlustersView* view : *viewList) {
+            const bool isActive = (view == activeView);
+                view->addNewClustersToView(clustersToRecluster,reclusteredClusterList, isActive);
+                view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
         }
 
         //Notify the errorMatrixView of the modification
@@ -3892,12 +3821,15 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // ── Per-spike waveform re-extraction helper ───────────────────────────
     // Reads raw waveform from .fil into channel-major layout [ch*nSamp+s].
-    // Also returns the PRECEDING sample's group-channel values so the
-    // stderiv temporal-difference at output sample 0 has the correct
-    // baseline (matches process_extractspikes_stderiv's streaming behaviour).
-    // prevSample is empty when the spike sits at the very start of the
-    // recording (startSample == 0); the transform falls back to prev=0 there,
-    // which matches the canonical t=0-of-recording boundary case.
+    //
+    // The `prevSample` out-parameter is retained on the signature for
+    // call-site compatibility but is always returned empty.  The canonical
+    // stderiv pipeline (process_extractspikes_stderiv, process_pca_stderiv)
+    // applies the temporal first-difference per spike with sdiff[-1] = 0,
+    // so the value of the raw sample preceding the spike window has no
+    // effect on the transformed waveform — see the comment on `prev` in
+    // applyStderivTransform below.  Earlier builds read it; that read is
+    // now elided.
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
 
     auto extractWaveform = [&](int64_t ts,
@@ -3909,33 +3841,21 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
         if (startSample < 0 || startSample + nSamp > totalSamples) return false;
 
-        // Read the window plus one preceding raw sample (when available).
-        const bool hasPrev   = (startSample > 0);
-        const int64_t readStart = hasPrev ? (startSample - 1) : startSample;
-        const int     readN     = hasPrev ? (nSamp + 1)        : nSamp;
-        const off_t rawOff = static_cast<off_t>(readStart)
+        // Read exactly the spike window.
+        const off_t rawOff = static_cast<off_t>(startSample)
                            * static_cast<off_t>(totalNbChan) * 2;
         if (fseeko(filF, rawOff, SEEK_SET) != 0) return false;
         std::vector<int16_t> rawFrame(
-            static_cast<size_t>(readN) * static_cast<size_t>(totalNbChan));
+            static_cast<size_t>(nSamp) * static_cast<size_t>(totalNbChan));
         if (fread(rawFrame.data(), 2, rawFrame.size(), filF) != rawFrame.size())
             return false;
 
-        // Group-channel slice for the spike window itself
-        const int spkStart = hasPrev ? 1 : 0;
+        // Group-channel slice — channel-major output layout [ch*nSamp+s].
         for (int s = 0; s < nSamp; ++s)
             for (int ci = 0; ci < nChan; ++ci)
                 wav[static_cast<size_t>(ci * nSamp + s)] =
-                    rawFrame[static_cast<size_t>((spkStart + s) * totalNbChan
+                    rawFrame[static_cast<size_t>(s * totalNbChan
                              + groupChannels[ci])];
-
-        // Group-channel slice for the preceding sample (raw, untransformed)
-        if (hasPrev) {
-            prevSample.assign(static_cast<size_t>(nChan), 0);
-            for (int ci = 0; ci < nChan; ++ci)
-                prevSample[static_cast<size_t>(ci)] =
-                    rawFrame[static_cast<size_t>(groupChannels[ci])];
-        }
         return true;
     };
 
@@ -3943,10 +3863,24 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // Returns transformed waveform in sample-major layout [s*nChan+ch]
     // (ALL nChan channels, including the linearly-dependent last one).
     //
-    // prevRaw (size nChan or empty): raw group-channel values for the sample
-    // immediately PRECEDING the spike window.  Used to seed the temporal
-    // first-difference at output sample 0.  Empty ⇒ prev=0 (matches the
-    // canonical t=0-of-recording boundary in process_extractspikes_stderiv).
+    // prevRaw: kept for ABI compatibility with existing call sites; ignored.
+    // The canonical pipeline applies the temporal first-difference per
+    // spike with sdiff[-1] = 0, so the actual preceding raw sample is
+    // not used.  See the comment on `prev` inside the body for the full
+    // rationale.
+    // Saturation counters — populated by applyStderivTransform via lambda
+    // capture-by-reference.  Reported once after the main loop.  The int16
+    // .spk format inherently clips spatial derivatives that exceed ±32768,
+    // and temporal first-differences between two identically-saturated
+    // samples are exactly 0 (sd[s] - sd[s-1] = -32768 - -32768 = 0).  This
+    // produces visible "zero plateau" segments on the largest-amplitude
+    // spikes in a cluster — a property of the canonical pipeline, not a
+    // nudge bug, but worth surfacing so it can be distinguished from real
+    // corruption.
+    int64_t spatialClampCount  = 0;
+    int64_t temporalClampCount = 0;
+    int64_t temporalZeroCount  = 0;  // # of (sd - prev = 0) events
+
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
                                      const std::vector<int16_t>& prevRaw,
                                      std::vector<int16_t>& out) {
@@ -3962,29 +3896,38 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             for (int ci = 0; ci < nChan; ++ci) {
                 const int val = wavCM[static_cast<size_t>(ci * nSamp + s)];
                 int sd = nChan * val - sum;
-                if (sd >  32767) sd =  32767;
-                if (sd < -32768) sd = -32768;
+                if (sd >  32767) { sd =  32767; ++spatialClampCount; }
+                else if (sd < -32768) { sd = -32768; ++spatialClampCount; }
                 out[static_cast<size_t>(s * nChan + ci)] = static_cast<int16_t>(sd);
             }
         }
 
-        // Initial `prev` = SD of the sample BEFORE the window.  Computed from
-        // the raw group-channel values of that sample using the same all-pairs
-        // formula.  When no previous sample exists (recording boundary), use
-        // zero, matching the canonical t=0-of-recording behaviour.
+        // Boundary condition: sdiff[-1, ch] = 0 PER SPIKE.  This is the
+        // canonical contract used by both ndm_extractspikes_stderiv (Pass 2
+        // waveform write) and ndm_pca_stderiv (basis training); see the
+        // matching comments at the temporal-difference loops in those tools.
+        // Each spike's transformed waveform is treated as starting from
+        // baseline, so output sample 0 equals the spatial derivative itself
+        // rather than a true first-difference against the preceding raw
+        // sample.  This is the convention the existing .spkD / .fetD /
+        // .pcaD on disk were built on.
+        //
+        // Earlier nudge builds primed `prev` with the spatial derivative of
+        // the *actual* preceding raw sample.  That is theoretically the
+        // proper temporal first-difference, but it does not match the
+        // canonical pipeline: for typical baseline-dominant signal just
+        // before a spike, sd[0] − sd[−1] ≈ 0, so the first sample of every
+        // nudged waveform collapsed to ~zero.  Visible symptom: a flat-line
+        // "step" at the start of nudged spike traces in the waveform view.
+        // Quiet symptom: nudged .fetD rows land in a slightly off-axis
+        // subspace of the .pcaD eigenvector basis the original spikes were
+        // projected into, biasing the refeaturization.
+        //
+        // `prevRaw` is consequently no longer used by this transform.  It
+        // is retained on the call signature so existing call sites compile
+        // unchanged; the matching read in extractWaveform has been pruned.
+        (void)prevRaw;
         std::vector<int16_t> prev(static_cast<size_t>(nChan), 0);
-        if (static_cast<int>(prevRaw.size()) == nChan) {
-            int sumP = 0;
-            for (int ci = 0; ci < nChan; ++ci)
-                sumP += static_cast<int>(prevRaw[static_cast<size_t>(ci)]);
-            for (int ci = 0; ci < nChan; ++ci) {
-                int sdP = nChan * static_cast<int>(prevRaw[static_cast<size_t>(ci)])
-                        - sumP;
-                if (sdP >  32767) sdP =  32767;
-                if (sdP < -32768) sdP = -32768;
-                prev[static_cast<size_t>(ci)] = static_cast<int16_t>(sdP);
-            }
-        }
 
         // Step 2: temporal first-difference in-place, using prev as the
         // baseline for output sample 0.
@@ -3994,8 +3937,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 const int16_t sd  = row[ci];
                 int diff = static_cast<int>(sd)
                          - static_cast<int>(prev[static_cast<size_t>(ci)]);
-                if (diff >  32767) diff =  32767;
-                if (diff < -32768) diff = -32768;
+                if (diff >  32767) { diff =  32767; ++temporalClampCount; }
+                else if (diff < -32768) { diff = -32768; ++temporalClampCount; }
+                if (diff == 0 && s > 0) ++temporalZeroCount;
                 prev[static_cast<size_t>(ci)] = sd;  // save SD, not diff
                 row[ci] = static_cast<int16_t>(diff);
             }
@@ -4004,9 +3948,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // ── Feature projection helper ─────────────────────────────────────────
     // wav: channel-major [ch*nSamp+s] — raw OR stderiv depending on isStderiv.
-    // prevRaw: raw group-channel values for the sample preceding the window
-    //          (passed through to applyStderivTransform; empty when the spike
-    //          sits at the very start of the recording).
+    // prevRaw: kept on the signature for ABI compatibility; ignored.  The
+    //          stderiv transform now uses sdiff[-1]=0 per spike, matching
+    //          the canonical pipeline that built .pcaD.
     // Returns full feature row (nFeatCols int64_t + timestamp placeholder).
     auto makeFetRow = [&](int64_t ts,
                           const std::vector<int16_t>& wavRaw,
@@ -4080,6 +4024,182 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     }
     const int64_t N = static_cast<int64_t>(spkTable.nbOfColumns());
 
+    // ── Pre-nudge invariant self-check ───────────────────────────────────
+    // Klusters' nudge — and any other tool that re-reads .fil at .res
+    // offsets — assumes:
+    //
+    //     .spk[i] peak  ≡  .fil at file-sample .res[i]
+    //
+    // This holds after canonical extractspikes (writes refined-peak
+    // position to .res) and after the patched alignspikes (updates .res
+    // to extTs = resTs + shifts).  An unpatched alignspikes leaves .res
+    // pointing at the original detection-threshold position while
+    // re-extracting .spk centred on the refined peak — every nudge then
+    // lands at a window mispositioned by `shifts[i]` samples relative
+    // to where the peak actually is in .fil.
+    //
+    // Detect this by reading the on-disk .spk for a small sample of
+    // spikes (first, middle, last in the cluster), finding the
+    // sum-|stderiv| peak position within the spike window, and comparing
+    // to peakSamp0.  A consistent offset across the sample indicates the
+    // invariant is broken; warn loudly so the user can re-run the
+    // patched pipeline rather than producing more corrupted data.
+    {
+        const QString readPath = QFileInfo(m_pendingSpkPath).exists()
+            ? m_pendingSpkPath : m_origSpkPath;
+        FILE* fr = fopen(readPath.toLocal8Bit().constData(), "rb");
+        if (fr && N > 0) {
+            const std::vector<int64_t> probeIdx = {
+                0,
+                N / 2,
+                N - 1,
+            };
+            std::vector<int> argmaxOffsets;
+            argmaxOffsets.reserve(probeIdx.size());
+            std::vector<int16_t> buf(static_cast<size_t>(nChan * nSamp));
+            for (int64_t pIdx : probeIdx) {
+                if (pIdx < 0 || pIdx >= N) continue;
+                const dataType row = static_cast<dataType>(
+                    spkTable(1, static_cast<dataType>(pIdx + 1)));
+                const int64_t pos0 = static_cast<int64_t>(row) - 1;
+                if (fseeko(fr, pos0 * static_cast<off_t>(bytesPerSpike),
+                           SEEK_SET) != 0) continue;
+                if (fread(buf.data(), 2, buf.size(), fr) != buf.size())
+                    continue;
+                // Sum |.spk| across channels per sample; in stderiv mode
+                // this peaks at the refined-peak position; in raw mode it
+                // peaks at the same place modulo sign (we use abs so sign
+                // doesn't matter).  Layout depends on isStderivSpk: stderiv
+                // is sample-major [s*nChan+c], raw is channel-major.
+                int bestS = 0;
+                int64_t bestE = -1;
+                for (int s = 0; s < nSamp; ++s) {
+                    int64_t e = 0;
+                    for (int ci = 0; ci < nChan; ++ci) {
+                        const size_t k = isStderivSpk
+                            ? static_cast<size_t>(s * nChan + ci)
+                            : static_cast<size_t>(ci * nSamp + s);
+                        e += std::abs((int)buf[k]);
+                    }
+                    if (e > bestE) { bestE = e; bestS = s; }
+                }
+                argmaxOffsets.push_back(bestS - peakSamp0);
+            }
+            fclose(fr);
+            // Median absolute offset across the probes.  If the median is
+            // > 1 sample, the .spk peak is consistently NOT at peakSamp0
+            // — strongly suggests the .res/.spk invariant is broken.
+            if (argmaxOffsets.size() >= 2) {
+                std::vector<int> abs_off;
+                abs_off.reserve(argmaxOffsets.size());
+                for (int o : argmaxOffsets) abs_off.push_back(std::abs(o));
+                std::sort(abs_off.begin(), abs_off.end());
+                const int median = abs_off[abs_off.size() / 2];
+                if (median > 1) {
+                    QString offTxt;
+                    for (int o : argmaxOffsets)
+                        offTxt += QString::number(o) + ' ';
+                    qWarning().noquote() << QString(
+                        "[nudge] cluster %1: pre-nudge invariant check "
+                        "FAILED — .spk peak is %2 samples off peakSamp0=%3 "
+                        "(per-probe offsets: %4). The .res/.spk peak "
+                        "invariant is broken; nudge will corrupt the .spk "
+                        "for this cluster.  Most likely cause: "
+                        "ndm_alignspikes was run with an old binary that "
+                        "does not update .res.  Rebuild ndmanager-plugins, "
+                        "then re-run: ndm_extractspikes_stderiv → "
+                        "ndm_alignspikes → ndm_pca_stderiv.")
+                        .arg(clusterId).arg(median).arg(peakSamp0)
+                        .arg(offTxt.trimmed());
+                    if (auto* sb = app() ? app()->statusBar() : nullptr)
+                        sb->showMessage(QString(
+                            "Nudge aborted: .spk peak is %1 samples "
+                            "off peakSamp0 — re-run the alignment "
+                            "pipeline.").arg(median), 8000);
+                    fclose(spkW); fclose(resW); fclose(fetW);
+                    if (filF) fclose(filF);
+                    return false;
+                }
+            }
+        } else if (fr) {
+            fclose(fr);
+        }
+    }
+
+    // Defensive accounting — surface I/O failures rather than silently
+    // writing at stale positions.  These should normally remain zero.
+    int64_t spkSeekFail   = 0;
+    int64_t resSeekFail   = 0;
+    int64_t fetSeekFail   = 0;
+    int64_t shortSpkWrite = 0;
+    int64_t shortResWrite = 0;
+    int64_t shortFetWrite = 0;
+    int64_t boundarySkip  = 0;  // extractWaveform returned false
+    int64_t fetReadback   = 0;  // # spikes whose .fet readback differed from intended
+    int64_t spkReadback   = 0;  // # spikes whose .spk readback differed from intended
+
+    // Per-spike trace mode: when NS3_VERBOSE is set, dump detailed numbers for
+    // the first nudged spike so the user can verify that:
+    //   (a) extractWaveform is reading exactly nSamp consecutive samples from
+    //       the right offset (no half-window mismatch),
+    //   (b) applyStderivTransform produces values that match what
+    //       process_extractspikes_stderiv would on the same raw window,
+    //   (c) the on-disk .fet bytes after our write match the values we asked
+    //       to write (ruling out concurrent thread interference),
+    //   (d) the feature delta is in line with what process_refeaturize_stderiv
+    //       would compute for a +1-sample shift of the same spike.
+    // The reference computation can be reproduced offline by running:
+    //   process_refeaturize_stderiv -p session.pcaD.G -w nSamp -n (nChan-1) \
+    //                                -i one-spike-index session.spkD.G
+    // on the .spkD slice corresponding to the nudged spike.
+    const bool traceFirst = qEnvironmentVariableIsSet("NS3_VERBOSE");
+
+    // ── Mean-waveform dump (gated by NUDGE_DUMP_MEAN env var) ─────────────
+    // When enabled, walk every spike in the cluster twice — once before the
+    // main rewrite loop and once after — accumulating the mean waveform
+    // straight from the bytes on disk in .spk.pending.  Both means are
+    // written to a single text file in the session directory so the user
+    // can upload it and we can plot before/after side by side.  This is
+    // the most direct test for "nudge moves the post-peak portion of the
+    // waveform by more than the pre-peak portion": if true, the after-mean
+    // will show a non-uniform horizontal shift relative to the before-mean.
+    // Reads use a separate read-only FILE* so we don't perturb the spkW
+    // cursor that the main loop relies on.
+    const bool dumpMean = qEnvironmentVariableIsSet("NUDGE_DUMP_MEAN");
+    auto computeMean = [&](std::vector<double>& meanCM /* [ch*nSamp+s] */)
+                          -> int64_t {
+        meanCM.assign(static_cast<size_t>(nChan * nSamp), 0.0);
+        FILE* fr = fopen(m_pendingSpkPath.toLocal8Bit().constData(), "rb");
+        if (!fr) return 0;
+        std::vector<int16_t> buf(static_cast<size_t>(nChan * nSamp));
+        int64_t nRead = 0;
+        for (int64_t i = 0; i < N; ++i) {
+            const dataType row = static_cast<dataType>(
+                spkTable(1, static_cast<dataType>(i + 1)));
+            const int64_t pos0 = static_cast<int64_t>(row) - 1;
+            if (fseeko(fr, pos0 * static_cast<off_t>(bytesPerSpike),
+                       SEEK_SET) != 0) continue;
+            if (fread(buf.data(), 2, buf.size(), fr) != buf.size()) continue;
+            // .spk layout is sample-major [s*nChan+ci]; accumulate to
+            // channel-major mean buffer [ci*nSamp+s] so the file dump
+            // reads naturally one channel at a time.
+            for (int s = 0; s < nSamp; ++s)
+                for (int ci = 0; ci < nChan; ++ci)
+                    meanCM[static_cast<size_t>(ci * nSamp + s)] +=
+                        buf[static_cast<size_t>(s * nChan + ci)];
+            ++nRead;
+        }
+        fclose(fr);
+        if (nRead > 0)
+            for (auto& v : meanCM)
+                v /= static_cast<double>(nRead);
+        return nRead;
+    };
+
+    std::vector<double> meanBefore;
+    int64_t nReadBefore = 0;
+    if (dumpMean) nReadBefore = computeMean(meanBefore);
+
     for (int64_t i = 0; i < N; ++i) {
         const dataType row  = static_cast<dataType>(
             spkTable(1, static_cast<dataType>(i + 1)));
@@ -4090,10 +4210,13 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // have been zeroed by an earlier buggy build (gotWav=false wrote zeros);
         // .res.pending is always written atomically per spike and is safe to use.
         int64_t oldTs64 = 0;
-        fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
-               SEEK_SET);
-        if (fread(&oldTs64, sizeof(int64_t), 1, resW) != 1)
+        if (fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+                   SEEK_SET) != 0) {
+            ++resSeekFail;
             oldTs64 = static_cast<int64_t>(clusteringData->featureValue(row, timeDim));
+        } else if (fread(&oldTs64, sizeof(int64_t), 1, resW) != 1) {
+            oldTs64 = static_cast<int64_t>(clusteringData->featureValue(row, timeDim));
+        }
         const dataType oldTs = static_cast<dataType>(oldTs64);
         dataType newTs = oldTs + static_cast<dataType>(deltaSamples);
         if (newTs < 0) newTs = 0;
@@ -4102,63 +4225,192 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
         const int64_t ts64 = static_cast<int64_t>(newTs);
 
-        // Re-extract waveform at new timestamp.  prevSample carries the raw
-        // group-channel values for the sample preceding the spike window —
-        // needed to seed the stderiv temporal-difference at output sample 0.
+        // Capture the in-memory feature row BEFORE the write, so we can show
+        // the user the feature delta and compare against an offline reference.
+        std::vector<int64_t> oldFetRow;
+        if (traceFirst && i == 0 && pca.valid()) {
+            oldFetRow.reserve(static_cast<size_t>(nFeatCols));
+            for (int col = 0; col < nFeatCols; ++col)
+                oldFetRow.push_back(static_cast<int64_t>(
+                    clusteringData->featureValue(row, col + 1)));
+        }
+
+        // Re-extract waveform at new timestamp.  prevSample is always
+        // returned empty (canonical contract: temporal first-difference
+        // boundary is sdiff[-1]=0 per spike); kept on the call signature
+        // for compatibility with applyStderivTransform.
         std::vector<int16_t> wav;
         std::vector<int16_t> prevSample;
         const bool gotWav = extractWaveform(ts64, wav, prevSample);
+        if (!gotWav) ++boundarySkip;
 
         // Write .spk at new position.  Use spkIsTransformed (via isStderivSpk),
         // not the feature-space flag: .spk format is independent of .fet format.
+        std::vector<int16_t> spkRowWritten;  // kept for trace + readback
         if (gotWav) {
-            fseeko(spkW, static_cast<off_t>(pos0) * static_cast<off_t>(bytesPerSpike),
-                   SEEK_SET);
-            if (isStderivSpk) {
+            if (fseeko(spkW, static_cast<off_t>(pos0) * static_cast<off_t>(bytesPerSpike),
+                       SEEK_SET) != 0) {
+                ++spkSeekFail;
+            } else if (isStderivSpk) {
                 // stderiv pipeline: .spk stores transformed waveform
                 // (all nChan channels, sample-major, matching ndm_extractspikes_stderiv)
-                std::vector<int16_t> spkRow;
-                applyStderivTransform(wav, prevSample, spkRow);
-                fwrite(spkRow.data(), 2, static_cast<size_t>(nChan * nSamp), spkW);
+                applyStderivTransform(wav, prevSample, spkRowWritten);
+                const size_t want = static_cast<size_t>(nChan * nSamp);
+                if (fwrite(spkRowWritten.data(), 2, want, spkW) != want) ++shortSpkWrite;
             } else {
                 // raw pipeline: convert channel-major → sample-major
-                std::vector<int16_t> spkRow(static_cast<size_t>(nChan * nSamp));
+                spkRowWritten.assign(static_cast<size_t>(nChan * nSamp), 0);
                 for (int s = 0; s < nSamp; ++s)
                     for (int ch = 0; ch < nChan; ++ch)
-                        spkRow[static_cast<size_t>(s * nChan + ch)] =
+                        spkRowWritten[static_cast<size_t>(s * nChan + ch)] =
                             wav[static_cast<size_t>(ch * nSamp + s)];
-                fwrite(spkRow.data(), 2, static_cast<size_t>(nChan * nSamp), spkW);
+                const size_t want = static_cast<size_t>(nChan * nSamp);
+                if (fwrite(spkRowWritten.data(), 2, want, spkW) != want) ++shortSpkWrite;
             }
         }
 
         // Write .res
-        fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
-               SEEK_SET);
-        fwrite(&ts64, sizeof(int64_t), 1, resW);
+        if (fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+                   SEEK_SET) != 0) {
+            ++resSeekFail;
+        } else if (fwrite(&ts64, sizeof(int64_t), 1, resW) != 1) {
+            ++shortResWrite;
+        }
 
         // Reproject and write .fet — only when waveform was successfully read.
         // When gotWav=false (spike at recording boundary or .fil unreadable),
         // preserve the existing feature values rather than zeroing them out.
+        std::vector<int64_t> fetRowWritten;
         if (gotWav) {
-            const auto fetRow = makeFetRow(ts64, wav, prevSample, row);
-            if (!fetRow.empty()) {
+            fetRowWritten = makeFetRow(ts64, wav, prevSample, row);
+            if (!fetRowWritten.empty()) {
                 // Update on-disk .fetD
                 const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
                     + static_cast<off_t>(pos0) * static_cast<off_t>(timeDim)
                       * static_cast<off_t>(sizeof(int64_t));
-                fseeko(fetW, fetOff, SEEK_SET);
-                fwrite(fetRow.data(), sizeof(int64_t), static_cast<size_t>(timeDim), fetW);
+                if (fseeko(fetW, fetOff, SEEK_SET) != 0) {
+                    ++fetSeekFail;
+                } else {
+                    const size_t want = static_cast<size_t>(timeDim);
+                    if (fwrite(fetRowWritten.data(), sizeof(int64_t), want, fetW) != want)
+                        ++shortFetWrite;
+                    fflush(fetW);
+                }
+
+                // Read-back verification: confirm the bytes on disk now match
+                // what we asked to write.  A mismatch would indicate either a
+                // concurrent writer (no other code path should be touching
+                // .fetD.pending while nudge holds spkW/resW/fetW open) or a
+                // filesystem-level reorder; either is a bug we want to catch.
+                if (fseeko(fetW, fetOff, SEEK_SET) == 0) {
+                    std::vector<int64_t> rb(static_cast<size_t>(timeDim), 0LL);
+                    const size_t got = fread(rb.data(), sizeof(int64_t),
+                                             static_cast<size_t>(timeDim), fetW);
+                    if (got == static_cast<size_t>(timeDim)) {
+                        for (int col = 0; col < timeDim; ++col) {
+                            if (rb[static_cast<size_t>(col)]
+                                != fetRowWritten[static_cast<size_t>(col)]) {
+                                ++fetReadback;
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 // Update in-memory feature table (PCA dims only)
                 if (pca.valid()) {
                     QList<dataType> vals;
                     vals.reserve(nFeatCols);
                     for (int col = 0; col < nFeatCols; ++col)
-                        vals.append(static_cast<dataType>(fetRow[static_cast<size_t>(col)]));
+                        vals.append(static_cast<dataType>(
+                            fetRowWritten[static_cast<size_t>(col)]));
                     clusteringData->updateFeatureRow(row, vals);
                 }
             }
         }
+
+        // .spk read-back verification, mirroring the .fet check above.
+        if (gotWav && !spkRowWritten.empty()) {
+            if (fseeko(spkW, static_cast<off_t>(pos0)
+                       * static_cast<off_t>(bytesPerSpike), SEEK_SET) == 0) {
+                fflush(spkW);
+                std::vector<int16_t> rbSpk(spkRowWritten.size(), 0);
+                const size_t got = fread(rbSpk.data(), 2,
+                                         spkRowWritten.size(), spkW);
+                if (got == spkRowWritten.size()) {
+                    for (size_t k = 0; k < spkRowWritten.size(); ++k) {
+                        if (rbSpk[k] != spkRowWritten[k]) {
+                            ++spkReadback;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Per-spike trace for the first nudged spike.
+        if (traceFirst && i == 0 && gotWav) {
+            // Find detection channel (largest peak-to-peak in the raw window).
+            int detCh = 0;
+            int bestPp = -1;
+            for (int ci = 0; ci < nChan; ++ci) {
+                int16_t mn = INT16_MAX, mx = INT16_MIN;
+                for (int s = 0; s < nSamp; ++s) {
+                    const int16_t v = wav[static_cast<size_t>(ci * nSamp + s)];
+                    if (v < mn) mn = v;
+                    if (v > mx) mx = v;
+                }
+                const int pp = static_cast<int>(mx) - static_cast<int>(mn);
+                if (pp > bestPp) { bestPp = pp; detCh = ci; }
+            }
+
+            QString rawTxt;
+            for (int s = 0; s < std::min(nSamp, 12); ++s)
+                rawTxt += QString::number(
+                    wav[static_cast<size_t>(detCh * nSamp + s)]) + ' ';
+            qDebug().noquote() << QString(
+                "[nudge-trace] cluster=%1 spike=%2 (file pos %3) "
+                "oldTs=%4 newTs=%5 delta=%6 peakSamp0=%7 startSample=%8 detCh=%9")
+                .arg(clusterId).arg(i).arg(pos0)
+                .arg(static_cast<long long>(oldTs))
+                .arg(static_cast<long long>(newTs))
+                .arg(deltaSamples)
+                .arg(peakSamp0)
+                .arg(static_cast<long long>(ts64 - peakSamp0))
+                .arg(detCh);
+            qDebug().noquote() << QString(
+                "[nudge-trace]  raw[detCh,0..11]: %1").arg(rawTxt);
+
+            if (isStderivSpk && spkRowWritten.size()
+                >= static_cast<size_t>(nChan * std::min(nSamp, 12))) {
+                QString sdTxt;
+                for (int s = 0; s < std::min(nSamp, 12); ++s)
+                    sdTxt += QString::number(
+                        spkRowWritten[static_cast<size_t>(s * nChan + detCh)]) + ' ';
+                qDebug().noquote() << QString(
+                    "[nudge-trace]  sdWritten[detCh,0..11]: %1").arg(sdTxt);
+            }
+
+            if (!fetRowWritten.empty()) {
+                const int nShow = std::min(nFeatCols, 8);
+                QString oldF, newF, dF;
+                for (int c = 0; c < nShow; ++c) {
+                    const int64_t o = (c < (int)oldFetRow.size())
+                        ? oldFetRow[static_cast<size_t>(c)] : 0;
+                    const int64_t n = fetRowWritten[static_cast<size_t>(c)];
+                    oldF += QString::number(static_cast<long long>(o)) + ' ';
+                    newF += QString::number(static_cast<long long>(n)) + ' ';
+                    dF   += QString::number(static_cast<long long>(n - o)) + ' ';
+                }
+                qDebug().noquote() << QString(
+                    "[nudge-trace]  oldFet[0..%1]: %2").arg(nShow-1).arg(oldF);
+                qDebug().noquote() << QString(
+                    "[nudge-trace]  newFet[0..%1]: %2").arg(nShow-1).arg(newF);
+                qDebug().noquote() << QString(
+                    "[nudge-trace]  deltaFet[0..%1]: %2").arg(nShow-1).arg(dF);
+            }
+        }
+
         // Always update the timestamp (in-memory + .res), even if waveform
         // extraction failed — the timestamp itself is valid regardless.
         clusteringData->updateTimestamp(row, newTs);
@@ -4166,6 +4418,87 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     fclose(spkW); fclose(resW); fclose(fetW);
     if (filF) fclose(filF);
+
+    // ── Mean-waveform dump: AFTER pass + write file ────────────────────────
+    if (dumpMean) {
+        std::vector<double> meanAfter;
+        const int64_t nReadAfter = computeMean(meanAfter);
+
+        // Write next to the .spk.pending file with a unique timestamp so
+        // repeated nudges produce distinct dump files.
+        QFileInfo spkInfo(m_pendingSpkPath);
+        const QString outName = QString("nudge-meanwave-c%1-d%2-%3.txt")
+            .arg(clusterId).arg(deltaSamples)
+            .arg(QDateTime::currentSecsSinceEpoch());
+        const QString outPath = spkInfo.dir().absoluteFilePath(outName);
+
+        FILE* fw = fopen(outPath.toLocal8Bit().constData(), "w");
+        if (fw) {
+            fprintf(fw, "# nudge mean-waveform dump\n");
+            fprintf(fw, "# clusterId=%d delta=%d nChan=%d nSamp=%d "
+                        "peakSamp0=%d isStderivSpk=%d isStderivFet=%d "
+                        "nSpikes=%lld nReadBefore=%lld nReadAfter=%lld\n",
+                    clusterId, deltaSamples, nChan, nSamp,
+                    peakSamp0,
+                    isStderivSpk ? 1 : 0,
+                    isStderivFet ? 1 : 0,
+                    static_cast<long long>(N),
+                    static_cast<long long>(nReadBefore),
+                    static_cast<long long>(nReadAfter));
+            // Column layout chosen to be trivial to load with numpy:
+            //   data = np.loadtxt(path, skiprows=3)   # 4 cols: ch, s, b, a
+            fprintf(fw, "ch s before after\n");
+            const size_t nb = meanBefore.size();
+            const size_t na = meanAfter.size();
+            for (int ci = 0; ci < nChan; ++ci) {
+                for (int s = 0; s < nSamp; ++s) {
+                    const size_t k = static_cast<size_t>(ci * nSamp + s);
+                    const double b = (k < nb) ? meanBefore[k] : 0.0;
+                    const double a = (k < na) ? meanAfter[k]  : 0.0;
+                    fprintf(fw, "%d %d %.6f %.6f\n", ci, s, b, a);
+                }
+            }
+            fclose(fw);
+            qDebug().noquote() << QString("[nudge-meanwave] wrote %1 "
+                "(N=%2 nReadBefore=%3 nReadAfter=%4)")
+                .arg(outPath)
+                .arg(N).arg(nReadBefore).arg(nReadAfter);
+        } else {
+            qWarning().noquote() << QString(
+                "[nudge-meanwave] cannot open %1 for writing").arg(outPath);
+        }
+    }
+    // Diagnostic summary.  All "fail" / "shortWrite" / "Readback" counters
+    // should be zero under normal operation; non-zero indicates filesystem
+    // trouble or a concurrent writer.  The saturation counters reflect the
+    // int16 .spk format limit and are expected to be non-zero on clusters
+    // containing very-large-amplitude spikes — this is a property of the
+    // canonical pipeline (see the boundary-condition comment above), not
+    // nudge corruption.
+    NS3_DIAG() << "[nudge] cluster=" << clusterId
+               << " delta=" << deltaSamples
+               << " N=" << N
+               << " boundarySkip=" << boundarySkip
+               << " spatialClamp=" << spatialClampCount
+               << " temporalClamp=" << temporalClampCount
+               << " temporalZero=" << temporalZeroCount
+               << " (of " << (N * static_cast<int64_t>(nSamp - 1) * nChan)
+               << " interior temporal-diff samples)"
+               << " fetReadback=" << fetReadback
+               << " spkReadback=" << spkReadback;
+    if (spkSeekFail || resSeekFail || fetSeekFail
+        || shortSpkWrite || shortResWrite || shortFetWrite
+        || fetReadback || spkReadback) {
+        qWarning() << "[nudge] I/O anomalies cluster=" << clusterId
+                   << " spkSeekFail=" << spkSeekFail
+                   << " resSeekFail=" << resSeekFail
+                   << " fetSeekFail=" << fetSeekFail
+                   << " shortSpkWrite=" << shortSpkWrite
+                   << " shortResWrite=" << shortResWrite
+                   << " shortFetWrite=" << shortFetWrite
+                   << " fetReadback=" << fetReadback
+                   << " spkReadback=" << spkReadback;
+    }
 
     setModified(true);
 
@@ -4188,6 +4521,19 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // and CorrelogramThread against the updated data.
     for (int i = 0; i < viewList->count(); ++i)
         viewList->at(i)->invalidateClusterDisplay(clusterId);
+
+    // Refresh the trace view (if any) so its cluster timestamp markers
+    // shift to the new positions on .fil playback.  Without this, the
+    // trace would only repaint when something else triggered a redraw
+    // — e.g. an open errormatrix's update — making nudge appear to
+    // "only work when errormatrix is available".
+    KlustersView* activeView =
+        app()->activeView();
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* v = viewList->at(i);
+        v->updateTraceView(electrodeGroupID, clusterColorList,
+                           v == activeView);
+    }
 
     logAfter(QList<int>{ clusterId });
 
@@ -4589,7 +4935,7 @@ KlustersDoc::dipSplitCluster(int   clusterId,
 
     // ── Mutate ──────────────────────────────────────────────────────────
     KlustersView* activeView =
-        static_cast<KlustersApp*>(parent)->activeView();
+        app()->activeView();
 
     QList<int> fromClusters;
     QList<int> emptiedClusters;

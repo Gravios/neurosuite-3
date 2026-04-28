@@ -602,11 +602,16 @@ void ClusterView::customEvent(QEvent* event){
                 break;
             case NEW_CLUSTER:
                 doc.createNewCluster(selectionArea,view.clusters(),Xdimension,Ydimension);
-                setFocus(Qt::OtherFocusReason);
+                // Focus is transferred to the cluster palette by KlustersApp's
+                // handler for KlustersDoc::newClusterAdded so the user can
+                // arrow-navigate to the freshly-created cluster.  Do NOT
+                // setFocus(Qt::OtherFocusReason) here — that would steal it
+                // back synchronously after the signal handler runs.
                 break;
             case NEW_CLUSTERS:
                 doc.createNewClusters(selectionArea,view.clusters(),Xdimension,Ydimension);
-                setFocus(Qt::OtherFocusReason);
+                // See NEW_CLUSTER above: palette focus is granted by
+                // KlustersApp's newClustersAdded handler.
                 break;
             case ZOOM:
                 break; //nothing to do

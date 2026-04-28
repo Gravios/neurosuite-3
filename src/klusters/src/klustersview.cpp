@@ -534,7 +534,13 @@ void KlustersView::errorMatrixDockClosed(QObject* errorMatrixView){
     viewList.removeAll(static_cast<ViewWidget*>(errorMatrixView));
     mainWindow.widgetRemovedFromDisplay(ERROR_MATRIX);
     isThereErrorMatrixView = false;
-        isThereTemplateMatrixView = false;
+    // NOTE: do NOT touch isThereTemplateMatrixView here.  The error-matrix
+    // dock and the template-matrix dock are independent QDockWidgets and
+    // are not destroyed together.  Earlier builds cleared this flag,
+    // orphaning a still-visible template-matrix view from the U-key
+    // update path (slotUpdateErrorMatrix gated its template-update emit
+    // on the flag).  templateMatrixDockClosed() is the only place that
+    // should clear it.
 }
 
 void KlustersView::templateMatrixDockClosed(QObject*){
