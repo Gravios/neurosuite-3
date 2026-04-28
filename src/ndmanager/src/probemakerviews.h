@@ -19,10 +19,15 @@ class QWheelEvent;
 namespace probemaker {
 
 /**
- * @brief Logical-view canvas — connector at the top, shanks in a row
- *        underneath, channel pills under each shank.  Layout is
- *        recomputed after every structural change; users can't drag
- *        items in this view (drag-position has no semantic meaning).
+ * @brief Logical-view canvas — DAG editor for the probe's
+ *        connector → shanks → channels.  Auto-laid-out the first time
+ *        each item appears; user drags persist across rebuilds via
+ *        the page's m_logicalState cache.
+ *
+ *        Mouse: bare wheel zooms (Ctrl+wheel also works for muscle-
+ *        memory parity with Pipeline Designer); middle-drag pans;
+ *        left-drag in empty space rubber-band-selects; left-drag on
+ *        a node moves it.
  */
 class ProbeLogicalView : public QGraphicsView
 {
@@ -32,6 +37,13 @@ public:
 
 protected:
     void wheelEvent(QWheelEvent* e) override;
+    void mousePressEvent(QMouseEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
+    void mouseReleaseEvent(QMouseEvent* e) override;
+
+private:
+    bool   m_panning = false;
+    QPoint m_lastPan;
 };
 
 /**

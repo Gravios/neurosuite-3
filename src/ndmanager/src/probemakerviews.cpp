@@ -44,15 +44,48 @@ ProbeLogicalView::ProbeLogicalView(QWidget* parent)
 
 void ProbeLogicalView::wheelEvent(QWheelEvent* e)
 {
-    if (e->modifiers() & Qt::ControlModifier) {
-        // Ctrl+wheel: zoom around cursor.  Match the Pipeline
-        // Designer's wheel sensitivity (1.15× per notch).
-        const qreal factor = (e->angleDelta().y() > 0) ? 1.15 : 1.0 / 1.15;
-        scale(factor, factor);
+    // Bare wheel zooms — matches the physical view's binding.  Ctrl+
+    // wheel also zooms for muscle-memory parity with users who
+    // reflexively hold Ctrl.
+    const qreal factor = (e->angleDelta().y() > 0) ? 1.15 : 1.0 / 1.15;
+    scale(factor, factor);
+    e->accept();
+}
+
+void ProbeLogicalView::mousePressEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::MiddleButton) {
+        m_panning = true;
+        m_lastPan = e->pos();
+        QApplication::setOverrideCursor(Qt::ClosedHandCursor);
         e->accept();
         return;
     }
-    QGraphicsView::wheelEvent(e);
+    QGraphicsView::mousePressEvent(e);
+}
+
+void ProbeLogicalView::mouseMoveEvent(QMouseEvent* e)
+{
+    if (m_panning) {
+        const QPoint d = e->pos() - m_lastPan;
+        m_lastPan = e->pos();
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - d.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - d.y());
+        e->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(e);
+}
+
+void ProbeLogicalView::mouseReleaseEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::MiddleButton && m_panning) {
+        m_panning = false;
+        QApplication::restoreOverrideCursor();
+        e->accept();
+        return;
+    }
+    QGraphicsView::mouseReleaseEvent(e);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,24 +1,24 @@
 /***************************************************************************
  * probemakeritems.h
  *
- * QGraphicsItem subclasses used by the Probe Maker page.  These are the
- * visual representations of the probe data model:
- *
- *   ConnectorItem     — gold "★ ROOT" header bar at the top of the scene
- *   ShankItem         — polygon silhouette (rect body + tip wedge);
- *                       carries channels as QGraphicsItem children, so
- *                       moving the shank moves them automatically
- *   ChannelItem       — small filled circle representing a recording site
+ * QGraphicsItem subclasses used by the Probe Maker page.  The
+ * physical view uses ConnectorItem / ShankItem / ChannelItem to
+ * render the actual probe geometry at micron scale; the logical view
+ * uses LogicalNodeItem + LogicalEdgeItem as a draggable DAG editor
+ * for the connector → shanks → channels tree.
  *
  * Each item carries a back-reference to its data-model sibling
  * (ProbeConnector / ProbeShank / ProbeChannel) so edits in the view
- * mutate the model in place.  The page emits modelChanged() afterwards.
+ * mutate the model in place.  The page emits modified() afterwards
+ * to flag the document as dirty.
  *
  * The two QGraphicsView subclasses (ProbeLogicalView, ProbePhysicalView)
- * share these items but render them differently — the logical view
- * arranges them in tree layout, the physical view places them at their
- * actual µm coordinates.  We keep the items "pure" (no per-view logic)
- * and let each view set positions via setPos() when populating its scene.
+ * own these items.  Items in the physical view are positioned in
+ * micron coords (with channels parented to their owning shank for
+ * cheap drag-the-shank-and-channels-follow behaviour); items in the
+ * logical view are positioned in arbitrary scene coords with their
+ * positions persisted across rebuilds via the page's m_logicalState
+ * cache (see probemakerpage.h).
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -31,6 +31,7 @@
 #include <QGraphicsRectItem>
 #include <QPainter>
 #include <QPolygonF>
+#include <QSet>
 
 // Forward-declare the data-model types — defined in
 // libklustersshared/.../parameteryamlreader_probes.h.
@@ -43,16 +44,29 @@ namespace probemaker {
 /** QGraphicsItem::data() role for back-references to the data model. */
 enum DataRole {
     RoleItemKind   = 0,   ///< QString: "connector" / "shank" / "channel"
-    RoleObjectId   = 1,   ///< QString: shank id, or channel hardwareId as string
-    RoleModelPtr   = 2    ///< QVariant::fromValue(void*): pointer into the
+    RoleObjectId   = 1,   ///< QString: shank id, or channel hardwareId as string;
+                          ///< used for cross-scene selection mirroring (must
+                          ///< match the value set by the physical-scene items).
+    RoleModelPtr   = 2,   ///< QVariant::fromValue(void*): pointer into the
                           ///< owning ProbeConnector.  Caller owns lifetime;
                           ///< the item never deletes through this pointer.
+                          ///< NOT stable across QList reallocation — see
+                          ///< RoleLogicalKey for a position-cache key that is.
+    RoleLogicalKey = 3    ///< QString: composite stable key used by the
+                          ///< logical-graph view's position cache.  Format:
+                          ///<   "C"           — connector
+                          ///<   "S:<shankId>" — shank
+                          ///<   "H:<shankId>:<hwId>" — channel
+                          ///< Set only on LogicalNodeItem; resilient to
+                          ///< QList reallocation that invalidates RoleModelPtr.
 };
 
 /** Item kinds — used for type() and for filtering selection. */
-constexpr int ItemTypeConnector = QGraphicsItem::UserType + 1;
-constexpr int ItemTypeShank     = QGraphicsItem::UserType + 2;
-constexpr int ItemTypeChannel   = QGraphicsItem::UserType + 3;
+constexpr int ItemTypeConnector   = QGraphicsItem::UserType + 1;
+constexpr int ItemTypeShank       = QGraphicsItem::UserType + 2;
+constexpr int ItemTypeChannel     = QGraphicsItem::UserType + 3;
+constexpr int ItemTypeLogicalNode = QGraphicsItem::UserType + 4;
+constexpr int ItemTypeLogicalEdge = QGraphicsItem::UserType + 5;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ConnectorItem
@@ -98,13 +112,11 @@ private:
 
 /** Shank silhouette — a rectangle with a triangular tip wedge.
  *
- *  In the physical view the polygon is drawn at the shank's actual
- *  micron dimensions (lengthUm × widthUm), with channels as direct
- *  children.  In the logical view the polygon is replaced by a
- *  uniform-size rectangle; channels still parent to it.
- *
- *  Movable in the physical view (drag to reposition relative to the
- *  connector); fixed in the logical view (laid out by the view). */
+ *  Used by the physical view; the logical view uses LogicalNodeItem
+ *  for its shank representation (see below).  The polygon is drawn
+ *  at the shank's actual micron dimensions (lengthUm × widthUm) with
+ *  channels as direct children.  Movable so the user can drag a
+ *  shank to reposition it relative to the connector. */
 class ShankItem : public QGraphicsPolygonItem
 {
 public:
@@ -117,11 +129,6 @@ public:
      *  width, or tip angle in the inspector. */
     void refreshFromModel();
 
-    /** Logical-view rendering mode: replace the silhouette polygon with
-     *  a uniform 200×56 rounded rect.  Set false to draw the actual
-     *  micron-dimensioned silhouette (physical view). */
-    void setLogicalMode(bool on);
-
 protected:
     void paint(QPainter* p,
                const QStyleOptionGraphicsItem* opt,
@@ -132,13 +139,13 @@ protected:
 
 private:
     /** Build the silhouette polygon from the model's lengthUm /
-     *  widthUm / tipAngle.  Called by the constructor and by
-     *  refreshFromModel().  Tip wedge sits at the bottom of the
-     *  polygon (y = lengthUm); the head sits at y = 0. */
+     *  widthUm / tipAngle.  The polygon is centred on local x=0 (the
+     *  shank's centreline) so a child ChannelItem with posUm.x()=0
+     *  lands on the centreline.  Tip wedge sits at y = lengthUm; head
+     *  sits at y = 0. */
     void rebuildPolygon();
 
     ProbeShank* m_model;        ///< non-owning
-    bool        m_logicalMode = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,6 +183,133 @@ protected:
 
 private:
     ProbeChannel* m_model;      ///< non-owning
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LogicalNodeItem  /  LogicalEdgeItem
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The logical-view scene used to be a static auto-laid-out diagram —
+// every rebuild called setPos() with computed coordinates and the user
+// couldn't drag anything; the connector→shank and shank→channel edges
+// were drawn as fixed paths between those static positions.  These two
+// classes turn it into a real DAG editor:
+//
+//   * LogicalNodeItem  — draggable, selectable rectangle that can act
+//                        as either a connector header, a shank, or a
+//                        channel.  Holds a back-reference to the model
+//                        item it represents and a registry of edges
+//                        so it can notify them whenever it moves.
+//
+//   * LogicalEdgeItem  — a polyline between two LogicalNodeItem
+//                        endpoints.  Endpoints are pointers, not
+//                        baked-in positions; recalcGeometry() refreshes
+//                        the path from the current endpoint scene
+//                        positions.  Nodes call this on every movement.
+//
+// Positions persist across rebuilds via a QHash<void*, QPointF> on the
+// page (keyed by the model pointer).  First time an item is laid out
+// the page assigns an auto-layout position; user drags update the hash;
+// subsequent rebuilds restore the stored position rather than
+// re-running the auto-layout for that item.
+
+class LogicalEdgeItem;
+
+/** Logical-view node — connector / shank / channel as a rectangle that
+ *  the user can drag and select.  Edges register with their endpoints
+ *  here so the node can call recalcGeometry() on each one whenever it
+ *  moves, keeping the lines glued to the box. */
+class LogicalNodeItem : public QGraphicsItem
+{
+public:
+    enum class Kind { Connector, Shank, Channel };
+
+    LogicalNodeItem(Kind          kind,
+                    void*         modelPtr,
+                    const QString& label,
+                    QSizeF        size,
+                    QGraphicsItem* parent = nullptr);
+
+    /** Notifies all attached edges that this endpoint is going away,
+     *  so they can null out their pointer and skip a UAF on their
+     *  own destructor.  This matters because QGraphicsScene::clear()
+     *  destroys items in arbitrary order — without this, an edge
+     *  destroyed AFTER one of its endpoints would call removeEdge()
+     *  on freed memory. */
+    ~LogicalNodeItem() override;
+
+    /** Register an edge to be redrawn when this node moves.  Both
+     *  endpoints typically register the same edge; either can drive
+     *  recalcGeometry() on every movement. */
+    void addEdge(LogicalEdgeItem* edge);
+    void removeEdge(LogicalEdgeItem* edge);
+
+    /** Scene-coordinate centre of this node's top edge — used as the
+     *  attachment point for an incoming edge from the parent. */
+    QPointF topAnchor() const;
+    /** Scene-coordinate centre of the bottom edge — attachment for
+     *  outgoing edges to children. */
+    QPointF bottomAnchor() const;
+
+    Kind  kind()     const { return m_kind; }
+    void* modelPtr() const { return m_modelPtr; }
+
+    int type() const override;
+    QRectF boundingRect() const override;
+    void   paint(QPainter* p,
+                 const QStyleOptionGraphicsItem* opt,
+                 QWidget* widget) override;
+
+protected:
+    QVariant itemChange(GraphicsItemChange change,
+                        const QVariant& value) override;
+
+private:
+    Kind     m_kind;
+    void*    m_modelPtr;       ///< back-reference; not owning
+    QString  m_label;
+    QSizeF   m_size;
+    QSet<LogicalEdgeItem*> m_edges;
+};
+
+/** Polyline between two LogicalNodeItem endpoints.  Endpoints are
+ *  stored by pointer; the edge subscribes to both via addEdge() so it
+ *  receives a recalcGeometry() callback whenever either moves.
+ *
+ *  The path is a 4-point polyline: nodeA-anchor → nodeA-stub →
+ *  nodeB-stub → nodeB-anchor, with a small vertical offset on each
+ *  stub.  This visually emphasises the attachment points and avoids
+ *  a single straight line that can ambiguously cross node bodies. */
+class LogicalEdgeItem : public QGraphicsItem
+{
+public:
+    LogicalEdgeItem(LogicalNodeItem* src, LogicalNodeItem* dst);
+    ~LogicalEdgeItem() override;
+
+    /** Recompute the polyline from the current scene positions of
+     *  src and dst.  Calls prepareGeometryChange() so QGraphicsScene
+     *  invalidates the old bounding rect.  Cheap (4 QPointF ops). */
+    void recalcGeometry();
+
+    /** Called by a LogicalNodeItem from its destructor when this edge
+     *  was registered with that endpoint.  Nulls the matching pointer
+     *  so the edge's own destructor doesn't dereference freed memory.
+     *  Order of destruction in QGraphicsScene::clear() is arbitrary,
+     *  so either endpoint or this edge may be destroyed first; this
+     *  callback handles the case where the endpoint dies first. */
+    void endpointDetached(LogicalNodeItem* who);
+
+    int type() const override;
+    QRectF boundingRect() const override;
+    void   paint(QPainter* p,
+                 const QStyleOptionGraphicsItem* opt,
+                 QWidget* widget) override;
+
+private:
+    LogicalNodeItem* m_src;
+    LogicalNodeItem* m_dst;
+    QPolygonF        m_path;       ///< 4 points, scene coords
+    QRectF           m_bounding;   ///< cached bounding rect for boundingRect()
 };
 
 }  // namespace probemaker
