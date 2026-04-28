@@ -26,18 +26,20 @@
 
 #include <QApplication>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGraphicsScene>
-#include <QGraphicsPathItem>
+#include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
-#include <QPainterPath>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QShortcut>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTextStream>
@@ -49,13 +51,98 @@ using probemaker::ChannelItem;
 using probemaker::ConnectorItem;
 using probemaker::ItemTypeChannel;
 using probemaker::ItemTypeConnector;
+using probemaker::ItemTypeLogicalNode;
 using probemaker::ItemTypeShank;
+using probemaker::LogicalEdgeItem;
+using probemaker::LogicalNodeItem;
 using probemaker::ProbeLogicalView;
 using probemaker::ProbePhysicalView;
 using probemaker::RoleItemKind;
+using probemaker::RoleLogicalKey;
 using probemaker::RoleModelPtr;
 using probemaker::RoleObjectId;
 using probemaker::ShankItem;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers — local to the translation unit
+// ─────────────────────────────────────────────────────────────────────────────
+namespace {
+
+// Stable composite-key generators for ProbeMakerPage::m_logicalState.
+// See probemakerpage.h for the rationale (QList reallocation can
+// invalidate raw model pointers; stable string keys avoid that).
+//
+// Format:
+//   connector       → "C"
+//   shank   <sid>   → "S:<sid>"
+//   channel <sid> <hw> → "H:<sid>:<hw>"
+//
+// Different prefixes ensure no collisions across kinds.  Shank id
+// strings are auto-generated as "shank<N>" and not user-editable, so
+// they're stable for the session.
+
+inline QString keyForConnector()
+{
+    return QStringLiteral("C");
+}
+inline QString keyForShank(const ProbeShank& s)
+{
+    return QStringLiteral("S:%1").arg(s.id);
+}
+inline QString keyForChannel(const ProbeShank& s, const ProbeChannel& c)
+{
+    return QStringLiteral("H:%1:%2").arg(s.id).arg(c.hardwareId);
+}
+
+// Quote a string for safe inclusion as a YAML scalar value.  Empty
+// strings, strings containing special characters (anything not in a
+// conservative plain-scalar safe set), and strings starting with a
+// reserved prefix get double-quoted with backslash-escaped " and \.
+// Strings that are clearly safe pass through unchanged so the output
+// stays readable.
+//
+// Conservative on purpose: when in doubt, quote.  False-positive
+// quoting just adds two chars; false-negatives produce malformed YAML.
+inline QString yamlEscape(const QString& s)
+{
+    if (s.isEmpty()) return QStringLiteral("\"\"");
+
+    // Plain-safe iff every char is alnum, '-', '_', '.', or space —
+    // AND the value is not one of YAML's reserved literals (true,
+    // false, null, ~, yes, no, on, off — all case-insensitive) — AND
+    // it doesn't start with whitespace, '-', '?', or a digit-leading
+    // sequence that could be parsed as a number.
+    bool plain = true;
+    for (QChar ch : s) {
+        if (!(ch.isLetterOrNumber() || ch == '-' || ch == '_'
+              || ch == '.' || ch == ' ')) {
+            plain = false; break;
+        }
+    }
+    if (plain) {
+        if (s.front().isSpace() || s.back().isSpace()) plain = false;
+        const QString lower = s.toLower();
+        if (lower == QLatin1String("true")  || lower == QLatin1String("false")
+         || lower == QLatin1String("null")  || lower == QLatin1String("~")
+         || lower == QLatin1String("yes")   || lower == QLatin1String("no")
+         || lower == QLatin1String("on")    || lower == QLatin1String("off"))
+            plain = false;
+    }
+    if (plain) return s;
+
+    QString out = QStringLiteral("\"");
+    for (QChar ch : s) {
+        if (ch == '\\')      out += QLatin1String("\\\\");
+        else if (ch == '"')  out += QLatin1String("\\\"");
+        else if (ch == '\n') out += QLatin1String("\\n");
+        else if (ch == '\t') out += QLatin1String("\\t");
+        else                 out += ch;
+    }
+    out += '"';
+    return out;
+}
+
+}  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Construction
@@ -77,11 +164,10 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
     tbox->setContentsMargins(8, 0, 8, 0);
     tbox->setSpacing(8);
 
-    m_loadBtn = new QPushButton(tr("📂 Load…"));
     m_saveBtn = new QPushButton(tr("💾 Save"));
-    m_saveBtn->setToolTip(tr("Save probe as <session>.ndm.default.probe (Ctrl+Alt+R)"));
+    m_saveBtn->setToolTip(tr("Save probe as <session>.ndm.default.probe"));
     m_saveAsBtn = new QPushButton(tr("Save As…"));
-    m_saveAsBtn->setToolTip(tr("Save probe under a custom name (Ctrl+Alt+Shift+R)"));
+    m_saveAsBtn->setToolTip(tr("Save probe under a custom name"));
 
     const QString tealBtn =
         "QPushButton{background:#102a18;border:1px solid #2dd4bf;color:#2dd4bf;"
@@ -94,7 +180,6 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
         "QPushButton{background:#0d1117;border:1px solid #2a3650;color:#8fa8c8;"
         "font-size:11px;padding:3px 10px;border-radius:3px;}"
         "QPushButton:hover{background:#141c2a;color:#bcd0e8;}";
-    m_loadBtn->setStyleSheet(neutralBtn);
 
     m_addShankBtn   = new QPushButton(tr("+ Shank"));
     m_addChannelBtn = new QPushButton(tr("+ Channel"));
@@ -111,10 +196,6 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
         "font-size:11px;padding:3px 10px;border-radius:3px;}"
         "QPushButton:hover{background:#2d1010;}");
 
-    connect(m_loadBtn,       &QPushButton::clicked,
-            this, [this]{ /* handled by ndManager menu via dialog;
-                           we just emit nothing here.  TODO: optional
-                           in-page Load dialog. */ });
     connect(m_saveBtn,       &QPushButton::clicked,
             this, &ProbeMakerPage::savePipelineRequested);
     connect(m_saveAsBtn,     &QPushButton::clicked,
@@ -127,6 +208,42 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
             this, &ProbeMakerPage::onAddArrayClicked);
     connect(m_deleteBtn,     &QPushButton::clicked,
             this, &ProbeMakerPage::onDeleteSelectedClicked);
+
+    // ── Undo / Redo ────────────────────────────────────────────────────
+    // Buttons in the toolbar plus widget-scoped keyboard shortcuts so
+    // they don't compete with any global Ctrl+Z/Ctrl+Y bindings in
+    // ndmanager's other pages.  The shortcut context is
+    // WidgetWithChildrenShortcut: active only while focus is inside
+    // the Probe Maker page (i.e. when the user is actually editing a
+    // probe, not flipping through other tabs).
+    m_undoBtn = new QPushButton(QStringLiteral("↶"));
+    m_redoBtn = new QPushButton(QStringLiteral("↷"));
+    m_undoBtn->setStyleSheet(neutralBtn);
+    m_redoBtn->setStyleSheet(neutralBtn);
+    m_undoBtn->setMaximumWidth(36);
+    m_redoBtn->setMaximumWidth(36);
+    m_undoBtn->setToolTip(tr("Undo (Ctrl+Z)"));
+    m_redoBtn->setToolTip(tr("Redo (Ctrl+Shift+Z, Ctrl+Y)"));
+    connect(m_undoBtn, &QPushButton::clicked,
+            this, &ProbeMakerPage::onUndoClicked);
+    connect(m_redoBtn, &QPushButton::clicked,
+            this, &ProbeMakerPage::onRedoClicked);
+
+    auto mkShortcut = [this](QKeySequence seq, void (ProbeMakerPage::*slot)()) {
+        auto* sc = new QShortcut(seq, this);
+        sc->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(sc, &QShortcut::activated, this, slot);
+    };
+    mkShortcut(QKeySequence(QKeySequence::Undo), &ProbeMakerPage::onUndoClicked);
+    mkShortcut(QKeySequence(QKeySequence::Redo), &ProbeMakerPage::onRedoClicked);
+    // QKeySequence::Redo is platform-dependent (Ctrl+Y on Windows/Linux,
+    // Cmd+Shift+Z on macOS).  Add the alternate explicitly so both
+    // bindings work everywhere — some users expect Ctrl+Shift+Z, others
+    // expect Ctrl+Y, and the canonical sequence covers only one.
+    mkShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z),
+               &ProbeMakerPage::onRedoClicked);
+    mkShortcut(QKeySequence(Qt::CTRL | Qt::Key_Y),
+               &ProbeMakerPage::onRedoClicked);
 
     auto* fitBtn = new QPushButton(tr("Fit"));
     fitBtn->setStyleSheet(neutralBtn);
@@ -142,9 +259,11 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
         m_physicalView->fitAll();
     });
 
-    tbox->addWidget(m_loadBtn);
     tbox->addWidget(m_saveBtn);
     tbox->addWidget(m_saveAsBtn);
+    tbox->addSpacing(16);
+    tbox->addWidget(m_undoBtn);
+    tbox->addWidget(m_redoBtn);
     tbox->addSpacing(16);
     tbox->addWidget(m_addShankBtn);
     tbox->addWidget(m_addChannelBtn);
@@ -158,6 +277,10 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
         tr("Wheel to zoom · middle-drag to pan · drag pads to reposition"));
     helpLabel->setStyleSheet("color:#2a3a50;font-size:10px;");
     tbox->addWidget(helpLabel);
+
+    // Stacks start empty; both buttons are disabled until the user
+    // does something undoable.
+    updateUndoRedoButtons();
 
     outerVbox->addWidget(toolbar);
 
@@ -230,6 +353,12 @@ void ProbeMakerPage::buildLogicalPane(QSplitter* inner)
     m_logicalView->setScene(logicalScene);
     connect(logicalScene, &QGraphicsScene::selectionChanged,
             this, &ProbeMakerPage::onLogicalSelectionChanged);
+    // Drag-tracking event filter: mouse press/release on the
+    // viewport reaches eventFilter() before being routed into items
+    // for drag handling, giving us a clean before/after hook to
+    // snapshot pre-drag state and verify a drag actually happened on
+    // release.  See eventFilter() for the protocol.
+    m_logicalView->viewport()->installEventFilter(this);
     v->addWidget(m_logicalView, /*stretch=*/1);
 
     inner->addWidget(wrap);
@@ -277,6 +406,9 @@ void ProbeMakerPage::buildPhysicalPane(QSplitter* inner)
     // flag again so users can opt back into auto-fit at any time.
     connect(m_physicalView, &ProbePhysicalView::userInteracted,
             this, [this]{ m_userZoomedOrPanned = true; });
+
+    // Drag-tracking event filter — see buildLogicalPane for protocol.
+    m_physicalView->viewport()->installEventFilter(this);
 
     v->addWidget(m_physicalView, /*stretch=*/1);
 
@@ -437,137 +569,136 @@ void ProbeMakerPage::rebuildLogicalScene()
 {
     if (!m_logicalView) return;
     QGraphicsScene* s = m_logicalView->scene();
-    s->clear();   // deletes all items, including children
 
-    // Layout constants for the logical (DAG-style) view.
+    // ── Capture pre-rebuild positions and prune dead keys ──────────────
+    //
+    // Each LogicalNodeItem stores its stable composite key in
+    // RoleLogicalKey at scene-build time.  Reading it back here gives
+    // us a per-item identifier that survives both the upcoming
+    // s->clear() and any QList reallocation that invalidated the raw
+    // model pointers.  Building the captured hash from the live
+    // scene (rather than augmenting m_logicalState in place) also
+    // implicitly prunes any keys whose model items no longer exist:
+    // they're not in the scene, so they're not in `captured`.
+    QHash<QString, QPointF> captured;
+    for (QGraphicsItem* it : s->items()) {
+        if (it->type() != ItemTypeLogicalNode) continue;
+        const QString key = it->data(RoleLogicalKey).toString();
+        if (!key.isEmpty())
+            captured.insert(key, it->pos());
+    }
+    m_logicalState = std::move(captured);
+
+    s->clear();   // deletes all items, including children and edges
+
+    // ── Layout constants ───────────────────────────────────────────────
     constexpr qreal connW    = 240.0;
+    constexpr qreal connH    = 56.0;
     constexpr qreal yConn    = 0.0;
-    constexpr qreal yShank   = yConn + ConnectorItem::NodeHeight + 80.0;
+    constexpr qreal yShank   = yConn + connH + 80.0;
     constexpr qreal shankW   = 200.0;
     constexpr qreal shankH   = 56.0;
     constexpr qreal shankGap = 60.0;
     constexpr qreal chanW    = 40.0;
     constexpr qreal chanH    = 26.0;
     constexpr qreal chanGap  = 6.0;
-    // How many channel pills fit in one row under a shank (= shankW).
-    // Channels overflow into additional rows below.  We size to fit
-    // cleanly: 4 pills × 40px + 3 gaps × 6px = 178px ≤ shankW=200.
     constexpr int   chansPerRow = 4;
-    constexpr qreal chanRowGap  = 4.0;       // vertical gap between channel rows
-    const     qreal chanFirstY  = yShank + shankH + 18.0;
+    constexpr qreal chanRowGap  = 4.0;
+    const     qreal chanFirstY  = yShank + shankH + 24.0;
 
-    const int    nShanks         = m_data.shanks.size();
-    const qreal  totalShankRowW  = nShanks > 0
+    const int   nShanks         = m_data.shanks.size();
+    const qreal totalShankRowW  = nShanks > 0
         ? nShanks * shankW + (nShanks - 1) * shankGap
         : shankW;
-    const qreal  sceneW          = qMax(connW, totalShankRowW);
+    const qreal sceneW = qMax(connW, totalShankRowW);
 
-    // ── Connector at top, centred horizontally over the shank row ─────
-    const qreal  connX = (sceneW - connW) * 0.5;
-    auto* connItem = new ConnectorItem(&m_data, connW);
-    connItem->setPos(connX, yConn);
-    s->addItem(connItem);
-    const QPointF connBottomCentre(connX + connW * 0.5,
-                                    yConn + ConnectorItem::NodeHeight);
+    // ── Connector node ─────────────────────────────────────────────────
+    // Auto-layout position = horizontally centred over the shank row.
+    // Persisted user position (if any) wins.
+    auto* connNode = new LogicalNodeItem(
+        LogicalNodeItem::Kind::Connector,
+        static_cast<void*>(&m_data),
+        m_data.model.isEmpty() ? tr("★ ROOT") : m_data.model,
+        QSizeF(connW, connH));
+    connNode->setData(RoleObjectId,   QStringLiteral("connector"));
+    connNode->setData(RoleLogicalKey, keyForConnector());
+    {
+        const QString k = keyForConnector();
+        connNode->setPos(m_logicalState.contains(k)
+            ? m_logicalState.value(k)
+            : QPointF((sceneW - connW) * 0.5, yConn));
+    }
+    s->addItem(connNode);
 
-    // Edge style: warm yellow, thicker than before, drawn on top of
-    // the scene background but underneath nodes.  Nodes paint with
-    // their own brush so the edge appears to "tuck under" them.
-    const QPen edgePen(QColor(0xfa, 0xc1, 0x5c), 1.4);
-
-    qreal shankX = (sceneW - totalShankRowW) * 0.5;
-    qreal maxYBottom = chanFirstY;   // tracks the lowest content for sceneRect
-
+    // ── Shank nodes (one per ProbeShank) ───────────────────────────────
+    qreal autoShankX = (sceneW - totalShankRowW) * 0.5;
+    QList<LogicalNodeItem*> shankNodes;
+    shankNodes.reserve(nShanks);
     for (int si = 0; si < nShanks; ++si) {
         ProbeShank& sh = m_data.shanks[si];
+        auto* shankNode = new LogicalNodeItem(
+            LogicalNodeItem::Kind::Shank,
+            static_cast<void*>(&sh),
+            sh.label.isEmpty() ? tr("Shank %1").arg(si + 1) : sh.label,
+            QSizeF(shankW, shankH));
+        shankNode->setData(RoleObjectId,   sh.id);
+        shankNode->setData(RoleLogicalKey, keyForShank(sh));
+        const QString shankKey = keyForShank(sh);
+        shankNode->setPos(m_logicalState.contains(shankKey)
+            ? m_logicalState.value(shankKey)
+            : QPointF(autoShankX, yShank));
+        s->addItem(shankNode);
+        shankNodes.append(shankNode);
+        autoShankX += shankW + shankGap;
 
-        // Shank node
-        auto* shankItem = new ShankItem(&sh);
-        shankItem->setLogicalMode(true);
-        shankItem->setPos(shankX, yShank);
-        s->addItem(shankItem);
+        // Connector → shank edge.  LogicalEdgeItem subscribes to both
+        // endpoints in its ctor; subsequent moves of either node call
+        // edge->recalcGeometry() automatically.
+        auto* edge = new LogicalEdgeItem(connNode, shankNode);
+        s->addItem(edge);
+    }
 
-        // Connector → shank edge.  Draw a polyline with a small
-        // vertical stub at each end so the visual contact is obvious
-        // even when the shanks fan out horizontally.
-        {
-            const QPointF shankTopCentre(shankX + shankW * 0.5, yShank);
-            const QPointF connStub  = connBottomCentre + QPointF(0, 12);
-            const QPointF shankStub = shankTopCentre   - QPointF(0, 12);
-            QPainterPath p;
-            p.moveTo(connBottomCentre);
-            p.lineTo(connStub);
-            p.lineTo(shankStub);
-            p.lineTo(shankTopCentre);
-            auto* edge = new QGraphicsPathItem(p);
-            edge->setPen(edgePen);
-            edge->setZValue(-1.0);
-            s->addItem(edge);
-        }
-
-        // Channels: lay out in rows under the shank, wrapping every
-        // chansPerRow pills.  Every channel is rendered (no "+N more"
-        // truncation) so every site is selectable for editing.  Edges
-        // run from the shank-bottom-centre to each channel-top-centre.
-        const QPointF shankBottomCentre(shankX + shankW * 0.5,
-                                         yShank + shankH);
+    // ── Channel nodes (one per ProbeChannel) ───────────────────────────
+    for (int si = 0; si < nShanks; ++si) {
+        ProbeShank& sh = m_data.shanks[si];
         const int nch = sh.channels.size();
+        // Auto-layout origin: directly under the shank's auto position
+        // (we don't read the shank's *current* pos here because user-
+        // positioned shanks shouldn't drag their channels into wherever
+        // they were dropped — channels independently auto-lay-out the
+        // first time, then persist their user positions just like
+        // shanks do).
+        const qreal autoOrigin = (sceneW - totalShankRowW) * 0.5
+                               + si * (shankW + shankGap);
+
         for (int ci = 0; ci < nch; ++ci) {
             ProbeChannel& ch = sh.channels[ci];
             const int row = ci / chansPerRow;
             const int col = ci % chansPerRow;
-
-            // Effective row width: the number of pills actually in
-            // *this* row (the last row may be partial).  Centred under
-            // the shank.
             const int colsThisRow = qMin(chansPerRow, nch - row * chansPerRow);
             const qreal rowW = colsThisRow * chanW
                              + (colsThisRow - 1) * chanGap;
-            const qreal rowX0 = shankX + (shankW - rowW) * 0.5;
-            const qreal cx = rowX0 + col * (chanW + chanGap);
-            const qreal cy = chanFirstY + row * (chanH + chanRowGap);
+            const qreal rowX0 = autoOrigin + (shankW - rowW) * 0.5;
+            const qreal autoX = rowX0 + col * (chanW + chanGap);
+            const qreal autoY = chanFirstY + row * (chanH + chanRowGap);
 
-            auto* chItem = new QGraphicsRectItem(0, 0, chanW, chanH);
-            chItem->setBrush(QColor(0x07, 0x12, 0x22));
-            chItem->setPen(QPen(QColor(0x37, 0x8a, 0xdd), 0.5));
-            chItem->setData(RoleItemKind, QStringLiteral("channel"));
-            chItem->setData(RoleObjectId, QString::number(ch.hardwareId));
-            chItem->setData(RoleModelPtr,
-                            QVariant::fromValue(static_cast<void*>(&ch)));
-            chItem->setFlag(QGraphicsItem::ItemIsSelectable, true);
-            chItem->setPos(cx, cy);
-            s->addItem(chItem);
+            auto* chanNode = new LogicalNodeItem(
+                LogicalNodeItem::Kind::Channel,
+                static_cast<void*>(&ch),
+                QStringLiteral("ch %1").arg(ch.hardwareId),
+                QSizeF(chanW, chanH));
+            chanNode->setData(RoleObjectId,   QString::number(ch.hardwareId));
+            chanNode->setData(RoleLogicalKey, keyForChannel(sh, ch));
+            const QString chanKey = keyForChannel(sh, ch);
+            chanNode->setPos(m_logicalState.contains(chanKey)
+                ? m_logicalState.value(chanKey)
+                : QPointF(autoX, autoY));
+            s->addItem(chanNode);
 
-            auto* txt = new QGraphicsSimpleTextItem(
-                QStringLiteral("ch %1").arg(ch.hardwareId), chItem);
-            txt->setBrush(QColor(0x85, 0xb7, 0xeb));
-            QFont f = txt->font();
-            f.setPointSizeF(8.0);
-            txt->setFont(f);
-            const QRectF tb = txt->boundingRect();
-            txt->setPos((chanW - tb.width()) * 0.5,
-                        (chanH - tb.height()) * 0.5);
-
-            // Shank → channel edge.  For wrapped rows we still draw
-            // from the shank's bottom centre to each pill — visually
-            // a bundle of fanned lines, which is what you want for a
-            // 1-to-many relationship.
-            const QPointF chTop(cx + chanW * 0.5, cy);
-            QPainterPath ep;
-            ep.moveTo(shankBottomCentre);
-            ep.lineTo(QPointF(shankBottomCentre.x(),
-                              shankBottomCentre.y() + 8));
-            ep.lineTo(QPointF(chTop.x(), chTop.y() - 8));
-            ep.lineTo(chTop);
-            auto* edge = new QGraphicsPathItem(ep);
-            edge->setPen(edgePen);
-            edge->setZValue(-1.0);
+            // Shank → channel edge.
+            auto* edge = new LogicalEdgeItem(shankNodes[si], chanNode);
             s->addItem(edge);
-
-            maxYBottom = qMax(maxYBottom, cy + chanH);
         }
-
-        shankX += shankW + shankGap;
     }
 
     s->setSceneRect(s->itemsBoundingRect().marginsAdded(QMarginsF(40, 40, 40, 40)));
@@ -579,9 +710,9 @@ void ProbeMakerPage::rebuildPhysicalScene()
     QGraphicsScene* s = m_physicalView->scene();
     s->clear();
 
-    // Connector ribbon — horizontal bar at the top of the scene
+    // Connector ribbon — horizontal bar above the shanks at scene-Y
+    // negative-something so it doesn't overlap the shank polygons.
     constexpr qreal connBarH = 40.0;
-    constexpr qreal connBarMargin = 40.0;
     auto* connItem = new ConnectorItem(&m_data, 280.0);
     connItem->setPos(0.0, -connBarH - 80.0);
     s->addItem(connItem);
@@ -601,7 +732,6 @@ void ProbeMakerPage::rebuildPhysicalScene()
     for (int si = 0; si < m_data.shanks.size(); ++si) {
         ProbeShank& sh = m_data.shanks[si];
         auto* shankItem = new ShankItem(&sh);
-        shankItem->setLogicalMode(false);
         const QPointF origin = needsAutoSpread
             ? QPointF(autoX, 0.0)
             : sh.originUm;
@@ -651,14 +781,20 @@ void ProbeMakerPage::mirrorSelection(const QGraphicsScene* sourceScene,
 {
     if (!sourceScene || !targetScene) return;
 
-    // Resolve the selected (kind, id) pair on the source side.
+    // Resolve the selected (kind, id) pair on the source side.  We
+    // prefer items with a non-empty RoleItemKind (connector / shank /
+    // channel); edges and other auxiliary graphics never have a kind
+    // set, so they get skipped naturally.  If nothing kindful is
+    // selected, fall through to clearing the target scene's selection.
     QString kind, id;
     void*   modelPtr = nullptr;
     for (QGraphicsItem* it : sourceScene->selectedItems()) {
-        kind     = it->data(RoleItemKind).toString();
+        const QString k = it->data(RoleItemKind).toString();
+        if (k.isEmpty()) continue;
+        kind     = k;
         id       = it->data(RoleObjectId).toString();
         modelPtr = it->data(RoleModelPtr).value<void*>();
-        break;   // we only mirror the first selection (no multi-select v1)
+        break;
     }
 
     // Cache the page-level selection for inspector refresh.
@@ -676,11 +812,23 @@ void ProbeMakerPage::mirrorSelection(const QGraphicsScene* sourceScene,
     // Apply the same selection in the target scene.  Block signals
     // while we do so to avoid bouncing back and triggering this slot
     // again.
+    //
+    // Connector matching is by kind alone: there's only ever one
+    // connector per scene, and the older ConnectorItem class doesn't
+    // set RoleObjectId, so an id-based match would never succeed.
+    // Shank and channel matching uses both kind and RoleObjectId.
     QSignalBlocker blocker(targetScene);
     for (QGraphicsItem* it : targetScene->items()) {
-        const bool match =
-            it->data(RoleItemKind).toString() == kind &&
-            it->data(RoleObjectId).toString() == id;
+        const QString itKind = it->data(RoleItemKind).toString();
+        bool match;
+        if (kind == QLatin1String("connector")) {
+            match = (itKind == QLatin1String("connector"));
+        } else if (kind.isEmpty()) {
+            match = false;   // nothing selected on source — clear target
+        } else {
+            match = (itKind == kind &&
+                     it->data(RoleObjectId).toString() == id);
+        }
         it->setSelected(match);
     }
     targetScene->update();
@@ -692,8 +840,24 @@ void ProbeMakerPage::mirrorSelection(const QGraphicsScene* sourceScene,
 
 void ProbeMakerPage::onAddShankClicked()
 {
+    pushUndoSnapshot(tr("Add shank"));
+
     ProbeShank sh;
-    sh.id    = QStringLiteral("shank%1").arg(m_data.shanks.size() + 1);
+    // Generate a fresh, unique id even if intermediate shanks were
+    // deleted.  Using `size() + 1` would collide: add A, B → [shank1,
+    // shank2]; delete A → [shank2]; add → "shank2" (duplicate of the
+    // surviving B).  Walk the existing ids and pick the next free
+    // suffix, which guarantees uniqueness within the session.
+    int suffix = m_data.shanks.size() + 1;
+    QString candidate = QStringLiteral("shank%1").arg(suffix);
+    auto idTaken = [this](const QString& id) {
+        for (const ProbeShank& s : m_data.shanks)
+            if (s.id == id) return true;
+        return false;
+    };
+    while (idTaken(candidate))
+        candidate = QStringLiteral("shank%1").arg(++suffix);
+    sh.id    = candidate;
     sh.label = QStringLiteral("Shank %1")
                    .arg(QChar(static_cast<char>('A' + static_cast<int>(m_data.shanks.size()))));
     sh.lengthUm = 1500.0;
@@ -722,6 +886,8 @@ void ProbeMakerPage::onAddShankClicked()
 
 void ProbeMakerPage::onAddChannelClicked()
 {
+    pushUndoSnapshot(tr("Add channel"));
+
     // Without an explicit selection, target the last (most recently
     // added) shank so the user can append channels with a single click.
     // Silent no-op was the previous behaviour and was too easy to mistake
@@ -733,8 +899,13 @@ void ProbeMakerPage::onAddChannelClicked()
     if (!targetShank) {
         // No shanks at all — nothing to attach a channel to.  Add a
         // shank first; the user gets visible feedback (the new shank
-        // appears) and can click + Channel again.
+        // appears) and can click + Channel again.  Mark the nested
+        // shank-add so its own pushUndoSnapshot is suppressed: the
+        // user's "Add channel" action becomes one atomic undo step,
+        // not two.
+        m_inNestedMutation = true;
         onAddShankClicked();
+        m_inNestedMutation = false;
         targetShank = &m_data.shanks.last();
     }
 
@@ -778,22 +949,11 @@ void ProbeMakerPage::onAddChannelClicked()
 
 void ProbeMakerPage::onAddArrayClicked()
 {
-    // Same shank-targeting logic as + Channel: prefer the explicitly
-    // selected shank, fall back to the most recently added one, create
-    // a new shank if there are none yet.  This keeps the array action
-    // usable on a fresh probe with one click.
-    ProbeShank* targetShank = m_selectedShank;
-    if (!targetShank && !m_data.shanks.isEmpty())
-        targetShank = &m_data.shanks.last();
-    if (!targetShank) {
-        onAddShankClicked();
-        targetShank = &m_data.shanks.last();
-    }
-
-    // Three quick prompts.  QInputDialog is intentional — it keeps the
-    // tarball small (no extra .ui file) and the parameters are
-    // independent enough that a single multi-field dialog wouldn't add
-    // much.  Cancel at any point aborts cleanly.
+    // Three quick prompts BEFORE any model mutation, so a user cancel
+    // doesn't leave behind a phantom shank or a no-op undo entry.
+    // QInputDialog is intentional — it keeps the tarball small (no
+    // extra .ui file) and the parameters are independent enough that
+    // a single multi-field dialog wouldn't add much.
     bool ok = false;
     const int count = QInputDialog::getInt(
         this, tr("Add Linear Array"),
@@ -812,6 +972,23 @@ void ProbeMakerPage::onAddArrayClicked()
         tr("Lateral offset from centreline (µm):  (negative = left, positive = right)"),
         /*default*/ 0.0, /*min*/ -5000.0, /*max*/ 5000.0, /*decimals*/ 2, &ok);
     if (!ok) return;
+
+    // All inputs collected → snapshot once for the entire op.
+    pushUndoSnapshot(tr("Add channel array (%1 sites)").arg(count));
+
+    // Same shank-targeting logic as + Channel: prefer the explicitly
+    // selected shank, fall back to the most recently added one, create
+    // a new shank if there are none yet.  Nested shank-add suppressed
+    // so the array op is a single atomic undo step.
+    ProbeShank* targetShank = m_selectedShank;
+    if (!targetShank && !m_data.shanks.isEmpty())
+        targetShank = &m_data.shanks.last();
+    if (!targetShank) {
+        m_inNestedMutation = true;
+        onAddShankClicked();
+        m_inNestedMutation = false;
+        targetShank = &m_data.shanks.last();
+    }
 
     // Highest hardware id so far, for sequential numbering.
     int maxHw = -1;
@@ -858,6 +1035,7 @@ void ProbeMakerPage::onDeleteSelectedClicked()
         for (ProbeShank& s : m_data.shanks) {
             for (int i = s.channels.size() - 1; i >= 0; --i) {
                 if (&s.channels[i] == m_selectedChannel) {
+                    pushUndoSnapshot(tr("Delete channel"));
                     s.channels.removeAt(i);
                     m_selectedChannel = nullptr;
                     rebuildLogicalScene();
@@ -870,6 +1048,7 @@ void ProbeMakerPage::onDeleteSelectedClicked()
     } else if (m_selectedShank) {
         for (int i = m_data.shanks.size() - 1; i >= 0; --i) {
             if (&m_data.shanks[i] == m_selectedShank) {
+                pushUndoSnapshot(tr("Delete shank"));
                 m_data.shanks.removeAt(i);
                 m_selectedShank = nullptr;
                 rebuildLogicalScene();
@@ -932,6 +1111,9 @@ void ProbeMakerPage::refreshInspector()
 void ProbeMakerPage::onConnectorFieldEdited()
 {
     if (!m_connectorSelected) return;
+    pushUndoSnapshotCoalesced(tr("Edit connector"),
+                              QStringLiteral("connector"),
+                              static_cast<void*>(&m_data));
     m_data.vendor        = m_connVendor->text();
     m_data.model         = m_connModel->text();
     m_data.totalChannels = m_connTotalChan->value();
@@ -951,6 +1133,9 @@ void ProbeMakerPage::onConnectorFieldEdited()
 void ProbeMakerPage::onShankFieldEdited()
 {
     if (!m_selectedShank) return;
+    pushUndoSnapshotCoalesced(tr("Edit shank"),
+                              QStringLiteral("shank"),
+                              static_cast<void*>(m_selectedShank));
     m_selectedShank->label    = m_shankLabel->text();
     m_selectedShank->lengthUm = m_shankLength->value();
     m_selectedShank->widthUm  = m_shankWidth->value();
@@ -968,6 +1153,9 @@ void ProbeMakerPage::onShankFieldEdited()
 void ProbeMakerPage::onChannelFieldEdited()
 {
     if (!m_selectedChannel) return;
+    pushUndoSnapshotCoalesced(tr("Edit channel"),
+                              QStringLiteral("channel"),
+                              static_cast<void*>(m_selectedChannel));
     m_selectedChannel->hardwareId = m_chanHwId->value();
     m_selectedChannel->posUm      = QPointF(m_chanX->value(), m_chanY->value());
     m_selectedChannel->siteIndex  = m_chanSiteIdx->value();
@@ -998,9 +1186,20 @@ void ProbeMakerPage::setConnector(const ProbeConnector& connector)
     // whole new probe centred and scaled regardless of any prior
     // manual zoom.
     m_userZoomedOrPanned = false;
+    // Discard cached logical-graph positions: model pointers are now
+    // different addresses (we reassigned m_data wholesale) so any
+    // stale entries would never match anyway, but explicit clear is
+    // tidier and bounds memory growth across many loads.
+    m_logicalState.clear();
+    // Loading a different probe is a hard boundary for the undo
+    // history — the user can't sensibly undo "across" a load.
+    m_undoStack.clear();
+    m_redoStack.clear();
+    resetEditIdentity();
     rebuildLogicalScene();
     rebuildPhysicalScene();
     setModified(false);
+    updateUndoRedoButtons();
 }
 
 ProbeConnector ProbeMakerPage::connector() const
@@ -1015,9 +1214,17 @@ void ProbeMakerPage::clearToConnector()
     // New content → re-enable auto-fit on the next rebuild so the
     // user sees the fresh probe centred and scaled appropriately.
     m_userZoomedOrPanned = false;
+    // Discard cached logical-graph positions; the new probe gets a
+    // fresh auto-layout.
+    m_logicalState.clear();
+    // Hard boundary for undo history.
+    m_undoStack.clear();
+    m_redoStack.clear();
+    resetEditIdentity();
     rebuildLogicalScene();
     rebuildPhysicalScene();
     setModified(false);
+    updateUndoRedoButtons();
 }
 
 void ProbeMakerPage::setModified(bool b)
@@ -1025,6 +1232,283 @@ void ProbeMakerPage::setModified(bool b)
     if (m_modified == b) return;
     m_modified = b;
     if (b) emit modified();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Undo / redo
+// ═══════════════════════════════════════════════════════════════════════════
+
+void ProbeMakerPage::pushUndoSnapshot(const QString& description)
+{
+    // Three reasons to skip the push:
+    //   1. m_undoInProgress: a restore is in flight — touching history
+    //      during restore would mean the rebuild could blow it up.
+    //   2. m_inNestedMutation: a higher-level mutator already pushed
+    //      its own snapshot and is now invoking a sub-mutator (e.g.
+    //      Add Array creating a shank); the user expects ONE undo
+    //      entry for their conceptual action, not two.
+    if (m_undoInProgress || m_inNestedMutation) return;
+
+    // The logical-view position cache is only fresh after a rebuild's
+    // capture pass — drags update LogicalNodeItem positions live but
+    // m_logicalState catches up only on the next rebuild.  Capture
+    // current scene positions into m_logicalState before snapshotting
+    // so the snapshot reflects the user-visible state.
+    if (m_logicalView && m_logicalView->scene()) {
+        for (QGraphicsItem* it : m_logicalView->scene()->items()) {
+            if (it->type() != ItemTypeLogicalNode) continue;
+            const QString key = it->data(RoleLogicalKey).toString();
+            if (!key.isEmpty()) m_logicalState[key] = it->pos();
+        }
+    }
+
+    UndoSnapshot snap;
+    snap.data         = m_data;
+    snap.logicalState = m_logicalState;
+    snap.description  = description;
+    m_undoStack.append(std::move(snap));
+
+    // A new edit invalidates any pending redo history — once you
+    // diverge from the redo timeline you can't get back without
+    // undoing the new edit.
+    m_redoStack.clear();
+
+    // Bound stack growth.  200 deep is more than enough for an
+    // editing session (and the data is small) but we don't want it to
+    // grow unbounded on long sessions.
+    while (m_undoStack.size() > kMaxUndoDepth)
+        m_undoStack.removeFirst();
+
+    // Any non-coalesced push starts a fresh edit identity — the next
+    // spinbox tick won't be merged with whatever came before.
+    resetEditIdentity();
+
+    updateUndoRedoButtons();
+}
+
+void ProbeMakerPage::pushUndoSnapshotCoalesced(const QString& description,
+                                                const QString& editKind,
+                                                void*          modelPtr)
+{
+    if (m_undoInProgress || m_inNestedMutation) return;
+
+    // If this edit is on the same field of the same item as the
+    // previous edit, the snapshot already on top of the undo stack
+    // already represents the pre-edit state.  Skip the push; the
+    // user will undo through one logical edit, not N individual
+    // spinbox ticks.
+    if (m_lastEditKind == editKind
+        && m_lastEditModelPtr == modelPtr
+        && !m_lastEditKind.isEmpty()
+        && !m_undoStack.isEmpty()) {
+        return;
+    }
+
+    // Capture logical positions like pushUndoSnapshot does.
+    if (m_logicalView && m_logicalView->scene()) {
+        for (QGraphicsItem* it : m_logicalView->scene()->items()) {
+            if (it->type() != ItemTypeLogicalNode) continue;
+            const QString key = it->data(RoleLogicalKey).toString();
+            if (!key.isEmpty()) m_logicalState[key] = it->pos();
+        }
+    }
+
+    // First tick of a new edit: push normally, then remember the
+    // identity so subsequent ticks coalesce.
+    UndoSnapshot snap;
+    snap.data         = m_data;
+    snap.logicalState = m_logicalState;
+    snap.description  = description;
+    m_undoStack.append(std::move(snap));
+    m_redoStack.clear();
+    while (m_undoStack.size() > kMaxUndoDepth)
+        m_undoStack.removeFirst();
+
+    m_lastEditKind     = editKind;
+    m_lastEditModelPtr = modelPtr;
+
+    updateUndoRedoButtons();
+}
+
+void ProbeMakerPage::onUndoClicked()
+{
+    if (m_undoStack.isEmpty()) return;
+
+    // Capture any drag-since-last-snapshot from the live scene into
+    // m_logicalState before snapshotting it onto the redo stack.
+    // Without this, an undone drag-then-undo round-trip would lose
+    // the post-drag state that the user is undoing from.
+    if (m_logicalView && m_logicalView->scene()) {
+        for (QGraphicsItem* it : m_logicalView->scene()->items()) {
+            if (it->type() != ItemTypeLogicalNode) continue;
+            const QString key = it->data(RoleLogicalKey).toString();
+            if (!key.isEmpty()) m_logicalState[key] = it->pos();
+        }
+    }
+    UndoSnapshot redo;
+    redo.data         = m_data;
+    redo.logicalState = m_logicalState;
+    redo.description  = m_undoStack.last().description;
+    m_redoStack.append(std::move(redo));
+
+    // Restore previous state.  m_undoInProgress guards pushUndoSnapshot
+    // against re-entering during the rebuilds below.
+    UndoSnapshot prev = m_undoStack.takeLast();
+    m_undoInProgress = true;
+    m_data         = std::move(prev.data);
+    m_logicalState = std::move(prev.logicalState);
+
+    // Selection pointers are stale after restore (m_data has new
+    // shank/channel addresses post-assignment).  Null them so the
+    // inspector hides its sub-forms; user can re-select in either
+    // scene to pick up where they were.
+    m_selectedShank   = nullptr;
+    m_selectedChannel = nullptr;
+    m_connectorSelected = false;
+
+    rebuildLogicalScene();
+    rebuildPhysicalScene();
+    refreshInspector();
+    setModified(true);
+    m_undoInProgress = false;
+
+    resetEditIdentity();
+    updateUndoRedoButtons();
+}
+
+void ProbeMakerPage::onRedoClicked()
+{
+    if (m_redoStack.isEmpty()) return;
+
+    // Symmetric to onUndoClicked.
+    if (m_logicalView && m_logicalView->scene()) {
+        for (QGraphicsItem* it : m_logicalView->scene()->items()) {
+            if (it->type() != ItemTypeLogicalNode) continue;
+            const QString key = it->data(RoleLogicalKey).toString();
+            if (!key.isEmpty()) m_logicalState[key] = it->pos();
+        }
+    }
+    UndoSnapshot undo;
+    undo.data         = m_data;
+    undo.logicalState = m_logicalState;
+    undo.description  = m_redoStack.last().description;
+    m_undoStack.append(std::move(undo));
+
+    UndoSnapshot next = m_redoStack.takeLast();
+    m_undoInProgress = true;
+    m_data         = std::move(next.data);
+    m_logicalState = std::move(next.logicalState);
+
+    m_selectedShank   = nullptr;
+    m_selectedChannel = nullptr;
+    m_connectorSelected = false;
+
+    rebuildLogicalScene();
+    rebuildPhysicalScene();
+    refreshInspector();
+    setModified(true);
+    m_undoInProgress = false;
+
+    resetEditIdentity();
+    updateUndoRedoButtons();
+}
+
+void ProbeMakerPage::updateUndoRedoButtons()
+{
+    if (m_undoBtn) {
+        m_undoBtn->setEnabled(!m_undoStack.isEmpty());
+        m_undoBtn->setToolTip(m_undoStack.isEmpty()
+            ? tr("Undo (Ctrl+Z)")
+            : tr("Undo %1 (Ctrl+Z)").arg(m_undoStack.last().description));
+    }
+    if (m_redoBtn) {
+        m_redoBtn->setEnabled(!m_redoStack.isEmpty());
+        m_redoBtn->setToolTip(m_redoStack.isEmpty()
+            ? tr("Redo (Ctrl+Shift+Z, Ctrl+Y)")
+            : tr("Redo %1 (Ctrl+Shift+Z, Ctrl+Y)")
+                .arg(m_redoStack.last().description));
+    }
+}
+
+bool ProbeMakerPage::eventFilter(QObject* obj, QEvent* ev)
+{
+    // Drag-tracking protocol: mouse-down over a movable item snapshots
+    // the pre-drag state; mouse-up checks whether the item actually
+    // moved.  If it did, the snapshot stays on the undo stack; if it
+    // was just a click-select with no movement, we pop the snapshot
+    // to keep the history free of no-op entries.
+    //
+    // We filter both viewports — the logical view's viewport for
+    // LogicalNodeItem drags (which mutate m_logicalState) and the
+    // physical view's viewport for ChannelItem / ShankItem drags
+    // (which mutate posUm / originUm in m_data).
+    //
+    // Determining "is the cursor over a movable item" uses the view's
+    // itemAt(): we identify which view owns the viewport, map the
+    // mouse position into the view's coords, and ask what's there.
+
+    // Identify the owning view (if any).
+    QGraphicsView* view = nullptr;
+    if (m_physicalView && obj == m_physicalView->viewport()) view = m_physicalView;
+    else if (m_logicalView && obj == m_logicalView->viewport()) view = m_logicalView;
+    if (!view) return QWidget::eventFilter(obj, ev);
+
+    if (ev->type() == QEvent::MouseButtonPress) {
+        auto* me = static_cast<QMouseEvent*>(ev);
+        if (me->button() != Qt::LeftButton)
+            return QWidget::eventFilter(obj, ev);   // only left-button drags
+
+        // Look up the item under the cursor.  itemAt() takes view coords,
+        // which is exactly what me->pos() gives us.
+        QGraphicsItem* hit = view->itemAt(me->pos());
+        if (!hit || !(hit->flags() & QGraphicsItem::ItemIsMovable))
+            return QWidget::eventFilter(obj, ev);
+
+        // Snapshot the pre-drag state.  Description is generic — we
+        // don't know yet whether the user is dragging a channel, a
+        // shank, or a logical-graph node, but the snapshot is the
+        // same shape regardless.
+        pushUndoSnapshot(tr("Move"));
+        m_dragSnapshotPushed = true;
+        m_dragItem           = hit;
+        m_dragStartPos       = hit->pos();
+        // Don't accept the event — let Qt route it normally so the
+        // built-in drag machinery still works.
+        return QWidget::eventFilter(obj, ev);
+    }
+
+    if (ev->type() == QEvent::MouseButtonRelease) {
+        if (!m_dragSnapshotPushed)
+            return QWidget::eventFilter(obj, ev);
+
+        // Did the item actually move?  If yes, the snapshot stays on
+        // the undo stack — the drag is undoable.  If no (just a
+        // click-select), pop the snapshot so the user's undo history
+        // doesn't fill with no-op entries from selecting items.
+        //
+        // Defensive: confirm the dragged item is still in its scene.
+        // If a structural rebuild fired mid-drag (it shouldn't, but)
+        // m_dragItem could be a dangling pointer; skip the position
+        // read and just pop in that case.  view->scene()->items()
+        // is O(n) but only runs on mouse release, not per move.
+        bool moved = false;
+        if (m_dragItem && view->scene()
+            && view->scene()->items().contains(m_dragItem)) {
+            moved = (m_dragItem->pos() != m_dragStartPos);
+        }
+        if (!moved && !m_undoStack.isEmpty()) {
+            // Drop the just-pushed entry.  The matching redo stack
+            // was cleared by the push; nothing else to clean up.
+            m_undoStack.removeLast();
+            updateUndoRedoButtons();
+        }
+        m_dragSnapshotPushed = false;
+        m_dragItem           = nullptr;
+        // m_dragStartPos doesn't need clearing; only valid while
+        // m_dragSnapshotPushed is true.
+    }
+
+    return QWidget::eventFilter(obj, ev);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1228,17 +1712,20 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     // than going through yaml-cpp::Emitter because the canonical
     // library files have specific comment/whitespace conventions
     // (block separators, inline comments on key lines) that
-    // round-trip cleanly only with hand-formatting.
+    // round-trip cleanly only with hand-formatting.  All user-
+    // controlled strings (vendor, model, notes, catalogPage,
+    // descriptions) are passed through yamlEscape() to handle special
+    // characters that would otherwise produce malformed YAML.
     out << "# neurosuite-3 probe file — generated by ndmanager Probe Maker\n";
     out << "# Canonical schema: matches src/nphys-data/src/probes/*.probe.\n";
     out << "probeFile:\n";
-    out << "  version: '" << m_data.version << "'\n";
+    out << "  version: " << yamlEscape(m_data.version) << "\n";
     if (!m_data.vendor.isEmpty())
-        out << "  vendor: " << m_data.vendor << "\n";
+        out << "  vendor: "      << yamlEscape(m_data.vendor) << "\n";
     if (!m_data.model.isEmpty())
-        out << "  model: " << m_data.model << "\n";
+        out << "  model: "       << yamlEscape(m_data.model) << "\n";
     if (!m_data.catalogPage.isEmpty())
-        out << "  catalogPage: " << m_data.catalogPage << "\n";
+        out << "  catalogPage: " << yamlEscape(m_data.catalogPage) << "\n";
 
     // Compute totalChannels from the model in case the field is stale.
     int total = 0;
@@ -1246,9 +1733,10 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     out << "  totalChannels: " << qMax(m_data.totalChannels, total) << "\n";
 
     out << "  substrate:\n";
-    out << "    material: " << (m_data.substrateMaterial.isEmpty()
-                                  ? QStringLiteral("silicon")
-                                  : m_data.substrateMaterial) << "\n";
+    out << "    material: "
+        << yamlEscape(m_data.substrateMaterial.isEmpty()
+                       ? QStringLiteral("silicon")
+                       : m_data.substrateMaterial) << "\n";
     if (m_data.substrateThicknessUm > 0)
         out << "    thickness_um: " << m_data.substrateThicknessUm << "\n";
     else
@@ -1256,7 +1744,10 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
 
     out << "  shanks:\n";
     out << "    count: " << m_data.shanks.size() << "\n";
-    // spacing_um: derive from originUm differences if uniform.
+    // spacing_um: derive from originUm differences iff uniform across
+    // all gaps.  qFuzzyCompare's documented zero-safety trick (adding
+    // 1.0 to both sides) is unnecessary here — spacings are always
+    // non-zero for multi-shank probes — so use the direct comparison.
     qreal spacing = 0.0;
     bool spacingUniform = true;
     if (m_data.shanks.size() >= 2) {
@@ -1264,7 +1755,7 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
         for (int i = 2; i < m_data.shanks.size(); ++i) {
             const qreal d = m_data.shanks[i].originUm.x()
                           - m_data.shanks[i-1].originUm.x();
-            if (qFuzzyCompare(d + 1.0, spacing + 1.0) == false) {
+            if (!qFuzzyCompare(d, spacing)) {
                 spacingUniform = false;
                 break;
             }
@@ -1298,8 +1789,16 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
         }
         out << "]\n";
     }
+    // SCHEMA NOTE: `sites.layout` and `sites.area_um2` are GLOBAL
+    // fields in the canonical schema, but the in-memory model carries
+    // them per-shank (layout) and per-channel (area_um2).  We write
+    // the FIRST value we see and silently drop divergent entries.  In
+    // practice this is fine: probes have one substrate fab, so all
+    // sites of one probe share area, and all shanks of one probe share
+    // layout.  If a future schema revision adds per-shank/per-channel
+    // overrides, the loader and saver will both need updating.
     if (!m_data.shanks.isEmpty())
-        out << "    layout: " << m_data.shanks.first().layout << "\n";
+        out << "    layout: " << yamlEscape(m_data.shanks.first().layout) << "\n";
     qreal area = 177.0;
     if (!m_data.shanks.isEmpty() && !m_data.shanks.first().channels.isEmpty())
         area = m_data.shanks.first().channels.first().areaUm2;
@@ -1321,10 +1820,11 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     }
 
     out << "  channelMap:\n";
-    if (!m_data.channelMapDescription.isEmpty())
-        out << "    description: \"" << m_data.channelMapDescription << "\"\n";
-    else
-        out << "    description: \"Sequential — site index = hardware channel.\"\n";
+    out << "    description: "
+        << yamlEscape(m_data.channelMapDescription.isEmpty()
+                       ? QStringLiteral("Sequential — site index = hardware channel.")
+                       : m_data.channelMapDescription)
+        << "\n";
     if (m_data.channelMap.isEmpty()) {
         out << "    map: null\n";
     } else {
@@ -1337,7 +1837,7 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     }
 
     if (!m_data.notes.isEmpty()) {
-        out << "  notes: \"" << m_data.notes << "\"\n";
+        out << "  notes: " << yamlEscape(m_data.notes) << "\n";
     }
 
     out.flush();

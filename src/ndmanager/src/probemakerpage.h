@@ -17,12 +17,16 @@
  ***************************************************************************/
 #pragma once
 
+#include <QHash>
+#include <QPointF>
 #include <QWidget>
 
 #include "klustersshared/parameteryamlreader_probes.h"
 
 class QGraphicsScene;
 class QGraphicsView;
+class QGraphicsItem;
+class QEvent;
 class QLabel;
 class QLineEdit;
 class QSpinBox;
@@ -117,6 +121,8 @@ private slots:
     void onAddChannelClicked();
     void onAddArrayClicked();    ///< add a linear array of N sites
     void onDeleteSelectedClicked();
+    void onUndoClicked();
+    void onRedoClicked();
 
     /** Inspector commit handlers — bound to editingFinished on each
      *  inspector field.  Each one reads the selected item, writes the
@@ -127,7 +133,6 @@ private slots:
     void onChannelFieldEdited();
 
 private:
-    void buildToolbar(QSplitter* outer);
     void buildLogicalPane(QSplitter* inner);
     void buildPhysicalPane(QSplitter* inner);
     void buildInspector(QSplitter* inner);
@@ -194,11 +199,12 @@ private:
     // Toolbar buttons
     QPushButton* m_saveBtn       = nullptr;
     QPushButton* m_saveAsBtn     = nullptr;
-    QPushButton* m_loadBtn       = nullptr;
     QPushButton* m_addShankBtn   = nullptr;
     QPushButton* m_addChannelBtn = nullptr;
     QPushButton* m_addArrayBtn   = nullptr;
     QPushButton* m_deleteBtn     = nullptr;
+    QPushButton* m_undoBtn       = nullptr;
+    QPushButton* m_redoBtn       = nullptr;
 
     /** Selection state.  Each field is non-null only when an item of
      *  that kind is currently selected (the three are mutually
@@ -214,4 +220,139 @@ private:
      *  by loadFromFile (fresh content gets a fresh fit) and by the
      *  Fit toolbar button (explicit re-fit). */
     bool           m_userZoomedOrPanned = false;
+
+    /** Per-item logical-view positions, used by the logical-graph
+     *  editor to remember where the user dragged each node across
+     *  scene rebuilds.  Without this, every model edit (which
+     *  triggers rebuildLogicalScene) would snap the user's hand-
+     *  arranged graph back to the auto-layout.
+     *
+     *  Keys are stable composite strings, not raw model pointers,
+     *  because `QList<ProbeShank>` reallocates on append (and
+     *  `QList<ProbeChannel>` likewise inside each shank) — so model
+     *  addresses are not stable across edits, and a stale address
+     *  could collide with a freshly-appended item placed at the same
+     *  recycled location.  See logicalKeyForXxx() helpers in
+     *  probemakerpage.cpp for the key format.
+     *
+     *  Cleared wholesale on clearToConnector / setConnector; pruned
+     *  of dead keys at the top of every rebuildLogicalScene. */
+    QHash<QString, QPointF> m_logicalState;
+
+    // ── Undo / redo ────────────────────────────────────────────────────
+    //
+    // Snapshot-based undo: every discrete operation (toolbar action,
+    // inspector field commit, drag-to-reposition) calls
+    // pushUndoSnapshot() *before* mutating m_data or m_logicalState.
+    // Undo pops the most recent snapshot and replaces m_data plus the
+    // logical-view position cache with the snapshot's; redo replays
+    // the inverse.  The model is small enough (a ProbeConnector with
+    // a QList<ProbeShank>) to copy in full on every op without
+    // measurable cost.
+    //
+    // Drag tracking: an event filter on both viewports' viewport
+    // widgets snapshots on MouseButtonPress over a movable item and
+    // pops the just-pushed snapshot on MouseButtonRelease if the
+    // tracked item didn't actually move (no-op click-selects).  See
+    // eventFilter() and m_dragSnapshotPushed below.
+    //
+    // Selection isn't saved in the snapshot.  After undo or redo, no
+    // item is selected — the model has new shank/channel addresses
+    // post-assignment, so the old m_selectedShank / m_selectedChannel
+    // pointers would be dangling.  The slots null them out and the
+    // user re-selects to pick up where they were.
+    struct UndoSnapshot {
+        ProbeConnector          data;          ///< model snapshot
+        QHash<QString, QPointF> logicalState;  ///< logical-view positions
+        QString                 description;   ///< human-readable, for tooltips
+    };
+    QList<UndoSnapshot> m_undoStack;
+    QList<UndoSnapshot> m_redoStack;
+    static constexpr int kMaxUndoDepth = 200;
+
+    /** Set true while onUndoClicked / onRedoClicked are restoring a
+     *  prior snapshot.  pushUndoSnapshot returns early in that mode so
+     *  the restore itself doesn't land on the stack — without this,
+     *  the rebuilds called during restore could re-enter mutating
+     *  code paths that push, blowing up history. */
+    bool m_undoInProgress = false;
+
+    /** Set true while a higher-level mutation (onAddArrayClicked,
+     *  onAddChannelClicked when there's no shank yet) is recursively
+     *  invoking another mutator (onAddShankClicked) for a sub-step.
+     *  pushUndoSnapshot returns early in that mode so the user's
+     *  single conceptual action becomes one undo entry rather than
+     *  one entry per nested call.  Distinct from m_undoInProgress
+     *  because the semantics differ — restore is "model is being
+     *  reverted, don't touch history"; nested-mutation is "model is
+     *  being mutated normally, but already snapshotted." */
+    bool m_inNestedMutation = false;
+
+    /** Edit identity for coalescing consecutive same-field edits into
+     *  a single undo step.  When the user drags a spinbox arrow from
+     *  1500 → 1501 → 1502, valueChanged fires once per tick; without
+     *  coalescing each tick would land on the undo stack as a separate
+     *  step.  We instead push only the FIRST tick (capturing the
+     *  pre-edit state) and let subsequent same-field ticks update
+     *  m_data without pushing.
+     *
+     *  identityKind names the conceptual field (e.g. "shank.length",
+     *  "channel.posX"); identityModelPtr disambiguates which item.
+     *  Any non-edit op (add / delete / undo / redo / load) calls
+     *  resetEditIdentity() so the next edit, even on the same field,
+     *  is a fresh undo step. */
+    QString m_lastEditKind;
+    void*   m_lastEditModelPtr = nullptr;
+    void resetEditIdentity()
+    {
+        m_lastEditKind.clear();
+        m_lastEditModelPtr = nullptr;
+    }
+
+    /** Push the current m_data state on the undo stack with the given
+     *  description, and clear the redo stack (a new edit invalidates
+     *  any prior redo history).  Caps undo depth at kMaxUndoDepth by
+     *  dropping the oldest entry. */
+    void pushUndoSnapshot(const QString& description);
+
+    /** Coalescing variant: if the most recent push had the same
+     *  (editKind, modelPtr), don't push again — the state already on
+     *  the undo stack is already the pre-edit state.  Otherwise push
+     *  normally. */
+    void pushUndoSnapshotCoalesced(const QString& description,
+                                    const QString& editKind,
+                                    void*          modelPtr);
+
+    /** Update enabled state and tooltips on the undo/redo buttons
+     *  based on current stack contents.  Called after every push,
+     *  undo, and redo. */
+    void updateUndoRedoButtons();
+
+    // ── Drag tracking via event filter ─────────────────────────────────
+    //
+    // The page installs itself as event filter on both viewports'
+    // viewport widgets (m_logicalView->viewport(), m_physicalView->
+    // viewport()).  On MouseButtonPress over a movable item, it
+    // pushes a snapshot and remembers the item's pre-drag pos.  On
+    // MouseButtonRelease, it compares the current pos to the
+    // remembered one — if they're equal, the user just clicked
+    // (no drag actually happened) and we pop the just-pushed
+    // snapshot to keep the undo history clean.  If they differ,
+    // the snapshot stays.
+
+    /** True iff a drag-press handler pushed an undo snapshot that's
+     *  still pending a corresponding release.  Used by the release
+     *  handler to decide whether to keep or pop the snapshot. */
+    bool             m_dragSnapshotPushed = false;
+
+    /** The item whose press triggered the snapshot, and the position
+     *  it had at that moment.  Compared at release to determine if
+     *  the drag was a no-op. */
+    QGraphicsItem*   m_dragItem = nullptr;
+    QPointF          m_dragStartPos;
+
+protected:
+    /** Implements drag-press / drag-release detection on both
+     *  viewports — see "Drag tracking" doc above. */
+    bool eventFilter(QObject* obj, QEvent* ev) override;
 };

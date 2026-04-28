@@ -105,24 +105,24 @@ void ConnectorItem::paint(QPainter* p,
     p->setFont(f);
     p->setPen(connectorAccent().lighter(130));
 
-    const QString label = m_model
-        ? QStringLiteral("Connector ★ ROOT")
-        : QStringLiteral("Connector ★ ROOT");  // model is non-owning, kept always
-    p->drawText(QRectF(12.0, 10.0, m_width - 24.0, 22.0),
-                Qt::AlignLeft | Qt::AlignVCenter, label);
-
-    // Subtitle: channel count + vendor/model
-    QString subtitle;
-    if (m_model) {
-        subtitle = QStringLiteral("%1 channels").arg(m_model->totalChannels);
-        if (!m_model->model.isEmpty()) {
-            subtitle += QStringLiteral(" · ");
-            if (!m_model->vendor.isEmpty()) {
-                subtitle += m_model->vendor + QStringLiteral(" ");
-            }
-            subtitle += m_model->model;
-        }
+    // Title shows the probe's model name when set, falling back to
+    // a generic "Connector ★ ROOT" placeholder.  m_model is non-owning
+    // and is set at construction; it can only be null in the unlikely
+    // case that ConnectorItem is constructed without a model (which
+    // we don't currently do, but defensive programming is cheap).
+    QString title = QStringLiteral("Connector ★ ROOT");
+    if (m_model && !m_model->model.isEmpty()) {
+        title = m_model->model;
+        if (!m_model->vendor.isEmpty())
+            title = m_model->vendor + QStringLiteral(" · ") + title;
     }
+    p->drawText(QRectF(12.0, 10.0, m_width - 24.0, 22.0),
+                Qt::AlignLeft | Qt::AlignVCenter, title);
+
+    // Subtitle: total channel count.
+    QString subtitle;
+    if (m_model)
+        subtitle = QStringLiteral("%1 channels").arg(m_model->totalChannels);
     f.setPointSizeF(8.0);
     f.setWeight(QFont::Normal);
     p->setFont(f);
@@ -159,49 +159,44 @@ void ShankItem::refreshFromModel()
     update();
 }
 
-void ShankItem::setLogicalMode(bool on)
-{
-    if (m_logicalMode == on) return;
-    m_logicalMode = on;
-    rebuildPolygon();
-    update();
-}
-
 void ShankItem::rebuildPolygon()
 {
     QPolygonF poly;
-    if (m_logicalMode || !m_model) {
-        // Logical view: 200×56 rounded rect, identical to the
-        // Pipeline Designer's node footprint.  Origin at top-left
-        // because logical-view positions are arbitrary anyway.
-        poly << QPointF(0.0,    0.0)
-             << QPointF(200.0,  0.0)
-             << QPointF(200.0, 56.0)
-             << QPointF(0.0,   56.0);
-    } else {
-        // Physical view: rect body (width × length) with a triangular
-        // tip wedge at the bottom (y = lengthUm).  The polygon is
-        // centred on x=0 — i.e. the local origin is at the top of the
-        // shank's CENTRELINE — so that a child ChannelItem with
-        // posUm.x() == 0 lands on the centreline.  Sites at ±halfW
-        // sit on the edges.  This matches the canonical .probe file
-        // convention where each shank's geometry is referenced to its
-        // own centreline (e.g. Buzsaki sites at x=±11 µm).
-        //
-        // Tip half-angle is (180° − tipAngle) / 2; at 90° the tip is
-        // flat (no wedge).  Lower angles produce sharp points.
-        const qreal w     = m_model->widthUm;
-        const qreal h     = m_model->lengthUm;
-        const qreal halfW = w * 0.5;
-        const qreal tipDeg = m_model->tipAngle;
-        const qreal halfApex = (180.0 - tipDeg) * 0.5 * M_PI / 180.0;
-        const qreal wedge = std::tan(halfApex) * halfW;
-        poly << QPointF(-halfW, 0.0)
-             << QPointF( halfW, 0.0)
-             << QPointF( halfW, h)
-             << QPointF( 0.0,   h + wedge)
-             << QPointF(-halfW, h);
+    if (!m_model) {
+        // Defensive — we never construct a ShankItem without a model
+        // in normal flow, but if one slips through, draw a minimal
+        // placeholder polygon so the scene doesn't crash on an empty
+        // QGraphicsPolygonItem.
+        poly << QPointF(0.0, 0.0)
+             << QPointF(70.0, 0.0)
+             << QPointF(70.0, 1500.0)
+             << QPointF(35.0, 1530.0)
+             << QPointF(0.0, 1500.0);
+        setPolygon(poly);
+        return;
     }
+    // Rect body (width × length) with a triangular tip wedge at the
+    // bottom (y = lengthUm).  The polygon is centred on x=0 — i.e.
+    // the local origin is at the top of the shank's CENTRELINE — so
+    // that a child ChannelItem with posUm.x() == 0 lands on the
+    // centreline.  Sites at ±halfW sit on the edges.  This matches
+    // the canonical .probe file convention where each shank's
+    // geometry is referenced to its own centreline (e.g. Buzsaki
+    // sites at x=±11 µm).
+    //
+    // Tip half-angle is (180° − tipAngle) / 2; at 90° the tip is
+    // flat (no wedge).  Lower angles produce sharp points.
+    const qreal w        = m_model->widthUm;
+    const qreal h        = m_model->lengthUm;
+    const qreal halfW    = w * 0.5;
+    const qreal tipDeg   = m_model->tipAngle;
+    const qreal halfApex = (180.0 - tipDeg) * 0.5 * M_PI / 180.0;
+    const qreal wedge    = std::tan(halfApex) * halfW;
+    poly << QPointF(-halfW, 0.0)
+         << QPointF( halfW, 0.0)
+         << QPointF( halfW, h)
+         << QPointF( 0.0,   h + wedge)
+         << QPointF(-halfW, h);
     setPolygon(poly);
 }
 
@@ -215,52 +210,19 @@ void ShankItem::paint(QPainter* p,
     p->setBrush(shankBg());
     p->setPen(QPen(selected ? selectionStroke() : shankAccent().darker(160),
                    selected ? 2.0 : 0.5));
-
-    if (m_logicalMode) {
-        p->drawRoundedRect(boundingRect(), 8.0, 8.0);
-        // Header stripe
-        QPainterPath stripe;
-        stripe.addRect(QRectF(0.0, 0.0, 200.0, 6.0));
-        p->setPen(Qt::NoPen);
-        p->setBrush(shankAccent());
-        p->drawPath(stripe);
-        // Label
-        if (m_model) {
-            QFont f = p->font();
-            f.setPointSizeF(10.0);
-            f.setWeight(QFont::Bold);
-            p->setFont(f);
-            p->setPen(shankAccent().lighter(130));
-            p->drawText(QRectF(12.0, 10.0, 176.0, 22.0),
-                        Qt::AlignLeft | Qt::AlignVCenter,
-                        m_model->label.isEmpty() ? m_model->id
-                                                 : m_model->label);
-            f.setPointSizeF(8.0);
-            f.setWeight(QFont::Normal);
-            p->setFont(f);
-            p->setPen(shankAccent());
-            const QString sub =
-                QStringLiteral("%1 channels · %2 µm")
-                    .arg(m_model->channels.size())
-                    .arg(static_cast<int>(m_model->lengthUm));
-            p->drawText(QRectF(12.0, 32.0, 176.0, 18.0),
-                        Qt::AlignLeft | Qt::AlignVCenter, sub);
-        }
-    } else {
-        // Physical view: just the silhouette polygon, no labels.
-        p->drawPolygon(polygon());
-    }
+    // Physical view: just the silhouette polygon.  Labels are shown
+    // by the inspector when the shank is selected.
+    p->drawPolygon(polygon());
 }
 
 QVariant ShankItem::itemChange(GraphicsItemChange change,
                                const QVariant& value)
 {
-    if (change == ItemPositionHasChanged && m_model && !m_logicalMode) {
-        // User dragged the shank; mirror the new position into the
-        // model's originUm.  scene() emits selectionChanged signals
-        // separately; the page connects to those for modelChanged.
-        const QPointF p = value.toPointF();
-        m_model->originUm = p;
+    if (change == ItemPositionHasChanged && m_model) {
+        // User dragged the shank in the physical scene; mirror the new
+        // origin into the model so the inspector and serializer see
+        // the updated position.
+        m_model->originUm = value.toPointF();
     }
     return QGraphicsPolygonItem::itemChange(change, value);
 }
@@ -324,6 +286,214 @@ QVariant ChannelItem::itemChange(GraphicsItemChange change,
         m_model->posUm = value.toPointF();
     }
     return QGraphicsEllipseItem::itemChange(change, value);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LogicalNodeItem
+// ═══════════════════════════════════════════════════════════════════════════
+
+LogicalNodeItem::LogicalNodeItem(Kind          kind,
+                                  void*         modelPtr,
+                                  const QString& label,
+                                  QSizeF        size,
+                                  QGraphicsItem* parent)
+    : QGraphicsItem(parent)
+    , m_kind(kind)
+    , m_modelPtr(modelPtr)
+    , m_label(label)
+    , m_size(size)
+{
+    setFlag(QGraphicsItem::ItemIsMovable,            true);
+    setFlag(QGraphicsItem::ItemIsSelectable,         true);
+    setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+    setData(RoleItemKind,
+            kind == Kind::Connector ? QStringLiteral("connector")
+          : kind == Kind::Shank     ? QStringLiteral("shank")
+                                     : QStringLiteral("channel"));
+    setData(RoleModelPtr, QVariant::fromValue(modelPtr));
+}
+
+LogicalNodeItem::~LogicalNodeItem()
+{
+    // Notify each registered edge that we're going away.  The edge
+    // nulls out whichever of its endpoint pointers we matched, so its
+    // own dtor (which may run before or after ours) doesn't call
+    // removeEdge() on this freed object.  We deliberately don't call
+    // removeEdge() ourselves here — m_edges is about to be destroyed.
+    for (LogicalEdgeItem* edge : m_edges)
+        edge->endpointDetached(this);
+}
+
+void LogicalNodeItem::addEdge(LogicalEdgeItem* edge)
+{
+    if (edge) m_edges.insert(edge);
+}
+
+void LogicalNodeItem::removeEdge(LogicalEdgeItem* edge)
+{
+    m_edges.remove(edge);
+}
+
+QPointF LogicalNodeItem::topAnchor() const
+{
+    // The node is drawn from (0,0) to (size.w, size.h) in local coords;
+    // top-centre in scene coords is mapToScene(size.w/2, 0).
+    return mapToScene(QPointF(m_size.width() * 0.5, 0.0));
+}
+
+QPointF LogicalNodeItem::bottomAnchor() const
+{
+    return mapToScene(QPointF(m_size.width() * 0.5, m_size.height()));
+}
+
+int LogicalNodeItem::type() const
+{
+    return ItemTypeLogicalNode;
+}
+
+QRectF LogicalNodeItem::boundingRect() const
+{
+    // Slightly larger than the visible rect so the selection halo and
+    // the focus border don't get clipped at the edge.
+    constexpr qreal pad = 1.0;
+    return QRectF(-pad, -pad,
+                  m_size.width()  + 2.0 * pad,
+                  m_size.height() + 2.0 * pad);
+}
+
+void LogicalNodeItem::paint(QPainter* p,
+                             const QStyleOptionGraphicsItem* opt,
+                             QWidget* /*widget*/)
+{
+    p->setRenderHint(QPainter::Antialiasing);
+    const bool selected = (opt && (opt->state & QStyle::State_Selected));
+
+    QColor bg, accent, txtCol;
+    switch (m_kind) {
+    case Kind::Connector:
+        bg = QColor(0x1a, 0x1a, 0x0d);
+        accent = QColor(0xfa, 0xc1, 0x5c);
+        txtCol = QColor(0xff, 0xd9, 0x7e);
+        break;
+    case Kind::Shank:
+        bg = QColor(0x0a, 0x12, 0x1c);
+        accent = QColor(0x4a, 0x9e, 0xff);
+        txtCol = QColor(0xbc, 0xd0, 0xe8);
+        break;
+    case Kind::Channel:
+        bg = QColor(0x07, 0x12, 0x22);
+        accent = QColor(0x37, 0x8a, 0xdd);
+        txtCol = QColor(0x85, 0xb7, 0xeb);
+        break;
+    }
+
+    const QRectF r(0.0, 0.0, m_size.width(), m_size.height());
+    p->setBrush(bg);
+    p->setPen(QPen(selected ? QColor(0xff, 0xd9, 0x7e) : accent.darker(160),
+                   selected ? 2.0 : 0.5));
+    if (m_kind == Kind::Connector || m_kind == Kind::Shank) {
+        p->drawRoundedRect(r, 6.0, 6.0);
+        // Top accent stripe (matches the auto-laid-out look).
+        p->setPen(Qt::NoPen);
+        p->setBrush(accent);
+        p->drawRect(QRectF(0.0, 0.0, m_size.width(), 4.0));
+    } else {
+        p->drawRoundedRect(r, 3.0, 3.0);
+    }
+
+    // Label (centred).
+    p->setPen(txtCol);
+    QFont f = p->font();
+    f.setPointSizeF(m_kind == Kind::Channel ? 8.0 : 10.0);
+    if (m_kind != Kind::Channel) f.setBold(true);
+    p->setFont(f);
+    p->drawText(r, Qt::AlignCenter, m_label);
+}
+
+QVariant LogicalNodeItem::itemChange(GraphicsItemChange change,
+                                      const QVariant& value)
+{
+    if (change == ItemPositionHasChanged) {
+        // Notify all attached edges so they re-route their polylines
+        // to follow this node's new scene position.
+        for (LogicalEdgeItem* edge : m_edges)
+            edge->recalcGeometry();
+    }
+    return QGraphicsItem::itemChange(change, value);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LogicalEdgeItem
+// ═══════════════════════════════════════════════════════════════════════════
+
+LogicalEdgeItem::LogicalEdgeItem(LogicalNodeItem* src, LogicalNodeItem* dst)
+    : m_src(src)
+    , m_dst(dst)
+{
+    setZValue(-1.0);   // edges render under nodes
+    if (m_src) m_src->addEdge(this);
+    if (m_dst) m_dst->addEdge(this);
+    recalcGeometry();
+}
+
+LogicalEdgeItem::~LogicalEdgeItem()
+{
+    // Either pointer may already be null if the corresponding endpoint
+    // was destroyed first (it called endpointDetached on us).  Only
+    // call removeEdge on the still-live ones.
+    if (m_src) m_src->removeEdge(this);
+    if (m_dst) m_dst->removeEdge(this);
+}
+
+void LogicalEdgeItem::endpointDetached(LogicalNodeItem* who)
+{
+    // The endpoint is being destroyed; null our pointer so our own
+    // dtor doesn't dereference it.  After detachment we can no longer
+    // recompute geometry (recalcGeometry guards against null), but
+    // that's fine — we'll be deleted in the same s->clear() pass.
+    if (m_src == who) m_src = nullptr;
+    if (m_dst == who) m_dst = nullptr;
+}
+
+void LogicalEdgeItem::recalcGeometry()
+{
+    if (!m_src || !m_dst) return;
+    prepareGeometryChange();
+
+    const QPointF a = m_src->bottomAnchor();
+    const QPointF b = m_dst->topAnchor();
+    // Stub offsets: emphasise the attachment by extending vertically
+    // away from each anchor before bending toward the other endpoint.
+    constexpr qreal stub = 12.0;
+    const QPointF aStub(a.x(), a.y() + stub);
+    const QPointF bStub(b.x(), b.y() - stub);
+
+    m_path.clear();
+    m_path << a << aStub << bStub << b;
+
+    // Cache bounding rect with a 4 px pad for the pen width.
+    m_bounding = m_path.boundingRect().adjusted(-4.0, -4.0, 4.0, 4.0);
+    update();
+}
+
+int LogicalEdgeItem::type() const
+{
+    return ItemTypeLogicalEdge;
+}
+
+QRectF LogicalEdgeItem::boundingRect() const
+{
+    return m_bounding;
+}
+
+void LogicalEdgeItem::paint(QPainter* p,
+                             const QStyleOptionGraphicsItem* /*opt*/,
+                             QWidget* /*widget*/)
+{
+    if (m_path.size() < 2) return;
+    p->setRenderHint(QPainter::Antialiasing);
+    p->setPen(QPen(QColor(0xfa, 0xc1, 0x5c), 1.4));
+    p->drawPolyline(m_path);
 }
 
 }  // namespace probemaker
