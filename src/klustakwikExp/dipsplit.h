@@ -70,6 +70,28 @@ void top_pcs_power_iteration(
     double tol    = 1e-6);
 
 // -----------------------------------------------------------------------------
+// top_pcs_with_eigenvalues — same as top_pcs_power_iteration, but additionally
+// returns the eigenvalue (Rayleigh quotient λ = uᵀ C u, which equals the
+// variance of the cluster's data along that principal direction) for each PC.
+//
+// Used by the elongation gate in KK::DipSplitAttemptEx — a cluster whose top
+// eigenvalue dominates its second/third eigenvalue by a wide margin is the
+// classic signature of two sub-modes well-separated along one axis but fitted
+// as a single inflated Gaussian by CEM.  This catches the failure mode that
+// the χ²-based bloat gate misses (when CEM's covariance has been so inflated
+// that mahal²₉₀ stays near the unimodal Gaussian expectation).
+//
+// Cost is identical to top_pcs_power_iteration plus k·d² for the Rayleigh
+// quotient — negligible.
+// -----------------------------------------------------------------------------
+void top_pcs_with_eigenvalues(
+    const float* X, int nPoints, int d, int k,
+    double* pcs_out,            // [k * d]   (each row: a PC)
+    double* eigs_out,           // [k]       (variance along each PC)
+    int max_iters = 50,
+    double tol    = 1e-6);
+
+// -----------------------------------------------------------------------------
 // kmeans2_refine — single-pass k=2 k-means refinement seeded at init centroids.
 // Writes labels ∈ {0,1} into `labels_out`.  Returns number of iterations until
 // convergence (labels unchanged).
