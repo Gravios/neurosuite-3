@@ -129,15 +129,31 @@ extern int   TimeShiftMergeEnable;
 extern int   DipSplitEnable;
 // DipSplitMinSize: minimum spike count per child cluster for an accepted
 // split, and minimum per parent cluster for the splitter to even look
-// (parent must have ≥ 2·DipSplitMinSize members).  Default 100.
+// (parent must have ≥ 2·DipSplitMinSize members).  Default 50.
 extern int   DipSplitMinSize;
 // DipSplitBloatFactor: the bloat gate fires when the cluster's 90th-
 // percentile Mahalanobis² exceeds this factor times χ²(nDims, 0.9).
-// Larger → more conservative (fewer false positives).  Default 1.5.
+// Larger → more conservative (fewer false positives).  Default 1.0.
+// Lowered from 1.5 because the χ²(d, 0.9) target is itself the
+// expected p90 of a unimodal Gaussian — bimodal mixtures whose
+// covariance has been inflated by CEM can sit just under it.  The
+// elongation gate (DipSplitElongationFactor) is the actual second
+// line of defence for that absorbed-bimodal case.
 extern float DipSplitBloatFactor;
+// DipSplitElongationFactor: secondary OR-gate that fires when the
+// cluster's covariance is strongly elongated along one direction —
+// specifically when the top eigenvalue is ≥ this factor times the
+// median of the top-3 eigenvalues.  Catches the failure mode where
+// CEM has fitted two well-separated sub-populations with one inflated
+// Gaussian: the bloat gate misses it (because the inflated covariance
+// keeps mahal²₉₀ near the χ² expectation), but the eigenvalue
+// signature is unmistakable.  Default 4.0.  Set 0.0 to disable
+// (revert to bloat-only behaviour).
+extern float DipSplitElongationFactor;
 // DipSplitValleyThresh: minimum valley depth on the KDE of a PC projection
 // for the cluster to be flagged as bimodal.  Depth ∈ [0, 1]; 0.15 means
-// "the valley is at most 85% as high as the shorter peak".  Default 0.15.
+// "the valley is at most 85% as high as the shorter peak".  Default 0.0
+// (let any detected valley through to the BIC gate).
 extern float DipSplitValleyThresh;
 extern int   SubspaceDims;      ///< top-N eigenvectors for Phase 2 subspace Mahal (0=full-space)
 extern int   SubspaceRecluster;    ///< per-cluster subspace CEM after Phase 2 (0=disabled)

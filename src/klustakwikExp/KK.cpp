@@ -5159,10 +5159,16 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
     const int M = static_cast<int>(members.size());
     if (M < DipSplitMinSize * 2) { reason_out = "small"; return false; }
 
-    // ── Gate A: bloat (cheap, skips ~all single-Gaussian clusters) ─────────
+    // ── Gate A: bloat ────────────────────────────────────────────────────
     // mahal²(p, c) = 2·(LogP[c][p] − baseScore_c).  We drop baseScore_c from
     // the comparison because we only need the per-point excess for the 90th-
     // percentile, and baseScore_c is constant across members of cluster c.
+    //
+    // For a true single-Gaussian cluster this is calibrated to χ²(d, 0.9).
+    // For a bimodal cluster fitted as one Gaussian, this *should* inflate
+    // — but if CEM has been generous with the covariance to absorb the
+    // separation, it can sit just under the χ² target.  Gate A' below
+    // catches that case from the eigenvalue side.
     std::vector<double> mahal2(M);
     for (int i = 0; i < M; ++i) {
         const int p = members[i];
@@ -5177,13 +5183,10 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
     const double mahal2_p90 = percentile_sorted(mahal2, 0.90);
     // χ²(d, 0.9) via Wilson-Hilferty.  z for p=0.9 is 1.2816.
     const double d_  = static_cast<double>(nDims);
-    const double a   = 1.0 - 2.0 / (9.0 * d_);
-    const double b   = 1.2816 * std::sqrt(2.0 / (9.0 * d_));
-    const double chi2_90 = d_ * std::pow(a + b, 3.0);
-    if (mahal2_p90 < DipSplitBloatFactor * chi2_90) {
-        reason_out = "not_bloated";
-        return false;
-    }
+    const double a_wh = 1.0 - 2.0 / (9.0 * d_);
+    const double b_wh = 1.2816 * std::sqrt(2.0 / (9.0 * d_));
+    const double chi2_90 = d_ * std::pow(a_wh + b_wh, 3.0);
+    const bool bloat_pass = (mahal2_p90 >= DipSplitBloatFactor * chi2_90);
 
     // ── Collect member feature vectors for PCA + dip + k-means ───────────
     // We do NOT use the time dim (last column) — it's a normalized timestamp
@@ -5197,10 +5200,48 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
                 Data.m_Data[p * nDims + j];
     }
 
-    // ── Compute top-3 PCs ────────────────────────────────────────────────
+    // ── Compute top-3 PCs WITH eigenvalues ───────────────────────────────
+    // Eigenvalues drive Gate A' (elongation) below.  Cost is ~free over the
+    // PCs-only call: same covariance build, same iterations, plus one d²
+    // Rayleigh quotient per converged PC.
     constexpr int kPCA = 3;
     std::vector<double> pcs(static_cast<size_t>(kPCA) * dPCA, 0.0);
-    dipsplit::top_pcs_power_iteration(Xmem.data(), M, dPCA, kPCA, pcs.data());
+    std::vector<double> eigs(kPCA, 0.0);
+    dipsplit::top_pcs_with_eigenvalues(Xmem.data(), M, dPCA, kPCA,
+                                        pcs.data(), eigs.data());
+
+    // ── Gate A': elongation (covariance-eccentricity) ────────────────────
+    // A unimodal Gaussian's top-3 eigenvalues are all of similar size (a
+    // ratio of ~2-3 between top1 and the others is normal for spike feature
+    // spaces where a few channels typically dominate).  Two well-separated
+    // sub-modes fitted as one Gaussian show a much larger ratio: the inter-
+    // mode separation contributes (D/2)² to the variance along that axis,
+    // dwarfing the within-mode spread.  Threshold 4.0 is a conservative
+    // pick — it lets bloat handle most cases and only kicks in for clearly
+    // elongated covariances.
+    //
+    // The metric is eig_top1 / median(eig_top1..3).  Median (not mean) so
+    // an enormous top eigenvalue doesn't drag its own reference up.  And
+    // eig_top1 / median is more stable than eig_top1 / eig_top3 — the
+    // latter can be tiny if the cluster is genuinely degenerate (rank-2).
+    bool elong_pass = false;
+    double elong_ratio = 0.0;
+    if (DipSplitElongationFactor > 0.0f) {
+        std::vector<double> sorted_eigs = eigs;
+        std::sort(sorted_eigs.begin(), sorted_eigs.end());  // ascending
+        const double eig_med = sorted_eigs[kPCA / 2];       // kPCA=3 → idx 1 = median
+        const double eig_top = sorted_eigs.back();
+        if (eig_med > 0.0) {
+            elong_ratio = eig_top / eig_med;
+            elong_pass  = (elong_ratio >= DipSplitElongationFactor);
+        }
+    }
+
+    // Either gate is sufficient — bloated OR elongated triggers evaluation.
+    if (!bloat_pass && !elong_pass) {
+        reason_out = "not_bloated";   // legacy reason name; covers both gates
+        return false;
+    }
 
     // Compute cluster centroid (for projection centering).
     std::vector<double> centroid(dPCA, 0.0);
@@ -5299,9 +5340,10 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
     }
 
     Output("  [dipsplit] cluster %d → %d+%d  PC%d depth=%.3f  "
-           "mahal²₉₀=%.1f vs χ²₉₀=%.1f  ΔBIC=%.1f\n",
+           "mahal²₉₀=%.1f vs χ²₉₀=%.1f  elong=%.2fx  ΔBIC=%.1f  gate=%s\n",
            clusterId, n0, n1, best_pc, best_depth,
-           mahal2_p90, chi2_90, bp.bic_k1 - bp.bic_k2);
+           mahal2_p90, chi2_90, elong_ratio, bp.bic_k1 - bp.bic_k2,
+           bloat_pass ? (elong_pass ? "both" : "bloat") : "elong");
     reason_out = "split";
     return true;
 }
@@ -5335,9 +5377,9 @@ int KK::DipSplitPhase()
     int n_no_free_id  = 0;
 
     fprintf(stderr, "[Phase 8]  DipSplit: probing %zu alive clusters "
-                    "(factor=%.2f, valley=%.2f, minSize=%d)\n",
+                    "(bloat=%.2f, elong=%.2f, valley=%.2f, minSize=%d)\n",
             alive_snapshot.size(), DipSplitBloatFactor,
-            DipSplitValleyThresh, DipSplitMinSize);
+            DipSplitElongationFactor, DipSplitValleyThresh, DipSplitMinSize);
 
     for (int c : alive_snapshot) {
         if (!ClassAlive[c]) continue;
@@ -5353,7 +5395,7 @@ int KK::DipSplitPhase()
     }
 
     fprintf(stderr, "[Phase 8]  DipSplit: %d accepted  "
-                    "(rejections: %d too-small, %d not-bloated, %d no-valley, "
+                    "(rejections: %d too-small, %d not-flagged, %d no-valley, "
                     "%d small-child, %d bic-worse, %d no-free-id)\n",
             n_split, n_small, n_not_bloated, n_no_valley,
             n_small_child, n_bic_worse, n_no_free_id);

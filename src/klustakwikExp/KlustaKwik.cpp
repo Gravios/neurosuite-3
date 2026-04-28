@@ -83,7 +83,29 @@ int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during clu
 // DipSplit parameters (Phase 1.8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
-float DipSplitBloatFactor       = 2.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation
+float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
+                                          ///< lowered from 2.0 because the χ² test is itself
+                                          ///< already conservative — bimodal mixtures whose
+                                          ///< covariance has been inflated by CEM to absorb
+                                          ///< the separation can have mahal²₉₀ ≈ χ²(d,0.9),
+                                          ///< barely passing even at factor=1.0.  Real
+                                          ///< single-Gaussian clusters cluster around mahal²₉₀
+                                          ///< = χ²(d,0.9) too; the elongation gate below is
+                                          ///< the actual second line of defence.
+float DipSplitElongationFactor  = 4.0f;  ///< secondary gate (OR with bloat): if eig_top1 ≥
+                                          ///< factor · median(eig_top1..3) of the cluster's
+                                          ///< covariance, evaluate dip even if bloat failed.
+                                          ///< Catches the absorbed-bimodal case: a mixture of
+                                          ///< two well-separated modes fitted as one inflated
+                                          ///< Gaussian shows up as a strongly elongated
+                                          ///< covariance (top eigenvalue ≫ next ones), even
+                                          ///< though mahal²₉₀ stays near the χ² expectation.
+                                          ///< Threshold 4.0 chosen by inspection: a unimodal
+                                          ///< Gaussian rarely exceeds 3× elongation in 3 PCs;
+                                          ///< two modes separated by ≥ 2σ inflate the top
+                                          ///< eigenvalue past 5× before they cease to be a
+                                          ///< single visible cluster.  Set 0.0 to disable
+                                          ///< this gate (bloat-only behaviour).
 float DipSplitValleyThresh      = 0.0f;  ///< min KDE valley depth to flag bimodality
 int   SubspaceDims              = 8;     ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
 int   SubspaceRecluster         = 1;     ///< 1=run per-cluster subspace CEM after Phase 2
@@ -154,6 +176,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
+    FLOAT_PARAM(DipSplitElongationFactor);
     FLOAT_PARAM(DipSplitValleyThresh);
     INT_PARAM(SubspaceDims);
     INT_PARAM(SubspaceRecluster);

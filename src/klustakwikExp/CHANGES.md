@@ -311,6 +311,79 @@ The inherited canonical changelog is preserved as
 
 All other files are byte-identical to their canonical counterparts.
 
+## [2026-04-28] DipSplit — elongation gate for absorbed-bimodal clusters
+
+**Problem.** Cluster 3 of jg05-20120316 group 6 contained ~20.5k spikes
+(~50% of all spikes in the recording) with clearly distinct waveform
+populations — the user's manual recluster split it into 13 clean clusters
+with good autocorrelograms.  Yet DipSplit rejected it as "not bloated"
+even with the most permissive params (`-DipSplitBloatFactor 1.0
+-DipSplitValleyThresh 0.0 -DipSplitMinSize 25`).
+
+**Diagnosis.** Gate A (bloat) measures `mahal²₉₀` of cluster members
+against a fitted single-Gaussian model.  When CEM has been generous with
+the covariance to absorb a bimodal separation — fitting one inflated
+Gaussian to two well-separated modes — the inflated covariance keeps
+`mahal²₉₀ ≈ χ²(d, 0.9)` (the unimodal expectation).  Even at
+`bloatFactor = 1.0` the gate didn't fire on cluster 3.  The χ² test is
+testing the wrong thing for this failure mode.
+
+**Fix.** Add a parallel gate driven by the cluster's covariance shape
+itself.  Compute the top-3 eigenvalues of the cluster's centred
+covariance (cheaply, via the same power iteration that already runs for
+the dip-test PCs) and check whether the top eigenvalue dominates the
+median by a wide margin.  Two well-separated modes inflate the top
+eigenvalue past 4–5× the next ones, even when their joint covariance
+looks nominally Gaussian.
+
+| metric                                | unimodal Gaussian | absorbed bimodal |
+|---------------------------------------|-------------------|------------------|
+| `mahal²₉₀` vs `χ²(d, 0.9)`             | ~ 1.0             | 1.0–1.3          |
+| `eig_top1 / median(eig_top1..3)`      | 1–3               | 5–20+            |
+
+The two gates are OR'd: `bloated OR elongated → run dip test`.  Either
+signature is sufficient evidence to merit the (still-cheap) dip test
+that is the actual bimodality decision.  The BIC gate downstream still
+guards against false-positive splits.
+
+**New parameters.**
+
+| parameter                       | default | meaning                                                   |
+|---------------------------------|---------|-----------------------------------------------------------|
+| `DipSplitElongationFactor`      | 4.0     | OR-gate: `eig_top1 / median(eig_top1..3) ≥ factor` triggers eval |
+
+**Default change.** `DipSplitBloatFactor` lowered from `2.0` to `1.0`.
+The χ²(d, 0.9) target is itself the expected p90 of a unimodal Gaussian,
+so any factor > 1.0 was demanding *worse-than-typical* fit — too
+conservative for a gate whose downstream BIC test already prevents
+false positives.
+
+**Files touched.**
+- `dipsplit.h`: new `top_pcs_with_eigenvalues()` API.
+- `dipsplit.cpp`: refactored power iteration into a shared `top_pcs_impl`
+  worker that optionally emits Rayleigh-quotient eigenvalues.  Cost
+  delta vs. the old implementation: one d² Rayleigh quotient per PC,
+  negligible relative to the per-iteration d² cost already incurred.
+- `KK.cpp` `DipSplitAttemptEx`: gate restructured.  The bloat decision
+  is now computed but not acted on alone; PCA + eigenvalues run; both
+  gates evaluated; OR-decision made.  Success log extended with
+  `elong=Nx` and `gate=bloat|elong|both`.
+- `KlustaKwik.{h,cpp}`: new `DipSplitElongationFactor` parameter
+  (registered via `FLOAT_PARAM`).  `DipSplitBloatFactor` default
+  lowered to 1.0.
+- `CHANGES.md`: this entry.
+
+**Expected log output**
+```
+[Phase 8]  DipSplit: probing 25 alive clusters (bloat=1.00, elong=4.00, valley=0.00, minSize=25)
+  [dipsplit] cluster 3 → 11420+9160  PC0 depth=0.412  mahal²₉₀=29.3 vs χ²₉₀=30.8  elong=8.42x  ΔBIC=1854.6  gate=elong
+[Phase 8]  DipSplit: 4 accepted  (rejections: 9 too-small, ...)
+```
+
+The "gate=elong" tag identifies splits that the bloat gate alone would
+have missed — these are the absorbed-bimodal cases the new gate is
+designed to catch.
+
 ## [2026-04-23g] Dead-code cleanup: remove unused .fil mmap infrastructure
 
 The `.fil` mmap plumbing added during stderiv development (members

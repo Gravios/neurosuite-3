@@ -138,9 +138,17 @@ ValleyResult valley_test(const double* samples, int n, double threshold)
 // trivially small.  Power iteration converges exponentially in the ratio
 // of adjacent singular values, which for spike features is well-behaved.
 // -----------------------------------------------------------------------------
-void top_pcs_power_iteration(
+//
+// Internal worker — both top_pcs_power_iteration and top_pcs_with_eigenvalues
+// dispatch here.  When `eigs_out` is non-null, each converged eigenvector's
+// Rayleigh quotient λᵢ = uᵢᵀ C uᵢ is also written out (the variance of the
+// data along that PC direction).  The covariance build and power-iteration
+// loop are identical regardless of whether eigenvalues are requested, so
+// the cost difference is just the d² per-PC Rayleigh quotient at the end.
+static void top_pcs_impl(
     const float* X, int nPoints, int d, int k,
-    double* pcs_out, int max_iters, double tol)
+    double* pcs_out, double* eigs_out,
+    int max_iters, double tol)
 {
     if (d <= 0 || k <= 0 || nPoints < 2) return;
 
@@ -227,7 +235,36 @@ void top_pcs_power_iteration(
         }
 
         std::copy(v.begin(), v.end(), pcs_out + pc * d);
+
+        if (eigs_out) {
+            // Rayleigh quotient λ = vᵀ C v.  v is unit-norm, so this gives
+            // the cluster's variance along this PC direction.  Used by the
+            // elongation gate (eigs_out[0] / median(eigs_out) suspect ≫ 1 for
+            // an absorbed bimodal mixture).
+            double lam = 0.0;
+            for (int a = 0; a < d; ++a) {
+                double s = 0.0;
+                for (int b = 0; b < d; ++b) s += cov[a * d + b] * v[b];
+                lam += v[a] * s;
+            }
+            eigs_out[pc] = lam;
+        }
     }
+}
+
+void top_pcs_power_iteration(
+    const float* X, int nPoints, int d, int k,
+    double* pcs_out, int max_iters, double tol)
+{
+    top_pcs_impl(X, nPoints, d, k, pcs_out, /*eigs_out=*/nullptr,
+                 max_iters, tol);
+}
+
+void top_pcs_with_eigenvalues(
+    const float* X, int nPoints, int d, int k,
+    double* pcs_out, double* eigs_out, int max_iters, double tol)
+{
+    top_pcs_impl(X, nPoints, d, k, pcs_out, eigs_out, max_iters, tol);
 }
 
 // -----------------------------------------------------------------------------
