@@ -106,7 +106,31 @@ public:
                              double yMin, double yMax,
                              const QString& hud);
     void clearWatershedOverlay();
-    bool hasWatershedOverlay() const { return !m_wsImage.isNull(); }
+    bool hasWatershedOverlay() const { return !wsImage.isNull(); }
+
+    // ── DipSplit preview overlay ─────────────────────────────────────────
+    // Used by KlustersApp during the "Shift+D" live preview.  Unlike the
+    // watershed overlay (a coloured raster of the grid labelling), this
+    // overlay is point-based: each spike of the candidate cluster is
+    // drawn as a translucent disk in feature space, blue for the
+    // left-half label and red for the right-half label, on top of the
+    // cluster scatter.  The decision boundary is implicit where the two
+    // colours meet — there is no analytic line to draw because the
+    // refined split was performed in 2D PC-space, not in the (X, Y)
+    // dimensions the user is currently viewing.
+    //
+    // @param xs,ys   Per-spike feature coordinates in the current
+    //                ClusterView dimensions.  Must be the same length
+    //                as @p labels.
+    // @param labels  0 or 1 per spike (left-half / right-half).
+    // @param hud     Short status text drawn at top-left in viewport
+    //                pixels.  Pass empty string to suppress.
+    void setDipsplitPreview(const QVector<double>& xs,
+                             const QVector<double>& ys,
+                             const QVector<int>&    labels,
+                             const QString&         hud);
+    void clearDipsplitPreview();
+    bool hasDipsplitPreview() const { return !dsXs.isEmpty(); }
 
     /**Returns the current ordinate dimension.
   */
@@ -239,18 +263,19 @@ public Q_SLOTS:
         if(active)redraw();
     }
 
-    /**Prints the currently display information on a printer via the painter @p printPainter.
+    /**Prints the currently-displayed contents to a printer via @p printPainter.
   * @param printPainter painter on a printer.
-  * @param metrics object providing information about the printer.
+  * @param width width of the printable area in printer pixels.
+  * @param height height of the printable area in printer pixels.
   * @param whiteBackground true if the printed background has to be white, false otherwise.
   */
     void print(QPainter& printPainter,int width,int height, bool whiteBackground) override;
 
 protected:
-    /**
-  * Draws the contents of the frame
-  * @param p painter used to draw the contents
-  */
+    /** Repaints the view: blits the doublebuffer to the screen, then
+     *  draws the current selection polygon and any active live-preview
+     *  overlay (watershed or dipsplit) on top.
+     */
     void paintEvent ( QPaintEvent*) override;
     virtual void resizeEvent(QResizeEvent* event) override {
         //Trigger parent event
@@ -333,16 +358,16 @@ private:
     }
 
 
-    /**
-  * Erase the last line drawn while drawing the polygon of selection in the double buffer.
-  * @param polygonColor color used to draw the line (to erase the line another line is draw on top of it)
-  */
+    /** Erases the last segment of the selection polygon by overdrawing
+     *  it in the doublebuffer.  Called from mousePressEvent when the
+     *  user backs out of the most recently committed polygon vertex.
+     */
     void eraseTheLastDrawnLine();
 
-    /**
-  * Erase the last line drawn during a mousemove event while drawing the polygon of selection in the double buffer.
-  * @param polygonColor color used to draw the line (to erase the line another line is draw on top of it)
-  */
+    /** Erases the last segment drawn by mouseMoveEvent (the rubber-band
+     *  preview line that follows the cursor before a vertex is
+     *  committed).  Same overdraw mechanism as eraseTheLastDrawnLine.
+     */
     void eraseTheLastMovingLine();
 
     /**
@@ -464,15 +489,26 @@ private:
 
 private:
     // Watershed preview overlay state (see setWatershedOverlay).
-    QImage  m_wsImage;
-    double  m_wsXMin = 0.0, m_wsXMax = 0.0;
-    double  m_wsYMin = 0.0, m_wsYMax = 0.0;
-    QString m_wsHud;
+    QImage  wsImage;
+    double  wsXMin = 0.0, wsXMax = 0.0;
+    double  wsYMin = 0.0, wsYMax = 0.0;
+    QString wsHud;
+
+    // DipSplit preview overlay state (see setDipsplitPreview).
+    QVector<double> dsXs;
+    QVector<double> dsYs;
+    QVector<int>    dsLabels;
+    QString         dsHud;
 
     // Helper called from paintEvent after the doublebuffer blit.  Draws
     // the overlay image stretched into the world rect, then writes the
     // HUD text in viewport pixels.
     void paintWatershedOverlay(QPainter& p, const QRect& worldRect);
+
+    // Helper called from paintEvent after the doublebuffer blit.  Draws
+    // each preview spike as a coloured disk in world coordinates, then
+    // writes the HUD text in viewport pixels.
+    void paintDipsplitPreview(QPainter& p, const QRect& worldRect);
 
 };
 

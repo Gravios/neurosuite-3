@@ -135,7 +135,7 @@ void KlustersDoc::removeView(KlustersView *view){
 
 
 bool KlustersDoc::isLastView() {
-    return ((int) viewList->count() == 1);
+    return (static_cast<int>(viewList->count()) == 1);
 }
 
 
@@ -242,8 +242,8 @@ void KlustersDoc::closeDocument(){
     acquisitionGain = 0;
 
     // Flush and close the curation log for this session
-    if (m_curationLogger)
-        m_curationLogger->close();
+    if (curationLogger)
+        curationLogger->close();
 }
 
 
@@ -532,10 +532,10 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     // Establish the four permanent pending files so the originals are never
     // touched during a session.  spkFileName and tmpCluFile are redirected
     // to the pending paths; they stay there for the whole document lifetime.
-    m_origSpkPath = spkFileUrl;
-    m_origResPath = urlFileInfo.absolutePath() + QDir::separator()
+    origSpkPath = spkFileUrl;
+    origResPath = urlFileInfo.absolutePath() + QDir::separator()
                     + baseName + ".res." + electrodeGroupID;
-    m_origFetPath = fetFileUrl;
+    origFetPath = fetFileUrl;
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
     if (!initPendingFiles()) {
         qWarning() << "[openDocument] could not create pending files";
@@ -545,8 +545,8 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     {
         const QString logPath = urlFileInfo.absolutePath() + QDir::separator()
                                 + baseName + ".curation_log." + electrodeGroupID + ".jl";
-        m_curationLogger = std::make_unique<CurationLogger>();
-        m_curationLogger->open(
+        curationLogger = std::make_unique<CurationLogger>();
+        curationLogger->open(
             logPath,
             baseName + ".clu." + electrodeGroupID,
             electrodeGroupID,
@@ -557,9 +557,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         // Pair the in-memory ring buffer with the user's max-undo
         // preference so every still-undoable action retains a tentative
         // log entry whose status flips on undo/redo.
-        m_curationLogger->setMaxBufferEntries(nbUndo);
-        m_clusterActionCount.clear();
-        m_lastLoggedActionIdx = -1;
+        curationLogger->setMaxBufferEntries(nbUndo);
+        clusterActionCount.clear();
+        lastLoggedActionIdx = -1;
     }
 
     return OK;
@@ -633,7 +633,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
 
     // For a regular Save:  write clu to the pending clu file (crash-safe).
     // For a SaveAs:        write directly to the new URL (no pending for it).
-    const QString cluWritePath = isSaveAs ? saveUrl : m_pendingCluPath;
+    const QString cluWritePath = isSaveAs ? saveUrl : pendingCluPath;
 
     //Open the clu file in write mode
     FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
@@ -735,13 +735,13 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     if (isSaveAs) {
         QFileInfo newInfo(docUrl);
         // Preserve .spkD/.fetD suffix for stderiv sessions.
-        const bool wasSpkD = m_origSpkPath.contains(QStringLiteral(".spkD."));
-        const bool wasFetD = m_origFetPath.contains(QStringLiteral(".fetD."));
-        m_origSpkPath = newInfo.absolutePath() + QDir::separator()
+        const bool wasSpkD = origSpkPath.contains(QStringLiteral(".spkD."));
+        const bool wasFetD = origFetPath.contains(QStringLiteral(".fetD."));
+        origSpkPath = newInfo.absolutePath() + QDir::separator()
                         + baseName + (wasSpkD ? ".spkD." : ".spk.") + electrodeGroupID;
-        m_origResPath = newInfo.absolutePath() + QDir::separator()
+        origResPath = newInfo.absolutePath() + QDir::separator()
                         + baseName + ".res." + electrodeGroupID;
-        m_origFetPath = newInfo.absolutePath() + QDir::separator()
+        origFetPath = newInfo.absolutePath() + QDir::separator()
                         + baseName + (wasFetD ? ".fetD." : ".fet.") + electrodeGroupID;
     }
     commitAndRenewPending();
@@ -1689,7 +1689,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     // resolved watershed config (after auto-tune), kernel diagnostics, and
     // per-basin spike counts.  Keys mirror the dipsplit pattern so a
     // downstream reader can treat the WATERSHED records uniformly.
-    if (m_curationLogger && m_curationLogger->isOpen()) {
+    if (curationLogger && curationLogger->isOpen()) {
         QMap<QString, QVariant> details;
         details.insert(QStringLiteral("algorithm"),
                        QStringLiteral("watershed_2d"));
@@ -1764,7 +1764,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
         details.insert(QStringLiteral("residual_present"),  sawResidual);
         details.insert(QStringLiteral("residual_count"),    residualCount);
 
-        m_curationLogger->recordActionDetails(details);
+        curationLogger->recordActionDetails(details);
     }
 
     logAfter(newClusterList);
@@ -1875,8 +1875,8 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
     // the data-level undo capacity so every still-undoable action has a
     // tentative log entry.  Shrinking the buffer flushes the oldest
     // entries to disk with their current status.
-    if (m_curationLogger && m_curationLogger->isOpen()) {
-        m_curationLogger->setMaxBufferEntries(newNbUndo);
+    if (curationLogger && curationLogger->isOpen()) {
+        curationLogger->setMaxBufferEntries(newNbUndo);
     }
 
     //if the new number of possible undo is smaller than the current one,
@@ -2231,8 +2231,8 @@ void KlustersDoc::undo(){
     // record reflects that the user reverted this action.  No disk write
     // happens here — the entry stays in the in-memory ring until it
     // either gets pushed out by overflow or is finalised at close().
-    if (m_curationLogger && m_curationLogger->isOpen()) {
-        m_curationLogger->notifyUndo();
+    if (curationLogger && curationLogger->isOpen()) {
+        curationLogger->notifyUndo();
     }
 }
 
@@ -2369,8 +2369,8 @@ void KlustersDoc::redo(){
     // Curation log: flip the topmost bad entry back to "good" — the user
     // restored this action so its on-disk record (when eventually
     // flushed) should not be marked as a reverted decision.
-    if (m_curationLogger && m_curationLogger->isOpen()) {
-        m_curationLogger->notifyRedo();
+    if (curationLogger && curationLogger->isOpen()) {
+        curationLogger->notifyRedo();
     }
 }
 
@@ -2994,9 +2994,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     auto pendingOrOrig = [](const QString& orig, const QString& pending) {
         return QFileInfo::exists(pending) ? pending : orig;
     };
-    const QString spkPath = pendingOrOrig(m_origSpkPath, m_pendingSpkPath);
-    const QString resPath = pendingOrOrig(m_origResPath, m_pendingResPath);
-    const QString fetPath = pendingOrOrig(m_origFetPath, m_pendingFetPath);
+    const QString spkPath = pendingOrOrig(origSpkPath, pendingSpkPath);
+    const QString resPath = pendingOrOrig(origResPath, pendingResPath);
+    const QString fetPath = pendingOrOrig(origFetPath, pendingFetPath);
     const QString cluPath = dir + "/" + base + ".clu." + grpId;
     // Pipeline detection — decouple .spk storage format from .fet feature
     // space.  These are orthogonal signals in Pipeline C (raw .spk + stderiv
@@ -3014,8 +3014,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //                      .pcaD basis.  Select .pcaD.N, and apply the
     //                      stderiv transform to the raw waveform before
     //                      projecting onto eigenvectors.
-    const bool spkIsTransformed = m_origSpkPath.contains(QStringLiteral(".spkD."));
-    const bool fetIsStderiv     = m_origFetPath.contains(QStringLiteral(".fetD."));
+    const bool spkIsTransformed = origSpkPath.contains(QStringLiteral(".spkD."));
+    const bool fetIsStderiv     = origFetPath.contains(QStringLiteral(".fetD."));
     // Kept as alias for existing legacy-named uses in this function that
     // really want the feature-space flag, not the .spk storage flag.
     const bool isStderivRealign = fetIsStderiv;
@@ -3269,7 +3269,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             const int64_t p = gidx[static_cast<size_t>(i)];
 
             // Read timestamp from .res at byte offset p*8
-            if (fseeko(rf, (off_t)(p * (int64_t)sizeof(int64_t)), SEEK_SET) != 0 ||
+            if (fseeko(rf, (off_t)(p * static_cast<int64_t>(sizeof(int64_t))), SEEK_SET) != 0 ||
                 fread(&clusterTs[static_cast<size_t>(i)],
                       sizeof(int64_t), 1, rf) != 1) {
                 fclose(rf); fclose(ff);
@@ -3281,7 +3281,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             for (int k = 0; k < nExtraFeats; ++k) {
                 const int col = nPcaFeats + k;
                 const off_t off = (off_t)sizeof(int32_t)
-                                + (off_t)(p * (int64_t)fileDim + col)
+                                + (off_t)(p * static_cast<int64_t>(fileDim) + col)
                                 * (off_t)sizeof(int64_t);
                 if (fseeko(ff, off, SEEK_SET) != 0 ||
                     fread(&extraFeats[static_cast<size_t>(i)][static_cast<size_t>(k)],
@@ -3709,9 +3709,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // after every save/reject), so they are always complete files ready for
     // random-access writes.  The originals remain untouched until save.
     // -----------------------------------------------------------------------
-    FILE* spkW = fopen(m_pendingSpkPath.toLocal8Bit().constData(), "r+b");
-    FILE* resW = fopen(m_pendingResPath.toLocal8Bit().constData(), "r+b");
-    FILE* fetW = fopen(m_pendingFetPath.toLocal8Bit().constData(), "r+b");
+    FILE* spkW = fopen(pendingSpkPath.toLocal8Bit().constData(), "r+b");
+    FILE* resW = fopen(pendingResPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(pendingFetPath.toLocal8Bit().constData(), "r+b");
     if (!spkW || !resW || !fetW) {
         if (spkW) fclose(spkW);
         if (resW) fclose(resW);
@@ -3875,9 +3875,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     fclose(fetW);
     if (filF) fclose(filF);
 
-    // spkFileName already points to m_pendingSpkPath (set on open and kept
+    // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
-    m_pendingRealign.push_back(std::move(pending));
+    pendingRealign.push_back(std::move(pending));
 
     log << "Done. " << nShifted << " shifted, " << nSwapped
         << " reordered. (pending save)\n";
@@ -3916,10 +3916,10 @@ void KlustersDoc::invalidateCorrelogramCache(int clusterId)
 bool KlustersDoc::initPendingFiles()
 {
     // Build the four pending paths from the current originals.
-    m_pendingSpkPath = m_origSpkPath + QStringLiteral(".pending");
-    m_pendingResPath = m_origResPath + QStringLiteral(".pending");
-    m_pendingFetPath = m_origFetPath + QStringLiteral(".pending");
-    m_pendingCluPath = docUrl       + QStringLiteral(".pending");
+    pendingSpkPath = origSpkPath + QStringLiteral(".pending");
+    pendingResPath = origResPath + QStringLiteral(".pending");
+    pendingFetPath = origFetPath + QStringLiteral(".pending");
+    pendingCluPath = docUrl       + QStringLiteral(".pending");
 
     // Helper: overwrite dst with a fresh copy of src.
     auto seedFile = [](const QString& src, const QString& dst) -> bool {
@@ -3931,16 +3931,16 @@ bool KlustersDoc::initPendingFiles()
         return true;
     };
 
-    const bool ok = seedFile(m_origSpkPath, m_pendingSpkPath)
-                 && seedFile(m_origResPath, m_pendingResPath)
-                 && seedFile(m_origFetPath, m_pendingFetPath)
-                 && seedFile(docUrl,        m_pendingCluPath);
+    const bool ok = seedFile(origSpkPath, pendingSpkPath)
+                 && seedFile(origResPath, pendingResPath)
+                 && seedFile(origFetPath, pendingFetPath)
+                 && seedFile(docUrl,        pendingCluPath);
 
     if (ok) {
         // Redirect the waveform reader and clu writer to the pending files.
         // They will remain here for the entire document session.
-        clusteringData->setSpkFileName(m_pendingSpkPath);
-        tmpCluFile = m_pendingCluPath;
+        clusteringData->setSpkFileName(pendingSpkPath);
+        tmpCluFile = pendingCluPath;
     }
     return ok;
 }
@@ -3954,13 +3954,13 @@ void KlustersDoc::commitAndRenewPending()
         if (!QFile::copy(src, dst))
             qWarning() << "[commitAndRenewPending] copy failed:" << src << "->" << dst;
     };
-    copyOver(m_pendingSpkPath, m_origSpkPath);
-    copyOver(m_pendingResPath, m_origResPath);
-    copyOver(m_pendingFetPath, m_origFetPath);
-    copyOver(m_pendingCluPath, docUrl);
+    copyOver(pendingSpkPath, origSpkPath);
+    copyOver(pendingResPath, origResPath);
+    copyOver(pendingFetPath, origFetPath);
+    copyOver(pendingCluPath, docUrl);
 
     // Clear the in-memory queue — all realignment batches are now on disk.
-    m_pendingRealign.clear();
+    pendingRealign.clear();
 
     // Step 2 — renew: re-seed the pending files from the fresh originals so
     // the next realignment (or another save cycle) starts from a clean slate.
@@ -3969,9 +3969,9 @@ void KlustersDoc::commitAndRenewPending()
 
 void KlustersDoc::rejectLastRealign()
 {
-    if (m_pendingRealign.empty()) return;
+    if (pendingRealign.empty()) return;
 
-    const PendingRealign& p = m_pendingRealign.back();
+    const PendingRealign& p = pendingRealign.back();
 
     // Restore in-memory feature/timestamp data.
     for (const PendingSpkRecord& rec : p.records) {
@@ -3983,7 +3983,7 @@ void KlustersDoc::rejectLastRealign()
             static_cast<dataType>(rec.origTs));
     }
 
-    m_pendingRealign.pop_back();
+    pendingRealign.pop_back();
 
     // Re-seed pending files from the untouched originals so the waveform
     // viewer immediately reflects the restored state.
@@ -4006,7 +4006,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     logBefore(CurationLogger::ActionType::NUDGE, QList<int>{ clusterId });
 
     // ── Stop all in-flight WaveformThreads BEFORE any file writes ─────────
-    // A WaveformThread reads from m_pendingSpkPath (= spkFileName) without
+    // A WaveformThread reads from pendingSpkPath (= spkFileName) without
     // holding any lock around the fread call.  If we write to that file
     // while the thread is mid-read we get a torn read → garbage waveforms
     // or, when that data drives an array index, a segfault.  Stop all
@@ -4014,7 +4014,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     for (int i = 0; i < viewList->count(); ++i)
         viewList->at(i)->stopAllViewThreads();
 
-    if (m_pendingResPath.isEmpty()) {
+    if (pendingResPath.isEmpty()) {
         if (!initPendingFiles()) return false;
     }
 
@@ -4041,7 +4041,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // Derive session base: strip ".spkD.N" or ".spk.N" suffix.
     const QString sessionBase = [&]() -> QString {
-        QString b = m_origSpkPath;
+        QString b = origSpkPath;
         b = b.left(b.lastIndexOf(QLatin1Char('.')));  // strip .N
         b = b.left(b.lastIndexOf(QLatin1Char('.')));  // strip .spk or .spkD
         return b;
@@ -4067,8 +4067,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //                      .pcaD basis.  Select .pcaD.N and apply the
     //                      stderiv transform before projecting the raw
     //                      waveform onto the eigenvectors.
-    const bool spkIsTransformed = m_origSpkPath.contains(QStringLiteral(".spkD."));
-    const bool fetIsStderiv     = m_origFetPath.contains(QStringLiteral(".fetD."));
+    const bool spkIsTransformed = origSpkPath.contains(QStringLiteral(".spkD."));
+    const bool fetIsStderiv     = origFetPath.contains(QStringLiteral(".fetD."));
     // Legacy name retained for any downstream use that really means the
     // feature-space flag; nothing in nudge uses this directly after the
     // refactor below, but keep it for grep compatibility during review.
@@ -4148,9 +4148,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         : static_cast<int64_t>(d.maxDimension(d.timeDimension()));
 
     // ── Open pending files for writing ────────────────────────────────────
-    FILE* spkW = fopen(m_pendingSpkPath.toLocal8Bit().constData(), "r+b");
-    FILE* resW = fopen(m_pendingResPath.toLocal8Bit().constData(), "r+b");
-    FILE* fetW = fopen(m_pendingFetPath.toLocal8Bit().constData(), "r+b");
+    FILE* spkW = fopen(pendingSpkPath.toLocal8Bit().constData(), "r+b");
+    FILE* resW = fopen(pendingResPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(pendingFetPath.toLocal8Bit().constData(), "r+b");
     if (!resW || !fetW || !spkW) {
         if (spkW) fclose(spkW);
         if (resW) fclose(resW);
@@ -4385,8 +4385,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // invariant is broken; warn loudly so the user can re-run the
     // patched pipeline rather than producing more corrupted data.
     {
-        const QString readPath = QFileInfo(m_pendingSpkPath).exists()
-            ? m_pendingSpkPath : m_origSpkPath;
+        const QString readPath = QFileInfo(pendingSpkPath).exists()
+            ? pendingSpkPath : origSpkPath;
         FILE* fr = fopen(readPath.toLocal8Bit().constData(), "rb");
         if (fr && N > 0) {
             const std::vector<int64_t> probeIdx = {
@@ -4419,7 +4419,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                         const size_t k = isStderivSpk
                             ? static_cast<size_t>(s * nChan + ci)
                             : static_cast<size_t>(ci * nSamp + s);
-                        e += std::abs((int)buf[k]);
+                        e += std::abs(static_cast<int>(buf[k]));
                     }
                     if (e > bestE) { bestE = e; bestS = s; }
                 }
@@ -4520,7 +4520,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     auto computeMean = [&](std::vector<double>& meanCM /* [ch*nSamp+s] */)
                           -> int64_t {
         meanCM.assign(static_cast<size_t>(nChan * nSamp), 0.0);
-        FILE* fr = fopen(m_pendingSpkPath.toLocal8Bit().constData(), "rb");
+        FILE* fr = fopen(pendingSpkPath.toLocal8Bit().constData(), "rb");
         if (!fr) return 0;
         std::vector<int16_t> buf(static_cast<size_t>(nChan * nSamp));
         int64_t nRead = 0;
@@ -4746,7 +4746,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 const int nShow = std::min(nFeatCols, 8);
                 QString oldF, newF, dF;
                 for (int c = 0; c < nShow; ++c) {
-                    const int64_t o = (c < (int)oldFetRow.size())
+                    const int64_t o = (c < static_cast<int>(oldFetRow.size()))
                         ? oldFetRow[static_cast<size_t>(c)] : 0;
                     const int64_t n = fetRowWritten[static_cast<size_t>(c)];
                     oldF += QString::number(static_cast<long long>(o)) + ' ';
@@ -4777,7 +4777,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
         // Write next to the .spk.pending file with a unique timestamp so
         // repeated nudges produce distinct dump files.
-        QFileInfo spkInfo(m_pendingSpkPath);
+        QFileInfo spkInfo(pendingSpkPath);
         const QString outName = QString("nudge-meanwave-c%1-d%2-%3.txt")
             .arg(clusterId).arg(deltaSamples)
             .arg(QDateTime::currentSecsSinceEpoch());
@@ -4898,32 +4898,32 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 void KlustersDoc::logBefore(CurationLogger::ActionType action,
                              const QList<int>& clusterIds)
 {
-    if (!m_curationLogger || !m_curationLogger->isOpen() || clusterIds.isEmpty())
+    if (!curationLogger || !curationLogger->isOpen() || clusterIds.isEmpty())
         return;
 
     QList<ClusterSnapshot> snaps = snapshotClusters(clusterIds);
 
     // Stamp each snapshot with this cluster's prior action count, then increment.
     for (ClusterSnapshot& s : snaps) {
-        s.actionHistoryDepth = m_clusterActionCount.value(s.clusterId, 0);
-        m_clusterActionCount[s.clusterId]++;
+        s.actionHistoryDepth = clusterActionCount.value(s.clusterId, 0);
+        clusterActionCount[s.clusterId]++;
     }
 
-    m_lastLoggedActionIdx = m_curationLogger->beginAction(action, snaps);
+    lastLoggedActionIdx = curationLogger->beginAction(action, snaps);
 }
 
 void KlustersDoc::logAfter(const QList<int>& clusterIds)
 {
-    if (!m_curationLogger || !m_curationLogger->isOpen() || clusterIds.isEmpty())
+    if (!curationLogger || !curationLogger->isOpen() || clusterIds.isEmpty())
         return;
 
     QList<ClusterSnapshot> snaps = snapshotClusters(clusterIds);
     // Preserve action_history_depth for result clusters (they were just created
     // or modified, so their count is the depth inherited from the action).
     for (ClusterSnapshot& s : snaps)
-        s.actionHistoryDepth = m_clusterActionCount.value(s.clusterId, 0);
+        s.actionHistoryDepth = clusterActionCount.value(s.clusterId, 0);
 
-    m_curationLogger->commitAction(snaps);
+    curationLogger->commitAction(snaps);
 }
 
 // ---------------------------------------------------------------------------
@@ -5209,9 +5209,49 @@ KlustersDoc::dipSplitCluster(int   clusterId,
                               float bloatFactor,
                               float valleyThresh)
 {
-    // Helper: copy decision metrics into a result struct.  Used both for
-    // accepted splits and rejections so the caller always gets the metrics
-    // even when the algorithm declined to split.
+    // Two-step thin wrapper: decide, then apply if the decision was
+    // positive.  The live-preview UI calls dipSplitDecide on its own
+    // (so it can render the boundary), then calls dipSplitApply on
+    // commit — Decide → Render → Commit, no double computation.
+    const DipSplitDecision D =
+        dipSplitDecide(clusterId, minSize, bloatFactor, valleyThresh);
+    if (!D.accepted) {
+        DipSplitResult R;
+        R.accepted   = false;
+        R.n0         = D.n0;
+        R.n1         = D.n1;
+        R.bestPC     = D.bestPC;
+        R.bestDepth  = D.bestDepth;
+        R.mahal2P90  = D.mahal2P90;
+        R.chi2_90    = D.chi2_90;
+        R.deltaBIC   = D.deltaBIC;
+        R.reason     = D.reason;
+        return R;
+    }
+    return dipSplitApply(D, minSize, bloatFactor, valleyThresh);
+}
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::dipSplitApply
+//
+// Commits a pre-computed DipSplitDecision.  Used by both the synchronous
+// dipSplitCluster wrapper and the live-preview UI.  No algorithm work
+// happens here — the decision is given.  This function only:
+//   1. Allocates a new cluster ID.
+//   2. Calls Data::moveSpikeSubset to relabel the right-half spikes.
+//   3. Renames the source to the palette tail.
+//   4. Fires view-update signals.
+//   5. Writes the curation log entry.
+//
+// Parameters minSize/bloatFactor/valleyThresh are recorded in the log
+// alongside the decision metrics; they don't influence behaviour here.
+// ---------------------------------------------------------------------------
+KlustersDoc::DipSplitResult
+KlustersDoc::dipSplitApply(const DipSplitDecision& D,
+                            int   minSize,
+                            float bloatFactor,
+                            float valleyThresh)
+{
     auto resultFromDecision = [](const DipSplitDecision& D) {
         DipSplitResult R;
         R.accepted   = D.accepted;
@@ -5226,18 +5266,15 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         return R;
     };
 
-    // Helper: build the metadata dictionary written to the curation log.
     auto buildLogDetails = [&](const DipSplitDecision& D, int newId) {
         QMap<QString, QVariant> m;
         m.insert(QStringLiteral("algorithm"),     QStringLiteral("dipsplit"));
-        m.insert(QStringLiteral("source_cluster"), clusterId);
+        m.insert(QStringLiteral("source_cluster"), D.clusterId);
         m.insert(QStringLiteral("new_cluster"),    newId);
         m.insert(QStringLiteral("reason"),         D.reason);
-        // Parameters
         m.insert(QStringLiteral("min_size"),       minSize);
         m.insert(QStringLiteral("bloat_factor"),   static_cast<double>(bloatFactor));
         m.insert(QStringLiteral("valley_thresh"),  static_cast<double>(valleyThresh));
-        // Metrics
         m.insert(QStringLiteral("n_left"),         D.n0);
         m.insert(QStringLiteral("n_right"),        D.n1);
         m.insert(QStringLiteral("best_pc"),        D.bestPC);
@@ -5248,12 +5285,10 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         return m;
     };
 
-    // ── Pure decision ────────────────────────────────────────────────────
-    const DipSplitDecision D =
-        dipSplitDecide(clusterId, minSize, bloatFactor, valleyThresh);
-
     if (!D.accepted)
         return resultFromDecision(D);
+
+    const int clusterId = D.clusterId;
 
     // ── Allocate a free cluster ID ───────────────────────────────────────
     // Use the canonical max+1 policy that every other create-cluster path
@@ -5294,8 +5329,8 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         // moveSpikeSubset rejected (no spikes actually moved) — bail out
         // cleanly.  Curation log gets the rejection details too.
         if (activeView) activeView->showAllWidgets();
-        if (m_curationLogger && m_curationLogger->isOpen()) {
-            m_curationLogger->recordActionDetails(buildLogDetails(D, 0));
+        if (curationLogger && curationLogger->isOpen()) {
+            curationLogger->recordActionDetails(buildLogDetails(D, 0));
         }
         logAfter(QList<int>{ clusterId });
         DipSplitResult R = resultFromDecision(D);
@@ -5350,10 +5385,10 @@ KlustersDoc::dipSplitCluster(int   clusterId,
     }
 
     // ── Curation-log: details + after-snapshot ───────────────────────────
-    if (m_curationLogger && m_curationLogger->isOpen()) {
+    if (curationLogger && curationLogger->isOpen()) {
         QMap<QString, QVariant> details = buildLogDetails(D, newId);
         details.insert(QStringLiteral("renamed_source_to"), renamedSourceId);
-        m_curationLogger->recordActionDetails(details);
+        curationLogger->recordActionDetails(details);
     }
     logAfter(QList<int>{ renamedSourceId, newId });
 

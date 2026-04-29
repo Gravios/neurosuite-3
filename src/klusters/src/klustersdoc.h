@@ -153,7 +153,7 @@ public:
     QList<KlustersView*> viewListCopy() const
     { return viewList ? *viewList : QList<KlustersView*>(); }
     bool isStderivSession() const
-        { return m_origSpkPath.contains(QStringLiteral(".spkD.")); }
+        { return origSpkPath.contains(QStringLiteral(".spkD.")); }
 
     /**Returns the reference on the list of ClusterColor objects.
     * @return ItemColors containing the information on the clusters and their associated color.
@@ -166,8 +166,9 @@ public:
     Data& data() const {return *clusteringData;}
 
     /**Manages the color change of a single cluster.
-    * Method call when the palette is in immediat mode (no need to press the update buton to trigger the change)
-    * @param clusterId cluster having is color changed.
+    * Called when the palette is in immediate-update mode (no need to press
+    * the Update button to trigger the change).
+    * @param clusterId cluster whose color has changed.
     * @param activeView the view in which the change has to be immediate.
     */
     void singleColorUpdate(int clusterId,KlustersView& activeView);
@@ -229,7 +230,7 @@ public:
     * @param region the polygon defining the area containing the spikes corresponding to the noise.
     * @param clustersOfOrigin a list of the cluster numbers (in ascending order) identifying the clusters which
     * may contain spikes in the region.
-    * @param dimensionX the dimension used as absciss to display the clusters.
+    * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     */
     void deleteNoise(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
@@ -239,7 +240,7 @@ public:
     * @param region the polygon defining the area containing the spikes corresponding to the noise.
     * @param clustersOfOrigin a list of the cluster numbers (in ascending order) identifying the clusters which
     * may contain spikes in the region.
-    * @param dimensionX the dimension used as absciss to display the clusters.
+    * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     */
     void deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
@@ -249,7 +250,7 @@ public:
     * @param region the polygon defining the area containing the spikes for the new cluster.
     * @param clustersOfOrigin a list of the cluster numbers identifying the clusters which
     * may contain spikes in the region.
-    * @param dimensionX the dimension used as absciss to display the clusters.
+    * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     * @return the number of the newly created cluster.
     */
@@ -261,7 +262,7 @@ public:
     * @param region the polygon defining the area containing the spikes for the new cluster.
     * @param clustersOfOrigin a list of the cluster numbers identifying the clusters which
     * may contain spikes in the region.
-    * @param dimensionX the dimension used as absciss to display the clusters.
+    * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     * @return a list of the numbers of the newly created clusters.
     */
@@ -333,6 +334,27 @@ public:
                                     int   minSize      = 50,
                                     float bloatFactor  = 0.0f,
                                     float valleyThresh = 0.20f);
+
+    /** Apply a pre-computed DipSplitDecision.  Splits the cluster
+     *  according to D.labels, allocates a new ID, renames the source
+     *  to the palette tail, fires view updates, and writes a curation
+     *  log entry — exactly the post-decision half of dipSplitCluster.
+     *
+     *  Used by the live-preview path so the algorithm runs once
+     *  (in dipSplitDecide), the preview shows the result, and Enter
+     *  commits without re-running.
+     *
+     *  Parameters minSize / bloatFactor / valleyThresh are passed in
+     *  only so they can be recorded in the curation log alongside the
+     *  decision metrics.  The decision itself was already made.
+     *
+     *  @pre  D.accepted must be true; otherwise the call is a no-op
+     *        returning a result with accepted=false.
+     */
+    DipSplitResult dipSplitApply(const DipSplitDecision& D,
+                                  int   minSize,
+                                  float bloatFactor,
+                                  float valleyThresh);
 
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
@@ -435,7 +457,7 @@ public:
     }
     
     /**Makes all the internal changes due to a modification of the number of undo.
-  * @param newNbUndo the futur new number of undo.
+  * @param newNbUndo the future new number of undo.
   */
     void nbUndoChangedCleaning(int newNbUndo);
 
@@ -457,6 +479,10 @@ public:
   */
     int createFeatureFile(QList<int>& clustersToRecluster, const QString &reclusteringFetFileName);
 
+    /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).
+     *  Updates .res and .fet (time feature column). Marks doc modified. */
+    bool nudgeClusterTimestamps(int clusterId, int deltaSamples);
+
     /**
      * Re-aligns the spikes of @p clusterId to their true peak position.
      *
@@ -468,16 +494,24 @@ public:
      * of entries in .res/.spk/.clu/.fet is swapped.  The in-memory arrays
      * (features, spikesByCluster) are updated accordingly.
      *
-     * @param clusterId  Cluster to realign.
-     * @param logOut     Receives human-readable progress / warning messages.
-     * @param nShifted   Set to the number of spikes that were shifted.
-     * @param nSwapped   Set to the number of sort-order swaps performed.
+     * @param clusterId   Cluster to realign.
+     * @param logOut      Receives human-readable progress / warning messages.
+     * @param nShifted    Set to the number of spikes that were shifted.
+     * @param nSwapped    Set to the number of sort-order swaps performed.
+     * @param liveLog     Optional callback invoked for every progress line so
+     *                    the caller can stream output to a UI in real time.
+     *                    Second arg is true for warnings/errors, false for
+     *                    informational messages.
+     * @param args        Extra command-line args passed through to the
+     *                    underlying process_refeaturize invocation.
+     * @param meanBefore  If non-null, populated with the per-sample mean
+     *                    waveform from before the realignment.
+     * @param meanAfter   If non-null, populated with the per-sample mean
+     *                    waveform from after the realignment.
+     * @param backupBase  If non-null, set to the basename of the on-disk
+     *                    backup created so the caller can offer a revert.
      * @return true on success.
      */
-    /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).
-     *  Updates .res and .fet (time feature column). Marks doc modified. */
-    bool nudgeClusterTimestamps(int clusterId, int deltaSamples);
-
     bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                        std::function<void(const QString&,bool)> liveLog = nullptr,
                        const QString& args = QString(),
@@ -507,7 +541,7 @@ public:
     };
 
     struct PendingRealign {
-        // Paths are stored doc-level (m_origSpkPath etc.); only per-batch
+        // Paths are stored doc-level (origSpkPath etc.); only per-batch
         // metadata and the per-spike undo records are needed here.
         int64_t bytesPerSpike = 0;
         int     spkElems      = 0;
@@ -517,7 +551,7 @@ public:
     };
 
     /** True when realignment results are waiting to be written to disk. */
-    bool hasPendingRealign() const { return !m_pendingRealign.empty(); }
+    bool hasPendingRealign() const { return !pendingRealign.empty(); }
 
     /** Discards the most recent pending realignment and restores the
      *  in-memory Data to its state before that realignment was run.
@@ -668,6 +702,23 @@ public:
     }
 
 Q_SIGNALS:
+    // ── Document-state signals ───────────────────────────────────────────
+    // Emitted whenever a curation action changes the cluster set or
+    // its membership.  Connected to slots on KlustersView / ClusterPalette
+    // so they can refresh, repaint, and update their internal state lists.
+    //
+    // Naming convention:
+    //   - past-tense verbs (clustersGrouped, newClusterAdded) announce a
+    //     completed mutation — listeners refresh from the new state.
+    //   - undo* / redo* announce that the corresponding action is being
+    //     reverted or replayed — listeners walk the same code path
+    //     in reverse.
+    //   - removeSpikesFromClusters carries the pre-action source cluster
+    //     list so listeners can identify which palette entries to update.
+    //
+    // The non-const reference parameters (QList<int>&, QMap<int,int>&)
+    // are a legacy of the pre-Qt6 API; the data is observational, not
+    // for in-place modification by listeners.
     void updateUndoNb(int undoNb);
     void updateRedoNb(int undoNb);
     void clustersGrouped(QList<int>& groupedClusters, int newClusterId);
@@ -782,16 +833,16 @@ private:
     bool initPendingFiles();
 
     /** Original file paths — set on open, updated on SaveAs. */
-    QString m_origSpkPath;
-    QString m_origResPath;
-    QString m_origFetPath;
-    // clu original == docUrl; clu pending == m_pendingCluPath
+    QString origSpkPath;
+    QString origResPath;
+    QString origFetPath;
+    // clu original == docUrl; clu pending == pendingCluPath
 
     /** Persistent .pending file paths — live for the entire document session. */
-    QString m_pendingSpkPath;
-    QString m_pendingResPath;
-    QString m_pendingFetPath;
-    QString m_pendingCluPath;
+    QString pendingSpkPath;
+    QString pendingResPath;
+    QString pendingFetPath;
+    QString pendingCluPath;
 
     /**
     * Removes spikes from some clusters and assign them to the cluster @pdestinationCluster
@@ -800,14 +851,14 @@ private:
     * @param region the polygon defining the area containing the spikes corresponding to the noise.
     * @param clustersOfOrigin a list of the cluster numbers (in ascending order) identifying the clusters which
     * may contain spikes in the region.
-    * @param dimensionX the dimension used as absciss to display the clusters.
+    * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     */
     void deleteSpikesFromClusters(int destination, QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
 
     /**
     * Fills the undo list (clusterColorListUndoList) and clear the redo list
-    * (clusterColorListRedoList) to prepare for a futur undo.
+    * (clusterColorListRedoList) to prepare for a future undo.
     * Sets the boolean modified to true as every action on the document implies
     * a call to this function.
     */
@@ -815,7 +866,7 @@ private:
 
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the futur undo.
+    * prepare the future undo.
     * @param addedClustersTemp the list of newly created clusters which will be added
     * to the addedClustersUndoList.
     * @param modifiedClustersTemp the list of last modified clusters, the list will be added
@@ -829,13 +880,13 @@ private:
 
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) with
-    * empty list to prepare the futur undo.
+    * empty list to prepare the future undo.
     */
     void prepareUndo();
 
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the futur undo. modifiedClustersUndoList will be fill with an empty list.
+    * prepare the future undo. modifiedClustersUndoList will be fill with an empty list.
     * @param newCluster the newly created cluster which will be put in a list and added
     * to the addedClustersUndoList.
     * @param deletedClusters the list of last deleted clusters, the list will be added
@@ -845,7 +896,7 @@ private:
 
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the futur undo. addedClustersUndoList will be fill with an empty list.
+    * prepare the future undo. addedClustersUndoList will be fill with an empty list.
     * @param modifiedClusters the list of last modified clusters, the list will be added
     * to the modifiedClustersUndoList.
     * @param deletedClusters the list of last deleted clusters, the list will be added
@@ -857,7 +908,7 @@ private:
 
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the futur undo.
+    * prepare the future undo.
     * @param newCluster the newly created cluster which will be put in a list and added
     * to the addedClustersUndoList.
     * @param modifiedClusters the list of last modified clusters, the list will be added
@@ -871,7 +922,7 @@ private:
 
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the futur undo.
+    * prepare the future undo.
     * @param newClusters the list of newly created clusters which will be added
     * to the addedClustersUndoList.
     * @param modifiedClusters the list of last modified clusters, the list will be added
@@ -891,7 +942,7 @@ private:
     
     /**
     * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the futur undo. modifiedClustersUndoList will be fill with an empty list.
+    * prepare the future undo. modifiedClustersUndoList will be fill with an empty list.
     * @param newClusters the list of clusters created  by the automaatic reclustering which will be added
     * to the addedClustersUndoList.
     * @param deletedClusters the list of automatically reclustered clusters  which will be deleted, the list will be added
@@ -1051,10 +1102,10 @@ private:
     QMap<int, QList<int> > displayGroupsClusterFile;
 
     /** Realignment writes pending until saveDocument() is called. */
-    std::vector<PendingRealign> m_pendingRealign;
+    std::vector<PendingRealign> pendingRealign;
 
     // ── Curation logger ───────────────────────────────────────────────────
-    std::unique_ptr<CurationLogger> m_curationLogger;
+    std::unique_ptr<CurationLogger> curationLogger;
 
     /** Snapshot @p clusterIds and open a "before" log block for @p action.
      *  No-op if the logger is not open.  Returns quietly on empty id list. */
@@ -1066,11 +1117,11 @@ private:
 
     /// Per-cluster action-touch count for the current session.
     /// Incremented in logBefore() so every cluster snapshot carries a depth.
-    QMap<int, int> m_clusterActionCount;
+    QMap<int, int> clusterActionCount;
 
     /// action_idx of the most recently begun log action — used by undo/redo
     /// to record which preceding action index is being reverted or replayed.
-    int m_lastLoggedActionIdx = -1;
+    int lastLoggedActionIdx = -1;
 
 public:
     // (logAnnotation was removed when the J/K/X manual annotation

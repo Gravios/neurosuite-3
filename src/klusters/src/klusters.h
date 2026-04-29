@@ -107,8 +107,7 @@ public:
     bool doesActiveDisplayContainProcessWidget();
 
     /**Adds a new view (ClusterView, WaveformView or CorrelationView) to the active display.
-    * @param displayType type of view to add (ClusterView,WaveformView or CorrelationView).
-    * @param docWidget QDockWidget to which the new view will be docked.
+    * @param displayType type of view to add (ClusterView, WaveformView, or CorrelationView).
     */
     void widgetAddToDisplay(KlustersView::DisplayType displayType);
 
@@ -124,7 +123,7 @@ public:
     bool isExistATemplateMatrix() const {return templateMatrixExists;}
 
     /**Updates the dimension spin boxes.
-    * @param dimensionX absciss dimension.
+    * @param dimensionX abscissa dimension.
     * @param dimensionY ordinate dimension.
     */
     void updateDimensionSpinBoxes(int dimensionX, int dimensionY);
@@ -300,7 +299,7 @@ private Q_SLOTS:
     void slotDelaySelection();
     /**Updates the palette and the spine boxes when the active display changes.*/
     void slotTabChange(int index);
-    /**Triggers an update of the dimensions due to a change of the absciss dimension.*/
+    /**Triggers an update of the dimensions due to a change of the abscissa dimension.*/
     void slotUpdateDimensionX(int dimensionX);
     void slotUpdateAutoNFeatures(int n);
     void slotUpdateRealignTopChan(int n);
@@ -447,8 +446,10 @@ private Q_SLOTS:
     void slotStopRecluster();
 
     /**Triggers the update of data incorporating the new data from the reclustering.
-   * @param process process which has just finished.
-   */
+     *  Wired to QProcess::finished, so the parameters match Qt's signal: an
+     *  exit code (unused) and an exit-status enum indicating whether the
+     *  process terminated normally or crashed.
+     */
     void slotProcessExited(int, QProcess::ExitStatus);
 
     /**Updates internal state indicating that the outputs of the separate process, which
@@ -533,24 +534,48 @@ private:
     //   Esc     cancel and restore the view
     // All other keys are blocked while preview is active so the user
     // doesn't accidentally trigger another action mid-tune.
-    bool                m_wsActive   = false;
-    QList<int>          m_wsSel;
-    QVector<double>     m_wsXs;
-    QVector<double>     m_wsYs;
-    int                 m_wsDimX     = 0;
-    int                 m_wsDimY     = 0;
-    int                 m_wsSigmaCells = 4;     // current sigma slider analogue
-    int                 m_wsThreshPct  = 5;     // current threshold (% of grid max)
-    double              m_wsGridMax    = 1.0;   // last-discovered absolute gridMax
-    int                 m_wsCachedSigma = -1;   // sigma at which gridMax was discovered
-    Watershed2D::Result m_wsResult;
-    ClusterView*        m_wsScatter  = nullptr; // borrowed pointer into the active view
-    KlustersView*       m_wsView     = nullptr; // active KlustersView at preview-entry time
+    bool                wsPreviewActive   = false;
+    QList<int>          wsSel;
+    QVector<double>     wsXs;
+    QVector<double>     wsYs;
+    int                 wsDimX     = 0;
+    int                 wsDimY     = 0;
+    int                 wsSigmaCells = 4;     // current sigma slider analogue
+    int                 wsThreshPct  = 5;     // current threshold (% of grid max)
+    double              wsGridMax    = 1.0;   // last-discovered absolute gridMax
+    int                 wsCachedSigma = -1;   // sigma at which gridMax was discovered
+    Watershed2D::Result wsResult;
+    ClusterView*        wsScatter  = nullptr; // borrowed pointer into the active view
+    KlustersView*       wsView     = nullptr; // active KlustersView at preview-entry time
 
     bool wsEnter();              // returns false if preconditions not met
     void wsExit(bool commit);
     void wsRecompute();          // re-runs kernel with current params, refreshes overlay
     void wsRefreshOverlay();     // builds the basin-coloured QImage and pushes to ClusterView
+
+    // ── DipSplit live-preview mode (Shift+D) ────────────────────────────
+    // Parallels the watershed preview but with no tunables — dipSplit's
+    // parameters control accept/reject, not the labelling itself, so
+    // there's nothing for arrows to adjust.  The preview just shows the
+    // proposed boundary; Enter commits, Esc cancels.
+    //
+    // Decision is computed once at entry via dipSplitDecide; the
+    // partition is rendered as coloured discs on top of the scatter
+    // (left half blue, right half red) using ClusterView's dipsplit
+    // overlay.  Enter calls dipSplitApply with the cached decision —
+    // no second algorithm pass.
+    bool                       dipPreviewActive  = false;
+    int                        dipClusterId = -1;
+    int                        dipMinSize     = 50;
+    float                      dipBloatFactor = 0.0f;
+    float                      dipValleyThresh = 0.20f;
+    KlustersDoc::DipSplitDecision dipDecision;
+    ClusterView*               dipScatter = nullptr;
+    KlustersView*              dipView    = nullptr;
+
+    bool dipPreviewEnter();
+    void dipPreviewExit(bool commit);
+    void dipRefreshOverlay();    // builds the per-spike (X,Y,label) point list and pushes to ClusterView
     
     /** Creates a new display.
      * @param type enum representing the type of view to be created.
@@ -558,7 +583,7 @@ private:
     void createDisplay(KlustersView::DisplayType type);
 
     /**Updates the active display due to a change of one of the dimensions.
-    * @param dimensionX absciss dimension.
+    * @param dimensionX abscissa dimension.
     * @param dimensionX ordinate dimension.
     */
     void updateDimensions(int dimensionX, int dimensionY);
@@ -681,7 +706,7 @@ private:
     QAction *mPreferenceAction;
 
     QAction *mViewStatusBar;
-    /**Spine box enabling to choose the absciss dimension*/
+    /**Spine box enabling to choose the abscissa dimension*/
     SpinBox* dimensionX;
 
     /**Spine box enabling to choose the ordinate dimension*/
@@ -692,10 +717,10 @@ private:
     /** True while a nudge is executing OR within the post-nudge suppression
      *  window.  Prevents queued autorepeat KeyPress events from firing
      *  additional nudges after a long (multi-second) nudge loop. */
-    bool m_nudgeInProgress{false};
+    bool nudgeInProgress{false};
     /** Timestamp of when the last nudge COMPLETED, used to suppress
      *  autorepeat events that were queued during the nudge loop. */
-    QElapsedTimer m_lastNudgeTimer;
+    QElapsedTimer lastNudgeTimer;
 
     /**The current number of undo used to enable/disable the the undo action.*/
     int currentNbUndo;

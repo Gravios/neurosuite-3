@@ -78,6 +78,11 @@ public:
     SpinBox(QWidget* parent = nullptr) : QSpinBox(parent) {}
 
 public Q_SLOTS:
+    /** Clear any text selection on the inner QLineEdit.
+     *  Wired to KlustersApp signals that fire when the spinbox should
+     *  no longer look "actively edited" — e.g. after the user has
+     *  applied a new dimension via Enter and focus returns to the view.
+     */
     void deselect();
 
 protected:

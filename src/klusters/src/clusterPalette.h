@@ -70,18 +70,33 @@ private:
     /** Rows explicitly toggled by the S key. Arrow navigation restores only
      *  these rows so that non-S navigation keeps the normal single-select
      *  behaviour. Cleared when S isolates back to one cluster. */
-    QSet<int> m_sRows;
+    QSet<int> sRows;
 
     /** True while arrow-key navigation is in progress. */
-    bool m_navigating{false};
+    bool navigating{false};
 
 public:
-    bool isNavigating() const { return m_navigating; }
-    const QSet<int>& getSRows() const { return m_sRows; }
+    bool isNavigating() const { return navigating; }
+    const QSet<int>& getSRows() const { return sRows; }
 
     friend class ClusterPalette;
 };
 
+/** Left-side dock widget showing the palette of clusters.
+ *
+ *  Renders one icon per cluster ID with the cluster's display colour and
+ *  an "active/visible" checkbox.  Click-and-drag selects multiple
+ *  clusters; cluster selection drives which clusters are shown in the
+ *  active KlustersView and which are eligible for keyboard-shortcut
+ *  curation actions (G = group, R = renumber, Shift+R = recluster, etc.).
+ *
+ *  The palette also intercepts a small set of keys when it has keyboard
+ *  focus: S toggles the current cluster's visibility, T moves the
+ *  selected cluster(s) to the tail of the palette, PageUp/PageDown
+ *  nudge timestamps in the parent KlustersDoc.  These intercepts run
+ *  through KlustersApp::eventFilter rather than as QAction shortcuts so
+ *  they only fire when the palette is the focus widget.
+ */
 class ClusterPalette : public QWidget
 {
     Q_OBJECT

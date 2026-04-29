@@ -315,7 +315,37 @@ when the test is clear. The pipeline:
    setting `DipSplit bloat factor` to `0` (the default in Klusters).
 5. Apply a BIC two-vs-one gate as a final sanity check.
 
-If all gates pass, the right-half spikes go to a new cluster ID at
+#### Live-preview mode
+
+Pressing `Shift+D` enters a **live-preview overlay**: the algorithm
+runs once, the proposed partition is rendered as coloured discs on
+top of the active scatter view, and the user decides whether to keep
+the split. Each candidate spike appears as a translucent disc — blue
+for the left-half (will be retained by the source cluster on commit),
+red for the right-half (will become the new cluster). The decision
+boundary is implicit where the two colours meet. A small HUD at the
+top-left of the view shows the per-side spike counts, the best PC,
+the valley depth, and ΔBIC.
+
+While preview is active:
+
+| Key | Action |
+|---|---|
+| `Enter` | Commit — apply the partition to the document |
+| `Esc` | Cancel — discard the preview and return to normal |
+
+All other keys are blocked. There are no tunables in preview because
+DipSplit's parameters (min-size, bloat factor, valley depth) only
+control accept/reject — not how the spikes are partitioned — so live
+adjustment of them would only toggle "preview shown vs rejection
+message," which is noisier than just dismissing and re-running with
+new preferences. If the algorithm rejects the cluster (too small, no
+valley, BIC worse, etc.) the status bar shows the reason and no
+overlay appears — there's no boundary to preview.
+
+#### Commit behaviour
+
+If the user commits, the right-half spikes go to a new cluster ID at
 the tail of the palette and the source (now holding the left-half
 spikes) is **renamed to the next free ID** so it lands at the tail
 too. Both halves of the split therefore appear at the end of the
