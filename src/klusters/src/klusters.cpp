@@ -41,6 +41,8 @@
 #include <QToolButton>
 #include <QString>
 #include <QImage>
+#include <QSet>
+#include <QHash>
 #include <QIcon>  
 #include <QCursor>
 #include <QFileInfo> 
@@ -2891,9 +2893,88 @@ void KlustersApp::wsRefreshOverlay()
     if (W > 0 && !m_wsResult.cellLabels.empty()) {
         img = QImage(W, W, QImage::Format_ARGB32_Premultiplied);
         img.fill(Qt::transparent);
-        auto basinHue = [](int label) -> int {
-            return (label * 47) % 360;
+
+        // ── Contrast-aware basin coloring ───────────────────────────────
+        // The overlay sits on top of the cluster scatter at alpha ≈ 110/255
+        // (~43% opacity), so the basin fill blends with the underlying
+        // spike colour.  If a basin happens to share a hue with the
+        // cluster it covers, the boundary becomes invisible — basin red
+        // over cluster red still reads as red.  To keep the partition
+        // legible regardless of which clusters the user has selected,
+        // we compute the set of hues currently used by visible clusters
+        // (i.e. forbidden hues), then pick basin hues at least 25° away
+        // from any of them.
+        //
+        // Cluster colours are assigned by KlustersDoc with the formula
+        //     hue = (clusterId * 7 mod 36) * 10            (s=200, v=255)
+        // so they live in the 36-bucket grid {0, 10, 20, …, 350}.  That
+        // leaves plenty of room for the basin overlay to find a clear
+        // hue almost always — in the worst case (very many clusters
+        // shown) we degrade gracefully to the rotation with maximum
+        // clearance instead of giving up.
+        QSet<int> forbiddenHues;
+        if (m_wsView) {
+            const QList<int>& shown = m_wsView->clusters();
+            for (int cid : shown) {
+                if (cid <= 1) continue;     // 0/1 = artefact/noise, drawn black/grey
+                forbiddenHues.insert(
+                    static_cast<int>(std::fmod(cid * 7.0, 36.0)) * 10);
+            }
+        }
+
+        // Minimum angular distance from any forbidden hue, in degrees.
+        // 25° = roughly two-and-a-half buckets of the 10°-quantized
+        // cluster palette — enough that the basin fill reads as a
+        // distinct hue even when alpha-blended with a cluster point.
+        constexpr int kRequiredClearance = 25;
+
+        auto hueClearance = [&forbiddenHues](int candidate) -> int {
+            if (forbiddenHues.isEmpty()) return 360;
+            int minDist = 360;
+            for (int f : forbiddenHues) {
+                int d = std::abs(candidate - f);
+                if (d > 180) d = 360 - d;     // wrap around the colour wheel
+                if (d < minDist) minDist = d;
+            }
+            return minDist;
         };
+
+        // Cache per-label hue choices.  With up to ~30 basins and 256²
+        // cells, computing the rotation per cell would be 65k×30 ops;
+        // caching reduces it to one rotation per basin.
+        QHash<int, int> labelToHue;
+        auto basinHue = [&](int label) -> int {
+            auto it = labelToHue.constFind(label);
+            if (it != labelToHue.constEnd()) return it.value();
+
+            const int seed = (label * 47) % 360;
+            int chosen = seed;
+            if (!forbiddenHues.isEmpty() &&
+                hueClearance(seed) < kRequiredClearance) {
+                // Rotate in 30° steps; pick the first rotation with
+                // sufficient clearance, falling back to the rotation
+                // with maximum clearance if none clear the threshold.
+                int bestHue = seed;
+                int bestClearance = hueClearance(seed);
+                for (int step = 30; step <= 330; step += 30) {
+                    const int candidate = (seed + step) % 360;
+                    const int cl = hueClearance(candidate);
+                    if (cl >= kRequiredClearance) {
+                        bestHue = candidate;
+                        bestClearance = cl;
+                        break;
+                    }
+                    if (cl > bestClearance) {
+                        bestHue = candidate;
+                        bestClearance = cl;
+                    }
+                }
+                chosen = bestHue;
+            }
+            labelToHue.insert(label, chosen);
+            return chosen;
+        };
+
         for (int y = 0; y < W; ++y) {
             for (int x = 0; x < W; ++x) {
                 const int lab = m_wsResult.cellLabels[y * W + x];
