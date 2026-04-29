@@ -1618,205 +1618,149 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
 
 
 // ---------------------------------------------------------------------------
-// Data::createNewClustersFromLabeling
+// Data::integrateBasinLabeling
 //
-// Spike-level reassignment driven by a per-row basin labeling.
-// Behaviour mirrors the QRegion variant above, but the decision rule
-// "this spike goes to a new cluster" is "the spike's feature-row index
-// is in the basin map".
+// Refactor target: mirrors the recluster pipeline.  All spikes from
+// `clustersToRecluster` are expected to have a basin label in
+// `featureRowToBasin` (>= 1).  Internally we populate the same
+// `reclusteringSpikesByCluster` table that createFeatureFile uses, then
+// rewrite its second column with `basinLabel + highestClusterId` (the
+// same offsetting `loadReclusteredClusters` does for KlustaKwik output),
+// and finally hand off to `integrateReclusteredClusters` which rebuilds
+// the spike table and pushes the undo entry.
 //
-// A single source cluster may contain spikes belonging to N different
-// basins.  We allocate one new cluster per (sourceCluster, basin)
-// pair, matching the watershed-result expectation that each basin
-// becomes its own cluster.
-//
-// Note this is intentionally NOT a refactor of the QRegion variant —
-// keeping the two implementations side-by-side avoids destabilizing
-// the long-tested polygon-split path.
+// Side-effects: same as recluster — source clusters are dissolved
+// (their old IDs disappear), new IDs land strictly after the previous
+// highest cluster ID, single undo step covers the whole operation.
 // ---------------------------------------------------------------------------
-QMap<int,int> Data::createNewClustersFromLabeling(
-    const QHash<dataType,int>& featureRowToBasin,
-    const QList<int>& clustersOfOrigin,
-    QList<int>& emptyClusters,
-    QList<int>& allNewClusters)
+bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
+                                   const QHash<dataType,int>& featureRowToBasin,
+                                   QList<int>& newClusterList)
 {
-    QMap<int,int> fromToFirstNewClusterId;     // returned: oldId -> first newId
-    if (featureRowToBasin.isEmpty()) return fromToFirstNewClusterId;
-
-    ClusterInfoMap clusterInfoMapTemp;
-    SortableTable*  spikesByClusterTemp = new SortableTable();
-    spikesByClusterTemp->setSize(nbSpikes);
-
-    // Determine the maximum number of (cluster, basin) pairs upper-bound
-    // so we can reserve newIds.  In the worst case every source cluster
-    // has spikes in every basin.
-    QList<int> basinIdsList;
-    {
-        QSet<int> seen;
-        for (int b : featureRowToBasin) seen.insert(b);
-        basinIdsList = QList<int>(seen.begin(), seen.end());
-        std::sort(basinIdsList.begin(), basinIdsList.end());
+    // 1. Mirror createFeatureFile's first half: bucket all spikes from
+    //    clustersToRecluster into reclusteringSpikesByCluster.
+    dataType reclusteringNbSpikes = 0;
+    for (int cid : clustersToRecluster) {
+        ClusterInfo info = (*clusterInfoMap)[static_cast<dataType>(cid)];
+        reclusteringNbSpikes += info.nbSpikes();
     }
-    const int nBasins = basinIdsList.size();
-    if (nBasins == 0) { delete spikesByClusterTemp; return fromToFirstNewClusterId; }
+    reclusteringSpikesByCluster.setSize(reclusteringNbSpikes);
 
-    const dataType existingMax = (*spikesByCluster)(2, nbSpikes);
-    int nextNewClusterId = static_cast<int>(existingMax) + 1;
-
-    // Two-pass write into spikesByClusterTemp: untouched clusters at the
-    // top, new clusters at the bottom (mirrors createNewClusters).
     dataType upperInsertionIndex = 1;
-    dataType lowerInsertionIndex = nbSpikes;
+    for (int cid : clustersToRecluster) {
+        ClusterInfo info             = (*clusterInfoMap)[static_cast<dataType>(cid)];
+        const dataType firstSpikePos = info.firstSpikePosition();
+        const dataType nbSpikesOfCl  = info.nbSpikes();
+        memcpy(&(reclusteringSpikesByCluster)(1, upperInsertionIndex),
+               &(*spikesByCluster)(1, firstSpikePos),
+               nbSpikesOfCl * sizeof(dataType));
+        // Don't bother memcpy'ing column 2 — we're going to rewrite it
+        // from the basin map below.
+        upperInsertionIndex += nbSpikesOfCl;
+    }
 
-    // For each source cluster, we'll record one (newId, basinLabel,
-    // firstSpikePos, nbSpikes) entry per non-empty basin.  Used after
-    // the top/bottom pass to build clusterInfoMapTemp's new-cluster
-    // entries in proper sorted-by-position order.
-    struct NewClusterEntry {
-        int newId;
-        dataType firstSpikePosition;
-        dataType nbSpikes;
-    };
-    QList<NewClusterEntry> newEntries;
+    // 2. Rewrite column 2 with `basin + highestClusterId`, mirroring
+    //    loadReclusteredClusters' offsetting of KlustaKwik output.
+    const dataType highestClusterId = (*spikesByCluster)(2, nbSpikes);
+    for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
+        const dataType row = reclusteringSpikesByCluster(1, i);
+        const auto it      = featureRowToBasin.find(row);
+        if (it == featureRowToBasin.end()) {
+            qWarning("integrateBasinLabeling: feature row %lld has no basin "
+                     "label — caller must label every spike (use a residual "
+                     "label for unassigned points)",
+                     (long long)row);
+            reclusteringSpikesByCluster.setSize(0, true);
+            return false;
+        }
+        reclusteringSpikesByCluster(2, i) =
+            static_cast<dataType>(it.value()) + highestClusterId;
+    }
 
-    // Walk source clusters in ascending order to keep palette ordering
-    // sensible.
-    QList<dataType> sourceIds = clusterInfoMap->keys();
-    std::sort(sourceIds.begin(), sourceIds.end());
+    // 3. Hand off to the existing integrate path.  This reads
+    //    reclusteringSpikesByCluster, rebuilds the spike table,
+    //    populates `newClusterList` with the freshly-allocated IDs, and
+    //    calls prepareUndo internally.  We pass an empty QFile because
+    //    integrateReclusteredClusters' first action would have been to
+    //    call loadReclusteredClusters — but we've already done that
+    //    work in step 2.  Refactor TODO: split integrateReclusteredClusters
+    //    into a "load" stage and a "commit" stage so this dummy QFile
+    //    isn't needed.  For now, inline the post-load body.
+    //
+    // We essentially duplicate the post-loadReclusteredClusters portion
+    // of integrateReclusteredClusters.  The duplication is regrettable
+    // but bounded — if the original ever changes, this needs to track.
 
-    for (dataType clusterId : sourceIds) {
-        const ClusterInfo& info       = (*clusterInfoMap)[clusterId];
-        const dataType firstSpikePos  = info.firstSpikePosition();
-        const dataType nbSpikesOfCl   = info.nbSpikes();
-        const dataType lastPos        = firstSpikePos + nbSpikesOfCl;
+    SortableTable* spikesByClusterTemp = new SortableTable();
+    spikesByClusterTemp->setSize(nbSpikes);
+    ClusterInfoMap* clusterInfoMapTemp = new ClusterInfoMap();
 
-        // Untouched cluster: copy verbatim, record at top.
-        if (!clustersOfOrigin.contains(static_cast<int>(clusterId))) {
+    // 3a. Copy untouched clusters.
+    upperInsertionIndex = 1;
+    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+        const dataType firstSpikePos = it.value().firstSpikePosition();
+        const dataType nbSpikesOfCl  = it.value().nbSpikes();
+        const dataType clusterId     = it.key();
+        if (!clustersToRecluster.contains(static_cast<int>(clusterId))) {
             memcpy(&(*spikesByClusterTemp)(1, upperInsertionIndex),
                    &(*spikesByCluster)(1, firstSpikePos),
                    nbSpikesOfCl * sizeof(dataType));
             memcpy(&(*spikesByClusterTemp)(2, upperInsertionIndex),
                    &(*spikesByCluster)(2, firstSpikePos),
                    nbSpikesOfCl * sizeof(dataType));
-            clusterInfoMapTemp.insert(clusterId,
-                ClusterInfo(upperInsertionIndex, nbSpikesOfCl,
-                            info.getStructure(), info.getType(),
-                            info.getId(), info.getQuality(), info.getNotes()));
+            clusterInfoMapTemp->insert(clusterId,
+                ClusterInfo(upperInsertionIndex, nbSpikesOfCl));
             upperInsertionIndex += nbSpikesOfCl;
-            continue;
-        }
-
-        // Source cluster: bucket each spike by basin (or "stays in
-        // source" if not in the labeling map).  We separate the
-        // unlabeled spikes from labeled ones; each non-empty basin
-        // becomes its own new cluster.
-        QHash<int, QList<dataType>> spikesByBasin;     // basinLabel -> rowIdxs
-        QList<dataType> staysInSource;
-        for (dataType i = firstSpikePos; i < lastPos; ++i) {
-            const dataType rowIdx = (*spikesByCluster)(1, i);
-            const auto it = featureRowToBasin.find(rowIdx);
-            if (it == featureRowToBasin.end())
-                staysInSource.append(rowIdx);
-            else
-                spikesByBasin[it.value()].append(rowIdx);
-        }
-
-        const dataType nbStays      = staysInSource.size();
-        const int      nbBasinsHere = spikesByBasin.size();
-
-        // Edge case: if all of this cluster's spikes ended up in a single
-        // basin AND there are no other source clusters contributing to
-        // that basin, the rename would be a no-op shift.  We still create
-        // the new cluster — it's a slight redundancy but avoids needing
-        // global "is this basin shared?" knowledge here.  The doc layer
-        // can detect and undo if desired.
-
-        if (nbStays > 0) {
-            // Source cluster keeps a non-empty subset.  Copy those spikes
-            // to the top, recording the source's (possibly shrunken) entry.
-            for (int k = 0; k < nbStays; ++k) {
-                (*spikesByClusterTemp)(1, upperInsertionIndex + k) = staysInSource[k];
-                (*spikesByClusterTemp)(2, upperInsertionIndex + k) = clusterId;
-            }
-            clusterInfoMapTemp.insert(clusterId,
-                ClusterInfo(upperInsertionIndex, nbStays,
-                            info.getStructure(), info.getType(),
-                            info.getId(), info.getQuality(), info.getNotes()));
-            upperInsertionIndex += nbStays;
-        } else {
-            // Source emptied entirely.
-            emptyClusters.append(static_cast<int>(clusterId));
-        }
-
-        // Allocate one new cluster per basin (in ascending basin-label
-        // order) and write its spikes to the bottom of spikesByClusterTemp.
-        QList<int> basinsHere = spikesByBasin.keys();
-        std::sort(basinsHere.begin(), basinsHere.end());
-
-        bool firstNewForThisSource = true;
-        for (int basinLabel : basinsHere) {
-            const QList<dataType>& rowsOfThisBasin = spikesByBasin[basinLabel];
-            const dataType nbRows = rowsOfThisBasin.size();
-
-            // Reserve a contiguous bottom-region for this new cluster.
-            const dataType newClusterStart = lowerInsertionIndex - nbRows + 1;
-            for (dataType k = 0; k < nbRows; ++k) {
-                (*spikesByClusterTemp)(1, newClusterStart + k) = rowsOfThisBasin[k];
-                (*spikesByClusterTemp)(2, newClusterStart + k) = nextNewClusterId;
-            }
-            lowerInsertionIndex -= nbRows;
-
-            NewClusterEntry e;
-            e.newId               = nextNewClusterId;
-            e.firstSpikePosition  = newClusterStart;
-            e.nbSpikes            = nbRows;
-            newEntries.append(e);
-
-            allNewClusters.append(nextNewClusterId);
-            if (firstNewForThisSource) {
-                fromToFirstNewClusterId.insert(
-                    static_cast<int>(clusterId), nextNewClusterId);
-                firstNewForThisSource = false;
-            }
-            ++nextNewClusterId;
         }
     }
 
-    // Insert new-cluster entries into clusterInfoMapTemp.
-    for (const NewClusterEntry& e : newEntries)
-        clusterInfoMapTemp.insert(e.newId,
-            ClusterInfo(e.firstSpikePosition, e.nbSpikes,
-                        QString(), QString(), QString(),
-                        QString(), QString()));
+    // 3b. Sort reclustering table by feature-row index for time order
+    //     (matches integrateReclusteredClusters line 4717).
+    reclusteringSpikesByCluster.sort(1);
 
-    // Sanity assert: if upperInsertionIndex - 1 + (nbSpikes - lowerInsertionIndex)
-    // doesn't match nbSpikes we miscounted.  Bail rather than corrupt.
-    const dataType filledTop = upperInsertionIndex - 1;
-    const dataType filledBottom = nbSpikes - lowerInsertionIndex;
-    if (filledTop + filledBottom != nbSpikes) {
-        qWarning("createNewClustersFromLabeling: column count mismatch "
-                 "(top=%lld bot=%lld total=%lld) — aborting without changes",
-                 (long long)filledTop, (long long)filledBottom, (long long)nbSpikes);
-        delete spikesByClusterTemp;
-        emptyClusters.clear();
-        allNewClusters.clear();
-        return QMap<int,int>();
+    // 3c. Count new clusters; allocate positions; populate
+    //     clusterInfoMapTemp with new entries.
+    QMap<dataType, dataType> clusters;
+    for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
+        const dataType clusterId = reclusteringSpikesByCluster(2, i);
+        clusters[clusterId]++;
     }
 
-    // Push pre-action state onto undo stack and swap in the new tables.
-    // dimensionChanged = false: no spikes change cluster 0 membership in
-    // a watershed split, so dimension maxima are unaffected.
-    // prepareUndo takes ownership of these heap allocations.
-    ClusterInfoMap* clusterInfoMapTempHeap = new ClusterInfoMap(clusterInfoMapTemp);
-    prepareUndo(spikesByClusterTemp, clusterInfoMapTempHeap, false);
+    QMap<dataType, dataType> positions;
+    int index = upperInsertionIndex;
+    for (auto cIt = clusters.begin(); cIt != clusters.end(); ++cIt) {
+        const dataType clusterId = cIt.key();
+        newClusterList.append(static_cast<int>(clusterId));
+        positions[clusterId] = index;
+        clusterInfoMapTemp->insert(clusterId,
+            ClusterInfo(index, cIt.value()));
+        index += cIt.value();
+    }
 
-    // Cache invalidation: drop waveform/correlation entries for source
-    // clusters that lost spikes.  Mirrors the pattern in createNewClusters
-    // (which doesn't do this either, relying on the doc-level
-    // invalidateWaveformCache calls).  Doc layer handles it.
+    // 3d. Fill the new clusters' spikes.
+    for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
+        const dataType clusterId    = reclusteringSpikesByCluster(2, i);
+        const dataType position     = positions[clusterId];
+        const dataType positionInFet = reclusteringSpikesByCluster(1, i);
+        (*spikesByClusterTemp)(1, position) = positionInFet;
+        (*spikesByClusterTemp)(2, position) = clusterId;
+        positions[clusterId]++;
+    }
 
-    return fromToFirstNewClusterId;
+    reclusteringSpikesByCluster.setSize(0, true);
+
+    const bool dimChanged = clustersToRecluster.contains(0);
+    prepareUndo(spikesByClusterTemp, clusterInfoMapTemp, dimChanged);
+
+    if (dimChanged) {
+        while (!minMaxThread->wait()) {}
+        clusterZeroJustModified = false;
+        minMaxThread->start();
+    }
+
+    return true;
 }
+
 
 
 /*

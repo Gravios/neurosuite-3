@@ -239,33 +239,31 @@ public:
   */
     QMap<int,int> createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters);
 
-    /** Generic relabel-by-spike variant of createNewClusters.  Each
-     *  spike's feature-row index maps via @p featureRowToBasin to a
-     *  basin label (>= 1).  Spikes not present in the map keep their
-     *  current cluster.  Spikes whose basin label is the same value
-     *  for all input spikes from one source cluster are also a no-op
-     *  (no new cluster is allocated for that case).
+    /** Apply a per-spike basin labeling using the existing recluster
+     *  pipeline, so new clusters are renumbered to start strictly after
+     *  the current maximum cluster ID and the source clusters are fully
+     *  dissolved.  Mirrors what KlustaKwik output does in the recluster
+     *  path, except labels come from a watershed kernel instead of an
+     *  external process.
      *
-     *  Used by the watershed action (W key): the watershed kernel
-     *  produces a labeling over points in the active scatter view's
-     *  2D feature space; each unique basin becomes one new cluster.
+     *  All spikes from `clustersToRecluster` MUST have an entry in
+     *  `featureRowToBasin` (basin >= 1).  The caller is responsible for
+     *  assigning unlabeled spikes to a "residual" basin so this contract
+     *  holds.
      *
-     *  @param featureRowToBasin map from .fet row index (1-based) to
-     *         a small positive basin number.
-     *  @param clustersOfOrigin clusters whose spikes are eligible
-     *         to be reassigned.
-     *  @param emptyClusters out-param: source clusters that became
-     *         empty because all their spikes moved to new ones.
-     *  @return map old-cluster-id -> first new-cluster-id (note:
-     *         a single source cluster may spawn multiple new clusters
-     *         if it contained spikes belonging to multiple basins;
-     *         the additional new IDs are the consecutive integers
-     *         after the first, ordered by basin label ascending). */
-    QMap<int,int> createNewClustersFromLabeling(
-        const QHash<dataType,int>& featureRowToBasin,
-        const QList<int>& clustersOfOrigin,
-        QList<int>& emptyClusters,
-        QList<int>& allNewClusters);
+     *  Implementation: populates the internal reclusteringSpikesByCluster
+     *  table by walking clustersToRecluster, then offsets each basin
+     *  label by highestClusterId (matching loadReclusteredClusters), and
+     *  finally hands off to integrateReclusteredClusters which rebuilds
+     *  the spike table and pushes the undo entry.
+     *
+     *  @param clustersToRecluster source clusters (will be dissolved).
+     *  @param featureRowToBasin   feature-row → basin label (>= 1).
+     *  @param newClusterList      out: new cluster IDs, in ascending order.
+     *  @return true on success. */
+    bool integrateBasinLabeling(QList<int>& clustersToRecluster,
+                                const QHash<dataType,int>& featureRowToBasin,
+                                QList<int>& newClusterList);
 
     /**
   * Removes spikes from some clusters and assign them to the cluster @p destinationCluster

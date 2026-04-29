@@ -1598,72 +1598,78 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
         return 0;
     }
 
-    // ── Build feature-row -> basin map for the Data layer.
+    // ── Build feature-row -> basin map.  Unlabeled spikes (label 0)
+    // ── must still get a label so integrateBasinLabeling's "every
+    // ── source spike has a basin" contract holds — assign them all
+    // ── to basin (numBasins+1), which becomes the residual cluster
+    // ── after the renumber.  This way the residual is its own
+    // ── tail-positioned cluster rather than being left in the source.
     QHash<dataType, int> rowToBasin;
     rowToBasin.reserve(static_cast<int>(rowIdxs.size()));
+    const int residualBasin = res.numBasins + 1;
+    bool sawResidual = false;
     for (size_t i = 0; i < rowIdxs.size(); ++i) {
-        const int lab = res.pointLabels[i];
-        if (lab > 0) rowToBasin.insert(rowIdxs[i], lab);
+        int lab = res.pointLabels[i];
+        if (lab <= 0) { lab = residualBasin; sawResidual = true; }
+        rowToBasin.insert(rowIdxs[i], lab);
     }
-    if (rowToBasin.isEmpty()) return 0;
 
     // ── Curation log (before).
     logBefore(CurationLogger::ActionType::WATERSHED, inputs);
 
-    // ── Mutate Data.
-    QList<int> emptyClusters;
-    QList<int> allNewClusters;
-    QMap<int,int> fromToFirstNewClusterId =
-        clusteringData->createNewClustersFromLabeling(
-            rowToBasin, inputs, emptyClusters, allNewClusters);
+    // ── Hand off to the recluster-style integrate pipeline.  This
+    // ── dissolves source clusters and emits new ones at IDs strictly
+    // ── greater than the previous max — exactly the renumber-after-
+    // ── last-cluster behaviour the user expects.
+    QList<int> newClusterList;
+    if (!clusteringData->integrateBasinLabeling(inputs, rowToBasin,
+                                                 newClusterList)) {
+        return 0;
+    }
+    if (newClusterList.isEmpty()) return 0;
 
-    if (allNewClusters.isEmpty()) return 0;
+    // ── Doc-level undo: same shape as recluster.
+    prepareReclusteringUndo(newClusterList, inputs);
 
-    // ── Doc-level undo (clusterColorList snapshot).
-    // Match createNewClusters' order: capture undo BEFORE appending new
-    // colours (the dipsplit segfault fix established this invariant).
+    // ── Update colour palette: add new, remove dissolved.  Mirrors
+    // ── reclusteringUpdate's main branch.
+    KlustersView* mainActiveView = app()->activeView();
+    QList<int> clustersToShow;
     {
-        QList<int> fromClusters = fromToFirstNewClusterId.keys();
-        prepareUndo(allNewClusters, fromClusters, emptyClusters);
+        const QList<int> currentlyShown = mainActiveView->clusters();
+        for (int c : currentlyShown)
+            if (!inputs.contains(c)) clustersToShow.append(c);
     }
-
-    // ── Allocate colours for all new clusters.
     QColor color;
-    std::sort(allNewClusters.begin(), allNewClusters.end());
-    for (int newId : allNewClusters) {
-        color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10, 200, 255);
+    for (int newId : newClusterList) {
+        color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10,
+                     200, 255);
         clusterColorList->append(newId, color);
+        clustersToShow.append(newId);
     }
-    // Drop colours for clusters that became empty.
-    for (int emptied : emptyClusters)
-        clusterColorList->remove(emptied);
+    for (int oldId : inputs)
+        clusterColorList->remove(oldId);
 
     // ── View notification.
-    // We treat watershed as a "many new clusters from many sources" event,
-    // exactly the shape that addNewClustersToView already handles.
     for (KlustersView* v : *viewList) {
-        const bool isActive = (v == activeView);
-        v->addNewClustersToView(fromToFirstNewClusterId, emptyClusters, isActive);
+        const bool isActive = (v == mainActiveView);
+        v->addNewClustersToView(inputs, newClusterList, isActive);
         v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
     }
-    emit newClustersAdded(fromToFirstNewClusterId, emptyClusters);
+    emit newClustersAdded(inputs);
 
     if (clusterColorList->isColorChanged())
         clusterColorList->resetAllColorStatus();
 
-    activeView->showAllWidgets();
+    mainActiveView->showAllWidgets();
 
-    // ── Refresh palette and select all the freshly created clusters.
-    QList<int> selectAfter = allNewClusters;
-    // Also keep any source clusters that survived (had unlabeled spikes).
-    for (int src : fromToFirstNewClusterId.keys())
-        if (!emptyClusters.contains(src)) selectAfter.append(src);
     clusterPalette.updateClusterList();
-    clusterPalette.selectItems(selectAfter);
+    clusterPalette.selectItems(clustersToShow);
 
-    logAfter(allNewClusters);
+    logAfter(newClusterList);
 
-    return allNewClusters.size();
+    Q_UNUSED(sawResidual);   // residual presence is informational only
+    return newClusterList.size();
 }
 
 void KlustersDoc::prepareClusterColorUndo(){
