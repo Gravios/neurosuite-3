@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 /***************************************************************************
                           klusters.cpp  -  description
                              -------------------
@@ -361,7 +362,7 @@ void KlustersApp::createMenus()
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
 
     mDipSplit = actionMenu->addAction(tr("&DipSplit Selected Cluster"));
-    mDipSplit->setShortcut(Qt::Key_D);
+    mDipSplit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
     mDipSplit->setToolTip(
         tr("Test the selected cluster for hidden bimodality.  If a valley is\n"
            "detected along one of its top-3 principal components AND the two-\n"
@@ -406,7 +407,7 @@ void KlustersApp::createMenus()
 
     mNewCluster = toolsMenu->addAction(tr("New Cluster"));
     mNewCluster->setIcon(QIcon(":/icons/new_cluster"));
-    mNewCluster->setShortcut(Qt::Key_C);
+    // Shortcut removed; reachable via menu / toolbar / "1" key (slotSingleNew).
     connect(mNewCluster,&QAction::triggered, this,&KlustersApp::slotSingleNew);
 
     mSplitClusters = toolsMenu->addAction(tr("&Split Clusters"));
@@ -417,12 +418,12 @@ void KlustersApp::createMenus()
 
     mDeleteArtifactSpikes = toolsMenu->addAction(tr("Delete &Artifact Spikes"));
     mDeleteArtifactSpikes->setIcon(QIcon(":/icons/delete_artefact_tool"));
-    mDeleteArtifactSpikes->setShortcut(Qt::Key_A);
+    // Shortcut removed; reachable via menu / toolbar.
     connect(mDeleteArtifactSpikes,&QAction::triggered, this,&KlustersApp::slotDeleteArtefact);
 
     mDeleteNoisySpikes = toolsMenu->addAction(tr("Delete &Noisy Spikes"));
     mDeleteNoisySpikes->setIcon(QIcon(":/icons/delete_noise_tool"));
-    mDeleteNoisySpikes->setShortcut(Qt::Key_N);
+    // Shortcut removed; reachable via menu / toolbar.
     connect(mDeleteNoisySpikes,&QAction::triggered, this,&KlustersApp::slotDeleteNoise);
 
     toolsMenu->addSeparator();
@@ -435,7 +436,7 @@ void KlustersApp::createMenus()
 
     toolsMenu->addSeparator();
     mWatershed = toolsMenu->addAction(tr("&Watershed Split"));
-    mWatershed->setShortcut(Qt::Key_W);
+    mWatershed->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_W));
     mWatershed->setStatusTip(tr(
         "Split the currently-shown clusters into one new cluster per "
         "density basin in the active scatter view."));
@@ -446,7 +447,9 @@ void KlustersApp::createMenus()
     //Waveforms menu
     QMenu *waveFormsMenu = menuBar()->addMenu(tr("&Waveforms"));
     timeFrameMode = waveFormsMenu->addAction(tr("&Time Frame"));
-    timeFrameMode->setShortcut(Qt::Key_T);
+    // Shortcut removed; reachable via menu only.  This frees plain "T"
+    // entirely for the palette-focus "renumber-to-end" intercept (which
+    // is handled in eventFilter rather than as a QAction).
     timeFrameMode->setCheckable(true);
     connect(timeFrameMode,&QAction::triggered, this,&KlustersApp::slotTimeFrameMode);
 
@@ -464,11 +467,11 @@ void KlustersApp::createMenus()
 
 
     mIncreaseAmplitude = waveFormsMenu->addAction(tr("&Increase Amplitude"));
-    mIncreaseAmplitude->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
+    mIncreaseAmplitude->setShortcut(Qt::Key_I);
     connect(mIncreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotIncreaseAmplitude);
 
     mDecreaseAmplitude = waveFormsMenu->addAction(tr("&Decrease Amplitude"));
-    mDecreaseAmplitude->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+    mDecreaseAmplitude->setShortcut(Qt::Key_D);
     connect(mDecreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotDecreaseAmplitude);
 
     timeFrameMode->setChecked(false);
@@ -510,11 +513,11 @@ void KlustersApp::createMenus()
     //Initialize the presentation mode to scale by maximum.
     scaleByMax->setChecked(true);
     mIncreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Increase Amplitude"));
-    mIncreaseAmplitudeCorrelation->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_I));
+    // Shortcut removed (Shift+I freed for future use; reach via menu only).
     connect(mIncreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotIncreaseCorrelogramsAmplitude);
 
     mDecreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Decrease Amplitude"));
-    mDecreaseAmplitudeCorrelation->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
+    // Shortcut removed (Shift+D was conflicting with DipSplit; reach via menu only).
     connect(mDecreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotDecreaseCorrelogramsAmplitude);
 
 
@@ -1117,6 +1120,71 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(object == paramBar && event->type() == 71){//filter the removal of items from the paramBar
         return true;
     }
+
+    // ── Watershed live-preview mode ─────────────────────────────────────────
+    // When m_wsActive is true, four arrow keys + Enter + Esc are claimed
+    // exclusively; any other key is swallowed silently to prevent the
+    // user from triggering an unrelated action mid-tune.  This block runs
+    // before everything else so even ShortcutOverride'd keys can't
+    // sneak past.
+    if (m_wsActive &&
+        (event->type() == QEvent::ShortcutOverride ||
+         event->type() == QEvent::KeyPress))
+    {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        const int key  = ke->key();
+        const auto mod = ke->modifiers();
+        const bool shift = (mod & Qt::ShiftModifier) != 0;
+        // Strip Shift from the modifier set for the equality test —
+        // arrows with or without Shift are both wanted.
+        const bool plainOrShifted = (mod == Qt::NoModifier) ||
+                                    (mod == Qt::ShiftModifier);
+
+        // Always claim the override so QActions don't fire.
+        if (event->type() == QEvent::ShortcutOverride) {
+            ke->accept();
+            return true;
+        }
+
+        if (ke->isAutoRepeat()) {
+            // Suppress autorepeat — the kernel costs ~50 ms per run, so
+            // queued autorepeats would feel sluggish and fire long after
+            // the key was released.
+            return true;
+        }
+
+        if (plainOrShifted) {
+            const int step = shift ? 5 : 1;
+            switch (key) {
+            case Qt::Key_Left:
+                m_wsSigmaCells = qBound(1, m_wsSigmaCells - step, 32);
+                wsRecompute();
+                return true;
+            case Qt::Key_Right:
+                m_wsSigmaCells = qBound(1, m_wsSigmaCells + step, 32);
+                wsRecompute();
+                return true;
+            case Qt::Key_Up:
+                m_wsThreshPct = qBound(0, m_wsThreshPct + step, 50);
+                wsRecompute();
+                return true;
+            case Qt::Key_Down:
+                m_wsThreshPct = qBound(0, m_wsThreshPct - step, 50);
+                wsRecompute();
+                return true;
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                wsExit(/*commit=*/true);
+                return true;
+            case Qt::Key_Escape:
+                wsExit(/*commit=*/false);
+                return true;
+            }
+        }
+        // Any other key while preview is active: swallow.
+        return true;
+    }
+
     // ── Key navigation ──────────────────────────────────────────────────────
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
@@ -1260,12 +1328,12 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
     // ── T key: palette move-to-end ─────────────────────────────────────────
-    // Qt::Key_T is normally bound to the "Time Frame" waveform-display
-    // toggle.  When the cluster palette has focus, T re-orders the
+    // T has no global QAction shortcut (the "Time Frame" QAction shortcut
+    // was removed).  When the cluster palette has focus, T re-orders the
     // currently-selected cluster(s) to the end of the palette list — same
-    // intercept pattern as Key_S (toggle current selection).  Without the
-    // ShortcutOverride claim, the QAction with the T shortcut would fire
-    // first and toggle the waveform mode instead.
+    // intercept pattern as Key_S.  The ShortcutOverride claim is retained
+    // defensively so any future QAction with T as shortcut still won't
+    // win over the palette intercept.
     if(event->type() == QEvent::ShortcutOverride){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
@@ -2580,25 +2648,41 @@ void KlustersApp::slotSelectTime(){
 
 
 // ---------------------------------------------------------------------------
-// Watershed dialog (W key)
+// Watershed live-preview mode (Shift+W)
 //
-// Modal dialog: shows a 256×256 heatmap of the smoothed density with each
-// basin coloured by its watershed label.  Two sliders: horizontal slider
-// controls the smoothing sigma, vertical slider controls the peak-height
-// threshold.  Arrow keys also adjust (Left/Right = sigma, Up/Down = peak
-// height).  Apply commits.
+// Replaces the pre-2026-04 modal dialog with an in-place overlay drawn
+// directly on the active scatter view.  Pressing Shift+W enters
+// preview: per-cluster (X, Y) feature points are extracted once, the
+// watershed kernel runs against the active view's current X/Y
+// dimensions, and the resulting basin partition is rendered as a
+// translucent coloured overlay on top of the scatter via
+// ClusterView::setWatershedOverlay.  A small HUD at top-left shows the
+// current parameters and key bindings.
 //
-// Implementation choice: re-runs the watershed kernel synchronously on
-// each slider change (and on dialog open).  ~50ms for 10k points on a
-// 256² grid; not noticeable in interactive use.
+// While in preview:
+//   ←/→     adjust smoothing sigma  (1..32 cells, ±1 per press, ±5 with Shift)
+//   ↑/↓     adjust peak threshold   (0..50% of grid max, ±1 per press, ±5 with Shift)
+//   Enter   commit the partition
+//   Esc     cancel
 //
-// To keep the dialog self-contained, the kernel-rerun helper and image-
-// rendering helpers live as lambdas inside this slot.
+// Other keys are blocked while preview is active (intercepted in
+// eventFilter, see the m_wsActive branch there) so the user doesn't
+// accidentally trigger an unrelated action mid-tune.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotWatershedSplit()
 {
-    if (!doc || !activeView() || !clusterPalette) return;
-    if (doesActiveDisplayContainProcessWidget()) return;
+    if (m_wsActive) {
+        // Pressing Shift+W while already in preview is a no-op.  Use
+        // Enter to commit, Esc to cancel.
+        return;
+    }
+    wsEnter();
+}
+
+bool KlustersApp::wsEnter()
+{
+    if (!doc || !activeView() || !clusterPalette) return false;
+    if (doesActiveDisplayContainProcessWidget()) return false;
 
     QList<int> sel = clusterPalette->selectedClusters();
     sel.removeAll(0);
@@ -2606,23 +2690,43 @@ void KlustersApp::slotWatershedSplit()
     if (sel.isEmpty()) {
         statusBar()->showMessage(
             tr("Watershed: select one or more clusters in the palette first."), 4000);
-        return;
+        return false;
     }
 
-    // ── Pull the (x, y, row) tuples ONCE up-front.  The kernel re-runs
-    // ── on each slider change but the input data is immutable across
-    // ── reruns, so we cache it here.
     KlustersView* aview = activeView();
+    if (!aview->containsClusterView()) {
+        statusBar()->showMessage(
+            tr("Watershed: the active display has no scatter view."), 4000);
+        return false;
+    }
+
+    // Locate the ClusterView widget.  It is the active KlustersView's
+    // currentViewWidget when containsClusterView() is true; cast through
+    // the ViewWidget base.
+    ClusterView* scatter = nullptr;
+    {
+        QList<ViewWidget*> vws = aview->getViewList();
+        for (ViewWidget* vw : vws) {
+            if ((scatter = qobject_cast<ClusterView*>(vw))) break;
+        }
+    }
+    if (!scatter) {
+        statusBar()->showMessage(
+            tr("Watershed: could not locate the scatter view."), 4000);
+        return false;
+    }
+
     const int dimX = aview->abscissaDimension();
     const int dimY = aview->ordinateDimension();
 
-    std::vector<double> xs;
-    std::vector<double> ys;
+    // Extract (X, Y) coordinates for every spike of every selected cluster.
+    QVector<double> xs;
+    QVector<double> ys;
     {
         size_t totalEst = 0;
         for (int cid : sel) totalEst += doc->data().nbOfSpikes(cid);
-        xs.reserve(totalEst);
-        ys.reserve(totalEst);
+        xs.reserve(static_cast<int>(totalEst));
+        ys.reserve(static_cast<int>(totalEst));
     }
     for (int cid : sel) {
         SortableTable subset;
@@ -2630,209 +2734,98 @@ void KlustersApp::slotWatershedSplit()
         const int n = static_cast<int>(subset.nbOfColumns());
         for (int i = 1; i <= n; ++i) {
             const auto row = subset(1, i);
-            xs.push_back(static_cast<double>(doc->data().featureValue(row, dimX)));
-            ys.push_back(static_cast<double>(doc->data().featureValue(row, dimY)));
+            xs.append(static_cast<double>(doc->data().featureValue(row, dimX)));
+            ys.append(static_cast<double>(doc->data().featureValue(row, dimY)));
         }
     }
     if (xs.size() < 50) {
         statusBar()->showMessage(
             tr("Watershed: not enough spikes (need at least 50)."), 4000);
-        return;
+        return false;
     }
 
-    // ── Build the dialog.
-    QDialog dlg(this);
-    dlg.setWindowTitle(tr("Watershed Split — %1 cluster%2, %3 spikes")
-                       .arg(sel.size()).arg(sel.size() == 1 ? "" : "s")
-                       .arg(static_cast<int>(xs.size())));
-    dlg.setModal(true);
+    // Stash state.  Initial sigma/threshold values are remembered from
+    // the previous invocation (m_wsSigmaCells / m_wsThreshPct are
+    // persistent members) so re-tuning a similar partition is fast.
+    m_wsSel       = sel;
+    m_wsXs        = std::move(xs);
+    m_wsYs        = std::move(ys);
+    m_wsDimX      = dimX;
+    m_wsDimY      = dimY;
+    m_wsScatter   = scatter;
+    m_wsView      = aview;
+    m_wsActive    = true;
+    m_wsCachedSigma = -1;     // force gridMax probe on first recompute
 
-    QVBoxLayout* mainLayout = new QVBoxLayout(&dlg);
-
-    // Heatmap label.  256x256 native; enlarged 1.5× for clarity.
-    QLabel* heatmap = new QLabel(&dlg);
-    heatmap->setFixedSize(384, 384);
-    heatmap->setAlignment(Qt::AlignCenter);
-    heatmap->setFrameStyle(QFrame::Box | QFrame::Plain);
-    heatmap->setLineWidth(1);
-
-    // Sliders.  Sigma (horizontal): 1..32 cells.  PeakHeight (vertical,
-    // displayed as percent of grid max): 0..50.
-    QSlider* sigmaSlider = new QSlider(Qt::Horizontal, &dlg);
-    sigmaSlider->setRange(1, 32);
-    sigmaSlider->setSingleStep(1);
-    sigmaSlider->setPageStep(2);
-
-    QSlider* peakSlider  = new QSlider(Qt::Vertical, &dlg);
-    peakSlider->setRange(0, 50);     // 0..50% of grid max
-    peakSlider->setSingleStep(1);
-    peakSlider->setPageStep(5);
-    peakSlider->setInvertedAppearance(true);  // top of slider = high threshold
-
-    // Info / status line.
-    QLabel* infoLabel = new QLabel(&dlg);
-    infoLabel->setMinimumWidth(380);
-
-    // Layout: heatmap with peakSlider on the right, sigmaSlider below.
-    QGridLayout* viewLayout = new QGridLayout();
-    viewLayout->setSpacing(4);
-    viewLayout->addWidget(heatmap,     0, 0);
-    viewLayout->addWidget(peakSlider,  0, 1);
-    viewLayout->addWidget(sigmaSlider, 1, 0);
-    QLabel* sigmaLabel = new QLabel(tr("← smoothing sigma →"), &dlg);
-    sigmaLabel->setAlignment(Qt::AlignCenter);
-    QLabel* peakLabel  = new QLabel(tr("peak\nheight"), &dlg);
-    peakLabel->setAlignment(Qt::AlignCenter);
-    viewLayout->addWidget(peakLabel,   1, 1);
-    viewLayout->addWidget(sigmaLabel,  2, 0);
-    mainLayout->addLayout(viewLayout);
-    mainLayout->addWidget(infoLabel);
-
-    QDialogButtonBox* bb = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    bb->button(QDialogButtonBox::Ok)->setText(tr("&Apply"));
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    mainLayout->addWidget(bb);
-
-    // ── State shared between rerun lambda and slider callbacks.
-    Watershed2D::Result lastRes;
-
-    // Lambda: render lastRes.smoothedGrid + lastRes.cellLabels into a QImage.
-    // Cells with label > 0 get a hue based on the label index; unassigned
-    // cells (label 0) get a grayscale density value.  Background scaled
-    // to grid max.
-    auto renderHeatmap = [&]() -> QImage {
-        const int W = lastRes.gridSize;
-        if (W <= 0 || lastRes.smoothedGrid.empty()) return QImage();
-        QImage img(W, W, QImage::Format_RGB32);
-        // Find smoothed-grid max for scaling.
-        float gmax = 0.0f;
-        for (float v : lastRes.smoothedGrid) if (v > gmax) gmax = v;
-        if (gmax <= 0) gmax = 1.0f;
-        // Distinct colours for first ~20 basins.  Beyond that, recycle.
-        auto basinHue = [](int label) -> int {
-            return (label * 47) % 360;
-        };
-        for (int y = 0; y < W; ++y) {
-            for (int x = 0; x < W; ++x) {
-                const int cellIdx = y * W + x;
-                const int lab     = lastRes.cellLabels[cellIdx];
-                const float v     = lastRes.smoothedGrid[cellIdx];
-                const float vN    = std::min(1.0f, v / gmax);
-                QColor c;
-                if (lab > 0) {
-                    c.setHsv(basinHue(lab), 200, static_cast<int>(80 + 175 * vN));
-                } else {
-                    const int g = static_cast<int>(40 * vN);
-                    c.setRgb(g, g, g);
-                }
-                // y is flipped so the visual axis matches scatter view orientation.
-                img.setPixel(x, W - 1 - y, c.rgb());
-            }
-        }
-        return img;
-    };
-
-    auto rerun = [&]() {
-        Watershed2D::Config cfg;
-        cfg.gridSize       = 256;
-        cfg.smoothSigma    = sigmaSlider->value();
-        cfg.minPeakHeight  = peakSlider->value() * 0.01;  // sentinel? no — encode as multiplier of gridMax in kernel
-        cfg.minBasinSize   = 0;     // auto
-        cfg.keepGrid       = true;
-        // peakSlider scale: 0..50 -> 0..0.50 (fraction of gridMax).  We
-        // can't pass that directly; the kernel currently treats minPeakHeight
-        // as absolute.  So we run a quick first pass to discover gridMax,
-        // then a second pass with the absolute threshold derived from
-        // the slider's percent.  Cheap because the histogram + smoothing
-        // dominate, not a big deal to do twice.
-        // (Simpler alternative: extend the kernel to accept a fractional
-        // threshold.  For now, do two passes.)
-        Watershed2D::Config probeCfg = cfg;
-        probeCfg.minPeakHeight = 0;       // auto = 5% of max -- just to learn max
-        Watershed2D::Result probe = Watershed2D::run(xs, ys, probeCfg);
-        if (!probe.ok) { lastRes = probe; return; }
-        // probe.effPeakHeight = 0.05 * gridMax, so gridMax = probe.effPeakHeight / 0.05
-        const double gridMax = probe.effPeakHeight / 0.05;
-        cfg.minPeakHeight = (peakSlider->value() / 100.0) * gridMax;
-        if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;     // 0% slider → use auto
-        lastRes = Watershed2D::run(xs, ys, cfg);
-    };
-
-    auto refreshUi = [&]() {
-        const QImage img = renderHeatmap();
-        if (!img.isNull()) {
-            heatmap->setPixmap(QPixmap::fromImage(img).scaled(
-                heatmap->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
-        }
-        int unassigned = 0;
-        for (int lab : lastRes.pointLabels) if (lab == 0) ++unassigned;
-        const int N = static_cast<int>(lastRes.pointLabels.size());
-        infoLabel->setText(tr(
-            "%1 basins, %2 peaks (pre-merge)  ·  %3 / %4 spikes unassigned  "
-            "·  σ=%5 cells, threshold=%6%% of max")
-            .arg(lastRes.numBasins).arg(lastRes.numPeaks)
-            .arg(unassigned).arg(N)
-            .arg(lastRes.effSigma, 0, 'f', 1)
-            .arg(peakSlider->value()));
-    };
-
-    // Initial run with all-auto, then snap sliders to those values.
+    // First run: snap sigma to auto-tune so the user starts from a
+    // sensible default.  We discover what the kernel chose, then write
+    // it back into m_wsSigmaCells.
     {
         Watershed2D::Config cfg;
         cfg.keepGrid = true;
-        lastRes = Watershed2D::run(xs, ys, cfg);
+        m_wsResult = Watershed2D::run(
+            std::vector<double>(m_wsXs.begin(), m_wsXs.end()),
+            std::vector<double>(m_wsYs.begin(), m_wsYs.end()),
+            cfg);
     }
-    if (!lastRes.ok) {
-        QMessageBox::information(this, tr("Watershed Split"), tr(
-            "Watershed could not run on this data — input may be degenerate "
-            "(all spikes share an X or Y feature value)."));
-        return;
+    if (!m_wsResult.ok) {
+        statusBar()->showMessage(
+            tr("Watershed: input degenerate (all spikes share an X or Y feature)."), 5000);
+        m_wsActive = false;
+        m_wsScatter = nullptr;
+        m_wsView = nullptr;
+        m_wsSel.clear();
+        m_wsXs.clear();
+        m_wsYs.clear();
+        return false;
     }
-    {
-        // Snap sliders.  Sigma comes back already in [1, 32]ish range.
-        // Threshold needs to be expressed as % of gridMax.
-        sigmaSlider->blockSignals(true);
-        peakSlider->blockSignals(true);
-        sigmaSlider->setValue(qBound(1, static_cast<int>(std::round(lastRes.effSigma)), 32));
-        // effPeakHeight is auto = 5% of gridMax, so slider value = 5
-        peakSlider->setValue(5);
-        sigmaSlider->blockSignals(false);
-        peakSlider->blockSignals(false);
-    }
-    refreshUi();
+    m_wsSigmaCells   = qBound(1, static_cast<int>(std::round(m_wsResult.effSigma)), 32);
+    m_wsThreshPct    = 5;     // auto-tune is 5% of gridMax
+    m_wsGridMax      = m_wsResult.effPeakHeight / 0.05;
+    m_wsCachedSigma  = m_wsSigmaCells;
 
-    auto onSlider = [&]() {
-        rerun();
-        refreshUi();
-    };
-    connect(sigmaSlider, &QSlider::valueChanged, &dlg, onSlider);
-    connect(peakSlider,  &QSlider::valueChanged, &dlg, onSlider);
+    wsRefreshOverlay();
+    return true;
+}
 
-    if (dlg.exec() != QDialog::Accepted) {
+void KlustersApp::wsExit(bool commit)
+{
+    if (!m_wsActive) return;
+
+    // Snapshot the bits we still need before clearing state.
+    const QList<int>          sel    = m_wsSel;
+    const int                 sigma  = m_wsSigmaCells;
+    const int                 thresh = m_wsThreshPct;
+    const double              gridMax = m_wsGridMax;
+    ClusterView* const        scatter = m_wsScatter;
+
+    // Clear state (also drops the overlay on the view).
+    if (scatter) scatter->clearWatershedOverlay();
+    m_wsActive  = false;
+    m_wsScatter = nullptr;
+    m_wsView    = nullptr;
+    m_wsSel.clear();
+    m_wsXs.clear();
+    m_wsYs.clear();
+    m_wsResult = Watershed2D::Result{};
+
+    if (!commit) {
         if (clusterPalette) clusterPalette->setFocusToList();
+        statusBar()->showMessage(tr("Watershed cancelled."), 3000);
         return;
     }
 
-    // ── User accepted.  Apply lastRes to the document.
-    Watershed2D::Config applyCfg;
-    applyCfg.gridSize     = 256;
-    applyCfg.smoothSigma  = sigmaSlider->value();
-    {
-        // Match exactly what the dialog showed.
-        Watershed2D::Config probeCfg;
-        probeCfg.minPeakHeight = 0;
-        Watershed2D::Result probe = Watershed2D::run(xs, ys, probeCfg);
-        const double gridMax = probe.effPeakHeight / 0.05;
-        applyCfg.minPeakHeight = (peakSlider->value() / 100.0) * gridMax;
-        if (applyCfg.minPeakHeight < 1e-6) applyCfg.minPeakHeight = 0;
-    }
-    applyCfg.minBasinSize  = 0;     // auto
+    // Apply.  Build the same Config the live-preview was using.
+    Watershed2D::Config cfg;
+    cfg.gridSize      = 256;
+    cfg.smoothSigma   = sigma;
+    cfg.minPeakHeight = (thresh / 100.0) * gridMax;
+    if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;
+    cfg.minBasinSize  = 0;     // auto
 
     slotStatusMsg(tr("Applying watershed split..."));
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    const int nNew = doc->watershedSelectedClusters(sel, applyCfg);
+    const int nNew = doc->watershedSelectedClusters(sel, cfg);
     QApplication::restoreOverrideCursor();
 
     if (nNew == 0) {
@@ -2844,10 +2837,100 @@ void KlustersApp::slotWatershedSplit()
                 .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
             4000);
     }
-
     if (clusterPalette) clusterPalette->setFocusToList();
     slotStatusMsg(tr("Ready."));
 }
+
+void KlustersApp::wsRecompute()
+{
+    if (!m_wsActive) return;
+
+    // If sigma changed, the histogram + smoothing change too, so the
+    // grid maximum changes — re-discover it via a probe pass with the
+    // auto-tune sentinel.  If sigma is unchanged, reuse the cached
+    // gridMax to halve the work per arrow press.
+    Watershed2D::Config cfg;
+    cfg.gridSize      = 256;
+    cfg.smoothSigma   = m_wsSigmaCells;
+    cfg.minBasinSize  = 0;     // auto
+    cfg.keepGrid      = true;
+
+    if (m_wsCachedSigma != m_wsSigmaCells) {
+        Watershed2D::Config probeCfg = cfg;
+        probeCfg.minPeakHeight = 0;     // auto = 5% of max — used to learn max
+        const Watershed2D::Result probe = Watershed2D::run(
+            std::vector<double>(m_wsXs.begin(), m_wsXs.end()),
+            std::vector<double>(m_wsYs.begin(), m_wsYs.end()),
+            probeCfg);
+        if (!probe.ok) return;
+        m_wsGridMax     = probe.effPeakHeight / 0.05;
+        m_wsCachedSigma = m_wsSigmaCells;
+    }
+    cfg.minPeakHeight = (m_wsThreshPct / 100.0) * m_wsGridMax;
+    if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;     // 0% slider → auto
+
+    m_wsResult = Watershed2D::run(
+        std::vector<double>(m_wsXs.begin(), m_wsXs.end()),
+        std::vector<double>(m_wsYs.begin(), m_wsYs.end()),
+        cfg);
+    wsRefreshOverlay();
+}
+
+void KlustersApp::wsRefreshOverlay()
+{
+    if (!m_wsActive || !m_wsScatter) return;
+
+    // Build the basin-coloured QImage.  Row 0 of the image corresponds
+    // to the LARGEST feature-Y so it lands at the visual top of the
+    // overlay (matches ClusterView's negate-Y convention; see
+    // ClusterView::paintWatershedOverlay).  The kernel's grid is row-
+    // major with grid-row 0 = smallest feature-Y, so we flip during
+    // setPixel via (W-1-y).
+    const int W = m_wsResult.gridSize;
+    QImage img;
+    if (W > 0 && !m_wsResult.cellLabels.empty()) {
+        img = QImage(W, W, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::transparent);
+        auto basinHue = [](int label) -> int {
+            return (label * 47) % 360;
+        };
+        for (int y = 0; y < W; ++y) {
+            for (int x = 0; x < W; ++x) {
+                const int lab = m_wsResult.cellLabels[y * W + x];
+                if (lab <= 0) continue;
+                QColor c;
+                c.setHsv(basinHue(lab), 200, 220);
+                c.setAlpha(110);
+                img.setPixel(x, W - 1 - y, c.rgba());
+            }
+        }
+    }
+
+    // Count unassigned spikes for the HUD.
+    int unassigned = 0;
+    for (int lab : m_wsResult.pointLabels)
+        if (lab == 0) ++unassigned;
+    const int N = static_cast<int>(m_wsResult.pointLabels.size());
+
+    const QString hud = tr(
+        "Watershed preview\n"
+        "  σ = %1 cells     thr = %2%%   →  %3 basins, %4 peaks\n"
+        "  %5 / %6 spikes outside any basin\n"
+        "  ←/→ σ     ↑/↓ thr     Shift+arrow ×5\n"
+        "  Enter: apply     Esc: cancel")
+        .arg(m_wsSigmaCells)
+        .arg(m_wsThreshPct)
+        .arg(m_wsResult.numBasins)
+        .arg(m_wsResult.numPeaks)
+        .arg(unassigned).arg(N);
+
+    m_wsScatter->setWatershedOverlay(img,
+                                     m_wsResult.xMin, m_wsResult.xMax,
+                                     m_wsResult.yMin, m_wsResult.yMax,
+                                     hud);
+}
+
+
 
 
 void KlustersApp::slotSingleColorUpdate(int clusterId){
@@ -4979,11 +5062,8 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
     // Filter: drop the global-max cluster and 0/1 (the rename would be a
     // no-op for the max, and remapping 0/1 would corrupt special-cluster
     // semantics).
-    const QList<dataType> allIds = doc->data().clusterIds();
-    if (!allIds.isEmpty()) {
-        const int globalMax = static_cast<int>(allIds.last());
-        sel.removeAll(globalMax);
-    }
+    const int globalMax = static_cast<int>(doc->data().highestClusterId());
+    if (globalMax > 0) sel.removeAll(globalMax);
     sel.removeAll(0);
     sel.removeAll(1);
 
@@ -5025,18 +5105,17 @@ void KlustersApp::slotShowShortcutHelp()
             {"H",              "Show this keyboard shortcut reference"},
         }},
         {"Cluster operations", {
-            {"C  or  1",       "New Cluster mode \u2014 draw selection polygon"},
-            {"S  or  2",       "Split Clusters mode \u2014 draw selection polygon"},
-            {"D",              "DipSplit \u2014 split current cluster on bimodality"},
+            {"1",              "New Cluster mode \u2014 draw selection polygon"},
+            {"2",              "Split Clusters mode \u2014 draw selection polygon"},
+            {"Shift+D",        "DipSplit \u2014 split current cluster on bimodality"},
+            {"Shift+W",        "Watershed split (live preview \u2014 \u2190/\u2192 \u03c3, \u2191/\u2193 thr, Enter apply, Esc cancel)"},
             {"G",              "Group selected clusters"},
             {"R",              "Renumber clusters"},
             {"Shift+R",        "Recluster selected (KlustaKwik)"},
             {"Shift+L",        "Realign spikes for selected cluster"},
-            {"N  or  Delete",  "Delete noisy spikes (move to cluster 1)"},
-            {"A",              "Delete artefact spikes (move to cluster 0)"},
-            {"Shift+Delete",   "Move whole selected cluster to artefact"},
+            {"Delete",         "Delete noisy cluster (move whole cluster to 1)"},
+            {"Shift+Delete",   "Delete artefact cluster (move whole cluster to 0)"},
             {"Z",              "Zoom mode"},
-            {"W",              "Watershed split — partition selected clusters by 2D density basins"},
             {"U",              "Update error matrix (+ template matrix if open)"},
             {"F",              "Toggle autoscale in cluster view"},
             {"Enter / Return", "Close selection polygon (New / Split modes)"},
@@ -5058,10 +5137,9 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+Shift+A",   "Select all except 0/1 (artefact / noise)"},
         }},
         {"Waveform display", {
-            {"T",              "Time-frame mode (when waveform view has focus)"},
             {"O",              "Overlay presentation"},
             {"M",              "Mean and standard deviation"},
-            {"Ctrl+I / Ctrl+D","Increase / decrease waveform amplitude"},
+            {"I / D",          "Increase / decrease waveform amplitude"},
             {"Ctrl+Shift+I / Ctrl+Shift+D",
                                "Increase / decrease per-channel amplitudes"},
             {"L",              "Show shoulder-line"},
@@ -5069,7 +5147,7 @@ void KlustersApp::slotShowShortcutHelp()
                                "Scale by max / shoulder / no scale"},
         }},
         {"Correlograms", {
-            {"Shift+I / Shift+D", "Increase / decrease correlogram amplitude"},
+            {"(no shortcuts)", "Use Correlations menu to adjust amplitude"},
             {"Ctrl+Shift+F / Ctrl+Shift+B",
                                "Next / previous spike (in trace view)"},
         }},

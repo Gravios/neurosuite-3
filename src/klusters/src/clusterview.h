@@ -26,6 +26,7 @@
 #include <QTimer>
 #include <QRegion>
 #include <QList>
+#include <QImage>
 
 
 #include <QResizeEvent>
@@ -78,6 +79,34 @@ public:
 
     int getSelectionLineWidth() const{return selectionLineWidth;}
     void setSelectionLineWidth(int w){selectionLineWidth = qBound(1, w, 10); update();}
+
+    // ── Watershed preview overlay ────────────────────────────────────────
+    // Used by KlustersApp during the "Shift+W" interactive watershed
+    // preview mode.  KlustersApp computes a coloured ARGB image of the
+    // basin labelling (one colour per basin, unassigned cells fully
+    // transparent), passes it here together with the world-coordinate
+    // bounds the watershed grid spans, and the view paints the image
+    // stretched into those bounds on top of the cluster scatter.  The
+    // overlay is drawn fresh in every paintEvent (never cached into the
+    // doublebuffer) so the basin colouring can be re-tuned without
+    // forcing a full cluster redraw.
+    //
+    // @param img      ARGB image; basin colours with alpha, transparent
+    //                 elsewhere.  May be of any size; will be stretched
+    //                 to the world rect on draw.  Pass an empty image
+    //                 to clear (or call clearWatershedOverlay()).
+    // @param xMin,xMax  World feature-X span the watershed grid covers
+    //                   (raw, unflipped).
+    // @param yMin,yMax  Same for Y (raw, unflipped — the view's
+    //                   negate-Y convention is applied internally).
+    // @param hud      Short status text drawn at top-left in viewport
+    //                 pixels.  Pass empty string to suppress.
+    void setWatershedOverlay(const QImage& img,
+                             double xMin, double xMax,
+                             double yMin, double yMax,
+                             const QString& hud);
+    void clearWatershedOverlay();
+    bool hasWatershedOverlay() const { return !m_wsImage.isNull(); }
 
     /**Returns the current ordinate dimension.
   */
@@ -432,6 +461,18 @@ private:
 
         QPolygon selectionPolygon;
     };
+
+private:
+    // Watershed preview overlay state (see setWatershedOverlay).
+    QImage  m_wsImage;
+    double  m_wsXMin = 0.0, m_wsXMax = 0.0;
+    double  m_wsYMin = 0.0, m_wsYMax = 0.0;
+    QString m_wsHud;
+
+    // Helper called from paintEvent after the doublebuffer blit.  Draws
+    // the overlay image stretched into the world rect, then writes the
+    // HUD text in viewport pixels.
+    void paintWatershedOverlay(QPainter& p, const QRect& worldRect);
 
 };
 

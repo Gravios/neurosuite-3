@@ -201,6 +201,20 @@ public:
     /**Returns the 0-based peak sample index within a waveform.*/
     int peakSampleIndex() const { return peakPositionInWaveform; }
 
+    /** Set the peak sample position (1-based) used as the alignment
+     *  anchor by nudge / realign / trace-overlay rendering.  Updates
+     *  the in-memory value only; the parameter file on disk (.par.N or
+     *  .xml <peakSampleIndex>) is NOT modified.  Reloading the session
+     *  will read the disk value again, so the user must persist this
+     *  separately if they want it to stick.
+     *
+     *  Used by the "Detect peak position" tool which measures the
+     *  actual peak location in `.spk` and corrects a stale
+     *  `peakPositionInWaveform` parameter (typical scenario: an old
+     *  ndm_alignspikes binary realigned the waveforms but the .par.N
+     *  was never updated to match the new peak position). */
+    void setPeakSampleIndex(int v) { peakPositionInWaveform = v; }
+
     /**Calculate the minimum and maximum for each dimension and store them in
   *dimensionMinima and dimensionMaxima respectively.
   * @param modifiedClusters list of the clusters which have been modified implying
@@ -424,6 +438,28 @@ public:
     /** Returns the list of cluster Ids.*/
     QList<dataType> clusterIds(){
         return clusterInfoMap->keys();
+    }
+
+    /** Returns the largest currently-allocated cluster ID, or 0 if there
+     *  are no clusters at all.  Reads the bottom of column 2 in
+     *  spikesByCluster (which is the canonical source — it's sorted by
+     *  cluster ID, so the last spike's cluster ID is the maximum).
+     *
+     *  Six call sites used to compute this themselves with the
+     *  `(*spikesByCluster)(2, nbSpikes)` idiom; this consolidation
+     *  guarantees a uniform definition. */
+    dataType highestClusterId() const {
+        if (nbSpikes == 0) return 0;
+        return (*spikesByCluster)(2, nbSpikes);
+    }
+
+    /** Returns the next cluster ID that's guaranteed not to collide with
+     *  any existing cluster — i.e. `highestClusterId() + 1`.  This is
+     *  the canonical "where do new clusters go" policy: always at the
+     *  tail, never filling interior gaps.  Used by every create-cluster
+     *  path so the palette ordering is predictable. */
+    dataType nextFreeClusterId() const {
+        return highestClusterId() + 1;
     }
 
     /**Returns the maximum for the dimension

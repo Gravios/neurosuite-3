@@ -281,13 +281,15 @@ All operations push onto the undo stack. The full session history is preserved u
 | Operation | Shortcut / Menu | Description |
 |---|---|---|
 | Group (merge) clusters | `G` | Merges all selected clusters into the lowest-numbered one |
-| Split clusters | `S` | Draw a lasso in the scatter plot; `S` assigns the enclosed spikes to a new cluster |
-| Auto bimodal split (DipSplit) | `D` | Tests the active cluster for bimodality on its top PCs; if a clean valley is found, splits into two new clusters automatically |
-| New cluster from lasso | `C` | Creates a new cluster ID and assigns the lasso-enclosed spikes to it |
-| Delete selected spikes → artefact (0) | `A` | Moves lasso-enclosed spikes to cluster 0 (artefact) |
-| Delete selected spikes → noise (1) | `N` | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
+| Split clusters | `2` (or `S` in palette focus) | Draw a lasso in the scatter plot; closing the polygon assigns the enclosed spikes to a new cluster |
+| Auto bimodal split (DipSplit) | `Shift+D` | Tests the active cluster for bimodality on its top PCs; if a clean valley is found, splits into two new clusters automatically |
+| Watershed split | `Shift+W` | Runs a 2D density watershed on the selected clusters in the active scatter view's X/Y dimensions; each density basin becomes one new cluster, leftover spikes (outside any peak) form a residual cluster |
+| New cluster from lasso | `1` | Creates a new cluster ID and assigns the lasso-enclosed spikes to it |
+| Delete selected spikes → artefact (0) | menu only (Tools → Delete Artifact Spikes) | Moves lasso-enclosed spikes to cluster 0 (artefact) |
+| Delete selected spikes → noise (1) | menu only (Tools → Delete Noisy Spikes) | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
 | Delete cluster(s) → artefact (0) | `Shift+Delete` | Moves all spikes of selected clusters to cluster 0 |
 | Delete cluster(s) → noise (1) | `Delete` | Moves all spikes of selected clusters to cluster 1 |
+| Renumber selected to end | `T` (palette focus) | Reassigns the selected cluster IDs to be greater than the current maximum, moving them to the tail of the palette |
 | Undo | `Ctrl+Z` | Undoes the last editing operation |
 | Redo | `Ctrl+Y` | Redoes the last undone operation |
 | Renumber clusters | `R` | Reassigns cluster IDs to be contiguous starting from 2 (0 and 1 are always noise/artefact) |
@@ -331,6 +333,88 @@ Preferences live under **Settings → Preferences → General**:
 DipSplit is intentionally conservative — it errs toward not splitting.
 Manual lasso split (`S`) remains the primary tool for ambiguous cases.
 
+### Watershed split — density-based 2D segmentation
+
+Watershed (`W` with one or more clusters selected in the palette)
+treats the selected spikes' (X, Y) feature-space coordinates — using
+the *active scatter view's currently displayed dimensions* — as a 2D
+point cloud, builds a density grid, and segments it into basins. Each
+basin becomes one new cluster.
+
+The pipeline:
+
+1. Project every spike of every selected cluster onto (`dim_x`,
+   `dim_y`) — the X/Y dimensions of the active scatter view at the
+   time `W` was pressed. Pressing `W` from a different view runs in a
+   different feature subspace.
+2. Build a density histogram (default 256×256) and smooth with a
+   Gaussian. The kernel sigma defaults to `max(1.5, gridSize / 32)`
+   when left at the auto-tune sentinel.
+3. Find 8-connected local maxima above `min_peak_height` (auto-tuned
+   to 5% of the post-smoothing grid maximum if left at 0).
+4. Flood-fill from each peak using a max-heap priority queue, marking
+   watershed lines along ridges between basins.
+5. Drop basins smaller than `min_basin_size` (auto-tuned to
+   `max(20, N / 500)` if left at 0).
+6. Map every input spike back to its basin via the cell its (X, Y)
+   coordinate falls into.
+
+Spikes that fall outside any basin (on the histogram floor of zero
+density after smoothing, or rejected by the min-basin-size filter)
+are routed into a **residual cluster** that lands at the tail of the
+palette alongside the other new basin-clusters. The source clusters
+are fully dissolved — the same renumber-to-tail behaviour as a
+recluster (KlustaKwik) action.
+
+Pressing `Shift+W` enters a **live-preview overlay mode**. The selected
+clusters' (X, Y) feature points are extracted once, the kernel runs
+against the active scatter view's current X/Y dimensions, and the
+basin partition is rendered as a translucent coloured overlay
+directly on top of the scatter — one colour per basin, transparent
+where no basin claimed a cell. A small HUD at the top-left of the
+view shows the current parameters and the per-basin spike counts.
+
+While preview is active:
+
+| Key | Action |
+|---|---|
+| `←` / `→` | Adjust smoothing sigma (1..32 cells, ±1 per press, ±5 with Shift) |
+| `↑` / `↓` | Adjust peak threshold (0..50% of grid max, ±1 per press, ±5 with Shift) |
+| `Enter` | Commit — apply the partition to the document |
+| `Esc` | Cancel — discard the preview and return to normal |
+
+All other keys are blocked while preview is active so you can't
+accidentally trigger an unrelated action mid-tune. Preview parameters
+persist between invocations within a session.
+
+| Sentinel | Auto-tune resolution |
+|---|---|
+| `smoothSigma == 0` | `max(1.5, gridSize / 32)` cells |
+| `minPeakHeight == 0` | 5% of post-smoothing grid maximum |
+| `minBasinSize == 0` | `max(20, totalInputSpikes / 500)` |
+
+Watershed is most useful for:
+- Splitting a cluster that the scatter view shows as two visually
+  distinct blobs but DipSplit declines to split (e.g. blobs of
+  unequal size where the kernel-density valley isn't deep enough).
+- Splitting after a coarse recluster pass that grouped multiple
+  density modes into one cluster.
+- Splitting clusters whose modal structure is only visible in
+  specific feature pairs — the user picks the pair via the active
+  view, then runs watershed.
+
+Single-basin results (the watershed found one peak in the projection)
+are silently no-ops: no new cluster is created and no log entry is
+written. This avoids spurious "split into one cluster" actions when
+the user picks a feature pair where the cluster is genuinely unimodal.
+
+Internally, watershed routes through the same data-layer pipeline as
+recluster (`Data::integrateBasinLabeling` calls into the same
+post-load body as `integrateReclusteredClusters`). This means new
+cluster IDs always land strictly after the current maximum, the
+source cluster IDs are never reused, and a single Ctrl+Z reverts the
+whole watershed in one step.
+
 ---
 
 ## Curation logging
@@ -341,13 +425,20 @@ is the audit trail for both crash forensics and the empirical-prior
 training pipeline (`kk_build_prior.py` in ndmanager-plugins; see
 [that workflow](../workflows/empirical-priors.md)).
 
-Schema (one JSON object per line):
+Each user-facing action emits, at minimum, a paired set of records:
+one snapshot per affected cluster from `before` (pre-mutation state)
+and one per affected cluster from `after` (post-mutation state),
+both tagged with the same `action_idx`. Some actions additionally
+emit `ACTION_DETAIL` records carrying algorithm-specific metadata
+(see below).
+
+### Top-level record schema
 
 | Field | Description |
 |---|---|
-| `event` | `SESSION_OPEN`, `ANNOTATE`, `UNDO`, `ACTION_DETAIL`, or empty for action records |
-| `action` | `SPLIT`, `SPLIT_N`, `GROUP`, `RECLUSTER`, `REALIGN`, `NUDGE`, `DIPSPLIT`, … |
-| `phase` | `before`, `after`, or empty (for events) |
+| `event` | `SESSION_OPEN`, `ANNOTATE`, `UNDO`, `REDO`, `ACTION_DETAIL`, or empty for action snapshots |
+| `action` | The operation kind — see action type table below |
+| `phase` | `before`, `after`, or empty (for events / details) |
 | `role` | `result`, `source`, or empty |
 | `action_idx` | Monotonic index — `before` and `after` records share an index, allowing pairing |
 | `cluster_id` | Cluster touched by this record |
@@ -360,9 +451,34 @@ Schema (one JSON object per line):
 | `waveform_snr`, `waveform_chan_spread`, `waveform_width_samp` | Waveform morphology |
 | `isi_cv` | Inter-spike interval coefficient of variation |
 
-`ACTION_DETAIL` records carry algorithm-internal state for actions
-that benefit from per-decision metadata. DipSplit, for example, logs
-its inputs and outputs:
+### Action types
+
+| `action` value | User-facing operation | Source clusters | Result clusters | Emits `ACTION_DETAIL`? |
+|---|---|---|---|---|
+| `GROUP` | Merge selected clusters (`G`) | N | 1 | No |
+| `SPLIT` | Single new cluster from polygon, lasso, or DipSplit | 1 | 1 (new) + 1 (residual src) | DipSplit only |
+| `SPLIT_N` | Multiple new clusters from polygon (one per source) | N | N (new) + N (residual srcs) | No |
+| `RECLUSTER` | KlustaKwik re-run on selected clusters (`Shift+R`) | M | K | No |
+| `WATERSHED` | 2D density watershed (`W`) | M | K (basins) + 1 (residual) | Yes |
+| `REALIGN` | Spike waveform realignment (`Shift+L`) | unchanged | unchanged | No |
+| `NUDGE` | Timestamp ±1 sample shift (`PageUp` / `PageDown`) | 1 | 1 (same id) | No |
+| `DELETE_NOISE` | Move whole cluster → cluster 1 (`Delete`) | 1 | — | No |
+| `DELETE_ARTEFACT` | Move whole cluster → cluster 0 (`Shift+Delete`) | 1 | — | No |
+| `DELETE_REGION_NOISE` | Lasso → cluster 1 (`N`) | 1+ | — | No |
+| `DELETE_REGION_ARTEFACT` | Lasso → cluster 0 (`A`) | 1+ | — | No |
+| `MOVE_SPIKES` | Manual subset reassignment | 1 | 1 | No |
+| `RENUMBER_PARTIAL` | Renumber selected to end (`T` in palette) | renamed | renamed | No |
+| `UNDO`, `REDO` | Reverts/replays a previous action | — | — | No |
+
+### `ACTION_DETAIL` records
+
+These carry algorithm-internal state for actions that benefit from
+per-decision metadata. Every `ACTION_DETAIL` record shares an
+`action_idx` with the parent action's `before` / `after` records, so
+joining is trivial in pandas.
+
+**DipSplit** logs the inputs it was called with and the metrics that
+drove the accept/reject decision:
 
 ```json
 {"event":"ACTION_DETAIL","action_idx":47,"algorithm":"dipsplit",
@@ -371,6 +487,40 @@ its inputs and outputs:
  "n_left":342,"n_right":418,"best_pc":0,"best_depth":0.51,
  "mahal2_p90":7.8,"chi2_90":7.78,"delta_bic":-12.4}
 ```
+
+**Watershed** logs source/result IDs and counts, the feature-space
+projection used, both requested and resolved (post-auto-tune)
+parameters, and kernel diagnostics:
+
+```json
+{"event":"ACTION_DETAIL","action_idx":58,"algorithm":"watershed_2d",
+ "source_clusters":"5,7,12","source_counts":"5:1842,7:2400,12:891",
+ "total_input_spikes":5133,
+ "dim_x":1,"dim_y":2,
+ "grid_size":256,
+ "smooth_sigma_req":0.0,"smooth_sigma_eff":8.0,
+ "min_peak_height_req":0.0,"min_peak_height_eff":12.4,
+ "min_basin_size_req":0,"min_basin_size_eff":20,
+ "use_local_maxima":true,
+ "num_peaks":5,"num_basins":4,
+ "new_clusters":"47,48,49,50,51",
+ "new_cluster_counts":"47:1320,48:980,49:1640,50:1193,51:0",
+ "residual_present":false,"residual_count":0}
+```
+
+The req/eff split for `smooth_sigma`, `min_peak_height`, and
+`min_basin_size` matters because the live-preview overlay defaults
+each parameter to a 0 sentinel that requests auto-tuning from the
+data; the resolved values capture what the kernel actually ran with.
+`num_peaks` (pre-merge peak count) vs. `num_basins` (post-merge)
+distinguishes "watershed found 12 peaks but `min_basin_size` collapsed
+8 into neighbours" from "watershed only found 4 peaks total".
+
+When the input has too few spikes (< 50) or the watershed finds only
+one basin, the action is silently skipped — no records are written
+for the no-op case.
+
+### Logs are append-only
 
 Logs are append-only within a session; reopening Klusters in the same
 working copy continues the same log. Logs from many sessions on the
@@ -546,7 +696,8 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Delete artifact cluster(s) | `Shift+Delete` |
 | Delete noisy cluster(s) | `Delete` |
 | Group (merge) clusters | `G` |
-| Renumber clusters | `R` |
+| Renumber clusters (full sequential) | `R` |
+| Renumber selected to end (palette focus) | `T` |
 | Update error matrix + template matrix | `U` |
 | Recluster (KlustaKwik) | `Shift+R` |
 | Realign spikes | `Shift+L` |
@@ -554,7 +705,8 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Nudge timestamps −1 sample | `Page Up` |
 | New cluster (from selection) | `1` |
 | Split selected cluster | `2` |
-| DipSplit (auto bimodal split) | `D` |
+| DipSplit (auto bimodal split) | `Shift+D` |
+| Watershed split (2D density basins) | `Shift+W` |
 | Shortcut help dialog | `H` |
 
 ### Tools
@@ -562,17 +714,12 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Action | Shortcut |
 |---|---|
 | Zoom | `Z` |
-| New cluster from lasso | `C` |
 | Split clusters | `S` |
-| Delete artifact spikes (lasso) | `A` |
-| Delete noisy spikes (lasso) | `N` |
-| Select time | `W` |
 
 ### Waveforms
 
 | Action | Shortcut |
 |---|---|
-| Time Frame mode | `T` |
 | Overlay presentation | `O` |
 | Mean ± SD presentation | `M` |
 | Increase amplitude | `I` |
@@ -582,12 +729,14 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Uniform Scale | `Shift+U` |
 | Shoulder line toggle | `L` |
 
+> Time Frame mode is reachable via Waveforms → Time Frame in the menu.
+> No keyboard shortcut is bound — `T` is reserved for the cluster
+> palette's "renumber selected to end" action when the palette has focus.
+
 ### Correlations
 
-| Action | Shortcut |
-|---|---|
-| Increase correlogram amplitude | `Shift+I` |
-| Decrease correlogram amplitude | `Shift+D` |
+Adjustments to correlogram amplitude are reachable via the Correlations
+menu only — no keyboard shortcuts are bound.
 
 ### Trace
 

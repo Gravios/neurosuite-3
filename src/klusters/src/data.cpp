@@ -1227,7 +1227,7 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
 
 dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
     //Set the new cluster number to the biggest existing number plus one
-    dataType newClusterId = (*spikesByCluster)(2,nbSpikes) + 1;
+    dataType newClusterId = nextFreeClusterId();
     dataType nbSpikesInNewCluster = 0;
 
     //Create the variables to store the number of spikes and the position of the last spike
@@ -1405,7 +1405,7 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
     //Set the new cluster number to the biggest existing number plus nbMaxNewClusters.
     //The number will be decremented before being used, and the number will be corrected at the end once the
     //number of really created clusters will be known (the biggest clusterId is store at the bottom of spikesByClusterTemp).
-    dataType newClusterId = (*spikesByCluster)(2,nbSpikes) + nbMaxNewClusters;
+    dataType newClusterId = highestClusterId() + nbMaxNewClusters;
 
     //Create the variables to store the number of spikes and the position of the first spike
     //for each cluster contributing to a new cluster. This will be used to sort the new clusters.
@@ -1659,9 +1659,9 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
         upperInsertionIndex += nbSpikesOfCl;
     }
 
-    // 2. Rewrite column 2 with `basin + highestClusterId`, mirroring
+    // 2. Rewrite column 2 with `basin + highestId`, mirroring
     //    loadReclusteredClusters' offsetting of KlustaKwik output.
-    const dataType highestClusterId = (*spikesByCluster)(2, nbSpikes);
+    const dataType highestId = highestClusterId();
     for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
         const dataType row = reclusteringSpikesByCluster(1, i);
         const auto it      = featureRowToBasin.find(row);
@@ -1674,7 +1674,7 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
             return false;
         }
         reclusteringSpikesByCluster(2, i) =
-            static_cast<dataType>(it.value()) + highestClusterId;
+            static_cast<dataType>(it.value()) + highestId;
     }
 
     // 3. Hand off to the existing integrate path.  This reads
@@ -2397,7 +2397,7 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     if(clustersToGroup.contains(0)) clusterZeroJustModified = true;
 
     //Set the new cluster number to the biggest existing number plus one
-    dataType newClusterId = (*spikesByCluster)(2,nbSpikes) + 1;
+    dataType newClusterId = nextFreeClusterId();
     dataType nbSpikesInNewCluster = 0;
 
     //Create the variables to store the number of spikes and the position of the first spike
@@ -4757,11 +4757,11 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
     // We offset each ID by highestClusterId so new clusters don't collide
     // with existing ones.
 
-    dataType highestClusterId = (*spikesByCluster)(2, nbSpikes);
+    dataType highestId = highestClusterId();
     const dataType maxK = reclusteringSpikesByCluster.nbOfColumns();
 
     NS3_DIAG() << "loadReclusteredClusters: expecting" << maxK
-             << "spike labels, highestClusterId=" << highestClusterId;
+             << "spike labels, highestClusterId=" << highestId;
 
     const QString path = clusterFile.fileName();
     clusterFile.close();
@@ -4790,7 +4790,7 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
             fclose(fp); return 0;
         }
         reclusteringSpikesByCluster(2, k++) =
-            static_cast<dataType>(id32) + highestClusterId;
+            static_cast<dataType>(id32) + highestId;
     }
     fclose(fp);
 

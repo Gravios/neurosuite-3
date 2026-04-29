@@ -49,6 +49,23 @@ bimodality on the top PCs and only splits when the test is clear. If
 DipSplit doesn't fire but you're confident it's bimodal, draw a lasso
 in the scatter and use `S` (split) or `C` (new cluster).
 
+For clusters that look multi-modal in a specific feature pair (three
+or more density blobs in the active scatter view), try Watershed
+(`W`). It runs a 2D density watershed on the selected clusters using
+the active view's X/Y dimensions and creates one new cluster per
+density basin. Pick the projection where the modes are most clearly
+separated *before* pressing `W` — watershed sees only the active
+scatter view's two dimensions. A live-preview dialog lets you adjust
+smoothing and peak-height thresholds before committing.
+
+DipSplit and Watershed are complementary:
+- **DipSplit**: cluster-by-cluster, statistical bimodality test on
+  top PCs, conservative (won't split if the test is ambiguous).
+- **Watershed**: density-based segmentation across a user-chosen 2D
+  projection, handles 3+ basins in one action, dissolves all
+  selected source clusters into the new basin clusters plus a
+  residual catch-all.
+
 For clusters that look like one unit fragmented across two IDs:
 select both in the palette, press `G` (group/merge). The
 [Template Matrix Display](../klusters/README.md#template-matrix-display)

@@ -706,6 +706,24 @@ public Q_SLOTS:
      *  global-max cluster are filtered by the caller. */
     void renumberClustersToEnd(QList<int> clustersToRenumber);
 
+    /** Single primitive for "rename a set of clusters" doc-level updates.
+     *  Drives Data::renumberPartial + colour-list rename + view rewrite +
+     *  errormatrix/template-matrix signal in the right order.  Used by
+     *  renumberClustersToEnd (T key) and is intended to subsume all
+     *  future rename callers (full renumber, watershed residual cleanup,
+     *  etc.) so the rename logic lives in one place.
+     *
+     *  @param partialOldToNew  ONLY the renamed clusters (oldId -> newId).
+     *  @param fullOldToNewOpt  Optional pre-built covering map (every
+     *         existing cluster ID -> post-rename ID, identity for
+     *         unchanged).  Pass nullptr to have it built automatically.
+     *
+     *  Caller is responsible for the doc-level UNDO snapshot
+     *  (`prepareUndo` / `prepareReclusteringUndo`) and any
+     *  logBefore/logAfter pairs; this helper does only the apply. */
+    void applyClusterRename(const QMap<int,int>& partialOldToNew,
+                            const QMap<int,int>* fullOldToNewOpt = nullptr);
+
     /** Run a 2D density watershed on the *selected* clusters in the
      *  palette using the active scatter view's X/Y feature dimensions,
      *  splitting them into one new cluster per basin.  Triggered by
