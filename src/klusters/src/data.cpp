@@ -207,11 +207,11 @@ bool Data::configure(QFile& parXFile,QFile& parFile,QString& errorInformation){
         channelIds.append(parXData[1][i].toInt());
     }
     nbRefactorySample = parXData[2][0].toInt();
-    RMSIntWindowLenght = parXData[2][1].toInt();
+    RMSIntWindowLength = parXData[2][1].toInt();
     firingRate = parXData[3][0].toFloat();
     nbSamplesInWaveform = parXData[4][0].toInt();
     peakPositionInWaveform = parXData[4][1].toInt();
-    windowLenghtToRealign = parXData[5][0].toInt();
+    windowLengthToRealign = parXData[5][0].toInt();
     peakPositionToRealign = parXData[5][1].toInt();
     nbSampleBeforePeak = parXData[6][0].toInt();
     nbSampleAfterPeak = parXData[6][1].toInt();
@@ -250,7 +250,7 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
         return false;
     }
     nbSpikes = spkFileLength /
-               (long)((long)nbChannels * (long)nbSamplesInWaveform * (long)sampleSize);
+               (static_cast<long>(nbChannels) * static_cast<long>(nbSamplesInWaveform) * static_cast<long>(sampleSize));
 
     // Binary .clu format:
     //   int32_t  nClusters
@@ -274,8 +274,8 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
 
     spikesByCluster->setSize(nbSpikes);
 
-    std::vector<int32_t> ids((size_t)nbSpikes);
-    if ((long)fread(ids.data(), sizeof(int32_t), (size_t)nbSpikes, f) != nbSpikes) {
+    std::vector<int32_t> ids(static_cast<size_t>(nbSpikes));
+    if (static_cast<long>(fread(ids.data(), sizeof(int32_t), static_cast<size_t>(nbSpikes), f)) != nbSpikes) {
         fclose(f);
         errorInformation = QObject::tr(
             "Short read in cluster file (expected %1 entries): %2")
@@ -285,7 +285,7 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
     fclose(f);
 
     for (long k = 0; k < nbSpikes; ++k)
-        (*spikesByCluster)(2, k + 1) = (dataType)ids[(size_t)k];
+        (*spikesByCluster)(2, k + 1) = static_cast<dataType>(ids[static_cast<size_t>(k)]);
 
     return true;
 }
@@ -315,10 +315,10 @@ bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
     nbDimensions = static_cast<int>(nDim);
 
     fseeko(f, 0, SEEK_END);
-    int64_t dataBytes = (int64_t)ftello(f) - (int64_t)sizeof(int32_t);
+    int64_t dataBytes = static_cast<int64_t>(ftello(f)) - static_cast<int64_t>(sizeof(int32_t));
     fseeko(f, sizeof(int32_t), SEEK_SET);
-    int64_t nSpikesInFile = dataBytes / ((int64_t)sizeof(int64_t) * nbDimensions);
-    if (nSpikesInFile != (int64_t)nbSpikes) {
+    int64_t nSpikesInFile = dataBytes / (static_cast<int64_t>(sizeof(int64_t)) * nbDimensions);
+    if (nSpikesInFile != static_cast<int64_t>(nbSpikes)) {
         fclose(f);
         errorInformation = QObject::tr(
             "Spike count mismatch: .fet has %1 spikes, expected %2")
@@ -330,16 +330,16 @@ bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
 
     // Use an explicit int64_t staging buffer so the code is correct
     // regardless of whether dataType (long) == int64_t on this platform.
-    int64_t total = (int64_t)nbSpikes * nbDimensions;
-    std::vector<int64_t> buf((size_t)total);
-    if ((int64_t)fread(buf.data(), sizeof(int64_t), (size_t)total, f) != total) {
+    int64_t total = static_cast<int64_t>(nbSpikes) * nbDimensions;
+    std::vector<int64_t> buf(static_cast<size_t>(total));
+    if (static_cast<int64_t>(fread(buf.data(), sizeof(int64_t), static_cast<size_t>(total), f)) != total) {
         fclose(f);
         errorInformation = QObject::tr("Short read in feature file: %1").arg(path);
         return false;
     }
     fclose(f);
     for (int64_t i = 0; i < total; ++i)
-        features[(size_t)i] = static_cast<dataType>(buf[(size_t)i]);
+        features[static_cast<size_t>(i)] = static_cast<dataType>(buf[static_cast<size_t>(i)]);
     return true;
 }
 
@@ -364,13 +364,13 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
     if (rows.size() < 2)
         return QVector<double>();
 
-    const double n = (double)rows.size();
+    const double n = static_cast<double>(rows.size());
 
     // 2. Per-feature mean
     QVector<double> mean(nFeat, 0.0);
     for (int row : rows)
         for (int f = 1; f <= nFeat; ++f)
-            mean[f - 1] += (double)features(row, f);
+            mean[f - 1] += static_cast<double>(features(row, f));
     for (int f = 0; f < nFeat; ++f)
         mean[f] /= n;
 
@@ -378,7 +378,7 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
     QVector<double> var(nFeat, 0.0);
     for (int row : rows) {
         for (int f = 1; f <= nFeat; ++f) {
-            double d = (double)features(row, f) - mean[f - 1];
+            double d = static_cast<double>(features(row, f)) - mean[f - 1];
             var[f - 1] += d * d;
         }
     }
@@ -411,13 +411,13 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
     if (rows.size() < 2)
         return QVector<double>();
 
-    const double n = (double)rows.size();
+    const double n = static_cast<double>(rows.size());
 
     // Per-feature mean
     QVector<double> mean(nFeat, 0.0);
     for (int row : rows)
         for (int f = 1; f <= nFeat; ++f)
-            mean[f - 1] += (double)features(row, f);
+            mean[f - 1] += static_cast<double>(features(row, f));
     for (int f = 0; f < nFeat; ++f)
         mean[f] /= n;
 
@@ -425,7 +425,7 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
     QVector<double> var(nFeat, 0.0);
     for (int row : rows) {
         for (int f = 1; f <= nFeat; ++f) {
-            double d = (double)features(row, f) - mean[f - 1];
+            double d = static_cast<double>(features(row, f)) - mean[f - 1];
             var[f - 1] += d * d;
         }
     }
@@ -4489,7 +4489,7 @@ void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
             correlationsInProcess.setClusterModified(*iterator,true);
             continue;
         }
-        for(int j = i; j<(int)oldClusterIds.count();j++) {
+        for(int j = i; j<static_cast<int>(oldClusterIds.count());j++) {
             int val = oldClusterIds.at(i);
             int val2 = oldClusterIds.at(j);
             if(val2 <= val){
@@ -4612,7 +4612,7 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
         for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
             dataType featuresRowIndex = reclusteringSpikesByCluster(1, i);
             for (int j = 1; j <= nbDimensions; ++j) {
-                int64_t v = (int64_t)features(featuresRowIndex, j);
+                int64_t v = static_cast<int64_t>(features(featuresRowIndex, j));
                 fwrite(&v, sizeof(int64_t), 1, ff);
             }
         }

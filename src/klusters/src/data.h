@@ -227,7 +227,7 @@ public:
   * @param region the polygon defining the area containing the spikes for the new cluster.
   * @param clustersOfOrigin a list of the cluster numbers identifying the clusters which
   * may contain spikes in the region
-  * @param dimensionX the dimension used as absciss to display the clusters
+  * @param dimensionX the dimension used as abscissa to display the clusters
   * @param dimensionY the dimension used as ordinate to display the clusters
   * @param fromClusters an empty list used as a return value, which will be filled
   * with the cluster numbers which really contained spikes in the region
@@ -244,7 +244,7 @@ public:
   * @param region the polygon defining the area containing the spikes for the new cluster.
   * @param clustersOfOrigin a list of the cluster numbers identifying the clusters which
   * may contain spikes in the region
-  * @param dimensionX the dimension used as absciss to display the clusters
+  * @param dimensionX the dimension used as abscissa to display the clusters
   * @param dimensionY the dimension used as ordinate to display the clusters
   * @param emptyClusters an empty list used as a return value, which will be filled
   * with the cluster numbers which became empty because all their spikes were put in the new one.
@@ -288,7 +288,7 @@ public:
   * @param destinationCluster the cluster number to assign the spikes contained in the region
   * @param fromClusters an empty list used as a return value, which will be filled
   * with the cluster numbers which really contained spikes in the region
-  * @param dimensionX the dimension used as absciss to display the clusters
+  * @param dimensionX the dimension used as abscissa to display the clusters
   * @param dimensionY the dimension used as ordinate to display the clusters
   * @param emptyClusters an empty list used as a return value, which will be filled
   * with the cluster numbers which became empty because all their spikes were put in the new one.
@@ -365,7 +365,7 @@ public:
     void renumberPartial(const QMap<int,int>& oldToNew);
 
     /**Makes all the internal changes due to a modification of the number of undo.
-  * @param newNbUndo the futur new number of undo.
+  * @param newNbUndo the future new number of undo.
   */
     void nbUndoChangedCleaning(int newNbUndo);
 
@@ -397,7 +397,7 @@ public:
     * Returns a QPoint for the given dimensions for the current spike for the cluster on which this class iterates
     * Caution: in Qt graphical coordinate system, the Y axis is inverted (increasing downwards),
     * thus a point (x,y) as to be drawn and tested as (x,-y).
-    * @param dimensionX the feature used as the absciss
+    * @param dimensionX the feature used as the abscissa
     * @param dimensionY the feature used as the ordinate
     * @return a QPoint for the couple (dimensionX,dimensionY) taking the Qt graphical
     * coordinate system into consideration, the ordinate coordinate is the opposite of the raw data.
@@ -724,11 +724,11 @@ private:
     int peakPositionInWaveform;
     QList<int> channelIds;
     int nbRefactorySample;
-    int RMSIntWindowLenght;
+    int RMSIntWindowLength;
     float firingRate;
     int nbSampleBeforePeak;
     int nbSampleAfterPeak;
-    int windowLenghtToRealign;
+    int windowLengthToRealign;
     int peakPositionToRealign;
     int nbFeaturesbyChannel;
     int nbSamplesByPCA;
@@ -886,6 +886,14 @@ private:
   */
     enum WaveformMode{SAMPLE=1,TIME_FRAME=2};
 
+    /** Per-cluster waveform-cache status flags.
+     *  Tracks whether each of the four cached views (sample-form raw,
+     *  time-frame-form raw, sample-form mean, time-frame-form mean) is
+     *  currently AVAILABLE, NOT_AVAILABLE, or IN_PROGRESS for a given
+     *  cluster, plus a `clusterModified` dirty bit set when any spike
+     *  belonging to the cluster has been moved/added/removed since the
+     *  last cache build.  Owned by Waveforms; one instance per cluster.
+     */
     class WaveformStatus{
     public:
         WaveformStatus(Status sample = NOT_AVAILABLE,Status timeFrame = NOT_AVAILABLE,Status sampleMean = NOT_AVAILABLE,Status timeFrameMean = NOT_AVAILABLE )
@@ -949,8 +957,27 @@ private:
         virtual dataType getTimeFrameMean(dataType index) const  = 0;
         virtual dataType getSampleStDeviation(dataType index) const  = 0;
         virtual dataType getTimeFrameStDeviation(dataType index) const  = 0;
+
+        /** Read up to @p nbSpkToDisplay waveform records from @p spikeFile
+         *  for the spikes whose row indices are listed in @p positionOfSpikes.
+         *  Stores the samples into the implementation's internal buffer
+         *  (sample-mode storage; see setSize / getSample for layout).
+         *
+         *  Used for "all spikes" mode where the caller wants every member
+         *  of the cluster up to a display cap.  @p nbSpikesOfCluster is
+         *  the total cluster size (a hint for buffer sizing).
+         */
         virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType nbSpkToDisplay) = 0;
+
+        /** Read the contiguous range [@p currentSpikeIndex .. @p end] of
+         *  spike records from @p spikeFile into the implementation's
+         *  time-frame buffer.  Used for time-frame display where only
+         *  spikes within a time window are shown; @p currentSpikeIndex
+         *  is updated on return to point past the last record read so
+         *  the caller can resume scanning.
+         */
         virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end) = 0;
+
         virtual void calculateMean(WaveformMode waveformMode) = 0;
 
     protected:
@@ -1131,6 +1158,23 @@ private:
         void setMaximum(uint m){max = m;}
         float getShoulder() const {return asymptote;}
         void setShoulder(float s){asymptote = s;}
+        /** Compute the cross-correlogram (or auto-correlogram) of the
+         *  spike-time sequences in @p spikesOfCluster1 and @p spikesOfCluster2.
+         *
+         *  Bins time-lag offsets between every spike pair into 2*halfBins+1
+         *  buckets of width @p binSizeInRU recording units, restricted to
+         *  lags in [-timeWindowInRU, +timeWindowInRU].  Counts are stored
+         *  in `values`; firing rate is updated.
+         *
+         *  @param spikesOfCluster1   Reference (centre-of-window) spike train.
+         *  @param spikesOfCluster2   Probe spike train.  Same as cluster 1
+         *                            for an autocorrelogram.
+         *  @param binSizeInRU        Bin width in recording sample units.
+         *  @param timeWindowInRU     Half-width of the histogram in recording units.
+         *  @param halfBins           Number of bins per side (so total bins = 2*halfBins+1).
+         *  @param autoCorrelogram    If true, the centre bin is zeroed
+         *                            (suppress trivial lag-zero self-pairs).
+         */
         void calculateCorrelation(SortableTable& spikesOfCluster1,SortableTable& spikesOfCluster2,double binSizeInRU,double timeWindowInRU,int halfBins,bool autoCorrelogram);
         int getNbBins(){return nbBins;}
         void setNbBins(int nb){nbBins = nb;}
@@ -1166,7 +1210,7 @@ private:
 
     //Methods
     /**
-  * Fills the undo lists (spikesByClusterUndoList,clusterInfoMapUndoList) to prepare for a futur undo.
+  * Fills the undo lists (spikesByClusterUndoList,clusterInfoMapUndoList) to prepare for a future undo.
   * @param spikesByClusterTemp the newly created spikesByCluster array
   * @param clusterInfoMapTemp the newly created ClusterInfoMap map
   */

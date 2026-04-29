@@ -191,6 +191,8 @@ public:
         MOVE_SPIKES     = 10, ///< Manual subset reassignment between clusters
         UNDO            = 11, ///< Curator reverted the preceding action
         REDO            = 12, ///< Curator re-applied an undone action
+        RENUMBER_PARTIAL = 13, ///< T-key palette rename to tail; pure ID rename, no spike movement
+        WATERSHED       = 14, ///< 2D density-watershed split: M source → N basin clusters + residual
     };
 
     CurationLogger();
@@ -202,15 +204,15 @@ public:
 
     /** Open a new log file for the given session.
      *  @param logPath         Full path for the .jl output file.
-     *  @param sessionBaseName Base name shown in every line's "file" field.
-     *  @param electrodeGroup  Electrode group ID string (e.g. "1").
+     *  @param baseName Base name shown in every line's "file" field.
+     *  @param groupId  Electrode group ID string (e.g. "1").
      *  @param samplingRateHz  Sampling frequency in Hz.
      *  @param nChannels       Channels in this electrode group.
      *  @param nPcaDims        Total PCA feature dimensions (excl. timestamp).
      */
     void open(const QString& logPath,
-              const QString& sessionBaseName,
-              const QString& electrodeGroup,
+              const QString& baseName,
+              const QString& groupId,
               double         samplingRateHz,
               int            nChannels,
               int            nPcaDims);
@@ -220,7 +222,7 @@ public:
      *  written with whatever status they currently have. */
     void close();
 
-    bool isOpen() const { return m_file.isOpen(); }
+    bool isOpen() const { return file.isOpen(); }
 
     /** Set the in-memory buffer capacity.  Should track the application's
      *  max-undos preference: the buffer holds exactly the entries the
@@ -229,8 +231,8 @@ public:
      *  excess oldest entries are flushed immediately. */
     void setMaxBufferEntries(int n);
 
-    int  maxBufferEntries() const { return m_maxBuffer; }
-    int  pendingEntryCount() const { return m_pending.size(); }
+    int  maxBufferEntries() const { return maxBuffer; }
+    int  pendingEntryCount() const { return pending.size(); }
 
     // ------------------------------------------------------------------
     // Action logging interface
@@ -278,7 +280,7 @@ public:
     static QString actionName(ActionType t);
 
 private:
-    /** One tentative buffered action.  Held in m_pending while the user
+    /** One tentative buffered action.  Held in pending while the user
      *  may still undo it.  At flush time (overflow or close), all of
      *  the entry's records are emitted to disk with the final status. */
     struct PendingEntry {
@@ -296,7 +298,7 @@ private:
      *  uniform field per record. */
     void flushEntry(const PendingEntry& e);
 
-    /** Pop the front of m_pending and flush it.  Called during overflow
+    /** Pop the front of pending and flush it.  Called during overflow
      *  and during close(). */
     void flushOldest();
 
@@ -313,13 +315,13 @@ private:
 
     QString jsonEscape(const QString& s) const;
 
-    QFile       m_file;
-    QTextStream m_out;
+    QFile       file;
+    QTextStream out;
 
-    QString m_sessionBaseName;
-    QString m_electrodeGroup;
-    QString m_sessionId;             ///< UUID-like token, unique per open()
-    int     m_actionIdx     = 0;     ///< monotonic counter, never reset within a session
-    int     m_maxBuffer     = 50;    ///< capacity of m_pending; tracks Settings.MaxUndo
-    QList<PendingEntry> m_pending;
+    QString sessionBaseName;
+    QString electrodeGroup;
+    QString sessionId;             ///< UUID-like token, unique per open()
+    int     nextActionIdx     = 0;     ///< monotonic counter, never reset within a session
+    int     maxBuffer     = 50;    ///< capacity of pending; tracks Settings.MaxUndo
+    QList<PendingEntry> pending;
 };

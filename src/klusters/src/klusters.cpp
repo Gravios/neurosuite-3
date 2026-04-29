@@ -1107,12 +1107,12 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     }
 
     // ── Watershed live-preview mode ─────────────────────────────────────────
-    // When m_wsActive is true, four arrow keys + Enter + Esc are claimed
+    // When wsPreviewActive is true, four arrow keys + Enter + Esc are claimed
     // exclusively; any other key is swallowed silently to prevent the
     // user from triggering an unrelated action mid-tune.  This block runs
     // before everything else so even ShortcutOverride'd keys can't
     // sneak past.
-    if (m_wsActive &&
+    if (wsPreviewActive &&
         (event->type() == QEvent::ShortcutOverride ||
          event->type() == QEvent::KeyPress))
     {
@@ -1142,19 +1142,19 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             const int step = shift ? 5 : 1;
             switch (key) {
             case Qt::Key_Left:
-                m_wsSigmaCells = qBound(1, m_wsSigmaCells - step, 32);
+                wsSigmaCells = qBound(1, wsSigmaCells - step, 32);
                 wsRecompute();
                 return true;
             case Qt::Key_Right:
-                m_wsSigmaCells = qBound(1, m_wsSigmaCells + step, 32);
+                wsSigmaCells = qBound(1, wsSigmaCells + step, 32);
                 wsRecompute();
                 return true;
             case Qt::Key_Up:
-                m_wsThreshPct = qBound(0, m_wsThreshPct + step, 50);
+                wsThreshPct = qBound(0, wsThreshPct + step, 50);
                 wsRecompute();
                 return true;
             case Qt::Key_Down:
-                m_wsThreshPct = qBound(0, m_wsThreshPct - step, 50);
+                wsThreshPct = qBound(0, wsThreshPct - step, 50);
                 wsRecompute();
                 return true;
             case Qt::Key_Return:
@@ -1168,6 +1168,72 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
         // Any other key while preview is active: swallow.
         return true;
+    }
+
+    // ── DipSplit live-preview mode ──────────────────────────────────────────
+    // Mirror of the watershed block above, but simpler: only Enter and
+    // Esc are meaningful (no tunables).  All other keys are swallowed
+    // while dipPreviewActive is true.
+    if (dipPreviewActive &&
+        (event->type() == QEvent::ShortcutOverride ||
+         event->type() == QEvent::KeyPress))
+    {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        const int key  = ke->key();
+        const auto mod = ke->modifiers();
+        const bool plain = (mod == Qt::NoModifier);
+
+        if (event->type() == QEvent::ShortcutOverride) {
+            ke->accept();
+            return true;
+        }
+        if (ke->isAutoRepeat()) return true;
+
+        if (plain) {
+            switch (key) {
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                dipPreviewExit(/*commit=*/true);
+                return true;
+            case Qt::Key_Escape:
+                dipPreviewExit(/*commit=*/false);
+                return true;
+            }
+        }
+        // Any other key while preview is active: swallow.
+        return true;
+    }
+
+    // ── DipSplit live-preview mode ──────────────────────────────────────────
+    // Parallel to the watershed block above but with no tunables: only
+    // Enter (apply) and Esc (cancel) are honoured.  Any other key is
+    // swallowed to prevent stray actions while the overlay is on screen.
+    if (dipPreviewActive &&
+        (event->type() == QEvent::ShortcutOverride ||
+         event->type() == QEvent::KeyPress))
+    {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+
+        if (event->type() == QEvent::ShortcutOverride) {
+            ke->accept();
+            return true;
+        }
+        if (ke->isAutoRepeat()) return true;
+
+        if (ke->modifiers() == Qt::NoModifier) {
+            switch (ke->key()) {
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                dipPreviewExit(/*commit=*/true);
+                return true;
+            case Qt::Key_Escape:
+                dipPreviewExit(/*commit=*/false);
+                return true;
+            default:
+                break;
+            }
+        }
+        return true;     // swallow everything else
     }
 
     // ── Key navigation ──────────────────────────────────────────────────────
@@ -1361,9 +1427,9 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             // blocks the FIRST one.
             if(ke->isAutoRepeat())
                 return true;
-            if(m_nudgeInProgress)
+            if(nudgeInProgress)
                 return true;
-            if(m_lastNudgeTimer.isValid() && m_lastNudgeTimer.elapsed() < 300)
+            if(lastNudgeTimer.isValid() && lastNudgeTimer.elapsed() < 300)
                 return true;
             if(ke->key() == Qt::Key_PageUp)
                 slotNudgeTimestampPlus();
@@ -2651,12 +2717,12 @@ void KlustersApp::slotSelectTime(){
 //   Esc     cancel
 //
 // Other keys are blocked while preview is active (intercepted in
-// eventFilter, see the m_wsActive branch there) so the user doesn't
+// eventFilter, see the wsPreviewActive branch there) so the user doesn't
 // accidentally trigger an unrelated action mid-tune.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotWatershedSplit()
 {
-    if (m_wsActive) {
+    if (wsPreviewActive) {
         // Pressing Shift+W while already in preview is a no-op.  Use
         // Enter to commit, Esc to cancel.
         return;
@@ -2730,44 +2796,44 @@ bool KlustersApp::wsEnter()
     }
 
     // Stash state.  Initial sigma/threshold values are remembered from
-    // the previous invocation (m_wsSigmaCells / m_wsThreshPct are
+    // the previous invocation (wsSigmaCells / wsThreshPct are
     // persistent members) so re-tuning a similar partition is fast.
-    m_wsSel       = sel;
-    m_wsXs        = std::move(xs);
-    m_wsYs        = std::move(ys);
-    m_wsDimX      = dimX;
-    m_wsDimY      = dimY;
-    m_wsScatter   = scatter;
-    m_wsView      = aview;
-    m_wsActive    = true;
-    m_wsCachedSigma = -1;     // force gridMax probe on first recompute
+    wsSel       = sel;
+    wsXs        = std::move(xs);
+    wsYs        = std::move(ys);
+    wsDimX      = dimX;
+    wsDimY      = dimY;
+    wsScatter   = scatter;
+    wsView      = aview;
+    wsPreviewActive    = true;
+    wsCachedSigma = -1;     // force gridMax probe on first recompute
 
     // First run: snap sigma to auto-tune so the user starts from a
     // sensible default.  We discover what the kernel chose, then write
-    // it back into m_wsSigmaCells.
+    // it back into wsSigmaCells.
     {
         Watershed2D::Config cfg;
         cfg.keepGrid = true;
-        m_wsResult = Watershed2D::run(
-            std::vector<double>(m_wsXs.begin(), m_wsXs.end()),
-            std::vector<double>(m_wsYs.begin(), m_wsYs.end()),
+        wsResult = Watershed2D::run(
+            std::vector<double>(wsXs.begin(), wsXs.end()),
+            std::vector<double>(wsYs.begin(), wsYs.end()),
             cfg);
     }
-    if (!m_wsResult.ok) {
+    if (!wsResult.ok) {
         statusBar()->showMessage(
             tr("Watershed: input degenerate (all spikes share an X or Y feature)."), 5000);
-        m_wsActive = false;
-        m_wsScatter = nullptr;
-        m_wsView = nullptr;
-        m_wsSel.clear();
-        m_wsXs.clear();
-        m_wsYs.clear();
+        wsPreviewActive = false;
+        wsScatter = nullptr;
+        wsView = nullptr;
+        wsSel.clear();
+        wsXs.clear();
+        wsYs.clear();
         return false;
     }
-    m_wsSigmaCells   = qBound(1, static_cast<int>(std::round(m_wsResult.effSigma)), 32);
-    m_wsThreshPct    = 5;     // auto-tune is 5% of gridMax
-    m_wsGridMax      = m_wsResult.effPeakHeight / 0.05;
-    m_wsCachedSigma  = m_wsSigmaCells;
+    wsSigmaCells   = qBound(1, static_cast<int>(std::round(wsResult.effSigma)), 32);
+    wsThreshPct    = 5;     // auto-tune is 5% of gridMax
+    wsGridMax      = wsResult.effPeakHeight / 0.05;
+    wsCachedSigma  = wsSigmaCells;
 
     wsRefreshOverlay();
     return true;
@@ -2775,24 +2841,24 @@ bool KlustersApp::wsEnter()
 
 void KlustersApp::wsExit(bool commit)
 {
-    if (!m_wsActive) return;
+    if (!wsPreviewActive) return;
 
     // Snapshot the bits we still need before clearing state.
-    const QList<int>          sel    = m_wsSel;
-    const int                 sigma  = m_wsSigmaCells;
-    const int                 thresh = m_wsThreshPct;
-    const double              gridMax = m_wsGridMax;
-    ClusterView* const        scatter = m_wsScatter;
+    const QList<int>          sel    = wsSel;
+    const int                 sigma  = wsSigmaCells;
+    const int                 thresh = wsThreshPct;
+    const double              gridMax = wsGridMax;
+    ClusterView* const        scatter = wsScatter;
 
     // Clear state (also drops the overlay on the view).
     if (scatter) scatter->clearWatershedOverlay();
-    m_wsActive  = false;
-    m_wsScatter = nullptr;
-    m_wsView    = nullptr;
-    m_wsSel.clear();
-    m_wsXs.clear();
-    m_wsYs.clear();
-    m_wsResult = Watershed2D::Result{};
+    wsPreviewActive  = false;
+    wsScatter = nullptr;
+    wsView    = nullptr;
+    wsSel.clear();
+    wsXs.clear();
+    wsYs.clear();
+    wsResult = Watershed2D::Result{};
 
     if (!commit) {
         if (clusterPalette) clusterPalette->setFocusToList();
@@ -2828,7 +2894,7 @@ void KlustersApp::wsExit(bool commit)
 
 void KlustersApp::wsRecompute()
 {
-    if (!m_wsActive) return;
+    if (!wsPreviewActive) return;
 
     // If sigma changed, the histogram + smoothing change too, so the
     // grid maximum changes — re-discover it via a probe pass with the
@@ -2836,34 +2902,34 @@ void KlustersApp::wsRecompute()
     // gridMax to halve the work per arrow press.
     Watershed2D::Config cfg;
     cfg.gridSize      = 256;
-    cfg.smoothSigma   = m_wsSigmaCells;
+    cfg.smoothSigma   = wsSigmaCells;
     cfg.minBasinSize  = 0;     // auto
     cfg.keepGrid      = true;
 
-    if (m_wsCachedSigma != m_wsSigmaCells) {
+    if (wsCachedSigma != wsSigmaCells) {
         Watershed2D::Config probeCfg = cfg;
         probeCfg.minPeakHeight = 0;     // auto = 5% of max — used to learn max
         const Watershed2D::Result probe = Watershed2D::run(
-            std::vector<double>(m_wsXs.begin(), m_wsXs.end()),
-            std::vector<double>(m_wsYs.begin(), m_wsYs.end()),
+            std::vector<double>(wsXs.begin(), wsXs.end()),
+            std::vector<double>(wsYs.begin(), wsYs.end()),
             probeCfg);
         if (!probe.ok) return;
-        m_wsGridMax     = probe.effPeakHeight / 0.05;
-        m_wsCachedSigma = m_wsSigmaCells;
+        wsGridMax     = probe.effPeakHeight / 0.05;
+        wsCachedSigma = wsSigmaCells;
     }
-    cfg.minPeakHeight = (m_wsThreshPct / 100.0) * m_wsGridMax;
+    cfg.minPeakHeight = (wsThreshPct / 100.0) * wsGridMax;
     if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;     // 0% slider → auto
 
-    m_wsResult = Watershed2D::run(
-        std::vector<double>(m_wsXs.begin(), m_wsXs.end()),
-        std::vector<double>(m_wsYs.begin(), m_wsYs.end()),
+    wsResult = Watershed2D::run(
+        std::vector<double>(wsXs.begin(), wsXs.end()),
+        std::vector<double>(wsYs.begin(), wsYs.end()),
         cfg);
     wsRefreshOverlay();
 }
 
 void KlustersApp::wsRefreshOverlay()
 {
-    if (!m_wsActive || !m_wsScatter) return;
+    if (!wsPreviewActive || !wsScatter) return;
 
     // Build the basin-coloured QImage.  Row 0 of the image corresponds
     // to the LARGEST feature-Y so it lands at the visual top of the
@@ -2871,9 +2937,9 @@ void KlustersApp::wsRefreshOverlay()
     // ClusterView::paintWatershedOverlay).  The kernel's grid is row-
     // major with grid-row 0 = smallest feature-Y, so we flip during
     // setPixel via (W-1-y).
-    const int W = m_wsResult.gridSize;
+    const int W = wsResult.gridSize;
     QImage img;
-    if (W > 0 && !m_wsResult.cellLabels.empty()) {
+    if (W > 0 && !wsResult.cellLabels.empty()) {
         img = QImage(W, W, QImage::Format_ARGB32_Premultiplied);
         img.fill(Qt::transparent);
 
@@ -2896,8 +2962,8 @@ void KlustersApp::wsRefreshOverlay()
         // shown) we degrade gracefully to the rotation with maximum
         // clearance instead of giving up.
         QSet<int> forbiddenHues;
-        if (m_wsView) {
-            const QList<int>& shown = m_wsView->clusters();
+        if (wsView) {
+            const QList<int>& shown = wsView->clusters();
             for (int cid : shown) {
                 if (cid <= 1) continue;     // 0/1 = artefact/noise, drawn black/grey
                 forbiddenHues.insert(
@@ -2960,7 +3026,7 @@ void KlustersApp::wsRefreshOverlay()
 
         for (int y = 0; y < W; ++y) {
             for (int x = 0; x < W; ++x) {
-                const int lab = m_wsResult.cellLabels[y * W + x];
+                const int lab = wsResult.cellLabels[y * W + x];
                 if (lab <= 0) continue;
                 QColor c;
                 c.setHsv(basinHue(lab), 200, 220);
@@ -2972,9 +3038,9 @@ void KlustersApp::wsRefreshOverlay()
 
     // Count unassigned spikes for the HUD.
     int unassigned = 0;
-    for (int lab : m_wsResult.pointLabels)
+    for (int lab : wsResult.pointLabels)
         if (lab == 0) ++unassigned;
-    const int N = static_cast<int>(m_wsResult.pointLabels.size());
+    const int N = static_cast<int>(wsResult.pointLabels.size());
 
     const QString hud = tr(
         "Watershed preview\n"
@@ -2982,15 +3048,15 @@ void KlustersApp::wsRefreshOverlay()
         "  %5 / %6 spikes outside any basin\n"
         "  ←/→ σ     ↑/↓ thr     Shift+arrow ×5\n"
         "  Enter: apply     Esc: cancel")
-        .arg(m_wsSigmaCells)
-        .arg(m_wsThreshPct)
-        .arg(m_wsResult.numBasins)
-        .arg(m_wsResult.numPeaks)
+        .arg(wsSigmaCells)
+        .arg(wsThreshPct)
+        .arg(wsResult.numBasins)
+        .arg(wsResult.numPeaks)
         .arg(unassigned).arg(N);
 
-    m_wsScatter->setWatershedOverlay(img,
-                                     m_wsResult.xMin, m_wsResult.xMax,
-                                     m_wsResult.yMin, m_wsResult.yMax,
+    wsScatter->setWatershedOverlay(img,
+                                     wsResult.xMin, wsResult.xMax,
+                                     wsResult.yMin, wsResult.yMax,
                                      hud);
 }
 
@@ -4764,89 +4830,233 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 }
 
 // ---------------------------------------------------------------------------
-// slotDipSplit
+// slotDipSplit  +  dipPreviewEnter / dipPreviewExit / dipRefreshOverlay
 //
-// Run DipSplit on the currently-selected cluster in the active view.  The
-// algorithm is a fast per-cluster adaptation of KlustaKwikExp's Phase 8
-// (bloat → PCA → valley → k-means → BIC).  If the cluster passes all gates,
-// it's split in two and both views are updated.  Otherwise we show a status
-// message explaining which gate rejected the cluster.
+// Shift+D opens an in-place live preview of the dipsplit decision: the
+// algorithm runs once via doc->dipSplitDecide(), the proposed partition
+// is rendered as coloured discs over the active scatter view (blue =
+// stays in the source cluster, red = moves to a new cluster), and the
+// user confirms with Enter or aborts with Esc.  No tunables — dipsplit's
+// parameters affect accept/reject but not the labelling, so there's
+// nothing for arrow keys to adjust.  Mutually exclusive with the
+// watershed live preview (eventFilter rejects Shift+D while wsPreviewActive).
+//
+// On Enter, doc->dipSplitApply is called with the cached decision; the
+// algorithm does not re-run.  This means the preview cannot drift from
+// the committed result.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotDipSplit()
 {
-    if (!doc) {
-        QMessageBox::information(this, tr("No document"),
-                                 tr("Please open a file first."));
+    if (dipPreviewActive) {
+        // Pressing Shift+D while already in dip preview is a no-op.
+        // Use Enter to commit, Esc to cancel.
         return;
     }
+    if (wsPreviewActive) {
+        // Watershed preview owns the active view; ignore Shift+D until
+        // the user resolves the watershed preview first.
+        return;
+    }
+    dipPreviewEnter();
+}
 
+bool KlustersApp::dipPreviewEnter()
+{
+    if (!doc || !activeView() || !clusterPalette) return false;
+    if (doesActiveDisplayContainProcessWidget()) return false;
+
+    // Pick the current cluster to test.  Same selection rule the prior
+    // synchronous slot used: first non-noise / non-artefact cluster
+    // shown in the active view.
     const QList<int>& shown = activeView()->clusters();
     int clusterId = -1;
     for (int c : shown) {
         if (c > 1) { clusterId = c; break; }
     }
     if (clusterId < 0) {
-        QMessageBox::information(this, tr("DipSplit"),
-            tr("Please select a cluster (cluster > 1) in the active display first."));
+        statusBar()->showMessage(
+            tr("DipSplit: select a cluster (cluster > 1) in the active display first."),
+            4000);
+        return false;
+    }
+
+    KlustersView* aview = activeView();
+    if (!aview->containsClusterView()) {
+        statusBar()->showMessage(
+            tr("DipSplit: the active display has no scatter view."), 4000);
+        return false;
+    }
+
+    // Locate the ClusterView the same way wsEnter does.
+    ClusterView* scatter = nullptr;
+    {
+        QList<ViewWidget*> vws = aview->getViewList();
+        for (ViewWidget* vw : vws) {
+            if ((scatter = qobject_cast<ClusterView*>(vw))) break;
+        }
+    }
+    if (!scatter) {
+        statusBar()->showMessage(
+            tr("DipSplit: could not locate the scatter view."), 4000);
+        return false;
+    }
+
+    // Stash parameters at entry time.  These are passed verbatim to
+    // dipSplitApply on commit so the curation log records the values
+    // that were in effect when the decision was made (not whatever
+    // the user might fiddle with during the preview).
+    dipClusterId    = clusterId;
+    dipMinSize      = configuration().getDipSplitMinSize();
+    dipBloatFactor  = static_cast<float>(configuration().getDipSplitBloatFactor());
+    dipValleyThresh = static_cast<float>(configuration().getDipSplitValleyThresh());
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    dipDecision = doc->dipSplitDecide(
+        dipClusterId, dipMinSize, dipBloatFactor, dipValleyThresh);
+    QApplication::restoreOverrideCursor();
+
+    if (!dipDecision.accepted) {
+        // Don't enter preview when the algorithm rejected — there's
+        // nothing to show.  Surface the same explanatory message the
+        // synchronous slot used.
+        const QString why = [&] {
+            const QString r = dipDecision.reason;
+            if (r == QLatin1String("too_small"))
+                return tr("cluster too small (< 2×MinSize)");
+            if (r == QLatin1String("not_bloated"))
+                return tr("cluster is already unimodal (Mahal²₉₀=%1  χ²₉₀=%2)")
+                       .arg(dipDecision.mahal2P90, 0, 'f', 1)
+                       .arg(dipDecision.chi2_90,   0, 'f', 1);
+            if (r == QLatin1String("no_valley"))
+                return tr("no valley deep enough on any of the top 3 principal "
+                          "components (best depth=%1)")
+                       .arg(dipDecision.bestDepth, 0, 'f', 3);
+            if (r == QLatin1String("small_child"))
+                return tr("split would produce a child cluster smaller than MinSize");
+            if (r == QLatin1String("bic_worse"))
+                return tr("single-Gaussian BIC is better than two-cluster BIC (ΔBIC=%1)")
+                       .arg(dipDecision.deltaBIC, 0, 'f', 1);
+            if (r == QLatin1String("cluster_not_found"))
+                return tr("cluster not found");
+            if (r == QLatin1String("bad_features"))
+                return tr("feature matrix is singular or has too few dimensions");
+            return tr("unknown reason (%1)").arg(r);
+        }();
+        statusBar()->showMessage(
+            tr("DipSplit: no split for cluster %1 — %2")
+                .arg(dipClusterId).arg(why),
+            10000);
+        // Reset state — we never entered preview.
+        dipDecision    = KlustersDoc::DipSplitDecision{};
+        dipClusterId   = -1;
+        return false;
+    }
+
+    dipScatter = scatter;
+    dipView    = aview;
+    dipPreviewActive  = true;
+    dipRefreshOverlay();
+    return true;
+}
+
+void KlustersApp::dipPreviewExit(bool commit)
+{
+    if (!dipPreviewActive) return;
+
+    // Snapshot the commit-relevant state before clearing.
+    const KlustersDoc::DipSplitDecision D    = dipDecision;
+    const int                           src  = dipClusterId;
+    const int                           ms   = dipMinSize;
+    const float                         bf   = dipBloatFactor;
+    const float                         vt   = dipValleyThresh;
+    ClusterView* const                  scat = dipScatter;
+
+    // Clear preview state (also drops the overlay).
+    if (scat) scat->clearDipsplitPreview();
+    dipPreviewActive    = false;
+    dipScatter   = nullptr;
+    dipView      = nullptr;
+    dipClusterId = -1;
+    dipDecision  = KlustersDoc::DipSplitDecision{};
+
+    if (!commit) {
+        if (clusterPalette) clusterPalette->setFocusToList();
+        statusBar()->showMessage(tr("DipSplit cancelled."), 3000);
         return;
     }
 
+    // Apply the cached decision.  Algorithm does not re-run.
+    slotStatusMsg(tr("Applying DipSplit..."));
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const KlustersDoc::DipSplitResult r = doc->dipSplitCluster(
-        clusterId,
-        configuration().getDipSplitMinSize(),
-        static_cast<float>(configuration().getDipSplitBloatFactor()),
-        static_cast<float>(configuration().getDipSplitValleyThresh()));
+    const KlustersDoc::DipSplitResult r =
+        doc->dipSplitApply(D, ms, bf, vt);
     QApplication::restoreOverrideCursor();
 
-    // Compose a one-line status and a longer details block for the log/dialog.
-    QString statusLine;
     if (r.accepted) {
-        // Both halves of the split now live at the tail of the palette;
-        // r.renamedSourceId holds the new tail-end ID of the original
-        // (left-half) cluster, r.newClusterId the right-half.  Show both.
-        statusLine = tr("DipSplit: cluster %1 → %2 (%3 spikes) + %4 (%5 spikes)   "
-                        "PC%6 depth=%7  ΔBIC=%8")
-            .arg(clusterId)
+        const QString line =
+            tr("DipSplit: cluster %1 → %2 (%3 spikes) + %4 (%5 spikes)   "
+               "PC%6 depth=%7  ΔBIC=%8")
+            .arg(src)
             .arg(r.renamedSourceId).arg(r.n0)
             .arg(r.newClusterId).arg(r.n1)
             .arg(r.bestPC)
             .arg(r.bestDepth, 0, 'f', 3)
             .arg(r.deltaBIC,  0, 'f', 1);
-        statusBar()->showMessage(statusLine, 10000);
-        // Select the freshly-created child cluster and return focus to the
-        // palette's iconView so arrow-key navigation works immediately.
-        // See slotRealignFinished for why setFocusToList() is the right
-        // method here (a plain setFocus() on the palette dock wouldn't
-        // propagate to the QListWidget that owns arrow-key handling).
+        statusBar()->showMessage(line, 10000);
         if (clusterPalette && r.newClusterId > 0) {
             clusterPalette->selectItems(QList<int>{r.newClusterId});
             clusterPalette->setFocusToList();
         }
     } else {
-        const QString why =
-              r.reason == QLatin1String("too_small")      ? tr("cluster too small (< 2×MinSize)")
-            : r.reason == QLatin1String("not_bloated")    ? tr("cluster is already unimodal "
-                                                               "(Mahal²₉₀=%1  χ²₉₀=%2)")
-                                                             .arg(r.mahal2P90, 0, 'f', 1)
-                                                             .arg(r.chi2_90, 0, 'f', 1)
-            : r.reason == QLatin1String("no_valley")      ? tr("no valley deep enough on any of "
-                                                               "the top 3 principal components "
-                                                               "(best depth=%1)")
-                                                             .arg(r.bestDepth, 0, 'f', 3)
-            : r.reason == QLatin1String("small_child")    ? tr("split would produce a child cluster "
-                                                               "smaller than MinSize")
-            : r.reason == QLatin1String("bic_worse")      ? tr("single-Gaussian BIC is better than "
-                                                               "two-cluster BIC (ΔBIC=%1)")
-                                                             .arg(r.deltaBIC, 0, 'f', 1)
-            : r.reason == QLatin1String("cluster_not_found") ? tr("cluster not found")
-            : r.reason == QLatin1String("bad_features")   ? tr("feature matrix is singular "
-                                                               "or has too few dimensions")
-            : r.reason == QLatin1String("no_free_id")     ? tr("no free cluster ID available")
-            :                                               tr("unknown reason (%1)").arg(r.reason);
-        statusLine = tr("DipSplit: no split for cluster %1 — %2").arg(clusterId).arg(why);
-        statusBar()->showMessage(statusLine, 10000);
+        // dipSplitApply rejected after the live decision said yes — this
+        // can happen if moveSpikeSubset returns small_child (e.g. label
+        // mapping produced an empty side after row deduplication).
+        statusBar()->showMessage(
+            tr("DipSplit: commit rejected (%1).").arg(r.reason),
+            6000);
+        if (clusterPalette) clusterPalette->setFocusToList();
     }
+    slotStatusMsg(tr("Ready."));
+}
+
+void KlustersApp::dipRefreshOverlay()
+{
+    if (!dipPreviewActive || !dipScatter || !doc) return;
+
+    // Build per-spike (X, Y, label) lists for the source cluster's
+    // members in the active view's current dimensions.  The
+    // DipSplitDecision carries one label per cluster member in the
+    // order returned by Data::spikePositions; the rowsByMember entry
+    // gives the corresponding 1-based feature row, which is the row
+    // we feed back into Data::featureValue to read (X, Y).
+    const int dimX = dipView->abscissaDimension();
+    const int dimY = dipView->ordinateDimension();
+
+    const int N = static_cast<int>(dipDecision.labels.size());
+    QVector<double> xs; xs.reserve(N);
+    QVector<double> ys; ys.reserve(N);
+    QVector<int>    labs; labs.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        const dataType row = dipDecision.rowsByMember.at(i);
+        xs.append (static_cast<double>(doc->data().featureValue(row, dimX)));
+        ys.append (static_cast<double>(doc->data().featureValue(row, dimY)));
+        labs.append(dipDecision.labels[static_cast<size_t>(i)]);
+    }
+
+    const QString hud = tr(
+        "DipSplit preview\n"
+        "  cluster %1   →   %2 (left, %3 spikes) + new (right, %4 spikes)\n"
+        "  best PC = %5    valley depth = %6    ΔBIC = %7\n"
+        "  Enter: apply     Esc: cancel")
+        .arg(dipClusterId)
+        .arg(dipClusterId)
+        .arg(dipDecision.n0)
+        .arg(dipDecision.n1)
+        .arg(dipDecision.bestPC)
+        .arg(dipDecision.bestDepth, 0, 'f', 3)
+        .arg(dipDecision.deltaBIC,  0, 'f', 1);
+
+    dipScatter->setDipsplitPreview(xs, ys, labs, hud);
 }
 
 // ---------------------------------------------------------------------------
@@ -5042,7 +5252,7 @@ void KlustersApp::slotApplyDriftSiblings()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotNudgeTimestampMinus()
 {
-    if (m_nudgeInProgress || isInit || !doc || !activeView()) return;
+    if (nudgeInProgress || isInit || !doc || !activeView()) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(
@@ -5050,14 +5260,14 @@ void KlustersApp::slotNudgeTimestampMinus()
         return;
     }
     const int id = shown.first();
-    m_nudgeInProgress = true;
+    nudgeInProgress = true;
     nudgeMinusAction->setEnabled(false);
     nudgePlusAction->setEnabled(false);
     statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     const bool ok = doc->nudgeClusterTimestamps(id, -1);
-    m_nudgeInProgress = false;
-    m_lastNudgeTimer.restart();
+    nudgeInProgress = false;
+    lastNudgeTimer.restart();
     nudgeMinusAction->setEnabled(true);
     nudgePlusAction->setEnabled(true);
     if (ok)
@@ -5077,7 +5287,7 @@ void KlustersApp::slotNudgeTimestampMinus()
 
 void KlustersApp::slotNudgeTimestampPlus()
 {
-    if (m_nudgeInProgress || isInit || !doc || !activeView()) return;
+    if (nudgeInProgress || isInit || !doc || !activeView()) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(
@@ -5085,14 +5295,14 @@ void KlustersApp::slotNudgeTimestampPlus()
         return;
     }
     const int id = shown.first();
-    m_nudgeInProgress = true;
+    nudgeInProgress = true;
     nudgeMinusAction->setEnabled(false);
     nudgePlusAction->setEnabled(false);
     statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     const bool ok = doc->nudgeClusterTimestamps(id, +1);
-    m_nudgeInProgress = false;
-    m_lastNudgeTimer.restart();
+    nudgeInProgress = false;
+    lastNudgeTimer.restart();
     nudgeMinusAction->setEnabled(true);
     nudgePlusAction->setEnabled(true);
     if (ok)
@@ -5175,7 +5385,7 @@ void KlustersApp::slotShowShortcutHelp()
         {"Cluster operations", {
             {"1",              "New Cluster mode \u2014 draw selection polygon"},
             {"2",              "Split Clusters mode \u2014 draw selection polygon"},
-            {"Shift+D",        "DipSplit \u2014 split current cluster on bimodality"},
+            {"Shift+D",        "DipSplit (live preview \u2014 Enter apply, Esc cancel)"},
             {"Shift+W",        "Watershed split (live preview \u2014 \u2190/\u2192 \u03c3, \u2191/\u2193 thr, Enter apply, Esc cancel)"},
             {"G",              "Group selected clusters"},
             {"R",              "Renumber clusters"},

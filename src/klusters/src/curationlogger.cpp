@@ -18,7 +18,7 @@
 
 // ---------------------------------------------------------------------------
 CurationLogger::CurationLogger()
-    : m_out(&m_file)
+    : out(&file)
 {
 }
 
@@ -29,73 +29,73 @@ CurationLogger::~CurationLogger()
 
 // ---------------------------------------------------------------------------
 void CurationLogger::open(const QString& logPath,
-                           const QString& sessionBaseName,
-                           const QString& electrodeGroup,
+                           const QString& baseName,
+                           const QString& groupId,
                            double         samplingRateHz,
                            int            nChannels,
                            int            nPcaDims)
 {
     close();
 
-    m_sessionBaseName = sessionBaseName;
-    m_electrodeGroup  = electrodeGroup;
-    m_actionIdx       = 0;
-    m_pending.clear();
+    sessionBaseName = baseName;
+    electrodeGroup  = groupId;
+    nextActionIdx       = 0;
+    pending.clear();
 
     // Generate a short session token (first 8 hex chars of a UUID)
-    m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+    sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
 
-    m_file.setFileName(logPath);
-    if (!m_file.open(QIODevice::Append | QIODevice::Text)) {
+    file.setFileName(logPath);
+    if (!file.open(QIODevice::Append | QIODevice::Text)) {
         qWarning("CurationLogger: cannot open log file %s",
                  qPrintable(logPath));
         return;
     }
-    m_out.setDevice(&m_file);
-    m_out.setEncoding(QStringConverter::Utf8);
+    out.setDevice(&file);
+    out.setEncoding(QStringConverter::Utf8);
 
     // Write a session-open sentinel — valid JSON object, easy to filter in pandas.
-    m_out << "{"
+    out << "{"
           << "\"event\":\"SESSION_OPEN\","
-          << "\"session_id\":\"" << m_sessionId << "\","
+          << "\"session_id\":\"" << sessionId << "\","
           << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"file\":\"" << jsonEscape(sessionBaseName) << "\","
-          << "\"group\":\"" << jsonEscape(electrodeGroup) << "\","
+          << "\"file\":\"" << jsonEscape(baseName) << "\","
+          << "\"group\":\"" << jsonEscape(groupId) << "\","
           << "\"sample_rate\":" << samplingRateHz << ","
           << "\"n_channels\":" << nChannels << ","
           << "\"n_pca_dims\":" << nPcaDims
           << "}\n";
-    m_out.flush();
+    out.flush();
 }
 
 // ---------------------------------------------------------------------------
 void CurationLogger::close()
 {
-    if (!m_file.isOpen())
+    if (!file.isOpen())
         return;
 
     // Flush every remaining pending entry with its current status (the
     // user's "save followed by quit" — we capture exactly the decisions
     // they ended the session with).
-    while (!m_pending.isEmpty())
+    while (!pending.isEmpty())
         flushOldest();
 
-    m_out << "{"
+    out << "{"
           << "\"event\":\"SESSION_CLOSE\","
-          << "\"session_id\":\"" << m_sessionId << "\","
+          << "\"session_id\":\"" << sessionId << "\","
           << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"n_actions\":" << m_actionIdx
+          << "\"n_actions\":" << nextActionIdx
           << "}\n";
-    m_out.flush();
-    m_file.close();
+    out.flush();
+    file.close();
 }
 
 // ---------------------------------------------------------------------------
 void CurationLogger::setMaxBufferEntries(int n)
 {
-    m_maxBuffer = (n < 1) ? 1 : n;
-    // Shrinking: flush from the front until size <= m_maxBuffer.
-    while (m_pending.size() > m_maxBuffer)
+    maxBuffer = (n < 1) ? 1 : n;
+    // Shrinking: flush from the front until size <= maxBuffer.
+    while (pending.size() > maxBuffer)
         flushOldest();
 }
 
@@ -103,21 +103,21 @@ void CurationLogger::setMaxBufferEntries(int n)
 int CurationLogger::beginAction(ActionType type,
                                  const QList<ClusterSnapshot>& before)
 {
-    if (!m_file.isOpen())
-        return m_actionIdx;
+    if (!file.isOpen())
+        return nextActionIdx;
 
     PendingEntry e;
-    e.actionIdx = m_actionIdx++;
+    e.actionIdx = nextActionIdx++;
     e.type      = type;
     e.before    = before;
     e.status    = QStringLiteral("good");
     e.tsBegin   = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
-    m_pending.append(e);
+    pending.append(e);
 
     // Overflow: the oldest entry can no longer be undone (it's beyond
     // the buffer's capacity = max-undos).  Its current status is now
     // its final status; write it out and free the slot.
-    while (m_pending.size() > m_maxBuffer)
+    while (pending.size() > maxBuffer)
         flushOldest();
 
     return e.actionIdx;
@@ -157,9 +157,9 @@ void CurationLogger::notifyUndo()
 {
     // Walk back from the most recent entry; flip the first one whose
     // status is still "good".
-    for (int i = m_pending.size() - 1; i >= 0; --i) {
-        if (m_pending[i].status == QLatin1String("good")) {
-            m_pending[i].status = QStringLiteral("bad");
+    for (int i = pending.size() - 1; i >= 0; --i) {
+        if (pending[i].status == QLatin1String("good")) {
+            pending[i].status = QStringLiteral("bad");
             return;
         }
     }
@@ -176,14 +176,14 @@ void CurationLogger::notifyRedo()
     // mirror of notifyUndo: the redo replays the most recently undone
     // action, which is the topmost "bad" entry.
     int target = -1;
-    for (int i = m_pending.size() - 1; i >= 0; --i) {
-        if (m_pending[i].status == QLatin1String("bad")) {
+    for (int i = pending.size() - 1; i >= 0; --i) {
+        if (pending[i].status == QLatin1String("bad")) {
             target = i;
             break;
         }
     }
     if (target >= 0)
-        m_pending[target].status = QStringLiteral("good");
+        pending[target].status = QStringLiteral("good");
 }
 
 // ---------------------------------------------------------------------------
@@ -192,16 +192,16 @@ void CurationLogger::notifyRedo()
 
 CurationLogger::PendingEntry* CurationLogger::currentPending()
 {
-    if (m_pending.isEmpty() || !m_file.isOpen())
+    if (pending.isEmpty() || !file.isOpen())
         return nullptr;
-    return &m_pending.last();
+    return &pending.last();
 }
 
 void CurationLogger::flushOldest()
 {
-    if (m_pending.isEmpty()) return;
-    flushEntry(m_pending.first());
-    m_pending.removeFirst();
+    if (pending.isEmpty()) return;
+    flushEntry(pending.first());
+    pending.removeFirst();
 }
 
 // Emit every accumulated line for one entry, all carrying the same
@@ -214,7 +214,7 @@ void CurationLogger::flushOldest()
 // and lets us emit everything in one tight burst per entry.
 void CurationLogger::flushEntry(const PendingEntry& e)
 {
-    if (!m_file.isOpen()) return;
+    if (!file.isOpen()) return;
 
     for (const ClusterSnapshot& s : e.before)
         writeLine("before", "source", s, e.actionIdx, e.type, e.status);
@@ -225,44 +225,44 @@ void CurationLogger::flushEntry(const PendingEntry& e)
     // and carrying the same status field.
     const QString actionStr = actionName(e.type);
     for (const QMap<QString, QVariant>& details : e.details) {
-        m_out << "{"
+        out << "{"
               << "\"event\":\"ACTION_DETAIL\","
-              << "\"session_id\":\"" << m_sessionId << "\","
+              << "\"session_id\":\"" << sessionId << "\","
               << "\"ts_begin\":\"" << e.tsBegin << "\","
               << "\"action\":\"" << actionStr << "\","
               << "\"action_idx\":" << e.actionIdx << ","
               << "\"status\":\"" << e.status << "\"";
 
         for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
-            m_out << ",\"" << jsonEscape(it.key()) << "\":";
+            out << ",\"" << jsonEscape(it.key()) << "\":";
             const QVariant& v = it.value();
             switch (v.typeId()) {
                 case QMetaType::Int:
                 case QMetaType::UInt:
                 case QMetaType::LongLong:
                 case QMetaType::ULongLong:
-                    m_out << v.toLongLong();
+                    out << v.toLongLong();
                     break;
                 case QMetaType::Double:
                 case QMetaType::Float: {
                     const double d = v.toDouble();
                     if (std::isfinite(d))
-                        m_out << QString::number(d, 'g', 15);
+                        out << QString::number(d, 'g', 15);
                     else
-                        m_out << "null";
+                        out << "null";
                     break;
                 }
                 case QMetaType::Bool:
-                    m_out << (v.toBool() ? "true" : "false");
+                    out << (v.toBool() ? "true" : "false");
                     break;
                 default:
-                    m_out << "\"" << jsonEscape(v.toString()) << "\"";
+                    out << "\"" << jsonEscape(v.toString()) << "\"";
                     break;
             }
         }
-        m_out << "}\n";
+        out << "}\n";
     }
-    m_out.flush();
+    out.flush();
 }
 
 // ---------------------------------------------------------------------------
@@ -273,12 +273,12 @@ void CurationLogger::writeLine(const QString& phase,
                                 ActionType action,
                                 const QString& status)
 {
-    m_out << "{"
+    out << "{"
           // ── context ──────────────────────────────────────────────────────
-          << "\"session_id\":\"" << m_sessionId << "\","
+          << "\"session_id\":\"" << sessionId << "\","
           << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"file\":\"" << jsonEscape(m_sessionBaseName) << "\","
-          << "\"group\":\"" << jsonEscape(m_electrodeGroup) << "\","
+          << "\"file\":\"" << jsonEscape(sessionBaseName) << "\","
+          << "\"group\":\"" << jsonEscape(electrodeGroup) << "\","
           // ── action ───────────────────────────────────────────────────────
           << "\"action\":\"" << actionName(action) << "\","
           << "\"action_idx\":" << aidx << ","
@@ -328,10 +328,10 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"n_feat_dims\":" << s.featVarDims.size() << ","
           << "\"feat_var_dims\":[";
     for (int i = 0; i < s.featVarDims.size(); ++i) {
-        if (i) m_out << ",";
-        m_out << s.featVarDims[i];
+        if (i) out << ",";
+        out << s.featVarDims[i];
     }
-    m_out << "],"
+    out << "],"
           // ── I. session context ────────────────────────────────────────────
           << "\"n_channels\":" << s.nChannels << ","
           << "\"n_pca_dims\":" << s.nPcaDims << ","
@@ -349,17 +349,17 @@ void CurationLogger::writeLine(const QString& phase,
 
 QString CurationLogger::jsonEscape(const QString& s) const
 {
-    QString out;
-    out.reserve(s.size() + 4);
+    QString escaped;
+    escaped.reserve(s.size() + 4);
     for (const QChar c : s) {
-        if      (c == QLatin1Char('\\')) out += QLatin1String("\\\\");
-        else if (c == QLatin1Char('"'))  out += QLatin1String("\\\"");
-        else if (c == QLatin1Char('\n')) out += QLatin1String("\\n");
-        else if (c == QLatin1Char('\r')) out += QLatin1String("\\r");
-        else if (c == QLatin1Char('\t')) out += QLatin1String("\\t");
-        else                             out += c;
+        if      (c == QLatin1Char('\\')) escaped += QLatin1String("\\\\");
+        else if (c == QLatin1Char('"'))  escaped += QLatin1String("\\\"");
+        else if (c == QLatin1Char('\n')) escaped += QLatin1String("\\n");
+        else if (c == QLatin1Char('\r')) escaped += QLatin1String("\\r");
+        else if (c == QLatin1Char('\t')) escaped += QLatin1String("\\t");
+        else                             escaped += c;
     }
-    return out;
+    return escaped;
 }
 
 // ---------------------------------------------------------------------------
