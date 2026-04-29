@@ -29,6 +29,7 @@
 #include "spinbox.h"
 #include "klustersview.h"
 #include "klustersdoc.h"   // needed by inline slot methods that call doc->logAnnotation()
+#include "watershed2d.h"   // for Result struct used in live-preview state
 
 
 // include files for Qt
@@ -58,6 +59,7 @@
 // forward declaration of the Klusters classes
 class KlustersDoc;
 class ClusterPalette;
+class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
 class PrefDialog;
 class ProcessWidget;
@@ -523,6 +525,38 @@ private:
      *  keyboard focus.  Used by the palette-context shortcut handlers
      *  (S, T, PageUp, PageDown) to decide whether to claim the key. */
     bool paletteHasFocus() const;
+
+    // ── Watershed live-preview mode (Shift+W) ───────────────────────────
+    // The live preview replaces the pre-2026-04 modal dialog.  Pressing
+    // Shift+W enters preview mode: the selected clusters' (X, Y) feature
+    // points are extracted once, the kernel runs against the active
+    // scatter view's current X/Y dimensions, and a coloured-basin overlay
+    // is painted on top of the scatter via ClusterView::setWatershedOverlay.
+    // While in preview:
+    //   ←/→     adjust smoothing sigma  (1..32 cells, ±1; ±5 with Shift)
+    //   ↑/↓     adjust peak threshold   (0..50% of grid max, ±1; ±5 with Shift)
+    //   Enter   commit the partition (calls watershedSelectedClusters)
+    //   Esc     cancel and restore the view
+    // All other keys are blocked while preview is active so the user
+    // doesn't accidentally trigger another action mid-tune.
+    bool                m_wsActive   = false;
+    QList<int>          m_wsSel;
+    QVector<double>     m_wsXs;
+    QVector<double>     m_wsYs;
+    int                 m_wsDimX     = 0;
+    int                 m_wsDimY     = 0;
+    int                 m_wsSigmaCells = 4;     // current sigma slider analogue
+    int                 m_wsThreshPct  = 5;     // current threshold (% of grid max)
+    double              m_wsGridMax    = 1.0;   // last-discovered absolute gridMax
+    int                 m_wsCachedSigma = -1;   // sigma at which gridMax was discovered
+    Watershed2D::Result m_wsResult;
+    ClusterView*        m_wsScatter  = nullptr; // borrowed pointer into the active view
+    KlustersView*       m_wsView     = nullptr; // active KlustersView at preview-entry time
+
+    bool wsEnter();              // returns false if preconditions not met
+    void wsExit(bool commit);
+    void wsRecompute();          // re-runs kernel with current params, refreshes overlay
+    void wsRefreshOverlay();     // builds the basin-coloured QImage and pushes to ClusterView
     
     /** Creates a new display.
      * @param type enum representing the type of view to be created.

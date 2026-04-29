@@ -223,6 +223,86 @@ void ClusterView::paintEvent ( QPaintEvent*){
         p.setPen(selPen);
         p.drawPolyline(selectionPolygon);
     }
+
+    // Watershed overlay (Shift+W preview mode).  Drawn last so it sits on
+    // top of points and any selection polygon.  Both the overlay image
+    // and the HUD text are repainted from scratch every paintEvent —
+    // never cached into the doublebuffer — so KlustersApp can re-tune
+    // sigma / threshold without forcing a full cluster redraw.
+    if (!m_wsImage.isNull())
+        paintWatershedOverlay(p, r);
+}
+
+void ClusterView::setWatershedOverlay(const QImage& img,
+                                       double xMin, double xMax,
+                                       double yMin, double yMax,
+                                       const QString& hud)
+{
+    m_wsImage = img;
+    m_wsXMin = xMin; m_wsXMax = xMax;
+    m_wsYMin = yMin; m_wsYMax = yMax;
+    m_wsHud  = hud;
+    // No drawContentsMode change — overlay is drawn over the existing
+    // doublebuffer in REFRESH mode, which is what update() schedules.
+    update();
+}
+
+void ClusterView::clearWatershedOverlay()
+{
+    if (m_wsImage.isNull() && m_wsHud.isEmpty()) return;
+    m_wsImage = QImage();
+    m_wsHud.clear();
+    update();
+}
+
+void ClusterView::paintWatershedOverlay(QPainter& p, const QRect& worldRect)
+{
+    // ── Stretch the basin-coloured image into the watershed grid's world
+    // ── rect.  The image rows correspond to feature-Y in the standard
+    // ── orientation (small-Y at the bottom, large-Y at the top), but
+    // ── ClusterView's draw window has its Y negated (so larger feature-Y
+    // ── maps to smaller world-Y, i.e. visual top).  We therefore source
+    // ── the image with a vertical flip via QPainter's automatic
+    // ── source-rect interpretation:  pass a target rect with top = -yMax
+    // ── and bottom = -yMin, which makes image row 0 land at -yMax (top).
+    // ── KlustersApp built the image so that row 0 already represents the
+    // ── largest feature-Y (the build flips during setPixel).
+    p.save();
+    p.setWindow(worldRect.left(), worldRect.top(),
+                worldRect.width()-1, worldRect.height()-1);
+
+    const QRectF tgt(QPointF(m_wsXMin, -m_wsYMax),
+                     QPointF(m_wsXMax, -m_wsYMin));
+
+    // QPainter::drawImage with a target rect performs both translation
+    // and scaling.  Use SmoothPixmapTransform off — the basin colours
+    // are flat fills, so nearest-neighbour gives sharp boundaries.
+    const bool prevSmooth = p.testRenderHint(QPainter::SmoothPixmapTransform);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    p.drawImage(tgt, m_wsImage);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
+
+    p.restore();
+
+    // ── HUD: drawn in viewport pixels, top-left, with a translucent
+    // ── dark background for legibility against arbitrary scatter
+    // ── backgrounds.  The painter's transform was already restored above.
+    if (!m_wsHud.isEmpty()) {
+        QFont f = p.font();
+        f.setPointSize(10);
+        p.setFont(f);
+        const QFontMetrics fm(p.font());
+        const QRect textBounds = fm.boundingRect(
+            QRect(0, 0, 600, 200),
+            Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+            m_wsHud);
+        const QRect bg = textBounds.translated(8, 8).adjusted(-6, -3, 8, 3);
+        p.fillRect(bg, QColor(0, 0, 0, 180));
+        p.setPen(QColor(255, 255, 255));
+        p.drawText(QRect(8, 8, 600, 200),
+                   Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                   m_wsHud);
+    }
 }
 
 void ClusterView::eraseTheLastDrawnLine()
@@ -602,16 +682,11 @@ void ClusterView::customEvent(QEvent* event){
                 break;
             case NEW_CLUSTER:
                 doc.createNewCluster(selectionArea,view.clusters(),Xdimension,Ydimension);
-                // Focus is transferred to the cluster palette by KlustersApp's
-                // handler for KlustersDoc::newClusterAdded so the user can
-                // arrow-navigate to the freshly-created cluster.  Do NOT
-                // setFocus(Qt::OtherFocusReason) here — that would steal it
-                // back synchronously after the signal handler runs.
+                setFocus(Qt::OtherFocusReason);
                 break;
             case NEW_CLUSTERS:
                 doc.createNewClusters(selectionArea,view.clusters(),Xdimension,Ydimension);
-                // See NEW_CLUSTER above: palette focus is granted by
-                // KlustersApp's newClustersAdded handler.
+                setFocus(Qt::OtherFocusReason);
                 break;
             case ZOOM:
                 break; //nothing to do
