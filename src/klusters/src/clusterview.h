@@ -108,29 +108,21 @@ public:
     void clearWatershedOverlay();
     bool hasWatershedOverlay() const { return !wsImage.isNull(); }
 
-    // ── DipSplit preview overlay ─────────────────────────────────────────
-    // Used by KlustersApp during the "Shift+D" live preview.  Unlike the
-    // watershed overlay (a coloured raster of the grid labelling), this
-    // overlay is point-based: each spike of the candidate cluster is
-    // drawn as a translucent disk in feature space, blue for the
-    // left-half label and red for the right-half label, on top of the
-    // cluster scatter.  The decision boundary is implicit where the two
-    // colours meet — there is no analytic line to draw because the
-    // refined split was performed in 2D PC-space, not in the (X, Y)
-    // dimensions the user is currently viewing.
+    // ── DipSplit post-commit HUD ─────────────────────────────────────────
+    // Used by KlustersApp after a Shift+D dipsplit commits.  Draws a
+    // short multi-line status block at top-left in viewport pixels
+    // (dark translucent background, white text) reporting the metrics
+    // of the just-committed split and the available next actions
+    // ("Esc: undo   Enter: keep").  No scatter overlay — the split
+    // already happened, so the source cluster is gone and both new
+    // clusters are visible via normal scatter rendering.
     //
-    // @param xs,ys   Per-spike feature coordinates in the current
-    //                ClusterView dimensions.  Must be the same length
-    //                as @p labels.
-    // @param labels  0 or 1 per spike (left-half / right-half).
-    // @param hud     Short status text drawn at top-left in viewport
-    //                pixels.  Pass empty string to suppress.
-    void setDipsplitPreview(const QVector<double>& xs,
-                             const QVector<double>& ys,
-                             const QVector<int>&    labels,
-                             const QString&         hud);
-    void clearDipsplitPreview();
-    bool hasDipsplitPreview() const { return !dsXs.isEmpty(); }
+    // KlustersApp owns the lifecycle:
+    //   setDipsplitPostCommitHud(text)  — draw the HUD
+    //   clearDipsplitPostCommitHud()    — drop it
+    void setDipsplitPostCommitHud(const QString& hud);
+    void clearDipsplitPostCommitHud();
+    bool hasDipsplitPostCommitHud() const { return !dsHud.isEmpty(); }
 
     /**Returns the current ordinate dimension.
   */
@@ -494,10 +486,8 @@ private:
     double  wsYMin = 0.0, wsYMax = 0.0;
     QString wsHud;
 
-    // DipSplit preview overlay state (see setDipsplitPreview).
-    QVector<double> dsXs;
-    QVector<double> dsYs;
-    QVector<int>    dsLabels;
+    // DipSplit post-commit HUD state (see setDipsplitPostCommitHud).
+    // Just a text string drawn over the doublebuffer in viewport pixels.
     QString         dsHud;
 
     // Helper called from paintEvent after the doublebuffer blit.  Draws
@@ -506,9 +496,8 @@ private:
     void paintWatershedOverlay(QPainter& p, const QRect& worldRect);
 
     // Helper called from paintEvent after the doublebuffer blit.  Draws
-    // each preview spike as a coloured disk in world coordinates, then
-    // writes the HUD text in viewport pixels.
-    void paintDipsplitPreview(QPainter& p, const QRect& worldRect);
+    // the dipsplit post-commit HUD text at top-left in viewport pixels.
+    void paintDipsplitPostCommitHud(QPainter& p);
 
 };
 

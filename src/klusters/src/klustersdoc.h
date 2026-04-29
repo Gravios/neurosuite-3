@@ -268,18 +268,20 @@ public:
     */
     void createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
 
-    /** DipSplit result summary — returned by dipSplitApply(). */
+    /** DipSplit result summary — returned by dipSplitApply().
+     *
+     *  Two-cluster commit: dipsplit produces TWO new clusters at the
+     *  palette tail and consumes the source.  leftId holds the
+     *  label-0 spikes (smaller of the new IDs); rightId = leftId+1
+     *  holds the label-1 spikes.
+     */
     struct DipSplitResult {
         bool    accepted        = false;  ///< true if the split was committed
-        int     newClusterId    = 0;      ///< ID of the right-half cluster (0 if none)
-        int     renamedSourceId = 0;      ///< ID the original source cluster was
-                                          ///< renamed to so it lands at the palette
-                                          ///< tail alongside newClusterId.  Equal
-                                          ///< to the input clusterId iff the
-                                          ///< rename step was skipped (only when
-                                          ///< the split itself was skipped).
-        int     n0              = 0;      ///< # spikes retained in original cluster
-        int     n1              = 0;      ///< # spikes moved to newClusterId
+        int     sourceId        = 0;      ///< the cluster that was split
+        int     leftId          = 0;      ///< new ID for label-0 spikes
+        int     rightId         = 0;      ///< new ID for label-1 spikes (= leftId+1)
+        int     n0              = 0;      ///< # label-0 spikes (now in leftId)
+        int     n1              = 0;      ///< # label-1 spikes (now in rightId)
         int     bestPC          = -1;     ///< which PC (0-2) showed deepest valley
         double  bestDepth       = 0.0;    ///< valley depth in [0..1]
         double  mahal2P90       = 0.0;    ///< 90th-percentile Mahalanobis² of cluster
@@ -807,6 +809,22 @@ private:
                                 QList<int>& fromClusters,
                                 QList<int>& emptiedClusters,
                                 KlustersView* activeView);
+
+    /** Sibling of commitClusterCreation for paths that produce TWO new
+     *  clusters from one (or more) source clusters in a single atomic
+     *  Data mutation — currently only KlustersDoc::dipSplitApply.
+     *
+     *  Pushes a single doc-level undo entry covering both new IDs and
+     *  the emptied source(s).  Routes view-side updates through
+     *  KlustersView::addNewClustersToView (recluster variant) so the
+     *  view-side undo also stays as a single entry.  One Ctrl+Z fully
+     *  reverts; one Ctrl+Y fully replays.
+     */
+    void commitTwoClusterCreation(int leftId,
+                                   int rightId,
+                                   QList<int>& fromClusters,
+                                   QList<int>& emptiedClusters,
+                                   KlustersView* activeView);
 
     /** Commit all pending files to the originals, then re-seed the pending
      *  files from the freshly-written originals so the cycle continues.

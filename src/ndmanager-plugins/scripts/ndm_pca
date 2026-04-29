@@ -92,8 +92,9 @@ once()
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 
-	# Perform PCA
-	process_pca -f $session.fet.$electrodeGroup.tmp -n $nElectrodes -w $waveformLength -d $nFeatures $options ${@:2} $session.spk.$electrodeGroup
+	# Perform PCA.  -g N labels the bar [PCA-N] so parallel-group
+	# runs are distinguishable in the terminal output.
+	process_pca -g $electrodeGroup -f $session.fet.$electrodeGroup.tmp -n $nElectrodes -w $waveformLength -d $nFeatures $options ${@:2} $session.spk.$electrodeGroup
 	check_command_status process_pca
 
 	# Merge binary PCA features with binary .res timestamps into final binary .fet
@@ -154,6 +155,11 @@ then
 		rm -f /tmp/ndm_pca_${session}_$((i+1)).log
 		if [ $groupStatus -ne 0 ] && [ $groupStatus -ne $OUTPUTS_EXIST ] && [ $groupStatus -ne $INPUTS_MISSING ]
 		then
+			# Emit a red ✗ marker bar so the user can see at a glance
+			# which group(s) failed amidst the green ✓ markers.  Mirrors
+			# ProgressBar's failure marker style for consistency with
+			# the live bars.
+			print_group_failed PCA $((i+1))
 			overallStatus=$groupStatus
 		fi
 	done

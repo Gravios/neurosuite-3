@@ -62,6 +62,7 @@ class ClusterPalette;
 class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
 class PrefDialog;
+class QShortcut;       // for dipsplit post-commit Esc/Enter shortcuts
 class ProcessWidget;
 class QRecentFileAction;
 class QExtendTabWidget;
@@ -565,29 +566,31 @@ private:
     void wsRecompute();          // re-runs kernel with current params, refreshes overlay
     void wsRefreshOverlay();     // builds the basin-coloured QImage and pushes to ClusterView
 
-    // ── DipSplit live-preview mode (Shift+D) ────────────────────────────
-    // Parallels the watershed preview but with no tunables — dipSplit's
-    // parameters control accept/reject, not the labelling itself, so
-    // there's nothing for arrows to adjust.  The preview just shows the
-    // proposed boundary; Enter commits, Esc cancels.
-    //
-    // Decision is computed once at entry via dipSplitDecide; the
-    // partition is rendered as coloured discs on top of the scatter
-    // (left half blue, right half red) using ClusterView's dipsplit
-    // overlay.  Enter calls dipSplitApply with the cached decision —
-    // no second algorithm pass.
-    bool                       dipPreviewActive  = false;
-    int                        dipClusterId = -1;
-    int                        dipMinSize     = 50;
-    float                      dipBloatFactor = 0.0f;
-    float                      dipValleyThresh = 0.20f;
-    KlustersDoc::DipSplitDecision dipDecision;
-    ClusterView*               dipScatter = nullptr;
-    KlustersView*              dipView    = nullptr;
+    // ── DipSplit (Shift+D) post-commit confirm ──────────────────────────
+    // No live preview: dipSplit runs the decision and (if accepted)
+    // commits immediately.  After commit, both new clusters are selected
+    // in the palette and a HUD is drawn over the active scatter view
+    // showing the metrics and the available next actions.  Two
+    // QShortcuts on the active view widget handle the keys:
+    //   Esc:    dipPostCommitUndo  → doc->undo() (single combined entry)
+    //   Enter:  dipPostCommitDismiss → clears HUD, keeps the split
+    // Switching views or invoking other curation actions also dismisses
+    // the HUD — the shortcuts are scoped to the host view widget.
+    bool                       dipPostCommitActive       = false;
+    ClusterView*               dipPostCommitScatter      = nullptr;
+    QShortcut*                 dipPostCommitEscShortcut    = nullptr;
+    QShortcut*                 dipPostCommitEnterShortcut  = nullptr;
+    QShortcut*                 dipPostCommitEnterShortcut2 = nullptr;  // numpad Enter
 
-    bool dipPreviewEnter();
-    void dipPreviewExit(bool commit);
-    void dipRefreshOverlay();    // builds the per-spike (X,Y,label) point list and pushes to ClusterView
+    void dipInstallPostCommitShortcuts(KlustersView* hostView);
+    void dipClearPostCommitShortcuts();
+    void dipDismissPostCommitHud();
+
+private Q_SLOTS:
+    void dipPostCommitUndo();
+    void dipPostCommitDismiss();
+
+private:
     
     /** Creates a new display.
      * @param type enum representing the type of view to be created.

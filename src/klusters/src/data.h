@@ -302,6 +302,35 @@ public:
                          int toCluster,
                          QList<int>& fromClusters, QList<int>& emptiedClusters);
 
+    /** Atomic two-way split of a single cluster.
+     *
+     *  Partitions every spike of @p sourceCluster into TWO new clusters
+     *  according to two disjoint row-sets, in a single rebuild of
+     *  spikesByCluster + clusterInfoMap, pushing exactly ONE Data-side
+     *  undo entry.  The source cluster is emptied and removed; both new
+     *  IDs land at the palette tail (assuming the caller chose them as
+     *  nextFreeClusterId() and nextFreeClusterId()+1).
+     *
+     *  Used by KlustersDoc::dipSplitApply.
+     *
+     *  @pre  leftRows ∪ rightRows covers every spike of sourceCluster
+     *        exactly once.  No validation is performed here.
+     *  @pre  leftId and rightId do not yet exist.  leftId != rightId.
+     *  @pre  sourceCluster exists.
+     *
+     *  @param[out] fromClusters     Set to {sourceCluster}.
+     *  @param[out] emptiedClusters  Set to {sourceCluster}.
+     *  @param[out] newClusters      Set to {leftId, rightId} ascending.
+     */
+    void splitClusterTwoWays(int sourceCluster,
+                              const QSet<dataType>& leftRows,
+                              int leftId,
+                              const QSet<dataType>& rightRows,
+                              int rightId,
+                              QList<int>& fromClusters,
+                              QList<int>& emptiedClusters,
+                              QList<int>& newClusters);
+
     /**
   * Deletes the clusters contained in @p clustersToDelete. The correponding spikes are assign to cluster 1 (the noise)
   * @param clustersToDelete a list of the cluster numbers (in ascending order) identifying the clusters to delete.

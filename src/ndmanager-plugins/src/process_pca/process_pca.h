@@ -55,6 +55,12 @@ struct arguments {
 	bool isNComponentsProvided;
 	bool isExtraFeaturesProvided;
 	bool isOffsetProvided;
+
+	// Optional electrode-group number for the progress bar label.
+	// When set (>= 0), the bar shows "[PCA-N]" instead of "[PCA]" so
+	// users running the wrapper script with parallel groups can tell
+	// which group's bar is which.
+	int  electrodeGroup;
 };
 
 

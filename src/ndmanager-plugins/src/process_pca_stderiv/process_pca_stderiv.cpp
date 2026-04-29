@@ -211,8 +211,13 @@ const bool dropLast = (dropCheckOrder == SDIFF_FIRST ||
 
     if(!inFile.empty()) fclose(in);
 
-    std::cerr << VERSION << ": transformed " << nSpikes << " spikes"
-              << " (" << nOutChan << "/" << nChan
-              << " channels; sdiff order " << orderArg << " + temporal dt)\n";
+    // Summary line removed: it spammed the terminal mid-bar in the
+    // ndm_pca_stderiv parallel-group flow (per-group log dumps cat'd
+    // back from the wrapper script, racing the live progress bars on
+    // /dev/tty).  The progress bars themselves are sufficient signal.
+    // Re-enable for direct-CLI debugging only:
+    //   std::cerr << VERSION << ": transformed " << nSpikes << " spikes"
+    //             << " (" << nOutChan << "/" << nChan
+    //             << " channels; sdiff order " << orderArg << " + temporal dt)\n";
     return 0;
 }

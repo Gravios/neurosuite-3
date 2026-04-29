@@ -2666,6 +2666,142 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
         clusterInfoMap->remove(static_cast<dataType>(cid));
 }
 
+// ---------------------------------------------------------------------------
+// Data::splitClusterTwoWays
+//
+// Atomic two-way split: takes one source cluster and partitions ALL its
+// spikes into TWO new clusters according to two disjoint row-sets, in a
+// single rebuild of spikesByCluster + clusterInfoMap.  The source is
+// emptied and dropped from the cluster list; both new IDs land at the
+// tail of the palette (assuming the caller chose them as
+// nextFreeClusterId() and nextFreeClusterId()+1).
+//
+// dipSplit's commit primitive.  Pushes a SINGLE Data-side undo entry
+// covering the whole operation.
+//
+// Preconditions:
+//   - leftRows ∪ rightRows must cover every spike of @p sourceCluster
+//     exactly once.  No validation here; dipSplit guarantees it by
+//     construction (every member spike has exactly one label, 0 or 1).
+//   - leftId and rightId must not already exist.
+//   - leftId != rightId.
+//   - sourceCluster must exist.
+// ---------------------------------------------------------------------------
+void Data::splitClusterTwoWays(int sourceCluster,
+                                const QSet<dataType>& leftRows,
+                                int leftId,
+                                const QSet<dataType>& rightRows,
+                                int rightId,
+                                QList<int>& fromClusters,
+                                QList<int>& emptiedClusters,
+                                QList<int>& newClusters)
+{
+    if (!clusterInfoMap->contains(static_cast<dataType>(sourceCluster))) return;
+    if (leftId == rightId) return;
+    if (clusterInfoMap->contains(static_cast<dataType>(leftId)))  return;
+    if (clusterInfoMap->contains(static_cast<dataType>(rightId))) return;
+
+    // First pass: walk the source's spikes (in temporal order via the
+    // existing spikesByCluster) and partition by label set.  Reads from
+    // current state, writes to local lists — does NOT mutate
+    // clusterInfoMap.  Watershed's integrateBasinLabeling uses this same
+    // discipline; pre-mutating the current map pollutes the undo
+    // snapshot when prepareUndo prepends the (now-corrupted) pointer.
+    QList<dataType> leftMoved;
+    QList<dataType> rightMoved;
+    {
+        const ClusterInfo& fi = (*clusterInfoMap)[static_cast<dataType>(sourceCluster)];
+        for (dataType i = fi.firstSpikePosition();
+             i < fi.firstSpikePosition() + fi.nbSpikes(); ++i) {
+            const dataType row1 = (*spikesByCluster)(1, i);
+            if (leftRows.contains(row1))
+                leftMoved.append(row1);
+            else if (rightRows.contains(row1))
+                rightMoved.append(row1);
+            // else: row not labelled — should not happen given dipSplit's
+            // construction.  Drop silently.
+        }
+    }
+    if (leftMoved.isEmpty() || rightMoved.isEmpty()) {
+        // Degenerate split — one side empty.  Bail without touching
+        // anything.  Caller treats this as small_child.
+        return;
+    }
+
+    // Second pass: build temp tables.  Three-stage construction matching
+    // integrateBasinLabeling:
+    //   2a. Copy untouched clusters (every cluster except the source).
+    //       Source is NOT copied — it dissolves.
+    //   2b. Append the leftId block.
+    //   2c. Append the rightId block.
+    SortableTable*  newSpk  = new SortableTable();
+    ClusterInfoMap* newInfo = new ClusterInfoMap();
+    newSpk->setSize(nbSpikes);
+
+    dataType pos = 1;
+
+    // 2a. Untouched clusters.
+    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+        const dataType cid      = it.key();
+        const dataType firstPos = it.value().firstSpikePosition();
+        const dataType nSpk     = it.value().nbSpikes();
+
+        if (cid == static_cast<dataType>(sourceCluster)) continue;
+
+        const dataType clStart = pos;
+        for (dataType i = firstPos; i < firstPos + nSpk; ++i) {
+            (*newSpk)(1, pos) = (*spikesByCluster)(1, i);
+            (*newSpk)(2, pos) = cid;
+            ++pos;
+        }
+        if (nSpk > 0)
+            newInfo->insert(cid, ClusterInfo(clStart, nSpk));
+    }
+
+    // 2b. leftId block at the tail.  leftMoved is already in temporal
+    // order from the first-pass scan (we walked the source in ascending
+    // spikesByCluster position).
+    {
+        const dataType clStart = pos;
+        for (dataType row1 : leftMoved) {
+            (*newSpk)(1, pos) = row1;
+            (*newSpk)(2, pos) = static_cast<dataType>(leftId);
+            ++pos;
+        }
+        newInfo->insert(static_cast<dataType>(leftId),
+            ClusterInfo(clStart, static_cast<dataType>(leftMoved.size())));
+    }
+
+    // 2c. rightId block — appended after leftId so rightId > leftId in
+    // the spikesByCluster layout, matching the ascending-key order
+    // QMap will iterate over newInfo.
+    {
+        const dataType clStart = pos;
+        for (dataType row1 : rightMoved) {
+            (*newSpk)(1, pos) = row1;
+            (*newSpk)(2, pos) = static_cast<dataType>(rightId);
+            ++pos;
+        }
+        newInfo->insert(static_cast<dataType>(rightId),
+            ClusterInfo(clStart, static_cast<dataType>(rightMoved.size())));
+    }
+
+    // Source as cluster 0 (noise) would change dim min/max; not a normal
+    // dipsplit target, but mirror moveSpikeSubset's criterion for safety.
+    const bool dimChanged = (sourceCluster == 0);
+
+    // Single Data-side undo entry covering the whole operation.  The
+    // pre-mutation clusterInfoMap is what gets pushed onto the undo
+    // stack as the "before" state — it's intact (we never modified it).
+    prepareUndo(newSpk, newInfo, dimChanged);
+
+    // Output bookkeeping for the caller.
+    fromClusters.append(sourceCluster);
+    emptiedClusters.append(sourceCluster);
+    newClusters.append(leftId);
+    newClusters.append(rightId);
+}
+
 void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged){
     //Store the current spikesByCluster in the undo list and make the temporary becomes the current one.
     spikesByClusterUndoList.prepend(spikesByCluster);

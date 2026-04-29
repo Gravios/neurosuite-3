@@ -132,7 +132,10 @@ once()
 
     # Compute PCA on the transformed waveforms.
     # Use nEffective (reduced) channel count for rank-deficient derivatives.
+    # -g N labels the bar [PCA-N] so parallel-group runs are
+    # distinguishable in the terminal output.
     process_pca \
+        -g $electrodeGroup \
         -f $session.fetD.$electrodeGroup.tmp \
         -n $nEffective \
         -w $waveformLength \
@@ -189,6 +192,11 @@ then
            [ $groupStatus -ne $OUTPUTS_EXIST ] && \
            [ $groupStatus -ne $INPUTS_MISSING ]
         then
+            # Emit a red ✗ marker bar so the user can see at a glance
+            # which group(s) failed amidst the green ✓ markers.  Mirrors
+            # ProgressBar's failure marker style for consistency with
+            # the live bars.
+            print_group_failed PCA $((i+1))
             overallStatus=$groupStatus
         fi
     done
