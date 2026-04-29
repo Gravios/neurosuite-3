@@ -1324,9 +1324,10 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 //
 // Shared post-mutation UI plumbing for any operation that produces ONE new
 // cluster derived from existing ones.  Used by createNewCluster (polygon
-// selection) and dipSplitCluster (bimodality split).  Keeping this in one
-// place ensures these paths can't drift apart and re-introduce bugs like
-// the missing palette refresh that hid DipSplit's freshly-created cluster.
+// selection) and dipSplitApply (bimodality split commit).  Keeping this in
+// one place ensures these paths can't drift apart and re-introduce bugs
+// like the missing palette refresh that hid DipSplit's freshly-created
+// cluster.
 // ---------------------------------------------------------------------------
 void KlustersDoc::commitClusterCreation(int newId,
                                          QList<int>& fromClusters,
@@ -5196,47 +5197,13 @@ KlustersDoc::dipSplitDecide(int   clusterId,
 }
 
 // ---------------------------------------------------------------------------
-// KlustersDoc::dipSplitCluster
-//
-// Driver: runs the pure decide function, and if it accepted the split,
-// commits it via Data::moveSpikeSubset + commitClusterCreation.  Logs the
-// algorithm parameters and decision metrics to the curation log alongside
-// the standard before/after cluster snapshots.
-// ---------------------------------------------------------------------------
-KlustersDoc::DipSplitResult
-KlustersDoc::dipSplitCluster(int   clusterId,
-                              int   minSize,
-                              float bloatFactor,
-                              float valleyThresh)
-{
-    // Two-step thin wrapper: decide, then apply if the decision was
-    // positive.  The live-preview UI calls dipSplitDecide on its own
-    // (so it can render the boundary), then calls dipSplitApply on
-    // commit — Decide → Render → Commit, no double computation.
-    const DipSplitDecision D =
-        dipSplitDecide(clusterId, minSize, bloatFactor, valleyThresh);
-    if (!D.accepted) {
-        DipSplitResult R;
-        R.accepted   = false;
-        R.n0         = D.n0;
-        R.n1         = D.n1;
-        R.bestPC     = D.bestPC;
-        R.bestDepth  = D.bestDepth;
-        R.mahal2P90  = D.mahal2P90;
-        R.chi2_90    = D.chi2_90;
-        R.deltaBIC   = D.deltaBIC;
-        R.reason     = D.reason;
-        return R;
-    }
-    return dipSplitApply(D, minSize, bloatFactor, valleyThresh);
-}
-
-// ---------------------------------------------------------------------------
 // KlustersDoc::dipSplitApply
 //
-// Commits a pre-computed DipSplitDecision.  Used by both the synchronous
-// dipSplitCluster wrapper and the live-preview UI.  No algorithm work
-// happens here — the decision is given.  This function only:
+// Commits a pre-computed DipSplitDecision.  Used by the live-preview UI:
+// dipSplitDecide() runs at preview entry, the proposed partition is
+// rendered as coloured discs over the scatter, and Enter calls
+// dipSplitApply with the cached decision.  No algorithm work happens
+// here — the decision is given.  This function only:
 //   1. Allocates a new cluster ID.
 //   2. Calls Data::moveSpikeSubset to relabel the right-half spikes.
 //   3. Renames the source to the palette tail.
