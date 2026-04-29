@@ -300,7 +300,7 @@ All operations push onto the undo stack. The full session history is preserved u
 
 ### DipSplit — automatic bimodal split
 
-DipSplit (`D`) tests the active cluster for bimodality and splits it
+DipSplit (`Shift+D`) tests the active cluster for bimodality and splits it
 when the test is clear. The pipeline:
 
 1. Compute the cluster's top PCA directions in feature space.
@@ -315,11 +315,28 @@ when the test is clear. The pipeline:
    setting `DipSplit bloat factor` to `0` (the default in Klusters).
 5. Apply a BIC two-vs-one gate as a final sanity check.
 
-If all gates pass, the new cluster is created via the same
-`commitClusterCreation` plumbing as a manual lasso split, with full
-undo support and source-cluster waveform/correlogram cache invalidation.
-Every gate decision is recorded in the curation log (see below) for
-later analysis.
+If all gates pass, the right-half spikes go to a new cluster ID at
+the tail of the palette and the source (now holding the left-half
+spikes) is **renamed to the next free ID** so it lands at the tail
+too. Both halves of the split therefore appear at the end of the
+palette, matching the recluster / watershed convention. The status
+bar reports the new IDs:
+
+```
+DipSplit: cluster 5 → 18 (412 spikes) + 19 (287 spikes)   PC1 depth=0.412  ΔBIC=8.3
+```
+
+Here cluster `5` was the input; `18` is its new tail ID (left-half),
+`19` is the new cluster (right-half). The mental model is that `5`
+disappears and is replaced by two children at the end, even though
+internally the source ID is renamed rather than allocated fresh.
+
+Both views are updated, every gate decision is recorded in the
+curation log (see below) for later analysis, and full undo support
+is preserved. Note that DipSplit takes **two undo entries**: the
+first Ctrl+Z reverts the source rename (source returns to its
+original ID, both halves still split); the second Ctrl+Z reverts the
+split (source recovers all spikes).
 
 Preferences live under **Settings → Preferences → General**:
 

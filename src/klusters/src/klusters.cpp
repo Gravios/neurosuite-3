@@ -4819,9 +4819,13 @@ void KlustersApp::slotDipSplit()
     // Compose a one-line status and a longer details block for the log/dialog.
     QString statusLine;
     if (r.accepted) {
-        statusLine = tr("DipSplit: cluster %1 → %1 (%2 spikes) + %3 (%4 spikes)   "
-                        "PC%5 depth=%6  ΔBIC=%7")
-            .arg(clusterId).arg(r.n0)
+        // Both halves of the split now live at the tail of the palette;
+        // r.renamedSourceId holds the new tail-end ID of the original
+        // (left-half) cluster, r.newClusterId the right-half.  Show both.
+        statusLine = tr("DipSplit: cluster %1 → %2 (%3 spikes) + %4 (%5 spikes)   "
+                        "PC%6 depth=%7  ΔBIC=%8")
+            .arg(clusterId)
+            .arg(r.renamedSourceId).arg(r.n0)
             .arg(r.newClusterId).arg(r.n1)
             .arg(r.bestPC)
             .arg(r.bestDepth, 0, 'f', 3)
