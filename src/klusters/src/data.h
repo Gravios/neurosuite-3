@@ -239,6 +239,34 @@ public:
   */
     QMap<int,int> createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters);
 
+    /** Generic relabel-by-spike variant of createNewClusters.  Each
+     *  spike's feature-row index maps via @p featureRowToBasin to a
+     *  basin label (>= 1).  Spikes not present in the map keep their
+     *  current cluster.  Spikes whose basin label is the same value
+     *  for all input spikes from one source cluster are also a no-op
+     *  (no new cluster is allocated for that case).
+     *
+     *  Used by the watershed action (W key): the watershed kernel
+     *  produces a labeling over points in the active scatter view's
+     *  2D feature space; each unique basin becomes one new cluster.
+     *
+     *  @param featureRowToBasin map from .fet row index (1-based) to
+     *         a small positive basin number.
+     *  @param clustersOfOrigin clusters whose spikes are eligible
+     *         to be reassigned.
+     *  @param emptyClusters out-param: source clusters that became
+     *         empty because all their spikes moved to new ones.
+     *  @return map old-cluster-id -> first new-cluster-id (note:
+     *         a single source cluster may spawn multiple new clusters
+     *         if it contained spikes belonging to multiple basins;
+     *         the additional new IDs are the consecutive integers
+     *         after the first, ordered by basin label ascending). */
+    QMap<int,int> createNewClustersFromLabeling(
+        const QHash<dataType,int>& featureRowToBasin,
+        const QList<int>& clustersOfOrigin,
+        QList<int>& emptyClusters,
+        QList<int>& allNewClusters);
+
     /**
   * Removes spikes from some clusters and assign them to the cluster @p destinationCluster
   * which is either the cluster 0, corresponding to the artifact, or the cluster 1, corresponding to the noise.
@@ -303,6 +331,26 @@ public:
   * @param clusterIdsNewOld map between new and old cluster ids.
   */
     void renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNewOld);
+
+    /** Targeted partial rename.  Each (oldId → newId) entry in `oldToNew`
+     *  is applied to the spike table, clusterInfoMap, waveform/correlation
+     *  caches.  Clusters not present in the map are left unchanged.
+     *  Used by the palette T shortcut to renumber selected clusters to
+     *  IDs greater than the current maximum, without disturbing the
+     *  numbering of unrelated clusters (which is what `renumber` would do).
+     *
+     *  Preconditions:
+     *   - new IDs in `oldToNew` must not collide with any existing
+     *     cluster ID OR with any other new ID in the same map;
+     *   - oldId must already exist in clusterInfoMap;
+     *   - 0 and 1 (artefact / noise) must NOT be remapped.
+     *
+     *  Pushes the pre-rename spike table onto the undo stack via
+     *  prepareUndo so Ctrl+Z reverses the operation.  Caller is
+     *  responsible for the matching KlustersDoc-level undo bookkeeping
+     *  (clusterColorList snapshot via prepareClusterColorUndo, etc.).
+     */
+    void renumberPartial(const QMap<int,int>& oldToNew);
 
     /**Makes all the internal changes due to a modification of the number of undo.
   * @param newNbUndo the futur new number of undo.

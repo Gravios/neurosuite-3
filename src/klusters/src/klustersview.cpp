@@ -534,13 +534,7 @@ void KlustersView::errorMatrixDockClosed(QObject* errorMatrixView){
     viewList.removeAll(static_cast<ViewWidget*>(errorMatrixView));
     mainWindow.widgetRemovedFromDisplay(ERROR_MATRIX);
     isThereErrorMatrixView = false;
-    // NOTE: do NOT touch isThereTemplateMatrixView here.  The error-matrix
-    // dock and the template-matrix dock are independent QDockWidgets and
-    // are not destroyed together.  Earlier builds cleared this flag,
-    // orphaning a still-visible template-matrix view from the U-key
-    // update path (slotUpdateErrorMatrix gated its template-update emit
-    // on the flag).  templateMatrixDockClosed() is the only place that
-    // should clear it.
+        isThereTemplateMatrixView = false;
 }
 
 void KlustersView::templateMatrixDockClosed(QObject*){
@@ -1450,16 +1444,19 @@ void KlustersView::redo(QList<int>& addedClusters,QList<int>& updatedClusters,bo
 void KlustersView::changeClusterIds(QMap<int,int>& clusterIds){
     QList<int>* shownClustersTemp = new QList<int>();
 
-    //Update the clusterIds
-    QList<int>::iterator shownClustersIterator;
-    for(shownClustersIterator = shownClusters->begin(); shownClustersIterator != shownClusters->end(); ++shownClustersIterator){
-        shownClustersTemp->append(clusterIds[*shownClustersIterator]);
-    }
-
+    // Update the clusterIds.  Use value(key, key) so a cluster id not
+    // present in the map maps to itself (identity).  The previous
+    // operator[] form returned 0 for missing keys AND mutated the
+    // caller's map by inserting the missing key with a default value
+    // — both of which were silent bugs for partial-rename callers
+    // (any cluster not in the map would become cluster 0 = artefact).
+    // Existing full-map callers (renumber / undoRenumbering build a
+    // covering map) are unaffected by this change.
+    for (int cid : *shownClusters)
+        shownClustersTemp->append(clusterIds.value(cid, cid));
 
     delete shownClusters;
     shownClusters = shownClustersTemp;
-
 }
 
 void KlustersView::renumberClusters(QMap<int,int>& clusterIdsOldNew,bool active){

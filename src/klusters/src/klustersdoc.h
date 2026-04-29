@@ -26,6 +26,7 @@
 #include <klustersshared/channelcolors.h>
 #include "clustersprovider.h"
 #include "curationlogger.h"
+#include "watershed2d.h"
 
 
 // include files for QT
@@ -222,17 +223,6 @@ public:
     * @param clusterId the id of the cluster to where the clusteres in clustersToDelete will be moved.
     */
     void deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId);
-
-    /**
-    * Moves the given cluster to the end of the palette display order.
-    * Snapshots the cluster-colour list onto the undo stack first so the
-    * action can be reversed with Ctrl+Z.  Triggers a palette refresh and
-    * returns the user's previous selection unchanged.
-    * @param clusterId the cluster to move to the end.
-    * @return true if the cluster existed and was moved (or was already at
-    *         the end); false if no such cluster.
-    */
-    bool moveClusterToEnd(int clusterId);
 
     /**
     * Removes spikes from some clusters and assign them to the cluster 1, the cluster for the noise.
@@ -708,6 +698,24 @@ public Q_SLOTS:
 
     /**Renumbers the clusters, so the the clusterIds will be consecutive.*/
     void renumberClusters();
+
+    /** Renumber selected clusters to IDs greater than the current global
+     *  maximum, so they end up at the tail of the (sorted-by-ID) palette.
+     *  Triggered by the palette T shortcut.  Single undo entry covers
+     *  the whole batch.  IDs 0 / 1 (artefact / noise) and the
+     *  global-max cluster are filtered by the caller. */
+    void renumberClustersToEnd(QList<int> clustersToRenumber);
+
+    /** Run a 2D density watershed on the *selected* clusters in the
+     *  palette using the active scatter view's X/Y feature dimensions,
+     *  splitting them into one new cluster per basin.  Triggered by
+     *  the W key.  Returns the number of new clusters produced (0 on
+     *  failure or if input has fewer than ~50 spikes / produces just
+     *  one basin).  Caller-supplied config controls grid size, smoothing,
+     *  peak height, and minimum basin size; passing 0 for minPeakHeight
+     *  or minBasinSize requests data-driven auto-tuning. */
+    int watershedSelectedClusters(const QList<int>& selectedClusters,
+                                  const Watershed2D::Config& cfg);
 
     /**Launchs an autoSave by starting the autoSaveThread.*/
     void launchAutoSave();

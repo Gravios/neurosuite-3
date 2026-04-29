@@ -154,19 +154,6 @@ bool ItemColors::remove(int identifier, SelectionMode mode){
     else return false;//unknow mode
 }
 
-bool ItemColors::moveItemToEnd(int itemId){
-  // BY_ITEM_NUMBER lookup of the existing entry.  takeAt() detaches it
-  // from the list without freeing it, so we can re-append the same
-  // ItemColor object — colour, label, and isChanged flag are preserved
-  // exactly.  No-op (returns true) when the item is already at the end.
-  const int index = itemColorIndex(itemId);
-  if(index == -1) return false;
-  if(index == itemList.count() - 1) return true;
-  ItemColor* moved = itemList.takeAt(index);
-  itemList.append(moved);
-  return true;
-}
-
 ItemColors::ItemColor* ItemColors::itemColor(int itemId) const{
 
   for (int i = 0; i < itemList.size(); ++i) {

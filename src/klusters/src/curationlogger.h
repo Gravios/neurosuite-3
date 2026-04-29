@@ -175,7 +175,8 @@ public:
         MOVE_SPIKES     = 10, ///< Manual subset reassignment between clusters
         UNDO            = 11, ///< Curator reverted the preceding action
         REDO            = 12, ///< Curator re-applied an undone action
-        REORDER_PALETTE = 13, ///< Cluster moved to end of palette (T key)
+        RENUMBER_PARTIAL = 13, ///< Targeted renumber-to-end (palette T key)
+        WATERSHED       = 14, ///< 2D density watershed split (W key)
     };
 
     CurationLogger();
