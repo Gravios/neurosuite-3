@@ -51,6 +51,15 @@
 #include <QListWidget>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <QFormLayout>
+#include <QSpinBox>
+#include <QPushButton>
+#include <QSlider>
+#include <QGridLayout>
+#include <QImage>
+#include <QPixmap>
+#include <QFrame>
+#include <QMessageBox>
 #include <QLabel>
 #include <QPrinter>
 #include <QSplitter>
@@ -420,8 +429,17 @@ void KlustersApp::createMenus()
 
     mSelectTime = toolsMenu->addAction(tr("Select Time"));
     mSelectTime->setIcon(QIcon(":/icons/time_tool"));
-    mSelectTime->setShortcut(Qt::Key_W);
+    // Note: Key_W formerly bound here; reassigned to Watershed split.
+    // Select Time can still be invoked via the menu / toolbar icon.
     connect(mSelectTime,&QAction::triggered, this,&KlustersApp::slotSelectTime);
+
+    toolsMenu->addSeparator();
+    mWatershed = toolsMenu->addAction(tr("&Watershed Split"));
+    mWatershed->setShortcut(Qt::Key_W);
+    mWatershed->setStatusTip(tr(
+        "Split the currently-shown clusters into one new cluster per "
+        "density basin in the active scatter view."));
+    connect(mWatershed, &QAction::triggered, this, &KlustersApp::slotWatershedSplit);
 
 
 
@@ -2561,6 +2579,277 @@ void KlustersApp::slotSelectTime(){
 }
 
 
+// ---------------------------------------------------------------------------
+// Watershed dialog (W key)
+//
+// Modal dialog: shows a 256×256 heatmap of the smoothed density with each
+// basin coloured by its watershed label.  Two sliders: horizontal slider
+// controls the smoothing sigma, vertical slider controls the peak-height
+// threshold.  Arrow keys also adjust (Left/Right = sigma, Up/Down = peak
+// height).  Apply commits.
+//
+// Implementation choice: re-runs the watershed kernel synchronously on
+// each slider change (and on dialog open).  ~50ms for 10k points on a
+// 256² grid; not noticeable in interactive use.
+//
+// To keep the dialog self-contained, the kernel-rerun helper and image-
+// rendering helpers live as lambdas inside this slot.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotWatershedSplit()
+{
+    if (!doc || !activeView() || !clusterPalette) return;
+    if (doesActiveDisplayContainProcessWidget()) return;
+
+    QList<int> sel = clusterPalette->selectedClusters();
+    sel.removeAll(0);
+    sel.removeAll(1);
+    if (sel.isEmpty()) {
+        statusBar()->showMessage(
+            tr("Watershed: select one or more clusters in the palette first."), 4000);
+        return;
+    }
+
+    // ── Pull the (x, y, row) tuples ONCE up-front.  The kernel re-runs
+    // ── on each slider change but the input data is immutable across
+    // ── reruns, so we cache it here.
+    KlustersView* aview = activeView();
+    const int dimX = aview->abscissaDimension();
+    const int dimY = aview->ordinateDimension();
+
+    std::vector<double> xs;
+    std::vector<double> ys;
+    {
+        size_t totalEst = 0;
+        for (int cid : sel) totalEst += doc->data().nbOfSpikes(cid);
+        xs.reserve(totalEst);
+        ys.reserve(totalEst);
+    }
+    for (int cid : sel) {
+        SortableTable subset;
+        if (!doc->data().spikePositions(cid, subset)) continue;
+        const int n = static_cast<int>(subset.nbOfColumns());
+        for (int i = 1; i <= n; ++i) {
+            const auto row = subset(1, i);
+            xs.push_back(static_cast<double>(doc->data().featureValue(row, dimX)));
+            ys.push_back(static_cast<double>(doc->data().featureValue(row, dimY)));
+        }
+    }
+    if (xs.size() < 50) {
+        statusBar()->showMessage(
+            tr("Watershed: not enough spikes (need at least 50)."), 4000);
+        return;
+    }
+
+    // ── Build the dialog.
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Watershed Split — %1 cluster%2, %3 spikes")
+                       .arg(sel.size()).arg(sel.size() == 1 ? "" : "s")
+                       .arg(static_cast<int>(xs.size())));
+    dlg.setModal(true);
+
+    QVBoxLayout* mainLayout = new QVBoxLayout(&dlg);
+
+    // Heatmap label.  256x256 native; enlarged 1.5× for clarity.
+    QLabel* heatmap = new QLabel(&dlg);
+    heatmap->setFixedSize(384, 384);
+    heatmap->setAlignment(Qt::AlignCenter);
+    heatmap->setFrameStyle(QFrame::Box | QFrame::Plain);
+    heatmap->setLineWidth(1);
+
+    // Sliders.  Sigma (horizontal): 1..32 cells.  PeakHeight (vertical,
+    // displayed as percent of grid max): 0..50.
+    QSlider* sigmaSlider = new QSlider(Qt::Horizontal, &dlg);
+    sigmaSlider->setRange(1, 32);
+    sigmaSlider->setSingleStep(1);
+    sigmaSlider->setPageStep(2);
+
+    QSlider* peakSlider  = new QSlider(Qt::Vertical, &dlg);
+    peakSlider->setRange(0, 50);     // 0..50% of grid max
+    peakSlider->setSingleStep(1);
+    peakSlider->setPageStep(5);
+    peakSlider->setInvertedAppearance(true);  // top of slider = high threshold
+
+    // Info / status line.
+    QLabel* infoLabel = new QLabel(&dlg);
+    infoLabel->setMinimumWidth(380);
+
+    // Layout: heatmap with peakSlider on the right, sigmaSlider below.
+    QGridLayout* viewLayout = new QGridLayout();
+    viewLayout->setSpacing(4);
+    viewLayout->addWidget(heatmap,     0, 0);
+    viewLayout->addWidget(peakSlider,  0, 1);
+    viewLayout->addWidget(sigmaSlider, 1, 0);
+    QLabel* sigmaLabel = new QLabel(tr("← smoothing sigma →"), &dlg);
+    sigmaLabel->setAlignment(Qt::AlignCenter);
+    QLabel* peakLabel  = new QLabel(tr("peak\nheight"), &dlg);
+    peakLabel->setAlignment(Qt::AlignCenter);
+    viewLayout->addWidget(peakLabel,   1, 1);
+    viewLayout->addWidget(sigmaLabel,  2, 0);
+    mainLayout->addLayout(viewLayout);
+    mainLayout->addWidget(infoLabel);
+
+    QDialogButtonBox* bb = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    bb->button(QDialogButtonBox::Ok)->setText(tr("&Apply"));
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    mainLayout->addWidget(bb);
+
+    // ── State shared between rerun lambda and slider callbacks.
+    Watershed2D::Result lastRes;
+
+    // Lambda: render lastRes.smoothedGrid + lastRes.cellLabels into a QImage.
+    // Cells with label > 0 get a hue based on the label index; unassigned
+    // cells (label 0) get a grayscale density value.  Background scaled
+    // to grid max.
+    auto renderHeatmap = [&]() -> QImage {
+        const int W = lastRes.gridSize;
+        if (W <= 0 || lastRes.smoothedGrid.empty()) return QImage();
+        QImage img(W, W, QImage::Format_RGB32);
+        // Find smoothed-grid max for scaling.
+        float gmax = 0.0f;
+        for (float v : lastRes.smoothedGrid) if (v > gmax) gmax = v;
+        if (gmax <= 0) gmax = 1.0f;
+        // Distinct colours for first ~20 basins.  Beyond that, recycle.
+        auto basinHue = [](int label) -> int {
+            return (label * 47) % 360;
+        };
+        for (int y = 0; y < W; ++y) {
+            for (int x = 0; x < W; ++x) {
+                const int cellIdx = y * W + x;
+                const int lab     = lastRes.cellLabels[cellIdx];
+                const float v     = lastRes.smoothedGrid[cellIdx];
+                const float vN    = std::min(1.0f, v / gmax);
+                QColor c;
+                if (lab > 0) {
+                    c.setHsv(basinHue(lab), 200, static_cast<int>(80 + 175 * vN));
+                } else {
+                    const int g = static_cast<int>(40 * vN);
+                    c.setRgb(g, g, g);
+                }
+                // y is flipped so the visual axis matches scatter view orientation.
+                img.setPixel(x, W - 1 - y, c.rgb());
+            }
+        }
+        return img;
+    };
+
+    auto rerun = [&]() {
+        Watershed2D::Config cfg;
+        cfg.gridSize       = 256;
+        cfg.smoothSigma    = sigmaSlider->value();
+        cfg.minPeakHeight  = peakSlider->value() * 0.01;  // sentinel? no — encode as multiplier of gridMax in kernel
+        cfg.minBasinSize   = 0;     // auto
+        cfg.keepGrid       = true;
+        // peakSlider scale: 0..50 -> 0..0.50 (fraction of gridMax).  We
+        // can't pass that directly; the kernel currently treats minPeakHeight
+        // as absolute.  So we run a quick first pass to discover gridMax,
+        // then a second pass with the absolute threshold derived from
+        // the slider's percent.  Cheap because the histogram + smoothing
+        // dominate, not a big deal to do twice.
+        // (Simpler alternative: extend the kernel to accept a fractional
+        // threshold.  For now, do two passes.)
+        Watershed2D::Config probeCfg = cfg;
+        probeCfg.minPeakHeight = 0;       // auto = 5% of max -- just to learn max
+        Watershed2D::Result probe = Watershed2D::run(xs, ys, probeCfg);
+        if (!probe.ok) { lastRes = probe; return; }
+        // probe.effPeakHeight = 0.05 * gridMax, so gridMax = probe.effPeakHeight / 0.05
+        const double gridMax = probe.effPeakHeight / 0.05;
+        cfg.minPeakHeight = (peakSlider->value() / 100.0) * gridMax;
+        if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;     // 0% slider → use auto
+        lastRes = Watershed2D::run(xs, ys, cfg);
+    };
+
+    auto refreshUi = [&]() {
+        const QImage img = renderHeatmap();
+        if (!img.isNull()) {
+            heatmap->setPixmap(QPixmap::fromImage(img).scaled(
+                heatmap->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+        }
+        int unassigned = 0;
+        for (int lab : lastRes.pointLabels) if (lab == 0) ++unassigned;
+        const int N = static_cast<int>(lastRes.pointLabels.size());
+        infoLabel->setText(tr(
+            "%1 basins, %2 peaks (pre-merge)  ·  %3 / %4 spikes unassigned  "
+            "·  σ=%5 cells, threshold=%6%% of max")
+            .arg(lastRes.numBasins).arg(lastRes.numPeaks)
+            .arg(unassigned).arg(N)
+            .arg(lastRes.effSigma, 0, 'f', 1)
+            .arg(peakSlider->value()));
+    };
+
+    // Initial run with all-auto, then snap sliders to those values.
+    {
+        Watershed2D::Config cfg;
+        cfg.keepGrid = true;
+        lastRes = Watershed2D::run(xs, ys, cfg);
+    }
+    if (!lastRes.ok) {
+        QMessageBox::information(this, tr("Watershed Split"), tr(
+            "Watershed could not run on this data — input may be degenerate "
+            "(all spikes share an X or Y feature value)."));
+        return;
+    }
+    {
+        // Snap sliders.  Sigma comes back already in [1, 32]ish range.
+        // Threshold needs to be expressed as % of gridMax.
+        sigmaSlider->blockSignals(true);
+        peakSlider->blockSignals(true);
+        sigmaSlider->setValue(qBound(1, static_cast<int>(std::round(lastRes.effSigma)), 32));
+        // effPeakHeight is auto = 5% of gridMax, so slider value = 5
+        peakSlider->setValue(5);
+        sigmaSlider->blockSignals(false);
+        peakSlider->blockSignals(false);
+    }
+    refreshUi();
+
+    auto onSlider = [&]() {
+        rerun();
+        refreshUi();
+    };
+    connect(sigmaSlider, &QSlider::valueChanged, &dlg, onSlider);
+    connect(peakSlider,  &QSlider::valueChanged, &dlg, onSlider);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        if (clusterPalette) clusterPalette->setFocusToList();
+        return;
+    }
+
+    // ── User accepted.  Apply lastRes to the document.
+    Watershed2D::Config applyCfg;
+    applyCfg.gridSize     = 256;
+    applyCfg.smoothSigma  = sigmaSlider->value();
+    {
+        // Match exactly what the dialog showed.
+        Watershed2D::Config probeCfg;
+        probeCfg.minPeakHeight = 0;
+        Watershed2D::Result probe = Watershed2D::run(xs, ys, probeCfg);
+        const double gridMax = probe.effPeakHeight / 0.05;
+        applyCfg.minPeakHeight = (peakSlider->value() / 100.0) * gridMax;
+        if (applyCfg.minPeakHeight < 1e-6) applyCfg.minPeakHeight = 0;
+    }
+    applyCfg.minBasinSize  = 0;     // auto
+
+    slotStatusMsg(tr("Applying watershed split..."));
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const int nNew = doc->watershedSelectedClusters(sel, applyCfg);
+    QApplication::restoreOverrideCursor();
+
+    if (nNew == 0) {
+        statusBar()->showMessage(tr(
+            "Watershed: no split — only one density basin found at the chosen settings."), 5000);
+    } else {
+        statusBar()->showMessage(
+            tr("Watershed: %1 new clusters created from %2 source%3.")
+                .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
+            4000);
+    }
+
+    if (clusterPalette) clusterPalette->setFocusToList();
+    slotStatusMsg(tr("Ready."));
+}
+
+
 void KlustersApp::slotSingleColorUpdate(int clusterId){
     if (!doc || !activeView()) return;
     //Trigger the action only if the active display does not contain a ProcessWidget
@@ -4666,42 +4955,58 @@ void KlustersApp::slotNudgeTimestampPlus()
 
 // ---------------------------------------------------------------------------
 // Move-selected-clusters-to-end (palette T key)
+//
+// Renumbers each selected cluster to maxId+1, maxId+2, ... so they end up
+// at the end of the palette (palette is sorted by cluster ID).  This is a
+// pure rename — no spike data changes, no merging.  Single undo entry
+// covers the whole operation.
+//
+// Edge cases:
+//   - the highest-numbered cluster is filtered out (already at the end)
+//   - 0 / 1 (artefact / noise) are filtered (special-cased throughout)
+//   - empty selection or only-already-at-end → status message, no-op
 // ---------------------------------------------------------------------------
 void KlustersApp::slotMoveSelectedClustersToEnd()
 {
-    if (!doc || !clusterPalette) return;
-    const QList<int> sel = clusterPalette->selectedClusters();
+    if (!doc || !clusterPalette || !activeView()) return;
+    QList<int> sel = clusterPalette->selectedClusters();
     if (sel.isEmpty()) {
         statusBar()->showMessage(
             tr("Select a cluster in the palette first."), 3000);
         return;
     }
 
-    // Move each selected cluster to the end, preserving their relative
-    // order among themselves.  Iterating in palette order means the
-    // first-selected ends up earliest among the moved entries (and last
-    // among the whole list); iterating in reverse would invert that.
-    // doc->moveClusterToEnd snapshots the colour list once per call —
-    // each move is its own undo step.  For "T" specifically, the user
-    // typically has one cluster selected, so this is rarely an issue.
-    for (int cid : sel) {
-        if (!doc->moveClusterToEnd(cid)) {
-            statusBar()->showMessage(
-                tr("Could not move cluster %1.").arg(cid), 3000);
-            break;
-        }
+    // Filter: drop the global-max cluster and 0/1 (the rename would be a
+    // no-op for the max, and remapping 0/1 would corrupt special-cluster
+    // semantics).
+    const QList<dataType> allIds = doc->data().clusterIds();
+    if (!allIds.isEmpty()) {
+        const int globalMax = static_cast<int>(allIds.last());
+        sel.removeAll(globalMax);
+    }
+    sel.removeAll(0);
+    sel.removeAll(1);
+
+    if (sel.isEmpty()) {
+        statusBar()->showMessage(
+            tr("Nothing to move — selection is already at the end."), 3000);
+        clusterPalette->setFocusToList();
+        return;
     }
 
-    // Re-select the moved clusters (palette refresh inside moveClusterToEnd
-    // preserved active-view selection but lost the multi-select highlight)
-    // and keep palette focus so arrow-nav resumes.
-    clusterPalette->selectItems(sel);
+    // Keep palette focus through the renumber so arrow-nav resumes
+    // immediately.  doc->renumberClustersToEnd handles the data + view
+    // notification + palette refresh.
+    doc->renumberClustersToEnd(sel);
     clusterPalette->setFocusToList();
-    statusBar()->showMessage(
-        tr("Cluster %1 moved to end.").arg(
-            sel.size() == 1 ? QString::number(sel.first())
-                            : tr("%1 clusters").arg(sel.size())),
-        2000);
+
+    if (sel.size() == 1) {
+        statusBar()->showMessage(
+            tr("Cluster %1 renumbered to end.").arg(sel.first()), 2500);
+    } else {
+        statusBar()->showMessage(
+            tr("%1 clusters renumbered to end.").arg(sel.size()), 2500);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4731,7 +5036,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"A",              "Delete artefact spikes (move to cluster 0)"},
             {"Shift+Delete",   "Move whole selected cluster to artefact"},
             {"Z",              "Zoom mode"},
-            {"W",              "Select time region"},
+            {"W",              "Watershed split — partition selected clusters by 2D density basins"},
             {"U",              "Update error matrix (+ template matrix if open)"},
             {"F",              "Toggle autoscale in cluster view"},
             {"Enter / Return", "Close selection polygon (New / Split modes)"},

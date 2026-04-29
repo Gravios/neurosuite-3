@@ -48,6 +48,7 @@
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
+#include "watershed2d.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include "clusterPalette.h"
@@ -1323,55 +1324,6 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 // place ensures these paths can't drift apart and re-introduce bugs like
 // the missing palette refresh that hid DipSplit's freshly-created cluster.
 // ---------------------------------------------------------------------------
-bool KlustersDoc::moveClusterToEnd(int clusterId)
-{
-    if (!clusterColorList || !clusterColorList->contains(clusterId))
-        return false;
-    // No-op if already at the end.  itemId() is BY_INDEX, so the last
-    // element's itemId equals clusterId iff it's already at the end.
-    const int n = clusterColorList->numberOfItems();
-    if (n > 0 && clusterColorList->itemId(n - 1) == clusterId)
-        return true;
-
-    // Snapshot pre-action state for undo.  prepareUndo() (no args) pushes
-    // empty added/modified/deleted lists onto the undo stack and snapshots
-    // clusterColorList — exactly what we need: the spike table is unchanged
-    // by a re-order, so no Data::prepareUndo is required.  The matching
-    // KlustersDoc::undo path will see empty data lists and skip the spike
-    // table swap (clearing caches as a side-effect, which is fine).
-    logBefore(CurationLogger::ActionType::REORDER_PALETTE,
-              QList<int>{ clusterId });
-    prepareUndo();
-
-    clusterColorList->moveItemToEnd(clusterId);
-
-    // Refresh the palette to reflect the new order.  Preserve the user's
-    // current selection; the palette itself stays focussed (caller's
-    // responsibility).
-    QList<int> shown;
-    KlustersView* activeView =
-        app()->activeView();
-    if (activeView) {
-        const QList<int>& cur = activeView->clusters();
-        for (int c : cur) shown.append(c);
-    }
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(shown);
-
-    logAfter(QList<int>{ clusterId });
-    return true;
-}
-
-
-// ---------------------------------------------------------------------------
-// KlustersDoc::commitClusterCreation
-//
-// Shared post-mutation UI plumbing for any operation that produces ONE new
-// cluster derived from existing ones.  Used by createNewCluster (polygon
-// selection) and dipSplitCluster (bimodality split).  Keeping this in one
-// place ensures these paths can't drift apart and re-introduce bugs like
-// the missing palette refresh that hid DipSplit's freshly-created cluster.
-// ---------------------------------------------------------------------------
 void KlustersDoc::commitClusterCreation(int newId,
                                          QList<int>& fromClusters,
                                          QList<int>& emptiedClusters,
@@ -1575,6 +1527,143 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
             logAfter(resultIds);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::watershedSelectedClusters
+//
+// Run a 2D density watershed on the *selected* clusters in the palette,
+// using the active scatter view's X/Y feature dimensions.  Each watershed
+// basin becomes a new cluster; the source clusters are dissolved (their
+// spikes redistributed across new clusters or, if some spikes fell on
+// watershed lines / below density threshold, into a small residual that
+// stays in the source).
+//
+// Returns the number of new clusters created (0 on failure / no basins).
+// ---------------------------------------------------------------------------
+int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
+                                           const Watershed2D::Config& cfg)
+{
+    KlustersView* activeView = app()->activeView();
+    if (!activeView) return 0;
+
+    const int dimX = activeView->abscissaDimension();
+    const int dimY = activeView->ordinateDimension();
+    QList<int>  inputs = selectedClusters;
+    if (inputs.isEmpty()) return 0;
+
+    // Drop 0 / 1 from input — we never reassign artefact / noise spikes.
+    inputs.removeAll(0);
+    inputs.removeAll(1);
+    if (inputs.isEmpty()) return 0;
+
+    // ── Collect the (x, y) coordinates and matching feature-row indices
+    // ── for every spike in the input clusters.
+    std::vector<double> xs;
+    std::vector<double> ys;
+    std::vector<dataType> rowIdxs;
+    {
+        size_t totalEst = 0;
+        for (int cid : inputs) totalEst += clusteringData->nbOfSpikes(cid);
+        xs.reserve(totalEst);
+        ys.reserve(totalEst);
+        rowIdxs.reserve(totalEst);
+    }
+    for (int cid : inputs) {
+        SortableTable subset;
+        if (!clusteringData->spikePositions(cid, subset)) continue;
+        const dataType n = subset.nbOfColumns();
+        for (dataType i = 1; i <= n; ++i) {
+            const dataType row = subset(1, i);
+            xs.push_back(static_cast<double>(clusteringData->featureValue(row, dimX)));
+            ys.push_back(static_cast<double>(clusteringData->featureValue(row, dimY)));
+            rowIdxs.push_back(row);
+        }
+    }
+    if (xs.size() < 50) return 0;     // not enough points to cluster
+
+    // ── Run watershed.  Caller-supplied config is taken as-is, but if
+    // ── the caller left minPeakHeight / minBasinSize at sentinel 0
+    // ── values we auto-tune them from the data size.
+    Watershed2D::Config c = cfg;
+    if (c.minPeakHeight <= 0)
+        c.minPeakHeight = std::max(3, static_cast<int>(xs.size() / 2000));
+    if (c.minBasinSize <= 0)
+        c.minBasinSize  = std::max(20, static_cast<int>(xs.size() / 500));
+
+    Watershed2D::Result res = Watershed2D::run(xs, ys, c);
+    if (!res.ok || res.numBasins == 0) return 0;
+    if (res.numBasins == 1) {
+        // Watershed returns just one basin: pointless to "split" — bail.
+        return 0;
+    }
+
+    // ── Build feature-row -> basin map for the Data layer.
+    QHash<dataType, int> rowToBasin;
+    rowToBasin.reserve(static_cast<int>(rowIdxs.size()));
+    for (size_t i = 0; i < rowIdxs.size(); ++i) {
+        const int lab = res.pointLabels[i];
+        if (lab > 0) rowToBasin.insert(rowIdxs[i], lab);
+    }
+    if (rowToBasin.isEmpty()) return 0;
+
+    // ── Curation log (before).
+    logBefore(CurationLogger::ActionType::WATERSHED, inputs);
+
+    // ── Mutate Data.
+    QList<int> emptyClusters;
+    QList<int> allNewClusters;
+    QMap<int,int> fromToFirstNewClusterId =
+        clusteringData->createNewClustersFromLabeling(
+            rowToBasin, inputs, emptyClusters, allNewClusters);
+
+    if (allNewClusters.isEmpty()) return 0;
+
+    // ── Doc-level undo (clusterColorList snapshot).
+    // Match createNewClusters' order: capture undo BEFORE appending new
+    // colours (the dipsplit segfault fix established this invariant).
+    {
+        QList<int> fromClusters = fromToFirstNewClusterId.keys();
+        prepareUndo(allNewClusters, fromClusters, emptyClusters);
+    }
+
+    // ── Allocate colours for all new clusters.
+    QColor color;
+    std::sort(allNewClusters.begin(), allNewClusters.end());
+    for (int newId : allNewClusters) {
+        color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10, 200, 255);
+        clusterColorList->append(newId, color);
+    }
+    // Drop colours for clusters that became empty.
+    for (int emptied : emptyClusters)
+        clusterColorList->remove(emptied);
+
+    // ── View notification.
+    // We treat watershed as a "many new clusters from many sources" event,
+    // exactly the shape that addNewClustersToView already handles.
+    for (KlustersView* v : *viewList) {
+        const bool isActive = (v == activeView);
+        v->addNewClustersToView(fromToFirstNewClusterId, emptyClusters, isActive);
+        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+    emit newClustersAdded(fromToFirstNewClusterId, emptyClusters);
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    activeView->showAllWidgets();
+
+    // ── Refresh palette and select all the freshly created clusters.
+    QList<int> selectAfter = allNewClusters;
+    // Also keep any source clusters that survived (had unlabeled spikes).
+    for (int src : fromToFirstNewClusterId.keys())
+        if (!emptyClusters.contains(src)) selectAfter.append(src);
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(selectAfter);
+
+    logAfter(allNewClusters);
+
+    return allNewClusters.size();
 }
 
 void KlustersDoc::prepareClusterColorUndo(){
@@ -1884,8 +1973,8 @@ void KlustersDoc::prepareReclusteringUndo(QList<int>& newClusters,QList<int>& de
 
     //Create a new list of deleted clusters
     QList<int>* deletedClustersTemp = new QList<int>();
-    for(iterator = deletedClusters.begin(); iterator != deletedClusters.end(); ++iterator)
-        deletedClustersTemp->append(*iterator);
+    for (int v : deletedClusters)
+        deletedClustersTemp->append(v);
 
     prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp);
 }
@@ -2234,6 +2323,120 @@ void KlustersDoc::renumberClusters(){
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(activeClusters);
     shownClustersUpdate(activeClusters,*activeView);
+}
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::renumberClustersToEnd
+//
+// Targeted rename: each cluster in `clustersToRenumber` gets a new ID
+// greater than the current global maximum, so they end up at the end of
+// the (sorted-by-ID) palette.  Triggered by the palette T shortcut.
+//
+// Selection ordering: clusters are renamed in ascending order so the
+// lowest-numbered selected cluster gets the lowest new ID
+// (currentMax+1), preserving relative order at the tail.
+//
+// Edge cases handled by the caller (slotMoveSelectedClustersToEnd):
+//   - global-max cluster filtered out (already at end)
+//   - 0 / 1 (artefact / noise) filtered out
+//
+// Single undo entry covers the whole batch — Ctrl+Z reverts all renames
+// in one step, matching the user's mental model of T as a single action.
+// ---------------------------------------------------------------------------
+void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
+{
+    if (clustersToRenumber.isEmpty()) return;
+
+    KlustersView* activeView = app()->activeView();
+    if (!activeView) return;
+
+    // Determine the current max cluster ID and assign new IDs starting
+    // at max+1.  clusterIds() returns a QMap::keys() result — sorted
+    // ascending — so .last() is the max.
+    const QList<dataType> existing = clusteringData->clusterIds();
+    if (existing.isEmpty()) return;
+    int nextNewId = static_cast<int>(existing.last()) + 1;
+
+    // Build the partial old→new map AND a full coverage map for the
+    // view-side rename path.  The view's renumberClusters expects a
+    // covering map (post-fix uses identity for missing keys, but
+    // building covering keeps the contract obvious in caller code).
+    QMap<int,int> partialOldToNew;
+    QMap<int,int> fullOldToNew;
+    QMap<int,int> fullNewToOld;
+    for (dataType eid : existing) {
+        fullOldToNew.insert(static_cast<int>(eid), static_cast<int>(eid));
+        fullNewToOld.insert(static_cast<int>(eid), static_cast<int>(eid));
+    }
+    std::sort(clustersToRenumber.begin(), clustersToRenumber.end());
+    for (int oldId : clustersToRenumber) {
+        if (oldId == 0 || oldId == 1) continue;            // never rename specials
+        if (!fullOldToNew.contains(oldId))     continue;   // skip missing
+        const int newId = nextNewId++;
+        partialOldToNew.insert(oldId, newId);
+        fullOldToNew.insert(oldId, newId);
+        // Inverse: under a partial rename, the previously-existing newId
+        // entry (identity) is overwritten with oldId.  Identity entries
+        // for unrelated clusters remain.
+        fullNewToOld.insert(newId, oldId);
+        fullNewToOld.remove(oldId);                        // old key no longer used
+    }
+    if (partialOldToNew.isEmpty()) return;
+
+    // ── Curation log: this is a renumber, not a group ──
+    logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL,
+              clustersToRenumber);
+
+    // ── Undo bookkeeping (KlustersDoc-level palette colour list) ──
+    // Snapshot clusterColorList BEFORE mutation so undo restores it.
+    // Use the empty-args prepareUndo plus the renumbering map snapshots,
+    // which is what the existing full-renumber path also does.
+    prepareUndo(fullOldToNew, fullNewToOld);
+
+    // ── Mutate Data ──
+    clusteringData->renumberPartial(partialOldToNew);
+
+    // ── Update colour list: rename in place to preserve colours ──
+    // Walk the partial map; for each entry, find the colour-list slot
+    // currently keyed on oldId and changeItemId to newId.  Cluster
+    // ordering in the palette is determined by the post-update sort
+    // pass below, NOT by the colour list's internal order.
+    for (auto it = partialOldToNew.constBegin();
+         it != partialOldToNew.constEnd(); ++it) {
+        const int oldId = it.key();
+        const int newId = it.value();
+        const int idx = clusterColorList->itemIndex(oldId);
+        if (idx >= 0) clusterColorList->changeItemId(idx, newId);
+    }
+
+    // ── View-side notification ──
+    // Each view rewrites its shownClusters via changeClusterIds (now
+    // partial-safe — see KlustersView::changeClusterIds) and emits its
+    // clustersRenumbered signal.
+    for (KlustersView* v : *viewList) {
+        const bool isActive = (v == activeView);
+        v->renumberClusters(fullOldToNew, isActive);
+        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+
+    // ── Error-matrix / template-matrix ──
+    emit renumber(fullOldToNew);
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    activeView->showAllWidgets();
+
+    // ── Refresh palette ──
+    QList<int> activeClusters = activeView->clusters();
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(activeClusters);
+
+    // Log post-rename: the cluster IDs are now their new values.
+    QList<int> newIds;
+    for (int oldId : clustersToRenumber)
+        newIds.append(partialOldToNew.value(oldId, oldId));
+    logAfter(newIds);
 }
 
 int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString& reclusteringFetFileName){

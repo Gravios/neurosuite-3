@@ -1622,27 +1622,47 @@ void TraceView::drawTraces(QPainter& painter){
                     //Only draw vertical lines for clusters contained in a cluster file containing data for channels of the current group
                     if (!clusterFileList.contains(selectedIterator.key())) continue;
                     QString providerName = QString::number(selectedIterator.key());
-                    if (clustersData[providerName] == 0)
+                    // ── Audit 2026-04-29: use value() not operator[] —
+                    //    operator[] would side-effect-insert a null entry
+                    //    when providerName isn't present, growing
+                    //    clustersData over time.
+                    ClusterData* cd = clustersData.value(providerName);
+                    if (cd == nullptr)
                         continue;
 
                     ItemColors* colors = providerItemColors[providerName];
-                    Array<dataType>& currentData = static_cast<ClusterData*>(clustersData[providerName])->getData();
+                    Array<dataType>& currentData = cd->getData();
                     int nbSpikes = currentData.nbOfColumns();
                     QList<int> clusterList = selectedIterator.value();
-                    QList<int>::iterator clusterIterator;
-                    for(clusterIterator = clusterList.begin(); clusterIterator != clusterList.end(); ++clusterIterator){
-                        QColor color = colors->color(*clusterIterator);
-                        QPen pen(color);
+
+                    // ── O(K+S) verticalLines refactor (audit 2026-04-29) ──
+                    // Original: for each of K selected clusters, scan all S
+                    // spikes filtering by clusterId == *iter, with a fresh
+                    // QPen + painter.setPen() per cluster.  When multiple
+                    // selected clusters fire on the same spike train the
+                    // total cost is O(K*S) of integer compares and S setPen
+                    // calls per provider per redraw.  Mirror of the raster
+                    // refactor below.  Single O(S) pass with a pen
+                    // lookup-by-clusterId; cache the painter pen across
+                    // runs of consecutive same-cluster spikes.
+                    QHash<dataType, QPen> penById;
+                    for(QList<int>::iterator clusterIterator = clusterList.begin();
+                        clusterIterator != clusterList.end(); ++clusterIterator){
+                        QPen pen(colors->color(*clusterIterator));
                         pen.setCosmetic(true);
-                        painter.setPen(pen);
-                        for(int i = 1; i <= nbSpikes;++i){
-                            dataType index = currentData(1,i);
-                            dataType clusterId = currentData(2,i);
-                            if (clusterId == *clusterIterator){
-                                int abscissa = X + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
-                                painter.drawLine(abscissa,top,abscissa,bottom);
-                            }
+                        penById.insert(static_cast<dataType>(*clusterIterator), pen);
+                    }
+                    dataType lastClusterId = static_cast<dataType>(-1);
+                    for(int i = 1; i <= nbSpikes; ++i){
+                        const dataType clusterId = currentData(2,i);
+                        if (!penById.contains(clusterId)) continue;
+                        if (clusterId != lastClusterId){
+                            painter.setPen(penById.value(clusterId));
+                            lastClusterId = clusterId;
                         }
+                        const dataType index = currentData(1,i);
+                        const int abscissa = X + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
+                        painter.drawLine(abscissa, top, abscissa, bottom);
                     }
                 }
             }//verticalLines
@@ -1876,26 +1896,45 @@ void TraceView::drawTraces(QPainter& painter){
             QRect windowRectangle((QRect)window);
             int top = windowRectangle.top();
             int bottom = windowRectangle.bottom();
+            // ── Single-column verticalLines optimisation (audit 2026-04-29).
+            //    Original: for each provider, scan all S spikes and on
+            //    every spike call clusterList.contains(id) (O(K) on a
+            //    QList) AND construct a fresh QPen + painter.setPen()
+            //    for every drawn spike — even when consecutive spikes
+            //    have the same cluster.  Replaced with the same K+S
+            //    pattern used in the multicolumn raster: build a
+            //    QHash<dataType,QPen> penById once, then walk spikes
+            //    once with hot-pen tracking.
             QHashIterator<QString, ClusterData*> iterator(clustersData);
             while (iterator.hasNext()) {
                 iterator.next();
-                ItemColors* colors = providerItemColors[iterator.key()];
-                QList<int> clusterList = selectedClusters[iterator.key().toInt()];
+                if (iterator.value() == nullptr) continue;
+                ItemColors* colors = providerItemColors.value(iterator.key());
+                if (colors == nullptr) continue;
+                const QList<int> clusterList = selectedClusters.value(iterator.key().toInt());
+                if (clusterList.isEmpty()) continue;
+
                 Array<dataType>& currentData = iterator.value()->getData();
                 int nbSpikes = currentData.nbOfColumns();
 
-                for(int i = 1; i < nbSpikes + 1;++i){
-                    dataType index = currentData(1,i);
-                    dataType clusterId = currentData(2,i);
-
-                    if (clusterList.contains(clusterId)){
-                        QColor color = colors->color(clusterId);
-                        QPen pen(color);
-                        pen.setCosmetic(true);
-                        painter.setPen(pen);
-                        int abscissa = static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
-                        painter.drawLine(abscissa,top,abscissa,bottom);
+                QHash<dataType, QPen> penById;
+                for(QList<int>::const_iterator it = clusterList.begin();
+                    it != clusterList.end(); ++it){
+                    QPen pen(colors->color(*it));
+                    pen.setCosmetic(true);
+                    penById.insert(static_cast<dataType>(*it), pen);
+                }
+                dataType lastClusterId = static_cast<dataType>(-1);
+                for(int i = 1; i <= nbSpikes; ++i){
+                    const dataType clusterId = currentData(2,i);
+                    if (!penById.contains(clusterId)) continue;
+                    if (clusterId != lastClusterId){
+                        painter.setPen(penById.value(clusterId));
+                        lastClusterId = clusterId;
                     }
+                    const dataType index = currentData(1,i);
+                    const int abscissa = static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
+                    painter.drawLine(abscissa, top, abscissa, bottom);
                 }
             }
         }//verticalLines
@@ -2530,7 +2569,12 @@ void TraceView::mousePressEvent(QMouseEvent* event){
         if (!selectedEventPosition.isEmpty())
             deselectedEventIndex = selectedEventPosition.at(0);
 
-        if (mode == SELECT && !shownChannels.isEmpty() || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
+        // ── Audit 2026-04-29: parentheses added to make the &&/||
+        //    precedence explicit.  Original code parsed correctly under
+        //    C++ rules (&& binds tighter than ||) but compiler emits
+        //    -Wparentheses warnings and the intent was hard to verify
+        //    by inspection.  Behaviour unchanged.
+        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
             QRect r((QRect)window);
             QPoint current;
             //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
@@ -2650,14 +2694,28 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                     int channelId = channelIds[0];
                     int channelIndex = 1;
                     //look up for the first channel which is not skipped
+                    // ── Bug fix (audit 2026-04-29): two bugs in this loop.
+                    //    (a) `skippedChannels.contains(i)` was checking
+                    //    whether the *index* i was in the skipped list,
+                    //    rather than `channelIds[i]` (the actual channel
+                    //    id).  Picked wrong "first non-skipped" channel.
+                    //    (b) the `y -= Yshift` ran AFTER the if-test, so
+                    //    when the loop broke at index i, `y` was still
+                    //    at channelIds[i-1]'s ordinate but channelId had
+                    //    advanced to channelIds[i] — one-channel y
+                    //    offset error in the subsequent position
+                    //    calculation.  Single-column branch below has
+                    //    the test correct (channelIds[i]) and the shift
+                    //    in the right order; this version is now
+                    //    consistent with it.
                     if (skippedChannels.contains(channelId)){
                         for(int i = 1; i < currentNbChannels; ++i){
-                            if (!skippedChannels.contains(i)){
+                            y -= Yshift;
+                            if (!skippedChannels.contains(channelIds[i])){
                                 channelId = channelIds[i];
                                 channelIndex = i + 1;
                                 break;
                             }
-                            y -= Yshift;
                         }
                     }
 

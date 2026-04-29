@@ -194,13 +194,19 @@ void EventsProvider::retrieveData(long startTime,long endTime,QObject* initiator
     //Look up for the closest starting index to the one corresponding to startTime
     //Dicotomy will be used with a stop at dicotomyBreak.
     if((startTime != previousStartTime) && (startTime != previousEndTime)){
+        // ── Bug fix (audit 2026-04-29): the `if(startTime == 0)` block was
+        //    not chained to the next `if(startTime < previousStartTime)`
+        //    with `else`.  When startTime==0 and previousStartTime>0,
+        //    BOTH branches ran and the second clobbered startIndex/endIndex
+        //    set by the first.  Same bug as in clustersprovider.cpp; same
+        //    fix.
         if(startTime == 0){
             startIndex = 1;
             if(endTime <= previousStartTime) endIndex = previousStartIndex;
             else if(endTime <= previousEndTime) endIndex = previousEndIndex;
             else if(endTime > previousEndTime) endIndex = nbEvents;
         }
-        if(startTime < previousStartTime){
+        else if(startTime < previousStartTime){
             startIndex = static_cast<int>(previousStartIndex / 2);
             if(startIndex <= 0) startIndex = 1;
             if(endTime <= previousStartTime) endIndex = previousStartIndex;
@@ -217,10 +223,34 @@ void EventsProvider::retrieveData(long startTime,long endTime,QObject* initiator
             endIndex = nbEvents;
         }
 
+        // Safety clamp: any of the branches above can produce an invalid
+        // range if previousStart/EndIndex are out of sync with nbEvents
+        // (e.g. nbEvents shrank after a re-load, or the cache was never
+        // invalidated after updateSamplingRate).  Without this guard, the
+        // dichotomy below will read timeStamps(1, N) with N out of bounds.
+        // Mirror of the same fix in clustersprovider.cpp.
+        if (startIndex < 1)         startIndex = 1;
+        if (endIndex > nbEvents)    endIndex   = nbEvents;
+        if (startIndex > endIndex)  startIndex = endIndex;
+
         long newStartIndex = startIndex;
         long newEndIndex = endIndex;
         //dicotomy
         while((newEndIndex - newStartIndex + 1) > dicotomyBreak){
+            // Guard: timeStamps(1, i) with i outside [1, nbEvents] reads
+            // past the end of the array (Array<> is 1-indexed, not
+            // bounds-checked).  Any transient inversion of
+            // [newStartIndex, newEndIndex] here would step off the
+            // array before the next loop condition check can stop us.
+            // Mirror of the same fix in clustersprovider.cpp.
+            if (newStartIndex < 1)         newStartIndex = 1;
+            if (newStartIndex > nbEvents)  newStartIndex = nbEvents;
+            if (newEndIndex > nbEvents)    newEndIndex   = nbEvents;
+            if (newEndIndex < newStartIndex) {
+                newEndIndex = newStartIndex;
+                break;
+            }
+
             time = static_cast<long>(floor(0.5 + timeStamps(1,newStartIndex)));
             if(time == startTime) break;
             else if(time > startTime){
@@ -378,6 +408,20 @@ void EventsProvider::requestNextEventData(long startTime,long timeFrame,const QL
         long newEndIndex = endIndex;
         //dicotomy
         while((newEndIndex - newStartIndex + 1) > dicotomyBreak){
+            // Guard: timeStamps(1, i) with i outside [1, nbEvents] reads
+            // past the end of the array (Array<> is 1-indexed, not
+            // bounds-checked).  Any transient inversion of
+            // [newStartIndex, newEndIndex] here would step off the
+            // array before the next loop condition check can stop us.
+            // Mirror of the same fix in clustersprovider.cpp.
+            if (newStartIndex < 1)         newStartIndex = 1;
+            if (newStartIndex > nbEvents)  newStartIndex = nbEvents;
+            if (newEndIndex > nbEvents)    newEndIndex   = nbEvents;
+            if (newEndIndex < newStartIndex) {
+                newEndIndex = newStartIndex;
+                break;
+            }
+
             time = static_cast<long>(floor(0.5 + timeStamps(1,newStartIndex)));
             if(time == startTime) break;
             else if(time > startTime){
@@ -854,6 +898,20 @@ long EventsProvider::findIndex(double eventTime,int eventId){
         long newEndIndex = endIndex;
         //dicotomy
         while((newEndIndex - newStartIndex + 1) > dicotomyBreak){
+            // Guard: timeStamps(1, i) with i outside [1, nbEvents] reads
+            // past the end of the array (Array<> is 1-indexed, not
+            // bounds-checked).  Any transient inversion of
+            // [newStartIndex, newEndIndex] here would step off the
+            // array before the next loop condition check can stop us.
+            // Mirror of the same fix in clustersprovider.cpp.
+            if (newStartIndex < 1)         newStartIndex = 1;
+            if (newStartIndex > nbEvents)  newStartIndex = nbEvents;
+            if (newEndIndex > nbEvents)    newEndIndex   = nbEvents;
+            if (newEndIndex < newStartIndex) {
+                newEndIndex = newStartIndex;
+                break;
+            }
+
             time = static_cast<long>(floor(0.5 + timeStamps(1,newStartIndex)));
             if(time == startTime) break;
             else if(time > startTime){

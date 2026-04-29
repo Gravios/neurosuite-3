@@ -262,6 +262,10 @@ private Q_SLOTS:
     * for which the traces are going to be displayed in the TraceView. This slot is accessible only if a TraceView and a ClusterView are present
     * and if one of the dimensions in the ClusterView is the time.*/
     void slotSelectTime();
+
+    /** Run the 2D density-watershed splitter on the currently-shown
+     *  clusters in the active scatter view.  Bound to W. */
+    void slotWatershedSplit();
     
     
     /*Slots for the actions menu.*/
@@ -622,6 +626,7 @@ private:
     QAction *mDeleteArtifactSpikes;
     QAction *mDeleteNoisySpikes;
     QAction *mSelectTime;
+    QAction *mWatershed;
     QAction *mSelectAllAction;
     QAction *mSelectAllExceptAction;
     QAction *mSaveAction;

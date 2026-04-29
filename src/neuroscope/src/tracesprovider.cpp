@@ -27,6 +27,7 @@
 #include <QRegularExpression>
 #include <QDebug>
 #include <QFileInfo>
+#include <cstdint>
 
 TracesProvider::TracesProvider(const QString& fileUrl,int nbChannels,int resolution,double samplingRate,int offset)
     : DataProvider(fileUrl),
@@ -266,32 +267,41 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
             }
         }
     } else if(resolution == 32) {
-
+        // ── Bug fix (audit 2026-04-29): the 32-bit resolution branch
+        //    previously seek/read using sizeof(short) (2 bytes) and into
+        //    Array<dataType> (sizeof(long) = 8 bytes on 64-bit).  Two
+        //    sources of corruption: (a) the file offset was wrong by a
+        //    factor of two, so seeks landed mid-record; (b) every read
+        //    deposited 2 bytes into an 8-byte slot, leaving 6 bytes
+        //    uninitialised garbage.  computeRecordingLength() correctly
+        //    uses dataSize=4 for resolution==32, so a real .dat file at
+        //    32-bit resolution is laid out as int32_t per sample — read
+        //    that way and convert to dataType, mirroring the 16-bit
+        //    branch's Array<short> intermediate.
         QFile dataFile(fileName);
         if (!dataFile.open(QIODevice::ReadOnly)) {
             data.setSize(0,0);
             emit dataReady(data,initiator);
             return;
         }
-        Array<dataType> retrieveData(nbSamples,nbChannels);
+        Array<int32_t> retrieveData(nbSamples,nbChannels);
         qint64 nbValues = nbSamples * nbChannels;
         qint64 position = static_cast<qint64>(static_cast<qint64>(startInRecordingUnits)* static_cast<qint64>(nbChannels));
 
-        dataFile.seek(position * sizeof(short));
-        qint64 nbRead = dataFile.read(reinterpret_cast<char*>(&retrieveData[0]), sizeof(short) * nbValues);
+        dataFile.seek(position * sizeof(int32_t));
+        qint64 nbRead = dataFile.read(reinterpret_cast<char*>(&retrieveData[0]), sizeof(int32_t) * nbValues);
 
-        // copy the data into retrieveData.
-        if(nbRead != qint64(nbValues*sizeof(short))){
+        if(nbRead != qint64(nbValues*sizeof(int32_t))){
             //emit the signal with an empty array, the reciever will take care of it, given a message to the user.
             data.setSize(0,0);
             dataFile.close();
             emit dataReady(data,initiator);
             return;
         }
-        //Apply the offset if need it and store the values in data.
+        //Apply the offset if need it,convert to dataType and store the values in data.
         if(offset != 0){
             for(qint64 i = 0; i < nbValues; ++i)
-                data[i] = retrieveData[i] - static_cast<dataType>(offset);
+                data[i] = static_cast<dataType>(retrieveData[i]) - static_cast<dataType>(offset);
         }
         else{
             for(qint64 i = 0; i < nbValues; ++i){

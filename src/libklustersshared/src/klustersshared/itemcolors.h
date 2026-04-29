@@ -181,17 +181,6 @@ public:
   virtual bool remove(int identifier, SelectionMode mode = BY_ITEM_NUMBER);
 
   /**
-  * Moves the item with the given itemId to the end of the list, preserving
-  * its colour, label and changed-status.  Used by the cluster palette to
-  * re-order entries via the T shortcut without having to recreate the
-  * QListWidget items.  Returns true if the item was found and moved (or
-  * if it was already at the end), false if no such item exists.
-  * @param itemId the item id to move.
-  * @return true on success, false if itemId not found.
-  */
-  virtual bool moveItemToEnd(int itemId);
-
-  /**
   * Returns the list of item ids for which the color has been changed since.
   * the last reset of their status.
   * @return item ids list.

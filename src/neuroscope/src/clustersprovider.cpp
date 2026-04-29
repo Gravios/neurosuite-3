@@ -295,13 +295,19 @@ void ClustersProvider::retrieveData(long startTime,long endTime,QObject* initiat
     //Look up for the closest starting index to the one corresponding to startTime
     //Dicotomy will be used with a stop at dicotomyBreak.
     if((startTime != previousStartTime) && (startTime != previousEndTime)){
+        // ── Bug fix (audit 2026-04-29): the `if(startTime == 0)` block was
+        //    not chained to the following `if(startTime < previousStartTime)`
+        //    with `else`.  When startTime==0 and previousStartTime>0, BOTH
+        //    branches execute and the second clobbers startIndex/endIndex
+        //    set by the first.  Chain explicitly so the four branches form
+        //    a true if/else-if ladder.
         if(startTime == 0){
             startIndex = 1;
             if(endTime <= previousStartTime) endIndex = previousStartIndex;
             else if(endTime <= previousEndTime) endIndex = previousEndIndex;
             else if(endTime > previousEndTime) endIndex = nbSpikes;
         }
-        if(startTime < previousStartTime){
+        else if(startTime < previousStartTime){
             startIndex = static_cast<int>(previousStartIndex / 2);
             if(startIndex <= 0)
                 startIndex = 1;
@@ -515,10 +521,16 @@ void ClustersProvider::requestNextClusterData(long startTime, long timeFrame, co
     //Look up for the closest starting index to the one corresponding to startTime
     //Dicotomy will be used with a stop at dicotomyBreak.
     if((startTime != previousStartTime) && (startTime != previousEndTime)){
+        // ── Bug fix (audit 2026-04-29): missing `else` between the
+        //    `if(startTime == 0)` block and the following `if/else if`
+        //    ladder.  When startTime==0 and previousStartTime>0, both
+        //    the first block and the `startTime < previousStartTime`
+        //    block ran; the latter clobbered startIndex with
+        //    previousStartIndex/2 instead of leaving it at 1.
         if(startTime == 0){
             startIndex = 1;
         }
-        if(startTime < previousStartTime){
+        else if(startTime < previousStartTime){
             startIndex = static_cast<int>(previousStartIndex / 2);
             if(startIndex <= 0) startIndex = 1;
         }
@@ -609,7 +621,12 @@ void ClustersProvider::requestNextClusterData(long startTime, long timeFrame, co
     else{
         if(startTime == previousStartTime) startIndex = previousStartIndex;
         else if(startTime == previousEndTime){
-            if(clusters(2,previousEndIndex) < startTime){
+            // ── Bug fix (audit 2026-04-29): compared recording-unit value
+            //    `clusters(2, previousEndIndex)` against millisecond value
+            //    `startTime` — units mismatch.  retrieveData() at line 415
+            //    correctly compares against `startInRecordingUnits`; this
+            //    branch must too.
+            if(clusters(2,previousEndIndex) < startInRecordingUnits){
                 startIndex = previousEndIndex + 1;
                 if(startIndex > nbSpikes) startIndex = nbSpikes;
             }
@@ -779,10 +796,16 @@ void ClustersProvider::requestPreviousClusterData(long startTime,long timeFrame,
     //Look up for the closest starting index to the one corresponding to startTime
     //Dicotomy will be used with a stop at dicotomyBreak.
     if((startTime != previousStartTime) && (startTime != previousEndTime)){
+        // ── Bug fix (audit 2026-04-29): missing `else` between the
+        //    `if(startTime == 0)` block and the following `if/else if`
+        //    ladder.  When startTime==0 and previousStartTime>0, both
+        //    the first block and the `startTime < previousStartTime`
+        //    block ran; the latter clobbered startIndex with
+        //    previousStartIndex/2 instead of leaving it at 1.
         if(startTime == 0){
             startIndex = 1;
         }
-        if(startTime < previousStartTime){
+        else if(startTime < previousStartTime){
             startIndex = static_cast<int>(previousStartIndex / 2);
             if(startIndex <= 0) startIndex = 1;
         }
@@ -874,7 +897,12 @@ void ClustersProvider::requestPreviousClusterData(long startTime,long timeFrame,
     else{
         if(startTime == previousStartTime) startIndex = previousStartIndex;
         else if(startTime == previousEndTime){
-            if(clusters(2,previousEndIndex) < startTime){
+            // ── Bug fix (audit 2026-04-29): compared recording-unit value
+            //    `clusters(2, previousEndIndex)` against millisecond value
+            //    `startTime` — units mismatch.  retrieveData() at line 415
+            //    correctly compares against `startInRecordingUnits`; this
+            //    branch must too.
+            if(clusters(2,previousEndIndex) < startInRecordingUnits){
                 startIndex = previousEndIndex + 1;
                 if(startIndex > nbSpikes) startIndex = nbSpikes;
             }

@@ -60,6 +60,7 @@ set(klusters_SRCS
     viewwidget.cpp
     waveformthread.cpp
     waveformview.cpp
+    watershed2d.cpp
     prefgenerallayout.cpp
     prefwaveformviewlayout.cpp
     prefclusterviewlayout.cpp
