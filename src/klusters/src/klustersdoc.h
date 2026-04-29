@@ -1073,15 +1073,10 @@ private:
     int m_lastLoggedActionIdx = -1;
 
 public:
-    /** Append a quality annotation for the most recently completed action.
-     *  @param quality  0 = bad/exploratory, 1 = uncertain, 2 = confident.
-     *  Intended to be called from a keyboard shortcut (J/K/X) immediately
-     *  after an action so the curator can tag the decision in-stream.
-     */
-    void logAnnotation(int quality) {
-        if (m_curationLogger && m_curationLogger->isOpen())
-            m_curationLogger->annotateLastAction(quality);
-    }
+    // (logAnnotation was removed when the J/K/X manual annotation
+    //  shortcuts were retired.  Curation status is now inferred
+    //  automatically from undo/redo — see CurationLogger::notifyUndo /
+    //  notifyRedo, called from KlustersDoc::undo() / redo().)
 
 };
 

@@ -28,7 +28,7 @@
 //include files application specific
 #include "spinbox.h"
 #include "klustersview.h"
-#include "klustersdoc.h"   // needed by inline slot methods that call doc->logAnnotation()
+#include "klustersdoc.h"   // needed by inline slot methods on KlustersDoc
 #include "watershed2d.h"   // for Result struct used in live-preview state
 
 
@@ -313,15 +313,9 @@ private Q_SLOTS:
      *  focus; undo-able. */
     void slotMoveSelectedClustersToEnd();
 
-    // ── Curation quality annotation ───────────────────────────────────────
-    /** Tag the most recently completed curation action with a quality label.
-     *  Keyboard shortcuts: J = good (2), K = uncertain (1), X = bad (0).
-     *  The annotation is appended to the curation log immediately and can be
-     *  issued any time between two curation actions.
-     */
-    void slotAnnotateGood()      { if (doc) doc->logAnnotation(2); }
-    void slotAnnotateUncertain() { if (doc) doc->logAnnotation(1); }
-    void slotAnnotateBad()       { if (doc) doc->logAnnotation(0); }
+    // (slotAnnotateGood/Uncertain/Bad were removed; curation status is
+    //  now inferred automatically from undo/redo behaviour — see
+    //  CurationLogger::notifyUndo / notifyRedo.)
 
     /**Triggers an update of the dimensions due to a change of the ordinate dimension.*/
     void slotUpdateDimensionY(int dimensionYs);

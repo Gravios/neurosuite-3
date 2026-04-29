@@ -1,5 +1,11 @@
 /***************************************************************************
  *  curationlogger.cpp  —  JSON-Lines curation audit log
+ *
+ *  See header doc-comment for the full lifecycle.  Implementation note:
+ *  every disk write is deferred until either an overflowing beginAction()
+ *  pushes the oldest entry out of the in-memory ring or close() is called.
+ *  This is intentional — the on-disk log captures only the user's
+ *  finalised curatorial decisions, not their tentative undo/redo dance.
  ***************************************************************************/
 
 #include "curationlogger.h"
@@ -34,7 +40,7 @@ void CurationLogger::open(const QString& logPath,
     m_sessionBaseName = sessionBaseName;
     m_electrodeGroup  = electrodeGroup;
     m_actionIdx       = 0;
-    m_currentAction   = -1;
+    m_pending.clear();
 
     // Generate a short session token (first 8 hex chars of a UUID)
     m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
@@ -67,6 +73,13 @@ void CurationLogger::close()
 {
     if (!m_file.isOpen())
         return;
+
+    // Flush every remaining pending entry with its current status (the
+    // user's "save followed by quit" — we capture exactly the decisions
+    // they ended the session with).
+    while (!m_pending.isEmpty())
+        flushOldest();
+
     m_out << "{"
           << "\"event\":\"SESSION_CLOSE\","
           << "\"session_id\":\"" << m_sessionId << "\","
@@ -78,20 +91,36 @@ void CurationLogger::close()
 }
 
 // ---------------------------------------------------------------------------
+void CurationLogger::setMaxBufferEntries(int n)
+{
+    m_maxBuffer = (n < 1) ? 1 : n;
+    // Shrinking: flush from the front until size <= m_maxBuffer.
+    while (m_pending.size() > m_maxBuffer)
+        flushOldest();
+}
+
+// ---------------------------------------------------------------------------
 int CurationLogger::beginAction(ActionType type,
                                  const QList<ClusterSnapshot>& before)
 {
     if (!m_file.isOpen())
         return m_actionIdx;
 
-    m_currentAction = static_cast<int>(type);
-    const int idx   = m_actionIdx++;
+    PendingEntry e;
+    e.actionIdx = m_actionIdx++;
+    e.type      = type;
+    e.before    = before;
+    e.status    = QStringLiteral("good");
+    e.tsBegin   = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+    m_pending.append(e);
 
-    for (const ClusterSnapshot& snap : before)
-        writeLine("before", "source", snap);
+    // Overflow: the oldest entry can no longer be undone (it's beyond
+    // the buffer's capacity = max-undos).  Its current status is now
+    // its final status; write it out and free the slot.
+    while (m_pending.size() > m_maxBuffer)
+        flushOldest();
 
-    m_out.flush();
-    return idx;
+    return e.actionIdx;
 }
 
 int CurationLogger::beginAction(ActionType type, const ClusterSnapshot& before)
@@ -101,11 +130,8 @@ int CurationLogger::beginAction(ActionType type, const ClusterSnapshot& before)
 
 void CurationLogger::commitAction(const QList<ClusterSnapshot>& after)
 {
-    if (!m_file.isOpen())
-        return;
-    for (const ClusterSnapshot& snap : after)
-        writeLine("after", "result", snap);
-    m_out.flush();
+    if (PendingEntry* p = currentPending())
+        p->after = after;
 }
 
 void CurationLogger::commitAction(const ClusterSnapshot& after)
@@ -114,15 +140,139 @@ void CurationLogger::commitAction(const ClusterSnapshot& after)
 }
 
 // ---------------------------------------------------------------------------
+void CurationLogger::recordActionDetails(const QMap<QString, QVariant>& details)
+{
+    if (details.isEmpty()) return;
+    if (PendingEntry* p = currentPending())
+        p->details.append(details);
+}
+
+// ---------------------------------------------------------------------------
+// Undo / redo just flip status — they don't write anything to disk.  The
+// status flip travels with the entry until it eventually leaves the buffer
+// (overflow or close), at which point the on-disk record locks in the
+// final good/bad label.
+// ---------------------------------------------------------------------------
+void CurationLogger::notifyUndo()
+{
+    // Walk back from the most recent entry; flip the first one whose
+    // status is still "good".
+    for (int i = m_pending.size() - 1; i >= 0; --i) {
+        if (m_pending[i].status == QLatin1String("good")) {
+            m_pending[i].status = QStringLiteral("bad");
+            return;
+        }
+    }
+    // All buffered entries already bad.  The data state is being reverted
+    // past the buffer boundary; the corresponding records were finalised
+    // and emitted to disk at overflow time, so we cannot retroactively
+    // re-status them.  This is a tolerated edge case at deep undo chains.
+}
+
+void CurationLogger::notifyRedo()
+{
+    // Walk forward from the oldest; flip the most recent (= largest i)
+    // entry whose status is "bad" back to "good".  Equivalent to the
+    // mirror of notifyUndo: the redo replays the most recently undone
+    // action, which is the topmost "bad" entry.
+    int target = -1;
+    for (int i = m_pending.size() - 1; i >= 0; --i) {
+        if (m_pending[i].status == QLatin1String("bad")) {
+            target = i;
+            break;
+        }
+    }
+    if (target >= 0)
+        m_pending[target].status = QStringLiteral("good");
+}
+
+// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
+CurationLogger::PendingEntry* CurationLogger::currentPending()
+{
+    if (m_pending.isEmpty() || !m_file.isOpen())
+        return nullptr;
+    return &m_pending.last();
+}
+
+void CurationLogger::flushOldest()
+{
+    if (m_pending.isEmpty()) return;
+    flushEntry(m_pending.first());
+    m_pending.removeFirst();
+}
+
+// Emit every accumulated line for one entry, all carrying the same
+// status.  The order on disk is:
+//   1. Before-snapshot lines (one per source cluster)
+//   2. After-snapshot lines  (one per result cluster)
+//   3. Detail lines          (zero or more, one per recordActionDetails call)
+// Putting the "before"+"after" lines together (rather than chronological
+// begin/details/commit) is fine for ML loaders that join by action_idx,
+// and lets us emit everything in one tight burst per entry.
+void CurationLogger::flushEntry(const PendingEntry& e)
+{
+    if (!m_file.isOpen()) return;
+
+    for (const ClusterSnapshot& s : e.before)
+        writeLine("before", "source", s, e.actionIdx, e.type, e.status);
+    for (const ClusterSnapshot& s : e.after)
+        writeLine("after",  "result", s, e.actionIdx, e.type, e.status);
+
+    // Detail lines: ACTION_DETAIL records keyed by the same action_idx
+    // and carrying the same status field.
+    const QString actionStr = actionName(e.type);
+    for (const QMap<QString, QVariant>& details : e.details) {
+        m_out << "{"
+              << "\"event\":\"ACTION_DETAIL\","
+              << "\"session_id\":\"" << m_sessionId << "\","
+              << "\"ts_begin\":\"" << e.tsBegin << "\","
+              << "\"action\":\"" << actionStr << "\","
+              << "\"action_idx\":" << e.actionIdx << ","
+              << "\"status\":\"" << e.status << "\"";
+
+        for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
+            m_out << ",\"" << jsonEscape(it.key()) << "\":";
+            const QVariant& v = it.value();
+            switch (v.typeId()) {
+                case QMetaType::Int:
+                case QMetaType::UInt:
+                case QMetaType::LongLong:
+                case QMetaType::ULongLong:
+                    m_out << v.toLongLong();
+                    break;
+                case QMetaType::Double:
+                case QMetaType::Float: {
+                    const double d = v.toDouble();
+                    if (std::isfinite(d))
+                        m_out << QString::number(d, 'g', 15);
+                    else
+                        m_out << "null";
+                    break;
+                }
+                case QMetaType::Bool:
+                    m_out << (v.toBool() ? "true" : "false");
+                    break;
+                default:
+                    m_out << "\"" << jsonEscape(v.toString()) << "\"";
+                    break;
+            }
+        }
+        m_out << "}\n";
+    }
+    m_out.flush();
+}
+
+// ---------------------------------------------------------------------------
 void CurationLogger::writeLine(const QString& phase,
                                 const QString& role,
-                                const ClusterSnapshot& s)
+                                const ClusterSnapshot& s,
+                                int aidx,
+                                ActionType action,
+                                const QString& status)
 {
-    const int aidx = m_actionIdx - 1;
-
     m_out << "{"
           // ── context ──────────────────────────────────────────────────────
           << "\"session_id\":\"" << m_sessionId << "\","
@@ -130,8 +280,9 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"file\":\"" << jsonEscape(m_sessionBaseName) << "\","
           << "\"group\":\"" << jsonEscape(m_electrodeGroup) << "\","
           // ── action ───────────────────────────────────────────────────────
-          << "\"action\":\"" << actionName(static_cast<ActionType>(m_currentAction)) << "\","
+          << "\"action\":\"" << actionName(action) << "\","
           << "\"action_idx\":" << aidx << ","
+          << "\"status\":\"" << status << "\","
           << "\"phase\":\"" << phase << "\","
           << "\"role\":\"" << role << "\","
           << "\"cluster\":" << s.clusterId << ","
@@ -232,86 +383,4 @@ QString CurationLogger::actionName(ActionType t)
     case ActionType::WATERSHED:              return QStringLiteral("WATERSHED");
     }
     return QStringLiteral("UNKNOWN");
-}
-
-// ---------------------------------------------------------------------------
-void CurationLogger::annotateLastAction(int quality)
-{
-    if (!m_file.isOpen()) return;
-    const int aidx = m_actionIdx - 1;   // most recently begun action
-    m_out << "{"
-          << "\"event\":\"ANNOTATE\","
-          << "\"session_id\":\"" << m_sessionId << "\","
-          << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"action_idx\":" << aidx << ","
-          << "\"quality\":" << quality
-          << "}\n";
-    m_out.flush();
-}
-
-void CurationLogger::recordActionDetails(const QMap<QString, QVariant>& details)
-{
-    if (!m_file.isOpen() || details.isEmpty()) return;
-    const int aidx = m_actionIdx - 1;   // most recently begun action
-
-    m_out << "{"
-          << "\"event\":\"ACTION_DETAIL\","
-          << "\"session_id\":\"" << m_sessionId << "\","
-          << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"action_idx\":" << aidx;
-
-    for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
-        m_out << ",\"" << jsonEscape(it.key()) << "\":";
-        const QVariant& v = it.value();
-        switch (v.typeId()) {
-            case QMetaType::Int:
-            case QMetaType::UInt:
-            case QMetaType::LongLong:
-            case QMetaType::ULongLong:
-                m_out << v.toLongLong();
-                break;
-            case QMetaType::Double:
-            case QMetaType::Float: {
-                // Use 'g' format — strips trailing zeroes, preserves
-                // ~15 sig figs.  NaN/Inf are not valid JSON; emit null.
-                const double d = v.toDouble();
-                if (std::isfinite(d))
-                    m_out << QString::number(d, 'g', 15);
-                else
-                    m_out << "null";
-                break;
-            }
-            case QMetaType::Bool:
-                m_out << (v.toBool() ? "true" : "false");
-                break;
-            default:
-                m_out << "\"" << jsonEscape(v.toString()) << "\"";
-                break;
-        }
-    }
-    m_out << "}\n";
-    m_out.flush();
-}
-
-void CurationLogger::logUndoRedo(ActionType type, int targetIdx,
-                                  const QList<ClusterSnapshot>& clusterState)
-{
-    if (!m_file.isOpen()) return;
-    m_currentAction = static_cast<int>(type);
-    const int idx   = m_actionIdx++;
-
-    // Write a single control line identifying which action was reverted/replayed
-    m_out << "{"
-          << "\"session_id\":\"" << m_sessionId << "\","
-          << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"action\":\"" << actionName(type) << "\","
-          << "\"action_idx\":" << idx << ","
-          << "\"target_action_idx\":" << targetIdx
-          << "}\n";
-
-    // Snapshot current state of affected clusters as the "after" state
-    for (const ClusterSnapshot& snap : clusterState)
-        writeLine("after", "result", snap);
-
-    m_out.flush();
 }

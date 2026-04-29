@@ -86,7 +86,7 @@
 #include <QMessageBox>
 #include <QToolBar>
 #include <QKeySequence>
-#include <QShortcut>
+#include <QShortcut>  // (kept for potential future use; J/K/X removed 2026-04)
 #include <QFileDialog>
 #include <QTime>
 #include <QSettings>
@@ -947,27 +947,10 @@ void KlustersApp::initSelectionBoxes(){
     connect(nudgePlusAction, &QAction::triggered,
             this, &KlustersApp::slotNudgeTimestampPlus);
 
-    // ── Curation quality annotation shortcuts ─────────────────────────────
-    // J = good (confident keep/action), K = uncertain, X = bad/exploratory
-    // These tag the most recently completed action in the curation log.
-    // They are intentionally simple QShortcuts (not toolbar actions) so they
-    // don't appear in menus and don't add visual clutter.
-    {
-        auto* scGood = new QShortcut(QKeySequence(Qt::Key_J), this);
-        scGood->setContext(Qt::ApplicationShortcut);
-        connect(scGood, &QShortcut::activated,
-                this, &KlustersApp::slotAnnotateGood);
-
-        auto* scUnc  = new QShortcut(QKeySequence(Qt::Key_K), this);
-        scUnc->setContext(Qt::ApplicationShortcut);
-        connect(scUnc, &QShortcut::activated,
-                this, &KlustersApp::slotAnnotateUncertain);
-
-        auto* scBad  = new QShortcut(QKeySequence(Qt::Key_X), this);
-        scBad->setContext(Qt::ApplicationShortcut);
-        connect(scBad, &QShortcut::activated,
-                this, &KlustersApp::slotAnnotateBad);
-    }
+    // (Curation quality annotation shortcuts J/K/X were removed in favour
+    //  of automatic status inference.  The curation log now marks any
+    //  undone action as "bad" and any retained action as "good" without
+    //  user intervention — see CurationLogger header doc-comment.)
 
 }
 
@@ -5235,11 +5218,6 @@ void KlustersApp::slotShowShortcutHelp()
             {"(no shortcuts)", "Use Correlations menu to adjust amplitude"},
             {"Ctrl+Shift+F / Ctrl+Shift+B",
                                "Next / previous spike (in trace view)"},
-        }},
-        {"Curation log annotation", {
-            {"J",              "Annotate last action as Good (confident)"},
-            {"K",              "Annotate last action as Uncertain"},
-            {"X",              "Annotate last action as Bad / exploratory"},
         }},
     };
 
