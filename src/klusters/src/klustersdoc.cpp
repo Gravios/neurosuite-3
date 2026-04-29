@@ -1608,11 +1608,25 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     rowToBasin.reserve(static_cast<int>(rowIdxs.size()));
     const int residualBasin = res.numBasins + 1;
     bool sawResidual = false;
+    int residualCount = 0;
+    // Per-basin spike counts (basin label -> count); residualBasin is
+    // included if any unlabeled spikes were rerouted.
+    QMap<int,int> basinCounts;
     for (size_t i = 0; i < rowIdxs.size(); ++i) {
         int lab = res.pointLabels[i];
-        if (lab <= 0) { lab = residualBasin; sawResidual = true; }
+        if (lab <= 0) {
+            lab = residualBasin;
+            sawResidual = true;
+            ++residualCount;
+        }
         rowToBasin.insert(rowIdxs[i], lab);
+        basinCounts[lab]++;
     }
+
+    // Per-source spike counts (cid -> count) for the "before" snapshot.
+    QMap<int,int> sourceCounts;
+    for (int cid : inputs)
+        sourceCounts[cid] = static_cast<int>(clusteringData->nbOfSpikes(cid));
 
     // ── Curation log (before).
     logBefore(CurationLogger::ActionType::WATERSHED, inputs);
@@ -1666,9 +1680,91 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(clustersToShow);
 
+    // ── Curation-log details ─────────────────────────────────────────────
+    // One ACTION_DETAIL record covering: source clusters and their sizes,
+    // resolved watershed config (after auto-tune), kernel diagnostics, and
+    // per-basin spike counts.  Keys mirror the dipsplit pattern so a
+    // downstream reader can treat the WATERSHED records uniformly.
+    if (m_curationLogger && m_curationLogger->isOpen()) {
+        QMap<QString, QVariant> details;
+        details.insert(QStringLiteral("algorithm"),
+                       QStringLiteral("watershed_2d"));
+
+        // Source side: cluster IDs (in input order) + per-source counts +
+        // total spike count fed into the watershed.
+        {
+            QStringList src;
+            for (int cid : inputs) src.append(QString::number(cid));
+            details.insert(QStringLiteral("source_clusters"),
+                           src.join(QStringLiteral(",")));
+            QStringList srcCounts;
+            for (int cid : inputs)
+                srcCounts.append(QString("%1:%2").arg(cid)
+                                 .arg(sourceCounts.value(cid, 0)));
+            details.insert(QStringLiteral("source_counts"),
+                           srcCounts.join(QStringLiteral(",")));
+            details.insert(QStringLiteral("total_input_spikes"),
+                           static_cast<qulonglong>(xs.size()));
+        }
+
+        // Feature-space the watershed ran in.
+        details.insert(QStringLiteral("dim_x"), dimX);
+        details.insert(QStringLiteral("dim_y"), dimY);
+
+        // Config: BOTH requested values and resolved (post-auto-tune) values.
+        details.insert(QStringLiteral("grid_size"),         c.gridSize);
+        details.insert(QStringLiteral("smooth_sigma_req"),  cfg.smoothSigma);
+        details.insert(QStringLiteral("smooth_sigma_eff"),  res.effSigma);
+        details.insert(QStringLiteral("min_peak_height_req"),
+                       cfg.minPeakHeight);
+        details.insert(QStringLiteral("min_peak_height_eff"),
+                       res.effPeakHeight);
+        details.insert(QStringLiteral("min_basin_size_req"),
+                       cfg.minBasinSize);
+        details.insert(QStringLiteral("min_basin_size_eff"),
+                       res.effMinBasinSize);
+        details.insert(QStringLiteral("use_local_maxima"),
+                       c.useLocalMaxima);
+
+        // Kernel diagnostics.
+        details.insert(QStringLiteral("num_peaks"),   res.numPeaks);
+        details.insert(QStringLiteral("num_basins"),  res.numBasins);
+
+        // Result side: new cluster IDs and their sizes.  Residual basin
+        // (catch-all for spikes that fell outside any peak) is logged
+        // separately so downstream tooling can distinguish "watershed
+        // basin proper" from "residual leftover".
+        {
+            QStringList newIds;
+            for (int nid : newClusterList) newIds.append(QString::number(nid));
+            details.insert(QStringLiteral("new_clusters"),
+                           newIds.join(QStringLiteral(",")));
+
+            // Per-basin counts in the order the new IDs were assigned.
+            // integrateBasinLabeling sorts new IDs by basin label
+            // ascending, so basin 1 → newClusterList[0], basin 2 →
+            // newClusterList[1], ..., residualBasin → newClusterList[k].
+            QStringList basinPairs;
+            const auto basinKeys = basinCounts.keys();   // ascending
+            for (int i = 0; i < basinKeys.size() && i < newClusterList.size();
+                 ++i) {
+                const int basinLabel = basinKeys[i];
+                const int newId      = newClusterList[i];
+                const int count      = basinCounts.value(basinLabel, 0);
+                basinPairs.append(QString("%1:%2").arg(newId).arg(count));
+            }
+            details.insert(QStringLiteral("new_cluster_counts"),
+                           basinPairs.join(QStringLiteral(",")));
+        }
+
+        details.insert(QStringLiteral("residual_present"),  sawResidual);
+        details.insert(QStringLiteral("residual_count"),    residualCount);
+
+        m_curationLogger->recordActionDetails(details);
+    }
+
     logAfter(newClusterList);
 
-    Q_UNUSED(sawResidual);   // residual presence is informational only
     return newClusterList.size();
 }
 
