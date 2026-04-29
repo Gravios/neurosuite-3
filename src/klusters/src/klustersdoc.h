@@ -268,7 +268,7 @@ public:
     */
     void createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
 
-    /** DipSplit result summary — returned by dipSplitCluster(). */
+    /** DipSplit result summary — returned by dipSplitApply(). */
     struct DipSplitResult {
         bool    accepted        = false;  ///< true if the split was committed
         int     newClusterId    = 0;      ///< ID of the right-half cluster (0 if none)
@@ -314,35 +314,22 @@ public:
 
     /** Pure algorithm core: tests a cluster for hidden bimodality and
      *  returns a structured decision.  No side effects on KlustersDoc state.
-     *  Used by dipSplitCluster() and exposed for unit testing / future
-     *  preview UI.
+     *  Used by the live-preview path: results are rendered as coloured
+     *  discs over the scatter, then committed via dipSplitApply().
      */
     DipSplitDecision dipSplitDecide(int   clusterId,
                                      int   minSize      = 50,
                                      float bloatFactor  = 0.0f,
                                      float valleyThresh = 0.20f);
 
-    /** Attempt a DipSplit on a single cluster using the same algorithm as
-     * klustakwikExp Phase 8: bloat gate → top-3 PCA → valley test → k-means
-     * seed/refine → BIC gate.  If accepted, commits the split and fires all
-     * view-update signals exactly as createNewCluster() does.
-     *
-     * Parameters default to the values used by KlustaKwikExp.  Returns a
-     * structured result the UI can log or display.
-     */
-    DipSplitResult dipSplitCluster(int   clusterId,
-                                    int   minSize      = 50,
-                                    float bloatFactor  = 0.0f,
-                                    float valleyThresh = 0.20f);
-
     /** Apply a pre-computed DipSplitDecision.  Splits the cluster
      *  according to D.labels, allocates a new ID, renames the source
      *  to the palette tail, fires view updates, and writes a curation
-     *  log entry — exactly the post-decision half of dipSplitCluster.
+     *  log entry.
      *
-     *  Used by the live-preview path so the algorithm runs once
-     *  (in dipSplitDecide), the preview shows the result, and Enter
-     *  commits without re-running.
+     *  Used by the live-preview path: dipSplitDecide() runs once at
+     *  preview entry, the preview shows the result, and Enter commits
+     *  via dipSplitApply without re-running the algorithm.
      *
      *  Parameters minSize / bloatFactor / valleyThresh are passed in
      *  only so they can be recorded in the curation log alongside the
@@ -798,7 +785,7 @@ public Q_SLOTS:
 private:
 
     /** Common UI-update tail for any operation that produces ONE new cluster
-     *  derived from existing ones (createNewCluster, dipSplitCluster, …).
+     *  derived from existing ones (createNewCluster, dipSplitApply, …).
      *
      *  Call after the underlying Data mutator has run successfully.  Performs:
      *    - registers a colour for @p newId in the cluster colour list;

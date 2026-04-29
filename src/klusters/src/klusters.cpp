@@ -2019,16 +2019,6 @@ bool KlustersApp::queryClose()
 }
 
 //TO implement , see documentation
-bool KlustersApp::queryExit()
-{
-    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    //If the saveThread has not finish, wait until id done
-    while(!saveThread->wait()){NS3_DIAG()<<"in queryExit";};
-    QApplication::restoreOverrideCursor();
-
-    return true;
-}
-
 void KlustersApp::customEvent (QEvent* event){
     //Event sent by the SaveThread
     if(event->type() == QEvent::User + 100){
@@ -2397,21 +2387,27 @@ void KlustersApp::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
-void KlustersApp::slotUndo()
-{  
-    slotStatusMsg(tr("Reverting last action..."));
-
+// ---------------------------------------------------------------------------
+// runUndoOrRedo
+//
+// Shared body for slotUndo / slotRedo.  Both run the corresponding doc-
+// level operation under a wait cursor, refresh the traceView browsing
+// state, and restore focus.  The only differences are the status message
+// and which member function (KlustersDoc::undo or ::redo) is invoked.
+// ---------------------------------------------------------------------------
+void KlustersApp::runUndoOrRedo(void (KlustersDoc::*op)(),
+                                 const QString& busyMessage)
+{
+    slotStatusMsg(busyMessage);
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    doc->undo();
+    (doc->*op)();
     QApplication::restoreOverrideCursor();
 
-    //Update the browsing possibility of the traceView
+    // Update the browsing possibility of the traceView
     KlustersView* view = activeView();
-    if(view->containsTraceView() && !view->clusters().isEmpty()) {
+    if (view->containsTraceView() && !view->clusters().isEmpty()) {
         slotStateChanged("traceViewBrowsingState");
-    }
-    else
-    {
+    } else {
         slotStateChanged("noTraceViewBrowsingState");
     }
 
@@ -2419,25 +2415,14 @@ void KlustersApp::slotUndo()
     if (view) view->focusClusterView();
 }
 
+void KlustersApp::slotUndo()
+{
+    runUndoOrRedo(&KlustersDoc::undo,  tr("Reverting last action..."));
+}
+
 void KlustersApp::slotRedo()
 {
-    slotStatusMsg(tr("Reverting last undo action..."));
-    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    doc->redo();
-    QApplication::restoreOverrideCursor();
-
-    //Update the browsing possibility of the traceView
-    KlustersView* view = activeView();
-    if(view->containsTraceView() && !view->clusters().isEmpty())
-    {
-        slotStateChanged("traceViewBrowsingState");
-    }
-    else  {
-        slotStateChanged("noTraceViewBrowsingState");
-    }
-
-    slotStatusMsg(tr("Ready."));
-    if (view) view->focusClusterView();
+    runUndoOrRedo(&KlustersDoc::redo,  tr("Reverting last undo action..."));
 }
 
 void KlustersApp::slotUpdateUndoNb(int undoNb){
@@ -2586,14 +2571,6 @@ void KlustersApp::slotStatusMsg(const QString &text)
     // change status message permanently
     statusBar()->clearMessage();
     statusBar()->showMessage(text);
-}
-
-
-void KlustersApp::viewMenuActivated( int id )
-{
-    /* QWidget* w = pWorkspace->windowList().at( id );
-  if ( w )
-    w->setFocus();*/
 }
 
 
@@ -3104,52 +3081,52 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     if (clusterPalette) clusterPalette->setFocusToList();
 }
 
-void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters){
-    slotStatusMsg(tr("Delete &noisy cluster(s)..."));
+// ---------------------------------------------------------------------------
+// moveSelectedClustersToReservedId
+//
+// Shared body for slotMoveClustersToNoise / slotMoveClustersToArtefact.
+// Both slots delete the selected clusters into a reserved ID (1 = noise,
+// 0 = artefact); everything else (status messages, traceView state
+// transitions, palette refocus) is identical.
+// ---------------------------------------------------------------------------
+void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClusters,
+                                                    int reservedId,
+                                                    const QString& busyMessage)
+{
+    slotStatusMsg(busyMessage);
     KlustersView* view = activeView();
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    doc->deleteClusters(selectedClusters,*view,1);
+    doc->deleteClusters(selectedClusters, *view, reservedId);
 
-    //Update the browsing possibility of the traceView
-    if(view->containsTraceView() && view->clusters().size() != 0) {
+    // Update the browsing possibility of the traceView
+    if (view->containsTraceView() && view->clusters().size() != 0) {
         slotStateChanged("traceViewBrowsingState");
-    }
-    else{
-
+    } else {
         slotStateChanged("noTraceViewBrowsingState");
     }
 
     QApplication::restoreOverrideCursor();
-    slotStatusMsg(tr("Ready.")); 
+    slotStatusMsg(tr("Ready."));
     // Restore focus to the cluster palette rather than the ClusterView:
     // deleteClusters() already auto-selects the next cluster in the list
     // (klustersdoc.cpp via selectItems()), so the user's natural next
     // action is to continue arrow-key navigation — which requires focus
     // on the palette's iconView, not the 2D scatter.  focusClusterView()
     // would steal that focus and silently break arrow-key nav after a
-    // "Delete Noisy" operation.
+    // delete operation.
     if (clusterPalette) clusterPalette->setFocusToList();
 }
 
-void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters){
-    slotStatusMsg(tr("Delete &artifact cluster(s)..."));
-    KlustersView* view = activeView();
-    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    doc->deleteClusters(selectedClusters,*view,0);
+void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters)
+{
+    moveSelectedClustersToReservedId(selectedClusters, /*noise=*/1,
+                                      tr("Delete &noisy cluster(s)..."));
+}
 
-    //Update the browsing possibility of the traceView
-    if(view->containsTraceView() && view->clusters().size() != 0) {
-        slotStateChanged("traceViewBrowsingState");
-    }
-    else {
-        slotStateChanged("noTraceViewBrowsingState");
-    }
-
-    QApplication::restoreOverrideCursor();
-    slotStatusMsg(tr("Ready."));
-    // Same reasoning as slotMoveClustersToNoise: keep focus on the palette
-    // so arrow-key navigation continues on the auto-selected next cluster.
-    if (clusterPalette) clusterPalette->setFocusToList();
+void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters)
+{
+    moveSelectedClustersToReservedId(selectedClusters, /*artefact=*/0,
+                                      tr("Delete &artifact cluster(s)..."));
 }
 
 
@@ -5250,7 +5227,16 @@ void KlustersApp::slotApplyDriftSiblings()
 // ---------------------------------------------------------------------------
 // Timestamp nudge — shift selected cluster's spike timestamps by ±1 sample
 // ---------------------------------------------------------------------------
-void KlustersApp::slotNudgeTimestampMinus()
+// ---------------------------------------------------------------------------
+// nudgeSelectedSingleCluster
+//
+// Shared body for slotNudgeTimestampMinus / Plus.  Both slots
+// (PageUp / PageDown / 3 / 4) shift the active cluster's timestamps by
+// ±1 sample and surface an identical UI flow: validate selection, show
+// "please wait", run the doc-level mutation, restore palette focus.
+// The only difference between the two slots is the sign of the delta.
+// ---------------------------------------------------------------------------
+void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
 {
     if (nudgeInProgress || isInit || !doc || !activeView()) return;
     const QList<int>& shown = activeView()->clusters();
@@ -5265,16 +5251,18 @@ void KlustersApp::slotNudgeTimestampMinus()
     nudgePlusAction->setEnabled(false);
     statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    const bool ok = doc->nudgeClusterTimestamps(id, -1);
+    const bool ok = doc->nudgeClusterTimestamps(id, deltaSamples);
     nudgeInProgress = false;
     lastNudgeTimer.restart();
     nudgeMinusAction->setEnabled(true);
     nudgePlusAction->setEnabled(true);
-    if (ok)
+    if (ok) {
+        const QString sign = (deltaSamples >= 0) ? QStringLiteral("+") : QStringLiteral("");
         statusBar()->showMessage(
-            tr("Cluster %1: −1 sample.").arg(id), 2000);
-    else
+            tr("Cluster %1: %2%3 sample.").arg(id).arg(sign).arg(deltaSamples), 2000);
+    } else {
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
+    }
     // Nudge is a keyboard-triggered op (PageUp/PageDown or 3/4) initiated
     // from the cluster palette.  Keep palette focus so the user can keep
     // arrow-navigating between clusters without having to Tab back.
@@ -5285,34 +5273,8 @@ void KlustersApp::slotNudgeTimestampMinus()
     if (clusterPalette) clusterPalette->setFocusToList();
 }
 
-void KlustersApp::slotNudgeTimestampPlus()
-{
-    if (nudgeInProgress || isInit || !doc || !activeView()) return;
-    const QList<int>& shown = activeView()->clusters();
-    if (shown.size() != 1) {
-        statusBar()->showMessage(
-            tr("Select exactly one cluster first."), 3000);
-        return;
-    }
-    const int id = shown.first();
-    nudgeInProgress = true;
-    nudgeMinusAction->setEnabled(false);
-    nudgePlusAction->setEnabled(false);
-    statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    const bool ok = doc->nudgeClusterTimestamps(id, +1);
-    nudgeInProgress = false;
-    lastNudgeTimer.restart();
-    nudgeMinusAction->setEnabled(true);
-    nudgePlusAction->setEnabled(true);
-    if (ok)
-        statusBar()->showMessage(
-            tr("Cluster %1: +1 sample.").arg(id), 2000);
-    else
-        statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
-    // See slotNudgeTimestampMinus for rationale: keep palette focus.
-    if (clusterPalette) clusterPalette->setFocusToList();
-}
+void KlustersApp::slotNudgeTimestampMinus() { nudgeSelectedSingleCluster(-1); }
+void KlustersApp::slotNudgeTimestampPlus()  { nudgeSelectedSingleCluster(+1); }
 
 // ---------------------------------------------------------------------------
 // Move-selected-clusters-to-end (palette T key)

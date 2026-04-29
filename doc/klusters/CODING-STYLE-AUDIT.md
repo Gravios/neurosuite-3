@@ -242,3 +242,112 @@ unsigned reinterpretation in arithmetic).
 - No behavioural change: `static_cast<T>(expr)` and `(T)expr` produce
   identical machine code for primitive type conversions.
 
+## Phase 5: AST-based dead-code & duplicate-code analysis (completed)
+
+Built a tree-sitter-driven analyzer (`scripts/audit/find_dead_and_dupes.py`,
+~280 lines) that parses every `*.cpp` / `*.h` in the source tree, builds
+symbol tables for declarations / definitions / uses, and computes
+canonicalised AST fingerprints (identifiers and literals erased) for
+clone detection.
+
+### Methodology refinement
+
+The first run scanned only the 19 working-tree files and reported many
+false positives — methods that are actually called from the broader
+545-file project (`realignworker.cpp`, `processwidget.cpp`, etc., not
+in the working copy).  Re-ran against a *merged tree* — full reference
+clone overlaid with working-tree edits, 190 klusters-related files —
+to get real signal.  This step is documented in the script header so
+future passes know to do the same.
+
+### Filters applied
+
+The dead-code filter excludes:
+- Qt signals (extracted from `signals:` / `Q_SIGNALS:` ranges)
+- Methods named `slotXxx` / `onXxx` (Qt connect convention; called via
+  string-literal SLOT()/SIGNAL() macros invisible to AST analysis)
+- Methods marked `virtual` or `override` (called via vtable)
+- Special methods: constructors, destructors, `operator…`, `main`,
+  Qt metacall hooks, standard event handlers (`paintEvent`, `keyPressEvent`,
+  …), STL container hooks (`begin`, `end`, …)
+
+The clone detector ignores function bodies smaller than 12 AST nodes
+(too trivial to be interesting).  Reports groups with bodies ≥30 AST
+nodes by default.
+
+### Findings — dead code
+
+22 candidates strictly in working-tree files.  Cross-checked each via
+grep; **3 verified-dead methods removed** in this pass:
+
+| Removed | Why |
+|---|---|
+| `KlustersApp::queryExit()` | Qt 4 `KMainWindow` API leftover; no callers in Qt 6 codebase. Body just waited for the save-thread which is already handled in `slotFileQuit()`. |
+| `KlustersApp::viewMenuActivated()` | Empty body referencing a long-removed `pWorkspace` MDI workspace. |
+| `KlustersDoc::dipSplitCluster()` (the wrapper) | Superseded by the live-preview path's `dipSplitDecide()` + `dipSplitApply()`.  Doc-comments referencing it cleaned up. |
+
+**Items deliberately kept** despite zero current callers:
+- `hasWatershedOverlay`, `hasDipsplitPreview`, `maxBufferEntries`,
+  `pendingEntryCount`, `isNavigating`, etc. — predicate API surface
+  added as part of coherent class APIs.  Kept; cost is one inline
+  declaration each.
+
+**Item the analyzer incorrectly flagged**: `Validator::fixup` (3 sites
+in `klusters.h`).  These are `QValidator::fixup` overrides called by
+Qt via vtable, but the keyword `virtual` doesn't appear at the override
+site (inherited from the base).  Filter limitation noted in the script
+header; left in place to remind future passes.
+
+### Findings — duplicate code
+
+120 clone groups detected; 30 with bodies ≥30 AST nodes.  Three
+clearly-mergeable refactors applied:
+
+| Pair | Fingerprint size | Refactored to |
+|---|---|---|
+| `slotNudgeTimestampMinus` / `Plus` | 332 nodes | `nudgeSelectedSingleCluster(int delta)` private helper; both slots are now one-liners. |
+| `slotMoveClustersToNoise` / `ToArtefact` | 173 nodes | `moveSelectedClustersToReservedId(selected, reservedId, busyMsg)` private helper; both slots delegate. |
+| `slotUndo` / `slotRedo` | 165 nodes | `runUndoOrRedo(void (KlustersDoc::*op)(), busyMsg)` private helper using pointer-to-member; both slots delegate. |
+
+**Clones deliberately kept** as legitimate twins:
+- `setSelectionLineWidth` / `setMarkerSize` (118 nodes) — share a
+  pattern but the calls into `Data` differ semantically; refactoring
+  would obscure the per-property update.
+- `setGain` / `setBackgroundColor` / `setChannelPositions` (90 nodes ×3)
+  — same setter pattern across orthogonal properties; deliberate.
+- `slotSingleNew` / `slotMultipleNew` / `slotDeleteNoise` /
+  `slotDeleteArtefact` / `slotZoom` / `slotSelectTime` (88 nodes ×6)
+  — each enters a distinct selection-mode; the small body is exactly
+  the right shape to express that.
+- `slotWindowNewClusterDisplay` / `Waveform` / `Crosscorrelation` /
+  `OverView` / `TraceDisplay` (46 nodes ×5) — five entry points, one
+  per display kind; could be parameterised but the explicit verbs are
+  more discoverable as menu actions.
+- `slotShowNextCluster` / `Previous` (41 nodes) — two-line directional
+  delta that's clearer kept as twin slots.
+- `ClusterPalette::moveClustersToNoise` / `ToArtefact` (54 nodes) — only
+  6 lines each; the `emit` requires a specific signal so refactoring
+  would need either function-pointer indirection or a templated emit
+  for marginal savings.
+- `Waveforms::nextSpike` / `nextMeanValue` / `nextStDeviationValue`
+  (33 nodes ×6) — three accessors × two waveform-buffer types; clones
+  are an artefact of a templated-iterator pattern that was open-coded.
+  Refactoring needs a base-class redesign — out of scope for this pass.
+
+### Verification
+
+- All 12 modified files brace-balanced.
+- All `dipSplitCluster` references purged (declaration, definition,
+  three doc-comment references in `klustersdoc.{h,cpp}`).
+- Three new helper declarations + definitions all resolve.
+- Expected behavioural identity: helpers are exact inlines of the
+  original bodies parameterised by the single varying input.
+
+### Tooling left in tree
+
+The analyzer script lives at `scripts/audit/find_dead_and_dupes.py`
+for future passes.  It needs `pip3 install tree_sitter==0.21.3
+tree_sitter_languages` and is configurable via the `ROOT` constant
+near the top.  The "merged tree" preconditioning step is documented
+in the file's header doc-comment.
+

@@ -138,12 +138,6 @@ public:
     
 
 protected:
-    /** queryExit is called by KDocMainWindow when the last window of the application is going to be closed during the closeEvent().
-     * Its purpose is purely to prepare the application (with possible user interaction)
-     * so it can safely be closed later (without user interaction).
-     */
-    bool queryExit();
-    
     void customEvent (QEvent *event) override;
     void showEvent(QShowEvent* event)override {slotUpdateParameterBar();}
 
@@ -241,8 +235,6 @@ private Q_SLOTS:
      * @param text the text that is displayed in the statusbar
      */
     void slotStatusMsg(const QString &text);
-    /** Activates the MDI child widget when it gets selected from the window menu. */
-    void viewMenuActivated( int id );
     /*Slots for the tools menu.*/
     /**Changes to a mode enabling the creation of a single cluster by selecting an area.*/
     void slotSingleNew();
@@ -520,6 +512,26 @@ private:
      *  keyboard focus.  Used by the palette-context shortcut handlers
      *  (S, T, PageUp, PageDown) to decide whether to claim the key. */
     bool paletteHasFocus() const;
+
+    /** Shared implementation of slotNudgeTimestampMinus / Plus.  Both
+     *  slots only differ in the sign of @p deltaSamples; everything else
+     *  (selection guard, busy flag, status messages, palette refocus) is
+     *  identical so it lives here. */
+    void nudgeSelectedSingleCluster(int deltaSamples);
+
+    /** Shared implementation of slotMoveClustersToNoise / ToArtefact.
+     *  Both slots delete the selected clusters into a reserved ID
+     *  (1 = noise, 0 = artefact); the status string and the reserved
+     *  ID are the only differences. */
+    void moveSelectedClustersToReservedId(const QList<int>& selectedClusters,
+                                           int reservedId,
+                                           const QString& busyMessage);
+
+    /** Shared implementation of slotUndo / slotRedo.  Both invoke the
+     *  corresponding KlustersDoc operation, refresh the traceView state,
+     *  and restore focus.  @p op is a pointer-to-member of KlustersDoc;
+     *  @p busyMessage is the status-bar text shown during the call. */
+    void runUndoOrRedo(void (KlustersDoc::*op)(), const QString& busyMessage);
 
     // ── Watershed live-preview mode (Shift+W) ───────────────────────────
     // The live preview replaces the pre-2026-04 modal dialog.  Pressing
