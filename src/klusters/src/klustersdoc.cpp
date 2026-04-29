@@ -5309,14 +5309,59 @@ KlustersDoc::dipSplitCluster(int   clusterId,
     // ── UI plumbing (palette refresh, view updates, undo) ────────────────
     commitClusterCreation(newId, fromClusters, emptiedClusters, activeView);
 
+    // ── Rename source cluster to the tail ────────────────────────────────
+    // After the split commits, the source cluster (now holding the
+    // left-half spikes) is still at its original palette position while
+    // newId sits at the tail.  To match the recluster / watershed
+    // convention — every "the algorithm partitioned this cluster"
+    // operation should leave both halves at the end of the palette —
+    // we rename the source to the next free ID, which is newId+1.
+    //
+    // Note on undo: the rename pushes its own data-side undo entry, so
+    // a full revert of DipSplit takes two Ctrl+Z presses (one for the
+    // rename, one for the split).  This matches the behaviour of any
+    // composite curation gesture and is the trade-off for keeping the
+    // moveSpikeSubset / commitClusterCreation primitive single-purpose.
+    int renamedSourceId = clusterId;
+    {
+        const int tailId = static_cast<int>(clusteringData->nextFreeClusterId());
+        if (tailId > 0 && tailId != clusterId) {
+            // Build the partial map (just the source) and the full
+            // coverage map applyClusterRename uses to drive view +
+            // matrix updates.
+            QMap<int,int> partialOldToNew;
+            partialOldToNew.insert(clusterId, tailId);
+
+            const QList<dataType> existing = clusteringData->clusterIds();
+            QMap<int,int> fullOldToNew;
+            QMap<int,int> fullNewToOld;
+            for (dataType eid : existing) {
+                const int iid = static_cast<int>(eid);
+                fullOldToNew.insert(iid, iid);
+                fullNewToOld.insert(iid, iid);
+            }
+            fullOldToNew.insert(clusterId, tailId);
+            fullNewToOld.insert(tailId, clusterId);
+            fullNewToOld.remove(clusterId);
+
+            // Doc-level rename undo snapshot (parallels renumberClustersToEnd).
+            prepareUndo(fullOldToNew, fullNewToOld);
+            applyClusterRename(partialOldToNew, &fullOldToNew);
+            renamedSourceId = tailId;
+        }
+    }
+
     // ── Curation-log: details + after-snapshot ───────────────────────────
     if (m_curationLogger && m_curationLogger->isOpen()) {
-        m_curationLogger->recordActionDetails(buildLogDetails(D, newId));
+        QMap<QString, QVariant> details = buildLogDetails(D, newId);
+        details.insert(QStringLiteral("renamed_source_to"), renamedSourceId);
+        m_curationLogger->recordActionDetails(details);
     }
-    logAfter(QList<int>{ clusterId, newId });
+    logAfter(QList<int>{ renamedSourceId, newId });
 
     // ── Build result ─────────────────────────────────────────────────────
     DipSplitResult R = resultFromDecision(D);
-    R.newClusterId = newId;
+    R.newClusterId    = newId;
+    R.renamedSourceId = renamedSourceId;
     return R;
 }

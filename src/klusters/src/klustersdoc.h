@@ -269,18 +269,24 @@ public:
 
     /** DipSplit result summary — returned by dipSplitCluster(). */
     struct DipSplitResult {
-        bool    accepted     = false;  ///< true if the split was committed
-        int     newClusterId = 0;      ///< ID of the right-half cluster (0 if none)
-        int     n0           = 0;      ///< # spikes retained in original cluster
-        int     n1           = 0;      ///< # spikes moved to newClusterId
-        int     bestPC       = -1;     ///< which PC (0-2) showed deepest valley
-        double  bestDepth    = 0.0;    ///< valley depth in [0..1]
-        double  mahal2P90    = 0.0;    ///< 90th-percentile Mahalanobis² of cluster
-        double  chi2_90      = 0.0;    ///< reference χ²(d, 0.9)
-        double  deltaBIC     = 0.0;    ///< BIC(k=1) - BIC(k=2);  > 0 ⇒ split better
-        QString reason;                ///< "split", "too_small", "not_bloated",
-                                       ///< "no_valley", "small_child", "bic_worse",
-                                       ///< "cluster_not_found", "bad_features"
+        bool    accepted        = false;  ///< true if the split was committed
+        int     newClusterId    = 0;      ///< ID of the right-half cluster (0 if none)
+        int     renamedSourceId = 0;      ///< ID the original source cluster was
+                                          ///< renamed to so it lands at the palette
+                                          ///< tail alongside newClusterId.  Equal
+                                          ///< to the input clusterId iff the
+                                          ///< rename step was skipped (only when
+                                          ///< the split itself was skipped).
+        int     n0              = 0;      ///< # spikes retained in original cluster
+        int     n1              = 0;      ///< # spikes moved to newClusterId
+        int     bestPC          = -1;     ///< which PC (0-2) showed deepest valley
+        double  bestDepth       = 0.0;    ///< valley depth in [0..1]
+        double  mahal2P90       = 0.0;    ///< 90th-percentile Mahalanobis² of cluster
+        double  chi2_90         = 0.0;    ///< reference χ²(d, 0.9)
+        double  deltaBIC        = 0.0;    ///< BIC(k=1) - BIC(k=2);  > 0 ⇒ split better
+        QString reason;                   ///< "split", "too_small", "not_bloated",
+                                          ///< "no_valley", "small_child", "bic_worse",
+                                          ///< "cluster_not_found", "bad_features"
     };
 
     /** Pure-decision output of dipSplitDecide() — captures whether the
