@@ -232,12 +232,11 @@ void ClusterView::paintEvent ( QPaintEvent*){
     if (!wsImage.isNull())
         paintWatershedOverlay(p, r);
 
-    // DipSplit overlay (Shift+D preview mode).  Mutually exclusive with
-    // watershed by KlustersApp's state machine, but the paintEvent is
-    // tolerant of both being scheduled.  Drawn last (after watershed)
-    // for the same uncached-fresh-each-paint reason.
-    if (!dsXs.isEmpty())
-        paintDipsplitPreview(p, r);
+    // DipSplit post-commit HUD (Shift+D confirm window).  Just a text
+    // box at top-left — no scatter overlay, since the split has already
+    // happened and the new clusters are visible via normal rendering.
+    if (!dsHud.isEmpty())
+        paintDipsplitPostCommitHud(p);
 }
 
 void ClusterView::setWatershedOverlay(const QImage& img,
@@ -312,117 +311,46 @@ void ClusterView::paintWatershedOverlay(QPainter& p, const QRect& worldRect)
     }
 }
 
-void ClusterView::setDipsplitPreview(const QVector<double>& xs,
-                                       const QVector<double>& ys,
-                                       const QVector<int>&    labels,
-                                       const QString&         hud)
+void ClusterView::setDipsplitPostCommitHud(const QString& hud)
 {
-    // Defensive: if the three arrays are inconsistent, treat as a clear.
-    if (xs.size() != ys.size() || xs.size() != labels.size()) {
-        clearDipsplitPreview();
+    if (hud.isEmpty()) {
+        clearDipsplitPostCommitHud();
         return;
     }
-    dsXs     = xs;
-    dsYs     = ys;
-    dsLabels = labels;
-    dsHud    = hud;
+    dsHud = hud;
+    // Plain update() — the HUD draws on top of the existing doublebuffer
+    // contents in REFRESH mode, no buffer rebuild needed.  Same pattern
+    // as setWatershedOverlay.
     update();
 }
 
-void ClusterView::clearDipsplitPreview()
+void ClusterView::clearDipsplitPostCommitHud()
 {
-    if (dsXs.isEmpty() && dsHud.isEmpty()) return;
-    dsXs.clear();
-    dsYs.clear();
-    dsLabels.clear();
+    if (dsHud.isEmpty()) return;
     dsHud.clear();
     update();
 }
 
-void ClusterView::paintDipsplitPreview(QPainter& p, const QRect& worldRect)
+void ClusterView::paintDipsplitPostCommitHud(QPainter& p)
 {
-    // ── Coloured-disk rendering ─────────────────────────────────────────
-    // Each candidate spike is drawn as a filled translucent disk in
-    // world (feature) coordinates.  Blue = label 0 (left half, retained
-    // by source on commit); red = label 1 (right half, moved to the new
-    // cluster).  Alpha ~ 160 keeps overlapping points readable.
-    //
-    // We use the same world-coordinate convention the rest of ClusterView
-    // uses: x is feature-X straight; y is the negated feature-Y so
-    // larger feature-Y maps to smaller world-y (visual top).  The
-    // (W-1-y) flip is therefore not needed here — we just write -y.
-    //
-    // Disk radius is in world units.  The current scatter draws each
-    // spike as a small dot of size pointSize (in world units, see
-    // ClusterView::pointSize).  The preview disk is intentionally
-    // larger than that — twice the radius — so it visibly covers the
-    // underlying point.  pointSize is in member-data accessible via
-    // the inherited ViewWidget API.
-
-    p.save();
-    p.setWindow(worldRect.left(), worldRect.top(),
-                worldRect.width()-1, worldRect.height()-1);
-    p.setRenderHint(QPainter::Antialiasing, true);
-
-    // Per-side colours: cool blue for left, warm red for right.  Both
-    // pure-saturation @ alpha 160 — readable both over light and dark
-    // scatter backgrounds.
-    const QColor blue (0,   120, 255, 160);
-    const QColor red  (255,  60,  60, 160);
-    const QColor blueOutline(0,   60, 180, 220);
-    const QColor redOutline (180, 30,  30, 220);
-
-    // Disk radius in world units.  Hard-coded relative to the world rect
-    // span — small enough not to obscure the partition, large enough to
-    // be unmistakable on top of a small-pointSize scatter.
-    const double radius =
-        0.005 * std::max<double>(worldRect.width(), worldRect.height());
-
-    QPen blueP(blueOutline);
-    blueP.setWidthF(radius * 0.25);
-    blueP.setCosmetic(false);
-    QPen redP(redOutline);
-    redP.setWidthF(radius * 0.25);
-    redP.setCosmetic(false);
-
-    const int N = dsXs.size();
-    for (int i = 0; i < N; ++i) {
-        const double cx =  dsXs[i];
-        const double cy = -dsYs[i];      // ClusterView's negate-Y convention
-        const int    lab = dsLabels[i];
-
-        const QRectF disk(QPointF(cx - radius, cy - radius),
-                          QPointF(cx + radius, cy + radius));
-        if (lab == 1) {
-            p.setBrush(red);
-            p.setPen(redP);
-        } else {
-            p.setBrush(blue);
-            p.setPen(blueP);
-        }
-        p.drawEllipse(disk);
-    }
-
-    p.restore();
-
-    // ── HUD: same style as the watershed overlay (top-left in
-    // ── viewport pixels, dark translucent background, white text).
-    if (!dsHud.isEmpty()) {
-        QFont f = p.font();
-        f.setPointSize(10);
-        p.setFont(f);
-        const QFontMetrics fm(p.font());
-        const QRect textBounds = fm.boundingRect(
-            QRect(0, 0, 600, 200),
-            Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
-            dsHud);
-        const QRect bg = textBounds.translated(8, 8).adjusted(-6, -3, 8, 3);
-        p.fillRect(bg, QColor(0, 0, 0, 180));
-        p.setPen(QColor(255, 255, 255));
-        p.drawText(QRect(8, 8, 600, 200),
-                   Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
-                   dsHud);
-    }
+    // Top-left text block in viewport pixels — same style as the
+    // watershed HUD: dark translucent background, white text.  No
+    // scatter overlay; the post-commit state is the actual cluster
+    // configuration, drawn through normal rendering paths.
+    QFont f = p.font();
+    f.setPointSize(10);
+    p.setFont(f);
+    const QFontMetrics fm(p.font());
+    const QRect textBounds = fm.boundingRect(
+        QRect(0, 0, 600, 200),
+        Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+        dsHud);
+    const QRect bg = textBounds.translated(8, 8).adjusted(-6, -3, 8, 3);
+    p.fillRect(bg, QColor(0, 0, 0, 180));
+    p.setPen(QColor(255, 255, 255));
+    p.drawText(QRect(8, 8, 600, 200),
+               Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+               dsHud);
 }
 
 void ClusterView::eraseTheLastDrawnLine()

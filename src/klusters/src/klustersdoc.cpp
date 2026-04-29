@@ -1418,6 +1418,100 @@ void KlustersDoc::commitClusterCreation(int newId,
     }
 }
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::commitTwoClusterCreation
+//
+// Sibling of commitClusterCreation for paths that produce TWO new clusters
+// from one (or more) source clusters in a single atomic Data mutation.
+// Used by dipSplitApply.
+//
+// Architecturally this is the recluster pattern (as used by watershed):
+//   - prepareReclusteringUndo(newClusterList, inputs)  — single doc-side
+//     undo entry covering N source clusters dissolving into M new
+//     clusters.
+//   - addNewClustersToView(inputs, newClusterList, …) — single view-side
+//     undo entry; the recluster-variant primitive does all source-removal
+//     and new-cluster registration in one bookkeeping pass.
+//   - emit newClustersAdded(inputs)                   — recluster-shaped
+//     signal for matrix views (single, takes only the dissolved-sources
+//     list).
+//
+// Three-stack symmetry: KlustersDoc undo, Data undo (already pushed by
+// splitClusterTwoWays), and KlustersView undo all get exactly ONE entry.
+// One Ctrl+Z fully reverts; one Ctrl+Y fully replays.  Matches the
+// watershed precedent verbatim.
+// ---------------------------------------------------------------------------
+void KlustersDoc::commitTwoClusterCreation(int leftId,
+                                            int rightId,
+                                            QList<int>& fromClusters,
+                                            QList<int>& emptiedClusters,
+                                            KlustersView* activeView)
+{
+    QList<int> newClusterList;
+    newClusterList.append(leftId);
+    newClusterList.append(rightId);
+
+    // ── Doc-level undo: prepareReclusteringUndo treats the operation
+    // ── as N→M (sources dissolving, new clusters appearing).  Single
+    // ── doc-side entry.
+    prepareReclusteringUndo(newClusterList, emptiedClusters);
+
+    // ── Colour palette update: build clustersToShow exactly like
+    // ── watershed's main branch: start from "currently shown except
+    // ── the dissolved sources", then append the new IDs.
+    QList<int> clustersToShow;
+    if (activeView) {
+        const QList<int> currentlyShown = activeView->clusters();
+        for (int c : currentlyShown)
+            if (!emptiedClusters.contains(c)) clustersToShow.append(c);
+    }
+    QColor color;
+    for (int newId : newClusterList) {
+        color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10,
+                     200, 255);
+        clusterColorList->append(newId, color);
+        clustersToShow.append(newId);
+    }
+    for (int oldId : emptiedClusters)
+        clusterColorList->remove(oldId);
+
+    // ── View notification: one call per view, recluster-variant
+    // ── primitive — single view-side undo entry per view.
+    for (KlustersView* v : *viewList) {
+        const bool isActive = (v == activeView);
+        v->addNewClustersToView(emptiedClusters, newClusterList, isActive);
+        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+    // Recluster-shaped matrix-view notification: takes only the
+    // sources-dissolved list, not per-cluster from-list.
+    emit newClustersAdded(emptiedClusters);
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    if (activeView) activeView->showAllWidgets();
+
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(clustersToShow);
+
+    // Caches: source clusters' caches are stale (they're gone), but the
+    // dissolved-cluster entries vanish with the cluster itself.  No-op
+    // loop kept for symmetry with commitClusterCreation in case a
+    // future caller passes a non-emptied modifier in fromClusters.
+    for (int cid : fromClusters) {
+        if (emptiedClusters.contains(cid)) continue;
+        invalidateWaveformCache(cid);
+        invalidateCorrelogramCache(cid);
+    }
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* v = viewList->at(i);
+        for (int cid : fromClusters) {
+            if (emptiedClusters.contains(cid)) continue;
+            v->invalidateClusterDisplay(cid);
+        }
+    }
+}
+
 
 void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
     //list which will contain the clusters really having spikes in the region of selection.
@@ -5199,18 +5293,28 @@ KlustersDoc::dipSplitDecide(int   clusterId,
 // ---------------------------------------------------------------------------
 // KlustersDoc::dipSplitApply
 //
-// Commits a pre-computed DipSplitDecision.  Used by the live-preview UI:
-// dipSplitDecide() runs at preview entry, the proposed partition is
-// rendered as coloured discs over the scatter, and Enter calls
-// dipSplitApply with the cached decision.  No algorithm work happens
-// here — the decision is given.  This function only:
-//   1. Allocates a new cluster ID.
-//   2. Calls Data::moveSpikeSubset to relabel the right-half spikes.
-//   3. Renames the source to the palette tail.
-//   4. Fires view-update signals.
-//   5. Writes the curation log entry.
+// Commits a pre-computed DipSplitDecision (model A: two-cluster split).
 //
-// Parameters minSize/bloatFactor/valleyThresh are recorded in the log
+// Architecture:
+//   1. Allocate two new IDs at the tail: leftId = nextFreeClusterId(),
+//      rightId = leftId + 1.
+//   2. Build leftRows (label==0) and rightRows (label==1).
+//   3. Call Data::splitClusterTwoWays — partitions the source's spikes
+//      into leftId + rightId in a single rebuild.  Source becomes empty
+//      and is removed.  ONE Data-side undo entry.
+//   4. Call commitTwoClusterCreation — palette colours, view
+//      notifications, doc-side undo (one entry).  View-side undo
+//      routes through addNewClustersToView (recluster variant) for
+//      one view-side entry.
+//
+// One Ctrl+Z fully reverts.  One Ctrl+Y fully replays.  No rename, no
+// asymmetric undo.
+//
+// Palette result for source=22 with previous max=31:
+//   pre:   {1, 2, ..., 21, 22, 23, ..., 31}
+//   post:  {1, 2, ..., 21,     23, ..., 31, 32=left, 33=right}
+//
+// minSize/bloatFactor/valleyThresh are recorded in the curation log
 // alongside the decision metrics; they don't influence behaviour here.
 // ---------------------------------------------------------------------------
 KlustersDoc::DipSplitResult
@@ -5222,6 +5326,7 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     auto resultFromDecision = [](const DipSplitDecision& D) {
         DipSplitResult R;
         R.accepted   = D.accepted;
+        R.sourceId   = D.clusterId;
         R.n0         = D.n0;
         R.n1         = D.n1;
         R.bestPC     = D.bestPC;
@@ -5233,11 +5338,12 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
         return R;
     };
 
-    auto buildLogDetails = [&](const DipSplitDecision& D, int newId) {
+    auto buildLogDetails = [&](const DipSplitDecision& D, int leftId, int rightId) {
         QMap<QString, QVariant> m;
         m.insert(QStringLiteral("algorithm"),     QStringLiteral("dipsplit"));
         m.insert(QStringLiteral("source_cluster"), D.clusterId);
-        m.insert(QStringLiteral("new_cluster"),    newId);
+        m.insert(QStringLiteral("left_cluster"),   leftId);
+        m.insert(QStringLiteral("right_cluster"),  rightId);
         m.insert(QStringLiteral("reason"),         D.reason);
         m.insert(QStringLiteral("min_size"),       minSize);
         m.insert(QStringLiteral("bloat_factor"),   static_cast<double>(bloatFactor));
@@ -5255,17 +5361,12 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     if (!D.accepted)
         return resultFromDecision(D);
 
-    const int clusterId = D.clusterId;
+    const int sourceClusterId = D.clusterId;
 
-    // ── Allocate a free cluster ID ───────────────────────────────────────
-    // Use the canonical max+1 policy that every other create-cluster path
-    // uses (Group, polygon-Split, Recluster, Watershed).  Earlier this
-    // was a gap-fill scan that allocated the first free ID >= 2,
-    // producing inconsistent palette positions: clusters {2, 17, 22}
-    // would get newId=3 here but newId=23 from a polygon split, even
-    // though both are conceptually "split this cluster in two".
-    const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
-    if (newId == 0) {
+    // ── Allocate two free cluster IDs at the tail ────────────────────────
+    const int leftId  = static_cast<int>(clusteringData->nextFreeClusterId());
+    const int rightId = leftId + 1;
+    if (leftId == 0) {
         DipSplitResult R = resultFromDecision(D);
         R.accepted = false;
         R.reason   = QStringLiteral("no_free_id");
@@ -5273,95 +5374,60 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     }
 
     // ── Curation-log: open the action ─────────────────────────────────────
-    logBefore(CurationLogger::ActionType::SPLIT, QList<int>{ clusterId });
+    logBefore(CurationLogger::ActionType::SPLIT, QList<int>{ sourceClusterId });
 
-    // ── Build the feature-row set for label==1 spikes ────────────────────
+    // ── Build the row-sets for label==0 (left) and label==1 (right) ──────
+    QSet<dataType> leftRows;
     QSet<dataType> rightRows;
+    leftRows.reserve(D.n0);
     rightRows.reserve(D.n1);
     const int M = static_cast<int>(D.labels.size());
     for (int i = 0; i < M; ++i) {
-        if (D.labels[static_cast<size_t>(i)] == 1)
-            rightRows.insert(D.rowsByMember.at(i));
+        const dataType row = D.rowsByMember.at(i);
+        if (D.labels[static_cast<size_t>(i)] == 0)
+            leftRows.insert(row);
+        else
+            rightRows.insert(row);
     }
 
-    // ── Mutate ──────────────────────────────────────────────────────────
-    KlustersView* activeView =
-        app()->activeView();
+    // ── Mutate (single Data-side undo entry) ─────────────────────────────
+    KlustersView* activeView = app()->activeView();
 
     QList<int> fromClusters;
     QList<int> emptiedClusters;
-    clusteringData->moveSpikeSubset(clusterId, rightRows, newId,
-                                    fromClusters, emptiedClusters);
-    if (fromClusters.isEmpty()) {
-        // moveSpikeSubset rejected (no spikes actually moved) — bail out
-        // cleanly.  Curation log gets the rejection details too.
+    QList<int> newClusters;
+    clusteringData->splitClusterTwoWays(sourceClusterId,
+                                         leftRows,  leftId,
+                                         rightRows, rightId,
+                                         fromClusters, emptiedClusters,
+                                         newClusters);
+    if (newClusters.size() != 2) {
+        // Degenerate split — one side empty after row resolution.
         if (activeView) activeView->showAllWidgets();
         if (curationLogger && curationLogger->isOpen()) {
-            curationLogger->recordActionDetails(buildLogDetails(D, 0));
+            curationLogger->recordActionDetails(buildLogDetails(D, 0, 0));
         }
-        logAfter(QList<int>{ clusterId });
+        logAfter(QList<int>{ sourceClusterId });
         DipSplitResult R = resultFromDecision(D);
         R.accepted = false;
         R.reason   = QStringLiteral("small_child");
         return R;
     }
 
-    // ── UI plumbing (palette refresh, view updates, undo) ────────────────
-    commitClusterCreation(newId, fromClusters, emptiedClusters, activeView);
-
-    // ── Rename source cluster to the tail ────────────────────────────────
-    // After the split commits, the source cluster (now holding the
-    // left-half spikes) is still at its original palette position while
-    // newId sits at the tail.  To match the recluster / watershed
-    // convention — every "the algorithm partitioned this cluster"
-    // operation should leave both halves at the end of the palette —
-    // we rename the source to the next free ID, which is newId+1.
-    //
-    // Note on undo: the rename pushes its own data-side undo entry, so
-    // a full revert of DipSplit takes two Ctrl+Z presses (one for the
-    // rename, one for the split).  This matches the behaviour of any
-    // composite curation gesture and is the trade-off for keeping the
-    // moveSpikeSubset / commitClusterCreation primitive single-purpose.
-    int renamedSourceId = clusterId;
-    {
-        const int tailId = static_cast<int>(clusteringData->nextFreeClusterId());
-        if (tailId > 0 && tailId != clusterId) {
-            // Build the partial map (just the source) and the full
-            // coverage map applyClusterRename uses to drive view +
-            // matrix updates.
-            QMap<int,int> partialOldToNew;
-            partialOldToNew.insert(clusterId, tailId);
-
-            const QList<dataType> existing = clusteringData->clusterIds();
-            QMap<int,int> fullOldToNew;
-            QMap<int,int> fullNewToOld;
-            for (dataType eid : existing) {
-                const int iid = static_cast<int>(eid);
-                fullOldToNew.insert(iid, iid);
-                fullNewToOld.insert(iid, iid);
-            }
-            fullOldToNew.insert(clusterId, tailId);
-            fullNewToOld.insert(tailId, clusterId);
-            fullNewToOld.remove(clusterId);
-
-            // Doc-level rename undo snapshot (parallels renumberClustersToEnd).
-            prepareUndo(fullOldToNew, fullNewToOld);
-            applyClusterRename(partialOldToNew, &fullOldToNew);
-            renamedSourceId = tailId;
-        }
-    }
+    // ── UI plumbing (single doc-side undo entry, single view-side entry) ─
+    commitTwoClusterCreation(leftId, rightId, fromClusters, emptiedClusters,
+                             activeView);
 
     // ── Curation-log: details + after-snapshot ───────────────────────────
     if (curationLogger && curationLogger->isOpen()) {
-        QMap<QString, QVariant> details = buildLogDetails(D, newId);
-        details.insert(QStringLiteral("renamed_source_to"), renamedSourceId);
+        QMap<QString, QVariant> details = buildLogDetails(D, leftId, rightId);
         curationLogger->recordActionDetails(details);
     }
-    logAfter(QList<int>{ renamedSourceId, newId });
+    logAfter(QList<int>{ leftId, rightId });
 
     // ── Build result ─────────────────────────────────────────────────────
     DipSplitResult R = resultFromDecision(D);
-    R.newClusterId    = newId;
-    R.renamedSourceId = renamedSourceId;
+    R.leftId  = leftId;
+    R.rightId = rightId;
     return R;
 }

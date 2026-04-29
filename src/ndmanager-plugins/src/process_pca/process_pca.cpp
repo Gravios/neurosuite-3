@@ -83,6 +83,7 @@ void help(const char* name)
 	cout << " -s size         input data size in bytes (ex : 32000000) when reading from standard input" << endl;
 	cout << " -c              use centered data for the projection" << endl;
 	cout << " -x              include extra features in output file (spike peak values)" << endl;
+	cout << " -g group        electrode-group number for progress bar label (e.g. -g 7 → [PCA-7])" << endl;
 	cout << " -v              verbose mode" << endl;
 	cout << " -h              display help" << endl;
 	cout << endl << "All arguments are mandatory except" << endl;
@@ -119,6 +120,7 @@ int main(int argc,char *argv[])
 	arguments.isNComponentsProvided = false;
 	arguments.isExtraFeaturesProvided = false;
 	arguments.isOffsetProvided = false;
+	arguments.electrodeGroup = -1;  // -1 == no group label (legacy mode)
 	
 	parseArgs(argc,argv,arguments); // Parse command-line
 	
@@ -212,7 +214,17 @@ int main(int argc,char *argv[])
 		cout << endl;
 	}
 
-	ProgressBar *progress = new ProgressBar("","PCA",(arguments.nChannels+4));
+	// Build the progress bar's step tag.  When a group number was
+	// passed (-g N), include it so parallel-group runs from the
+	// wrapper script can be distinguished visually: "[PCA-7]" for
+	// group 7's bar.  Without -g we fall back to the legacy "[PCA]"
+	// for direct-CLI compatibility.
+	std::string pcaStepTag = "PCA";
+	if (arguments.electrodeGroup >= 0) {
+		pcaStepTag += "-";
+		pcaStepTag += std::to_string(arguments.electrodeGroup);
+	}
+	ProgressBar *progress = new ProgressBar("", pcaStepTag, (arguments.nChannels+4));
 	
 	// Init arrays
 	rawData = new short[nRecords]; // Buffer for all data (all channels)
@@ -569,6 +581,11 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 				++i; // consume the argument even without OpenMP
 				cerr << "warning: -t ignored (not compiled with OpenMP)" << endl;
 #endif
+				break;
+
+			case 'g': // electrode-group number for the progress bar label
+				if ( i+1 > nOptions ) error(argv[0]);
+				arguments.electrodeGroup = atoi(argv[++i]);
 				break;
 
 			case 'v': // verbose mode

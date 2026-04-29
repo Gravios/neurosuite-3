@@ -124,7 +124,7 @@ print_header()
 	local title N n l char style i
 
 	title=$1
-	N=150
+	N=80
 	n=${#title}
 	l=$((($N-$n)/2+1))
 
@@ -145,6 +145,46 @@ print_header()
 	for (( i=1;i<$l;i++ ));do echo -n " ";done;echo $title
 	for (( i=1;i<$N;i++ ));do echo -n "$char";done;
 	echo -e "$PLAIN"
+}
+
+# Print a single-line failure marker for a group, mimicking the look of
+# the modern ProgressBar's ✗ failure marker.  Used by wrapper scripts
+# to flag groups whose plugin invocation exited non-zero, since the
+# plugin's bar may not have had a chance to emit a marker itself
+# (early exit, signal, etc.).
+#
+# Output format (UTF-8 capable terminals):
+#   [<step>-<group>] ──────────────────────────────────────────────────── ✗
+#
+# Falls back to ASCII '-' fill + '[FAIL]' tag on legacy 8-bit terminals.
+#
+#  usage: print_group_failed step group
+print_group_failed()
+{
+	local step=$1
+	local group=$2
+	local label="[${step}-${group}]"
+	# Bar-width budget mirrors ProgressBar's 80-col layout: chrome
+	# ([+]+space+space+marker = 5 chars after the label).
+	local barWidth=$((80 - ${#label} - 5))
+	local fill=""
+	local i
+
+	# Detect UTF-8.  Same heuristic as ProgressBar::localeIsUtf8: any
+	# of LC_ALL / LC_CTYPE / LANG containing "UTF-8" or "utf8".
+	local locale="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"
+	case "$locale" in
+		*UTF-8*|*utf-8*|*UTF8*|*utf8*)
+			# Unicode: thin horizontal line (U+2500) + bold red ✗ (U+2717).
+			for ((i=0;i<barWidth;i++)); do fill+="$(printf '\xe2\x94\x80')"; done
+			printf '%s %s \033[1;31m\xe2\x9c\x97\033[0m\n' "$label" "$fill"
+			;;
+		*)
+			# ASCII fallback.
+			for ((i=0;i<barWidth;i++)); do fill+="-"; done
+			printf '%s %s [FAIL]\n' "$label" "$fill"
+			;;
+	esac
 }
 
 #////////////////////////////////////////////////////////////////////////////

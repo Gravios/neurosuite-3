@@ -30,7 +30,9 @@ typedef int32_t	Coordinates;
 
 // Constants
 #define MAX_N_RESTARTS	512
-#define PROGRESS_MAX_N_CHARS	6
+// PROGRESS_MAX_N_CHARS removed 2026: the modernised ProgressBar (see
+// progressbar.h) computes its own layout from the terminal width, no
+// longer requires a fixed step-tag column reservation.
 // ncs
 #define NCS_N_SAMPLES_PER_RECORD 512
 #define NCS_MAX_N_CHANNELS 512
