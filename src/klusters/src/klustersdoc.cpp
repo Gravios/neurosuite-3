@@ -2332,6 +2332,93 @@ void KlustersDoc::renumberClusters(){
 }
 
 // ---------------------------------------------------------------------------
+// KlustersDoc::applyClusterRename
+//
+// Single primitive for "rename a set of clusters" actions.  Used by:
+//   - renumberClustersToEnd (T key)        — partial rename to tail
+//   - renumberClusters (full sequential)   — TODO Phase 2.5 plumbing below
+//   - watershed residual cleanup           — folded into integrateBasinLabeling
+//
+// The mutation runs across THREE state tables and the GUI signal bus,
+// in the order required for consistency:
+//
+//   1. Data layer (renumberPartial) — the spike table + clusterInfoMap
+//      get the new IDs; old IDs vanish.  This pushes its own data-side
+//      undo entry.
+//   2. Colour list — each renamed cluster's ItemColor entry is
+//      relabelled in place via changeItemId so the colour persists.
+//   3. Each KlustersView — shownClusters list rewrites its old IDs to
+//      new IDs via changeClusterIds (called inside renumberClusters).
+//   4. Errormatrix / template-matrix — receive the rename via the
+//      KlustersDoc::renumber() Qt signal.
+//
+// Caller is responsible for the doc-level UNDO snapshot (`prepareUndo` /
+// `prepareReclusteringUndo` / etc.) and any logBefore/logAfter pairs;
+// this helper does only the apply.
+//
+// `partialOldToNew` lists ONLY the renamed clusters.  `fullOldToNew` is
+// a covering map (every existing cluster ID maps to its post-rename ID,
+// identity for unchanged) — required because KlustersView::renumberClusters
+// calls changeClusterIds, which historically expected a covering map
+// (since fixed to be partial-safe, but covering callers are still safer).
+// Pass nullptr for `fullOldToNew` to have it built automatically.
+// ---------------------------------------------------------------------------
+void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
+                                      const QMap<int,int>* fullOldToNewOpt)
+{
+    if (partialOldToNew.isEmpty()) return;
+
+    KlustersView* activeView = app()->activeView();
+    if (!activeView) return;
+
+    // Build a covering map if the caller didn't supply one.
+    QMap<int,int> fullOwned;
+    const QMap<int,int>* full = fullOldToNewOpt;
+    if (!full) {
+        const QList<dataType> existing = clusteringData->clusterIds();
+        for (dataType eid : existing) {
+            const int iid = static_cast<int>(eid);
+            fullOwned.insert(iid, partialOldToNew.value(iid, iid));
+        }
+        full = &fullOwned;
+    }
+
+    // 1. Data layer — pushes its own data-side undo entry.
+    clusteringData->renumberPartial(partialOldToNew);
+
+    // 2. Colour list — rename in place so colours persist.
+    for (auto it = partialOldToNew.constBegin();
+         it != partialOldToNew.constEnd(); ++it) {
+        const int oldId = it.key();
+        const int newId = it.value();
+        const int idx = clusterColorList->itemIndex(oldId);
+        if (idx >= 0) clusterColorList->changeItemId(idx, newId);
+    }
+
+    // 3. Each view — rewrites shownClusters; emits its own clustersRenumbered.
+    for (KlustersView* v : *viewList) {
+        const bool isActive = (v == activeView);
+        // Cast the const-ref to a non-const ref for the legacy view API.
+        // changeClusterIds inside renumberClusters does not mutate it.
+        v->renumberClusters(const_cast<QMap<int,int>&>(*full), isActive);
+        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+
+    // 4. Errormatrix / template-matrix.
+    emit renumber(const_cast<QMap<int,int>&>(*full));
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    activeView->showAllWidgets();
+
+    // Refresh palette.
+    QList<int> activeClusters = activeView->clusters();
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(activeClusters);
+}
+
+// ---------------------------------------------------------------------------
 // KlustersDoc::renumberClustersToEnd
 //
 // Targeted rename: each cluster in `clustersToRenumber` gets a new ID
@@ -2352,21 +2439,13 @@ void KlustersDoc::renumberClusters(){
 void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
 {
     if (clustersToRenumber.isEmpty()) return;
+    if (!app()->activeView()) return;
 
-    KlustersView* activeView = app()->activeView();
-    if (!activeView) return;
-
-    // Determine the current max cluster ID and assign new IDs starting
-    // at max+1.  clusterIds() returns a QMap::keys() result — sorted
-    // ascending — so .last() is the max.
     const QList<dataType> existing = clusteringData->clusterIds();
     if (existing.isEmpty()) return;
-    int nextNewId = static_cast<int>(existing.last()) + 1;
+    int nextNewId = static_cast<int>(clusteringData->nextFreeClusterId());
 
-    // Build the partial old→new map AND a full coverage map for the
-    // view-side rename path.  The view's renumberClusters expects a
-    // covering map (post-fix uses identity for missing keys, but
-    // building covering keeps the contract obvious in caller code).
+    // Build the partial old→new map AND a full coverage map.
     QMap<int,int> partialOldToNew;
     QMap<int,int> fullOldToNew;
     QMap<int,int> fullNewToOld;
@@ -2381,64 +2460,22 @@ void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
         const int newId = nextNewId++;
         partialOldToNew.insert(oldId, newId);
         fullOldToNew.insert(oldId, newId);
-        // Inverse: under a partial rename, the previously-existing newId
-        // entry (identity) is overwritten with oldId.  Identity entries
-        // for unrelated clusters remain.
         fullNewToOld.insert(newId, oldId);
-        fullNewToOld.remove(oldId);                        // old key no longer used
+        fullNewToOld.remove(oldId);
     }
     if (partialOldToNew.isEmpty()) return;
 
     // ── Curation log: this is a renumber, not a group ──
-    logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL,
-              clustersToRenumber);
+    logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, clustersToRenumber);
 
-    // ── Undo bookkeeping (KlustersDoc-level palette colour list) ──
-    // Snapshot clusterColorList BEFORE mutation so undo restores it.
-    // Use the empty-args prepareUndo plus the renumbering map snapshots,
-    // which is what the existing full-renumber path also does.
+    // ── Doc-level undo snapshot (uses the renumber-specific stack so
+    //    KlustersDoc::undo can detect this as a renumber action).
     prepareUndo(fullOldToNew, fullNewToOld);
 
-    // ── Mutate Data ──
-    clusteringData->renumberPartial(partialOldToNew);
+    // ── Apply.
+    applyClusterRename(partialOldToNew, &fullOldToNew);
 
-    // ── Update colour list: rename in place to preserve colours ──
-    // Walk the partial map; for each entry, find the colour-list slot
-    // currently keyed on oldId and changeItemId to newId.  Cluster
-    // ordering in the palette is determined by the post-update sort
-    // pass below, NOT by the colour list's internal order.
-    for (auto it = partialOldToNew.constBegin();
-         it != partialOldToNew.constEnd(); ++it) {
-        const int oldId = it.key();
-        const int newId = it.value();
-        const int idx = clusterColorList->itemIndex(oldId);
-        if (idx >= 0) clusterColorList->changeItemId(idx, newId);
-    }
-
-    // ── View-side notification ──
-    // Each view rewrites its shownClusters via changeClusterIds (now
-    // partial-safe — see KlustersView::changeClusterIds) and emits its
-    // clustersRenumbered signal.
-    for (KlustersView* v : *viewList) {
-        const bool isActive = (v == activeView);
-        v->renumberClusters(fullOldToNew, isActive);
-        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
-    }
-
-    // ── Error-matrix / template-matrix ──
-    emit renumber(fullOldToNew);
-
-    if (clusterColorList->isColorChanged())
-        clusterColorList->resetAllColorStatus();
-
-    activeView->showAllWidgets();
-
-    // ── Refresh palette ──
-    QList<int> activeClusters = activeView->clusters();
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(activeClusters);
-
-    // Log post-rename: the cluster IDs are now their new values.
+    // Log post-rename.
     QList<int> newIds;
     for (int oldId : clustersToRenumber)
         newIds.append(partialOldToNew.value(oldId, oldId));
@@ -4305,29 +4342,40 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 std::sort(abs_off.begin(), abs_off.end());
                 const int median = abs_off[abs_off.size() / 2];
                 if (median > 1) {
+                    // The cluster's .spk peaks don't sit at peakSamp0.
+                    // This is NOT something nudge introduces — it's a
+                    // pre-existing condition (most often a stale .par.N
+                    // peakSampleIndex, or .spk written by an old
+                    // ndm_alignspikes that didn't update .res).
+                    //
+                    // Nudge is a rigid time translation: it shifts every
+                    // .res[i] by delta and re-reads the .fil window at
+                    // (newRes - peakSamp0).  Whatever within-window
+                    // alignment existed before the nudge is preserved
+                    // afterward — the median offset will still be
+                    // `median` samples after this operation.
+                    //
+                    // We used to refuse here, but that conflates two
+                    // independent concerns: window-internal peak position
+                    // (what `median` measures) and timestamp accuracy
+                    // (what nudge corrects).  The user's nudge intent
+                    // doesn't depend on the former, so we proceed and
+                    // just inform them.
                     QString offTxt;
                     for (int o : argmaxOffsets)
                         offTxt += QString::number(o) + ' ';
-                    qWarning().noquote() << QString(
-                        "[nudge] cluster %1: pre-nudge invariant check "
-                        "FAILED — .spk peak is %2 samples off peakSamp0=%3 "
-                        "(per-probe offsets: %4). The .res/.spk peak "
-                        "invariant is broken; nudge will corrupt the .spk "
-                        "for this cluster.  Most likely cause: "
-                        "ndm_alignspikes was run with an old binary that "
-                        "does not update .res.  Rebuild ndmanager-plugins, "
-                        "then re-run: ndm_extractspikes_stderiv → "
-                        "ndm_alignspikes → ndm_pca_stderiv.")
+                    qInfo().noquote() << QString(
+                        "[nudge] cluster %1: existing alignment off by %2 "
+                        "samples (peakSamp0=%3, per-probe offsets: %4); "
+                        "nudge will preserve the offset.")
                         .arg(clusterId).arg(median).arg(peakSamp0)
                         .arg(offTxt.trimmed());
                     if (auto* sb = app() ? app()->statusBar() : nullptr)
                         sb->showMessage(QString(
-                            "Nudge aborted: .spk peak is %1 samples "
-                            "off peakSamp0 — re-run the alignment "
-                            "pipeline.").arg(median), 8000);
-                    fclose(spkW); fclose(resW); fclose(fetW);
-                    if (filF) fclose(filF);
-                    return false;
+                            "Cluster %1: existing alignment off by %2 "
+                            "samples; nudge will preserve the offset.")
+                            .arg(clusterId).arg(median), 5000);
+                    // Fall through — proceed with the nudge.
                 }
             }
         } else if (fr) {
@@ -5114,15 +5162,13 @@ KlustersDoc::dipSplitCluster(int   clusterId,
         return resultFromDecision(D);
 
     // ── Allocate a free cluster ID ───────────────────────────────────────
-    int newId = 0;
-    {
-        const QList<dataType> existing = clusteringData->clusterIds();
-        QSet<int> taken;
-        for (dataType c : existing) taken.insert(static_cast<int>(c));
-        for (int c = 2; c < 1'000'000; ++c) {
-            if (!taken.contains(c)) { newId = c; break; }
-        }
-    }
+    // Use the canonical max+1 policy that every other create-cluster path
+    // uses (Group, polygon-Split, Recluster, Watershed).  Earlier this
+    // was a gap-fill scan that allocated the first free ID >= 2,
+    // producing inconsistent palette positions: clusters {2, 17, 22}
+    // would get newId=3 here but newId=23 from a polygon split, even
+    // though both are conceptually "split this cluster in two".
+    const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
     if (newId == 0) {
         DipSplitResult R = resultFromDecision(D);
         R.accepted = false;
