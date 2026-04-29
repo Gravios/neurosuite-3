@@ -554,6 +554,10 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
             clusteringData->nbOfchannels(),
             clusteringData->totalNbOfPCAs()
         );
+        // Pair the in-memory ring buffer with the user's max-undo
+        // preference so every still-undoable action retains a tentative
+        // log entry whose status flips on undo/redo.
+        m_curationLogger->setMaxBufferEntries(nbUndo);
         m_clusterActionCount.clear();
         m_lastLoggedActionIdx = -1;
     }
@@ -1867,6 +1871,14 @@ void KlustersDoc::prepareUndo(QList<int>* addedClustersTemp,QList<int>* modified
 
 
 void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
+    // Keep the curation logger's in-memory ring buffer the same size as
+    // the data-level undo capacity so every still-undoable action has a
+    // tentative log entry.  Shrinking the buffer flushes the oldest
+    // entries to disk with their current status.
+    if (m_curationLogger && m_curationLogger->isOpen()) {
+        m_curationLogger->setMaxBufferEntries(newNbUndo);
+    }
+
     //if the new number of possible undo is smaller than the current one,
     // clean the undo/redo related variables.
     if(newNbUndo < nbUndo){
@@ -2215,19 +2227,12 @@ void KlustersDoc::undo(){
 
     NS3_DIAG()<<"in KlustersDoc::undo 2";
 
-    // Log the undo: snapshot ALL current clusters so the log reflects the
-    // post-revert state.  Reference the action_idx that was just reversed.
-    if (m_curationLogger && m_curationLogger->isOpen() && clusteringData) {
-        const QList<int> allIds = [this]() -> QList<int> {
-            QList<int> ids;
-            for (const auto& id : clusteringData->clusterIds())
-                ids.append(static_cast<int>(id));
-            return ids;
-        }();
-        m_curationLogger->logUndoRedo(CurationLogger::ActionType::UNDO,
-                                       m_lastLoggedActionIdx,
-                                       snapshotClusters(allIds));
-        m_lastLoggedActionIdx--;    // step back so redo re-references correctly
+    // Curation log: flip the topmost good entry's status to "bad" so the
+    // record reflects that the user reverted this action.  No disk write
+    // happens here — the entry stays in the in-memory ring until it
+    // either gets pushed out by overflow or is finalised at close().
+    if (m_curationLogger && m_curationLogger->isOpen()) {
+        m_curationLogger->notifyUndo();
     }
 }
 
@@ -2361,18 +2366,11 @@ void KlustersDoc::redo(){
         NS3_DIAG() << "in KlustersDoc::redo, end  : ";
     }
 
-    // Log the redo: snapshot current state, reference the re-applied action.
-    if (m_curationLogger && m_curationLogger->isOpen() && clusteringData) {
-        const QList<int> allIds = [this]() -> QList<int> {
-            QList<int> ids;
-            for (const auto& id : clusteringData->clusterIds())
-                ids.append(static_cast<int>(id));
-            return ids;
-        }();
-        m_lastLoggedActionIdx++;
-        m_curationLogger->logUndoRedo(CurationLogger::ActionType::REDO,
-                                       m_lastLoggedActionIdx,
-                                       snapshotClusters(allIds));
+    // Curation log: flip the topmost bad entry back to "good" — the user
+    // restored this action so its on-disk record (when eventually
+    // flushed) should not be marked as a reverted decision.
+    if (m_curationLogger && m_curationLogger->isOpen()) {
+        m_curationLogger->notifyRedo();
     }
 }
 

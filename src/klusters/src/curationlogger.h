@@ -9,12 +9,28 @@
  *  Log format: one JSON object per line, UTF-8.
  *  File location: <sessionDir>/<baseName>.curation_log.<electrodeGroup>.jl
  *
- *  Typical workflow:
- *    1. KlustersDoc::openDocument()  → CurationLogger::open()
- *    2. Before each action           → CurationLogger::beginAction()
+ *  Lifecycle (deferred-flush model):
+ *    1. KlustersDoc::openDocument()   → CurationLogger::open()
+ *    2. Before each action            → CurationLogger::beginAction()
  *    3. Doc modifies data in-place
- *    4. After each action            → CurationLogger::commitAction()
- *    5. KlustersDoc::closeDocument() → CurationLogger::close()
+ *    4. After each action             → CurationLogger::commitAction()
+ *    5. Optional details              → CurationLogger::recordActionDetails()
+ *    6. User Ctrl+Z                   → CurationLogger::notifyUndo()
+ *    7. User Ctrl+Y                   → CurationLogger::notifyRedo()
+ *    8. KlustersDoc::closeDocument()  → CurationLogger::close()
+ *
+ *  Each action stays in an in-memory ring buffer of capacity = max-undos
+ *  with a tentative "good" status.  notifyUndo() flips the topmost good
+ *  entry to "bad"; notifyRedo() flips the topmost bad entry back to good.
+ *  When a new action overflows the buffer, the displaced (oldest) entry
+ *  is flushed to disk with its final status.  At close() time, every
+ *  remaining entry is flushed.  This means:
+ *    - The on-disk log only contains finalised (no-longer-undoable)
+ *      records — every line carries its definitive good/bad status.
+ *    - If Klusters crashes before close(), buffered entries are lost.
+ *      Persistence happens at save+quit, not at save.
+ *    - The log size equals exactly the user's curatorial decisions,
+ *      not their tentative explorations.
  ***************************************************************************/
 
 #pragma once
@@ -175,8 +191,6 @@ public:
         MOVE_SPIKES     = 10, ///< Manual subset reassignment between clusters
         UNDO            = 11, ///< Curator reverted the preceding action
         REDO            = 12, ///< Curator re-applied an undone action
-        RENUMBER_PARTIAL = 13, ///< Targeted renumber-to-end (palette T key)
-        WATERSHED       = 14, ///< 2D density watershed split (W key)
     };
 
     CurationLogger();
@@ -201,69 +215,101 @@ public:
               int            nChannels,
               int            nPcaDims);
 
-    /** Flush and close the log file. */
+    /** Flush every remaining buffered entry to disk and close the file.
+     *  Called at document-close (= save + quit).  Pending entries are
+     *  written with whatever status they currently have. */
     void close();
 
     bool isOpen() const { return m_file.isOpen(); }
+
+    /** Set the in-memory buffer capacity.  Should track the application's
+     *  max-undos preference: the buffer holds exactly the entries the
+     *  user can still revert via Ctrl+Z, so a 1:1 pairing between undo
+     *  stack depth and buffer slots is preserved.  When shrinking,
+     *  excess oldest entries are flushed immediately. */
+    void setMaxBufferEntries(int n);
+
+    int  maxBufferEntries() const { return m_maxBuffer; }
+    int  pendingEntryCount() const { return m_pending.size(); }
 
     // ------------------------------------------------------------------
     // Action logging interface
     //
     // Call beginAction() with before-snapshots, perform the data mutation,
     // then call commitAction() with after-snapshots.  The same action_idx
-    // links the two sets of lines so they can be joined in pandas.
+    // is later visible on every disk record produced by this entry so the
+    // before/after lines can be joined in pandas.  No disk write happens
+    // until the entry is finalised (overflow or close).
     // ------------------------------------------------------------------
 
-    /** Record the "before" snapshots for an upcoming action.
-     *  Increments the internal action counter; returns the index assigned
-     *  to this action (useful for associating with UI feedback).
-     */
+    /** Open a new tentative entry at the back of the buffer.  The action
+     *  starts with status="good"; flips to "bad" on the first undo that
+     *  reaches it.  Returns the action index assigned to this entry. */
     int  beginAction(ActionType type, const QList<ClusterSnapshot>& before);
 
-    /** Record the "after" snapshots once the action has completed.
-     *  Must follow a corresponding beginAction() call.
-     *  @param after  Snapshots of all clusters produced/modified by the action.
-     */
+    /** Record the after-snapshots on the most recently begun entry.
+     *  Must follow a corresponding beginAction() call. */
     void commitAction(const QList<ClusterSnapshot>& after);
 
     // Convenience: single-cluster wrappers
     int  beginAction(ActionType type, const ClusterSnapshot& before);
     void commitAction(const ClusterSnapshot& after);
 
-    /** Append a curator quality annotation to the most recently begun action.
-     *  @param quality   0 = bad/exploratory, 1 = uncertain, 2 = confident/good.
-     *  Call after beginAction() at any time before the next beginAction().
-     *  These records are the primary supervised signal for decision-tree training.
-     */
-    void annotateLastAction(int quality);
-
-    /** Append an algorithm-specific detail record to the most recently begun
-     *  action.  Used by automated curation tools (DipSplit, Realign, …) to
-     *  log the parameters they were called with and the metrics that drove
-     *  their accept/reject decision.  Each value is JSON-serialised
-     *  according to its QVariant type (int → number, double → number,
-     *  bool → true/false, anything else → quoted string).
-     *
-     *  Emits a single ACTION_DETAIL JSON-line record keyed by the most
-     *  recent action_idx.  Safe to call multiple times per action — each
-     *  call produces an independent record.
-     */
+    /** Append an algorithm-specific detail record to the most recently
+     *  begun entry.  Used by automated curation tools (DipSplit, Realign,
+     *  …) to log the parameters they were called with and the metrics
+     *  that drove their accept/reject decision.  Each value is JSON-
+     *  serialised according to its QVariant type.  Multiple calls per
+     *  action are allowed; each contributes one ACTION_DETAIL line at
+     *  flush time. */
     void recordActionDetails(const QMap<QString, QVariant>& details);
 
-    /** Log an UNDO or REDO event referencing the action index it reverts/replays.
-     *  @param type         Must be ActionType::UNDO or ActionType::REDO.
-     *  @param targetIdx    action_idx of the action being reverted / replayed.
-     *  @param clusterState Current snapshot of the clusters affected.
-     */
-    void logUndoRedo(ActionType type, int targetIdx,
-                     const QList<ClusterSnapshot>& clusterState);
+    /** User pressed Ctrl+Z.  Flips the topmost good entry's status to
+     *  "bad".  No-op if every buffered entry is already bad (the data
+     *  state is being reverted past the buffer; the corresponding disk
+     *  records are already finalised and cannot be retroactively
+     *  re-statused). */
+    void notifyUndo();
+
+    /** User pressed Ctrl+Y.  Flips the topmost bad entry's status back
+     *  to "good".  No-op if no bad entries exist. */
+    void notifyRedo();
 
     static QString actionName(ActionType t);
 
 private:
+    /** One tentative buffered action.  Held in m_pending while the user
+     *  may still undo it.  At flush time (overflow or close), all of
+     *  the entry's records are emitted to disk with the final status. */
+    struct PendingEntry {
+        int                                  actionIdx = -1;
+        ActionType                           type      = ActionType::GROUP;
+        QList<ClusterSnapshot>               before;
+        QList<ClusterSnapshot>               after;
+        QList<QMap<QString, QVariant>>       details;
+        QString                              status    = QStringLiteral("good");
+        QString                              tsBegin;       // ISO timestamp at beginAction
+    };
+
+    /** Emit all of the entry's accumulated lines to the file.  Each line
+     *  carries the entry's final status so downstream tooling sees one
+     *  uniform field per record. */
+    void flushEntry(const PendingEntry& e);
+
+    /** Pop the front of m_pending and flush it.  Called during overflow
+     *  and during close(). */
+    void flushOldest();
+
+    /** Mutating reference to the current (back-most) pending entry, or
+     *  nullptr if none.  Used by commitAction / recordActionDetails. */
+    PendingEntry* currentPending();
+
     void writeLine(const QString& phase,
                    const QString& role,
-                   const ClusterSnapshot& snap);
+                   const ClusterSnapshot& snap,
+                   int aidx,
+                   ActionType action,
+                   const QString& status);
 
     QString jsonEscape(const QString& s) const;
 
@@ -272,7 +318,8 @@ private:
 
     QString m_sessionBaseName;
     QString m_electrodeGroup;
-    QString m_sessionId;    ///< UUID-like token, unique per open()
-    int     m_actionIdx = 0;
-    int     m_currentAction = -1; ///< ActionType cast to int
+    QString m_sessionId;             ///< UUID-like token, unique per open()
+    int     m_actionIdx     = 0;     ///< monotonic counter, never reset within a session
+    int     m_maxBuffer     = 50;    ///< capacity of m_pending; tracks Settings.MaxUndo
+    QList<PendingEntry> m_pending;
 };

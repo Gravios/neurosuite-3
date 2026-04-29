@@ -447,17 +447,52 @@ one snapshot per affected cluster from `before` (pre-mutation state)
 and one per affected cluster from `after` (post-mutation state),
 both tagged with the same `action_idx`. Some actions additionally
 emit `ACTION_DETAIL` records carrying algorithm-specific metadata
-(see below).
+(see below). Every record carries a `status` field of either
+`"good"` (the user kept the action) or `"bad"` (the user reverted
+it via Ctrl+Z and never restored it before the action left the
+in-memory ring buffer).
+
+### Deferred-flush lifecycle
+
+The on-disk log only contains finalised records. While an action is
+still undoable, its records live in an in-memory ring buffer of
+capacity equal to the user's max-undo preference (default 50). The
+ring's behaviour:
+
+- **Each user action** appends a tentative entry with
+  `status = "good"`. If the buffer overflows, the oldest entry is
+  flushed to disk with whatever status it currently has.
+- **Ctrl+Z (undo)** flips the topmost still-`good` entry to `"bad"`.
+- **Ctrl+Y (redo)** flips the topmost `bad` entry back to `"good"`.
+- **Document close** (= save followed by quit) flushes every
+  remaining entry with its current status, then writes the
+  `SESSION_CLOSE` sentinel.
+
+Consequences worth knowing:
+
+- The log captures the user's *final* curatorial decisions, not their
+  tentative explorations. An action explored and then reverted is
+  written out as `"bad"`; one kept past the buffer boundary is
+  `"good"`.
+- If Klusters crashes before close, in-memory entries are lost. To
+  guarantee persistence of recent decisions, save and quit cleanly.
+- Undoing past the ring's bottom (i.e. undoing 51+ actions in a row
+  with default capacity 50) reverts the data state but cannot
+  retroactively re-status the corresponding on-disk records — they
+  were finalised at overflow time.
+- Manual J / K / X annotation shortcuts no longer exist; the
+  `"good"` / `"bad"` status is inferred from undo behaviour.
 
 ### Top-level record schema
 
 | Field | Description |
 |---|---|
-| `event` | `SESSION_OPEN`, `ANNOTATE`, `UNDO`, `REDO`, `ACTION_DETAIL`, or empty for action snapshots |
+| `event` | `SESSION_OPEN`, `SESSION_CLOSE`, `ACTION_DETAIL`, or empty for action snapshots |
 | `action` | The operation kind — see action type table below |
+| `status` | `good` (kept) or `bad` (reverted via Ctrl+Z) — present on every action / detail record |
 | `phase` | `before`, `after`, or empty (for events / details) |
 | `role` | `result`, `source`, or empty |
-| `action_idx` | Monotonic index — `before` and `after` records share an index, allowing pairing |
+| `action_idx` | Monotonic index — `before`, `after`, and `ACTION_DETAIL` records of one action share an index |
 | `cluster_id` | Cluster touched by this record |
 | `n_spikes`, `n_clusters_in_group` | State after the action |
 | `n_pca_dims`, `n_feat_dims` | Feature-space dimensionality |
