@@ -3372,62 +3372,107 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
     spikesByClusterTemp->setSize(nbSpikes);
     ClusterInfoMap* clusterInfoMapTemp  = new ClusterInfoMap();
 
-    // Walk every cluster in current state and copy to the temp tables,
-    // remapping IDs in row 2 of the spike table for renamed clusters.
+    // ── Pass 1: build the new-ID → (oldId, oldFirstSpikePosition,
+    // nbSpikes, ClusterInfo-payload) table.
+    //
+    // Each old cluster gets a (possibly identity) new ID via the
+    // oldToNew map.  We bucket by NEW id so the next pass can write
+    // spikes into the temp table in ascending-new-id order — that's
+    // what keeps highestClusterId() (which reads row 2 at the last
+    // physical position) and the canonical spike-table-is-sorted-by-id
+    // invariant honest.  Without this re-sort, a single partial
+    // rename leaves the table physically unsorted, and every
+    // subsequent nextFreeClusterId() (= last position's id + 1) lies
+    // — every later T renames to the same "new" id, producing
+    // duplicate IDs and a corrupt clusterInfoMap (last-writer-wins on
+    // QMap::insert with the same key).
+    struct Bucket {
+        dataType oldFirstPos;
+        dataType nbSpikesOfCluster;
+        dataType oldId;
+        // ClusterInfo-payload fields, copied so we can pass them to
+        // the new-id-keyed clusterInfoMap entry without re-iterating.
+        ClusterInfo info;
+    };
+    QMap<int, Bucket> bucketsByNewId;          // sorted by new-id (QMap iterates ascending)
     for (ClusterInfoMap::Iterator it = clusterInfoMap->begin();
          it != clusterInfoMap->end(); ++it)
     {
-        const dataType oldId               = it.key();
-        const dataType firstSpikePosition  = it.value().firstSpikePosition();
-        const dataType nbSpikesOfCluster   = it.value().nbSpikes();
-        const int      newId = oldToNew.contains(static_cast<int>(oldId))
-                                ? oldToNew.value(static_cast<int>(oldId))
-                                : static_cast<int>(oldId);
+        const int oldId = static_cast<int>(it.key());
+        const int newId = oldToNew.contains(oldId)
+                            ? oldToNew.value(oldId)
+                            : oldId;
+        Bucket b{ it.value().firstSpikePosition(),
+                  it.value().nbSpikes(),
+                  static_cast<dataType>(oldId),
+                  it.value() };
+        bucketsByNewId.insert(newId, b);
+    }
 
-        // Row 1 (original .fet row indices) is invariant under renumbering.
-        memcpy(&(*spikesByClusterTemp)(1,firstSpikePosition),
-               &(*spikesByCluster)(1,firstSpikePosition),
-               nbSpikesOfCluster * sizeof(dataType));
+    // ── Pass 2: write spikes into the temp table in ascending-new-id
+    // order, packing them contiguously starting at position 1.  Build
+    // clusterInfoMapTemp with the NEW firstSpikePosition for each
+    // cluster.  Move waveform-cache entries for renamed clusters.
+    dataType writePos = 1;
+    for (auto it = bucketsByNewId.constBegin();
+         it != bucketsByNewId.constEnd(); ++it)
+    {
+        const int        newId      = it.key();
+        const Bucket&    b          = it.value();
+        const int        oldId      = static_cast<int>(b.oldId);
+        const dataType   nbSp       = b.nbSpikesOfCluster;
+        const dataType   oldFirst   = b.oldFirstPos;
 
-        if (newId == static_cast<int>(oldId)) {
-            // Row 2 is also invariant for unchanged clusters.
-            memcpy(&(*spikesByClusterTemp)(2,firstSpikePosition),
-                   &(*spikesByCluster)(2,firstSpikePosition),
-                   nbSpikesOfCluster * sizeof(dataType));
+        // Row 1 (feature-file row indices) copies verbatim from the
+        // old block; quicksort isn't stable so we do this manually
+        // instead of using SortableTable::sort.  Within-cluster spike
+        // order (== feature-file row order) is preserved.
+        memcpy(&(*spikesByClusterTemp)(1, writePos),
+               &(*spikesByCluster)(1, oldFirst),
+               nbSp * sizeof(dataType));
+
+        if (newId == oldId) {
+            // Identity rename — row 2 copies verbatim too.
+            memcpy(&(*spikesByClusterTemp)(2, writePos),
+                   &(*spikesByCluster)(2, oldFirst),
+                   nbSp * sizeof(dataType));
         } else {
-            // Rewrite row 2 to the new cluster ID.
-            for (long i = 0; i < nbSpikesOfCluster; ++i)
-                (*spikesByClusterTemp)(2, firstSpikePosition + i) = newId;
+            // Rewrite row 2 with the new id.
+            for (long i = 0; i < nbSp; ++i)
+                (*spikesByClusterTemp)(2, writePos + i) = newId;
 
             // Move waveform cache entry from old key to new key.  Mirrors
             // the corresponding block in Data::renumber.
             {
                 QMutexLocker lk(&mutex);
-                if (waveformStatusMap.contains(static_cast<int>(oldId))) {
-                    if (!waveformStatusMap[static_cast<int>(oldId)].isInProcess()) {
+                if (waveformStatusMap.contains(oldId)) {
+                    if (!waveformStatusMap[oldId].isInProcess()) {
                         Waveforms* waveforms = waveformDict.take(QString::fromLatin1("%1").arg(oldId));
                         waveformDict.insert(QString::fromLatin1("%1").arg(newId), waveforms);
-                        WaveformStatus waveformStatus = waveformStatusMap[static_cast<int>(oldId)];
+                        WaveformStatus waveformStatus = waveformStatusMap[oldId];
                         waveformStatusMap.insert(newId, waveformStatus);
-                        waveformStatusMap.remove(static_cast<int>(oldId));
+                        waveformStatusMap.remove(oldId);
                     } else {
                         // A WaveformThread is in flight for oldId; flag
                         // it as modified so it'll re-key on completion.
-                        WaveformStatus waveformStatus     = waveformStatusMap[static_cast<int>(oldId)];
+                        WaveformStatus waveformStatus     = waveformStatusMap[oldId];
                         WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
                         waveformStatusCopy.setClusterModified(true);
-                        waveformStatusMap.insert(static_cast<int>(oldId), waveformStatusCopy);
+                        waveformStatusMap.insert(oldId, waveformStatusCopy);
                     }
                 }
             }
         }
 
-        // Insert into the new clusterInfoMap under the (possibly remapped) key.
+        // Insert into clusterInfoMapTemp under the NEW id, with the
+        // NEW firstSpikePosition (writePos) — not the old one.
         clusterInfoMapTemp->insert(newId,
-            ClusterInfo(firstSpikePosition, nbSpikesOfCluster,
-                        it.value().getStructure(), it.value().getType(),
-                        it.value().getId(), it.value().getQuality(),
-                        it.value().getNotes()));
+            ClusterInfo(writePos, nbSp,
+                        b.info.getStructure(), b.info.getType(),
+                        b.info.getId(), b.info.getQuality(),
+                        b.info.getNotes()));
+
+        writePos += nbSp;
     }
 
     // Renumber correlation cache; needs only the partial map (renumber()

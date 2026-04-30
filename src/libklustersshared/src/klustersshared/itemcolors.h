@@ -206,6 +206,16 @@ public:
   * @param newItemLabel the new label to assign.
   */
   virtual void changeItemLabel(int index,const QString& newItemLabel);
+
+  /**
+  * Sorts the internal item list by ascending itemId.  Used after
+  * partial-rename operations (e.g. the palette T-key renumber-to-end)
+  * where in-place changeItemId() updates leave items out of natural
+  * sort order, causing the palette to render them in their pre-rename
+  * positions instead of at their new ID-derived positions.  Stable:
+  * relative order of items with equal itemId is preserved.
+  */
+  virtual void sortByItemId();
 private:
 
   /**Structure representing a color item.*/

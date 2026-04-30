@@ -20,6 +20,7 @@
 //Added by qt3to4:
 #include <QList>
 #include <QDebug>
+#include <algorithm>           // std::stable_sort (sortByItemId)
 
 ItemColors::ItemColors()
     :itemList(),
@@ -202,6 +203,25 @@ void ItemColors::changeItemLabel(int index, const QString &newItemLabel){
     ItemColors::ItemColor* theItemColor = itemList.at(static_cast<uint>(index));
 
     theItemColor->label = newItemLabel;
+}
+
+void ItemColors::sortByItemId(){
+    // Stable sort by itemId.  We use std::stable_sort so any items that
+    // happen to share the same itemId (which shouldn't normally happen
+    // for cluster IDs but is defended-against here) preserve their
+    // pre-sort relative order.  Operates on the QList of pointers
+    // directly — no allocations, no per-element copies.
+    //
+    // Called by KlustersDoc::applyClusterRename after a partial
+    // renumber (e.g. the T-key path).  Without this, items that have
+    // their itemId mutated in place via changeItemId() stay in their
+    // pre-rename storage positions, and the palette's
+    // updateClusterList — which renders in storage order — shows the
+    // renumbered cluster's icon at the wrong palette position.
+    std::stable_sort(itemList.begin(), itemList.end(),
+        [](const ItemColors::ItemColor* a, const ItemColors::ItemColor* b) {
+            return a->itemId < b->itemId;
+        });
 }
 
 

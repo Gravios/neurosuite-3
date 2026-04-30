@@ -120,13 +120,26 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
         } else {
             // Move to targetRow. clearSelection() + setCurrentRow() ensures
             // a clean single-select visual state for the cursor. Then restore
-            // sRows highlights so S-pinned clusters stay visually selected.
-            // selectedClusters() now unions visual + sRows so every
-            // itemSelectionChanged fired here returns the correct display set.
+            // S-pinned highlights so S-pinned clusters stay visually
+            // selected across arrow navigation.  selectedClusters() unions
+            // visual + S-pinned so every itemSelectionChanged fired here
+            // returns the correct display set.
+            //
+            // Pinned ids are looked up against each item's CLUSTER_ID
+            // data role (set in updateClusterList), not by row index, so
+            // the highlight is correct regardless of how the iconView was
+            // (re)ordered after the pin was made.
             clearSelection();
             setCurrentRow(targetRow);
-            for (int k : std::as_const(sRows))
-                if (k < count()) item(k)->setSelected(true);
+            if (!sPinnedIds.isEmpty()) {
+                for (int k = 0; k < count(); ++k) {
+                    QListWidgetItem* it = item(k);
+                    if (!it) continue;
+                    const int cid = it->data(ClusterPalette::CLUSTER_ID).toInt();
+                    if (sPinnedIds.contains(cid))
+                        it->setSelected(true);
+                }
+            }
         }
         scrollToItem(currentItem(), QAbstractItemView::EnsureVisible);
     };
@@ -218,26 +231,30 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
         QListWidgetItem *cur = currentItem();
         if (!cur) { QListWidget::keyPressEvent(event); return; }
 
-        const int curRow = row(cur);
+        // Pin/unpin by cluster id (stable across renumbers) rather than
+        // by iconView row (changes whenever the palette is rebuilt).
+        const int curId = cur->data(ClusterPalette::CLUSTER_ID).toInt();
 
-        if (!sRows.contains(curRow)) {
-            // Not S-selected yet → add it.
+        if (!sPinnedIds.contains(curId)) {
+            // Not S-pinned yet → add it.
             cur->setSelected(true);
-            sRows.insert(curRow);
+            sPinnedIds.insert(curId);
             lastSPressItem = cur;
         } else if (cur == lastSPressItem) {
             // S pressed a second time on the same item → isolate: clear all
-            // other S-rows and deselect them visually, keep only this one.
-            sRows.clear();
+            // other S-pins and deselect them visually, keep only this one.
+            sPinnedIds.clear();
             for (int k = 0; k < count(); ++k)
                 if (item(k) != cur) item(k)->setSelected(false);
-            // Current item stays selected (it was already); sRows is now empty
-            // so next arrow navigation resumes single-select behaviour.
+            // Current item stays selected (it was already); sPinnedIds is
+            // now empty so next arrow navigation resumes single-select
+            // behaviour — matches the original "S-twice = un-pin everything,
+            // keep visual selection on this cluster only" semantics.
             lastSPressItem = nullptr;
         } else {
-            // S on a different already-S-selected item → remove it.
+            // S on a different already-S-pinned item → remove it.
             cur->setSelected(false);
-            sRows.remove(curRow);
+            sPinnedIds.remove(curId);
             lastSPressItem = cur;
         }
         emit selectionToggled();
@@ -346,6 +363,13 @@ void ClusterPalette::updateClusterList(){
         return;
     iconView->clear();
 
+    // iconView->clear() destroys every QListWidgetItem; lastSPressItem
+    // now dangles, so reset it before building the fresh icons.  The
+    // pinned-id set itself (sPinnedIds) is independent of these
+    // pointers and survives across the rebuild — that's the whole
+    // point of storing pins by id rather than by row or item pointer.
+    iconView->lastSPressItem = nullptr;
+
 
     //Get the list of clusters with their color
     ItemColors& clusterColors = doc->clusterColors();
@@ -360,16 +384,17 @@ void ClusterPalette::updateClusterList(){
         painter.begin(&pix);
         painter.fillRect(0,0,12,12,clusterColors.color(i,ItemColors::BY_INDEX));
         painter.end();
-        QString clusterText = QString::fromLatin1("%1").arg(clusterColors.itemId(i));
+        const int curId = clusterColors.itemId(i);
+        QString clusterText = QString::fromLatin1("%1").arg(curId);
 
         if(isInUserClusterInfoMode){
-            if(clusterColors.itemId(i) == 0){
+            if(curId == 0){
                 clusterText.append(" - ").append("artefact");
-            } else if(clusterColors.itemId(i) == 1){
+            } else if(curId == 1){
                 clusterText.append(" - ").append("noise");
             } else{
                 QList<QString> clusterInformation;
-                doc->data().getUserClusterInformation(clusterColors.itemId(i),clusterInformation);
+                doc->data().getUserClusterInformation(curId,clusterInformation);
 
                 if(!clusterInformation.at(0).isEmpty()){
                     clusterText.append(" - ").append(clusterInformation.at(0));
@@ -389,11 +414,31 @@ void ClusterPalette::updateClusterList(){
             }
             QListWidgetItem * item  = new QListWidgetItem(pix, clusterText, iconView);
             item->setData(INDEX,i);
+            item->setData(CLUSTER_ID, curId);
         }
         else{
             QListWidgetItem * item  = new QListWidgetItem(pix, clusterText, iconView);
             item->setData(INDEX,i);
+            item->setData(CLUSTER_ID, curId);
         }
+    }
+
+    // Restore S-pinned visual selection across the rebuild.  Any
+    // pinned cluster id whose cluster no longer exists (e.g. it was
+    // merged into another via group) is silently dropped from the set
+    // — pinning a cluster that's gone is meaningless.
+    if (!iconView->sPinnedIds.isEmpty()) {
+        QSet<int> stillPresent;
+        for (int row = 0; row < iconView->count(); ++row) {
+            QListWidgetItem* it = iconView->item(row);
+            if (!it) continue;
+            const int cid = it->data(CLUSTER_ID).toInt();
+            if (iconView->sPinnedIds.contains(cid)) {
+                it->setSelected(true);
+                stillPresent.insert(cid);
+            }
+        }
+        iconView->sPinnedIds = stillPresent;
     }
 }
 
@@ -555,21 +600,31 @@ QList<int> ClusterPalette::selectedClusters() {
     if(!doc) {
         return QList<int>();
     }
-    ItemColors& clusterColors = doc->clusterColors();
+
+    // Build the set of cluster ids to report: the visually selected
+    // items UNION sPinnedIds (S-pinned clusters).  Using the union
+    // means even the transient intermediate signals fired during arrow
+    // navigation (before we restore S-pinned highlights) return the
+    // correct cluster list.
+    //
+    // Both sets are cluster ids, so the union is a direct insert.
+    // Visual-selection ids come from each item's CLUSTER_ID data role
+    // (set in updateClusterList) — stable across renumbers, unlike
+    // iconView rows.
+    QSet<int> reportIds;
+    for (int i = 0; i < iconView->count(); ++i) {
+        QListWidgetItem* it = iconView->item(i);
+        if (!it) continue;
+        if (it->isSelected())
+            reportIds.insert(it->data(CLUSTER_ID).toInt());
+    }
+    for (int id : iconView->getSPinnedIds())
+        reportIds.insert(id);
 
     QList<int> selectedClusters;
-
-    // Build the set of rows to report: the visually selected items UNION
-    // sRows (S-pinned clusters). Using the union means even the transient
-    // intermediate signals fired during arrow navigation (before we restore
-    // sRows highlights) return the correct cluster list.
-    QSet<int> reportRows;
-    for (int i = 0; i < iconView->count(); ++i)
-        if (iconView->item(i)->isSelected()) reportRows.insert(i);
-    for (int k : iconView->getSRows()) reportRows.insert(k);
-
-    for (int i : reportRows)
-        selectedClusters.append(clusterColors.itemId(i));
+    selectedClusters.reserve(reportIds.size());
+    for (int id : reportIds)
+        selectedClusters.append(id);
 
     //Selection has just changed
     isUpToDate = false;
@@ -577,27 +632,47 @@ QList<int> ClusterPalette::selectedClusters() {
     return selectedClusters;
 }
 
+void ClusterPalette::renumberPinnedIds(const QMap<int,int>& oldToNew)
+{
+    if (iconView->sPinnedIds.isEmpty() || oldToNew.isEmpty())
+        return;
+    // Walk the map and replace any pinned id that's been renamed.
+    // Build the new set in a temporary so we don't iterate-and-modify.
+    QSet<int> renumbered;
+    renumbered.reserve(iconView->sPinnedIds.size());
+    for (int id : iconView->sPinnedIds) {
+        if (oldToNew.contains(id))
+            renumbered.insert(oldToNew.value(id));
+        else
+            renumbered.insert(id);
+    }
+    iconView->sPinnedIds = renumbered;
+}
+
 void ClusterPalette::toggleCurrentSelection(){
     QListWidgetItem *cur = iconView->currentItem();
     if (!cur) return;
 
-    const int curRow = iconView->row(cur);
+    // Pin/unpin by cluster id (stable across renumbers) rather than by
+    // iconView row.  Mirrors the inner S-key handler in
+    // ClusterPaletteWidget::keyPressEvent.
+    const int curId = cur->data(CLUSTER_ID).toInt();
 
-    if (!iconView->sRows.contains(curRow)) {
-        // Not S-selected → add it.
+    if (!iconView->sPinnedIds.contains(curId)) {
+        // Not S-pinned → add it.
         cur->setSelected(true);
-        iconView->sRows.insert(curRow);
+        iconView->sPinnedIds.insert(curId);
         iconView->lastSPressItem = cur;
     } else if (cur == iconView->lastSPressItem) {
         // S twice on same item → isolate: clear all others, keep only this.
-        iconView->sRows.clear();
+        iconView->sPinnedIds.clear();
         for (int k = 0; k < iconView->count(); ++k)
             if (iconView->item(k) != cur) iconView->item(k)->setSelected(false);
         iconView->lastSPressItem = nullptr;
     } else {
-        // S on a different already-S-selected item → deselect it.
+        // S on a different already-S-pinned item → deselect it.
         cur->setSelected(false);
-        iconView->sRows.remove(curRow);
+        iconView->sPinnedIds.remove(curId);
         iconView->lastSPressItem = cur;
     }
     slotClickRedraw();

@@ -24,6 +24,8 @@
 #include <QToolTip>
 
 #include <QList>
+#include <QMap>      // renumberPinnedIds takes a QMap<int,int>
+#include <QSet>      // sPinnedIds is QSet<int>
 
 class QStatusBar;
 
@@ -67,17 +69,26 @@ private:
      *  S-target deselects all others and keeps only that item selected. */
     QListWidgetItem *lastSPressItem{nullptr};
 
-    /** Rows explicitly toggled by the S key. Arrow navigation restores only
-     *  these rows so that non-S navigation keeps the normal single-select
-     *  behaviour. Cleared when S isolates back to one cluster. */
-    QSet<int> sRows;
+    /** Cluster IDs explicitly toggled by the S key.  Arrow navigation
+     *  restores selection on items whose cluster id is in this set, so
+     *  S-pinning survives palette refreshes (renumbers, full recluster,
+     *  etc.) — the icon for a renumbered cluster keeps its pinned state
+     *  even though its iconView row may have moved.  Cleared when S
+     *  isolates back to one cluster.
+     *
+     *  Stored as cluster ids rather than iconView rows so the set is
+     *  stable across operations that re-build the iconView (T-key
+     *  partial renumber, R-key full renumber, recluster, dipsplit,
+     *  watershed) — those rebuild the icon list, leaving any
+     *  row-indexed set pointing at unrelated icons. */
+    QSet<int> sPinnedIds;
 
     /** True while arrow-key navigation is in progress. */
     bool navigating{false};
 
 public:
     bool isNavigating() const { return navigating; }
-    const QSet<int>& getSRows() const { return sRows; }
+    const QSet<int>& getSPinnedIds() const { return sPinnedIds; }
 
     friend class ClusterPalette;
 };
@@ -118,11 +129,28 @@ public:
     //and the selection of cluster is immediately trigger
     enum Mode {IMMEDIATE = 1, DELAY = 2};
     
-    enum DataStored { INDEX = Qt::UserRole+1 };
+    enum DataStored {
+        INDEX      = Qt::UserRole + 1,   ///< storage index in ItemColors itemList
+        CLUSTER_ID = Qt::UserRole + 2,   ///< the cluster id this item displays —
+                                         ///< stable across renumbers, unlike the
+                                         ///< iconView row.  Used so sPinnedIds
+                                         ///< can pin clusters by id rather than
+                                         ///< by palette row.
+    };
 
     void createClusterList(KlustersDoc* doc);
     void updateClusterList();
     void selectItems(const QList<int> &selectedClusters);
+
+    /** Rewrite the S-pinned-ids set through a partial cluster-rename map.
+     *  Each entry whose key matches a pinned id gets its id replaced by
+     *  the new id; pinned ids not in the map are left alone (because
+     *  they refer to clusters that weren't renamed).  Called by
+     *  KlustersDoc::applyClusterRename so S-pinning survives both the
+     *  T-key partial renumber and the R-key full renumber.
+     *  No-op if no pinned ids are set. */
+    void renumberPinnedIds(const QMap<int,int>& oldToNew);
+
     void setImmediateMode(){mode = IMMEDIATE;}
     void setDelayMode(){mode = DELAY;}
     void reset();
