@@ -53,7 +53,7 @@ public:
     /**
 * Zooms the width and the height of the rectangle by @p factor and center it on the specified center (@p centerX, @p centerY).
 * @param factor zoom factor
-* @param centerX absciss of the center point for the newly zoomed rectangle
+* @param centerX abscissa of the center point for the newly zoomed rectangle
 * @param centerY ordinate of the center point for the newly zoomed rectangle
 * @return boolean indicating if the zoom has been done
 */
@@ -75,9 +75,9 @@ public:
 
     /**
 * Zooms on the rectangle specified by two diagonal points (firstClickX,firstClickY) and (secondClickX,secondClickY).
-* @param firstClickX absciss of the first selected point
+* @param firstClickX abscissa of the first selected point
 * @param firstClickY ordinate of the first selected point
-* @param secondClickX absciss of the second selected point
+* @param secondClickX abscissa of the second selected point
 * @param secondClickY ordinate of the first selected point
 * @return boolean indicating if the zoom has been done
 */

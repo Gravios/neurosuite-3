@@ -99,7 +99,7 @@ public:
   /**
   * Returns true if the channel Id exists false otherwise.
   * @param channelId the id of the channel to check for existence
-  * @return the boolean value for the existance of the channel
+  * @return the boolean value for the existence of the channel
   */
   virtual bool contains(int channelId);
 

@@ -115,35 +115,35 @@ public:
     virtual void setFailed();
 
 private:
-    std::string m_label;
-    std::string m_step;
-    int         m_total;
-    int         m_done;
-    int         m_barWidth;        ///< computed at start(); 0 = uninitialised
-    int         m_lastDrawnEighths;///< 1/8-cell granularity, prevents redundant redraws
-    bool        m_unicode;         ///< true when output channel is a UTF-8 TTY
-    bool        m_isTty;           ///< true when bar can be drawn live
-    void*       m_ttyFile;         ///< FILE* for live drawing; NULL → non-TTY path.
+    std::string label;
+    std::string step;
+    int         total;
+    int         done;
+    int         barWidth;        ///< computed at start(); 0 = uninitialised
+    int         lastDrawnEighths;///< 1/8-cell granularity, prevents redundant redraws
+    bool        unicode;         ///< true when output channel is a UTF-8 TTY
+    bool        isTty;           ///< true when bar can be drawn live
+    void*       ttyFile;         ///< FILE* for live drawing; NULL → non-TTY path.
                                    ///< Points at /dev/tty if open succeeds, else
                                    ///< stderr if stderr is a TTY, else NULL.
                                    ///< Held as void* so the header doesn't have
                                    ///< to drag in <cstdio>.
-    bool        m_ttyFileOwned;    ///< true iff we fopen'd it (must fclose in dtor)
-    int         m_nonTtyMilestones;///< for piped output: count of 5% milestones emitted
-    bool        m_started;         ///< start() has run
-    bool        m_finished;        ///< finish() has run
-    bool        m_failed;          ///< setFailed() has been called
+    bool        ttyFileOwned;    ///< true iff we fopen'd it (must fclose in dtor)
+    int         nonTtyMilestones;///< for piped output: count of 5% milestones emitted
+    bool        started;         ///< start() has run
+    bool        finished;        ///< finish() has run
+    bool        failed;          ///< setFailed() has been called
 
     /** Render the bar at its current state. */
     void redraw();
 
-    /** Compute m_barWidth, taking terminal width and label/step lengths
-     *  into account.  Caller is expected to handle ellipsis on m_label
+    /** Compute barWidth, taking terminal width and label/step lengths
+     *  into account.  Caller is expected to handle ellipsis on label
      *  if the result would be too narrow. */
     void computeLayout();
 
     /** Decide whether to use Unicode block characters or ASCII fallback,
-     *  and whether stdout is a TTY at all.  Sets m_unicode and m_isTty. */
+     *  and whether stdout is a TTY at all.  Sets unicode and isTty. */
     void detectCapabilities();
 };
 

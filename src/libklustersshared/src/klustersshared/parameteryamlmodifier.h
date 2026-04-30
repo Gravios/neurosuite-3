@@ -167,10 +167,10 @@ public:
     bool setUnitsInformation(const QMap<int,QStringList>& units);
 
 private:
-    YAML::Node m_root;   ///< live YAML tree (Map or Null if never parsed)
+    YAML::Node root;   ///< live YAML tree (Map or Null if never parsed)
 
     // Helpers
-    /** Ensure m_root is a Map and has the given top-level key as a Map. */
+    /** Ensure root is a Map and has the given top-level key as a Map. */
     YAML::Node ensureMap(const std::string& key);
 
     /** Assign a scalar, creating intermediate maps as needed. */

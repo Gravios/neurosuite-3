@@ -1170,6 +1170,72 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         return true;
     }
 
+    // ── DipSplit live-preview mode ──────────────────────────────────────────
+    // Mirror of the watershed block above, but simpler: only Enter and
+    // Esc are meaningful (no tunables).  All other keys are swallowed
+    // while dipPreviewActive is true.
+    if (dipPreviewActive &&
+        (event->type() == QEvent::ShortcutOverride ||
+         event->type() == QEvent::KeyPress))
+    {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        const int key  = ke->key();
+        const auto mod = ke->modifiers();
+        const bool plain = (mod == Qt::NoModifier);
+
+        if (event->type() == QEvent::ShortcutOverride) {
+            ke->accept();
+            return true;
+        }
+        if (ke->isAutoRepeat()) return true;
+
+        if (plain) {
+            switch (key) {
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                dipPreviewExit(/*commit=*/true);
+                return true;
+            case Qt::Key_Escape:
+                dipPreviewExit(/*commit=*/false);
+                return true;
+            }
+        }
+        // Any other key while preview is active: swallow.
+        return true;
+    }
+
+    // ── DipSplit live-preview mode ──────────────────────────────────────────
+    // Parallel to the watershed block above but with no tunables: only
+    // Enter (apply) and Esc (cancel) are honoured.  Any other key is
+    // swallowed to prevent stray actions while the overlay is on screen.
+    if (dipPreviewActive &&
+        (event->type() == QEvent::ShortcutOverride ||
+         event->type() == QEvent::KeyPress))
+    {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+
+        if (event->type() == QEvent::ShortcutOverride) {
+            ke->accept();
+            return true;
+        }
+        if (ke->isAutoRepeat()) return true;
+
+        if (ke->modifiers() == Qt::NoModifier) {
+            switch (ke->key()) {
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                dipPreviewExit(/*commit=*/true);
+                return true;
+            case Qt::Key_Escape:
+                dipPreviewExit(/*commit=*/false);
+                return true;
+            default:
+                break;
+            }
+        }
+        return true;     // swallow everything else
+    }
+
     // ── Key navigation ──────────────────────────────────────────────────────
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
@@ -1314,15 +1380,19 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     }
     // ── T key: palette move-to-end ─────────────────────────────────────────
     // T has no global QAction shortcut (the "Time Frame" QAction shortcut
-    // was removed).  When the cluster palette has focus, T re-orders the
-    // currently-selected cluster(s) to the end of the palette list — same
-    // intercept pattern as Key_S.  The ShortcutOverride claim is retained
-    // defensively so any future QAction with T as shortcut still won't
-    // win over the palette intercept.
+    // was removed).  Trigger the renumber-to-end whenever the user has a
+    // palette selection, regardless of which view currently holds focus
+    // (cluster view, correlation matrix, error matrix, template matrix —
+    // any of these are normal palette companions).  Only suppress when
+    // focus is in a text-entry control (spinbox / line-edit) so the user
+    // can still type letters.  Earlier the gate required strict
+    // paletteHasFocus(), which silently dropped T after a click on the
+    // correlation matrix — counter-intuitive, since the palette's
+    // selection ring stays visible across that focus change.
     if(event->type() == QEvent::ShortcutOverride){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
-           && paletteHasFocus()){
+           && !focusIsInTextInput()){
             ke->accept();
             return true;
         }
@@ -1330,7 +1400,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
-           && doc && paletteHasFocus()){
+           && doc && !focusIsInTextInput()){
             slotMoveSelectedClustersToEnd();
             return true;
         }
@@ -1438,6 +1508,25 @@ bool KlustersApp::paletteHasFocus() const
     if (!clusterPalette) return false;
     for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget())
         if (w == clusterPalette) return true;
+    return false;
+}
+
+bool KlustersApp::focusIsInTextInput() const
+{
+    // Returns true when the currently-focused widget is a text-entry
+    // control (QAbstractSpinBox covers QSpinBox and QDoubleSpinBox; the
+    // separate QLineEdit check covers the duration / bin-size / etc. line
+    // edits in the parameter toolbar).  Used by the T-key intercept (and
+    // potentially other future single-letter palette shortcuts) so the
+    // user can still type letters into spinboxes / line-edits without
+    // triggering palette actions.  We walk up the ancestor chain because
+    // spinboxes embed an internal QLineEdit that is the actual focus
+    // widget; testing only the leaf would miss it for QAbstractSpinBox-
+    // derived controls.
+    for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget()) {
+        if (qobject_cast<QAbstractSpinBox*>(w)) return true;
+        if (qobject_cast<QLineEdit*>(w))       return true;
+    }
     return false;
 }
 
@@ -4741,44 +4830,43 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 }
 
 // ---------------------------------------------------------------------------
-// slotDipSplit  +  dipPostCommitDismiss  +  dipPostCommitUndo
+// slotDipSplit  +  dipPreviewEnter / dipPreviewExit / dipRefreshOverlay
 //
-// Shift+D runs dipsplit on the currently-selected cluster: the algorithm
-// runs once via doc->dipSplitDecide(), and if accepted the split commits
-// immediately via doc->dipSplitApply().  Both new clusters get selected
-// in the palette.
+// Shift+D opens an in-place live preview of the dipsplit decision: the
+// algorithm runs once via doc->dipSplitDecide(), the proposed partition
+// is rendered as coloured discs over the active scatter view (blue =
+// stays in the source cluster, red = moves to a new cluster), and the
+// user confirms with Enter or aborts with Esc.  No tunables — dipsplit's
+// parameters affect accept/reject but not the labelling, so there's
+// nothing for arrow keys to adjust.  Mutually exclusive with the
+// watershed live preview (eventFilter rejects Shift+D while wsPreviewActive).
 //
-// Post-commit, a confirm HUD is drawn over the active scatter view
-// reporting the metrics (BIC, valley depth, spike counts).  Two QShortcuts
-// installed on the active view handle:
-//   Esc:    revert via doc->undo() — pops the single combined undo entry,
-//           bringing back the source cluster intact.
-//   Return: dismiss the HUD, keep the split.
-//
-// Any other curation action also dismisses the HUD silently (the
-// shortcuts are scoped to the view widget; switching views or invoking
-// other actions deletes them via the dipPostCommit* helpers).
-//
-// No live-preview overlay; no two-phase commit.  Decision and commit
-// happen atomically.  The cached decision approach is gone — there's
-// nothing to "drift" from.
+// On Enter, doc->dipSplitApply is called with the cached decision; the
+// algorithm does not re-run.  This means the preview cannot drift from
+// the committed result.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotDipSplit()
 {
+    if (dipPreviewActive) {
+        // Pressing Shift+D while already in dip preview is a no-op.
+        // Use Enter to commit, Esc to cancel.
+        return;
+    }
     if (wsPreviewActive) {
         // Watershed preview owns the active view; ignore Shift+D until
         // the user resolves the watershed preview first.
         return;
     }
-    if (dipPostCommitActive) {
-        // Pressing Shift+D while the post-commit confirm is up is a
-        // no-op.  Use Enter to dismiss or Esc to undo.
-        return;
-    }
-    if (!doc || !activeView() || !clusterPalette) return;
-    if (doesActiveDisplayContainProcessWidget()) return;
+    dipPreviewEnter();
+}
 
-    // Pick the current cluster: first non-noise / non-artefact cluster
+bool KlustersApp::dipPreviewEnter()
+{
+    if (!doc || !activeView() || !clusterPalette) return false;
+    if (doesActiveDisplayContainProcessWidget()) return false;
+
+    // Pick the current cluster to test.  Same selection rule the prior
+    // synchronous slot used: first non-noise / non-artefact cluster
     // shown in the active view.
     const QList<int>& shown = activeView()->clusters();
     int clusterId = -1;
@@ -4789,17 +4877,17 @@ void KlustersApp::slotDipSplit()
         statusBar()->showMessage(
             tr("DipSplit: select a cluster (cluster > 1) in the active display first."),
             4000);
-        return;
+        return false;
     }
 
     KlustersView* aview = activeView();
     if (!aview->containsClusterView()) {
         statusBar()->showMessage(
             tr("DipSplit: the active display has no scatter view."), 4000);
-        return;
+        return false;
     }
 
-    // Locate the ClusterView so we can show the post-commit HUD on it.
+    // Locate the ClusterView the same way wsEnter does.
     ClusterView* scatter = nullptr;
     {
         QList<ViewWidget*> vws = aview->getViewList();
@@ -4810,39 +4898,44 @@ void KlustersApp::slotDipSplit()
     if (!scatter) {
         statusBar()->showMessage(
             tr("DipSplit: could not locate the scatter view."), 4000);
-        return;
+        return false;
     }
 
-    const int   minSize      = configuration().getDipSplitMinSize();
-    const float bloatFactor  = static_cast<float>(configuration().getDipSplitBloatFactor());
-    const float valleyThresh = static_cast<float>(configuration().getDipSplitValleyThresh());
+    // Stash parameters at entry time.  These are passed verbatim to
+    // dipSplitApply on commit so the curation log records the values
+    // that were in effect when the decision was made (not whatever
+    // the user might fiddle with during the preview).
+    dipClusterId    = clusterId;
+    dipMinSize      = configuration().getDipSplitMinSize();
+    dipBloatFactor  = static_cast<float>(configuration().getDipSplitBloatFactor());
+    dipValleyThresh = static_cast<float>(configuration().getDipSplitValleyThresh());
 
-    // ── Run the decision ─────────────────────────────────────────────────
-    slotStatusMsg(tr("Running DipSplit..."));
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const KlustersDoc::DipSplitDecision D =
-        doc->dipSplitDecide(clusterId, minSize, bloatFactor, valleyThresh);
+    dipDecision = doc->dipSplitDecide(
+        dipClusterId, dipMinSize, dipBloatFactor, dipValleyThresh);
     QApplication::restoreOverrideCursor();
 
-    if (!D.accepted) {
-        // Decision rejected — surface the reason and stop.
+    if (!dipDecision.accepted) {
+        // Don't enter preview when the algorithm rejected — there's
+        // nothing to show.  Surface the same explanatory message the
+        // synchronous slot used.
         const QString why = [&] {
-            const QString r = D.reason;
+            const QString r = dipDecision.reason;
             if (r == QLatin1String("too_small"))
                 return tr("cluster too small (< 2×MinSize)");
             if (r == QLatin1String("not_bloated"))
                 return tr("cluster is already unimodal (Mahal²₉₀=%1  χ²₉₀=%2)")
-                       .arg(D.mahal2P90, 0, 'f', 1)
-                       .arg(D.chi2_90,   0, 'f', 1);
+                       .arg(dipDecision.mahal2P90, 0, 'f', 1)
+                       .arg(dipDecision.chi2_90,   0, 'f', 1);
             if (r == QLatin1String("no_valley"))
                 return tr("no valley deep enough on any of the top 3 principal "
                           "components (best depth=%1)")
-                       .arg(D.bestDepth, 0, 'f', 3);
+                       .arg(dipDecision.bestDepth, 0, 'f', 3);
             if (r == QLatin1String("small_child"))
                 return tr("split would produce a child cluster smaller than MinSize");
             if (r == QLatin1String("bic_worse"))
                 return tr("single-Gaussian BIC is better than two-cluster BIC (ΔBIC=%1)")
-                       .arg(D.deltaBIC, 0, 'f', 1);
+                       .arg(dipDecision.deltaBIC, 0, 'f', 1);
             if (r == QLatin1String("cluster_not_found"))
                 return tr("cluster not found");
             if (r == QLatin1String("bad_features"))
@@ -4850,162 +4943,120 @@ void KlustersApp::slotDipSplit()
             return tr("unknown reason (%1)").arg(r);
         }();
         statusBar()->showMessage(
-            tr("DipSplit: no split for cluster %1 — %2").arg(clusterId).arg(why),
+            tr("DipSplit: no split for cluster %1 — %2")
+                .arg(dipClusterId).arg(why),
             10000);
-        slotStatusMsg(tr("Ready."));
+        // Reset state — we never entered preview.
+        dipDecision    = KlustersDoc::DipSplitDecision{};
+        dipClusterId   = -1;
+        return false;
+    }
+
+    dipScatter = scatter;
+    dipView    = aview;
+    dipPreviewActive  = true;
+    dipRefreshOverlay();
+    return true;
+}
+
+void KlustersApp::dipPreviewExit(bool commit)
+{
+    if (!dipPreviewActive) return;
+
+    // Snapshot the commit-relevant state before clearing.
+    const KlustersDoc::DipSplitDecision D    = dipDecision;
+    const int                           src  = dipClusterId;
+    const int                           ms   = dipMinSize;
+    const float                         bf   = dipBloatFactor;
+    const float                         vt   = dipValleyThresh;
+    ClusterView* const                  scat = dipScatter;
+
+    // Clear preview state (also drops the overlay).
+    if (scat) scat->clearDipsplitPreview();
+    dipPreviewActive    = false;
+    dipScatter   = nullptr;
+    dipView      = nullptr;
+    dipClusterId = -1;
+    dipDecision  = KlustersDoc::DipSplitDecision{};
+
+    if (!commit) {
+        if (clusterPalette) clusterPalette->setFocusToList();
+        statusBar()->showMessage(tr("DipSplit cancelled."), 3000);
         return;
     }
 
-    // ── Commit the decision ──────────────────────────────────────────────
+    // Apply the cached decision.  Algorithm does not re-run.
     slotStatusMsg(tr("Applying DipSplit..."));
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const KlustersDoc::DipSplitResult R =
-        doc->dipSplitApply(D, minSize, bloatFactor, valleyThresh);
+    const KlustersDoc::DipSplitResult r =
+        doc->dipSplitApply(D, ms, bf, vt);
     QApplication::restoreOverrideCursor();
 
-    if (!R.accepted) {
-        // Commit rejected (degenerate split after row resolution).
+    if (r.accepted) {
+        const QString line =
+            tr("DipSplit: cluster %1 → %2 (%3 spikes) + %4 (%5 spikes)   "
+               "PC%6 depth=%7  ΔBIC=%8")
+            .arg(src)
+            .arg(r.renamedSourceId).arg(r.n0)
+            .arg(r.newClusterId).arg(r.n1)
+            .arg(r.bestPC)
+            .arg(r.bestDepth, 0, 'f', 3)
+            .arg(r.deltaBIC,  0, 'f', 1);
+        statusBar()->showMessage(line, 10000);
+        if (clusterPalette && r.newClusterId > 0) {
+            clusterPalette->selectItems(QList<int>{r.newClusterId});
+            clusterPalette->setFocusToList();
+        }
+    } else {
+        // dipSplitApply rejected after the live decision said yes — this
+        // can happen if moveSpikeSubset returns small_child (e.g. label
+        // mapping produced an empty side after row deduplication).
         statusBar()->showMessage(
-            tr("DipSplit: commit rejected (%1).").arg(R.reason), 6000);
-        slotStatusMsg(tr("Ready."));
-        return;
+            tr("DipSplit: commit rejected (%1).").arg(r.reason),
+            6000);
+        if (clusterPalette) clusterPalette->setFocusToList();
     }
-
-    // ── Post-commit: select both new clusters in the palette and put up
-    //    the confirm HUD on the active scatter view. ──────────────────────
-    if (clusterPalette) {
-        clusterPalette->selectItems(QList<int>{ R.leftId, R.rightId });
-        clusterPalette->setFocusToList();
-    }
-
-    const QString hud = tr(
-        "DipSplit committed\n"
-        "  cluster %1   →   %2 (left, %3 spikes) + %4 (right, %5 spikes)\n"
-        "  best PC = %6    valley depth = %7    ΔBIC = %8\n"
-        "  Enter: keep     Esc: undo")
-        .arg(R.sourceId)
-        .arg(R.leftId).arg(R.n0)
-        .arg(R.rightId).arg(R.n1)
-        .arg(R.bestPC)
-        .arg(R.bestDepth, 0, 'f', 3)
-        .arg(R.deltaBIC,  0, 'f', 1);
-
-    scatter->setDipsplitPostCommitHud(hud);
-
-    // Also surface a one-line summary in the status bar (in case the
-    // HUD is missed).
-    statusBar()->showMessage(
-        tr("DipSplit: %1 → %2 + %3 (Esc to undo, Enter to keep)")
-            .arg(R.sourceId).arg(R.leftId).arg(R.rightId), 10000);
-
-    // Install scoped Esc/Enter shortcuts on the active view.  These
-    // self-clean when the post-commit window ends.
-    dipPostCommitScatter = scatter;
-    dipPostCommitActive  = true;
-    dipInstallPostCommitShortcuts(aview);
-
     slotStatusMsg(tr("Ready."));
 }
 
-// Helper: install Esc/Enter QShortcuts on the active view widget for
-// the duration of the post-commit confirm window.  Window-context so
-// they fire regardless of focus within the main window.
-void KlustersApp::dipInstallPostCommitShortcuts(KlustersView* hostView)
+void KlustersApp::dipRefreshOverlay()
 {
-    // Defensive: clean up any stale shortcuts from a prior session.
-    dipClearPostCommitShortcuts();
+    if (!dipPreviewActive || !dipScatter || !doc) return;
 
-    if (!hostView) return;
+    // Build per-spike (X, Y, label) lists for the source cluster's
+    // members in the active view's current dimensions.  The
+    // DipSplitDecision carries one label per cluster member in the
+    // order returned by Data::spikePositions; the rowsByMember entry
+    // gives the corresponding 1-based feature row, which is the row
+    // we feed back into Data::featureValue to read (X, Y).
+    const int dimX = dipView->abscissaDimension();
+    const int dimY = dipView->ordinateDimension();
 
-    dipPostCommitEscShortcut =
-        new QShortcut(QKeySequence(Qt::Key_Escape), hostView);
-    dipPostCommitEscShortcut->setContext(Qt::WindowShortcut);
-    connect(dipPostCommitEscShortcut, &QShortcut::activated,
-            this, &KlustersApp::dipPostCommitUndo);
-
-    dipPostCommitEnterShortcut =
-        new QShortcut(QKeySequence(Qt::Key_Return), hostView);
-    dipPostCommitEnterShortcut->setContext(Qt::WindowShortcut);
-    connect(dipPostCommitEnterShortcut, &QShortcut::activated,
-            this, &KlustersApp::dipPostCommitDismiss);
-
-    // QKeySequence(Qt::Key_Return) only matches Return; numpad Enter is
-    // a separate key code.  Bind a second shortcut for it.
-    dipPostCommitEnterShortcut2 =
-        new QShortcut(QKeySequence(Qt::Key_Enter), hostView);
-    dipPostCommitEnterShortcut2->setContext(Qt::WindowShortcut);
-    connect(dipPostCommitEnterShortcut2, &QShortcut::activated,
-            this, &KlustersApp::dipPostCommitDismiss);
-}
-
-void KlustersApp::dipClearPostCommitShortcuts()
-{
-    if (dipPostCommitEscShortcut) {
-        dipPostCommitEscShortcut->deleteLater();
-        dipPostCommitEscShortcut = nullptr;
+    const int N = static_cast<int>(dipDecision.labels.size());
+    QVector<double> xs; xs.reserve(N);
+    QVector<double> ys; ys.reserve(N);
+    QVector<int>    labs; labs.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        const dataType row = dipDecision.rowsByMember.at(i);
+        xs.append (static_cast<double>(doc->data().featureValue(row, dimX)));
+        ys.append (static_cast<double>(doc->data().featureValue(row, dimY)));
+        labs.append(dipDecision.labels[static_cast<size_t>(i)]);
     }
-    if (dipPostCommitEnterShortcut) {
-        dipPostCommitEnterShortcut->deleteLater();
-        dipPostCommitEnterShortcut = nullptr;
-    }
-    if (dipPostCommitEnterShortcut2) {
-        dipPostCommitEnterShortcut2->deleteLater();
-        dipPostCommitEnterShortcut2 = nullptr;
-    }
-}
 
-// Esc handler: undo the dipsplit (one combined entry — split + view
-// reattach all happen via the standard undo path).
-void KlustersApp::dipPostCommitUndo()
-{
-    if (!dipPostCommitActive) return;
-    dipDismissPostCommitHud();
-    if (doc) {
-        slotStatusMsg(tr("Reverting DipSplit..."));
-        QApplication::setOverrideCursor(Qt::WaitCursor);
-        doc->undo();
-        QApplication::restoreOverrideCursor();
-        // Refresh traceView state same as slotUndo would.
-        KlustersView* view = activeView();
-        if (view) {
-            if (view->containsTraceView() && !view->clusters().isEmpty()) {
-                slotStateChanged("traceViewBrowsingState");
-            } else {
-                slotStateChanged("noTraceViewBrowsingState");
-            }
-        }
-        // Return focus to the palette — same convention as the other
-        // curation slots (slotMoveClustersToNoise, slotMoveClustersToArtefact).
-        // The user invoked dipsplit from the palette; they should land
-        // back there after undoing.  slotUndo's focusClusterView() is
-        // wrong here because it targets the scatter widget.
-        if (clusterPalette) clusterPalette->setFocusToList();
-        slotStatusMsg(tr("Ready."));
-        statusBar()->showMessage(tr("DipSplit undone."), 4000);
-    }
-}
+    const QString hud = tr(
+        "DipSplit preview\n"
+        "  cluster %1   →   %2 (left, %3 spikes) + new (right, %4 spikes)\n"
+        "  best PC = %5    valley depth = %6    ΔBIC = %7\n"
+        "  Enter: apply     Esc: cancel")
+        .arg(dipClusterId)
+        .arg(dipClusterId)
+        .arg(dipDecision.n0)
+        .arg(dipDecision.n1)
+        .arg(dipDecision.bestPC)
+        .arg(dipDecision.bestDepth, 0, 'f', 3)
+        .arg(dipDecision.deltaBIC,  0, 'f', 1);
 
-// Enter handler: dismiss the HUD, keep the split.
-void KlustersApp::dipPostCommitDismiss()
-{
-    if (!dipPostCommitActive) return;
-    dipDismissPostCommitHud();
-    // Return focus to the palette so arrow-key navigation continues on
-    // the auto-selected new clusters (left/right halves are already
-    // selected by commitTwoClusterCreation's selectItems call).
-    if (clusterPalette) clusterPalette->setFocusToList();
-    statusBar()->showMessage(tr("DipSplit kept."), 3000);
-}
-
-// Shared cleanup: clear HUD on the scatter and release shortcuts.
-void KlustersApp::dipDismissPostCommitHud()
-{
-    if (dipPostCommitScatter) {
-        dipPostCommitScatter->clearDipsplitPostCommitHud();
-        dipPostCommitScatter = nullptr;
-    }
-    dipPostCommitActive = false;
-    dipClearPostCommitShortcuts();
+    dipScatter->setDipsplitPreview(xs, ys, labs, hud);
 }
 
 // ---------------------------------------------------------------------------
@@ -5271,17 +5322,41 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
         return;
     }
 
+    // Track whether the user's selection included the global-max cluster
+    // before filtering — we want a different message when the selection
+    // was *only* the max (already at the end, nothing else to do) vs. a
+    // mix that includes other movable clusters.
+    const int globalMax = static_cast<int>(doc->data().highestClusterId());
+    const bool selIncludedMax = (globalMax > 0) && sel.contains(globalMax);
+    const int  selSizeBefore  = sel.size();
+
     // Filter: drop the global-max cluster and 0/1 (the rename would be a
     // no-op for the max, and remapping 0/1 would corrupt special-cluster
     // semantics).
-    const int globalMax = static_cast<int>(doc->data().highestClusterId());
     if (globalMax > 0) sel.removeAll(globalMax);
     sel.removeAll(0);
     sel.removeAll(1);
 
     if (sel.isEmpty()) {
-        statusBar()->showMessage(
-            tr("Nothing to move — selection is already at the end."), 3000);
+        // The selection was non-empty before filtering but everything got
+        // filtered out.  If the only thing selected was the max cluster,
+        // T is a no-op — but that's not a "failure," it's a correct
+        // identity operation.  Use a calm, non-alarming status message
+        // ("already at end") rather than the louder "Nothing to move"
+        // wording, which sounded like the action had failed.
+        if (selIncludedMax && selSizeBefore == 1) {
+            statusBar()->showMessage(
+                tr("Cluster %1 is already at the end of the list.")
+                    .arg(globalMax),
+                2500);
+        } else {
+            // Mixed case: user selected only protected clusters (0/1)
+            // or some other unmovable combination.
+            statusBar()->showMessage(
+                tr("Selected cluster(s) cannot be renumbered "
+                   "(reserved 0/1 or already at end)."),
+                3000);
+        }
         clusterPalette->setFocusToList();
         return;
     }

@@ -20,7 +20,7 @@
 ParameterYamlModifier::ParameterYamlModifier()
 {
     // Start with a null node so we can detect "never parsed"
-    m_root = YAML::Node(YAML::NodeType::Map);
+    root = YAML::Node(YAML::NodeType::Map);
 }
 
 // ---------------------------------------------------------------------------
@@ -30,17 +30,17 @@ ParameterYamlModifier::ParameterYamlModifier()
 bool ParameterYamlModifier::parseFile(const QString& path)
 {
     try {
-        m_root = YAML::LoadFile(path.toStdString());
-        if (!m_root.IsDefined() || !m_root.IsMap()) {
+        root = YAML::LoadFile(path.toStdString());
+        if (!root.IsDefined() || !root.IsMap()) {
             qWarning() << "ParameterYamlModifier: root is not a YAML map in" << path;
-            m_root = YAML::Node(YAML::NodeType::Map);
+            root = YAML::Node(YAML::NodeType::Map);
             return false;
         }
         return true;
     } catch (const YAML::Exception& e) {
         qWarning() << "ParameterYamlModifier: parse error in" << path
                    << ":" << QString::fromStdString(e.what());
-        m_root = YAML::Node(YAML::NodeType::Map);
+        root = YAML::Node(YAML::NodeType::Map);
         return false;
     }
 }
@@ -48,9 +48,9 @@ bool ParameterYamlModifier::parseFile(const QString& path)
 bool ParameterYamlModifier::writeToFile(const QString& path)
 {
     // Ensure the version/creator header is present (needed for new files)
-    if (!m_root["parameters"]) {
-        m_root["parameters"]["version"] = "1.0";
-        m_root["parameters"]["creator"] = "neuroscope-3";
+    if (!root["parameters"]) {
+        root["parameters"]["version"] = "1.0";
+        root["parameters"]["creator"] = "neuroscope-3";
     }
 
     QString tmpPath = path + QLatin1String(".nstmp");
@@ -64,7 +64,7 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
         emitter.SetIndent(2);
         emitter.SetMapFormat(YAML::Block);
         emitter.SetSeqFormat(YAML::Block);
-        emitter << m_root;
+        emitter << root;
         out.close();
     } catch (const std::exception& e) {
         qWarning() << "ParameterYamlModifier: write error:" << e.what();
@@ -92,9 +92,9 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
 
 YAML::Node ParameterYamlModifier::ensureMap(const std::string& key)
 {
-    if (!m_root[key] || !m_root[key].IsMap())
-        m_root[key] = YAML::Node(YAML::NodeType::Map);
-    return m_root[key];
+    if (!root[key] || !root[key].IsMap())
+        root[key] = YAML::Node(YAML::NodeType::Map);
+    return root[key];
 }
 
 template<typename T>
@@ -162,7 +162,7 @@ bool ParameterYamlModifier::setSampleRateByExtension(
         entry["extension"]    = it.key().toStdString();
         seq.push_back(entry);
     }
-    m_root["files"] = seq;
+    root["files"] = seq;
     return true;
 }
 
@@ -176,7 +176,7 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
 {
     // Preserve per-group nFeatures from any existing groups
     QMap<int,int> existingNFeatures;
-    auto existing = m_root["spikeDetection"]["channelGroups"];
+    auto existing = root["spikeDetection"]["channelGroups"];
     if (existing && existing.IsSequence()) {
         int idx = 1;
         for (auto grp : existing) {
@@ -187,12 +187,12 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
     }
 
     // neuroscope/spikes also carries nSamples and peakSampleIndex
-    if (!m_root["neuroscope"] || !m_root["neuroscope"].IsMap())
-        m_root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
-    if (!m_root["neuroscope"]["spikes"] || !m_root["neuroscope"]["spikes"].IsMap())
-        m_root["neuroscope"]["spikes"] = YAML::Node(YAML::NodeType::Map);
-    m_root["neuroscope"]["spikes"]["nSamples"]       = nbSamples;
-    m_root["neuroscope"]["spikes"]["peakSampleIndex"] = peakSampleIndex;
+    if (!root["neuroscope"] || !root["neuroscope"].IsMap())
+        root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
+    if (!root["neuroscope"]["spikes"] || !root["neuroscope"]["spikes"].IsMap())
+        root["neuroscope"]["spikes"] = YAML::Node(YAML::NodeType::Map);
+    root["neuroscope"]["spikes"]["nSamples"]       = nbSamples;
+    root["neuroscope"]["spikes"]["peakSampleIndex"] = peakSampleIndex;
 
     auto sd = ensureMap("spikeDetection");
     YAML::Node seq(YAML::NodeType::Sequence);
@@ -219,8 +219,8 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
     // Preserve existing nSamples/peakSampleIndex
     int nbSamples       = 32;
     int peakSampleIndex = 16;
-    if (m_root["neuroscope"]["spikes"]) {
-        auto spk = m_root["neuroscope"]["spikes"];
+    if (root["neuroscope"]["spikes"]) {
+        auto spk = root["neuroscope"]["spikes"];
         if (spk["nSamples"])       nbSamples       = spk["nSamples"].as<int>(32);
         if (spk["peakSampleIndex"]) peakSampleIndex = spk["peakSampleIndex"].as<int>(16);
     }
@@ -262,12 +262,12 @@ bool ParameterYamlModifier::setAnatomicalDescription(
 void ParameterYamlModifier::setMiscellaneousInformation(
         float screenGain, const QString& traceBackgroundImage)
 {
-    if (!m_root["neuroscope"] || !m_root["neuroscope"].IsMap())
-        m_root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
-    auto misc = m_root["neuroscope"]["miscellaneous"];
+    if (!root["neuroscope"] || !root["neuroscope"].IsMap())
+        root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
+    auto misc = root["neuroscope"]["miscellaneous"];
     if (!misc || !misc.IsMap()) {
-        m_root["neuroscope"]["miscellaneous"] = YAML::Node(YAML::NodeType::Map);
-        misc = m_root["neuroscope"]["miscellaneous"];
+        root["neuroscope"]["miscellaneous"] = YAML::Node(YAML::NodeType::Map);
+        misc = root["neuroscope"]["miscellaneous"];
     }
     misc["screenGain"] = static_cast<double>(screenGain);
     if (traceBackgroundImage.isEmpty())
@@ -284,12 +284,12 @@ void ParameterYamlModifier::setNeuroscopeVideoInformation(
         int rotation, int flip,
         const QString& backgroundPath, int drawTrajectory)
 {
-    if (!m_root["neuroscope"] || !m_root["neuroscope"].IsMap())
-        m_root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
-    auto vid = m_root["neuroscope"]["video"];
+    if (!root["neuroscope"] || !root["neuroscope"].IsMap())
+        root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
+    auto vid = root["neuroscope"]["video"];
     if (!vid || !vid.IsMap()) {
-        m_root["neuroscope"]["video"] = YAML::Node(YAML::NodeType::Map);
-        vid = m_root["neuroscope"]["video"];
+        root["neuroscope"]["video"] = YAML::Node(YAML::NodeType::Map);
+        vid = root["neuroscope"]["video"];
     }
     vid["rotate"]             = rotation;
     vid["flip"]               = flip;
@@ -311,12 +311,12 @@ bool ParameterYamlModifier::setChannelDisplayInformation(
 {
     if (!channelColors) return false;
 
-    if (!m_root["neuroscope"] || !m_root["neuroscope"].IsMap())
-        m_root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
-    if (!m_root["neuroscope"]["channels"] || !m_root["neuroscope"]["channels"].IsMap())
-        m_root["neuroscope"]["channels"] = YAML::Node(YAML::NodeType::Map);
+    if (!root["neuroscope"] || !root["neuroscope"].IsMap())
+        root["neuroscope"] = YAML::Node(YAML::NodeType::Map);
+    if (!root["neuroscope"]["channels"] || !root["neuroscope"]["channels"].IsMap())
+        root["neuroscope"]["channels"] = YAML::Node(YAML::NodeType::Map);
 
-    auto channels = m_root["neuroscope"]["channels"];
+    auto channels = root["neuroscope"]["channels"];
 
     YAML::Node colorSeq(YAML::NodeType::Sequence);
     YAML::Node offsetSeq(YAML::NodeType::Sequence);
@@ -326,8 +326,8 @@ bool ParameterYamlModifier::setChannelDisplayInformation(
     // time a session is opened), so iterate 0..nChannels-1 and fall back to
     // a default blue for any channel not present in channelColors.
     int nChannels = 0;
-    if (m_root["acquisitionSystem"] && m_root["acquisitionSystem"]["nChannels"])
-        nChannels = m_root["acquisitionSystem"]["nChannels"].as<int>(0);
+    if (root["acquisitionSystem"] && root["acquisitionSystem"]["nChannels"])
+        nChannels = root["acquisitionSystem"]["nChannels"].as<int>(0);
     if (nChannels <= 0)
         nChannels = static_cast<int>(channelColors->numberOfChannels());
 
@@ -388,6 +388,6 @@ bool ParameterYamlModifier::setUnitsInformation(const QMap<int,QStringList>& uni
         u["notes"]             = strOrNull(row[6]);
         seq.push_back(u);
     }
-    m_root["units"] = seq;
+    root["units"] = seq;
     return true;
 }
