@@ -2226,6 +2226,11 @@ void KlustersDoc::undo(){
             //Add the current undo indice to the renumberingRedoList
             renumberingRedoList.append(nbUndo + 1);
 
+            // Reverse any S-pin renumbers made by the original action
+            // so a pin the user set on the pre-renumber cluster id is
+            // restored when undo brings that id back.
+            clusterPalette.renumberPinnedIds(clusterIdsNewOldMap[nbUndo + 1]);
+
             //Notify all the views of the undo
 
             for (KlustersView* view : *viewList) {
@@ -2372,6 +2377,11 @@ void KlustersDoc::redo(){
             //remove the current undo indice from the renumberingRedoList
             renumberingRedoList.removeAll(nbUndo);
 
+            // Re-apply the original rename to S-pinned ids so a pin
+            // restored by undo gets re-translated when redo replays
+            // the renumber.
+            clusterPalette.renumberPinnedIds(clusterIdsOldNewMap[nbUndo]);
+
             //Notify all the views of the undo
             for (KlustersView* view : *viewList) {
                 const bool isActive = (view == activeView);
@@ -2489,6 +2499,10 @@ void KlustersDoc::renumberClusters(){
         clusterColorList->changeItemId(i,clusterId);
     }
 
+    // Translate S-pinned cluster ids through the rename so any
+    // pinning the user established before R survives the renumber.
+    clusterPalette.renumberPinnedIds(clusterIdsOldNew);
+
     //Notify all the views of the modification
     const int numberOfView(viewList->count());
     for(int i =0; i<numberOfView;++i)
@@ -2583,6 +2597,27 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
         const int idx = clusterColorList->itemIndex(oldId);
         if (idx >= 0) clusterColorList->changeItemId(idx, newId);
     }
+    // changeItemId mutates IDs in-place without re-ordering the
+    // underlying itemList, so a partial rename like the T-key
+    // "renumber to end" leaves the renamed entry sitting at its old
+    // storage position.  The palette renders in storage order, so the
+    // icon would still appear where the OLD ID lived.  Re-sort by
+    // itemId so the palette layout matches the new ID ordering.
+    //
+    // Safe to do here because (a) the renumber-undo snapshot was
+    // taken before this — prepareClusterColorUndo deep-copies via
+    // ItemColors's copy ctor, and the snapshot is immutable from this
+    // point — and (b) Data::renumberPartial now re-packs the spike
+    // table in ascending-id order, so highestClusterId() and friends
+    // report correct values for all subsequent renumbers.
+    clusterColorList->sortByItemId();
+
+    // 2b. Translate S-pinned cluster ids through the rename so a
+    // pinned cluster keeps its pin under its new id.  Without this,
+    // pins would be silently dropped on the next palette refresh
+    // (updateClusterList prunes pinned ids whose cluster no longer
+    // exists, and after a rename the OLD id is gone).
+    clusterPalette.renumberPinnedIds(partialOldToNew);
 
     // 3. Each view — rewrites shownClusters; emits its own clustersRenumbered.
     for (KlustersView* v : *viewList) {
