@@ -158,21 +158,21 @@ std::string ellipsise(const std::string& s, int maxChars, bool unicode)
 } // namespace
 
 // ---------------------------------------------------------------------------
-ProgressBar::ProgressBar(std::string label, std::string step, int total)
-    : m_label(std::move(label))
-    , m_step(std::move(step))
-    , m_total(total)
-    , m_done(0)
-    , m_barWidth(0)
-    , m_lastDrawnEighths(-1)
-    , m_unicode(false)
-    , m_isTty(false)
-    , m_ttyFile(nullptr)
-    , m_ttyFileOwned(false)
-    , m_nonTtyMilestones(0)
-    , m_started(false)
-    , m_finished(false)
-    , m_failed(false)
+ProgressBar::ProgressBar(std::string lbl, std::string stp, int tot)
+    : label(std::move(lbl))
+    , step(std::move(stp))
+    , total(tot)
+    , done(0)
+    , barWidth(0)
+    , lastDrawnEighths(-1)
+    , unicode(false)
+    , isTty(false)
+    , ttyFile(nullptr)
+    , ttyFileOwned(false)
+    , nonTtyMilestones(0)
+    , started(false)
+    , finished(false)
+    , failed(false)
 {
     detectCapabilities();
 }
@@ -180,11 +180,11 @@ ProgressBar::ProgressBar(std::string label, std::string step, int total)
 ProgressBar::~ProgressBar()
 {
     finish();
-    if (m_ttyFileOwned && m_ttyFile) {
-        std::fclose(static_cast<std::FILE*>(m_ttyFile));
+    if (ttyFileOwned && ttyFile) {
+        std::fclose(static_cast<std::FILE*>(ttyFile));
     }
-    m_ttyFile      = nullptr;
-    m_ttyFileOwned = false;
+    ttyFile      = nullptr;
+    ttyFileOwned = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ ProgressBar::~ProgressBar()
 //      stdout/stderr to per-group logfiles (ndm_pca's parallel mode).
 //   2. stderr if it's a TTY — conventional CLI fallback for tools where
 //      stdout is the data channel.
-//   3. neither: m_isTty stays false, the redraw loop emits milestone
+//   3. neither: isTty stays false, the redraw loop emits milestone
 //      lines on stdout instead.
 //
 // We also detect Unicode capability on the chosen channel.
@@ -208,9 +208,9 @@ void ProgressBar::detectCapabilities()
     if (std::FILE* tty = std::fopen("/dev/tty", "w")) {
         // Disable buffering so \r-redraws are visible immediately.
         std::setvbuf(tty, nullptr, _IONBF, 0);
-        m_ttyFile      = tty;
-        m_ttyFileOwned = true;
-        m_isTty        = true;
+        ttyFile      = tty;
+        ttyFileOwned = true;
+        isTty        = true;
     }
     // 2. Fall back to stderr if it's a TTY.  Don't open it — just point
     //    at the existing FILE*; setvbuf on stderr is usually a no-op
@@ -218,22 +218,22 @@ void ProgressBar::detectCapabilities()
     //    it line-wise.  Safe to call.
     else if (isatty(STDERR_FILENO)) {
         std::setvbuf(stderr, nullptr, _IONBF, 0);
-        m_ttyFile      = stderr;
-        m_ttyFileOwned = false;
-        m_isTty        = true;
+        ttyFile      = stderr;
+        ttyFileOwned = false;
+        isTty        = true;
     }
     // 3. Last try: stdout if it's a TTY (rare — usually means /dev/tty
     //    failed for an unusual reason).  Keep it for completeness.
     else if (isatty(STDOUT_FILENO)) {
-        m_ttyFile      = stdout;
-        m_ttyFileOwned = false;
-        m_isTty        = true;
+        ttyFile      = stdout;
+        ttyFileOwned = false;
+        isTty        = true;
     } else {
-        m_isTty   = false;
-        m_ttyFile = nullptr;
+        isTty   = false;
+        ttyFile = nullptr;
     }
 
-    m_unicode = m_isTty && localeIsUtf8();
+    unicode = isTty && localeIsUtf8();
 }
 
 // ---------------------------------------------------------------------------
@@ -253,8 +253,8 @@ void ProgressBar::computeLayout()
     // Chrome accounts for: '[' + step + ']' + ' '  = 3 chars baseline,
     // plus a leading ' ' between label and '[' when the label is
     // non-empty.
-    int stepLen      = static_cast<int>(m_step.length());
-    int labelLen     = static_cast<int>(m_label.length());
+    int stepLen      = static_cast<int>(step.length());
+    int labelLen     = static_cast<int>(label.length());
     int chromeActual = CHROME_WIDTH + (labelLen > 0 ? 1 : 0);
     int budget       = targetWidth - chromeActual - stepLen - labelLen;
 
@@ -267,83 +267,83 @@ void ProgressBar::computeLayout()
         if (maxLabel < 1) {
             // Pathological: the step alone is too long.  Shrink both —
             // truncate the step to a sensible cap and drop the label.
-            m_label.clear();
+            label.clear();
             const int stepCap = 8;
-            if (static_cast<int>(m_step.length()) > stepCap) {
-                m_step = ellipsise(m_step, stepCap, m_unicode);
+            if (static_cast<int>(step.length()) > stepCap) {
+                step = ellipsise(step, stepCap, unicode);
             }
             // Label is now empty so chrome = CHROME_WIDTH (no leading space).
-            m_barWidth = targetWidth - CHROME_WIDTH
-                       - static_cast<int>(m_step.length());
+            barWidth = targetWidth - CHROME_WIDTH
+                       - static_cast<int>(step.length());
         } else {
-            m_label    = ellipsise(m_label, maxLabel, m_unicode);
-            m_barWidth = MIN_BAR_WIDTH;
+            label    = ellipsise(label, maxLabel, unicode);
+            barWidth = MIN_BAR_WIDTH;
         }
     } else {
-        m_barWidth = budget;
+        barWidth = budget;
     }
 
     // Final safety clamp.  Should never trigger after the logic above
     // but defends against future arithmetic mistakes.
-    if (m_barWidth < 1) m_barWidth = 1;
+    if (barWidth < 1) barWidth = 1;
 }
 
 // ---------------------------------------------------------------------------
 void ProgressBar::start()
 {
-    if (m_started) return;
-    m_started = true;
+    if (started) return;
+    started = true;
 
     computeLayout();
-    m_done             = 0;
-    m_lastDrawnEighths = -1;
-    m_nonTtyMilestones = 0;
+    done             = 0;
+    lastDrawnEighths = -1;
+    nonTtyMilestones = 0;
     redraw();
 }
 
 // ---------------------------------------------------------------------------
 void ProgressBar::advance()
 {
-    if (!m_started) start();
-    if (m_finished) return;
+    if (!started) start();
+    if (finished) return;
 
-    if (m_done < m_total) ++m_done;
+    if (done < total) ++done;
     redraw();
 }
 
 // ---------------------------------------------------------------------------
 void ProgressBar::redraw()
 {
-    if (m_total <= 0) return;
+    if (total <= 0) return;
 
     // Fraction of work done, in eighths-of-a-cell units.  This is the
     // smallest visible state change a Unicode bar can render; using it
     // as the change-detection key lets us skip redundant redraws.
-    const long totalEighths = static_cast<long>(m_barWidth) * 8;
-    long doneEighths        = (static_cast<long>(m_done) * totalEighths)
-                            / static_cast<long>(m_total);
+    const long totalEighths = static_cast<long>(barWidth) * 8;
+    long doneEighths        = (static_cast<long>(done) * totalEighths)
+                            / static_cast<long>(total);
     if (doneEighths < 0) doneEighths = 0;
     if (doneEighths > totalEighths) doneEighths = totalEighths;
 
     // ── Non-TTY path: emit one line per ~5% milestone on stdout. ─────────
     // Stays on stdout so log-capturing wrappers see milestones in their
     // logfiles when no TTY is available at all (CI, batch, cron).
-    if (!m_isTty) {
-        const int pct = static_cast<int>((100L * m_done) / m_total);
+    if (!isTty) {
+        const int pct = static_cast<int>((100L * done) / total);
         const int milestone = pct / NONTTY_PCT_STEP;
-        if (milestone > m_nonTtyMilestones) {
-            m_nonTtyMilestones = milestone;
-            std::cout << m_label
-                      << (m_label.empty() ? "" : " ")
-                      << "[" << m_step << "] " << pct << "%\n";
+        if (milestone > nonTtyMilestones) {
+            nonTtyMilestones = milestone;
+            std::cout << label
+                      << (label.empty() ? "" : " ")
+                      << "[" << step << "] " << pct << "%\n";
             std::cout.flush();
         }
         return;
     }
 
     // ── TTY path: full-line redraw via \r on the chosen channel. ─────────
-    if (doneEighths == m_lastDrawnEighths) return;   // nothing visibly changed
-    m_lastDrawnEighths = doneEighths;
+    if (doneEighths == lastDrawnEighths) return;   // nothing visibly changed
+    lastDrawnEighths = doneEighths;
 
     // Round eighths to whole cells.  The minimalist horizontal-line
     // style doesn't accommodate vertical eighths-blocks as a leading
@@ -353,7 +353,7 @@ void ProgressBar::redraw()
     // barWidth, but the rendered bar is whole-cell.
     int filled = static_cast<int>(doneEighths / 8);
     if ((doneEighths % 8) >= 4) ++filled;
-    if (filled > m_barWidth) filled = m_barWidth;
+    if (filled > barWidth) filled = barWidth;
 
     // Build the line as a single string then write atomically.  Prefix
     // with ESC[2K (erase entire line) + \r so any concurrent text
@@ -365,20 +365,20 @@ void ProgressBar::redraw()
     std::string line;
     line.reserve(static_cast<size_t>(MAX_LINE_WIDTH) * 4);  // UTF-8 worst case
     line += "\r\x1b[2K";
-    if (!m_label.empty()) { line += m_label; line.push_back(' '); }
+    if (!label.empty()) { line += label; line.push_back(' '); }
     line.push_back('[');
-    line += m_step;
+    line += step;
     line += "] ";
 
-    if (m_unicode) {
+    if (unicode) {
         for (int i = 0; i < filled;             ++i) line += FULL_BLOCK;
-        for (int i = 0; i < m_barWidth - filled; ++i) line += LIGHT_SHADE;
+        for (int i = 0; i < barWidth - filled; ++i) line += LIGHT_SHADE;
     } else {
         for (int i = 0; i < filled;             ++i) line.push_back('=');
-        for (int i = 0; i < m_barWidth - filled; ++i) line.push_back('-');
+        for (int i = 0; i < barWidth - filled; ++i) line.push_back('-');
     }
 
-    std::FILE* out = static_cast<std::FILE*>(m_ttyFile);
+    std::FILE* out = static_cast<std::FILE*>(ttyFile);
     std::fwrite(line.data(), 1, line.size(), out);
     std::fflush(out);
 }
@@ -386,23 +386,23 @@ void ProgressBar::redraw()
 // ---------------------------------------------------------------------------
 void ProgressBar::message(std::string msg)
 {
-    if (!m_started) start();
+    if (!started) start();
 
     // Force the visible bar to 100% before we drop the message.
-    m_done = m_total;
-    m_lastDrawnEighths = -1;       // bypass change-skip in redraw()
+    done = total;
+    lastDrawnEighths = -1;       // bypass change-skip in redraw()
     redraw();
 
     // The message line goes on the same channel the bar drew on so it
     // appears in the same place visually.  Newline-prefix in TTY mode
     // (cursor sits at end of \r-redrawn line); plain prefix in non-TTY
     // mode (the redraw above ended in \n already on stdout).
-    if (m_isTty) {
-        std::FILE* out = static_cast<std::FILE*>(m_ttyFile);
+    if (isTty) {
+        std::FILE* out = static_cast<std::FILE*>(ttyFile);
         // Same completion marker as finish() — the bar reached 100%
         // for this phase, so the check belongs here too.  ASCII fallback
         // skips the marker.
-        if (m_unicode) std::fputs(COMPLETE_MARK_UTF8, out);
+        if (unicode) std::fputs(COMPLETE_MARK_UTF8, out);
         std::fputc('\n', out);
         std::fputs("    \xE2\x86\x92 ", out);   // "    → " in UTF-8
         std::fputs(msg.c_str(), out);
@@ -414,48 +414,48 @@ void ProgressBar::message(std::string msg)
     }
 
     // Reset for reuse: the next phase starts a fresh bar at 0%.
-    m_started          = false;
-    m_finished         = false;
-    m_done             = 0;
-    m_lastDrawnEighths = -1;
+    started          = false;
+    finished         = false;
+    done             = 0;
+    lastDrawnEighths = -1;
     start();
 }
 
 // ---------------------------------------------------------------------------
 void ProgressBar::setFailed()
 {
-    m_failed = true;
+    failed = true;
 }
 
 // ---------------------------------------------------------------------------
 void ProgressBar::finish()
 {
-    if (m_finished) return;
-    m_finished = true;
-    if (!m_started) return;
+    if (finished) return;
+    finished = true;
+    if (!started) return;
 
     // Snap to 100% only on success.  On failure we leave the bar at
     // whatever fill state it had reached so the failure point is
     // visible — useful for debugging "where did this die".
-    if (!m_failed && m_done < m_total) {
-        m_done = m_total;
-        m_lastDrawnEighths = -1;
+    if (!failed && done < total) {
+        done = total;
+        lastDrawnEighths = -1;
         redraw();
-    } else if (m_failed) {
+    } else if (failed) {
         // Force a redraw of the current state to make sure the line is
         // clean (any concurrent stderr/stdout intrusions get wiped by
         // the redraw's leading ESC[2K) before the marker is appended.
-        m_lastDrawnEighths = -1;
+        lastDrawnEighths = -1;
         redraw();
     }
-    if (m_isTty) {
-        std::FILE* out = static_cast<std::FILE*>(m_ttyFile);
+    if (isTty) {
+        std::FILE* out = static_cast<std::FILE*>(ttyFile);
         // Bold-coloured terminal marker — green ✓ on success, red ✗ on
         // failure.  Skipped in ASCII mode to avoid mojibake on legacy
         // 8-bit terminals where the ANSI escape would still work but
         // the Unicode glyph would render as garbage.
-        if (m_unicode) {
-            std::fputs(m_failed ? FAIL_MARK_UTF8 : COMPLETE_MARK_UTF8, out);
+        if (unicode) {
+            std::fputs(failed ? FAIL_MARK_UTF8 : COMPLETE_MARK_UTF8, out);
         }
         std::fputc('\n', out);
         std::fflush(out);

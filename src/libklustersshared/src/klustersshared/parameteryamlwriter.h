@@ -40,7 +40,7 @@
  * @brief Writes the neurosuite YAML parameter file from scratch.
  *
  * Call the set*() methods in any order, then call writeTofile() once.
- * The writer holds an in-memory YAML tree (m_doc) that is serialised
+ * The writer holds an in-memory YAML tree (doc) that is serialised
  * atomically on writeTofile().
  */
 class KLUSTERSSHARED_EXPORT ParameterYamlWriter
@@ -113,7 +113,7 @@ public:
     void setUnitsInformation(const QMap<int,QStringList>& units);
 
 private:
-    YAML::Node m_doc;
+    YAML::Node doc;
 
     static YAML::Node strNode(const QString& s);
 };

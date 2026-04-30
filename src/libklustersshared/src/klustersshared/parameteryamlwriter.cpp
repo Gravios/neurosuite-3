@@ -35,7 +35,7 @@ ParameterYamlWriter::ParameterYamlWriter()
 {
     // yaml-cpp 0.8: chained operator[] on a new map creates sub-maps in-place
     // only when the intermediate node is fetched as a live reference first.
-    YAML::Node params = m_doc["parameters"];
+    YAML::Node params = doc["parameters"];
     params["version"] = "1.0";
     params["creator"] = "ndManager-yaml";
 }
@@ -58,7 +58,7 @@ bool ParameterYamlWriter::writeTofile(const QString& path)
         emitter.SetIndent(2);
         emitter.SetMapFormat(YAML::Block);
         emitter.SetSeqFormat(YAML::Block);
-        emitter << m_doc;
+        emitter << doc;
         out.close();
     } catch (const std::exception& e) {
         qWarning() << "ParameterYamlWriter: write error:" << e.what();
@@ -86,7 +86,7 @@ bool ParameterYamlWriter::writeTofile(const QString& path)
 
 void ParameterYamlWriter::setGeneralInformation(GeneralInformation& gi)
 {
-    YAML::Node n = m_doc["generalInfo"];
+    YAML::Node n = doc["generalInfo"];
     n["date"]          = gi.getDate().toString(Qt::ISODate).toStdString();
     n["experimenters"] = strNode(gi.getExperimenters());
     n["description"]   = strNode(gi.getDescription());
@@ -100,7 +100,7 @@ void ParameterYamlWriter::setGeneralInformation(GeneralInformation& gi)
 void ParameterYamlWriter::setAcquisitionSystemInformation(
         const QMap<QString,double>& info)
 {
-    YAML::Node n = m_doc["acquisitionSystem"];
+    YAML::Node n = doc["acquisitionSystem"];
     auto setInt = [&](const char* key, const QString& mapKey) {
         if (info.contains(mapKey))
             n[key] = static_cast<int>(info[mapKey]);
@@ -120,7 +120,7 @@ void ParameterYamlWriter::setAcquisitionSystemInformation(
 
 void ParameterYamlWriter::setVideoInformation(const QMap<QString,double>& info)
 {
-    YAML::Node n = m_doc["video"];
+    YAML::Node n = doc["video"];
     if (info.contains(QStringLiteral("width")))
         n["width"]  = static_cast<int>(info[QStringLiteral("width")]);
     if (info.contains(QStringLiteral("height")))
@@ -137,7 +137,7 @@ void ParameterYamlWriter::setVideoInformation(const QMap<QString,double>& info)
 
 void ParameterYamlWriter::setLfpInformation(double lfpSamplingRate)
 {
-    YAML::Node n = m_doc["fieldPotentials"];
+    YAML::Node n = doc["fieldPotentials"];
     n["lfpSamplingRate"] = lfpSamplingRate;
 }
 
@@ -167,7 +167,7 @@ void ParameterYamlWriter::setFilesInformation(const QList<FileInformation>& file
         }
         seq.push_back(entry);
     }
-    m_doc["files"] = seq;
+    doc["files"] = seq;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ void ParameterYamlWriter::setAnatomicalDescription(
         grp["channels"] = channels;
         groups.push_back(grp);
     }
-    YAML::Node anat = m_doc["anatomicalDescription"];
+    YAML::Node anat = doc["anatomicalDescription"];
     anat["channelGroups"] = groups;
 }
 
@@ -238,12 +238,12 @@ void ParameterYamlWriter::setSpikeDetectionInformation(
         }
     }
 
-    YAML::Node spike = m_doc["spikeDetection"];
+    YAML::Node spike = doc["spikeDetection"];
     spike["channelGroups"] = groups;
 
     // Also keep neuroscope/spikes in sync so neuroscope reads the right values
     if (globalNSamples > 0) {
-        YAML::Node ns  = m_doc["neuroscope"];
+        YAML::Node ns  = doc["neuroscope"];
         YAML::Node spk = ns["spikes"];
         // Only write if not already set by setNeuroscopeSpikeInformation
         if (!spk["nSamples"]) {
@@ -260,7 +260,7 @@ void ParameterYamlWriter::setSpikeDetectionInformation(
 void ParameterYamlWriter::setMiscellaneousInformation(
         float screenGain, const QString& traceBackgroundImage)
 {
-    YAML::Node ns   = m_doc["neuroscope"];
+    YAML::Node ns   = doc["neuroscope"];
     YAML::Node misc = ns["miscellaneous"];
     misc["screenGain"]           = static_cast<double>(screenGain);
     misc["traceBackgroundImage"] = strNode(traceBackgroundImage);
@@ -272,7 +272,7 @@ void ParameterYamlWriter::setMiscellaneousInformation(
 
 void ParameterYamlWriter::setNeuroscopeVideoInformation(NeuroscopeVideoInfo& vi)
 {
-    YAML::Node ns = m_doc["neuroscope"];
+    YAML::Node ns = doc["neuroscope"];
     YAML::Node v  = ns["video"];
     v["rotate"]              = vi.getRotation();
     v["flip"]                = vi.getFlip();
@@ -287,7 +287,7 @@ void ParameterYamlWriter::setNeuroscopeVideoInformation(NeuroscopeVideoInfo& vi)
 void ParameterYamlWriter::setNeuroscopeSpikeInformation(int nbSamples,
                                                          int peakSampleIndex)
 {
-    YAML::Node ns  = m_doc["neuroscope"];
+    YAML::Node ns  = doc["neuroscope"];
     YAML::Node spk = ns["spikes"];
     spk["nSamples"]        = nbSamples;
     spk["peakSampleIndex"] = peakSampleIndex;
@@ -318,7 +318,7 @@ void ParameterYamlWriter::setChannelDisplayInformation(
         offsets.push_back(o);
     }
 
-    YAML::Node ns = m_doc["neuroscope"];
+    YAML::Node ns = doc["neuroscope"];
     YAML::Node ch = ns["channels"];
     ch["colors"]  = colors;
     ch["offsets"] = offsets;
@@ -365,7 +365,7 @@ void ParameterYamlWriter::setProgramsInformation(
 
         seq.push_back(prog);
     }
-    m_doc["programs"] = seq;
+    doc["programs"] = seq;
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ void ParameterYamlWriter::setUnitsInformation(const QMap<int,QStringList>& units
         u["notes"]             = strNode(row[6]);
         seq.push_back(u);
     }
-    m_doc["units"] = seq;
+    doc["units"] = seq;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,5 +399,5 @@ void ParameterYamlWriter::setProbesInformation(const QList<ProbeEntry>& probes,
                                                const QString& libraryPath)
 {
     // writeProbesSection handles the empty-list no-op and the libraryPath field
-    writeProbesSection(m_doc, probes, libraryPath);
+    writeProbesSection(doc, probes, libraryPath);
 }

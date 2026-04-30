@@ -96,7 +96,7 @@ public:
   /**
   * Returns true if the item Id exists false otherwise.
   * @param itemId the id of the item to check for existence.
-  * @return the boolean value for the existance of the item.
+  * @return the boolean value for the existence of the item.
   */
   virtual bool contains(int itemId);
 

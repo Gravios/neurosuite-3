@@ -134,7 +134,7 @@ public:
     void closeFile();
 
     /** Returns true if a file has been successfully parsed. */
-    bool isValid() const { return m_valid; }
+    bool isValid() const { return valid; }
 
     /**
      * Returns the raw parsed YAML document root.
@@ -143,7 +143,7 @@ public:
      * The returned reference is only valid while this reader is alive and a
      * file is loaded (isValid() == true).
      */
-    const YAML::Node& getRawRoot() const { return m_root; }
+    const YAML::Node& getRawRoot() const { return root; }
 
     /** Returns the file format version string (e.g. "1.0"). */
     QString getVersion() const;
@@ -341,8 +341,8 @@ public:
     void getProgramsInformation(QList<ProgramInformation>& programs) const;
 
 private:
-    bool        m_valid = false;
-    YAML::Node  m_root;
+    bool        valid = false;
+    YAML::Node  root;
 
     // Helpers
     template<typename T>
