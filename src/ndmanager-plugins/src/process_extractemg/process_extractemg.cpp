@@ -77,6 +77,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include "process_extractemg.h"
+#include "process_extractemg_gpu.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -335,7 +336,8 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
                           double                    epsilon,
                           int                       maxIterations,
                           int                       failureLimit,
-                          uint64_t                  seed)
+                          uint64_t                  seed,
+                          Pow3Kernel               *pow3Kernel)
 {
     outIterTotal = 0;
     outAcceptedK = 0;
@@ -408,6 +410,21 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
             double s = 0.0;
             for (int c = 0; c < nch; ++c) s += WMi[c] * xrow[c];
             zrow[i] = s;
+        }
+    }
+
+    // ----- pow3 kernel preparation -----
+    // If a GPU kernel was passed in, upload Z once.  prepare() may
+    // refuse (returns false) for problems that are too small to benefit
+    // — in that case we silently fall back to the inline CPU code.
+    bool useExternalKernel = false;
+    if (pow3Kernel) {
+        if (pow3Kernel->prepare(Z, nch, N)) {
+            useExternalKernel = true;
+        } else {
+            std::fprintf(stderr,
+                "process_extractemg: pow3 kernel prepare() declined; "
+                "using built-in CPU pow3 sweep\n");
         }
     }
 
@@ -509,15 +526,61 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
             //
             // Then divide by N and subtract 3*w.
 
+            // Dispatch the pow3 step to the injected kernel when one was
+            // accepted by prepare(); otherwise run the inline CPU OMP
+            // sweep below.  Both paths produce the same newW value
+            // newW[c] = ( Σ_t Z[t,c] * (Σ_c' Z[t,c']*w[c'])^3 ) / N
+            //           − 3 * w[c]
+            // so the rest of the FastICA outer loop is identical.
+
+            if (useExternalKernel) {
+                if (!pow3Kernel->step(w.data(), newW.data())) {
+                    std::fprintf(stderr,
+                        "process_extractemg: pow3Kernel->step() failed; "
+                        "aborting FastICA call\n");
+                    if (pow3Kernel) pow3Kernel->destroy();
+                    return false;
+                }
+                // Kernel returns newW already divided by N and with the
+                // -3*w term applied.  Skip the inline CPU code.
+                for (int c = 0; c < nch; ++c) w[c] = newW[(size_t)c];
+                normalize(w.data());
+                continue;
+            }
+
             for (int c = 0; c < nch; ++c) newW[(size_t)c] = 0.0;
 
-            for (int t = 0; t < N; ++t) {
-                const double *zrow = Z.data() + (size_t)t * nch;
-                double s = 0.0;
-                for (int c = 0; c < nch; ++c) s += zrow[c] * w[c];
-                const double yt = s * s * s;
-                for (int c = 0; c < nch; ++c) newW[(size_t)c] += zrow[c] * yt;
+            // ── Parallel pow3 update with thread-local newW accumulators.
+            //
+            // The reduction target is a length-nch vector, which OpenMP's
+            // built-in reduction(+:array) supports but with per-thread
+            // private buffers; we do the same explicitly so the access
+            // pattern is unambiguous to the compiler and to the reader.
+            //
+            // For typical nch (~8–32) each thread's buffer is 64–256 B —
+            // L1-resident — and the across-thread merge in the critical
+            // section is O(numThreads × nch), negligible compared with
+            // the O(N × nch) inner work.
+            //
+            // When nested inside the across-probes parallel region,
+            // omp_set_max_active_levels(1) ensures this construct runs
+            // serially (only the outer probe-loop level is active),
+            // avoiding oversubscription on multi-probe sessions.
+            #pragma omp parallel
+            {
+                std::vector<double> localW((size_t)nch, 0.0);
+                #pragma omp for nowait schedule(static)
+                for (int t = 0; t < N; ++t) {
+                    const double *zrow = Z.data() + (size_t)t * nch;
+                    double s = 0.0;
+                    for (int c = 0; c < nch; ++c) s += zrow[c] * w[c];
+                    const double yt = s * s * s;
+                    for (int c = 0; c < nch; ++c) localW[(size_t)c] += zrow[c] * yt;
+                }
+                #pragma omp critical
+                for (int c = 0; c < nch; ++c) newW[(size_t)c] += localW[(size_t)c];
             }
+
             const double invN = 1.0 / (double)N;
             for (int c = 0; c < nch; ++c)
                 w[c] = newW[(size_t)c] * invN - 3.0 * w[c];
@@ -584,7 +647,17 @@ static void usage(const char *prog)
         "  -c  GROUPS       channel groups, colon-separated, comma-separated\n"
         "                   channel indices (0-based) within each group\n"
         "                       e.g.  0,1,2,3:8,9,10,11   for two 4-ch groups\n"
+        "                   Each group is conventionally one probe; channels\n"
+        "                   in a group must be disjoint from channels in\n"
+        "                   other groups (one probe per channel).\n"
         "  basename         session basename (no extension)\n"
+        "\n"
+        "Optional:\n"
+        "  -i  IDS          comma-separated output IDs, one per group\n"
+        "                   (used in <basename>.{emg,res.emg,spk.emg}.<id>\n"
+        "                    filenames and as the metadata 'id' field).\n"
+        "                   Default: 1,2,..,nGroups.\n"
+        "                       e.g.  -i 0,1   for two probes with IDs 0 and 1\n"
         "\n"
         "Event-detection / waveform options (defaults shown):\n"
         "  -w  W            samples per event waveform                  (32)\n"
@@ -603,6 +676,12 @@ static void usage(const char *prog)
         "  --no-clean       skip writing  <basename>-emgclean.dat\n"
         "  --no-emg-trace   skip writing  <basename>.emg.N\n"
         "  --no-waveforms   skip writing  <basename>.spk.emg.N\n"
+        "\n"
+        "Compute backend (FastICA pow3 inner kernel):\n"
+        "  --backend NAME   one of: auto cpu cuda hip sycl  (default auto)\n"
+        "                   auto picks: CUDA > HIP > SYCL > CPU.\n"
+        "                   Falls back to CPU if requested backend is\n"
+        "                   compiled out or no device is reachable.\n"
         "\n"
         "  -v               verbose\n"
         "  -V               print version and exit\n"
@@ -669,6 +748,19 @@ static bool parseArgs(int argc, char **argv, EmgArgs &args)
         if (a == "--no-clean")     { args.writeCleanDat = false;  continue; }
         if (a == "--no-emg-trace") { args.writeEmgTrace = false;  continue; }
         if (a == "--no-waveforms") { args.writeWaveforms = false; continue; }
+        if (a == "--backend") {
+            if (i + 1 >= argc) {
+                cerr << "process_extractemg: --backend requires an argument\n";
+                return false;
+            }
+            std::string err;
+            args.backend = (int)icaBackendFromString(argv[++i], &err);
+            if (!err.empty()) {
+                cerr << "process_extractemg: " << err << "\n";
+                return false;
+            }
+            continue;
+        }
 
         auto need = [&](void) -> const char* {
             if (i + 1 >= argc) {
@@ -685,6 +777,22 @@ static bool parseArgs(int argc, char **argv, EmgArgs &args)
             const char *v = need(); if (!v) return false;
             deferredGroupSpec = v;
             sawC = true;
+        }
+        else if (a == "-i") {
+            const char *v = need(); if (!v) return false;
+            // Comma-separated integer IDs; parse into args.groupIds.
+            args.groupIds.clear();
+            string s = v;
+            size_t start = 0;
+            while (start <= s.size()) {
+                size_t comma = s.find(',', start);
+                string tok = (comma == string::npos)
+                             ? s.substr(start)
+                             : s.substr(start, comma - start);
+                if (!tok.empty()) args.groupIds.push_back(std::atoi(tok.c_str()));
+                if (comma == string::npos) break;
+                start = comma + 1;
+            }
         }
         else if (a == "-w") { const char *v = need(); if (!v) return false; args.spikeLength      = std::atoi(v); }
         else if (a == "-p") { const char *v = need(); if (!v) return false; args.peakSampleIndex  = std::atoi(v); }
@@ -726,6 +834,42 @@ static bool parseArgs(int argc, char **argv, EmgArgs &args)
     if (args.groupChannels.empty()) {
         cerr << "process_extractemg: -c yielded no groups\n";
         return false;
+    }
+
+    // Default group IDs to 1..nGroups when -i was not given.
+    if (args.groupIds.empty()) {
+        args.groupIds.resize(args.groupChannels.size());
+        for (size_t g = 0; g < args.groupChannels.size(); ++g)
+            args.groupIds[g] = (int)(g + 1);
+    } else if (args.groupIds.size() != args.groupChannels.size()) {
+        cerr << "process_extractemg: -i has " << args.groupIds.size()
+             << " IDs but -c has " << args.groupChannels.size()
+             << " groups\n";
+        return false;
+    }
+
+    // Check group-channel disjointness: each channel may belong to at most
+    // one group.  If two probes claimed the same channel they would both
+    // try to subtract their EMG component into the same column of the
+    // cleaned dat, which would compound rather than reduce.
+    {
+        std::vector<int> owner((size_t)args.nChannels, -1);
+        for (size_t g = 0; g < args.groupChannels.size(); ++g) {
+            for (int c : args.groupChannels[g]) {
+                if (owner[(size_t)c] >= 0) {
+                    cerr << "process_extractemg: channel " << c
+                         << " appears in both group " << owner[(size_t)c]
+                         << " (id=" << args.groupIds[(size_t)owner[(size_t)c]]
+                         << ") and group " << g
+                         << " (id=" << args.groupIds[g]
+                         << ").  Each channel may only be claimed by one"
+                            " probe; check the wrapper's per-probe channel"
+                            " gathering against the session YAML.\n";
+                    return false;
+                }
+                owner[(size_t)c] = (int)g;
+            }
+        }
     }
 
     // Sanity-default the derived parameters
@@ -825,7 +969,8 @@ static bool identifyComponent(const EmgArgs    &args,
                               FILE             *fdat,
                               int64_t           totalSamples,
                               const vector<int>&groupChans,
-                              GroupModel       &model)
+                              GroupModel       &model,
+                              Pow3Kernel       *pow3Kernel)
 {
     const int nch = (int)groupChans.size();
     if (nch < 2) {
@@ -885,6 +1030,10 @@ static bool identifyComponent(const EmgArgs    &args,
         for (int c = 0; c < nch; ++c)
             chanSum[(size_t)c] /= (double)nKept;
     }
+
+    // Stash mean into the model for the caller (Pass 2 will use it as the
+    // centring vector when projecting through Ws / subtracting through As).
+    model.channelMean = chanSum;
 
     if (args.verbose) {
         cout << "    per-channel mean :";
@@ -984,7 +1133,8 @@ static bool identifyComponent(const EmgArgs    &args,
                                             /*epsilon*/      1e-4,
                                             /*maxIter*/      1000,
                                             /*failureLimit*/ 5,
-                                            seed);
+                                            seed,
+                                            pow3Kernel);
 
     if (icaAcc == 0) {
         cerr << "process_extractemg: FastICA produced no components\n";
@@ -1157,7 +1307,7 @@ static bool streamProcess(const EmgArgs        &args,
     if (args.writeEmgTrace) {
         for (size_t g = 0; g < runtime.size(); ++g) {
             std::ostringstream oss;
-            oss << args.basename << ".emg." << (g + 1);
+            oss << args.basename << ".emg." << args.groupIds[g];
             femg[g] = std::fopen(oss.str().c_str(), "wb");
             if (!femg[g]) {
                 cerr << "process_extractemg: cannot open " << oss.str()
@@ -1199,7 +1349,16 @@ static bool streamProcess(const EmgArgs        &args,
                         (size_t)gotN * args.nChannels * sizeof(int16_t));
 
         // Per-group EMG projection + subtraction
-        for (size_t g = 0; g < runtime.size(); ++g) {
+        //
+        // Groups are independent: each group only writes to its own slice
+        // of emgAu (one float per sample, indexed by group), and to its
+        // own subset of channels in bufClean.  Group-channel disjointness
+        // is enforced at parseArgs() time, so per-channel writes into
+        // bufClean from different groups never collide.  This makes the
+        // loop trivially parallelisable across probes.
+        #pragma omp parallel for schedule(static) if(runtime.size() > 1)
+        for (int gi = 0; gi < (int)runtime.size(); ++gi) {
+            const size_t g = (size_t)gi;
             const auto &chans = runtime[g].channels;
             const auto &As    = runtime[g].model.loading;       // mixing
             const auto &Ws    = runtime[g].model.unmixing;      // unmixing
@@ -1259,7 +1418,7 @@ static bool streamProcess(const EmgArgs        &args,
                 }
                 if (std::fwrite(emgChunk.data(), sizeof(int16_t),
                                 (size_t)gotN, femg[g]) != (size_t)gotN) {
-                    cerr << "process_extractemg: short write to .emg." << (g+1) << "\n";
+                    cerr << "process_extractemg: short write to .emg." << args.groupIds[g] << "\n";
                     if (fclean) std::fclose(fclean);
                     for (auto *fp : femg) if (fp) std::fclose(fp);
                     return false;
@@ -1449,7 +1608,8 @@ int main(int argc, char **argv)
              << "  refractory   : " << args.refractorySamples << " samples\n"
              << "  groups       : " << args.groupChannels.size() << "\n";
         for (size_t g = 0; g < args.groupChannels.size(); ++g) {
-            cout << "    group " << (g+1) << " (" << args.groupChannels[g].size() << " ch):";
+            cout << "    group " << (g+1) << " (id=" << args.groupIds[g]
+                 << ", " << args.groupChannels[g].size() << " ch):";
             for (int c : args.groupChannels[g]) cout << ' ' << c;
             cout << "\n";
         }
@@ -1463,64 +1623,101 @@ int main(int argc, char **argv)
     }
 
     // ------------------------------------------------------------------
-    //  PASS 1 — identify EMG component for each group
+    //  PASS 1 — identify EMG component for each group (parallel-safe)
+    //
+    //  Each iteration is independent: separate FILE* descriptor opened
+    //  inside the parallel region (fopen/fseek/fread is not thread-safe
+    //  on a shared FILE*), separate FastICA run, separate model.  The
+    //  identifyComponent function itself is internally OpenMP-parallel
+    //  in its pow3 inner kernel; nested parallelism is set to off so a
+    //  multi-probe session uses its threads on the across-probes axis,
+    //  while a single-probe session has them all available for the
+    //  inner kernel.
     // ------------------------------------------------------------------
     vector<GroupRuntime> runtime(args.groupChannels.size());
-    for (size_t g = 0; g < args.groupChannels.size(); ++g) {
+    for (size_t g = 0; g < args.groupChannels.size(); ++g)
         runtime[g].channels = args.groupChannels[g];
-        if (args.verbose)
-            cout << "Group " << (g+1) << ":\n";
 
-        // We want the per-channel mean from the *full* file or at least the
-        // ID window — identifyComponent computes it itself internally.
-        if (!identifyComponent(args, fdat, totalSamples,
-                               runtime[g].channels, runtime[g].model)) {
-            std::fclose(fdat);
-            return EXIT_FAILURE;
+    bool pass1Failed = false;
+    int  pass1FailGroup = -1;
+
+    // ----- backend selection ---------------------------------------------
+    const IcaBackend wantedBackend = (IcaBackend)args.backend;
+    const IcaBackend chosenBackend = icaPickBackend(wantedBackend);
+    if (args.verbose) {
+        cout << "FastICA backend: requested='" << icaBackendName(wantedBackend)
+             << "', selected='" << icaBackendName(chosenBackend) << "'\n";
+    }
+
+    if (args.verbose) {
+        cout << "Pass 1 — running FastICA per probe ("
+             << runtime.size() << " group(s)";
+#ifdef _OPENMP
+        if (runtime.size() > 1)
+            cout << ", parallel across probes via OpenMP";
+        else
+            cout << ", single probe — pow3 kernel parallelised internally";
+#endif
+        cout << ")\n";
+    }
+
+#ifdef _OPENMP
+    omp_set_max_active_levels(1);   // avoid nested oversubscription
+#endif
+
+    #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)
+    for (int gi = 0; gi < (int)runtime.size(); ++gi) {
+        if (pass1Failed) continue;
+        const size_t g = (size_t)gi;
+
+        // One Pow3Kernel per OpenMP thread.  GPU kernels keep device
+        // buffers (Z, w, newW, y) in their state, so they cannot be
+        // shared across threads safely; we just allocate one per probe
+        // here.  The factory falls through to Cpu if the backend is
+        // unavailable.
+        std::unique_ptr<Pow3Kernel> kernel = makePow3Kernel(chosenBackend);
+
+        FILE *fdatThr = std::fopen(datPath.c_str(), "rb");
+        if (!fdatThr) {
+            #pragma omp critical
+            {
+                cerr << "process_extractemg: cannot open " << datPath
+                     << " in thread for group " << g
+                     << " (id=" << args.groupIds[g] << "): "
+                     << std::strerror(errno) << "\n";
+                if (!pass1Failed) { pass1Failed = true; pass1FailGroup = (int)g; }
+            }
+            continue;
         }
 
-        // Re-derive the per-channel mean from inside identifyComponent
-        // (we pass it back via a parallel call here for streaming).
-        // Simplest: recompute mean during PASS 2 setup using the same window.
-        // For cheapness, use a streaming pass over the entire file mean here:
-        runtime[g].chanMean.assign(runtime[g].channels.size(), 0.0);
-        {
-            // Recompute per-channel mean over the ID window for symmetry with
-            // the projection used during identification.
-            const int64_t startSamp = (int64_t)std::round(args.noiseStartSec * args.samplingRate);
-            int64_t       durSamp   = (int64_t)std::round(args.noiseDurationSec * args.samplingRate);
-            if (startSamp + durSamp > totalSamples) durSamp = totalSamples - startSamp;
-            if (durSamp < 1) durSamp = 1;
-
-            if (fseeko(fdat,
-                       startSamp * args.nChannels * (off_t)sizeof(int16_t),
-                       SEEK_SET) != 0) {
-                cerr << "process_extractemg: seek failed (mean recompute)\n";
-                std::fclose(fdat);
-                return EXIT_FAILURE;
-            }
-            const int64_t bufSamp = std::min<int64_t>(durSamp, 1<<18);
-            vector<int16_t> raw((size_t)bufSamp * args.nChannels);
-            int64_t soFar = 0, nKept = 0;
-            const int    nch = (int)runtime[g].channels.size();
-            while (soFar < durSamp) {
-                int64_t want = std::min(bufSamp, durSamp - soFar);
-                size_t  got  = std::fread(raw.data(), sizeof(int16_t),
-                                          (size_t)(want * args.nChannels), fdat);
-                int64_t gotN = (int64_t)(got / args.nChannels);
-                if (gotN <= 0) break;
-                for (int64_t t = 0; t < gotN; ++t) {
-                    const int16_t *row = raw.data() + (size_t)t * args.nChannels;
-                    for (int c = 0; c < nch; ++c)
-                        runtime[g].chanMean[(size_t)c] +=
-                            (double)row[runtime[g].channels[(size_t)c]];
-                }
-                nKept += gotN;
-                soFar += gotN;
-            }
-            if (nKept > 0)
-                for (auto &m : runtime[g].chanMean) m /= (double)nKept;
+        if (args.verbose) {
+            #pragma omp critical
+            cout << "Group " << (g + 1)
+                 << " (id=" << args.groupIds[g] << "):\n";
         }
+
+        const bool ok = identifyComponent(args, fdatThr, totalSamples,
+                                          runtime[g].channels,
+                                          runtime[g].model,
+                                          kernel.get());
+        std::fclose(fdatThr);
+        kernel->destroy();      // release device buffers ASAP
+
+        if (!ok) {
+            #pragma omp critical
+            { if (!pass1Failed) { pass1Failed = true; pass1FailGroup = (int)g; } }
+            continue;
+        }
+
+        // chanMean is now provided by identifyComponent via model.channelMean.
+        // Copy it into the group's runtime (Pass 2 reads it from there).
+        runtime[g].chanMean = runtime[g].model.channelMean;
+    }
+
+    if (pass1Failed) {
+        cerr << "process_extractemg: Pass 1 failed at group " << pass1FailGroup
+             << " (id=" << args.groupIds[(size_t)pass1FailGroup] << ")\n";
+        return EXIT_FAILURE;
     }
 
     // ------------------------------------------------------------------
@@ -1533,47 +1730,79 @@ int main(int argc, char **argv)
     std::fclose(fdat);
 
     // ------------------------------------------------------------------
-    //  Detect events for each group
+    //  Detect events for each group (parallel across probes)
     // ------------------------------------------------------------------
     vector<vector<int64_t>> allEvents(runtime.size());
-    for (size_t g = 0; g < runtime.size(); ++g) {
+    #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)
+    for (int gi = 0; gi < (int)runtime.size(); ++gi) {
+        const size_t g = (size_t)gi;
         allEvents[g] = detectEvents(args, runtime[g].model, runtime[g].emgAu);
-        if (args.verbose)
-            cout << "Group " << (g+1) << ": " << allEvents[g].size()
-                 << " EMG events detected\n";
+    }
+    if (args.verbose) {
+        for (size_t g = 0; g < runtime.size(); ++g)
+            cout << "Group " << (g+1)
+                 << " (id=" << args.groupIds[g] << "): "
+                 << allEvents[g].size() << " EMG events detected\n";
     }
 
     // ------------------------------------------------------------------
-    //  Write .res.emg.N (timestamps) + .spk.emg.N (waveforms)
+    //  Write .res.emg.<id> (timestamps) + .spk.emg.<id> (waveforms)
+    //
+    //  Parallel across probes: separate output paths, no shared state
+    //  except the read-only original .dat which extractWaveforms mmaps
+    //  (mmap is thread-safe for concurrent reads).
     // ------------------------------------------------------------------
-    for (size_t g = 0; g < runtime.size(); ++g) {
-        // .res.emg.N
+    bool writeFailed = false;
+    int  writeFailGroup = -1;
+    #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)
+    for (int gi = 0; gi < (int)runtime.size(); ++gi) {
+        if (writeFailed) continue;
+        const size_t g = (size_t)gi;
+        const int    id = args.groupIds[g];
+
+        // .res.emg.<id>
         std::ostringstream resOss;
-        resOss << args.basename << ".res.emg." << (g + 1);
+        resOss << args.basename << ".res.emg." << id;
         FILE *fres = std::fopen(resOss.str().c_str(), "wb");
         if (!fres) {
-            cerr << "process_extractemg: cannot open " << resOss.str()
-                 << " for write: " << std::strerror(errno) << "\n";
-            return EXIT_FAILURE;
+            #pragma omp critical
+            {
+                cerr << "process_extractemg: cannot open " << resOss.str()
+                     << " for write: " << std::strerror(errno) << "\n";
+                if (!writeFailed) { writeFailed = true; writeFailGroup = (int)g; }
+            }
+            continue;
         }
         if (!allEvents[g].empty()
             && std::fwrite(allEvents[g].data(), sizeof(int64_t),
                            allEvents[g].size(), fres) != allEvents[g].size()) {
-            cerr << "process_extractemg: short write of .res.emg." << (g+1) << "\n";
+            #pragma omp critical
+            {
+                cerr << "process_extractemg: short write of .res.emg." << id << "\n";
+                if (!writeFailed) { writeFailed = true; writeFailGroup = (int)g; }
+            }
             std::fclose(fres);
-            return EXIT_FAILURE;
+            continue;
         }
         std::fclose(fres);
 
-        // .spk.emg.N
+        // .spk.emg.<id>
         if (args.writeWaveforms) {
             std::ostringstream spkOss;
-            spkOss << args.basename << ".spk.emg." << (g + 1);
-            if (!extractWaveforms(args, datPath, (int)(g + 1),
+            spkOss << args.basename << ".spk.emg." << id;
+            if (!extractWaveforms(args, datPath, id,
                                   runtime[g].channels,
-                                  allEvents[g], spkOss.str()))
-                return EXIT_FAILURE;
+                                  allEvents[g], spkOss.str())) {
+                #pragma omp critical
+                { if (!writeFailed) { writeFailed = true; writeFailGroup = (int)g; } }
+            }
         }
+    }
+    if (writeFailed) {
+        cerr << "process_extractemg: output write failed at group "
+             << writeFailGroup
+             << " (id=" << args.groupIds[(size_t)writeFailGroup] << ")\n";
+        return EXIT_FAILURE;
     }
 
     // ------------------------------------------------------------------
@@ -1597,7 +1826,7 @@ int main(int argc, char **argv)
           << "groups:\n";
         for (size_t g = 0; g < runtime.size(); ++g) {
             const auto &r = runtime[g];
-            f << "  - id: " << (g + 1) << "\n"
+            f << "  - id: " << args.groupIds[g] << "\n"
               << "    nEvents: " << allEvents[g].size() << "\n"
               << "    uniformityScore: " << r.model.uniformityScore << "\n"
               << "    eigenvalueRatio: " << r.model.eigenvalueRatio << "\n"

@@ -5,23 +5,30 @@
 
     EMG component identification and removal for multichannel
     extracellular .dat recordings.  C++ port of the algorithmic core of
-    the labbox MATLAB EMG_removing toolbox (Chen 2019), restricted to the
-    operations that have an unambiguous translation:
+    the labbox MATLAB EMG_removing toolbox (Chen 2019), using FastICA
+    deflation pow3 (faithful port of FastICA_25/fpica.m, case 10):
 
-      1. spatial-mode identification on high-pass-filtered data,
-      2. linear projection of the raw trace onto the EMG loading vector,
+      1. spatial-mode identification via FastICA on a high-pass-filtered
+         subsample, picking the IC whose channel loading is most
+         spatially uniform (max |sum(A[:,k]/||A[:,k]||)|),
+      2. linear projection of the raw (un-filtered, de-meaned) trace
+         onto the unmixing row Ws,
       3. subtraction of the projected component from every channel in
-         the spike-detection group,
+         the group using the mixing column As,
       4. discrete event detection from the |EMG_au| envelope.
 
-    The MATLAB toolbox uses FastICA on whitened data; the C++ port uses
-    PCA (leading eigenvector of the channel-channel covariance) on the
-    high-pass-filtered subsample.  The two are equivalent up to a sign
-    when the EMG mode dominates the high-band variance — which by
-    construction it does, because the high-pass cutoff is chosen above
-    the LFP corner — and the eigendecomposition has the advantages of
-    being deterministic, dependency-free, trivial to parallelise, and
-    fast for the channel counts we care about (8–32 per shank).
+    The "groups" passed in via --channel-groups are typically probes
+    (one entry per probe, channels = union of that probe's
+    anatomicalDescription groups).  All groups share a single output
+    .dat (each group writes only to its own channels — no overlap).
+
+    OpenMP parallelism
+    ------------------
+      - Pass 1 FastICA: across-probes parallel via 'omp parallel for' over
+        groups, with the dat ID-window pre-loaded into a shared buffer.
+      - Pass 1 inner pow3 kernel: parallel reduction over t.
+      - Pass 2 streaming projection / subtraction: across-probes parallel
+        per chunk (each probe writes to disjoint channels of bufClean).
 
     copyright  (C) 2026 neurosuite-3 contributors
 
@@ -46,9 +53,16 @@ struct EmgArgs {
     double      samplingRate = 0.0;  // Hz
 
     // Per-group channel lists.  groupChannels[g] is a vector of 0-based
-    // channel indices into the dat for group g (g is 0-based here; the
-    // wrapper script and the on-disk filenames use 1-based group numbers).
+    // channel indices into the dat for group g.  Wrapper-side semantics:
+    // each group is conventionally one probe, with channels gathered
+    // from the union of that probe's anatomicalDescription groups.
+    // Channels not in any group pass through unchanged.
     std::vector<std::vector<int>> groupChannels;
+
+    // Output filename suffixes for per-group artefacts (.emg.<id>,
+    // .res.emg.<id>, .spk.emg.<id>, and the metadata-yaml entry id).
+    // When empty, defaults to 1..groupChannels.size().
+    std::vector<int> groupIds;
 
     int         spikeLength      = 32;     // samples per event waveform
     int         peakSampleIndex  = 16;     // index of peak within waveform
@@ -68,6 +82,12 @@ struct EmgArgs {
     bool        writeEmgTrace    = true;   // <session>.emg.N
     bool        writeWaveforms   = true;   // <session>.spk.emg.N
     bool        verbose          = false;
+
+    // GPU backend for the FastICA pow3 inner kernel.  "auto" picks the
+    // first available among CUDA, HIP, SYCL, falling back to CPU.
+    // String-form is parsed in main(); kept as enum here so the rest of
+    // the code is type-safe.  IcaBackend lives in process_extractemg_gpu.h.
+    int /*IcaBackend*/ backend = 0;   // = IcaBackend::Auto
 };
 
 // ---------------------------------------------------------------------------
@@ -94,9 +114,13 @@ struct EmgArgs {
 // converged          whether FastICA converged within maxIter for the
 //                    chosen component.
 // ---------------------------------------------------------------------------
+// channelMean        per-channel mean over the identification window
+//                    (used for both the FastICA centring and the Pass 2
+//                    projection EMG_au[t] = (raw[t,:] - mu) · Ws).
 struct GroupModel {
     std::vector<double> loading;            // As (nch)
     std::vector<double> unmixing;           // Ws (nch)
+    std::vector<double> channelMean;        // μ  (nch) — over ID window
     double              uniformityScore   = 0.0;
     double              eigenvalueRatio   = 0.0;
     double              threshold         = 0.0;
@@ -199,6 +223,18 @@ bool jacobiEigenSym(std::vector<double> &A,
 // IC.  We expose a `seed` parameter so callers can request reproducible
 // runs.  Pass 0 for nondeterministic seeding from std::random_device.
 // ---------------------------------------------------------------------------
+// Pow3 kernel injection
+// ---------------------
+// The pow3 inner update is the only heavy step per FastICA iteration
+// and is also the only part that benefits from a GPU.  Callers pass a
+// Pow3Kernel object (CPU / CUDA / HIP / SYCL) which has prepare(Z)
+// called once and step(w, newW) called per iteration.  See
+// process_extractemg_gpu.h for the interface.  Pass nullptr to use the
+// CPU OpenMP fallback inline (no factory, no virtual call) — useful for
+// the unit tests.
+// ---------------------------------------------------------------------------
+class Pow3Kernel;   // forward declaration (process_extractemg_gpu.h)
+
 bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-major, sample-major)
                           int                       nch,
                           int                       N,
@@ -210,4 +246,5 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
                           double                    epsilon         = 1e-4,
                           int                       maxIterations   = 1000,
                           int                       failureLimit    = 5,
-                          uint64_t                  seed            = 0);
+                          uint64_t                  seed            = 0,
+                          Pow3Kernel               *pow3Kernel      = nullptr);

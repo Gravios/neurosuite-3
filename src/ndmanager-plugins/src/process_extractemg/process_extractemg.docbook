@@ -9,7 +9,7 @@
 
 	<refnamediv>
 		<refname>process_extractemg</refname>
-		<refpurpose>identify, remove, and extract EMG events from a multichannel .dat using FastICA</refpurpose>
+		<refpurpose>identify, remove, and extract EMG events from a multichannel .dat using FastICA, on a per-probe basis</refpurpose>
 	</refnamediv>
 
 	<refsynopsisdiv>
@@ -18,6 +18,7 @@
 		<arg choice="plain"><option>-n</option> <replaceable>nChannels</replaceable></arg>
 		<arg choice="plain"><option>-s</option> <replaceable>samplingRate</replaceable></arg>
 		<arg choice="plain"><option>-c</option> <replaceable>groups</replaceable></arg>
+		<arg><option>-i</option> <replaceable>ids</replaceable></arg>
 		<arg><option>-w</option> <replaceable>nSamples</replaceable></arg>
 		<arg><option>-p</option> <replaceable>peakIndex</replaceable></arg>
 		<arg><option>-f</option> <replaceable>hpFreq</replaceable></arg>
@@ -29,6 +30,7 @@
 		<arg><option>-B</option> <replaceable>idStartSec</replaceable></arg>
 		<arg><option>-Z</option> <replaceable>idDurationSec</replaceable></arg>
 		<arg><option>-k</option> <replaceable>chunkSamples</replaceable></arg>
+		<arg><option>--backend</option> <replaceable>name</replaceable></arg>
 		<arg><option>--no-clean</option></arg>
 		<arg><option>--no-emg-trace</option></arg>
 		<arg><option>--no-waveforms</option></arg>
@@ -43,33 +45,32 @@
 			<command>process_extractemg</command> identifies the
 			electromyographic (EMG) component contaminating a
 			multichannel extracellular recording, subtracts it from the
-			raw signal to produce a cleaned <filename>.dat</filename>,
-			and writes the EMG bursts as event files in the same format
-			as spikes. It is a C++ port of the algorithmic core of the
-			labbox MATLAB <literal>EMG_removing</literal> toolbox (Chen
-			2019), restricted to the configuration the toolbox uses by
-			default: deflation FastICA with the pow3 nonlinearity, run
-			on high-pass filtered data, with the EMG component selected
-			as the independent component whose channel loading is most
-			spatially uniform.
+			raw signal to produce a cleaned
+			<filename>.dat</filename>, and writes the EMG bursts as
+			event files in the same format as spikes.  Each
+			<option>-c</option> group is conventionally one probe;
+			groups must use disjoint channels (one probe per channel)
+			so that per-probe subtractions write to non-overlapping
+			columns of the shared cleaned dat.
 		</para>
 		<para>
-			The implementation comes directly from the
-			FastICA_25 toolbox shipped with labbox
-			(<filename>fastica.m</filename>,
+			The implementation is a C++ port of the algorithmic core
+			of the labbox MATLAB <literal>EMG_removing</literal>
+			toolbox (Chen 2019), restricted to the configuration the
+			toolbox uses by default: deflation FastICA with the pow3
+			nonlinearity, run on high-pass filtered data, with the EMG
+			component selected as the independent component whose
+			channel loading is most spatially uniform.  The FastICA
+			port comes directly from the FastICA_25 toolbox shipped
+			with labbox (<filename>fastica.m</filename>,
 			<filename>fpica.m</filename>,
 			<filename>whitenv.m</filename>,
 			<filename>pcamat.m</filename>,
-			<filename>remmean.m</filename>). Variable names in the
-			C++ source mirror the MATLAB sources so the correspondence
-			is auditable line-for-line. Only the deflation/pow3 path
-			is ported; symmetric mode, tanh, gauss, skew nonlinearities,
-			fine-tuning, stabilisation, and sample-size subsetting are
-			not implemented because the EMG_removing toolbox does not
-			use them.
+			<filename>remmean.m</filename>); only the deflation/pow3
+			path is included.
 		</para>
 		<para>
-			The pipeline runs in three passes:
+			The pipeline runs in three passes per probe:
 		</para>
 		<itemizedlist>
 			<listitem>
@@ -81,13 +82,11 @@
 					Butterworth high-pass at
 					<replaceable>hpFreq</replaceable>, downsamples by
 					<replaceable>downsample</replaceable>, and runs
-					FastICA. The EMG component is the IC maximising
-					<literal>|sum(A[:,k] / ||A[:,k]||)|</literal> — the
-					same diagnostic the MATLAB toolbox uses
-					(<filename>EMG_rm_long.m</filename> line 259). The
-					event-detection threshold is
-					<literal>thresholdFactor · 1.4826 · MAD(|EMG_au|)</literal>
-					evaluated on the un-filtered subsample.
+					FastICA.  EMG component =
+					<literal>argmax_k |sum(A[:,k] / ||A[:,k]||)|</literal>
+					(matches <filename>EMG_rm_long.m</filename> line
+					259).  Threshold = <literal>thresholdFactor · 1.4826 · MAD(|EMG_au|)</literal>
+					on the un-filtered subsample.
 				</para>
 			</listitem>
 			<listitem>
@@ -95,14 +94,14 @@
 					<emphasis>Pass 2 (streaming)</emphasis> reads the
 					full <filename>.dat</filename> in chunks of
 					<replaceable>chunkSamples</replaceable> samples per
-					channel. For each sample <literal>t</literal>:
+					channel.  For each probe and each sample t:
 					<literal>EMG_au[t] = (raw[t,:] − μ) · Ws</literal>;
 					the cleaned signal
 					<literal>clean[t,c] = raw[t,c] − As[c]·EMG_au[t]</literal>
 					is written to
-					<filename>basename-emgclean.dat</filename> and
+					<filename>basename-emgclean.dat</filename>, and
 					<literal>EMG_au</literal> is written to
-					<filename>basename.emg.&lt;g&gt;</filename>.
+					<filename>basename.emg.&lt;id&gt;</filename>.
 				</para>
 			</listitem>
 			<listitem>
@@ -116,16 +115,21 @@
 					<replaceable>peakSearch</replaceable>-sample window,
 					then mmaps the original
 					<filename>.dat</filename> and copies a
-					<replaceable>nSamples × nChannels(g)</replaceable>
+					<replaceable>nSamples × nChannels(probe)</replaceable>
 					int16 waveform window into
-					<filename>basename.spk.emg.&lt;g&gt;</filename>.
+					<filename>basename.spk.emg.&lt;id&gt;</filename>.
 				</para>
 			</listitem>
 		</itemizedlist>
 		<para>
 			This tool is normally invoked through the
 			<command>ndm_extractemg</command> pipeline script, which
-			handles parameter file reading and multi-group looping.
+			derives per-probe channel lists from the session YAML's
+			<literal>probes:</literal> and
+			<literal>anatomicalDescription.channelGroups</literal>
+			sections (with <literal>skip=0</literal> filtering) and
+			falls back to <literal>spikeDetection.channelGroups</literal>
+			when no probes are declared.
 		</para>
 	</refsect1>
 
@@ -154,7 +158,9 @@
 						Channel groups: colon-separated list of
 						comma-separated 0-based channel indices, e.g.
 						<literal>0,1,2,3:8,9,10,11</literal> for two
-						4-channel groups.
+						4-channel groups.  Each group is conventionally
+						one probe; channels in a group must be disjoint
+						from channels in other groups.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -171,6 +177,20 @@
 		<title>Options</title>
 		<variablelist>
 			<varlistentry>
+				<term><option>-i</option> <replaceable>ids</replaceable></term>
+				<listitem>
+					<para>
+						Comma-separated output IDs, one per group,
+						used as the suffix of per-probe output
+						filenames (<filename>basename.emg.&lt;id&gt;</filename>,
+						<filename>basename.res.emg.&lt;id&gt;</filename>,
+						<filename>basename.spk.emg.&lt;id&gt;</filename>)
+						and in the metadata sidecar's <literal>id</literal>
+						field.  Default: <literal>1,2,…,nGroups</literal>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
 				<term><option>-w</option> <replaceable>W</replaceable></term>
 				<listitem><para>Samples per event waveform (default 32).</para></listitem>
 			</varlistentry>
@@ -183,9 +203,7 @@
 				<listitem>
 					<para>
 						High-pass cutoff for FastICA component
-						identification, in Hz (default 100). Raising
-						this above the LFP band biases the leading IC
-						towards the muscle component.
+						identification, in Hz (default 100).
 					</para>
 				</listitem>
 			</varlistentry>
@@ -193,8 +211,8 @@
 				<term><option>-t</option> <replaceable>T</replaceable></term>
 				<listitem>
 					<para>
-						Event-detection threshold expressed as a
-						multiple of <literal>1.4826·MAD(|EMG_au|)</literal>
+						Event-detection threshold as a multiple of
+						<literal>1.4826·MAD(|EMG_au|)</literal>
 						(default 5.0).
 					</para>
 				</listitem>
@@ -232,8 +250,7 @@
 				<listitem>
 					<para>
 						Downsample factor for the identification pass
-						(default 3). Larger values trade ID accuracy
-						for memory + speed.
+						(default 3).
 					</para>
 				</listitem>
 			</varlistentry>
@@ -249,8 +266,27 @@
 				<term><option>-k</option> <replaceable>S</replaceable></term>
 				<listitem>
 					<para>
-						Streaming chunk size for Pass 2, in samples
-						per channel (default 1048576).
+						Streaming chunk size for Pass 2, in samples per
+						channel (default 1048576).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--backend</option> <replaceable>name</replaceable></term>
+				<listitem>
+					<para>
+						Compute backend for the FastICA pow3 inner
+						kernel: one of <literal>auto</literal>,
+						<literal>cpu</literal>, <literal>cuda</literal>,
+						<literal>hip</literal>, <literal>sycl</literal>
+						(default <literal>auto</literal>).
+						<literal>auto</literal> picks the first available
+						among CUDA &gt; HIP &gt; SYCL &gt; CPU; falls
+						back to CPU at runtime if the requested backend
+						is compiled out or no device is reachable.  GPU
+						backends skip device offload when N·nch &lt;
+						100 000 samples (launch overhead would otherwise
+						dominate).
 					</para>
 				</listitem>
 			</varlistentry>
@@ -267,8 +303,8 @@
 				<term><option>--no-emg-trace</option></term>
 				<listitem>
 					<para>
-						Skip writing per-group
-						<filename>basename.emg.&lt;g&gt;</filename>.
+						Skip writing per-probe
+						<filename>basename.emg.&lt;id&gt;</filename>.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -277,7 +313,7 @@
 				<listitem>
 					<para>
 						Skip writing per-event waveform files
-						<filename>basename.spk.emg.&lt;g&gt;</filename>.
+						<filename>basename.spk.emg.&lt;id&gt;</filename>.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -297,43 +333,44 @@
 					<para>
 						Same shape as
 						<filename>basename.dat</filename> (int16,
-						sample-major). For each group, the channels in
-						that group have the EMG component subtracted.
-						Channels not part of any group are passed
-						through unchanged. The DC offset of the raw
+						sample-major).  For each probe, the channels in
+						that probe have the EMG component subtracted.
+						Channels not part of any probe are passed
+						through unchanged.  The DC offset of the raw
 						signal is preserved.
 					</para>
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><filename>basename.emg.&lt;g&gt;</filename></term>
+				<term><filename>basename.emg.&lt;id&gt;</filename></term>
 				<listitem>
 					<para>
-						int16, single-channel,
-						sample-rate-aligned. The reconstructed
-						<literal>EMG_au</literal> trace for group
-						<literal>g</literal>, clamped to int16 range.
+						int16, single-channel, sample-rate-aligned.
+						The reconstructed <literal>EMG_au</literal>
+						trace for the probe with id
+						<literal>&lt;id&gt;</literal>, clamped to int16
+						range.
 					</para>
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><filename>basename.res.emg.&lt;g&gt;</filename></term>
+				<term><filename>basename.res.emg.&lt;id&gt;</filename></term>
 				<listitem>
 					<para>
-						Binary, no header. <literal>nEvents ×
+						Binary, no header.  <literal>nEvents ×
 						int64_t</literal> sample-index timestamps
-						(little-endian). Same format as
+						(little-endian).  Same format as
 						<filename>basename.res.&lt;g&gt;</filename>.
 					</para>
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><filename>basename.spk.emg.&lt;g&gt;</filename></term>
+				<term><filename>basename.spk.emg.&lt;id&gt;</filename></term>
 				<listitem>
 					<para>
-						Binary, no header. <literal>nEvents × nSamples
-						× nChannels(g) × int16_t</literal>, sample-major
-						layout. Same format as
+						Binary, no header.  <literal>nEvents × nSamples
+						× nChannels(probe) × int16_t</literal>,
+						sample-major layout.  Same format as
 						<filename>basename.spk.&lt;g&gt;</filename>.
 						Waveforms are extracted from the
 						<emphasis>original</emphasis>
@@ -346,12 +383,16 @@
 				<term><filename>basename.emg.meta.yaml</filename></term>
 				<listitem>
 					<para>
-						Sidecar with per-group diagnostics: the
+						Sidecar with per-probe diagnostics: the
 						<literal>loading</literal> (As) and
 						<literal>unmixing</literal> (Ws) vectors used,
 						the spatial uniformity score of the chosen IC,
 						the FastICA iteration count and convergence
-						flag, and the threshold and median envelope.
+						flag, the channel mean, and the threshold and
+						median envelope.  The <literal>id</literal>
+						field of each entry matches the
+						<option>-i</option> suffix used in the per-probe
+						output filenames.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -376,24 +417,73 @@
     W(round,:) = w' wm</screen>
 		<para>
 			where <literal>Z</literal> is the whitened input,
-			<literal>wm = D^(-1/2) E'</literal> the whitening matrix,
-			<literal>dwm = E D^(1/2)</literal> the dewhitening matrix,
+			<literal>wm = D^(-1/2) E'</literal>,
+			<literal>dwm = E D^(1/2)</literal>,
 			<literal>E, D</literal> the eigenvectors and eigenvalues of
 			the channel covariance, and <literal>B</literal> the
-			running set of accepted unit vectors. With the toolbox
-			defaults: <literal>ε = 1e-4</literal>,
-			<literal>maxIter = 1000</literal>, no fine-tuning, no
-			stabilisation, full sample size,
+			running set of accepted unit vectors.  Toolbox defaults:
+			<literal>ε = 1e-4</literal>, <literal>maxIter = 1000</literal>,
+			no fine-tuning, no stabilisation, full sample size,
 			<literal>K = max(round(0.8·nch), min(16, nch))</literal>.
 		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Parallelism &amp; GPU Acceleration</title>
 		<para>
-			The C++ rewrite uses sample-major data storage so the
-			pow3 inner kernel reads the whitened data contiguously per
-			sample, accumulating into both the projection
-			<literal>y[t]</literal> and the back-projection
-			<literal>newW[c]</literal> in a single pass. This is
-			algorithmically identical to the MATLAB version but
-			cache-friendly when N ≫ nch.
+			The CPU code path uses OpenMP both across probes (Pass 1
+			FastICA, Pass 2 streaming subtraction, Pass 3 event
+			detection and waveform extraction — all probe-level
+			operations are independent) and inside the FastICA pow3
+			inner reduction (sample-axis split with thread-local
+			accumulators).  Nested parallelism is disabled
+			(<literal>omp_set_max_active_levels(1)</literal>); a
+			multi-probe session uses its threads on the across-probes
+			axis, while a single-probe session has them all available
+			for the inner kernel.
+		</para>
+		<para>
+			Three GPU backends accelerate the FastICA pow3 inner
+			kernel — the only heavy operation per fixed-point iteration:
+		</para>
+		<itemizedlist>
+			<listitem>
+				<para>
+					<emphasis>CUDA</emphasis> (NVIDIA, default priority
+					1) — cuBLAS <literal>dgemv</literal> for the two
+					gemvs, custom kernel for the elementwise cube,
+					cuBLAS <literal>daxpy</literal> for the
+					<literal>−3·w</literal> term.  Build with
+					<literal>cmake -DEXTRACTEMG_USE_CUDA=ON</literal>.
+				</para>
+			</listitem>
+			<listitem>
+				<para>
+					<emphasis>HIP</emphasis> (AMD ROCm, priority 2) —
+					rocBLAS <literal>rocblas_dgemv</literal> +
+					<literal>rocblas_daxpy</literal>, hipLaunchKernelGGL
+					for the cube.  Build with
+					<literal>cmake -DEXTRACTEMG_USE_HIP=ON</literal>.
+				</para>
+			</listitem>
+			<listitem>
+				<para>
+					<emphasis>SYCL</emphasis> (Intel oneAPI, priority 3)
+					— oneMKL <literal>column_major::gemv</literal> +
+					<literal>axpy</literal>, sycl::parallel_for for
+					the cube.  Build with
+					<literal>cmake -DEXTRACTEMG_USE_SYCL=ON</literal>.
+				</para>
+			</listitem>
+		</itemizedlist>
+		<para>
+			Selection at runtime via <option>--backend</option>; the
+			default <literal>auto</literal> picks the first available.
+			GPU backends skip offload when N·nch &lt; 100 000 — the
+			per-iter launch overhead would otherwise dominate.  All
+			GPU paths share the same fastIcaDeflationPow3 outer loop;
+			only the pow3 step is dispatched through the
+			Pow3Kernel interface.
 		</para>
 	</refsect1>
 
@@ -409,7 +499,7 @@
 				<listitem>
 					<para>
 						Error — bad arguments, unreadable input files,
-						or I/O failure. Output files are left in their
+						or I/O failure.  Output files are left in their
 						previous state on error.
 					</para>
 				</listitem>
@@ -420,20 +510,27 @@
 	<refsect1>
 		<title>Examples</title>
 		<para>
-			Two 4-channel groups, default parameters:
+			Two probes (ids 0 and 1), default parameters, auto backend:
 		</para>
-		<screen>process_extractemg -n 16 -s 32000 -c 0,1,2,3:8,9,10,11 session</screen>
+		<screen>process_extractemg -n 16 -s 32000 \
+                  -c 0,1,2,3,4,5,6,7:8,9,10,11,12,13,14,15 \
+                  -i 0,1 \
+                  --backend auto session</screen>
 		<para>
-			Verbose, longer ID window, threshold-only run:
+			Single 32-channel probe forced onto CUDA, longer ID window:
 		</para>
-		<screen>process_extractemg -n 32 -s 30000 -c 0,1,2,3,4,5,6,7 \
-                  -B 60 -Z 120 -t 4 -v --no-clean --no-waveforms session</screen>
+		<screen>process_extractemg -n 32 -s 30000 \
+                  -c 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31 \
+                  -i 0 \
+                  -B 60 -Z 120 \
+                  --backend cuda \
+                  -v session</screen>
 	</refsect1>
 
 	<refsect1>
 		<title>References</title>
 		<para>
-			Hyvärinen, A. (1999). Fast and robust fixed-point
+			Hyvärinen, A. (1999).  Fast and robust fixed-point
 			algorithms for independent component analysis.
 			<emphasis>IEEE Transactions on Neural Networks</emphasis>,
 			10(3), 626–634.
@@ -443,7 +540,7 @@
 			<ulink url="http://research.ics.aalto.fi/ica/fastica/">http://research.ics.aalto.fi/ica/fastica/</ulink>.
 		</para>
 		<para>
-			Chen, L. (2019). EMG_removing labbox toolbox.
+			Chen, L. (2019).  EMG_removing labbox toolbox.
 		</para>
 	</refsect1>
 

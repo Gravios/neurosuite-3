@@ -49,6 +49,11 @@
     <status>Optional</status>
    </parameter>
    <parameter>
+    <n>backend</n>
+    <value>auto</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
     <n>emgClean</n>
     <value>yes</value>
     <status>Optional</status>
@@ -64,28 +69,55 @@
     <status>Optional</status>
    </parameter>
   </parameters>
-  <help>Identify and remove the EMG component of a multichannel extracellular .dat using FastICA, and write the EMG events out as if they were spikes.
+  <help>Identify and remove the EMG component of a multichannel extracellular .dat using FastICA, on a per-probe basis, and write the EMG events out as if they were spikes.
 
-C++ port of the algorithmic core of the labbox MATLAB EMG_removing toolbox (Chen 2019), restricted to the configuration the toolbox uses by default: deflation FastICA with the pow3 nonlinearity, run on high-pass filtered data, with the EMG component selected as the IC whose loading is most spatially uniform.
+C++ port of the algorithmic core of the labbox MATLAB EMG_removing toolbox (Chen 2019), restricted to the configuration the toolbox uses by default: deflation FastICA with the pow3 nonlinearity, run on high-pass filtered data, with the EMG component selected as the IC whose channel loading is most spatially uniform.
 
-Inputs:
+Per-probe semantics
+-------------------
+
+Each probe declared in `probes:` is processed independently: FastICA runs on the union of that probe's anatomicalDescription channel groups (skip=0 channels only), producing one EMG mode per probe.  All probes share a single output `&lt;session&gt;-emgclean.dat` — each probe writes only to its own channels, so the per-probe subtractions don't collide.  Per-probe `.emg.&lt;id&gt;`, `.res.emg.&lt;id&gt;`, `.spk.emg.&lt;id&gt;` files use the probe's `id` field as the suffix.
+
+If `probes:` is empty or absent, the wrapper falls back to one group per `spikeDetection.channelGroups` entry (legacy behaviour, 1-based suffixes).
+
+Inputs
+------
   &lt;session&gt;.dat
-  &lt;session&gt;.{xml,yaml,yml}     (acquisitionSystem and spikeDetection blocks read)
+  &lt;session&gt;.{xml,yaml,yml}     (acquisitionSystem, probes, anatomicalDescription)
 
-Outputs (per spikeDetection group, 1-based):
+Outputs
+-------
   &lt;session&gt;-emgclean.dat       int16, same shape as .dat, EMG component subtracted
+                              (DC preserved; channels not in any probe pass through unchanged)
+
+For each probe id `g`:
   &lt;session&gt;.emg.&lt;g&gt;             int16 1-channel EMG_au trace (sample-rate-aligned)
-  &lt;session&gt;.res.&lt;g&gt;.emg         int64-LE event timestamps (sample indices)
-  &lt;session&gt;.spk.&lt;g&gt;.emg         int16 nSamples × nChannels per-event waveforms
-  &lt;session&gt;.emg.meta.yaml      sidecar: per-group loading, unmixing, threshold, FastICA diagnostics
+  &lt;session&gt;.res.emg.&lt;g&gt;         int64-LE event timestamps (sample indices)
+  &lt;session&gt;.spk.emg.&lt;g&gt;         int16 nSamples × nChannels per-event waveforms
 
-Pipeline:
-  1.  Pass 1 — read up to idDuration seconds starting at idStart, demean per channel, apply 4th-order Butterworth high-pass at hpFreq, downsample by `downsample`, run FastICA deflation pow3 with K = max(round(0.8·nch), min(16, nch)).  EMG component = column k of A maximising |sum( A[:,k] / ||A[:,k]|| )|.  Threshold = thresholdFactor · 1.4826 · MAD(|EMG_au|) on the un-filtered subsample.
-  2.  Pass 2 — stream the full .dat in chunks of `chunkSamples` samples per channel.  For each sample compute EMG_au[t] = (raw[t,:] − μ) · Ws, then write clean[t,c] = raw[t,c] − As[c]·EMG_au[t] to &lt;session&gt;-emgclean.dat and EMG_au itself to &lt;session&gt;.emg.&lt;g&gt;.
-  3.  Event detection — smooth |EMG_au| with a boxcar of envelopeWindowMs, find threshold-crossings separated by ≥ refractoryPeriod, refine each peak inside a peakSearchLength window.
-  4.  Pass 3 — for each event timestamp, mmap the original .dat and extract a (nSamples × nChannels(g)) int16 waveform window into &lt;session&gt;.spk.&lt;g&gt;.emg.
+  &lt;session&gt;.emg.meta.yaml      sidecar: per-probe loading (As), unmixing (Ws),
+                              uniformity score, FastICA iterations / convergence,
+                              threshold, channel mean
 
-Run BEFORE ndm_hipass / ndm_extractspikes if you want spike detection to operate on the EMG-cleaned signal (use &lt;session&gt;-emgclean.dat as the source for downstream filtering — the wrapper does NOT rename .dat itself; renaming or symlinking is the operator's call).  Run AFTER spike detection if you want the .res.&lt;g&gt;.emg / .spk.&lt;g&gt;.emg events purely for analysis without disturbing the spike-extraction pipeline.
+Pipeline
+--------
+
+  1. Pass 1 — for each probe, read up to idDuration seconds starting at idStart, demean per channel, apply 4th-order Butterworth high-pass at hpFreq, downsample by `downsample`, run FastICA deflation pow3 with K = max(round(0.8·nch), min(16, nch)).  EMG component = column k of A maximising |sum( A[:,k] / ||A[:,k]|| )|.  Threshold = thresholdFactor · 1.4826 · MAD(|EMG_au|) on the un-filtered subsample.
+
+  2. Pass 2 — stream the full .dat in chunks of `chunkSamples` samples per channel.  For each sample compute EMG_au[t] = (raw[t,:] − μ) · Ws (per probe), then write clean[t,c] = raw[t,c] − As[c]·EMG_au[t] to &lt;session&gt;-emgclean.dat and EMG_au itself to &lt;session&gt;.emg.&lt;g&gt;.
+
+  3. Event detection — smooth |EMG_au| with a boxcar of envelopeWindowMs, find threshold-crossings separated by ≥ refractoryPeriod, refine each peak inside a peakSearchLength window.
+
+  4. Pass 3 — for each event timestamp, mmap the original .dat and extract a (nSamples × nChannels(probe)) int16 waveform window into &lt;session&gt;.spk.emg.&lt;g&gt;.
+
+Parallelism
+-----------
+
+Pass 1 FastICA is parallelised across probes via OpenMP (each thread runs an independent FastICA on its probe), and the FastICA pow3 inner kernel is OpenMP-parallel internally for the single-probe case.  Pass 2 streaming subtraction is parallelised across probes per chunk (channel-disjoint writes).  Pass 3 event detection + waveform extraction is parallelised across probes.
+
+GPU acceleration of the FastICA pow3 inner kernel is available when the binary is built with `EXTRACTEMG_USE_CUDA=ON`, `EXTRACTEMG_USE_HIP=ON`, or `EXTRACTEMG_USE_SYCL=ON` (priority CUDA &gt; HIP &gt; SYCL).  Selected at runtime via the `backend` parameter.
+
+Run BEFORE ndm_hipass / ndm_extractspikes if you want spike detection to operate on the EMG-cleaned signal (use &lt;session&gt;-emgclean.dat as the source for downstream filtering — the wrapper does NOT rename .dat itself).  Run AFTER spike detection if you want the .res.emg.&lt;g&gt; / .spk.emg.&lt;g&gt; events purely for analysis without disturbing the spike-extraction pipeline.
 
 # hpFreq
 
@@ -118,6 +150,10 @@ Time window in seconds (relative to the start of .dat) over which FastICA observ
 # chunkSamples
 
 Streaming chunk size for Pass 2 (samples per channel).  Default 1048576 (= 1 MiB at int16, ≈ 32 s at 32 kHz × 16 channels).
+
+# backend
+
+Compute backend for the FastICA pow3 inner kernel.  One of: `auto`, `cpu`, `cuda`, `hip`, `sycl`.  Default `auto` selects in priority order CUDA &gt; HIP &gt; SYCL &gt; CPU.  Falls back to CPU at runtime if the requested backend was compiled out or no device is reachable.  GPU backends skip device offload when N·nch &lt; 100 000 samples (pow3 launch overhead would otherwise dominate).
 
 # emgClean, emgTrace, emgWaveforms
 
