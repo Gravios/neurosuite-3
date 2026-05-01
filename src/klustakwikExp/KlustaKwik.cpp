@@ -319,6 +319,31 @@ void SetupParams(int argc, char **argv) {
         if (SamplingRate      <= 0) Error("SamplingRate not set: pass -SamplingRate or fix YAML\n");
     }
 
+    // -----------------------------------------------------------------
+    // Time-shift probe — forcibly disabled
+    // -----------------------------------------------------------------
+    // The Phase-1.5 time-shift probe (MaxTimeShift / TimeShiftAlignIter)
+    // was an experimental refinement that fanned a (2N+1)-candidate PCA
+    // basis over each spike and re-projected to find the alignment
+    // minimising within-cluster Mahalanobis distance.  In practice it
+    // did not reliably improve sort quality, and ndm_alignspikes (run
+    // as a pre-pass over .spk before clustering) produced better
+    // results at a fraction of the runtime cost.
+    //
+    // The implementation is kept in tree (KK::InitTimeShift /
+    // TimeShiftFinalize / shiftprobe_disabled.cpp) but is hard-disabled
+    // here.  We override the user's CLI / YAML setting and emit a
+    // one-line notice when either was non-zero, so callers from older
+    // pipeline scripts get a clear signal.
+    if (MaxTimeShift != 0 || TimeShiftAlignIter != 0) {
+        fprintf(stderr,
+                "[notice] -MaxTimeShift / -TimeShiftAlignIter ignored; the "
+                "time-shift probe is disabled in this build (use "
+                "ndm_alignspikes for spike alignment).\n");
+    }
+    MaxTimeShift        = 0;
+    TimeShiftAlignIter  = 0;
+
     if (Screen && Verbose) print_params(stdout);
 
     if (Log) {
