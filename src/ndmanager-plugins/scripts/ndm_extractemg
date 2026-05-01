@@ -3,25 +3,33 @@
 #////////////////////////////////////////////////////////////////////////////
 #//
 #//   ndm_extractemg — identify, remove and extract EMG events from a .dat
+#//                    on a per-probe basis.
 #//
-#//   Wraps process_extractemg.  Parses the session YAML/XML for the
-#//   acquisition system and spike-detection groups, then runs FastICA
-#//   per group to identify the EMG component, subtracts it from the
-#//   raw signal to produce <session>-emgclean.dat, writes a per-group
-#//   .emg.N trace, and detects threshold-crossing events to populate
-#//   .res.emg.N + .spk.emg.N (analogous to .res.N + .spk.N for spikes).
+#//   Reads the session YAML's `probes:` and
+#//   `anatomicalDescription.channelGroups` sections to derive one channel
+#//   group per probe (= union of that probe's anatomical groups, with
+#//   skip=0 channels only), then runs FastICA per probe to identify the
+#//   EMG component, subtracts it from the raw signal to produce a single
+#//   <session>-emgclean.dat covering all probes, and writes per-probe
+#//   .emg.<id>, .res.emg.<id>, .spk.emg.<id> event files (analogous to
+#//   spike .res / .spk).
 #//
-#//   Run BEFORE ndm_hipass / ndm_extractspikes (the cleaned dat from
-#//   here becomes the source for downstream filtering), or AFTER
-#//   ndm_extractspikes if EMG events are needed only for analysis (in
-#//   which case the cleaned dat can be skipped via emgClean=no).
+#//   When `probes:` is empty or absent (legacy sessions, or sessions
+#//   pre-dating the Probe tab), falls back to one group per
+#//   spikeDetection.channelGroups entry — the earlier behaviour.
 #//
-#//   copyright       (C) 2026 Gravios / NeuroSuite-3 contributors
+#//   Compute backend (CPU / CUDA / HIP / SYCL) is selected via the
+#//   `backend` parameter; `auto` picks the first available among CUDA,
+#//   HIP, SYCL, falling back to CPU.
 #//
-#//   This program is free software; you can redistribute it and/or modify
-#//   it under the terms of the GNU General Public License as published by
-#//   the Free Software Foundation; either version 3 of the License, or
-#//   (at your option) any later version.
+#//   Run BEFORE ndm_hipass / ndm_extractspikes if you want spike detection
+#//   to operate on the EMG-cleaned signal (the wrapper does NOT rename
+#//   .dat itself; renaming or symlinking is the operator's call).  Run
+#//   AFTER spike detection if you want the .res.emg.<id> / .spk.emg.<id>
+#//   events purely for analysis without disturbing spike extraction.
+#//
+#//   copyright       (C) 2026 neurosuite-3 contributors
+#//   SPDX-License-Identifier: GPL-3.0-or-later
 #//
 #////////////////////////////////////////////////////////////////////////////
 
@@ -40,66 +48,155 @@ session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
 
-print_header "$session - Extracting EMG component (FastICA + event detection)"
+print_header "$session - Extracting EMG component (per-probe FastICA + event detection)"
 
 inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
 
 check_commands_installed process_extractemg
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
 # // Read session-wide parameters
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
 
 nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
 samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
-nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 
 check_mandatory_variable $nChannels    "missing number of channels"
 check_mandatory_variable $samplingRate "missing sampling rate"
-if [ $nElectrodeGroups -eq 0 ]
-then
-    echo_error "missing spike groups in spikeDetection block"
-    exit $GENERAL_ERROR
+
+# ////////////////////////////////////////////////////////////////////////////
+# // Build per-probe channel lists
+# //
+# // Strategy: read the YAML directly via Python for two reasons —
+# // (a) yaml_read does not support filtering on `skip` field within a
+# //     channels list of dicts, and
+# // (b) probes -> anatomicalGroups -> channelGroups -> channels is a
+# //     three-level join we'd otherwise unroll in bash with one yaml_read
+# //     call per probe per anatomical group.
+# //
+# // The script emits two TAB-separated lines on stdout when probes are
+# // declared:
+# //
+# //     groupSpec    -> 0,1,2,3:4,5,6,7
+# //     probeIds     -> 0,1
+# //
+# // …or a single 'EMPTY' marker when no probes are declared (so the
+# // caller falls back to spikeDetection-based grouping).
+# ////////////////////////////////////////////////////////////////////////////
+
+yamlfile=$(find_yaml_file "$session")
+
+per_probe_output=$(python3 - "$yamlfile" << 'PYEOF'
+import sys, yaml
+
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+
+probes = doc.get('probes') or []
+# A probes: entry with all-None fields counts as "no real probe declared".
+def is_real(p):
+    if not isinstance(p, dict): return False
+    if p.get('probeFile') is None and (p.get('anatomicalGroups') is None
+                                      or p.get('anatomicalGroups') == []):
+        return False
+    return True
+probes = [p for p in probes if is_real(p)]
+
+if not probes:
+    print("EMPTY")
+    sys.exit(0)
+
+# Build a 1-based index: anatomicalDescription.channelGroups[i] -> list of
+# 0-based channel ids with skip=0.
+ad = (doc.get('anatomicalDescription') or {}).get('channelGroups') or []
+anat_chans = {}      # 1-based index -> [int]
+for idx, grp in enumerate(ad, start=1):
+    if not isinstance(grp, dict):
+        continue
+    chans = []
+    for ch in (grp.get('channels') or []):
+        if isinstance(ch, dict):
+            if int(ch.get('skip', 0)) == 0:
+                chans.append(int(ch['id']))
+        else:
+            # plain scalar list — treat all as live
+            chans.append(int(ch))
+    anat_chans[idx] = chans
+
+probe_specs = []   # list of (probeId, [channels])
+for p in probes:
+    pid = int(p.get('id', -1))
+    groups = p.get('anatomicalGroups') or []
+    chans = []
+    seen = set()
+    for g in groups:
+        for c in anat_chans.get(int(g), []):
+            if c not in seen:
+                seen.add(c)
+                chans.append(c)
+    if not chans:
+        sys.stderr.write(f"ndm_extractemg: probe id={pid} has no live channels — skipping\n")
+        continue
+    probe_specs.append((pid, chans))
+
+if not probe_specs:
+    print("EMPTY")
+    sys.exit(0)
+
+groupSpec = ":".join(",".join(str(c) for c in chans) for _pid, chans in probe_specs)
+probeIds  = ",".join(str(pid) for pid, _ in probe_specs)
+print(f"PROBES\t{groupSpec}\t{probeIds}")
+PYEOF
+)
+
+mode=$(echo "$per_probe_output" | head -n1 | cut -f1)
+
+if [ "$mode" = "PROBES" ]; then
+    electrodeList=$(echo "$per_probe_output" | head -n1 | cut -f2)
+    probeIdList=$(  echo "$per_probe_output" | head -n1 | cut -f3)
+    nElectrodeGroups=$(echo "$probeIdList" | tr ',' '\n' | wc -l)
+    echo_info "Per-probe mode: ${nElectrodeGroups} probe(s), ids=${probeIdList}"
+else
+    # Fallback: one group per spikeDetection.channelGroups entry.  This
+    # matches the legacy behaviour for sessions that don't yet use the
+    # Probe tab.  Each spike-detection group becomes its own "probe" for
+    # FastICA purposes and gets its own .emg.<g> / .res.emg.<g> /
+    # .spk.emg.<g> output files keyed by 1-based group index.
+    echo_info "No probes declared; falling back to per-spikeDetection-group EMG removal"
+    nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+    if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]; then
+        echo_error "no probes and no spikeDetection groups found"
+        exit $GENERAL_ERROR
+    fi
+    unset electrodeList probeIdList
+    for electrodeGroup in $(seq 1 $nElectrodeGroups); do
+        electrodes=$(yaml_read $session \
+            "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
+        check_mandatory_variable $electrodes \
+            "missing electrode list for spikeDetection group $electrodeGroup"
+        electrodes=$(echo $electrodes | sed 's/ /,/g')
+        electrodeList="$electrodeList:$electrodes"
+        probeIdList="$probeIdList,$electrodeGroup"
+    done
+    # Strip leading separators
+    electrodeList=${electrodeList:1}
+    probeIdList=${probeIdList:1}
 fi
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Build :-separated, ,-separated channel groups string
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
+# // Read waveform shape (from spikeDetection if present; else defaults)
+# ////////////////////////////////////////////////////////////////////////////
 
-unset electrodeList
-samplesInWaveform=
-peakSample=
-for electrodeGroup in $(seq 1 $nElectrodeGroups)
-do
-    electrodes=$(yaml_read $session \
-        "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
-    check_mandatory_variable $electrodes \
-        "missing electrode list for group $electrodeGroup"
-    electrodes=$(echo $electrodes | sed 's/ /,/g')
-    electrodeList="$electrodeList:$electrodes"
-
-    _ns=$(yaml_read $session \
-        "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-    _ps=$(yaml_read $session \
-        "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
-    if [ -z "$samplesInWaveform" ] && [ -n "$_ns" ]; then
-        samplesInWaveform=$_ns
-        peakSample=$_ps
-    fi
-done
-
-# Strip leading ':'
-n=$((${#electrodeList}-1))
-electrodeList=${electrodeList:1:$n}
-
-# Fall back to sane defaults for waveform shape if spikeDetection groups
-# don't define them (unusual, but tolerate it).
+samplesInWaveform=$(yaml_read $session \
+    "//spikeDetection/channelGroups/group[1]/nSamples")
+peakSample=$(yaml_read $session \
+    "//spikeDetection/channelGroups/group[1]/peakSampleIndex")
 samplesInWaveform=${samplesInWaveform:-32}
 peakSample=${peakSample:-16}
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Read ndm_extractemg parameters
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
+# // Read ndm_extractemg parameters (with internal-default fallbacks)
+# ////////////////////////////////////////////////////////////////////////////
 
 hpFreq=$(read_script_parameter           $session hpFreq)
 thresholdFactor=$(read_script_parameter  $session thresholdFactor)
@@ -113,9 +210,8 @@ chunkSamples=$(read_script_parameter     $session chunkSamples)
 emgClean=$(read_script_parameter         $session emgClean)
 emgTrace=$(read_script_parameter         $session emgTrace)
 emgWaveforms=$(read_script_parameter     $session emgWaveforms)
+backend=$(read_script_parameter          $session backend)
 
-# Defaults (matching process_extractemg's internal defaults; we re-state
-# them here so the wrapper logs reflect what will actually run).
 hpFreq=${hpFreq:-100}
 thresholdFactor=${thresholdFactor:-5.0}
 envelopeWindowMs=${envelopeWindowMs:-20}
@@ -128,29 +224,28 @@ chunkSamples=${chunkSamples:-1048576}
 emgClean=${emgClean:-yes}
 emgTrace=${emgTrace:-yes}
 emgWaveforms=${emgWaveforms:-yes}
+backend=${backend:-auto}
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
 # // Skip if all outputs already present
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
 
 allOk=true
-for group in $(seq 1 $nElectrodeGroups)
-do
-    if [ ! -f "$session.res.emg.$group" ]; then allOk=false; fi
-    if [ "$emgWaveforms" = "yes" ] && [ ! -f "$session.spk.emg.$group" ]; then allOk=false; fi
-    if [ "$emgTrace"     = "yes" ] && [ ! -f "$session.emg.$group"     ]; then allOk=false; fi
+for probeId in $(echo "$probeIdList" | tr ',' ' '); do
+    [ ! -f "$session.res.emg.$probeId" ] && allOk=false
+    [ "$emgWaveforms" = "yes" ] && [ ! -f "$session.spk.emg.$probeId" ] && allOk=false
+    [ "$emgTrace"     = "yes" ] && [ ! -f "$session.emg.$probeId"     ] && allOk=false
 done
-if [ "$emgClean" = "yes" ] && [ ! -f "$session-emgclean.dat" ]; then allOk=false; fi
+[ "$emgClean" = "yes" ] && [ ! -f "$session-emgclean.dat" ] && allOk=false
 
-if [ "$allOk" = "true" ]
-then
+if [ "$allOk" = "true" ]; then
     echo_info "All EMG outputs already exist, nothing to do."
     exit $NO_ERROR
 fi
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
 # // Compose flags + invoke
-# ////////////////////////////////////////////////////////////////////////////////////////////////
+# ////////////////////////////////////////////////////////////////////////////
 
 extra=""
 [ "$emgClean"     = "no" ] && extra="$extra --no-clean"
@@ -158,17 +253,20 @@ extra=""
 [ "$emgWaveforms" = "no" ] && extra="$extra --no-waveforms"
 
 echo_info "Channel groups          : $electrodeList"
+echo_info "Probe IDs               : $probeIdList"
 echo_info "High-pass cutoff        : $hpFreq Hz"
 echo_info "Threshold factor (×σ)   : $thresholdFactor"
 echo_info "Envelope window         : ${envelopeWindowMs} ms"
 echo_info "Refractory (samples)    : ${refractoryPeriod} (0 = derive from envelope window)"
 echo_info "ID window               : ${idStart}s + ${idDuration}s"
 echo_info "Streaming chunk         : ${chunkSamples} samples/channel"
+echo_info "Compute backend         : ${backend}"
 
 process_extractemg \
     -n $nChannels \
     -s $samplingRate \
     -c $electrodeList \
+    -i $probeIdList \
     -w $samplesInWaveform \
     -p $peakSample \
     -f $hpFreq \
@@ -180,6 +278,7 @@ process_extractemg \
     -B $idStart \
     -Z $idDuration \
     -k $chunkSamples \
+    --backend $backend \
     $extra \
     -v \
     $session
