@@ -1,0 +1,464 @@
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+          "http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd">
+<refentry id="process_extractemg">
+
+	<refmeta>
+		<refentrytitle>process_extractemg</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_extractemg</refname>
+		<refpurpose>identify, remove, and extract EMG events from a multichannel .dat using FastICA</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_extractemg</command>
+		<arg choice="plain"><option>-n</option> <replaceable>nChannels</replaceable></arg>
+		<arg choice="plain"><option>-s</option> <replaceable>samplingRate</replaceable></arg>
+		<arg choice="plain"><option>-c</option> <replaceable>groups</replaceable></arg>
+		<arg><option>-w</option> <replaceable>nSamples</replaceable></arg>
+		<arg><option>-p</option> <replaceable>peakIndex</replaceable></arg>
+		<arg><option>-f</option> <replaceable>hpFreq</replaceable></arg>
+		<arg><option>-t</option> <replaceable>thresholdFactor</replaceable></arg>
+		<arg><option>-e</option> <replaceable>envelopeWindowMs</replaceable></arg>
+		<arg><option>-r</option> <replaceable>refractory</replaceable></arg>
+		<arg><option>-l</option> <replaceable>peakSearch</replaceable></arg>
+		<arg><option>-d</option> <replaceable>downsample</replaceable></arg>
+		<arg><option>-B</option> <replaceable>idStartSec</replaceable></arg>
+		<arg><option>-Z</option> <replaceable>idDurationSec</replaceable></arg>
+		<arg><option>-k</option> <replaceable>chunkSamples</replaceable></arg>
+		<arg><option>--no-clean</option></arg>
+		<arg><option>--no-emg-trace</option></arg>
+		<arg><option>--no-waveforms</option></arg>
+		<arg><option>-v</option></arg>
+		<arg choice="plain"><replaceable>basename</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_extractemg</command> identifies the
+			electromyographic (EMG) component contaminating a
+			multichannel extracellular recording, subtracts it from the
+			raw signal to produce a cleaned <filename>.dat</filename>,
+			and writes the EMG bursts as event files in the same format
+			as spikes. It is a C++ port of the algorithmic core of the
+			labbox MATLAB <literal>EMG_removing</literal> toolbox (Chen
+			2019), restricted to the configuration the toolbox uses by
+			default: deflation FastICA with the pow3 nonlinearity, run
+			on high-pass filtered data, with the EMG component selected
+			as the independent component whose channel loading is most
+			spatially uniform.
+		</para>
+		<para>
+			The implementation comes directly from the
+			FastICA_25 toolbox shipped with labbox
+			(<filename>fastica.m</filename>,
+			<filename>fpica.m</filename>,
+			<filename>whitenv.m</filename>,
+			<filename>pcamat.m</filename>,
+			<filename>remmean.m</filename>). Variable names in the
+			C++ source mirror the MATLAB sources so the correspondence
+			is auditable line-for-line. Only the deflation/pow3 path
+			is ported; symmetric mode, tanh, gauss, skew nonlinearities,
+			fine-tuning, stabilisation, and sample-size subsetting are
+			not implemented because the EMG_removing toolbox does not
+			use them.
+		</para>
+		<para>
+			The pipeline runs in three passes:
+		</para>
+		<itemizedlist>
+			<listitem>
+				<para>
+					<emphasis>Pass 1 (identification)</emphasis> reads
+					<replaceable>idDurationSec</replaceable> seconds
+					starting at <replaceable>idStartSec</replaceable>,
+					removes the per-channel mean, applies a 4th-order
+					Butterworth high-pass at
+					<replaceable>hpFreq</replaceable>, downsamples by
+					<replaceable>downsample</replaceable>, and runs
+					FastICA. The EMG component is the IC maximising
+					<literal>|sum(A[:,k] / ||A[:,k]||)|</literal> — the
+					same diagnostic the MATLAB toolbox uses
+					(<filename>EMG_rm_long.m</filename> line 259). The
+					event-detection threshold is
+					<literal>thresholdFactor · 1.4826 · MAD(|EMG_au|)</literal>
+					evaluated on the un-filtered subsample.
+				</para>
+			</listitem>
+			<listitem>
+				<para>
+					<emphasis>Pass 2 (streaming)</emphasis> reads the
+					full <filename>.dat</filename> in chunks of
+					<replaceable>chunkSamples</replaceable> samples per
+					channel. For each sample <literal>t</literal>:
+					<literal>EMG_au[t] = (raw[t,:] − μ) · Ws</literal>;
+					the cleaned signal
+					<literal>clean[t,c] = raw[t,c] − As[c]·EMG_au[t]</literal>
+					is written to
+					<filename>basename-emgclean.dat</filename> and
+					<literal>EMG_au</literal> is written to
+					<filename>basename.emg.&lt;g&gt;</filename>.
+				</para>
+			</listitem>
+			<listitem>
+				<para>
+					<emphasis>Pass 3 (event extraction)</emphasis>
+					smooths <literal>|EMG_au|</literal> with a boxcar
+					of width <replaceable>envelopeWindowMs</replaceable>,
+					finds threshold crossings separated by at least
+					<replaceable>refractory</replaceable> samples,
+					refines each peak inside a
+					<replaceable>peakSearch</replaceable>-sample window,
+					then mmaps the original
+					<filename>.dat</filename> and copies a
+					<replaceable>nSamples × nChannels(g)</replaceable>
+					int16 waveform window into
+					<filename>basename.spk.emg.&lt;g&gt;</filename>.
+				</para>
+			</listitem>
+		</itemizedlist>
+		<para>
+			This tool is normally invoked through the
+			<command>ndm_extractemg</command> pipeline script, which
+			handles parameter file reading and multi-group looping.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Required Arguments</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>-n</option> <replaceable>nChannels</replaceable></term>
+				<listitem>
+					<para>
+						Total number of channels in the
+						<filename>basename.dat</filename> file.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-s</option> <replaceable>samplingRate</replaceable></term>
+				<listitem>
+					<para>Sampling rate of the .dat in Hz.</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-c</option> <replaceable>groups</replaceable></term>
+				<listitem>
+					<para>
+						Channel groups: colon-separated list of
+						comma-separated 0-based channel indices, e.g.
+						<literal>0,1,2,3:8,9,10,11</literal> for two
+						4-channel groups.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>basename</replaceable></term>
+				<listitem>
+					<para>Session basename without extension.</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>-w</option> <replaceable>W</replaceable></term>
+				<listitem><para>Samples per event waveform (default 32).</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-p</option> <replaceable>P</replaceable></term>
+				<listitem><para>Peak sample index within waveform (default 16).</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-f</option> <replaceable>F</replaceable></term>
+				<listitem>
+					<para>
+						High-pass cutoff for FastICA component
+						identification, in Hz (default 100). Raising
+						this above the LFP band biases the leading IC
+						towards the muscle component.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-t</option> <replaceable>T</replaceable></term>
+				<listitem>
+					<para>
+						Event-detection threshold expressed as a
+						multiple of <literal>1.4826·MAD(|EMG_au|)</literal>
+						(default 5.0).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-e</option> <replaceable>MS</replaceable></term>
+				<listitem>
+					<para>
+						Boxcar envelope smoothing window in milliseconds
+						(default 20).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-r</option> <replaceable>R</replaceable></term>
+				<listitem>
+					<para>
+						Minimum samples between consecutive accepted
+						events (default 0 → derive from envelope window).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-l</option> <replaceable>L</replaceable></term>
+				<listitem>
+					<para>
+						Samples after a threshold crossing within which
+						the local maximum is found (default 0 → use
+						refractory period).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-d</option> <replaceable>D</replaceable></term>
+				<listitem>
+					<para>
+						Downsample factor for the identification pass
+						(default 3). Larger values trade ID accuracy
+						for memory + speed.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-B</option> <replaceable>S</replaceable></term>
+				<listitem><para>ID-pass start time in seconds (default 0).</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-Z</option> <replaceable>S</replaceable></term>
+				<listitem><para>ID-pass duration in seconds (default 60).</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-k</option> <replaceable>S</replaceable></term>
+				<listitem>
+					<para>
+						Streaming chunk size for Pass 2, in samples
+						per channel (default 1048576).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--no-clean</option></term>
+				<listitem>
+					<para>
+						Skip writing
+						<filename>basename-emgclean.dat</filename>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--no-emg-trace</option></term>
+				<listitem>
+					<para>
+						Skip writing per-group
+						<filename>basename.emg.&lt;g&gt;</filename>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--no-waveforms</option></term>
+				<listitem>
+					<para>
+						Skip writing per-event waveform files
+						<filename>basename.spk.emg.&lt;g&gt;</filename>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-v</option></term>
+				<listitem><para>Verbose progress output.</para></listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Output Files</title>
+		<variablelist>
+			<varlistentry>
+				<term><filename>basename-emgclean.dat</filename></term>
+				<listitem>
+					<para>
+						Same shape as
+						<filename>basename.dat</filename> (int16,
+						sample-major). For each group, the channels in
+						that group have the EMG component subtracted.
+						Channels not part of any group are passed
+						through unchanged. The DC offset of the raw
+						signal is preserved.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>basename.emg.&lt;g&gt;</filename></term>
+				<listitem>
+					<para>
+						int16, single-channel,
+						sample-rate-aligned. The reconstructed
+						<literal>EMG_au</literal> trace for group
+						<literal>g</literal>, clamped to int16 range.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>basename.res.emg.&lt;g&gt;</filename></term>
+				<listitem>
+					<para>
+						Binary, no header. <literal>nEvents ×
+						int64_t</literal> sample-index timestamps
+						(little-endian). Same format as
+						<filename>basename.res.&lt;g&gt;</filename>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>basename.spk.emg.&lt;g&gt;</filename></term>
+				<listitem>
+					<para>
+						Binary, no header. <literal>nEvents × nSamples
+						× nChannels(g) × int16_t</literal>, sample-major
+						layout. Same format as
+						<filename>basename.spk.&lt;g&gt;</filename>.
+						Waveforms are extracted from the
+						<emphasis>original</emphasis>
+						<filename>basename.dat</filename>, not the
+						cleaned dat.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><filename>basename.emg.meta.yaml</filename></term>
+				<listitem>
+					<para>
+						Sidecar with per-group diagnostics: the
+						<literal>loading</literal> (As) and
+						<literal>unmixing</literal> (Ws) vectors used,
+						the spatial uniformity score of the chosen IC,
+						the FastICA iteration count and convergence
+						flag, and the threshold and median envelope.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Algorithm</title>
+		<para>
+			FastICA is implemented exactly as in
+			<filename>fpica.m</filename> case 10 (deflation, pow3):
+		</para>
+		<screen>for round = 1..K:
+    w = randn(nch);  w -= B B' w;  w /= ||w||
+    until ||w − wOld|| &lt; ε  OR  ||w + wOld|| &lt; ε:
+        w   -= B B' w;  w /= ||w||
+        wOld = w
+        w    = (Z (Z'w).^3) / N − 3w
+        w   /= ||w||
+    B(:,round) = w
+    A(:,round) = dwm w
+    W(round,:) = w' wm</screen>
+		<para>
+			where <literal>Z</literal> is the whitened input,
+			<literal>wm = D^(-1/2) E'</literal> the whitening matrix,
+			<literal>dwm = E D^(1/2)</literal> the dewhitening matrix,
+			<literal>E, D</literal> the eigenvectors and eigenvalues of
+			the channel covariance, and <literal>B</literal> the
+			running set of accepted unit vectors. With the toolbox
+			defaults: <literal>ε = 1e-4</literal>,
+			<literal>maxIter = 1000</literal>, no fine-tuning, no
+			stabilisation, full sample size,
+			<literal>K = max(round(0.8·nch), min(16, nch))</literal>.
+		</para>
+		<para>
+			The C++ rewrite uses sample-major data storage so the
+			pow3 inner kernel reads the whitened data contiguously per
+			sample, accumulating into both the projection
+			<literal>y[t]</literal> and the back-projection
+			<literal>newW[c]</literal> in a single pass. This is
+			algorithmically identical to the MATLAB version but
+			cache-friendly when N ≫ nch.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Exit Status</title>
+		<variablelist>
+			<varlistentry>
+				<term>0</term>
+				<listitem><para>Success.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term>1</term>
+				<listitem>
+					<para>
+						Error — bad arguments, unreadable input files,
+						or I/O failure. Output files are left in their
+						previous state on error.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>Examples</title>
+		<para>
+			Two 4-channel groups, default parameters:
+		</para>
+		<screen>process_extractemg -n 16 -s 32000 -c 0,1,2,3:8,9,10,11 session</screen>
+		<para>
+			Verbose, longer ID window, threshold-only run:
+		</para>
+		<screen>process_extractemg -n 32 -s 30000 -c 0,1,2,3,4,5,6,7 \
+                  -B 60 -Z 120 -t 4 -v --no-clean --no-waveforms session</screen>
+	</refsect1>
+
+	<refsect1>
+		<title>References</title>
+		<para>
+			Hyvärinen, A. (1999). Fast and robust fixed-point
+			algorithms for independent component analysis.
+			<emphasis>IEEE Transactions on Neural Networks</emphasis>,
+			10(3), 626–634.
+		</para>
+		<para>
+			FastICA Matlab toolbox 2.5,
+			<ulink url="http://research.ics.aalto.fi/ica/fastica/">http://research.ics.aalto.fi/ica/fastica/</ulink>.
+		</para>
+		<para>
+			Chen, L. (2019). EMG_removing labbox toolbox.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>See Also</title>
+		<para>
+			<citerefentry><refentrytitle>ndm_extractemg</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>ndm_extractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>ndm_hipass</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Authors</title>
+		<para>neurosuite-3 contributors</para>
+	</refsect1>
+
+</refentry>

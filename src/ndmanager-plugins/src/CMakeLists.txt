@@ -3,6 +3,7 @@
 
 add_subdirectory(process)
 add_subdirectory(process_extractchannels)
+add_subdirectory(process_extractemg)
 add_subdirectory(process_extractleds)
 add_subdirectory(process_extractspikes)
 add_subdirectory(process_extractspikes_sdiff)
