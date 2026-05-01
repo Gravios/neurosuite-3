@@ -1,0 +1,187 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   ndm_extractemg — identify, remove and extract EMG events from a .dat
+#//
+#//   Wraps process_extractemg.  Parses the session YAML/XML for the
+#//   acquisition system and spike-detection groups, then runs FastICA
+#//   per group to identify the EMG component, subtracts it from the
+#//   raw signal to produce <session>-emgclean.dat, writes a per-group
+#//   .emg.N trace, and detects threshold-crossing events to populate
+#//   .res.emg.N + .spk.emg.N (analogous to .res.N + .spk.N for spikes).
+#//
+#//   Run BEFORE ndm_hipass / ndm_extractspikes (the cleaned dat from
+#//   here becomes the source for downstream filtering), or AFTER
+#//   ndm_extractspikes if EMG events are needed only for analysis (in
+#//   which case the cleaned dat can be skipped via emgClean=no).
+#//
+#//   copyright       (C) 2026 Gravios / NeuroSuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Extracting EMG component (FastICA + event detection)"
+
+inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
+
+check_commands_installed process_extractemg
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read session-wide parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+
+check_mandatory_variable $nChannels    "missing number of channels"
+check_mandatory_variable $samplingRate "missing sampling rate"
+if [ $nElectrodeGroups -eq 0 ]
+then
+    echo_error "missing spike groups in spikeDetection block"
+    exit $GENERAL_ERROR
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Build :-separated, ,-separated channel groups string
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+unset electrodeList
+samplesInWaveform=
+peakSample=
+for electrodeGroup in $(seq 1 $nElectrodeGroups)
+do
+    electrodes=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
+    check_mandatory_variable $electrodes \
+        "missing electrode list for group $electrodeGroup"
+    electrodes=$(echo $electrodes | sed 's/ /,/g')
+    electrodeList="$electrodeList:$electrodes"
+
+    _ns=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+    _ps=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+    if [ -z "$samplesInWaveform" ] && [ -n "$_ns" ]; then
+        samplesInWaveform=$_ns
+        peakSample=$_ps
+    fi
+done
+
+# Strip leading ':'
+n=$((${#electrodeList}-1))
+electrodeList=${electrodeList:1:$n}
+
+# Fall back to sane defaults for waveform shape if spikeDetection groups
+# don't define them (unusual, but tolerate it).
+samplesInWaveform=${samplesInWaveform:-32}
+peakSample=${peakSample:-16}
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read ndm_extractemg parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+hpFreq=$(read_script_parameter           $session hpFreq)
+thresholdFactor=$(read_script_parameter  $session thresholdFactor)
+envelopeWindowMs=$(read_script_parameter $session envelopeWindowMs)
+refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
+peakSearchLength=$(read_script_parameter $session peakSearchLength)
+downsample=$(read_script_parameter       $session downsample)
+idStart=$(read_script_parameter          $session idStart)
+idDuration=$(read_script_parameter       $session idDuration)
+chunkSamples=$(read_script_parameter     $session chunkSamples)
+emgClean=$(read_script_parameter         $session emgClean)
+emgTrace=$(read_script_parameter         $session emgTrace)
+emgWaveforms=$(read_script_parameter     $session emgWaveforms)
+
+# Defaults (matching process_extractemg's internal defaults; we re-state
+# them here so the wrapper logs reflect what will actually run).
+hpFreq=${hpFreq:-100}
+thresholdFactor=${thresholdFactor:-5.0}
+envelopeWindowMs=${envelopeWindowMs:-20}
+refractoryPeriod=${refractoryPeriod:-0}
+peakSearchLength=${peakSearchLength:-0}
+downsample=${downsample:-3}
+idStart=${idStart:-0}
+idDuration=${idDuration:-60}
+chunkSamples=${chunkSamples:-1048576}
+emgClean=${emgClean:-yes}
+emgTrace=${emgTrace:-yes}
+emgWaveforms=${emgWaveforms:-yes}
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Skip if all outputs already present
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+allOk=true
+for group in $(seq 1 $nElectrodeGroups)
+do
+    if [ ! -f "$session.res.emg.$group" ]; then allOk=false; fi
+    if [ "$emgWaveforms" = "yes" ] && [ ! -f "$session.spk.emg.$group" ]; then allOk=false; fi
+    if [ "$emgTrace"     = "yes" ] && [ ! -f "$session.emg.$group"     ]; then allOk=false; fi
+done
+if [ "$emgClean" = "yes" ] && [ ! -f "$session-emgclean.dat" ]; then allOk=false; fi
+
+if [ "$allOk" = "true" ]
+then
+    echo_info "All EMG outputs already exist, nothing to do."
+    exit $NO_ERROR
+fi
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Compose flags + invoke
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+extra=""
+[ "$emgClean"     = "no" ] && extra="$extra --no-clean"
+[ "$emgTrace"     = "no" ] && extra="$extra --no-emg-trace"
+[ "$emgWaveforms" = "no" ] && extra="$extra --no-waveforms"
+
+echo_info "Channel groups          : $electrodeList"
+echo_info "High-pass cutoff        : $hpFreq Hz"
+echo_info "Threshold factor (×σ)   : $thresholdFactor"
+echo_info "Envelope window         : ${envelopeWindowMs} ms"
+echo_info "Refractory (samples)    : ${refractoryPeriod} (0 = derive from envelope window)"
+echo_info "ID window               : ${idStart}s + ${idDuration}s"
+echo_info "Streaming chunk         : ${chunkSamples} samples/channel"
+
+process_extractemg \
+    -n $nChannels \
+    -s $samplingRate \
+    -c $electrodeList \
+    -w $samplesInWaveform \
+    -p $peakSample \
+    -f $hpFreq \
+    -t $thresholdFactor \
+    -e $envelopeWindowMs \
+    -r $refractoryPeriod \
+    -l $peakSearchLength \
+    -d $downsample \
+    -B $idStart \
+    -Z $idDuration \
+    -k $chunkSamples \
+    $extra \
+    -v \
+    $session
+
+check_command_status process_extractemg
