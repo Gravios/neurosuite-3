@@ -454,7 +454,7 @@
 					gemvs, custom kernel for the elementwise cube,
 					cuBLAS <literal>daxpy</literal> for the
 					<literal>−3·w</literal> term.  Build with
-					<literal>cmake -DEXTRACTEMG_USE_CUDA=ON</literal>.
+					<literal>cmake -DUSE_CUDA=ON</literal>.
 				</para>
 			</listitem>
 			<listitem>
@@ -463,7 +463,7 @@
 					rocBLAS <literal>rocblas_dgemv</literal> +
 					<literal>rocblas_daxpy</literal>, hipLaunchKernelGGL
 					for the cube.  Build with
-					<literal>cmake -DEXTRACTEMG_USE_HIP=ON</literal>.
+					<literal>cmake -DUSE_HIP=ON</literal>.
 				</para>
 			</listitem>
 			<listitem>
@@ -472,7 +472,7 @@
 					— oneMKL <literal>column_major::gemv</literal> +
 					<literal>axpy</literal>, sycl::parallel_for for
 					the cube.  Build with
-					<literal>cmake -DEXTRACTEMG_USE_SYCL=ON</literal>.
+					<literal>cmake -DUSE_SYCL=ON</literal>.
 				</para>
 			</listitem>
 		</itemizedlist>

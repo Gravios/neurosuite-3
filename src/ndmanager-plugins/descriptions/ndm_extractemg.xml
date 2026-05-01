@@ -115,7 +115,7 @@ Parallelism
 
 Pass 1 FastICA is parallelised across probes via OpenMP (each thread runs an independent FastICA on its probe), and the FastICA pow3 inner kernel is OpenMP-parallel internally for the single-probe case.  Pass 2 streaming subtraction is parallelised across probes per chunk (channel-disjoint writes).  Pass 3 event detection + waveform extraction is parallelised across probes.
 
-GPU acceleration of the FastICA pow3 inner kernel is available when the binary is built with `EXTRACTEMG_USE_CUDA=ON`, `EXTRACTEMG_USE_HIP=ON`, or `EXTRACTEMG_USE_SYCL=ON` (priority CUDA &gt; HIP &gt; SYCL).  Selected at runtime via the `backend` parameter.
+GPU acceleration of the FastICA pow3 inner kernel is available when the binary is built with `USE_CUDA=ON`, `USE_HIP=ON`, or `USE_SYCL=ON` (priority CUDA &gt; HIP &gt; SYCL).  Selected at runtime via the `backend` parameter.
 
 Run BEFORE ndm_hipass / ndm_extractspikes if you want spike detection to operate on the EMG-cleaned signal (use &lt;session&gt;-emgclean.dat as the source for downstream filtering — the wrapper does NOT rename .dat itself).  Run AFTER spike detection if you want the .res.emg.&lt;g&gt; / .spk.emg.&lt;g&gt; events purely for analysis without disturbing the spike-extraction pipeline.
 
