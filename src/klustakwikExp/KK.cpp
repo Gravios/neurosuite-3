@@ -34,13 +34,19 @@
 #include <unordered_set>
 #ifdef _OPENMP
 #include <omp.h>
+#endif
 
 // ── mmap for time-shift .spk/.spkD shared-memory access ──────────────────
+// These POSIX headers are NOT OpenMP-related; the mmap/open/munmap call
+// sites later in this file are unconditional, so the headers must be
+// included unconditionally too.  Previously they lived inside the
+// #ifdef _OPENMP block, which broke the SYCL build with icpx (where
+// _OPENMP is not defined unless -fopenmp is added) — undefined
+// O_RDONLY / PROT_READ / MAP_PRIVATE / MAP_FAILED / MADV_RANDOM / munmap.
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#endif
 // SIMD intrinsics for the batched EStep kernel (AVX-512 / AVX2 paths).
 // The file is compiled with -march=native, so the right path is selected
 // automatically at compile time via __AVX512F__ / __AVX2__ macros.

@@ -378,8 +378,13 @@ if(_SYCL_ACTIVE)
     target_compile_definitions(yaml_obj PRIVATE
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
+    # KlustaKwikYaml.cpp is intentionally NOT listed here — it is supplied
+    # via $<TARGET_OBJECTS:yaml_obj> below.  Listing it in both places causes
+    # icpx to emit two object files (one with -fsycl, one without) that both
+    # define kkReadYamlSpikeParams, producing a multiple-definition link
+    # error on Intel Arc / oneAPI builds.
     add_executable(KlustaKwik_sycl
-        KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp KlustaKwikYaml.cpp
+        KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
         ${_xcorr_dir}/realign_xcorr_sycl.cpp

@@ -192,6 +192,7 @@ set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../shared/xcorr")
 # =============================================================================
 set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
     dipsplit.cpp
+    shiftprobe_disabled.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
 set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
@@ -241,7 +242,9 @@ install(TARGETS KlustaKwikExp_cpu DESTINATION "${CMAKE_INSTALL_BINDIR}")
 if(_CUDA_ACTIVE)
     find_package(CUDAToolkit REQUIRED)
 
-    add_executable(KlustaKwikExp ${_cpu_srcs} KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu shiftprobe_cuda.cu ${_headers})
+    # shiftprobe_cuda.cu is no longer compiled — see shiftprobe_disabled.cpp
+    # for the rationale.
+    add_executable(KlustaKwikExp ${_cpu_srcs} KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
     target_include_directories(KlustaKwikExp PRIVATE "${_xcorr_dir}")
     target_compile_options(KlustaKwikExp PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
@@ -307,25 +310,8 @@ if(_HIP_ACTIVE)
         $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
         /opt/rocm/include)
 
-    # shift-probe HIP kernel — same pattern as the xcorr and core kernels.
-    # Separated because shiftprobe_hip.cpp contains __global__ kernels that
-    # must be compiled by hipcc, while the rest of the CPU TU can use the
-    # system C++ compiler.
-    add_library(shiftprobe_hip_kernels_exp OBJECT shiftprobe_hip.cpp)
-    set_property(TARGET shiftprobe_hip_kernels_exp PROPERTY CXX_COMPILER "${_HIPCC}")
-    set_target_properties(shiftprobe_hip_kernels_exp PROPERTIES CXX_COMPILER_LAUNCHER "")
-    target_compile_options(shiftprobe_hip_kernels_exp PRIVATE
-        -O3 -march=native
-        --offload-arch=${_hip_archs_comma}
-        -fgpu-rdc
-        -Wall -Wextra)
-    target_compile_definitions(shiftprobe_hip_kernels_exp PRIVATE
-        USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_include_directories(shiftprobe_hip_kernels_exp PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${_xcorr_dir}"
-        $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
-        /opt/rocm/include)
+    # shiftprobe_hip.cpp is no longer compiled — see shiftprobe_disabled.cpp
+    # for the rationale.
 
     add_executable(KlustaKwikExp ${_cpu_srcs} ${_headers})
     target_compile_definitions(KlustaKwikExp PRIVATE
@@ -337,7 +323,6 @@ if(_HIP_ACTIVE)
         _kk_exp_cxx_flags
         kk_exp_hip_kernels
         xcorr_hip_kernels_exp
-        shiftprobe_hip_kernels_exp
         yaml-cpp)
     if(hip_FOUND)
         target_link_libraries(KlustaKwikExp PRIVATE hip::host)
@@ -401,9 +386,17 @@ if(_SYCL_ACTIVE)
     target_compile_definitions(yaml_obj_exp PRIVATE
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
+    # KlustaKwikYaml.cpp is intentionally NOT listed here — it is supplied
+    # via $<TARGET_OBJECTS:yaml_obj_exp> below.  Listing it in both places
+    # causes icpx to emit two object files (one with -fsycl, one without)
+    # that both define kkReadYamlSpikeParams, producing a multiple-definition
+    # link error on Intel Arc / oneAPI builds.
+    # shiftprobe_sycl.cpp is no longer compiled — see shiftprobe_disabled.cpp
+    # for the rationale.
     add_executable(KlustaKwikExp_sycl
-        KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp KlustaKwikYaml.cpp
-        shiftprobe_sycl.cpp
+        KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp
+        dipsplit.cpp
+        shiftprobe_disabled.cpp
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
         ${_xcorr_dir}/realign_xcorr_sycl.cpp

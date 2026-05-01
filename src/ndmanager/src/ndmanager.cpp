@@ -36,6 +36,7 @@
 #include <QDebug>
 #include <QSettings>
 #include <QPointer>
+#include <QTimer>
 
 // application specific includes
 #include "ndmanager.h"
@@ -916,10 +917,46 @@ void ndManager::slotQuit()
 
 void ndManager::readSettings()
 {
+    // Escape hatch for a pathological saved state — e.g. window geometry
+    // captured on a different monitor, or a corrupted QSettings entry.
+    // Set NDM_RESET_GEOMETRY=1 to skip restoration entirely; the
+    // constructor's resize(800, 600) then governs the initial size.
+    if (qEnvironmentVariableIntValue("NDM_RESET_GEOMETRY") != 0)
+        return;
+
     QSettings settings;
     settings.beginGroup("geometry");
-    restoreGeometry(settings.value("geometry").toByteArray());
-    restoreState(settings.value("windowState").toByteArray());
+    const QByteArray geo   = settings.value("geometry").toByteArray();
+    const QByteArray state = settings.value("windowState").toByteArray();
     settings.endGroup();
+
+    // Defer the restore until after show() has run and the Wayland
+    // compositor's initial xdg_surface configure event has been processed.
+    //
+    // Calling restoreGeometry() / restoreState() synchronously from the
+    // constructor (i.e. before main() reaches manager->show()) is safe on
+    // X11 but races on Wayland: when the saved state is "maximized", the
+    // compositor sends a configure event sized to the current monitor
+    // (e.g. 1920x1152), but Qt has already queued the saved interior
+    // window dimensions (e.g. 1254x633).  The next commit then fails
+    // xdg_surface's "buffer must match configured maximized state" check
+    // and the compositor tears the connection down with:
+    //
+    //     xdg_wm_base@N: error 4: xdg_surface buffer (1254 x 633) does not
+    //     match the configured maximized state (1920 x 1152)
+    //
+    // Posting through QTimer::singleShot(0, ...) sidesteps this entirely:
+    // the lambda runs after the event loop has spun once, by which point
+    // show() has established the surface and Qt has consumed the initial
+    // configure.  restoreGeometry() then has a known-good baseline to
+    // mutate, and the maximized state is honoured cleanly.
+    //
+    // X11 / XWayland users can also work around the issue by exporting
+    // QT_QPA_PLATFORM=xcb at the shell level — but the deferred restore
+    // is correct on native Wayland too, so we apply it unconditionally.
+    QTimer::singleShot(0, this, [this, geo, state]() {
+        if (!geo.isEmpty())   restoreGeometry(geo);
+        if (!state.isEmpty()) restoreState(state);
+    });
 }
 
