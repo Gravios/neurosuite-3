@@ -226,6 +226,7 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
 
     //Get the data.
     tracesProvider.requestData(startTime,endTime,this,startTimeInRecordingUnits);
+    requestOverlayData();
 }
 
 
@@ -327,6 +328,135 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator)
         }
     }
 
+}
+
+// =============================================================================
+//  Overlay traces — registration & data flow
+// =============================================================================
+//
+// Overlays are TracesProvider instances loaded by NeuroscopeDoc on top
+// of the base recording.  Each provider streams from its own file but
+// shares the base recording's nbChannels / resolution / sampling rate
+// so the same time window argument can be served by both without
+// resampling.
+//
+// Lifecycle
+// ---------
+//   addOverlayProvider:  connects to the provider's dataReady signal
+//                        and issues an initial requestData() for the
+//                        currently displayed window so the user sees
+//                        the overlay immediately, not after the next
+//                        scroll/zoom event.
+//
+//   removeOverlayProvider: disconnects the signal, drops the cached
+//                        Array<dataType>, removes the entry from the
+//                        list.  Called BEFORE the doc deletes the
+//                        provider.
+//
+//   overlayDataAvailable: per-overlay slot; updates the cached array
+//                        and triggers a repaint.  Filtered by initiator
+//                        because providers are shared across views and
+//                        every view's request triggers an emission.
+//
+//   request loop: requestData() in scroll / zoom / pageBack / pageNext
+//                        / etc. is mirrored by an overlay request inside
+//                        each existing dataAvailable slot's
+//                        post-update sweep — handled in the existing
+//                        request sites (see scrollLeft/Right etc).
+//                        Only the initial overlay add and the
+//                        re-painting on receipt are needed here; ALL
+//                        scroll / zoom paths already call requestData
+//                        for the base, and the overlay piggybacks on
+//                        the initial-render path via update().
+
+void TraceView::addOverlayProvider(TracesProvider *prov, const QString &label, const QColor &color)
+{
+    if (!prov) return;
+
+    // Reject duplicates (a doc::addOverlayDat call would already filter
+    // by canonical path, but cheap to defend against here too).
+    for (const Overlay &o : overlays)
+        if (o.provider == prov) return;
+
+    Overlay o;
+    o.provider = prov;
+    o.label    = label;
+    o.color    = color;
+    overlays.append(o);
+
+    // Direct connection — same rationale as the base tracesProvider
+    // connect (Array<dataType>& reference can't safely cross a queued
+    // boundary; see comment above the base connect in the ctor).
+    connect(prov, &TracesProvider::dataReady,
+            this, &TraceView::overlayDataAvailable,
+            Qt::DirectConnection);
+
+    // Kick off an initial request so the overlay shows up without
+    // requiring a scroll / zoom.  The provider runs synchronously, so
+    // overlayDataAvailable will be entered before this method returns;
+    // the slot will store the data and update().
+    prov->requestData(startTime, endTime, this, startTimeInRecordingUnits);
+}
+
+void TraceView::removeOverlayProvider(TracesProvider *prov)
+{
+    for (int i = 0; i < overlays.size(); ++i) {
+        if (overlays[i].provider != prov) continue;
+        // Drop the connection BEFORE the doc destroys the provider —
+        // any in-flight emission from this provider after disconnect
+        // would otherwise hit our slot pointing at a half-deleted
+        // overlay entry.
+        disconnect(prov, &TracesProvider::dataReady,
+                   this, &TraceView::overlayDataAvailable);
+        overlays.removeAt(i);
+        update();
+        return;
+    }
+}
+
+void TraceView::overlayDataAvailable(Array<dataType>& data, QObject* initiator)
+{
+    // Providers are shared across multiple TraceViews (one per
+    // NeuroscopeView).  Only consume the emission whose request we
+    // initiated.
+    if (initiator != this) return;
+
+    // Find the overlay entry for the emitting provider.  sender()
+    // identifies it; QObject::sender() works inside any Qt-connected
+    // slot.
+    TracesProvider *src = qobject_cast<TracesProvider*>(sender());
+    if (!src) return;
+
+    for (Overlay &o : overlays) {
+        if (o.provider != src) continue;
+
+        if (data.nbOfRows() == 0) {
+            // The overlay is shorter than the base trace's currently
+            // displayed window — paint nothing for it this frame
+            // rather than throwing up a dialog (this is a normal
+            // condition for overlays of trimmed sub-ranges, not an
+            // I/O error).
+            o.ready = false;
+            o.data  = Array<dataType>();
+        } else {
+            o.data  = data;
+            o.ready = true;
+        }
+        update();
+        return;
+    }
+}
+
+void TraceView::requestOverlayData()
+{
+    for (Overlay &o : overlays) {
+        if (!o.provider) continue;
+        // Mark stale before requesting so a re-paint that arrives
+        // mid-flight (unlikely with the current sync providers, but
+        // future-proof) can't show last frame's data.
+        o.ready = false;
+        o.provider->requestData(startTime, endTime, this, startTimeInRecordingUnits);
+    }
 }
 
 void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator,const QString &providerName){
@@ -500,6 +630,7 @@ void TraceView::displayTimeFrame(long start,long timeFrameWidth){
     }
 
     tracesProvider.requestData(startTime,endTime,this,startTimeInRecordingUnits);
+    requestOverlayData();
 }
 
 void TraceView::setAutocenterChannels(bool status){
@@ -859,6 +990,7 @@ void TraceView::showChannels(const QList<int>& channelsToShow){
     //Request the data
     dataReady = false;
     tracesProvider.requestData(startTime,endTime,this,startTimeInRecordingUnits);
+    requestOverlayData();
 }
 
 void TraceView::updateShownGroupsChannels(const QList<int>& channelsToShow){
@@ -1357,6 +1489,117 @@ void TraceView::drawTrace(QPainter& painter,int limit,int basePosition,int X,int
 
 }
 
+// =============================================================================
+//  drawOverlayChannel — paint one overlay's data for one channel
+// =============================================================================
+//
+// Mirrors the structure of the base trace drawing: when the view is
+// downsampled (downSampling > 1) it uses the same min/max-per-bucket
+// strategy as drawTrace() so the overlay's envelope matches the base's
+// pixel-aligned envelope; when downSampling==1 it paints one polyline
+// vertex per sample, matching the high-resolution polyline branch in
+// drawTraces.
+//
+// The pen colour and width MUST be set by the caller before calling
+// this method — drawOverlayChannel does not own pen state.  We don't
+// follow the base trace's "thicker line for selected channels" rule:
+// overlays are visual aids, not selectable channels, so they keep a
+// constant line width.
+//
+// Numerical caveats
+// -----------------
+// - overlayData is allowed to have fewer samples than the base
+//   `nbSamples` (overlay file shorter than base, partial last frame).
+//   We bound the loop by overlayData's actual nbOfRows() so we don't
+//   read past the end.  An overlay with zero samples is filtered out
+//   in dataAvailable (ready=false) and never reaches this method, but
+//   we still defend against it for safety.
+// - channelFactors[channelId] is the same Y-scaling as the base, so
+//   the overlay sits in the same coordinate frame as the base trace
+//   for direct visual comparison.
+// =============================================================================
+void TraceView::drawOverlayChannel(QPainter &painter,
+                                   const Array<dataType> &overlayData,
+                                   int basePosition,
+                                   int Xstart,
+                                   int channelId,
+                                   int nbSamples,
+                                   int nbSamplesToDraw,
+                                   bool downSampled)
+{
+    const int availSamples = overlayData.nbOfRows();
+    if (availSamples <= 0) return;
+
+    // Cap any access into the overlay array at its actual size so a
+    // shorter-than-base overlay does not produce out-of-range reads.
+    const int safeN     = std::min(nbSamples,        availSamples);
+    if (safeN <= 0) return;
+
+    if (downSampled) {
+        // ---- Downsampled: min/max envelope per pixel column. ----
+        // Re-uses the same bucket boundaries as drawTrace() so the
+        // overlay envelope aligns 1:1 with the base envelope.
+        const int limit = 1;   // same as base path's `limit` for tiny ranges
+        int X = Xstart;
+        int start = 1;
+        int stop  = static_cast<int>(floor(downSampling + 0.5));
+        if (stop > safeN) stop = safeN;
+        long mn = overlayData(1, channelId + 1);
+        long mx = mn;
+        for (int k = start + 1; k <= stop; ++k) {
+            const long v = overlayData(k, channelId + 1);
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+        }
+        int yMin = basePosition - static_cast<long>(mn * channelFactors.at(channelId));
+        int yMax = basePosition - static_cast<long>(mx * channelFactors.at(channelId));
+        if ((yMax - yMin) <= limit) painter.drawPoint(X, yMin);
+        else                        painter.drawLine(X, yMin, X, yMax);
+        X += Xstep;
+        long previousMin = mn;
+        long previousMax = mx;
+
+        for (int i = 2; i <= nbSamplesToDraw; ++i) {
+            start = static_cast<int>(floor((i-1) * downSampling + 0.5 + 1));
+            stop  = qMin(static_cast<int>(floor(i * downSampling + 0.5)), safeN);
+            if (start > safeN) break;
+
+            mn = overlayData(start, channelId + 1);
+            mx = mn;
+            for (int k = start + 1; k <= stop; ++k) {
+                const long v = overlayData(k, channelId + 1);
+                if (v < mn) mn = v;
+                if (v > mx) mx = v;
+            }
+            // Same min/max smoothing the base draw uses to bridge
+            // adjacent buckets (without it the envelope can have
+            // 1-pixel gaps).
+            if (mn > previousMax) mn = previousMax;
+            if (mx < previousMin) mx = previousMin;
+            previousMax = mx;
+            previousMin = mn;
+
+            yMax = basePosition - static_cast<long>(mn * channelFactors.at(channelId));
+            yMin = basePosition - static_cast<long>(mx * channelFactors.at(channelId));
+            if ((yMax - yMin) <= limit) painter.drawPoint(X, yMin);
+            else                        painter.drawLine(X, yMin, X, yMax);
+            X += Xstep;
+        }
+    } else {
+        // ---- One sample per pixel: polyline through every point. ----
+        QPolygon trace(safeN);
+        int X = Xstart;
+        for (int i = 0; i < safeN; ++i) {
+            const int y = basePosition
+                - static_cast<long>(overlayData(i + 1, channelId + 1)
+                                    * channelFactors[channelId]);
+            trace.setPoint(i, X, y);
+            X += Xstep;
+        }
+        painter.drawPolyline(trace);
+    }
+}
+
 void TraceView::drawTraces( const QList<int>& channels,bool highlight)
 {
 
@@ -1785,6 +2028,38 @@ void TraceView::drawTraces(QPainter& painter){
                         }//loop on spikes
                     }//else waveform
                 }
+
+                // ── Overlay traces (multi-column branch) ──────────────
+                // For each registered overlay whose data are ready,
+                // paint its polyline for this channel at the same
+                // basePosition / Xstart used by the base trace above,
+                // using the overlay's distinguishing colour.
+                //
+                // We snapshot painter pen state per overlay to avoid
+                // leaking pen changes into the next channel iteration
+                // (subsequent loop bodies expect the base pen still
+                // installed when they reach the cluster / waveform
+                // sub-paths).
+                if (!overlays.isEmpty() && !skippedChannels.contains(channelId)) {
+                    const QPen savedPen = painter.pen();
+                    for (const Overlay &ov : overlays) {
+                        if (!ov.ready || ov.data.nbOfRows() == 0) continue;
+                        QColor oc = ov.color;
+                        if (greyScaleMode) {
+                            const int g = qGray(oc.rgb());
+                            oc.setHsv(0, 0, g);
+                        }
+                        QPen op(oc, 1);
+                        op.setCosmetic(true);
+                        painter.setPen(op);
+                        drawOverlayChannel(painter, ov.data,
+                                           positions.at(j),
+                                           X + (downSampling != 1 ? 0 : 0), // base uses X+0 in 1:1 path; X for downsampled
+                                           channelId, nbSamples, nbSamplesToDraw,
+                                           /*downSampled=*/ downSampling != 1);
+                    }
+                    painter.setPen(savedPen);
+                }
             }
 
             //Loop on all the selected clusters (first on the cluster files containing selected clusters) if the raster is asked.
@@ -2069,6 +2344,31 @@ void TraceView::drawTraces(QPainter& painter){
                             }
                         }//loop on spikes
                     }//else waveform
+                }
+
+                // ── Overlay traces (single-column branch) ─────────────
+                // X has been mutated by the polyline build above; use
+                // X0 instead, which is the column origin and matches
+                // the X used by the base polyline's starting vertex.
+                if (!overlays.isEmpty()) {
+                    const QPen savedPen = painter.pen();
+                    for (const Overlay &ov : overlays) {
+                        if (!ov.ready || ov.data.nbOfRows() == 0) continue;
+                        QColor oc = ov.color;
+                        if (greyScaleMode) {
+                            const int g = qGray(oc.rgb());
+                            oc.setHsv(0, 0, g);
+                        }
+                        QPen op(oc, 1);
+                        op.setCosmetic(true);
+                        painter.setPen(op);
+                        drawOverlayChannel(painter, ov.data,
+                                           positions[j],
+                                           X0,
+                                           channelId, nbSamples, nbSamplesToDraw,
+                                           /*downSampled=*/ downSampling != 1);
+                    }
+                    painter.setPen(savedPen);
                 }
 
             }

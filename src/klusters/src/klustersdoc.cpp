@@ -4243,6 +4243,34 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         }
     }
 
+    // ── Refuse to nudge when the PCA basis failed to load ────────────────
+    // makeFetRow returns a fixed-size zero-filled row when pca.valid() is
+    // false (it cannot reproject without eigenvectors).  The disk write at
+    // line ~4767 was previously gated on `!fetRowWritten.empty()`, which
+    // ALWAYS passes — the row has the right size, just zero contents — so
+    // a missing or unreadable .pca[D].N file resulted in every spike's .fet
+    // row being silently overwritten with zeros.  The in-memory update is
+    // correctly guarded on pca.valid() (line ~4802), so on-disk and
+    // in-memory diverge: features go to zero on disk while the cluster
+    // looks normal in the GUI until the session is reopened.
+    //
+    // Loud failure is the right behaviour here.  Nudging without
+    // reprojection is not actually well-defined (you'd shift timestamps
+    // and waveforms but leave features pointing at the old position),
+    // so refuse rather than producing an inconsistent state.
+    if (!pca.valid()) {
+        QString msg = QString(
+            "[nudge] cluster %1: refusing to nudge — PCA basis (%2) "
+            "could not be loaded.  Run process_pca / process_pca_stderiv "
+            "to regenerate, or check file permissions.")
+            .arg(clusterId).arg(chosenPca);
+        qWarning().noquote() << msg;
+        if (auto* sb = app() ? app()->statusBar() : nullptr)
+            sb->showMessage(QString("Nudge refused: PCA basis (%1) "
+                                    "not available.").arg(chosenPca), 8000);
+        return false;
+    }
+
     // Feature-reprojection path: requires a valid .pcaD basis AND a .fetD
     // feature file.  The PCA basis is only meaningful if we know whether it
     // was computed in stderiv space — fetIsStderiv encodes exactly that.
@@ -4750,12 +4778,26 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             }
         }
 
-        // Write .res
-        if (fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
-                   SEEK_SET) != 0) {
-            ++resSeekFail;
-        } else if (fwrite(&ts64, sizeof(int64_t), 1, resW) != 1) {
-            ++shortResWrite;
+        // Write .res — but ONLY when the new waveform was successfully
+        // extracted from .fil.  When the new window crosses a recording
+        // boundary, extractWaveform returns false and .spk / .fet writes
+        // are skipped below, leaving stale waveform/feature content on
+        // disk.  If we still updated .res in that case, the spike's .res
+        // timestamp would no longer match the .spk window position — the
+        // .res/.spk invariant the entire pipeline depends on (.spk[i] peak
+        // ≡ .fil at .res[i]) breaks for the affected spikes.  Visible
+        // symptom: a small fraction of cluster spikes show waveforms
+        // shifted by deltaSamples relative to where their .res says.
+        // Boundary spikes therefore stay at their original timestamp —
+        // counted via boundarySkip and reported in the summary so the
+        // user can see how many spikes were left behind.
+        if (gotWav) {
+            if (fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+                       SEEK_SET) != 0) {
+                ++resSeekFail;
+            } else if (fwrite(&ts64, sizeof(int64_t), 1, resW) != 1) {
+                ++shortResWrite;
+            }
         }
 
         // Reproject and write .fet — only when waveform was successfully read.
@@ -4798,7 +4840,16 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                     }
                 }
 
-                // Update in-memory feature table (PCA dims only)
+                // Update in-memory feature table (PCA dims only).
+                // updateFeatureRow explicitly excludes the timestamp
+                // column (see Data::updateFeatureRow), so we have to
+                // call updateTimestamp separately — otherwise the
+                // in-memory `.fet` time column stays at oldTs while the
+                // on-disk one has been advanced to newTs.  Anything that
+                // reads the in-memory feature table (autocorrelogram,
+                // refractory-violation panel, error matrix) would
+                // continue to show the cluster at its pre-nudge
+                // timestamps until the session is closed and reopened.
                 if (pca.valid()) {
                     QList<dataType> vals;
                     vals.reserve(nFeatCols);
@@ -4806,6 +4857,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                         vals.append(static_cast<dataType>(
                             fetRowWritten[static_cast<size_t>(col)]));
                     clusteringData->updateFeatureRow(row, vals);
+                    clusteringData->updateTimestamp(row, newTs);
                 }
             }
         }
@@ -4982,6 +5034,23 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     }
 
     setModified(true);
+
+    // Surface boundary-skip count to the user.  After the bug-B fix,
+    // spikes whose new window crosses a recording boundary stay at their
+    // original timestamp rather than being silently desynchronised.  If
+    // any spikes were left behind, tell the user via the status bar so
+    // they know the cluster wasn't fully translated.
+    if (boundarySkip > 0) {
+        QString msg = QString(
+            "Nudge: cluster %1 — %2 of %3 spike(s) near recording boundary "
+            "kept at original timestamp (new window outside .fil range).")
+            .arg(clusterId)
+            .arg(static_cast<long long>(boundarySkip))
+            .arg(static_cast<long long>(N));
+        qInfo().noquote() << "[nudge]" << msg;
+        if (auto* sb = app() ? app()->statusBar() : nullptr)
+            sb->showMessage(msg, 8000);
+    }
 
     // Recompute per-dimension min/max so the scatter view world-window
     // axes are correct after feature values have been updated.

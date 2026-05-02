@@ -45,6 +45,14 @@ public:
     TracesProvider(const QString &fileUrl, int nbChannels, int resolution, double samplingRate, int offset);
     ~TracesProvider();
 
+    /**Optional human-readable label distinguishing this provider in the
+     * UI (used for overlay traces — the base recording leaves it blank
+     * and is identified by its file URL alone).  Empty string means
+     * "this is the primary/base trace provider".
+     */
+    void           setDisplayName(const QString &name) { displayName = name; }
+    QString        getDisplayName() const              { return displayName; }
+
     /// Added by M.Zugaro to enable automatic forward paging
     void updateRecordingLength() { computeRecordingLength(); }
 
@@ -137,6 +145,11 @@ private:
 
     /**the total length of the document in miliseconds.*/
     qlonglong length;
+
+    /**Optional human-readable label distinguishing this provider in the
+     * UI (used for overlay traces).  Empty for the base recording.
+     */
+    QString displayName;
 
     //Functions
 

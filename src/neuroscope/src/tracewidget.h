@@ -367,6 +367,19 @@ public Q_SLOTS:
         view.removeEventProvider(name,active);
     }
 
+    /**Adds an overlay TracesProvider whose data are painted on top of the
+     * base trace using @p color.  Pure forwarder to TraceView; the
+     * provider is owned by NeuroscopeDoc.
+     */
+    void addOverlayProvider(TracesProvider *prov, QString label, QColor color){
+        view.addOverlayProvider(prov, label, color);
+    }
+
+    /**Removes an overlay TracesProvider previously added.*/
+    void removeOverlayProvider(TracesProvider *prov){
+        view.removeOverlayProvider(prov);
+    }
+
     /**Prints the current information drawn in the traceView.
   * @param printPainter painter on a printer.
   * @param metrics object providing information about the printer.

@@ -102,6 +102,22 @@ public:
     qlonglong recordingLength() const { return length; }
     void updateRecordingLength() { tracesProvider.updateRecordingLength();length = tracesProvider.recordingLength(); }
 
+    // ─────────────────────────────────────────────────────────────────
+    //  Overlay traces
+    //
+    //  Each overlay is a TracesProvider streaming from a separate file
+    //  that shares the base recording's nbChannels / resolution /
+    //  sampling rate.  drawTraces() paints the overlay's data on top of
+    //  each base channel using @p color.
+    //
+    //  The provider object is owned by NeuroscopeDoc; this class keeps
+    //  a non-owning pointer.  removeOverlayProvider() must be called
+    //  before the provider is destroyed (NeuroscopeDoc::removeOverlay
+    //  guarantees this ordering).
+    // ─────────────────────────────────────────────────────────────────
+    void addOverlayProvider(TracesProvider *prov, const QString &label, const QColor &color);
+    void removeOverlayProvider(TracesProvider *prov);
+
     /**Enum to be use as a Mode.
   * <ul>
   * <li>SELECT Enumeration indicating that the user is in a mode enabling him to select traces.</li>
@@ -420,6 +436,16 @@ public Q_SLOTS:
   */
     void dataAvailable(Array<dataType>& data,QObject* initiator);
 
+    /**Displays the data of an overlay provider — same shape as the base
+     * trace but painted in a contrasting colour on top.
+     * @param data array of data (number of channels X number of samples)
+     *             from an overlay TracesProvider.
+     * @param initiator the requesting view (this) — overlay
+     *                  TracesProvider is shared across views, so we
+     *                  must filter by initiator.
+     */
+    void overlayDataAvailable(Array<dataType>& data, QObject* initiator);
+
     /**Displays the cluster information that has been retrieved.
   * @param data 2 line array containing the sample index of the peak index of each spike existing in the requested time frame with the
   * corresponding cluster id. The first line contains the sample index and the second line the cluster id.
@@ -557,6 +583,43 @@ private:
     /** True iff both allClustersReady() and allEventsReady() are true. */
     bool allProvidersReady() const;
 
+    /** Re-issue requestData() to every registered overlay provider for
+     *  the currently displayed time window.  Called at every base-trace
+     *  requestData site so overlays scroll/zoom in lockstep with the
+     *  base.  Sets ready=false up-front so a stale paint frame can't
+     *  show data from the previous time window if a re-paint happens
+     *  before the (synchronous) provider call returns.
+     */
+    void requestOverlayData();
+
+    /** Paint one overlay's polyline for one channel at the given base
+     *  position.  Called from drawTraces() once per (channel × overlay)
+     *  pair, after the base trace has been laid down.  Caller is
+     *  responsible for setting up @p painter's pen with the overlay's
+     *  colour before invoking.
+     *
+     *  @p overlayData     full overlay array for this view; same shape
+     *                     as the base `data` (channels × samples).
+     *  @p basePosition    y-coordinate of the channel's zero line.
+     *  @p Xstart          x-coordinate of the first sample.
+     *  @p channelId       0-based channel index, indexed +1 into the
+     *                     Array<dataType>.
+     *  @p nbSamples       number of samples in the time window.
+     *  @p nbSamplesToDraw number of pixel columns to draw (= nbSamples
+     *                     when downSampling==1, smaller otherwise).
+     *  @p downSampled     true when the view is downsampled (use
+     *                     min/max-per-bucket like base drawTrace);
+     *                     false when one sample per pixel.
+     */
+    void drawOverlayChannel(QPainter &painter,
+                            const Array<dataType> &overlayData,
+                            int basePosition,
+                            int Xstart,
+                            int channelId,
+                            int nbSamples,
+                            int nbSamplesToDraw,
+                            bool downSampled);
+
     /**True if the the colors are in grey-scale*/
     bool greyScaleMode;
 
@@ -565,6 +628,20 @@ private:
 
     /**Provider of the channels data.*/
     TracesProvider& tracesProvider;
+
+    /// Per-overlay runtime state — provider pointer is non-owning
+    /// (NeuroscopeDoc holds ownership), label & colour are mirrored
+    /// from the doc's OverlayTrace, data is the latest payload from
+    /// the provider's dataReady signal, ready is set when the data
+    /// for the currently displayed time window has arrived.
+    struct Overlay {
+        TracesProvider *provider = nullptr;
+        QString         label;
+        QColor          color;
+        Array<dataType> data;
+        bool            ready = false;
+    };
+    QList<Overlay> overlays;
 
     /**True if the traces are displayed on multiple columns, false otherwise.*/
     bool multiColumns;

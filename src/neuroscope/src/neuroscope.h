@@ -321,6 +321,12 @@ private Q_SLOTS:
 
     /**Closes the position file.*/
     void slotClosePositionFile();
+
+    /**Loads an additional dat / lfp / eeg file to overlay on top of the
+     * base recording.  The file must share the base's nbChannels,
+     * resolution and sampling rate.
+     */
+    void slotLoadOverlayFile();
     
     /**Opens a file from the recent files menu. */
     void slotFileOpenRecent(const QString& url);
@@ -701,6 +707,10 @@ private:
     QAction* mLoadClusterFiles;
     QAction* mLoadEventFiles;
     QAction* mLoadPositionFile;
+    /**Loads an additional dat / lfp / eeg file as an overlay (see
+     * NeuroscopeDoc::addOverlayDat).
+     */
+    QAction* mLoadOverlayFile;
     QAction* mCreateEventFile;
     QAction* mCloseCluster;
     QAction* mCloseEvent;
