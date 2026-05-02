@@ -32,6 +32,7 @@
 #include "clustersprovider.h"
 #include "eventsprovider.h"
 #include "itemcolors.h"
+#include "tracesprovider.h"
 
 
 class EventData;
@@ -120,6 +121,10 @@ NeuroscopeView::NeuroscopeView(NeuroscopeApp& mainWindow, const QString &label, 
     connect(this,&NeuroscopeView::newEventProvider,traceWidget,
             &TraceWidget::addEventProvider);
     connect(this,&NeuroscopeView::eventProviderRemoved,traceWidget,&TraceWidget::removeEventProvider);
+    connect(this,&NeuroscopeView::overlayProviderAdded,
+            traceWidget, &TraceWidget::addOverlayProvider);
+    connect(this,&NeuroscopeView::overlayProviderRemoved,
+            traceWidget, &TraceWidget::removeOverlayProvider);
     connect(this,&NeuroscopeView::showEvents,traceWidget,&TraceWidget::showEvents);
     connect(this,&NeuroscopeView::eventColorUpdated,traceWidget,&TraceWidget::eventColorUpdate);
     connect(this,&NeuroscopeView::nextEvent,traceWidget,&TraceWidget::showNextEvent);
@@ -309,6 +314,19 @@ void NeuroscopeView::removeEventProvider(const QString &name, bool active, bool 
 
     //Warn the TraceWidget(s) and positionView
     emit eventProviderRemoved(name,active,lastFile);
+}
+
+void NeuroscopeView::addOverlayProvider(TracesProvider *prov, const QString &label, const QColor &color)
+{
+    // Pure pass-through: NeuroscopeDoc owns the provider, the view
+    // doesn't keep its own copy of the metadata.  TraceWidget connects
+    // this signal to TraceView::addOverlayProvider in its constructor.
+    emit overlayProviderAdded(prov, label, color);
+}
+
+void NeuroscopeView::removeOverlayProvider(TracesProvider *prov)
+{
+    emit overlayProviderRemoved(prov);
 }
 
 void NeuroscopeView::shownEventsUpdate(const QString& name,const QList<int>& eventsToShow){

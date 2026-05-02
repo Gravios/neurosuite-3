@@ -157,6 +157,14 @@ void NeuroscopeApp::initActions()
     mLoadPositionFile = fileMenu->addAction(tr("Load Posi&tion File..."));
     connect(mLoadPositionFile, &QAction::triggered, this, &NeuroscopeApp::slotLoadPositionFile);
 
+    // Overlay trace file (dat / lfp / eeg with same channel layout as
+    // the base recording — painted on top using a contrasting colour)
+    mLoadOverlayFile = fileMenu->addAction(tr("Load &Overlay Trace File..."));
+    mLoadOverlayFile->setToolTip(tr(
+        "Add a dat/lfp/eeg file with the same channel layout as the base "
+        "recording, drawn on top of each channel in a contrasting colour."));
+    connect(mLoadOverlayFile, &QAction::triggered, this, &NeuroscopeApp::slotLoadOverlayFile);
+
     fileMenu->addSeparator();
 
 
@@ -1312,6 +1320,55 @@ void NeuroscopeApp::slotLoadPositionFile(){
 
     slotStatusMsg(tr("Ready."));
 
+}
+
+void NeuroscopeApp::slotLoadOverlayFile()
+{
+    if (!doc) {
+        QMessageBox::information(this, tr("Load Overlay"),
+            tr("Open a recording first, then load overlays."));
+        return;
+    }
+
+    slotStatusMsg(tr("Loading overlay trace file..."));
+
+    QSettings settings;
+    // Filters mirror the file types the base loader accepts.  We accept
+    // arbitrary extensions in the "All Files" filter because users
+    // routinely overlay engineered files like
+    // <basename>-emgclean.dat or <basename>.lfp.cleaned that don't fit
+    // a canonical pattern.
+    const QString filters =
+        tr("Trace files (*.dat *.eeg *.lfp);;All files (*)");
+
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Open Overlay Trace File..."),
+        settings.value("CurrentDirectory").toString(),
+        filters);
+
+    if (path.isEmpty()) {
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    QDir cur;
+    settings.setValue("CurrentDirectory", cur.absoluteFilePath(path));
+
+    QString error;
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const bool ok = doc->addOverlayDat(path, &error);
+    QApplication::restoreOverrideCursor();
+
+    if (!ok) {
+        QMessageBox::critical(this, tr("Cannot Load Overlay"),
+            error.isEmpty()
+                ? tr("Failed to load overlay file.")
+                : error);
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    slotStatusMsg(tr("Overlay loaded."));
 }
 
 void NeuroscopeApp::slotCreateEventFile(){

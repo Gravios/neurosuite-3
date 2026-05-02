@@ -445,6 +445,17 @@ public:
   */
     void removeEventProvider(const QString& name,bool active,bool lastFile);
 
+    // ─────────────────────────────────────────────────────────────────
+    //  Overlay traces — propagated from NeuroscopeDoc through to the
+    //  TraceView via TraceWidget.  Each overlay is a TracesProvider
+    //  whose data are painted on top of the base trace using @p color.
+    //  Ownership of the provider stays with NeuroscopeDoc; the view
+    //  holds non-owning pointers and must disconnect / drop them in
+    //  removeOverlayProvider() before the doc deletes them.
+    // ─────────────────────────────────────────────────────────────────
+    void addOverlayProvider(TracesProvider *prov, const QString &label, const QColor &color);
+    void removeOverlayProvider(TracesProvider *prov);
+
     /**Changes the color of a event.
   * @param name name use to identified the event provider containing the updated event.
   * @param eventId id of the event to redraw.
@@ -748,6 +759,12 @@ Q_SIGNALS:
     void newEventProvider(EventsProvider* eventsProvider,QString name,ItemColors* eventColors,bool active,
                           QList<int>& eventsToShow,const QList<int>& eventsToSkip);
     void eventProviderRemoved(const QString &name,bool active,bool lastFile);
+
+    // Overlay-trace propagation to TraceWidget(s).  Carried by raw
+    // pointer because NeuroscopeDoc owns the TracesProvider and its
+    // lifetime spans every TraceView that registered for it.
+    void overlayProviderAdded(TracesProvider *prov, QString label, QColor color);
+    void overlayProviderRemoved(TracesProvider *prov);
     void showEvents(const QString &name,QList<int>& eventsToShow);
     void eventColorUpdated(const QColor &color,const QString &name,int eventId,bool active);
     void nextEvent();

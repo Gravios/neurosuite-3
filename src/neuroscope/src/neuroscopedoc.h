@@ -23,7 +23,7 @@
 #include <QObject>
 #include <QString>
 #include <QPair>
-
+#include <QColor>
 #include <QList>
 
 #include <QEvent>
@@ -378,6 +378,57 @@ public:
    * @return TracesProvider object.
    */
     TracesProvider& tracesDataProvider() const {return *tracesProvider;}
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Overlay traces
+    //
+    //  The user may load additional .dat / .lfp / .eeg files that share
+    //  the channel layout of the base recording.  Each overlay is a
+    //  TracesProvider streaming from its own file; the trace view paints
+    //  it on top of the base trace using a per-overlay distinguishing
+    //  colour.  All overlays must agree with the base on:
+    //    - number of channels (nbChannels),
+    //    - resolution (12, 14, 16, or 32 bits),
+    //    - sampling rate.
+    //
+    //  These constraints make the overlay sample-aligned with the base
+    //  so the same time window argument can be served by both providers
+    //  without resampling.  A length mismatch is allowed (overlay
+    //  shorter or longer than the base); the view requests data within
+    //  whichever interval is currently displayed and gets back an empty
+    //  buffer beyond the overlay's own length.
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Per-overlay state held by the document.  The provider is owned
+    /// by the doc; views hold non-owning pointers into the same list.
+    struct OverlayTrace {
+        TracesProvider *provider = nullptr;
+        QString         path;          // canonical filesystem path
+        QString         label;         // basename used for the menu / palette
+        QColor          color;         // palette colour cycled per overlay
+        bool            visible = true;
+    };
+
+    /**Loads an additional dat / lfp / eeg file as an overlay.  The file
+     * must share the base recording's nbChannels, resolution and
+     * sampling rate.  On success, a new OverlayTrace is appended to the
+     * overlay list and every existing view is informed via
+     * addOverlayProvider().
+     *
+     * @param  path     filesystem path to the overlay file
+     * @param  errorOut on failure, populated with a human-readable
+     *                  diagnostic suitable for QMessageBox::critical()
+     * @return true on success, false on validation error or I/O failure
+     */
+    bool addOverlayDat(const QString &path, QString *errorOut = nullptr);
+
+    /**Removes an overlay by canonical path and notifies all views.*/
+    void removeOverlay(const QString &path);
+
+    /**Read-only access to the current overlay list (views iterate this
+     * when (re)constructing themselves; see setProviders).
+     */
+    const QList<OverlayTrace>& overlayTraces() const { return mOverlayTraces; }
 
     /**Returns a reference on the Map given the correspondance between the channel ids and the display group ids.
    */
@@ -973,6 +1024,12 @@ private:
     
     /**Provider of the channels data.*/
     TracesProvider* tracesProvider;
+
+    /**Overlay TracesProviders loaded after the base recording (see
+     * addOverlayDat / removeOverlay).  Owned: providers are deleted in
+     * ~NeuroscopeDoc and on closeDocument.
+     */
+    QList<OverlayTrace> mOverlayTraces;
 
     /**Pointer on the parent widget (main window).*/
     QWidget* parent;

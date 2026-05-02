@@ -129,6 +129,11 @@ NeuroscopeDoc::~NeuroscopeDoc(){
         delete channelColorList;
         delete tracesProvider;
     }
+    // Overlay TracesProviders are document-owned (see addOverlayDat).
+    // Free them before clearing the list so any signals they emit on
+    // teardown are seen by their connected slots, not deleted views.
+    for(const OverlayTrace &ov : mOverlayTraces) delete ov.provider;
+    mOverlayTraces.clear();
     qDeleteAll(providers);
     providers.clear();
     qDeleteAll(providerItemColors);
@@ -240,6 +245,10 @@ void NeuroscopeDoc::closeDocument()
         delete tracesProvider;
         tracesProvider = 0L;
     }
+
+    // Drop overlays so a subsequent openDocument starts clean.
+    for(const OverlayTrace &ov : mOverlayTraces) delete ov.provider;
+    mOverlayTraces.clear();
 
     channelDefaultOffsets.clear();
 }
@@ -1027,6 +1036,13 @@ void NeuroscopeDoc::setProviders(NeuroscopeView* activeView){
             }
         }
     }
+
+    // Replay any overlay traces into the new view so it sees the same
+    // overlays as every other view in the doc.  Overlays were not
+    // registered into the `providers` hash above (they are tracked
+    // separately in mOverlayTraces), so they need an explicit pass.
+    for (const OverlayTrace &ov : mOverlayTraces)
+        newView->addOverlayProvider(ov.provider, ov.label, ov.color);
 }
 
 void NeuroscopeDoc::setWaveformInformation(int nb,int index,NeuroscopeView* activeView){
@@ -2682,6 +2698,149 @@ void NeuroscopeDoc::loadSession(SessionReader reader){
 
             }
         }
+    }
+}
+
+// =============================================================================
+//  Overlay traces
+// =============================================================================
+
+bool NeuroscopeDoc::addOverlayDat(const QString &path, QString *errorOut)
+{
+    auto fail = [errorOut](const QString &msg) -> bool {
+        if (errorOut) *errorOut = msg;
+        return false;
+    };
+
+    if (!tracesProvider)
+        return fail(NeuroscopeDoc::tr("No base recording is open."));
+
+    // ----- Canonicalise the path so duplicate-add check is reliable -----
+    QFileInfo info(path);
+    if (!info.exists() || !info.isReadable())
+        return fail(NeuroscopeDoc::tr("Cannot read file: %1").arg(path));
+    const QString canonical = info.canonicalFilePath();
+
+    // Reject loading the base recording back as an overlay of itself.
+    if (QFileInfo(docUrl).canonicalFilePath() == canonical)
+        return fail(NeuroscopeDoc::tr(
+            "The file you selected is the base recording — it is already displayed."));
+
+    // Reject duplicate overlay
+    for (const OverlayTrace &ov : mOverlayTraces)
+        if (ov.path == canonical)
+            return fail(NeuroscopeDoc::tr(
+                "This file is already loaded as an overlay."));
+
+    // ----- Validate file size against base recording's parameters --------
+    //
+    // Per-sample byte size: 2 for 12/14/16-bit, 4 for 32-bit.  The file
+    // must be a whole number of samples × channels.  We don't insist on
+    // matching length — the user may overlay a shorter -emgclean.dat
+    // generated from a subrange — but we DO require the geometry to be
+    // self-consistent.
+    int dataSize = 0;
+    if (resolution == 12 || resolution == 14 || resolution == 16) dataSize = 2;
+    else if (resolution == 32) dataSize = 4;
+    else
+        return fail(NeuroscopeDoc::tr(
+            "Base recording has unsupported resolution (%1 bit).").arg(resolution));
+
+    const qint64 fileSize = info.size();
+    if (fileSize <= 0)
+        return fail(NeuroscopeDoc::tr("Overlay file is empty."));
+
+    const qint64 bytesPerFrame = static_cast<qint64>(channelNb) * dataSize;
+    if (fileSize % bytesPerFrame != 0)
+        return fail(NeuroscopeDoc::tr(
+            "Overlay file size (%1 bytes) is not a multiple of the frame size "
+            "(%2 channels × %3 bytes = %4 bytes).  This file does not have the "
+            "same channel count as the base recording.")
+            .arg(fileSize).arg(channelNb).arg(dataSize).arg(bytesPerFrame));
+
+    // ----- Construct the provider ----------------------------------------
+    //
+    // Sampling rate of the overlay is the base recording's *current*
+    // samplingRate (datSamplingRate or eegSamplingRate depending on which
+    // is the base).  If the user wants to overlay an .lfp/.eeg over a
+    // .dat (or vice versa) the sampling rates would differ — we don't
+    // currently support that.  Document it with a clear error rather
+    // than silently misalign samples in time.
+    const QString baseExt = QFileInfo(docUrl).suffix().toLower();
+    const QString ovExt   = info.suffix().toLower();
+    auto isLfpExt = [](const QString &e){
+        return e == QLatin1String("eeg") || e == QLatin1String("lfp");
+    };
+    if (baseExt == QLatin1String("dat") && isLfpExt(ovExt))
+        return fail(NeuroscopeDoc::tr(
+            "Cannot overlay an .%1 file on a .dat — sampling rates differ. "
+            "Open the .%1 as the base recording and overlay the .dat instead.")
+            .arg(ovExt));
+    if (isLfpExt(baseExt) && ovExt == QLatin1String("dat"))
+        return fail(NeuroscopeDoc::tr(
+            "Cannot overlay a .dat file on an .%1 — sampling rates differ.")
+            .arg(baseExt));
+
+    TracesProvider *prov = new TracesProvider(canonical, channelNb,
+                                              resolution, samplingRate,
+                                              initialOffset);
+
+    OverlayTrace overlay;
+    overlay.provider = prov;
+    overlay.path     = canonical;
+    overlay.label    = info.fileName();
+    overlay.visible  = true;
+
+    // Cycle through a small palette of high-contrast hues so successive
+    // overlays are visually distinguishable from each other and from the
+    // base channel colours (which are typically blueish on black).  Hue
+    // is the primary axis; saturation/value are kept high so the overlay
+    // is salient even on dark backgrounds.
+    static const QColor kPalette[] = {
+        QColor( 255,  90,  90),   // red
+        QColor(  90, 255, 130),   // green
+        QColor( 255, 200,  60),   // amber
+        QColor( 200, 130, 255),   // violet
+        QColor(  90, 220, 255),   // cyan
+        QColor( 255, 130, 200),   // pink
+    };
+    constexpr int N = sizeof(kPalette) / sizeof(kPalette[0]);
+    overlay.color = kPalette[mOverlayTraces.size() % N];
+
+    prov->setDisplayName(overlay.label);
+
+    mOverlayTraces.append(overlay);
+
+    // ----- Notify every existing view ------------------------------------
+    if (viewList) {
+        for (NeuroscopeView *v : *viewList) {
+            if (v) v->addOverlayProvider(prov, overlay.label, overlay.color);
+        }
+    }
+
+    return true;
+}
+
+void NeuroscopeDoc::removeOverlay(const QString &path)
+{
+    QFileInfo info(path);
+    const QString canonical = info.canonicalFilePath().isEmpty()
+                              ? path : info.canonicalFilePath();
+
+    for (int i = 0; i < mOverlayTraces.size(); ++i) {
+        if (mOverlayTraces[i].path != canonical) continue;
+
+        // Tell views first so they disconnect from the provider before
+        // it goes away — otherwise an in-flight dataReady emission could
+        // hit a freed slot target.
+        if (viewList) {
+            for (NeuroscopeView *v : *viewList) {
+                if (v) v->removeOverlayProvider(mOverlayTraces[i].provider);
+            }
+        }
+        delete mOverlayTraces[i].provider;
+        mOverlayTraces.removeAt(i);
+        return;
     }
 }
 
