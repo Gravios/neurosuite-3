@@ -4943,10 +4943,6 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                     "[nudge-trace]  deltaFet[0..%1]: %2").arg(nShow-1).arg(dF);
             }
         }
-
-        // Always update the timestamp (in-memory + .res), even if waveform
-        // extraction failed — the timestamp itself is valid regardless.
-        clusteringData->updateTimestamp(row, newTs);
     }
 
     fclose(spkW); fclose(resW); fclose(fetW);
