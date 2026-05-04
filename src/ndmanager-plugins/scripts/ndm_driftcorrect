@@ -1,0 +1,145 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_driftcorrect — geometrically refeaturize spike waveforms to a
+#//                     reference probe position
+#//
+#//  For each spikeDetection group, reads the per-spike waveforms
+#//  (.spkD.N preferred, .spk.N fallback) plus the per-probe drift signal
+#//  (SESSION.dat.drift.P, written by ndm_estimatedrift), and produces
+#//  a corrected waveform file (.spkCD.N or .spkC.N) in which every spike's
+#//  recorded amplitude profile has been spatially reinterpolated as if
+#//  the probe were sitting at the reference position d(t)=0.
+#//
+#//  Output: SESSION.spkC.N  (or SESSION.spkCD.N for stderiv input)
+#//
+#//  This plugin reads NO .clu file.  The correction is purely geometric;
+#//  the cluster identity of each spike is irrelevant to refeaturization.
+#//  Spikes labelled as artifact (cluster 0) or MUA (cluster 1) are
+#//  refeaturized just like any other — re-clustering after correction
+#//  may surface units that were previously buried in the hash.
+#//
+#//  Workflow position:
+#//      ndm_extractspikes(_stderiv) → .spk(D)
+#//      ndm_pca(_stderiv)           → .fet(D)
+#//      ndm_klustakwik              → initial .clu (rough, drift not yet corrected)
+#//      ndm_estimatedrift           → .drift  +  .dat.drift.P
+#//   →  ndm_driftcorrect            → .spkC(D)
+#//      ndm_pca(_stderiv) [re-run]  → .fetC(D)
+#//      ndm_klustakwik [re-run]     → refined .clu
+#//      ndm_estimatedrift [re-run]  → sharper drift estimate
+#//      … iterate until drift signal converges …
+#//
+#//  copyright (C) 2025 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}; session=${session%.yaml}; session=${session%.yml}
+
+print_header "$session - Drift-correcting spike waveforms"
+
+check_commands_installed python3
+python3 -c "import yaml, numpy" 2>/dev/null || {
+    echo_error "Python packages missing: install pyyaml and numpy"
+    exit $GENERAL_ERROR; }
+
+# Resolve the YAML parameter file — required; no XML fallback
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No parameter file found for session '$session' (expected ${session}.yaml)"
+    exit $INPUTS_MISSING; }
+inputs_missing "$yamlfile" && exit $INPUTS_MISSING
+
+# Read parameters from the ndm_driftcorrect block (all optional)
+overwrite=$(read_script_parameter "$session" ndm_driftcorrect overwrite)
+overwrite=${overwrite:-false}
+
+passthroughThreshUm=$(read_script_parameter "$session" ndm_driftcorrect passthroughThreshUm)
+passthroughThreshUm=${passthroughThreshUm:-0.25}
+
+probeLibrary=$(read_script_parameter "$session" ndm_driftcorrect probeLibrary)
+
+batchSize=$(read_script_parameter "$session" ndm_driftcorrect batchSize)
+batchSize=${batchSize:-100000}
+
+# Acquisition parameters
+samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
+nChannels=$(yaml_read    "$session" "//acquisitionSystem/nChannels")
+nBits=$(yaml_read        "$session" "//acquisitionSystem/nBits")
+nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
+
+[ -z "$nSpikeGroups" ] || [ "$nSpikeGroups" -eq 0 ] && {
+    echo_error "No spikeDetection groups in $yamlfile"
+    exit $GENERAL_ERROR; }
+
+# At least one .spk or .spkD must exist
+spk_count=0
+for (( g=1; g<=nSpikeGroups; g++ )); do
+    { [ -f "$session.spk.$g" ] || [ -f "$session.spkD.$g" ]; } && (( spk_count++ ))
+done
+[ "$spk_count" -eq 0 ] && {
+    echo_error "No .spk or .spkD files found. Run ndm_extractspikes(_stderiv) first."
+    exit $INPUTS_MISSING; }
+
+# At least one .dat.drift.P must exist (any probe).  ndm_estimatedrift
+# writes one per probe with SESSION.dat present; without those binary
+# signals there is nothing to apply.
+drift_count=0
+for f in "$session".dat.drift.*; do
+    [ -f "$f" ] && (( drift_count++ ))
+done
+[ "$drift_count" -eq 0 ] && {
+    echo_error "No drift signal files found (expected $session.dat.drift.N)."
+    echo_error "Run ndm_estimatedrift first.  If the .drift YAML exists but"
+    echo_error "no .dat.drift.* files were written, check that $session.dat"
+    echo_error "is present alongside the spike files."
+    exit $INPUTS_MISSING; }
+echo_message "Found $spk_count/$nSpikeGroups spike groups, $drift_count drift signal file(s)"
+
+# Build comma-separated nSamples list, one per group (YAML nSamples field)
+nSamplesPerGroup=""
+for (( g=1; g<=nSpikeGroups; g++ )); do
+    ns=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
+    ns=${ns:-32}
+    if [ -z "$nSamplesPerGroup" ]; then
+        nSamplesPerGroup="$ns"
+    else
+        nSamplesPerGroup="${nSamplesPerGroup},${ns}"
+    fi
+done
+
+# Locate the Python helper alongside this script, or in PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_driftcorrect.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="process_driftcorrect.py"
+
+python3 "$PY_HELPER" \
+    --session                 "$session" \
+    --param-file              "$yamlfile" \
+    --sampling-rate           "$samplingRate" \
+    --n-channels              "$nChannels" \
+    --n-bits                  "$nBits" \
+    --n-groups                "$nSpikeGroups" \
+    --n-samples-per-group     "$nSamplesPerGroup" \
+    --passthrough-thresh-um   "$passthroughThreshUm" \
+    --batch-size              "$batchSize" \
+    --overwrite               "$overwrite" \
+    ${probeLibrary:+--probe-library "$probeLibrary"}
+
+status=$?
+[ $status -ne 0 ] && {
+    echo_error "process_driftcorrect.py failed (exit $status)"
+    exit $GENERAL_ERROR; }
+
+echo_message "Drift correction complete."
+echo_message "Re-run ndm_pca(_stderiv) on the .spkC(D) outputs to produce"
+echo_message ".fetC(D), then ndm_klustakwik for refined clustering."
+exit $NO_ERROR
