@@ -86,6 +86,11 @@
  *                       updated to new ts)
  *   <outBase>.clu.<g>   merged cluster ids (originals preserved; new
  *                       spikes get shadow / unmatched ids)
+ *   <outBase>.shadowmark.<g>
+ *                       text sidecar (key=value, one per line) recording
+ *                       unmatched_id / shadow_offset / n_unmatched / n_new.
+ *                       Consumed by ndm_subcluster_unmatched as the
+ *                       authoritative "shadowcluster ran here" marker.
  ***************************************************************************/
 
 #define _LARGEFILE_SOURCE
@@ -914,6 +919,43 @@ int main(int argc, char **argv)
     atomicRename(outCluTmp, outClu);
     atomicRename(outFetTmp, outFet);
     atomicRename(outSpkTmp, outSpk);
+
+    // ── write shadowmark sidecar ──────────────────────────────────────────
+    //
+    // <outBase>.shadowmark.<grp> is a tiny key=value text file written iff
+    // shadowcluster successfully merged this group.  ndm_subcluster_unmatched
+    // reads it to (a) detect which groups were actually shadow-merged and
+    // (b) recover the unmatched bin id authoritatively, instead of guessing
+    // via max(clu_ids) — which mis-fires on groups that never reached
+    // shadowcluster (e.g. when reextract Pass 1 accepted 0 new spikes) and
+    // ends up re-clustering the original noise/MUA cluster.
+    //
+    // Format (line-oriented, one key per line, single space separator):
+    //   unmatched_id   <int>    cluster id that holds the post-merge residual
+    //   shadow_offset  <int>    offset added to parent ids for shadow ids
+    //   n_unmatched    <int>    spikes that ended up in the unmatched bin
+    //   n_new          <int>    total new spikes processed (for sanity)
+    //
+    // Sidecar lives next to the four committed files and is committed by the
+    // wrapper script (ndm_reextractspikes / _stderiv) along with them.  Empty
+    // sidecar (n_new=0) is still written: callers should treat any present
+    // sidecar as "shadowcluster ran here", but skip subclustering when
+    // n_unmatched == 0.
+    {
+        const std::string outMark    = outBase + ".shadowmark." + std::to_string(grp);
+        const std::string outMarkTmp = outMark + ".tmp";
+        FILE *f = std::fopen(outMarkTmp.c_str(), "w");
+        if (!f) {
+            cerr << "error: cannot write " << outMarkTmp << endl;
+            return 1;
+        }
+        std::fprintf(f, "unmatched_id %d\n",   static_cast<int>(unmatchedShadow));
+        std::fprintf(f, "shadow_offset %d\n",  static_cast<int>(shadowOffset));
+        std::fprintf(f, "n_unmatched %lld\n",  static_cast<long long>(nUnmatched));
+        std::fprintf(f, "n_new %lld\n",        static_cast<long long>(nNewSpikes));
+        std::fclose(f);
+        atomicRename(outMarkTmp, outMark);
+    }
 
     // ── report ──────────────────────────────────────────────────────────
     int64_t totalDemoted = 0;
