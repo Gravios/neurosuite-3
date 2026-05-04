@@ -421,13 +421,14 @@ def estimate_shank_drift(
 
     res_path = f"{session}.res.{group_idx}"
     clu_path = f"{session}.clu.{group_idx}"
-    # Prefer .spkD.N (stderiv): same layout as .spk.N, but nChan-1 sites
+    # Prefer .spkD.N (stderiv pipeline) over .spk.N.  Same on-disk layout —
+    # int16 sample-major, full nCG channels (the stderiv transform is
+    # in-place, no channel is dropped: see STANDARDIZATION.md §3.3).
+    # Channel-dropping happens at .fetD time, not .spkD time, so n_sites
+    # is exactly len(depths) for both paths.
     _spkD = f"{session}.spkD.{group_idx}"
     _spk  = f"{session}.spk.{group_idx}"
-    is_stderiv = os.path.isfile(_spkD)
-    spk_path   = _spkD if is_stderiv else _spk
-    if is_stderiv:
-        n_sites -= 1  # spkD stores nChan-1 sites
+    spk_path = _spkD if os.path.isfile(_spkD) else _spk
 
     if not os.path.isfile(res_path) or not os.path.isfile(clu_path):
         return None

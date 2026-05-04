@@ -357,9 +357,25 @@ void KlustersView::forceClusterRefresh(int clusterId)
 
 void KlustersView::stopAllViewThreads()
 {
+    // Standard ViewWidget descendants (WaveformView, etc.) — covered by
+    // the ViewWidget::stopRunningThreads virtual.
     const QList<ViewWidget*>& widgets = getViewList();
     for (ViewWidget* w : widgets)
         w->stopRunningThreads();
+
+    // TemplateMatrixView is NOT a ViewWidget — it inherits directly from
+    // QWidget and lives only as a dock widget child of this KlustersView,
+    // so the iteration above misses it.  Walk the QObject tree to find
+    // any TemplateMatrixView instance(s) and quiesce their internal
+    // threads (TemplateMatrixThread + PairXcorrThread, both of which
+    // fopen/fread .spk.pending directly).  Without this, nudge /
+    // realign writes to .spk.pending race with in-flight matrix-thread
+    // reads — visible symptom is a subset of cluster spikes appearing
+    // corrupted after a nudge.
+    const QList<TemplateMatrixView*> tmvs =
+        findChildren<TemplateMatrixView*>();
+    for (TemplateMatrixView* tmv : tmvs)
+        tmv->stopRunningThreadsSync();
 }
 
 void KlustersView::invalidateClusterDisplay(int clusterId)

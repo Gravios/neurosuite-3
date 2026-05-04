@@ -117,6 +117,15 @@ echo_info()
 	echo $*
 }
 
+# Print informational message — synonym for echo_info, kept so newer plugins
+# (ndm_decomposecollisions, ndm_setupgroups, ndm_applydrift, ndm_stripdat,
+# ndm_estimatedrift) that adopted the more readable name don't fail with
+# "echo_message: command not found" when sourced against this file.
+echo_message()
+{
+	echo $*
+}
+
 # Print a header to indicate current processing step
 #  usage: print_header message [character [style]]
 print_header()
