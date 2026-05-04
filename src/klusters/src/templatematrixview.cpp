@@ -127,6 +127,66 @@ void TemplateMatrixView::stopPairThread()
     }
 }
 
+// ---------------------------------------------------------------------------
+// stopRunningThreadsSync — synchronous teardown for safe concurrent file writes
+//
+// Both TemplateMatrixThread and PairXcorrThread fopen()/fread() the .spk
+// pending file directly (templatematrixthread.cpp:113 and
+// pairxcorrthread.cpp:21).  Operations that REWRITE .spk.pending —
+// nudgeClusterTimestamps and realignSpikes — call
+// KlustersView::stopAllViewThreads() to quiesce concurrent readers before
+// touching the file.
+//
+// The catch: TemplateMatrixView inherits from QWidget, not ViewWidget, so
+// it is NOT in KlustersView::viewList (which is a QList<ViewWidget*>).
+// stopAllViewThreads' iteration of viewList never reached us.  Result:
+// while nudge rewrote a spike's .spk slot, an in-flight TemplateMatrixThread
+// or PairXcorrThread could be mid-read on the same byte range, returning
+// a mix of pre- and post-nudge bytes.  Visible symptom — and the user's
+// reported one — was a subset of spikes (those whose .spk slots overlapped
+// an in-flight read) showing torn waveforms after nudge.
+//
+// This method closes the race by waiting synchronously for every in-flight
+// thread to return from run() before yielding control back to the caller.
+// stopAllViewThreads now invokes this method on every TemplateMatrixView it
+// finds via findChildren<TemplateMatrixView*>(), so the by-the-time we
+// open .spk.pending for writing, no other handle is reading from it.
+// ---------------------------------------------------------------------------
+void TemplateMatrixView::stopRunningThreadsSync()
+{
+    // 1. Pair thread: signal stop, then wait for run() to return.  We must
+    //    NOT use the existing stopPairThread() here because that orphans
+    //    the pointer (deferred cleanup in customEvent).  We need synchronous
+    //    completion so the file handle is closed before we return.
+    if (m_pairThread) {
+        m_pairThread->stopProcessing();
+        while (!m_pairThread->wait()) {}
+        // Thread has finished run() and posted its event; the customEvent
+        // handler that consumes the post takes ownership.  Clear our
+        // pointer so subsequent calls don't try to wait again.  The
+        // event will arrive and be discarded by the generation check —
+        // see TemplateMatrixView::customEvent's sourceCluster mismatch
+        // branch.
+        m_pairThread = nullptr;
+    }
+
+    // 2. Matrix threads: same pattern as WaveformView::stopAndClearThreads.
+    //    The threads currently in threadsToBeKill are NOT necessarily dead
+    //    yet — the destructor pattern relies on Qt's event loop to drain
+    //    them via customEvent.  For the in-place quiesce we need, drain
+    //    them ourselves.
+    for (TemplateMatrixThread* t : threadsToBeKill)
+        t->stopProcessing();
+    for (TemplateMatrixThread* t : threadsToBeKill)
+        while (!t->wait()) {}
+    qDeleteAll(threadsToBeKill);
+    threadsToBeKill.clear();
+
+    // 3. Drop any completion events those threads posted before we waited
+    //    so customEvent doesn't fire later with a dangling thread pointer.
+    QApplication::removePostedEvents(this);
+}
+
 // ── colour map ───────────────────────────────────────────────────────────────
 
 void TemplateMatrixView::initializeColorMap()

@@ -4379,6 +4379,46 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     int64_t temporalClampCount = 0;
     int64_t temporalZeroCount  = 0;  // # of (sd - prev = 0) events
 
+    // ── Spatial-derivative order: read from YAML ─────────────────────────
+    // The canonical pipeline (process_extractspikes_stderiv) supports four
+    // spatial-derivative modes selected via -d / sdiffOrder:
+    //   0 = SDIFF_NONE       (pass-through, no spatial transform)
+    //   1 = SDIFF_FIRST      (val − val[ci+1], or val − val[ci-1] at the edge)
+    //   2 = SDIFF_LAPLACIAN  (val − ½(val[ci-1] + val[ci+1]) at interior)
+    //   3 = SDIFF_ALLPAIRS   (nChan·val − Σ val   ←  the YAML default)
+    //
+    // Earlier nudge builds hardcoded SDIFF_ALLPAIRS.  Sessions clustered
+    // with any other mode would silently get wrong waveforms after nudge:
+    // the transform applied by nudge would not match the one applied by
+    // the original .spkD/.fetD/.pcaD generation, so the new waveform sits
+    // in a slightly off-axis subspace of the .pcaD eigenvector basis.
+    //
+    // Now read sdiffOrder from the session YAML.  The value is stored under
+    // ndm_extractspikes_stderiv (extraction time).  ndm_pca_stderiv stores
+    // its own copy under that program too, but they should agree — if they
+    // don't, the session is inconsistent and we should refuse to nudge.
+    // Default to ALLPAIRS only when the YAML doesn't carry the field at
+    // all (legacy sessions predating the YAML schema).
+    int sdiffOrder = 3;  // SDIFF_ALLPAIRS — the canonical default
+    if (!parameterFile.isEmpty()) {
+        ParameterYamlReader reader;
+        if (reader.parseFile(parameterFile)) {
+            const QString s = reader.getProgramParameter(
+                QStringLiteral("ndm_extractspikes_stderiv"),
+                QStringLiteral("sdiffOrder"));
+            if (!s.isEmpty()) {
+                bool ok = false;
+                const int v = s.toInt(&ok);
+                if (ok && v >= 0 && v <= 3) sdiffOrder = v;
+            }
+        }
+    }
+    // Capture as const inside the lambda to make the branch cheap.
+    const int kSdiffOrder = sdiffOrder;
+    NS3_DIAG() << "[nudge] sdiffOrder=" << kSdiffOrder
+               << " (0=none 1=first 2=laplacian 3=allpairs)"
+               << " parameterFile=" << parameterFile;
+
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
                                      const std::vector<int16_t>& prevRaw,
                                      std::vector<int16_t>& out) {
@@ -4386,14 +4426,59 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // out:   sample-major  [s*nChan+ch]
         out.resize(static_cast<size_t>(nSamp * nChan));
 
-        // Step 1: spatial all-pairs derivative (integer, clamped) into out
+        // Step 1: spatial derivative (matches process_extractspikes_stderiv
+        // computeSDiff for each mode).  Result lands in `out` in the
+        // sample-major layout that matches the canonical Pass 2 writer.
         for (int s = 0; s < nSamp; ++s) {
-            int sum = 0;
-            for (int ci = 0; ci < nChan; ++ci)
-                sum += wavCM[static_cast<size_t>(ci * nSamp + s)];
+            // Cache the channel values at this time-sample for cheap
+            // intra-channel access in modes 1 (FIRST) and 2 (LAPLACIAN).
+            // We read channel-major wavCM[ci * nSamp + s].
             for (int ci = 0; ci < nChan; ++ci) {
                 const int val = wavCM[static_cast<size_t>(ci * nSamp + s)];
-                int sd = nChan * val - sum;
+                int sd;
+                switch (kSdiffOrder) {
+                case 0:  // SDIFF_NONE — pass-through
+                    sd = val;
+                    break;
+                case 1: {  // SDIFF_FIRST — val − next-channel (or prev at edge)
+                    const int other = (ci < nChan - 1)
+                        ? wavCM[static_cast<size_t>((ci+1) * nSamp + s)]
+                        : (nChan > 1
+                            ? wavCM[static_cast<size_t>((ci-1) * nSamp + s)]
+                            : 0);
+                    sd = val - other;
+                    break; }
+                case 2: {  // SDIFF_LAPLACIAN
+                    if (nChan == 1) { sd = val; break; }
+                    if (ci == 0)
+                        sd = val - wavCM[static_cast<size_t>(1 * nSamp + s)];
+                    else if (ci == nChan - 1)
+                        sd = val - wavCM[static_cast<size_t>((nChan-2) * nSamp + s)];
+                    else {
+                        // ½(prev+next) implemented in integer arithmetic with
+                        // the same rounding behaviour as the canonical:
+                        //   sd = round(val − 0.5*(prev + next))
+                        //      = (2*val − prev − next + sign·1) / 2
+                        // canonical uses double + std::round → tie-to-nearest-even
+                        // is unreachable for int16 inputs; the (a+1)/2 trick
+                        // matches the floor(.5+) behaviour for all values
+                        // representable as int16.
+                        const int prev = wavCM[static_cast<size_t>((ci-1) * nSamp + s)];
+                        const int next = wavCM[static_cast<size_t>((ci+1) * nSamp + s)];
+                        const int twoVal = 2 * val - prev - next;
+                        sd = (twoVal >= 0)
+                            ? (twoVal + 1) / 2
+                            : -((-twoVal + 1) / 2);
+                    }
+                    break; }
+                case 3:  // SDIFF_ALLPAIRS — fall through (default)
+                default: {
+                    int sum = 0;
+                    for (int cj = 0; cj < nChan; ++cj)
+                        sum += wavCM[static_cast<size_t>(cj * nSamp + s)];
+                    sd = nChan * val - sum;
+                    break; }
+                }
                 if (sd >  32767) { sd =  32767; ++spatialClampCount; }
                 else if (sd < -32768) { sd = -32768; ++spatialClampCount; }
                 out[static_cast<size_t>(s * nChan + ci)] = static_cast<int16_t>(sd);

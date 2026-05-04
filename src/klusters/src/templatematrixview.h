@@ -59,6 +59,28 @@ public:
     void willBeKilled();
     bool isThreadsRunning() const;
 
+    /** Synchronously stop all in-flight threads (TemplateMatrixThread instances
+     *  in `threadsToBeKill` plus the active PairXcorrThread).  Waits for each
+     *  thread to actually return from `run()` before returning, so callers can
+     *  safely write to .spk.pending immediately afterward without worrying
+     *  about torn reads.
+     *
+     *  Distinct from `willBeKilled()`: this method does NOT set `goingToDie`,
+     *  so the view continues to function and can launch new threads
+     *  afterward (e.g. when the user triggers an update).
+     *
+     *  Distinct from `stopPairThread()`: that method is asynchronous (sets
+     *  the stop flag and abandons the pointer); this method waits for
+     *  termination so the underlying file handle is actually closed.
+     *
+     *  Not an override: TemplateMatrixView inherits from QWidget, not
+     *  ViewWidget, so it isn't part of `KlustersView::viewList` and cannot
+     *  hook the existing `ViewWidget::stopRunningThreads()` virtual.
+     *  Instead, callers walk `findChildren<TemplateMatrixView*>()` and
+     *  invoke this method directly — see the call site in
+     *  KlustersView::stopAllViewThreads. */
+    void stopRunningThreadsSync();
+
     void updateMatrixContents();
     void updateSliderRange();
 

@@ -38,29 +38,47 @@
       <command>ndm_estimatedrift</command> reads the curated
       <filename>.clu.N</filename> cluster assignment files and the
       corresponding spike-time <filename>.res.N</filename> and waveform
-      <filename>.spk.N</filename> files for each spikeDetection group, then
-      estimates the in-vivo vertical displacement (drift) of each electrode
-      shank over successive time windows.
+      <filename>.spk.N</filename> (or <filename>.spkD.N</filename>) files
+      for each spikeDetection group, then estimates the in-vivo vertical
+      displacement (drift) of each electrode shank over successive time
+      windows.
     </para>
     <para>
-      The algorithm computes the waveform <emphasis>centre-of-mass</emphasis>
-      (CoM) of each well-isolated unit by weighting the depth coordinate of
-      each electrode site by the peak-to-peak amplitude of the mean waveform
-      on that site.  The median CoM across qualified units in each time window
-      is taken as the population-level estimate of the local tissue/probe
-      displacement.  Drift for each window is expressed as the CoM shift
-      relative to the first window (µm; positive = deeper insertion).
+      Two complementary methods are run and reported per window.  The
+      primary method is per-unit spatial-profile cross-correlation: for
+      each well-isolated unit the amplitude-vs-depth fingerprint
+      (mean PTP per site) is built in a reference window and in every
+      subsequent window, and the two profiles are cross-correlated along
+      the depth axis with parabolic-fit sub-site refinement.  The shank
+      drift is the weighted median of the per-unit shifts (weights =
+      sqrt(n_spikes_ref × n_spikes_win)).  A geometric consistency check
+      flags units whose pairwise depth distances change by more than
+      <parameter>outlierThreshold</parameter> µm and excludes them.
     </para>
     <para>
-      Electrode site geometry is read from the <filename>.probe</filename>
-      configuration file declared in the session YAML under the
-      <literal>probes</literal> section.  When no probe file is present, a
-      uniform 50 µm linear spacing is assumed.
+      The fallback method is population-level amplitude-profile
+      cross-correlation: a single mean-PTP-per-site profile is built
+      across all non-noise spikes and cross-correlated against the
+      reference profile.  This is reported alongside the per-unit
+      estimate and is used as the primary value when fewer than
+      <parameter>minUnits</parameter> units are tracked.
+    </para>
+    <para>
+      Electrode site geometry is read from inline
+      <literal>sitePositions_um</literal> on the spike-detection group
+      when present, falling back to the <filename>.probe</filename>
+      configuration declared in the session YAML under
+      <literal>probes</literal>.  When neither is available a uniform
+      50 µm linear spacing is assumed.
     </para>
     <para>
       The result is written to <filename>SESSION.drift</filename> in YAML
-      format.  This file is consumed by drift-correction tools and can be
-      inspected in any text editor.
+      format.  This file is consumed by drift-correction tools (e.g.
+      <command>ndm_applydrift</command>) and can be inspected in any
+      text editor.  When <filename>SESSION.dat</filename> is present, a
+      per-probe binary signal <filename>SESSION.dat.drift.N</filename> is
+      also written (int16 µm, one sample per recording sample,
+      piecewise-linear interpolation between window midpoints).
     </para>
   </refsect1>
 
@@ -131,6 +149,18 @@
       </varlistentry>
 
       <varlistentry>
+        <term><parameter>outlierThreshold</parameter></term>
+        <listitem><para>
+          Maximum allowed change (µm) in pairwise depth distance between
+          a unit and the others, between the reference and the current
+          window, before that unit is flagged as an outlier and excluded
+          from the per-unit drift estimate (default:
+          <literal>5.0</literal>).  Outliers are still listed in the
+          per-window detail block for inspection.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term><parameter>probeLibrary</parameter></term>
         <listitem><para>
           Override the probe library search path.  When not set, the plugin
@@ -152,45 +182,84 @@
     <programlisting language="yaml"><![CDATA[
 drift:
   format: '1.0'
-  method: unit_com
+  methods: [per_unit_xcorr, xcorr_population]
+  primaryMethod: per_unit_xcorr
   windowSec: 60.0
   minUnits: 3
   minSpikes: 20
+  outlierThreshold: 5.0
   probes:
     - probeId: 0
       label: "left CA1"
       shanks:
         - shankIndex: 0
           spikeGroup: 1
-          nUnitsTotal: 7
-          refCom_um: 245.3
+          nUnitsQualified: 7
+          nUnitsInRef: 6
+          refWindowIndex: 0
+          refWindowT_start: 0.0
+          maxAbsDrift_um: 8.42
+          driftRate_um_per_hr: 3.1
           windows:
             - t_start: 0.0
               t_end: 60.0
-              n_units: 6
-              com_um: 245.3
               drift_um: 0.0
+              per_unit_xcorr:
+                drift_um: 0.0
+                n_inlier_units: 6
+                units:
+                  - { unit: 2, ref_com_um: 245.3, win_com_um: 245.3,
+                      xcorr_shift_um: 0.0, com_delta_um: 0.0,
+                      weight: 142.0, outlier: false }
+              xcorr_population:
+                drift_um: 0.0
             - t_start: 60.0
               t_end: 120.0
-              n_units: 7
-              com_um: 243.5
-              drift_um: -1.8
+              drift_um: -1.83
+              per_unit_xcorr:
+                drift_um: -1.85
+                n_inlier_units: 7
+                units: [...]
+              xcorr_population:
+                drift_um: -1.78
     ]]></programlisting>
     <variablelist>
       <varlistentry>
         <term><structfield>drift_um</structfield></term>
         <listitem><para>
-          Signed displacement in micrometres relative to the first window.
-          Positive = probe moved deeper into tissue; negative = retraction.
-          <literal>null</literal> when fewer than <parameter>minUnits</parameter>
-          units qualified in this window.
+          Combined per-window estimate, signed displacement in
+          micrometres relative to the reference window.  Positive =
+          probe moved deeper into tissue; negative = retraction.
+          A weighted blend of per-unit xcorr and population xcorr when
+          enough inlier units are tracked; falls back to either method
+          alone otherwise.  <literal>null</literal> when neither
+          method produced an estimate for the window.
         </para></listitem>
       </varlistentry>
       <varlistentry>
-        <term><structfield>com_um</structfield></term>
+        <term><structfield>per_unit_xcorr.drift_um</structfield></term>
         <listitem><para>
-          Absolute depth of the population centre-of-mass in micrometres
-          (origin = shank tip).
+          Weighted median of per-unit cross-correlation shifts (µm).
+          Sub-site precision via parabolic interpolation around the
+          correlation peak.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>xcorr_population.drift_um</structfield></term>
+        <listitem><para>
+          Population-level cross-correlation shift (µm) using the
+          mean-PTP-per-site amplitude profile across all non-noise
+          spikes in the window.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>units</structfield></term>
+        <listitem><para>
+          Per-unit detail for the window: cluster id, reference and
+          window CoM, xcorr shift, CoM delta (cross-check), weight, and
+          outlier flag.  Units flagged as outliers contribute zero
+          weight to the rigid-body estimate but remain visible for
+          inspection.
         </para></listitem>
       </varlistentry>
     </variablelist>
@@ -243,15 +312,32 @@ anatomicalDescription:
         <listitem><para>Curated cluster labels for group N (mandatory input).</para></listitem>
       </varlistentry>
       <varlistentry>
-        <term><filename>SESSION.spk.N</filename></term>
+        <term><filename>SESSION.spk.N</filename> /
+              <filename>SESSION.spkD.N</filename></term>
         <listitem><para>
-          Spike waveforms for group N (optional; used for accurate CoM).
-          When absent, the global CoM is used as a proxy.
+          Spike waveforms for group N (optional; used for accurate CoM
+          and amplitude profiles).  When both are present
+          <filename>.spkD.N</filename> (stderiv pipeline) is preferred —
+          its on-disk layout matches <filename>.spk.N</filename> (int16
+          sample-major, full nCG channels).  When neither is present
+          spike counts are used as an amplitude proxy.
         </para></listitem>
       </varlistentry>
       <varlistentry>
         <term><filename>SESSION.drift</filename></term>
         <listitem><para>Output drift file (YAML).</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.dat.drift.N</filename></term>
+        <listitem><para>
+          Optional binary side-output, one file per probe (1-based
+          index N matching the YAML <literal>probes</literal> list
+          order).  Contains <literal>n_total_samples</literal> int16
+          values (µm), one per recording sample, generated by
+          piecewise-linear interpolation of the per-window drift
+          estimates.  Written only when <filename>SESSION.dat</filename>
+          is present.
+        </para></listitem>
       </varlistentry>
     </variablelist>
   </refsect1>
@@ -259,6 +345,7 @@ anatomicalDescription:
   <refsect1>
     <title>See Also</title>
     <para>
+      <citerefentry><refentrytitle>ndm_applydrift</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
       <citerefentry><refentrytitle>ndm_klustakwik</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
       <citerefentry><refentrytitle>ndm_pca</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
       <citerefentry><refentrytitle>klusters</refentrytitle><manvolnum>1</manvolnum></citerefentry>
