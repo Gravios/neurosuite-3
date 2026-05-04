@@ -1294,6 +1294,18 @@ programs:
       leaves the originals intact; a crash during the merge leaves a
       .tmp alongside the untouched original.
 
+    OUTPUT
+
+      In-place merge into $session.{res,spk,fet,clu}.N for every group
+      that had at least one new spike accepted by Pass 1.  Additionally,
+      a small text sidecar $session.shadowmark.<N> is written per
+      merged group recording unmatched_id, shadow_offset, n_unmatched,
+      and n_new.  The sidecar is the authoritative marker that
+      ndm_subcluster_unmatched uses to (a) decide which groups to
+      process and (b) recover the unmatched bin id without guessing.
+      Don't delete the sidecar between re-extract and sub-cluster — it
+      is regenerated only by re-running this script (or _stderiv).
+
     PARAMETERS
 
     # reextractThresholdFactor
@@ -1393,7 +1405,10 @@ programs:
     OUTPUT
 
       Merges in-place into $session.{res,spk,fet,clu}.N.  Originals
-      preserved at $session.<ext>.<N>.bak on first run.
+      preserved at $session.<ext>.<N>.bak on first run.  A
+      $session.shadowmark.<N> sidecar is written for every merged
+      group; see ndm_reextractspikes (OUTPUT block) for the contract
+      with ndm_subcluster_unmatched.
 
     SEE ALSO
 
@@ -1444,7 +1459,7 @@ programs:
     original cluster IDs plus:
       - shadow(k) = maxExistingId + 1 + k      (new spikes gated into
                     cluster k by robust Mahalanobis distance)
-      - unmatched = 2 * maxExistingId + 1      (single bin holding all
+      - unmatched = 2 * maxExistingId + 2      (single bin holding all
                     new spikes that exceeded the χ² threshold OR were
                     demoted by the inflation guard in v1.1+)
 
@@ -1456,16 +1471,44 @@ programs:
     the operator can triage in Klusters with actual cluster labels
     instead of one amorphous pile.
 
+    ACTIVATION GATE
+
+    Per-group activation is gated on the .shadowmark.<g> sidecar
+    written by process_shadowcluster (and committed by the re-extract
+    wrappers).  When the sidecar is absent, the group was not
+    shadow-merged — for example, because re-extract Pass 1 accepted 0
+    new spikes — and there is no unmatched bin to re-cluster: the
+    group is skipped with an info message.  This replaces the
+    pre-2026-05 max(clu_ids) heuristic, which silently destroyed
+    pre-existing noise / MUA bins on groups that bypassed
+    shadowcluster entirely.
+
+    The sidecar is plain text, key=value, one per line:
+      unmatched_id   <int>
+      shadow_offset  <int>
+      n_unmatched    <int>
+      n_new          <int>
+
     FLOW
 
+      0. Read $session.shadowmark.$g for the authoritative unmatched
+         bin id.  Skip the group if absent (or n_unmatched == 0).
       1. Read $session.clu.$g; locate rows where clu == unmatched_id.
       2. Extract those rows from $session.fet.$g (or .fetD.$g) into a
          sandbox .fet file next to the real session.
-      3. Run KlustaKwik on the sandbox stem → sandbox .clu.$g.
+      3. Symlink session yaml → $session-unmatched-$g.<ext> so KK's
+         kkReadYamlSpikeParams sees session SamplingRate / channelIds /
+         probe geometry (without this, KK falls back to SR=20000 and
+         all probe fields unset).  Run KlustaKwik on the sandbox stem
+         → sandbox .clu.$g.  Tear down the symlink regardless of KK
+         exit status.
       4. Remap sandbox IDs k=1..K to (unmatched_id + 1)..(unmatched_id + K)
          and merge back into $session.clu.$g over the unmatched rows.
-      5. Backup at $session.clu.$g.bak-sub is idempotence-checked on
-         re-runs (remove it to force a re-sub-cluster).
+      5. On success: rotate $session.shadowmark.$g to .shadowmark.$g.done
+         and back $session.clu.$g up to .clu.$g.bak-sub.  Either marker
+         (the .done sidecar or the .bak-sub backup) gates a re-run;
+         remove the .bak-sub to force a re-sub-cluster on the same
+         residual.
 
     Waveforms are not touched.  Re-clustering only affects .clu; the
     Mahalanobis subspace that defined "unmatched" is the reference .fet
@@ -1555,8 +1598,10 @@ programs:
     Manually:
       ndm_subcluster_unmatched [session] [group]
 
-    If electrodeGroup is omitted, every group with an unmatched bin is
-    processed.
+    If electrodeGroup is omitted, every group whose .shadowmark.<g>
+    sidecar is present is processed; groups without one are skipped.
+    Re-run ndm_reextractspikes / _stderiv to (re)populate the sidecars
+    for groups you want to sub-cluster.
 
     Automatically:
       Set reextractAutoSubcluster=1 in programs[ndm_reextractspikes]

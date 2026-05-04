@@ -182,7 +182,12 @@ struct PcaModel {
     bool isCentered;
     // mean[ch][s]
     vector<vector<double>> mean;
-    // eigvec[ch] laid out col-major: [s * nComponents + k]
+    // eigvec[ch] laid out col-major: [k * data2use + s]
+    //   k = component index (0..nComponents-1, outer)
+    //   s = sample index    (0..data2use-1, inner — contiguous run)
+    // Each eigenvector occupies data2use consecutive doubles; the next
+    // eigenvector follows immediately.  See projectSpike for the access
+    // formula and KK.cpp:2266 for the matching convention on the KK side.
     vector<vector<double>> eigvec;
 };
 
@@ -283,10 +288,18 @@ static void projectSpike(const int16_t *wav,
             const double raw = (double)wav[sIdx * nChan + ch];
             x[s] = m.isCentered ? (raw - mu[s]) : raw;
         }
+        // Eigenvector layout in the .pca file (written by process_pca):
+        //   evecBuf[component * data2use + sample]  (col-major: each
+        //   eigenvector occupies data2use consecutive doubles, then
+        //   the next eigenvector follows).  Correct access is
+        //   ev[k * data2use + s].  The earlier formula
+        //   ev[s * nComp + k] treated the file as row-major and
+        //   silently scrambled the projection — see KK.cpp:2266 for
+        //   the same warning on the KlustaKwik side.
         for (int k = 0; k < nComp; ++k) {
             double v = 0.0;
             for (int s = 0; s < m.data2use; ++s)
-                v += ev[(size_t)s * nComp + k] * x[s];
+                v += ev[(size_t)k * m.data2use + s] * x[s];
             out[ch * nComp + k] = (int64_t)std::llround(v);
         }
     }
