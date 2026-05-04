@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2"
+          xmlns:xlink="http://www.w3.org/1999/xlink"
+          xml:id="ndm_driftcorrect">
+
+  <info>
+    <productname>neurosuite-3</productname>
+    <authorgroup>
+      <author><personname><firstname>neurosuite-3</firstname>
+        <surname>contributors</surname></personname></author>
+    </authorgroup>
+    <copyright><year>2025</year><holder>neurosuite-3 contributors</holder></copyright>
+    <legalnotice><para>GPL-3.0-or-later</para></legalnotice>
+  </info>
+
+  <refmeta>
+    <refentrytitle>ndm_driftcorrect</refentrytitle>
+    <manvolnum>1</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+    <refname>ndm_driftcorrect</refname>
+    <refpurpose>
+      Geometrically refeaturize spike waveforms to a reference probe position
+    </refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>ndm_driftcorrect</command>
+      <arg choice="opt"><replaceable>session</replaceable></arg>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+    <title>Description</title>
+    <para>
+      <command>ndm_driftcorrect</command> applies a per-probe drift signal
+      (<filename>SESSION.dat.drift.P</filename>, produced by
+      <command>ndm_estimatedrift</command>) to the per-spike waveform
+      files of every spike-detection group, producing drift-corrected
+      waveform files <filename>SESSION.spkC.N</filename> (or
+      <filename>SESSION.spkCD.N</filename> for the stderiv pipeline)
+      in which every spike has been spatially reinterpolated as if the
+      probe were sitting at the reference position
+      <emphasis>d(t)=0</emphasis>.
+    </para>
+    <para>
+      For spike <emphasis>i</emphasis> at timestamp
+      <emphasis>t<subscript>i</subscript></emphasis> with probe drift
+      <emphasis>d<subscript>i</subscript></emphasis> µm, site k at
+      reference depth z<subscript>k</subscript> physically sat at depth
+      z<subscript>k</subscript>+d<subscript>i</subscript> when the spike
+      was recorded.  The correction interpolates the recorded values
+      back to the reference grid:
+      <programlisting>
+s_k_corrected(t) = interp(z_k − d_i, {z_j}_j, {s_j(t)}_j)
+      </programlisting>
+      For drifts smaller than one site spacing this is well-conditioned
+      and sub-µm accurate.  For larger drifts the interpolation clamps
+      to boundary site values (<function>numpy.interp</function>
+      semantics) and emits a warning.
+    </para>
+    <para>
+      <emphasis role="strong">This plugin reads no
+      <filename>.clu</filename> file.</emphasis>  The correction is
+      purely geometric.  Whether a spike was labelled artifact (cluster
+      0), MUA (cluster 1), or assigned to a real unit makes no
+      difference: the recorded waveform is the same physical signal,
+      and so is the corrected waveform.
+    </para>
+    <para>
+      This decoupling enables iterative refinement.  A group whose
+      spikes all landed in clusters 0/1 in iteration N can recover real
+      units in iteration N+1 after refeaturization, because
+      refeaturization did not gate on the (provisional) cluster
+      labels.  As long as <emphasis>some</emphasis> shank on the same
+      probe was curated well enough to drive
+      <command>ndm_estimatedrift</command>, every sibling shank on
+      that probe gets refeaturized using the propagated probe-level
+      drift signal — including shanks whose own
+      <filename>.clu</filename> contains nothing but noise and MUA.
+    </para>
+  </refsect1>
+
+  <refsect1>
+    <title>Workflow position</title>
+    <programlisting>
+ndm_extractspikes(_stderiv)  →  .spk(D).N
+ndm_pca(_stderiv)            →  .fet(D).N
+ndm_klustakwik               →  initial .clu.N (rough; drift not yet corrected)
+ndm_estimatedrift            →  .drift  +  .dat.drift.P  (per probe)
+   ↓
+<emphasis role="strong">ndm_driftcorrect</emphasis>             →  .spkC(D).N
+   ↓
+ndm_pca(_stderiv) [re-run]   →  .fetC(D).N
+ndm_klustakwik [re-run]      →  refined .clu.N
+ndm_estimatedrift [re-run]   →  sharper drift estimate
+   ↓
+… iterate until max |Δd(t)| converges below threshold …
+    </programlisting>
+    <para>
+      The drift signal is the <emphasis>absolute</emphasis> offset
+      between the probe and the reference position, not the increment
+      between successive iterations.
+      <command>ndm_driftcorrect</command> always reads the original
+      <filename>.spk(D)</filename> (never a previous
+      <filename>.spkC(D)</filename>) so successive iterations do not
+      compound interpolation error.  Setting
+      <parameter>overwrite</parameter> to <literal>true</literal>
+      forces the output to be regenerated when the drift signal has
+      been refreshed.
+    </para>
+  </refsect1>
+
+  <refsect1>
+    <title>Parameters</title>
+    <para>
+      All parameters are optional.  Defaults shown in parentheses.
+      Read from the <literal>ndm_driftcorrect</literal> programs block
+      in the YAML parameter file.
+    </para>
+    <variablelist>
+      <varlistentry>
+        <term><parameter>overwrite</parameter></term>
+        <listitem><para>
+          When <literal>true</literal>, regenerate
+          <filename>.spkC(D)</filename> outputs that already exist.
+          Default: <literal>false</literal>.  Set this when re-running
+          after a refreshed <filename>.dat.drift.P</filename>.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><parameter>passthroughThreshUm</parameter></term>
+        <listitem><para>
+          When the maximum absolute drift across the recording is
+          below this threshold (µm), the input
+          <filename>.spk(D)</filename> is byte-copied to the
+          <filename>.spkC(D)</filename> output instead of being
+          re-interpolated.  Default: <literal>0.25</literal>.  Avoids
+          unnecessary computation on probes that did not drift.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><parameter>batchSize</parameter></term>
+        <listitem><para>
+          Number of spikes processed per memory-resident batch.
+          Default: <literal>100000</literal>.  Lower this on small-RAM
+          systems; raise it for slightly faster throughput.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><parameter>probeLibrary</parameter></term>
+        <listitem><para>
+          Override probe-library search path.  Same semantics as
+          <command>ndm_estimatedrift</command>.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>Edge cases &amp; how they are handled</title>
+    <variablelist>
+      <varlistentry>
+        <term>Source group's <filename>.clu</filename> contains only
+              clusters 0 and/or 1</term>
+        <listitem><para>
+          <command>ndm_estimatedrift</command> returned no estimate
+          for that group — and if no sibling on the same probe was
+          curated either, no <filename>.dat.drift.P</filename> was
+          written.  <command>ndm_driftcorrect</command> skips the
+          probe with an info message; downstream tooling falls back
+          to the uncorrected <filename>.spk(D)</filename>.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Target group's <filename>.clu</filename> contains only
+              clusters 0 and/or 1</term>
+        <listitem><para>
+          The group is refeaturized normally using the propagated
+          probe-level drift signal.  Re-clustering the corrected
+          waveforms may surface units that were buried in MUA before.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Drift signal is essentially zero
+              (max(|d|) &lt; <parameter>passthroughThreshUm</parameter>)</term>
+        <listitem><para>
+          Fast-path: <filename>.spk(D)</filename> is byte-copied to
+          <filename>.spkC(D)</filename>.  No interpolation runs.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>NaN-depth sites in inline
+              <literal>sitePositions_um</literal></term>
+        <listitem><para>
+          Those sites pass through unchanged on the output, AND are
+          excluded from the interpolant.  Valid sites are
+          interpolated normally.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Drift exceeds half the array span</term>
+        <listitem><para>
+          Boundary clamp.  A warning is printed listing the spike
+          count for which this happened — typically indicates an
+          outlier window in the drift estimate that should be reviewed.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Spike timestamp out of
+              <filename>.dat.drift.P</filename> bounds</term>
+        <listitem><para>
+          Clamped to the first/last sample of the drift signal — same
+          semantics as <function>numpy.interp</function> and consistent
+          with how <command>ndm_estimatedrift</command> writes the
+          binary signal.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Group has no probe geometry
+              (no <literal>sitePositions_um</literal>, no probe file)</term>
+        <listitem><para>
+          Skipped with an info message.  Without depth coordinates the
+          interpolation cannot run.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Output <filename>.spkC(D)</filename> already exists</term>
+        <listitem><para>
+          Skipped unless <parameter>overwrite</parameter> is
+          <literal>true</literal>.  Set
+          <parameter>overwrite</parameter> when iterating with a
+          refreshed drift signal.
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>Files</title>
+    <variablelist>
+      <varlistentry>
+        <term><filename>SESSION.yaml</filename></term>
+        <listitem><para>Session parameter file (mandatory input).</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.res.N</filename></term>
+        <listitem><para>
+          Spike timestamps (mandatory input — used to look up per-spike
+          drift values).
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.spk.N</filename> /
+              <filename>SESSION.spkD.N</filename></term>
+        <listitem><para>
+          Recorded waveforms (mandatory input).  When both are present
+          <filename>.spkD.N</filename> is preferred (matches the
+          stderiv pipeline used by <command>ndm_pca_stderiv</command>).
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.dat.drift.P</filename></term>
+        <listitem><para>
+          Per-probe drift signal (int16 µm, one sample per recording
+          sample), produced by <command>ndm_estimatedrift</command>.
+          P is the 1-based probe index in the YAML
+          <literal>probes</literal> list.  At least one such file must
+          exist; groups whose probe lacks a drift signal are skipped.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>SESSION.spkC.N</filename> /
+              <filename>SESSION.spkCD.N</filename></term>
+        <listitem><para>
+          Drift-corrected waveform output.  Same on-disk layout as the
+          input (int16 sample-major).
+        </para></listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+
+  <refsect1>
+    <title>Wiring into the pipeline</title>
+    <para>
+      Until <command>ndm_pca</command> /
+      <command>ndm_pca_stderiv</command> /
+      <command>ndm_klustakwik</command> grow native
+      <filename>.spkC(D)</filename> awareness (see the
+      <function>pickInputPath</function> helper in
+      <command>KlustaKwik</command>), the corrected files can be
+      consumed by symlink or by passing explicit paths to the
+      individual tools.  The recommended pattern for an iterative
+      refinement loop is:
+    </para>
+    <programlisting>
+# 1) Initial pass — no drift correction yet.
+ndm_extractspikes_stderiv  $session
+ndm_pca_stderiv            $session
+ndm_klustakwik             $session
+
+# 2) First drift estimate.
+ndm_estimatedrift          $session
+ndm_driftcorrect           $session
+
+# 3) Refeaturize and recluster on .spkCD.
+for g in $groups; do
+    mv $session.spkD.$g  $session.spkD.$g.iter0
+    cp $session.spkCD.$g $session.spkD.$g    # let ndm_pca_stderiv see it
+done
+ndm_pca_stderiv            $session
+ndm_klustakwik             $session
+
+# 4) Sharpen drift estimate.
+ndm_estimatedrift          $session
+# Compare drift signals; iterate if max|Δd(t)| above threshold.
+    </programlisting>
+  </refsect1>
+
+  <refsect1>
+    <title>See Also</title>
+    <para>
+      <citerefentry><refentrytitle>ndm_estimatedrift</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>ndm_applydrift</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>ndm_pca_stderiv</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>ndm_klustakwik</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+    </para>
+  </refsect1>
+
+</refentry>

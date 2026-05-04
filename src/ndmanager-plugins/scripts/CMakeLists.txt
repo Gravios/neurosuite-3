@@ -10,6 +10,7 @@ install(PROGRAMS
     ndm_start ndm_transcodevideo ndm_tsp2sts
     ndm_estimatedrift
     ndm_applydrift
+    ndm_driftcorrect
     ndm_decomposecollisions
     ndm_localise
     ndm_setupgroups
@@ -40,6 +41,7 @@ install(PROGRAMS
 install(PROGRAMS
     process_estimatedrift.py
     process_applydrift.py
+    process_driftcorrect.py
     process_localise.py
     process_setupgroups.py
     kk_build_prior.py
@@ -48,7 +50,8 @@ install(PROGRAMS
 
 foreach(_page IN ITEMS
         cnt duration ndm ndm_recolorchannels ndm_start
-        ndm_estimatedrift ndm_decomposecollisions ndm_setupgroups pad
+        ndm_estimatedrift ndm_decomposecollisions ndm_driftcorrect
+        ndm_setupgroups pad
         process_reorderclusters rn)
     add_manpage(${_page})
 endforeach()
