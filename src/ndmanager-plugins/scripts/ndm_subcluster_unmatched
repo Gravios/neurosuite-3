@@ -7,7 +7,7 @@
 #//   each group's .clu.N contains the original cluster IDs plus:
 #//     - shadow(k) = maxExistingId + 1 + k    (new spikes gated into
 #//                   cluster k by robust Mahalanobis distance)
-#//     - unmatched = 2 * maxExistingId + 1    (single bin holding all
+#//     - unmatched = 2 * maxExistingId + 2    (single bin holding all
 #//                   new spikes that exceeded the χ² threshold from
 #//                   every eligible parent)
 #//
@@ -17,6 +17,14 @@
 #//   spikes, and real noise.  Running KlustaKwik on this bin alone
 #//   recovers the sub-structure so the operator can triage in Klusters
 #//   with actual cluster labels instead of one amorphous pile.
+#//
+#//   Per-group activation is gated on the .shadowmark.<g> sidecar
+#//   written by process_shadowcluster.  When absent, the group was
+#//   never shadow-merged (e.g. reextract Pass 1 accepted 0 new spikes)
+#//   and there is no unmatched bin to recluster — the group is skipped.
+#//   This replaces the pre-rev-3 max(clu_ids) heuristic, which silently
+#//   destroyed pre-existing noise/MUA bins on groups that bypassed
+#//   shadowcluster entirely.
 #//
 #//   Pipeline-aware extension detection:
 #//     - Reads from .fetD.N if present (stderiv / sdiffOrder ∈ {1, 3}
@@ -29,17 +37,28 @@
 #//       extension when reading (klustakwik/KK.cpp:117).  There's no
 #//       consumer for .fetD once the KK step is reached, so this is just
 #//       a naming choice internal to the sandbox.
+#//     - The session yaml is symlinked into the sandbox stem for the
+#//       duration of the KK call so kkReadYamlSpikeParams sees the
+#//       session's SamplingRate / channelIds / probe geometry.  Without
+#//       this shim, KK falls back to SamplingRate=20000 with all probe
+#//       fields unset, breaking chunked CEM and drift-aware paths.
 #//
 #//   Flow:
-#//     1. Read $session.clu.$g, locate rows where clu == unmatched_id.
-#//     2. Extract those rows from $session.{fet,fetD}.$g into a sandbox:
+#//     1. Read $session.shadowmark.$g for the authoritative unmatched id.
+#//        Skip if absent (group was not shadow-merged) or n_unmatched=0.
+#//     2. Read $session.clu.$g, locate rows where clu == unmatched_id.
+#//     3. Extract those rows from $session.{fet,fetD}.$g into a sandbox:
 #//          $session-unmatched-$g.fet.$g   (always .fet for KK)
-#//     3. Run KlustaKwik on the sandbox stem → $session-unmatched-$g.clu.$g
-#//     4. Remap sandbox cluster IDs (1..K) to offset IDs
+#//     4. Symlink session yaml → $session-unmatched-$g.<ext> so KK reads
+#//        session params, then run KlustaKwik on the sandbox stem →
+#//          $session-unmatched-$g.clu.$g
+#//        Tear down the symlink regardless of KK exit status.
+#//     5. Remap sandbox cluster IDs (1..K) to offset IDs
 #//          (unmatched_id + 1) .. (unmatched_id + K)
 #//        and merge back into $session.clu.$g over the unmatched rows.
 #//        The final .clu.N header is updated to reflect the new max ID.
-#//     5. Sandbox files removed on success; originals preserved at
+#//     6. Sandbox files removed on success; shadowmark rotated to
+#//        .shadowmark.$g.done; originals preserved at
 #//        $session.clu.$g.bak-sub (first-run wins, same policy as the
 #//        re-extract scripts).
 #//
@@ -51,8 +70,8 @@
 #//   reprocessing required.
 #//
 #//   Arguments:  [parameter-file]  [electrodeGroup]
-#//   If electrodeGroup is omitted, processes every group that has a
-#//   .clu.N containing an unmatched bin; groups without one are skipped.
+#//   If electrodeGroup is omitted, processes every group whose
+#//   .shadowmark.<g> sidecar is present; groups without one are skipped.
 #//
 #//   copyright       (C) 2025 neurosuite-3 contributors
 #//
@@ -99,27 +118,28 @@ fi
 # //    int32 nClusters header; then nSpikes × int32 IDs.
 # //  The two files are row-aligned (same index).
 # //
-# //  Caller passes fetExt ∈ {"fet","fetD"} to select which variant to
-# //  read from — detected per-group by the driver based on on-disk
-# //  presence (fetD preferred when both exist, to match the stderiv
-# //  pipeline's output naming).
+# //  Caller passes:
+# //    fetExt        ∈ {"fet","fetD"} — which variant to read from
+# //    unmatchedId   the bin id taken from $session.shadowmark.<g>
+# //                  (NOT inferred from max(clu_ids); see the rationale
+# //                  in once() below)
 # //
 # //  Output is a sandbox stem with the same group suffix so KlustaKwik
-# //  reads it naturally.  Returns the unmatched_id and count on stdout
-# //  (space-separated: "<unmatched_id> <n_unmatched>"), or an empty
-# //  string if no unmatched bin was detected in this group.
+# //  reads it naturally.  Returns the count on stdout, or empty string if
+# //  no rows matched the supplied unmatched id.
 # ////////////////////////////////////////////////////////////////////////////
 
 extract_unmatched()
 {
     local group=$1
     local sandboxStem=$2
-    local fetExt=$3     # "fet" or "fetD" — which variant to read from
+    local fetExt=$3       # "fet" or "fetD"
+    local unmatchedId=$4  # authoritative id from the shadowmark sidecar
 
-    python3 - "$session" "$group" "$sandboxStem" "$fetExt" <<'PYEOF'
+    python3 - "$session" "$group" "$sandboxStem" "$fetExt" "$unmatchedId" <<'PYEOF'
 import struct, sys, os
-session, group, sandboxStem, fetExt = \
-    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+session, group, sandboxStem, fetExt, unmatched_id = (
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))
 
 # .clu.N is canonical (no D variant, per the shadowcluster convention
 # established in reextract rev 1+).  Feature file is the .fetExt variant
@@ -136,17 +156,13 @@ with open(clu_path, "rb") as f:
 nClusters = struct.unpack("<i", clu_buf[:4])[0]
 clu_ids = list(struct.unpack(f"<{(len(clu_buf)-4)//4}i", clu_buf[4:]))
 
-# Detect the unmatched bin.  By shadowcluster convention it's the
-# single largest-id bin, created as (2 * maxExistingId + 1) where
-# maxExistingId is the pre-merge max.  Safer heuristic: the highest
-# id present in the file is the unmatched bin, PROVIDED there's at
-# least one entry with that id.  If the user has already re-clustered
-# and relabeled, the highest id might not be the unmatched bin — but
-# then we'd have nothing to re-cluster anyway, so the caller's
-# idempotence check ($session.clu.$g.bak-sub exists) will bail first.
-if not clu_ids:
-    sys.exit(0)
-unmatched_id = max(clu_ids)
+# Caller passes the unmatched id from the shadowmark sidecar — the
+# authoritative source.  We deliberately do NOT fall back to
+# max(clu_ids) here: that heuristic mis-fires when shadowcluster
+# never ran on this group (e.g. reextract Pass 1 accepted 0 new
+# spikes), in which case max(clu_ids) is just the largest pre-existing
+# cluster (typically the original noise/MUA bin) and re-clustering it
+# silently destroys the operator's prior sort.
 unmatched_rows = [i for i, c in enumerate(clu_ids) if c == unmatched_id]
 if len(unmatched_rows) == 0:
     sys.exit(0)
@@ -168,8 +184,8 @@ with open(out_fet, "wb") as f:
         start = hdr_size + row_idx * row_bytes
         f.write(fet_buf[start:start + row_bytes])
 
-# Report to stdout for the caller.
-print(f"{unmatched_id} {len(unmatched_rows)}")
+# Report only the row count to the caller (unmatched_id was supplied).
+print(f"{len(unmatched_rows)}")
 PYEOF
 }
 
@@ -279,6 +295,41 @@ once()
         return $INPUTS_MISSING
     fi
 
+    # ── Authoritative unmatched-bin lookup (shadowmark sidecar) ────────────
+    #
+    # Pre-rev-3 behaviour was to take unmatched_id = max(clu_ids) and run
+    # KlustaKwik on whatever rows matched.  This is unsafe whenever
+    # process_shadowcluster did NOT actually run on this group — for
+    # example, when reextract Pass 1 accepted 0 new spikes (typical for
+    # most groups in a session) — because then max(clu_ids) is the
+    # operator's largest pre-existing cluster, usually the noise/MUA bin,
+    # and re-clustering it silently destroys the prior sort.
+    #
+    # The sidecar $session.shadowmark.<g> is written atomically by
+    # process_shadowcluster and committed by the reextract wrapper; its
+    # presence is the contract that says "this group was shadow-merged,
+    # here is the residual bin".  If absent, we skip — the operator
+    # should re-run ndm_reextractspikes / _stderiv to (re)produce the
+    # sidecar before sub-clustering.
+    local markFile="$session.shadowmark.$group"
+    if [ ! -f "$markFile" ]; then
+        echo_info "  group $group: no $markFile — shadowcluster did not run on this group; skipping"
+        return $NO_ERROR
+    fi
+    local unmatchedId nUnmatchedFromMark
+    unmatchedId=$(awk '$1=="unmatched_id"   {print $2; exit}'  "$markFile")
+    nUnmatchedFromMark=$(awk '$1=="n_unmatched" {print $2; exit}' "$markFile")
+    if [ -z "$unmatchedId" ]; then
+        echo_warning "  group $group: $markFile missing unmatched_id key — skipping"
+        return $GENERAL_ERROR
+    fi
+    if [ "${nUnmatchedFromMark:-0}" = "0" ]; then
+        echo_info "  group $group: shadowmark reports n_unmatched=0 — nothing to sub-cluster, skipping"
+        # Mark as done so we don't keep reading the sidecar on re-runs.
+        mv -f "$markFile" "$markFile.done"
+        return $NO_ERROR
+    fi
+
     # Idempotence: if we've already sub-clustered this group, the backup
     # .clu.$group.bak-sub exists.  Don't re-process — the operator can
     # rm the .bak-sub to force a re-run.
@@ -293,20 +344,23 @@ once()
     # Clean any stragglers from a previous aborted run.  Sandbox output is
     # always .fet (not .fetD) because KlustaKwik hard-codes .fet — no
     # consumer reads .fetD.  The extractor below writes {sandbox}.fet.{g}
-    # regardless of whether input was .fet.{g} or .fetD.{g}.
+    # regardless of whether input was .fet.{g} or .fetD.{g}.  The yaml
+    # symlink (for KK's session-param auto-detection) is also cleaned
+    # so a stale dangling link does not poison this run.
     rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group" \
-          "$sandboxStem.klg.$group" "$sandboxStem.temp.clu.$group"
+          "$sandboxStem.klg.$group" "$sandboxStem.temp.clu.$group" \
+          "$sandboxStem.yaml" "$sandboxStem.yml" "$sandboxStem.xml"
 
-    # Pass 1: extract unmatched rows to sandbox .fet.
-    local extract_out
-    extract_out=$(extract_unmatched "$group" "$sandboxStem" "$fetExt")
-    if [ -z "$extract_out" ]; then
-        echo_info "  group $group: no unmatched bin detected — skipping"
+    # Pass 1: extract unmatched rows to sandbox .fet using the unmatched
+    # id supplied by the shadowmark sidecar.
+    local nUnmatched
+    nUnmatched=$(extract_unmatched "$group" "$sandboxStem" "$fetExt" "$unmatchedId")
+    if [ -z "$nUnmatched" ]; then
+        echo_info "  group $group: shadowmark unmatched_id=$unmatchedId not present in live .clu — skipping"
+        echo_info "    (group may have been hand-edited since the shadow merge)"
         rm -f "$sandboxStem.fet.$group"
         return $NO_ERROR
     fi
-    local unmatchedId=${extract_out% *}
-    local nUnmatched=${extract_out##* }
 
     echo_info "  group $group: unmatched cluster id=$unmatchedId, $nUnmatched spikes (read from .$fetExt.$group)"
 
@@ -461,6 +515,33 @@ PYEOF
 
     print_header "  group $group - KlustaKwik on $nUnmatched unmatched spikes"
 
+    # ── YAML visibility shim ────────────────────────────────────────────────
+    #
+    # KlustaKwik calls kkReadYamlSpikeParams(FileBase, ElecNo) which probes
+    # for <FileBase>.yaml then <FileBase>.yml.  When invoked against the
+    # sandbox stem ($sandboxStem = $session-unmatched-<g>) those probes
+    # miss and KK falls back to SamplingRate=20000 with all probe geometry
+    # / channelIds / nbSamples / peakSampleIndex unset (visible in the log
+    # as "SamplingRate defaulting to 20000 Hz").  That fallback breaks
+    # chunked CEM math whenever the session SR != 20000 and silently
+    # disables drift-aware paths that need site positions.
+    #
+    # Symlink the live session yaml to the sandbox stem just for the
+    # duration of the KK call.  The symlink is removed regardless of KK
+    # exit status so a crash mid-run does not leave a stale link behind.
+    local yamlShim=""
+    if [ -f "$session.$param_ext" ]; then
+        yamlShim="$sandboxStem.$param_ext"
+        # Refuse to clobber a pre-existing real file (defensive: shouldn't
+        # happen given the cleanup above, but a half-aborted prior run
+        # could in principle leave one).
+        if [ -e "$yamlShim" ] && [ ! -L "$yamlShim" ]; then
+            echo_error "  group $group: $yamlShim exists and is not a symlink; refusing to clobber"
+            return $GENERAL_ERROR
+        fi
+        ln -sf "$(basename "$session.$param_ext")" "$yamlShim"
+    fi
+
     # Invocation mirrors ndm_klustakwik line-for-line, except:
     #   -UseFeatures all              — always use every sandbox feature
     #   -fSaveModel 0                 — no .model.N (sandbox is throw-away)
@@ -502,6 +583,12 @@ PYEOF
         -SaveIntermediates       0
     local kk_status=$?
 
+    # Tear down YAML shim regardless of outcome — leaves no dangling link
+    # on the next invocation, even if KK crashed mid-run.
+    if [ -n "$yamlShim" ] && [ -L "$yamlShim" ]; then
+        rm -f "$yamlShim"
+    fi
+
     unset OMP_NUM_THREADS OMP_WAIT_POLICY
 
     if [ $kk_status -ne 0 ]; then
@@ -528,6 +615,15 @@ PYEOF
           "$sandboxStem.clu.$group" \
           "$sandboxStem.klg.$group" \
           "$sandboxStem.temp.clu.$group"
+
+    # Rotate the shadowmark sidecar to .done so a re-run won't re-trigger
+    # the sub-cluster on the same residual.  The .clu.$group.bak-sub
+    # idempotence check above is the primary guard; rotating the sidecar
+    # keeps the audit trail without the sidecar reading stale on a future
+    # invocation that sees a manually-restored .clu.$group.
+    if [ -f "$markFile" ]; then
+        mv -f "$markFile" "$markFile.done"
+    fi
 
     return $NO_ERROR
 }

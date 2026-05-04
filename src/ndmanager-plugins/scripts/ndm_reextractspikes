@@ -305,8 +305,8 @@ rm -f $tmpStem.fil
 mergeStem=$session-reextr-merge
 
 # Clean any stale merge outputs from a previous aborted run.
-rm -f "$mergeStem".{res,spk,fet,clu,pca}.[0-9]*
-rm -f "$mergeStem".{res,spk,fet,clu,pca}.[0-9]*.tmp
+rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*
+rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*.tmp
 
 committedCount=0
 noSpikesCount=0
@@ -402,7 +402,7 @@ for group in $(seq 1 $nElectrodeGroups); do
 
     if [ $sc_status -ne 0 ]; then
         echo_error "  group $group: process_shadowcluster failed; live files untouched"
-        rm -f "$mergeStem".{res,spk,fet,clu}."$group"
+        rm -f "$mergeStem".{res,spk,fet,clu,shadowmark}."$group"
         check_command_status process_shadowcluster $sc_status
     fi
 
@@ -414,24 +414,33 @@ for group in $(seq 1 $nElectrodeGroups); do
     done
     if [ -n "$missing" ]; then
         echo_error "  group $group: sandbox missing outputs:$missing; live files untouched"
-        rm -f "$mergeStem".{res,spk,fet,clu}."$group"
+        rm -f "$mergeStem".{res,spk,fet,clu,shadowmark}."$group"
         exit $GENERAL_ERROR
     fi
 
     # Commit: atomic per-file renames.  .clu last so an interrupted
-    # commit leaves the session indexable by old cluster labels.
+    # commit leaves the session indexable by old cluster labels.  The
+    # .shadowmark sidecar (written by process_shadowcluster) is committed
+    # together with them; ndm_subcluster_unmatched uses its presence as
+    # the authoritative marker that this group was shadow-merged.
     mv -f "$mergeStem.res.$group" "$session.res.$group"
     mv -f "$mergeStem.spk.$group" "$session.$spkExt.$group"
     mv -f "$mergeStem.fet.$group" "$session.$fetExt.$group"
     mv -f "$mergeStem.clu.$group" "$session.clu.$group"
+    if [ -f "$mergeStem.shadowmark.$group" ]; then
+        mv -f "$mergeStem.shadowmark.$group" "$session.shadowmark.$group"
+    else
+        echo_warning "  group $group: process_shadowcluster did not produce a shadowmark sidecar"
+        echo_warning "  ndm_subcluster_unmatched will skip this group; rebuild process_shadowcluster"
+    fi
     committedCount=$((committedCount + 1))
 
     rm -f "$tmpStem.res.$group" "$tmpStem.spk.$group" "$tmpStem.spkD.$group"
 done
 
 # Sweep any leftover sandbox files.
-rm -f "$mergeStem".{res,spk,fet,clu,pca}.[0-9]*
-rm -f "$mergeStem".{res,spk,fet,clu,pca}.[0-9]*.tmp
+rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*
+rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*.tmp
 
 echo_info ""
 echo_info "Done — $committedCount/$activeCount eligible group(s) had new spikes merged in-place"
