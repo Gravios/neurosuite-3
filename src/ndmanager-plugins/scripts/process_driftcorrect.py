@@ -109,6 +109,17 @@ def parse_args() -> argparse.Namespace:
                    help="Number of spikes processed per batch (memory cap).")
     p.add_argument("--overwrite",               default="false",
                    help="If true, overwrite existing .spkC(D) outputs.")
+    p.add_argument("--n-workers",                type=int, default=1,
+                   help="Number of worker processes for group-parallel "
+                        "refeaturization.  Default 1 (sequential).  Each "
+                        "group reads its own .res / .spk(D) and writes its "
+                        "own .spkC(D), so this scales nearly linearly with "
+                        "group count up to physical core count.  At NPX "
+                        "scale (large per-group .spk files) the bottleneck "
+                        "becomes disk bandwidth — running more workers "
+                        "than the storage stack can stream in parallel "
+                        "yields diminishing returns.  Set 0 to mean 'use "
+                        "all CPUs'.")
     p.add_argument("--probe-library",           default="")
     return p.parse_args()
 
@@ -269,8 +280,19 @@ def output_spk_path(session: str, group_idx: int, is_stderiv: bool) -> str:
 
 
 def read_drift_signal(path: str) -> np.ndarray:
-    """Read SESSION.dat.drift.P — int16 µm, one sample per recording sample."""
-    return np.fromfile(path, dtype="<i2")
+    """
+    Memory-map SESSION.dat.drift.P — int16 µm, one sample per recording sample.
+
+    At NPX rates (30 kHz × hours) this can be 100s of MB; ``np.memmap``
+    keeps it out of RAM until indexed.  The access pattern below is a
+    single fancy-index lookup against ``ts`` (per-spike timestamps), so
+    only the spike-aligned pages are paged in.
+    """
+    file_bytes = os.path.getsize(path)
+    n_samples  = file_bytes // 2                   # int16 = 2 bytes
+    if n_samples == 0:
+        return np.empty(0, dtype=np.int16)
+    return np.memmap(path, dtype="<i2", mode="r", shape=(n_samples,))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -399,7 +421,9 @@ def process_group(session:               str,
         print(f"  group {group_idx}: drift signal {drift_path} missing — "
               "skipping (no estimate for this probe)", file=sys.stderr)
         return 0
-    drift = read_drift_signal(drift_path).astype(np.float32)
+    # Memory-map and keep as int16 — the float32 cast happens per batch
+    # so the whole signal never materializes in RAM at NPX rates.
+    drift = read_drift_signal(drift_path)
     if drift.size == 0:
         print(f"  group {group_idx}: drift signal {drift_path} empty — "
               "skipping", file=sys.stderr)
@@ -411,7 +435,17 @@ def process_group(session:               str,
               f".dat sample count {n_total_samples} — proceeding with clamp",
               file=sys.stderr)
 
-    max_abs = float(np.max(np.abs(drift)))
+    # Chunked max-scan instead of np.max(np.abs(drift)) — the latter
+    # would page in the whole file just to find the global maximum.
+    # 4 MB chunks (2M int16 samples) is small enough to stay in L2 on
+    # any modern CPU and large enough to amortize Python loop overhead.
+    _chunk = 1 << 21
+    max_abs = 0
+    for s in range(0, drift.size, _chunk):
+        m = int(np.abs(drift[s:s+_chunk]).max())
+        if m > max_abs:
+            max_abs = m
+    max_abs = float(max_abs)
 
     # ── Fast path: drift is essentially zero everywhere ────────────────
     if max_abs < passthrough_thresh_um:
@@ -432,10 +466,19 @@ def process_group(session:               str,
     n_spikes = res.size
 
     # ── Read .spk(D) ───────────────────────────────────────────────────
-    n_sites = z_ref.size
-    raw     = np.fromfile(spk_path, dtype=np.int16)
-    stride  = n_samp * n_sites
-    n_spk_in_file = raw.size // stride
+    # Memory-map the spike file: at NPX scale (~60 GB) loading it into
+    # RAM is impractical, but the access pattern here is sequential
+    # batches of consecutive spikes, which is the ideal memmap case —
+    # the OS page-cache holds at most one batch's worth at a time and
+    # streams the rest from disk.
+    n_sites       = z_ref.size
+    stride        = n_samp * n_sites
+    if stride <= 0:
+        print(f"  group {group_idx}: stride is zero (n_samp={n_samp}, "
+              f"n_sites={n_sites}) — skipping", file=sys.stderr)
+        return 0
+    file_bytes    = os.path.getsize(spk_path)
+    n_spk_in_file = file_bytes // (stride * 2)   # int16 = 2 bytes
     if n_spk_in_file == 0:
         print(f"  group {group_idx}: {spk_path} contains no spikes — "
               "skipping", file=sys.stderr)
@@ -447,12 +490,15 @@ def process_group(session:               str,
         print(f"  group {group_idx}: .spk has {n_spk_in_file} spikes, "
               f".res has {n_spikes} — using {n_use}", file=sys.stderr)
         n_spikes = n_use
-        res = res[:n_use]
-    wf_all = raw[:n_spikes * stride].reshape(n_spikes, n_samp, n_sites)
+        res      = res[:n_use]
+    wf_all = np.memmap(spk_path, dtype="<i2", mode="r",
+                       shape=(n_spikes, n_samp, n_sites))
 
     # ── Look up per-spike drift, clamp timestamp to drift array bounds ─
+    # Cast int16 → float32 here, on the small (n_spikes,) per-spike
+    # array — not on the full multi-million-sample memmap.
     ts = np.clip(res.astype(np.int64), 0, drift.size - 1)
-    d_per_spike = drift[ts]   # int16 → float32 already
+    d_per_spike = np.asarray(drift[ts], dtype=np.float32)
 
     # ── Sanity warning: drift exceeds half the array span ─────────────
     z_valid   = z_ref[np.isfinite(z_ref)]
@@ -482,6 +528,43 @@ def process_group(session:               str,
           f"{'stderiv' if is_stderiv else 'raw'} pipeline)",
           file=sys.stderr)
     return 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multiprocessing worker (module-level so it's picklable for spawn)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from dataclasses import dataclass
+
+@dataclass
+class _GroupJob:
+    """Self-contained per-group work item.  All fields pickle cleanly."""
+    session:               str
+    group_idx:             int
+    drift_path:            str
+    z_ref:                 np.ndarray
+    n_samp:                int
+    sampling_rate:         float
+    n_total_samples:       int
+    passthrough_thresh_um: float
+    batch_size:            int
+    overwrite:             bool
+
+
+def _run_group(job: _GroupJob) -> int:
+    """Worker entrypoint: thin wrapper around ``process_group``."""
+    return process_group(
+        session               = job.session,
+        group_idx             = job.group_idx,
+        drift_path            = job.drift_path,
+        z_ref                 = job.z_ref,
+        n_samp                = job.n_samp,
+        sampling_rate         = job.sampling_rate,
+        n_total_samples       = job.n_total_samples,
+        passthrough_thresh_um = job.passthrough_thresh_um,
+        batch_size            = job.batch_size,
+        overwrite             = job.overwrite,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -528,6 +611,10 @@ def main() -> int:
     n_processed = 0
     n_skipped   = 0
 
+    # Build the job list in the parent — probe-geometry resolution hits
+    # a cache, and we want to do it once rather than per-child.  Skipped
+    # groups (no geometry) never become jobs.
+    jobs: list[_GroupJob] = []
     for g in range(1, args.n_groups + 1):
         # Resolve probe → drift file.
         pid, _ = g_probe_map.get(g, (0, g - 1))
@@ -545,7 +632,7 @@ def main() -> int:
 
         n_samp = n_samp_list[g - 1] if g <= len(n_samp_list) else 32
 
-        rc = process_group(
+        jobs.append(_GroupJob(
             session               = args.session,
             group_idx             = g,
             drift_path            = drift_path,
@@ -556,10 +643,27 @@ def main() -> int:
             passthrough_thresh_um = args.passthrough_thresh_um,
             batch_size            = args.batch_size,
             overwrite             = overwrite,
-        )
-        if rc != 0:
-            return rc
-        n_processed += 1
+        ))
+
+    # Resolve worker count.  0 → all CPUs; clamp to job count.
+    requested = args.n_workers if args.n_workers != 0 else os.cpu_count() or 1
+    n_workers = max(1, min(requested, len(jobs)))
+
+    if n_workers <= 1 or len(jobs) <= 1:
+        for job in jobs:
+            rc = _run_group(job)
+            if rc != 0:
+                return rc
+            n_processed += 1
+    else:
+        from multiprocessing import get_context
+        ctx = get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            for rc in pool.imap(_run_group, jobs):
+                if rc != 0:
+                    pool.terminate()
+                    return rc
+                n_processed += 1
 
     print(f"Drift correction summary: {n_processed} group(s) processed, "
           f"{n_skipped} skipped", file=sys.stderr)
