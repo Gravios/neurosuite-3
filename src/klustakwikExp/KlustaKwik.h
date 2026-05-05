@@ -73,6 +73,13 @@ extern char  Log;
 extern char  Screen;
 extern int   MaxIter;
 extern char  StartCluFile[];
+// Refine-existing-clustering parameters (see KlustaKwik.cpp)
+extern char  RefineExisting[];
+extern char  RefineMode[];
+extern int   RefineIters;
+extern float RefineMergeThresh;
+extern float RefineSplitMinDepth;
+extern int   RefineLockNoiseClu;
 extern float PenaltyMix;
 
 extern char  InitMethod[];

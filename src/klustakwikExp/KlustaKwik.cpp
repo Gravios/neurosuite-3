@@ -51,6 +51,24 @@ char  Log                    = 0;
 char  Screen                 = 0;
 int   MaxIter                = 500;
 char  StartCluFile[STRLEN]   = "";
+
+// ── Refine-existing-clustering parameters ──────────────────────────────────
+// When set, KlustaKwik loads an existing .clu.N as full-Gaussian cluster
+// models and runs a curation pass (reassign + split + merge) instead of the
+// standard init/CEM dispatch.  See KK::RefineExisting in KK.cpp.
+//
+// Drift integration is implicit: when -ChunkFile is also given, RefineExisting
+// uses the chunk boundaries to compute per-cluster temporal occupancy, which
+// gates the merge phase (clusters concentrated in disjoint chunks merge more
+// readily than co-occurring clusters of similar Mahalanobis distance — the
+// drifting-unit case).
+char  RefineExisting[STRLEN] = "";       // path to seed .clu; empty = disabled
+char  RefineMode[STRLEN]     = "full";   // off | reassign | split | merge | full
+int   RefineIters            = 5;        // CEM iterations during reassign
+float RefineMergeThresh      = 0.0f;     // 0 = inherit from MergeThresh (auto-χ²)
+float RefineSplitMinDepth    = 0.4f;     // DipSplit valley depth threshold
+int   RefineLockNoiseClu     = 1;        // never modify cluster ids 0 and 1
+                                         // (artefact / MUA bins per neurosuite convention)
 float PenaltyMix             = 0.0f;
 char  InitMethod[STRLEN]     = "farthest";  // "farthest" (default, deterministic),
                                             // "kmeans++" (D²-weighted random, useful
@@ -195,6 +213,12 @@ void SetupParams(int argc, char **argv) {
     BOOLEAN_PARAM(Screen);
     INT_PARAM(MaxIter);
     STRING_PARAM(StartCluFile);
+    STRING_PARAM(RefineExisting);
+    STRING_PARAM(RefineMode);
+    INT_PARAM(RefineIters);
+    FLOAT_PARAM(RefineMergeThresh);
+    FLOAT_PARAM(RefineSplitMinDepth);
+    INT_PARAM(RefineLockNoiseClu);
     INT_PARAM(fSaveModel);
     INT_PARAM(SplitEvery);
 
@@ -1023,6 +1047,55 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "  mode: original random-init\n");
             }
             fflush(stderr);
+        }
+
+        // ── RefineExisting short-circuit ───────────────────────────────────
+        // When -RefineExisting <path> is given, skip the K-sweep entirely.
+        // RefineExistingClustering loads the supplied .clu, fits full-Gaussian
+        // models from the existing assignments, and runs reassign / split /
+        // merge phases.  K_in defines the operating point — there's no point
+        // in iterating MinClusters..MaxClusters because the seed itself
+        // pins K.  ParallelK is also irrelevant here: we run exactly one
+        // refinement, single-threaded at the outer level (RunEMLoop and the
+        // pairwise merge already exploit OpenMP internally).
+        if (*RefineExisting) {
+            if (strcmp(RefineMode, "off") == 0) {
+                Output("RefineMode=off — exiting without changing %s\n",
+                       RefineExisting);
+                exit(0);
+            }
+            // Effective merge threshold: 0 means "inherit from MergeThresh".
+            // MergeThresh itself defaults to 0 = auto-calibrate to χ²(d, 0.99).
+            // KK::RefineExistingClustering requires a concrete value, so we
+            // compute χ²(nDims-1, 0.99) inline if both knobs are zero.
+            float effMergeThresh = (RefineMergeThresh > 0.0f)
+                                 ? RefineMergeThresh
+                                 : MergeThresh;
+            if (effMergeThresh <= 0.0f) {
+                // Wilson–Hilferty approx to χ²(d, 0.99).  Conservative — the
+                // true value at d=21 is 38.93; the approx gives 38.96.
+                const int   d = std::max(1, K1.nDims - 1);
+                const double z = 2.3263478740408408;  // standard normal 0.99
+                const double m = 1.0 - 2.0 / (9.0 * d);
+                const double k = 1.0 - 2.0 / (9.0 * d) + z * std::sqrt(2.0 / (9.0 * d));
+                effMergeThresh = static_cast<float>(d * std::pow(k / m, 3.0));
+                Output("RefineExisting: auto-calibrated MergeThresh = "
+                       "χ²(%d, 0.99) ≈ %.2f\n", d, effMergeThresh);
+            }
+
+            BestScore = K1.RefineExistingClustering(
+                RefineExisting, RefineMode, RefineIters,
+                effMergeThresh, RefineSplitMinDepth,
+                RefineLockNoiseClu != 0,
+                /*chunkBoundsSec=*/ extChunkBoundsSec);
+            kSv.BestScoreSave = BestScore;
+            Output("RefineExisting %s -> K=%d  Score %f\n",
+                   RefineMode, K1.nClustersAlive, BestScore);
+            for (int p = 0; p < K1.nPoints; p++) K1.BestClass[p] = K1.Class[p];
+            SaveOutput(K1.BestClass);  // always save: this is the final output
+            if (fSaveModel) K1.SaveBestMeans();
+            // Skip the K-sweep / chunked-CEM dispatch entirely.
+            return 0;
         }
 
         // Start from provided cluster file if given

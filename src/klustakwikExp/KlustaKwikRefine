@@ -1,0 +1,211 @@
+#!/bin/bash
+# /////////////////////////////////////////////////////////////////////////////
+# //  KlustaKwikRefine
+# //
+# //  Ergonomic wrapper around `KlustaKwik -RefineExisting` for curating an
+# //  existing .clu file using the centroids and per-cluster covariances of
+# //  that .clu as Gaussian models.  Three sub-phases run in sequence:
+# //
+# //    A. REASSIGN  (full Gaussian E/M loop, splits disabled, K constant)
+# //    B. SPLIT     (DipSplit on each surviving cluster — may grow K)
+# //    C. MERGE     (pairwise Mahalanobis × BIC; drift-aware when chunks
+# //                  are available — pairs in disjoint chunks merge on a
+# //                  relaxed threshold)
+# //
+# //  Auto-detection
+# //
+# //    - Seed .clu          : <session>.clu.<group>            (must exist)
+# //    - Drift chunks       : <session>.chunks.<group>         (optional;
+# //                                                             enables the
+# //                                                             drift-aware
+# //                                                             merge gate)
+# //    - YAML / params      : <session>.yaml                   (must exist;
+# //                                                             provides
+# //                                                             SamplingRate,
+# //                                                             NbChannels,
+# //                                                             NbSamplesPerSpike)
+# //
+# //  Idempotence
+# //
+# //    The seed .clu.<group> is backed up to .clu.<group>.bak-refine on
+# //    first run; refusal-to-clobber on subsequent runs unless --force is
+# //    passed.  Remove the .bak-refine to force a fresh refinement on the
+# //    current .clu.
+# //
+# //  Usage
+# //
+# //    KlustaKwikRefine <session> <electrodeGroup>
+# //                     [--mode reassign|split|merge|full]   (default: full)
+# //                     [--iters N]                          (default: 5)
+# //                     [--mergethresh F]                    (default: auto-χ²)
+# //                     [--splitdepth F]                     (default: 0.4)
+# //                     [--chunks <path>]                    (default: auto)
+# //                     [--no-drift]                         (skip chunk lookup)
+# //                     [--unlock-noise]                     (allow merging
+# //                                                            cluster 0 / 1)
+# //                     [--force]                            (overwrite .bak)
+# //                     [--dry-run]                          (print cmd, exit)
+# //                     [-- <extra-KK-flags...>]             (forwarded raw)
+# //
+# //  Extra flags after `--` are forwarded verbatim to the KlustaKwik binary,
+# //  so anything KKE accepts works (e.g. `-Verbose 2 -Log 1`).
+# /////////////////////////////////////////////////////////////////////////////
+
+set -euo pipefail
+
+SCRIPT_NAME=$(basename "$0")
+
+usage()
+{
+    sed -n '/^# \/\/\//,/^# \/\/\//p' "$0" | sed 's|^# *||'
+    exit "${1:-1}"
+}
+
+# ─── arg parsing ─────────────────────────────────────────────────────────────
+positional=()
+mode=full
+iters=5
+mergethresh=0          # 0 => let the binary auto-calibrate
+splitdepth=0.4
+chunks=""
+auto_chunks=1
+lock_noise=1
+force=0
+dry_run=0
+extra_args=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)         usage 0 ;;
+        --mode)            mode=$2;        shift 2 ;;
+        --iters)           iters=$2;       shift 2 ;;
+        --mergethresh)     mergethresh=$2; shift 2 ;;
+        --splitdepth)      splitdepth=$2;  shift 2 ;;
+        --chunks)          chunks=$2; auto_chunks=0; shift 2 ;;
+        --no-drift)        auto_chunks=0;  shift   ;;
+        --unlock-noise)    lock_noise=0;   shift   ;;
+        --force)           force=1;        shift   ;;
+        --dry-run)         dry_run=1;      shift   ;;
+        --)                shift; extra_args=("$@"); break ;;
+        -*)                echo "$SCRIPT_NAME: unknown option: $1" >&2
+                           usage 1 ;;
+        *)                 positional+=("$1"); shift ;;
+    esac
+done
+
+if [[ ${#positional[@]} -ne 2 ]]; then
+    echo "$SCRIPT_NAME: expected 2 positional args (session, group), got ${#positional[@]}" >&2
+    usage 1
+fi
+session=${positional[0]}
+group=${positional[1]}
+
+if ! [[ "$group" =~ ^[0-9]+$ ]]; then
+    echo "$SCRIPT_NAME: electrodeGroup must be a positive integer (got '$group')" >&2
+    exit 1
+fi
+
+case "$mode" in
+    off|reassign|split|merge|full) ;;
+    *)  echo "$SCRIPT_NAME: --mode must be off|reassign|split|merge|full (got '$mode')" >&2
+        exit 1 ;;
+esac
+
+# ─── input validation ────────────────────────────────────────────────────────
+clu_path="$session.clu.$group"
+if [[ ! -f "$clu_path" ]]; then
+    echo "$SCRIPT_NAME: $clu_path not found — nothing to refine" >&2
+    exit 1
+fi
+
+# Auto-detect chunk file when not explicitly given.  Chunk files are
+# produced by ndm_applydrift after ndm_estimatedrift; presence enables
+# the drift-aware merge gate.  Absent file is fine — refinement falls back
+# to plain Mahalanobis × BIC merge.
+if [[ -z "$chunks" && $auto_chunks -eq 1 ]]; then
+    cand="$session.chunks.$group"
+    if [[ -f "$cand" ]]; then
+        chunks=$cand
+        echo "$SCRIPT_NAME: detected drift chunks at $chunks (drift-aware merge enabled)"
+    fi
+fi
+
+if [[ -n "$chunks" && ! -f "$chunks" ]]; then
+    echo "$SCRIPT_NAME: --chunks $chunks does not exist" >&2
+    exit 1
+fi
+
+# ─── idempotence: back up seed .clu before we let the binary write to it ─────
+bak_path="$clu_path.bak-refine"
+if [[ -f "$bak_path" && $force -eq 0 ]]; then
+    echo "$SCRIPT_NAME: $bak_path already exists from a prior refinement"
+    echo "  remove the .bak-refine to force a fresh run, or pass --force"
+    exit 1
+fi
+if [[ $dry_run -eq 0 ]]; then
+    cp -f "$clu_path" "$bak_path"
+fi
+
+# ─── pick the binary ─────────────────────────────────────────────────────────
+# Prefer the GPU build when present (KlustaKwikExp), falling back to the CPU
+# build (KlustaKwikExp_cpu) — same selection rule as the regular ndmanager-
+# plugins KlustaKwik invocation in ndm_klustakwik.
+if command -v KlustaKwikExp >/dev/null 2>&1; then
+    KK_BIN=KlustaKwikExp
+elif command -v KlustaKwikExp_cpu >/dev/null 2>&1; then
+    KK_BIN=KlustaKwikExp_cpu
+elif command -v KlustaKwik >/dev/null 2>&1; then
+    KK_BIN=KlustaKwik
+else
+    echo "$SCRIPT_NAME: no KlustaKwik binary on PATH" >&2
+    exit 1
+fi
+
+# ─── construct the call ──────────────────────────────────────────────────────
+# RefineExisting takes the seed .clu path; the binary will write its output
+# back to <session>.clu.<group> (the canonical output path), which is why we
+# backed it up as .bak-refine above.  ChunkFile, when present, drives the
+# drift-aware temporal-overlap gate inside RefineExistingClustering's Phase C.
+cmd=("$KK_BIN" "$session" "$group"
+     -RefineExisting    "$clu_path"
+     -RefineMode        "$mode"
+     -RefineIters       "$iters"
+     -RefineSplitMinDepth "$splitdepth"
+     -RefineLockNoiseClu "$lock_noise"
+     -Log 1 -Screen 1)
+
+if [[ "$mergethresh" != "0" ]]; then
+    cmd+=(-RefineMergeThresh "$mergethresh")
+fi
+if [[ -n "$chunks" ]]; then
+    cmd+=(-ChunkFile "$chunks")
+fi
+if [[ ${#extra_args[@]} -gt 0 ]]; then
+    cmd+=("${extra_args[@]}")
+fi
+
+# ─── go ──────────────────────────────────────────────────────────────────────
+if [[ $dry_run -eq 1 ]]; then
+    printf '%q ' "${cmd[@]}"; echo
+    exit 0
+fi
+
+echo "$SCRIPT_NAME: $session group $group — mode=$mode${chunks:+ (drift-aware)}"
+echo "  seed:    $clu_path  (backed up to $bak_path)"
+echo "  binary:  $KK_BIN"
+echo
+
+"${cmd[@]}"
+status=$?
+
+if [[ $status -ne 0 ]]; then
+    echo "$SCRIPT_NAME: KlustaKwik returned $status; restoring $clu_path from backup"
+    cp -f "$bak_path" "$clu_path"
+    exit $status
+fi
+
+echo
+echo "$SCRIPT_NAME: done"
+echo "  refined:  $clu_path"
+echo "  backup:   $bak_path"
+exit 0
