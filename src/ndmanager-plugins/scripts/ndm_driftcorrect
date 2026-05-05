@@ -70,6 +70,9 @@ probeLibrary=$(read_script_parameter "$session" ndm_driftcorrect probeLibrary)
 batchSize=$(read_script_parameter "$session" ndm_driftcorrect batchSize)
 batchSize=${batchSize:-100000}
 
+nWorkers=$(read_script_parameter "$session" ndm_driftcorrect nWorkers)
+nWorkers=${nWorkers:-1}
+
 # Acquisition parameters
 samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
 nChannels=$(yaml_read    "$session" "//acquisitionSystem/nChannels")
@@ -131,6 +134,7 @@ python3 "$PY_HELPER" \
     --n-samples-per-group     "$nSamplesPerGroup" \
     --passthrough-thresh-um   "$passthroughThreshUm" \
     --batch-size              "$batchSize" \
+    --n-workers               "$nWorkers" \
     --overwrite               "$overwrite" \
     ${probeLibrary:+--probe-library "$probeLibrary"}
 

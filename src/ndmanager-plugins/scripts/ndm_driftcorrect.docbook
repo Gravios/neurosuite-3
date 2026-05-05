@@ -145,8 +145,43 @@ ndm_estimatedrift [re-run]   →  sharper drift estimate
         <term><parameter>batchSize</parameter></term>
         <listitem><para>
           Number of spikes processed per memory-resident batch.
-          Default: <literal>100000</literal>.  Lower this on small-RAM
-          systems; raise it for slightly faster throughput.
+          Default: <literal>100000</literal>.  The
+          <filename>.spk(D)</filename> file is memory-mapped, so the
+          batch size only bounds the working-set RAM of the
+          interpolation kernel — at <literal>100000</literal> spikes
+          × 82 samples × 384 channels × 4 B/float ≈ 12 GB the kernel
+          stays comfortably below typical workstation RAM.  Lower this
+          on small-RAM systems; raise it for slightly faster
+          throughput on large-RAM systems where the kernel can
+          process more spikes per launch overhead.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><parameter>nWorkers</parameter></term>
+        <listitem><para>
+          Number of worker processes for group-parallel drift
+          correction.  Default <literal>1</literal> (sequential).
+          Set to <literal>0</literal> to use all available CPUs, or
+          to a positive integer to cap the worker count.  Each group
+          is processed independently — its own
+          <filename>.res</filename>, memory-mapped
+          <filename>.spk(D)</filename>, memory-mapped
+          <filename>.dat.drift.P</filename>, and own output file —
+          so throughput scales nearly linearly with group count up
+          to physical core count.  For NPX-class data where each
+          group's interpolation kernel does seconds of work, this is
+          a near-free speedup; for octrode-class data with milliseconds
+          of work per group, the spawn overhead can dominate and
+          sequential mode is faster.
+        </para>
+        <para>
+          Output files are deterministic in content: each group writes
+          to its own <filename>.spkC(D).N</filename> path, and the
+          interpolation is purely a function of the input
+          waveforms and drift signal.  Two runs at different
+          <parameter>nWorkers</parameter> values produce byte-identical
+          output files for every group.  Only the order of stderr
+          progress messages differs.
         </para></listitem>
       </varlistentry>
       <varlistentry>

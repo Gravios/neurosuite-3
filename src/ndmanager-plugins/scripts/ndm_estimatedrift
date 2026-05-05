@@ -41,6 +41,8 @@ windowSec=$(read_script_parameter "$session" ndm_estimatedrift windowSec);  wind
 minUnits=$(read_script_parameter  "$session" ndm_estimatedrift minUnits);   minUnits=${minUnits:-3}
 minSpikes=$(read_script_parameter "$session" ndm_estimatedrift minSpikes);  minSpikes=${minSpikes:-20}
 excludeNoise=$(read_script_parameter "$session" ndm_estimatedrift excludeNoise); excludeNoise=${excludeNoise:-true}
+weightMode=$(read_script_parameter "$session" ndm_estimatedrift weightMode); weightMode=${weightMode:-geometry}
+nWorkers=$(read_script_parameter   "$session" ndm_estimatedrift nWorkers);   nWorkers=${nWorkers:-1}
 probeLibrary=$(read_script_parameter "$session" ndm_estimatedrift probeLibrary)
 
 samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
@@ -87,6 +89,8 @@ python3 "$PY_HELPER" \
     --min-units            "$minUnits" \
     --min-spikes           "$minSpikes" \
     --exclude-noise        "$excludeNoise" \
+    --weight-mode          "$weightMode" \
+    --n-workers            "$nWorkers" \
     --n-samples-per-group  "$nSamplesPerGroup" \
     ${probeLibrary:+--probe-library "$probeLibrary"} \
     --output               "$session.drift"

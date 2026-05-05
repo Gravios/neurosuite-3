@@ -97,6 +97,26 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--exclude-noise",     default="true")
     p.add_argument("--outlier-threshold", type=float, default=5.0,
                    help="Max pairwise distance change (µm) to flag a unit as outlier")
+    p.add_argument("--weight-mode",
+                   choices=["geometry", "sharpness", "count"], default="geometry",
+                   help="Per-unit weighting in the Method-1 weighted median.  "
+                        "'geometry' (default) extends 'sharpness' with a "
+                        "profile_drift_sensitivity term — the L2 norm of the "
+                        "spatial derivative of the unit's amplitude profile, "
+                        "computed from the reference window.  This down-weights "
+                        "far-field units whose profile is stable across drift "
+                        "(sharp xcorr peak, but the peak is uninformative).  "
+                        "'sharpness' uses curvature × n_active × sqrt(n_spikes); "
+                        "'count' reproduces the legacy sqrt(n_ref × n_win) "
+                        "weighting for back-compat.")
+    p.add_argument("--n-workers", type=int, default=1,
+                   help="Number of worker processes for shank-parallel "
+                        "estimation.  Default 1 (sequential, fully "
+                        "deterministic ordering of stderr messages).  Each "
+                        "shank is independent — independent .res/.clu/.spk "
+                        "reads, no shared state — so this scales nearly "
+                        "linearly with shank count up to physical core "
+                        "count.  Set 0 to mean 'use all CPUs'.")
     p.add_argument("--probe-library",     default="")
     p.add_argument("--n-samples-per-group", default="",
                    help="Comma-separated list of nSamplesPerSpike for each group "
@@ -185,9 +205,36 @@ def read_clu(path: str) -> np.ndarray:
 
 
 def read_spk(path: str, n_sites: int, n_samp: int, n_spk: int) -> np.ndarray:
-    data = np.fromfile(path, dtype=np.int16, count=n_spk * n_samp * n_sites)
-    k    = data.size // (n_samp * n_sites)
-    return data[:k * n_samp * n_sites].reshape(k, n_samp, n_sites)
+    """
+    Memory-map a .spk(D).N file as a (k, n_samp, n_sites) int16 array.
+
+    Uses ``np.memmap`` so the OS page-cache holds only what we actually
+    touch.  Fancy-indexed reads like ``wf_all[idx]`` for one cluster's
+    spikes pull in just those pages; the full file is never resident.
+
+    The on-disk layout is sample-major: each spike is ``n_samp`` rows
+    of ``n_sites`` int16 values, stored back-to-back.  We expose this
+    as a 3-D view shaped (k, n_samp, n_sites) where ``k`` is whatever
+    integer number of complete spikes fit in the file.
+
+    The file size is computed once via ``os.path.getsize`` so this
+    works for both ``.spk.N`` (raw) and ``.spkD.N`` (stderiv) without
+    needing to know which pipeline wrote it.
+    """
+    stride = n_samp * n_sites
+    if stride <= 0:
+        return np.empty((0, max(1, n_samp), max(1, n_sites)), dtype=np.int16)
+    total_bytes = os.path.getsize(path)
+    k_in_file   = total_bytes // (stride * 2)   # int16 = 2 bytes
+    if n_spk > 0:
+        k = min(k_in_file, n_spk)
+    else:
+        k = k_in_file
+    if k <= 0:
+        return np.empty((0, n_samp, n_sites), dtype=np.int16)
+    mm = np.memmap(path, dtype="<i2", mode="r",
+                   shape=(k, n_samp, n_sites))
+    return mm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +271,86 @@ def unit_com(wf: np.ndarray, depths: np.ndarray) -> float:
 def unit_amplitude_profile(wf: np.ndarray) -> np.ndarray:
     """Mean PTP per site. (n_sites,)"""
     return ptp(wf).mean(axis=0) if wf.shape[0] > 0 else np.zeros(wf.shape[2])
+
+
+def profile_drift_sensitivity(profile: np.ndarray,
+                               depths:  np.ndarray) -> float:
+    """
+    Estimate how sensitive a unit's amplitude profile is to small
+    probe-depth shifts, in units of (L2-normalised amplitude per µm).
+
+    The intuition:
+        * A near-source unit with a tight peak has a steep profile
+          gradient on either flank.  A 1 µm probe shift moves the
+          centroid by 1 µm and the per-site amplitudes change visibly.
+          → large sensitivity.
+        * A far-source unit with a smeared, near-flat profile has
+          almost no gradient anywhere.  A 1 µm probe shift barely
+          changes the per-site amplitudes.
+          → tiny sensitivity.
+
+    This separation matters because both kinds of unit can produce
+    sharp xcorr peaks (a flat profile cross-correlated with itself
+    peaks sharply at zero), so curvature alone is misleading.  The
+    sensitivity term distinguishes "sharp because informative" from
+    "sharp because invariant".
+
+    Computation
+    -----------
+    L2-normalise the profile so absolute amplitude doesn't enter
+    (the count and active-site terms already encode that).  Restrict
+    to active sites with PTP > 10 % of the per-window peak — the
+    same threshold used by ``per_unit_xcorr_shift``.  Compute central
+    differences of the normalised profile w.r.t. depth on the
+    sorted-by-depth active subset, then return the L2 norm.
+
+    Returns 0.0 when fewer than 3 active sites are available
+    (central differences need a 3-point stencil).  This forces the
+    weight to zero, which is correct: we have no shape information.
+
+    For the Buzsaki64L (8 sites/shank, ~20 µm pitch) typical values
+    range from ~0.005 (far-field, near-flat profile) to ~0.05
+    (tight near-tip dipole) — a 10× spread that meaningfully
+    redistributes weight across the unit population.
+
+    For the A32 (32 sites, 50 µm pitch) the dynamic range is wider
+    still: a unit registering sharply on a single site neighbourhood
+    will dwarf far-field units by 50× or more in this metric.
+    """
+    valid_depths = np.isfinite(depths)
+    if valid_depths.sum() < 3:
+        return 0.0
+    threshold = 0.1 * max(profile.max(), 1e-6)
+    active    = valid_depths & (profile > threshold)
+    if active.sum() < 3:
+        return 0.0
+
+    p_a = profile[active].astype(np.float64)
+    z_a = depths[active].astype(np.float64)
+
+    # Sort by depth (no guarantee active-site order is monotone).
+    order = np.argsort(z_a)
+    p_s   = p_a[order]
+    z_s   = z_a[order]
+
+    # L2-normalise so absolute amplitude doesn't bleed in.
+    norm = np.linalg.norm(p_s)
+    if norm <= 1e-12:
+        return 0.0
+    p_n = p_s / norm
+
+    # Central differences in depth.  At array edges fall back to
+    # forward/backward differences so we don't drop endpoint info.
+    n = len(p_n)
+    grad = np.empty(n, dtype=np.float64)
+    grad[0]    = (p_n[1]  - p_n[0])     / max(z_s[1]    - z_s[0],    1e-9)
+    grad[-1]   = (p_n[-1] - p_n[-2])    / max(z_s[-1]   - z_s[-2],   1e-9)
+    if n >= 3:
+        dz = z_s[2:] - z_s[:-2]
+        dz = np.where(dz < 1e-9, 1e-9, dz)
+        grad[1:-1] = (p_n[2:] - p_n[:-2]) / dz
+
+    return float(np.linalg.norm(grad))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +394,8 @@ def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
 
 def per_unit_xcorr_shift(ref_profile: np.ndarray,
                           win_profile: np.ndarray,
-                          depths: np.ndarray) -> Optional[float]:
+                          depths: np.ndarray
+                          ) -> Optional[tuple[float, float, int, int]]:
     """
     Estimate the depth shift of a single unit by cross-correlating its
     amplitude-vs-depth profile between the reference and current window.
@@ -275,14 +403,33 @@ def per_unit_xcorr_shift(ref_profile: np.ndarray,
     ref_profile, win_profile : (n_sites,) mean PTP amplitude per site
     depths                   : (n_sites,) depth in µm, monotone
 
-    Returns shift in µm (positive = unit's footprint moved deeper), or None
-    if the profile has too few non-zero sites to be reliable.
+    Returns
+    -------
+    (shift_um, peak_curvature, n_active_ref, n_active_win) or None.
+
+    Returns None only when the profile fails the hard floor of *at least
+    two* sites with appreciable signal in both windows.  Above that
+    floor, the continuous-valued ``n_active_*`` and ``peak_curvature``
+    are returned so the caller can use them as a soft confidence weight
+    (low n_active_* = profile concentrated on a single site, low
+    curvature = ambiguous xcorr peak).
+
+    "Appreciable" is fixed at 10 % of the per-window peak — same
+    threshold as the population-xcorr fallback.  This is a hard floor
+    because below it the cross-correlation is dominated by noise; the
+    soft-weight scheme handles the gradient between "barely usable" and
+    "perfectly clean" above it.
     """
-    # Require at least 2 sites with appreciable signal
-    threshold = 0.1 * max(ref_profile.max(), win_profile.max(), 1e-6)
-    if (ref_profile > threshold).sum() < 2 or (win_profile > threshold).sum() < 2:
+    threshold      = 0.1 * max(ref_profile.max(), win_profile.max(), 1e-6)
+    n_active_ref   = int((ref_profile > threshold).sum())
+    n_active_win   = int((win_profile > threshold).sum())
+    if n_active_ref < 2 or n_active_win < 2:
         return None
-    return xcorr_shift(ref_profile, win_profile, depths)
+    res = xcorr_shift(ref_profile, win_profile, depths)
+    if res is None:
+        return None
+    shift, curvature = res
+    return shift, curvature, n_active_ref, n_active_win
 
 
 def method1_per_unit_xcorr(
@@ -294,6 +441,7 @@ def method1_per_unit_xcorr(
         win_cnts:     dict[int, int],          # unit → spike count in win
         depths:       np.ndarray,
         threshold:    float,
+        weight_mode:  str = "geometry",
 ) -> tuple[Optional[float], int, list[dict]]:
     """
     Compute rigid-body drift as the weighted median of per-unit spatial-profile
@@ -303,7 +451,50 @@ def method1_per_unit_xcorr(
       1. Cross-correlate amplitude_profile[ref] vs amplitude_profile[win].
       2. The peak lag (µm, sub-site via parabolic interpolation) = this unit's
          individual displacement estimate.
-      3. Weight = sqrt(n_spikes_ref × n_spikes_win).
+      3. Weight depends on weight_mode:
+
+         geometry  (default):
+            profile_drift_sensitivity(ref_profile)
+          × peak_curvature
+          × sqrt(n_active_ref × n_active_win)
+          × sqrt(n_spikes_ref × n_spikes_win)
+
+         sharpness (legacy, prior default):
+            peak_curvature
+          × sqrt(n_active_ref × n_active_win)
+          × sqrt(n_spikes_ref × n_spikes_win)
+
+         count     (legacy, original):
+            sqrt(n_spikes_ref × n_spikes_win)
+
+    Geometry-mode rationale.
+    Sharpness mode rewards units whose xcorr peak is well-defined.  But a
+    sharp xcorr peak can arise for two opposite reasons:
+
+      (a) the unit has a tight spatial dipole that genuinely tracks
+          drift — its amplitude profile changes substantially per µm
+          of shift, and the xcorr unambiguously locates that shift.
+          We want this unit dominating the weighted median.
+
+      (b) the unit has a stable, near-flat amplitude profile (far
+          from the array, recorded in the array's far field) — the
+          profile barely changes shape over a small drift, so the
+          xcorr peaks sharply at zero or near-zero regardless of the
+          true drift.  This unit gives no drift information.
+
+    The profile_drift_sensitivity term — the L2 norm of the spatial
+    derivative of the unit's reference-window profile — separates
+    these cases.  Tight near-tip units have steep gradients;
+    far-field units have ~flat profiles.  The two factors of
+    ~10× spread (typical) means a single near-tip unit with 100
+    spikes can outweigh five far-field units with 1000 spikes each
+    — which is exactly the right outcome for drift estimation.
+
+    On a Buzsaki64L (8 sites/shank, 20 µm pitch, 140 µm shank span)
+    or A32 linear (32 sites, 50 µm pitch) the dynamic range of
+    profile_drift_sensitivity across well-isolated units in a
+    typical session is ~10–50×, depending on how broad the
+    amplitude-vs-depth spread of curated units is.
 
     The geometric consistency check (pairwise CoM distances) is still used to
     flag outliers — units whose relative spatial arrangement changed — before
@@ -327,8 +518,32 @@ def method1_per_unit_xcorr(
         n_ref    = ref_cnts.get(uid, 0)
         n_win    = win_cnts.get(uid, 0)
 
-        shift = per_unit_xcorr_shift(ref_p, win_p, depths)
-        w     = math.sqrt(n_ref * n_win) if (not flagged and shift is not None) else 0.0
+        res            = per_unit_xcorr_shift(ref_p, win_p, depths)
+        shift          = None
+        curvature      = 0.0
+        n_active_ref   = 0
+        n_active_win   = 0
+        if res is not None:
+            shift, curvature, n_active_ref, n_active_win = res
+
+        # Component weights — kept separate for inspection in the YAML.
+        # Sensitivity is computed from the REFERENCE window's profile only:
+        # it's a per-unit constant across the session, computed once when
+        # the unit is registered against its reference geometric snapshot.
+        w_count       = math.sqrt(n_ref * n_win)
+        w_active      = math.sqrt(n_active_ref * n_active_win)
+        w_curvature   = curvature
+        w_sensitivity = profile_drift_sensitivity(ref_p, depths)
+
+        if weight_mode == "count":
+            w_total = w_count
+        elif weight_mode == "sharpness":
+            w_total = w_curvature * w_active * w_count
+        else:  # "geometry" (default)
+            w_total = w_sensitivity * w_curvature * w_active * w_count
+
+        if flagged or shift is None or w_total <= 0:
+            w_total = 0.0
 
         details.append({
             "unit":              uid,
@@ -340,13 +555,21 @@ def method1_per_unit_xcorr(
             # CoM difference retained as a cross-check (should be close to xcorr_shift)
             "com_delta_um":      round(win_com - ref_com, 2)
                                  if not (math.isnan(ref_com) or math.isnan(win_com)) else None,
-            "weight":            round(w, 1),
+            "weight":            round(w_total, 4),
+            # Component breakdown — exposed so users can see WHY a unit
+            # got its weight (e.g. sensitivity 0.005 = far-field unit;
+            # curvature 0.02 = ambiguous xcorr; n_active 2 = barely-
+            # resolved profile).
+            "weight_sensitivity":round(w_sensitivity, 5),
+            "weight_curvature":  round(w_curvature, 3),
+            "weight_n_active":   round(w_active, 2),
+            "weight_n_spikes":   round(w_count, 1),
             "outlier":           flagged,
         })
 
-        if not flagged and shift is not None and w > 0:
+        if not flagged and shift is not None and w_total > 0:
             shifts.append(shift)
-            weights.append(w)
+            weights.append(w_total)
 
     if not shifts:
         return None, 0, details
@@ -375,10 +598,24 @@ def build_profile(spk_idx: np.ndarray,
     return np.full(n_sites, float(len(valid)))
 
 
-def xcorr_shift(ref: np.ndarray, win: np.ndarray, depths: np.ndarray) -> Optional[float]:
+def xcorr_shift(ref: np.ndarray, win: np.ndarray, depths: np.ndarray
+                ) -> Optional[tuple[float, float]]:
     """
     Sub-sample depth shift (µm) via cross-correlation of amplitude profiles.
     Parabolic interpolation around the peak gives sub-site precision.
+
+    Returns
+    -------
+    (shift_um, peak_curvature) or None on failure.
+
+    ``peak_curvature`` is the parabolic-fit second-difference at the peak
+    (``2*y_peak − y_prev − y_next``) on the *L2-normalised* profiles.
+    Range is approximately [0, 1] for typical neural profiles: ≈0 means a
+    flat/ambiguous peak (low confidence in the shift estimate); ≈1 means
+    a sharp single-site-wide peak (high confidence).  Profiles whose peak
+    sits at the cross-correlation boundary, or whose parabolic
+    denominator is degenerate, are returned with curvature = 0 so callers
+    can downweight them without throwing the estimate away.
     """
     if ref.sum() == 0 or win.sum() == 0 or len(depths) < 3:
         return None
@@ -394,17 +631,25 @@ def xcorr_shift(ref: np.ndarray, win: np.ndarray, depths: np.ndarray) -> Optiona
     pk    = int(np.argmax(cc))
     # Parabolic interpolation
     if 1 <= pk <= len(cc) - 2:
-        y0, y1, y2 = cc[pk - 1], cc[pk], cc[pk + 1]
-        denom = 2 * (2 * y1 - y0 - y2)
-        frac  = (y0 - y2) / denom if abs(denom) > 1e-12 else 0.0
-        lag   = lags[pk] + frac
+        y0, y1, y2 = float(cc[pk - 1]), float(cc[pk]), float(cc[pk + 1])
+        denom      = 2 * (2 * y1 - y0 - y2)
+        frac       = (y0 - y2) / denom if abs(denom) > 1e-12 else 0.0
+        lag        = lags[pk] + frac
+        # Curvature: the second-difference at the peak.  This IS the
+        # numerator of `denom` divided by 2 (i.e. the negative of the
+        # discrete second derivative).  On L2-normalised profiles it is
+        # bounded in [0, 1] for any reasonable peak.
+        curvature  = max(0.0, 2 * y1 - y0 - y2)
     else:
-        lag = lags[pk]
+        # Peak at the boundary — parabolic fit not defined.  Take the
+        # integer lag but report curvature 0 so the caller can downweight.
+        lag       = float(lags[pk])
+        curvature = 0.0
     # Filter NaN depths (null geometry sites) before computing spacing
     valid_depths = depths[np.isfinite(depths)] if len(depths) > 0 else depths
     spacing = float(np.median(np.diff(np.sort(valid_depths)))) \
               if len(valid_depths) > 1 else 50.0
-    return round(float(lag * spacing), 2)
+    return round(float(lag * spacing), 2), round(curvature, 4)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -417,6 +662,7 @@ def estimate_shank_drift(
         min_units: int, min_spikes: int,
         exclude_noise: bool, outlier_threshold: float,
         n_samp: int = 32,
+        weight_mode: str = "geometry",
 ) -> Optional[dict]:
 
     res_path = f"{session}.res.{group_idx}"
@@ -556,13 +802,17 @@ def estimate_shank_drift(
                 ref_profiles, win_profiles,
                 ref_coms,     win_coms,
                 ref_cnts,     win_cnts,
-                depths,       outlier_threshold)
+                depths,       outlier_threshold,
+                weight_mode = weight_mode)
 
         # Method 2: population xcorr
-        d_m2: Optional[float] = None
+        d_m2: Optional[float]      = None
+        d_m2_curvature: float       = 0.0
         if has_spk and ref_pop_profile is not None:
             win_pop_profile = build_profile(win_idx, wf_all, clu, noise, n_sites)
-            d_m2 = xcorr_shift(ref_pop_profile, win_pop_profile, depths)
+            res_m2 = xcorr_shift(ref_pop_profile, win_pop_profile, depths)
+            if res_m2 is not None:
+                d_m2, d_m2_curvature = res_m2
 
         # Combined estimate
         if d_m1 is not None and n_m1 >= min_units:
@@ -580,11 +830,14 @@ def estimate_shank_drift(
                 "drift_um":       d_m1,
                 "n_inlier_units": n_m1,
                 # Each entry: unit id, xcorr shift, CoM delta (cross-check),
-                # weight, outlier flag
+                # weight (total + breakdown), outlier flag
                 "units": detail,
             },
             "xcorr_population": {
-                "drift_um": d_m2,
+                "drift_um":       d_m2,
+                # Population peak curvature is also reported so users can
+                # judge fallback-method confidence visually.  Range [0,1].
+                "peak_curvature": round(d_m2_curvature, 4),
             },
         })
 
@@ -604,6 +857,53 @@ def estimate_shank_drift(
         "windows":             windows_out,
     }
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multiprocessing worker (module-level so it's picklable for spawn)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from dataclasses import dataclass
+
+@dataclass
+class _ShankJob:
+    """Self-contained per-shank work item.
+
+    All fields are simple types (str, int, float, np.ndarray) so the
+    object pickles cleanly across the spawn boundary.  The depths array
+    is NumPy but small (≤ a few hundred floats) — pickling it is
+    cheaper than re-resolving probe geometry in each child.
+    """
+    session:           str
+    group_idx:         int
+    depths:            np.ndarray
+    sampling_rate:     float
+    window_sec:        float
+    min_units:         int
+    min_spikes:        int
+    exclude_noise:     bool
+    outlier_threshold: float
+    n_samp:            int
+    weight_mode:       str
+    probe_id:          int
+    shank_index:       int
+
+
+def _run_shank(job: _ShankJob) -> Optional[dict]:
+    """Worker entrypoint: thin wrapper around ``estimate_shank_drift``.
+
+    Lives at module scope so ``multiprocessing.Pool`` (spawn context)
+    can import it in child processes without re-running the
+    ``__main__`` block.
+    """
+    return estimate_shank_drift(
+        job.session, job.group_idx, job.depths,
+        job.sampling_rate, job.window_sec,
+        job.min_units, job.min_spikes,
+        job.exclude_noise, job.outlier_threshold,
+        n_samp      = job.n_samp,
+        weight_mode = job.weight_mode,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -802,25 +1102,72 @@ def main() -> int:
             print(f"  [warn] --n-samples-per-group parse error; "
                   f"using default 32 for all groups", file=sys.stderr)
 
-    for g in range(1, args.n_groups + 1):
-        if source_group and g != source_group:
-            continue  # only estimate from the nominated shank
+    # Determine which shanks to process.
+    if source_group:
+        shank_ids = [source_group]
+    else:
+        shank_ids = list(range(1, args.n_groups + 1))
+
+    # Pre-resolve depths and per-group nSamples in the parent — probe-file
+    # loading hits a cache, so doing it once here avoids each child
+    # repeatedly parsing the same probe YAML.
+    shank_jobs: list[_ShankJob] = []
+    for g in shank_ids:
         pid, shk = g_probe_map.get(g, (0, g - 1))
         d        = get_depths(g)
-        # nSamples for this group (1-based index into the list)
-        n_samp = n_samp_list[g - 1] if g <= len(n_samp_list) else 32
+        n_samp   = n_samp_list[g - 1] if g <= len(n_samp_list) else 32
         print(f"  Group {g}: probe={pid} shank={shk} sites={len(d)} "
               f"nSamp={n_samp}", file=sys.stderr)
-        r = estimate_shank_drift(
-            args.session, g, d,
-            args.sampling_rate, args.window_sec,
-            args.min_units, args.min_spikes,
-            exclude_noise, args.outlier_threshold,
-            n_samp=n_samp)
-        if r:
-            all_results.append((pid, shk, g, r))
-            if source_group:
-                source_result = r
+        shank_jobs.append(_ShankJob(
+            session             = args.session,
+            group_idx           = g,
+            depths              = d,
+            sampling_rate       = args.sampling_rate,
+            window_sec          = args.window_sec,
+            min_units           = args.min_units,
+            min_spikes          = args.min_spikes,
+            exclude_noise       = exclude_noise,
+            outlier_threshold   = args.outlier_threshold,
+            n_samp              = n_samp,
+            weight_mode         = args.weight_mode,
+            probe_id            = pid,
+            shank_index         = shk,
+        ))
+
+    # Resolve worker count.  0 → all CPUs; clamp to job count so we
+    # don't spawn idle workers for a single-shank session.
+    requested_workers = args.n_workers if args.n_workers != 0 else os.cpu_count() or 1
+    n_workers         = max(1, min(requested_workers, len(shank_jobs)))
+
+    if n_workers <= 1 or len(shank_jobs) <= 1:
+        # Sequential path — preserves the historical stderr ordering and
+        # avoids fork/import overhead for small jobs.
+        for job in shank_jobs:
+            r = _run_shank(job)
+            if r is not None:
+                all_results.append((job.probe_id, job.shank_index,
+                                    job.group_idx, r))
+                if source_group:
+                    source_result = r
+    else:
+        # Parallel path.  Each child process opens its own memmaps and
+        # parses its own .res/.clu, so there's no shared state to
+        # synchronize.  imap_unordered lets results stream back as soon
+        # as each shank finishes — useful when shanks have very
+        # unbalanced spike counts.
+        from multiprocessing import get_context
+        # Use 'spawn' to avoid inheriting open file descriptors from the
+        # parent (NumPy + memmap interact poorly with fork on some
+        # platforms; spawn is reliably correct everywhere).
+        ctx = get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            for job, r in zip(shank_jobs,
+                               pool.imap(_run_shank, shank_jobs)):
+                if r is not None:
+                    all_results.append((job.probe_id, job.shank_index,
+                                        job.group_idx, r))
+                    if source_group:
+                        source_result = r
 
     # --source-group mode: propagate the source shank's drift windows to
     # all sibling groups on the same probe that were NOT estimated.
@@ -859,6 +1206,7 @@ def main() -> int:
         "minUnits":         args.min_units,
         "minSpikes":        args.min_spikes,
         "outlierThreshold": args.outlier_threshold,
+        "weightMode":       args.weight_mode,
         "probes":           probes_out,
     }}
 

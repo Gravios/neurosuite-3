@@ -161,6 +161,152 @@
       </varlistentry>
 
       <varlistentry>
+        <term><parameter>weightMode</parameter></term>
+        <listitem><para>
+          How per-unit contributions are weighted in the Method-1
+          weighted median.  Default: <literal>geometry</literal>.
+        </para>
+        <variablelist>
+          <varlistentry>
+            <term><literal>geometry</literal> (default)</term>
+            <listitem><para>
+              Weight =
+              <emphasis>profile_drift_sensitivity</emphasis> ×
+              <emphasis>peak_curvature</emphasis> ×
+              sqrt(<emphasis>n_active_ref</emphasis> ×
+              <emphasis>n_active_win</emphasis>) ×
+              sqrt(<emphasis>n_spikes_ref</emphasis> ×
+              <emphasis>n_spikes_win</emphasis>).
+            </para>
+            <para>
+              This is the right choice on any non-uniform-sensitivity
+              probe geometry — most familiar examples being
+              Buzsaki-style shanks (V-shaped tip, recording
+              sensitivity peaks at the apex) and linear arrays
+              (sites widely spaced, units at the array's far field
+              barely change profile shape with drift).
+            </para>
+            <para>
+              The motivating problem: <emphasis>sharpness</emphasis>
+              alone (the prior default) rewards units whose xcorr
+              peak is well-defined.  But a sharp xcorr peak can
+              arise for two opposite reasons:
+            </para>
+            <itemizedlist>
+              <listitem><para>
+                The unit has a tight spatial dipole that genuinely
+                tracks drift — its amplitude profile changes
+                substantially per µm of shift, and the xcorr
+                unambiguously locates that shift.
+                <emphasis role="strong">Should</emphasis> dominate
+                the weighted median.
+              </para></listitem>
+              <listitem><para>
+                The unit has a stable, near-flat amplitude profile
+                (recorded in the array's far field) — the profile
+                barely changes shape over a small drift, so the
+                xcorr peaks sharply at zero or near-zero regardless
+                of true drift.  Gives <emphasis>no</emphasis> drift
+                information.  <emphasis role="strong">Should
+                not</emphasis> dominate the weighted median.
+              </para></listitem>
+            </itemizedlist>
+            <para>
+              The
+              <emphasis>profile_drift_sensitivity</emphasis> term
+              — the L2 norm of the spatial derivative of the unit's
+              reference-window amplitude profile, computed on the
+              unit's active-site subset and L2-normalised — separates
+              these cases.  Tight near-tip units have steep
+              gradients (~0.02–0.05 normalised-amplitude/µm on a
+              50-µm-pitch linear probe).  Far-field units have
+              ~flat profiles (~0.001–0.005).  The 5–50× spread
+              across realistic units in a session typically
+              redistributes weight by an order of magnitude relative
+              to <literal>sharpness</literal> mode, with the
+              redistribution always favouring units that genuinely
+              track drift.
+            </para>
+            <para>
+              On a Buzsaki64L (8 sites/shank, 20 µm pitch, 140 µm
+              shank span) the dynamic range is moderate (~5×).
+              On an A32 linear (32 sites, 50 µm pitch, 1550 µm span)
+              the dynamic range is wider (~20–50×) because the wide
+              spacing means a far-field unit's profile is much more
+              stable across drift than a near-field unit's.
+            </para>
+            </listitem>
+          </varlistentry>
+          <varlistentry>
+            <term><literal>sharpness</literal></term>
+            <listitem><para>
+              Weight = <emphasis>peak_curvature</emphasis> ×
+              sqrt(<emphasis>n_active_ref</emphasis> ×
+              <emphasis>n_active_win</emphasis>) ×
+              sqrt(<emphasis>n_spikes_ref</emphasis> ×
+              <emphasis>n_spikes_win</emphasis>).
+              Use when the geometric-sensitivity heuristic is
+              undesirable — e.g. dense Neuropixels-class probes
+              where every well-isolated unit is effectively
+              near-field, or when reproducing results from a
+              previous release that used <literal>sharpness</literal>
+              as the default.
+            </para></listitem>
+          </varlistentry>
+          <varlistentry>
+            <term><literal>count</literal></term>
+            <listitem><para>
+              Weight =
+              sqrt(<emphasis>n_spikes_ref</emphasis> ×
+              <emphasis>n_spikes_win</emphasis>).  Reproduces the
+              legacy behaviour of pre-r3 releases.  Useful only for
+              back-compatibility with previously published drift
+              estimates.
+            </para></listitem>
+          </varlistentry>
+        </variablelist>
+        <para>
+          The component values used to construct the weight
+          (<emphasis>profile_drift_sensitivity</emphasis>,
+          <emphasis>peak_curvature</emphasis>,
+          <emphasis>n_active_*</emphasis>,
+          <emphasis>n_spikes_*</emphasis>) are reported per-unit in
+          the output YAML so users can inspect why a particular unit
+          got the weight it did — useful for diagnosing surprising
+          drift estimates.
+        </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><parameter>nWorkers</parameter></term>
+        <listitem><para>
+          Number of worker processes for shank-parallel drift
+          estimation.  Default <literal>1</literal> (sequential, fully
+          deterministic stderr ordering).  Set to <literal>0</literal>
+          to use all available CPUs, or to a positive integer to cap
+          the worker count.  Each shank is processed independently
+          (its own <filename>.res</filename>, <filename>.clu</filename>,
+          and memory-mapped <filename>.spk(D)</filename> reads), so
+          throughput scales nearly linearly with shank count up to
+          physical core count.  Spawn-based pool — small per-shank
+          overhead — so this is most useful for sessions with several
+          shanks or with NPX-class shanks where the per-shank work is
+          large enough to amortize the spawn cost.  For single-shank
+          sessions or quick smoke tests, leave at
+          <literal>1</literal>.
+        </para>
+        <para>
+          Output ordering in the YAML file is canonicalized
+          (<literal>probeId</literal> ascending, then
+          <literal>shankIndex</literal> ascending) regardless of
+          completion order, so two runs at different
+          <parameter>nWorkers</parameter> values produce
+          byte-identical drift files.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term><parameter>probeLibrary</parameter></term>
         <listitem><para>
           Override the probe library search path.  When not set, the plugin
@@ -188,6 +334,7 @@ drift:
   minUnits: 3
   minSpikes: 20
   outlierThreshold: 5.0
+  weightMode: geometry
   probes:
     - probeId: 0
       label: "left CA1"
@@ -210,9 +357,15 @@ drift:
                 units:
                   - { unit: 2, ref_com_um: 245.3, win_com_um: 245.3,
                       xcorr_shift_um: 0.0, com_delta_um: 0.0,
-                      weight: 142.0, outlier: false }
+                      weight: 1.5631,
+                      weight_sensitivity: 0.01992,
+                      weight_curvature: 0.652,
+                      weight_n_active: 2.83,
+                      weight_n_spikes: 142.0,
+                      outlier: false }
               xcorr_population:
                 drift_um: 0.0
+                peak_curvature: 0.483
             - t_start: 60.0
               t_end: 120.0
               drift_um: -1.83
@@ -222,6 +375,7 @@ drift:
                 units: [...]
               xcorr_population:
                 drift_um: -1.78
+                peak_curvature: 0.412
     ]]></programlisting>
     <variablelist>
       <varlistentry>
@@ -253,13 +407,70 @@ drift:
         </para></listitem>
       </varlistentry>
       <varlistentry>
+        <term><structfield>xcorr_population.peak_curvature</structfield></term>
+        <listitem><para>
+          Sharpness of the population xcorr peak, range [0, 1] on
+          L2-normalised profiles.  ≈0 means the shift is ambiguous;
+          ≈1 means a sharp single-site-wide peak.  Used for visual
+          confidence inspection of the fallback method.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
         <term><structfield>units</structfield></term>
         <listitem><para>
           Per-unit detail for the window: cluster id, reference and
-          window CoM, xcorr shift, CoM delta (cross-check), weight, and
-          outlier flag.  Units flagged as outliers contribute zero
-          weight to the rigid-body estimate but remain visible for
+          window CoM, xcorr shift, CoM delta (cross-check), weight,
+          weight component breakdown, and outlier flag.  Units flagged
+          as outliers contribute zero weight to the rigid-body
+          estimate but remain visible for inspection.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>units[*].weight_sensitivity</structfield></term>
+        <listitem><para>
+          Profile drift sensitivity for this unit, in units of
+          (L2-normalised amplitude per µm).  Computed once per unit
+          from the reference window's profile as the L2 norm of the
+          spatial derivative on the unit's active-site subset.  Low
+          values (~0.001–0.005) flag far-field units whose amplitude
+          profile barely changes shape with probe drift — their xcorr
+          peak is sharp because the profile is invariant, not because
+          it tracks drift.  High values (~0.02–0.05) flag near-field
+          units with tight spatial dipoles whose profile genuinely
+          shifts site-by-site as the probe moves.  Used as a weight
+          factor only in <parameter>weightMode</parameter> =
+          <literal>geometry</literal>; reported in all modes for
           inspection.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>units[*].weight_curvature</structfield></term>
+        <listitem><para>
+          The xcorr peak curvature for this unit, range [0, 1].  Low
+          values flag units whose individual xcorr correlogram has a
+          broad or multi-modal lag profile — i.e. their shift estimate
+          is ambiguous regardless of how many spikes contributed.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>units[*].weight_n_active</structfield></term>
+        <listitem><para>
+          sqrt(<emphasis>n_active_ref</emphasis> ×
+          <emphasis>n_active_win</emphasis>) where
+          <emphasis>n_active_*</emphasis> counts sites whose mean PTP
+          exceeds 10% of the unit's per-window peak amplitude.  Low
+          values flag units whose footprint is concentrated on one or
+          two sites — these contribute weak shape information to the
+          xcorr.
+        </para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><structfield>units[*].weight_n_spikes</structfield></term>
+        <listitem><para>
+          sqrt(<emphasis>n_spikes_ref</emphasis> ×
+          <emphasis>n_spikes_win</emphasis>) — the shot-noise term.
+          The legacy weight value (when
+          <parameter>weightMode</parameter> = <literal>count</literal>).
         </para></listitem>
       </varlistentry>
     </variablelist>
