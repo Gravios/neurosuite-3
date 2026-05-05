@@ -447,3 +447,9 @@ if(NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE AND NOT _SYCL_ACTIVE)
         DESTINATION "${CMAKE_INSTALL_BINDIR}"
         RENAME KlustaKwikExp)
 endif()
+
+# Ergonomic wrapper for the -RefineExisting workflow (KK::RefineExistingClustering).
+# Auto-detects <session>.clu.<g> as the seed and <session>.chunks.<g> as the
+# drift-chunk file; forwards remaining flags to the binary.
+install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/KlustaKwikRefine"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}")

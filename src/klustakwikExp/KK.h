@@ -88,6 +88,48 @@ public:
     float CEM(const char *CluFile = nullptr, int recurse = 1);
     void  Reindex();
 
+    // -----------------------------------------------------------------------
+    // RefineExisting — curate a hand-edited or previously-sorted .clu using
+    // the existing centroids and per-cluster covariances as Gaussian priors.
+    //
+    // Pipeline (a subset of phases is selectable via mode argument):
+    //
+    //   A. REASSIGN: load .clu, MStep to fit full-Gaussian models, then run
+    //      RefineIters EM iterations restricted by Mahalanobis gating so that
+    //      only boundary spikes can change parent.  Keeps K constant.  Cheap.
+    //
+    //   B. SPLIT:    run DipSplit on each surviving cluster to recover units
+    //      that the operator merged together, or that the original sort
+    //      collapsed (e.g. drift-induced bimodality on a single channel).
+    //      May increase K.
+    //
+    //   C. MERGE:    pairwise BIC-gated Mahalanobis merge on the post-split
+    //      cluster set.  When chunk boundaries are available (extChunkBounds),
+    //      pairs whose temporal occupancy lies in disjoint chunks are
+    //      merged on a relaxed threshold (matches the drifting-unit case
+    //      handled by RunChunkedCEM Phase 2's overlap-vote machinery).
+    //      May decrease K.
+    //
+    // mode:
+    //    "off"      — no-op (caller should not have entered here)
+    //    "reassign" — A only
+    //    "split"    — A + B
+    //    "merge"    — A + C
+    //    "full"     — A + B + C  (default)
+    //
+    // chunkBoundsSec: optional [first, ..., last] in seconds.  If empty,
+    //    the temporal-occupancy gate in C is bypassed and all merges are
+    //    judged on Mahalanobis + BIC alone.
+    // -----------------------------------------------------------------------
+    float RefineExistingClustering(
+        const char* cluFile,
+        const char* mode,
+        int   nIters,
+        float mergeThresh,
+        float splitMinDepth,
+        bool  lockNoiseClu,
+        const std::vector<float>& chunkBoundsSec);
+
 private:
     // Shared convergence loop body used by CEM() and CEMTwoPhase() Phase 1.
     // Runs MStep/EStep/CStep/ConsiderDeletion until convergence.

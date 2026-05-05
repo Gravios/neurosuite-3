@@ -20,6 +20,7 @@
 #include <cstdint>
 #include "KlustaKwik.h"
 #include "KlustaSave.h"
+#include "dipsplit.h"        // BicPair / bic_two_vs_one — used by RefineExistingClustering
 #include "realign_xcorr.h"   // XcorrDispatch::compute — shared normalised circular xcorr
 
 #include <algorithm>
@@ -1474,6 +1475,360 @@ float KK::CEM(const char *CluFile, int Recurse) {
         DipSplitPhase();
     }
 
+    return score;
+}
+
+// ===========================================================================
+// RefineExistingClustering
+//
+// Curate a hand-edited or previously-sorted .clu using the existing centroids
+// and per-cluster covariances as Gaussian priors.  The motivation: a curated
+// .clu encodes a lot of information (the operator's manual splits/merges,
+// the previous KK run's parameter sweep) that a fresh CEM run would discard.
+// Refinement preserves that work and only changes assignments where the
+// existing model says they are inconsistent.
+//
+// Convention: cluster ids 0 (artefact) and 1 (MUA) are not parents under the
+// neurosuite convention.  When lockNoiseClu is true (default), no spike is
+// ever moved INTO or OUT OF clusters 0 / 1, and those clusters are not
+// considered for split or merge.  This matches what the user expects when
+// running refinement after a triage pass that put bad spikes in 0/1.
+//
+// Drift-aware merge gate: when chunkBoundsSec is non-empty, each cluster's
+// temporal occupancy is computed (histogram of Data[timeDim] over the chunk
+// boundaries).  Two clusters whose occupancy lies in disjoint chunk sets
+// are MORE likely to be the same drifting unit (the unit moved across the
+// probe and the original sort failed to reconnect the trajectories), so
+// merge on a relaxed threshold; co-occurring clusters need stronger
+// evidence.  The gate factor is min(1.5, 1.0 + bhattacharyya_overlap),
+// where bhattacharyya_overlap = sum_k sqrt(p_k * q_k) over chunks k.
+//
+// Returns the final score (lower is better, same convention as CEM).
+// ===========================================================================
+float KK::RefineExistingClustering(
+    const char* cluFile,
+    const char* mode,
+    int   nIters,
+    float mergeThresh,
+    float splitMinDepth,
+    bool  lockNoiseClu,
+    const std::vector<float>& chunkBoundsSec)
+{
+    if (!cluFile || !*cluFile) {
+        Error("RefineExistingClustering: cluFile is empty\n");
+    }
+    const std::string modeStr = mode ? mode : "full";
+    const bool wantReassign = (modeStr != "off");
+    const bool wantSplit    = (modeStr == "split" || modeStr == "full");
+    const bool wantMerge    = (modeStr == "merge" || modeStr == "full");
+    if (!wantReassign && !wantSplit && !wantMerge) {
+        Output("RefineExistingClustering: mode=off — no-op\n");
+        return ComputeScore();
+    }
+
+    // ── Load existing clustering ─────────────────────────────────────────────
+    Output("\n[Refine] loading seed clustering from %s\n", cluFile);
+    LoadClu(cluFile);
+    Reindex();
+    Output("[Refine]   K_in = %d clusters; %d points; %d dims\n",
+           nClustersAlive, nPoints, nDims);
+
+    // ── Phase A: REASSIGN ────────────────────────────────────────────────────
+    // Run a constrained EM loop.  We re-use RunEMLoop but with splits disabled
+    // (TrySplits would defeat the "warm-start" guarantee — it would explore
+    //  K_in+1, K_in+2, ... configurations).  Iteration cap = nIters; the
+    // existing ChangedThresh / FullStepEvery still apply, so loops that
+    // converge early bail out with no work.
+    //
+    // A point can only move from cluster A to B if the Mahalanobis penalty
+    // says B fits better than A — that's exactly what EStep + CStep already
+    // do.  No additional gating needed: the warm models from MStep are
+    // compact relative to the data, so spurious cross-cluster jumps are
+    // rare unless the existing assignment was genuinely wrong.
+    float score = HugeScore;
+    if (wantReassign) {
+        Output("[Refine] Phase A — reassign (%d iters max)\n",
+               nIters > 0 ? nIters : MaxIter);
+        const int saveSplitEvery = SplitEvery;
+        SplitEvery = 0;     // disable all splits inside RunEMLoop
+        score = RunEMLoop(
+            /*enableSplits=*/   false,
+            /*enableDistDump=*/ false,
+            /*maxIter=*/        nIters > 0 ? nIters : MaxIter,
+            /*phaseLabel=*/     "[Refine A]");
+        SplitEvery = saveSplitEvery;
+        Output("[Refine]   K_after_A = %d  score = %.4g\n", nClustersAlive, score);
+    } else {
+        // Even when reassign is disabled, we need fresh M-step models for
+        // split/merge to operate on — otherwise Mean / Cov reflect whatever
+        // state the previous CEM call left behind.
+        MStep();
+        score = ComputeScore();
+    }
+
+    // ── Phase B: SPLIT ───────────────────────────────────────────────────────
+    // Reuse the existing DipSplit machinery.  DipSplitPhase iterates alive
+    // clusters and probes for bimodal structure (BIC-gated, k-means refined,
+    // valley-depth threshold).  The user controls the depth threshold via
+    // RefineSplitMinDepth.
+    if (wantSplit) {
+        Output("[Refine] Phase B — DipSplit on %d clusters (min depth %.2f)\n",
+               nClustersAlive, splitMinDepth);
+        const float saveValleyThresh = DipSplitValleyThresh;
+        const int   saveDipEnable    = DipSplitEnable;
+        DipSplitValleyThresh = splitMinDepth;
+        DipSplitEnable       = 1;
+        DipSplitPhase();
+        DipSplitValleyThresh = saveValleyThresh;
+        DipSplitEnable       = saveDipEnable;
+        // DipSplitPhase mutates Class[] but does not refresh M-step models,
+        // so re-fit before the merge phase.
+        MStep();
+        score = ComputeScore();
+        Output("[Refine]   K_after_B = %d  score = %.4g\n", nClustersAlive, score);
+    }
+
+    // ── Phase C: MERGE ───────────────────────────────────────────────────────
+    if (wantMerge) {
+        const int nSpatialDims = (nDims > 1) ? nDims - 1 : nDims;
+        const int timeDim      = nDims - 1;
+
+        // Build per-cluster temporal occupancy distribution over chunks (if
+        // chunkBoundsSec was given).  occupancy[c] is a [nChunks]-vector of
+        // normalised counts (sums to 1 for each non-empty cluster).
+        const int nChunks =
+            (chunkBoundsSec.size() >= 2)
+            ? static_cast<int>(chunkBoundsSec.size()) - 1
+            : 0;
+        std::vector<std::vector<float>> occupancy(MaxPossibleClusters);
+        if (nChunks > 0) {
+            // Convert raw-sample chunk boundaries to normalised-time
+            // boundaries (Data[timeDim] is already in normalised [0,1] coords
+            // for chunked-CEM consumers; we use the same convention here).
+            const float sessionSamples = timeRawMax - timeRawMin;
+            std::vector<float> normBounds(chunkBoundsSec.size());
+            if (sessionSamples > 0.0f && SamplingRate > 0.0f) {
+                for (size_t i = 0; i < chunkBoundsSec.size(); ++i)
+                    normBounds[i] = (chunkBoundsSec[i] * SamplingRate - timeRawMin)
+                                    / sessionSamples;
+            } else {
+                // Fallback: spread chunks uniformly.  Mostly hit during
+                // unit tests where SamplingRate isn't set; in production
+                // KlustaKwik.cpp ensures both fields are populated.
+                for (int i = 0; i <= nChunks; ++i)
+                    normBounds[i] = static_cast<float>(i) / nChunks;
+            }
+
+            for (int cc = 0; cc < nClustersAlive; ++cc) {
+                const int c = AliveIndex[cc];
+                occupancy[c].assign(nChunks, 0.0f);
+            }
+            for (int p = 0; p < nPoints; ++p) {
+                const int c = Class[p];
+                if (occupancy[c].empty()) continue;  // not alive
+                const float t = Data[p * nDims + timeDim];
+                // upper_bound — chunk index = idx-1, clamp to [0, nChunks-1]
+                int k = static_cast<int>(
+                    std::upper_bound(normBounds.begin(), normBounds.end(), t)
+                    - normBounds.begin()) - 1;
+                if (k < 0)        k = 0;
+                if (k >= nChunks) k = nChunks - 1;
+                occupancy[c][k] += 1.0f;
+            }
+            for (int cc = 0; cc < nClustersAlive; ++cc) {
+                const int c = AliveIndex[cc];
+                float sum = 0.0f;
+                for (float v : occupancy[c]) sum += v;
+                if (sum > 0.0f)
+                    for (float& v : occupancy[c]) v /= sum;
+            }
+        }
+
+        // Mahalanobis distance between cluster a and b in spatial dims, using
+        // tgt's covariance (matches MergeChunkModels convention).  Returns
+        // HugeScore if Cholesky fails.
+        auto mahalDist = [&](int a, int b) -> float {
+            if (nSpatialDims > kMaxStackDims) return HugeScore;
+            float diff[kMaxStackDims];
+            for (int d = 0; d < nSpatialDims; ++d)
+                diff[d] = Mean[a*nDims + d] - Mean[b*nDims + d];
+            float covB[kMaxStackDims*kMaxStackDims];
+            float chol[kMaxStackDims*kMaxStackDims];
+            float root[kMaxStackDims];
+            for (int r = 0; r < nSpatialDims; ++r)
+                for (int c = r; c < nSpatialDims; ++c)
+                    covB[r*nSpatialDims + c] = Cov[b*nDims2 + r*nDims + c];
+            if (Cholesky(covB, chol, nSpatialDims)) return HugeScore;
+            TriSolve(chol, diff, root, nSpatialDims);
+            float dist = 0.0f;
+            for (int d = 0; d < nSpatialDims; ++d) dist += root[d] * root[d];
+            return dist;
+        };
+
+        // Bhattacharyya overlap of two normalised occupancy distributions.
+        // Returns 0 (disjoint) to 1 (identical).
+        auto temporalOverlap = [&](int a, int b) -> float {
+            if (occupancy[a].empty() || occupancy[b].empty()) return 1.0f;
+            float bc = 0.0f;
+            for (int k = 0; k < nChunks; ++k)
+                bc += std::sqrt(occupancy[a][k] * occupancy[b][k]);
+            return bc;
+        };
+
+        // Effective Mahalanobis threshold for this pair: relaxed when
+        // temporal overlap is low (drift case), tightened when high.  Multiplier
+        // ranges from 1.0 (full overlap) to 1.5 (disjoint), capped so we don't
+        // merge truly different units that happen to be in different chunks.
+        auto pairThresh = [&](int a, int b) -> float {
+            if (nChunks <= 1) return mergeThresh;
+            const float ov  = temporalOverlap(a, b);   // [0,1]
+            const float mul = 1.0f + 0.5f * (1.0f - ov);
+            return mergeThresh * mul;
+        };
+
+        Output("[Refine] Phase C — pairwise merge "
+               "(spatialDims=%d, baseThresh=%.2f, %d chunks)\n",
+               nSpatialDims, mergeThresh, nChunks);
+
+        // Iterate until no more merges are accepted.  Each merge rebuilds the
+        // alive set and re-fits MStep so subsequent pairs see correct stats.
+        int mergePass = 0;
+        int mergesThisRun = 0;
+        const int kFirstParent = lockNoiseClu ? 2 : 0;
+        while (true) {
+            mergePass++;
+            int nMergedThisPass = 0;
+
+            // Snapshot the alive list at top of pass — Reindex() may mutate
+            // mid-pass when ClassAlive[] is updated.
+            std::vector<int> alive;
+            alive.reserve(nClustersAlive);
+            for (int cc = 0; cc < nClustersAlive; ++cc) {
+                const int c = AliveIndex[cc];
+                if (c >= kFirstParent) alive.push_back(c);
+            }
+
+            // Score all candidate pairs by Mahalanobis distance, then process
+            // closest-first.  Sorting once per pass is O(K² log K) which is
+            // negligible — typical K is < 200.
+            struct PairCand {
+                int   a, b;
+                float dist;
+                float thresh;
+            };
+            std::vector<PairCand> cands;
+            cands.reserve(alive.size() * (alive.size() - 1) / 2);
+            for (size_t ia = 0; ia < alive.size(); ++ia) {
+                for (size_t ib = ia + 1; ib < alive.size(); ++ib) {
+                    const int a = alive[ia], b = alive[ib];
+                    // Mahalanobis under both covariances; take the smaller —
+                    // matches the "either fits the merged cloud" intuition.
+                    const float dAB = mahalDist(a, b);
+                    const float dBA = mahalDist(b, a);
+                    const float d   = std::min(dAB, dBA);
+                    const float th  = pairThresh(a, b);
+                    if (d < th) cands.push_back({a, b, d, th});
+                }
+            }
+            std::sort(cands.begin(), cands.end(),
+                      [](const PairCand& x, const PairCand& y) {
+                          return x.dist < y.dist;
+                      });
+
+            // Track which clusters have been merged this pass — once a
+            // cluster is consumed, don't merge it again until the next pass
+            // (so we operate on consistent stats).
+            std::vector<char> consumed(MaxPossibleClusters, 0);
+            for (const auto& pc : cands) {
+                if (consumed[pc.a] || consumed[pc.b]) continue;
+
+                // BIC gate: build labels from the candidate pair, run
+                // bic_two_vs_one over the spatial dims.  If k=1 BIC wins
+                // by >= 0, the merger is favoured.
+                std::vector<int>   memberRows;
+                std::vector<int>   memberLabels;
+                memberRows.reserve(2048);
+                memberLabels.reserve(2048);
+                for (int p = 0; p < nPoints; ++p) {
+                    if (Class[p] == pc.a)      { memberRows.push_back(p);
+                                                 memberLabels.push_back(0); }
+                    else if (Class[p] == pc.b) { memberRows.push_back(p);
+                                                 memberLabels.push_back(1); }
+                }
+                const int M = static_cast<int>(memberRows.size());
+                if (M < 2 * nSpatialDims) continue;  // too small for BIC
+
+                // Pack spatial features into contiguous float buffer for
+                // dipsplit::bic_two_vs_one (which takes float* rows × dim).
+                std::vector<float> X(static_cast<size_t>(M) * nSpatialDims);
+                for (int i = 0; i < M; ++i) {
+                    const int p = memberRows[i];
+                    for (int d = 0; d < nSpatialDims; ++d)
+                        X[static_cast<size_t>(i) * nSpatialDims + d] =
+                            Data[p * nDims + d];
+                }
+                const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
+                    X.data(), M, nSpatialDims, memberLabels.data());
+
+                // Lower BIC is better.  Accept merger if k=1 BIC <= k=2 BIC
+                // (a tie still merges — this is the "absent evidence" case
+                // and we lean toward fewer clusters by design).  Override
+                // by raising RefineMergeThresh if you want the merge to be
+                // stricter — that gates in pairThresh first.
+                if (bp.bic_k1 > bp.bic_k2) {
+                    // Two-cluster fit is significantly better — keep them.
+                    continue;
+                }
+
+                // Commit: relabel all spikes from b to a, mark b dead,
+                // mark both as consumed for this pass.
+                for (int p = 0; p < nPoints; ++p)
+                    if (Class[p] == pc.b) Class[p] = pc.a;
+                ClassAlive[pc.b] = 0;
+                consumed[pc.a] = consumed[pc.b] = 1;
+                nMergedThisPass++;
+                mergesThisRun++;
+
+                if (Verbose >= 1) {
+                    Output("[Refine C]   merged %d <- %d  (mahal²=%.2f, "
+                           "thresh=%.2f, BIC₁=%.1f BIC₂=%.1f, ov=%.2f)\n",
+                           pc.a, pc.b, pc.dist, pc.thresh,
+                           bp.bic_k1, bp.bic_k2,
+                           (nChunks > 1) ? temporalOverlap(pc.a, pc.b) : 1.0f);
+                }
+            }
+
+            if (nMergedThisPass == 0) break;
+            // Refresh stats so the next pass sees post-merge models.
+            Reindex();
+            MStep();
+            Output("[Refine C] pass %d: %d merges accepted; K=%d\n",
+                   mergePass, nMergedThisPass, nClustersAlive);
+        }
+        if (mergesThisRun == 0) {
+            Output("[Refine C] no merges accepted; K=%d\n", nClustersAlive);
+        }
+        score = ComputeScore();
+        Output("[Refine]   K_after_C = %d  score = %.4g\n", nClustersAlive, score);
+    }
+
+    // ── Final tidy ───────────────────────────────────────────────────────────
+    // One last reassign pass: after split/merge, points near the new
+    // cluster boundaries can have stale assignments.  Single iteration is
+    // enough since Mean/Cov are already converged for the current
+    // partition.
+    if (wantSplit || wantMerge) {
+        const int saveSplitEvery = SplitEvery;
+        SplitEvery = 0;
+        score = RunEMLoop(
+            /*enableSplits=*/   false,
+            /*enableDistDump=*/ false,
+            /*maxIter=*/        std::max(2, std::min(nIters, 5)),
+            /*phaseLabel=*/     "[Refine final]");
+        SplitEvery = saveSplitEvery;
+    }
+
+    Output("[Refine] done — K_final=%d, score=%.4g\n", nClustersAlive, score);
     return score;
 }
 

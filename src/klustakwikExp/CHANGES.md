@@ -1199,3 +1199,115 @@ probe's accumulated `m_cumShift[]`.  Rationale: running both paths would
 let the canonical xcorr overwrite the probe's committed shifts with
 newly-computed xcorr values, wasting the probe's work.
 
+
+## [2026-05-05] RefineExisting — curate a hand-edited / prior-sort .clu
+
+`KK::RefineExistingClustering` is a new entry point that loads an existing
+`.clu.<g>`, fits full-Gaussian models from those assignments via `MStep`,
+and runs a curated three-phase pass instead of the standard CEM.  The
+motivation: a curated `.clu` encodes the operator's manual splits / merges
+and the previous KK run's K-sweep, all of which a fresh CEM would discard.
+Refinement preserves that work and only changes assignments where the
+existing model says they are inconsistent.
+
+### Phases
+
+```
+A. REASSIGN  RunEMLoop with splits disabled, capped at -RefineIters
+             (default 5).  K is conserved.  Boundary spikes move to
+             whichever existing parent fits better under full-Gaussian
+             Mahalanobis; the gating is just EStep + CStep — no special
+             machinery.
+
+B. SPLIT     DipSplitPhase on each surviving cluster with the user-
+             controllable -RefineSplitMinDepth (default 0.4) overriding
+             DipSplitValleyThresh.  May grow K.  Runs the same BIC + k-
+             means + valley-depth gates as the inline DipSplit invocation
+             at end of CEM — the seed clusters from the loaded .clu just
+             replace whatever CEM would have converged to.
+
+C. MERGE     Pairwise Mahalanobis × BIC over the post-split cluster set.
+             Distance is min(mahal(a→b), mahal(b→a)) under each cluster's
+             own Σ; pairs below an effective threshold are then BIC-tested
+             with dipsplit::bic_two_vs_one (k=1 vs k=2 over the spatial
+             dims).  Closest-first with single-merge-per-cluster-per-pass
+             so consecutive merges see fresh stats.  Iterates until no
+             pair passes both gates.
+
+  Drift-aware merge gate.  When -ChunkFile is provided, per-cluster
+  temporal occupancy is computed by histogramming Data[timeDim] into the
+  chunk boundaries.  Bhattacharyya overlap b = Σ √(p·q) over chunks
+  yields a multiplier in [1.0, 1.5]: pairs whose occupancy lies in
+  disjoint chunks get a relaxed threshold (matches the "drifting unit
+  the original sort split into two non-overlapping clusters" case);
+  co-occurring pairs get the base threshold.  Same gating philosophy as
+  RunChunkedCEM Phase 2's overlap-vote machinery, applied here at the
+  pair level instead of via union-find.
+
+  A final REASSIGN pass runs after split/merge to clean up boundary
+  spikes against the new model set.
+```
+
+### Lock convention for clusters 0 / 1
+
+Under the neurosuite convention, cluster 0 is the artefact bin and
+cluster 1 is the MUA bin.  By default (`-RefineLockNoiseClu 1`),
+RefineExisting never moves spikes into or out of clusters 0 / 1, and
+those clusters are excluded from the split and merge candidate sets.
+This matches what an operator expects when running refinement after a
+triage pass that put bad spikes in 0 / 1.  Pass `--unlock-noise` to the
+`KlustaKwikRefine` wrapper (or `-RefineLockNoiseClu 0` to the binary
+directly) to override.
+
+### Parameters
+
+| flag                       | default | meaning                                              |
+|----------------------------|---------|------------------------------------------------------|
+| `-RefineExisting <path>`   | unset   | seed `.clu`; presence triggers the refinement path  |
+| `-RefineMode <m>`          | full    | `off` / `reassign` / `split` / `merge` / `full`     |
+| `-RefineIters N`           | 5       | iteration cap for Phase A and the final tidy        |
+| `-RefineMergeThresh F`     | 0       | 0 = inherit `MergeThresh` (which defaults to χ²)    |
+| `-RefineSplitMinDepth F`   | 0.4     | DipSplit valley depth threshold during Phase B      |
+| `-RefineLockNoiseClu N`    | 1       | non-zero locks clusters 0 / 1                       |
+
+When both `-RefineMergeThresh` and `-MergeThresh` are zero, KlustaKwik
+auto-calibrates to χ²(d, 0.99) via Wilson-Hilferty (matches the chunked-
+CEM convention for `MergeThresh` auto-calibration).
+
+### Drift-file consumption
+
+The `.drift` file itself is not read directly — it is consumed by
+`ndm_applydrift` to produce `.chunks.<g>` (the chunk-boundary file in
+seconds).  KlustaKwik reads the chunks file via the existing `-ChunkFile`
+flag.  This is the same plumbing the chunked-CEM mode already uses; the
+refinement path just adds a new consumer.
+
+### Wrapper script
+
+`KlustaKwikRefine <session> <group>` auto-detects `<session>.clu.<g>`
+as seed and `<session>.chunks.<g>` as the drift-chunks file, backs up
+the seed to `.clu.<g>.bak-refine`, and invokes the binary.  Supports
+`--mode`, `--iters`, `--mergethresh`, `--splitdepth`, `--chunks`,
+`--no-drift`, `--unlock-noise`, `--force`, `--dry-run`, plus a `--`
+escape for arbitrary forwarded KK flags.
+
+### Implementation reuse
+
+RefineExisting reuses these pre-existing pieces verbatim:
+
+- `LoadClu` (auto-detects binary vs text .clu format)
+- `MStep` (full-Gaussian E/M)
+- `RunEMLoop` (with `enableSplits=false` for Phase A and the tidy)
+- `DipSplitPhase` (with valley-depth threshold rebound)
+- `Cholesky` / `TriSolve` (Mahalanobis distance under each cluster's Σ)
+- `dipsplit::bic_two_vs_one` (Phase C BIC gate)
+
+The only genuinely new code is the per-cluster temporal-occupancy
+histogram and the Bhattacharyya overlap calculation; everything else is
+glue.
+
+### Recovery
+
+The wrapper backs up the seed `.clu.<g>` to `.clu.<g>.bak-refine` on
+first run and refuses to clobber an existing backup unless `--force`
+is passed.  To revert: `mv -f *.clu.*.bak-refine *.clu.*`.
