@@ -16,6 +16,16 @@ install(PROGRAMS
     ndm_setupgroups
     ndm_stripdat
     ndm_redetectspikes
+    # Realign spike snippets to their true energy peak before PCA.  The
+    # extracted snippet is centred at the threshold-crossing sample T, but
+    # the true waveform peak may sit at T±δ — when δ varies across spikes
+    # of the same neuron, PCA sees multiple shifted copies and KlustaKwik
+    # over-splits.  Re-extracts each snippet from the raw .fil at the true
+    # peak, updates .res / .spk in place, archives the original .res to
+    # .res.<g>.prealign, and clears stale .fet / .pca so the caller must
+    # re-run ndm_pca / ndm_pca_stderiv.  Backed by process_alignspikes
+    # (already installed via src/process_alignspikes/CMakeLists.txt).
+    ndm_alignspikes
     # Second-pass spike re-extraction + shadow clustering.  The _stderiv
     # variant re-uses the spatial-derivative detection pipeline's
     # extensions (.spkD / .fetD / .pcaD); the plain variant works on raw
