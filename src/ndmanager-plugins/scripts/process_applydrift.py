@@ -111,6 +111,77 @@ def find_shank_for_group(doc: dict, source_group: int) -> Optional[dict]:
     return None
 
 
+def is_tombstoned(shank: dict) -> bool:
+    """A shank is tombstoned when ndm_estimatedrift recorded an explicit
+    skipReason for it — usually because the .clu had only noise / artefact
+    clusters or too few qualified units to estimate drift.  Tombstoned
+    shanks have empty `windows`, so chunking against them produces a
+    degenerate single-chunk file.  Treated as "not usable as a source".
+    """
+    return bool(shank.get("skipReason"))
+
+
+def find_probe_for_group(doc: dict, source_group: int) -> Optional[dict]:
+    """Return the probe sub-dict that hosts *source_group*."""
+    for probe in doc.get("drift", {}).get("probes", []):
+        for shank in probe.get("shanks", []):
+            if shank.get("spikeGroup") == source_group:
+                return probe
+    return None
+
+
+def choose_fallback_source(doc: dict, requested: int) -> Optional[dict]:
+    """Pick the best replacement when *requested* is missing or tombstoned.
+
+    Priority order:
+      1. Sibling shank on the same probe with non-tombstoned windows,
+         preferring the closest shankIndex to the requested group.  This
+         is the typical multi-shank-probe case: shank 1 was triaged to
+         noise, but shank 2 has 80 good units and represents the same
+         probe motion.
+      2. Any non-tombstoned shank anywhere in the file (cross-probe
+         fallback).  Less reliable — a different probe may have moved
+         differently — but better than failing outright.
+
+    Returns the shank dict (with windows) or None if no usable shank
+    exists in the entire .drift file (the user's whole session was
+    triaged to noise; no recovery possible).
+    """
+    requested_probe = find_probe_for_group(doc, requested)
+
+    def _shank_score(shank: dict, probe: dict) -> tuple:
+        # Lower is better.  Same-probe wins first; within-probe, closeness
+        # to the requested shankIndex breaks ties.
+        same_probe = (probe is requested_probe)
+        # When the requested shank exists in the file (tombstoned), we
+        # know its shankIndex.  When it's truly absent, fall back to
+        # group-1's index = 0 as the ordering anchor.
+        req_shk = 0
+        for s in (requested_probe or {}).get("shanks", []):
+            if s.get("spikeGroup") == requested:
+                req_shk = int(s.get("shankIndex", 0))
+                break
+        return (
+            0 if same_probe else 1,
+            abs(int(shank.get("shankIndex", 0)) - req_shk),
+            int(shank.get("spikeGroup", 1 << 30)),  # tie-break by group id
+        )
+
+    candidates: list[tuple[tuple, dict]] = []
+    for probe in doc.get("drift", {}).get("probes", []):
+        for shank in probe.get("shanks", []):
+            if is_tombstoned(shank):
+                continue
+            if not shank.get("windows"):
+                continue  # empty windows — same effective state as tombstoned
+            candidates.append((_shank_score(shank, probe), shank))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
 def extract_windows(shank: dict) -> list[dict]:
     """Return the list of window dicts from a shank entry."""
     return shank.get("windows", [])
@@ -222,13 +293,51 @@ def main() -> int:
 
     doc = load_drift(args.drift_file)
     shank = find_shank_for_group(doc, args.source_group)
-    if shank is None:
+
+    # Fallback path: the requested source group is either entirely absent
+    # from the drift file (ndm_estimatedrift never processed it — old .drift
+    # files predating the tombstone convention) or is tombstoned (skipReason
+    # set — usually because the .clu had only noise / artefact clusters,
+    # which happens routinely on probes where a few shanks were triaged
+    # down).  In either case we look for a usable sibling shank on the same
+    # probe before giving up.  This matches operator intent: "I want chunks
+    # for group N; find me drift data from somewhere reasonable on the same
+    # probe."
+    fallback_used: Optional[int] = None
+    if shank is None or is_tombstoned(shank):
+        why = ("not present in .drift" if shank is None
+               else f"skipped by ndm_estimatedrift "
+                    f"({shank.get('skipReason', 'unknown reason')})")
         print(
-            f"[error] source group {args.source_group} not found in {args.drift_file}.\n"
-            f"        Run ndm_estimatedrift with --source-group {args.source_group} first.",
+            f"[info] source group {args.source_group}: {why}; "
+            f"looking for a sibling shank on the same probe to use instead",
             file=sys.stderr,
         )
-        return 1
+        if shank is not None and shank.get("skipDetail"):
+            print(f"[info]   detail: {shank['skipDetail']}", file=sys.stderr)
+
+        replacement = choose_fallback_source(doc, args.source_group)
+        if replacement is None:
+            print(
+                f"[error] no usable source shank in {args.drift_file}.\n"
+                f"        Every shank is either absent or tombstoned.\n"
+                f"        Re-run ndm_estimatedrift after curating at least\n"
+                f"        one shank's .clu beyond noise/artefact clusters.",
+                file=sys.stderr,
+            )
+            return 1
+        fallback_used = int(replacement.get("spikeGroup", -1))
+        same_probe   = (find_probe_for_group(doc, args.source_group)
+                        is find_probe_for_group(doc, fallback_used))
+        print(
+            f"[info]   falling back to group {fallback_used} "
+            f"({'same probe' if same_probe else 'different probe — '
+                'less reliable, but better than nothing'}); "
+            f"output files will still be named "
+            f"{args.session}.chunks.{args.source_group} etc.",
+            file=sys.stderr,
+        )
+        shank = replacement
 
     windows = extract_windows(shank)
     if not windows:
@@ -240,8 +349,11 @@ def main() -> int:
 
     # Pull window_sec from the file header if available.
     window_sec = float(doc.get("drift", {}).get("windowSec", 60.0))
+    src_label = (f"group {args.source_group} (via fallback to group {fallback_used})"
+                 if fallback_used is not None
+                 else f"group {args.source_group}")
     print(
-        f"  Source group {args.source_group}: {len(windows)} drift windows "
+        f"  Source {src_label}: {len(windows)} drift windows "
         f"({window_sec}s each)",
         file=sys.stderr,
     )
