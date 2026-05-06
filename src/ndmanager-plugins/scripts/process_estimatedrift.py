@@ -689,6 +689,33 @@ def estimate_shank_drift(
     noise: set[int] = {0, 1} if exclude_noise else set()
     good_units      = sorted(set(clu.tolist()) - noise)
 
+    # Early-skip: no real units in this group's .clu — every spike landed in
+    # cluster 0 (artefact) or 1 (MUA).  This is common for groups that
+    # operators have triaged down to noise after deciding the shank is bad,
+    # or for shanks where the automatic sort never produced anything sortable.
+    # Drift cannot be estimated without a population of single units to
+    # track, so we return a tombstone entry instead of None: ndm_applydrift
+    # then sees the group as *intentionally skipped* (vs. *never processed*)
+    # and can fall back to a sibling source group on the same probe instead
+    # of failing with the cryptic "source group N not found in .drift" error.
+    # The tombstone carries skipReason so downstream tools can surface a
+    # clear explanation.
+    if len(good_units) == 0:
+        clu_unique = sorted(set(clu.tolist()))
+        print(f"  [info] group {group_idx}: noise-only .clu "
+              f"(ids={clu_unique}); skipping drift estimation",
+              file=sys.stderr)
+        return {
+            "spikeGroup":   group_idx,
+            "skipReason":   "noise-only-clu",
+            "skipDetail":   (f"all spikes assigned to clusters "
+                             f"{sorted(noise & set(clu_unique))} "
+                             f"(noise / artefact); no real units to track"),
+            "nSpikes":      int(n),
+            "nClusters":    len(clu_unique),
+            "windows":      [],
+        }
+
     n_sites  = len(depths)
     # n_samp is passed in from the YAML nSamples field for this group.
     # Default 32 is the ndmanager process_extractspikes default.
@@ -765,8 +792,28 @@ def estimate_shank_drift(
             break
 
     if ref_idx is None:
-        print(f"  [info] group {group_idx}: no window with ≥{min_units} units", file=sys.stderr)
-        return None
+        # Same tombstone treatment as the noise-only case above.  This branch
+        # fires when the group has real units (good_units > 0) but they fire
+        # too sparsely to reach min_units in any single window — typical for
+        # groups with one or two low-rate units, or for shanks that drift
+        # away from active brain regions partway through.  Drift estimation
+        # against <min_units reference sources would be unreliable, so we
+        # skip with an explicit tombstone rather than silently dropping the
+        # group from .drift.
+        print(f"  [info] group {group_idx}: no window with ≥{min_units} units "
+              f"({len(qualified)} qualified); skipping drift estimation",
+              file=sys.stderr)
+        return {
+            "spikeGroup":   group_idx,
+            "skipReason":   "insufficient-units-per-window",
+            "skipDetail":   (f"{len(qualified)} qualified unit(s) globally, "
+                             f"but no {window_sec:.0f}s window had "
+                             f"≥{min_units} units firing ≥{min_spikes} spikes"),
+            "nSpikes":          int(n),
+            "nQualifiedUnits":  len(qualified),
+            "minUnitsRequired": min_units,
+            "windows":          [],
+        }
 
     windows_out: list[dict] = []
 
@@ -1171,7 +1218,29 @@ def main() -> int:
 
     # --source-group mode: propagate the source shank's drift windows to
     # all sibling groups on the same probe that were NOT estimated.
-    if source_group and source_result is not None:
+    # Skip propagation when the source itself was tombstoned (skipReason
+    # set) — we'd just be cloning empty windows everywhere, which gives
+    # ndm_applydrift nothing useful to chunk against.
+    if (source_group
+            and source_result is not None
+            and source_result.get("skipReason")):
+        # User asked for an explicit source group, but that group could not
+        # be estimated.  Surface this loudly so the operator knows the
+        # propagation step is being skipped — without this, the .drift file
+        # gets a single tombstone entry and ndm_applydrift's confused error
+        # message ("source group N not found") only shows up much later.
+        print(
+            f"  [warn] --source-group {source_group}: shank was skipped "
+            f"({source_result['skipReason']}); not propagating to siblings",
+            file=sys.stderr)
+        print(
+            f"  [warn]   re-run with --source-group <g> pointing at a group "
+            f"that has real units, or omit --source-group to estimate all "
+            f"groups independently",
+            file=sys.stderr)
+    if (source_group
+            and source_result is not None
+            and not source_result.get("skipReason")):
         src_pid = g_probe_map.get(source_group, (0, source_group - 1))[0]
         for g in range(1, args.n_groups + 1):
             if g == source_group:
