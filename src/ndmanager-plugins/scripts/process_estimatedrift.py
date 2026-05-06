@@ -912,6 +912,118 @@ def estimate_shank_drift(
 
 from dataclasses import dataclass
 
+
+def average_drift_across_shanks(
+        shank_results: list[dict],
+        window_sec: float,
+) -> Optional[dict]:
+    """Compute a probe-level drift trace by weighted-mean averaging across
+    all healthy shanks on the probe.
+
+    Rationale.  Shanks of a single probe are mechanically rigid — they
+    move together as the probe drifts.  Per-shank drift estimates differ
+    only by:
+      (a) noise from the per-shank unit-tracking algorithm
+      (b) per-shank position errors (e.g. unit clusters that are
+          themselves slightly mis-positioned)
+      (c) genuine within-probe gradients (rare for stiff probes; possible
+          for very long shanks under thermal expansion)
+
+    Averaging across shanks reduces (a) and (b); (c) is small enough on
+    typical probe geometries (≤8mm shanks) that the assumption is fine.
+    A per-probe weighted mean — weighted by each shank's reference-window
+    unit count — is the natural pooled estimator.
+
+    Inputs.
+      shank_results — list of healthy shank dicts (each must have
+                      'windows' and 'nUnitsInRef'; tombstones with
+                      skipReason set are silently skipped here, since
+                      the caller is expected to have filtered).
+      window_sec    — the global windowSec parameter.  All shanks share
+                      this; we re-stamp t_start/t_end into the averaged
+                      windows for cleanliness.
+
+    Returns a dict shaped like a single-shank result's windows-bearing
+    portion — with 'method', 'sourceGroups', 'sourceWeights', and
+    'windows' (each window having drift_um, n_contributing_shanks, and
+    an across-shank stddev for diagnostics).  Returns None when there
+    are zero usable healthy shanks.
+    """
+    healthy = [r for r in shank_results
+               if r and not r.get("skipReason") and r.get("windows")]
+    if not healthy:
+        return None
+
+    # Find max window count across all healthy shanks.  Sessions with
+    # different last-spike-times across shanks can produce slightly
+    # different n_windows; we cover the union so the averaged trace
+    # extends to the longest shank.
+    n_windows = max(len(r["windows"]) for r in healthy)
+
+    # Per-shank weight = nUnitsInRef (count of units that anchored the
+    # reference window — directly proportional to the shank's
+    # signal-to-noise on drift).  Shanks with no nUnitsInRef field
+    # (legacy or otherwise malformed) get weight 1.
+    weights = [max(1, int(r.get("nUnitsInRef", 1))) for r in healthy]
+    source_groups = [int(r["spikeGroup"]) for r in healthy]
+
+    avg_windows: list[dict] = []
+    for w in range(n_windows):
+        contrib_drifts: list[float] = []
+        contrib_weights: list[int]   = []
+        for r, weight in zip(healthy, weights):
+            if w >= len(r["windows"]):
+                continue
+            d = r["windows"][w].get("drift_um")
+            if d is None:
+                continue
+            contrib_drifts.append(float(d))
+            contrib_weights.append(weight)
+
+        if not contrib_drifts:
+            avg_windows.append({
+                "t_start":               round(w * window_sec, 3),
+                "t_end":                 round((w + 1) * window_sec, 3),
+                "drift_um":              None,
+                "n_contributing_shanks": 0,
+                "stddev_um":             None,
+            })
+            continue
+
+        # Weighted mean.
+        wsum = sum(contrib_weights)
+        mean = sum(d * w_ for d, w_ in
+                   zip(contrib_drifts, contrib_weights)) / wsum
+
+        # Across-shank stddev (unweighted — diagnostics, not the estimate).
+        # If a single shank contributed, stddev is 0.0 by definition.
+        if len(contrib_drifts) >= 2:
+            var = (sum((d - mean) ** 2 for d in contrib_drifts)
+                   / len(contrib_drifts))
+            stddev = round(math.sqrt(var), 3)
+        else:
+            stddev = 0.0
+
+        avg_windows.append({
+            "t_start":               round(w * window_sec, 3),
+            "t_end":                 round((w + 1) * window_sec, 3),
+            "drift_um":              round(mean, 3),
+            "n_contributing_shanks": len(contrib_drifts),
+            "stddev_um":             stddev,
+        })
+
+    valid = [w["drift_um"] for w in avg_windows if w["drift_um"] is not None]
+    return {
+        "method":         "weighted-mean-across-shanks",
+        "weightField":    "nUnitsInRef",
+        "sourceGroups":   source_groups,
+        "sourceWeights":  weights,
+        "nShanks":        len(healthy),
+        "maxAbsDrift_um": round(max(abs(d) for d in valid), 3) if valid else None,
+        "windows":        avg_windows,
+    }
+
+
 @dataclass
 class _ShankJob:
     """Self-contained per-shank work item.
@@ -1261,11 +1373,35 @@ def main() -> int:
         shanks = [{"shankIndex": shk, **r}
                   for p2, shk, _, r in sorted(all_results, key=lambda x: x[1])
                   if p2 == pid]
-        probes_out.append({
+
+        # Per-probe averaged drift trace.  When two or more shanks on
+        # the same probe estimated successfully, this is the canonical
+        # probe-motion estimate that ndm_applydrift prefers over any
+        # individual shank's trace.  See average_drift_across_shanks
+        # for the rationale.
+        probe_avg = average_drift_across_shanks(shanks, args.window_sec)
+        probe_entry: dict = {
             "probeId": pid,
             "label":   p_entry_map.get(pid, {}).get("label", ""),
-            "shanks":  shanks,
-        })
+        }
+        if probe_avg is not None:
+            probe_entry["drift"] = probe_avg
+            print(
+                f"  probe {pid}: averaged drift across "
+                f"{probe_avg['nShanks']} shank(s) "
+                f"(groups {probe_avg['sourceGroups']}, "
+                f"weights {probe_avg['sourceWeights']}); "
+                f"max |drift| = {probe_avg['maxAbsDrift_um']} µm",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"  probe {pid}: no healthy shanks — "
+                f"probe-level averaged drift not available",
+                file=sys.stderr,
+            )
+        probe_entry["shanks"] = shanks
+        probes_out.append(probe_entry)
 
     doc = {"drift": {
         "format":           "1.0",

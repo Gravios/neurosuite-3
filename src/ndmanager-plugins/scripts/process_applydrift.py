@@ -90,6 +90,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sampling-rate",  type=float, default=0.0,
                    help="Acquisition sampling rate (Hz). Used only for the "
                         "header comment in the output file.")
+    p.add_argument("--shank-specific", action="store_true",
+                   help="Force use of the requested source group's per-shank "
+                        "drift trace, ignoring any probe-level averaged trace "
+                        "(probes[i].drift) that may be present in the .drift "
+                        "file.  Default is to prefer the probe-level average "
+                        "when available — it pools across shanks for a less "
+                        "noisy estimate.  Pass this flag for diagnostics or "
+                        "when you specifically need the per-shank result.")
     return p.parse_args()
 
 
@@ -304,42 +312,101 @@ def main() -> int:
     # for group N; find me drift data from somewhere reasonable on the same
     # probe."
     fallback_used: Optional[int] = None
-    if shank is None or is_tombstoned(shank):
+    requested_tombstoned = (shank is None or is_tombstoned(shank))
+    if requested_tombstoned:
         why = ("not present in .drift" if shank is None
                else f"skipped by ndm_estimatedrift "
                     f"({shank.get('skipReason', 'unknown reason')})")
-        print(
-            f"[info] source group {args.source_group}: {why}; "
-            f"looking for a sibling shank on the same probe to use instead",
-            file=sys.stderr,
-        )
-        if shank is not None and shank.get("skipDetail"):
-            print(f"[info]   detail: {shank['skipDetail']}", file=sys.stderr)
+        skip_detail = (shank.get("skipDetail")
+                       if shank is not None else None)
 
-        replacement = choose_fallback_source(doc, args.source_group)
-        if replacement is None:
+        # Look for the probe-level averaged trace before falling back to
+        # a sibling shank — when present, it's the better source for
+        # exactly this case (the requested shank had nothing usable, but
+        # other shanks on the same probe did, and ndm_estimatedrift
+        # already pooled them).  Probe-average lookup happens later in
+        # the main flow; here we only need to know whether to emit
+        # the sibling-fallback message vs. defer to probe-average.
+        probe_obj = find_probe_for_group(doc, args.source_group)
+        probe_has_average = bool(
+            (probe_obj or {}).get("drift", {}).get("windows"))
+
+        if probe_has_average and not args.shank_specific:
+            # Probe-average path will pick this up in the main flow;
+            # don't print a sibling-fallback message that wouldn't reflect
+            # what's actually used.  Set 'shank' to any non-tombstoned
+            # sibling so the windows attribute lookup later doesn't
+            # NPE — but the per-shank windows themselves get overridden
+            # by the probe average.
+            replacement = choose_fallback_source(doc, args.source_group)
+            if replacement is not None:
+                fallback_used = int(replacement.get("spikeGroup", -1))
+                shank = replacement
             print(
-                f"[error] no usable source shank in {args.drift_file}.\n"
-                f"        Every shank is either absent or tombstoned.\n"
-                f"        Re-run ndm_estimatedrift after curating at least\n"
-                f"        one shank's .clu beyond noise/artefact clusters.",
+                f"[info] source group {args.source_group}: {why}; "
+                f"using probe-level averaged drift "
+                f"(see 'Source:' line below for sources)",
                 file=sys.stderr,
             )
-            return 1
-        fallback_used = int(replacement.get("spikeGroup", -1))
-        same_probe   = (find_probe_for_group(doc, args.source_group)
-                        is find_probe_for_group(doc, fallback_used))
-        print(
-            f"[info]   falling back to group {fallback_used} "
-            f"({'same probe' if same_probe else 'different probe — '
-                'less reliable, but better than nothing'}); "
-            f"output files will still be named "
-            f"{args.session}.chunks.{args.source_group} etc.",
-            file=sys.stderr,
-        )
-        shank = replacement
+            if skip_detail:
+                print(f"[info]   detail: {skip_detail}", file=sys.stderr)
+        else:
+            print(
+                f"[info] source group {args.source_group}: {why}; "
+                f"looking for a sibling shank on the same probe to use instead",
+                file=sys.stderr,
+            )
+            if skip_detail:
+                print(f"[info]   detail: {skip_detail}", file=sys.stderr)
 
-    windows = extract_windows(shank)
+            replacement = choose_fallback_source(doc, args.source_group)
+            if replacement is None:
+                print(
+                    f"[error] no usable source shank in {args.drift_file}.\n"
+                    f"        Every shank is either absent or tombstoned.\n"
+                    f"        Re-run ndm_estimatedrift after curating at least\n"
+                    f"        one shank's .clu beyond noise/artefact clusters.",
+                    file=sys.stderr,
+                )
+                return 1
+            fallback_used = int(replacement.get("spikeGroup", -1))
+            same_probe = (find_probe_for_group(doc, args.source_group)
+                          is find_probe_for_group(doc, fallback_used))
+            print(
+                f"[info]   falling back to group {fallback_used} "
+                f"({'same probe' if same_probe else 'different probe — '
+                    'less reliable, but better than nothing'}); "
+                f"output files will still be named "
+                f"{args.session}.chunks.{args.source_group} etc.",
+                file=sys.stderr,
+            )
+            shank = replacement
+
+    # ── Source selection: probe-level average vs per-shank ─────────────────
+    #
+    # When ndm_estimatedrift writes a probe-level averaged drift trace
+    # (probes[i].drift), prefer it: it pools per-shank estimates across
+    # all healthy shanks on the probe and is therefore less noisy than
+    # any single shank's trace.  The user can opt out with --shank-specific
+    # to force the requested source group's per-shank windows (useful for
+    # diagnostics or when individual shank drift differs from probe-mean
+    # in a way the operator cares about).  Old .drift files without the
+    # probe-level field fall through unchanged.
+    probe_avg_used = False
+    probe = find_probe_for_group(doc, args.source_group)
+    if probe is None and fallback_used is not None:
+        # When the requested group was missing entirely, find_probe_for_group
+        # against the requested id won't resolve.  Anchor on the fallback
+        # group instead so we still pick up its probe's average.
+        probe = find_probe_for_group(doc, fallback_used)
+
+    probe_avg = (probe or {}).get("drift") if not args.shank_specific else None
+    if probe_avg and probe_avg.get("windows"):
+        windows = probe_avg["windows"]
+        probe_avg_used = True
+    else:
+        windows = extract_windows(shank)
+
     if not windows:
         print(
             f"[warn] no drift windows found for group {args.source_group} "
@@ -349,11 +416,17 @@ def main() -> int:
 
     # Pull window_sec from the file header if available.
     window_sec = float(doc.get("drift", {}).get("windowSec", 60.0))
-    src_label = (f"group {args.source_group} (via fallback to group {fallback_used})"
-                 if fallback_used is not None
-                 else f"group {args.source_group}")
+    if probe_avg_used:
+        src_groups = probe_avg.get("sourceGroups", [])
+        weights    = probe_avg.get("sourceWeights", [])
+        src_label  = (f"probe-level averaged drift "
+                      f"(across groups {src_groups}, weights {weights})")
+    elif fallback_used is not None:
+        src_label = f"group {args.source_group} (via fallback to group {fallback_used})"
+    else:
+        src_label = f"group {args.source_group}"
     print(
-        f"  Source {src_label}: {len(windows)} drift windows "
+        f"  Source: {src_label}: {len(windows)} drift windows "
         f"({window_sec}s each)",
         file=sys.stderr,
     )
@@ -370,6 +443,26 @@ def main() -> int:
         f"(thresh={args.thresh_um} µm, min={args.min_chunk_sec}s)",
         file=sys.stderr,
     )
+
+    # Ergonomic interpretation: when adaptive chunking produces a single
+    # chunk, the probe didn't drift enough to warrant chunked CEM at the
+    # given threshold.  Surface this clearly so the operator isn't left
+    # wondering why their .chunks.<g> files all have just two lines.
+    if n_chunks <= 1 and windows:
+        valid_drifts = [w["drift_um"] for w in windows
+                        if w.get("drift_um") is not None]
+        if valid_drifts:
+            drange = max(valid_drifts) - min(valid_drifts)
+            print(
+                f"  [info] drift below threshold "
+                f"(range {drange:.2f} µm < thresh {args.thresh_um} µm) "
+                f"→ single-chunk output; chunked CEM is effectively "
+                f"disabled for these groups.\n"
+                f"  [info] this is the correct outcome when the probe was "
+                f"stable; to force smaller chunks for stress-testing, "
+                f"re-run with --thresh-um <smaller value>.",
+                file=sys.stderr,
+            )
 
     # Determine which groups to write files for.
     target_groups = list(args.target_groups)
