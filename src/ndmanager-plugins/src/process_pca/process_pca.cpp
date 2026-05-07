@@ -40,6 +40,8 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <string>
 using namespace std;
 
 
@@ -48,6 +50,130 @@ const char *programVersion = "process_pca 0.9.4 (28-11-2011)";
 
 unsigned long int nRecords = 0; // number of records in all channels
 unsigned long int nRecordsPerChannel = 0; // number of records for a channel
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// Subset-PCA helpers
+// ───────────────────────────────────────────────────────────────────────────
+//
+// parseExcludeList parses a comma-separated list of cluster ids ("0,1,5,12")
+// into a sorted std::vector<int>.  Whitespace is tolerated.  Returns true on
+// success, false on any parse error (with a message on stderr).
+static bool parseExcludeList(const char *raw, std::vector<int> &out)
+{
+	out.clear();
+	if (!raw || !*raw) {
+		cerr << "error: -e: exclude list is empty." << endl;
+		return false;
+	}
+	std::string buf;
+	auto flush = [&](void) -> bool {
+		if (buf.empty()) return true;
+		// Trim
+		size_t a = 0, b = buf.size();
+		while (a < b && isspace((unsigned char)buf[a])) ++a;
+		while (b > a && isspace((unsigned char)buf[b-1])) --b;
+		if (a == b) { buf.clear(); return true; }
+		std::string tok = buf.substr(a, b-a);
+		buf.clear();
+		// Validate: signed integer
+		size_t i = 0;
+		if (tok[0] == '+' || tok[0] == '-') i = 1;
+		if (i >= tok.size()) {
+			cerr << "error: -e: bad cluster id '" << tok << "'." << endl;
+			return false;
+		}
+		for (; i < tok.size(); ++i) {
+			if (!isdigit((unsigned char)tok[i])) {
+				cerr << "error: -e: bad cluster id '" << tok << "'." << endl;
+				return false;
+			}
+		}
+		out.push_back(atoi(tok.c_str()));
+		return true;
+	};
+	for (const char *p = raw; *p; ++p) {
+		if (*p == ',') {
+			if (!flush()) return false;
+		} else {
+			buf.push_back(*p);
+		}
+	}
+	if (!flush()) return false;
+	std::sort(out.begin(), out.end());
+	out.erase(std::unique(out.begin(), out.end()), out.end());
+	return true;
+}
+
+// loadCluIds reads a .clu file (binary: int32 nClusters header + N×int32 ids;
+// or legacy text: ASCII first-line nClusters, then one id per line).  On
+// success the returned vector has exactly *expectedN* entries.  Auto-detects
+// format by checking whether the first 4 bytes plausibly form an int32 small
+// enough to be a cluster count (≤ 1<<20) — text files start with ASCII digits
+// which decode to enormous int32 values and never trigger the binary path.
+static bool loadCluIds(const char *path,
+                       unsigned long expectedN,
+                       std::vector<int> &out)
+{
+	out.clear();
+	std::ifstream f(path, std::ios::binary);
+	if (!f) {
+		cerr << "error: cannot open .clu file '" << path << "'." << endl;
+		return false;
+	}
+	f.seekg(0, std::ios::end);
+	std::streamoff fsize = f.tellg();
+	f.seekg(0, std::ios::beg);
+	if (fsize < 4) {
+		cerr << "error: .clu file '" << path << "' is too small (" << fsize
+		     << " bytes)." << endl;
+		return false;
+	}
+
+	// Probe binary header
+	int32_t hdr = 0;
+	f.read(reinterpret_cast<char*>(&hdr), 4);
+	const std::streamoff bodyBytes = fsize - 4;
+	const bool binaryPlausible = (hdr > 0 && hdr <= (1<<20)
+	                              && bodyBytes == (std::streamoff)expectedN * 4);
+
+	if (binaryPlausible) {
+		out.resize(expectedN);
+		f.read(reinterpret_cast<char*>(out.data()),
+		       (std::streamsize)expectedN * 4);
+		if ((unsigned long)f.gcount() != expectedN * 4) {
+			cerr << "error: .clu '" << path << "': short read of body"
+			     << endl;
+			return false;
+		}
+		return true;
+	}
+
+	// Text fallback — re-open as text
+	f.close();
+	std::ifstream tf(path);
+	if (!tf) {
+		cerr << "error: .clu '" << path << "': cannot reopen as text"
+		     << endl;
+		return false;
+	}
+	int nClusters = 0;
+	if (!(tf >> nClusters)) {
+		cerr << "error: .clu '" << path << "': expected leading int32 "
+		     << "nClusters header (binary) or ASCII nClusters line "
+		     << "(text); got neither." << endl;
+		return false;
+	}
+	out.reserve(expectedN);
+	int v;
+	while (tf >> v) out.push_back(v);
+	if (out.size() != expectedN) {
+		cerr << "error: .clu '" << path << "' has " << out.size()
+		     << " ids but spike file implies " << expectedN << "." << endl;
+		return false;
+	}
+	return true;
+}
 
 
 /**
@@ -84,6 +210,13 @@ void help(const char* name)
 	cout << " -c              use centered data for the projection" << endl;
 	cout << " -x              include extra features in output file (spike peak values)" << endl;
 	cout << " -g group        electrode-group number for progress bar label (e.g. -g 7 → [PCA-7])" << endl;
+	cout << " -l clu-file     .clu.<g> path; required when -e is given.  Used only for the" << endl;
+	cout << "                 subset-PCA fit (see -e).  All spikes are still projected through" << endl;
+	cout << "                 the resulting basis." << endl;
+	cout << " -e ids          comma-separated cluster ids to EXCLUDE from the PCA fit (e.g." << endl;
+	cout << "                 '-e 5,12').  Useful for dropping high-rate units (interneurons)" << endl;
+	cout << "                 that would otherwise pull eigenvectors toward whatever" << endl;
+	cout << "                 distinguishes their fast waveforms.  Requires -l." << endl;
 	cout << " -v              verbose mode" << endl;
 	cout << " -h              display help" << endl;
 	cout << endl << "All arguments are mandatory except" << endl;
@@ -121,6 +254,10 @@ int main(int argc,char *argv[])
 	arguments.isExtraFeaturesProvided = false;
 	arguments.isOffsetProvided = false;
 	arguments.electrodeGroup = -1;  // -1 == no group label (legacy mode)
+	arguments.cluFileName = nullptr;
+	arguments.isCluFileProvided = false;
+	arguments.excludeClustersStr = nullptr;
+	arguments.isExcludeClustersProvided = false;
 	
 	parseArgs(argc,argv,arguments); // Parse command-line
 	
@@ -214,6 +351,82 @@ int main(int argc,char *argv[])
 		cout << endl;
 	}
 
+	// ─── Subset PCA setup (interneuron exclusion) ──────────────────────────
+	//
+	// When -e/-l are supplied, build a per-spike keep mask such that:
+	//   keepMask[k] == true   ⇒ spike k contributes to the covariance fit
+	//   keepMask[k] == false  ⇒ spike k is projected through the resulting
+	//                           basis but does NOT influence its direction
+	// This matches the canonical "fit on subset, project all" semantics:
+	// the eigenvectors are computed entirely from kept spikes, but every
+	// row of the input still produces a row in the output .fet so the
+	// caller's spike count and indexing are preserved.
+	std::vector<bool> keepMask;
+	std::vector<int>  excludeList;
+	unsigned long nFitSpikes = nSpikes;
+	if (arguments.isCluFileProvided != arguments.isExcludeClustersProvided) {
+		cerr << "error: -l and -e must be given together (or both omitted)."
+		     << endl;
+		exit(1);
+	}
+	if (arguments.isExcludeClustersProvided) {
+		// isCenteredData inputs are pre-centered against the FULL set's mean
+		// outside this binary; subset PCA needs to re-centre against the
+		// fit set's mean, which we cannot reconstruct from already-centred
+		// data.  Refuse the combination explicitly rather than silently
+		// producing a basis fit on the wrong centroid.
+		if (arguments.isCenteredData) {
+			cerr << "error: -c (pre-centered input) is incompatible with "
+			     << "-e (subset PCA).  Re-run on uncentered input."
+			     << endl;
+			exit(1);
+		}
+		if (!parseExcludeList(arguments.excludeClustersStr, excludeList))
+			exit(1);
+		std::vector<int> cluIds;
+		if (!loadCluIds(arguments.cluFileName, nSpikes, cluIds))
+			exit(1);
+
+		keepMask.assign(nSpikes, true);
+		nFitSpikes = 0;
+		// Linear scan: for each spike, drop if its cluster is in the exclude
+		// set.  excludeList is small (typically 1-3 entries) and sorted, so
+		// std::binary_search is cheap.
+		for (unsigned long k = 0; k < nSpikes; ++k) {
+			if (std::binary_search(excludeList.begin(),
+			                       excludeList.end(),
+			                       cluIds[k])) {
+				keepMask[k] = false;
+			} else {
+				++nFitSpikes;
+			}
+		}
+
+		if (nFitSpikes == 0) {
+			cerr << "error: -e: every spike was excluded; cannot fit basis."
+			     << endl;
+			exit(1);
+		}
+		if (nFitSpikes < (unsigned long)data2use) {
+			cerr << "error: -e: only " << nFitSpikes << " spikes remain "
+			     << "after exclusion, but PCA over data2use=" << data2use
+			     << " samples needs at least that many spikes for a "
+			     << "non-degenerate covariance.  Pick a smaller exclude "
+			     << "set." << endl;
+			exit(1);
+		}
+
+		cout << "Subset PCA: excluding clusters {";
+		for (size_t i = 0; i < excludeList.size(); ++i) {
+			cout << excludeList[i];
+			if (i + 1 < excludeList.size()) cout << ", ";
+		}
+		cout << "}; fitting on " << nFitSpikes << "/" << nSpikes
+		     << " spikes (" << (nSpikes - nFitSpikes) << " dropped, "
+		     << (100.0 * (nSpikes - nFitSpikes) / (double)nSpikes)
+		     << "%)." << endl;
+	}
+
 	// Build the progress bar's step tag.  When a group number was
 	// passed (-g N), include it so parallel-group runs from the
 	// wrapper script can be distinguished visually: "[PCA-7]" for
@@ -266,32 +479,49 @@ int main(int argc,char *argv[])
 	{
 		mean[i] = new double[data2use];
 		sum[i] = new double[data2use];
-		datSpkChanCenter[i] = gsl_matrix_alloc(data2use,nSpikes);
 		if(!arguments.isCenteredData)
 			datSpkChan[i] = gsl_matrix_alloc(data2use,nSpikes);
 		if(arguments.isExtraFeaturesProvided)
 			peakVal[i] = new short[nSpikes];
-		
+
 		varcov[i] = gsl_matrix_alloc(data2use,data2use);
 		reducedData[i] = gsl_matrix_alloc(arguments.nComponents,nSpikes);
+		// datSpkChanCenter holds the centred FIT set (subset when -e is used,
+		// full set otherwise — nFitSpikes equals nSpikes when no exclusion is
+		// active).  The covariance dgemm below reads this matrix, so its
+		// column count is nFitSpikes — eigenvectors are computed strictly
+		// from the kept spikes.  Projection later uses datSpkChan (uncentred,
+		// full size), preserving every spike's row in the output .fet.
+		datSpkChanCenter[i] = gsl_matrix_alloc(data2use, nFitSpikes);
 		for ( int j = 0 ; j < data2use ; ++j )
 		{
 			mean[i][j] = -1;
 			sum[i][j] = 0;
+			// First pass: populate datSpkChan (full, uncentred) and
+			// accumulate the FIT-set sum for the mean.
 			for ( unsigned int k = 0 ; k < nSpikes ; ++k )
 			{
 				double v = rawData[(arguments.nChannels*arguments.spikeLength)*k+((j+recShift)*arguments.nChannels)+i];
-				gsl_matrix_set(datSpkChanCenter[i],j,k,v);
 				if(!arguments.isCenteredData)
 					gsl_matrix_set(datSpkChan[i],j,k,v);
-				sum[i][j] += v;
+				if (keepMask.empty() || keepMask[k])
+					sum[i][j] += v;
 				if(arguments.isExtraFeaturesProvided && (j+recShift)==arguments.peakPosition)
 					peakVal[i][k] = v; // if this is the peak, store it !
 			} // for k
-			mean[i][j] = sum[i][j]/nSpikes; // mean computation
+			mean[i][j] = sum[i][j]/(double)nFitSpikes;
+
+			// Second pass: emit one column of datSpkChanCenter per kept
+			// spike, in the same temporal order as the input.  fitIdx is
+			// the running index into the subset; with no exclusion it
+			// simply equals k throughout.
+			unsigned long fitIdx = 0;
 			for ( unsigned int k = 0 ; k < nSpikes ; ++k )
 			{
-				gsl_matrix_set (datSpkChanCenter[i],j,k,(gsl_matrix_get(datSpkChanCenter[i],j,k)-mean[i][j]));
+				if (!keepMask.empty() && !keepMask[k]) continue;
+				double v = rawData[(arguments.nChannels*arguments.spikeLength)*k+((j+recShift)*arguments.nChannels)+i];
+				gsl_matrix_set(datSpkChanCenter[i], j, fitIdx, v - mean[i][j]);
+				++fitIdx;
 			} // for k
 		} // for j
 	} // for i
@@ -328,7 +558,15 @@ int main(int argc,char *argv[])
 		gsl_eigen_symmv_workspace *tw = gsl_eigen_symmv_alloc(data2use);
 
 		// compute variance-covariance matrix (Data * DataTrans)
-		gsl_blas_dgemm(CblasNoTrans,CblasTrans,(1.0/(nSpikes-1)),datSpkChanCenter[i],datSpkChanCenter[i],0.0,varcov[i]);
+		// Compute the variance-covariance matrix (Data * DataTrans).
+		// The divisor uses the number of columns actually present in
+		// datSpkChanCenter — that is nFitSpikes, which equals nSpikes when
+		// no exclusion is active and nFitSpikes < nSpikes under -e.  Using
+		// the wrong divisor would only change eigenvalue magnitudes, not
+		// the eigenvector directions sorted by gsl_eigen_symmv_sort, but
+		// "right divisor" matches the unbiased sample covariance estimator
+		// the comment above promises.
+		gsl_blas_dgemm(CblasNoTrans,CblasTrans,(1.0/(nFitSpikes-1)),datSpkChanCenter[i],datSpkChanCenter[i],0.0,varcov[i]);
 
 		// solve eigen system to get eigen values and vectors
 		gsl_eigen_symmv(varcov[i],tEigenValues,tEigenVectors,tw);
@@ -586,6 +824,18 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 			case 'g': // electrode-group number for the progress bar label
 				if ( i+1 > nOptions ) error(argv[0]);
 				arguments.electrodeGroup = atoi(argv[++i]);
+				break;
+
+			case 'l': // .clu file path for subset PCA (paired with -e)
+				if ( i+1 >= nOptions ) error(argv[0]);
+				arguments.cluFileName = argv[++i];
+				arguments.isCluFileProvided = true;
+				break;
+
+			case 'e': // comma-separated cluster ids to exclude from the fit
+				if ( i+1 >= nOptions ) error(argv[0]);
+				arguments.excludeClustersStr = argv[++i];
+				arguments.isExcludeClustersProvided = true;
 				break;
 
 			case 'v': // verbose mode

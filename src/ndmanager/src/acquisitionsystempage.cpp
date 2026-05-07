@@ -52,6 +52,20 @@ AcquisitionSystemPage::AcquisitionSystemPage(QWidget *parent)
     connect(amplificationLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
     connect(samplingRateLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
     connect(offsetLineEdit, &QLineEdit::textChanged, this, &AcquisitionSystemPage::propertyModified);
+
+    // Default to 16 bits when the page is freshly constructed (new session,
+    // before any YAML or template is loaded).  The combo-box items are
+    // ordered 12, 14, 16, 32 in acquisitionsystemlayout.ui so Qt's natural
+    // initial index 0 would yield 12-bit — almost never the right choice
+    // for a new recording in this lab's workflow.  16 bits is by far the
+    // most common acquisition resolution (Intan, Open Ephys, Neuralynx,
+    // Plexon, Blackrock all default to 16-bit), and it also matches the
+    // bit depth at which spike-snippet files (.spk / .spkD) are always
+    // stored in the neurosuite pipeline regardless of recording bit depth
+    // — so users who never touch this field still get a YAML that the
+    // downstream tools can read consistently.  Index 2 corresponds to
+    // 16-bit per the (set|get)Resolution switch tables below.
+    resolutionComboBox->setCurrentIndex(2);
 }
 
 

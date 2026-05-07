@@ -108,6 +108,31 @@ once()
     check_optional_variable $extra || extra=false
     $extra && options="$options -x"
 
+    # ── Subset PCA: drop high-rate clusters from the fit ──────────────────
+    #
+    # Same semantics as ndm_pca: fit eigenvectors on the non-excluded
+    # spikes, project all.  Useful for second-pass PCA after an initial
+    # clustering identifies interneurons or other high-rate units that
+    # would otherwise bias the basis.  Set in the session config:
+    #
+    #   <program><n>ndm_pca_stderiv</n><parameters>
+    #     <parameter><n>excludeClusters</n><value>5,12</value>
+    #                 <status>Optional</status></parameter>
+    #   </parameters></program>
+    #
+    # The .clu file is auto-resolved as $session.clu.$electrodeGroup.
+    excludeClusters=$(read_script_parameter $session excludeClusters)
+    if check_optional_variable $excludeClusters
+    then
+        cluFile=$session.clu.$electrodeGroup
+        if [ ! -f "$cluFile" ]
+        then
+            echo_error "excludeClusters=$excludeClusters but $cluFile is missing — run an initial PCA + clustering pass first, then re-run with excludeClusters set."
+            exit $GENERAL_ERROR
+        fi
+        options="$options -l $cluFile -e $excludeClusters"
+    fi
+
     # Orders 1 and 3 produce one linearly dependent channel in the spatial
     # derivative (order 1: last = -penultimate; order 3: sum = 0).
     # process_pca_stderiv drops that channel, so tell process_pca to
