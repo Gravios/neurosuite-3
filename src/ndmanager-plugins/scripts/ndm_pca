@@ -88,6 +88,38 @@ once()
 	check_optional_variable $extra || extra=false
 	$extra && options="$options -x"
 
+	# ── Subset PCA: drop high-rate clusters from the fit ────────────────────
+	#
+	# When the operator has run an initial clustering pass and identified
+	# fast-spiking interneurons (or any other cluster whose row count would
+	# bias the PCA basis), pass their cluster ids here to fit eigenvectors on
+	# the remaining spikes only.  All spikes are still projected through the
+	# resulting basis, so the .fet has one row per spike — only the basis
+	# direction changes.  Set in the session config like:
+	#
+	#   <program><n>ndm_pca</n><parameters>
+	#     <parameter><n>excludeClusters</n><value>5,12</value>
+	#                 <status>Optional</status></parameter>
+	#   </parameters></program>
+	#
+	# or in YAML form, e.g. excludeClusters: "5,12".
+	#
+	# Auto-resolves the .clu path from the session basename + group number;
+	# expects $session.clu.$electrodeGroup to exist.  Without an existing
+	# .clu (i.e. on the first PCA pass before any clustering has happened),
+	# leave excludeClusters empty.
+	excludeClusters=$(read_script_parameter $session excludeClusters)
+	if check_optional_variable $excludeClusters
+	then
+		cluFile=$session.clu.$electrodeGroup
+		if [ ! -f "$cluFile" ]
+		then
+			echo_error "excludeClusters=$excludeClusters but $cluFile is missing — run an initial PCA + clustering pass first, then re-run with excludeClusters set."
+			exit $GENERAL_ERROR
+		fi
+		options="$options -l $cluFile -e $excludeClusters"
+	fi
+
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////

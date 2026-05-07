@@ -61,6 +61,20 @@ struct arguments {
 	// users running the wrapper script with parallel groups can tell
 	// which group's bar is which.
 	int  electrodeGroup;
+
+	// ─── Subset PCA (interneuron / high-rate exclusion) ─────────────────
+	// When set, the PCA basis is fit ONLY on spikes whose .clu cluster
+	// id is NOT in excludeClusterIds.  All spikes are still projected
+	// through the resulting eigenvectors, so the output .fet has one
+	// row per spike — the basis just isn't biased toward the high-rate
+	// clusters.  Typical use: drop fast-spiking interneurons (which
+	// dominate the row count and pull eigenvectors toward whatever
+	// distinguishes their fast waveforms) so the basis better separates
+	// neighbouring pyramidal cells.  See -l / -e command-line flags.
+	const char *cluFileName;          ///< -l: .clu.<g> path; nSpikes int32 ids prefixed by int32 nClusters header
+	bool        isCluFileProvided;
+	const char *excludeClustersStr;   ///< -e: raw arg string, e.g. "0,1,5,12"
+	bool        isExcludeClustersProvided;
 };
 
 
