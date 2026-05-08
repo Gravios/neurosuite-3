@@ -1232,18 +1232,17 @@ int KK::TrySplits() {
             // splits disabled) lets the boundary stabilise; the comparison is
             // then between two converged-enough fits.
             //
-            // Splits are disabled inside the settle to keep K3 a 2-class
-            // proposal — we are evaluating *this* split, not letting K3 grow
-            // K further.  3 iterations is enough for boundary spikes to
-            // re-assign without burning time; convergence to fixed-point
+            // enableSplits=false on its own is sufficient to keep K3 a 2-class
+            // proposal — RunEMLoop's TrySplits dispatch is gated on that flag
+            // (KK.cpp:`if (enableSplits && SplitEvery > 0 && ...)`).  SplitEvery
+            // is a global, not a per-object member, so there's no need (and no
+            // way) to save/restore it on K3.  3 iterations is enough for
+            // boundary spikes to re-assign; convergence to fixed-point
             // typically completes in <5 iters at this scale.
-            const int saveSplitEvery = K3.SplitEvery;
-            K3.SplitEvery = 0;
             K3.RunEMLoop(/*enableSplits=*/  false,
                          /*enableDistDump=*/false,
                          /*maxIter=*/       3,
                          /*phaseLabel=*/    "[trySplit-recheck]");
-            K3.SplitEvery = saveSplitEvery;
             const float newScore = K3.ComputeScore();
             Output("Splitting cluster %d changes total score from %f to %f\n", c, Score, newScore);
             if (newScore < Score) {
