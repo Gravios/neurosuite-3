@@ -367,8 +367,6 @@ xml_count()
 		# here because yaml_read collects all leaf values, not list items.
 		python3 - "$yamlfile" "$xpath" << 'PYEOF'
 import sys, yaml, re
-def load(p):
-    with open(p) as f: return yaml.safe_load(f)
 def resolve(doc, xpath):
     parts = re.split(r'/(?![^\[]*\])', re.sub(r'^/+', '', xpath))
     node = doc
@@ -382,8 +380,20 @@ def resolve(doc, xpath):
         else:
             node = node.get(p) if isinstance(node, dict) else None
     return node
+
+# Surface YAML parse / I/O errors; swallow only traversal-time errors.
 try:
-    node = resolve(load(sys.argv[1]), sys.argv[2])
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f)
+except yaml.YAMLError as e:
+    print(f"xml_count: {sys.argv[1]}: YAML parse error: {e}", file=sys.stderr)
+    sys.exit(1)
+except OSError as e:
+    print(f"xml_count: {sys.argv[1]}: {e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    node = resolve(doc, sys.argv[2])
     print(len(node) if isinstance(node, list) else (0 if node is None else 1))
 except Exception: print(0)
 PYEOF
@@ -639,9 +649,18 @@ def get_nested(node, parts):
             return None
     return node
 
+# Surface YAML parse / I/O errors loudly; only swallow lookup-time errors.
 try:
     with open(sys.argv[1]) as f:
         doc = yaml.safe_load(f)
+except yaml.YAMLError as e:
+    print(f"yaml_read_key: {sys.argv[1]}: YAML parse error: {e}", file=sys.stderr)
+    sys.exit(1)
+except OSError as e:
+    print(f"yaml_read_key: {sys.argv[1]}: {e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
     parts = sys.argv[2].split('.')
     val = get_nested(doc, parts)
     if val is None:
@@ -689,10 +708,6 @@ yaml_read()
 
 	python3 - "$yamlfile" "$xpath" << 'PYEOF'
 import sys, yaml, re
-
-def load(path):
-    with open(path) as f:
-        return yaml.safe_load(f)
 
 def xpath_simple(doc, xpath):
     # Strip leading //
@@ -761,10 +776,24 @@ def xpath_program_param(doc, xpath):
                     return str(v).strip() if v is not None else None
     return None
 
+# Load + parse YAML.  These errors MUST surface — silently swallowing them
+# (as the previous catch-all did) makes downstream "missing variable" errors
+# misleading.  Tab characters in YAML are the canonical example: they raise
+# yaml.YAMLError, which previously vanished and produced an empty result.
 try:
-    doc = load(sys.argv[1])
-    xpath = sys.argv[2]
+    with open(sys.argv[1]) as f:
+        doc = yaml.safe_load(f)
+except yaml.YAMLError as e:
+    print(f"yaml_read: {sys.argv[1]}: YAML parse error: {e}", file=sys.stderr)
+    sys.exit(1)
+except OSError as e:
+    print(f"yaml_read: {sys.argv[1]}: {e}", file=sys.stderr)
+    sys.exit(1)
 
+# XPath traversal — internal logic errors stay silent (preserves the "key
+# not found" semantics that callers rely on via xml_read_failed).
+try:
+    xpath = sys.argv[2]
     # Detect program-parameter pattern (has predicate on name/n element)
     if re.search(r"(?:name|n)\[\.\=", xpath):
         result = xpath_program_param(doc, xpath)
@@ -868,9 +897,20 @@ def get_nested(node, parts):
             return None
     return node
 
+# Load + parse YAML.  Surface parse errors (e.g. tab indentation) loudly
+# rather than silently returning 0.
 try:
     with open(sys.argv[1]) as f:
         doc = yaml.safe_load(f)
+except yaml.YAMLError as e:
+    print(f"yaml_count: {sys.argv[1]}: YAML parse error: {e}", file=sys.stderr)
+    sys.exit(1)
+except OSError as e:
+    print(f"yaml_count: {sys.argv[1]}: {e}", file=sys.stderr)
+    sys.exit(1)
+
+# Lookup logic — silent fallback to 0 on internal traversal errors.
+try:
     xpath = sys.argv[2]
     # Strip leading //
     xpath = re.sub(r'^/+', '', xpath)
