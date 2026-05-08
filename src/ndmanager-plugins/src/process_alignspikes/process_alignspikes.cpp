@@ -8,8 +8,22 @@
  * ─────────
  * For each spike snippet in .spk.N (or .spkD.N):
  *
- *   1. Compute cross-channel energy E(t) = Σ_c |W[t, c]| in a window
- *      [peakSampleIndex − maxShift … peakSampleIndex + maxShift].
+ *   1. Compute cross-channel energy E(t) = Σ_c |W[t, c]| over the spike
+ *      snippet.  Two paths are supported, switched on alignSigma:
+ *
+ *      (A) alignSigma > 0  — circular cross-correlation against a stationary
+ *          Gaussian template centred at peakSampleIndex.  E is computed over
+ *          the FULL nSamples window directly from the .spk.N / .spkD.N
+ *          snippet (no .fil read for discovery).  argmax_d xcorr(E, g)[d]
+ *          IS the signed shift δ; sub-sample refinement uses parabolic
+ *          interpolation on the xcorr around its discrete peak.
+ *
+ *      (B) alignSigma ≤ 0  — bounded argmax over [target − maxShift,
+ *          target + maxShift].  For .spkD samples the temporal first-
+ *          difference produces an energy zero-crossing at the original
+ *          peak with lobes on either side, so this path re-reads each
+ *          spike's window from .fil and applies SDIFF_ALLPAIRS only
+ *          (no temporal diff), giving a peak-aligned signal.
  *
  *   2. Find foundSample = argmax E(t).
  *      Sub-sample refinement via parabolic interpolation reduces residual
@@ -45,6 +59,16 @@
  *   --stderiv             Input/output is .spkD.N with SDIFF_ALLPAIRS re-extraction
  *   --min-score  f        Minimum relative energy score [0,1] to accept a shift;
  *                         spikes below threshold are left unshifted [default: 0.0]
+ *   --top-channels N      Use only the N highest-amplitude channels per spike
+ *                         for alignment energy [default: 0 = all]
+ *   --align-sigma σ       Std (samples) of a stationary Gaussian template
+ *                         circular-xcorr'd against the per-spike energy
+ *                         over the FULL nSamples window.  When > 0, this
+ *                         replaces the bounded-argmax discovery and
+ *                         operates on the existing .spk.N / .spkD.N
+ *                         snippet (no .fil read for discovery).  Set ≤ 0
+ *                         to disable and use the legacy bounded-argmax
+ *                         path.  [default: 0.0]
  *   -v                    Verbose
  *   -h                    Help
  *
@@ -123,7 +147,12 @@ static std::vector<int> parseIntList(const char* s)
 
 // ── Shift estimation ──────────────────────────────────────────────────────
 
-/** Compute optimal alignment shift for one spike snippet.
+/** Compute optimal alignment shift for one spike snippet (legacy path).
+ *
+ *  Bounded argmax of cross-channel energy E(t) = Σ_c |W[t,c]| over the
+ *  search window [target − maxShift, target + maxShift], with parabolic
+ *  sub-sample refinement.  Used when alignSigma ≤ 0.  For alignSigma > 0
+ *  see computeShiftXcorr.
  *
  *  @param wav      Snippet data: layout [sample * nChan + chan], nSamp * nChan shorts.
  *  @param nChan    Channels in snippet (may be derivative channels for spkD).
@@ -221,6 +250,143 @@ static int computeShift(const short* wav,
     return intShift;
 }
 
+/** Compute optimal alignment shift via circular cross-correlation against a
+ *  stationary Gaussian template (alignSigma > 0 path).
+ *
+ *  Operates on the full nSamples window of the already-loaded spk/spkD
+ *  snippet — does NOT re-read from .fil — and so saves the per-spike random
+ *  read from disk that the legacy stderiv path needs.  The Gaussian template
+ *  g[k] = exp(−(k − target)² / 2σ²) is precomputed once per group; the
+ *  per-spike work is one O(nSamp²) circular dot product (≈1600 ops for
+ *  nSamp = 40, trivial), one parabolic sub-sample fit, and a clamp to
+ *  ±maxShift.
+ *
+ *  Why circular xcorr instead of weighted argmax: with a wide enough Gaussian
+ *  the xcorr smooths over the bimodal energy distribution that the temporal
+ *  first-difference produces in .spkD samples (energy lobes on either side of
+ *  the original peak), so the discovered shift correctly tracks the raw
+ *  peak position even when working in derivative space.  σ ≳ 1.5 samples is
+ *  recommended for stderiv; smaller σ may discover a shift biased toward one
+ *  of the lobes.
+ *
+ *  @param wav        Snippet [sample * nChan + chan], nSamp * nChan shorts
+ *  @param nChan      Channels in snippet (may be derivative channels for spkD)
+ *  @param nSamp      Samples per snippet
+ *  @param target     Target peak sample index (Gaussian centre, 0-based)
+ *  @param maxShift   Output clamp; |shift| ≤ maxShift  (set ≤ 0 to disable)
+ *  @param nTopChan   Use only the N highest-amplitude channels for energy
+ *                    (0 or >= nChan: all channels)
+ *  @param gauss      Precomputed Gaussian template, length nSamp
+ *  @param score      Output: peak xcorr / total xcorr ∈ [0,1] — depends on σ;
+ *                    tune minScore alongside alignSigma.
+ *  @return           Integer shift δ
+ */
+static int computeShiftXcorr(const short* wav,
+                              int nChan, int nSamp, int target,
+                              int maxShift, int nTopChan,
+                              const double* gauss,
+                              double* score)
+{
+    // `target` is the centre of `gauss` (precomputed by caller); not used
+    // inside this function — kept in the signature for symmetry with
+    // computeShift.
+    (void)target;
+
+    // Top-K channel selection — uses the full window for amplitude ranking
+    // (no maxShift bound here; the Gaussian σ controls the effective window).
+    std::vector<uint8_t> chanUse(nChan, 1);
+    if (nTopChan > 0 && nTopChan < nChan) {
+        std::vector<std::pair<int64_t,int>> chanAmp(nChan);
+        for (int c = 0; c < nChan; ++c) {
+            int64_t pk = 0;
+            for (int t = 0; t < nSamp; ++t) {
+                const int64_t v = std::abs((int)wav[t * nChan + c]);
+                if (v > pk) pk = v;
+            }
+            chanAmp[c] = {pk, c};
+        }
+        std::partial_sort(chanAmp.begin(),
+                          chanAmp.begin() + nTopChan,
+                          chanAmp.end(),
+                          [](const auto& a, const auto& b){
+                              return a.first > b.first;
+                          });
+        std::fill(chanUse.begin(), chanUse.end(), 0);
+        for (int k = 0; k < nTopChan; ++k)
+            chanUse[chanAmp[k].second] = 1;
+    }
+
+    // Energy across the FULL window (selected channels only)
+    std::vector<double> energy(nSamp, 0.0);
+    for (int t = 0; t < nSamp; ++t) {
+        int64_t e = 0;
+        for (int c = 0; c < nChan; ++c)
+            if (chanUse[c]) e += std::abs((int)wav[t * nChan + c]);
+        energy[t] = (double)e;
+    }
+
+    // Circular cross-correlation R[d] = Σ_t E[t] · g[(t − d) mod N].
+    // gauss is centred at `target`, so g[(t−d) mod N] is a Gaussian centred
+    // (in the t-axis) at t = target + d.  R[d] is therefore maximised at the
+    // d* that places the Gaussian peak over E's dominant mass:
+    //     d* = (sample where E is concentrated) − target = signed shift.
+    std::vector<double> R(nSamp, 0.0);
+    for (int d = 0; d < nSamp; ++d) {
+        double r = 0.0;
+        for (int t = 0; t < nSamp; ++t) {
+            int idx = t - d;
+            if (idx < 0) idx += nSamp;     // guaranteed nSamp + idx > 0 since d < nSamp
+            r += energy[t] * gauss[idx];
+        }
+        R[d] = r;
+    }
+
+    // Argmax; if R is all-zero (silent snippet) return 0 — no information.
+    double rMax = R[0];
+    int dStar = 0;
+    for (int d = 1; d < nSamp; ++d)
+        if (R[d] > rMax) { rMax = R[d]; dStar = d; }
+    if (rMax <= 0.0) {
+        if (score) *score = 0.0;
+        return 0;
+    }
+
+    // Parabolic refinement using circular neighbours of dStar.  Shift is
+    // signed in (−N/2, +N/2]; for d in (N/2, N) we treat as (d − N).
+    int dPrev = (dStar - 1 + nSamp) % nSamp;
+    int dNext = (dStar + 1) % nSamp;
+    double a0 = R[dPrev], a1 = R[dStar], a2 = R[dNext];
+    double delta = 0.0;
+    double denom = 2.0 * (2.0*a1 - a0 - a2);
+    if (denom > 1e-9) {
+        double off = (a2 - a0) / denom;
+        if (off > -1.0 && off < 1.0) delta = off;
+    }
+    double dContinuous = (double)dStar + delta;
+    if      (dContinuous >= (double)nSamp) dContinuous -= nSamp;
+    else if (dContinuous <  0.0)           dContinuous += nSamp;
+
+    double signedShift = (dContinuous > nSamp / 2.0)
+        ? dContinuous - (double)nSamp
+        : dContinuous;
+
+    int outShift = (int)std::round(signedShift);
+    if (maxShift > 0) {
+        if (outShift >  maxShift) outShift =  maxShift;
+        if (outShift < -maxShift) outShift = -maxShift;
+    }
+
+    // Score: peak xcorr / total xcorr.  The absolute scale of this depends on
+    // σ (sharper Gaussian ⇒ higher peak fraction even on flat energy), so
+    // recalibrate minScore when alignSigma changes.
+    if (score) {
+        double rTotal = 0.0;
+        for (auto v : R) rTotal += v;
+        *score = (rTotal > 0.0) ? (R[dStar] / rTotal) : 0.0;
+    }
+    return outShift;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────
 
 static void usage(const char* prog)
@@ -237,6 +403,15 @@ static void usage(const char* prog)
         "  --top-channels N    Use only the N highest-amplitude channels per spike\n"
         "                      for alignment energy (excludes collision/noise on\n"
         "                      low-amplitude channels) [default: 0 = use all]\n"
+        "  --align-sigma s     Std (in samples) of a stationary Gaussian template;\n"
+        "                      when > 0, alignment shift is found by circular\n"
+        "                      cross-correlation of the per-spike energy with\n"
+        "                      this Gaussian over the FULL nSamples window,\n"
+        "                      operating on the existing .spk.N / .spkD.N\n"
+        "                      snippet (no .fil read for discovery).  σ ≳ 1.5\n"
+        "                      bridges the bimodal energy of .spkD waveforms.\n"
+        "                      ≤ 0 falls back to the legacy bounded-argmax path\n"
+        "                      [default: 0.0]\n"
         "  -v                  Verbose\n"
         "  -h                  This help\n",
         prog);
@@ -253,6 +428,7 @@ int main(int argc, char* argv[])
     bool        stderiv        = false;
     double      minScore       = 0.0;
     int         nTopChan       = 0;   // 0 = use all channels (legacy behaviour)
+    double      alignSigma     = 0.0; // ≤ 0 = legacy bounded-argmax; > 0 = circular xcorr
     bool        verbose        = false;
     std::string basename;
     int         electrodeGroup = 0;
@@ -276,6 +452,8 @@ int main(int argc, char* argv[])
             minScore = atof(argv[++i]);
         else if (strcmp(a, "--top-channels") == 0 && i+1 < argc)
             nTopChan = atoi(argv[++i]);
+        else if (strcmp(a, "--align-sigma") == 0 && i+1 < argc)
+            alignSigma = atof(argv[++i]);
         else if (strcmp(a, "-v") == 0)
             verbose = true;
         else if (a[0] != '-') {
@@ -324,6 +502,10 @@ int main(int argc, char* argv[])
         fprintf(stderr, "  nTopChan      = %d%s\n", nTopChan,
                 (nTopChan <= 0 || nTopChan >= static_cast<int>(chanList.size()))
                     ? " (all channels)" : "");
+        fprintf(stderr, "  alignSigma    = %.3f%s\n", alignSigma,
+                (alignSigma > 0.0)
+                    ? " (circular xcorr on snippets)"
+                    : " (legacy bounded argmax)");
         fprintf(stderr, "  spk file      = %s\n", spkPath.c_str());
         fprintf(stderr, "  res file      = %s\n", resPath.c_str());
         fprintf(stderr, "  fil file      = %s\n", filPath.c_str());
@@ -373,24 +555,67 @@ int main(int argc, char* argv[])
     fclose(spkF);
 
     // ── Compute shifts ────────────────────────────────────────────────────
-    // For the raw pipeline, compute energy directly from spkBuf (.spk.N).
-    // For the stderiv pipeline, spkBuf holds the spatial+temporal derivative
-    // waveform (.spkD.N).  The temporal first-difference converts the spatial
-    // derivative peak into a zero-crossing with energy lobes at the rising and
-    // falling edges.  Using spkBuf for energy detection in stderiv mode
-    // therefore finds the edge, not the peak, and systematically shifts ALL
-    // spikes by -(maxShift) regardless of whether they are misaligned.
     //
-    // Fix: in stderiv mode, compute shifts from a raw-equivalent signal read
-    // directly from .fil: the spatial derivative only (SDIFF_ALLPAIRS applied
-    // to raw channels), which has its energy peak at the same sample as the
-    // raw voltage peak.  Only open .fil for the shift pass when stderiv=true.
+    // Discovery has two paths, switched on alignSigma:
+    //
+    //   (A) alignSigma > 0   "xcorr on snippet" path.
+    //       Spikes are already coarsely aligned by detection, so the true
+    //       peak is somewhere inside the existing nSamples window.  We
+    //       compute per-sample energy E(t) = Σ_c |W[t,c]| over the FULL
+    //       nSamples window directly from spkBuf, then circular-xcorr E
+    //       against a stationary Gaussian g[k] = exp(−(k−target)²/2σ²)
+    //       precomputed once.  argmax_d R[d] (with parabolic sub-sample
+    //       refinement) IS the signed shift.  No .fil read for either mode.
+    //
+    //       For .spkD samples the temporal first-difference produces energy
+    //       lobes on either side of the original peak with a dip in the
+    //       middle; a wide enough Gaussian (σ ≳ 1.5 samples) bridges the
+    //       lobes and the xcorr peak still lands at the original peak.
+    //       Tighter σ may bias toward one of the lobes.
+    //
+    //   (B) alignSigma ≤ 0   legacy bounded-argmax path.
+    //       Raw mode: argmax over [target−maxShift, target+maxShift] on the
+    //       spkBuf snippet directly.
+    //       Stderiv mode: re-read each spike's window from .fil, apply
+    //       SDIFF_ALLPAIRS only (no temporal diff) to produce a peak-aligned
+    //       signal, then bounded argmax.  Avoids the .spkD double-lobe
+    //       problem at the cost of one random .fil read per spike.
+    //
+    // After discovery, the re-extraction phase (below) reads the .fil at
+    // extTs = resTs + shift and writes new spk/spkD samples using exactly
+    // the same waveform-formation logic as ndm_extractspikes /
+    // ndm_extractspikes_stderiv (raw passthrough or SDIFF_ALLPAIRS + temporal
+    // first-difference, respectively).
     std::vector<int>    shifts(nSpikes, 0);
     std::vector<double> scores(nSpikes, 0.0);
     int nToRextract = 0;
 
-    if (!stderiv) {
-        // Raw pipeline: use spkBuf directly (raw ADC waveforms)
+    // Precompute the stationary Gaussian template for path (A).
+    std::vector<double> gauss;
+    if (alignSigma > 0.0) {
+        gauss.resize((size_t)nSamples);
+        const double inv2s2 = 1.0 / (2.0 * alignSigma * alignSigma);
+        for (int k = 0; k < nSamples; ++k) {
+            const double dk = (double)(k - peakSampleIdx);
+            gauss[(size_t)k] = std::exp(-dk * dk * inv2s2);
+        }
+    }
+
+    if (alignSigma > 0.0) {
+        // Path A: circular xcorr on existing spk/spkD snippets — no .fil read.
+        for (int i = 0; i < nSpikes; ++i) {
+            const short* wav = spkBuf.data() + (size_t)i * elemsPerSpike;
+            double sc = 0.0;
+            int sh = computeShiftXcorr(wav, nChanGrp, nSamples, peakSampleIdx,
+                                       maxShift, nTopChan, gauss.data(), &sc);
+            scores[i] = sc;
+            if (sc >= minScore) {
+                shifts[i] = sh;
+                if (sh != 0) ++nToRextract;
+            }
+        }
+    } else if (!stderiv) {
+        // Path B (raw): bounded argmax on spkBuf directly.
         for (int i = 0; i < nSpikes; ++i) {
             const short* wav = spkBuf.data() + (size_t)i * elemsPerSpike;
             double sc = 0.0;
@@ -403,9 +628,7 @@ int main(int argc, char* argv[])
             }
         }
     } else {
-        // Stderiv pipeline: compute energy on spatial-derivative-only signal
-        // read from .fil.  SDIFF_ALLPAIRS has its energy peak at the raw spike
-        // peak; the temporal first-difference step is NOT applied here.
+        // Path B (stderiv): read .fil and apply SDIFF_ALLPAIRS only.
         FILE* filShift = xfopen(filPath.c_str(), "rb");
         fseeko(filShift, 0, SEEK_END);
         const off_t filShiftSize = ftello(filShift);
@@ -414,11 +637,9 @@ int main(int argc, char* argv[])
         const int   rawElems  = nSamples * nTotalChannels;
         const off_t rawBytes  = (off_t)rawElems * sizeof(short);
         std::vector<short> rawWin(rawElems);
-        // Spatial-derivative waveform for energy computation (nSamples × nChanGrp)
         std::vector<short> sdiffWin((size_t)nSamples * nChanGrp, 0);
         off_t filShiftPos = 0;
 
-        // Sort spikes by .fil offset for near-sequential access
         std::vector<int> order(nSpikes);
         std::iota(order.begin(), order.end(), 0);
         std::sort(order.begin(), order.end(), [&](int a, int b){
