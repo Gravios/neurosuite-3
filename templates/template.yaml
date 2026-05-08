@@ -991,6 +991,7 @@ programs:
   - {name: after,           value: 12,      status: Optional}
   - {name: extra,           value: 'false', status: Optional}
   - {name: sdiffOrder,      value: 3,       status: Optional}
+  - {name: excludeClusters, value: '',      status: Optional}
   # threadsPerGroup: number of OMP threads per group when running all groups in
   # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
   # - {name: threadsPerGroup, value: 2,     status: Optional}
@@ -1009,6 +1010,13 @@ programs:
 
     Do NOT use after ndm_extractspikes_stderiv — that plugin already writes
     derivative waveforms; use plain ndm_pca instead.
+
+    Outputs are written with a 'D' suffix so raw and derivative bases can
+    coexist for the same session:
+      .fetD.N   feature file consumed by KlustaKwik / Klusters
+      .pcaD.N   derivative-space eigenvector basis (same on-disk layout as
+                .pca.N; readable by view_pca_eigenvectors.py and by
+                process_refeaturize_stderiv).
 
     CHANNEL COUNT REDUCTION
 
@@ -1053,6 +1061,27 @@ programs:
 
     Spatial derivative order (must match ndm_extractspikes_stderiv):
       0 = none  1 = first  2 = Laplacian  3 = all-pairwise (default 3)
+
+    # excludeClusters
+
+    Comma-separated list of cluster ids whose spikes are dropped from the
+    PCA fit (e.g. "5,12").  All spikes are still projected through the
+    resulting basis — the .fetD has one row per spike — only the basis
+    direction changes.  Useful for second-pass PCA after an initial
+    clustering identifies high-rate units (interneurons, artefact
+    clusters) that would otherwise dominate the eigenvector solution.
+
+    Auto-resolves the .clu path as session.clu.electrodeGroup; this file
+    must exist before ndm_pca_stderiv starts (run an initial PCA +
+    clustering pass first, then re-run with excludeClusters set).  Leave
+    empty (or omit) on the first PCA pass.
+
+    # threadsPerGroup
+
+    OpenMP threads per group when running all groups in parallel.
+    Default = floor(nCores / nGroups), minimum 1.  Set explicitly to cap
+    total CPU use:
+      threadsPerGroup * nGroups <= nAvailableCores
 
 - name: ndm_spikecleaner
   parameters:
@@ -1652,26 +1681,71 @@ programs:
 
 - name: ndm_pca
   parameters:
-  - {name: before, value: 12,      status: Mandatory}
-  - {name: after,  value: 12,      status: Mandatory}
-  - {name: extra,  value: 'false', status: Mandatory}
+  - {name: before,          value: 12,      status: Mandatory}
+  - {name: after,           value: 12,      status: Mandatory}
+  - {name: extra,           value: 'false', status: Mandatory}
+  - {name: excludeClusters, value: '',      status: Optional}
+  # threadsPerGroup: number of OMP threads per group when running all groups in
+  # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
+  # - {name: threadsPerGroup, value: 2,     status: Optional}
   help: |-
     Compute principal component analysis (PCA) to produce .fet files for sorting.
+
+    Reads .spk.N (raw waveforms) and writes:
+      .fet.N   binary feature file consumed by KlustaKwik / Klusters
+      .pca.N   eigenvector basis used by Klusters refeaturize and by
+               KlustaKwik's Phase 1.5 / Phase 4 re-projection (PCAE / legacy
+               5-int header — both layouts are supported by readers).
+
+    Use after ndm_extractspikes or ndm_extractspikes_sdiff:
+      ndm_extractspikes       → ndm_pca → ndm_klustakwik
+      ndm_extractspikes_sdiff → ndm_pca → ndm_klustakwik
+      ndm_extractspikes_stderiv → ndm_pca → ndm_klustakwik
+        (.spk already holds derivative waveforms; basis is derivative-space)
+
+    Pair ndm_pca_stderiv with ndm_extractspikes (raw .spk) instead — that
+    plugin transforms each spike before fitting PCA.
 
     PARAMETERS
 
     # before
 
-    Samples before the waveform peak to include in PCA. Either a single value for
-    all groups or a space-separated list (one per group). Default = 12.
+    Samples before the waveform peak to include in PCA.  Either a single
+    value for all groups or a space-separated list (one per group).
+    Default = 12.
 
     # after
 
-    Samples after the waveform peak. Same format as before. Default = 12.
+    Samples after the waveform peak.  Same format as before. Default = 12.
 
     # extra
 
-    If true, include the spike peak value as an extra feature in the .fet file.
+    If true, include the spike peak value as an extra feature in the .fet
+    file.
+
+    OPTIONAL PARAMETERS
+
+    # excludeClusters
+
+    Comma-separated list of cluster ids whose spikes are dropped from the
+    PCA fit (e.g. "5,12").  All spikes are still projected through the
+    resulting basis — the .fet has one row per spike — only the basis
+    direction changes.  Useful for second-pass PCA after an initial
+    clustering identifies high-rate units (interneurons, artefact
+    clusters) that would otherwise dominate the eigenvector solution.
+
+    Auto-resolves the .clu path as session.clu.electrodeGroup; this file
+    must exist before ndm_pca starts (run an initial PCA + clustering
+    pass first, then re-run with excludeClusters set).  Leave empty (or
+    omit) on the first PCA pass.
+
+    # threadsPerGroup
+
+    OpenMP threads per group when running all groups in parallel
+    (`ndm_pca` with no explicit group argument launches one process per
+    group).  Default = floor(nCores / nGroups), minimum 1.  Set
+    explicitly to cap total CPU use:
+      threadsPerGroup * nGroups <= nAvailableCores
 
 - name: ndm_klustakwik
   parameters:
