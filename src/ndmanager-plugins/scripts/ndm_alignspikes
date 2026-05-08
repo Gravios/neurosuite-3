@@ -36,12 +36,23 @@
 #//
 #//   PARAMETERS (set in session YAML under program: ndm_alignspikes)
 #//   ──────────────────────────────────────────────────────────────────
-#//   maxShift   Maximum shift in samples [default: 3]
-#//              Corresponds to MaxTimeShift in KlustaKwikExp.  Values
-#//              larger than 5 risk merging spikes from different neurons.
-#//   minScore   Minimum relative energy score [0,1] to accept a shift.
-#//              Spikes where the peak is diffuse (score < minScore) are
-#//              left unshifted.  [default: 0.0]
+#//   maxShift     Maximum shift in samples [default: 3]
+#//                Corresponds to MaxTimeShift in KlustaKwikExp.  Values
+#//                larger than 5 risk merging spikes from different neurons.
+#//   minScore     Minimum relative energy score [0,1] to accept a shift.
+#//                Spikes where the peak is diffuse (score < minScore) are
+#//                left unshifted.  [default: 0.0]
+#//   topChannels  Use only the N highest-amplitude channels per spike when
+#//                computing the energy.  Excludes collision/residual
+#//                activity on non-primary channels.  [default: 0 = all]
+#//   alignSigma   Std (in samples) of a stationary Gaussian template
+#//                circular-xcorr'd against the per-spike energy over the
+#//                FULL nSamples window.  When > 0, replaces the legacy
+#//                bounded-argmax discovery and operates on the existing
+#//                .spk.N / .spkD.N snippets (no .fil read for discovery).
+#//                σ ≳ 1.5 bridges the bimodal energy of .spkD waveforms.
+#//                ≤ 0 falls back to the legacy bounded-argmax path.
+#//                [default: 0.0]
 #//
 #//   copyright       (C) 2026  Gravios / NeuroSuite-3 contributors
 #//   GNU GPL v3 or later.
@@ -80,15 +91,18 @@ check_mandatory_variable $nElectrodeGroups "missing electrode groups"
 maxShift=$(read_script_parameter $session maxShift)
 minScore=$(read_script_parameter $session minScore)
 topChannels=$(read_script_parameter $session topChannels)
+alignSigma=$(read_script_parameter $session alignSigma)
 
 maxShift=${maxShift:-3}
 minScore=${minScore:-0.0}
 topChannels=${topChannels:-0}
+alignSigma=${alignSigma:-0.0}
 
 echo_info "Alignment parameters:"
 echo_info "  maxShift     = $maxShift samples"
 echo_info "  minScore     = $minScore"
 echo_info "  topChannels  = $topChannels  (0 = use all channels)"
+echo_info "  alignSigma   = $alignSigma   (0 = legacy bounded-argmax; >0 = circular xcorr)"
 
 # ── Per-group alignment ───────────────────────────────────────────────────
 
@@ -144,6 +158,7 @@ for group in $(seq 1 $nElectrodeGroups); do
         -m "$maxShift" \
         --min-score "$minScore" \
         --top-channels "$topChannels" \
+        --align-sigma "$alignSigma" \
         $stderivFlag \
         -v \
         "$session" "$group"
