@@ -57,22 +57,16 @@ struct ValleyResult {
 
 ValleyResult valley_test(const double* samples, int n, double threshold);
 
-// -----------------------------------------------------------------------------
-// top_pcs_power_iteration — compute top-k principal components via
-// power iteration with Gram-Schmidt deflation on the d×d covariance matrix.
-// X is row-major nPoints × d; output PCs are row-major k × d (each row a PC).
-// Centres X internally.  O(n·d²) for cov build + O(k·d²·iters) for iteration.
-// -----------------------------------------------------------------------------
-void top_pcs_power_iteration(
-    const float* X, int nPoints, int d, int k,
-    double* pcs_out,            // [k * d]
-    int max_iters = 50,
-    double tol    = 1e-6);
 
 // -----------------------------------------------------------------------------
-// top_pcs_with_eigenvalues — same as top_pcs_power_iteration, but additionally
-// returns the eigenvalue (Rayleigh quotient λ = uᵀ C u, which equals the
-// variance of the cluster's data along that principal direction) for each PC.
+// top_pcs_with_eigenvalues — top-k principal components via power iteration
+// with Gram-Schmidt deflation on the d×d covariance matrix, plus the
+// eigenvalue (Rayleigh quotient λ = uᵀ C u, which equals the variance of
+// the cluster's data along that principal direction) for each PC.
+//
+// X is row-major nPoints × d; output PCs are row-major k × d (each row a PC).
+// Centres X internally.  O(n·d²) for cov build + O(k·d²·iters) for iteration
+// + k·d² for the Rayleigh quotient — negligible.
 //
 // Used by the elongation gate in KK::DipSplitAttemptEx — a cluster whose top
 // eigenvalue dominates its second/third eigenvalue by a wide margin is the
@@ -80,9 +74,6 @@ void top_pcs_power_iteration(
 // as a single inflated Gaussian by CEM.  This catches the failure mode that
 // the χ²-based bloat gate misses (when CEM's covariance has been so inflated
 // that mahal²₉₀ stays near the unimodal Gaussian expectation).
-//
-// Cost is identical to top_pcs_power_iteration plus k·d² for the Rayleigh
-// quotient — negligible.
 // -----------------------------------------------------------------------------
 void top_pcs_with_eigenvalues(
     const float* X, int nPoints, int d, int k,

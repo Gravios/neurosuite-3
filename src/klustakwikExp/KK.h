@@ -192,10 +192,6 @@ public:
                            float mergeThresh,
                            const std::vector<std::unordered_map<int,int>>& overlapVotes);
 
-    // Post-Phase-2 per-cluster subspace reclustering.
-    // Projects each global cluster into its top-subspaceDims eigenvector subspace
-    // and runs CEM to find splits that are hidden in the full feature space.
-    void SubspaceReclusterPass(int subspaceDims);
 
     // Per-chunk subspace reclustering — runs BEFORE Phase 1.5 and Phase 2.
     // For each per-chunk local cluster, projects its spikes into the top-subspaceDims
@@ -222,11 +218,6 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nChan, int nSamplesPerSpike, float minScore);
 
-    void WithinChunkMerge(
-        const std::vector<std::vector<int>>& chunkPoints,
-        std::vector<std::vector<int>>&        perChunkClass,
-        std::vector<std::vector<ChunkModel>>& perChunkModels,
-        int nSpatialDims, float mergeThresh);
 
     void SubspaceReclusterPerChunk(
         int subspaceDims,
@@ -461,12 +452,6 @@ public:
     // Returns the number of accepted splits.
     int  DipSplitPhase();
 
-    // Single-cluster DipSplit attempt.  Used as the backing engine for
-    // DipSplitPhase and also callable directly by interactive tools
-    // (Klusters menu action).  Returns true when the split was accepted
-    // and Class[] has been updated; caller must run MStep + EStep to
-    // refresh cluster stats.
-    bool DipSplitAttempt(int clusterId);
 
     // Extended form: returns a pointer-to-string-literal describing the
     // outcome, used by DipSplitPhase for aggregate logging.  Tags:

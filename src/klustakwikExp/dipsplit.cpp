@@ -133,18 +133,15 @@ ValleyResult valley_test(const double* samples, int n, double threshold)
 }
 
 // -----------------------------------------------------------------------------
-// top_pcs_power_iteration — power iteration on the d×d centred covariance.
+// top_pcs_impl — power iteration on the d×d centred covariance.
 // d is typically ≤ 32 for our spike-sort feature spaces, so O(d²) ops are
 // trivially small.  Power iteration converges exponentially in the ratio
 // of adjacent singular values, which for spike features is well-behaved.
-// -----------------------------------------------------------------------------
 //
-// Internal worker — both top_pcs_power_iteration and top_pcs_with_eigenvalues
-// dispatch here.  When `eigs_out` is non-null, each converged eigenvector's
-// Rayleigh quotient λᵢ = uᵢᵀ C uᵢ is also written out (the variance of the
-// data along that PC direction).  The covariance build and power-iteration
-// loop are identical regardless of whether eigenvalues are requested, so
-// the cost difference is just the d² per-PC Rayleigh quotient at the end.
+// Internal worker called by top_pcs_with_eigenvalues.  When `eigs_out` is
+// non-null, each converged eigenvector's Rayleigh quotient λᵢ = uᵢᵀ C uᵢ
+// is also written out (the variance of the data along that PC direction).
+// -----------------------------------------------------------------------------
 static void top_pcs_impl(
     const float* X, int nPoints, int d, int k,
     double* pcs_out, double* eigs_out,
@@ -252,13 +249,6 @@ static void top_pcs_impl(
     }
 }
 
-void top_pcs_power_iteration(
-    const float* X, int nPoints, int d, int k,
-    double* pcs_out, int max_iters, double tol)
-{
-    top_pcs_impl(X, nPoints, d, k, pcs_out, /*eigs_out=*/nullptr,
-                 max_iters, tol);
-}
 
 void top_pcs_with_eigenvalues(
     const float* X, int nPoints, int d, int k,
