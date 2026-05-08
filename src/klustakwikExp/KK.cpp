@@ -3205,24 +3205,34 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         Output("Provisional Class[] seeded: %d alive clusters\n", nClustersAlive);
     }
 
-    // ── Phase 1.5 slot: cluster alignment ────────────────────────────────────
+    // ── Phase 1.5: per-cluster shift-probe alignment ────────────────────────
     //
-    // STATUS: currently DISABLED.  The canonical xcorr realignment that used
-    // to occupy this slot has been removed.  The replacement, the shift-probe
-    // method `TimeShiftAlignPhase()` (defined in this file ~line 5105), is
-    // implemented and honours `-TimeShiftAlignIter` but is NOT WIRED IN here
-    // — the slot is empty.  Feature re-projection via RefeaturizeFromShifts
-    // happens at Phase 4 (mean-waveform harvest); cluster alignment per se
-    // is skipped.
+    // For each alive cluster, picks the per-spike δ ∈ {-N,…,+N} that
+    // minimises Mahalanobis² to the cluster's own Gaussian (using the
+    // cluster's Mean + Cholesky-factored Cov).  Aligns spikes WITHIN each
+    // cluster — not to a canonical peak sample.  The cluster's mean is
+    // wherever Phase 1 CEM put it; this phase tightens spikes around that
+    // centre, it does not move the centre to peakSampleIndex.
     //
-    // To re-enable Phase 1.5 alignment, uncomment the line below.  Note that
-    // the chunked Phase 1 results in this driver are already separated per
-    // chunk; per-spike alignment against per-cluster Cholesky factors may
-    // produce spurious shifts on overlapping units, which is one reason the
-    // call was left out.
+    // Caveats inherited from the design:
+    //  - Per-cluster myopia: spikes near a cluster boundary may be pulled
+    //    deeper into the wrong cluster (the score sees only the assigned
+    //    cluster's distribution, not neighbours').  The next EStep will
+    //    re-evaluate, but on slightly distorted features.
+    //  - Asymmetric search window: candOk[ci] enforces |baseCum + δ| ≤
+    //    m_timeShiftMaxAbs, so spikes already near ±maxAbs see fewer
+    //    candidates on the cap-side.  Intentional bound on cumulative
+    //    drift, not a bug.
+    //  - Pre-shifted PCA basis is fixed at InitTimeShift; large cumulative
+    //    shifts (across many iterations) make the basis statistically
+    //    less efficient but not incorrect.
     //
-    //   if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
-    //       TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+    // Stats are current at this point: the SubspaceRecluster=1 seeding
+    // block above ran MStep + Cholesky.  When SubspaceRecluster=0 no
+    // clusters are alive yet and the call no-ops cleanly (the loop in
+    // TimeShiftAlignPhase iterates ClassAlive and finds nothing).
+    if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
+        TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
 
     // ── Phase 2: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
@@ -3252,7 +3262,6 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // spurious shifts on clean data.  ConsiderDeletion / TimeShiftMergeEvaluate
     // handle the time-shift cases that actually occur (genuine same-unit
     // mergers across drift).
-    (void)TimeShiftAlignIter;  // honoured by TimeShiftAlignPhase if wired in
 
 
     // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
@@ -3918,24 +3927,34 @@ float KK::RunChunkedCEM(float chunkMinutes,
         Output("Provisional Class[] seeded: %d alive clusters\n", nClustersAlive);
     }
 
-    // ── Phase 1.5 slot: cluster alignment ────────────────────────────────────
+    // ── Phase 1.5: per-cluster shift-probe alignment ────────────────────────
     //
-    // STATUS: currently DISABLED.  The canonical xcorr realignment that used
-    // to occupy this slot has been removed.  The replacement, the shift-probe
-    // method `TimeShiftAlignPhase()` (defined in this file ~line 5105), is
-    // implemented and honours `-TimeShiftAlignIter` but is NOT WIRED IN here
-    // — the slot is empty.  Feature re-projection via RefeaturizeFromShifts
-    // happens at Phase 4 (mean-waveform harvest); cluster alignment per se
-    // is skipped.
+    // For each alive cluster, picks the per-spike δ ∈ {-N,…,+N} that
+    // minimises Mahalanobis² to the cluster's own Gaussian (using the
+    // cluster's Mean + Cholesky-factored Cov).  Aligns spikes WITHIN each
+    // cluster — not to a canonical peak sample.  The cluster's mean is
+    // wherever Phase 1 CEM put it; this phase tightens spikes around that
+    // centre, it does not move the centre to peakSampleIndex.
     //
-    // To re-enable Phase 1.5 alignment, uncomment the line below.  Note that
-    // the chunked Phase 1 results in this driver are already separated per
-    // chunk; per-spike alignment against per-cluster Cholesky factors may
-    // produce spurious shifts on overlapping units, which is one reason the
-    // call was left out.
+    // Caveats inherited from the design:
+    //  - Per-cluster myopia: spikes near a cluster boundary may be pulled
+    //    deeper into the wrong cluster (the score sees only the assigned
+    //    cluster's distribution, not neighbours').  The next EStep will
+    //    re-evaluate, but on slightly distorted features.
+    //  - Asymmetric search window: candOk[ci] enforces |baseCum + δ| ≤
+    //    m_timeShiftMaxAbs, so spikes already near ±maxAbs see fewer
+    //    candidates on the cap-side.  Intentional bound on cumulative
+    //    drift, not a bug.
+    //  - Pre-shifted PCA basis is fixed at InitTimeShift; large cumulative
+    //    shifts (across many iterations) make the basis statistically
+    //    less efficient but not incorrect.
     //
-    //   if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
-    //       TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+    // Stats are current at this point: the SubspaceRecluster=1 seeding
+    // block above ran MStep + Cholesky.  When SubspaceRecluster=0 no
+    // clusters are alive yet and the call no-ops cleanly (the loop in
+    // TimeShiftAlignPhase iterates ClassAlive and finds nothing).
+    if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
+        TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
 
     // ── Phase 2: per-chunk subspace reclustering + refractory split ────────
     if (SubspaceRecluster > 0) {
@@ -3965,7 +3984,6 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // spurious shifts on clean data.  ConsiderDeletion / TimeShiftMergeEvaluate
     // handle the time-shift cases that actually occur (genuine same-unit
     // mergers across drift).
-    (void)TimeShiftAlignIter;  // honoured by TimeShiftAlignPhase if wired in
 
 
     // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
@@ -5781,12 +5799,20 @@ int KK::TimeShiftAlignCluster(int clusterId, int nChan, int nSamplesPerSpike)
 //      to A's mean before the next per-spike alignment decision).
 //   3. Exit early when a pass produces zero shifts (converged).
 //
-// MStep between passes — not EStep — because TimeShiftAlignCluster reads
-// Mean[] and cholFlat[] (refreshed by MStep) but writes nothing that EStep
-// needs to see; EStep would just be wasted work.  An EStep is needed
-// before the NEXT phase that consumes LogP, but that's the caller's
-// responsibility (the chunked-CEM driver runs MStep+EStep after Phase 1.5
-// in any case).
+// Between passes: MStep refreshes Mean/Cov, then a focused Cholesky-only
+// refresh recomputes cholFlat from the new Cov.  Skipping the full EStep
+// avoids the per-(point, cluster) LogP recompute, which alignment scoring
+// doesn't need.  An EStep is still required before the NEXT phase that
+// consumes LogP, but that's the caller's responsibility — the chunked-CEM
+// driver runs MStep+EStep after Phase 1.5 in any case.
+//
+// Note: an earlier version of this function called only MStep() between
+// passes and assumed cholFlat would be refreshed too.  It isn't — cholFlat
+// lives inside EStep (KK::EStep, ~line 565).  Pass N+1 was therefore
+// scoring with updated Mean against pre-shift Cholesky factors, an
+// inconsistency that grew with each iteration.  The Cholesky-only refresh
+// below mirrors the pattern at the provisional seeding site (~line 3199)
+// and keeps Mean / Cov / cholFlat all in sync without paying for LogP.
 //
 // Returns the cumulative count of spikes whose shifts changed across
 // all passes and clusters.
@@ -5813,9 +5839,22 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
             Output("[Phase 1.5] pass %d/%d: %d spikes shifted across "
                    "%d clusters\n",
                    pass + 1, TimeShiftAlignIter, passShifted, nClustersProcessed);
-            // Refresh cluster means so next pass aligns spikes against
-            // the post-shift centres rather than the pre-shift centres.
+            // Refresh Mean/Cov so the next pass aligns against post-shift
+            // centres, then refresh cholFlat from the new Cov.  Without
+            // this Cholesky refresh, pass N+1 would score against stale
+            // covariance factors.  Singular clusters are deleted in place
+            // (matches EStep's behaviour at KK.cpp:565-572).
             MStep();
+            for (int cc = 1; cc < nClustersAlive; ++cc) {
+                const int c = AliveIndex[cc];
+                if (Cholesky(Cov.m_Data + c * nDims2,
+                             cholFlat.data() + c * nDims2, nDims)) {
+                    Output("[Phase 1.5] class %d deleted: covariance "
+                           "matrix is singular after shifts\n", c);
+                    ClassAlive[c] = 0;
+                }
+            }
+            Reindex();
         } else {
             // Converged — no spikes changed shift; further passes can't
             // change anything either.
