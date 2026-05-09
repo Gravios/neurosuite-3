@@ -128,7 +128,7 @@ float DipSplitElongationFactor  = 4.0f;  ///< secondary gate (OR with bloat): if
                                           ///< single visible cluster.  Set 0.0 to disable
                                           ///< this gate (bloat-only behaviour).
 float DipSplitValleyThresh      = 0.0f;  ///< min KDE valley depth to flag bimodality
-int   SubspaceDims              = 8;     ///< 0=full-space Mahal; >0=use top-N eigenvectors for Phase 2 matching
+int   SubspaceDims              = 0;     ///< 0=use all spatial dims (full feature space). >0=Phase 2a/2b run on top-N spatial features ranked by within-cluster (2a) or within-chunk (2b) variance, matches classic KlustaKwik -UseFeatures auto-K behavior. Recommended: 4–8 to escape BIC saturation at high dims.
 int   SubspaceRecluster         = 1;     ///< 1=run per-cluster subspace CEM after Phase 2
 float TemplateMatchScore        = 0.85f; ///< min xcorr for within-chunk template matching (Phase 5)
 int   TemplateMatchIters        = 10;    ///< max within-chunk template match iterations
