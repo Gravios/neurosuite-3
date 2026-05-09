@@ -2238,94 +2238,6 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// MergeChunkModels
-//
-// Assigns a global cluster ID to every ChunkModel using mutual nearest-neighbour
-// (MNN) matching across adjacent chunks, then propagates labels via union-find.
-//
-// For each pair of adjacent chunks (k, k+1):
-//   - Compute the full K×K symmetric Mahalanobis distance matrix.
-//   - For each cluster i in chunk k, find its nearest neighbour j* in chunk k+1.
-//   - For each cluster j in chunk k+1, find its nearest neighbour i* in chunk k.
-//   - Merge i and j only if they are mutual nearest neighbours AND d_sym(i,j) < mergeThresh.
-//
-// This prevents the chaining failure mode of plain union-find with a loose
-// threshold, where A→B and B→C edges (both below mergeThresh) would merge A
-// and C even if d_sym(A,C) >> mergeThresh.  MNN requires both sides to agree
-// that the other is their closest match, so a unit can only absorb one chain
-// link per chunk boundary.
-//
-// d_sym(A,B) = 0.5 * [mahal(μ_A, Σ_B) + mahal(μ_B, Σ_A)]
-//
-// Noise (localClusterId==0) always maps to globalClusterId==0.
-// Returns the number of distinct real global clusters.
-// ---------------------------------------------------------------------------
-// topKEigen — power iteration with deflation for symmetric matrices
-//
-// Finds the top k eigenvectors and eigenvalues of a symmetric nSpatialDims×nSpatialDims
-// matrix stored in upper-triangular form (cov[r*nDims + c], r<=c, c up to nDims-1).
-//
-// Uses 200 iterations of deflated power iteration — sufficient for convergence
-// of the dominant eigenvectors of typical PCA covariance matrices.
-// ---------------------------------------------------------------------------
-static void topKEigen(const float* covUT, int n, int nDims, int k,
-                      std::vector<float>& evecs,   // k × n, row-major
-                      std::vector<float>& evals)   // k eigenvalues, descending
-{
-    // Expand upper-triangular to full symmetric
-    std::vector<float> A(static_cast<size_t>(n) * n, 0.0f);
-    for (int r = 0; r < n; r++)
-        for (int c = r; c < n; c++) {
-            float v = covUT[r * nDims + c];
-            A[r * n + c] = v;
-            A[c * n + r] = v;
-        }
-
-    evecs.assign(static_cast<size_t>(k) * n, 0.0f);
-    evals.assign(static_cast<size_t>(k), 0.0f);
-
-    std::vector<float> v(n), Av(n);
-    for (int ki = 0; ki < k; ki++) {
-        // Deterministic initialization: unit vector along dimension ki%n
-        std::fill(v.begin(), v.end(), 0.0f);
-        v[static_cast<size_t>(ki % n)] = 1.0f;
-
-        float lambda = 0.0f;
-        for (int iter = 0; iter < 200; iter++) {
-            // Matrix-vector multiply: Av = A * v
-            std::fill(Av.begin(), Av.end(), 0.0f);
-            for (int r = 0; r < n; r++)
-                for (int c = 0; c < n; c++)
-                    Av[static_cast<size_t>(r)] +=
-                        A[static_cast<size_t>(r * n + c)] * v[static_cast<size_t>(c)];
-
-            // Deflate: subtract projections onto previously found eigenvectors
-            for (int j = 0; j < ki; j++) {
-                float dot = 0.0f;
-                for (int d = 0; d < n; d++)
-                    dot += evecs[static_cast<size_t>(j * n + d)] * Av[static_cast<size_t>(d)];
-                for (int d = 0; d < n; d++)
-                    Av[static_cast<size_t>(d)] -= dot * evecs[static_cast<size_t>(j * n + d)];
-            }
-
-            // Compute norm = eigenvalue estimate
-            float norm = 0.0f;
-            for (int d = 0; d < n; d++)
-                norm += Av[static_cast<size_t>(d)] * Av[static_cast<size_t>(d)];
-            norm = std::sqrt(norm);
-            if (norm < 1e-12f) break;
-
-            lambda = norm;
-            for (int d = 0; d < n; d++)
-                v[static_cast<size_t>(d)] = Av[static_cast<size_t>(d)] / norm;
-        }
-
-        for (int d = 0; d < n; d++)
-            evecs[static_cast<size_t>(ki * n + d)] = v[static_cast<size_t>(d)];
-        evals[static_cast<size_t>(ki)] = lambda;
-    }
-}
 
 
 // ---------------------------------------------------------------------------
@@ -3253,6 +3165,15 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
         TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
 
+    // ── Phase 1.6: per-chunk DipSplit ──────────────────────────────────────
+    //
+    // Catches bimodal/elongated clusters that the parametric Phase 1 CEM
+    // missed.  Runs per-chunk before Phase 2 so subsequent passes operate
+    // on the most-correctly-split inputs, and so cross-chunk merge in
+    // Phase 6 sees the correct cluster count.  Replaces the old
+    // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
+    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
     //
     // P2.D: refractory split runs FIRST.  Refractory contamination is a
@@ -3587,7 +3508,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
 
-    fprintf(stderr, "[Phase 6]  Cross-chunk model matching (overlap + Mahal + xcorr)\n");
+    fprintf(stderr, "[Phase 6]  Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -4103,6 +4024,15 @@ float KK::RunChunkedCEM(float chunkMinutes,
     if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
         TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
 
+    // ── Phase 1.6: per-chunk DipSplit ──────────────────────────────────────
+    //
+    // Catches bimodal/elongated clusters that the parametric Phase 1 CEM
+    // missed.  Runs per-chunk before Phase 2 so subsequent passes operate
+    // on the most-correctly-split inputs, and so cross-chunk merge in
+    // Phase 6 sees the correct cluster count.  Replaces the old
+    // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
+    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
     //
     // P2.D: refractory split runs FIRST.  Refractory contamination is a
@@ -4479,7 +4409,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
 
-    fprintf(stderr, "[Phase 6]  Cross-chunk model matching (overlap + Mahal + xcorr)\n");
+    fprintf(stderr, "[Phase 6]  Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
