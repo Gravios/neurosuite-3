@@ -185,6 +185,15 @@ public:
         std::vector<float>   mean;    // [nDims]
         std::vector<float>   cov;     // [nDims*nDims], upper triangle populated
         std::vector<int16_t> meanWav; // [nChan*nSamples] channel-major, for template matching
+        // Boundary-localised mean waveforms for cross-chunk xcorr in Phase 6.
+        // meanWavLeft : mean of cluster's spikes in the FIRST 25% of the chunk by time
+        // meanWavRight: mean of cluster's spikes in the LAST  25% of the chunk by time
+        // Empty when the cluster has no spikes in the relevant window — caller
+        // must fall back to chunk-wide meanWav in that case.  Drift-resistant
+        // matching: pair X's right-edge with Y's left-edge when X.chunkIdx <
+        // Y.chunkIdx, so the comparison uses the temporally-closest waveforms.
+        std::vector<int16_t> meanWavLeft;
+        std::vector<int16_t> meanWavRight;
     };
 
     int   MergeChunkModels(std::vector<ChunkModel>& models,
