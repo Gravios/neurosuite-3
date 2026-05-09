@@ -693,6 +693,14 @@ public:
     // update kSv.BestScoreSave.  Set automatically on chunk sub-objects so
     // parallel per-chunk EM cannot corrupt the outer loop's best-score state.
     bool suppressBestSave  = false;
+    // When true, CEMTwoPhase ignores InitMethod and preseedCentres and
+    // initialises Class[] with the canonical KlustaKwik random pattern
+    // (irand(1, nStartingClusters - 1) per spike).  Set by the chunked
+    // RunChunkedCEM driver so each chunk gets a fresh independent random
+    // start regardless of the user's -InitMethod flag, which still
+    // controls non-chunked CEM and any nested CEMTwoPhase calls outside
+    // Phase 1.
+    bool chunkInitRandom   = false;
     int  ompTeamSize       = 0;    // 0 = use all OMP threads; set by ParallelK workers
 
     // Optional per-instance KlustaSave for parallel workers.
