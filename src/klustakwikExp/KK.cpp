@@ -6733,10 +6733,32 @@ void KK::PerClusterCEMPerChunk(
     // sane floor; raise to 25 for stability with small clusters.
     const int minClusterSize = std::max(nFullDims + 5, 25);
 
+    // ── Load-balancing knobs ─────────────────────────────────────────
+    // Phase 2a is bottlenecked by the largest 2–3 clusters per chunk,
+    // each of which serializes a single thread for minutes while 100+
+    // other threads sit idle.  Mitigation: when a cluster exceeds
+    // kLargeThreshold spikes, split its members randomly into batches
+    // of ~kTargetBatch spikes each and dispatch each batch as a
+    // separate work item.  This trades a small amount of redundant work
+    // (each batch re-discovers any common sub-modes) for genuine
+    // parallelism — Phase 2b's chunk re-CEM with ConsiderDeletion
+    // re-merges any over-splits across batches.
+    //
+    // After items are built we LPT-sort (longest processing time first)
+    // so the giant items start while the worker pool is full; small
+    // ones backfill as threads free up.
+    const int kPhase2aLargeThreshold = 1500;  // subdivide if size > this
+    const int kPhase2aTargetBatch    = 600;   // target spikes per batch
+
     // ── Phase A: build (chunk, cluster) work items ───────────────────
     struct WorkItem {
         int ck;
         int lc;                       // cluster's local id within the chunk
+                                      // (-1 marks "subdivided" — sub-labels
+                                      // all get fresh chunk-local IDs at
+                                      // write-back; original cluster's ID
+                                      // is replaced by the union of all
+                                      // batches' sub-clusters)
         std::vector<int> members;     // indices into chunkPoints[ck]
     };
     std::vector<WorkItem> items;
@@ -6756,13 +6778,72 @@ void KK::PerClusterCEMPerChunk(
             for (int i = 0; i < static_cast<int>(pts.size()); i++)
                 if (cls[static_cast<size_t>(i)] == lc) mem.push_back(i);
             if (static_cast<int>(mem.size()) < minClusterSize) continue;
-            items.push_back({ck, lc, std::move(mem)});
+
+            if (static_cast<int>(mem.size()) > kPhase2aLargeThreshold) {
+                // Subdivide into ceil(N / kPhase2aTargetBatch) random
+                // batches of approximately equal size.  Use a per-cluster
+                // RNG seed (RandomSeed XOR'd with chunk/cluster keys) so
+                // shuffles are reproducible.
+                std::mt19937 rng(static_cast<unsigned>(RandomSeed)
+                               ^ static_cast<unsigned>(ck * 7919 + lc * 31));
+                std::shuffle(mem.begin(), mem.end(), rng);
+
+                const int N      = static_cast<int>(mem.size());
+                const int nBatch = (N + kPhase2aTargetBatch - 1)
+                                 / kPhase2aTargetBatch;
+                const int base   = N / nBatch;
+                const int extra  = N - base * nBatch;
+
+                int offset = 0;
+                for (int b = 0; b < nBatch; b++) {
+                    const int sz = base + (b < extra ? 1 : 0);
+                    if (sz < minClusterSize) {
+                        // Edge case: tiny final batch — fold remainder
+                        // into the previous batch instead of dropping.
+                        if (!items.empty() && items.back().lc == -1
+                            && items.back().ck == ck) {
+                            auto& prev = items.back().members;
+                            prev.insert(prev.end(),
+                                        mem.begin() + offset,
+                                        mem.begin() + offset + sz);
+                        }
+                        offset += sz;
+                        continue;
+                    }
+                    std::vector<int> sub(mem.begin() + offset,
+                                         mem.begin() + offset + sz);
+                    offset += sz;
+                    items.push_back({ck, /*lc=*/-1, std::move(sub)});
+                }
+            } else {
+                items.push_back({ck, lc, std::move(mem)});
+            }
         }
     }
 
+    // LPT scheduling: largest items first.  With schedule(dynamic) this
+    // ensures the long-running giant clusters (or their batches) start
+    // while the thread pool is full, and small items backfill at the
+    // tail.  Avoids the wall-time "stragglers" pattern where a few
+    // late-starting giants leave 100+ threads idle for minutes.
+    std::sort(items.begin(), items.end(),
+              [](const WorkItem& a, const WorkItem& b) {
+                  return a.members.size() > b.members.size();
+              });
+
+    // Quick stats for diagnostic logging.
+    int nSubdivided = 0;
+    size_t maxSize = 0;
+    for (const auto& it : items) {
+        if (it.lc < 0) nSubdivided++;
+        if (it.members.size() > maxSize) maxSize = it.members.size();
+    }
+
     fprintf(stderr,
-            "[Phase 2a] Per-cluster CEM: probing %d clusters (min size %d)\n",
-            static_cast<int>(items.size()), minClusterSize);
+            "[Phase 2a] Per-cluster CEM: probing %d items (min size %d, "
+            "max %zu, %d subdivided batches)\n",
+            static_cast<int>(items.size()), minClusterSize,
+            maxSize, nSubdivided);
 
     if (items.empty()) return;
 
@@ -6871,11 +6952,17 @@ void KK::PerClusterCEMPerChunk(
 
         // Map sub-cluster ID to chunk-local ID:
         //   0 -> 0 (noise; should be empty under NoisePoint=0)
-        //   1 -> item.lc (parent retains its ID)
-        //   ≥2 -> fresh chunk-local ID
+        //   For non-subdivided items (item.lc >= 0):
+        //     1 -> item.lc (parent retains its ID)
+        //     ≥2 -> fresh chunk-local ID
+        //   For subdivided items (item.lc == -1):
+        //     ALL sub-labels (including 1) -> fresh chunk-local IDs.
+        //     The original cluster's ID is replaced entirely by the
+        //     union of all batches' sub-clusters; Phase 2b's chunk
+        //     re-CEM is responsible for re-merging coherent ones.
         std::unordered_map<int,int> subToLc;
         subToLc[0] = 0;
-        subToLc[1] = item.lc;
+        if (item.lc >= 0) subToLc[1] = item.lc;
 
         const int nMem = static_cast<int>(item.members.size());
         for (int i = 0; i < nMem; i++) {
