@@ -6747,8 +6747,8 @@ void KK::PerClusterCEMPerChunk(
     // After items are built we LPT-sort (longest processing time first)
     // so the giant items start while the worker pool is full; small
     // ones backfill as threads free up.
-    const int kPhase2aLargeThreshold = 1500;  // subdivide if size > this
-    const int kPhase2aTargetBatch    = 600;   // target spikes per batch
+    const int kPhase2aLargeThreshold = 800;   // subdivide if size > this
+    const int kPhase2aTargetBatch    = 400;   // target spikes per batch
 
     // ── Phase A: build (chunk, cluster) work items ───────────────────
     struct WorkItem {
@@ -6904,21 +6904,51 @@ void KK::PerClusterCEMPerChunk(
         Ks.timeRawMin = timeRawMin;
         Ks.timeRawMax = timeRawMax;
 
-        // Warm start: noise (cluster 0) empty, all spikes in cluster 1.
-        // TrySplits will discover bimodal structure if present.
-        Ks.nStartingClusters = 2;
-        for (int c = 0; c < MaxPossibleClusters; c++)
-            Ks.ClassAlive[c] = (c < 2) ? 1 : 0;
-        for (int i = 0; i < nMem; i++) Ks.Class[i] = 1;
+        // Init mode depends on whether this item was subdivided:
+        //
+        //  • Non-subdivided (item.lc ≥ 0, original small cluster): warm
+        //    start at K=2 with all spikes in cluster 1.  Let TrySplits
+        //    drive K growth for full bimodality discovery.
+        //
+        //  • Subdivided (item.lc == -1, batch from a large cluster):
+        //    flat-K random init at K = ceil(N / kInitSize).  Disable
+        //    TrySplits and cap MaxIter so each batch finishes in
+        //    bounded time.  Phase 2b's chunk re-CEM (with TrySplits +
+        //    ConsiderDeletion at the chunk level) is responsible for
+        //    discovering structure across the union of all batches.
+        //    Without this cap, a noisy batch can land in a TrySplits-
+        //    ConsiderDeletion oscillation and serialize a single
+        //    thread for many minutes — the original straggler problem
+        //    just relocated to one batch instead of one cluster.
+        bool   enableSplits = true;
+        int    capMaxIter   = 0;        // 0 = no override
+        if (item.lc < 0) {
+            // Subdivided batch.
+            const int kInitSize = 100;  // target spikes per starting cluster
+            const int nReal     = std::max(2, (nMem + kInitSize - 1) / kInitSize);
+            Ks.nStartingClusters = nReal + 1;
+            for (int c = 0; c < MaxPossibleClusters; c++)
+                Ks.ClassAlive[c] = (c <= nReal) ? 1 : 0;
+            for (int i = 0; i < nMem; i++)
+                Ks.Class[i] = irand(1, nReal);
+            enableSplits = false;
+            capMaxIter   = 50;          // hard cap; flat-K converges fast
+        } else {
+            // Non-subdivided cluster: warm-start at K=2.
+            Ks.nStartingClusters = 2;
+            for (int c = 0; c < MaxPossibleClusters; c++)
+                Ks.ClassAlive[c] = (c < 2) ? 1 : 0;
+            for (int i = 0; i < nMem; i++) Ks.Class[i] = 1;
+        }
         Ks.Reindex();
 
         Ks.MStep();
         Ks.EStep();
 
-        Ks.RunEMLoop(/*enableSplits=*/  true,
+        Ks.RunEMLoop(/*enableSplits=*/   enableSplits,
                      /*enableDistDump=*/ false,
-                     /*maxIter=*/        0,
-                     /*phaseLabel=*/     "[2a]");
+                     /*maxIter=*/        capMaxIter,
+                     /*phaseLabel=*/     (item.lc < 0) ? "[2a-batch]" : "[2a]");
 
         // nClustersAlive includes noise (0).  No-split: == 2 (noise + 1).
         // Real split: > 2.
