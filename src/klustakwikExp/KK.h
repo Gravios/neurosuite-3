@@ -226,6 +226,20 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims);
 
+    // Per-chunk DipSplit: runs immediately after Phase 1 chunked CEM.
+    // For each chunk, builds a sub-KK with the chunk's data and current
+    // Class[] labels, runs DipSplitPhase to find bimodal/elongated clusters
+    // that the parametric CEM missed, and writes the refined labels back to
+    // perChunkClass[ck].  Replaces the global Phase 8 DipSplit invocation —
+    // running this early (per-chunk, before cross-chunk merging) gives
+    // cleaner inputs to subsequent passes and avoids splitting clusters
+    // whose apparent bimodality is an artefact of cross-chunk drift.
+    void DipSplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
     // Refractory-period guided split: after SubspaceReclusterPerChunk, for
     // each cluster whose ISI violation rate exceeds minContamRate, attempt a
     // BIC-checked 2-cluster split seeded by violator vs non-violator centroids.

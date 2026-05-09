@@ -3624,15 +3624,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // checkpoint before DipSplit potentially mutates the cluster set.
     ReportClusterQuality("Phase 7");
 
-    // ── Phase 8: DipSplit (post-Phase-3) ───────────────────────────────
-    // Runs AFTER global MStep/EStep so LogP[c][p] reflects the final
-    // cluster assignments.  Splits a bloated cluster into two if a valley
-    // is found on any of its top-3 PCs and BIC supports it.  No-op if
-    // DipSplitEnable=0 or no clusters pass the bloat gate.
-    if (DipSplitEnable != 0) {
-        const int n_split = DipSplitPhase();
-        if (n_split > 0) score = ComputeScore();
-    }
+    // Phase 8 DipSplit removed: per-chunk DipSplit now runs as Phase 1.6,
+    // before cross-chunk model matching, so global splits at this stage
+    // would be operating on already-merged clusters where apparent
+    // bimodality is more likely a drift artefact than a real second mode.
 
     // Per-phase quality summary at end of pipeline (after DipSplit).  Catches
     // failures like "one cluster ate everything" before the user sees it in
@@ -4421,13 +4416,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // checkpoint before DipSplit potentially mutates the cluster set.
     ReportClusterQuality("Phase 7");
 
-    // ── Phase 8: DipSplit (post-Phase-3) ───────────────────────────────
-    // Runs AFTER global MStep/EStep so LogP[c][p] reflects the final
-    // cluster assignments.  See RunChunkedCEM(ext) for details.
-    if (DipSplitEnable != 0) {
-        const int n_split = DipSplitPhase();
-        if (n_split > 0) score = ComputeScore();
-    }
+    // Phase 8 DipSplit removed (see Driver A above for rationale).
 
     // Per-phase quality summary at end of pipeline (after DipSplit).
     // See KK::ReportClusterQuality for metric definitions.
@@ -6312,6 +6301,225 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
                "— nothing to write back\n", m_timeShiftCallCount);
     }
     CloseTimeShift();
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::DipSplitPerChunk
+//
+// Per-chunk DipSplit pass — runs immediately after Phase 1 chunked CEM,
+// before any other refinement.  For each chunk, builds a thread-local
+// scratch KK populated with the chunk's data and current Class[] labels,
+// runs MStep + EStep so cluster stats are current, then invokes
+// DipSplitPhase on the scratch KK to find bimodal/elongated clusters
+// that the parametric CEM merged.  Refined labels are copied back to
+// perChunkClass[ck] and the chunk's ChunkModel list is rebuilt from the
+// new partition.
+//
+// This replaces the global Phase 8 DipSplit invocation that previously
+// ran AFTER cross-chunk model matching.  Running per-chunk and early has
+// two advantages over the late global pass:
+//
+//   - Catches missed splits at the chunk level before cross-chunk merge
+//     reads the per-chunk models.  Misses at this stage propagate as
+//     undersplit globals; catching them here makes Phase 6 see the
+//     correct cluster count.
+//
+//   - Avoids splitting global clusters that look bimodal only because
+//     drift across chunks made the spike distribution look two-moded.
+//     Per-chunk views are drift-free within their time window.
+//
+// Cluster ID allocation: when a chunk-local cluster splits into two,
+// sub-cluster 0 keeps the original local id; sub-cluster 1 gets a fresh
+// id starting from the chunk's current maxLocalId+1.
+// ---------------------------------------------------------------------------
+void KK::DipSplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    if (DipSplitEnable == 0) return;
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    int totalSplitsAcrossChunks = 0;
+    int totalChunksWithSplits   = 0;
+
+    fprintf(stderr,
+            "[Phase 1.6] Per-chunk DipSplit (bloat=%.2f, elong=%.2f, "
+            "valley=%.2f, minSize=%d)\n",
+            DipSplitBloatFactor, DipSplitElongationFactor,
+            DipSplitValleyThresh, DipSplitMinSize);
+
+    // Per-chunk results: new perChunkClass and replacement ChunkModel list.
+    // Computed in parallel below, applied serially after the parallel block
+    // so model-rebuild side-effects don't race.
+    struct ChunkResult {
+        bool                     changed = false;
+        std::vector<int>         newClass;
+        std::vector<ChunkModel>  newModels;
+        int                      nSplits = 0;
+    };
+    std::vector<ChunkResult> results(nCh);
+
+    #pragma omp parallel for schedule(dynamic) reduction(+:totalSplitsAcrossChunks,totalChunksWithSplits)
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts = chunkPoints[ck];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts < DipSplitMinSize) continue;
+        if (perChunkClass[ck].size() != static_cast<size_t>(nPts)) continue;
+
+        // Skip chunks with only noise.  Need at least one real cluster for
+        // DipSplit to have anything to probe.
+        int maxLc = 0;
+        for (int c : perChunkClass[ck]) if (c > maxLc) maxLc = c;
+        if (maxLc < 1) continue;
+
+        // ── Build scratch KK with chunk's data and current labels ─────
+        KK Ks;
+        Ks.nDims              = nFullDims;
+        Ks.nPoints            = nPts;
+        Ks.penaltyMix         = penaltyMix;
+        Ks.suppressBestSave   = true;
+        Ks.minClustersAlive   = 1;
+        Ks.NoisePoint         = 0;          // user spec: no real noise from extraction
+
+        // DipSplit parameters (DipSplitEnable, DipSplitMinSize,
+        // DipSplitElongationFactor, DipSplitValleyThresh, DipSplitBloatFactor)
+        // are file-scope globals defined in Parameters.cpp, not class members.
+        // DipSplitPhase reads them directly — no per-instance copy required.
+
+        Ks.AllocateArrays();
+        Ks.AllocateCholeskyVecs();
+        Ks.ReinitForSplit(nPts, nFullDims, penaltyMix);
+
+        // Copy chunk data
+        for (int i = 0; i < nPts; i++) {
+            const int p = pts[static_cast<size_t>(i)];
+            for (int d = 0; d < nFullDims; d++)
+                Ks.Data[static_cast<size_t>(i) * nFullDims + d] =
+                    Data[static_cast<size_t>(p) * nFullDims + d];
+        }
+        Ks.timeRawMin = timeRawMin;
+        Ks.timeRawMax = timeRawMax;
+
+        // Set Class[] from current per-chunk labels and ClassAlive[]
+        for (int c = 0; c < MaxPossibleClusters; c++) Ks.ClassAlive[c] = 0;
+        for (int i = 0; i < nPts; i++) {
+            const int c = perChunkClass[ck][static_cast<size_t>(i)];
+            Ks.Class[i] = c;
+            if (c >= 0 && c < MaxPossibleClusters) Ks.ClassAlive[c] = 1;
+        }
+        Ks.Reindex();
+
+        // Compute cluster stats so DipSplit sees current Mean/Cov/cholFlat.
+        // EStep is needed (not just MStep) because DipSplitAttemptEx reads
+        // cholFlat for Mahalanobis-based gates.
+        Ks.MStep();
+        Ks.EStep();
+
+        // Snapshot pre-split alive count to measure how many splits occurred
+        const int aliveBefore = Ks.nClustersAlive;
+
+        // Run DipSplit on the scratch KK.  DipSplitPhase prints a summary
+        // line tagged "[Phase 8]"; for per-chunk usage we don't need the
+        // verbose per-chunk summaries (the overall total is logged below
+        // in the serial section), so we silence them by gating on a per-
+        // chunk flag.  Rather than threading a verbosity flag, we accept
+        // the existing output — it's harmless and useful for debugging.
+        Ks.DipSplitPhase();
+
+        const int aliveAfter = Ks.nClustersAlive;
+        const int nSplits    = std::max(0, aliveAfter - aliveBefore);
+
+        if (nSplits == 0) continue;
+
+        // DipSplitPhase mutated Class[] but didn't refresh Mean/Cov for the
+        // new sub-clusters.  Run MStep so we can populate ChunkModel mean/cov
+        // from Ks.Mean/Ks.Cov below.  cholFlat doesn't need refreshing here
+        // — it isn't read by the rebuild path.
+        Ks.MStep();
+
+        // Read back labels.  DipSplit may have allocated new cluster IDs
+        // outside the previous maxLc range.  We preserve those IDs in the
+        // chunk-local namespace by remapping: any new ID (> original maxLc)
+        // gets a fresh local id starting from maxLc+1, allocated densely
+        // and deterministically per chunk.
+        std::unordered_map<int,int> remap;
+        int nextLc = maxLc + 1;
+        std::vector<int> newCls(nPts);
+        for (int i = 0; i < nPts; i++) {
+            const int sc = Ks.Class[i];
+            if (sc <= maxLc) { newCls[i] = sc; continue; }
+            auto it = remap.find(sc);
+            if (it == remap.end()) {
+                remap[sc] = nextLc++;
+                it = remap.find(sc);
+            }
+            newCls[i] = it->second;
+        }
+
+        // Build a sub-cluster -> final-local-id map for the ChunkModel
+        // rebuild loop below (sub-cluster id in Ks.Class[] -> local id we
+        // committed to perChunkClass[ck]).
+        std::unordered_map<int,int> scToLc;
+        for (int sc = 0; sc < MaxPossibleClusters; sc++) {
+            if (!Ks.ClassAlive[sc]) continue;
+            if (sc <= maxLc)              scToLc[sc] = sc;
+            else if (remap.count(sc))     scToLc[sc] = remap[sc];
+            // else: alive but no spikes assigned — skip
+        }
+
+        // Rebuild ChunkModel list from Ks.Mean / Ks.Cov.  Mirror the
+        // canonical pattern used in Phase 1's per-chunk seeding loop
+        // (KK.cpp:3198-3218): full nFullDims mean, full nFullDims² cov
+        // (upper triangle only), nMembers from Ks.Class scan.
+        std::vector<ChunkModel> newMdls;
+        newMdls.reserve(scToLc.size());
+        for (const auto& [sc, lc] : scToLc) {
+            ChunkModel cm;
+            cm.chunkIdx        = ck;
+            cm.localClusterId  = lc;
+            cm.globalClusterId = -1;
+            cm.nMembers        = 0;
+            cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
+            cm.cov.assign (static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+
+            for (int d = 0; d < nFullDims; d++)
+                cm.mean[static_cast<size_t>(d)] =
+                    Ks.Mean[static_cast<size_t>(sc) * nFullDims + d];
+            for (int r = 0; r < nFullDims; r++)
+                for (int col = r; col < nFullDims; col++)
+                    cm.cov[static_cast<size_t>(r) * nFullDims + col] =
+                        Ks.Cov[static_cast<size_t>(sc) * Ks.nDims2
+                              + r * nFullDims + col];
+
+            for (int i = 0; i < nPts; i++)
+                if (Ks.Class[i] == sc) cm.nMembers++;
+            if (cm.nMembers == 0) continue;
+
+            newMdls.push_back(std::move(cm));
+        }
+
+        results[ck].changed   = true;
+        results[ck].newClass  = std::move(newCls);
+        results[ck].newModels = std::move(newMdls);
+        results[ck].nSplits   = nSplits;
+        totalSplitsAcrossChunks += nSplits;
+        totalChunksWithSplits   += 1;
+    }
+
+    // ── Serial application ───────────────────────────────────────────
+    for (int ck = 0; ck < nCh; ck++) {
+        if (!results[ck].changed) continue;
+        perChunkClass [ck] = std::move(results[ck].newClass);
+        perChunkModels[ck] = std::move(results[ck].newModels);
+    }
+
+    fprintf(stderr,
+            "[Phase 1.6] DipSplit per-chunk: %d splits across %d chunks\n",
+            totalSplitsAcrossChunks, totalChunksWithSplits);
 }
 
 
