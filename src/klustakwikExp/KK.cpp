@@ -7140,7 +7140,7 @@ void KK::ChunkReCEMPerChunk(
     if (nCh == 0) return;
 
     fprintf(stderr,
-            "[Phase 2b] Chunk re-CEM (random init at K = Phase-2a non-noise label count)\n");
+            "[Phase 2b] Chunk re-CEM (warm-start from Phase-2a labels)\n");
 
     struct ChunkResult {
         bool                    changed = false;
@@ -7248,32 +7248,47 @@ void KK::ChunkReCEMPerChunk(
         Ks.timeRawMin = timeRawMin;
         Ks.timeRawMax = timeRawMax;
 
-        // Phase 2b uses RANDOM initialisation rather than warm-starting
-        // from Phase 2a's fine-grained labels.  Rationale: a warm-start
-        // converges to the nearest local optimum, essentially refining
-        // cls0 in place; it doesn't escape local minima Phase 1 + 2a got
-        // stuck in.  Random init forces CEM to explore a different region
-        // of the configuration space.  K is preserved from cls0's
-        // distinct non-noise label count, so Phase 2a's structure-
-        // discovery still informs the search scale, but the per-spike
-        // assignment is drawn fresh.
+        // Phase 2b WARM-STARTS from cls0 (Phase 2a's labels).  Rationale:
+        // with patch11 feature selection in Phase 2a, structure discovery
+        // happens at 2a in a low-dim subspace where BIC permits marginal
+        // splits.  Phase 2b's job is then to REFINE those labels at the
+        // chunk level (or, with -SubspaceDims > 0, in 2b's chunk-wide
+        // subspace) — not to re-explore from scratch.  Warm-start
+        // converges fast and preserves 2a's discoveries; ConsiderDeletion
+        // and (optionally) TrySplits adjust K from there.
+        //
+        // Map cls0's possibly-sparse cluster IDs ({0, 5, 7, 12, ...}) to
+        // a contiguous range ({0, 1, 2, 3, ...}) for the sub-KK.  Cluster
+        // 0 stays as noise; non-noise IDs get sequential mapping in the
+        // order they appear in uniqueLcs.
         int nReal = 0;
         for (int c : uniqueLcs) if (c > 0) nReal++;
-        if (nReal < 2) continue;  // can't randomise into one cluster
+        if (nReal < 2) continue;  // not enough structure to refine
+
+        std::unordered_map<int,int> lcToK;
+        lcToK.reserve(uniqueLcs.size());
+        lcToK[0] = 0;  // noise stays as noise
+        int nextK = 1;
+        for (int c : uniqueLcs) {
+            if (c <= 0) continue;
+            lcToK[c] = nextK++;
+        }
 
         const int nStart = nReal + 1;  // +1 for noise (cluster 0)
         Ks.nStartingClusters = nStart;
         for (int c = 0; c < MaxPossibleClusters; c++)
             Ks.ClassAlive[c] = (c < nStart) ? 1 : 0;
-        for (int i = 0; i < nPts; i++)
-            Ks.Class[i] = irand(1, nReal);   // [1..nReal] inclusive
+        for (int i = 0; i < nPts; i++) {
+            const auto it = lcToK.find(cls0[static_cast<size_t>(i)]);
+            Ks.Class[i] = (it != lcToK.end()) ? it->second : 0;
+        }
         Ks.Reindex();
 
         // Initial MStep + EStep so RunEMLoop has consistent stats, then
-        // run normal CEM with splits enabled.  TrySplits and
-        // ConsiderDeletion together prune the fresh random init: empty
-        // sub-clusters get deleted, oversplit groups merge, real
-        // structure survives.
+        // run normal CEM with splits enabled.  Warm-start means MStep
+        // sees Phase 2a's clusters intact; subsequent EStep refines the
+        // assignments; TrySplits and ConsiderDeletion adjust K only if
+        // BIC strictly prefers the change.
         Ks.MStep();
         Ks.EStep();
         Ks.RunEMLoop(/*enableSplits=*/  true,
