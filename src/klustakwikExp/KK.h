@@ -219,8 +219,26 @@ public:
         int nChan, int nSamplesPerSpike, float minScore);
 
 
-    void SubspaceReclusterPerChunk(
-        int subspaceDims,
+
+    // Phase 2a: per-cluster ordinary CEM in the full feature space.  For
+    // each cluster in each chunk, runs CEM with splits enabled to find
+    // bimodal substructure that Phase 1 missed.  Replaces the projection-
+    // based subspace recluster, which over-accepted on elongated unimodal
+    // clusters because the projection was built from cluster-specific
+    // top-variance directions.  Updates perChunkClass[]; perChunkModels[]
+    // is rebuilt by ChunkReCEMPerChunk in Phase 2b.
+    void PerClusterCEMPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
+    // Phase 2b: chunk-level warm-start CEM after PerClusterCEMPerChunk.
+    // Runs ordinary CEM on the chunk's full data with the new fine-grained
+    // labels as initial Class[], letting boundary spikes reassign and
+    // ConsiderDeletion merge oversplit fragments back together.  Rebuilds
+    // perChunkModels[] from the converged state.
+    void ChunkReCEMPerChunk(
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
