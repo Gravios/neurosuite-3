@@ -2334,27 +2334,63 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                           float mergeThresh,
                           const std::vector<std::unordered_map<int,int>>& overlapVotes)
 {
+    // ── Phase 6 (redesigned): cross-chunk model matching ──────────────────
+    //
+    // Two passes, no outer iteration:
+    //
+    //   Pass 1 (temporal sweep):
+    //     For each adjacent chunk pair (k, k+1), use overlapVotes[k] to find
+    //     mutual-plurality matches.  This is the AUTHORITATIVE source of
+    //     cross-chunk identity — overlap-region spikes were sorted by real
+    //     EM in both chunks, so a vote-match is direct evidence of cluster
+    //     continuity.  Drift-immune by construction.  Sweeps pairs in
+    //     temporal order so a unit's identity propagates through a chain
+    //     of contiguous chunks.
+    //
+    //   Pass 2 (xcorr on leftovers):
+    //     "Leftovers" are chunk-clusters that didn't receive any overlap
+    //     vote-match in Pass 1 — typically clusters whose chunks have no
+    //     overlap configured, or units that fire only in the middle of a
+    //     chunk and miss the overlap region.  For each leftover, do a
+    //     full N×M xcorr search against every chunk-cluster in any other
+    //     chunk, using DIRECTIONAL edge-localised waveforms:
+    //
+    //         leftover (chunk k) right-edge  ↔  candidate (chunk j) left-edge   when k < j
+    //         leftover (chunk k) left-edge   ↔  candidate (chunk j) right-edge  when k > j
+    //
+    //     The temporally-closest waveforms are used, minimising drift
+    //     artefacts.  Falls back to chunk-wide meanWav when an edge
+    //     waveform is empty (cluster has fewer than 5 spikes in the edge
+    //     window).  Mutual nearest neighbour gating guards against
+    //     promiscuous matching.
+    //
+    // Replaces the previous design which interleaved overlap voting,
+    // Mahalanobis MNN, and chunk-wide xcorr per chunk pair, then iterated
+    // the whole thing until convergence.  Mahalanobis MNN was filtering out
+    // drift-affected merges (same unit, slightly different cov per chunk →
+    // inflated symmetric Mahal distance) — the temporal-sweep + edge-waveform
+    // xcorr design avoids the problem entirely.
+    // ----------------------------------------------------------------------
+
+    (void)nSpatialDims;  // unused (Mahalanobis MNN dropped)
+    (void)mergeThresh;   // unused (Mahalanobis MNN dropped)
+
     const int n = static_cast<int>(models.size());
 
-    // Union-Find with path compression — used only after MNN filtering
+    // Union-Find with path compression
     std::vector<int> parent(n);
     std::iota(parent.begin(), parent.end(), 0);
-
     std::function<int(int)> Find = [&](int x) -> int {
         while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
         return x;
     };
-    int _newUnions = 0;  // counts new Union() calls per outer iteration
     auto Union = [&](int a, int b) {
         a = Find(a); b = Find(b);
-        if (a != b) { parent[b] = a; _newUnions++; }
+        if (a != b) { parent[b] = a; }
     };
 
-    // All noise models (localClusterId==0) are unconditionally merged into
-    // globalClusterId=0 regardless of model similarity.
-    int nNoiseMerged  = 0;
-    int nNoiseChunks  = 0;
-    int firstNoise    = -1;
+    // ── Merge noise unconditionally to global 0 ──────────────────────────
+    int nNoiseMerged = 0, nNoiseChunks = 0, firstNoise = -1;
     for (int i = 0; i < n; i++) {
         if (models[i].localClusterId != 0) continue;
         nNoiseMerged += models[i].nMembers;
@@ -2368,62 +2404,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         Output("MergeChunkModels: noise — %d spikes across %d chunks merged to global c=0\n",
                nNoiseMerged, nNoiseChunks);
 
-    // Mahalanobis distance — full-space or subspace depending on SubspaceDims.
-    //
-    // SubspaceDims == 0: standard Mahalanobis under tgt's covariance.
-    //
-    // SubspaceDims > 0: project (μ_A - μ_B) onto the top-SubspaceDims eigenvectors
-    //   of the POOLED covariance (Σ_A + Σ_B)/2, then compute normalised distance
-    //   in that subspace.  The pooled eigenvectors represent the directions of
-    //   maximum shared variance — the features most diagnostic for these two units.
-    //   Units sharing the same primary waveform mode will be close; units with
-    //   orthogonal primary features will be far even with similar cluster centres.
-    auto mahalDist = [&](const ChunkModel& src, const ChunkModel& tgt) -> float {
-        if (nSpatialDims > kMaxStackDims) return HugeScore;
-        // Build diff vector (spatial dims only)
-        float diff[kMaxStackDims];
-        for (int d = 0; d < nSpatialDims; d++)
-            diff[d] = src.mean[d] - tgt.mean[d];
-
-        if (SubspaceDims <= 0) {
-            // ── Full-space Mahalanobis (original) ─────────────────────
-            float covS[kMaxStackDims*kMaxStackDims], chol[kMaxStackDims*kMaxStackDims], root[kMaxStackDims];
-            for (int r = 0; r < nSpatialDims; r++)
-                for (int c = r; c < nSpatialDims; c++)
-                    covS[r * nSpatialDims + c] = tgt.cov[r * nDims + c];
-            if (Cholesky(covS, chol, nSpatialDims)) return HugeScore;
-            TriSolve(chol, diff, root, nSpatialDims);
-            float dist = 0.0f;
-            for (int d = 0; d < nSpatialDims; d++) dist += root[d] * root[d];
-            return dist;
-        }
-
-        // ── Subspace Mahalanobis via pooled covariance eigenvectors ───
-        const int k = std::min(SubspaceDims, nSpatialDims);
-
-        // Pooled covariance: (Σ_src + Σ_tgt) / 2  (upper triangle in nDims layout)
-        std::vector<float> pooledUT(static_cast<size_t>(nSpatialDims) * nDims, 0.0f);
-        for (int r = 0; r < nSpatialDims; r++)
-            for (int c = r; c < nSpatialDims; c++)
-                pooledUT[r * nDims + c] = 0.5f * (src.cov[r * nDims + c]
-                                                 + tgt.cov[r * nDims + c]);
-
-        std::vector<float> evecs, evals;
-        topKEigen(pooledUT.data(), nSpatialDims, nDims, k, evecs, evals);
-
-        // Project diff onto each eigenvector and normalise by eigenvalue
-        float dist = 0.0f;
-        for (int ki = 0; ki < k; ki++) {
-            if (evals[static_cast<size_t>(ki)] < 1e-6f) continue;
-            float proj = 0.0f;
-            for (int d = 0; d < nSpatialDims; d++)
-                proj += evecs[static_cast<size_t>(ki * nSpatialDims + d)] * diff[d];
-            dist += (proj * proj) / evals[static_cast<size_t>(ki)];
-        }
-        return dist;
-    };
-
-    // Index models by chunkIdx for O(1) lookup.
+    // ── Index models by chunkIdx ─────────────────────────────────────────
     std::unordered_map<int, std::vector<int>> byChunk;
     for (int i = 0; i < n; i++)
         if (models[i].localClusterId != 0)
@@ -2433,189 +2414,174 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         std::max_element(byChunk.begin(), byChunk.end(),
             [](const auto& a, const auto& b){ return a.first < b.first; })->first;
 
-    // Iterate the chunk-pair pass until no new merges occur.
-    // Cross-chunk xcorr matches can cascade: a new Union in pair (k,k+1)
-    // may resolve a cluster that was previously unmatched in pair (k+1,k+2).
-    const int _ccMaxIter = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
-    for (int _ccIter = 0; _ccIter < _ccMaxIter; _ccIter++) {
-        _newUnions = 0;
-        for (int k = 0; k < maxChunk; k++) {
+    // ── Pass 1: temporal-order overlap voting ───────────────────────────
+    //
+    // Mark each chunk-cluster that participated in a vote-match (or
+    // vote-confirm — same component already) as "matched", so Pass 2
+    // doesn't try to xcorr-match clusters that already have a continuity
+    // partner via overlap.
+    std::unordered_set<int> matched;   // model indices
+
+    int totalVoteMerges = 0;
+    for (int k = 0; k <= maxChunk - 1; k++) {
         auto itA = byChunk.find(k);
         auto itB = byChunk.find(k + 1);
         if (itA == byChunk.end() || itB == byChunk.end()) continue;
+        if (k >= static_cast<int>(overlapVotes.size())) continue;
+        const auto& votes = overlapVotes[k];
+        if (votes.empty()) continue;
 
         const auto& vecA = itA->second;
         const auto& vecB = itB->second;
-        const int nA = (int)vecA.size();
-        const int nB = (int)vecB.size();
 
-        // localClusterId -> index in vecA / vecB for both passes
+        // localClusterId -> model index (within chunk k, k+1)
         std::unordered_map<int,int> localToIdxA, localToIdxB;
-        for (int a = 0; a < nA; a++)
-            localToIdxA[models[vecA[a]].localClusterId] = a;
-        for (int b = 0; b < nB; b++)
-            localToIdxB[models[vecB[b]].localClusterId] = b;
+        for (int a : vecA) localToIdxA[models[a].localClusterId] = a;
+        for (int b : vecB) localToIdxB[models[b].localClusterId] = b;
 
-        // ── Pass 1: overlap vote matching (authoritative when overlap > 0) ──
-        //
-        // Overlap spikes were sorted by real EM in both adjacent chunks.
-        // A mutual plurality match (>= 3 shared spikes) is treated as
-        // authoritative and short-circuits the Mahalanobis check.
-        std::unordered_set<int> resolvedA, resolvedB;
+        // Vote floor: max(3, nOverlapSpikes/500) — sparse clusters still
+        // match while very-common noise pairs are filtered out.
+        int nOverlapSpikes = 0;
+        for (const auto& [key, count] : votes) nOverlapSpikes += count;
+        const int voteFloor = std::max(3, nOverlapSpikes / 500);
 
-        if (k < static_cast<int>(overlapVotes.size()) && !overlapVotes[k].empty()) {
-            const auto& votes = overlapVotes[k];
-
-            // Scale vote floor with overlap region size so sparse clusters
-            // still match while very common noise pairs are filtered out.
-            // floor = max(3, nOverlapSpikes/500).
-            int nOverlapSpikes = 0;
-            for (const auto& [key, count] : votes) nOverlapSpikes += count;
-            const int voteFloor = std::max(3, nOverlapSpikes / 500);
-
-            std::unordered_map<int, std::pair<int,int>> bestFromA;
-            std::unordered_map<int, std::pair<int,int>> bestFromB;
-            for (const auto& [key, count] : votes) {
-                const int clsK  = key / MaxPossibleClusters;
-                const int clsK1 = key % MaxPossibleClusters;
-                auto& bA = bestFromA[clsK];
-                if (count > bA.second) bA = {clsK1, count};
-                auto& bB = bestFromB[clsK1];
-                if (count > bB.second) bB = {clsK, count};
-            }
-            for (const auto& [clsK, topB] : bestFromA) {
-                if (topB.second < voteFloor) continue;
-                const int clsK1 = topB.first;
-                auto itBest = bestFromB.find(clsK1);
-                if (itBest == bestFromB.end() || itBest->second.first != clsK) continue;
-                auto itA2 = localToIdxA.find(clsK);
-                auto itB2 = localToIdxB.find(clsK1);
-                if (itA2 == localToIdxA.end() || itB2 == localToIdxB.end()) continue;
-                const int mA = vecA[itA2->second];
-                const int mB = vecB[itB2->second];
-                resolvedA.insert(clsK);
-                resolvedB.insert(clsK1);
-                if (Find(mA) != Find(mB)) {
-                    Union(mA, mB);
-                    Output("  vote-match  chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d\n",
-                           models[mA].chunkIdx, clsK,
-                           models[mB].chunkIdx, clsK1,
-                           topB.second, itBest->second.second);
-                } else {
-                    Output("  vote-confirm chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d (already merged)\n",
-                           models[mA].chunkIdx, clsK,
-                           models[mB].chunkIdx, clsK1,
-                           topB.second, itBest->second.second);
-                }
-            }
+        // Mutual best-from-each-side
+        std::unordered_map<int, std::pair<int,int>> bestFromA, bestFromB;
+        for (const auto& [key, count] : votes) {
+            const int clsK  = key / MaxPossibleClusters;
+            const int clsK1 = key % MaxPossibleClusters;
+            auto& bA = bestFromA[clsK];
+            if (count > bA.second) bA = {clsK1, count};
+            auto& bB = bestFromB[clsK1];
+            if (count > bB.second) bB = {clsK, count};
         }
 
-        // ── Pass 2: Mahalanobis MNN for unresolved clusters ──────────────
-        // When ChunkOverlapMinutes == 0, resolvedA/B are empty and this
-        // pass runs on all clusters exactly as before.
-        std::vector<int> uA, uB;
-        for (int a = 0; a < nA; a++)
-            if (!resolvedA.count(models[vecA[a]].localClusterId)) uA.push_back(a);
-        for (int b = 0; b < nB; b++)
-            if (!resolvedB.count(models[vecB[b]].localClusterId)) uB.push_back(b);
-
-        const int nUA = static_cast<int>(uA.size());
-        const int nUB = static_cast<int>(uB.size());
-
-        if (nUA > 0 && nUB > 0) {
-            std::vector<float> D(nUA * nUB);
-            for (int ai = 0; ai < nUA; ai++)
-                for (int bi = 0; bi < nUB; bi++) {
-                    const float dAB = mahalDist(models[vecA[uA[ai]]], models[vecB[uB[bi]]]);
-                    const float dBA = mahalDist(models[vecB[uB[bi]]], models[vecA[uA[ai]]]);
-                    D[ai * nUB + bi] = 0.5f * (dAB + dBA);
-                }
-            std::vector<int> nnA(nUA, -1);
-            for (int ai = 0; ai < nUA; ai++) {
-                float best = HugeScore; int bestBi = -1;
-                for (int bi = 0; bi < nUB; bi++)
-                    if (D[ai * nUB + bi] < best) { best = D[ai * nUB + bi]; bestBi = bi; }
-                if (best < mergeThresh) nnA[ai] = bestBi;
-            }
-            std::vector<int> nnB(nUB, -1);
-            for (int bi = 0; bi < nUB; bi++) {
-                float best = HugeScore; int bestAi = -1;
-                for (int ai = 0; ai < nUA; ai++)
-                    if (D[ai * nUB + bi] < best) { best = D[ai * nUB + bi]; bestAi = ai; }
-                if (best < mergeThresh) nnB[bi] = bestAi;
-            }
-            for (int ai = 0; ai < nUA; ai++) {
-                const int bi = nnA[ai];
-                if (bi < 0) continue;
-                if (nnB[bi] != ai) continue;
-                Union(vecA[uA[ai]], vecB[uB[bi]]);
-                Output("  mahal-match chunk%d.c%d <-> chunk%d.c%d  d_sym=%.2f\n",
-                       models[vecA[uA[ai]]].chunkIdx, models[vecA[uA[ai]]].localClusterId,
-                       models[vecB[uB[bi]]].chunkIdx, models[vecB[uB[bi]]].localClusterId,
-                       D[ai * nUB + bi]);
+        for (const auto& [clsK, topB] : bestFromA) {
+            if (topB.second < voteFloor) continue;
+            const int clsK1 = topB.first;
+            auto itBest = bestFromB.find(clsK1);
+            if (itBest == bestFromB.end() || itBest->second.first != clsK) continue;
+            auto itA2 = localToIdxA.find(clsK);
+            auto itB2 = localToIdxB.find(clsK1);
+            if (itA2 == localToIdxA.end() || itB2 == localToIdxB.end()) continue;
+            const int mA = itA2->second;
+            const int mB = itB2->second;
+            matched.insert(mA);
+            matched.insert(mB);
+            if (Find(mA) != Find(mB)) {
+                Union(mA, mB);
+                totalVoteMerges++;
+                Output("  vote-match  chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d\n",
+                       models[mA].chunkIdx, clsK,
+                       models[mB].chunkIdx, clsK1,
+                       topB.second, itBest->second.second);
+            } else {
+                Output("  vote-confirm chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d (already merged)\n",
+                       models[mA].chunkIdx, clsK,
+                       models[mB].chunkIdx, clsK1,
+                       topB.second, itBest->second.second);
             }
         }
+    }
+    Output("MergeChunkModels: Pass 1 (overlap voting): %d new merges across %d chunk pairs\n",
+           totalVoteMerges, std::max(0, maxChunk));
 
-        // ── Pass 3: cross-chunk template matching (unresolved pairs) ──────
-        // Compute normalised xcorr between cluster mean waveforms.
-        // Controlled by CrossChunkTemplateScore (independent of Phase 5).
-        if (CrossChunkTemplateScore > 0.0f &&
-            NbChannels > 0 && NbSamplesPerSpike > 0) {
-            const int nCh   = NbChannels;
-            const int nSamp = NbSamplesPerSpike;
-            const int wE    = nCh * nSamp;
-            const int mxSh  = std::max(1, nSamp / 4);
+    // ── Pass 2: F1 N×M xcorr on leftovers, directional edge waveforms ───
+    //
+    // For each leftover (chunk-cluster not matched by overlap voting),
+    // search every chunk-cluster in every other chunk for the best xcorr
+    // match.  Edge waveform direction: the leftover's edge nearest the
+    // candidate's chunk; the candidate's edge nearest the leftover's
+    // chunk.  Falls back to chunk-wide meanWav when an edge waveform is
+    // unavailable (cluster has fewer than 5 spikes in the edge window).
+    //
+    // MNN gating: a leftover's best partner must reciprocate (have the
+    // leftover as ITS best back-match across ALL its candidates).  This
+    // guards against promiscuous merging — a leftover that scores high
+    // against many distant chunks gets matched only if some chunk also
+    // scores it highest.
+    int totalXcorrMerges = 0;
+    int nLeftovers = 0;
+    if (CrossChunkTemplateScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
+        const int wElems = NbChannels * NbSamplesPerSpike;
+        const int mxSh   = std::max(1, NbSamplesPerSpike / 4);
 
-            auto xcorrPair = [&](const ChunkModel& ma, const ChunkModel& mb) -> float {
-                if ((int)ma.meanWav.size() != wE) return -1.0f;
-                if ((int)mb.meanWav.size() != wE) return -1.0f;
+        // Resolve which waveform to use for cluster i when matching against
+        // cluster j.  Direction: i.chunkIdx vs j.chunkIdx.  Fall back to
+        // chunk-wide meanWav when the requested edge is empty.
+        auto pickWav = [&](const ChunkModel& mi, const ChunkModel& mj)
+            -> const std::vector<int16_t>* {
+            const std::vector<int16_t>* w = nullptr;
+            if (mi.chunkIdx < mj.chunkIdx)      w = &mi.meanWavRight;
+            else if (mi.chunkIdx > mj.chunkIdx) w = &mi.meanWavLeft;
+            else                                w = &mi.meanWav;     // shouldn't happen
+            if (!w || static_cast<int>(w->size()) != wElems) {
+                if (static_cast<int>(mi.meanWav.size()) == wElems) w = &mi.meanWav;
+                else w = nullptr;
+            }
+            return w;
+        };
+
+        // Identify leftovers (non-noise, not matched by Pass 1)
+        std::vector<int> leftovers;
+        leftovers.reserve(n);
+        for (int i = 0; i < n; i++) {
+            if (models[i].localClusterId == 0) continue;  // noise
+            if (matched.count(i)) continue;
+            leftovers.push_back(i);
+        }
+        nLeftovers = static_cast<int>(leftovers.size());
+
+        // Score: best (li, j) pair seen.  Build bestForward[li] (best j for
+        // each leftover li) and bestBackward[j] (best leftover for each j
+        // candidate).  MNN: both must agree.
+        std::unordered_map<int, std::pair<int,float>> bestForward;   // li -> (j, score)
+        std::unordered_map<int, std::pair<int,float>> bestBackward;  // j  -> (li, score)
+
+        for (int li : leftovers) {
+            const ChunkModel& mA = models[li];
+            for (int j = 0; j < n; j++) {
+                if (j == li) continue;
+                const ChunkModel& mB = models[j];
+                if (mB.localClusterId == 0)        continue;  // noise
+                if (mB.chunkIdx == mA.chunkIdx)    continue;  // same chunk
+                const auto* wA = pickWav(mA, mB);
+                const auto* wB = pickWav(mB, mA);
+                if (!wA || !wB) continue;
+
                 int sh = 0; float sc = 0.0f;
                 XcorrDispatch::compute(
-                    ma.meanWav.data(), mb.meanWav.data(),
-                    1, nCh, nSamp, mxSh, 0.0f, &sh, &sc);
-                return sc;
-            };
+                    wA->data(), wB->data(),
+                    1, NbChannels, NbSamplesPerSpike, mxSh, 0.0f, &sh, &sc);
+                if (sc < CrossChunkTemplateScore) continue;
 
-            // Rebuild unresolved lists from current state
-            std::vector<int> tuA, tuB;
-            for (int a = 0; a < nA; a++)
-                if (!resolvedA.count(models[vecA[a]].localClusterId)) tuA.push_back(a);
-            for (int b = 0; b < nB; b++)
-                if (!resolvedB.count(models[vecB[b]].localClusterId)) tuB.push_back(b);
-
-            const int tnA = (int)tuA.size(), tnB = (int)tuB.size();
-            std::unordered_map<int,std::pair<int,float>> bestAtoB, bestBtoA;
-            for (int ai = 0; ai < tnA; ai++) {
-                const ChunkModel& ma = models[vecA[tuA[ai]]];
-                for (int bi = 0; bi < tnB; bi++) {
-                    const ChunkModel& mb = models[vecB[tuB[bi]]];
-                    float sc = xcorrPair(ma, mb);
-                    if (sc < CrossChunkTemplateScore) continue;
-                    if (!bestAtoB.count(ai) || sc > bestAtoB[ai].second)
-                        bestAtoB[ai] = {bi, sc};
-                    if (!bestBtoA.count(bi) || sc > bestBtoA[bi].second)
-                        bestBtoA[bi] = {ai, sc};
-                }
-            }
-            for (auto& [ai, pairB] : bestAtoB) {
-                int bi = pairB.first;
-                auto itBA = bestBtoA.find(bi);
-                if (itBA == bestBtoA.end() || itBA->second.first != ai) continue;
-                int mA2 = vecA[tuA[ai]], mB2 = vecB[tuB[bi]];
-                if (Find(mA2) == Find(mB2)) continue;
-                Union(mA2, mB2);
-                Output("  tmpl-match  chunk%d.c%d <-> chunk%d.c%d  xcorr=%.3f\n",
-                       models[mA2].chunkIdx, models[mA2].localClusterId,
-                       models[mB2].chunkIdx, models[mB2].localClusterId, pairB.second);
+                auto itF = bestForward.find(li);
+                if (itF == bestForward.end() || sc > itF->second.second)
+                    bestForward[li] = {j, sc};
+                auto itB = bestBackward.find(j);
+                if (itB == bestBackward.end() || sc > itB->second.second)
+                    bestBackward[j] = {li, sc};
             }
         }
-        }  // for k (chunk pairs)
-        if (_newUnions == 0) break;  // converged
-        Output("MergeChunkModels: iter %d produced %d new merges\n",
-               _ccIter + 1, _newUnions);
-    }  // for _ccIter
 
-    // Assign contiguous globalClusterIds from component roots
+        // Apply MNN merges
+        for (auto& [li, fwd] : bestForward) {
+            const int j = fwd.first;
+            auto itB = bestBackward.find(j);
+            if (itB == bestBackward.end() || itB->second.first != li) continue;
+            if (Find(li) == Find(j)) continue;
+            Union(li, j);
+            totalXcorrMerges++;
+            Output("  edge-xcorr  chunk%d.c%d <-> chunk%d.c%d  xcorr=%.3f\n",
+                   models[li].chunkIdx, models[li].localClusterId,
+                   models[j].chunkIdx,  models[j].localClusterId,
+                   fwd.second);
+        }
+    }
+    Output("MergeChunkModels: Pass 2 (edge xcorr): %d new merges from %d leftovers\n",
+           totalXcorrMerges, nLeftovers);
+
+    // ── Assign contiguous globalClusterIds from component roots ─────────
     std::unordered_map<int,int> rootToGlobal;
     int nextGlobal = 1;
 
@@ -3370,9 +3336,27 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     if (cm.chunkIdx == k)
                         lcToModel[cm.localClusterId] = &cm;
 
-                // Accumulate per-cluster waveform sums
-                std::unordered_map<int, std::vector<int64_t>> acc;
-                std::unordered_map<int, int> nAcc;
+                // Determine this chunk's time range so we can classify spikes
+                // as left-edge (first 25%) / middle / right-edge (last 25%)
+                // for the boundary-localised waveforms used in Phase 6's
+                // cross-chunk xcorr.  Time = last feature dim, raw samples.
+                float tMin = std::numeric_limits<float>::infinity();
+                float tMax = -std::numeric_limits<float>::infinity();
+                for (int i = 0; i < nPts; i++) {
+                    const float t = Data[static_cast<size_t>(pts[i]) * nDims + (nDims - 1)];
+                    if (t < tMin) tMin = t;
+                    if (t > tMax) tMax = t;
+                }
+                const float tRange    = (tMax > tMin) ? (tMax - tMin) : 1.0f;
+                const float tLeftEnd  = tMin + 0.25f * tRange;
+                const float tRightBeg = tMin + 0.75f * tRange;
+
+                // Accumulate per-cluster waveform sums.  Three accumulators
+                // per cluster: full chunk, left-edge (first 25%), right-edge
+                // (last 25%).  Every spike contributes to acc; spikes within
+                // the edge windows additionally contribute to accLeft/Right.
+                std::unordered_map<int, std::vector<int64_t>> acc, accLeft, accRight;
+                std::unordered_map<int, int> nAcc, nAccLeft, nAccRight;
                 std::vector<int16_t> row(static_cast<size_t>(wElems));
                 for (int i = 0; i < nPts; i++) {
                     const int lc = cls[i];
@@ -3384,6 +3368,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                            SEEK_SET);
                     if (fread(row.data(), sizeof(int16_t), wElems, spkTM)
                             != static_cast<size_t>(wElems)) continue;
+
+                    // Full-chunk accumulator
                     auto& a = acc[lc];
                     if (a.empty()) a.assign(static_cast<size_t>(wElems), 0);
                     // sample-major (.spk) → channel-major (XcorrDispatch)
@@ -3392,7 +3378,25 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                             a[static_cast<size_t>(ch * NbSamplesPerSpike + s)]
                                 += row[static_cast<size_t>(s * NbChannels + ch)];
                     nAcc[lc]++;
+
+                    // Edge accumulators.  A spike can only fall into one of
+                    // the two edge windows (mutually exclusive at 25% each);
+                    // middle-50% spikes contribute only to the chunk-wide mean.
+                    const float t = Data[static_cast<size_t>(p2) * nDims + (nDims - 1)];
+                    std::vector<int64_t>* edgeAcc = nullptr;
+                    int* edgeN = nullptr;
+                    if (t <= tLeftEnd)       { edgeAcc = &accLeft[lc];  edgeN = &nAccLeft[lc];  }
+                    else if (t >= tRightBeg) { edgeAcc = &accRight[lc]; edgeN = &nAccRight[lc]; }
+                    if (edgeAcc) {
+                        if (edgeAcc->empty()) edgeAcc->assign(static_cast<size_t>(wElems), 0);
+                        for (int ch = 0; ch < NbChannels; ch++)
+                            for (int s = 0; s < NbSamplesPerSpike; s++)
+                                (*edgeAcc)[static_cast<size_t>(ch * NbSamplesPerSpike + s)]
+                                    += row[static_cast<size_t>(s * NbChannels + ch)];
+                        (*edgeN)++;
+                    }
                 }
+                // Finalise full-chunk meanWav
                 for (auto& [lc, a] : acc) {
                     int n2 = nAcc[lc];
                     if (n2 == 0) continue;
@@ -3400,6 +3404,29 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     cm->meanWav.resize(static_cast<size_t>(wElems));
                     for (int e = 0; e < wElems; e++)
                         cm->meanWav[static_cast<size_t>(e)] =
+                            static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                }
+                // Finalise meanWavLeft.  Require a minimum of 5 spikes for a
+                // meaningful mean — below that, leave empty so Phase 6 falls
+                // back to chunk-wide meanWav for this cluster.
+                for (auto& [lc, a] : accLeft) {
+                    const int n2 = nAccLeft[lc];
+                    if (n2 < 5) continue;
+                    if (!lcToModel.count(lc)) continue;
+                    ChunkModel* cm = lcToModel[lc];
+                    cm->meanWavLeft.resize(static_cast<size_t>(wElems));
+                    for (int e = 0; e < wElems; e++)
+                        cm->meanWavLeft[static_cast<size_t>(e)] =
+                            static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                }
+                for (auto& [lc, a] : accRight) {
+                    const int n2 = nAccRight[lc];
+                    if (n2 < 5) continue;
+                    if (!lcToModel.count(lc)) continue;
+                    ChunkModel* cm = lcToModel[lc];
+                    cm->meanWavRight.resize(static_cast<size_t>(wElems));
+                    for (int e = 0; e < wElems; e++)
+                        cm->meanWavRight[static_cast<size_t>(e)] =
                             static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
                 }
             }
@@ -3443,11 +3470,26 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                         for (auto& cm : perChunkModels[k])
                             if (cm.chunkIdx == k)
                                 lcToModel2[cm.localClusterId] = &cm;
-                        // Zero existing meanWav for live clusters
-                        for (auto& [lc2, pcm] : lcToModel2)
+                        // Zero existing meanWav (and edge waveforms) for live clusters
+                        for (auto& [lc2, pcm] : lcToModel2) {
                             pcm->meanWav.assign(static_cast<size_t>(wElems), 0);
-                        std::unordered_map<int, std::vector<int64_t>> acc2;
-                        std::unordered_map<int, int> nAcc2;
+                            pcm->meanWavLeft.clear();
+                            pcm->meanWavRight.clear();
+                        }
+                        // Determine this chunk's time range for edge classification
+                        float tMin2 = std::numeric_limits<float>::infinity();
+                        float tMax2 = -std::numeric_limits<float>::infinity();
+                        for (int i = 0; i < nPts2; i++) {
+                            const float t = Data[static_cast<size_t>(pts2[i]) * nDims + (nDims - 1)];
+                            if (t < tMin2) tMin2 = t;
+                            if (t > tMax2) tMax2 = t;
+                        }
+                        const float tRange2    = (tMax2 > tMin2) ? (tMax2 - tMin2) : 1.0f;
+                        const float tLeftEnd2  = tMin2 + 0.25f * tRange2;
+                        const float tRightBeg2 = tMin2 + 0.75f * tRange2;
+
+                        std::unordered_map<int, std::vector<int64_t>> acc2, accLeft2, accRight2;
+                        std::unordered_map<int, int> nAcc2, nAccLeft2, nAccRight2;
                         std::vector<int16_t> row2(static_cast<size_t>(wElems));
                         for (int i = 0; i < nPts2; i++) {
                             const int lc2 = cls2[i];
@@ -3464,6 +3506,21 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                                     a2[static_cast<size_t>(ch2 * NbSamplesPerSpike + s2)]
                                         += row2[static_cast<size_t>(s2 * NbChannels + ch2)];
                             nAcc2[lc2]++;
+
+                            // Edge accumulators
+                            const float t = Data[static_cast<size_t>(pts2[i]) * nDims + (nDims - 1)];
+                            std::vector<int64_t>* edgeAcc = nullptr;
+                            int* edgeN = nullptr;
+                            if (t <= tLeftEnd2)       { edgeAcc = &accLeft2[lc2];  edgeN = &nAccLeft2[lc2];  }
+                            else if (t >= tRightBeg2) { edgeAcc = &accRight2[lc2]; edgeN = &nAccRight2[lc2]; }
+                            if (edgeAcc) {
+                                if (edgeAcc->empty()) edgeAcc->assign(static_cast<size_t>(wElems), 0);
+                                for (int ch2 = 0; ch2 < NbChannels; ch2++)
+                                    for (int s2 = 0; s2 < NbSamplesPerSpike; s2++)
+                                        (*edgeAcc)[static_cast<size_t>(ch2 * NbSamplesPerSpike + s2)]
+                                            += row2[static_cast<size_t>(s2 * NbChannels + ch2)];
+                                (*edgeN)++;
+                            }
                         }
                         for (auto& [lc2, a2] : acc2) {
                             int n2b = nAcc2[lc2];
@@ -3472,6 +3529,24 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                             cm2->meanWav.resize(static_cast<size_t>(wElems));
                             for (int e2 = 0; e2 < wElems; e2++)
                                 cm2->meanWav[static_cast<size_t>(e2)] =
+                                    static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
+                        }
+                        for (auto& [lc2, a2] : accLeft2) {
+                            const int n2b = nAccLeft2[lc2];
+                            if (n2b < 5 || !lcToModel2.count(lc2)) continue;
+                            auto* cm2 = lcToModel2[lc2];
+                            cm2->meanWavLeft.resize(static_cast<size_t>(wElems));
+                            for (int e2 = 0; e2 < wElems; e2++)
+                                cm2->meanWavLeft[static_cast<size_t>(e2)] =
+                                    static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
+                        }
+                        for (auto& [lc2, a2] : accRight2) {
+                            const int n2b = nAccRight2[lc2];
+                            if (n2b < 5 || !lcToModel2.count(lc2)) continue;
+                            auto* cm2 = lcToModel2[lc2];
+                            cm2->meanWavRight.resize(static_cast<size_t>(wElems));
+                            for (int e2 = 0; e2 < wElems; e2++)
+                                cm2->meanWavRight[static_cast<size_t>(e2)] =
                                     static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
                         }
                     }
@@ -4111,9 +4186,27 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     if (cm.chunkIdx == k)
                         lcToModel[cm.localClusterId] = &cm;
 
-                // Accumulate per-cluster waveform sums
-                std::unordered_map<int, std::vector<int64_t>> acc;
-                std::unordered_map<int, int> nAcc;
+                // Determine this chunk's time range so we can classify spikes
+                // as left-edge (first 25%) / middle / right-edge (last 25%)
+                // for the boundary-localised waveforms used in Phase 6's
+                // cross-chunk xcorr.  Time = last feature dim, raw samples.
+                float tMin = std::numeric_limits<float>::infinity();
+                float tMax = -std::numeric_limits<float>::infinity();
+                for (int i = 0; i < nPts; i++) {
+                    const float t = Data[static_cast<size_t>(pts[i]) * nDims + (nDims - 1)];
+                    if (t < tMin) tMin = t;
+                    if (t > tMax) tMax = t;
+                }
+                const float tRange    = (tMax > tMin) ? (tMax - tMin) : 1.0f;
+                const float tLeftEnd  = tMin + 0.25f * tRange;
+                const float tRightBeg = tMin + 0.75f * tRange;
+
+                // Accumulate per-cluster waveform sums.  Three accumulators
+                // per cluster: full chunk, left-edge (first 25%), right-edge
+                // (last 25%).  Every spike contributes to acc; spikes within
+                // the edge windows additionally contribute to accLeft/Right.
+                std::unordered_map<int, std::vector<int64_t>> acc, accLeft, accRight;
+                std::unordered_map<int, int> nAcc, nAccLeft, nAccRight;
                 std::vector<int16_t> row(static_cast<size_t>(wElems));
                 for (int i = 0; i < nPts; i++) {
                     const int lc = cls[i];
@@ -4125,6 +4218,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
                            SEEK_SET);
                     if (fread(row.data(), sizeof(int16_t), wElems, spkTM)
                             != static_cast<size_t>(wElems)) continue;
+
+                    // Full-chunk accumulator
                     auto& a = acc[lc];
                     if (a.empty()) a.assign(static_cast<size_t>(wElems), 0);
                     // sample-major (.spk) → channel-major (XcorrDispatch)
@@ -4133,7 +4228,25 @@ float KK::RunChunkedCEM(float chunkMinutes,
                             a[static_cast<size_t>(ch * NbSamplesPerSpike + s)]
                                 += row[static_cast<size_t>(s * NbChannels + ch)];
                     nAcc[lc]++;
+
+                    // Edge accumulators.  A spike can only fall into one of
+                    // the two edge windows (mutually exclusive at 25% each);
+                    // middle-50% spikes contribute only to the chunk-wide mean.
+                    const float t = Data[static_cast<size_t>(p2) * nDims + (nDims - 1)];
+                    std::vector<int64_t>* edgeAcc = nullptr;
+                    int* edgeN = nullptr;
+                    if (t <= tLeftEnd)       { edgeAcc = &accLeft[lc];  edgeN = &nAccLeft[lc];  }
+                    else if (t >= tRightBeg) { edgeAcc = &accRight[lc]; edgeN = &nAccRight[lc]; }
+                    if (edgeAcc) {
+                        if (edgeAcc->empty()) edgeAcc->assign(static_cast<size_t>(wElems), 0);
+                        for (int ch = 0; ch < NbChannels; ch++)
+                            for (int s = 0; s < NbSamplesPerSpike; s++)
+                                (*edgeAcc)[static_cast<size_t>(ch * NbSamplesPerSpike + s)]
+                                    += row[static_cast<size_t>(s * NbChannels + ch)];
+                        (*edgeN)++;
+                    }
                 }
+                // Finalise full-chunk meanWav
                 for (auto& [lc, a] : acc) {
                     int n2 = nAcc[lc];
                     if (n2 == 0) continue;
@@ -4141,6 +4254,29 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     cm->meanWav.resize(static_cast<size_t>(wElems));
                     for (int e = 0; e < wElems; e++)
                         cm->meanWav[static_cast<size_t>(e)] =
+                            static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                }
+                // Finalise meanWavLeft.  Require a minimum of 5 spikes for a
+                // meaningful mean — below that, leave empty so Phase 6 falls
+                // back to chunk-wide meanWav for this cluster.
+                for (auto& [lc, a] : accLeft) {
+                    const int n2 = nAccLeft[lc];
+                    if (n2 < 5) continue;
+                    if (!lcToModel.count(lc)) continue;
+                    ChunkModel* cm = lcToModel[lc];
+                    cm->meanWavLeft.resize(static_cast<size_t>(wElems));
+                    for (int e = 0; e < wElems; e++)
+                        cm->meanWavLeft[static_cast<size_t>(e)] =
+                            static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                }
+                for (auto& [lc, a] : accRight) {
+                    const int n2 = nAccRight[lc];
+                    if (n2 < 5) continue;
+                    if (!lcToModel.count(lc)) continue;
+                    ChunkModel* cm = lcToModel[lc];
+                    cm->meanWavRight.resize(static_cast<size_t>(wElems));
+                    for (int e = 0; e < wElems; e++)
+                        cm->meanWavRight[static_cast<size_t>(e)] =
                             static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
                 }
             }
@@ -4226,11 +4362,26 @@ float KK::RunChunkedCEM(float chunkMinutes,
                         for (auto& cm : perChunkModels[k])
                             if (cm.chunkIdx == k)
                                 lcToModel2[cm.localClusterId] = &cm;
-                        // Zero existing meanWav for live clusters
-                        for (auto& [lc2, pcm] : lcToModel2)
+                        // Zero existing meanWav (and edge waveforms) for live clusters
+                        for (auto& [lc2, pcm] : lcToModel2) {
                             pcm->meanWav.assign(static_cast<size_t>(wElems), 0);
-                        std::unordered_map<int, std::vector<int64_t>> acc2;
-                        std::unordered_map<int, int> nAcc2;
+                            pcm->meanWavLeft.clear();
+                            pcm->meanWavRight.clear();
+                        }
+                        // Determine this chunk's time range for edge classification
+                        float tMin2 = std::numeric_limits<float>::infinity();
+                        float tMax2 = -std::numeric_limits<float>::infinity();
+                        for (int i = 0; i < nPts2; i++) {
+                            const float t = Data[static_cast<size_t>(pts2[i]) * nDims + (nDims - 1)];
+                            if (t < tMin2) tMin2 = t;
+                            if (t > tMax2) tMax2 = t;
+                        }
+                        const float tRange2    = (tMax2 > tMin2) ? (tMax2 - tMin2) : 1.0f;
+                        const float tLeftEnd2  = tMin2 + 0.25f * tRange2;
+                        const float tRightBeg2 = tMin2 + 0.75f * tRange2;
+
+                        std::unordered_map<int, std::vector<int64_t>> acc2, accLeft2, accRight2;
+                        std::unordered_map<int, int> nAcc2, nAccLeft2, nAccRight2;
                         std::vector<int16_t> row2(static_cast<size_t>(wElems));
                         for (int i = 0; i < nPts2; i++) {
                             const int lc2 = cls2[i];
@@ -4247,6 +4398,21 @@ float KK::RunChunkedCEM(float chunkMinutes,
                                     a2[static_cast<size_t>(ch2 * NbSamplesPerSpike + s2)]
                                         += row2[static_cast<size_t>(s2 * NbChannels + ch2)];
                             nAcc2[lc2]++;
+
+                            // Edge accumulators
+                            const float t = Data[static_cast<size_t>(pts2[i]) * nDims + (nDims - 1)];
+                            std::vector<int64_t>* edgeAcc = nullptr;
+                            int* edgeN = nullptr;
+                            if (t <= tLeftEnd2)       { edgeAcc = &accLeft2[lc2];  edgeN = &nAccLeft2[lc2];  }
+                            else if (t >= tRightBeg2) { edgeAcc = &accRight2[lc2]; edgeN = &nAccRight2[lc2]; }
+                            if (edgeAcc) {
+                                if (edgeAcc->empty()) edgeAcc->assign(static_cast<size_t>(wElems), 0);
+                                for (int ch2 = 0; ch2 < NbChannels; ch2++)
+                                    for (int s2 = 0; s2 < NbSamplesPerSpike; s2++)
+                                        (*edgeAcc)[static_cast<size_t>(ch2 * NbSamplesPerSpike + s2)]
+                                            += row2[static_cast<size_t>(s2 * NbChannels + ch2)];
+                                (*edgeN)++;
+                            }
                         }
                         for (auto& [lc2, a2] : acc2) {
                             int n2b = nAcc2[lc2];
@@ -4255,6 +4421,24 @@ float KK::RunChunkedCEM(float chunkMinutes,
                             cm2->meanWav.resize(static_cast<size_t>(wElems));
                             for (int e2 = 0; e2 < wElems; e2++)
                                 cm2->meanWav[static_cast<size_t>(e2)] =
+                                    static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
+                        }
+                        for (auto& [lc2, a2] : accLeft2) {
+                            const int n2b = nAccLeft2[lc2];
+                            if (n2b < 5 || !lcToModel2.count(lc2)) continue;
+                            auto* cm2 = lcToModel2[lc2];
+                            cm2->meanWavLeft.resize(static_cast<size_t>(wElems));
+                            for (int e2 = 0; e2 < wElems; e2++)
+                                cm2->meanWavLeft[static_cast<size_t>(e2)] =
+                                    static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
+                        }
+                        for (auto& [lc2, a2] : accRight2) {
+                            const int n2b = nAccRight2[lc2];
+                            if (n2b < 5 || !lcToModel2.count(lc2)) continue;
+                            auto* cm2 = lcToModel2[lc2];
+                            cm2->meanWavRight.resize(static_cast<size_t>(wElems));
+                            for (int e2 = 0; e2 < wElems; e2++)
+                                cm2->meanWavRight[static_cast<size_t>(e2)] =
                                     static_cast<int16_t>(a2[static_cast<size_t>(e2)] / n2b);
                         }
                     }
