@@ -3316,11 +3316,18 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 nFullDims, refractSamp, 0.01f, sessLenSamp);
         }
 
-        // Subspace reclustering — finds covariance-structured splits the
-        // refractory pass missed.
-        fprintf(stderr, "[Phase 2]  Per-chunk subspace reclustering (per-chunk, pre-alignment)\n");
-        SubspaceReclusterPerChunk(
-            SubspaceDims > 0 ? SubspaceDims : 3,
+        // Phase 2a: per-cluster ordinary CEM in the full feature space.
+        // Replaces SubspaceReclusterPerChunk.  For each cluster in each
+        // chunk, runs CEM with splits enabled to find bimodal substructure;
+        // updates perChunkClass[] only.
+        PerClusterCEMPerChunk(
+            chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
+        // reassign across the new fine-grained label set and lets CEM
+        // merge oversplit fragments via ConsiderDeletion.  Rebuilds
+        // perChunkModels[] from the converged state.
+        ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
     }
 
@@ -4050,11 +4057,18 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 nFullDims, refractSamp, 0.01f, sessLenSamp);
         }
 
-        // Subspace reclustering — finds covariance-structured splits the
-        // refractory pass missed.
-        fprintf(stderr, "[Phase 2]  Per-chunk subspace reclustering (per-chunk, pre-alignment)\n");
-        SubspaceReclusterPerChunk(
-            SubspaceDims > 0 ? SubspaceDims : 3,
+        // Phase 2a: per-cluster ordinary CEM in the full feature space.
+        // Replaces SubspaceReclusterPerChunk.  For each cluster in each
+        // chunk, runs CEM with splits enabled to find bimodal substructure;
+        // updates perChunkClass[] only.
+        PerClusterCEMPerChunk(
+            chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
+        // reassign across the new fine-grained label set and lets CEM
+        // merge oversplit fragments via ConsiderDeletion.  Rebuilds
+        // perChunkModels[] from the converged state.
+        ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
     }
 
@@ -6524,6 +6538,362 @@ void KK::DipSplitPerChunk(
 
 
 // ---------------------------------------------------------------------------
+// KK::PerClusterCEMPerChunk
+//
+// Phase 2a: per-cluster ordinary CEM in the FULL feature space.  For each
+// cluster in each chunk, builds a thread-local scratch KK populated with
+// only that cluster's spikes, warm-starts from a single Gaussian (all
+// spikes assigned to cluster 1, cluster 0 = noise but unused), and runs
+// RunEMLoop with splits enabled.  TrySplits inside the loop probes for
+// bimodal substructure using the bimodality-coefficient feature selection
+// from P1.B; the K3 outer recheck (P1.A) settles each candidate split for
+// 3 EM iterations before scoring.
+//
+// Replaces the former subspace-projected SubspaceReclusterPerChunk.  The
+// projection-then-CEM design had a structural failure mode: an elongated
+// unimodal Gaussian, when projected into its own top-variance eigenvectors,
+// looks bimodal-along-the-long-axis to a 2-Gaussian fit, producing high
+// false-positive split rates (~67% acceptance was observed on octrode data).
+// Running ordinary CEM in the full feature space avoids the projection
+// bias entirely and lets the standard BIC-gated split machinery decide.
+//
+// Cluster ID assignment:
+//   - sub-cluster 0 (noise): NoisePoint=0 keeps it empty (user spec: no real
+//     noise from extraction)
+//   - sub-cluster 1: keeps the parent's local ID
+//   - sub-clusters 2,3,...: get fresh chunk-local IDs starting at maxLc+1
+//
+// ChunkModel rebuild is deferred to ChunkReCEMPerChunk, which re-runs a
+// chunk-level CEM that lets fine-grained sub-clusters reorganise across
+// the chunk's full data (boundary spikes can reassign, oversplit pieces
+// can merge via ConsiderDeletion).  Building stale ChunkModels here only
+// to discard them in 2b would be wasted work.
+// ---------------------------------------------------------------------------
+void KK::PerClusterCEMPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& /*perChunkModels*/,
+    int nFullDims)
+{
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    // Minimum cluster size for full-dim covariance.  Below this, the
+    // per-cluster CEM would build a singular covariance and degenerate.
+    // nFullDims+5 (a few spikes' margin above the rank requirement) is a
+    // sane floor; raise to 25 for stability with small clusters.
+    const int minClusterSize = std::max(nFullDims + 5, 25);
+
+    // ── Phase A: build (chunk, cluster) work items ───────────────────
+    struct WorkItem {
+        int ck;
+        int lc;                       // cluster's local id within the chunk
+        std::vector<int> members;     // indices into chunkPoints[ck]
+    };
+    std::vector<WorkItem> items;
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& cls = perChunkClass[ck];
+        const auto& pts = chunkPoints[ck];
+        if (pts.empty()) continue;
+        if (cls.size() != pts.size()) continue;
+
+        // Find unique non-noise local cluster IDs in this chunk.
+        std::unordered_set<int> uniqueLcs;
+        for (int c : cls) if (c >= 1) uniqueLcs.insert(c);
+
+        for (int lc : uniqueLcs) {
+            std::vector<int> mem;
+            for (int i = 0; i < static_cast<int>(pts.size()); i++)
+                if (cls[static_cast<size_t>(i)] == lc) mem.push_back(i);
+            if (static_cast<int>(mem.size()) < minClusterSize) continue;
+            items.push_back({ck, lc, std::move(mem)});
+        }
+    }
+
+    fprintf(stderr,
+            "[Phase 2a] Per-cluster CEM: probing %d clusters (min size %d)\n",
+            static_cast<int>(items.size()), minClusterSize);
+
+    if (items.empty()) return;
+
+    // ── Phase B: parallel per-cluster CEM ────────────────────────────
+    struct ItemResult {
+        bool changed = false;
+        int  nSubClusters = 0;
+        std::vector<int> newSubLabels;  // per-member sub-cluster id from CEM
+    };
+    std::vector<ItemResult> results(items.size());
+
+    int totalSplits        = 0;
+    int totalNewSubClusters = 0;
+
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalSplits,totalNewSubClusters)
+    for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
+        const auto& item = items[static_cast<size_t>(wi)];
+        const int   nMem = static_cast<int>(item.members.size());
+        const auto& pts  = chunkPoints[item.ck];
+
+        // Build sub-KK with only this cluster's spikes (full feature space)
+        KK Ks;
+        Ks.nDims              = nFullDims;
+        Ks.nPoints            = nMem;
+        Ks.penaltyMix         = penaltyMix;
+        Ks.suppressBestSave   = true;
+        Ks.minClustersAlive   = 1;
+        Ks.NoisePoint         = 0;
+
+        Ks.AllocateArrays();
+        Ks.AllocateCholeskyVecs();
+        Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
+
+        for (int i = 0; i < nMem; i++) {
+            const int p = pts[static_cast<size_t>(item.members[static_cast<size_t>(i)])];
+            for (int d = 0; d < nFullDims; d++)
+                Ks.Data[static_cast<size_t>(i) * nFullDims + d] =
+                    Data[static_cast<size_t>(p) * nFullDims + d];
+        }
+        Ks.timeRawMin = timeRawMin;
+        Ks.timeRawMax = timeRawMax;
+
+        // Warm start: noise (cluster 0) empty, all spikes in cluster 1.
+        // TrySplits will discover bimodal structure if present.
+        Ks.nStartingClusters = 2;
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            Ks.ClassAlive[c] = (c < 2) ? 1 : 0;
+        for (int i = 0; i < nMem; i++) Ks.Class[i] = 1;
+        Ks.Reindex();
+
+        Ks.MStep();
+        Ks.EStep();
+
+        Ks.RunEMLoop(/*enableSplits=*/  true,
+                     /*enableDistDump=*/ false,
+                     /*maxIter=*/        0,
+                     /*phaseLabel=*/     "[2a]");
+
+        // nClustersAlive includes noise (0).  No-split: == 2 (noise + 1).
+        // Real split: > 2.
+        if (Ks.nClustersAlive <= 2) continue;
+
+        results[static_cast<size_t>(wi)].changed       = true;
+        results[static_cast<size_t>(wi)].nSubClusters  = Ks.nClustersAlive - 1;
+        results[static_cast<size_t>(wi)].newSubLabels.resize(static_cast<size_t>(nMem));
+        for (int i = 0; i < nMem; i++)
+            results[static_cast<size_t>(wi)].newSubLabels[static_cast<size_t>(i)] = Ks.Class[i];
+
+        totalSplits         += 1;
+        totalNewSubClusters += (Ks.nClustersAlive - 2);  // beyond the original 1
+    }
+
+    // ── Phase C: serial application — assign fresh local IDs ─────────
+    std::vector<int> nextLc(nCh, 1);
+    for (int ck = 0; ck < nCh; ck++) {
+        int maxLc = 0;
+        for (int c : perChunkClass[static_cast<size_t>(ck)])
+            if (c > maxLc) maxLc = c;
+        nextLc[static_cast<size_t>(ck)] = maxLc + 1;
+    }
+
+    std::unordered_set<int> chunksAffected;
+    for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
+        const auto& res = results[static_cast<size_t>(wi)];
+        if (!res.changed) continue;
+        const auto& item = items[static_cast<size_t>(wi)];
+        auto& cls = perChunkClass[static_cast<size_t>(item.ck)];
+
+        // Map sub-cluster ID to chunk-local ID:
+        //   0 -> 0 (noise; should be empty under NoisePoint=0)
+        //   1 -> item.lc (parent retains its ID)
+        //   ≥2 -> fresh chunk-local ID
+        std::unordered_map<int,int> subToLc;
+        subToLc[0] = 0;
+        subToLc[1] = item.lc;
+
+        const int nMem = static_cast<int>(item.members.size());
+        for (int i = 0; i < nMem; i++) {
+            const int sc = res.newSubLabels[static_cast<size_t>(i)];
+            auto it = subToLc.find(sc);
+            if (it == subToLc.end()) {
+                subToLc[sc] = nextLc[static_cast<size_t>(item.ck)]++;
+                it = subToLc.find(sc);
+            }
+            cls[static_cast<size_t>(item.members[static_cast<size_t>(i)])] = it->second;
+        }
+        chunksAffected.insert(item.ck);
+    }
+
+    fprintf(stderr,
+            "[Phase 2a] Per-cluster CEM: %d clusters split, +%d new sub-clusters, "
+            "%d chunks affected\n",
+            totalSplits, totalNewSubClusters,
+            static_cast<int>(chunksAffected.size()));
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::ChunkReCEMPerChunk
+//
+// Phase 2b: chunk-level warm-start CEM.  After PerClusterCEMPerChunk has
+// produced fine-grained per-cluster splits, this pass runs an ordinary
+// chunk-level CEM seeded from the new fine-grained labels.  The point is
+// to let spikes near sub-cluster boundaries reassign across the chunk's
+// full label set, and to let CEM's ConsiderDeletion merge oversplit
+// fragments back together when the data doesn't support them.
+//
+// Splits are kept enabled (unlike the K3 recheck in TrySplits, which
+// disables them for evaluation purposes).  CEM here may discover further
+// structure that per-cluster CEM missed because the per-cluster pass saw
+// only one cluster's spikes — across the chunk, similar-looking spikes
+// from different clusters can drive new splits or unify mistakes.
+//
+// Skipped chunks: those with ≤ 2 distinct labels (trivially nothing to
+// reorganise).
+//
+// ChunkModel rebuild from final Ks.Mean / Ks.Cov.  This replaces all
+// previous ChunkModels for the chunk; cross-chunk Phase 6 reads only
+// the rebuilt list.
+// ---------------------------------------------------------------------------
+void KK::ChunkReCEMPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    fprintf(stderr,
+            "[Phase 2b] Chunk re-CEM (warm-start from fine-grained labels)\n");
+
+    struct ChunkResult {
+        bool                    changed = false;
+        int                     deltaClusters = 0;
+        std::vector<int>        newClass;
+        std::vector<ChunkModel> newModels;
+    };
+    std::vector<ChunkResult> results(nCh);
+
+    int totalChunksProcessed = 0;
+    int totalDeltaClusters   = 0;
+
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalChunksProcessed,totalDeltaClusters)
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts = chunkPoints[static_cast<size_t>(ck)];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts == 0) continue;
+
+        const auto& cls0 = perChunkClass[static_cast<size_t>(ck)];
+        if (static_cast<int>(cls0.size()) != nPts) continue;
+
+        // Skip chunks with ≤ 2 distinct labels (noise + at most 1 cluster).
+        std::unordered_set<int> uniqueLcs(cls0.begin(), cls0.end());
+        if (uniqueLcs.size() <= 2) continue;
+
+        const int aliveBefore = static_cast<int>(uniqueLcs.size());
+
+        // Build sub-KK warm-started from cls0
+        KK Ks;
+        Ks.nDims              = nFullDims;
+        Ks.nPoints            = nPts;
+        Ks.penaltyMix         = penaltyMix;
+        Ks.suppressBestSave   = true;
+        Ks.minClustersAlive   = 1;
+        Ks.NoisePoint         = 0;
+
+        Ks.AllocateArrays();
+        Ks.AllocateCholeskyVecs();
+        Ks.ReinitForSplit(nPts, nFullDims, penaltyMix);
+
+        for (int i = 0; i < nPts; i++) {
+            const int p = pts[static_cast<size_t>(i)];
+            for (int d = 0; d < nFullDims; d++)
+                Ks.Data[static_cast<size_t>(i) * nFullDims + d] =
+                    Data[static_cast<size_t>(p) * nFullDims + d];
+        }
+        Ks.timeRawMin = timeRawMin;
+        Ks.timeRawMax = timeRawMax;
+
+        // Set Class[] and ClassAlive[] from the fine-grained labels
+        for (int c = 0; c < MaxPossibleClusters; c++) Ks.ClassAlive[c] = 0;
+        for (int i = 0; i < nPts; i++) {
+            const int c = cls0[static_cast<size_t>(i)];
+            Ks.Class[i] = c;
+            if (c >= 0 && c < MaxPossibleClusters) Ks.ClassAlive[c] = 1;
+        }
+        Ks.Reindex();
+
+        // Warm-start: MStep + EStep so RunEMLoop has consistent stats.
+        // Run normal CEM with splits enabled — CEM may discover further
+        // structure or merge oversplit fragments via ConsiderDeletion.
+        Ks.MStep();
+        Ks.EStep();
+        Ks.RunEMLoop(/*enableSplits=*/  true,
+                     /*enableDistDump=*/ false,
+                     /*maxIter=*/        0,
+                     /*phaseLabel=*/     "[2b]");
+
+        // Read back labels
+        std::vector<int> newCls(static_cast<size_t>(nPts));
+        for (int i = 0; i < nPts; i++) newCls[static_cast<size_t>(i)] = Ks.Class[i];
+
+        // Refresh Mean/Cov for ChunkModel build
+        Ks.MStep();
+
+        // Rebuild ChunkModel list from Ks.Mean / Ks.Cov.  Mirrors the
+        // canonical pattern from Phase 1 seeding (KK.cpp:3198-3218).
+        std::vector<ChunkModel> newMdls;
+        newMdls.reserve(static_cast<size_t>(Ks.nClustersAlive));
+        for (int cc = 0; cc < Ks.nClustersAlive; cc++) {
+            const int c = Ks.AliveIndex[cc];
+            ChunkModel cm;
+            cm.chunkIdx        = ck;
+            cm.localClusterId  = c;
+            cm.globalClusterId = -1;
+            cm.nMembers        = 0;
+            cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
+            cm.cov.assign (static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+            for (int d = 0; d < nFullDims; d++)
+                cm.mean[static_cast<size_t>(d)] =
+                    Ks.Mean[static_cast<size_t>(c) * nFullDims + d];
+            for (int r = 0; r < nFullDims; r++)
+                for (int col = r; col < nFullDims; col++)
+                    cm.cov[static_cast<size_t>(r) * nFullDims + col] =
+                        Ks.Cov[static_cast<size_t>(c) * Ks.nDims2
+                              + r * nFullDims + col];
+            for (int i = 0; i < nPts; i++)
+                if (Ks.Class[i] == c) cm.nMembers++;
+            if (cm.nMembers == 0) continue;
+            newMdls.push_back(std::move(cm));
+        }
+
+        results[static_cast<size_t>(ck)].changed       = true;
+        results[static_cast<size_t>(ck)].deltaClusters = Ks.nClustersAlive - aliveBefore;
+        results[static_cast<size_t>(ck)].newClass      = std::move(newCls);
+        results[static_cast<size_t>(ck)].newModels     = std::move(newMdls);
+
+        totalChunksProcessed += 1;
+        totalDeltaClusters   += (Ks.nClustersAlive - aliveBefore);
+    }
+
+    // Serial application
+    for (int ck = 0; ck < nCh; ck++) {
+        if (!results[static_cast<size_t>(ck)].changed) continue;
+        perChunkClass [static_cast<size_t>(ck)] =
+            std::move(results[static_cast<size_t>(ck)].newClass);
+        perChunkModels[static_cast<size_t>(ck)] =
+            std::move(results[static_cast<size_t>(ck)].newModels);
+    }
+
+    fprintf(stderr,
+            "[Phase 2b] Chunk re-CEM: %d chunks processed, net cluster delta = %+d\n",
+            totalChunksProcessed, totalDeltaClusters);
+}
+
+
+// ---------------------------------------------------------------------------
 // KK::SubspaceReclusterPerChunk
 //
 // Per-chunk subspace reclustering — Phase 2 of the runtime pipeline.
@@ -6689,494 +7059,6 @@ int  KK::WithinChunkTemplateMatch(
 
 
 
-// ---------------------------------------------------------------------------
-void KK::SubspaceReclusterPerChunk(
-    int subspaceDims,
-    const std::vector<std::vector<int>>& chunkPoints,
-    std::vector<std::vector<int>>&        perChunkClass,
-    std::vector<std::vector<ChunkModel>>& perChunkModels,
-    int nFullDims)
-{
-    if (subspaceDims <= 0) return;
-    // kMax: hard ceiling on subspace dimensions extracted per cluster.
-    // The effective per-cluster dimension kEff is chosen automatically
-    // from the eigenvalue gap, so this is just an upper bound.
-    const int kMax     = std::min(subspaceDims, nFullDims - 1);
-    const int nCh      = static_cast<int>(chunkPoints.size());
-    const int nSpatial = nFullDims - 1;
-    // minSpikes based on kMax as upper bound; effective k per cluster
-    // may be smaller, so this is conservative.
-    const int minSpikes = std::max(kMax * 10, 20);
-
-    // ── Diagnostic accounting ────────────────────────────────────────────────
-    // Without this, the routine's silent skips (small clusters, degenerate
-    // covariance) make it look like Phase 2 "completed too quickly" when in
-    // fact most candidate clusters were filtered out before the parallel
-    // CEM.  All counts are tracked here and printed at end-of-phase to
-    // stderr, regardless of `Log`.
-    int nVisited      = 0;   // alive non-noise clusters considered
-    int nSkipNoise    = 0;   // localClusterId == 0
-    int nSkipTooSmall = 0;   // nMem < minSpikes
-    int nSkipBadNull  = 0;   // nullScore == 0 (degenerate Ks)
-    int nQueued       = 0;   // pushed to items[] for parallel CEM
-    int nAccepted     = 0;   // passed BIC gate AND nullSplit
-    int nRejNoSplit   = 0;   // best run had no real split
-    int nRejWorseNull = 0;   // best run worse than nullScore
-
-    // ── Phase A: serial pre-processing ─────────────────────────────────────
-    // For each (chunk, cluster) build a projected sub-KK and compute nullScore.
-    // Reads Data[] (read-only) and perChunkClass/perChunkModels (read-only here).
-
-    struct WorkItem {
-        int   ck, lc;
-        int   nMem;
-        int   kEff;                      // auto-selected subspace dims for this cluster
-        std::vector<int>   members;      // local indices into chunkPoints[ck]
-        std::vector<float> ksData;       // projected + normalised subspace data [nMem × kEff]
-        float timeRawMin, timeRawMax;
-        float nullScore;
-        bool  valid;
-    };
-
-    struct Result {
-        int  ck, lc;
-        bool accepted;
-        int  bestSubK;
-        float bestSubScore;
-        std::vector<int> bestSubClass;   // length nMem
-    };
-
-    std::vector<WorkItem> items;
-    items.reserve(512);
-
-    for (int ck = 0; ck < nCh; ck++) {
-        const auto& pts  = chunkPoints[ck];
-        const auto& cls  = perChunkClass[ck];
-        const auto& mdls = perChunkModels[ck];
-        const int   nPts = static_cast<int>(pts.size());
-        if (nPts == 0 || mdls.empty()) continue;
-
-        std::vector<ChunkModel> snapshot = mdls;
-        for (const auto& origCm : snapshot) {
-            const int lc = origCm.localClusterId;
-            if (lc == 0) { ++nSkipNoise; continue; }
-            ++nVisited;
-
-            std::vector<int> members;
-            for (int i = 0; i < nPts; i++)
-                if (cls[i] == lc) members.push_back(i);
-
-            const int nMem = static_cast<int>(members.size());
-            if (nMem < minSpikes) { ++nSkipTooSmall; continue; }
-
-            // Cluster mean
-            std::vector<float> clMean(static_cast<size_t>(nSpatial), 0.0f);
-            for (int li : members) {
-                const int p = pts[static_cast<size_t>(li)];
-                for (int d = 0; d < nSpatial; d++)
-                    clMean[static_cast<size_t>(d)] += Data[p * nDims + d];
-            }
-            for (float& v : clMean) v /= nMem;
-
-            // Upper-triangular covariance
-            std::vector<float> clCovUT(static_cast<size_t>(nSpatial) * nFullDims, 0.0f);
-            for (int li : members) {
-                const int p = pts[static_cast<size_t>(li)];
-                for (int r = 0; r < nSpatial; r++)
-                    for (int cc = r; cc < nSpatial; cc++) {
-                        float dr = Data[p * nDims + r]  - clMean[static_cast<size_t>(r)];
-                        float dc = Data[p * nDims + cc] - clMean[static_cast<size_t>(cc)];
-                        clCovUT[r * nFullDims + cc] += dr * dc;
-                    }
-            }
-            for (auto& v : clCovUT) v /= static_cast<float>(nMem - 1);
-
-            // Extract up to kMax eigenvectors, then auto-select kEff via
-            // the largest normalised eigenvalue gap:
-            //   gap_i = (lambda_i - lambda_{i+1}) / lambda_0
-            // The largest gap marks the signal/noise boundary in the
-            // cluster's own covariance spectrum.
-            std::vector<float> evecs, evals;
-            topKEigen(clCovUT.data(), nSpatial, nFullDims, kMax, evecs, evals);
-
-            int kEff = 2;  // minimum: >= 2 dims needed to detect a split
-            if (kMax >= 2 && evals[0] > 1e-12f) {
-                float maxGap = -1.0f;
-                for (int ki = 0; ki < kMax - 1; ki++) {
-                    float gap = (evals[static_cast<size_t>(ki)]
-                               - evals[static_cast<size_t>(ki + 1)])
-                              / evals[0];
-                    if (gap > maxGap) { maxGap = gap; kEff = ki + 1; }
-                }
-                kEff = std::max(2, std::min(kEff, kMax));
-            }
-
-            // P2.A: project into the kEff-dimensional eigenvector subspace
-            // WITHOUT whitening.
-            //
-            // The earlier version divided each projected coordinate by
-            // sqrt(λ_i), making the projected covariance the identity.  That
-            // looks clean but breaks the BIC accounting downstream: KK::Penalty
-            // counts nParams = (k(k+1)/2 + k + 1)(K-1), the parameter budget
-            // for a full general covariance.  Whitened data has fewer
-            // effective free parameters (variances pinned at 1), so the BIC
-            // penalty is too harsh on multi-cluster fits relative to the
-            // null — and good splits get rejected.
-            //
-            // Removing the division lets the sub-CEM learn its own per-mode
-            // covariance.  Mahalanobis distances become commensurable across
-            // the k axes via the post-projection min-max normalisation
-            // below, which is sufficient for CEM convergence without the
-            // BIC mismatch.
-            WorkItem wi;
-            wi.ck = ck; wi.lc = lc; wi.nMem = nMem; wi.kEff = kEff;
-            wi.members = std::move(members);
-            wi.ksData.resize(static_cast<size_t>(nMem) * kEff);
-            for (int i = 0; i < nMem; i++) {
-                const int p = pts[static_cast<size_t>(wi.members[static_cast<size_t>(i)])];
-                for (int ki = 0; ki < kEff; ki++) {
-                    float proj = 0.0f;
-                    for (int d = 0; d < nSpatial; d++)
-                        proj += evecs[static_cast<size_t>(ki * nSpatial + d)]
-                              * (Data[p * nDims + d] - clMean[static_cast<size_t>(d)]);
-                    wi.ksData[static_cast<size_t>(i * kEff + ki)] = proj;
-                }
-            }
-
-            // Normalise to [0,1]
-            std::vector<float> subMin(static_cast<size_t>(kEff),  HugeScore);
-            std::vector<float> subMax(static_cast<size_t>(kEff), -HugeScore);
-            for (int i = 0; i < nMem; i++)
-                for (int ki = 0; ki < kEff; ki++) {
-                    float v = wi.ksData[static_cast<size_t>(i * kEff + ki)];
-                    if (v < subMin[static_cast<size_t>(ki)]) subMin[static_cast<size_t>(ki)] = v;
-                    if (v > subMax[static_cast<size_t>(ki)]) subMax[static_cast<size_t>(ki)] = v;
-                }
-            for (int i = 0; i < nMem; i++)
-                for (int ki = 0; ki < kEff; ki++) {
-                    float range = subMax[static_cast<size_t>(ki)] - subMin[static_cast<size_t>(ki)];
-                    wi.ksData[static_cast<size_t>(i * kEff + ki)] = (range > 1e-12f)
-                        ? (wi.ksData[static_cast<size_t>(i * kEff + ki)] - subMin[static_cast<size_t>(ki)]) / range
-                        : 0.5f;
-                }
-            wi.timeRawMin = subMin[static_cast<size_t>(kEff - 1)];
-            wi.timeRawMax = subMax[static_cast<size_t>(kEff - 1)];
-
-            // Null score
-            {
-                KK Ks;
-                Ks.nDims = kEff; Ks.nPoints = nMem;
-                Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
-                Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
-                for (int i = 0; i < nMem * kEff; i++) Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
-                Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
-                Ks.ReinitForSplit(nMem, kEff, penaltyMix);
-                Ks.nStartingClusters = 1; Ks.NoisePoint = 0;
-                for (int i2 = 0; i2 < nMem; i2++) Ks.Class[i2] = 1;
-                Ks.ClassAlive[1] = 1; Ks.nClustersAlive = 1; Ks.AliveIndex[0] = 1;
-                Ks.MStep(); Ks.EStep();
-                wi.nullScore = Ks.ComputeScore();
-            }
-            wi.valid = (wi.nullScore != 0.0f);
-            if (!wi.valid) {
-                // nullScore == 0 indicates the single-cluster fit collapsed.
-                // Common cause: covariance matrix is rank-deficient in the
-                // kEff-dimensional subspace (members lie on a degenerate
-                // manifold), so EStep killed the cluster and only the empty
-                // noise row contributed to ComputeScore.  This work item
-                // cannot be evaluated for splitting; flag it for the summary.
-                ++nSkipBadNull;
-                fprintf(stderr,
-                        "  [Phase 2] chunk %d cluster %d: nullScore=0 "
-                        "(degenerate covariance in %d-dim subspace, %d members) "
-                        "— skipped\n",
-                        ck, lc, wi.kEff, nMem);
-                continue;  // do NOT push to items[]; nothing to recluster
-            }
-            ++nQueued;
-            items.push_back(std::move(wi));
-        }
-    }
-
-    const int nItems = static_cast<int>(items.size());
-    if (nItems == 0) {
-        // Nothing to recluster — but report WHY so the user can see whether
-        // they hit the small-cluster filter, the degenerate-covariance
-        // filter, or simply had no real clusters.
-        fprintf(stderr,
-                "[Phase 2]  Per-chunk subspace recluster: 0/%d clusters queued "
-                "(skipped: %d noise, %d too-small <%d, %d degenerate)\n",
-                nVisited, nSkipNoise, nSkipTooSmall, minSpikes, nSkipBadNull);
-        return;
-    }
-
-    // ── Phase B: parallel sub-CEM ─────────────────────────────────────────────
-    // Flattened over (item × run): nItems*nRuns independent work units.
-    // Each unit is a single (cluster, random-seed) CEMTwoPhase call.
-    // Serial reduction after the parallel block picks the best-scoring run
-    // per cluster and writes it into results[], which Phase C reads unchanged.
-    //
-    // Mapping invariant: runResults[wi_idx * runsPerSubCluster + run].subClass[i2]
-    // = Ks.Class[i2] after CEMTwoPhase on wi.ksData.  This is the sub-cluster
-    // label (1..N) for the i2-th member of work item wi_idx.  Phase C consumes
-    // res.bestSubClass[i2] with the same indexing as before — only the source
-    // (which run) changed, not the meaning of the value.
-    const int runsPerSubCluster = (nRuns > 0) ? nRuns : 1;
-    const int nFlatItems        = nItems * runsPerSubCluster;
-
-    struct RunResult {
-        float            score     = 0.0f;   // 0 = invalid (nClusters <= 1)
-        int              nClusters = 1;
-        std::vector<int> subClass; // [nMem]: sub-cluster labels from Ks.Class[]
-    };
-    std::vector<RunResult> runResults(static_cast<size_t>(nFlatItems));
-    // Pre-size subClass vectors; initialise to 0 (all noise) as a safe default.
-    for (int fi = 0; fi < nFlatItems; fi++) {
-        const int wi_idx = fi / runsPerSubCluster;
-        const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
-        runResults[static_cast<size_t>(fi)].subClass.assign(
-            static_cast<size_t>(wi.nMem), 0);
-    }
-
-    std::vector<Result> results(static_cast<size_t>(nItems));
-
-#ifdef _OPENMP
-    const int _srcThreads = std::min(
-        (ompTeamSize > 0) ? ompTeamSize : omp_get_max_threads(),
-        nFlatItems);
-#else
-    const int _srcThreads = 1;
-#endif
-
-    // Number of farthest-point seeds for the subspace CEM.
-    // We use enough starting clusters that CEM can discover the right number
-    // via splits and deletions, matching the approach in CEMTwoPhase/TrySplits.
-    // min(8, nMem/30) prevents over-seeding tiny clusters; +1 for noise slot.
-    // This is computed per work-item below; the constant here is a ceiling.
-    const int maxSubStart = 9;  // noise + up to 8 real sub-clusters
-
-    #pragma omp parallel for schedule(dynamic) num_threads(_srcThreads) \
-        default(none) \
-        shared(items, runResults, nItems) \
-        firstprivate(penaltyMix, RandomSeed, runsPerSubCluster, HugeScore, maxSubStart, \
-                     MaxPossibleClusters)
-    for (int fi = 0; fi < nItems * runsPerSubCluster; fi++) {
-        const int wi_idx = fi / runsPerSubCluster;
-        const int run    = fi % runsPerSubCluster;
-        const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
-        RunResult& rr = runResults[static_cast<size_t>(fi)];
-
-        if (!wi.valid) continue;
-
-        // Determine sensible number of starting clusters for this sub-cluster.
-        // Use enough seeds to let CEM find multi-cluster structure via splits,
-        // but cap at min(maxSubStart, nMem/minSpikesPerCluster) to avoid
-        // degenerate fits on small clusters.
-        // +1 for the noise slot (cluster 0).
-        // Use this cluster's auto-selected subspace dimension.
-        const int k = wi.kEff;
-        const int minSpkPerCl = std::max(k * 3, 10);
-        const int nSeeds = std::max(2,
-                           std::min(maxSubStart - 1,
-                                    wi.nMem / minSpkPerCl));
-        const int nSubStart = nSeeds + 1;  // +1 noise slot
-
-        // Each thread has its own KK scratch — no shared mutable state.
-        KK Ks;
-        Ks.nDims = k; Ks.nPoints = wi.nMem;
-        Ks.penaltyMix = penaltyMix; Ks.suppressBestSave = true;
-        Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
-        // MaxClusters and MaxPossibleClusters are globals; the scratch KK
-        // object inherits them via AllocateArrays(). We cap the effective
-        // per-subspace ceiling by clamping nSubStart, not by touching the
-        // global — the global drives array sizing and must not be lowered.
-
-        Ks.ReinitForSplit(wi.nMem, k, penaltyMix);
-        for (int i = 0; i < wi.nMem * k; i++)
-            Ks.Data[i] = wi.ksData[static_cast<size_t>(i)];
-        Ks.timeRawMin = wi.timeRawMin; Ks.timeRawMax = wi.timeRawMax;
-
-        // Farthest-point seeding: places nSeeds centres spread across the
-        // subspace, giving CEM a principled non-random starting partition.
-        // Different runs vary the seed of the random tie-breaker used by
-        // InitCentresFarthestPoint, producing different initial assignments
-        // when two points are equidistant from the current frontier.
-        srand(static_cast<unsigned>(RandomSeed
-              + static_cast<unsigned>(wi.ck) * 997u
-              + static_cast<unsigned>(wi.lc) * 13u
-              + static_cast<unsigned>(run)   * 7u));
-        // Initialise with farthest-point seeding in the full k-dimensional
-        // subspace (all dimensions are spatial — there is no time column here).
-        Ks.nStartingClusters = nSubStart; Ks.NoisePoint = 0;
-        for (int c = 0; c < MaxPossibleClusters; c++)
-            Ks.ClassAlive[c] = (c < nSubStart) ? 1 : 0;
-        Ks.Reindex();
-        Ks.InitCentresFarthestPoint(nSeeds, k);  // all k dims are spatial
-        Ks.InitClassFromCentres(k);
-
-        // Use CEM (not CEMTwoPhase) because the subspace has no time column.
-        // CEMTwoPhase would reduce to nDims-1 = k-1 in Phase 1, discarding
-        // one real feature dimension.  RunEMLoop with enableSplits=true runs
-        // the full k-dimensional CEM with TrySplits enabled.
-        const float score = Ks.RunEMLoop(
-            /*enableSplits=*/   true,
-            /*enableDistDump=*/ false,
-            /*maxIter=*/        0,
-            /*phaseLabel=*/     "sub");
-
-        // Only record if a genuine split occurred — i.e. at least 2 REAL
-        // sub-clusters survived.  Ks.nClustersAlive INCLUDES the noise slot
-        // (always alive even when empty under NoisePoint=0), so the
-        // pre-split parent corresponds to nClustersAlive == 2 (noise + 1
-        // real cluster) and a real split needs nClustersAlive >= 3.
-        // The previous `> 1` guard accepted the no-split case as a "split
-        // into 2 sub-clusters" of which one was always noise — silently
-        // bypassing the BIC gate's intent.
-        if (Ks.nClustersAlive > 2) {
-            rr.score     = score;
-            rr.nClusters = Ks.nClustersAlive;
-            for (int i2 = 0; i2 < wi.nMem; i2++)
-                rr.subClass[static_cast<size_t>(i2)] = Ks.Class[i2];
-        }
-    }
-
-    // Serial reduction: for each item, pick the run with best score.
-    // Writes into results[] which Phase C reads — same structure as before.
-    for (int wi_idx = 0; wi_idx < nItems; wi_idx++) {
-        const WorkItem& wi = items[static_cast<size_t>(wi_idx)];
-        Result& res = results[static_cast<size_t>(wi_idx)];
-        res.ck = wi.ck; res.lc = wi.lc;
-        res.accepted = false; res.bestSubK = 1;
-        // Initialise bestSubClass to 0 (all noise) — overwritten on acceptance.
-        res.bestSubClass.assign(static_cast<size_t>(wi.nMem), 0);
-
-        if (!wi.valid) continue;
-
-        float bestScore = HugeScore;
-        int   bestSubK  = 1;
-        for (int run = 0; run < runsPerSubCluster; run++) {
-            // Index: wi_idx * runsPerSubCluster + run — matches the flat loop above.
-            const RunResult& rr = runResults[
-                static_cast<size_t>(wi_idx * runsPerSubCluster + run)];
-            // rr.nClusters defaults to 1 (no real split this run) and is set
-            // to >= 3 only when the parallel block found a genuine split.
-            if (rr.nClusters > 1 && rr.score < bestScore) {
-                bestScore = rr.score;
-                bestSubK  = rr.nClusters;
-                // Copy — not move — so runResults stays valid if we iterate again.
-                res.bestSubClass = rr.subClass;
-            }
-        }
-        // Categorise outcome for the end-of-phase summary.
-        if (bestSubK <= 1) {
-            ++nRejNoSplit;     // no run produced a real split
-        } else if (bestScore >= wi.nullScore) {
-            ++nRejWorseNull;   // best split is worse than the unsplit null
-        } else {
-            res.accepted     = true;
-            res.bestSubK     = bestSubK;
-            res.bestSubScore = bestScore;
-            ++nAccepted;
-        }
-    }
-
-    // ── Phase C: serial result application ─────────────────────────────────
-    // Apply accepted splits to perChunkClass and perChunkModels.
-    // Serial within each chunk because nextLocalId is per-chunk shared state.
-    int totalSplit = 0;
-    for (int ck = 0; ck < nCh; ck++) {
-        auto& cls  = perChunkClass[ck];
-        auto& mdls = perChunkModels[ck];
-        const auto& pts  = chunkPoints[ck];
-        const int   nPts = static_cast<int>(pts.size());
-
-        // Highest existing ID (rebuilt per chunk)
-        int nextLocalId = 0;
-        for (const auto& cm : mdls)
-            if (cm.localClusterId > nextLocalId) nextLocalId = cm.localClusterId;
-        nextLocalId++;
-
-        for (int wi_idx = 0; wi_idx < nItems; wi_idx++) {
-            const WorkItem& wi  = items[static_cast<size_t>(wi_idx)];
-            const Result&   res = results[static_cast<size_t>(wi_idx)];
-            if (res.ck != ck || !res.accepted) continue;
-
-            const int lc   = wi.lc;
-            const int nMem = wi.nMem;
-
-            std::unordered_map<int,int> subToLocal;
-            subToLocal[res.bestSubClass[0]] = lc;
-            for (int i2 = 0; i2 < nMem; i2++) {
-                int sc = res.bestSubClass[static_cast<size_t>(i2)];
-                if (!subToLocal.count(sc)) subToLocal[sc] = nextLocalId++;
-            }
-
-            Output("  SubspaceRecluster: chunk%d cluster%d -> %d sub-clusters "
-                   "(subScore=%.4g < null=%.4g)\n",
-                   ck, lc, res.bestSubK, res.bestSubScore, wi.nullScore);
-
-            for (int i2 = 0; i2 < nMem; i2++)
-                cls[static_cast<size_t>(wi.members[static_cast<size_t>(i2)])] =
-                    subToLocal[res.bestSubClass[static_cast<size_t>(i2)]];
-
-            // P2.G: per-sub-cluster shift-probe loop deleted.  The previous
-            // body built `sub` (global-spike-index list per new sub-cluster)
-            // and discarded it via `(void)sub;` — pure dead work.  The
-            // intended TimeShiftSplit hook was removed earlier; if a future
-            // refeaturization step is added back, it goes here.
-
-            mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
-                [lc](const ChunkModel& m){ return m.localClusterId == lc; }),
-                mdls.end());
-
-            for (auto& [sc2, newLc] : subToLocal) {
-                ChunkModel cm;
-                cm.chunkIdx = ck; cm.localClusterId = newLc;
-                cm.globalClusterId = -1; cm.nMembers = 0;
-                cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
-                cm.cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
-                for (int i2 = 0; i2 < nPts; i2++) {
-                    if (cls[static_cast<size_t>(i2)] != newLc) continue;
-                    const int p2 = pts[static_cast<size_t>(i2)];
-                    for (int d = 0; d < nFullDims; d++)
-                        cm.mean[static_cast<size_t>(d)] += Data[p2 * nDims + d];
-                    cm.nMembers++;
-                }
-                if (cm.nMembers > 0)
-                    for (float& v : cm.mean) v /= cm.nMembers;
-                for (int i2 = 0; i2 < nPts; i2++) {
-                    if (cls[static_cast<size_t>(i2)] != newLc) continue;
-                    const int p2 = pts[static_cast<size_t>(i2)];
-                    for (int r = 0; r < nFullDims; r++)
-                        for (int cc2 = r; cc2 < nFullDims; cc2++) {
-                            float dr = Data[p2 * nDims + r]   - cm.mean[static_cast<size_t>(r)];
-                            float dc = Data[p2 * nDims + cc2] - cm.mean[static_cast<size_t>(cc2)];
-                            cm.cov[r * nFullDims + cc2] += dr * dc;
-                        }
-                }
-                if (cm.nMembers > 1)
-                    for (float& v : cm.cov) v /= static_cast<float>(cm.nMembers - 1);
-                mdls.push_back(std::move(cm));
-            }
-            totalSplit++;
-        }
-    }
-
-    // End-of-phase stderr summary — always visible regardless of Log setting.
-    // Counts cover the full filter funnel:
-    //   visited = alive non-noise clusters seen by the outer loop
-    //   skipped = filtered out before parallel CEM (too-small, degenerate)
-    //   queued  = made it into the parallel CEM pool
-    //   accepted = passed BIC gate AND beat the unsplit null
-    //   rejected = explored but didn't produce a usable split
-    fprintf(stderr,
-            "[Phase 2]  Per-chunk subspace recluster: %d split / %d queued "
-            "(visited %d, skipped: %d too-small <%d / %d degenerate; "
-            "rejected: %d no-split / %d worse-than-null)\n",
-            totalSplit, nQueued,
-            nVisited, nSkipTooSmall, minSpikes, nSkipBadNull,
-            nRejNoSplit, nRejWorseNull);
-}
 
 
 
