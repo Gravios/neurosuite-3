@@ -6904,7 +6904,68 @@ void KK::PerClusterCEMPerChunk(
         // time at copy-in time gives us correct stride throughout (no
         // reliance on CEMTwoPhase's nDims-mutation trick) and matches
         // the standalone Klusters recluster path.
-        const int nSubDims = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+        const int nSpatialDimsFull = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+
+        // ── Per-cluster feature selection ─────────────────────────
+        // When SubspaceDims > 0 and < nSpatialDimsFull, rank the
+        // spatial features by within-cluster variance over this item's
+        // members and pick the top SubspaceDims.  CEM then runs in a
+        // K-dim subspace.
+        //
+        // Why: with K=21 spatial dims and ~1000 spikes per cluster,
+        // each Gaussian costs 21+231=252 BIC parameters → log(N)·252/2
+        // ≈ 880 BIC units per cluster, which rejects every marginal
+        // split.  At K=6, the cost drops to 6+21=27 params → ~95 BIC
+        // units, comparable to what classic KlustaKwik with
+        // -UseFeatures (auto-4) operates on.  Marginal real bimodal
+        // pairs that get rejected at 21 dims pass cleanly at 6.
+        //
+        // Selection is per-item (each cluster picks its own best
+        // features) — a cluster contaminated mainly along ch3-PC2
+        // and ch5-PC1 will have those features ranked high; another
+        // cluster with different sub-structure picks different ones.
+        // Each picked feature stays interpretable (it's still
+        // "PC_i of channel_j" in the original .fetD layout).
+        int  nSubDims;                          // active dim count for CEM
+        std::vector<int> selFeat;               // indices into spatial dims [0..nSpatialDimsFull)
+
+        if (SubspaceDims > 0 && SubspaceDims < nSpatialDimsFull) {
+            // Compute per-feature mean and variance on this cluster's spikes.
+            std::vector<double> sum(nSpatialDimsFull, 0.0);
+            std::vector<double> sqsum(nSpatialDimsFull, 0.0);
+            for (int i = 0; i < nMem; i++) {
+                const int p = pts[static_cast<size_t>(item.members[static_cast<size_t>(i)])];
+                for (int d = 0; d < nSpatialDimsFull; d++) {
+                    const double v = Data[static_cast<size_t>(p) * nFullDims + d];
+                    sum[d]   += v;
+                    sqsum[d] += v * v;
+                }
+            }
+            std::vector<std::pair<double,int>> rank(nSpatialDimsFull);
+            const double invN = 1.0 / nMem;
+            for (int d = 0; d < nSpatialDimsFull; d++) {
+                const double m  = sum[d] * invN;
+                const double v  = std::max(0.0, sqsum[d] * invN - m * m);
+                rank[d] = {v, d};
+            }
+            std::sort(rank.begin(), rank.end(),
+                      [](const auto& a, const auto& b){ return a.first > b.first; });
+
+            nSubDims = SubspaceDims;
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int k = 0; k < nSubDims; k++)
+                selFeat[static_cast<size_t>(k)] = rank[static_cast<size_t>(k)].second;
+            // Sort selected indices ascending so the packed columns
+            // remain in original feature order — purely cosmetic, but
+            // makes any debug printout interpretable.
+            std::sort(selFeat.begin(), selFeat.end());
+        } else {
+            // No subspace: use all spatial features in original order.
+            nSubDims = nSpatialDimsFull;
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int d = 0; d < nSubDims; d++)
+                selFeat[static_cast<size_t>(d)] = d;
+        }
 
         KK Ks;
         Ks.nDims              = nSubDims;
@@ -6918,12 +6979,14 @@ void KK::PerClusterCEMPerChunk(
         Ks.AllocateCholeskyVecs();
         Ks.ReinitForSplit(nMem, nSubDims, penaltyMix);
 
-        // Pack data WITHOUT the time column (last dim of source).
+        // Pack data using selected features only.  Stride = nSubDims.
         for (int i = 0; i < nMem; i++) {
             const int p = pts[static_cast<size_t>(item.members[static_cast<size_t>(i)])];
-            for (int d = 0; d < nSubDims; d++)
-                Ks.Data[static_cast<size_t>(i) * nSubDims + d] =
+            for (int k = 0; k < nSubDims; k++) {
+                const int d = selFeat[static_cast<size_t>(k)];
+                Ks.Data[static_cast<size_t>(i) * nSubDims + k] =
                     Data[static_cast<size_t>(p) * nFullDims + d];
+            }
         }
         Ks.timeRawMin = timeRawMin;
         Ks.timeRawMax = timeRawMax;
@@ -7116,7 +7179,50 @@ void KK::ChunkReCEMPerChunk(
         // large) and its parameter cost in BIC inflates the rejection
         // bar for marginal spatial splits.  Stripping time at copy-in
         // gives consistent stride throughout.
-        const int nSubDims = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+        const int nSpatialDimsFull = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+
+        // ── Per-chunk feature selection ──────────────────────────
+        // Same mechanism as Phase 2a (see comment there).  Phase 2b
+        // operates on the chunk's full spike set rather than one
+        // cluster's spikes, so within-chunk variance ranks features
+        // by overall spread across all units in the chunk — features
+        // along which the chunk's spike cloud is fattest.  Those are
+        // the directions where multi-unit structure can hide; CEM
+        // discovers it.
+        int  nSubDims;
+        std::vector<int> selFeat;
+
+        if (SubspaceDims > 0 && SubspaceDims < nSpatialDimsFull) {
+            std::vector<double> sum(nSpatialDimsFull, 0.0);
+            std::vector<double> sqsum(nSpatialDimsFull, 0.0);
+            for (int i = 0; i < nPts; i++) {
+                const int p = pts[static_cast<size_t>(i)];
+                for (int d = 0; d < nSpatialDimsFull; d++) {
+                    const double v = Data[static_cast<size_t>(p) * nFullDims + d];
+                    sum[d]   += v;
+                    sqsum[d] += v * v;
+                }
+            }
+            std::vector<std::pair<double,int>> rank(nSpatialDimsFull);
+            const double invN = 1.0 / nPts;
+            for (int d = 0; d < nSpatialDimsFull; d++) {
+                const double m = sum[d] * invN;
+                const double v = std::max(0.0, sqsum[d] * invN - m * m);
+                rank[d] = {v, d};
+            }
+            std::sort(rank.begin(), rank.end(),
+                      [](const auto& a, const auto& b){ return a.first > b.first; });
+            nSubDims = SubspaceDims;
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int k = 0; k < nSubDims; k++)
+                selFeat[static_cast<size_t>(k)] = rank[static_cast<size_t>(k)].second;
+            std::sort(selFeat.begin(), selFeat.end());
+        } else {
+            nSubDims = nSpatialDimsFull;
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int d = 0; d < nSubDims; d++)
+                selFeat[static_cast<size_t>(d)] = d;
+        }
 
         KK Ks;
         Ks.nDims              = nSubDims;
@@ -7130,12 +7236,14 @@ void KK::ChunkReCEMPerChunk(
         Ks.AllocateCholeskyVecs();
         Ks.ReinitForSplit(nPts, nSubDims, penaltyMix);
 
-        // Pack data WITHOUT the time column.
+        // Pack data using selected features only.
         for (int i = 0; i < nPts; i++) {
             const int p = pts[static_cast<size_t>(i)];
-            for (int d = 0; d < nSubDims; d++)
-                Ks.Data[static_cast<size_t>(i) * nSubDims + d] =
+            for (int k = 0; k < nSubDims; k++) {
+                const int d = selFeat[static_cast<size_t>(k)];
+                Ks.Data[static_cast<size_t>(i) * nSubDims + k] =
                     Data[static_cast<size_t>(p) * nFullDims + d];
+            }
         }
         Ks.timeRawMin = timeRawMin;
         Ks.timeRawMax = timeRawMax;
@@ -7180,13 +7288,17 @@ void KK::ChunkReCEMPerChunk(
         // Refresh Mean/Cov for ChunkModel build
         Ks.MStep();
 
-        // Rebuild ChunkModel list from Ks.Mean / Ks.Cov.  Note: Ks operates
-        // on nSubDims (time excluded), so Ks.Mean has stride nSubDims and
-        // Ks.Cov has stride nSubDims²; we copy these into a ChunkModel
-        // sized at nFullDims with the trailing row/col (time) left at zero.
-        // Downstream consumers (Phase 6 since patch2) don't use the time
-        // row/col any more, but we preserve the nFullDims schema so the
-        // ChunkModel layout matches Phase 1's models exactly.
+        // Rebuild ChunkModel list from Ks.Mean / Ks.Cov.
+        //
+        // Ks operated on `nSubDims` selected features (could be < the
+        // full spatial dim count when -SubspaceDims > 0).  Map each
+        // Ks-internal index k back to its original spatial slot via
+        // selFeat[k], so cm.mean/cov are indexed by the canonical
+        // nFullDims layout regardless of which features Ks used.
+        //
+        // selFeat is ascending-sorted, so selFeat[r] < selFeat[col]
+        // when r < col, which preserves the upper-triangle schema.
+        // Unused spatial dims (and the time row/col) stay zero.
         std::vector<ChunkModel> newMdls;
         newMdls.reserve(static_cast<size_t>(Ks.nClustersAlive));
         for (int cc = 0; cc < Ks.nClustersAlive; cc++) {
@@ -7198,15 +7310,20 @@ void KK::ChunkReCEMPerChunk(
             cm.nMembers        = 0;
             cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
             cm.cov.assign (static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
-            // Copy only the spatial submatrix; time row/col stays zero.
-            for (int d = 0; d < nSubDims; d++)
+            for (int k = 0; k < nSubDims; k++) {
+                const int d = selFeat[static_cast<size_t>(k)];
                 cm.mean[static_cast<size_t>(d)] =
-                    Ks.Mean[static_cast<size_t>(c) * nSubDims + d];
-            for (int r = 0; r < nSubDims; r++)
-                for (int col = r; col < nSubDims; col++)
-                    cm.cov[static_cast<size_t>(r) * nFullDims + col] =
+                    Ks.Mean[static_cast<size_t>(c) * nSubDims + k];
+            }
+            for (int r = 0; r < nSubDims; r++) {
+                const int rd = selFeat[static_cast<size_t>(r)];
+                for (int col = r; col < nSubDims; col++) {
+                    const int cd = selFeat[static_cast<size_t>(col)];
+                    cm.cov[static_cast<size_t>(rd) * nFullDims + cd] =
                         Ks.Cov[static_cast<size_t>(c) * Ks.nDims2
                               + r * nSubDims + col];
+                }
+            }
             for (int i = 0; i < nPts; i++)
                 if (Ks.Class[i] == c) cm.nMembers++;
             if (cm.nMembers == 0) continue;
