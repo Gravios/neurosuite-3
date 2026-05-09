@@ -3700,9 +3700,11 @@ float KK::RunChunkedCEM(float chunkMinutes,
     const float chunkFrac    = chunkSamples / sessionSamples;
     const int   nChunks      = std::max(1, static_cast<int>(std::ceil(1.0f / chunkFrac)));
 
-    fprintf(stderr, "[Phase 0] Chunking (%.0f min, %d chunks, %.0f min/chunk; "
-                    "preseed disabled — per-chunk random-init CEM)\n",
-            sessionSamples / samplingRate / 60.0f, nChunks, chunkMinutes);
+    fprintf(stderr, "[Phase 0] Chunking (%.0f min, %d chunks, %.0f min/chunk; %s)\n",
+            sessionSamples / samplingRate / 60.0f, nChunks, chunkMinutes,
+            (chunkPreseedFraction > 0.0f)
+                ? "global preseed enabled"
+                : "preseed disabled — per-chunk random-init CEM");
     Output("RunChunkedCEM: session %.1f min, chunk %.1f min, %d chunks\n",
            sessionSamples / samplingRate / 60.0f, chunkMinutes, nChunks);
 
@@ -3781,19 +3783,41 @@ float KK::RunChunkedCEM(float chunkMinutes,
     Output("Active chunks: %d\n", nActive);
 
     // -------------------------------------------------------------------
-    // Phase 0: DISABLED.
+    // Phase 0: optional global preseed (re-enabled in patch10).
     //
-    // The previous global-preseed step (PreseedSubsampleCEM) is no longer
-    // run.  Each chunk now uses an independent random-start CEM (see the
-    // chunkInitRandom flag below), which is faster, simpler, and avoids
-    // the bias that comes from initialising every chunk's centres from
-    // the same global subsample.  The -ChunkPreseedFraction flag is
-    // ignored (kept parseable for backward CLI compatibility).
+    // When chunkPreseedFraction > 0, sample that fraction of spikes
+    // globally and run a single CEMTwoPhase on the subsample to get
+    // shared starting centres for every chunk in Phase 1.  Pros: chunks
+    // start from a coherent global cluster picture, which can stabilise
+    // small/sparse chunks and helps Phase 6 cross-chunk matching.
+    // Cons: bias — every chunk inherits the same initial bias from the
+    // subsample, and rare units that are absent from the subsample get
+    // no preseed centre at all.
+    //
+    // When chunkPreseedFraction <= 0, skip this and let each chunk run
+    // its own random-init CEM (the patch6 default).  In that mode
+    // chunkInitRandom = true gates the per-thread KK to use
+    // irand(1, nCentres) per spike rather than farthest-point init.
+    //
+    // Set -ChunkPreseedFraction 0 (or omit) to keep the patch6 default.
+    // Set -ChunkPreseedFraction 0.05..0.20 to A/B test against random
+    // init.  PreseedSubsampleCEM emits its own progress lines.
     // -------------------------------------------------------------------
-    std::vector<float> globalPreseedCentres;  // intentionally empty
-    if (chunkPreseedFraction > 0.0f)
-        Output("Note: -ChunkPreseedFraction %.3f is ignored — chunked mode "
-               "uses per-chunk random init.\n", chunkPreseedFraction);
+    std::vector<float> globalPreseedCentres;
+    if (chunkPreseedFraction > 0.0f) {
+        Output("Phase 0: global preseed (fraction=%.3f, nCentres=%d)\n",
+               chunkPreseedFraction, MaxClusters - 1);
+        globalPreseedCentres = PreseedSubsampleCEM(
+            chunkPreseedFraction, MaxClusters - 1,
+            nSpatialDims, timeMergeIter);
+        if (globalPreseedCentres.empty()) {
+            Output("Phase 0: preseed produced no centres — falling back to "
+                   "per-chunk random init.\n");
+        } else {
+            Output("Phase 0: preseed produced %zu centres × %d spatial dims\n",
+                   globalPreseedCentres.size() / nSpatialDims, nSpatialDims);
+        }
+    }
 
     // -------------------------------------------------------------------
     // Phase 1: per-chunk CEMTwoPhase — parallel over chunks
