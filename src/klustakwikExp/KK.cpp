@@ -2163,7 +2163,18 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     // method selected by `-InitMethod` (default farthest).
     const int nCentres = nStartingClusters - 1;  // noise cluster is always 0
     if (nCentres >= 1) {
-        if (!preseedCentres.empty() &&
+        if (chunkInitRandom) {
+            // Chunked path forces random Class[] init regardless of the
+            // user's -InitMethod or preseed: each chunk runs a fresh
+            // independent random-start KK.  The canonical pattern matches
+            // KK.cpp:1506 (original KlustaKwik random-init).
+            for (int p = 0; p < nPoints; p++)
+                Class[p] = irand(1, nCentres);
+            for (int c = 0; c < MaxPossibleClusters; c++)
+                ClassAlive[c] = (c < nStartingClusters);
+            Reindex();
+            // No InitClassFromCentres: Class[] is already set.
+        } else if (!preseedCentres.empty() &&
             static_cast<int>(preseedCentres.size()) >= nCentres * nSpatialDims) {
             // Copy preseed centres into Centres[]; zero the time column.
             Centres.SetSize(nCentres * nDims);
@@ -2173,18 +2184,30 @@ float KK::CEMTwoPhase(int timeMergeIter) {
                 if (nDims > nSpatialDims)
                     Centres[k * nDims + nSpatialDims] = 0.0f;  // time column
             }
+            for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
+            Reindex();
+            InitClassFromCentres(nSpatialDims);
+        } else if (std::strcmp(InitMethod, "random") == 0) {
+            // -InitMethod random: real random Class[] init for any caller.
+            for (int p = 0; p < nPoints; p++)
+                Class[p] = irand(1, nCentres);
+            for (int c = 0; c < MaxPossibleClusters; c++)
+                ClassAlive[c] = (c < nStartingClusters);
+            Reindex();
         } else if (std::strcmp(InitMethod, "kmeans++") == 0) {
             InitCentresKMeansPP(nCentres, nSpatialDims);
+            for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
+            Reindex();
+            InitClassFromCentres(nSpatialDims);
         } else {
             // Default: deterministic farthest-point.  Selected explicitly
             // by `-InitMethod farthest` and as the fallback for any other
-            // value (preserves canonical KlustaKwik behaviour for the
-            // unrecognised `random` option).
+            // unrecognised value.
             InitCentresFarthestPoint(nCentres, nSpatialDims);
+            for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
+            Reindex();
+            InitClassFromCentres(nSpatialDims);
         }
-        for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
-        Reindex();
-        InitClassFromCentres(nSpatialDims);
     } else {
         for (int p = 0; p < nPoints; p++) Class[p] = 0;
         for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = (c < nStartingClusters);
@@ -2888,7 +2911,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (normBounds[i] > 1.0f) normBounds[i] = 1.0f;
     }
 
-    fprintf(stderr, "[Phase 0] Preseed (%.0f min, %d drift-adaptive chunks)\n",
+    fprintf(stderr, "[Phase 0] Chunking (%.0f min, %d drift-adaptive chunks; "
+                    "per-chunk random-init CEM)\n",
             sessionSamples / samplingRate / 60.0f, nChunks);
     Output("RunChunkedCEM(ext): session %.1f min, %d drift-adaptive chunks\n",
            sessionSamples / samplingRate / 60.0f, nChunks);
@@ -2976,6 +3000,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         threadKc[t].penaltyMix        = penaltyMix;
         threadKc[t].suppressBestSave  = true;
         threadKc[t].minClustersAlive  = nStartingClusters;
+        threadKc[t].chunkInitRandom   = true;  // per-chunk random init
         threadKc[t].AllocateArrays();
         threadKc[t].AllocateCholeskyVecs();
     }
@@ -3675,7 +3700,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
     const float chunkFrac    = chunkSamples / sessionSamples;
     const int   nChunks      = std::max(1, static_cast<int>(std::ceil(1.0f / chunkFrac)));
 
-    fprintf(stderr, "[Phase 0] Preseed (%.0f min, %d chunks, %.0f min/chunk)\n",
+    fprintf(stderr, "[Phase 0] Chunking (%.0f min, %d chunks, %.0f min/chunk; "
+                    "preseed disabled — per-chunk random-init CEM)\n",
             sessionSamples / samplingRate / 60.0f, nChunks, chunkMinutes);
     Output("RunChunkedCEM: session %.1f min, chunk %.1f min, %d chunks\n",
            sessionSamples / samplingRate / 60.0f, chunkMinutes, nChunks);
@@ -3755,19 +3781,19 @@ float KK::RunChunkedCEM(float chunkMinutes,
     Output("Active chunks: %d\n", nActive);
 
     // -------------------------------------------------------------------
-    // Phase 0.5: global preseed — cluster a random subsample to get
-    // globally-informed starting centres for every chunk.
-    // Only runs when chunkPreseedFraction > 0.
+    // Phase 0: DISABLED.
+    //
+    // The previous global-preseed step (PreseedSubsampleCEM) is no longer
+    // run.  Each chunk now uses an independent random-start CEM (see the
+    // chunkInitRandom flag below), which is faster, simpler, and avoids
+    // the bias that comes from initialising every chunk's centres from
+    // the same global subsample.  The -ChunkPreseedFraction flag is
+    // ignored (kept parseable for backward CLI compatibility).
     // -------------------------------------------------------------------
-    std::vector<float> globalPreseedCentres;
-    if (chunkPreseedFraction > 0.0f) {
-        globalPreseedCentres = PreseedSubsampleCEM(
-            chunkPreseedFraction, MaxClusters - 1,
-            nSpatialDims, timeMergeIter);
-        if (globalPreseedCentres.empty())
-            Output("PreseedSubsampleCEM returned no centres — "
-                   "chunks will use farthest-point seeding.\n");
-    }
+    std::vector<float> globalPreseedCentres;  // intentionally empty
+    if (chunkPreseedFraction > 0.0f)
+        Output("Note: -ChunkPreseedFraction %.3f is ignored — chunked mode "
+               "uses per-chunk random init.\n", chunkPreseedFraction);
 
     // -------------------------------------------------------------------
     // Phase 1: per-chunk CEMTwoPhase — parallel over chunks
@@ -3820,6 +3846,11 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // the outer loop's nStartingClusters.  The preseed already found a good
     // partition of the full dataset, so seeding chunks at that K avoids the
     // slow bottom-up split cascade from K=2.
+    //
+    // With Phase 0 preseed disabled (default), globalPreseedCentres is always
+    // empty and chunkStartK falls back to nStartingClusters.  Each chunk
+    // starts at K = nStartingClusters with random Class[] init via
+    // chunkInitRandom — TrySplits and ConsiderDeletion settle K from there.
     const int chunkStartK = (!globalPreseedCentres.empty())
         ? static_cast<int>(globalPreseedCentres.size() / nSpatialDims) + 1
         : nStartingClusters;
@@ -3831,10 +3862,14 @@ float KK::RunChunkedCEM(float chunkMinutes,
         threadKc[t].nStartingClusters = chunkStartK;
         threadKc[t].penaltyMix        = penaltyMix;
         threadKc[t].suppressBestSave  = true;
-        // Use chunkStartK as the deletion floor so chunks don't collapse below
-        // the preseed K.  minClustersAlive=2 when no preseed (normal behaviour).
-        threadKc[t].minClustersAlive  = std::max(2, chunkStartK - 4);
-        threadKc[t].preseedCentres    = globalPreseedCentres;  // shared read-only
+        // Deletion floor: with preseed, hold near chunkStartK to preserve
+        // the preseed's K.  Without preseed (default), drop to 2 so CEM
+        // can shrink down naturally from random init.
+        threadKc[t].minClustersAlive  = (!globalPreseedCentres.empty())
+            ? std::max(2, chunkStartK - 4)
+            : 2;
+        threadKc[t].preseedCentres    = globalPreseedCentres;  // empty by default
+        threadKc[t].chunkInitRandom   = globalPreseedCentres.empty();
         threadKc[t].AllocateArrays();
         threadKc[t].AllocateCholeskyVecs();
     }
