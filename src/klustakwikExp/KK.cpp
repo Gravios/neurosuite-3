@@ -6784,9 +6784,25 @@ void KK::PerClusterCEMPerChunk(
         const int   nMem = static_cast<int>(item.members.size());
         const auto& pts  = chunkPoints[item.ck];
 
-        // Build sub-KK with only this cluster's spikes (full feature space)
+        // Build sub-KK with only this cluster's spikes.
+        //
+        // SPATIAL-ONLY: time (last dim) is excluded.  Reasoning: this is
+        // the same recluster that Klusters performs when the user "splits"
+        // a cluster — Klusters spawns KlustaKwikExp on the cluster's
+        // spikes, which runs CEMTwoPhase whose Phase 1 is spatial-only
+        // (excludes time).  TrySplits on full-dim data was rejecting
+        // bimodal pairs whose split improvement was below the BIC penalty
+        // because the time dim's parameter cost was being counted in the
+        // penalty without contributing meaningfully to the spatial
+        // discrimination (per-cluster time variance ≈ chunk duration is
+        // large, so time's Mahalanobis contribution is weak).  Stripping
+        // time at copy-in time gives us correct stride throughout (no
+        // reliance on CEMTwoPhase's nDims-mutation trick) and matches
+        // the standalone Klusters recluster path.
+        const int nSubDims = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+
         KK Ks;
-        Ks.nDims              = nFullDims;
+        Ks.nDims              = nSubDims;
         Ks.nPoints            = nMem;
         Ks.penaltyMix         = penaltyMix;
         Ks.suppressBestSave   = true;
@@ -6795,12 +6811,13 @@ void KK::PerClusterCEMPerChunk(
 
         Ks.AllocateArrays();
         Ks.AllocateCholeskyVecs();
-        Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
+        Ks.ReinitForSplit(nMem, nSubDims, penaltyMix);
 
+        // Pack data WITHOUT the time column (last dim of source).
         for (int i = 0; i < nMem; i++) {
             const int p = pts[static_cast<size_t>(item.members[static_cast<size_t>(i)])];
-            for (int d = 0; d < nFullDims; d++)
-                Ks.Data[static_cast<size_t>(i) * nFullDims + d] =
+            for (int d = 0; d < nSubDims; d++)
+                Ks.Data[static_cast<size_t>(i) * nSubDims + d] =
                     Data[static_cast<size_t>(p) * nFullDims + d];
         }
         Ks.timeRawMin = timeRawMin;
@@ -6948,9 +6965,20 @@ void KK::ChunkReCEMPerChunk(
 
         const int aliveBefore = static_cast<int>(uniqueLcs.size());
 
-        // Build sub-KK warm-started from cls0
+        // Build sub-KK warm-started from cls0.
+        //
+        // SPATIAL-ONLY: time excluded.  Same rationale as Phase 2a — the
+        // standalone Klusters recluster path runs CEMTwoPhase which is
+        // spatial-only in Phase 1, so chunk re-CEM should match that for
+        // bimodality discovery.  Time as a feature within a single chunk
+        // is weak signal (per-cluster time variance ≈ chunk duration is
+        // large) and its parameter cost in BIC inflates the rejection
+        // bar for marginal spatial splits.  Stripping time at copy-in
+        // gives consistent stride throughout.
+        const int nSubDims = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+
         KK Ks;
-        Ks.nDims              = nFullDims;
+        Ks.nDims              = nSubDims;
         Ks.nPoints            = nPts;
         Ks.penaltyMix         = penaltyMix;
         Ks.suppressBestSave   = true;
@@ -6959,12 +6987,13 @@ void KK::ChunkReCEMPerChunk(
 
         Ks.AllocateArrays();
         Ks.AllocateCholeskyVecs();
-        Ks.ReinitForSplit(nPts, nFullDims, penaltyMix);
+        Ks.ReinitForSplit(nPts, nSubDims, penaltyMix);
 
+        // Pack data WITHOUT the time column.
         for (int i = 0; i < nPts; i++) {
             const int p = pts[static_cast<size_t>(i)];
-            for (int d = 0; d < nFullDims; d++)
-                Ks.Data[static_cast<size_t>(i) * nFullDims + d] =
+            for (int d = 0; d < nSubDims; d++)
+                Ks.Data[static_cast<size_t>(i) * nSubDims + d] =
                     Data[static_cast<size_t>(p) * nFullDims + d];
         }
         Ks.timeRawMin = timeRawMin;
@@ -7010,8 +7039,13 @@ void KK::ChunkReCEMPerChunk(
         // Refresh Mean/Cov for ChunkModel build
         Ks.MStep();
 
-        // Rebuild ChunkModel list from Ks.Mean / Ks.Cov.  Mirrors the
-        // canonical pattern from Phase 1 seeding (KK.cpp:3198-3218).
+        // Rebuild ChunkModel list from Ks.Mean / Ks.Cov.  Note: Ks operates
+        // on nSubDims (time excluded), so Ks.Mean has stride nSubDims and
+        // Ks.Cov has stride nSubDims²; we copy these into a ChunkModel
+        // sized at nFullDims with the trailing row/col (time) left at zero.
+        // Downstream consumers (Phase 6 since patch2) don't use the time
+        // row/col any more, but we preserve the nFullDims schema so the
+        // ChunkModel layout matches Phase 1's models exactly.
         std::vector<ChunkModel> newMdls;
         newMdls.reserve(static_cast<size_t>(Ks.nClustersAlive));
         for (int cc = 0; cc < Ks.nClustersAlive; cc++) {
@@ -7023,14 +7057,15 @@ void KK::ChunkReCEMPerChunk(
             cm.nMembers        = 0;
             cm.mean.assign(static_cast<size_t>(nFullDims), 0.0f);
             cm.cov.assign (static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
-            for (int d = 0; d < nFullDims; d++)
+            // Copy only the spatial submatrix; time row/col stays zero.
+            for (int d = 0; d < nSubDims; d++)
                 cm.mean[static_cast<size_t>(d)] =
-                    Ks.Mean[static_cast<size_t>(c) * nFullDims + d];
-            for (int r = 0; r < nFullDims; r++)
-                for (int col = r; col < nFullDims; col++)
+                    Ks.Mean[static_cast<size_t>(c) * nSubDims + d];
+            for (int r = 0; r < nSubDims; r++)
+                for (int col = r; col < nSubDims; col++)
                     cm.cov[static_cast<size_t>(r) * nFullDims + col] =
                         Ks.Cov[static_cast<size_t>(c) * Ks.nDims2
-                              + r * nFullDims + col];
+                              + r * nSubDims + col];
             for (int i = 0; i < nPts; i++)
                 if (Ks.Class[i] == c) cm.nMembers++;
             if (cm.nMembers == 0) continue;
