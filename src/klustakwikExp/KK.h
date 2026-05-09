@@ -182,6 +182,15 @@ public:
         int localClusterId;
         int globalClusterId;  // -1 until assigned by MergeChunkModels
         int nMembers;
+        // Per-edge member counts — needed so Phase 5 (within-chunk merge)
+        // can do mathematically-correct weighted averaging of meanWavLeft
+        // and meanWavRight when merging two clusters.  Without these, the
+        // surviving model's edge means would still reflect only one of
+        // the merged clusters' edge spikes after Phase 5, giving Phase 6
+        // stale templates.  Populated by Phase 4 mean-waveform harvest;
+        // updated by Phase 5 merge.
+        int nMembersLeft  = 0;
+        int nMembersRight = 0;
         std::vector<float>   mean;    // [nDims]
         std::vector<float>   cov;     // [nDims*nDims], upper triangle populated
         std::vector<int16_t> meanWav; // [nChan*nSamples] channel-major, for template matching

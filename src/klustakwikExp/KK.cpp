@@ -3364,6 +3364,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     for (int e = 0; e < wElems; e++)
                         cm->meanWavLeft[static_cast<size_t>(e)] =
                             static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                    cm->nMembersLeft = n2;
                 }
                 for (auto& [lc, a] : accRight) {
                     const int n2 = nAccRight[lc];
@@ -3374,6 +3375,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     for (int e = 0; e < wElems; e++)
                         cm->meanWavRight[static_cast<size_t>(e)] =
                             static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                    cm->nMembersRight = n2;
                 }
             }
             fclose(spkTM);
@@ -4257,6 +4259,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     for (int e = 0; e < wElems; e++)
                         cm->meanWavLeft[static_cast<size_t>(e)] =
                             static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                    cm->nMembersLeft = n2;
                 }
                 for (auto& [lc, a] : accRight) {
                     const int n2 = nAccRight[lc];
@@ -4267,6 +4270,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     for (int e = 0; e < wElems; e++)
                         cm->meanWavRight[static_cast<size_t>(e)] =
                             static_cast<int16_t>(a[static_cast<size_t>(e)] / n2);
+                    cm->nMembersRight = n2;
                 }
             }
             fclose(spkTM);
@@ -7510,6 +7514,58 @@ int  KK::WithinChunkTemplateMatch(
         }
         for (auto& lc : cls)
             if (lcRemap.count(lc)) lc = lcRemap[lc];
+
+        // ── Aggregate waveforms from merged-away models into canonicals ───
+        //
+        // Before label remap, accumulate weighted means per canonical
+        // component using each cluster's stored counts as weights.
+        // Without this step, the surviving model's meanWav and
+        // meanWavLeft/Right still reflect ONLY the canonical cluster's
+        // pre-merge spikes — Phase 6 then runs cross-chunk xcorr on
+        // stale templates that don't include the merged-in cluster's
+        // contribution.  This was a real bug that biased Phase 6
+        // decisions.
+        //
+        // Mathematics: arithmetic mean is associative under proper
+        // weighting — mean(A∪B) = (|A|·mean(A) + |B|·mean(B)) / (|A|+|B|).
+        // Per-edge means use the per-edge counts (nMembersLeft/Right)
+        // so spikes that fell outside the edge windows don't pollute
+        // the boundary template.
+        //
+        // dst.nMembers itself is recomputed below from the remapped
+        // cls labels (authoritative); we only need a temporary running
+        // count for weighting the meanWav merge.  nMembersLeft/Right
+        // ARE updated here since they're not recomputed elsewhere.
+        auto wmerge = [](std::vector<int16_t>& d, int& dN,
+                         const std::vector<int16_t>& s, int sN) {
+            if (s.empty() || sN <= 0) return;
+            if (d.empty() || dN <= 0) { d = s; dN = sN; return; }
+            const size_t L = d.size();
+            for (size_t e = 0; e < L; e++) {
+                const int64_t num = static_cast<int64_t>(d[e]) * dN
+                                  + static_cast<int64_t>(s[e]) * sN;
+                d[e] = static_cast<int16_t>(num / (dN + sN));
+            }
+            dN += sN;
+        };
+
+        for (const auto& [root, canonIdx] : rootToCanonIdx) {
+            ChunkModel& dst = mdls[static_cast<size_t>(canonIdx)];
+            int runningN     = dst.nMembers;
+            int runningNLeft = dst.nMembersLeft;
+            int runningNRight= dst.nMembersRight;
+            for (int a = 0; a < n; a++) {
+                if (a == canonIdx) continue;
+                if (Find(a) != root) continue;
+                const ChunkModel& src = mdls[static_cast<size_t>(a)];
+                wmerge(dst.meanWav,      runningN,      src.meanWav,      src.nMembers);
+                wmerge(dst.meanWavLeft,  runningNLeft,  src.meanWavLeft,  src.nMembersLeft);
+                wmerge(dst.meanWavRight, runningNRight, src.meanWavRight, src.nMembersRight);
+            }
+            // Persist the updated edge counts; nMembers is recomputed below.
+            dst.nMembersLeft  = runningNLeft;
+            dst.nMembersRight = runningNRight;
+        }
 
         // Remove merged-away ChunkModels; keep canonical ones
         std::unordered_set<int> keepLc;
