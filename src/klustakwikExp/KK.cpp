@@ -6849,21 +6849,26 @@ void KK::PerClusterCEMPerChunk(
 // ---------------------------------------------------------------------------
 // KK::ChunkReCEMPerChunk
 //
-// Phase 2b: chunk-level warm-start CEM.  After PerClusterCEMPerChunk has
-// produced fine-grained per-cluster splits, this pass runs an ordinary
-// chunk-level CEM seeded from the new fine-grained labels.  The point is
-// to let spikes near sub-cluster boundaries reassign across the chunk's
-// full label set, and to let CEM's ConsiderDeletion merge oversplit
-// fragments back together when the data doesn't support them.
+// Phase 2b: chunk-level CEM with RANDOM initialisation.  After
+// PerClusterCEMPerChunk has produced fine-grained per-cluster splits,
+// this pass runs an ordinary chunk-level CEM seeded with random class
+// assignment (the canonical irand(1, K-1) pattern), with K preserved
+// from the count of distinct non-noise labels in cls0.
 //
-// Splits are kept enabled (unlike the K3 recheck in TrySplits, which
-// disables them for evaluation purposes).  CEM here may discover further
-// structure that per-cluster CEM missed because the per-cluster pass saw
-// only one cluster's spikes — across the chunk, similar-looking spikes
-// from different clusters can drive new splits or unify mistakes.
+// Random init rather than warm-start from cls0: a warm-started CEM
+// converges to the nearest local optimum, which is essentially a
+// refinement of the input labels — it cannot escape local minima
+// Phase 1 and Phase 2a got stuck in.  Random init forces the CEM to
+// re-explore the configuration space at the same K, and TrySplits +
+// ConsiderDeletion within the loop prune empty sub-clusters and merge
+// oversplit groups so the final partition reflects the data's
+// structure rather than the warm-start's biases.
 //
-// Skipped chunks: those with ≤ 2 distinct labels (trivially nothing to
-// reorganise).
+// Splits are kept enabled; CEM may discover further structure or
+// reduce K below nReal via ConsiderDeletion.
+//
+// Skipped chunks: those with fewer than 2 distinct non-noise labels
+// (random init into one cluster is degenerate).
 //
 // ChunkModel rebuild from final Ks.Mean / Ks.Cov.  This replaces all
 // previous ChunkModels for the chunk; cross-chunk Phase 6 reads only
@@ -6879,7 +6884,7 @@ void KK::ChunkReCEMPerChunk(
     if (nCh == 0) return;
 
     fprintf(stderr,
-            "[Phase 2b] Chunk re-CEM (warm-start from fine-grained labels)\n");
+            "[Phase 2b] Chunk re-CEM (random init at K = Phase-2a non-noise label count)\n");
 
     struct ChunkResult {
         bool                    changed = false;
@@ -6930,18 +6935,32 @@ void KK::ChunkReCEMPerChunk(
         Ks.timeRawMin = timeRawMin;
         Ks.timeRawMax = timeRawMax;
 
-        // Set Class[] and ClassAlive[] from the fine-grained labels
-        for (int c = 0; c < MaxPossibleClusters; c++) Ks.ClassAlive[c] = 0;
-        for (int i = 0; i < nPts; i++) {
-            const int c = cls0[static_cast<size_t>(i)];
-            Ks.Class[i] = c;
-            if (c >= 0 && c < MaxPossibleClusters) Ks.ClassAlive[c] = 1;
-        }
+        // Phase 2b uses RANDOM initialisation rather than warm-starting
+        // from Phase 2a's fine-grained labels.  Rationale: a warm-start
+        // converges to the nearest local optimum, essentially refining
+        // cls0 in place; it doesn't escape local minima Phase 1 + 2a got
+        // stuck in.  Random init forces CEM to explore a different region
+        // of the configuration space.  K is preserved from cls0's
+        // distinct non-noise label count, so Phase 2a's structure-
+        // discovery still informs the search scale, but the per-spike
+        // assignment is drawn fresh.
+        int nReal = 0;
+        for (int c : uniqueLcs) if (c > 0) nReal++;
+        if (nReal < 2) continue;  // can't randomise into one cluster
+
+        const int nStart = nReal + 1;  // +1 for noise (cluster 0)
+        Ks.nStartingClusters = nStart;
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            Ks.ClassAlive[c] = (c < nStart) ? 1 : 0;
+        for (int i = 0; i < nPts; i++)
+            Ks.Class[i] = irand(1, nReal);   // [1..nReal] inclusive
         Ks.Reindex();
 
-        // Warm-start: MStep + EStep so RunEMLoop has consistent stats.
-        // Run normal CEM with splits enabled — CEM may discover further
-        // structure or merge oversplit fragments via ConsiderDeletion.
+        // Initial MStep + EStep so RunEMLoop has consistent stats, then
+        // run normal CEM with splits enabled.  TrySplits and
+        // ConsiderDeletion together prune the fresh random init: empty
+        // sub-clusters get deleted, oversplit groups merge, real
+        // structure survives.
         Ks.MStep();
         Ks.EStep();
         Ks.RunEMLoop(/*enableSplits=*/  true,
