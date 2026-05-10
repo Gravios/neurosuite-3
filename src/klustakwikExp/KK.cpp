@@ -7298,10 +7298,19 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
 {
     if (K_init < 1 || N < 1 || D < 1) return std::max(1, K_init);
 
-    // Hyperparameters.  Conservative defaults.
-    const double alpha0 = 1.0;
-    const double beta0  = 1.0;
-    const double nu0    = static_cast<double>(D + 2);  // must exceed D - 1
+    // Hyperparameters from CLI globals (defaults set in KlustaKwik.cpp).
+    // alpha0: Dirichlet concentration.  Lowering (e.g., 0.1) makes the
+    //         prior favour sparser solutions — clusters with weak evidence
+    //         get pruned more aggressively.
+    // beta0:  Normal prior strength on means.
+    // nu0:    Wishart d.o.f.  Must exceed D - 1 for a proper Wishart.  We
+    //         enforce a floor of D + 0.5 to keep numerics stable when the
+    //         user picks a small offset on a high-dim problem.
+    const double alpha0 = static_cast<double>(VBGMMAlpha0);
+    const double beta0  = static_cast<double>(VBGMMBeta0);
+    double       nu0    = static_cast<double>(D)
+                        + static_cast<double>(VBGMMNu0Offset);
+    if (nu0 < D + 0.5) nu0 = D + 0.5;
 
     // Data mean (m0) and per-feature variance (for W0inv = mean_var * I).
     std::vector<double> m0(D, 0.0);
@@ -7790,8 +7799,8 @@ void KK::ChunkReCEMPerChunk(
                 /*K_init=*/ nStart,
                 /*N=*/      nPts,
                 /*D=*/      nSubDims,
-                /*maxIter=*/50,
-                /*convTol=*/1e-3);
+                /*maxIter=*/VBGMMMaxIter,
+                /*convTol=*/static_cast<double>(VBGMMConvTol));
             (void)nSurvivors;
 
             // Write back labels.  VB may have left some k indices unused
@@ -7855,8 +7864,8 @@ void KK::ChunkReCEMPerChunk(
                 /*K_init=*/ K_init,
                 /*N=*/      nPts,
                 /*D=*/      nSubDims,
-                /*maxIter=*/50,
-                /*convTol=*/1e-3);
+                /*maxIter=*/VBGMMMaxIter,
+                /*convTol=*/static_cast<double>(VBGMMConvTol));
             (void)nSurvivors;
 
             for (int i = 0; i < nPts; i++) Ks.Class[i] = labelsBuf[i];

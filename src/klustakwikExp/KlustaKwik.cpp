@@ -103,6 +103,11 @@ int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 di
 int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
 int   TimeShiftSplitEnable   = 0;    ///< apply ±1-sample shift probe at split-test time
 int   Phase2bMode            = 0;    ///< 0 = warm-start CEM, 1 = VB-GMM, 2 = CEM-with-splits + VB-GMM
+int   VBGMMMaxIter           = 50;   ///< VB-GMM max iterations (Phase2bMode 1 or 2)
+float VBGMMConvTol           = 1e-3f;///< VB-GMM convergence tol on max |Δr| across (n,k)
+float VBGMMAlpha0            = 1.0f; ///< VB-GMM Dirichlet concentration; <1 favours sparsity (more pruning)
+float VBGMMBeta0             = 1.0f; ///< VB-GMM Normal prior strength on means
+float VBGMMNu0Offset         = 2.0f; ///< VB-GMM Wishart d.o.f. = D + this; must be > 0
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -198,6 +203,11 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(TimeShiftMergeEnable);
     INT_PARAM(TimeShiftSplitEnable);
     INT_PARAM(Phase2bMode);
+    INT_PARAM(VBGMMMaxIter);
+    FLOAT_PARAM(VBGMMConvTol);
+    FLOAT_PARAM(VBGMMAlpha0);
+    FLOAT_PARAM(VBGMMBeta0);
+    FLOAT_PARAM(VBGMMNu0Offset);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
