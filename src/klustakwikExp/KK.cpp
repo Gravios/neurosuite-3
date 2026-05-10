@@ -3315,6 +3315,12 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     if (fread(row.data(), sizeof(int16_t), wElems, spkTM)
                             != static_cast<size_t>(wElems)) continue;
 
+                    // Apply committed shift (TimeShiftSplitEnable path):
+                    // ensure the harvested waveform geometry matches the
+                    // PCA features in Data[].
+                    ShiftWaveformRowInPlace(row.data(), p2,
+                                            NbChannels, NbSamplesPerSpike);
+
                     // Full-chunk accumulator
                     auto& a = acc[lc];
                     if (a.empty()) a.assign(static_cast<size_t>(wElems), 0);
@@ -3447,6 +3453,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                                    SEEK_SET);
                             if (fread(row2.data(), sizeof(int16_t), wElems, spkTM2)
                                     != static_cast<size_t>(wElems)) continue;
+                            ShiftWaveformRowInPlace(row2.data(), pts2[i],
+                                                    NbChannels, NbSamplesPerSpike);
                             auto& a2 = acc2[lc2];
                             if (a2.empty()) a2.assign(static_cast<size_t>(wElems), 0);
                             for (int ch2 = 0; ch2 < NbChannels; ch2++)
@@ -4210,6 +4218,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     if (fread(row.data(), sizeof(int16_t), wElems, spkTM)
                             != static_cast<size_t>(wElems)) continue;
 
+                    // Apply committed shift (TimeShiftSplitEnable path):
+                    // ensure the harvested waveform geometry matches the
+                    // PCA features in Data[].
+                    ShiftWaveformRowInPlace(row.data(), p2,
+                                            NbChannels, NbSamplesPerSpike);
+
                     // Full-chunk accumulator
                     auto& a = acc[lc];
                     if (a.empty()) a.assign(static_cast<size_t>(wElems), 0);
@@ -4384,6 +4398,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
                                    SEEK_SET);
                             if (fread(row2.data(), sizeof(int16_t), wElems, spkTM2)
                                     != static_cast<size_t>(wElems)) continue;
+                            ShiftWaveformRowInPlace(row2.data(), pts2[i],
+                                                    NbChannels, NbSamplesPerSpike);
                             auto& a2 = acc2[lc2];
                             if (a2.empty()) a2.assign(static_cast<size_t>(wElems), 0);
                             for (int ch2 = 0; ch2 < NbChannels; ch2++)
@@ -5495,6 +5511,51 @@ pick_best_and_commit:
 
     ++m_timeShiftCallCount;
     return nChanged;
+}
+
+// ---------------------------------------------------------------------------
+// ShiftWaveformRowInPlace
+//
+// Apply m_cumShift[p] to a freshly-read .spk waveform row, in-place.
+// Used by Phase 4 mean-waveform harvest so meanWav/Left/Right reflect
+// the shifted spike geometry that EStep/MStep already see post-probe.
+//
+// Algorithm: per-channel circular shift.  For shift sh (in samples):
+//   new_row[s, ch] = old_row[(s - sh) mod nSamples, ch]
+// Implementing the shift on the .spk-window directly (rather than
+// re-extracting from .fil) is correct to within boundary samples; on
+// high-pass-filtered data with flat edges those wrapped samples are
+// baseline noise and the approximation is essentially exact for
+// |sh| <= 1-2 samples (which is the only range the split probe uses
+// when InitTimeShift is called with N_halfWidth=1).
+//
+// No-ops if the probe never ran (m_cumShift empty) or this spike has
+// not been shifted (sh == 0).  Cost when sh != 0: one tmp allocation
+// of nSamples*nChan int16 + a single copy pass.
+// ---------------------------------------------------------------------------
+void KK::ShiftWaveformRowInPlace(int16_t* row, int p,
+                                 int nChan, int nSamples) const
+{
+    if (m_cumShift.empty()) return;
+    if (p < 0 || p >= static_cast<int>(m_cumShift.size())) return;
+    const int sh = m_cumShift[static_cast<size_t>(p)];
+    if (sh == 0) return;
+    if (nSamples <= 0 || nChan <= 0) return;
+
+    const int total = nChan * nSamples;
+    std::vector<int16_t> tmp(static_cast<size_t>(total));
+    for (int s = 0; s < nSamples; s++) {
+        // Wrap (s - sh) into [0, nSamples).  Negative-modulo behavior
+        // is robust under either pre-C++11 or post-C++11 rules with
+        // the (... + nSamples) % nSamples form.
+        const int src = ((s - sh) % nSamples + nSamples) % nSamples;
+        const int srcRow = src * nChan;
+        const int dstRow = s   * nChan;
+        for (int ch = 0; ch < nChan; ch++)
+            tmp[static_cast<size_t>(dstRow + ch)] =
+                row[static_cast<size_t>(srcRow + ch)];
+    }
+    std::copy(tmp.begin(), tmp.end(), row);
 }
 
 // ---------------------------------------------------------------------------

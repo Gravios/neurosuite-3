@@ -449,6 +449,23 @@ public:
     int TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
                                   int nChan, int nSamplesPerSpike);
 
+    // Apply the committed cumulative shift for spike `p` (m_cumShift[p],
+    // in samples) to a freshly-read .spk waveform `row` IN PLACE.
+    // Layout of `row`: sample-major, [nSamples × nChan] interleaved as
+    // row[s * nChan + ch].  Implements per-channel circular shift —
+    // adequate for high-pass-filtered waveforms with near-flat edges
+    // since the wrapped samples are baseline noise.  No-op if cumShift
+    // for this spike is 0 or m_cumShift is empty (probe never ran).
+    //
+    // Used by Phase 4 mean-waveform harvest so meanWav / meanWavLeft /
+    // meanWavRight reflect the shifted spike geometry that the rest of
+    // the pipeline (PCA features in Data[]) already sees post-probe.
+    // Without this, Phase 5/6 template matching compares un-shifted
+    // mean waveforms while EStep/MStep operate on shifted features —
+    // an inconsistency that biases template-merge decisions.
+    void ShiftWaveformRowInPlace(int16_t* row, int p,
+                                 int nChan, int nSamples) const;
+
     // Merge tightener probe: for each spike, pick the shift δ ∈ {-N, …, +N}
     // that MINIMISES its Mahalanobis² distance to the receiving cluster's
     // Gaussian (mean `destMean`, Cholesky factor `destChol` lower-triangular,
