@@ -7328,10 +7328,76 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
     meanVar /= (N * D);
     if (!(meanVar > 0.0)) meanVar = 1.0;  // pathological data; fall back
 
-    // W0inv = meanVar * I (diagonal).  Stored densely for uniformity in
-    // the M-step accumulation.  Each W_k^{-1} starts from W0inv per spike.
-    std::vector<double> W0inv(D * D, 0.0);
-    for (int d = 0; d < D; d++) W0inv[d * D + d] = meanVar;
+    // ── W0inv: per-cluster Wishart inverse-scale priors ────────────────
+    //
+    // Mode 0 (isotropic global): W0inv[k] = meanVar * I for every k.  The
+    // prior expects all clusters to have the same per-feature variance,
+    // ignoring that close-shank vs far-shank neurons have very different
+    // per-channel variance signatures.
+    //
+    // Mode 1 (per-cluster diagonal empirical): W0inv[k] = diag of cluster
+    // k's per-feature variance under the warm-start labels, blended with
+    // a small isotropic floor for numerical safety.  This matches the
+    // observation that a close neuron has high variance on a few channels
+    // and low variance on the rest, while a far neuron has low variance
+    // distributed across channels.  The prior shapes Phase 2b's
+    // covariance regularization to the cluster's actual feature support.
+    //
+    // Stored as [K_init × D × D] dense (most off-diagonals zero in mode 0
+    // and 1) for uniform indexing in init and M-step.
+    std::vector<double> W0inv(static_cast<size_t>(K_init) * D * D, 0.0);
+    {
+        const double blend     = std::clamp(static_cast<double>(VBGMMPriorBlend), 0.0, 1.0);
+        const double iso_floor = blend * meanVar;  // additive isotropic floor
+
+        if (VBGMMPriorMode == 1) {
+            // Per-cluster empirical variance from warm-start labels.
+            // Use full-data fallback for clusters with too few spikes
+            // (< D + 1, i.e., not enough for a meaningful covariance).
+            std::vector<double> Nk_init(K_init, 0.0);
+            std::vector<double> mean_init(static_cast<size_t>(K_init) * D, 0.0);
+            for (int p = 0; p < N; p++) {
+                const int k = labels[p];
+                if (k < 0 || k >= K_init) continue;
+                Nk_init[k] += 1.0;
+                for (int d = 0; d < D; d++)
+                    mean_init[k * D + d] += data[p * D + d];
+            }
+            for (int k = 0; k < K_init; k++) {
+                if (Nk_init[k] < 1.0) continue;
+                for (int d = 0; d < D; d++)
+                    mean_init[k * D + d] /= Nk_init[k];
+            }
+            std::vector<double> emp_var(static_cast<size_t>(K_init) * D, 0.0);
+            for (int p = 0; p < N; p++) {
+                const int k = labels[p];
+                if (k < 0 || k >= K_init) continue;
+                for (int d = 0; d < D; d++) {
+                    const double v = data[p * D + d] - mean_init[k * D + d];
+                    emp_var[k * D + d] += v * v;
+                }
+            }
+            for (int k = 0; k < K_init; k++) {
+                if (Nk_init[k] >= D + 1.0) {
+                    for (int d = 0; d < D; d++) {
+                        const double v_emp = emp_var[k * D + d] / Nk_init[k];
+                        // (1 - blend) * empirical + blend * isotropic floor
+                        W0inv[k * D * D + d * D + d] =
+                              (1.0 - blend) * v_emp + iso_floor;
+                    }
+                } else {
+                    // Fall back to isotropic for under-populated clusters.
+                    for (int d = 0; d < D; d++)
+                        W0inv[k * D * D + d * D + d] = meanVar;
+                }
+            }
+        } else {
+            // Mode 0 (isotropic global): every cluster gets meanVar * I.
+            for (int k = 0; k < K_init; k++)
+                for (int d = 0; d < D; d++)
+                    W0inv[k * D * D + d * D + d] = meanVar;
+        }
+    }
 
     int K = K_init;
 
@@ -7400,7 +7466,8 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
                 for (int j = 0; j < D; j++) {
                     const double dxj = xbar[k * D + j] - m0[j];
                     Winv[k * D * D + i * D + j] =
-                        W0inv[i * D + j] + Nk[k] * Sk[k * D * D + i * D + j]
+                        W0inv[k * D * D + i * D + j]
+                      + Nk[k] * Sk[k * D * D + i * D + j]
                       + w * dxi * dxj;
                 }
             }
@@ -7546,7 +7613,8 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
                 for (int j = 0; j < D; j++) {
                     const double dxj = xbar[k * D + j] - m0[j];
                     Winv[k * D * D + i * D + j] =
-                        W0inv[i * D + j] + Nk[k] * Sk[k * D * D + i * D + j]
+                        W0inv[k * D * D + i * D + j]
+                      + Nk[k] * Sk[k * D * D + i * D + j]
                       + w * dxi * dxj;
                 }
             }
