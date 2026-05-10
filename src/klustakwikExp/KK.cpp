@@ -7619,11 +7619,13 @@ void KK::ChunkReCEMPerChunk(
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
 
-    fprintf(stderr,
-            "[Phase 2b] Chunk re-CEM (%s)\n",
-            (Phase2bMode == 1)
-                ? "Variational-Bayes GMM, warm-start from Phase-2a labels"
-                : "warm-start from Phase-2a labels");
+    const char* p2bDesc = nullptr;
+    switch (Phase2bMode) {
+        case 1:  p2bDesc = "Variational-Bayes GMM, warm-start from Phase-2a labels"; break;
+        case 2:  p2bDesc = "warm-start CEM with splits -> VB-GMM auto-prune"; break;
+        default: p2bDesc = "warm-start from Phase-2a labels (CEM)";  break;
+    }
+    fprintf(stderr, "[Phase 2b] Chunk re-CEM (%s)\n", p2bDesc);
 
     struct ChunkResult {
         bool                    changed = false;
@@ -7804,6 +7806,67 @@ void KK::ChunkReCEMPerChunk(
             }
             Ks.Reindex();
             Ks.MStep();   // populate Mean/Cov for ChunkModel rebuild below
+        } else if (Phase2bMode == 2) {
+            // ── Phase 2b mode 2: preseed -> split -> VB-GMM ───────────────
+            //
+            // Three-stage hybrid that exercises both directions of K change:
+            //
+            //   1. Preseed: warm-start from Phase-2a labels (already set
+            //      up above; Ks.Class[] populated, Ks.ClassAlive[] set).
+            //
+            //   2. Split: run CEM with TrySplits enabled.  Grows K wherever
+            //      BIC supports a split — including reorganisations within
+            //      Phase 2a's clusters that 2a's per-cluster CEM didn't
+            //      explore (because 2a operates on each cluster in
+            //      isolation).  ConsiderDeletion may also fire here.
+            //
+            //   3. Prune: hand the (possibly expanded) label set to VB-GMM.
+            //      The Dirichlet prior consolidates clusters that CEM's
+            //      TrySplits accepted on marginal BIC evidence, when the
+            //      data don't support the split under the Bayesian
+            //      criterion.
+            //
+            // Net effect: K can both grow (via CEM in step 2) AND shrink
+            // (via VB in step 3) within a single Phase 2b pass, whereas
+            // mode 0 only shrinks via deletion and mode 1 only refines
+            // around Phase 2a's existing K.
+            //
+            // ── Stage 2: CEM with splits ────────────────────────────────
+            Ks.MStep();
+            Ks.EStep();
+            Ks.RunEMLoop(/*enableSplits=*/  true,
+                         /*enableDistDump=*/ false,
+                         /*maxIter=*/        0,
+                         /*phaseLabel=*/     "[2b-split]");
+
+            // ── Stage 3: VB-GMM auto-prune on post-CEM labels ───────────
+            // K_init = max-alive-index + 1; fresh scan of Class[] avoids
+            // having to track through Reindex / TrySplits internals.
+            int K_init = 1;
+            for (int i = 0; i < nPts; i++) {
+                const int c = Ks.Class[i];
+                if (c >= K_init) K_init = c + 1;
+            }
+            std::vector<int> labelsBuf(static_cast<size_t>(nPts));
+            for (int i = 0; i < nPts; i++) labelsBuf[i] = Ks.Class[i];
+
+            const int nSurvivors = RunVBGMM(
+                Ks.Data.m_Data, labelsBuf.data(),
+                /*K_init=*/ K_init,
+                /*N=*/      nPts,
+                /*D=*/      nSubDims,
+                /*maxIter=*/50,
+                /*convTol=*/1e-3);
+            (void)nSurvivors;
+
+            for (int i = 0; i < nPts; i++) Ks.Class[i] = labelsBuf[i];
+            for (int c = 0; c < MaxPossibleClusters; c++) Ks.ClassAlive[c] = 0;
+            for (int i = 0; i < nPts; i++) {
+                const int c = Ks.Class[i];
+                if (c >= 0 && c < MaxPossibleClusters) Ks.ClassAlive[c] = 1;
+            }
+            Ks.Reindex();
+            Ks.MStep();
         } else {
             // ── Phase 2b mode 0: warm-start CEM (patch12 default) ─────────
             // Initial MStep + EStep so RunEMLoop has consistent stats, then
