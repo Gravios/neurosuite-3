@@ -133,6 +133,11 @@ extern int   MaxTimeShift;
 extern int   TimeShiftMergeEnable;
 extern int   TimeShiftSplitEnable;
 extern int   Phase2bMode;
+extern int   VBGMMMaxIter;
+extern float VBGMMConvTol;
+extern float VBGMMAlpha0;
+extern float VBGMMBeta0;
+extern float VBGMMNu0Offset;
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;
