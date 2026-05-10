@@ -101,6 +101,8 @@ int   AdaptiveMerge          = 1;    ///< per-pair d_eff-based MergeThresh (defa
 std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
 int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 disables, max 5)
 int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
+int   TimeShiftSplitEnable   = 0;    ///< apply ±1-sample shift probe at split-test time
+int   Phase2bMode            = 0;    ///< 0 = warm-start CEM (patch12 default), 1 = Variational-Bayes GMM (patch16)
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -194,6 +196,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(AdaptiveMerge);
     INT_PARAM(MaxTimeShift);
     INT_PARAM(TimeShiftMergeEnable);
+    INT_PARAM(TimeShiftSplitEnable);
+    INT_PARAM(Phase2bMode);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
@@ -362,8 +366,10 @@ void SetupParams(int argc, char **argv) {
     if (MaxTimeShift != 0 || TimeShiftAlignIter != 0) {
         fprintf(stderr,
                 "[notice] -MaxTimeShift / -TimeShiftAlignIter ignored; the "
-                "time-shift probe is disabled in this build (use "
-                "ndm_alignspikes for spike alignment).\n");
+                "time-shift align/merge probe is disabled in this build (use "
+                "ndm_alignspikes for spike alignment).  For split-time "
+                "alignment refinement (+/-1 sample), use "
+                "-TimeShiftSplitEnable 1.\n");
     }
     MaxTimeShift        = 0;
     TimeShiftAlignIter  = 0;
@@ -896,8 +902,14 @@ int main(int argc, char **argv) {
                    MaxTimeShift);
             MaxTimeShift = 5;
         }
-        if (MaxTimeShift > 0)
-            K1.InitTimeShift(NbChannels, NbSamplesPerSpike, MaxTimeShift);
+        // Initialise time-shift machinery if any consumer is enabled.
+        // Split probe (TimeShiftSplitCluster, called from TrySplits) only
+        // tests δ ∈ {−1, 0, +1}, so a half-width of 1 is sufficient for
+        // split-only operation.  When MaxTimeShift > 0 (align/merge paths),
+        // use the larger configured half-width.
+        const int initHalfWidth = (MaxTimeShift > 0) ? MaxTimeShift : 1;
+        if (MaxTimeShift > 0 || TimeShiftSplitEnable != 0)
+            K1.InitTimeShift(NbChannels, NbSamplesPerSpike, initHalfWidth);
 
         // ── Empirical prior ────────────────────────────────────────────────────
         if (PriorFile[0] != '\0') {
