@@ -102,7 +102,7 @@ std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
 int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 disables, max 5)
 int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
 int   TimeShiftSplitEnable   = 0;    ///< apply ±1-sample shift probe at split-test time
-int   Phase2bMode            = 0;    ///< 0 = warm-start CEM (patch12 default), 1 = Variational-Bayes GMM (patch16)
+int   Phase2bMode            = 0;    ///< 0 = warm-start CEM, 1 = VB-GMM, 2 = CEM-with-splits + VB-GMM
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
