@@ -114,6 +114,7 @@ float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-to
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1.6 DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
+int   TimeShiftAlignPostMerge = 0;   ///< If 1, run TimeShiftAlignPhase one more time after Phase 7 EM, with the post-merge global cluster state.  Catches misalignments that arose from boundary spike reassignments in Phase 6 / Phase 7.
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -220,6 +221,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
     FLOAT_PARAM(CrossChunkDriftSigma);
+    INT_PARAM(TimeShiftAlignPostMerge);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);

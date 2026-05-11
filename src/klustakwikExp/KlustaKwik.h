@@ -144,6 +144,7 @@ extern float TemplateMatchEigRatio;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
+extern int   TimeShiftAlignPostMerge;
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;

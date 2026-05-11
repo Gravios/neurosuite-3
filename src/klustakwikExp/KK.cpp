@@ -3840,6 +3840,53 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // checkpoint before DipSplit potentially mutates the cluster set.
     ReportClusterQuality("Phase 7");
 
+    // ── Phase 7.5 (optional): post-merge cluster realignment ────────────────
+    // When -TimeShiftAlignPostMerge != 0, run another TimeShiftAlignPhase
+    // pass against the post-Phase-7 global cluster state.  This catches
+    // realignment opportunities that opened up only after Phase 6's
+    // cross-chunk merges consolidated chunk-local clusters into global
+    // units: a spike whose Phase-1.5 alignment was optimal vs. its
+    // chunk-local cluster mean may not be optimal vs. the global cluster
+    // mean (which is the weighted average across all the chunk-local
+    // pieces).  Effectively replicates what Klusters' realignment dialog
+    // does post-hoc on the output, but does it inside the run so any
+    // downstream consumer (final mean waveform, .clu file) sees clean
+    // features.  No-op when m_timeShiftReady is false.
+    if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
+        fprintf(stderr, "[Phase 7.5] Post-merge cluster realignment\n");
+        const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+        if (nShifted > 0) {
+            // Refresh global state after realignment: MStep recomputes
+            // Mean/Cov from updated Data[], EStep populates LogP, then a
+            // ComputeScore captures the post-realignment score.
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            void* savedGpuR = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+            MStep();
+            for (int p2 = 0; p2 < nPoints; p2++)
+                if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+            ClassAlive[0] = 1;
+            Reindex();
+            EStep();
+            {
+                const float kLargeLogP = 1e15f;
+                for (int p2 = 0; p2 < nPoints; p2++) {
+                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    if (!std::isfinite(lp)) lp = kLargeLogP;
+                }
+            }
+            score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            gpu = static_cast<decltype(gpu)>(savedGpuR);
+#endif
+            if (score < ksv().BestScoreSave) {
+                SaveBestMeans();
+                ksv().BestScoreSave = score;
+            }
+            ReportClusterQuality("Phase 7.5");
+        }
+    }
+
     // Phase 8 DipSplit removed: per-chunk DipSplit now runs as Phase 1.6,
     // before cross-chunk model matching, so global splits at this stage
     // would be operating on already-merged clusters where apparent
@@ -4800,6 +4847,43 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Per-phase quality summary after Phase 7 (Global EM) — gives a
     // checkpoint before DipSplit potentially mutates the cluster set.
     ReportClusterQuality("Phase 7");
+
+    // ── Phase 7.5 (optional): post-merge cluster realignment ────────────────
+    // Mirror of Driver A's Phase 7.5.  See Driver A's body for rationale
+    // (cross-chunk merge consolidates chunk-local clusters into global
+    // units; spikes' Phase-1.5 alignments may no longer be optimal vs.
+    // the new global means).
+    if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
+        fprintf(stderr, "[Phase 7.5] Post-merge cluster realignment\n");
+        const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+        if (nShifted > 0) {
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            void* savedGpuR = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+            MStep();
+            for (int p2 = 0; p2 < nPoints; p2++)
+                if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+            ClassAlive[0] = 1;
+            Reindex();
+            EStep();
+            {
+                const float kLargeLogP = 1e15f;
+                for (int p2 = 0; p2 < nPoints; p2++) {
+                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    if (!std::isfinite(lp)) lp = kLargeLogP;
+                }
+            }
+            score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            gpu = static_cast<decltype(gpu)>(savedGpuR);
+#endif
+            if (score < ksv().BestScoreSave) {
+                SaveBestMeans();
+                ksv().BestScoreSave = score;
+            }
+            ReportClusterQuality("Phase 7.5");
+        }
+    }
 
     // Phase 8 DipSplit removed (see Driver A above for rationale).
 
