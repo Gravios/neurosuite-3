@@ -6543,6 +6543,8 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
     return totalShifted;
 }
 
+
+
 // ---------------------------------------------------------------------------
 // EnergyCOMRealignPhase — per-cluster centre-of-energy realignment
 //
@@ -7775,6 +7777,165 @@ void KK::PerClusterCEMPerChunk(
 }
 
 
+// ---------------------------------------------------------------------------
+// TopKEigenPowerDeflation — top-K eigenvectors of a D×D symmetric matrix.
+//
+// Power-iteration with rank-1 deflation.  Cheap and adequate for the small
+// K (≤ ~5) we need for residual-PCA: each eigenvector costs one chain of
+// ~50 matvecs (D² ops each).  The matrix is modified in-place by the
+// deflation A ← A − λ·v·vᵀ between iterations.
+//
+// Convergence criterion is on the Rayleigh quotient: stop when consecutive
+// λ estimates differ by < relTol · |λ|, or after maxIter iterations.
+//
+// Outputs:
+//   V       — row-major [K × D] eigenvectors (unit-norm, descending |λ|).
+//   eigvals — [K] eigenvalues (descending in magnitude).
+// ---------------------------------------------------------------------------
+static void TopKEigenPowerDeflation(std::vector<double>& A,  // [D*D], modified
+                                    int D, int K,
+                                    int maxIter, double relTol,
+                                    std::vector<double>& V,
+                                    std::vector<double>& eigvals)
+{
+    V.assign(static_cast<size_t>(K) * D, 0.0);
+    eigvals.assign(K, 0.0);
+    if (D <= 0 || K <= 0) return;
+
+    std::vector<double> v(D), Av(D);
+    // Deterministic seeding so two runs on identical data give the same
+    // eigenvectors (modulo sign).  Re-seeding per-eigenvector keeps things
+    // reproducible across calls.
+    uint64_t seed = 0x9E3779B97F4A7C15ULL;
+
+    for (int k = 0; k < K; k++) {
+        // Cheap xor-shift RNG inline; v has unit-norm random init.
+        double n2 = 0.0;
+        for (int i = 0; i < D; i++) {
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+            const double r = static_cast<double>(seed & 0xFFFFFFFFULL) /
+                             4294967296.0 - 0.5;
+            v[i] = r; n2 += r * r;
+        }
+        if (!(n2 > 0)) { eigvals[k] = 0; continue; }
+        const double inv = 1.0 / std::sqrt(n2);
+        for (int i = 0; i < D; i++) v[i] *= inv;
+
+        double lambda_prev = 0.0;
+        bool   converged   = false;
+        for (int it = 0; it < maxIter; it++) {
+            // Av = A · v
+            for (int i = 0; i < D; i++) {
+                double s = 0.0;
+                const double* row = A.data() + static_cast<size_t>(i) * D;
+                for (int j = 0; j < D; j++) s += row[j] * v[j];
+                Av[i] = s;
+            }
+            // λ = vᵀ Av
+            double lambda = 0.0;
+            for (int i = 0; i < D; i++) lambda += v[i] * Av[i];
+            // Normalise Av → v
+            double norm = 0.0;
+            for (int i = 0; i < D; i++) norm += Av[i] * Av[i];
+            if (!(norm > 0.0)) { lambda = 0; break; }
+            const double ninv = 1.0 / std::sqrt(norm);
+            for (int i = 0; i < D; i++) v[i] = Av[i] * ninv;
+
+            if (it > 0 && std::fabs(lambda - lambda_prev) <
+                          relTol * std::max(1.0, std::fabs(lambda))) {
+                lambda_prev = lambda;
+                converged   = true;
+                break;
+            }
+            lambda_prev = lambda;
+        }
+        (void)converged;
+        // Store eigenpair (rejecting near-zero / negative-noise eigenvalues
+        // produced by deflation rounding on remaining low-variance modes).
+        eigvals[k] = lambda_prev;
+        for (int i = 0; i < D; i++)
+            V[static_cast<size_t>(k) * D + i] = v[i];
+
+        // Deflate: A ← A − λ · v vᵀ
+        for (int i = 0; i < D; i++) {
+            const double vi = lambda_prev * v[i];
+            double* row = A.data() + static_cast<size_t>(i) * D;
+            for (int j = 0; j < D; j++) row[j] -= vi * v[j];
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// FindDominantChannels — return indices of top-N channels by peak-to-peak
+// amplitude of a cluster's mean waveform.  Used by Phase 2b mode 3 to pick
+// the most "informative" channels for per-spike xcorr realignment: the
+// channel(s) where the neuron is strongest carry the cleanest alignment
+// signal and the highest SNR for cross-correlation.
+//
+// `meanWave` is laid out time-major, channel-minor: index = t*nChan + ch.
+// ---------------------------------------------------------------------------
+static void FindDominantChannels(const double* meanWave,
+                                 int nChan, int nSamplesPerSpike, int topN,
+                                 std::vector<int>& outCh)
+{
+    std::vector<std::pair<double, int>> amps(nChan);
+    for (int ch = 0; ch < nChan; ch++) {
+        double minv =  1e300, maxv = -1e300;
+        for (int t = 0; t < nSamplesPerSpike; t++) {
+            const double v = meanWave[t * nChan + ch];
+            if (v < minv) minv = v;
+            if (v > maxv) maxv = v;
+        }
+        amps[static_cast<size_t>(ch)] = {maxv - minv, ch};
+    }
+    std::sort(amps.begin(), amps.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+    const int n = std::min(topN, nChan);
+    outCh.resize(n);
+    for (int i = 0; i < n; i++) outCh[i] = amps[static_cast<size_t>(i)].second;
+}
+
+
+// ---------------------------------------------------------------------------
+// FindBestLagXCorr — integer-lag cross-correlation of one spike against a
+// cluster mean, summed over a subset of channels (the "dominant" ones).
+//
+// Sign convention: positive lag ⇒ spike's content is EARLIER than the mean
+// (needs to be shifted LATER, i.e. read further into .fil), so the returned
+// lag adds directly to m_cumShift (which uses positive = read later).  This
+// matches RefeaturizeFromShifts' offset rule:  off = rawTs + sh − PeakIdx.
+//
+// Uses an inner-window correlation (range [maxLag, nSamplesPerSpike−maxLag))
+// to avoid boundary handling — we lose 2·maxLag of the wave at the edges
+// (typically 6 of 42 samples), which is well outside the peak region and
+// contributes little to the correlation regardless.
+// ---------------------------------------------------------------------------
+static int FindBestLagXCorr(const int16_t* spike, const double* mean,
+                            int nChan, int nSamplesPerSpike,
+                            const std::vector<int>& dominantCh, int maxLag)
+{
+    const int tStart = maxLag;
+    const int tEnd   = nSamplesPerSpike - maxLag;
+    if (tEnd <= tStart || dominantCh.empty()) return 0;
+
+    double bestScore = -1e300;
+    int    bestLag   = 0;
+    for (int lag = -maxLag; lag <= maxLag; lag++) {
+        double score = 0.0;
+        for (int t = tStart; t < tEnd; t++) {
+            const int tSpike = t + lag;
+            const int16_t* sRow = spike + tSpike * nChan;
+            const double*  mRow = mean  + t      * nChan;
+            for (int ch : dominantCh)
+                score += static_cast<double>(sRow[ch]) * mRow[ch];
+        }
+        if (score > bestScore) { bestScore = score; bestLag = lag; }
+    }
+    return bestLag;
+}
+
+
 // ===========================================================================
 // Variational Bayesian GMM — used as an alternate Phase 2b inner loop.
 //
@@ -8349,6 +8510,354 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
 // previous ChunkModels for the chunk; cross-chunk Phase 6 reads only
 // the rebuilt list.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// RunPhase2bMode3Chunk — Phase 2b mode 3 per-chunk driver.
+//
+// Iterative residual-PCA refinement + dominant-channel xcorr realignment
+// for one chunk's spikes.  See the long comment at the Phase2bMode == 3
+// dispatch (in the Phase 2b chunk loop) for the full algorithm rationale.
+//
+// Inputs:
+//   Ks                — the per-chunk sub-KK (warm-started from Phase 2a)
+//   pts               — global spike indices in this chunk [nPts]
+//   nChan             — channel count for this group
+//   nSamplesPerSpike  — sample count per spike window
+//   nStart            — initial cluster count (incl. noise=cluster 0)
+//
+// Side effects:
+//   * Modifies Ks.Class[], Ks.ClassAlive[]: refined per-chunk labels.
+//   * Modifies this->m_cumShift[] for indices in `pts`: per-spike
+//     realignment shifts (additive, capped at ±m_timeShiftMaxAbs).
+//
+// Reads .spk via TimeShiftReadSpikeWave (mmap path is thread-safe; the
+// FILE* fallback is serialised here with a local critical section).
+//
+// Convergence: stops early when the fraction of label-changing spikes in
+// an iteration falls below ResidualPCAConvTol, or after ResidualPCAIter
+// outer iterations.
+// ---------------------------------------------------------------------------
+void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
+                              int nChan, int nSamplesPerSpike,
+                              int nStart)
+{
+    const int nPts = static_cast<int>(pts.size());
+    if (nPts < 5 || nChan <= 0 || nSamplesPerSpike <= 0) return;
+    if (!m_timeShiftReady) {
+        // mmap/FILE not set up — fall back to mode 0 behaviour silently.
+        Ks.MStep(); Ks.EStep();
+        Ks.RunEMLoop(true, false, 0, "[2b-m3-fallback]");
+        return;
+    }
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int nSubDims    = Ks.nDims;          // VBGMM feature width
+    const int K_init      = nStart;            // initial K (noise + real)
+
+    // Sanitise hyperparameters from CLI globals
+    const int maxIter      = std::max(1, ResidualPCAIter);
+    const int nResidComp   = std::clamp(ResidualPCAComponents, 1, 8);
+    const int nDomCh       = std::clamp(ResidualPCADominantChannels, 1,
+                                        std::max(1, nChan));
+    const int subK         = std::clamp(ResidualPCASubK, 2, 8);
+    const double convTol   = std::max(0.0,
+                                     static_cast<double>(ResidualPCAConvTol));
+
+    // ── Read all chunk spikes into a local buffer ───────────────────────
+    // Bulk-read upfront so the inner loop has random access without per-spike
+    // file ops.  Memory cost: nPts × waveSamples × 2 bytes — for a typical
+    // chunk of 50k spikes × 336 samples × 2B = ~32 MiB per chunk worker.
+    std::vector<int16_t> waveBuf(static_cast<size_t>(nPts) * waveSamples);
+    {
+        int16_t scratch[2];  // unused; TimeShiftReadSpikeWave writes directly
+        (void)scratch;
+        bool needCrit = (m_timeShiftSpkMap == nullptr);  // FILE* path → serial
+        if (needCrit) {
+            #pragma omp critical (KK_TimeShiftReadSpikeWave)
+            {
+                for (int i = 0; i < nPts; i++) {
+                    int16_t* dst = waveBuf.data() +
+                                   static_cast<size_t>(i) * waveSamples;
+                    if (!TimeShiftReadSpikeWave(pts[i], waveSamples, dst))
+                        std::fill(dst, dst + waveSamples, 0);
+                }
+            }
+        } else {
+            // mmap is reentrant — issue reads in parallel-safe loop
+            for (int i = 0; i < nPts; i++) {
+                int16_t* dst = waveBuf.data() +
+                               static_cast<size_t>(i) * waveSamples;
+                if (!TimeShiftReadSpikeWave(pts[i], waveSamples, dst))
+                    std::fill(dst, dst + waveSamples, 0);
+            }
+        }
+    }
+
+    // ── Iteration buffers ───────────────────────────────────────────────
+    std::vector<int>    prevLabels(nPts), labels(nPts);
+    std::vector<double> meanWave(static_cast<size_t>(waveSamples), 0.0);
+    std::vector<double> residual;                  // re-sized per cluster
+    std::vector<double> covR(static_cast<size_t>(waveSamples) *
+                              waveSamples, 0.0);
+    std::vector<double> eigvecs;                   // [K * waveSamples]
+    std::vector<double> eigvals;                   // [K]
+    std::vector<float>  subFeat;                   // [N_c * nResidComp]
+    std::vector<int>    subLabels;
+    std::vector<int>    members;
+    std::vector<int>    domChans;
+
+    // Seed labels from the warm-started Ks.Class[].
+    for (int i = 0; i < nPts; i++) labels[i] = Ks.Class[i];
+
+    int totalSplitsApplied = 0;
+    int totalRealigned     = 0;
+
+    for (int iter = 0; iter < maxIter; iter++) {
+        prevLabels = labels;
+
+        // ── Step 1: VBGMM on chunk features with current label warm-start ─
+        // First iter: warm-start from Phase 2a (already in labels).  Later
+        // iters: warm-start from the previous iter's split-and-realign
+        // labels (re-featurized via Data[] which doesn't change inside this
+        // chunk loop, but the labels carry forward the structure we found).
+        {
+            std::vector<int> lbuf = labels;
+            // Cluster-id space may have expanded by splits in previous
+            // iter; bound K_init by the labels actually present.
+            int kCur = K_init;
+            for (int v : lbuf) if (v + 1 > kCur) kCur = v + 1;
+            RunVBGMM(Ks.Data.m_Data, lbuf.data(), kCur, nPts, nSubDims,
+                     VBGMMMaxIter, static_cast<double>(VBGMMConvTol));
+            labels = lbuf;
+        }
+
+        // ── Step 2/3: per-cluster residual-PCA + split via residual VBGMM ─
+        // Find max alive cluster id to know where to assign new sub-ids.
+        int nextId = 0;
+        for (int v : labels) if (v + 1 > nextId) nextId = v + 1;
+
+        // Collect ids of currently-alive non-noise clusters (snapshot
+        // BEFORE we start splitting — we don't recurse into freshly-made
+        // sub-clusters in this same iter).
+        std::vector<int> activeIds;
+        {
+            std::vector<int> seen;
+            seen.reserve(64);
+            for (int v : labels) {
+                if (v <= 0) continue;
+                bool found = false;
+                for (int s : seen) if (s == v) { found = true; break; }
+                if (!found) seen.push_back(v);
+            }
+            activeIds = std::move(seen);
+        }
+
+        for (int cid : activeIds) {
+            // Gather members of cluster cid
+            members.clear();
+            for (int i = 0; i < nPts; i++)
+                if (labels[i] == cid) members.push_back(i);
+            const int Nc = static_cast<int>(members.size());
+            // Need enough spikes for stable mean + residual PCA: a soft
+            // floor of 2·waveSamples keeps the per-cluster covariance
+            // non-degenerate.  Below that, attempting to split is more
+            // likely to overfit noise than discover real structure.
+            if (Nc < std::max(20, 2 * nResidComp)) continue;
+
+            // Mean waveform of the cluster
+            std::fill(meanWave.begin(), meanWave.end(), 0.0);
+            for (int m : members) {
+                const int16_t* w = waveBuf.data() +
+                                   static_cast<size_t>(m) * waveSamples;
+                for (int j = 0; j < waveSamples; j++)
+                    meanWave[j] += static_cast<double>(w[j]);
+            }
+            const double invN = 1.0 / Nc;
+            for (int j = 0; j < waveSamples; j++) meanWave[j] *= invN;
+
+            // Build residuals: residual[i, j] = waveBuf[member_i, j] − mean[j]
+            residual.assign(static_cast<size_t>(Nc) * waveSamples, 0.0);
+            for (int i = 0; i < Nc; i++) {
+                const int16_t* w = waveBuf.data() +
+                                   static_cast<size_t>(members[i]) * waveSamples;
+                double* rrow = residual.data() +
+                               static_cast<size_t>(i) * waveSamples;
+                for (int j = 0; j < waveSamples; j++)
+                    rrow[j] = static_cast<double>(w[j]) - meanWave[j];
+            }
+
+            // Residual covariance Σ = (1/(N-1)) Rᵀ R  in [waveSamples × waveSamples]
+            std::fill(covR.begin(), covR.end(), 0.0);
+            const double cscale = 1.0 / std::max(1, Nc - 1);
+            for (int i = 0; i < Nc; i++) {
+                const double* rrow = residual.data() +
+                                     static_cast<size_t>(i) * waveSamples;
+                for (int a = 0; a < waveSamples; a++) {
+                    const double ra = rrow[a];
+                    double* crow = covR.data() +
+                                   static_cast<size_t>(a) * waveSamples;
+                    for (int b = 0; b < waveSamples; b++)
+                        crow[b] += ra * rrow[b];
+                }
+            }
+            for (size_t k = 0; k < covR.size(); k++) covR[k] *= cscale;
+
+            // Top-K eigenvectors via power iteration with deflation
+            TopKEigenPowerDeflation(covR, waveSamples, nResidComp,
+                                    /*maxIter=*/50, /*relTol=*/1e-4,
+                                    eigvecs, eigvals);
+
+            // Project residuals onto the top eigenvectors → sub-features
+            // subFeat[i * nResidComp + k] = ⟨residual[i], eigvecs[k]⟩
+            subFeat.assign(static_cast<size_t>(Nc) * nResidComp, 0.0f);
+            for (int i = 0; i < Nc; i++) {
+                const double* rrow = residual.data() +
+                                     static_cast<size_t>(i) * waveSamples;
+                for (int k = 0; k < nResidComp; k++) {
+                    const double* ev = eigvecs.data() +
+                                       static_cast<size_t>(k) * waveSamples;
+                    double s = 0.0;
+                    for (int j = 0; j < waveSamples; j++) s += rrow[j] * ev[j];
+                    subFeat[static_cast<size_t>(i) * nResidComp + k] =
+                        static_cast<float>(s);
+                }
+            }
+
+            // VBGMM on sub-features: initialise everyone in cluster 0 of
+            // the sub-space, K_init = subK (Dirichlet prior shrinks K).
+            subLabels.assign(static_cast<size_t>(Nc), 0);
+            // Spread initial labels round-robin so VBGMM has K seeds to
+            // grow from rather than collapsing immediately.
+            for (int i = 0; i < Nc; i++)
+                subLabels[static_cast<size_t>(i)] = i % subK;
+            const int nSurv = RunVBGMM(subFeat.data(), subLabels.data(),
+                                       subK, Nc, nResidComp,
+                                       VBGMMMaxIter,
+                                       static_cast<double>(VBGMMConvTol));
+
+            if (nSurv <= 1) continue;  // no split discovered → keep cluster
+
+            // Find the majority sub-cluster id (gets to keep cid); the rest
+            // become new clusters numbered nextId, nextId+1, ...
+            std::vector<int> subCounts(subK, 0);
+            for (int v : subLabels) if (v >= 0 && v < subK) subCounts[v]++;
+            int majority = 0, majCount = subCounts[0];
+            for (int k = 1; k < subK; k++)
+                if (subCounts[k] > majCount) { majCount = subCounts[k]; majority = k; }
+
+            std::vector<int> subRemap(subK, -1);
+            subRemap[majority] = cid;
+            for (int k = 0; k < subK; k++) {
+                if (k == majority) continue;
+                if (subCounts[k] == 0)  continue;
+                if (nextId >= MaxPossibleClusters) {
+                    // Out of ID space — collapse remaining sub-clusters
+                    // back to the original cid.  No structural loss; just
+                    // skip the split for this iter.
+                    subRemap[k] = cid;
+                } else {
+                    subRemap[k] = nextId++;
+                }
+            }
+            // Apply remap to chunk-wide labels[]
+            for (int i = 0; i < Nc; i++) {
+                const int sk  = subLabels[static_cast<size_t>(i)];
+                const int newCid = (sk >= 0 && sk < subK) ? subRemap[sk] : cid;
+                labels[members[i]] = newCid;
+            }
+            ++totalSplitsApplied;
+        }
+
+        // ── Step 4: per-spike xcorr realign on dominant channels ─────────
+        // For the (possibly-split) current labels, recompute means and align.
+        {
+            // Build a fresh list of alive non-noise cluster ids (post-split)
+            std::vector<int> seen;
+            seen.reserve(64);
+            for (int v : labels) {
+                if (v <= 0) continue;
+                bool found = false;
+                for (int s : seen) if (s == v) { found = true; break; }
+                if (!found) seen.push_back(v);
+            }
+
+            for (int cid : seen) {
+                members.clear();
+                for (int i = 0; i < nPts; i++)
+                    if (labels[i] == cid) members.push_back(i);
+                if (static_cast<int>(members.size()) < 5) continue;
+
+                // Mean waveform
+                std::fill(meanWave.begin(), meanWave.end(), 0.0);
+                for (int m : members) {
+                    const int16_t* w = waveBuf.data() +
+                                       static_cast<size_t>(m) * waveSamples;
+                    for (int j = 0; j < waveSamples; j++)
+                        meanWave[j] += static_cast<double>(w[j]);
+                }
+                const double invN = 1.0 / members.size();
+                for (int j = 0; j < waveSamples; j++) meanWave[j] *= invN;
+
+                // Dominant channels (top by peak-to-peak amplitude)
+                FindDominantChannels(meanWave.data(), nChan,
+                                     nSamplesPerSpike, nDomCh, domChans);
+                if (domChans.empty()) continue;
+
+                // Per-spike xcorr lag → update m_cumShift on the OUTER KK.
+                // m_cumShift uses global spike index (pts[i]).
+                for (int i : members) {
+                    const int16_t* w = waveBuf.data() +
+                                       static_cast<size_t>(i) * waveSamples;
+                    const int lag = FindBestLagXCorr(w, meanWave.data(),
+                                                    nChan, nSamplesPerSpike,
+                                                    domChans,
+                                                    m_timeShiftMaxAbs);
+                    if (lag == 0) continue;
+                    const int gp = pts[static_cast<size_t>(i)];
+                    if (gp < 0 || gp >= static_cast<int>(m_cumShift.size()))
+                        continue;
+                    const int curr = m_cumShift[static_cast<size_t>(gp)];
+                    const int wb   = curr + lag;
+                    if (std::abs(wb) > m_timeShiftMaxAbs) continue;
+                    m_cumShift[static_cast<size_t>(gp)] = wb;
+                    ++totalRealigned;
+                }
+            }
+        }
+
+        // ── Step 5: convergence check ────────────────────────────────────
+        int nChanged = 0;
+        for (int i = 0; i < nPts; i++)
+            if (labels[i] != prevLabels[i]) ++nChanged;
+        const double frac = static_cast<double>(nChanged) / nPts;
+        if (frac < convTol) break;
+    }
+
+    // Write final labels back into the sub-KK and refresh its bookkeeping.
+    for (int i = 0; i < nPts; i++) {
+        const int v = labels[i];
+        Ks.Class[i] = (v >= 0 && v < MaxPossibleClusters) ? v : 0;
+    }
+    for (int c = 0; c < MaxPossibleClusters; c++) Ks.ClassAlive[c] = 0;
+    for (int i = 0; i < nPts; i++) {
+        const int c = Ks.Class[i];
+        if (c >= 0 && c < MaxPossibleClusters) Ks.ClassAlive[c] = 1;
+    }
+    Ks.Reindex();
+    Ks.MStep();
+
+    // The outer Phase 9 (TimeShiftFinalize) refeaturizes globally; we
+    // don't call RefeaturizeFromShifts here because the parallel chunk
+    // loop would race on Data[] writes if multiple chunks tried.
+    //
+    // Diagnostic (only emit if anything happened in this chunk to keep
+    // the log readable on large sessions with hundreds of chunks).
+    if (totalSplitsApplied > 0 || totalRealigned > 0) {
+        Output("[Phase 2b m3] chunk: %d splits, %d realigns "
+               "(across %d iters max)\n",
+               totalSplitsApplied, totalRealigned, maxIter);
+    }
+}
+
 void KK::ChunkReCEMPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
@@ -8606,6 +9115,65 @@ void KK::ChunkReCEMPerChunk(
             }
             Ks.Reindex();
             Ks.MStep();
+        } else if (Phase2bMode == 3) {
+            // ── Phase 2b mode 3: residual-PCA iterative refinement ────────
+            //
+            // Per-chunk loop that addresses two failure modes mode 1/2 don't:
+            //
+            //   (i)  Sub-structure hiding INSIDE an existing cluster — two
+            //        neurons whose mean waveforms are similar (so the
+            //        cluster passes initial CEM/VBGMM) but whose RESIDUAL
+            //        waveforms differ.  Subtracting each cluster's mean and
+            //        re-PCA'ing the residual exposes that difference;
+            //        running VBGMM on the residual features splits the
+            //        cluster.
+            //
+            //   (ii) Within-cluster temporal jitter — spikes from the same
+            //        neuron whose .spk windows are misaligned by 1-3 samples
+            //        (Phase 1a's cluster-mean Mahal alignment can leave
+            //        residual jitter on the dominant channels because Mahal
+            //        is dominated by the high-variance directions, not the
+            //        peak channels).  Per-spike cross-correlation against
+            //        the cluster mean on the 1-2 DOMINANT channels — the
+            //        channels where the neuron is strongest, hence cleanest
+            //        SNR — tightens the alignment.
+            //
+            // Loop body (up to ResidualPCAIter iterations, default 3):
+            //   1. VBGMM on current chunk features → labels
+            //   2. Read raw spike waveforms from .spk (or .spkD)
+            //   3. For each alive cluster:
+            //        a. Compute mean waveform (per-channel)
+            //        b. Compute residuals = spike − mean
+            //        c. Eigendecompose residual covariance → top-K eigenvecs
+            //        d. Project residuals → K-dim sub-features
+            //        e. Run VBGMM on sub-features; if K > 1 survivors,
+            //           SPLIT: keep majority as original ID, new IDs
+            //           assigned to the rest.
+            //   4. Per-spike xcorr realignment on 1-2 dominant channels
+            //      → updates the OUTER KK's m_cumShift[p] for each chunk
+            //      member.
+            //   5. Convergence: stop if label-change fraction < ConvTol.
+            //
+            // After the loop, refeaturize-from-.fil happens at the outer
+            // scope (driver issues a global RefeaturizeFromShifts after
+            // all chunks complete).  Sub-cluster IDs above MaxPossibleClusters
+            // get clamped back to the original cluster (no-split) to keep
+            // the per-chunk cluster space bounded.
+            //
+            // Reads the ORIGINAL .spk waveforms via TimeShiftReadSpikeWave
+            // (mmap path is thread-safe; FILE* path is serialised on a
+            // critical section, which is the existing pattern).  Writes to
+            // m_cumShift use disjoint per-chunk indices (the parallel chunks
+            // never share spike indices), so the parallel-for stays safe.
+            //
+            // Hyperparameters via CLI flags (defaults in KlustaKwik.cpp):
+            //   ResidualPCAIter             — max outer iterations (3)
+            //   ResidualPCAComponents       — top-K residual eigenvecs (3)
+            //   ResidualPCASubK             — K_init for residual VBGMM (4)
+            //   ResidualPCADominantChannels — 1 or 2 (2)
+            //   ResidualPCAConvTol          — convergence threshold (0.01)
+            this->RunPhase2bMode3Chunk(Ks, pts, NbChannels,
+                                       NbSamplesPerSpike, nStart);
         } else {
             // ── Phase 2b mode 0: warm-start CEM (patch12 default) ─────────
             // Initial MStep + EStep so RunEMLoop has consistent stats, then

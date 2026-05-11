@@ -140,6 +140,13 @@ extern float VBGMMBeta0;
 extern float VBGMMNu0Offset;
 extern int   VBGMMPriorMode;
 extern float VBGMMPriorBlend;
+// ResidualPCA — Phase 2b mode 3 hyperparameters (per-chunk iterative
+// residual-PCA refinement + dominant-channel xcorr realignment).
+extern int   ResidualPCAIter;
+extern int   ResidualPCAComponents;
+extern int   ResidualPCASubK;
+extern int   ResidualPCADominantChannels;
+extern float ResidualPCAConvTol;
 extern float TemplateMatchEigRatio;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
