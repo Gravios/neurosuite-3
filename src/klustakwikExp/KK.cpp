@@ -1521,9 +1521,16 @@ float KK::CEM(const char *CluFile, int Recurse) {
     if (DistDump) fprintf(Distfp, "\n");
 
     // klustakwikExp Phase 8: DipSplit — bimodal-cluster detection & split.
-    // Runs once on converged clusters.  No-op if DipSplitEnable=0 or no
-    // bloated clusters are found.
-    if (DipSplitEnable != 0 && !suppressBestSave) {
+    // Runs once on converged clusters.  No-op if DipSplitEnable=0,
+    // DipSplitGlobalEnable=0, or no bloated clusters are found.
+    //
+    // The DipSplitGlobalEnable check disables Phase 8 in chunked mode with
+    // drift, where the global cluster's spikes span the session's drift
+    // range and the top PC of the mean-centered data captures the drift
+    // axis — producing false-positive splits that bisect a single drifting
+    // unit into "early" and "late" sub-clusters.  Per-chunk Phase 1.6
+    // DipSplit is unaffected (suppressBestSave=true on per-chunk Ks).
+    if (DipSplitEnable != 0 && DipSplitGlobalEnable != 0 && !suppressBestSave) {
         DipSplitPhase();
     }
 
@@ -1632,7 +1639,12 @@ float KK::RefineExistingClustering(
         const int   saveDipEnable    = DipSplitEnable;
         DipSplitValleyThresh = splitMinDepth;
         DipSplitEnable       = 1;
-        DipSplitPhase();
+        // Honor the global-Phase-8 disable here too — if the user has
+        // explicitly disabled Phase 8 (drift-resistant mode), don't
+        // re-enable it via the refine path's local override.
+        if (DipSplitGlobalEnable != 0) {
+            DipSplitPhase();
+        }
         DipSplitValleyThresh = saveValleyThresh;
         DipSplitEnable       = saveDipEnable;
         // DipSplitPhase mutates Class[] but does not refresh M-step models,
@@ -2254,7 +2266,10 @@ float KK::CEMTwoPhase(int timeMergeIter) {
         // klustakwikExp Phase 8: DipSplit — bimodal-cluster detection.
         // Only fires on the main instance (scratch Kc's set suppressBestSave
         // so chunk-local clustering doesn't run it redundantly).
-        if (DipSplitEnable != 0 && !suppressBestSave) {
+        // Also gated by DipSplitGlobalEnable so users can disable Phase 8
+        // entirely in chunked mode with drift (where it misfires on the
+        // drift axis of session-spanning clusters).
+        if (DipSplitEnable != 0 && DipSplitGlobalEnable != 0 && !suppressBestSave) {
             DipSplitPhase();
             score = ComputeScore();   // refresh since DipSplit may have split
         }

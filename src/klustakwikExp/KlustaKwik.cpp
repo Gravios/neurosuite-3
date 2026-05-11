@@ -111,6 +111,7 @@ float VBGMMNu0Offset         = 2.0f; ///< VB-GMM Wishart d.o.f. = D + this; must
 int   VBGMMPriorMode         = 0;    ///< 0 = isotropic global, 1 = per-cluster diagonal empirical, 2 = per-cluster FULL covariance empirical
 float VBGMMPriorBlend        = 0.1f; ///< (mode 1, 2) regularization blend toward isotropic; 0 = pure empirical
 float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-top-eig / max(per-cluster-top-eig). 0 disables (xcorr only).
+int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1.6 DipSplit is unaffected.
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -214,6 +215,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(VBGMMPriorMode);
     FLOAT_PARAM(VBGMMPriorBlend);
     FLOAT_PARAM(TemplateMatchEigRatio);
+    INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
