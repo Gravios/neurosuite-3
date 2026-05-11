@@ -145,6 +145,7 @@ extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
 extern int   TimeShiftAlignPostMerge;
+extern float TimeShiftAlignScoreThresh;
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;

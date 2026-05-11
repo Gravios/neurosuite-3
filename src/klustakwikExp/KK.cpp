@@ -5968,9 +5968,13 @@ int KK::TimeShiftMergeTighten(
         const float rawTsNorm = Data.m_Data[p * nDims + timeDimIdx];
 
         // Evaluate Mahalanobis² under the destination cluster for each
-        // in-range candidate and pick the minimum.
-        int   bestCand = N;
-        float bestMahal = std::numeric_limits<float>::infinity();
+        // in-range candidate and pick the minimum.  Also track the
+        // δ=0 candidate's Mahal² separately so the post-loop gate
+        // (-TimeShiftAlignScoreThresh) can require a minimum
+        // improvement before committing a non-baseline shift.
+        int   bestCand     = N;
+        float bestMahal    = std::numeric_limits<float>::infinity();
+        float baselineMahal = std::numeric_limits<float>::infinity();
 
         for (int ci = 0; ci < kCand; ++ci) {
             if (!candOk[ci]) continue;
@@ -6007,10 +6011,30 @@ int KK::TimeShiftMergeTighten(
             }
             if (bad) continue;
 
+            if (ci == N) baselineMahal = mahal2;
+
             if (mahal2 < bestMahal) {
                 bestMahal = mahal2;
                 bestCand  = ci;
             }
+        }
+
+        // Threshold gate (-TimeShiftAlignScoreThresh): when a non-baseline
+        // candidate wins, require its Mahal² improvement over δ=0 to
+        // exceed the user-set threshold; otherwise fall back to baseline.
+        // With the default 0.0, this gate is a no-op since the argmin
+        // guarantees bestMahal ≤ baselineMahal, so `baselineMahal -
+        // bestMahal` is always ≥ 0 and never strictly less than 0.
+        // Raise the threshold to suppress sub-noise-floor shifts whose
+        // Mahal² improvement is dominated by numerical jitter and which,
+        // compounded over TimeShiftAlignIter passes, can tighten a wrong
+        // post-merge composite mean around spikes that don't really
+        // belong (the Phase 7a "reinforce a bad Phase 6 merge" mode).
+        if (bestCand != N
+            && std::isfinite(baselineMahal)
+            && (baselineMahal - bestMahal) < TimeShiftAlignScoreThresh) {
+            bestCand  = N;
+            bestMahal = baselineMahal;
         }
 
         const int bestDelta = bestCand - N;
