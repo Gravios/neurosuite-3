@@ -116,6 +116,36 @@ int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
 int   TimeShiftAlignPostMerge = 0;   ///< If 1, run TimeShiftAlignPhase one more time after Phase 7 EM, with the post-merge global cluster state.  Catches misalignments that arose from boundary spike reassignments in Phase 6 / Phase 7.
 float TimeShiftAlignScoreThresh = 0.0f; ///< Phase 1a / 7a minimum Mahalanobis² improvement required to commit a per-spike shift in TimeShiftMergeTighten. Best non-baseline (δ≠0) candidate must satisfy `baselineMahal² - bestMahal² > threshold`; otherwise the spike stays at δ=0. 0.0 = no gate (pure argmin, original behaviour) — any improvement, however small, accepted. Raise to suppress micro-shifts from numerical noise compounding over `TimeShiftAlignIter` passes, or to keep Phase 7a from tightening a post-merge composite cluster mean around spikes that don't really belong (the "reinforce a bad Phase 6 merge" failure mode).  Typical experiment values: 0.5 (loose), 1.0 (moderate), 2.0 (strict).  Applies to all TimeShiftMergeTighten callers including Phase 1a, Phase 7a, and merge-time victim tightening.
+
+// ── Per-phase cluster-mean alignment intervals ────────────────────────────
+// Each flag enables a TimeShiftAlignPhase (cluster-mean xcorr/Mahal²) pass
+// at the boundary AFTER the named phase completes.  Default 0 = off.  When
+// any of these is non-zero, the pre-existing force-disable of
+// MaxTimeShift / TimeShiftAlignIter is BYPASSED (the user has opted into
+// alignment); sensible defaults are applied to MaxTimeShift and
+// TimeShiftAlignIter if they would otherwise be zero.  Phase 7a continues
+// to use the legacy TimeShiftAlignPostMerge flag for back-compat.
+int   TimeShiftAlignAfterPhase1  = 0;  ///< Cluster-mean alignment after Phase 1 (initial per-chunk CEM).  Identical site to the original Phase 1a.
+int   TimeShiftAlignAfterPhase1b = 0;  ///< Cluster-mean alignment after Phase 1b (per-chunk DipSplit).  New clusters from DipSplit get tightened around their own means.
+int   TimeShiftAlignAfterPhase2  = 0;  ///< Cluster-mean alignment after the Phase 2 / 2a / 2b chunk-loop completes (refractory split + per-cluster CEM + chunk re-CEM all run interleaved per-chunk, sharing one insertion site).
+int   TimeShiftAlignAfterPhase5  = 0;  ///< Cluster-mean alignment after Phase 5 (within-chunk template match).  Mergers consolidated similar units; re-tighten around merged means.
+int   TimeShiftAlignAfterPhase6  = 0;  ///< Cluster-mean alignment after Phase 6 (cross-chunk model match).  Cross-chunk consolidation now spans multiple chunks; re-align spikes vs. the (weighted) global cluster mean before Phase 7's EM.
+
+// ── Energy-COM (centre-of-mass) realignment ───────────────────────────────
+// When enabled, after EACH active TimeShiftAlign* phase, computes the
+// weighted-mean time of channel-summed waveform energy for every spike,
+// applies an ADDITIVE integer shift to put that COM at the canonical
+// PeakSampleIndex (bounded by the cumulative-shift cap), then calls
+// RefeaturizeFromShifts to re-extract and re-project the affected spikes
+// from .fil at the new offsets.
+//
+// Operates per-spike on the ORIGINAL .spk waveform (no cluster context):
+// COM is a waveform-intrinsic anchor, complementary to the cluster-mean
+// shift.  Cluster-mean handles cluster-fit drift; energy-COM handles
+// spike-anchor inconsistency between .spk's captured peak and the
+// canonical PeakSampleIndex.
+int   EnergyCOMRealign      = 0;       ///< 0 = off; 1 = enable energy-COM realignment after each active cluster-mean alignment block.
+int   EnergyCOMMetric       = 1;       ///< Energy metric for COM: 0 = sum |x|, 1 = sum x² (default, standard signal energy).
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -223,6 +253,13 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(DipSplit2D);
     FLOAT_PARAM(CrossChunkDriftSigma);
     INT_PARAM(TimeShiftAlignPostMerge);
+    INT_PARAM(TimeShiftAlignAfterPhase1);
+    INT_PARAM(TimeShiftAlignAfterPhase1b);
+    INT_PARAM(TimeShiftAlignAfterPhase2);
+    INT_PARAM(TimeShiftAlignAfterPhase5);
+    INT_PARAM(TimeShiftAlignAfterPhase6);
+    INT_PARAM(EnergyCOMRealign);
+    INT_PARAM(EnergyCOMMetric);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
@@ -374,7 +411,7 @@ void SetupParams(int argc, char **argv) {
     }
 
     // -----------------------------------------------------------------
-    // Time-shift probe — forcibly disabled
+    // Time-shift probe — force-disabled UNLESS per-phase alignment opt-in
     // -----------------------------------------------------------------
     // The Phase-1.5 time-shift probe (MaxTimeShift / TimeShiftAlignIter)
     // was an experimental refinement that fanned a (2N+1)-candidate PCA
@@ -385,20 +422,42 @@ void SetupParams(int argc, char **argv) {
     // results at a fraction of the runtime cost.
     //
     // The implementation is kept in tree (KK::InitTimeShift /
-    // TimeShiftFinalize / shiftprobe_disabled.cpp) but is hard-disabled
-    // here.  We override the user's CLI / YAML setting and emit a
-    // one-line notice when either was non-zero, so callers from older
-    // pipeline scripts get a clear signal.
-    if (MaxTimeShift != 0 || TimeShiftAlignIter != 0) {
+    // TimeShiftFinalize / shiftprobe_disabled.cpp) and the legacy
+    // `-MaxTimeShift` / `-TimeShiftAlignIter` CLI route remains
+    // force-disabled by default.  However, if the user opts into ANY
+    // of the new per-phase alignment intervals (TimeShiftAlignAfter*
+    // or TimeShiftAlignPostMerge), the force-disable is bypassed and
+    // sensible defaults are applied to MaxTimeShift / TimeShiftAlignIter
+    // if those would otherwise be zero — without this, the per-phase
+    // calls would early-return inside TimeShiftAlignPhase.
+    const bool anyPhaseAlignSet =
+           TimeShiftAlignAfterPhase1  != 0
+        || TimeShiftAlignAfterPhase1b != 0
+        || TimeShiftAlignAfterPhase2  != 0
+        || TimeShiftAlignAfterPhase5  != 0
+        || TimeShiftAlignAfterPhase6  != 0
+        || TimeShiftAlignPostMerge    != 0;
+
+    if (!anyPhaseAlignSet) {
+        if (MaxTimeShift != 0 || TimeShiftAlignIter != 0) {
+            fprintf(stderr,
+                    "[notice] -MaxTimeShift / -TimeShiftAlignIter ignored; the "
+                    "time-shift align/merge probe is disabled in this build (use "
+                    "ndm_alignspikes for spike alignment, or one of "
+                    "-TimeShiftAlignAfterPhase* to enable in-pipeline alignment). "
+                    " For split-time alignment refinement (+/-1 sample), use "
+                    "-TimeShiftSplitEnable 1.\n");
+        }
+        MaxTimeShift        = 0;
+        TimeShiftAlignIter  = 0;
+    } else {
+        if (MaxTimeShift <= 0)        MaxTimeShift       = 3;
+        if (TimeShiftAlignIter <= 0)  TimeShiftAlignIter = 1;
         fprintf(stderr,
-                "[notice] -MaxTimeShift / -TimeShiftAlignIter ignored; the "
-                "time-shift align/merge probe is disabled in this build (use "
-                "ndm_alignspikes for spike alignment).  For split-time "
-                "alignment refinement (+/-1 sample), use "
-                "-TimeShiftSplitEnable 1.\n");
+                "[info] per-phase cluster-mean alignment enabled "
+                "(MaxTimeShift=%d, TimeShiftAlignIter=%d, EnergyCOMRealign=%d)\n",
+                MaxTimeShift, TimeShiftAlignIter, EnergyCOMRealign);
     }
-    MaxTimeShift        = 0;
-    TimeShiftAlignIter  = 0;
 
     if (Screen && Verbose) print_params(stdout);
 
