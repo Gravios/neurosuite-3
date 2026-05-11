@@ -521,6 +521,32 @@ public:
     // post-Phase-7 site does its own ComputeScore + ReportClusterQuality).
     void RunAlignmentBlock(int enableFlag, const char* phaseLabel);
 
+    // ---- Phase 2b mode 3: residual-PCA refinement (per-chunk driver) ----
+    //
+    // Iterative loop that:
+    //   (a) runs VBGMM on the current chunk features;
+    //   (b) for each alive cluster, subtracts the per-channel mean
+    //       waveform from each spike, runs PCA on the residual covariance,
+    //       projects residuals onto the top-K eigenvectors, and runs
+    //       VBGMM on the residual sub-features — SPLITTING the cluster
+    //       when the residual VBGMM finds more than one survivor;
+    //   (c) per-spike xcorr realignment on the 1–2 channels with the
+    //       largest mean-waveform peak-to-peak amplitude (the dominant
+    //       channels for that cluster), updating m_cumShift in-place.
+    //
+    // Loops up to ResidualPCAIter times or until the chunk's per-spike
+    // label-change fraction falls below ResidualPCAConvTol.
+    //
+    // Called from the Phase 2b chunk loop when -Phase2bMode 3.  Operates
+    // on the per-chunk sub-KK `Ks` (writes labels back into Ks.Class) and
+    // the outer (this) KK's m_cumShift array.  Safe to call from inside
+    // the chunk parallel-for: writes to m_cumShift use disjoint per-chunk
+    // global indices, and TimeShiftReadSpikeWave's FILE* fallback is
+    // serialised on a named critical section.
+    void RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
+                              int nChan, int nSamplesPerSpike,
+                              int nStart);
+
     // ---- DipSplit: bimodal-cluster detection & split (Phase 8) ----------
     //
     // For each alive cluster that passes a χ²-calibrated bloat gate (its

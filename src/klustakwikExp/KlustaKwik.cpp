@@ -102,7 +102,7 @@ std::vector<float> ExternalPreseedCentres;  ///< populated by applyKKPrior()
 int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 disables, max 5)
 int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
 int   TimeShiftSplitEnable   = 0;    ///< apply ±1-sample shift probe at split-test time
-int   Phase2bMode            = 0;    ///< 0 = warm-start CEM, 1 = VB-GMM, 2 = CEM-with-splits + VB-GMM
+int   Phase2bMode            = 0;    ///< 0 = warm-start CEM, 1 = VB-GMM, 2 = CEM-with-splits + VB-GMM, 3 = residual-PCA refinement + dominant-channel xcorr realign
 int   VBGMMMaxIter           = 50;   ///< VB-GMM max iterations (Phase2bMode 1 or 2)
 float VBGMMConvTol           = 1e-3f;///< VB-GMM convergence tol on max |Δr| across (n,k)
 float VBGMMAlpha0            = 1.0f; ///< VB-GMM Dirichlet concentration; <1 favours sparsity (more pruning)
@@ -110,6 +110,12 @@ float VBGMMBeta0             = 1.0f; ///< VB-GMM Normal prior strength on means
 float VBGMMNu0Offset         = 2.0f; ///< VB-GMM Wishart d.o.f. = D + this; must be > 0
 int   VBGMMPriorMode         = 0;    ///< 0 = isotropic global, 1 = per-cluster diagonal empirical, 2 = per-cluster FULL covariance empirical
 float VBGMMPriorBlend        = 0.1f; ///< (mode 1, 2) regularization blend toward isotropic; 0 = pure empirical
+// ── ResidualPCA — Phase 2b mode 3 hyperparameters ─────────────────────────
+int   ResidualPCAIter             = 3;     ///< (Phase2bMode=3) max outer iterations of the residual-PCA refinement loop per chunk.  Early-stops when the fraction of label-changing spikes falls below ResidualPCAConvTol.
+int   ResidualPCAComponents       = 3;     ///< (Phase2bMode=3) number of top eigenvectors of the per-cluster residual covariance to use as features for the residual VBGMM split test.  1–8 typical; default 3 captures the bulk of within-cluster waveform variation while keeping the per-cluster VBGMM dim low.
+int   ResidualPCASubK             = 4;     ///< (Phase2bMode=3) initial K for the residual VBGMM (per cluster).  Dirichlet prior shrinks K toward the support of the data; this is the upper bound on how many sub-clusters can emerge from a single existing cluster in one iteration.
+int   ResidualPCADominantChannels = 2;     ///< (Phase2bMode=3) number of channels used in the per-spike xcorr realignment step.  Channels are ranked per-cluster by peak-to-peak amplitude of the mean waveform — the 1–2 channels where the neuron is strongest carry the cleanest alignment signal.  1 or 2 typical.
+float ResidualPCAConvTol          = 0.01f; ///< (Phase2bMode=3) early-stop threshold: when the fraction of spikes whose label changed in this iteration is < ResidualPCAConvTol, the chunk's loop terminates.  0.01 = 1% of spikes changing.
 float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-top-eig / max(per-cluster-top-eig). 0 disables (xcorr only).
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
@@ -248,6 +254,11 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(VBGMMNu0Offset);
     INT_PARAM(VBGMMPriorMode);
     FLOAT_PARAM(VBGMMPriorBlend);
+    INT_PARAM(ResidualPCAIter);
+    INT_PARAM(ResidualPCAComponents);
+    INT_PARAM(ResidualPCASubK);
+    INT_PARAM(ResidualPCADominantChannels);
+    FLOAT_PARAM(ResidualPCAConvTol);
     FLOAT_PARAM(TemplateMatchEigRatio);
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
