@@ -6544,21 +6544,35 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
 }
 
 // ---------------------------------------------------------------------------
-// EnergyCOMRealignPhase — per-spike centre-of-energy realignment
+// EnergyCOMRealignPhase — per-cluster centre-of-energy realignment
 //
-// Computes, for each spike, the weighted-mean time of the per-sample
-// channel-summed energy in its .spk window:
+// For each alive cluster, computes the MEAN waveform across all spikes
+// assigned to that cluster, then the weighted-mean time of the per-sample
+// channel-summed energy of that mean waveform:
 //
-//     e(t) = Σ_c |x(t, c)|²       (EnergyCOMMetric = 1, default)
-//          | Σ_c |x(t, c)|        (EnergyCOMMetric = 0)
+//     mean_x(t, c) = ( 1/N ) · Σ_{p ∈ cluster}  x_p(t, c)
+//     e(t)  = Σ_c |mean_x(t, c)|²       (EnergyCOMMetric = 1, default)
+//           | Σ_c |mean_x(t, c)|        (EnergyCOMMetric = 0)
 //     t_COM = ( Σ_t  t · e(t) ) / ( Σ_t e(t) )
 //
 // Then computes the integer shift δ_COM = round(t_COM − PeakSampleIndex)
-// and adds it to m_cumShift[p], clamping against m_timeShiftMaxAbs.  The
-// shift is ADDITIVE to whatever a preceding cluster-mean alignment
-// (TimeShiftAlignPhase) wrote — the two are complementary criteria:
-// cluster-mean handles cluster-fit drift in PCA space, energy-COM
-// handles waveform-anchor drift in time.
+// and adds it to m_cumShift[p] for every spike p in the cluster — the
+// SAME delta to all members.  Computing the COM on the cluster mean rather
+// than on individual spikes (a) averages out per-spike capture-noise
+// (an individual spike's "energy COM" is a poor estimator with high
+// variance), and (b) yields a single coherent direction per cluster, so
+// the cluster's relative geometry in PCA space is preserved.  Per-spike
+// COM realignment, by contrast, scatters cluster members in inconsistent
+// directions and disrupts the cluster shape that downstream EM has just
+// converged on.
+//
+// The per-cluster shift is ADDITIVE to whatever a preceding cluster-mean
+// alignment (TimeShiftAlignPhase) wrote — the two are complementary:
+// cluster-mean handles cluster-fit drift in PCA space, energy-COM handles
+// waveform-anchor drift in time.  If applying delta to any cluster
+// member would push its cumulative shift past ±m_timeShiftMaxAbs, the
+// whole cluster is skipped rather than clamped per-spike (partial shifts
+// would break the very uniformity this phase is meant to preserve).
 //
 // After updating m_cumShift, RefeaturizeFromShifts re-extracts the
 // shifted spikes from .fil at the new sample offsets, projects through
@@ -6566,104 +6580,129 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
 // into Data[].  This is the same machinery used by Phase 9
 // (TimeShiftFinalize) for the final disk commit, just invoked mid-run.
 //
-// Cost notes:
-//  - O(nPoints · nChan · nSamplesPerSpike) per spike for the energy sum
-//    — small (waveSamples ≈ 8 × 42 = 336 ops); the spike read from .spk
-//    dominates if the file isn't memory-mapped.
-//  - RefeaturizeFromShifts iterates spikes-with-non-zero-cumShift; for
-//    typical sub-second shifts after cluster-mean align this is a
-//    modest fraction of nPoints.  Calling this between multiple
-//    phases is the dominant cost — each call re-reads from .fil for
-//    shifted spikes (~30 µs/spike).
-//
 // Reads the ORIGINAL .spk waveform per spike (TimeShiftReadSpikeWave
-// does not account for m_cumShift), so the COM is computed from the
-// waveform as originally captured — independent of any prior shift
-// already in m_cumShift.  The additive update to m_cumShift means the
-// final shift is the SUM of all prior contributions plus the new COM
-// correction, which is what Phase 9 / RefeaturizeFromShifts use.
+// does not account for m_cumShift), so the cluster mean is built from
+// waveforms as originally captured — independent of any prior shift
+// already in m_cumShift.  The additive update means the final shift is
+// the SUM of all prior contributions plus the new COM correction, which
+// is what Phase 9 / RefeaturizeFromShifts consume.
 //
-// Returns the cumulative number of spikes whose m_cumShift was changed
-// by this call.
+// Cost notes:
+//  - O(nPoints · waveSamples) for the gather + accumulate step (one
+//    pass over members per cluster; spike read from .spk dominates).
+//  - The summed-waveform energy COM uses a double accumulator (sumWave)
+//    so int16 sums across thousands of spikes do not overflow.
+//  - Energy COM is computed on the SUMMED waveform — equivalent up to a
+//    global scale factor (preserved by the t_COM ratio) to computing it
+//    on the MEAN; saves the divide-by-N pass.
+//
+// Returns the total number of spikes whose m_cumShift was updated.
 // ---------------------------------------------------------------------------
 int KK::EnergyCOMRealignPhase(int nChan, int nSamplesPerSpike)
 {
     if (!m_timeShiftReady) return 0;
     if (EnergyCOMRealign == 0) return 0;
     if (nChan <= 0 || nSamplesPerSpike <= 0) return 0;
-    if (!(!m_cumShift.empty())) return 0;
+    if (m_cumShift.empty()) return 0;
 
     const int waveSamples = nChan * nSamplesPerSpike;
     std::vector<int16_t> waveScratch(static_cast<size_t>(waveSamples), 0);
+    std::vector<double>  sumWave   (static_cast<size_t>(waveSamples), 0.0);
+    std::vector<int>     members;
+    members.reserve(1024);
 
     const double peakRef = static_cast<double>(PeakSampleIndex);
-    int nShifted   = 0;
-    int nClamped   = 0;
-    int nBadRead   = 0;
-    int nSilent    = 0;
-    int nZeroShift = 0;
+    int nClustersShifted   = 0;
+    int nSpikesShifted     = 0;
+    int nClustersTooSmall  = 0;
+    int nClustersBadRead   = 0;
+    int nClustersSilent    = 0;
+    int nClustersZeroShift = 0;
+    int nClustersClamped   = 0;
 
-    for (int p = 0; p < nPoints; ++p) {
-        if (!TimeShiftReadSpikeWave(p, waveSamples, waveScratch.data())) {
-            ++nBadRead;
-            continue;
+    for (int c = 1; c < MaxPossibleClusters; ++c) {
+        if (!ClassAlive[c]) continue;
+
+        // Gather members of cluster c.
+        members.clear();
+        for (int p = 0; p < nPoints; ++p)
+            if (Class[p] == c) members.push_back(p);
+        if (members.size() < 5) { ++nClustersTooSmall; continue; }
+
+        // Sum the .spk-captured waveforms across all members.  The COM is
+        // scale-invariant so we don't need to divide by N — a double
+        // accumulator avoids int16 overflow when N is large.
+        std::fill(sumWave.begin(), sumWave.end(), 0.0);
+        int nRead = 0;
+        for (int p : members) {
+            if (!TimeShiftReadSpikeWave(p, waveSamples, waveScratch.data())) continue;
+            for (int i = 0; i < waveSamples; ++i)
+                sumWave[i] += static_cast<double>(waveScratch[i]);
+            ++nRead;
         }
+        if (nRead == 0) { ++nClustersBadRead; continue; }
 
-        // Sum channel-energy at each sample and accumulate the COM
-        // numerator/denominator in one pass.
+        // Energy COM on the summed-waveform — equivalent to MEAN-waveform
+        // COM since the ratio cancels the 1/N factor.  This is the energy
+        // profile of the cluster's typical waveform shape, with per-spike
+        // capture noise averaged out.
         double totalE    = 0.0;
         double weightedT = 0.0;
-        if (EnergyCOMMetric == 0) {
-            // Absolute (|x|) energy
-            for (int t = 0; t < nSamplesPerSpike; ++t) {
-                double e = 0.0;
-                const int16_t* row = waveScratch.data() + t * nChan;
-                for (int c = 0; c < nChan; ++c)
-                    e += std::fabs(static_cast<double>(row[c]));
-                totalE    += e;
-                weightedT += static_cast<double>(t) * e;
-            }
-        } else {
-            // Squared (x²) energy — standard signal-power definition
-            for (int t = 0; t < nSamplesPerSpike; ++t) {
-                double e = 0.0;
-                const int16_t* row = waveScratch.data() + t * nChan;
-                for (int c = 0; c < nChan; ++c) {
-                    const double x = static_cast<double>(row[c]);
+        for (int t = 0; t < nSamplesPerSpike; ++t) {
+            double e = 0.0;
+            const double* row = sumWave.data() + t * nChan;
+            if (EnergyCOMMetric == 0) {
+                for (int ch = 0; ch < nChan; ++ch) e += std::fabs(row[ch]);
+            } else {
+                for (int ch = 0; ch < nChan; ++ch) {
+                    const double x = row[ch];
                     e += x * x;
                 }
-                totalE    += e;
-                weightedT += static_cast<double>(t) * e;
             }
+            totalE    += e;
+            weightedT += static_cast<double>(t) * e;
         }
+        if (!(totalE > 0.0)) { ++nClustersSilent; continue; }
 
-        if (!(totalE > 0.0)) { ++nSilent; continue; }
-        const double tCOM = weightedT / totalE;
+        const double tCOM  = weightedT / totalE;
+        const int    delta = static_cast<int>(std::lround(tCOM - peakRef));
+        if (delta == 0) { ++nClustersZeroShift; continue; }
 
-        const int deltaCOM = static_cast<int>(std::lround(tCOM - peakRef));
-        if (deltaCOM == 0) { ++nZeroShift; continue; }
+        // Cap check across all members: if applying delta would push ANY
+        // member's cumulative shift past the cap, skip the whole cluster.
+        // Clamping only the over-cap members would scatter the cluster
+        // (some spikes shifted by delta, others by less), defeating the
+        // per-cluster-uniform design.
+        bool anyExceeds = false;
+        for (int p : members) {
+            const int wouldBe = m_cumShift[static_cast<size_t>(p)] + delta;
+            if (std::abs(wouldBe) > m_timeShiftMaxAbs) { anyExceeds = true; break; }
+        }
+        if (anyExceeds) { ++nClustersClamped; continue; }
 
-        const int curr    = m_cumShift[static_cast<size_t>(p)];
-        const int wouldBe = curr + deltaCOM;
-        if (std::abs(wouldBe) > m_timeShiftMaxAbs) { ++nClamped; continue; }
+        // Apply the SAME delta to every spike in the cluster.
+        for (int p : members)
+            m_cumShift[static_cast<size_t>(p)] += delta;
 
-        m_cumShift[static_cast<size_t>(p)] = wouldBe;
-        ++nShifted;
+        ++nClustersShifted;
+        nSpikesShifted += static_cast<int>(members.size());
     }
 
-    Output("[EnergyCOM] %d spikes shifted (peak ref = sample %d, cap = ±%d); "
-           "skipped: %d bad-read, %d silent, %d zero-shift, %d cap-clamped\n",
-           nShifted, PeakSampleIndex, m_timeShiftMaxAbs,
-           nBadRead, nSilent, nZeroShift, nClamped);
+    Output("[EnergyCOM] %d clusters realigned (%d spikes total; peak ref = "
+           "sample %d, cap = ±%d); skipped: %d small, %d bad-read, %d silent, "
+           "%d zero-shift, %d cap-clamped\n",
+           nClustersShifted, nSpikesShifted, PeakSampleIndex,
+           m_timeShiftMaxAbs, nClustersTooSmall, nClustersBadRead,
+           nClustersSilent, nClustersZeroShift, nClustersClamped);
 
-    if (nShifted > 0) {
+    if (nSpikesShifted > 0) {
         // Re-extract + re-featurize all currently-shifted spikes from .fil
         // at their NEW (cumulative) sample offsets, projecting through the
         // saved PCA eigenvectors and writing fresh features into Data[].
         RefeaturizeFromShifts(m_cumShift, nChan, nSamplesPerSpike);
     }
 
-    return nShifted;
+    return nSpikesShifted;
 }
 
 // ---------------------------------------------------------------------------
