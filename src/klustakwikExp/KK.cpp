@@ -6351,28 +6351,88 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
             centroid[j] += Xmem[static_cast<size_t>(i) * dPCA + j];
     for (int j = 0; j < dPCA; ++j) centroid[j] /= M;
 
-    // ── Gate B: dip test on each PC ──────────────────────────────────────
+    // ── Gate B: dip test on subdimensional projection ────────────────────
+    //
+    // Two modes (selected by -DipSplit2D):
+    //
+    // Mode 0 (default): test each top-K PC's 1D projection individually.
+    // Fast, catches bimodality aligned with any single eigenvector.  Can
+    // miss diagonal discriminants where neither PC1 nor PC2 alone shows
+    // a valley but their joint distribution does.
+    //
+    // Mode 1: project to (PC1, PC2) plane, scan directions θ ∈ [0, π) at
+    // 5° resolution (36 angles), run the 1D valley test on each direction,
+    // keep the deepest valley.  Catches diagonal discriminants — the
+    // optimal axis for separating two modes is the line between their
+    // centroids, which the scan finds without knowing the centroids a
+    // priori.  PC3+ is dropped under the assumption that real bimodality
+    // shows up in the top 2 variance directions; if you suspect PC3+
+    // bimodality on your data, stay in mode 0.
     int    best_pc     = -1;
     double best_depth  = 0.0;
     double best_valley = 0.0;
+    double best_theta_deg = 0.0;       // mode 1 only
+    bool   best_is_2d  = false;
     std::vector<double> best_projection;
-    for (int pc = 0; pc < kPCA; ++pc) {
-        const double* u = pcs.data() + pc * dPCA;
-        std::vector<double> proj(M);
+
+    if (DipSplit2D != 0 && kPCA >= 2) {
+        // Pre-compute PC1 and PC2 scores once for all spikes.
+        std::vector<double> s1(static_cast<size_t>(M));
+        std::vector<double> s2(static_cast<size_t>(M));
         for (int i = 0; i < M; ++i) {
-            double s = 0.0;
-            for (int j = 0; j < dPCA; ++j)
-                s += (Xmem[static_cast<size_t>(i) * dPCA + j] - centroid[j])
-                     * u[j];
-            proj[i] = s;
+            double a1 = 0.0, a2 = 0.0;
+            for (int j = 0; j < dPCA; ++j) {
+                const double v = Xmem[static_cast<size_t>(i) * dPCA + j]
+                               - centroid[static_cast<size_t>(j)];
+                a1 += v * pcs[0 * dPCA + j];
+                a2 += v * pcs[1 * dPCA + j];
+            }
+            s1[static_cast<size_t>(i)] = a1;
+            s2[static_cast<size_t>(i)] = a2;
         }
-        const dipsplit::ValleyResult vr = dipsplit::valley_test(
-            proj.data(), M, DipSplitValleyThresh);
-        if (vr.depth > best_depth) {
-            best_pc         = pc;
-            best_depth      = vr.depth;
-            best_valley     = vr.valley_loc;
-            best_projection = std::move(proj);
+
+        // Directional scan over θ ∈ [0, π) at 5° resolution.  Dip statistic
+        // is direction-symmetric (dip(θ) == dip(θ+π)) so half-circle suffices.
+        constexpr int nDir = 36;
+        std::vector<double> proj(static_cast<size_t>(M));
+        for (int k = 0; k < nDir; ++k) {
+            const double theta = M_PI * static_cast<double>(k) / nDir;
+            const double c  = std::cos(theta);
+            const double sn = std::sin(theta);
+            for (int i = 0; i < M; ++i)
+                proj[static_cast<size_t>(i)] =
+                    c * s1[static_cast<size_t>(i)] + sn * s2[static_cast<size_t>(i)];
+            const dipsplit::ValleyResult vr = dipsplit::valley_test(
+                proj.data(), M, DipSplitValleyThresh);
+            if (vr.depth > best_depth) {
+                best_pc         = 0;                       // sentinel; "2D-PC12"
+                best_depth      = vr.depth;
+                best_valley     = vr.valley_loc;
+                best_theta_deg  = theta * 180.0 / M_PI;
+                best_is_2d      = true;
+                best_projection = proj;                    // copy
+            }
+        }
+    } else {
+        // Per-PC 1D test (mode 0, current default).
+        for (int pc = 0; pc < kPCA; ++pc) {
+            const double* u = pcs.data() + pc * dPCA;
+            std::vector<double> proj(M);
+            for (int i = 0; i < M; ++i) {
+                double s = 0.0;
+                for (int j = 0; j < dPCA; ++j)
+                    s += (Xmem[static_cast<size_t>(i) * dPCA + j] - centroid[j])
+                         * u[j];
+                proj[i] = s;
+            }
+            const dipsplit::ValleyResult vr = dipsplit::valley_test(
+                proj.data(), M, DipSplitValleyThresh);
+            if (vr.depth > best_depth) {
+                best_pc         = pc;
+                best_depth      = vr.depth;
+                best_valley     = vr.valley_loc;
+                best_projection = std::move(proj);
+            }
         }
     }
     if (best_pc < 0 || best_depth < DipSplitValleyThresh) {
@@ -6440,11 +6500,19 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
         if (labels[i] == 1) Class[members[i]] = newId;
     }
 
-    Output("  [dipsplit] cluster %d → %d+%d  PC%d depth=%.3f  "
-           "mahal²₉₀=%.1f vs χ²₉₀=%.1f  elong=%.2fx  ΔBIC=%.1f  gate=%s\n",
-           clusterId, n0, n1, best_pc, best_depth,
-           mahal2_p90, chi2_90, elong_ratio, bp.bic_k1 - bp.bic_k2,
-           bloat_pass ? (elong_pass ? "both" : "bloat") : "elong");
+    if (best_is_2d) {
+        Output("  [dipsplit] cluster %d → %d+%d  PC12@%.0f° depth=%.3f  "
+               "mahal²₉₀=%.1f vs χ²₉₀=%.1f  elong=%.2fx  ΔBIC=%.1f  gate=%s\n",
+               clusterId, n0, n1, best_theta_deg, best_depth,
+               mahal2_p90, chi2_90, elong_ratio, bp.bic_k1 - bp.bic_k2,
+               bloat_pass ? (elong_pass ? "both" : "bloat") : "elong");
+    } else {
+        Output("  [dipsplit] cluster %d → %d+%d  PC%d depth=%.3f  "
+               "mahal²₉₀=%.1f vs χ²₉₀=%.1f  elong=%.2fx  ΔBIC=%.1f  gate=%s\n",
+               clusterId, n0, n1, best_pc, best_depth,
+               mahal2_p90, chi2_90, elong_ratio, bp.bic_k1 - bp.bic_k2,
+               bloat_pass ? (elong_pass ? "both" : "bloat") : "elong");
+    }
     reason_out = "split";
     return true;
 }
