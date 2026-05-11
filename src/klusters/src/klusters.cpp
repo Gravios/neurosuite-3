@@ -1743,7 +1743,7 @@ void KlustersApp::openDocumentFile(const QString& url)
         if(returnStatus == KlustersDoc::INCORRECT_FILE)
         {
             QApplication::restoreOverrideCursor();
-            QMessageBox::critical (this, tr("Error!"), tr("The selected file is invalid, it has to be of the form baseName.clu.n or baseName.fet.n or baseName.par.n"));
+            QMessageBox::critical (this, tr("Error!"), tr("The selected file is invalid, it has to be of the form baseName.clu.n, baseName.fet.n, or baseName.par.n — optionally followed by an experiment tag (e.g. baseName.clu.n.stack)."));
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             //close the document
             doc->closeDocument();
