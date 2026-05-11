@@ -140,6 +140,7 @@ extern float VBGMMBeta0;
 extern float VBGMMNu0Offset;
 extern int   VBGMMPriorMode;
 extern float VBGMMPriorBlend;
+extern float TemplateMatchEigRatio;
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;

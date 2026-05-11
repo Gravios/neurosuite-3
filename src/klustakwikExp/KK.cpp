@@ -8122,6 +8122,135 @@ void KK::ChunkReCEMPerChunk(
 // viewed at slightly different times within the chunk.  It also pre-consolidates
 // the model list before Phase 6 so cross-chunk matching has fewer, purer models.
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// ----- Top eigenvalue of a symmetric D × D matrix via power iteration ------
+// Returns lambda_max; converges in O(D² · iters), no eigvecs stored.  Used by
+// the Phase 5 union-elongation gate: top eigenvalue of pooled+between
+// covariance vs top eigenvalues of the individual cluster covariances.
+//
+// Reference matrix M must be symmetric; only the values M[i*D + j] (full
+// dense, with M[i,j] = M[j,i]) are read.  Stable on near-degenerate
+// spectra to within tol; if the matrix is identically zero, returns 0.
+static double tmpl_top_eigenvalue(const double* M, int D,
+                                  int max_iter = 60, double tol = 1e-7)
+{
+    if (D < 1) return 0.0;
+    if (D == 1) return M[0];
+    std::vector<double> u(static_cast<size_t>(D), 1.0 / std::sqrt(static_cast<double>(D)));
+    std::vector<double> v(static_cast<size_t>(D));
+    double lambda = 0.0;
+    for (int it = 0; it < max_iter; it++) {
+        // v = M u
+        for (int i = 0; i < D; i++) {
+            double s = 0.0;
+            for (int j = 0; j < D; j++) s += M[i * D + j] * u[static_cast<size_t>(j)];
+            v[static_cast<size_t>(i)] = s;
+        }
+        // ||v||
+        double n2 = 0.0;
+        for (int i = 0; i < D; i++) n2 += v[static_cast<size_t>(i)] * v[static_cast<size_t>(i)];
+        const double nrm = std::sqrt(n2);
+        if (nrm < 1e-30) return 0.0;
+        for (int i = 0; i < D; i++) v[static_cast<size_t>(i)] /= nrm;
+        // Rayleigh quotient: λ = vᵀ M v
+        double rq = 0.0;
+        for (int i = 0; i < D; i++) {
+            double s = 0.0;
+            for (int j = 0; j < D; j++) s += M[i * D + j] * v[static_cast<size_t>(j)];
+            rq += v[static_cast<size_t>(i)] * s;
+        }
+        const bool converged = (std::abs(rq - lambda) <= tol * std::abs(rq) + 1e-12);
+        lambda = rq;
+        std::swap(u, v);
+        if (converged) break;
+    }
+    return lambda;
+}
+
+// ----- Union-elongation ratio test ----------------------------------------
+//
+// For a candidate merge pair (A, B), compute the union covariance under
+// equal-weight pooled-within + Welch-style between term:
+//
+//   Σ_pooled = ((N_A-1)·Σ_A + (N_B-1)·Σ_B) / (N_A+N_B-2)
+//   Σ_union  = Σ_pooled + (N_A·N_B / ((N_A+N_B)(N_A+N_B-1))) · (m_A-m_B)(m_A-m_B)ᵀ
+//
+// Then compare top eigenvalues:
+//
+//   ratio = λ_max(Σ_union) / max(λ_max(Σ_A), λ_max(Σ_B))
+//
+// Interpretation:
+//   ratio ≈ 1   →  union's top eigenvalue is dominated by the more-elongated
+//                  component's natural anisotropy — the centroid separation
+//                  added no new structure → A and B are the same unit.
+//   ratio >> 1  →  union has elongation that NEITHER component had on its
+//                  own — driven by inter-centroid separation → A and B
+//                  are distinct units, do not merge.
+//
+// Crucially: this test does NOT have the failure mode that killed patch21's
+// per-cluster PCA preprocessing.  patch21 projected a single cluster's spikes
+// onto that cluster's own top eigenvector — which by construction produced
+// a 1-D distribution that CEM-with-K=2 would happily fit, giving a 67%
+// false-positive split rate on elongated single clusters.  The union-ratio
+// test SUBTRACTS the per-cluster top eigenvalue contribution, so an
+// elongated single cluster has ratio ≈ 1 (its own elongation cancels
+// against the pooled-within term) and does not trigger a false veto.
+//
+// Returns the ratio.  Returns 1.0 (no veto) on degenerate inputs.
+static double tmpl_union_eig_ratio(const KK::ChunkModel& A,
+                                   const KK::ChunkModel& B)
+{
+    const int D = static_cast<int>(A.mean.size());
+    if (D < 2 || static_cast<int>(B.mean.size()) != D) return 1.0;
+    if (A.cov.size() != static_cast<size_t>(D) * D) return 1.0;
+    if (B.cov.size() != static_cast<size_t>(D) * D) return 1.0;
+    if (A.nMembers < 2 || B.nMembers < 2)            return 1.0;
+
+    const double Na = A.nMembers, Nb = B.nMembers, Nu = Na + Nb;
+
+    // Symmetrise both per-cluster covariances from their upper-triangle storage.
+    std::vector<double> SA(static_cast<size_t>(D) * D);
+    std::vector<double> SB(static_cast<size_t>(D) * D);
+    for (int i = 0; i < D; i++) {
+        for (int j = i; j < D; j++) {
+            const double a = static_cast<double>(A.cov[static_cast<size_t>(i) * D + j]);
+            const double b = static_cast<double>(B.cov[static_cast<size_t>(i) * D + j]);
+            SA[i * D + j] = a; SA[j * D + i] = a;
+            SB[i * D + j] = b; SB[j * D + i] = b;
+        }
+    }
+
+    // Pooled-within covariance.
+    std::vector<double> SU(static_cast<size_t>(D) * D);
+    const double pooledDen = std::max(1.0, Nu - 2.0);
+    const double wA = (Na - 1.0) / pooledDen;
+    const double wB = (Nb - 1.0) / pooledDen;
+    for (int i = 0; i < D * D; i++) SU[i] = wA * SA[i] + wB * SB[i];
+
+    // Between-cluster outer product.
+    const double between = (Na * Nb) / (Nu * std::max(1.0, Nu - 1.0));
+    for (int i = 0; i < D; i++) {
+        const double di = static_cast<double>(A.mean[i]) - static_cast<double>(B.mean[i]);
+        for (int j = 0; j < D; j++) {
+            const double dj = static_cast<double>(A.mean[j]) - static_cast<double>(B.mean[j]);
+            SU[i * D + j] += between * di * dj;
+        }
+    }
+
+    // Top eigenvalues of each.
+    const double tA = tmpl_top_eigenvalue(SA.data(), D);
+    const double tB = tmpl_top_eigenvalue(SB.data(), D);
+    const double tU = tmpl_top_eigenvalue(SU.data(), D);
+    const double tMax = std::max(tA, tB);
+    if (tMax <= 1e-30) return 1.0;
+    return tU / tMax;
+}
+
+}  // anonymous namespace
+
+// ---------------------------------------------------------------------------
 int  KK::WithinChunkTemplateMatch(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
@@ -8197,6 +8326,29 @@ int  KK::WithinChunkTemplateMatch(
             if (b < 0) continue;
             if (bestB[static_cast<size_t>(b)] != a) continue;  // not mutual best
             if (Find(a) == Find(b)) continue;
+
+            // Optional eigenvalue-ratio veto.  When -TemplateMatchEigRatio > 0,
+            // additionally require that the union covariance's top eigenvalue
+            // is not dominated by inter-centroid separation.  See
+            // tmpl_union_eig_ratio() docs for the rationale and why this
+            // avoids the failure mode that killed patch21's per-cluster PCA.
+            if (TemplateMatchEigRatio > 0.0f) {
+                const double eigRatio = tmpl_union_eig_ratio(
+                    mdls[static_cast<size_t>(a)],
+                    mdls[static_cast<size_t>(b)]);
+                if (eigRatio > static_cast<double>(TemplateMatchEigRatio)) {
+                    Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f "
+                           "eig-ratio=%.2f > %.2f → VETO\n",
+                           ck,
+                           mdls[static_cast<size_t>(a)].localClusterId,
+                           mdls[static_cast<size_t>(b)].localClusterId,
+                           bestS[static_cast<size_t>(a)],
+                           eigRatio,
+                           static_cast<double>(TemplateMatchEigRatio));
+                    continue;
+                }
+            }
+
             Union(a, b);
             Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f\n",
                    ck,
