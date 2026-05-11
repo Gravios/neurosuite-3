@@ -648,6 +648,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     //close the file
     fclose(cluFile);
 
+    QString cluFileSuffix_;
     // For SaveAs: update doc URL and derived paths before committing.
     if(isSaveAs){
         docUrl = saveUrl;
