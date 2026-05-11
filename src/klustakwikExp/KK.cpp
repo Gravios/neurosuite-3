@@ -8538,7 +8538,7 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
 // ---------------------------------------------------------------------------
 void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                               int nChan, int nSamplesPerSpike,
-                              int nStart)
+                              int nStart, int chunkIdx)
 {
     const int nPts = static_cast<int>(pts.size());
     if (nPts < 5 || nChan <= 0 || nSamplesPerSpike <= 0) return;
@@ -8561,6 +8561,15 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     const int subK         = std::clamp(ResidualPCASubK, 2, 8);
     const double convTol   = std::max(0.0,
                                      static_cast<double>(ResidualPCAConvTol));
+
+    // Entry banner.  Each per-chunk worker emits one of these — when the
+    // chunk loop is parallel the lines interleave across threads, which is
+    // why every line is self-contained with its chunk index.
+    Output("[Phase 2b m3] chunk %d START: %d spikes, %d sub-dims, K_init=%d, "
+           "maxIter=%d, K_resid=%d, K_sub=%d, domCh=%d, convTol=%.4f, "
+           "maxShift=%d\n",
+           chunkIdx, nPts, nSubDims, K_init, maxIter, nResidComp, subK,
+           nDomCh, convTol, m_timeShiftMaxAbs);
 
     // ── Read all chunk spikes into a local buffer ───────────────────────
     // Bulk-read upfront so the inner loop has random access without per-spike
@@ -8610,25 +8619,49 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
 
     int totalSplitsApplied = 0;
     int totalRealigned     = 0;
+    int actualItersRun     = 0;
 
     for (int iter = 0; iter < maxIter; iter++) {
         prevLabels = labels;
+        ++actualItersRun;
+
+        // Snapshot alive-cluster count before this iter's VBGMM
+        int aliveBefore = 0;
+        {
+            std::vector<int> seen; seen.reserve(64);
+            for (int v : labels) {
+                if (v <= 0) continue;
+                bool found = false;
+                for (int s : seen) if (s == v) { found = true; break; }
+                if (!found) seen.push_back(v);
+            }
+            aliveBefore = static_cast<int>(seen.size());
+        }
 
         // ── Step 1: VBGMM on chunk features with current label warm-start ─
         // First iter: warm-start from Phase 2a (already in labels).  Later
         // iters: warm-start from the previous iter's split-and-realign
         // labels (re-featurized via Data[] which doesn't change inside this
         // chunk loop, but the labels carry forward the structure we found).
+        int vbgmmSurvivors = 0;
         {
             std::vector<int> lbuf = labels;
             // Cluster-id space may have expanded by splits in previous
             // iter; bound K_init by the labels actually present.
             int kCur = K_init;
             for (int v : lbuf) if (v + 1 > kCur) kCur = v + 1;
-            RunVBGMM(Ks.Data.m_Data, lbuf.data(), kCur, nPts, nSubDims,
-                     VBGMMMaxIter, static_cast<double>(VBGMMConvTol));
+            vbgmmSurvivors = RunVBGMM(
+                Ks.Data.m_Data, lbuf.data(), kCur, nPts, nSubDims,
+                VBGMMMaxIter, static_cast<double>(VBGMMConvTol));
             labels = lbuf;
         }
+
+        // Per-iter counters
+        int splitsThisIter      = 0;  // # clusters that got split
+        int newSubClustersIter  = 0;  // # new IDs created from splits
+        int clustersExamined    = 0;
+        int clustersTooSmall    = 0;
+        int realignThisIter     = 0;
 
         // ── Step 2/3: per-cluster residual-PCA + split via residual VBGMM ─
         // Find max alive cluster id to know where to assign new sub-ids.
@@ -8652,6 +8685,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         }
 
         for (int cid : activeIds) {
+            ++clustersExamined;
             // Gather members of cluster cid
             members.clear();
             for (int i = 0; i < nPts; i++)
@@ -8661,7 +8695,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
             // floor of 2·waveSamples keeps the per-cluster covariance
             // non-degenerate.  Below that, attempting to split is more
             // likely to overfit noise than discover real structure.
-            if (Nc < std::max(20, 2 * nResidComp)) continue;
+            if (Nc < std::max(20, 2 * nResidComp)) { ++clustersTooSmall; continue; }
 
             // Mean waveform of the cluster
             std::fill(meanWave.begin(), meanWave.end(), 0.0);
@@ -8746,6 +8780,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
 
             std::vector<int> subRemap(subK, -1);
             subRemap[majority] = cid;
+            int newIdsAddedHere = 0;
             for (int k = 0; k < subK; k++) {
                 if (k == majority) continue;
                 if (subCounts[k] == 0)  continue;
@@ -8756,6 +8791,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                     subRemap[k] = cid;
                 } else {
                     subRemap[k] = nextId++;
+                    ++newIdsAddedHere;
                 }
             }
             // Apply remap to chunk-wide labels[]
@@ -8764,7 +8800,11 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 const int newCid = (sk >= 0 && sk < subK) ? subRemap[sk] : cid;
                 labels[members[i]] = newCid;
             }
-            ++totalSplitsApplied;
+            if (newIdsAddedHere > 0) {
+                ++splitsThisIter;
+                newSubClustersIter += newIdsAddedHere;
+                ++totalSplitsApplied;
+            }
         }
 
         // ── Step 4: per-spike xcorr realign on dominant channels ─────────
@@ -8819,17 +8859,31 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                     const int wb   = curr + lag;
                     if (std::abs(wb) > m_timeShiftMaxAbs) continue;
                     m_cumShift[static_cast<size_t>(gp)] = wb;
+                    ++realignThisIter;
                     ++totalRealigned;
                 }
             }
         }
 
-        // ── Step 5: convergence check ────────────────────────────────────
+        // ── Step 5: convergence check + per-iter banner ──────────────────
         int nChanged = 0;
         for (int i = 0; i < nPts; i++)
             if (labels[i] != prevLabels[i]) ++nChanged;
         const double frac = static_cast<double>(nChanged) / nPts;
-        if (frac < convTol) break;
+        const bool   converged = (frac < convTol);
+
+        Output("[Phase 2b m3] chunk %d iter %d/%d: alive %d -> VBGMM survivors %d, "
+               "examined %d (%d too small), %d splits -> %d new sub-clusters, "
+               "%d spike realigns, %d/%d (%.2f%%) labels changed%s\n",
+               chunkIdx, iter + 1, maxIter,
+               aliveBefore, vbgmmSurvivors,
+               clustersExamined, clustersTooSmall,
+               splitsThisIter, newSubClustersIter,
+               realignThisIter,
+               nChanged, nPts, 100.0 * frac,
+               converged ? " [CONVERGED]" : "");
+
+        if (converged) break;
     }
 
     // Write final labels back into the sub-KK and refresh its bookkeeping.
@@ -8849,13 +8903,12 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     // don't call RefeaturizeFromShifts here because the parallel chunk
     // loop would race on Data[] writes if multiple chunks tried.
     //
-    // Diagnostic (only emit if anything happened in this chunk to keep
-    // the log readable on large sessions with hundreds of chunks).
-    if (totalSplitsApplied > 0 || totalRealigned > 0) {
-        Output("[Phase 2b m3] chunk: %d splits, %d realigns "
-               "(across %d iters max)\n",
-               totalSplitsApplied, totalRealigned, maxIter);
-    }
+    // Final chunk summary — always emitted (paired with the chunk-START
+    // banner) so per-chunk totals are visible even when nothing happened.
+    Output("[Phase 2b m3] chunk %d END: %d total splits, %d total realigns, "
+           "ran %d/%d iters\n",
+           chunkIdx, totalSplitsApplied, totalRealigned,
+           actualItersRun, maxIter);
 }
 
 void KK::ChunkReCEMPerChunk(
@@ -8871,6 +8924,7 @@ void KK::ChunkReCEMPerChunk(
     switch (Phase2bMode) {
         case 1:  p2bDesc = "Variational-Bayes GMM, warm-start from Phase-2a labels"; break;
         case 2:  p2bDesc = "warm-start CEM with splits -> VB-GMM auto-prune"; break;
+        case 3:  p2bDesc = "residual-PCA refinement + dominant-channel xcorr realign"; break;
         default: p2bDesc = "warm-start from Phase-2a labels (CEM)";  break;
     }
     fprintf(stderr, "[Phase 2b] Chunk re-CEM (%s)\n", p2bDesc);
@@ -9173,7 +9227,7 @@ void KK::ChunkReCEMPerChunk(
             //   ResidualPCADominantChannels — 1 or 2 (2)
             //   ResidualPCAConvTol          — convergence threshold (0.01)
             this->RunPhase2bMode3Chunk(Ks, pts, NbChannels,
-                                       NbSamplesPerSpike, nStart);
+                                       NbSamplesPerSpike, nStart, ck);
         } else {
             // ── Phase 2b mode 0: warm-start CEM (patch12 default) ─────────
             // Initial MStep + EStep so RunEMLoop has consistent stats, then
