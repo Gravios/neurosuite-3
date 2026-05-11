@@ -85,7 +85,7 @@ float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML at
 float MergeThresh            = 0.0f;    // 0 = auto-calibrate to χ²(nDims, 0.99) at runtime
 int   GlobalMergeIter        = 0;       // Phase 7 warm-start EM iterations; 0 skips Phase 7 entirely
 int   SaveIntermediates      = 0;       // 0 = final-write only; 1 = also write per-phase .clu
-// Phase 1.5 waveform realignment parameters
+// Phase 1a waveform realignment parameters
 int   NbChannels             = 0;    ///< spike group channel count
 int   NbSamplesPerSpike      = 0;    ///< waveform window width
 int   PeakSampleIndex        = 0;    ///< 0-based spike peak within window
@@ -93,7 +93,7 @@ int   NbTotalChannels        = 0;    ///< total channels in .fil file
 int   NbBytesPerSample       = 2;    ///< bytes per sample in .spk
 std::vector<int> GroupChannelIds;    ///< ADC channel indices for this group
 int   nRuns                  = 20;   ///< flat run count; 0 = legacy K×nStarts loop
-int   TimeShiftAlignIter     = 5;    ///< Phase 1.5 alignment passes (0=skip; N runs with MStep between)
+int   TimeShiftAlignIter     = 5;    ///< Phase 1a alignment passes (0=skip; N runs with MStep between)
 
 // ── Empirical prior ────────────────────────────────────────────────────────
 char  PriorFile[STRLEN]      = "";   ///< path to .prior.N.yaml
@@ -111,7 +111,7 @@ float VBGMMNu0Offset         = 2.0f; ///< VB-GMM Wishart d.o.f. = D + this; must
 int   VBGMMPriorMode         = 0;    ///< 0 = isotropic global, 1 = per-cluster diagonal empirical, 2 = per-cluster FULL covariance empirical
 float VBGMMPriorBlend        = 0.1f; ///< (mode 1, 2) regularization blend toward isotropic; 0 = pure empirical
 float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-top-eig / max(per-cluster-top-eig). 0 disables (xcorr only).
-int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1.6 DipSplit is unaffected.
+int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
 int   TimeShiftAlignPostMerge = 0;   ///< If 1, run TimeShiftAlignPhase one more time after Phase 7 EM, with the post-merge global cluster state.  Catches misalignments that arose from boundary spike reassignments in Phase 6 / Phase 7.

@@ -211,12 +211,12 @@ public:
                            const std::vector<std::unordered_map<int,int>>& overlapVotes);
 
 
-    // Per-chunk subspace reclustering — runs BEFORE Phase 1.5 and Phase 2.
+    // Per-chunk subspace reclustering — runs BEFORE Phase 1a and Phase 2.
     // For each per-chunk local cluster, projects its spikes into the top-subspaceDims
     // eigenvector subspace and tries to split it.  Updates perChunkClass and
     // perChunkModels in-place so downstream realignment and cross-chunk matching
     // see purer cluster models.
-    // Within-chunk merge pass — runs after Phase 1.5 waveform realignment,
+    // Within-chunk merge pass — runs after Phase 1a waveform realignment,
     // before Phase 2 cross-chunk matching.  Uses updated Data[] features to
     // merge over-split local clusters within each chunk.
     // Post-Phase-2 global waveform realignment.
@@ -229,7 +229,7 @@ public:
 
     // Within-chunk xcorr template matching — merges clusters whose mean
     // waveforms have normalised xcorr >= minScore (mutual best match).
-    // Runs after Phase 1.5 realignment and meanWav harvest, before Phase 2.
+    // Runs after Phase 1a realignment and meanWav harvest, before Phase 2.
     int  WithinChunkTemplateMatch(
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
@@ -314,7 +314,7 @@ public:
                                            int   nSpatialDims,
                                            int   timeMergeIter);
 
-    // Phase 1.5 waveform realignment — in-place .spk rewrite.
+    // Phase 1a waveform realignment — in-place .spk rewrite.
     //
     // Reads each spike's waveform from the .spk file, aligns it to its
     // chunk-cluster mean via integer circular cross-correlation, and writes
@@ -480,13 +480,13 @@ public:
         const float* destMean,     // [nDims]
         const float* destChol);    // [nDims²] lower-triangular
 
-    // ---- Cluster-internal alignment (Phase 1.5 replacement) ---------------
+    // ---- Cluster-internal alignment (Phase 1a replacement) ---------------
     // Per-spike min-Mahalanobis² alignment of spikes against their OWN
     // cluster's Gaussian.  Equivalent problem statement to canonical xcorr
     // realignment but operates in feature space (using Chol rather than
     // raw-waveform cross-correlation) — which automatically weights
-    // dimensions by their discriminative power.  Runs at the Phase 1.5
-    // slot in the driver (Phase 1.5), replacing the canonical xcorr pass
+    // dimensions by their discriminative power.  Runs at the Phase 1a
+    // slot in the driver (Phase 1a), replacing the canonical xcorr pass
     // that has been removed.
     //
     // Returns the number of spikes whose shift changed.  A no-op when the
