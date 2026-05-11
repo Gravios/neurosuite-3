@@ -654,16 +654,46 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         QFileInfo docUrlFileInfo(docUrl);
         QString fileName = docUrlFileInfo.fileName();
         const QStringList fileParts = fileName.split(".", Qt::SkipEmptyParts);
-        baseName = fileParts.first();
-        if(fileParts.count() > 2)  {
-            for(qsizetype i = 1;i < fileParts.count()-2; ++i){
-                baseName += "." + fileParts.at(i);
-            }
+
+        // Use the same suffix-aware scan-from-end parser as openDocument so
+        // a SaveAs to a tagged path (e.g. `foo.clu.8.stack`) correctly
+        // updates baseName/electrodeGroupID/cluFileSuffix_ — without this,
+        // baseName ends up as "foo.clu" and electrodeGroupID as "stack",
+        // which corrupts every subsequent .spk/.fet/.par path.
+        static const QStringList kTypeTokens = {
+            QStringLiteral("clu"), QStringLiteral("fet"),
+            QStringLiteral("spk"), QStringLiteral("par"),
+            QStringLiteral("fetD"), QStringLiteral("spkD"),
+        };
+        qsizetype typeIdx = -1;
+        for (qsizetype probe = 2; probe <= 4 && probe <= fileParts.count(); ++probe) {
+            const qsizetype idx = fileParts.count() - probe;
+            if (idx < 1) break;
+            if (kTypeTokens.contains(fileParts[idx])) { typeIdx = idx; break; }
         }
-        if(fileParts.count() < 3)
-            electrodeGroupID.clear();
-        else
-            electrodeGroupID = fileParts.at(fileParts.count()-1);
+        if (typeIdx >= 0) {
+            baseName = fileParts.first();
+            for (qsizetype i = 1; i < typeIdx; ++i)
+                baseName += "." + fileParts.at(i);
+            electrodeGroupID = fileParts.at(typeIdx + 1);
+            cluFileSuffix_.clear();
+            for (qsizetype i = typeIdx + 2; i < fileParts.count(); ++i)
+                cluFileSuffix_ += QLatin1Char('.') + fileParts.at(i);
+        } else {
+            // Legacy fallback (unrecognised filename) — preserves old behaviour
+            // so callers that don't pass a tagged form still work.
+            baseName = fileParts.first();
+            if(fileParts.count() > 2)  {
+                for(qsizetype i = 1;i < fileParts.count()-2; ++i){
+                    baseName += "." + fileParts.at(i);
+                }
+            }
+            if(fileParts.count() < 3)
+                electrodeGroupID.clear();
+            else
+                electrodeGroupID = fileParts.at(fileParts.count()-1);
+            cluFileSuffix_.clear();
+        }
 
         parameterFile = docUrlFileInfo.absoluteFilePath() + QDir::separator() + baseName + ".yaml";
     }
