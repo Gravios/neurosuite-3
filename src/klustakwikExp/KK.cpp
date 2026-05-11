@@ -29,6 +29,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <random>
 #include <unordered_map>
@@ -2373,6 +2374,12 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     // partner via overlap.
     std::unordered_set<int> matched;   // model indices
 
+    // Confirmed (chunk_pair, model_pair) records from Pass 1.  Harvested
+    // alongside the matched/Union ops so we get drift-displacement
+    // evidence per adjacent chunk pair for Pass 2's smoothness factor.
+    struct ConfirmedPair { int chunkA, chunkB, modelA, modelB; };
+    std::vector<ConfirmedPair> confirmedPairs;
+
     int totalVoteMerges = 0;
     for (int k = 0; k <= maxChunk - 1; k++) {
         auto itA = byChunk.find(k);
@@ -2432,10 +2439,128 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                        models[mB].chunkIdx, clsK1,
                        topB.second, itBest->second.second);
             }
+            // Harvest this confirmed pair so we can later compute the
+            // per-adjacent-chunk-pair drift displacement vector.  These
+            // come from the authoritative overlap-vote source — direct
+            // spike-sorting evidence of cluster continuity across chunks.
+            confirmedPairs.push_back({k, k + 1, mA, mB});
         }
     }
     Output("MergeChunkModels: Pass 1 (overlap voting): %d new merges across %d chunk pairs\n",
            totalVoteMerges, std::max(0, maxChunk));
+
+    // ── Build drift table from Pass 1 confirmed matches ─────────────────
+    //
+    // For each adjacent chunk pair (k, k+1) with ≥ 3 confirmed matches,
+    // compute the mean displacement (per feature dim) and the residual
+    // RMS scatter of individual match displacements around that mean.
+    //
+    //   expected_drift(k → k+1) = mean over matches of (mB.mean - mA.mean)
+    //   scatter(k → k+1)        = RMS deviation of individual displacements
+    //                             from the mean
+    //
+    // Used by Pass 2 to compute a smoothness factor on each candidate
+    // xcorr match:
+    //
+    //   actual    = mB.mean - mA.mean
+    //   deviation = ||actual - expected_drift(A → B)|| / scatter(A → B)
+    //   smoothness = exp(-(deviation / CrossChunkDriftSigma)² / 2)
+    //   effective_score = xcorr_score × smoothness
+    //
+    // Semantics: candidates whose displacement matches the population's
+    // average drift (smooth trajectory, or coordinated jump from electrode
+    // movement) → smoothness ≈ 1 → no penalty.  Solo jumps or
+    // wrong-direction displacements → smoothness ≈ 0 → effectively vetoed.
+    //
+    // For non-adjacent chunk pairs (a, b), expected drift is the sum of
+    // adjacent-pair drifts in the chain; scatter combines via variance
+    // addition (independent per-pair errors).
+    struct DriftEstimate {
+        std::vector<double> mean_shift;
+        double scatter;
+        int    n_matches;
+    };
+    std::map<std::pair<int,int>, DriftEstimate> driftTable;
+
+    if (CrossChunkDriftSigma > 0.0f && nSpatialDims > 0) {
+        // Group confirmed pairs by adjacent chunk pair
+        std::map<std::pair<int,int>, std::vector<std::pair<int,int>>> pairsByChunkPair;
+        for (const auto& cp : confirmedPairs) {
+            pairsByChunkPair[{cp.chunkA, cp.chunkB}].push_back({cp.modelA, cp.modelB});
+        }
+
+        for (const auto& [chunkPair, modelPairs] : pairsByChunkPair) {
+            if (static_cast<int>(modelPairs.size()) < 3) continue;
+
+            const int D = nSpatialDims;
+            std::vector<double> mean_shift(D, 0.0);
+            std::vector<std::vector<double>> displacements;
+            displacements.reserve(modelPairs.size());
+
+            for (const auto& [mA, mB] : modelPairs) {
+                const auto& mvA = models[mA].mean;
+                const auto& mvB = models[mB].mean;
+                if (static_cast<int>(mvA.size()) < D ||
+                    static_cast<int>(mvB.size()) < D) continue;
+                std::vector<double> disp(D);
+                for (int j = 0; j < D; j++) {
+                    disp[j] = static_cast<double>(mvB[j])
+                            - static_cast<double>(mvA[j]);
+                    mean_shift[j] += disp[j];
+                }
+                displacements.push_back(std::move(disp));
+            }
+            if (displacements.size() < 3) continue;
+            const double invN = 1.0 / displacements.size();
+            for (int j = 0; j < D; j++) mean_shift[j] *= invN;
+
+            // Residual RMS scatter (Euclidean norm of (disp - mean_shift))
+            double sum_dev2 = 0.0;
+            for (const auto& disp : displacements) {
+                double r2 = 0.0;
+                for (int j = 0; j < D; j++) {
+                    const double r = disp[j] - mean_shift[j];
+                    r2 += r * r;
+                }
+                sum_dev2 += r2;
+            }
+            const double scatter = std::sqrt(
+                sum_dev2 / std::max<size_t>(1, displacements.size() - 1));
+
+            driftTable[chunkPair] = {
+                std::move(mean_shift), scatter,
+                static_cast<int>(displacements.size())};
+        }
+
+        Output("MergeChunkModels: Drift table — %zu adjacent chunk pairs estimated "
+               "(from ≥3 confirmed matches each)\n", driftTable.size());
+    }
+
+    // Helper: expected drift from chunk ca to chunk cb (signed) and combined
+    // scatter.  For adjacent pairs uses the direct table entry; for
+    // non-adjacent pairs chains through intermediate adjacent pairs.
+    // Returns scatter = -1 if no estimate possible (any link in the chain
+    // is missing from the table).
+    auto lookupDrift = [&](int ca, int cb, int D)
+        -> std::pair<std::vector<double>, double>
+    {
+        if (ca == cb) return {std::vector<double>(D, 0.0), 0.0};
+        const int ci = std::min(ca, cb);
+        const int cj = std::max(ca, cb);
+        std::vector<double> total(D, 0.0);
+        double total_var = 0.0;
+        for (int k = ci; k < cj; k++) {
+            auto it = driftTable.find({k, k + 1});
+            if (it == driftTable.end())
+                return {std::vector<double>(D, 0.0), -1.0};
+            for (int j = 0; j < D; j++)
+                total[j] += it->second.mean_shift[j];
+            total_var += it->second.scatter * it->second.scatter;
+        }
+        if (ca > cb)
+            for (double& v : total) v = -v;
+        return {std::move(total), std::sqrt(total_var)};
+    };
 
     // ── Pass 2: F1 N×M xcorr on leftovers, directional edge waveforms ───
     //
@@ -2505,6 +2630,43 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                     wA->data(), wB->data(),
                     1, NbChannels, NbSamplesPerSpike, mxSh, 0.0f, &sh, &sc);
                 if (sc < CrossChunkTemplateScore) continue;
+
+                // Drift-smoothness factor.  When CrossChunkDriftSigma > 0
+                // AND the chunk pair has a drift estimate from Pass 1,
+                // multiply the xcorr score by exp(-(dev/sigma)²/2) where
+                // dev = ||actual_displacement - expected|| / scatter.
+                // Real drifting units have actual ≈ expected → smoothness ≈ 1.
+                // Wrong-direction or solo jumps → smoothness ≈ 0 → effectively
+                // vetoed.  No drift estimate available (insufficient Pass 1
+                // matches in the chain) → smoothness skipped, fall back to
+                // pure xcorr scoring.
+                if (CrossChunkDriftSigma > 0.0f && nSpatialDims > 0) {
+                    const int D = nSpatialDims;
+                    if (static_cast<int>(mA.mean.size()) >= D &&
+                        static_cast<int>(mB.mean.size()) >= D)
+                    {
+                        const auto [expected, scatter] =
+                            lookupDrift(mA.chunkIdx, mB.chunkIdx, D);
+                        if (scatter > 0.0) {
+                            double dev2 = 0.0;
+                            for (int j = 0; j < D; j++) {
+                                const double d =
+                                    (static_cast<double>(mB.mean[j])
+                                   - static_cast<double>(mA.mean[j]))
+                                  - expected[j];
+                                dev2 += d * d;
+                            }
+                            const double dev_norm =
+                                std::sqrt(dev2) / scatter;
+                            const double sig =
+                                static_cast<double>(CrossChunkDriftSigma);
+                            const double smoothness =
+                                std::exp(-0.5 * (dev_norm / sig) * (dev_norm / sig));
+                            sc = static_cast<float>(sc * smoothness);
+                            if (sc < CrossChunkTemplateScore) continue;
+                        }
+                    }
+                }
 
                 auto itF = bestForward.find(li);
                 if (itF == bestForward.end() || sc > itF->second.second)
