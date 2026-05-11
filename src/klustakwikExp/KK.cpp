@@ -3365,8 +3365,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // block above ran MStep + Cholesky.  When SubspaceRecluster=0 no
     // clusters are alive yet and the call no-ops cleanly (the loop in
     // TimeShiftAlignPhase iterates ClassAlive and finds nothing).
-    if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
-        TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1, "Phase 1a");
 
     // ── Phase 1b: per-chunk DipSplit ──────────────────────────────────────
     //
@@ -3376,6 +3375,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
     //
@@ -3428,6 +3428,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // handle the time-shift cases that actually occur (genuine same-unit
     // mergers across drift).
 
+    // ── Post-Phase-2 alignment site ─────────────────────────────────────
+    RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Phase 2c");
 
     // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
     // this function.  Running it here would operate on stale per-chunk
@@ -3721,6 +3723,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
 
+    // ── Post-Phase-5 alignment site ─────────────────────────────────────
+    // Within-chunk template merges have consolidated per-chunk clusters.
+    // Aligns spikes against the merged means before cross-chunk matching.
+    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
+
     fprintf(stderr, "[Phase 6] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     if (nGlobal < 1) {
@@ -3746,6 +3753,13 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     for (const auto& cm : allModels)
         packedToGlobal[cm.chunkIdx * MaxPossibleClusters + cm.localClusterId] =
             cm.globalClusterId;
+
+    // ── Post-Phase-6 alignment site ─────────────────────────────────────
+    // Runs after cross-chunk model matching: per-chunk clusters have been
+    // mapped to global cluster IDs (above) but Class[] is still per-chunk.
+    // Aligns spikes to per-chunk cluster means BEFORE the Phase 7 init
+    // block remaps Class[] to global IDs.
+    RunAlignmentBlock(TimeShiftAlignAfterPhase6, "Phase 6a");
 
     // ── Phase 7: global warm-start EM ───────────────────────────────────────
     nDims  = nFullDims;
@@ -3855,7 +3869,12 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
         fprintf(stderr, "[Phase 7a] Post-merge cluster realignment\n");
         const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
-        if (nShifted > 0) {
+        int nCOMShifted = 0;
+        if (EnergyCOMRealign != 0) {
+            fprintf(stderr, "[Phase 7a] Energy-COM realignment\n");
+            nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
+        }
+        if (nShifted > 0 || nCOMShifted > 0) {
             // Refresh global state after realignment: MStep recomputes
             // Mean/Cov from updated Data[], EStep populates LogP, then a
             // ComputeScore captures the post-realignment score.
@@ -4335,8 +4354,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // block above ran MStep + Cholesky.  When SubspaceRecluster=0 no
     // clusters are alive yet and the call no-ops cleanly (the loop in
     // TimeShiftAlignPhase iterates ClassAlive and finds nothing).
-    if (TimeShiftAlignIter > 0 && NbChannels > 0 && NbSamplesPerSpike > 0)
-        TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1, "Phase 1a");
 
     // ── Phase 1b: per-chunk DipSplit ──────────────────────────────────────
     //
@@ -4346,6 +4364,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
     //
@@ -4398,6 +4417,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // handle the time-shift cases that actually occur (genuine same-unit
     // mergers across drift).
 
+    // ── Post-Phase-2 alignment site ─────────────────────────────────────
+    RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Phase 2c");
 
     // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
     // this function.  Running it here would operate on stale per-chunk
@@ -4733,6 +4754,11 @@ float KK::RunChunkedCEM(float chunkMinutes,
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
 
+    // ── Post-Phase-5 alignment site ─────────────────────────────────────
+    // Within-chunk template merges have consolidated per-chunk clusters.
+    // Aligns spikes against the merged means before cross-chunk matching.
+    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
+
     fprintf(stderr, "[Phase 6] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     if (nGlobal < 1) {
@@ -4767,6 +4793,16 @@ float KK::RunChunkedCEM(float chunkMinutes,
     for (const auto& cm : allModels)
         packedToGlobal[cm.chunkIdx * MaxPossibleClusters + cm.localClusterId] =
             cm.globalClusterId;
+
+    // ── Post-Phase-6 alignment site ─────────────────────────────────────
+    // Runs after cross-chunk model matching: per-chunk clusters have been
+    // mapped to global cluster IDs (above) but no Class[] update has happened
+    // yet — that occurs inside the Phase 7 init block below.  Alignment here
+    // uses the still-per-chunk Class state, which is correct: spikes are
+    // aligned to their per-chunk cluster means BEFORE the per-chunk → global
+    // remap kicks in.  This catches alignment drift WITHIN per-chunk clusters
+    // that Phase 5's template matching may have left behind.
+    RunAlignmentBlock(TimeShiftAlignAfterPhase6, "Phase 6a");
 
     // -------------------------------------------------------------------
     // Phase 7: global warm-start EM (full dimensionality including time)
@@ -4876,7 +4912,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
     if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
         fprintf(stderr, "[Phase 7a] Post-merge cluster realignment\n");
         const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
-        if (nShifted > 0) {
+        int nCOMShifted = 0;
+        if (EnergyCOMRealign != 0) {
+            fprintf(stderr, "[Phase 7a] Energy-COM realignment\n");
+            nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
+        }
+        if (nShifted > 0 || nCOMShifted > 0) {
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
             void* savedGpuR = static_cast<void*>(gpu); gpu = nullptr;
 #endif
@@ -6500,6 +6541,160 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
         Output("[Phase 1a] Cluster alignment: %d total spike-shifts\n",
                totalShifted);
     return totalShifted;
+}
+
+// ---------------------------------------------------------------------------
+// EnergyCOMRealignPhase — per-spike centre-of-energy realignment
+//
+// Computes, for each spike, the weighted-mean time of the per-sample
+// channel-summed energy in its .spk window:
+//
+//     e(t) = Σ_c |x(t, c)|²       (EnergyCOMMetric = 1, default)
+//          | Σ_c |x(t, c)|        (EnergyCOMMetric = 0)
+//     t_COM = ( Σ_t  t · e(t) ) / ( Σ_t e(t) )
+//
+// Then computes the integer shift δ_COM = round(t_COM − PeakSampleIndex)
+// and adds it to m_cumShift[p], clamping against m_timeShiftMaxAbs.  The
+// shift is ADDITIVE to whatever a preceding cluster-mean alignment
+// (TimeShiftAlignPhase) wrote — the two are complementary criteria:
+// cluster-mean handles cluster-fit drift in PCA space, energy-COM
+// handles waveform-anchor drift in time.
+//
+// After updating m_cumShift, RefeaturizeFromShifts re-extracts the
+// shifted spikes from .fil at the new sample offsets, projects through
+// the saved PCA eigenvectors, re-normalises, and writes the new features
+// into Data[].  This is the same machinery used by Phase 9
+// (TimeShiftFinalize) for the final disk commit, just invoked mid-run.
+//
+// Cost notes:
+//  - O(nPoints · nChan · nSamplesPerSpike) per spike for the energy sum
+//    — small (waveSamples ≈ 8 × 42 = 336 ops); the spike read from .spk
+//    dominates if the file isn't memory-mapped.
+//  - RefeaturizeFromShifts iterates spikes-with-non-zero-cumShift; for
+//    typical sub-second shifts after cluster-mean align this is a
+//    modest fraction of nPoints.  Calling this between multiple
+//    phases is the dominant cost — each call re-reads from .fil for
+//    shifted spikes (~30 µs/spike).
+//
+// Reads the ORIGINAL .spk waveform per spike (TimeShiftReadSpikeWave
+// does not account for m_cumShift), so the COM is computed from the
+// waveform as originally captured — independent of any prior shift
+// already in m_cumShift.  The additive update to m_cumShift means the
+// final shift is the SUM of all prior contributions plus the new COM
+// correction, which is what Phase 9 / RefeaturizeFromShifts use.
+//
+// Returns the cumulative number of spikes whose m_cumShift was changed
+// by this call.
+// ---------------------------------------------------------------------------
+int KK::EnergyCOMRealignPhase(int nChan, int nSamplesPerSpike)
+{
+    if (!m_timeShiftReady) return 0;
+    if (EnergyCOMRealign == 0) return 0;
+    if (nChan <= 0 || nSamplesPerSpike <= 0) return 0;
+    if (!(!m_cumShift.empty())) return 0;
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+    std::vector<int16_t> waveScratch(static_cast<size_t>(waveSamples), 0);
+
+    const double peakRef = static_cast<double>(PeakSampleIndex);
+    int nShifted   = 0;
+    int nClamped   = 0;
+    int nBadRead   = 0;
+    int nSilent    = 0;
+    int nZeroShift = 0;
+
+    for (int p = 0; p < nPoints; ++p) {
+        if (!TimeShiftReadSpikeWave(p, waveSamples, waveScratch.data())) {
+            ++nBadRead;
+            continue;
+        }
+
+        // Sum channel-energy at each sample and accumulate the COM
+        // numerator/denominator in one pass.
+        double totalE    = 0.0;
+        double weightedT = 0.0;
+        if (EnergyCOMMetric == 0) {
+            // Absolute (|x|) energy
+            for (int t = 0; t < nSamplesPerSpike; ++t) {
+                double e = 0.0;
+                const int16_t* row = waveScratch.data() + t * nChan;
+                for (int c = 0; c < nChan; ++c)
+                    e += std::fabs(static_cast<double>(row[c]));
+                totalE    += e;
+                weightedT += static_cast<double>(t) * e;
+            }
+        } else {
+            // Squared (x²) energy — standard signal-power definition
+            for (int t = 0; t < nSamplesPerSpike; ++t) {
+                double e = 0.0;
+                const int16_t* row = waveScratch.data() + t * nChan;
+                for (int c = 0; c < nChan; ++c) {
+                    const double x = static_cast<double>(row[c]);
+                    e += x * x;
+                }
+                totalE    += e;
+                weightedT += static_cast<double>(t) * e;
+            }
+        }
+
+        if (!(totalE > 0.0)) { ++nSilent; continue; }
+        const double tCOM = weightedT / totalE;
+
+        const int deltaCOM = static_cast<int>(std::lround(tCOM - peakRef));
+        if (deltaCOM == 0) { ++nZeroShift; continue; }
+
+        const int curr    = m_cumShift[static_cast<size_t>(p)];
+        const int wouldBe = curr + deltaCOM;
+        if (std::abs(wouldBe) > m_timeShiftMaxAbs) { ++nClamped; continue; }
+
+        m_cumShift[static_cast<size_t>(p)] = wouldBe;
+        ++nShifted;
+    }
+
+    Output("[EnergyCOM] %d spikes shifted (peak ref = sample %d, cap = ±%d); "
+           "skipped: %d bad-read, %d silent, %d zero-shift, %d cap-clamped\n",
+           nShifted, PeakSampleIndex, m_timeShiftMaxAbs,
+           nBadRead, nSilent, nZeroShift, nClamped);
+
+    if (nShifted > 0) {
+        // Re-extract + re-featurize all currently-shifted spikes from .fil
+        // at their NEW (cumulative) sample offsets, projecting through the
+        // saved PCA eigenvectors and writing fresh features into Data[].
+        RefeaturizeFromShifts(m_cumShift, nChan, nSamplesPerSpike);
+    }
+
+    return nShifted;
+}
+
+// ---------------------------------------------------------------------------
+// RunAlignmentBlock — per-phase-boundary alignment wrapper
+//
+// Invoked at each insertion site (after Phase 1, Phase 1b, Phase 2,
+// Phase 2b, Phase 5, Phase 6) when the corresponding
+// TimeShiftAlignAfterPhase* flag is set.  Runs cluster-mean alignment
+// via TimeShiftAlignPhase, then (if -EnergyCOMRealign 1) the energy-COM
+// pass via EnergyCOMRealignPhase.  Banners use the supplied label.
+//
+// Intentionally minimal — no MStep / EStep / ComputeScore here.  The
+// existing convention (matching the original Phase 1a call site at the
+// pre-patch line 3368) is that the next phase's own setup refreshes
+// global state.  The dedicated Phase 7a site does its own
+// ComputeScore + ReportClusterQuality because it's the LAST
+// alignment of the run and the final score / quality dump consumes
+// the refreshed numbers.
+// ---------------------------------------------------------------------------
+void KK::RunAlignmentBlock(int enableFlag, const char* phaseLabel)
+{
+    if (!enableFlag || !m_timeShiftReady) return;
+    if (NbChannels <= 0 || NbSamplesPerSpike <= 0) return;
+
+    fprintf(stderr, "[%s] Cluster-mean alignment\n", phaseLabel);
+    (void)TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
+
+    if (EnergyCOMRealign != 0) {
+        fprintf(stderr, "[%s] Energy-COM realignment\n", phaseLabel);
+        (void)EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
+    }
 }
 
 // ===========================================================================

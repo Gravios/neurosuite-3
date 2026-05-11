@@ -500,6 +500,27 @@ public:
     // MStep + EStep beforehand.
     int TimeShiftAlignPhase(int nChan, int nSamplesPerSpike);
 
+    // Energy-COM (centre-of-mass) per-spike realignment.  For each spike,
+    // sums channel-energy across the .spk window, computes the
+    // weighted-mean time index of that energy distribution, and applies
+    // an additive integer shift to align that COM time with
+    // PeakSampleIndex (clamped against the cumulative-shift cap).  After
+    // all per-spike shifts, calls RefeaturizeFromShifts to re-extract
+    // and re-project shifted spikes from .fil.  No-ops when
+    // -EnergyCOMRealign 0 or the time-shift probe isn't initialised.
+    // Returns the number of spikes whose cumulative shift changed.
+    int EnergyCOMRealignPhase(int nChan, int nSamplesPerSpike);
+
+    // Run cluster-mean alignment (via TimeShiftAlignPhase) and, when
+    // EnergyCOMRealign != 0, an additional energy-COM pass.  Gated by
+    // the per-phase enableFlag passed in (e.g., TimeShiftAlignAfterPhase5).
+    // Banners include the supplied phaseLabel.  Caller is responsible
+    // for any post-alignment MStep / EStep / score refresh appropriate
+    // to the phase boundary (matches the existing Phase 1a convention,
+    // where the next phase's own state refresh suffices; the dedicated
+    // post-Phase-7 site does its own ComputeScore + ReportClusterQuality).
+    void RunAlignmentBlock(int enableFlag, const char* phaseLabel);
+
     // ---- DipSplit: bimodal-cluster detection & split (Phase 8) ----------
     //
     // For each alive cluster that passes a χ²-calibrated bloat gate (its
