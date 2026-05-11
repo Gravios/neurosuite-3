@@ -545,7 +545,7 @@ public:
     // serialised on a named critical section.
     void RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                               int nChan, int nSamplesPerSpike,
-                              int nStart);
+                              int nStart, int chunkIdx);
 
     // ---- DipSplit: bimodal-cluster detection & split (Phase 8) ----------
     //
