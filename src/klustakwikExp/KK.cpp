@@ -8807,63 +8807,15 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
             }
         }
 
-        // ── Step 4: per-spike xcorr realign on dominant channels ─────────
-        // For the (possibly-split) current labels, recompute means and align.
-        {
-            // Build a fresh list of alive non-noise cluster ids (post-split)
-            std::vector<int> seen;
-            seen.reserve(64);
-            for (int v : labels) {
-                if (v <= 0) continue;
-                bool found = false;
-                for (int s : seen) if (s == v) { found = true; break; }
-                if (!found) seen.push_back(v);
-            }
-
-            for (int cid : seen) {
-                members.clear();
-                for (int i = 0; i < nPts; i++)
-                    if (labels[i] == cid) members.push_back(i);
-                if (static_cast<int>(members.size()) < 5) continue;
-
-                // Mean waveform
-                std::fill(meanWave.begin(), meanWave.end(), 0.0);
-                for (int m : members) {
-                    const int16_t* w = waveBuf.data() +
-                                       static_cast<size_t>(m) * waveSamples;
-                    for (int j = 0; j < waveSamples; j++)
-                        meanWave[j] += static_cast<double>(w[j]);
-                }
-                const double invN = 1.0 / members.size();
-                for (int j = 0; j < waveSamples; j++) meanWave[j] *= invN;
-
-                // Dominant channels (top by peak-to-peak amplitude)
-                FindDominantChannels(meanWave.data(), nChan,
-                                     nSamplesPerSpike, nDomCh, domChans);
-                if (domChans.empty()) continue;
-
-                // Per-spike xcorr lag → update m_cumShift on the OUTER KK.
-                // m_cumShift uses global spike index (pts[i]).
-                for (int i : members) {
-                    const int16_t* w = waveBuf.data() +
-                                       static_cast<size_t>(i) * waveSamples;
-                    const int lag = FindBestLagXCorr(w, meanWave.data(),
-                                                    nChan, nSamplesPerSpike,
-                                                    domChans,
-                                                    m_timeShiftMaxAbs);
-                    if (lag == 0) continue;
-                    const int gp = pts[static_cast<size_t>(i)];
-                    if (gp < 0 || gp >= static_cast<int>(m_cumShift.size()))
-                        continue;
-                    const int curr = m_cumShift[static_cast<size_t>(gp)];
-                    const int wb   = curr + lag;
-                    if (std::abs(wb) > m_timeShiftMaxAbs) continue;
-                    m_cumShift[static_cast<size_t>(gp)] = wb;
-                    ++realignThisIter;
-                    ++totalRealigned;
-                }
-            }
-        }
+        // (Step 4 — per-spike xcorr realign — moved OUT of the iter loop.
+        // Reason: TimeShiftReadSpikeWave reads the original .spk verbatim
+        // (no .fil re-extraction mid-chunk for parallel-safety), so the
+        // cluster mean computed in iter N+1 is identical to iter N's.
+        // Per-iter xcorr would therefore return the same lag every iter
+        // and either double-shift or cap-clamp.  One pass at the end on
+        // the final cluster labels is both correct and matches Klusters'
+        // single-shot realignSpikes behaviour.)
+        (void)realignThisIter;  // intentionally always 0 inside the loop
 
         // ── Step 5: convergence check + per-iter banner ──────────────────
         int nChanged = 0;
@@ -8886,6 +8838,128 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         if (converged) break;
     }
 
+    // ──── Final per-cluster alignment (post-split-iterations) ────────────
+    // One single pass on the converged labels, using the proven shared
+    // normalised-xcorr library (XcorrDispatch::compute) that Klusters'
+    // interactive realignSpikes calls.  Why one pass:
+    //  - cluster mean is computed from .spk reads which don't change
+    //    inside this chunk loop (no .fil re-extract mid-chunk for
+    //    parallel-safety), so a second pass would compute identical
+    //    lags and either double-shift or cap-clamp;
+    //  - one Klusters realignSpikes pass on a problematic cluster is
+    //    empirically sufficient to collapse the within-cluster waveform
+    //    variance — see the sirotaA-jg-000005 cluster 197 comparison.
+    //
+    // Algorithm (per cluster c):
+    //   1. Build channel-major cluster mean tmpl[ch * nSamples + s] by
+    //      averaging the cluster's .spk waveforms (int16, with
+    //      truncation rather than round to match Klusters' meanWav
+    //      build at KK.cpp:3537-3539).
+    //   2. Repack the cluster's .spk waveforms from sample-major
+    //      .spk layout (waveBuf[i*waveSamples + s*nChan + ch]) into
+    //      the channel-major XcorrDispatch layout
+    //      (xcWfm[(sp*nChan + ch)*nSamples + s]).
+    //   3. XcorrDispatch::compute returns optimal lag and normalised
+    //      score per spike.  Shifts below ResidualPCAMinScore default
+    //      to lag = 0 (left alone) — matches Klusters' minScore gate.
+    //   4. Apply lag to m_cumShift[gp] additively, with the same cap
+    //      check (|new shift| ≤ m_timeShiftMaxAbs) used everywhere
+    //      else.
+    int finalAligned = 0;
+    int finalLowScore = 0;
+    int finalCapClamped = 0;
+    {
+        // Re-collect alive non-noise cluster ids from final labels
+        std::vector<int> finalIds;
+        finalIds.reserve(64);
+        for (int v : labels) {
+            if (v <= 0) continue;
+            bool found = false;
+            for (int s : finalIds) if (s == v) { found = true; break; }
+            if (!found) finalIds.push_back(v);
+        }
+
+        // Scratch buffers — sized for the largest cluster's batch call
+        std::vector<int16_t> tmpl(static_cast<size_t>(waveSamples), 0);
+        std::vector<int16_t> xcWfm;
+        std::vector<int>     xcShifts;
+        std::vector<float>   xcScores;
+        const float minScore  = ResidualPCAMinScore;
+        const int   maxShift  = m_timeShiftMaxAbs;
+
+        for (int cid : finalIds) {
+            members.clear();
+            for (int i = 0; i < nPts; i++)
+                if (labels[i] == cid) members.push_back(i);
+            const int Nc = static_cast<int>(members.size());
+            if (Nc < 5) continue;
+
+            // Build channel-major template = int16 mean.  Use int64
+            // accumulator to avoid overflow on large clusters.
+            std::vector<int64_t> accCh(static_cast<size_t>(waveSamples), 0);
+            for (int m : members) {
+                const int16_t* w = waveBuf.data() +
+                                   static_cast<size_t>(m) * waveSamples;
+                for (int s = 0; s < nSamplesPerSpike; s++)
+                    for (int ch = 0; ch < nChan; ch++)
+                        accCh[static_cast<size_t>(ch * nSamplesPerSpike + s)]
+                            += w[s * nChan + ch];
+            }
+            for (int e = 0; e < waveSamples; e++)
+                tmpl[static_cast<size_t>(e)] = static_cast<int16_t>(
+                    accCh[static_cast<size_t>(e)] / Nc);
+
+            // Repack cluster's waveforms into channel-major batch
+            xcWfm.assign(static_cast<size_t>(Nc) * waveSamples, 0);
+            for (int sp = 0; sp < Nc; sp++) {
+                const int16_t* w = waveBuf.data() +
+                                   static_cast<size_t>(members[sp]) * waveSamples;
+                int16_t* dst = xcWfm.data() +
+                               static_cast<size_t>(sp) * waveSamples;
+                for (int s = 0; s < nSamplesPerSpike; s++)
+                    for (int ch = 0; ch < nChan; ch++)
+                        dst[ch * nSamplesPerSpike + s] = w[s * nChan + ch];
+            }
+
+            xcShifts.assign(static_cast<size_t>(Nc), 0);
+            xcScores.assign(static_cast<size_t>(Nc), 0.0f);
+            // XcorrDispatch returns normalised xcorr in [-1,1]; shifts
+            // below minScore stay at 0 (no realignment).  Returns 0
+            // on success; failures are not catastrophic — left-shifts
+            // simply stay 0 and the cluster's spikes aren't realigned.
+            const int rc = XcorrDispatch::compute(
+                xcWfm.data(), tmpl.data(),
+                Nc, nChan, nSamplesPerSpike,
+                maxShift, minScore,
+                xcShifts.data(), xcScores.data());
+            (void)rc;
+
+            // Apply lags to m_cumShift, with the global cap.  The lag
+            // sign convention matches m_cumShift: positive lag = spike
+            // late vs. template = read further into .fil = positive sh.
+            for (int sp = 0; sp < Nc; sp++) {
+                const int lag = xcShifts[static_cast<size_t>(sp)];
+                if (lag == 0) {
+                    if (xcScores[static_cast<size_t>(sp)] < minScore)
+                        ++finalLowScore;
+                    continue;
+                }
+                const int gp = pts[static_cast<size_t>(members[sp])];
+                if (gp < 0 || gp >= static_cast<int>(m_cumShift.size()))
+                    continue;
+                const int curr = m_cumShift[static_cast<size_t>(gp)];
+                const int wb   = curr + lag;
+                if (std::abs(wb) > m_timeShiftMaxAbs) {
+                    ++finalCapClamped;
+                    continue;
+                }
+                m_cumShift[static_cast<size_t>(gp)] = wb;
+                ++finalAligned;
+                ++totalRealigned;
+            }
+        }
+    }
+
     // Write final labels back into the sub-KK and refresh its bookkeeping.
     for (int i = 0; i < nPts; i++) {
         const int v = labels[i];
@@ -8903,8 +8977,13 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     // don't call RefeaturizeFromShifts here because the parallel chunk
     // loop would race on Data[] writes if multiple chunks tried.
     //
-    // Final chunk summary — always emitted (paired with the chunk-START
-    // banner) so per-chunk totals are visible even when nothing happened.
+    // Per-chunk final-alignment summary — bookend to the chunk-START
+    // banner so each chunk has a paired START/ALIGN/END trio in the log.
+    Output("[Phase 2b m3] chunk %d ALIGN: %d spike realigns (xcorr >= %.2f); "
+           "skipped: %d low-score, %d cap-clamped\n",
+           chunkIdx, finalAligned,
+           static_cast<double>(ResidualPCAMinScore),
+           finalLowScore, finalCapClamped);
     Output("[Phase 2b m3] chunk %d END: %d total splits, %d total realigns, "
            "ran %d/%d iters\n",
            chunkIdx, totalSplitsApplied, totalRealigned,
@@ -8924,7 +9003,7 @@ void KK::ChunkReCEMPerChunk(
     switch (Phase2bMode) {
         case 1:  p2bDesc = "Variational-Bayes GMM, warm-start from Phase-2a labels"; break;
         case 2:  p2bDesc = "warm-start CEM with splits -> VB-GMM auto-prune"; break;
-        case 3:  p2bDesc = "residual-PCA refinement + dominant-channel xcorr realign"; break;
+        case 3:  p2bDesc = "residual-PCA split iterations + post-loop normalised-xcorr realign (Klusters)"; break;
         default: p2bDesc = "warm-start from Phase-2a labels (CEM)";  break;
     }
     fprintf(stderr, "[Phase 2b] Chunk re-CEM (%s)\n", p2bDesc);

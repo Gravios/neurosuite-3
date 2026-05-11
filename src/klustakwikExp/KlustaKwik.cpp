@@ -114,8 +114,9 @@ float VBGMMPriorBlend        = 0.1f; ///< (mode 1, 2) regularization blend towar
 int   ResidualPCAIter             = 3;     ///< (Phase2bMode=3) max outer iterations of the residual-PCA refinement loop per chunk.  Early-stops when the fraction of label-changing spikes falls below ResidualPCAConvTol.
 int   ResidualPCAComponents       = 3;     ///< (Phase2bMode=3) number of top eigenvectors of the per-cluster residual covariance to use as features for the residual VBGMM split test.  1–8 typical; default 3 captures the bulk of within-cluster waveform variation while keeping the per-cluster VBGMM dim low.
 int   ResidualPCASubK             = 4;     ///< (Phase2bMode=3) initial K for the residual VBGMM (per cluster).  Dirichlet prior shrinks K toward the support of the data; this is the upper bound on how many sub-clusters can emerge from a single existing cluster in one iteration.
-int   ResidualPCADominantChannels = 2;     ///< (Phase2bMode=3) number of channels used in the per-spike xcorr realignment step.  Channels are ranked per-cluster by peak-to-peak amplitude of the mean waveform — the 1–2 channels where the neuron is strongest carry the cleanest alignment signal.  1 or 2 typical.
+int   ResidualPCADominantChannels = 2;     ///< (DEPRECATED in mode 3) — formerly used by the per-iter dominant-channel xcorr; the post-loop realign now uses the shared XcorrDispatch::compute (all channels, normalised xcorr) for proper Klusters-style alignment.  Flag retained for backwards compatibility; ignored in the current implementation.
 float ResidualPCAConvTol          = 0.01f; ///< (Phase2bMode=3) early-stop threshold: when the fraction of spikes whose label changed in this iteration is < ResidualPCAConvTol, the chunk's loop terminates.  0.01 = 1% of spikes changing.
+float ResidualPCAMinScore         = 0.7f;  ///< (Phase2bMode=3) minimum normalised cross-correlation (in [-1,1]) required to accept a per-spike alignment shift in the post-loop XcorrDispatch realign pass.  Below this, the spike's shift stays at zero (matches Klusters' realignSpikes gate).  0.7 is the conventional value; lower (0.5) admits noisier alignments; higher (0.85) restricts to high-confidence matches.
 float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-top-eig / max(per-cluster-top-eig). 0 disables (xcorr only).
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
@@ -259,6 +260,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(ResidualPCASubK);
     INT_PARAM(ResidualPCADominantChannels);
     FLOAT_PARAM(ResidualPCAConvTol);
+    FLOAT_PARAM(ResidualPCAMinScore);
     FLOAT_PARAM(TemplateMatchEigRatio);
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);

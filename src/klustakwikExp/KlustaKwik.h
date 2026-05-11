@@ -147,6 +147,7 @@ extern int   ResidualPCAComponents;
 extern int   ResidualPCASubK;
 extern int   ResidualPCADominantChannels;
 extern float ResidualPCAConvTol;
+extern float ResidualPCAMinScore;
 extern float TemplateMatchEigRatio;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
