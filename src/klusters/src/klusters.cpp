@@ -1854,15 +1854,48 @@ void KlustersApp::openDocumentFile(const QString& url)
         QString docName = doc->documentName();
         QFileInfo urlFileInfo(url);
         QStringList fileParts = urlFileInfo.fileName().split(".", Qt::SkipEmptyParts);
-        QString electrodNb;
-        if(fileParts.count() < 3)
-            electrodNb.clear();
-        else
-            electrodNb = fileParts[fileParts.count()-1];
 
-        QString baseName = fileParts[0];
-        for(uint i = 1;i < fileParts.count()-2; ++i)
-            baseName += "." + fileParts[i];
+        // Use the same suffix-aware parser as KlustersDoc::openDocument so
+        // tagged .clu filenames (e.g. `foo.clu.8.stack`) resolve to the
+        // canonical `baseName-group` document name and the "already-open"
+        // check succeeds.  Without this, a tagged-file open produces
+        // `name = ".../foo.clu-stack"` which never matches the document's
+        // suffix-aware `baseName-group` form (`".../foo-8"`).
+        // Scan the LAST 3 positions for one of the known type tokens.
+        static const QStringList kTypeTokens = {
+            QStringLiteral("clu"), QStringLiteral("fet"),
+            QStringLiteral("spk"), QStringLiteral("par"),
+            QStringLiteral("fetD"), QStringLiteral("spkD"),
+        };
+        qsizetype typeIdx = -1;
+        for (qsizetype probe = 2; probe <= 4 && probe <= fileParts.count(); ++probe) {
+            const qsizetype idx = fileParts.count() - probe;
+            if (idx < 1) break;  // baseName needs at least parts[0]
+            if (kTypeTokens.contains(fileParts[idx])) { typeIdx = idx; break; }
+        }
+        QString electrodNb;
+        QString baseName;
+        if (typeIdx < 0) {
+            // Fall back to legacy behaviour (no recognised type token) so an
+            // invalid filename still doesn't crash; the slotFileOpenRecent
+            // path will print the usual "invalid filename" error downstream.
+            if (fileParts.count() < 3)
+                electrodNb.clear();
+            else
+                electrodNb = fileParts[fileParts.count()-1];
+            baseName = fileParts[0];
+            for (qsizetype i = 1; i < fileParts.count()-2; ++i)
+                baseName += "." + fileParts[i];
+        } else {
+            electrodNb = fileParts[typeIdx + 1];
+            baseName   = fileParts[0];
+            for (qsizetype i = 1; i < typeIdx; ++i)
+                baseName += "." + fileParts[i];
+            // Anything after fileParts[typeIdx + 1] is the optional tag
+            // (e.g. ".stack") — deliberately discarded here: the
+            // already-open check compares against the canonical document
+            // name `baseName-group` which has no suffix.
+        }
         QString name = urlFileInfo.absolutePath() + QDir::separator() + baseName + "-" + electrodNb;
 
         if(docName == name){
