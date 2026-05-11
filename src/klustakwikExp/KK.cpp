@@ -7337,23 +7337,32 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
     //
     // Mode 1 (per-cluster diagonal empirical): W0inv[k] = diag of cluster
     // k's per-feature variance under the warm-start labels, blended with
-    // a small isotropic floor for numerical safety.  This matches the
-    // observation that a close neuron has high variance on a few channels
-    // and low variance on the rest, while a far neuron has low variance
-    // distributed across channels.  The prior shapes Phase 2b's
-    // covariance regularization to the cluster's actual feature support.
+    // a small isotropic floor for numerical safety.  Captures diagonal
+    // anisotropy (different per-feature variance scales per cluster) but
+    // not channel correlations within a cluster.
+    //
+    // Mode 2 (per-cluster FULL covariance empirical): W0inv[k] = full
+    // empirical covariance of cluster k spikes under warm-start labels,
+    // blended with isotropic floor on the diagonal.  Captures BOTH the
+    // diagonal anisotropy of mode 1 AND off-diagonal correlations —
+    // i.e., the channel-pattern signature of a neuron's spatial
+    // waveform.  Higher numerical risk on small clusters (rank-deficient
+    // empirical cov) — fallback to isotropic kicks in when N_k < D + 1.
+    //
+    // The blend term (VBGMMPriorBlend, default 0.1) adds blend*meanVar to
+    // each cluster's prior diagonal, ensuring positive-definiteness even
+    // when empirical cov is ill-conditioned.
     //
     // Stored as [K_init × D × D] dense (most off-diagonals zero in mode 0
-    // and 1) for uniform indexing in init and M-step.
+    // and 1; populated in mode 2) for uniform indexing in init and M-step.
     std::vector<double> W0inv(static_cast<size_t>(K_init) * D * D, 0.0);
     {
         const double blend     = std::clamp(static_cast<double>(VBGMMPriorBlend), 0.0, 1.0);
         const double iso_floor = blend * meanVar;  // additive isotropic floor
 
-        if (VBGMMPriorMode == 1) {
-            // Per-cluster empirical variance from warm-start labels.
-            // Use full-data fallback for clusters with too few spikes
-            // (< D + 1, i.e., not enough for a meaningful covariance).
+        if (VBGMMPriorMode == 1 || VBGMMPriorMode == 2) {
+            // Per-cluster empirical {variance | covariance} from warm-start
+            // labels.  Common preamble: compute per-cluster N_k and means.
             std::vector<double> Nk_init(K_init, 0.0);
             std::vector<double> mean_init(static_cast<size_t>(K_init) * D, 0.0);
             for (int p = 0; p < N; p++) {
@@ -7368,27 +7377,73 @@ static int RunVBGMM(const float* data, int* labels, int K_init,
                 for (int d = 0; d < D; d++)
                     mean_init[k * D + d] /= Nk_init[k];
             }
-            std::vector<double> emp_var(static_cast<size_t>(K_init) * D, 0.0);
-            for (int p = 0; p < N; p++) {
-                const int k = labels[p];
-                if (k < 0 || k >= K_init) continue;
-                for (int d = 0; d < D; d++) {
-                    const double v = data[p * D + d] - mean_init[k * D + d];
-                    emp_var[k * D + d] += v * v;
-                }
-            }
-            for (int k = 0; k < K_init; k++) {
-                if (Nk_init[k] >= D + 1.0) {
+
+            if (VBGMMPriorMode == 1) {
+                // ── Mode 1: per-cluster DIAGONAL empirical ──────────────
+                std::vector<double> emp_var(static_cast<size_t>(K_init) * D, 0.0);
+                for (int p = 0; p < N; p++) {
+                    const int k = labels[p];
+                    if (k < 0 || k >= K_init) continue;
                     for (int d = 0; d < D; d++) {
-                        const double v_emp = emp_var[k * D + d] / Nk_init[k];
-                        // (1 - blend) * empirical + blend * isotropic floor
-                        W0inv[k * D * D + d * D + d] =
-                              (1.0 - blend) * v_emp + iso_floor;
+                        const double v = data[p * D + d] - mean_init[k * D + d];
+                        emp_var[k * D + d] += v * v;
                     }
-                } else {
-                    // Fall back to isotropic for under-populated clusters.
-                    for (int d = 0; d < D; d++)
-                        W0inv[k * D * D + d * D + d] = meanVar;
+                }
+                for (int k = 0; k < K_init; k++) {
+                    if (Nk_init[k] >= D + 1.0) {
+                        for (int d = 0; d < D; d++) {
+                            const double v_emp = emp_var[k * D + d] / Nk_init[k];
+                            // (1 - blend) * empirical + blend * isotropic floor
+                            W0inv[k * D * D + d * D + d] =
+                                  (1.0 - blend) * v_emp + iso_floor;
+                        }
+                    } else {
+                        // Fall back to isotropic for under-populated clusters.
+                        for (int d = 0; d < D; d++)
+                            W0inv[k * D * D + d * D + d] = meanVar;
+                    }
+                }
+            } else {
+                // ── Mode 2: per-cluster FULL covariance empirical ───────
+                // Captures off-diagonal correlations (the channel-pattern
+                // signature of a neuron's spatial waveform).  Requires
+                // N_k >= D + 1 for a non-rank-deficient empirical cov;
+                // smaller clusters fall back to isotropic.  Numerical
+                // safety net: the blend term puts a positive isotropic
+                // floor on every diagonal, keeping the matrix PD even if
+                // empirical cov is ill-conditioned.
+                //
+                // Memory: [K × D²] doubles; for typical (K=20, D=6),
+                // ~6 KB total — trivial.  For (K=50, D=21), ~180 KB.
+                std::vector<double> emp_cov(static_cast<size_t>(K_init) * D * D, 0.0);
+                for (int p = 0; p < N; p++) {
+                    const int k = labels[p];
+                    if (k < 0 || k >= K_init) continue;
+                    for (int i = 0; i < D; i++) {
+                        const double di = data[p * D + i] - mean_init[k * D + i];
+                        for (int j = 0; j < D; j++) {
+                            const double dj = data[p * D + j] - mean_init[k * D + j];
+                            emp_cov[k * D * D + i * D + j] += di * dj;
+                        }
+                    }
+                }
+                for (int k = 0; k < K_init; k++) {
+                    if (Nk_init[k] >= D + 1.0) {
+                        const double inv_N = 1.0 / Nk_init[k];
+                        for (int i = 0; i < D; i++) {
+                            for (int j = 0; j < D; j++) {
+                                const double c = emp_cov[k * D * D + i * D + j] * inv_N;
+                                // (1 - blend) * empirical_cov_k for all (i,j),
+                                // plus isotropic floor on diagonal only.
+                                W0inv[k * D * D + i * D + j] = (1.0 - blend) * c;
+                            }
+                            W0inv[k * D * D + i * D + i] += iso_floor;
+                        }
+                    } else {
+                        // Isotropic fallback for under-populated clusters.
+                        for (int d = 0; d < D; d++)
+                            W0inv[k * D * D + d * D + d] = meanVar;
+                    }
                 }
             }
         } else {
