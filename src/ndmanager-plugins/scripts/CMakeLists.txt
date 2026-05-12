@@ -38,6 +38,12 @@ install(PROGRAMS
     # then merges sub-cluster IDs back into the live .clu with an offset
     # so they don't collide with existing shadow/parent IDs.
     ndm_subcluster_unmatched
+    # Drift-aware template matching per cluster group.  Sibling of
+    # KlustaKwikExp's Phase 6b (mean-subtraction merge) that tracks
+    # cluster mean waveforms through sliding time windows and merges
+    # pairs whose smoothed trajectories converge.  Backed by
+    # process_drifttracker (installed via its own subdirectory).
+    ndm_drifttracker
     ndm_xml2yaml
     pad process_renameevents_SPWR process_renameevents_TMaze
     process_reorderclusters process_spikegrouper rn

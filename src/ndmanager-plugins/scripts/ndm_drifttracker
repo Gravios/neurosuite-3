@@ -1,0 +1,102 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_drifttracker — drift-aware template matching per cluster group.
+#//
+#//  Computes time-varying mean waveforms per cluster within sliding windows
+#//  (minimum-variance estimator under Gaussian noise), smooths each
+#//  cluster's trajectory through waveform space with Tikhonov ridge, and
+#//  merges pairs whose smoothed drift trajectories converge under
+#//  cyclic-shift subtraction.
+#//
+#//  Time-aware sibling of KlustaKwikExp's Phase 6b (mean-subtraction
+#//  merge): Phase 6b uses ONE global mean per cluster, so a unit that
+#//  drifts in feature space across the session looks "different from
+#//  itself" and gets fragmented; this plugin tracks the drift and merges
+#//  trajectories that genuinely follow the same unit window-by-window.
+#//
+#//  Backed by src/ndmanager-plugins/src/process_drifttracker.  Geometry
+#//  (nChan, nSamp, peakSampleIndex, samplingRate) is read directly from
+#//  <session>.yaml by process_drifttracker — this wrapper just iterates
+#//  spike groups and passes the algorithm knobs.
+#//
+#//  Per group, reads:
+#//      <session>.res.<grp>      int64 timestamps
+#//      <session>.clu.<grp>      int32 header + int32 cluster IDs
+#//      <session>.spk.<grp>      int16 spike waveforms (or .spkD for stderiv)
+#//
+#//  Per group, writes:
+#//      <session>.clu.<grp>.drift     merged cluster IDs
+#//      <session>.drift.<grp>.yaml    per-window report
+#//
+#//  copyright (C) 2026 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}; session=${session%.yaml}; session=${session%.yml}
+
+print_header "$session - Drift-aware template matching per cluster group"
+
+check_commands_installed process_drifttracker
+
+# Resolve YAML parameter file — required (geometry comes from it)
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No parameter file found for session '$session'"; exit $INPUTS_MISSING; }
+inputs_missing "$yamlfile" && exit $INPUTS_MISSING
+
+# Just count the groups; geometry is read directly by process_drifttracker
+nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
+[ -z "$nSpikeGroups" ] || [ "$nSpikeGroups" -eq 0 ] && {
+    echo_error "No spikeDetection groups in $yamlfile"; exit $GENERAL_ERROR; }
+
+# Algorithm knobs (all overridable from the per-script parameter block)
+windowMin=$(read_script_parameter     "$session" ndm_drifttracker windowMin);     windowMin=${windowMin:-5.0}
+overlapMin=$(read_script_parameter    "$session" ndm_drifttracker overlapMin);    overlapMin=${overlapMin:-2.5}
+minWinSpikes=$(read_script_parameter  "$session" ndm_drifttracker minWinSpikes);  minWinSpikes=${minWinSpikes:-30}
+lambda=$(read_script_parameter        "$session" ndm_drifttracker lambda);        lambda=${lambda:-1.0}
+mergeThresh=$(read_script_parameter   "$session" ndm_drifttracker mergeThresh);   mergeThresh=${mergeThresh:-0.05}
+maxShift=$(read_script_parameter      "$session" ndm_drifttracker maxShift);      maxShift=${maxShift:-3}
+minWinOverlap=$(read_script_parameter "$session" ndm_drifttracker minWinOverlap); minWinOverlap=${minWinOverlap:-3}
+spkSuffix=$(read_script_parameter     "$session" ndm_drifttracker spkSuffix);     spkSuffix=${spkSuffix:-spk}
+
+# Loop over spike groups
+for (( g=1; g<=nSpikeGroups; g++ )); do
+    # Skip groups without the input triple
+    [ ! -f "${session}.res.${g}" ] && continue
+    [ ! -f "${session}.clu.${g}" ] && continue
+    [ ! -f "${session}.${spkSuffix}.${g}" ] && {
+        echo_warning "skipping group $g: ${session}.${spkSuffix}.${g} missing"
+        continue
+    }
+
+    # Avoid clobbering a prior run
+    outputs_exist "${session}.clu.${g}.drift" && {
+        echo_message "  group $g: ${session}.clu.${g}.drift exists; skipping"
+        continue
+    }
+
+    echo_message "  group $g"
+
+    process_drifttracker \
+        "${session}" "${g}" \
+        --window-min      "${windowMin}" \
+        --overlap-min     "${overlapMin}" \
+        --min-win-spikes  "${minWinSpikes}" \
+        --lambda          "${lambda}" \
+        --merge-thresh    "${mergeThresh}" \
+        --max-shift       "${maxShift}" \
+        --min-win-overlap "${minWinOverlap}" \
+        --spk-suffix      "${spkSuffix}" \
+        || { echo_error "process_drifttracker failed on group $g"; exit $GENERAL_ERROR; }
+done
+
+print_footer

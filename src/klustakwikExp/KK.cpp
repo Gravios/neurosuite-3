@@ -3439,7 +3439,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
     if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
         && NbChannels > 0 && NbSamplesPerSpike > 0)
-        fprintf(stderr, "[Phase 4] Mean waveform harvest (channel-major xcorr format)\n");
+        fprintf(stderr, "[Phase 3] Mean waveform harvest (channel-major xcorr format)\n");
     // Populate ChunkModel::meanWav for template matching.
     // Done serially after the parallel chunk loop since all chunks share
     // the same .spk file handle and fseeko calls cannot be parallelised safely.
@@ -3582,7 +3582,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // ── Phase 5: within-chunk circular xcorr template matching (iterated) ─
     // Loops until no new merges occur or 10 iterations.  After each merge pass
     // the surviving clusters need updated meanWav vectors (the merged cluster
-    // mean changes when two sub-clusters are combined), so the Phase 4 harvest
+    // mean changes when two sub-clusters are combined), so the Phase 3 harvest
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
@@ -3689,7 +3689,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     fclose(spkTM2);
                 }
             }
-            fprintf(stderr, "[Phase 5] Within-chunk xcorr template matching (iter %d)\n",
+            fprintf(stderr, "[Phase 4] Within-chunk xcorr template matching (iter %d)\n",
                     _tmIter + 1);
             int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
@@ -3726,9 +3726,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // ── Post-Phase-5 alignment site ─────────────────────────────────────
     // Within-chunk template merges have consolidated per-chunk clusters.
     // Aligns spikes against the merged means before cross-chunk matching.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Phase 4a");
 
-    fprintf(stderr, "[Phase 6] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
+    fprintf(stderr, "[Phase 5] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -3759,7 +3759,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // mapped to global cluster IDs (above) but Class[] is still per-chunk.
     // Aligns spikes to per-chunk cluster means BEFORE the Phase 7 init
     // block remaps Class[] to global IDs.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase6, "Phase 6a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
 
     // ── Phase 7: global warm-start EM ───────────────────────────────────────
     nDims  = nFullDims;
@@ -3780,7 +3780,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (globalMergeIter <= 0) {
         // GlobalMerge=0: skip Phase 7 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
-        fprintf(stderr, "[Phase 7] Global EM: skipped (GlobalMergeIter=0)\n");
+        fprintf(stderr, "[Phase 6] Global EM: skipped (GlobalMergeIter=0)\n");
         Output("Phase 7 skipped (GlobalMerge=0) — using Phase 6 assignment directly\n");
         // Force CPU path for Phase 7 post-merge scoring.
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
@@ -3813,7 +3813,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
-        fprintf(stderr, "[Phase 7] Global warm-start EM\n");
+        fprintf(stderr, "[Phase 6] Global warm-start EM\n");
         Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
@@ -3854,7 +3854,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // checkpoint before DipSplit potentially mutates the cluster set.
     ReportClusterQuality("Phase 7");
 
-    // ── Phase 7a (optional): post-merge cluster realignment ────────────────
+    // ── Phase 6a (optional): post-merge cluster realignment ────────────────
     // When -TimeShiftAlignPostMerge != 0, run another TimeShiftAlignPhase
     // pass against the post-Phase-7 global cluster state.  This catches
     // realignment opportunities that opened up only after Phase 6's
@@ -3867,11 +3867,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // downstream consumer (final mean waveform, .clu file) sees clean
     // features.  No-op when m_timeShiftReady is false.
     if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
-        fprintf(stderr, "[Phase 7a] Post-merge cluster realignment\n");
+        fprintf(stderr, "[Phase 6a] Post-merge cluster realignment\n");
         const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
         int nCOMShifted = 0;
         if (EnergyCOMRealign != 0) {
-            fprintf(stderr, "[Phase 7a] Energy-COM realignment\n");
+            fprintf(stderr, "[Phase 6a] Energy-COM realignment\n");
             nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
         }
         if (nShifted > 0 || nCOMShifted > 0) {
@@ -3906,21 +3906,21 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
 
-    // ── Phase 7b (optional): mean-waveform subtraction merge ─────────
-    // Runs after Phase 7a so the means it aggregates already reflect
+    // ── Phase 6b (optional): mean-waveform subtraction merge ─────────
+    // Runs after Phase 6a so the means it aggregates already reflect
     // the final post-merge alignment.  Opt-in via
     // -MeanSubtractionMergeEnable 1; threshold via
     // -MeanSubtractionMergeThresh (default 0.05), cyclic-shift radius
     // via -MeanSubtractionMergeMaxShift (default 3).  See
     // KK::FinalMeanSubtractionMerge for algorithm details.
     if (MeanSubtractionMergeEnable != 0) {
-        fprintf(stderr, "[Phase 7b] Mean-subtraction template merge "
+        fprintf(stderr, "[Phase 6b] Mean-subtraction template merge "
                         "(threshold D < %.3f)\n",
                 static_cast<double>(MeanSubtractionMergeThresh));
         const int nMergedSub =
             FinalMeanSubtractionMerge(NbChannels, NbSamplesPerSpike);
         if (nMergedSub > 0) {
-            // Same state-refresh dance as Phase 7a — Class[] now points
+            // Same state-refresh dance as Phase 6a — Class[] now points
             // to consolidated roots; MStep recomputes Mean/Cov, Reindex
             // compacts dead IDs, EStep populates LogP for the new layout.
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
@@ -3980,7 +3980,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 //   Phase 5   Within-chunk template match (xcorr + optional eig-ratio veto).
 //   Phase 6   Cross-chunk model match (overlap voting + edge xcorr).
 //   Phase 7   Global warm-start EM (optional; -GlobalMergeIter > 0).
-//   Phase 7a  Post-merge cluster realignment (was 7.5; optional, patch26).
+//   Phase 6a  Post-merge cluster realignment (was 7.5; optional, patch26).
 //   Phase 8   Legacy global DipSplit (deprecated; gated off by default).
 //   Phase 9   Shift commit (write refined .spk/.fet/.res).
 //
@@ -4108,7 +4108,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // globally and run a single CEMTwoPhase on the subsample to get
     // shared starting centres for every chunk in Phase 1.  Pros: chunks
     // start from a coherent global cluster picture, which can stabilise
-    // small/sparse chunks and helps Phase 6 cross-chunk matching.
+    // small/sparse chunks and helps Phase 5 cross-chunk matching.
     // Cons: bias — every chunk inherits the same initial bias from the
     // subsample, and rare units that are absent from the subsample get
     // no preseed centre at all.
@@ -4473,7 +4473,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
     if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
         && NbChannels > 0 && NbSamplesPerSpike > 0)
-        fprintf(stderr, "[Phase 4] Mean waveform harvest (channel-major xcorr format)\n");
+        fprintf(stderr, "[Phase 3] Mean waveform harvest (channel-major xcorr format)\n");
     // Populate ChunkModel::meanWav for template matching.
     // Done serially after the parallel chunk loop since all chunks share
     // the same .spk file handle and fseeko calls cannot be parallelised safely.
@@ -4658,7 +4658,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // ── Phase 5: within-chunk circular xcorr template matching (iterated) ─
     // Loops until no new merges occur or 10 iterations.  After each merge pass
     // the surviving clusters need updated meanWav vectors (the merged cluster
-    // mean changes when two sub-clusters are combined), so the Phase 4 harvest
+    // mean changes when two sub-clusters are combined), so the Phase 3 harvest
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
@@ -4765,7 +4765,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     fclose(spkTM2);
                 }
             }
-            fprintf(stderr, "[Phase 5] Within-chunk xcorr template matching (iter %d)\n",
+            fprintf(stderr, "[Phase 4] Within-chunk xcorr template matching (iter %d)\n",
                     _tmIter + 1);
             int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
@@ -4802,9 +4802,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // ── Post-Phase-5 alignment site ─────────────────────────────────────
     // Within-chunk template merges have consolidated per-chunk clusters.
     // Aligns spikes against the merged means before cross-chunk matching.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Phase 4a");
 
-    fprintf(stderr, "[Phase 6] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
+    fprintf(stderr, "[Phase 5] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -4847,7 +4847,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // aligned to their per-chunk cluster means BEFORE the per-chunk → global
     // remap kicks in.  This catches alignment drift WITHIN per-chunk clusters
     // that Phase 5's template matching may have left behind.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase6, "Phase 6a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
 
     // -------------------------------------------------------------------
     // Phase 7: global warm-start EM (full dimensionality including time)
@@ -4908,7 +4908,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
-        fprintf(stderr, "[Phase 7] Global warm-start EM\n");
+        fprintf(stderr, "[Phase 6] Global warm-start EM\n");
         Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
@@ -4949,17 +4949,17 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // checkpoint before DipSplit potentially mutates the cluster set.
     ReportClusterQuality("Phase 7");
 
-    // ── Phase 7a (optional): post-merge cluster realignment ────────────────
+    // ── Phase 6a (optional): post-merge cluster realignment ────────────────
     // Mirror of Driver A's Phase 7a.  See Driver A's body for rationale
     // (cross-chunk merge consolidates chunk-local clusters into global
     // units; spikes' Phase-1.5 alignments may no longer be optimal vs.
     // the new global means).
     if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
-        fprintf(stderr, "[Phase 7a] Post-merge cluster realignment\n");
+        fprintf(stderr, "[Phase 6a] Post-merge cluster realignment\n");
         const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
         int nCOMShifted = 0;
         if (EnergyCOMRealign != 0) {
-            fprintf(stderr, "[Phase 7a] Energy-COM realignment\n");
+            fprintf(stderr, "[Phase 6a] Energy-COM realignment\n");
             nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
         }
         if (nShifted > 0 || nCOMShifted > 0) {
@@ -4991,13 +4991,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
         }
     }
 
-    // ── Phase 7b (optional): mean-waveform subtraction merge ─────────
+    // ── Phase 6b (optional): mean-waveform subtraction merge ─────────
     // Mirror of Driver A's Phase 7b.  See FinalMeanSubtractionMerge for
     // algorithm; opt-in via -MeanSubtractionMergeEnable 1 with threshold
     // -MeanSubtractionMergeThresh (default 0.05) and cyclic-shift
     // radius -MeanSubtractionMergeMaxShift (default 3).
     if (MeanSubtractionMergeEnable != 0) {
-        fprintf(stderr, "[Phase 7b] Mean-subtraction template merge "
+        fprintf(stderr, "[Phase 6b] Mean-subtraction template merge "
                         "(threshold D < %.3f)\n",
                 static_cast<double>(MeanSubtractionMergeThresh));
         const int nMergedSub =
@@ -6155,7 +6155,7 @@ int KK::TimeShiftMergeTighten(
         // Mahal² improvement is dominated by numerical jitter and which,
         // compounded over TimeShiftAlignIter passes, can tighten a wrong
         // post-merge composite mean around spikes that don't really
-        // belong (the Phase 7a "reinforce a bad Phase 6 merge" mode).
+        // belong (the Phase 6a "reinforce a bad Phase 6 merge" mode).
         if (bestCand != N
             && std::isfinite(baselineMahal)
             && (baselineMahal - bestMahal) < TimeShiftAlignScoreThresh) {
@@ -6833,13 +6833,13 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     if (!m_timeShiftReady) {
         char spkPath[STRLEN + 16];
         if (pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo) < 0) {
-            fprintf(stderr, "[Phase 7b] No .spk/.spkD found for electrode %d; "
+            fprintf(stderr, "[Phase 6b] No .spk/.spkD found for electrode %d; "
                             "skip mean-subtraction merge.\n", ElecNo);
             return 0;
         }
         spkFallback = fopen(spkPath, "rb");
         if (!spkFallback) {
-            fprintf(stderr, "[Phase 7b] Could not open %s; "
+            fprintf(stderr, "[Phase 6b] Could not open %s; "
                             "skip mean-subtraction merge.\n", spkPath);
             return 0;
         }
@@ -6913,7 +6913,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     if (spkFallback) fclose(spkFallback);
 
     if (liveClusters.size() < 2) {
-        fprintf(stderr, "[Phase 7b] Mean-subtraction merge: only %zu eligible "
+        fprintf(stderr, "[Phase 6b] Mean-subtraction merge: only %zu eligible "
                         "clusters (skipped %d small, %d bad-read); nothing to do.\n",
                 liveClusters.size(), nSkippedSmall, nSkippedBadRead);
         return 0;
@@ -7002,7 +7002,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     }
 
     if (candidates.empty()) {
-        fprintf(stderr, "[Phase 7b] Mean-subtraction merge: 0 pairs below "
+        fprintf(stderr, "[Phase 6b] Mean-subtraction merge: 0 pairs below "
                         "D=%.3f (%zu eligible clusters compared with "
                         "cyclic-shift search ±%d); no merges.\n",
                 static_cast<double>(MeanSubtractionMergeThresh),
@@ -7032,7 +7032,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
         const int keep = std::min(ri, rj);
         const int drop = std::max(ri, rj);
         parent[drop] = keep;
-        fprintf(stderr, "[Phase 7b]   merge cluster %d <- %d  (D=%.4f at τ=%+d, "
+        fprintf(stderr, "[Phase 6b]   merge cluster %d <- %d  (D=%.4f at τ=%+d, "
                         "n=%d+%d=%d)\n",
                 keep, drop, p.D, p.bestShift,
                 meanN[keep], meanN[drop],
@@ -7053,7 +7053,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
         if (kv.first != kv.second) ClassAlive[kv.first] = 0;
     }
 
-    fprintf(stderr, "[Phase 7b] Mean-subtraction merge: %d merges applied "
+    fprintf(stderr, "[Phase 6b] Mean-subtraction merge: %d merges applied "
                     "(%zu candidates below D=%.3f under cyclic-shift ±%d, "
                     "%zu clusters evaluated; skipped %d small, %d bad-read).\n",
             nMerged, candidates.size(),
@@ -7076,7 +7076,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
 // Intentionally minimal — no MStep / EStep / ComputeScore here.  The
 // existing convention (matching the original Phase 1a call site at the
 // pre-patch line 3368) is that the next phase's own setup refreshes
-// global state.  The dedicated Phase 7a site does its own
+// global state.  The dedicated Phase 6a site does its own
 // ComputeScore + ReportClusterQuality because it's the LAST
 // alignment of the run and the final score / quality dump consumes
 // the refreshed numbers.
@@ -7428,7 +7428,7 @@ int KK::DipSplitPhase()
     int n_bic_worse   = 0;
     int n_no_free_id  = 0;
 
-    fprintf(stderr, "[Phase 8] DipSplit: probing %zu alive clusters "
+    fprintf(stderr, "[DipSplit] DipSplit: probing %zu alive clusters "
                     "(bloat=%.2f, elong=%.2f, valley=%.2f, minSize=%d)\n",
             alive_snapshot.size(), DipSplitBloatFactor,
             DipSplitElongationFactor, DipSplitValleyThresh, DipSplitMinSize);
@@ -7446,7 +7446,7 @@ int KK::DipSplitPhase()
         else if (std::strcmp(reason, "no_free_id")  == 0) ++n_no_free_id;
     }
 
-    fprintf(stderr, "[Phase 8] DipSplit: %d accepted  "
+    fprintf(stderr, "[DipSplit] DipSplit: %d accepted  "
                     "(rejections: %d too-small, %d not-flagged, %d no-valley, "
                     "%d small-child, %d bic-worse, %d no-free-id)\n",
             n_split, n_small, n_not_bloated, n_no_valley,
@@ -7503,9 +7503,9 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
 
     if (nShifted > 0) {
         fprintf(stderr,
-                "[Phase 9] Shift commit: re-extract %d spikes from .fil "
+                "[Phase 6c] Shift commit: re-extract %d spikes from .fil "
                 "→ .spk/.fet\n", nShifted);
-        Output("[Phase 9] Shift commit: %d probe calls, %d spikes with "
+        Output("[Phase 6c] Shift commit: %d probe calls, %d spikes with "
                "non-zero cumulative shift\n",
                m_timeShiftCallCount, nShifted);
         // RefeaturizeFromShifts expects shift=0 to mean "skip" — which matches
@@ -7516,7 +7516,7 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
         RefeaturizeFromShifts(m_cumShift, nChan, nSamplesPerSpike);
         WritePhase15Checkpoint(m_cumShift, nChan, nSamplesPerSpike);
     } else {
-        Output("[Phase 9] Shift commit: %d probe calls, 0 spikes shifted "
+        Output("[Phase 6c] Shift commit: %d probe calls, 0 spikes shifted "
                "— nothing to write back\n", m_timeShiftCallCount);
     }
     CloseTimeShift();
@@ -7642,7 +7642,7 @@ void KK::DipSplitPerChunk(
         const int aliveBefore = Ks.nClustersAlive;
 
         // Run DipSplit on the scratch KK.  DipSplitPhase prints a summary
-        // line tagged "[Phase 8]"; for per-chunk usage we don't need the
+        // line tagged "[DipSplit]"; for per-chunk usage we don't need the
         // verbose per-chunk summaries (the overall total is logged below
         // in the serial section), so we silence them by gating on a per-
         // chunk flag.  Rather than threading a verbosity flag, we accept
@@ -8259,7 +8259,7 @@ static void TopKEigenPowerDeflation(std::vector<double>& A,  // [D*D], modified
 //
 // The final hard assignment (argmax_k r[n,k]) is what gets handed back
 // to the rest of the pipeline, so Phase 4 mean-waveform harvest, Phase 5
-// template match, and Phase 6 cross-chunk match all continue to operate
+// template match, and Phase 5 cross-chunk match all continue to operate
 // on hard labels and can build per-cluster Gaussians from those.
 //
 // All internal computation is double precision (Wishart updates are
@@ -9704,7 +9704,7 @@ void KK::ChunkReCEMPerChunk(
 // into the top-subspaceDims eigenvector subspace of that cluster's covariance,
 // then runs CEMTwoPhase in that reduced space.  Splits are accepted if the
 // multi-cluster BIC score beats the single-cluster null.  perChunkClass[] and
-// perChunkModels[] are updated in-place so downstream Phase 6 cross-chunk
+// perChunkModels[] are updated in-place so downstream Phase 5 cross-chunk
 // matching sees purer, better-separated cluster models.
 //
 // New local cluster IDs are assigned starting from maxLocalId+1 within each
