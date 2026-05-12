@@ -521,6 +521,33 @@ public:
     // post-Phase-7 site does its own ComputeScore + ReportClusterQuality).
     void RunAlignmentBlock(int enableFlag, const char* phaseLabel);
 
+    // ---- Phase 7b: final mean-waveform subtraction merge ------------
+    //
+    // Optional cleanup pass after Phase 7a.  For each pair of live
+    // global clusters (id ≥ 2), computes the normalised L2 residual
+    // between their mean waveforms (aggregated across all chunks, with
+    // per-spike alignment shifts applied):
+    //
+    //     D(i, j) = ||mean[i] - mean[j]||² / max(||mean[i]||², ||mean[j]||²)
+    //
+    // Pairs with D < MeanSubtractionMergeThresh are merged via union-
+    // find (smallest D first; transitive merges allowed).  Unlike Phase
+    // 5/6 xcorr template matching, this metric is amplitude-sensitive
+    // — two clusters with identical SHAPE but different amplitudes
+    // will NOT merge here.  Use when amplitude carries identity (e.g.,
+    // a small unit and a large unit with similar spike shape that
+    // xcorr would erroneously fuse).
+    //
+    // Reads spike waveforms from .spk / .spkD via pickInputPath; uses
+    // ShiftWaveformRowInPlace so the aggregated means reflect the
+    // post-alignment view.  Returns the number of merges applied;
+    // 0 means no pair was below threshold, in which case Class[] is
+    // unchanged and the caller can skip the state-refresh block.
+    //
+    // No-op when MeanSubtractionMergeEnable == 0 or no spike file is
+    // available.  Banner: "[Phase 7b] Mean-subtraction merge: …"
+    int FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike);
+
     // ---- Phase 2b mode 3: residual-PCA refinement (per-chunk driver) ----
     //
     // Iterative loop that:
