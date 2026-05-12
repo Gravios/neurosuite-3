@@ -3910,7 +3910,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Runs after Phase 7a so the means it aggregates already reflect
     // the final post-merge alignment.  Opt-in via
     // -MeanSubtractionMergeEnable 1; threshold via
-    // -MeanSubtractionMergeThresh (default 0.15).  See
+    // -MeanSubtractionMergeThresh (default 0.05), cyclic-shift radius
+    // via -MeanSubtractionMergeMaxShift (default 3).  See
     // KK::FinalMeanSubtractionMerge for algorithm details.
     if (MeanSubtractionMergeEnable != 0) {
         fprintf(stderr, "[Phase 7b] Mean-subtraction template merge "
@@ -4993,7 +4994,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // ── Phase 7b (optional): mean-waveform subtraction merge ─────────
     // Mirror of Driver A's Phase 7b.  See FinalMeanSubtractionMerge for
     // algorithm; opt-in via -MeanSubtractionMergeEnable 1 with threshold
-    // -MeanSubtractionMergeThresh (default 0.15).
+    // -MeanSubtractionMergeThresh (default 0.05) and cyclic-shift
+    // radius -MeanSubtractionMergeMaxShift (default 3).
     if (MeanSubtractionMergeEnable != 0) {
         fprintf(stderr, "[Phase 7b] Mean-subtraction template merge "
                         "(threshold D < %.3f)\n",
@@ -6925,8 +6927,34 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
         energy[c] = e;
     }
 
-    // ── Step 3: pairwise residual; collect below-threshold candidates ──
-    struct Pair { int i; int j; double D; };
+    // ── Step 3: pairwise residual under cyclic time shifts ─────────────
+    //
+    // For each pair (i, j), the residual is computed at every cyclic
+    // time-shift τ ∈ [−K, K] on mean[i] and the minimum is taken:
+    //
+    //     D(i, j) = min over τ of  ||shift_τ(m_i) - m_j||² / max(||m_i||², ||m_j||²)
+    //
+    // where shift_τ wraps the time axis (m[t * nChan + ch] →
+    // m[((t + τ) mod nSamp) * nChan + ch]).  Two reasons cyclic is
+    // safe here despite physical waveforms not being periodic: (1)
+    // captured spike windows have near-zero amplitude at both edges
+    // (baseline) since the peak sits at PeakSampleIndex, so wrap-around
+    // moves baseline-on-baseline and contributes ≈0 to the residual;
+    // (2) the search radius K is bounded by MeanSubtractionMergeMaxShift
+    // (default 3) on a typical 32-42 sample window — ≤ 10% of the
+    // window wraps, well outside the peak region.
+    //
+    // Single-shift (no sweep) comparison was misleading: cluster-mean
+    // alignment converges to a "good enough" shift per cluster, but the
+    // residual between two clusters' means can still have a 1-2 sample
+    // misalignment that single-shift D would penalise as if the
+    // waveforms differed in shape.  Min-over-shifts removes that.
+    const int nSamp = nSamplesPerSpike;
+    int maxShift = MeanSubtractionMergeMaxShift;
+    if (maxShift < 0)              maxShift = 0;
+    if (maxShift > nSamp / 2)      maxShift = nSamp / 2;  // hard cap
+
+    struct Pair { int i; int j; double D; int bestShift; };
     std::vector<Pair> candidates;
     std::sort(liveClusters.begin(), liveClusters.end());
 
@@ -6941,23 +6969,44 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
             const double denom = std::max(ei, ej);
             if (!(denom > 0.0)) continue;       // silent vs anything
 
-            double rss = 0.0;
-            for (int k = 0; k < wElems; ++k) {
-                const double d = mi[static_cast<size_t>(k)] -
-                                 mj[static_cast<size_t>(k)];
-                rss += d * d;
+            double bestD     = std::numeric_limits<double>::infinity();
+            int    bestShift = 0;
+
+            for (int tau = -maxShift; tau <= maxShift; ++tau) {
+                double rss = 0.0;
+                // Inner loops: for each (t, ch), pull shifted mi sample
+                // and compare to mj at the same (t, ch).  Layout is
+                // time-major channel-minor (idx = t * nChan + ch),
+                // matching the aggregation step above.
+                for (int t = 0; t < nSamp; ++t) {
+                    // Cyclic source row: (t + tau) wrapped into [0, nSamp).
+                    int tSrc = t + tau;
+                    while (tSrc <    0)     tSrc += nSamp;
+                    while (tSrc >= nSamp)   tSrc -= nSamp;
+                    const int rowSrc = tSrc * nChan;
+                    const int rowDst = t    * nChan;
+                    for (int ch = 0; ch < nChan; ++ch) {
+                        const double d =
+                            mi[static_cast<size_t>(rowSrc + ch)] -
+                            mj[static_cast<size_t>(rowDst + ch)];
+                        rss += d * d;
+                    }
+                }
+                const double D = rss / denom;
+                if (D < bestD) { bestD = D; bestShift = tau; }
             }
-            const double D = rss / denom;
-            if (D < static_cast<double>(MeanSubtractionMergeThresh))
-                candidates.push_back({i, j, D});
+
+            if (bestD < static_cast<double>(MeanSubtractionMergeThresh))
+                candidates.push_back({i, j, bestD, bestShift});
         }
     }
 
     if (candidates.empty()) {
         fprintf(stderr, "[Phase 7b] Mean-subtraction merge: 0 pairs below "
-                        "D=%.3f (%zu eligible clusters compared); no merges.\n",
+                        "D=%.3f (%zu eligible clusters compared with "
+                        "cyclic-shift search ±%d); no merges.\n",
                 static_cast<double>(MeanSubtractionMergeThresh),
-                liveClusters.size());
+                liveClusters.size(), maxShift);
         return 0;
     }
 
@@ -6983,9 +7032,10 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
         const int keep = std::min(ri, rj);
         const int drop = std::max(ri, rj);
         parent[drop] = keep;
-        fprintf(stderr, "[Phase 7b]   merge cluster %d <- %d  (D=%.4f, "
+        fprintf(stderr, "[Phase 7b]   merge cluster %d <- %d  (D=%.4f at τ=%+d, "
                         "n=%d+%d=%d)\n",
-                keep, drop, p.D, meanN[keep], meanN[drop],
+                keep, drop, p.D, p.bestShift,
+                meanN[keep], meanN[drop],
                 meanN[keep] + meanN[drop]);
         ++nMerged;
     }
@@ -7004,10 +7054,11 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     }
 
     fprintf(stderr, "[Phase 7b] Mean-subtraction merge: %d merges applied "
-                    "(%zu candidates below D=%.3f, %zu clusters evaluated; "
-                    "skipped %d small, %d bad-read).\n",
+                    "(%zu candidates below D=%.3f under cyclic-shift ±%d, "
+                    "%zu clusters evaluated; skipped %d small, %d bad-read).\n",
             nMerged, candidates.size(),
             static_cast<double>(MeanSubtractionMergeThresh),
+            maxShift,
             liveClusters.size(), nSkippedSmall, nSkippedBadRead);
 
     return nMerged;

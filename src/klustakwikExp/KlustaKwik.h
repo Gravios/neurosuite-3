@@ -163,6 +163,7 @@ extern int   EnergyCOMRealign;
 extern int   EnergyCOMMetric;
 extern int   MeanSubtractionMergeEnable;   ///< Phase 7b enable
 extern float MeanSubtractionMergeThresh;   ///< Phase 7b residual threshold
+extern int   MeanSubtractionMergeMaxShift; ///< Phase 7b cyclic-shift half-width
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;

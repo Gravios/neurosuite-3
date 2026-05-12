@@ -173,7 +173,23 @@ int   EnergyCOMMetric       = 1;       ///< Energy metric for COM: 0 = sum |x|, 
 // 6's cross-chunk match.  Disabled by default — opt in with
 // -MeanSubtractionMergeEnable 1.
 int   MeanSubtractionMergeEnable = 0;    ///< 0 = off; 1 = run Phase 7b after Phase 7a
-float MeanSubtractionMergeThresh = 0.15f;///< normalised residual D below which a pair merges
+float MeanSubtractionMergeThresh = 0.05f;///< normalised residual D below which a pair merges.
+                                          ///< Default is 0.05 because the implementation
+                                          ///< searches over cyclic time-shifts τ ∈ [−K, K]
+                                          ///< and takes the minimum D over shifts, which
+                                          ///< systematically lowers D vs a single-shift
+                                          ///< comparison.  Empirically D=0.30 merges
+                                          ///< virtually all clusters; D=0.05 catches
+                                          ///< genuine duplicates with ~10× SNR margin.
+int   MeanSubtractionMergeMaxShift = 3;  ///< Phase 7b cyclic-shift search half-width.
+                                          ///< For each pair, residual is computed at every
+                                          ///< τ ∈ [−K, K] (cyclic time-shift on one mean
+                                          ///< waveform) and the minimum is taken.  Default
+                                          ///< 3 covers typical alignment-residual jitter
+                                          ///< (cluster-mean alignment converges to ±1-2
+                                          ///< samples; cyclic search adds robustness to
+                                          ///< sub-sample drift between clusters).  Hard-
+                                          ///< capped to nSamplesPerSpike/2 at runtime.
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -296,6 +312,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(EnergyCOMMetric);
     INT_PARAM(MeanSubtractionMergeEnable);
     FLOAT_PARAM(MeanSubtractionMergeThresh);
+    INT_PARAM(MeanSubtractionMergeMaxShift);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);

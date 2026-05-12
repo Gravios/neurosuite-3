@@ -525,10 +525,17 @@ public:
     //
     // Optional cleanup pass after Phase 7a.  For each pair of live
     // global clusters (id ≥ 2), computes the normalised L2 residual
-    // between their mean waveforms (aggregated across all chunks, with
-    // per-spike alignment shifts applied):
+    // between their mean waveforms under cyclic time-shift search:
     //
-    //     D(i, j) = ||mean[i] - mean[j]||² / max(||mean[i]||², ||mean[j]||²)
+    //     D(i, j) = min over τ ∈ [−K, K] of
+    //               ||shift_τ(mean[i]) - mean[j]||² /
+    //               max(||mean[i]||², ||mean[j]||²)
+    //
+    // where K = MeanSubtractionMergeMaxShift (default 3).  The min-
+    // over-shifts step makes the metric robust to the 1-2 sample
+    // residual misalignment that cluster-mean alignment can leave
+    // between two clusters (each converges to its own optimum vs
+    // its members, but those optima may not coincide across clusters).
     //
     // Pairs with D < MeanSubtractionMergeThresh are merged via union-
     // find (smallest D first; transitive merges allowed).  Unlike Phase
