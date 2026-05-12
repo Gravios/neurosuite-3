@@ -513,7 +513,7 @@ public:
 
     // Run cluster-mean alignment (via TimeShiftAlignPhase) and, when
     // EnergyCOMRealign != 0, an additional energy-COM pass.  Gated by
-    // the per-phase enableFlag passed in (e.g., TimeShiftAlignAfterPhase5).
+    // the per-phase enableFlag passed in (e.g., TimeShiftAlignAfterPhase4).
     // Banners include the supplied phaseLabel.  Caller is responsible
     // for any post-alignment MStep / EStep / score refresh appropriate
     // to the phase boundary (matches the existing Phase 1a convention,
@@ -552,7 +552,7 @@ public:
     // unchanged and the caller can skip the state-refresh block.
     //
     // No-op when MeanSubtractionMergeEnable == 0 or no spike file is
-    // available.  Banner: "[Phase 7b] Mean-subtraction merge: …"
+    // available.  Banner: "[Phase 6b] Mean-subtraction merge: …"
     int FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike);
 
     // ---- Phase 2b mode 3: residual-PCA refinement (per-chunk driver) ----
