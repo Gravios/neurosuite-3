@@ -770,6 +770,22 @@ public Q_SLOTS:
     void applyClusterRename(const QMap<int,int>& partialOldToNew,
                             const QMap<int,int>* fullOldToNewOpt = nullptr);
 
+    /** Reorder clusters so that the cluster IDs supplied in `newOrder`
+     *  appear in that sequence starting at ID 2 (preserving 0/1 at the
+     *  front).  Internally builds the partial/full old→new maps,
+     *  snapshots the undo stack (renumber-specific stack so undo can
+     *  classify the action), records a RENUMBER_PARTIAL curation-log
+     *  entry, and delegates the actual rename to applyClusterRename.
+     *
+     *  Used by KlustersApp::slotReorderClustersBySimilarity (Shift+S).
+     *  Returns the number of clusters whose ID actually changed (0
+     *  means already-in-order; nothing happens, no undo entry pushed).
+     *
+     *  Rejects `newOrder` entries that are 0/1 or don't currently exist
+     *  in the cluster table (returns -1, status bar message left to the
+     *  caller). */
+    int reorderClustersByPermutation(const QList<int>& newOrder);
+
     /** Run a 2D density watershed on the *selected* clusters in the
      *  palette using the active scatter view's X/Y feature dimensions,
      *  splitting them into one new cluster per basin.  Triggered by

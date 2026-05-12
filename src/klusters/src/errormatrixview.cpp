@@ -387,6 +387,10 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
+    // Notify KlustersApp's last-interacted tracker before any early return:
+    // even an empty-matrix click should still mark THIS view as the user's
+    // current focus for the Shift+S reorder selection.
+    emit viewInteracted();
     if(clusterList.isEmpty())
         return;
     //Select the clusters corresponding to the current cell of the matrix (if they still exist)

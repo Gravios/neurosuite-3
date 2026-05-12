@@ -30,6 +30,11 @@
 #include "realignreviewdialog.h"
 #include "realignworker.h"
 #include "qhelpviewer.h"
+// For the Shift+S reorder action: needs the public accessors + signals
+// added to these view classes.
+#include "errormatrixview.h"
+#include "templatematrixview.h"
+#include "array.h"
 
 
 
@@ -341,6 +346,21 @@ void KlustersApp::createMenus()
     mUpdateErrorMatrix->setIcon(QIcon(":/icons/grouping_assistant_update"));
     mUpdateErrorMatrix->setShortcut(Qt::Key_U);
     connect(mUpdateErrorMatrix,&QAction::triggered, this,&KlustersApp::slotUpdateErrorMatrix);
+
+    mReorderClustersBySimilarity = actionMenu->addAction(tr("Re&order Clusters by Similarity"));
+    mReorderClustersBySimilarity->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_S));
+    mReorderClustersBySimilarity->setToolTip(
+        tr("Renumber clusters so that similar clusters get adjacent IDs, using\n"
+           "single-linkage agglomerative clustering on the active similarity matrix.\n"
+           "When both error and template matrices exist, uses whichever was most\n"
+           "recently created or clicked.  Clusters 0 (artefact) and 1 (noise) are\n"
+           "preserved at the start.  Undoable with Ctrl+Z."));
+    // Disabled until at least one of the matrices is open.  Re-enabled
+    // via slotStateChanged("errorMatrixViewState") and the equivalent
+    // template-matrix wiring at the dock-creation site.
+    mReorderClustersBySimilarity->setEnabled(false);
+    connect(mReorderClustersBySimilarity,&QAction::triggered,
+            this,&KlustersApp::slotReorderClustersBySimilarity);
 
     actionMenu->addSeparator();
 
@@ -735,6 +755,7 @@ void KlustersApp::createToolBar()
     mActionBar->addAction(mDeleteNoisy);
     mActionBar->addAction(mUpdateDisplay);
     mActionBar->addAction(mUpdateErrorMatrix);
+    mActionBar->addAction(mReorderClustersBySimilarity);
     mActionBar->addAction(mGroupeClusters);
 
 
@@ -3559,6 +3580,238 @@ void KlustersApp::slotUpdateErrorMatrix(){
     view->updateTemplateMatrix();
 }
 
+// ---------------------------------------------------------------------------
+// Last-interacted matrix-view tracking
+//
+// Each matrix view (ErrorMatrixView, TemplateMatrixView) emits
+// viewInteracted() from its mouseReleaseEvent.  We connect those signals
+// at dock-creation time (in the ERROR_MATRIX / TEMPLATE_MATRIX cases of
+// setConnections) so subsequent clicks land here, updating
+// m_lastMatrixUsed.  Combined with the same field being set at dock
+// creation, this implements the "last created or last clicked" semantics
+// the Shift+S reorder uses to disambiguate when both matrices exist.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotErrorMatrixInteracted()
+{
+    m_lastMatrixUsed = MatrixKind::ERROR_MATRIX_KIND;
+}
+
+void KlustersApp::slotTemplateMatrixInteracted()
+{
+    m_lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
+}
+
+// ---------------------------------------------------------------------------
+// slotReorderClustersBySimilarity — Shift+S
+//
+// Picks the active similarity matrix (error or template), runs single-
+// linkage agglomerative clustering on it to produce a 1-D ordering where
+// similar clusters end up adjacent, then renumbers the clusters so that
+// the post-rename palette layout matches that ordering.  Clusters 0
+// (artefact) and 1 (noise) are preserved at the front.
+//
+// Matrix selection
+// ----------------
+//   - If only one of {error, template} matrix view exists, use it.
+//   - If both exist, use m_lastMatrixUsed (set on creation and on click).
+//   - If neither exists, the action is disabled (mReorderClustersBySimilarity
+//     ->setEnabled(false) at construction; enabled when the first matrix
+//     dock is created in setConnections).  Guard here anyway.
+//
+// Algorithm: single-linkage agglomerative clustering
+// --------------------------------------------------
+// 1. Build a working similarity matrix S over the matrix's cluster list,
+//    EXCLUDING clusters 0 and 1 (which stay pinned at the front).
+// 2. While more than one alive node remains:
+//      - find (i, j) with highest S[i, j] among alive nodes
+//      - merge: leaves[i] ← leaves[i] + leaves[j]
+//      - kill node j
+//      - update S[i, k] ← max(S[i, k], S[j, k]) for every alive k
+//        (single-linkage: similarity to merged node = max of constituents)
+// 3. The single surviving node's leaves[] list is the leaf order.
+//
+// This is O(N³) on the active cluster count N, which is trivial for the
+// typical N ≤ 200 we see in a single electrode group (≤ 8 MOPS).  Cluster
+// IDs in the leaf order get renamed to (2, 3, 4, ...) in order, so
+// neighbouring IDs after the rename are the most-similar pairs.
+//
+// Apply via the established applyClusterRename pipeline:
+//   logBefore(RENUMBER_PARTIAL) → prepareUndo → applyClusterRename → logAfter
+// — identical to the T-key (renumberClustersToEnd) flow, so the undo
+// stack, curation log, palette refresh, and dock-side renumber signals
+// all work without further wiring.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotReorderClustersBySimilarity()
+{
+    KlustersView* view = activeView();
+    if (!view) return;
+
+    // ── Pick the source matrix view ─────────────────────────────────────
+    ErrorMatrixView*    emv = view->findChild<ErrorMatrixView*>();
+    TemplateMatrixView* tmv = view->findChild<TemplateMatrixView*>();
+    const bool emvReady = (emv && emv->hasComputedData());
+    const bool tmvReady = (tmv && tmv->hasComputedData());
+
+    QList<int>           clusterIdsInMatrix;
+    const Array<double>* simMatrix = nullptr;
+    const char*          matrixLabel = "?";
+
+    if (emvReady && !tmvReady) {
+        clusterIdsInMatrix = emv->matrixComputedClusterList();
+        simMatrix          = emv->matrixData();
+        matrixLabel        = "error";
+    } else if (tmvReady && !emvReady) {
+        clusterIdsInMatrix = tmv->matrixClusterList();
+        simMatrix          = tmv->matrixData();
+        matrixLabel        = "template";
+    } else if (emvReady && tmvReady) {
+        // Both ready — defer to last-created-or-clicked.
+        if (m_lastMatrixUsed == MatrixKind::TEMPLATE_MATRIX_KIND) {
+            clusterIdsInMatrix = tmv->matrixClusterList();
+            simMatrix          = tmv->matrixData();
+            matrixLabel        = "template (last interacted)";
+        } else {
+            // ERROR_MATRIX_KIND or NONE (treat NONE → error as the more
+            // commonly used matrix; matches the U-key default).
+            clusterIdsInMatrix = emv->matrixComputedClusterList();
+            simMatrix          = emv->matrixData();
+            matrixLabel        = "error (last interacted)";
+        }
+    } else {
+        QMessageBox::information(
+            this, tr("Reorder Clusters by Similarity"),
+            tr("Neither the error matrix nor the template matrix has been\n"
+               "computed yet.  Press U to compute the error matrix (and/or\n"
+               "open the template matrix), then try Shift+S again."));
+        return;
+    }
+
+    if (!simMatrix) return;
+
+    // ── Build the working order, excluding 0 and 1 (pinned at the front) ──
+    // matrixCidToRow gives, for each cluster ID c in the matrix, its
+    // 1-based row/column index in simMatrix (Array<T>::operator()(i,j) is
+    // 1-based).  We skip cluster 0 and cluster 1 — they keep their IDs
+    // and don't participate in the reorder (Data::renumberPartial would
+    // reject any map that touched them).
+    const int nClustersInMatrix = clusterIdsInMatrix.size();
+    QMap<int,int> matrixCidToRow;
+    QList<int>    nodeCids;   // cluster IDs that participate (>= 2)
+    nodeCids.reserve(nClustersInMatrix);
+    for (int i = 0; i < nClustersInMatrix; ++i) {
+        const int cid = clusterIdsInMatrix[i];
+        matrixCidToRow.insert(cid, i + 1);   // 1-based for Array<>::operator()
+        if (cid >= 2) nodeCids.append(cid);
+    }
+    const int N = nodeCids.size();
+    if (N < 2) {
+        statusBar()->showMessage(
+            tr("Reorder: fewer than 2 non-noise clusters in %1 matrix; "
+               "nothing to reorder.").arg(QString::fromLatin1(matrixLabel)),
+            3000);
+        return;
+    }
+
+    // ── Local working similarity matrix S[i][j] over node indices ──────
+    // Allocated as a flat vector for cache locality; small (N ≤ a few
+    // hundred typically).
+    std::vector<double> S(static_cast<size_t>(N) * N, 0.0);
+    for (int i = 0; i < N; ++i) {
+        const int row_i = matrixCidToRow.value(nodeCids[i]);
+        for (int j = 0; j < N; ++j) {
+            if (i == j) continue;
+            const int row_j = matrixCidToRow.value(nodeCids[j]);
+            // Symmetrise: max of upper/lower entries.  Either matrix is
+            // computed symmetrically by its thread, but being defensive
+            // here costs nothing.
+            const double a = (*simMatrix)(row_i, row_j);
+            const double b = (*simMatrix)(row_j, row_i);
+            S[static_cast<size_t>(i) * N + j] = std::max(a, b);
+        }
+    }
+
+    // ── Single-linkage agglomerative merge → leaf order ─────────────────
+    std::vector<std::vector<int>> leaves(N);
+    std::vector<bool>             alive(N, true);
+    for (int i = 0; i < N; ++i) leaves[i].push_back(i);
+
+    for (int step = 0; step < N - 1; ++step) {
+        // Find best (i*, j*) among alive nodes
+        double bestSim = -std::numeric_limits<double>::infinity();
+        int    bi = -1, bj = -1;
+        for (int i = 0; i < N; ++i) {
+            if (!alive[i]) continue;
+            for (int j = i + 1; j < N; ++j) {
+                if (!alive[j]) continue;
+                const double s = S[static_cast<size_t>(i) * N + j];
+                if (s > bestSim) { bestSim = s; bi = i; bj = j; }
+            }
+        }
+        if (bi < 0 || bj < 0) break;   // disconnected — leave the rest
+
+        // Merge bj into bi
+        leaves[bi].insert(leaves[bi].end(),
+                          leaves[bj].begin(), leaves[bj].end());
+        alive[bj] = false;
+
+        // Update similarities to all remaining alive nodes (single-linkage
+        // = max).  Diagonal kept at 0; symmetric write.
+        for (int k = 0; k < N; ++k) {
+            if (!alive[k] || k == bi) continue;
+            const double a = S[static_cast<size_t>(bi) * N + k];
+            const double b = S[static_cast<size_t>(bj) * N + k];
+            const double m = std::max(a, b);
+            S[static_cast<size_t>(bi) * N + k] = m;
+            S[static_cast<size_t>(k)  * N + bi] = m;
+        }
+    }
+
+    // Recover the leaf order: walk alive[] and concatenate leaves[] in
+    // index order.  In a fully-connected matrix only one node is alive;
+    // a disconnected matrix leaves multiple — append them in order.
+    std::vector<int> orderIdx;
+    orderIdx.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        if (!alive[i]) continue;
+        for (int leaf : leaves[i]) orderIdx.push_back(leaf);
+    }
+    if (static_cast<int>(orderIdx.size()) != N) {
+        // Belt and braces: if something went wrong with the merge, fall
+        // back to the original order rather than corrupting the rename.
+        orderIdx.clear();
+        for (int i = 0; i < N; ++i) orderIdx.push_back(i);
+    }
+
+    // Translate leaf indices → cluster IDs in target order, then hand
+    // off to the doc-layer method that owns all the undo/log/palette/
+    // view bookkeeping (mirrors the renumberClustersToEnd entry point).
+    QList<int> targetOrder;
+    targetOrder.reserve(N);
+    for (int leaf : orderIdx) targetOrder.append(nodeCids[leaf]);
+
+    const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
+    if (nRenamed < 0) {
+        QMessageBox::warning(this, tr("Reorder Clusters by Similarity"),
+            tr("Could not apply the reorder — the cluster table changed\n"
+               "between the matrix computation and now, or an invalid\n"
+               "permutation was produced.  No clusters were renamed."));
+        return;
+    }
+    if (nRenamed == 0) {
+        statusBar()->showMessage(
+            tr("Reorder: clusters already in similarity order (%1 matrix); "
+               "nothing to do.").arg(QString::fromLatin1(matrixLabel)),
+            3000);
+        return;
+    }
+
+    statusBar()->showMessage(
+        tr("Reorder: renamed %1 clusters by %2-matrix similarity.")
+            .arg(nRenamed)
+            .arg(QString::fromLatin1(matrixLabel)),
+        4000);
+}
+
 void KlustersApp::slotSelectAll(){
     //Trigger the action only if the active display does not contain a ProcessWidget
     if(!doesActiveDisplayContainProcessWidget()){
@@ -3964,9 +4217,31 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             slotStateChanged("errorMatrixViewState");
             slotStateChanged("groupingAssistantDisplayExists");
             errorMatrixExists = true;
+            // Track most-recently-created matrix for Shift+S reorder.
+            m_lastMatrixUsed = MatrixKind::ERROR_MATRIX_KIND;
+            // Enable Shift+S reorder now that at least one matrix exists.
+            if (mReorderClustersBySimilarity)
+                mReorderClustersBySimilarity->setEnabled(true);
+            // Wire the per-click last-interacted signal — qobject_cast
+            // because ViewWidget is the base type used at this call site.
+            if (auto* emv = qobject_cast<ErrorMatrixView*>(view)) {
+                connect(emv, &ErrorMatrixView::viewInteracted,
+                        this, &KlustersApp::slotErrorMatrixInteracted,
+                        Qt::UniqueConnection);
+            }
             break;
         case KlustersView::TEMPLATE_MATRIX:
             templateMatrixExists = true;
+            // Track most-recently-created matrix for Shift+S reorder.
+            m_lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
+            // Enable Shift+S reorder now that at least one matrix exists.
+            if (mReorderClustersBySimilarity)
+                mReorderClustersBySimilarity->setEnabled(true);
+            if (auto* tmv = qobject_cast<TemplateMatrixView*>(view)) {
+                connect(tmv, &TemplateMatrixView::viewInteracted,
+                        this, &KlustersApp::slotTemplateMatrixInteracted,
+                        Qt::UniqueConnection);
+            }
             break;
         case KlustersView::OVERVIEW:
             break;

@@ -403,6 +403,18 @@ private Q_SLOTS:
     void slotUpdateErrorMatrix();
     void slotShowShortcutHelp();
 
+    /** Reorders and renumbers clusters by similarity, using whichever of
+     *  the error matrix or template matrix is currently relevant (see
+     *  m_lastMatrixUsed below).  Triggered by Shift+S. */
+    void slotReorderClustersBySimilarity();
+
+    /** Track which matrix view the user most recently interacted with.
+     *  Connected from ErrorMatrixView::viewInteracted /
+     *  TemplateMatrixView::viewInteracted (each matrix view's
+     *  mouseReleaseEvent emits its signal). */
+    void slotErrorMatrixInteracted();
+    void slotTemplateMatrixInteracted();
+
     /**Select all the clusters.*/
     void slotSelectAll();
 
@@ -725,6 +737,7 @@ private:
     QAction *mRedo;
     QAction *mRenumberAndSave;
     QAction *mUpdateErrorMatrix;
+    QAction *mReorderClustersBySimilarity;
     QAction *mPreferenceAction;
 
     QAction *mViewStatusBar;
@@ -1015,6 +1028,15 @@ private:
     /**True if a Error Martix exists, false otherwise.*/
     bool errorMatrixExists;
     bool templateMatrixExists;
+
+    /** Tracks which similarity matrix the user most recently interacted
+     *  with (either created or clicked).  Used to disambiguate the
+     *  Shift+S reorder when both error and template matrices coexist.
+     *  Updated by ERROR_MATRIX/TEMPLATE_MATRIX cases in setConnections,
+     *  plus slotErrorMatrixInteracted / slotTemplateMatrixInteracted
+     *  (which receive viewInteracted signals on every matrix click). */
+    enum class MatrixKind { NONE, ERROR_MATRIX_KIND, TEMPLATE_MATRIX_KIND };
+    MatrixKind m_lastMatrixUsed = MatrixKind::NONE;
 
     /**The path of the currently open document.*/
     QString filePath;
