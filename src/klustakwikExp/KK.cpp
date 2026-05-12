@@ -7867,73 +7867,13 @@ static void TopKEigenPowerDeflation(std::vector<double>& A,  // [D*D], modified
 
 
 // ---------------------------------------------------------------------------
-// FindDominantChannels — return indices of top-N channels by peak-to-peak
-// amplitude of a cluster's mean waveform.  Used by Phase 2b mode 3 to pick
-// the most "informative" channels for per-spike xcorr realignment: the
-// channel(s) where the neuron is strongest carry the cleanest alignment
-// signal and the highest SNR for cross-correlation.
-//
-// `meanWave` is laid out time-major, channel-minor: index = t*nChan + ch.
+// (FindDominantChannels + FindBestLagXCorr removed in patch37 — the per-
+// cluster alignment in Phase 2b mode 3 now uses the shared, normalised-xcorr
+// XcorrDispatch::compute (same library that backs Klusters' interactive
+// realignSpikes), which operates on ALL channels rather than a dominant
+// subset.  The deprecated ResidualPCADominantChannels CLI flag is kept for
+// backwards compatibility but is ignored — see RunPhase2bMode3Chunk.)
 // ---------------------------------------------------------------------------
-static void FindDominantChannels(const double* meanWave,
-                                 int nChan, int nSamplesPerSpike, int topN,
-                                 std::vector<int>& outCh)
-{
-    std::vector<std::pair<double, int>> amps(nChan);
-    for (int ch = 0; ch < nChan; ch++) {
-        double minv =  1e300, maxv = -1e300;
-        for (int t = 0; t < nSamplesPerSpike; t++) {
-            const double v = meanWave[t * nChan + ch];
-            if (v < minv) minv = v;
-            if (v > maxv) maxv = v;
-        }
-        amps[static_cast<size_t>(ch)] = {maxv - minv, ch};
-    }
-    std::sort(amps.begin(), amps.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
-    const int n = std::min(topN, nChan);
-    outCh.resize(n);
-    for (int i = 0; i < n; i++) outCh[i] = amps[static_cast<size_t>(i)].second;
-}
-
-
-// ---------------------------------------------------------------------------
-// FindBestLagXCorr — integer-lag cross-correlation of one spike against a
-// cluster mean, summed over a subset of channels (the "dominant" ones).
-//
-// Sign convention: positive lag ⇒ spike's content is EARLIER than the mean
-// (needs to be shifted LATER, i.e. read further into .fil), so the returned
-// lag adds directly to m_cumShift (which uses positive = read later).  This
-// matches RefeaturizeFromShifts' offset rule:  off = rawTs + sh − PeakIdx.
-//
-// Uses an inner-window correlation (range [maxLag, nSamplesPerSpike−maxLag))
-// to avoid boundary handling — we lose 2·maxLag of the wave at the edges
-// (typically 6 of 42 samples), which is well outside the peak region and
-// contributes little to the correlation regardless.
-// ---------------------------------------------------------------------------
-static int FindBestLagXCorr(const int16_t* spike, const double* mean,
-                            int nChan, int nSamplesPerSpike,
-                            const std::vector<int>& dominantCh, int maxLag)
-{
-    const int tStart = maxLag;
-    const int tEnd   = nSamplesPerSpike - maxLag;
-    if (tEnd <= tStart || dominantCh.empty()) return 0;
-
-    double bestScore = -1e300;
-    int    bestLag   = 0;
-    for (int lag = -maxLag; lag <= maxLag; lag++) {
-        double score = 0.0;
-        for (int t = tStart; t < tEnd; t++) {
-            const int tSpike = t + lag;
-            const int16_t* sRow = spike + tSpike * nChan;
-            const double*  mRow = mean  + t      * nChan;
-            for (int ch : dominantCh)
-                score += static_cast<double>(sRow[ch]) * mRow[ch];
-        }
-        if (score > bestScore) { bestScore = score; bestLag = lag; }
-    }
-    return bestLag;
-}
 
 
 // ===========================================================================
