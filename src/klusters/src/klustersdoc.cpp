@@ -2737,6 +2737,97 @@ void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
     logAfter(newIds);
 }
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::reorderClustersByPermutation
+//
+// Drives the rename pipeline (logBefore + prepareUndo + applyClusterRename +
+// logAfter) from an externally-supplied cluster order.  Used by the Shift+S
+// "Reorder Clusters by Similarity" action — the slot computes the order via
+// agglomerative clustering on the active similarity matrix and hands it
+// here, so all the undo/log/palette/view bookkeeping stays inside the doc
+// layer where it belongs (mirrors the renumberClustersToEnd pattern).
+//
+// New IDs start at 2; clusters 0 (artefact) and 1 (noise) are untouched and
+// stay at the front of the palette.  Any newOrder entry referencing 0, 1,
+// or a missing cluster makes the whole call a no-op (returns -1) so we never
+// half-apply a rename.
+// ---------------------------------------------------------------------------
+int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
+{
+    if (newOrder.isEmpty()) return 0;
+    if (!app()->activeView()) return -1;
+
+    const QList<dataType> existing = clusteringData->clusterIds();
+    if (existing.isEmpty()) return -1;
+
+    QSet<int> existingSet;
+    for (dataType eid : existing) existingSet.insert(static_cast<int>(eid));
+
+    // Validate: every newOrder entry must be a real, non-special cluster.
+    QSet<int> seen;
+    for (int cid : newOrder) {
+        if (cid <= 1) return -1;
+        if (!existingSet.contains(cid)) return -1;
+        if (seen.contains(cid)) return -1;       // duplicates not allowed
+        seen.insert(cid);
+    }
+
+    // Build maps.  We rename the listed clusters to consecutive IDs
+    // starting at 2; any existing cluster NOT in newOrder keeps its
+    // current ID — that's an artefact of the slot only handing us
+    // clusters present in the similarity matrix, and is fine because
+    // applyClusterRename uses Data::renumberPartial which preserves
+    // unlisted IDs.
+    QMap<int,int> partialOldToNew;
+    QMap<int,int> fullOldToNew;
+    QMap<int,int> fullNewToOld;
+    for (dataType eid : existing) {
+        const int iid = static_cast<int>(eid);
+        fullOldToNew.insert(iid, iid);
+        fullNewToOld.insert(iid, iid);
+    }
+    int nextNewId = 2;
+    QList<int> renamedClusters;
+    for (int oldId : newOrder) {
+        const int newId = nextNewId++;
+        if (oldId == newId) continue;          // already in target slot
+        partialOldToNew.insert(oldId, newId);
+        fullOldToNew.insert(oldId, newId);
+        fullNewToOld.remove(oldId);
+        fullNewToOld.insert(newId, oldId);
+        renamedClusters.append(oldId);
+    }
+
+    if (partialOldToNew.isEmpty()) return 0;   // already in order
+
+    // Reject if the rename would map two old IDs to the same new ID.
+    // This shouldn't happen given the per-newOrder uniqueness check
+    // above PLUS the consecutive-from-2 assignment, but applyClusterRename
+    // doesn't validate this, so we defend before mutating state.
+    QSet<int> targets;
+    for (auto it = fullOldToNew.constBegin();
+         it != fullOldToNew.constEnd(); ++it)
+    {
+        if (targets.contains(it.value())) return -1;
+        targets.insert(it.value());
+    }
+
+    // Curation log + undo snapshot use the same pattern as
+    // renumberClustersToEnd, so undo/redo behaviour and log replay
+    // both treat this as a partial-renumber action.
+    logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, renamedClusters);
+    prepareUndo(fullOldToNew, fullNewToOld);
+    applyClusterRename(partialOldToNew, &fullOldToNew);
+
+    QList<int> newIds;
+    newIds.reserve(renamedClusters.size());
+    for (int oldId : renamedClusters)
+        newIds.append(partialOldToNew.value(oldId, oldId));
+    logAfter(newIds);
+
+    return partialOldToNew.size();
+}
+
 int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString& reclusteringFetFileName){
     QFile fetFile(reclusteringFetFileName);
     if(!fetFile.open(QIODevice::WriteOnly))

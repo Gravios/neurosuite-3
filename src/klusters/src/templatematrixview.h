@@ -95,6 +95,26 @@ public:
     void newClustersAdded(QList<int>& clustersToRecluster);
     void renumber(QMap<int,int>& clusterIdsOldNew);
 
+    // ── Read-only accessors used by KlustersApp::slotReorderClustersBySimilarity ──
+    // The scores matrix is a row-major Array<double> indexed 1..nClusters
+    // (cluster ID for row/col i is clusterList[i-1]).  Higher score =
+    // closer mean-waveform match, so this is a similarity matrix in the
+    // reorder algorithm's terminology.
+
+    /// True once at least one template-matrix computation has completed.
+    bool hasComputedData() const { return dataReady; }
+    /// Cluster IDs corresponding to matrix rows/columns (1-based mapping).
+    QList<int> matrixClusterList() const { return clusterList; }
+    /// Pointer to the [N x N] score matrix (1-based; may be null).
+    const Array<double>* matrixData() const { return scores; }
+
+Q_SIGNALS:
+    /// Emitted when the user clicks anywhere in the matrix view.  Used
+    /// by KlustersApp to track which matrix view the user most recently
+    /// interacted with — Shift+S reorder uses that matrix when both
+    /// error and template matrices coexist.
+    void viewInteracted();
+
 protected:
     void paintEvent(QPaintEvent*) override;
     void customEvent(QEvent* event) override;

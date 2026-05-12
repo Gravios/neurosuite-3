@@ -65,6 +65,29 @@ public:
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled() override;
 
+    // ── Read-only accessors used by KlustersApp::slotReorderClustersBySimilarity ──
+    // The probability matrix is built by ErrorMatrixThread and stored as
+    // a row-major Array<double> indexed 1..nClusters (cluster ID for
+    // row/col i is computedClusterList[i-1]).  Higher probability =
+    // clusters more likely to belong to the same neuron, so this is a
+    // similarity matrix in the reorder algorithm's terminology.
+
+    /// True once at least one matrix computation has completed.
+    bool hasComputedData() const { return dataReady; }
+    /// Cluster IDs present in the matrix (including noise/artefact).
+    QList<int> matrixClusterList() const { return clusterList; }
+    /// Cluster IDs that actually have computed probabilities.
+    QList<int> matrixComputedClusterList() const { return computedClusterList; }
+    /// Pointer to the [N x N] probability matrix (1-based; may be null).
+    const Array<double>* matrixData() const { return probabilities; }
+
+Q_SIGNALS:
+    /// Emitted when the user clicks anywhere in the matrix view.  Used
+    /// by KlustersApp to track which matrix view the user most recently
+    /// interacted with — Shift+S reorder uses that matrix when both
+    /// error and template matrices coexist.
+    void viewInteracted();
+
 public Q_SLOTS:
 
     /**Enables the caller to know if there is any thread running launch by the Widget.*/

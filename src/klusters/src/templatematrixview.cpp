@@ -487,6 +487,10 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
 
 void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
+    // Tell KlustersApp's last-interacted tracker BEFORE the early-return
+    // guards — even a click on an empty/stale matrix counts as the
+    // user "focusing" this view for the Shift+S reorder selection.
+    emit viewInteracted();
     if (!dataReady || clusterList.isEmpty()) return;
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
