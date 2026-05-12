@@ -153,6 +153,27 @@ int   TimeShiftAlignAfterPhase6  = 0;  ///< Cluster-mean alignment after Phase 6
 // canonical PeakSampleIndex.
 int   EnergyCOMRealign      = 0;       ///< 0 = off; 1 = enable energy-COM realignment after each active cluster-mean alignment block.
 int   EnergyCOMMetric       = 1;       ///< Energy metric for COM: 0 = sum |x|, 1 = sum x² (default, standard signal energy).
+
+// Phase 7b — optional final mean-waveform subtraction merge.  Runs after
+// all alignment is done (post-Phase-7a if enabled).  For each pair of
+// live clusters, computes the normalised L2 residual between their mean
+// waveforms (per-cluster aggregated across ALL chunks, with per-spike
+// shifts applied):
+//
+//     D(i, j) = ||mean[i] - mean[j]||² / max(||mean[i]||², ||mean[j]||²)
+//
+// Pairs with D < MeanSubtractionMergeThresh are merged via union-find,
+// smallest D first (transitive merges allowed).  Differs from Phase
+// 5/6 xcorr matching in two key ways: (1) the metric is amplitude-
+// sensitive (xcorr is amplitude-invariant), so two clusters with the
+// same shape at very different amplitudes will NOT merge here — useful
+// when amplitude carries identity (e.g. distinct neurons with similar
+// shape); (2) operates on globally-aggregated means rather than per-
+// chunk means, so it catches residual fragmentation that survived Phase
+// 6's cross-chunk match.  Disabled by default — opt in with
+// -MeanSubtractionMergeEnable 1.
+int   MeanSubtractionMergeEnable = 0;    ///< 0 = off; 1 = run Phase 7b after Phase 7a
+float MeanSubtractionMergeThresh = 0.15f;///< normalised residual D below which a pair merges
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -273,6 +294,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(TimeShiftAlignAfterPhase6);
     INT_PARAM(EnergyCOMRealign);
     INT_PARAM(EnergyCOMMetric);
+    INT_PARAM(MeanSubtractionMergeEnable);
+    FLOAT_PARAM(MeanSubtractionMergeThresh);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);

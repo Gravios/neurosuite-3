@@ -3906,6 +3906,50 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
 
+    // ── Phase 7b (optional): mean-waveform subtraction merge ─────────
+    // Runs after Phase 7a so the means it aggregates already reflect
+    // the final post-merge alignment.  Opt-in via
+    // -MeanSubtractionMergeEnable 1; threshold via
+    // -MeanSubtractionMergeThresh (default 0.15).  See
+    // KK::FinalMeanSubtractionMerge for algorithm details.
+    if (MeanSubtractionMergeEnable != 0) {
+        fprintf(stderr, "[Phase 7b] Mean-subtraction template merge "
+                        "(threshold D < %.3f)\n",
+                static_cast<double>(MeanSubtractionMergeThresh));
+        const int nMergedSub =
+            FinalMeanSubtractionMerge(NbChannels, NbSamplesPerSpike);
+        if (nMergedSub > 0) {
+            // Same state-refresh dance as Phase 7a — Class[] now points
+            // to consolidated roots; MStep recomputes Mean/Cov, Reindex
+            // compacts dead IDs, EStep populates LogP for the new layout.
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            void* savedGpuB = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+            MStep();
+            for (int p2 = 0; p2 < nPoints; p2++)
+                if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+            ClassAlive[0] = 1;
+            Reindex();
+            EStep();
+            {
+                const float kLargeLogP = 1e15f;
+                for (int p2 = 0; p2 < nPoints; p2++) {
+                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    if (!std::isfinite(lp)) lp = kLargeLogP;
+                }
+            }
+            score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            gpu = static_cast<decltype(gpu)>(savedGpuB);
+#endif
+            if (score < ksv().BestScoreSave) {
+                SaveBestMeans();
+                ksv().BestScoreSave = score;
+            }
+            ReportClusterQuality("Phase 7b");
+        }
+    }
+
     // Phase 8 DipSplit removed: per-chunk DipSplit now runs as Phase 1b,
     // before cross-chunk model matching, so global splits at this stage
     // would be operating on already-merged clusters where apparent
@@ -4943,6 +4987,45 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 ksv().BestScoreSave = score;
             }
             ReportClusterQuality("Phase 7a");
+        }
+    }
+
+    // ── Phase 7b (optional): mean-waveform subtraction merge ─────────
+    // Mirror of Driver A's Phase 7b.  See FinalMeanSubtractionMerge for
+    // algorithm; opt-in via -MeanSubtractionMergeEnable 1 with threshold
+    // -MeanSubtractionMergeThresh (default 0.15).
+    if (MeanSubtractionMergeEnable != 0) {
+        fprintf(stderr, "[Phase 7b] Mean-subtraction template merge "
+                        "(threshold D < %.3f)\n",
+                static_cast<double>(MeanSubtractionMergeThresh));
+        const int nMergedSub =
+            FinalMeanSubtractionMerge(NbChannels, NbSamplesPerSpike);
+        if (nMergedSub > 0) {
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            void* savedGpuB = static_cast<void*>(gpu); gpu = nullptr;
+#endif
+            MStep();
+            for (int p2 = 0; p2 < nPoints; p2++)
+                if (!ClassAlive[Class[p2]]) Class[p2] = 0;
+            ClassAlive[0] = 1;
+            Reindex();
+            EStep();
+            {
+                const float kLargeLogP = 1e15f;
+                for (int p2 = 0; p2 < nPoints; p2++) {
+                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    if (!std::isfinite(lp)) lp = kLargeLogP;
+                }
+            }
+            score = ComputeScore();
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+            gpu = static_cast<decltype(gpu)>(savedGpuB);
+#endif
+            if (score < ksv().BestScoreSave) {
+                SaveBestMeans();
+                ksv().BestScoreSave = score;
+            }
+            ReportClusterQuality("Phase 7b");
         }
     }
 
@@ -6705,6 +6788,229 @@ int KK::EnergyCOMRealignPhase(int nChan, int nSamplesPerSpike)
     }
 
     return nSpikesShifted;
+}
+
+// ---------------------------------------------------------------------------
+// FinalMeanSubtractionMerge — Phase 7b
+//
+// Pairwise merge of live global clusters based on the normalised L2
+// residual between their mean spike waveforms:
+//
+//     D(i, j) = ||mean[i] - mean[j]||² / max(||mean[i]||², ||mean[j]||²)
+//
+// Mean waveforms are aggregated across all chunks (i.e. spike index
+// 0..nPoints-1 walks the whole session's spikes), using either the
+// time-shift probe's open .spk file when available (so the means
+// reflect the post-alignment view) or a direct fopen on the canonical
+// .spk / .spkD path when the probe never initialised.  Self-contained
+// — does NOT require m_timeShiftReady, unlike EnergyCOMRealignPhase.
+//
+// Pairs below MeanSubtractionMergeThresh are merged via union-find,
+// smallest D first.  Smaller cluster ID always wins (keeps the palette
+// layout stable; chronological-order-by-ID gets preserved).  No
+// iteration: union-find already handles transitive merges in one pass.
+//
+// Caller is responsible for the post-merge state refresh (MStep /
+// Reindex / EStep / ComputeScore) — same convention as Phase 7a's
+// TimeShiftAlignPhase.
+// ---------------------------------------------------------------------------
+int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
+{
+    if (MeanSubtractionMergeEnable == 0) return 0;
+    if (nChan <= 0 || nSamplesPerSpike <= 0) return 0;
+    if (!(MeanSubtractionMergeThresh > 0.0f)) return 0;
+
+    const int wElems = nChan * nSamplesPerSpike;
+
+    // ── Spike-file access ──────────────────────────────────────────────
+    // Prefer the time-shift probe's open file (already mmap'd / fopen'd,
+    // and applying any cumulative shifts via TimeShiftReadSpikeWave so
+    // means reflect post-alignment geometry).  Fall back to a direct
+    // open of .spk / .spkD when the probe isn't initialised.
+    FILE* spkFallback = nullptr;
+    if (!m_timeShiftReady) {
+        char spkPath[STRLEN + 16];
+        if (pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo) < 0) {
+            fprintf(stderr, "[Phase 7b] No .spk/.spkD found for electrode %d; "
+                            "skip mean-subtraction merge.\n", ElecNo);
+            return 0;
+        }
+        spkFallback = fopen(spkPath, "rb");
+        if (!spkFallback) {
+            fprintf(stderr, "[Phase 7b] Could not open %s; "
+                            "skip mean-subtraction merge.\n", spkPath);
+            return 0;
+        }
+    }
+
+    // ── Step 1: per-cluster mean waveform aggregation ──────────────────
+    // Layout matches EnergyCOMRealignPhase's sumWave: time-major,
+    // channel-minor (index = t * nChan + ch).  Sample-major is the
+    // natural .spk layout; for an L2 residual the layout doesn't
+    // matter as long as both means use the same indexing.
+    constexpr int   kMinSpikesForMean = 5;
+    std::vector<int16_t> row(static_cast<size_t>(wElems));
+    std::vector<int>     liveClusters;
+    std::unordered_map<int, std::vector<double>> meanWav;
+    std::unordered_map<int, int>                 meanN;
+    int nSkippedSmall   = 0;
+    int nSkippedBadRead = 0;
+
+    for (int c = 2; c < MaxPossibleClusters; ++c) {
+        if (!ClassAlive[c]) continue;
+
+        // Gather members.  Could O(N) once into a multimap but each
+        // cluster's loop is short and we want to skip too-small ones
+        // before allocating their accumulator.
+        std::vector<int> members;
+        for (int p = 0; p < nPoints; ++p)
+            if (Class[p] == c) members.push_back(p);
+        if (static_cast<int>(members.size()) < kMinSpikesForMean) {
+            ++nSkippedSmall;
+            continue;
+        }
+
+        std::vector<double> acc(static_cast<size_t>(wElems), 0.0);
+        int nRead = 0;
+        for (int p : members) {
+            bool ok = false;
+            if (m_timeShiftReady) {
+                ok = TimeShiftReadSpikeWave(p, wElems, row.data());
+            } else {
+                // Fallback path: raw .spk read, then apply any shifts
+                // we know about.  m_cumShift may still be populated even
+                // if m_timeShiftReady is false (probe deinitialised
+                // post-Phase-7), so ShiftWaveformRowInPlace is correct.
+                if (fseeko(spkFallback,
+                           static_cast<off_t>(p) * wElems * sizeof(int16_t),
+                           SEEK_SET) == 0 &&
+                    fread(row.data(), sizeof(int16_t),
+                          static_cast<size_t>(wElems), spkFallback)
+                        == static_cast<size_t>(wElems))
+                {
+                    ShiftWaveformRowInPlace(row.data(), p,
+                                            nChan, nSamplesPerSpike);
+                    ok = true;
+                }
+            }
+            if (!ok) continue;
+            for (int i = 0; i < wElems; ++i)
+                acc[static_cast<size_t>(i)] +=
+                    static_cast<double>(row[static_cast<size_t>(i)]);
+            ++nRead;
+        }
+        if (nRead == 0) { ++nSkippedBadRead; continue; }
+
+        const double inv = 1.0 / nRead;
+        for (int i = 0; i < wElems; ++i) acc[static_cast<size_t>(i)] *= inv;
+
+        liveClusters.push_back(c);
+        meanWav[c] = std::move(acc);
+        meanN[c]   = nRead;
+    }
+    if (spkFallback) fclose(spkFallback);
+
+    if (liveClusters.size() < 2) {
+        fprintf(stderr, "[Phase 7b] Mean-subtraction merge: only %zu eligible "
+                        "clusters (skipped %d small, %d bad-read); nothing to do.\n",
+                liveClusters.size(), nSkippedSmall, nSkippedBadRead);
+        return 0;
+    }
+
+    // ── Step 2: per-cluster energy (denominator for normalisation) ─────
+    std::unordered_map<int, double> energy;
+    for (int c : liveClusters) {
+        double e = 0.0;
+        for (double v : meanWav[c]) e += v * v;
+        energy[c] = e;
+    }
+
+    // ── Step 3: pairwise residual; collect below-threshold candidates ──
+    struct Pair { int i; int j; double D; };
+    std::vector<Pair> candidates;
+    std::sort(liveClusters.begin(), liveClusters.end());
+
+    for (size_t a = 0; a < liveClusters.size(); ++a) {
+        const int    i  = liveClusters[a];
+        const auto&  mi = meanWav[i];
+        const double ei = energy[i];
+        for (size_t b = a + 1; b < liveClusters.size(); ++b) {
+            const int    j  = liveClusters[b];
+            const auto&  mj = meanWav[j];
+            const double ej = energy[j];
+            const double denom = std::max(ei, ej);
+            if (!(denom > 0.0)) continue;       // silent vs anything
+
+            double rss = 0.0;
+            for (int k = 0; k < wElems; ++k) {
+                const double d = mi[static_cast<size_t>(k)] -
+                                 mj[static_cast<size_t>(k)];
+                rss += d * d;
+            }
+            const double D = rss / denom;
+            if (D < static_cast<double>(MeanSubtractionMergeThresh))
+                candidates.push_back({i, j, D});
+        }
+    }
+
+    if (candidates.empty()) {
+        fprintf(stderr, "[Phase 7b] Mean-subtraction merge: 0 pairs below "
+                        "D=%.3f (%zu eligible clusters compared); no merges.\n",
+                static_cast<double>(MeanSubtractionMergeThresh),
+                liveClusters.size());
+        return 0;
+    }
+
+    // ── Step 4: union-find merge (smallest D first) ────────────────────
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Pair& a, const Pair& b) { return a.D < b.D; });
+
+    std::unordered_map<int, int> parent;
+    for (int c : liveClusters) parent[c] = c;
+    auto findRoot = [&](int x) {
+        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+    };
+
+    int nMerged = 0;
+    for (const auto& p : candidates) {
+        const int ri = findRoot(p.i);
+        const int rj = findRoot(p.j);
+        if (ri == rj) continue;
+        // Smaller cluster ID always wins — palette stability, and the
+        // surviving root represents the chronologically-earlier cluster
+        // (chunk-merge order assigns lower IDs to earlier-detected units).
+        const int keep = std::min(ri, rj);
+        const int drop = std::max(ri, rj);
+        parent[drop] = keep;
+        fprintf(stderr, "[Phase 7b]   merge cluster %d <- %d  (D=%.4f, "
+                        "n=%d+%d=%d)\n",
+                keep, drop, p.D, meanN[keep], meanN[drop],
+                meanN[keep] + meanN[drop]);
+        ++nMerged;
+    }
+
+    // ── Step 5: apply resolved roots to Class[] + kill merged-away ─────
+    for (int p = 0; p < nPoints; ++p) {
+        const int c = Class[p];
+        if (c < 2) continue;
+        auto it = parent.find(c);
+        if (it == parent.end()) continue;
+        const int root = findRoot(c);
+        if (root != c) Class[p] = root;
+    }
+    for (const auto& kv : parent) {
+        if (kv.first != kv.second) ClassAlive[kv.first] = 0;
+    }
+
+    fprintf(stderr, "[Phase 7b] Mean-subtraction merge: %d merges applied "
+                    "(%zu candidates below D=%.3f, %zu clusters evaluated; "
+                    "skipped %d small, %d bad-read).\n",
+            nMerged, candidates.size(),
+            static_cast<double>(MeanSubtractionMergeThresh),
+            liveClusters.size(), nSkippedSmall, nSkippedBadRead);
+
+    return nMerged;
 }
 
 // ---------------------------------------------------------------------------
