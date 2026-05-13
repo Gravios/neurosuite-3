@@ -173,6 +173,30 @@ struct Params {
     double      gainSmoothLambda = 10.0; // μ in Σ(a_w − a_{w-1})²; higher = smoother
     double      gainUnityPrior   = 0.1;  // λ_unity in Σ(a_w − 1)²; higher = stays near 1
 
+    // Channel-position-aware drift (patch49).  Each cluster gets a 2D
+    // centre-of-mass trajectory through (x, y) channel-position space,
+    // computed from amplitude-weighted channel positions on the smoothed
+    // per-window mean waveforms.  Trajectories are Tikhonov-smoothed in
+    // 2D position space (much cheaper than full waveform space — 2 dims
+    // per window vs nChan × nSamp), then pairs are filtered by mean COM
+    // distance before merging.
+    //
+    // If --channel-positions is given, expects a text file with one row
+    // per channel: "x y" (μm).  Order matches channels within the group.
+    // Otherwise channel INDEX is used as 1D position (x=0, y=index) —
+    // works for tetrodes/octrodes where channels are arranged linearly
+    // on a shank; the COM is then in units of "channels" rather than μm.
+    //
+    // positionThresh > 0 enforces an AND-filter on candidate pairs: in
+    // addition to passing the waveform residual D < mergeThresh check,
+    // a pair's mean per-window COM distance must be ≤ positionThresh.
+    // positionThresh == 0 (default) computes the diagnostic but doesn't
+    // filter — purely informational.
+    std::string channelPositionsFile;   // empty = use channel index
+    std::string positionUnits;          // patch51: diagnostic label; empty = auto
+    double      positionThresh = 0.0;   // 0 = off; otherwise μm (or channels)
+    double      positionSmoothLambda = 5.0;  // Tikhonov ridge on COM(t) smoothness
+
     // File-name suffixes (override for stderiv variant: spkD)
     std::string spkSuffix     = "spk";
     std::string outCluTag     = "drift";
@@ -221,6 +245,24 @@ void usage(const char* prog) {
         "                         μ · Σ(a_w − a_{w-1})² (default 10.0)\n"
         "  --gain-unity-prior   L  prior pulling gain toward 1.0\n"
         "                         λ · Σ(a_w − 1)² (default 0.1)\n"
+        "\n"
+        "Position-aware drift (patch49):\n"
+        "  --channel-positions FILE  text file, one row per channel: \"x y\"\n"
+        "                         in μm.  Order matches channels within the\n"
+        "                         spike group.  Optional — if absent, channel\n"
+        "                         INDEX is used as 1D y-position (x=0).\n"
+        "  --position-thresh    D   AND-filter on candidate pairs: mean per-\n"
+        "                         window COM distance must be ≤ D (default 0\n"
+        "                         = compute diagnostic but don't filter).\n"
+        "                         Units match --channel-positions (μm if a\n"
+        "                         positions file is loaded, channels otherwise).\n"
+        "  --position-smooth-lambda L  Tikhonov ridge on COM(t) smoothness\n"
+        "                         (default 5.0)\n"
+        "  --position-units    STR  diagnostic units label (default auto:\n"
+        "                         'μm' when --channel-positions is given,\n"
+        "                         'channels' otherwise).  Useful when the\n"
+        "                         positions file uses mm, normalized, or\n"
+        "                         non-μm coordinates.\n"
         "  --spk-suffix     ext  spk file suffix (default 'spk'; auto-falls back\n"
         "                         to 'spkD' for stderiv pipelines when .spk is\n"
         "                         absent — pass an explicit value to disable fallback)\n"
@@ -281,6 +323,10 @@ bool parseArgs(int argc, char** argv, Params& p)
         else if (a == "--gain-fit")                { if (!nexti(&p.gainFit,            a.c_str())) return false; }
         else if (a == "--gain-smooth-lambda")      { if (!next (&p.gainSmoothLambda,   a.c_str())) return false; }
         else if (a == "--gain-unity-prior")        { if (!next (&p.gainUnityPrior,     a.c_str())) return false; }
+        else if (a == "--channel-positions")       { if (!nexts(&p.channelPositionsFile, a.c_str())) return false; }
+        else if (a == "--position-thresh")         { if (!next (&p.positionThresh,        a.c_str())) return false; }
+        else if (a == "--position-smooth-lambda")  { if (!next (&p.positionSmoothLambda,  a.c_str())) return false; }
+        else if (a == "--position-units")          { if (!nexts(&p.positionUnits,         a.c_str())) return false; }
         else if (a == "--peak-sample")             { if (!nexti(&p.peakSample,    a.c_str())) return false; }
         else if (a == "--spk-suffix")              { if (!nexts(&p.spkSuffix,     a.c_str())) return false; }
         else if (a == "--out-clu-tag")             { if (!nexts(&p.outCluTag,     a.c_str())) return false; }
@@ -673,6 +719,17 @@ void smoothTemplatesTikhonov(double lambda, PerClusterTemplates& tpl)
     if (tpl.mean.empty()) return;
     const int nWin = static_cast<int>(tpl.mean.begin()->second.size());
     if (nWin <= 1) return;
+
+    // Stability guard #1 (patch50): with lambda <= 0 the Tikhonov coupling is
+    // off, so each window's value should remain its raw mean.  Naively running
+    // Thomas in this regime produces NaN: for any cluster with a transition
+    // from defined (alpha=1) to undefined (alpha=0) windows, the elimination
+    // step hits 0/0 at the first undefined index and IEEE 754's `0 * NaN = NaN`
+    // back-propagates through the entire trajectory — destroying even the
+    // defined windows.  Skip the solver entirely; raw means stay as-is and
+    // undefined windows stay at their zero-initialised state.
+    if (lambda <= 0.0) return;
+
     const int wElems = static_cast<int>(tpl.mean.begin()->second.front().size());
 
     std::vector<double> diag(nWin), rhs(nWin), x(nWin);
@@ -681,6 +738,18 @@ void smoothTemplatesTikhonov(double lambda, PerClusterTemplates& tpl)
         const int32_t c = kv.first;
         auto&         M = kv.second;        // [nWin][wElems]
         const auto&   A = tpl.count.at(c);
+
+        // Stability guard #2 (patch50): the Tikhonov system A·x = b is
+        // singular when no window has α > 0 — the matrix becomes the pure
+        // Laplacian λL whose null space contains the constant vector
+        // (Σ rows = 0 for every row).  Thomas elimination hits 0 at the
+        // last step; the resulting NaN back-propagates.  Skip such
+        // clusters entirely; their means stay at the all-zero initial state.
+        bool anyDefined = false;
+        for (int w = 0; w < nWin; ++w) {
+            if (A[w] > 0) { anyDefined = true; break; }
+        }
+        if (!anyDefined) continue;
 
         for (int d = 0; d < wElems; ++d) {
             // Build diag + rhs for this dimension.
@@ -696,6 +765,209 @@ void smoothTemplatesTikhonov(double lambda, PerClusterTemplates& tpl)
             // Solve and write back.
             solveTridiagonalThomas(nWin, diag.data(), -lambda, rhs.data(), x.data());
             for (int w = 0; w < nWin; ++w) M[w][d] = x[w];
+        }
+    }
+}
+
+// ─── Phase B.5: position-aware drift tracking (patch49) ─────────────────────
+//
+// Each cluster gets a 2D centre-of-mass trajectory through (x, y) channel-
+// position space.  For each window w and each cluster c, the COM is:
+//
+//   ptp[ch]  = max(m[w][:, ch]) − min(m[w][:, ch])      (peak-to-peak per channel)
+//   com_x[c, w] = Σ_ch ptp[ch] · pos_x[ch] / Σ_ch ptp[ch]
+//   com_y[c, w] = Σ_ch ptp[ch] · pos_y[ch] / Σ_ch ptp[ch]
+//
+// Peak-to-peak amplitude is the standard weighting in modern sorters
+// (Kilosort, DARTsort).  When the upstream Tikhonov smoother (Phase B)
+// produces a near-zero waveform for some (c, w) — typically because the
+// cluster went silent in that window — the per-window COM is flagged
+// undefined and interpolated by a second pass of Tikhonov in 2D position
+// space.
+//
+// The drift signal a cluster exhibits is then a 2D vector trajectory
+// {com_x[c, w], com_y[c, w]}_w, much lower-dimensional than the full
+// waveform trajectory.  Pairs of clusters that follow the same underlying
+// drifting unit have COM trajectories that overlap closely; pairs that
+// differ in absolute position by more than a few channels diameter are
+// unlikely to be the same unit even if their waveform residuals look
+// favourable.
+struct ClusterCOMTrajectory {
+    std::unordered_map<int32_t, std::vector<double>> x;       // [nWin] per cluster
+    std::unordered_map<int32_t, std::vector<double>> y;       // [nWin]
+    std::unordered_map<int32_t, std::vector<int>>    defined; // [nWin] 0/1 flag
+};
+
+// Load channel positions from a 2-column text file (one "x y" pair per
+// channel, in group order).  Lines starting with '#' are ignored.  Returns
+// false on any parse error; on success fills posX/posY (both size nChan).
+//
+// When no file is given, falls back to channel index: (x=0, y=index) so
+// downstream COM math works in unit-less "channel" coordinates that are
+// still monotonic in the natural channel ordering on a linear shank.
+bool loadOrDefaultChannelPositions(
+    const std::string& path, int nChan,
+    std::vector<double>& posX, std::vector<double>& posY)
+{
+    posX.assign(nChan, 0.0);
+    posY.assign(nChan, 0.0);
+    if (path.empty()) {
+        for (int ch = 0; ch < nChan; ++ch) posY[ch] = static_cast<double>(ch);
+        return true;
+    }
+    std::ifstream f(path);
+    if (!f) {
+        std::fprintf(stderr, "ERROR: cannot open --channel-positions '%s'\n",
+                     path.c_str());
+        return false;
+    }
+    int  idx     = 0;            // data row index (0..nChan-1)
+    int  lineno  = 0;            // actual file line number (patch51 — accurate diagnostics)
+    std::string line;
+    while (std::getline(f, line)) {
+        ++lineno;
+        // Strip leading whitespace, skip blank/comment lines.
+        size_t a = 0;
+        while (a < line.size() && (line[a] == ' ' || line[a] == '\t')) ++a;
+        if (a >= line.size() || line[a] == '#') continue;
+        // Parse "x y" — sscanf returns number of fields read.  Use %n to
+        // know how far it advanced, then check the rest of the line for
+        // unexpected trailing tokens (patch51 — defensive parsing).
+        double x, y;
+        int    consumed = 0;
+        const int n = std::sscanf(line.c_str() + a, "%lf %lf%n", &x, &y, &consumed);
+        if (n != 2) {
+            std::fprintf(stderr,
+                "ERROR: --channel-positions '%s' line %d: expected 'x y', got '%s'\n",
+                path.c_str(), lineno, line.c_str() + a);
+            return false;
+        }
+        // Check for trailing junk beyond y (skipping whitespace).  A third
+        // numeric token on the line — easy to type by accident if user
+        // meant (x, y, z) — is an outright parse error, not a warning.
+        // Comments after y are fine.
+        size_t tail = a + consumed;
+        while (tail < line.size() && (line[tail] == ' ' || line[tail] == '\t')) ++tail;
+        if (tail < line.size() && line[tail] != '#') {
+            std::fprintf(stderr,
+                "ERROR: --channel-positions '%s' line %d: trailing token after "
+                "'x y' — got '%s'.  Format is exactly two columns; use '#' for "
+                "inline comments.\n",
+                path.c_str(), lineno, line.c_str() + tail);
+            return false;
+        }
+        if (idx >= nChan) {
+            std::fprintf(stderr,
+                "ERROR: --channel-positions '%s' line %d: more data rows than "
+                "the group's nChan=%d\n",
+                path.c_str(), lineno, nChan);
+            return false;
+        }
+        posX[idx] = x;
+        posY[idx] = y;
+        ++idx;
+    }
+    if (idx != nChan) {
+        std::fprintf(stderr,
+            "ERROR: --channel-positions '%s' has %d data row(s), expected nChan=%d\n",
+            path.c_str(), idx, nChan);
+        return false;
+    }
+    return true;
+}
+
+// Compute per-cluster per-window COM trajectories from the smoothed mean
+// waveforms.  Windows with zero or near-zero total ptp are flagged
+// `defined=0` and left at zero; the smoothing pass fills them by interpolation.
+void computeCOMTrajectories(
+    const PerClusterTemplates& tpl,
+    const std::vector<double>& posX,
+    const std::vector<double>& posY,
+    int nChan, int nSamp,
+    ClusterCOMTrajectory& out)
+{
+    if (tpl.mean.empty()) return;
+    const int nWin = static_cast<int>(tpl.mean.begin()->second.size());
+
+    for (const auto& kv : tpl.mean) {
+        const int32_t c = kv.first;
+        const auto&   M = kv.second;          // [nWin][nChan * nSamp]
+        const auto&   A = tpl.count.at(c);    // [nWin]
+
+        auto& xVec = out.x[c]; xVec.assign(nWin, 0.0);
+        auto& yVec = out.y[c]; yVec.assign(nWin, 0.0);
+        auto& dVec = out.defined[c]; dVec.assign(nWin, 0);
+
+        for (int w = 0; w < nWin; ++w) {
+            if (A[w] <= 0) continue;          // dead window — leave undefined
+            const auto& mw = M[w];
+
+            // Per-channel peak-to-peak on the (time-major channel-minor) layout.
+            double totalAmp = 0.0;
+            double sumX = 0.0, sumY = 0.0;
+            for (int ch = 0; ch < nChan; ++ch) {
+                double minV = mw[0 * nChan + ch];
+                double maxV = minV;
+                for (int t = 1; t < nSamp; ++t) {
+                    const double v = mw[t * nChan + ch];
+                    if (v < minV) minV = v;
+                    if (v > maxV) maxV = v;
+                }
+                const double ptp = maxV - minV;
+                totalAmp += ptp;
+                sumX     += ptp * posX[ch];
+                sumY     += ptp * posY[ch];
+            }
+            if (totalAmp > 0.0) {
+                xVec[w] = sumX / totalAmp;
+                yVec[w] = sumY / totalAmp;
+                dVec[w] = 1;
+            }
+        }
+    }
+}
+
+// Tikhonov-smooth each cluster's COM trajectory (per-axis, decoupled).
+// Same banded tridiagonal pattern as smoothTemplatesTikhonov, but in 2 dims
+// per window rather than nChan × nSamp.  Undefined windows have α=0 and are
+// interpolated from neighbours.
+//
+// Two stability guards (patch50) — see smoothTemplatesTikhonov above for
+// the analysis.  Both produce NaN trajectories without these guards.
+void smoothCOMTrajectoriesTikhonov(double lambda, ClusterCOMTrajectory& com)
+{
+    if (com.x.empty()) return;
+    const int nWin = static_cast<int>(com.x.begin()->second.size());
+    if (nWin <= 1) return;
+    if (lambda <= 0.0) return;          // guard #1: no smoothing, raw values kept
+
+    std::vector<double> diag(nWin), rhs(nWin), x(nWin);
+
+    for (auto& kv : com.x) {
+        const int32_t c = kv.first;
+        auto& xVec = kv.second;
+        auto& yVec = com.y.at(c);
+        const auto& dVec = com.defined.at(c);
+
+        // Guard #2: skip clusters with no defined windows (Laplacian-only
+        // system is singular; Thomas produces NaN).
+        bool anyDefined = false;
+        for (int w = 0; w < nWin; ++w) {
+            if (dVec[w]) { anyDefined = true; break; }
+        }
+        if (!anyDefined) continue;
+
+        for (int axis = 0; axis < 2; ++axis) {
+            std::vector<double>& v = (axis == 0) ? xVec : yVec;
+            for (int w = 0; w < nWin; ++w) {
+                const double alpha = static_cast<double>(dVec[w]);
+                const double nb = ((w > 0)        ? 1.0 : 0.0)
+                                + ((w < nWin - 1) ? 1.0 : 0.0);
+                diag[w] = alpha + nb * lambda;
+                rhs[w]  = alpha * v[w];
+            }
+            solveTridiagonalThomas(nWin, diag.data(), -lambda, rhs.data(), x.data());
+            for (int w = 0; w < nWin; ++w) v[w] = x[w];
         }
     }
 }
@@ -718,6 +990,15 @@ struct MergePair {
     // amplitude-redistribution (electrode moved relative to the unit),
     // not just time-shift.
     double                     meanAbsGainDev = 0.0;
+    // Position-aware diagnostic (patch49).  meanCOMDistance = mean over
+    // co-alive windows of √((Δx)² + (Δy)²).  Units match channel positions
+    // (μm if --channel-positions loaded, else "channels").  comDriftA /
+    // comDriftB record how much each cluster's COM moved across the
+    // session — useful for flagging pairs that "merge because they both
+    // drifted in opposite directions through the same spot".
+    double                     meanCOMDistance = -1.0;     // -1 = not computed
+    double                     comDriftA       = 0.0;
+    double                     comDriftB       = 0.0;
 };
 
 // One window's normalised L2 residual with cyclic-shift search.  miSrc is
@@ -846,7 +1127,15 @@ GainFitResult fitPerChannelGainTrajectory(
         }
     }
 
-    // Solve nChan independent tridiagonal systems.
+    // Solve nChan independent tridiagonal systems.  Stability guard (patch50):
+    // when mu + lambdaUnity == 0 AND a channel has zero amplitude in some
+    // window (normA[w*nChan+ch] == 0 either because alpha[w]==0 or because
+    // the channel itself was dead), diag[w] = 0 and Thomas hits 0/0.  The
+    // default lambdaUnity = 0.1 prevents this in normal use, but a user
+    // explicitly disabling both regularisers should not crash.  Clamp the
+    // effective diag-only constant to a tiny epsilon when both are zero.
+    const bool noReg     = (mu <= 0.0 && lambdaUnity <= 0.0);
+    const double diagEps = noReg ? 1e-12 : 0.0;
     std::vector<double> diag(nWin), rhs(nWin), x(nWin);
     for (int ch = 0; ch < nChan; ++ch) {
         for (int w = 0; w < nWin; ++w) {
@@ -854,7 +1143,8 @@ GainFitResult fitPerChannelGainTrajectory(
                             + ((w < nWin - 1) ? 1.0 : 0.0);
             diag[w] = static_cast<double>(alpha[w]) * normA[w * nChan + ch]
                     + nb * mu
-                    + lambdaUnity;
+                    + lambdaUnity
+                    + diagEps;
             rhs[w]  = static_cast<double>(alpha[w]) * innerAB[w * nChan + ch]
                     + lambdaUnity;
         }
@@ -912,7 +1202,10 @@ GainFitResult fitPerChannelGainTrajectory(
 }
 
 std::vector<MergePair>
-driftAwareSubtractionMerge(const Params& p, const PerClusterTemplates& tpl)
+driftAwareSubtractionMerge(
+    const Params& p,
+    const PerClusterTemplates& tpl,
+    const ClusterCOMTrajectory* com)   // nullptr ⇒ position filter disabled
 {
     std::vector<MergePair> candidates;
     std::vector<int32_t>   clusters;
@@ -964,6 +1257,53 @@ driftAwareSubtractionMerge(const Params& p, const PerClusterTemplates& tpl)
                     gainDevOut = gfr.meanAbsGainDev;
                 }
             }
+
+            // Position-aware diagnostic + optional AND-filter (patch49).
+            // Always compute when COM data is available; only apply the
+            // filter when positionThresh > 0.  Pairs that pass the
+            // waveform residual but disagree on COM position by more than
+            // positionThresh are filtered out — likely two different units
+            // that look superficially similar in waveform space.
+            double meanCOM = -1.0;
+            double driftA  = 0.0;
+            double driftB  = 0.0;
+            if (com != nullptr) {
+                const auto& xA = com->x.at(ca);
+                const auto& yA = com->y.at(ca);
+                const auto& dA = com->defined.at(ca);
+                const auto& xB = com->x.at(cb);
+                const auto& yB = com->y.at(cb);
+                const auto& dB = com->defined.at(cb);
+                double sumDist = 0.0;
+                int    nDist   = 0;
+                // Per-cluster drift magnitude over the session: distance
+                // from earliest-defined to latest-defined COM.
+                int firstA = -1, lastA = -1, firstB = -1, lastB = -1;
+                for (int w = 0; w < nWin; ++w) {
+                    if (dA[w]) { if (firstA < 0) firstA = w; lastA = w; }
+                    if (dB[w]) { if (firstB < 0) firstB = w; lastB = w; }
+                    if (Aa[w] <= 0 || Ab[w] <= 0) continue;
+                    const double dx = xA[w] - xB[w];
+                    const double dy = yA[w] - yB[w];
+                    sumDist += std::sqrt(dx * dx + dy * dy);
+                    ++nDist;
+                }
+                if (nDist > 0) meanCOM = sumDist / nDist;
+                if (firstA >= 0 && lastA > firstA) {
+                    const double dx = xA[lastA] - xA[firstA];
+                    const double dy = yA[lastA] - yA[firstA];
+                    driftA = std::sqrt(dx * dx + dy * dy);
+                }
+                if (firstB >= 0 && lastB > firstB) {
+                    const double dx = xB[lastB] - xB[firstB];
+                    const double dy = yB[lastB] - yB[firstB];
+                    driftB = std::sqrt(dx * dx + dy * dy);
+                }
+                // AND-filter
+                if (p.positionThresh > 0.0 && meanCOM > p.positionThresh)
+                    continue;
+            }
+
             if (finalD < p.mergeThresh) {
                 MergePair mp;
                 mp.a              = ca;
@@ -972,6 +1312,9 @@ driftAwareSubtractionMerge(const Params& p, const PerClusterTemplates& tpl)
                 mp.nWinsUsed      = nUsed;
                 mp.bestShifts     = std::move(shifts);
                 mp.meanAbsGainDev = gainDevOut;
+                mp.meanCOMDistance = meanCOM;
+                mp.comDriftA      = driftA;
+                mp.comDriftB      = driftB;
                 candidates.push_back(std::move(mp));
             }
         }
@@ -1014,6 +1357,7 @@ resolveMerges(const std::vector<MergePair>& cands,
 bool writeReport(const Params& p,
                  const std::vector<std::pair<int64_t,int64_t>>& wins,
                  const PerClusterTemplates& tpl,
+                 const ClusterCOMTrajectory& com,
                  const std::vector<MergePair>& cands,
                  const std::unordered_map<int32_t,int32_t>& merges,
                  const std::string& path)
@@ -1043,6 +1387,19 @@ bool writeReport(const Params& p,
         f << "  gain_smooth_lambda: " << p.gainSmoothLambda << "\n";
         f << "  gain_unity_prior: "   << p.gainUnityPrior   << "\n";
     }
+    f << "  position_thresh: "        << p.positionThresh       << "\n";
+    f << "  position_smooth_lambda: " << p.positionSmoothLambda << "\n";
+    f << "  channel_positions_file: \""
+      << (p.channelPositionsFile.empty() ? "(channel index)" : p.channelPositionsFile)
+      << "\"\n";
+    {
+        // patch51: emit the units label, exactly as it appears in the banner
+        const std::string posUnitsDefault =
+            p.channelPositionsFile.empty() ? "channels" : "μm";
+        const std::string& posUnits =
+            p.positionUnits.empty() ? posUnitsDefault : p.positionUnits;
+        f << "  position_units: \"" << posUnits << "\"\n";
+    }
 
     f << "windows:\n";
     for (size_t i = 0; i < wins.size(); ++i) {
@@ -1064,6 +1421,23 @@ bool writeReport(const Params& p,
         f << "]\n";
     }
 
+    // Per-cluster COM trajectories (smoothed).  Two arrays per cluster:
+    // {x: [...], y: [...]} indexed by window.  Units = μm if --channel-
+    // positions loaded, else channel index.
+    f << "com_trajectories:  # smoothed 2D position over time, per cluster\n";
+    for (int32_t c : sortedClus) {
+        auto itX = com.x.find(c);
+        auto itY = com.y.find(c);
+        if (itX == com.x.end() || itY == com.y.end()) continue;
+        f << "  " << c << ":\n    x: [";
+        for (size_t i = 0; i < itX->second.size(); ++i)
+            f << (i ? ", " : "") << itX->second[i];
+        f << "]\n    y: [";
+        for (size_t i = 0; i < itY->second.size(); ++i)
+            f << (i ? ", " : "") << itY->second[i];
+        f << "]\n";
+    }
+
     f << "merges_applied:  # smaller cluster ID wins\n";
     int nMerged = 0;
     for (const auto& mp : cands) {
@@ -1074,6 +1448,11 @@ bool writeReport(const Params& p,
               << ", n_wins: "   << mp.nWinsUsed;
             if (mp.meanAbsGainDev > 0.0)
                 f << ", mean_abs_gain_dev: " << mp.meanAbsGainDev;
+            if (mp.meanCOMDistance >= 0.0) {
+                f << ", mean_com_distance: " << mp.meanCOMDistance
+                  << ", com_drift_a: "       << mp.comDriftA
+                  << ", com_drift_b: "       << mp.comDriftB;
+            }
             f << ", taus: [";
             for (size_t i = 0; i < mp.bestShifts.size(); ++i)
                 f << (i ? ", " : "") << mp.bestShifts[i];
@@ -1088,7 +1467,10 @@ bool writeReport(const Params& p,
         if (merges.at(mp.a) != merges.at(mp.b)) {
             f << "  - { a: " << mp.a << ", b: " << mp.b
               << ", D: "     << mp.D
-              << ", n_wins: " << mp.nWinsUsed << " }\n";
+              << ", n_wins: " << mp.nWinsUsed;
+            if (mp.meanCOMDistance >= 0.0)
+                f << ", mean_com_distance: " << mp.meanCOMDistance;
+            f << " }\n";
         }
     }
     return f.good();
@@ -1238,25 +1620,72 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "[drifttracker]   Phase B: Tikhonov smoothing applied (λ=%.3f)\n",
                      p.lambda);
 
-    // ── Phase C: drift-aware subtraction merge ────────────────────────────
-    auto cands = driftAwareSubtractionMerge(p, tpl);
+    // ── Phase B.5: position-aware drift tracking ──────────────────────────
+    // Always compute when channel positions are available.  Position becomes
+    // an AND-filter on merge candidates only when --position-thresh > 0.
+    std::vector<double> chPosX, chPosY;
+    if (!loadOrDefaultChannelPositions(p.channelPositionsFile, p.nChan, chPosX, chPosY))
+        return 1;
+    ClusterCOMTrajectory com;
+    computeCOMTrajectories(tpl, chPosX, chPosY, p.nChan, p.nSamp, com);
+    smoothCOMTrajectoriesTikhonov(p.positionSmoothLambda, com);
     if (p.verbose) {
+        // patch51: user override > auto-detect from positions file presence
+        const std::string posUnitsDefault =
+            p.channelPositionsFile.empty() ? "channels" : "μm";
+        const std::string& posUnits =
+            p.positionUnits.empty() ? posUnitsDefault : p.positionUnits;
+        // Per-cluster session-wide COM drift magnitude (one number per
+        // cluster), useful as the headline diagnostic.
+        std::vector<int32_t> sortedClus;
+        for (const auto& kv : com.x) sortedClus.push_back(kv.first);
+        std::sort(sortedClus.begin(), sortedClus.end());
+        std::fprintf(stderr,
+            "[drifttracker]   Phase B.5: COM trajectories computed (%s; "
+            "%zu clusters tracked)\n",
+            posUnits.c_str(), sortedClus.size());
+        for (int32_t c : sortedClus) {
+            const auto& dV = com.defined.at(c);
+            int first = -1, last = -1;
+            for (int w = 0; w < (int)dV.size(); ++w) {
+                if (dV[w]) { if (first < 0) first = w; last = w; }
+            }
+            if (first < 0 || last <= first) continue;
+            const double dx = com.x.at(c)[last] - com.x.at(c)[first];
+            const double dy = com.y.at(c)[last] - com.y.at(c)[first];
+            const double mag = std::sqrt(dx * dx + dy * dy);
+            std::fprintf(stderr,
+                "[drifttracker]     cluster %d  COM drift = %.2f %s "
+                "(w%d → w%d)\n",
+                c, mag, posUnits.c_str(), first, last);
+        }
+    }
+
+    // ── Phase C: drift-aware subtraction merge ────────────────────────────
+    auto cands = driftAwareSubtractionMerge(p, tpl, &com);
+    if (p.verbose) {
+        // patch51: user override > short auto label
+        const std::string posUnitsDefault =
+            p.channelPositionsFile.empty() ? "ch" : "μm";
+        const std::string& posUnits =
+            p.positionUnits.empty() ? posUnitsDefault : p.positionUnits;
         std::fprintf(stderr,
             "[drifttracker]   Phase C: %zu candidate pair(s) under D=%.4f, "
-            "cyclic ±%d%s\n",
+            "cyclic ±%d%s%s\n",
             cands.size(), p.mergeThresh, p.maxShift,
-            p.gainFit != 0 ? ", gain-fit ON" : "");
+            p.gainFit != 0 ? ", gain-fit ON" : "",
+            p.positionThresh > 0.0 ? ", position-filter ON" : "");
         for (const auto& mp : cands) {
-            if (p.gainFit != 0) {
+            std::fprintf(stderr,
+                "[drifttracker]     candidate %d ↔ %d  D=%.4f  over %d co-alive windows",
+                mp.a, mp.b, mp.D, mp.nWinsUsed);
+            if (p.gainFit != 0)
+                std::fprintf(stderr, "  mean|gain−1|=%.3f", mp.meanAbsGainDev);
+            if (mp.meanCOMDistance >= 0.0)
                 std::fprintf(stderr,
-                    "[drifttracker]     candidate %d ↔ %d  D=%.4f  over %d co-alive windows  "
-                    "mean|gain−1|=%.3f\n",
-                    mp.a, mp.b, mp.D, mp.nWinsUsed, mp.meanAbsGainDev);
-            } else {
-                std::fprintf(stderr,
-                    "[drifttracker]     candidate %d ↔ %d  D=%.4f  over %d co-alive windows\n",
-                    mp.a, mp.b, mp.D, mp.nWinsUsed);
-            }
+                    "  meanCOM=%.2f%s  driftA=%.2f  driftB=%.2f",
+                    mp.meanCOMDistance, posUnits.c_str(), mp.comDriftA, mp.comDriftB);
+            std::fprintf(stderr, "\n");
         }
     }
 
@@ -1289,7 +1718,7 @@ int main(int argc, char** argv)
     }
 
     if (!writeCluFile(outClu, mergedClu)) return 1;
-    if (!writeReport(p, wins, tpl, cands, rootMap, outYaml)) return 1;
+    if (!writeReport(p, wins, tpl, com, cands, rootMap, outYaml)) return 1;
 
     if (p.verbose) {
         std::fprintf(stderr,
