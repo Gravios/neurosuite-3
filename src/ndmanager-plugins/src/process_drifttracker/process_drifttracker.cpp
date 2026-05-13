@@ -221,6 +221,31 @@ struct Params {
     int    sharedDriftMinClusters   = 5;         // K — min shared clusters per window edge
     double sharedDriftPrior         = 0.01;      // Tikhonov ridge on D(w) magnitude
 
+    // ── Iterative refinement (patch58 — Huber-IRLS outlier downweighting) ──
+    //
+    // Single-pass D estimate uses uniform per-cluster weights within each
+    // edge.  Outlier clusters (units whose own motion isn't part of the
+    // shared population drift — dying cells, mis-merged FPs that mimic
+    // drift, etc.) bias the mean-based per-edge displacement.  Iterating
+    // with per-cluster Huber weighting identifies these and downweights
+    // them, sharpening D recovery.
+    //
+    // - sharedDriftIter == 1 (default): single pass — patch57 behaviour
+    // - sharedDriftIter  > 1          : IRLS, max N iterations; early exit
+    //                                    when max |ΔD(w)| < sharedDriftTol
+    //   * each iteration recomputes per-cluster Huber weights from the
+    //     residuals of the previous D estimate
+    //   * weight formula: w_c = 1                       if |r_c| ≤ k·MAD(r)
+    //                     w_c = k·MAD(r) / |r_c|        else
+    //   * k = sharedDriftHuberK (default 1.345 — Huber's 95%-efficiency
+    //     choice at normal distribution)
+    //
+    // For most fragmented-cluster sessions, 2–3 iterations suffice;
+    // further iterations refine D by <1% of the change in the first pass.
+    int    sharedDriftIter          = 1;         // 1 = single-pass; >1 enables IRLS
+    double sharedDriftHuberK        = 1.345;     // MAD-multiples breakpoint
+    double sharedDriftTol           = 1e-3;      // convergence in D-units (channels/μm)
+
     // File-name suffixes (override for stderiv variant: spkD)
     std::string spkSuffix     = "spk";
     std::string outCluTag     = "drift";
@@ -307,6 +332,21 @@ void usage(const char* prog) {
         "                          the system well-conditioned for sparse\n"
         "                          graphs and disconnected components\n"
         "                          (default 0.01)\n"
+        "  --shared-drift-iter N   number of IRLS refinement iterations\n"
+        "                          (default 1 = single-pass).  Values > 1\n"
+        "                          enable Huber-weighted iterative\n"
+        "                          refinement: each iteration downweights\n"
+        "                          clusters whose own motion deviates from\n"
+        "                          the shared population drift (outliers).\n"
+        "                          2–3 iterations typically converge.\n"
+        "  --shared-drift-huber-k K  Huber breakpoint in MAD-multiples\n"
+        "                          (default 1.345 — Huber's 95% efficiency).\n"
+        "                          Smaller = more aggressive outlier\n"
+        "                          rejection; larger = closer to L2 mean.\n"
+        "  --shared-drift-tol T    Early-exit tolerance: stop iterating\n"
+        "                          when max |D_new(w) − D_old(w)| < T,\n"
+        "                          in the same units as channel positions\n"
+        "                          (default 1e-3 channels)\n"
         "  --spk-suffix     ext  spk file suffix (default 'spk'; auto-falls back\n"
         "                         to 'spkD' for stderiv pipelines when .spk is\n"
         "                         absent — pass an explicit value to disable fallback)\n"
@@ -374,6 +414,9 @@ bool parseArgs(int argc, char** argv, Params& p)
         else if (a == "--shared-drift")            { p.sharedDrift = true; }
         else if (a == "--shared-drift-min-clusters") { if (!nexti(&p.sharedDriftMinClusters, a.c_str())) return false; }
         else if (a == "--shared-drift-prior")      { if (!next (&p.sharedDriftPrior,      a.c_str())) return false; }
+        else if (a == "--shared-drift-iter")       { if (!nexti(&p.sharedDriftIter,       a.c_str())) return false; }
+        else if (a == "--shared-drift-huber-k")    { if (!next (&p.sharedDriftHuberK,     a.c_str())) return false; }
+        else if (a == "--shared-drift-tol")        { if (!next (&p.sharedDriftTol,        a.c_str())) return false; }
         else if (a == "--peak-sample")             { if (!nexti(&p.peakSample,    a.c_str())) return false; }
         else if (a == "--spk-suffix")              { if (!nexts(&p.spkSuffix,     a.c_str())) return false; }
         else if (a == "--out-clu-tag")             { if (!nexts(&p.outCluTag,     a.c_str())) return false; }
@@ -1098,6 +1141,10 @@ struct SharedDriftResult {
     int                                    nEdges        = 0;
     int                                    nDisconnected = 0;
     bool                                   solveOk       = true;
+    // patch58 — iteration diagnostics
+    int                                    nIters        = 1;    // 1 = single-pass
+    int                                    nOutliers     = 0;    // clusters w/ weight < 1 at convergence
+    double                                 lastMaxDelta  = 0.0;  // max |ΔD(w)| at the final iter
 };
 
 // Cholesky factorise (LLᵀ) of an SPD matrix A stored row-major in flat
@@ -1154,7 +1201,7 @@ estimateSharedDrift(const ClusterCOMTrajectory& com, int nWin, const Params& p)
     r.D.assign((size_t)nWin, {0.0, 0.0});
     if (nWin <= 1 || com.x.empty()) return r;
 
-    // ── (1) inverted index: clusters defined in each window ──
+    // ── (1) Inverted index: clusters defined in each window ──
     std::vector<std::vector<int32_t>> clustersInWin((size_t)nWin);
     for (const auto& kv : com.defined) {
         const int32_t c = kv.first;
@@ -1163,9 +1210,18 @@ estimateSharedDrift(const ClusterCOMTrajectory& com, int nWin, const Params& p)
             if (dV[(size_t)w]) clustersInWin[(size_t)w].push_back(c);
     }
 
-    // ── (2) edges: per window pair, mean displacement of shared clusters ──
-    struct Edge { int i, j; double dx, dy; int w; };
-    std::vector<Edge> edges;
+    // ── (2) Edges: enumerate window pairs.  For each edge, KEEP THE
+    //              PER-CLUSTER DISPLACEMENT OBSERVATIONS, not just the
+    //              aggregated mean.  patch58 needs them for IRLS
+    //              re-weighting; patch57's averaging happens inside each
+    //              iteration.  Memory: at most W²·avgShared doubles ≈
+    //              same order as the smoothed templates.
+    struct EdgeObs {
+        int                  i, j;
+        std::vector<int32_t> clusters;
+        std::vector<double>  dx, dy;       // per cluster, same order
+    };
+    std::vector<EdgeObs> edges;
     edges.reserve((size_t)nWin * (nWin - 1) / 2);
     for (int i = 0; i < nWin; ++i) {
         const auto& Si = clustersInWin[(size_t)i];
@@ -1174,81 +1230,167 @@ estimateSharedDrift(const ClusterCOMTrajectory& com, int nWin, const Params& p)
         for (int j = i + 1; j < nWin; ++j) {
             const auto& Sj = clustersInWin[(size_t)j];
             if ((int)Sj.size() < p.sharedDriftMinClusters) continue;
-            std::vector<int32_t> shared;
-            shared.reserve(std::min(Si.size(), Sj.size()));
-            for (int32_t c : Sj) if (setI.count(c)) shared.push_back(c);
-            if ((int)shared.size() < p.sharedDriftMinClusters) continue;
-            double sumDx = 0.0, sumDy = 0.0;
-            for (int32_t c : shared) {
-                sumDx += com.x.at(c)[(size_t)j] - com.x.at(c)[(size_t)i];
-                sumDy += com.y.at(c)[(size_t)j] - com.y.at(c)[(size_t)i];
+            EdgeObs e;
+            e.i = i; e.j = j;
+            e.clusters.reserve(std::min(Si.size(), Sj.size()));
+            for (int32_t c : Sj) {
+                if (!setI.count(c)) continue;
+                e.clusters.push_back(c);
+                e.dx.push_back(com.x.at(c)[(size_t)j] - com.x.at(c)[(size_t)i]);
+                e.dy.push_back(com.y.at(c)[(size_t)j] - com.y.at(c)[(size_t)i]);
             }
-            const double n = (double)shared.size();
-            edges.push_back({i, j, sumDx / n, sumDy / n, (int)shared.size()});
+            if ((int)e.clusters.size() < p.sharedDriftMinClusters) continue;
+            edges.push_back(std::move(e));
         }
     }
     r.nEdges = (int)edges.size();
     if (edges.empty()) return r;
 
-    // ── (3) assemble Laplacian + RHS, anchored at D[0] = 0 ──
-    // The reduced system has size n = nWin - 1, indexed [0..n-1] = [1..nWin-1].
-    const int n = nWin - 1;
-    std::vector<double> L((size_t)n * n, 0.0);
-    std::vector<double> rx((size_t)n, 0.0), ry((size_t)n, 0.0);
+    // Disconnected-window count is a STRUCTURAL property of the edge graph,
+    // independent of cluster weights — compute it once.
+    {
+        std::vector<int> degree((size_t)nWin, 0);
+        for (const auto& e : edges) { degree[(size_t)e.i] += 1; degree[(size_t)e.j] += 1; }
+        // Window 0 is the anchor; not "disconnected" even if it has no edges.
+        for (int w = 1; w < nWin; ++w) if (degree[(size_t)w] == 0) r.nDisconnected += 1;
+    }
 
+    // ── (3) IRLS outer loop ──
+    // Per-cluster Huber weight, updated each iteration.  Initial: all 1.0.
+    std::unordered_map<int32_t, double> clusterWeight;
+    for (const auto& kv : com.defined) clusterWeight[kv.first] = 1.0;
+
+    const int    maxIter = std::max(1, p.sharedDriftIter);
+    const int    n       = nWin - 1;      // reduced size after anchoring D[0] = 0
+    const double prior   = std::max(p.sharedDriftPrior, 1e-9);
     auto idx = [&](int i, int j) -> size_t { return (size_t)i * n + j; };
 
-    // Per edge (i, j): constraint D[j] - D[i] = d_ij (weighted by w_ij = |S|).
-    // Contributions when re-indexed by k = idx - 1:
-    //   L[k_i, k_i] += w   (if i > 0)
-    //   L[k_j, k_j] += w   (if j > 0)
-    //   L[k_i, k_j] -= w,  L[k_j, k_i] -= w   (if both > 0)
-    //   rx[k_i]   -= w * dx   (if i > 0)
-    //   rx[k_j]   += w * dx   (if j > 0)
-    // (same shape for y).  i == 0 contributes only to the j-side, since
-    // D[0] is the anchor.
-    for (const auto& e : edges) {
-        const double w = (double)e.w;
-        if (e.i > 0) {
-            L[idx(e.i - 1, e.i - 1)] += w;
-            rx[(size_t)(e.i - 1)] -= w * e.dx;
-            ry[(size_t)(e.i - 1)] -= w * e.dy;
+    std::vector<std::pair<double, double>> Dprev((size_t)nWin, {0.0, 0.0});
+    std::vector<std::pair<double, double>> Dcurr((size_t)nWin, {0.0, 0.0});
+
+    for (int iter = 0; iter < maxIter; ++iter) {
+        // Aggregate per-edge weighted means.
+        struct EdgeAgg { int i, j; double dx, dy, weight; };
+        std::vector<EdgeAgg> aggEdges;
+        aggEdges.reserve(edges.size());
+        for (const auto& e : edges) {
+            double sw = 0.0, sx = 0.0, sy = 0.0;
+            for (size_t k = 0; k < e.clusters.size(); ++k) {
+                const double w = clusterWeight[e.clusters[k]];
+                if (w <= 0.0) continue;
+                sw += w;
+                sx += w * e.dx[k];
+                sy += w * e.dy[k];
+            }
+            if (sw < 1e-9) continue;
+            aggEdges.push_back({e.i, e.j, sx / sw, sy / sw, sw});
         }
-        if (e.j > 0) {
-            L[idx(e.j - 1, e.j - 1)] += w;
-            rx[(size_t)(e.j - 1)] += w * e.dx;
-            ry[(size_t)(e.j - 1)] += w * e.dy;
+        if (aggEdges.empty()) { r.solveOk = false; break; }
+
+        // Build Laplacian + RHS.
+        std::vector<double> L((size_t)n * n, 0.0);
+        std::vector<double> rx((size_t)n, 0.0), ry((size_t)n, 0.0);
+        for (const auto& e : aggEdges) {
+            const double w = e.weight;
+            if (e.i > 0) {
+                L[idx(e.i - 1, e.i - 1)] += w;
+                rx[(size_t)(e.i - 1)] -= w * e.dx;
+                ry[(size_t)(e.i - 1)] -= w * e.dy;
+            }
+            if (e.j > 0) {
+                L[idx(e.j - 1, e.j - 1)] += w;
+                rx[(size_t)(e.j - 1)] += w * e.dx;
+                ry[(size_t)(e.j - 1)] += w * e.dy;
+            }
+            if (e.i > 0 && e.j > 0) {
+                L[idx(e.i - 1, e.j - 1)] -= w;
+                L[idx(e.j - 1, e.i - 1)] -= w;
+            }
         }
-        if (e.i > 0 && e.j > 0) {
-            L[idx(e.i - 1, e.j - 1)] -= w;
-            L[idx(e.j - 1, e.i - 1)] -= w;
+        for (int i = 0; i < n; ++i) L[idx(i, i)] += prior;
+
+        std::vector<double> Lcopy = L;
+        if (!choleskyFactor(Lcopy, n)) { r.solveOk = false; break; }
+        std::vector<double> dx = rx, dy = ry;
+        choleskySolve(Lcopy, n, dx);
+        choleskySolve(Lcopy, n, dy);
+
+        Dprev = Dcurr;
+        Dcurr[0] = {0.0, 0.0};
+        for (int i = 0; i < n; ++i) Dcurr[(size_t)(i + 1)] = {dx[(size_t)i], dy[(size_t)i]};
+        r.nIters = iter + 1;
+
+        // Convergence check (after first iteration).
+        if (iter > 0) {
+            double maxChange = 0.0;
+            for (int w = 0; w < nWin; ++w) {
+                const double ddx = Dcurr[(size_t)w].first  - Dprev[(size_t)w].first;
+                const double ddy = Dcurr[(size_t)w].second - Dprev[(size_t)w].second;
+                const double m   = std::sqrt(ddx * ddx + ddy * ddy);
+                if (m > maxChange) maxChange = m;
+            }
+            r.lastMaxDelta = maxChange;
+            if (maxChange < p.sharedDriftTol) break;
         }
+        if (iter == maxIter - 1) break;
+
+        // ── Re-weight clusters via Huber on per-cluster residuals ──
+        // For each cluster c, average its per-edge residual magnitude:
+        //   r_c = mean over c's edges of |(observed dx, dy) - (pred dx, pred dy)|
+        // where pred = D[j] - D[i].  Then Huber-weight w_c against MAD(r).
+        std::unordered_map<int32_t, double> sumRes, cntRes;
+        sumRes.reserve(clusterWeight.size());
+        cntRes.reserve(clusterWeight.size());
+        for (const auto& e : edges) {
+            const double dxPred = Dcurr[(size_t)e.j].first  - Dcurr[(size_t)e.i].first;
+            const double dyPred = Dcurr[(size_t)e.j].second - Dcurr[(size_t)e.i].second;
+            for (size_t k = 0; k < e.clusters.size(); ++k) {
+                const double rx_c = e.dx[k] - dxPred;
+                const double ry_c = e.dy[k] - dyPred;
+                const double rmag = std::sqrt(rx_c * rx_c + ry_c * ry_c);
+                sumRes[e.clusters[k]] += rmag;
+                cntRes[e.clusters[k]] += 1.0;
+            }
+        }
+
+        std::vector<int32_t> cList;
+        std::vector<double>  rPer;
+        cList.reserve(sumRes.size());
+        rPer.reserve(sumRes.size());
+        for (const auto& kv : sumRes) {
+            cList.push_back(kv.first);
+            rPer.push_back(kv.second / cntRes.at(kv.first));
+        }
+        if (rPer.empty()) break;
+
+        // Robust scale: 1.4826 · median(|r_c − median(r_c)|).
+        std::vector<double> tmp = rPer;
+        std::nth_element(tmp.begin(), tmp.begin() + tmp.size() / 2, tmp.end());
+        const double medR = tmp[tmp.size() / 2];
+        std::vector<double> dev(rPer.size());
+        for (size_t k = 0; k < rPer.size(); ++k)
+            dev[k] = std::fabs(rPer[k] - medR);
+        std::nth_element(dev.begin(), dev.begin() + dev.size() / 2, dev.end());
+        const double mad   = std::max(dev[dev.size() / 2], 1e-12);
+        const double scale = 1.4826 * mad;
+        const double cutoff = p.sharedDriftHuberK * scale;
+
+        // Update per-cluster weights.
+        int nOut = 0;
+        for (size_t k = 0; k < cList.size(); ++k) {
+            const int32_t c = cList[k];
+            const double r_c = rPer[k];
+            if (r_c <= cutoff) {
+                clusterWeight[c] = 1.0;
+            } else {
+                clusterWeight[c] = cutoff / r_c;   // Huber falloff: weight < 1
+                if (clusterWeight[c] < 0.999) ++nOut;
+            }
+        }
+        r.nOutliers = nOut;
     }
 
-    // Tikhonov ridge on the diagonal — stabilises disconnected components.
-    const double prior = std::max(p.sharedDriftPrior, 1e-9);
-    for (int i = 0; i < n; ++i) L[idx(i, i)] += prior;
-
-    // ── (4) diagnose disconnected windows ──
-    // A window is "disconnected" if its diagonal degree (= sum of edge
-    // weights touching it) is zero — only the prior term remains.
-    for (int i = 0; i < n; ++i) {
-        const double deg = L[idx(i, i)] - prior;
-        if (deg < 1e-9) r.nDisconnected += 1;
-    }
-
-    // ── (5) solve L · Dx = rx and L · Dy = ry by Cholesky ──
-    std::vector<double> Lcopy = L;
-    if (!choleskyFactor(Lcopy, n)) {
-        r.solveOk = false;
-        return r;
-    }
-    std::vector<double> dx = rx, dy = ry;
-    choleskySolve(Lcopy, n, dx);
-    choleskySolve(Lcopy, n, dy);
-
-    r.D[0] = {0.0, 0.0};
-    for (int i = 0; i < n; ++i) r.D[(size_t)(i + 1)] = {dx[(size_t)i], dy[(size_t)i]};
+    r.D = Dcurr;
     return r;
 }
 
@@ -1699,6 +1841,11 @@ bool writeReport(const Params& p,
     if (p.sharedDrift) {
         f << "  shared_drift_min_clusters: " << p.sharedDriftMinClusters << "\n";
         f << "  shared_drift_prior: "        << p.sharedDriftPrior       << "\n";
+        f << "  shared_drift_iter: "         << p.sharedDriftIter        << "\n";
+        if (p.sharedDriftIter > 1) {
+            f << "  shared_drift_huber_k: "  << p.sharedDriftHuberK      << "\n";
+            f << "  shared_drift_tol: "      << p.sharedDriftTol         << "\n";
+        }
     }
     f << "  channel_positions_file: \""
       << (p.channelPositionsFile.empty() ? "(channel index)" : p.channelPositionsFile)
@@ -2016,6 +2163,14 @@ int main(int argc, char** argv)
                     "max |D(w)| = %.2f %s @ w=%d, %d disconnected window(s)\n",
                     sr.nEdges, p.sharedDriftMinClusters, maxMag,
                     posUnits.c_str(), maxW, sr.nDisconnected);
+                if (p.sharedDriftIter > 1) {
+                    std::fprintf(stderr,
+                        "[drifttracker]   Phase B.6: IRLS converged in "
+                        "%d iter(s), final max |ΔD| = %.4f %s, "
+                        "%d outlier cluster(s) (weight < 1)\n",
+                        sr.nIters, sr.lastMaxDelta, posUnits.c_str(),
+                        sr.nOutliers);
+                }
             }
         }
     }
