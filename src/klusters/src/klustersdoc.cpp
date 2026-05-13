@@ -276,12 +276,36 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     const QStringList fileParts = fileName.split(".", Qt::SkipEmptyParts);
     if(fileParts.count() < 3)
         return INCORRECT_FILE;
-    baseName = fileParts[0];
 
-    for(qsizetype i = 1;i < fileParts.count()-2; ++i)
+    // Detect optional trailing variant suffix on .clu files (e.g. .clu.8.drift
+    // from process_drifttracker, .clu.8.bak, .clu.8.merged).  The canonical
+    // form is <base>.clu.<grp> with <grp> a positive integer; if the last
+    // token doesn't parse as an integer AND the second-to-last token does,
+    // treat the last token as a variant tag and the second-to-last as the
+    // electrode group ID.  baseName runs through everything before that.
+    //
+    // Variant files share .spk / .spkD / .fet / .fetD with the canonical
+    // electrode group — only the .clu file gets the variant suffix.
+    QString cluVariant;
+    qsizetype groupIdx = fileParts.count() - 1;
+    {
+        bool lastIsInt = false;
+        (void)fileParts.last().toInt(&lastIsInt);
+        if (!lastIsInt && fileParts.count() >= 4) {
+            bool prevIsInt = false;
+            (void)fileParts[fileParts.count() - 2].toInt(&prevIsInt);
+            if (prevIsInt) {
+                cluVariant = fileParts.last();
+                groupIdx   = fileParts.count() - 2;
+            }
+        }
+    }
+
+    baseName = fileParts[0];
+    for(qsizetype i = 1; i < groupIdx - 1; ++i)
         baseName += "." + fileParts[i];
 
-    electrodeGroupID = fileParts[fileParts.count()-1];
+    electrodeGroupID = fileParts[groupIdx];
 
     //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.yaml)
 
@@ -296,6 +320,8 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     }
 
     QString cluFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".clu."+ electrodeGroupID;
+    if (!cluVariant.isEmpty())
+        cluFileUrl += "." + cluVariant;
     docUrl = cluFileUrl;
 
     cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + urlFileInfo.fileName() + ".autosave";
