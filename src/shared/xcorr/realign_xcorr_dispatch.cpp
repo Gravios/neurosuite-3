@@ -33,7 +33,7 @@
 extern "C" {
     int xcorr_cuda_available() { return 0; }
     int xcorr_cuda_compute(const int16_t*, const int16_t*,
-                           int, int, int, int, float,
+                           int, int, int, int, float, float,
                            int*, float*) { return -1; }
 }
 #endif
@@ -42,7 +42,7 @@ extern "C" {
 extern "C" {
     int xcorr_hip_available() { return 0; }
     int xcorr_hip_compute(const int16_t*, const int16_t*,
-                          int, int, int, int, float,
+                          int, int, int, int, float, float,
                           int*, float*) { return -1; }
 }
 #endif
@@ -51,7 +51,7 @@ extern "C" {
 extern "C" {
     int xcorr_sycl_available() { return 0; }
     int xcorr_sycl_compute(const int16_t*, const int16_t*,
-                           int, int, int, int, float,
+                           int, int, int, int, float, float,
                            int*, float*) { return -1; }
 }
 #endif
@@ -71,13 +71,13 @@ static Backend detectBackend()
 {
 #ifdef USE_CUDA
     if (xcorr_cuda_available()) {
-        fprintf(stderr, "[realign] xcorr backend: CUDA\n");
+        fprintf(stdout, "[realign] xcorr backend: CUDA\n");
         return Backend::CUDA;
     }
 #endif
 #ifdef USE_HIP
     if (xcorr_hip_available()) {
-        fprintf(stderr, "[realign] xcorr backend: HIP (AMD ROCm)\n");
+        fprintf(stdout, "[realign] xcorr backend: HIP (AMD ROCm)\n");
         return Backend::HIP;
     }
 #endif
@@ -87,11 +87,11 @@ static Backend detectBackend()
     // during JIT compilation.  Don't probe at all unless the user has
     // explicitly opted in with KLUSTERS_USE_SYCL=1.
     if (std::getenv("KLUSTERS_USE_SYCL") && xcorr_sycl_available()) {
-        fprintf(stderr, "[realign] xcorr backend: SYCL (Intel oneAPI)\n");
+        fprintf(stdout, "[realign] xcorr backend: SYCL (Intel oneAPI)\n");
         return Backend::SYCL;
     }
 #endif
-    fprintf(stderr, "[realign] xcorr backend: OpenMP CPU\n");
+    fprintf(stdout, "[realign] xcorr backend: OpenMP CPU\n");
     return Backend::OMP;
 }
 
@@ -124,7 +124,7 @@ int compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out)
 {
@@ -132,30 +132,28 @@ int compute(
     switch (activeBackend()) {
     case Backend::CUDA:
         rc = xcorr_cuda_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
-                                maxShift, minScore, shifts_out, scores_out);
+                                maxShift, minScore, zeroTieMargin, shifts_out, scores_out);
         if (rc == 0) return 0;
         fprintf(stderr, "[realign] CUDA xcorr failed (rc=%d), falling back to OMP\n", rc);
         break;
     case Backend::HIP:
         rc = xcorr_hip_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
-                               maxShift, minScore, shifts_out, scores_out);
+                               maxShift, minScore, zeroTieMargin, shifts_out, scores_out);
         if (rc == 0) return 0;
         fprintf(stderr, "[realign] HIP xcorr failed (rc=%d), falling back to OMP\n", rc);
         break;
     case Backend::SYCL:
         rc = xcorr_sycl_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
-                                maxShift, minScore, shifts_out, scores_out);
+                                maxShift, minScore, zeroTieMargin, shifts_out, scores_out);
         if (rc == 0) return 0;
         fprintf(stderr, "[realign] SYCL xcorr failed (rc=%d), falling back to OMP\n", rc);
-        // Permanently demote to OMP so we don't attempt SYCL again this session.
         s_backend  = Backend::OMP;
         break;
     default:
         break;
     }
-    // Always-available OMP fallback
     return xcorr_omp_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
-                             maxShift, minScore, shifts_out, scores_out);
+                             maxShift, minScore, zeroTieMargin, shifts_out, scores_out);
 }
 
 } // namespace XcorrDispatch

@@ -68,7 +68,7 @@ __global__ void xcorr_kernel(
     const float*   __restrict__ tmplEnergyBuf,   // [1]: sqrt(tmplEnergy)
     const float*   __restrict__ spkSqrtEnergy,   // [nSpikes]
     int nChan, int nSamp,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   __restrict__ shifts_out,
     float* __restrict__ scores_out)
 {
@@ -79,9 +79,12 @@ __global__ void xcorr_kernel(
     const int nLags = 2 * maxShift + 1;
     float* sh_score = shmem;
     float* sh_lag   = shmem + nLags;
+    // patch61 — one extra slot at shmem[2*nLags] stores score at lag=0.
+    float* sh_score0 = shmem + 2 * nLags;
 
     sh_score[threadIdx.x] = -FLT_MAX;
     sh_lag  [threadIdx.x] = 0.0f;
+    if (threadIdx.x == 0) sh_score0[0] = -FLT_MAX;
     __syncthreads();
 
     const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
@@ -103,6 +106,7 @@ __global__ void xcorr_kernel(
         float score = (denom > 1e-12) ? static_cast<float>(num / denom) : 0.0f;
         sh_score[threadIdx.x] = score;
         sh_lag  [threadIdx.x] = static_cast<float>(lag);
+        if (lag == 0) sh_score0[0] = score;     // patch61
     }
     __syncthreads();
 
@@ -118,8 +122,14 @@ __global__ void xcorr_kernel(
     }
 
     if (threadIdx.x == 0) {
-        float best = sh_score[0];
-        int   blag = static_cast<int>(sh_lag[0]);
+        float best   = sh_score[0];
+        int   blag   = static_cast<int>(sh_lag[0]);
+        float score0 = sh_score0[0];
+        // patch61 — stay-at-zero tie-margin (see OMP backend for rationale).
+        if (blag != 0 && best < score0 + zeroTieMargin) {
+            blag = 0;
+            best = score0;
+        }
         // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
         // caller does newTs = ts + shifts_out to correct.
         shifts_out[sp] = (best >= minScore) ? blag : 0;
@@ -144,7 +154,7 @@ int xcorr_cuda_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out)
 {
@@ -185,11 +195,11 @@ int xcorr_cuda_compute(
             fprintf(stderr, "[xcorr_cuda] maxShift too large for single-block reduction\n");
             goto cleanup;
         }
-        size_t shmBytes = 2 * static_cast<size_t>(blockSz) * sizeof(float);
+        size_t shmBytes = (2 * static_cast<size_t>(blockSz) + 1) * sizeof(float);
         xcorr_kernel<<<nSpikes, blockSz, shmBytes>>>(
             d_wave, d_tmpl, d_tmplE, d_spkE,
             nChannels, nSamples,
-            maxShift, minScore,
+            maxShift, minScore, zeroTieMargin,
             d_shifts, d_scores);
     }
 

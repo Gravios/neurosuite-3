@@ -54,7 +54,7 @@ int xcorr_omp_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out)
 {
@@ -95,6 +95,7 @@ int xcorr_omp_compute(
 
         float bestScore = -FLT_MAX;
         int   bestLag   = 0;
+        float score0    = -FLT_MAX;  // patch61: score at lag=0, for tie-margin
 
         for (int lag = -maxShift; lag <= maxShift; ++lag) {
             double num = 0.0;
@@ -114,15 +115,32 @@ int xcorr_omp_compute(
                           ? static_cast<float>(num / denom)
                           : 0.0f;
 
+            if (lag == 0) score0 = score;            // patch61
             if (score > bestScore) {
                 bestScore = score;
                 bestLag   = lag;
             }
         }
 
-        // bestLag > 0: spike peak is late by bestLag samples relative to template.
-        // Caller corrects with: newTimestamp = oldTimestamp + bestLag
-        //                  and: aligned[s]  = original[(s + bestLag) % N]
+        // patch61 — STAY-AT-ZERO tie-margin.  On a freshly tightened
+        // cluster, spike-noise asymmetry typically lets some non-zero
+        // lag eke out a microscopic xcorr improvement over lag=0 even
+        // though the alignment is statistically indistinguishable.
+        // Repeated nudge then disperses the alignment.  Revert to lag=0
+        // unless the winning lag exceeds it by zeroTieMargin (default
+        // ~0.005 of the [-1, 1] xcorr range).  Real 1-sample
+        // misalignments typically show differences > 0.05, so this
+        // doesn't suppress legitimate corrections.
+        if (bestLag != 0 && bestScore < score0 + zeroTieMargin) {
+            bestLag   = 0;
+            bestScore = score0;
+        }
+
+        // A peak at bestLag means the spike is shifted +bestLag samples
+        // relative to the template.  Negate so the caller can simply add
+        // shifts_out to the timestamp (moving the spike earlier).
+        // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
+        // caller does newTs = ts + shifts_out to correct.
         shifts_out[sp] = (bestScore >= minScore) ? bestLag : 0;
         scores_out[sp] = bestScore;
     }
