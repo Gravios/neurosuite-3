@@ -60,6 +60,17 @@ public:
         return new SaveDoneEvent(*this,status);
     }
 
+    // patch63 — carry a diagnostic message describing exactly why a save
+    // failed (path, errno, step name).  The generic "I/O Error" dialog
+    // told the user nothing about what went wrong, especially on NTFS/
+    // fuseblk mounts where copy/rename can fail silently due to ACLs or
+    // cross-uid restrictions.
+    SaveDoneEvent* saveDoneEvent(bool status, const QString& errMsg){
+        SaveDoneEvent* e = new SaveDoneEvent(*this,status);
+        e->errorMessage = errMsg;
+        return e;
+    }
+
     /**
   * Internal class use to send information to the application object (KlustersApp) concerning
   * the save process.
@@ -69,12 +80,15 @@ public:
         //Only the method saveDoneEvent of SaveThread has access to the private part of SaveDoneEvent,
         //the constructor of saveDoneEvent being private, only this method con create a new saveDoneEvent
         friend SaveDoneEvent* SaveThread::saveDoneEvent(bool status);
+        friend SaveDoneEvent* SaveThread::saveDoneEvent(bool status, const QString&);
 
     public:
         bool isItSaveAs()const {return saveThread.isSaveAs;}
         void setTemporaryFile(const QString& tmpFile){tempCluFile = tmpFile;}
         QString temporaryFile() const {return tempCluFile;}
         bool isSaveOk() const {return saveOk;}
+        // patch63 — error message accessor (empty when isSaveOk()).
+        QString error() const {return errorMessage;}
         ~SaveDoneEvent(){}
 
     private:
@@ -83,6 +97,7 @@ public:
         const SaveThread& saveThread;
         QString tempCluFile;
         bool saveOk;
+        QString errorMessage;   // patch63
     };
 
 private:

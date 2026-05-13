@@ -45,7 +45,10 @@ void SaveThread::run(){
     }
     //Send an event to the application to upload, if need it the file where the cluster information
     // have been store, and update the menu and the status bar.
-    SaveDoneEvent* event = saveDoneEvent(status);
+    // patch63 — include the diagnostic error message from KlustersDoc so
+    // the UI can show what actually failed.
+    SaveDoneEvent* event = status ? saveDoneEvent(true)
+                                  : saveDoneEvent(false, doc->lastSaveError());
     event->setTemporaryFile(doc->temporaryFile());
     QApplication::postEvent(parent,event);
 }
