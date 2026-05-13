@@ -160,6 +160,19 @@ struct Params {
     int         maxShift      = 3;     // cyclic-shift search half-width
     int         minWinOverlap = 3;     // require this many co-alive windows to even compare a pair
 
+    // Per-channel time-varying gain fit (patch47).  Captures drift physics
+    // that pure time-shift can't: a unit moving relative to the array
+    // redistributes amplitude across channels.  For each pair (A, B), if
+    // gainFit != 0, fit a sequence of per-channel scalar gains a_w ∈ ℝ^nChan
+    // such that  a_w ⊙ shift_τ(A_w) ≈ B_w  for all co-alive windows w,
+    // with Tikhonov smoothness on a_w − a_{w-1} and a mild prior pulling
+    // a_w toward 1 (so we don't degenerate to zeroing channels to "explain
+    // away" mismatch).  Channels decouple — nChan independent tridiagonal
+    // systems, each solved by Thomas in O(nWin).
+    int         gainFit       = 0;     // 0 = off (default); 1 = on
+    double      gainSmoothLambda = 10.0; // μ in Σ(a_w − a_{w-1})²; higher = smoother
+    double      gainUnityPrior   = 0.1;  // λ_unity in Σ(a_w − 1)²; higher = stays near 1
+
     // File-name suffixes (override for stderiv variant: spkD)
     std::string spkSuffix     = "spk";
     std::string outCluTag     = "drift";
@@ -197,6 +210,17 @@ void usage(const char* prog) {
         "  --merge-thresh   D    average residual below which to merge (default 0.05)\n"
         "  --max-shift      K    cyclic-shift search half-width (default 3)\n"
         "  --min-win-overlap N   min co-alive windows to compare a pair (default 3)\n"
+        "\n"
+        "Per-channel drift model (patch47 — off by default):\n"
+        "  --gain-fit       0|1  fit per-channel time-varying gain on each pair\n"
+        "                         before computing the merge residual (default 0).\n"
+        "                         Captures drift that's not just time-shift —\n"
+        "                         e.g., a unit's amplitude redistributing across\n"
+        "                         channels as it moves relative to the array.\n"
+        "  --gain-smooth-lambda L  Tikhonov ridge on gain time-smoothness\n"
+        "                         μ · Σ(a_w − a_{w-1})² (default 10.0)\n"
+        "  --gain-unity-prior   L  prior pulling gain toward 1.0\n"
+        "                         λ · Σ(a_w − 1)² (default 0.1)\n"
         "  --spk-suffix     ext  spk file suffix (default 'spk'; auto-falls back\n"
         "                         to 'spkD' for stderiv pipelines when .spk is\n"
         "                         absent — pass an explicit value to disable fallback)\n"
@@ -254,6 +278,9 @@ bool parseArgs(int argc, char** argv, Params& p)
         else if (a == "--merge-thresh")            { if (!next (&p.mergeThresh,   a.c_str())) return false; }
         else if (a == "--max-shift")               { if (!nexti(&p.maxShift,      a.c_str())) return false; }
         else if (a == "--min-win-overlap")         { if (!nexti(&p.minWinOverlap, a.c_str())) return false; }
+        else if (a == "--gain-fit")                { if (!nexti(&p.gainFit,            a.c_str())) return false; }
+        else if (a == "--gain-smooth-lambda")      { if (!next (&p.gainSmoothLambda,   a.c_str())) return false; }
+        else if (a == "--gain-unity-prior")        { if (!next (&p.gainUnityPrior,     a.c_str())) return false; }
         else if (a == "--peak-sample")             { if (!nexti(&p.peakSample,    a.c_str())) return false; }
         else if (a == "--spk-suffix")              { if (!nexts(&p.spkSuffix,     a.c_str())) return false; }
         else if (a == "--out-clu-tag")             { if (!nexts(&p.outCluTag,     a.c_str())) return false; }
@@ -684,6 +711,13 @@ struct MergePair {
     double                     D;          // mean over co-alive windows
     int                        nWinsUsed;
     std::vector<int>           bestShifts; // best τ per window
+    // Per-channel time-varying gain diagnostic (patch47).  Empty when gainFit
+    // is off.  meanAbsGainDev = mean over (co-alive window, channel) of
+    // |a_w[ch] − 1|, summarising how much per-channel scaling was needed
+    // to align A onto B.  Large values flag pairs whose drift was
+    // amplitude-redistribution (electrode moved relative to the unit),
+    // not just time-shift.
+    double                     meanAbsGainDev = 0.0;
 };
 
 // One window's normalised L2 residual with cyclic-shift search.  miSrc is
@@ -725,6 +759,158 @@ void pairwiseResidualOneWindow(
     outShift = bestT;
 }
 
+// ─── Per-channel time-varying gain fit (patch47) ────────────────────────────
+//
+// Given two cluster trajectories Ma[w] and Mb[w] (each [nWin][wElems] doubles
+// in time-major channel-minor layout), plus a per-window best cyclic shift
+// τ_w from pairwiseResidualOneWindow, fit a per-channel gain sequence
+// gain[w, ch] minimising:
+//
+//   Σ_w α_w · ||gain[w, :] ⊙ shift_{τ_w}(Ma[w])  −  Mb[w]||²
+//   +  μ     · Σ_w (gain[w, ch] − gain[w-1, ch])²       (smoothness)
+//   +  λ_u   · Σ_w (gain[w, ch] − 1)²                   (unity prior)
+//
+// where α_w = 1 if window w is co-alive (both clusters have counts), else 0.
+// The channels decouple — nChan independent symmetric positive-definite
+// tridiagonal systems, each solved by Thomas in O(nWin).
+//
+// For channel ch, expanding ||gain · A − B||² and setting d/d gain_v = 0
+// per window v gives:
+//
+//   a_v · (α_v · ||A_v[ch]||² + nb·μ + λ_u)  −  μ · a_{v-1}  −  μ · a_{v+1}
+//   = α_v · ⟨A_v[ch], B_v[ch]⟩  +  λ_u
+//
+// where nb = 1 for boundary windows, 2 for interior. The off-diagonal is
+// constant −μ along the band, matching solveTridiagonalThomas's interface.
+//
+// Returns the post-fit residual D averaged over co-alive windows, using
+// the gain-corrected energy in the denominator:
+//
+//   D_w  =  ||gain_w ⊙ shift_τw(Ma_w)  −  Mb_w||² /
+//           max(||gain_w ⊙ shift_τw(Ma_w)||²,  ||Mb_w||²)
+//
+// gainOut is filled with [nWin][nChan] doubles; meanAbsGainDevOut is the
+// summary used for the report banner.
+struct GainFitResult {
+    double meanD;            // gain-corrected, averaged over co-alive windows
+    double meanAbsGainDev;   // mean |gain - 1| over (alive window × channel)
+    std::vector<std::vector<double>> gain;   // [nWin][nChan]
+};
+
+GainFitResult fitPerChannelGainTrajectory(
+    const std::vector<std::vector<double>>& Ma,   // [nWin][wElems]
+    const std::vector<std::vector<double>>& Mb,
+    const std::vector<int>& Aa,                   // per-window counts, 0 = dead
+    const std::vector<int>& Ab,
+    const std::vector<int>& bestShifts,           // length = co-alive windows; in window-order
+    int nChan, int nSamp,
+    double mu, double lambdaUnity)
+{
+    GainFitResult out;
+    const int nWin = static_cast<int>(Ma.size());
+    out.gain.assign(nWin, std::vector<double>(nChan, 1.0));   // identity init
+
+    // Pre-compute, per (window, channel):
+    //   normA_w[ch]  = ||shift_τ(A_w)[ch, :]||²
+    //   innerAB_w[ch] = ⟨shift_τ(A_w)[ch, :], B_w[ch, :]⟩
+    //   normB_w[ch]   = ||B_w[ch, :]||²
+    // Use 0 for windows that aren't co-alive — α=0 zeros their contribution.
+    //
+    // bestShifts is indexed in co-alive order; we need a per-window τ map.
+    // Build a co-alive walker so we don't have to mirror that logic here.
+    std::vector<double> normA (nWin * nChan, 0.0);
+    std::vector<double> innerAB(nWin * nChan, 0.0);
+    std::vector<double> normB (nWin * nChan, 0.0);
+    std::vector<int>    alpha (nWin, 0);
+
+    int coAliveIdx = 0;
+    for (int w = 0; w < nWin; ++w) {
+        if (Aa[w] <= 0 || Ab[w] <= 0) continue;
+        alpha[w] = 1;
+        const int tau = (coAliveIdx < (int)bestShifts.size())
+                        ? bestShifts[coAliveIdx] : 0;
+        ++coAliveIdx;
+        for (int t = 0; t < nSamp; ++t) {
+            int tSrc = t + tau;
+            while (tSrc <    0)   tSrc += nSamp;
+            while (tSrc >= nSamp) tSrc -= nSamp;
+            const int rowSrc = tSrc * nChan;
+            const int rowDst = t    * nChan;
+            for (int ch = 0; ch < nChan; ++ch) {
+                const double aV = Ma[w][rowSrc + ch];
+                const double bV = Mb[w][rowDst + ch];
+                normA  [w * nChan + ch] += aV * aV;
+                innerAB[w * nChan + ch] += aV * bV;
+                normB  [w * nChan + ch] += bV * bV;
+            }
+        }
+    }
+
+    // Solve nChan independent tridiagonal systems.
+    std::vector<double> diag(nWin), rhs(nWin), x(nWin);
+    for (int ch = 0; ch < nChan; ++ch) {
+        for (int w = 0; w < nWin; ++w) {
+            const double nb = ((w > 0)        ? 1.0 : 0.0)
+                            + ((w < nWin - 1) ? 1.0 : 0.0);
+            diag[w] = static_cast<double>(alpha[w]) * normA[w * nChan + ch]
+                    + nb * mu
+                    + lambdaUnity;
+            rhs[w]  = static_cast<double>(alpha[w]) * innerAB[w * nChan + ch]
+                    + lambdaUnity;
+        }
+        solveTridiagonalThomas(nWin, diag.data(), -mu, rhs.data(), x.data());
+        for (int w = 0; w < nWin; ++w) out.gain[w][ch] = x[w];
+    }
+
+    // Compute the gain-corrected per-window residual and the mean-abs-dev
+    // summary.  Walk co-alive windows again with their τ.
+    double sumD = 0.0;
+    int    nUsed = 0;
+    double sumAbsDev = 0.0;
+    long   nDevTerms = 0;
+    coAliveIdx = 0;
+    for (int w = 0; w < nWin; ++w) {
+        if (!alpha[w]) continue;
+        const int tau = (coAliveIdx < (int)bestShifts.size())
+                        ? bestShifts[coAliveIdx] : 0;
+        ++coAliveIdx;
+
+        // Per-channel gain at this window
+        const double* g = out.gain[w].data();
+
+        // Accumulate gain-corrected RSS + per-channel gain-energy + B-energy
+        double rss = 0.0, gainEnergy = 0.0, bEnergy = 0.0;
+        for (int t = 0; t < nSamp; ++t) {
+            int tSrc = t + tau;
+            while (tSrc <    0)   tSrc += nSamp;
+            while (tSrc >= nSamp) tSrc -= nSamp;
+            const int rowSrc = tSrc * nChan;
+            const int rowDst = t    * nChan;
+            for (int ch = 0; ch < nChan; ++ch) {
+                const double gA = g[ch] * Ma[w][rowSrc + ch];
+                const double bV = Mb[w][rowDst + ch];
+                const double d  = gA - bV;
+                rss        += d   * d;
+                gainEnergy += gA  * gA;
+                bEnergy    += bV  * bV;
+            }
+        }
+        const double denom = std::max(gainEnergy, bEnergy);
+        if (denom > 0.0) {
+            sumD += rss / denom;
+            ++nUsed;
+        }
+        for (int ch = 0; ch < nChan; ++ch) {
+            sumAbsDev += std::fabs(g[ch] - 1.0);
+            ++nDevTerms;
+        }
+    }
+    out.meanD          = (nUsed > 0)      ? sumD / nUsed
+                                          : std::numeric_limits<double>::infinity();
+    out.meanAbsGainDev = (nDevTerms > 0)  ? sumAbsDev / nDevTerms : 0.0;
+    return out;
+}
+
 std::vector<MergePair>
 driftAwareSubtractionMerge(const Params& p, const PerClusterTemplates& tpl)
 {
@@ -760,9 +946,32 @@ driftAwareSubtractionMerge(const Params& p, const PerClusterTemplates& tpl)
                 shifts.push_back(tau);
             }
             if (nUsed < p.minWinOverlap) continue;
-            const double meanD = sumD / nUsed;
-            if (meanD < p.mergeThresh) {
-                MergePair mp{ca, cb, meanD, nUsed, std::move(shifts)};
+            double finalD     = sumD / nUsed;
+            double gainDevOut = 0.0;
+
+            // Per-channel time-varying gain refinement.  Cyclic τ already
+            // picked per window above; gain fit now corrects amplitude
+            // redistribution across channels.  Replaces the shift-only D
+            // with a strictly-no-larger gain-corrected D (the gain fit
+            // can always pick gain=1 to recover the shift-only solution).
+            if (p.gainFit != 0) {
+                GainFitResult gfr = fitPerChannelGainTrajectory(
+                    Ma, Mb, Aa, Ab, shifts,
+                    p.nChan, p.nSamp,
+                    p.gainSmoothLambda, p.gainUnityPrior);
+                if (std::isfinite(gfr.meanD)) {
+                    finalD     = gfr.meanD;
+                    gainDevOut = gfr.meanAbsGainDev;
+                }
+            }
+            if (finalD < p.mergeThresh) {
+                MergePair mp;
+                mp.a              = ca;
+                mp.b              = cb;
+                mp.D              = finalD;
+                mp.nWinsUsed      = nUsed;
+                mp.bestShifts     = std::move(shifts);
+                mp.meanAbsGainDev = gainDevOut;
                 candidates.push_back(std::move(mp));
             }
         }
@@ -829,6 +1038,11 @@ bool writeReport(const Params& p,
     f << "  merge_thresh: "   << p.mergeThresh   << "\n";
     f << "  max_shift: "      << p.maxShift      << "\n";
     f << "  min_win_overlap: " << p.minWinOverlap << "\n";
+    f << "  gain_fit: "        << p.gainFit       << "\n";
+    if (p.gainFit != 0) {
+        f << "  gain_smooth_lambda: " << p.gainSmoothLambda << "\n";
+        f << "  gain_unity_prior: "   << p.gainUnityPrior   << "\n";
+    }
 
     f << "windows:\n";
     for (size_t i = 0; i < wins.size(); ++i) {
@@ -857,8 +1071,10 @@ bool writeReport(const Params& p,
             f << "  - { keep: " << std::min(mp.a, mp.b)
               << ", drop: "     << std::max(mp.a, mp.b)
               << ", D: "        << mp.D
-              << ", n_wins: "   << mp.nWinsUsed
-              << ", taus: [";
+              << ", n_wins: "   << mp.nWinsUsed;
+            if (mp.meanAbsGainDev > 0.0)
+                f << ", mean_abs_gain_dev: " << mp.meanAbsGainDev;
+            f << ", taus: [";
             for (size_t i = 0; i < mp.bestShifts.size(); ++i)
                 f << (i ? ", " : "") << mp.bestShifts[i];
             f << "] }\n";
@@ -1026,12 +1242,21 @@ int main(int argc, char** argv)
     auto cands = driftAwareSubtractionMerge(p, tpl);
     if (p.verbose) {
         std::fprintf(stderr,
-            "[drifttracker]   Phase C: %zu candidate pair(s) under D=%.4f, cyclic ±%d\n",
-            cands.size(), p.mergeThresh, p.maxShift);
+            "[drifttracker]   Phase C: %zu candidate pair(s) under D=%.4f, "
+            "cyclic ±%d%s\n",
+            cands.size(), p.mergeThresh, p.maxShift,
+            p.gainFit != 0 ? ", gain-fit ON" : "");
         for (const auto& mp : cands) {
-            std::fprintf(stderr,
-                "[drifttracker]     candidate %d ↔ %d  D=%.4f  over %d co-alive windows\n",
-                mp.a, mp.b, mp.D, mp.nWinsUsed);
+            if (p.gainFit != 0) {
+                std::fprintf(stderr,
+                    "[drifttracker]     candidate %d ↔ %d  D=%.4f  over %d co-alive windows  "
+                    "mean|gain−1|=%.3f\n",
+                    mp.a, mp.b, mp.D, mp.nWinsUsed, mp.meanAbsGainDev);
+            } else {
+                std::fprintf(stderr,
+                    "[drifttracker]     candidate %d ↔ %d  D=%.4f  over %d co-alive windows\n",
+                    mp.a, mp.b, mp.D, mp.nWinsUsed);
+            }
         }
     }
 
