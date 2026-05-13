@@ -357,6 +357,12 @@ public:
     /**Returns the temporary file corresponding to the cluster file.*/
     QString temporaryFile() const {return tmpCluFile;}
 
+    /** patch63 — last save error message.  Empty unless the most recent
+     *  saveDocument() call returned a non-OK status, in which case this
+     *  contains a human-readable description of the failing step (path,
+     *  errno).  Surfaced in the SaveDoneEvent for the GUI to show. */
+    QString lastSaveError() const { return lastSaveErrorMessage; }
+
     /**Returns the temporary file corresponding to the spike file.*/
     QString getSpikeFileName() const {return tmpSpikeFile;}
 
@@ -845,8 +851,14 @@ private:
     /** Commit all pending files to the originals, then re-seed the pending
      *  files from the freshly-written originals so the cycle continues.
      *  Called by saveDocument() after a successful write.
-     *  Also handles SaveAs: pass the new base paths when the doc URL changed. */
-    void commitAndRenewPending();
+     *  Also handles SaveAs: pass the new base paths when the doc URL changed.
+     *
+     *  patch63 — returns false if any of the four file copies failed and
+     *  populates outError with a human-readable description of the first
+     *  failure.  Previous behaviour swallowed errors via qWarning() which
+     *  meant the user saw "save successful" but the on-disk file was
+     *  unchanged when QFile::copy failed (e.g. NTFS permission issues). */
+    bool commitAndRenewPending(QString* outError = nullptr);
 
     /** Seed all four .pending files from their originals.
      *  Redirects spkFileName and tmpCluFile to the pending paths.
@@ -864,6 +876,12 @@ private:
     QString pendingResPath;
     QString pendingFetPath;
     QString pendingCluPath;
+
+    /** patch63 — populated by saveDocument() / commitAndRenewPending() when
+     *  any step fails.  Read via lastSaveError() and surfaced in the
+     *  SaveDoneEvent so the user sees the actual path / errno / step name
+     *  rather than a generic "I/O Error". */
+    QString lastSaveErrorMessage;
 
     /**
     * Removes spikes from some clusters and assign them to the cluster @pdestinationCluster

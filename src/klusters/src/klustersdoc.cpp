@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <cerrno>          // patch63 — saveDocument errno diagnostics
+#include <cstring>         // patch63 — strerror
 #include <vector>
 #include <stdint.h>
 /***************************************************************************
@@ -654,6 +656,9 @@ void KlustersDoc::customEvent(QEvent *event){
 
 int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/){
 
+    // patch63 — clear any stale error from a previous save attempt.
+    lastSaveErrorMessage.clear();
+
     // Determine whether this is a Save (same URL) or SaveAs (new URL).
     const bool isSaveAs = (docUrl != saveUrl);
 
@@ -664,10 +669,39 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     //Open the clu file in write mode
     FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
     if(cluFile == nullptr){
+        // patch63 — surface exactly why fopen failed instead of returning
+        // a bare error code that becomes a generic "I/O Error" dialog.
+        const int e = errno;
+        lastSaveErrorMessage = QString(
+            "Cannot open file for writing:\n%1\n\n"
+            "errno %2 (%3)\n\n"
+            "Likely causes:\n"
+            "  • File owned by a different user (common after running\n"
+            "    process_drifttracker / KlustaKwikExp as another uid,\n"
+            "    e.g. via sudo or a build account)\n"
+            "  • Parent directory not writable by the user running Klusters\n"
+            "  • File or its directory marked immutable (chattr +i)\n"
+            "  • File locked by another process (lsof to check)\n"
+            "  • Filesystem mounted read-only or out of space")
+            .arg(cluWritePath)
+            .arg(e)
+            .arg(QString::fromLocal8Bit(std::strerror(e)));
+        qWarning().noquote() << "[saveDocument] fopen failed:"
+                             << cluWritePath << "errno" << e
+                             << QString::fromLocal8Bit(std::strerror(e));
         return OPEN_ERROR;
     }
 
     if(!clusteringData->saveClusters(cluFile)){
+        // patch63 — write failed mid-save (disk full, I/O error).
+        fclose(cluFile);
+        lastSaveErrorMessage = QString(
+            "saveClusters() failed while writing to:\n%1\n\n"
+            "errno %2 (%3)\n\n"
+            "Likely cause: disk full or I/O error.")
+            .arg(cluWritePath)
+            .arg(errno)
+            .arg(QString::fromLocal8Bit(std::strerror(errno)));
         return SAVE_ERROR;
     }
 
@@ -801,7 +835,17 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         origFetPath = newInfo.absolutePath() + QDir::separator()
                         + baseName + (wasFetD ? ".fetD." : ".fet.") + electrodeGroupID;
     }
-    commitAndRenewPending();
+    // patch63 — commitAndRenewPending now reports failure.  When the
+    // pending → original copy fails (typical: NTFS/fuseblk permission
+    // issue, restrictive ACL, locked target), the pending .clu has the
+    // user's edits but the final .clu file is unchanged.  Without this
+    // check Klusters reported "save successful" while the on-disk file
+    // was stale — extremely confusing.
+    QString commitError;
+    if (!commitAndRenewPending(&commitError)) {
+        lastSaveErrorMessage = commitError;
+        return SAVE_ERROR;
+    }
 
     modified=false;
     return OK;
@@ -4223,26 +4267,66 @@ bool KlustersDoc::initPendingFiles()
     return ok;
 }
 
-void KlustersDoc::commitAndRenewPending()
+bool KlustersDoc::commitAndRenewPending(QString* outError)
 {
-    // Step 1 — commit: copy each pending file over the original.
+    // patch63 — Step 1: copy each pending file over the original.
     // QFile::copy refuses to overwrite, so remove the target first.
-    auto copyOver = [](const QString& src, const QString& dst) {
-        QFile::remove(dst);
-        if (!QFile::copy(src, dst))
-            qWarning() << "[commitAndRenewPending] copy failed:" << src << "->" << dst;
+    // Each step now reports failure via outError + return value instead
+    // of silently swallowing the error.  Without this, a failed
+    // QFile::copy here meant the user saw "save successful" but the
+    // on-disk file was unchanged.
+    QString firstError;
+    auto copyOver = [&firstError](const QString& src, const QString& dst,
+                                  const char* label) -> bool {
+        if (!QFile::exists(src)) {
+            if (firstError.isEmpty()) {
+                firstError = QString(
+                    "Cannot commit %1 — pending file missing:\n%2")
+                    .arg(QString::fromLatin1(label)).arg(src);
+            }
+            qWarning().noquote() << "[commitAndRenewPending]" << label
+                                 << "pending missing:" << src;
+            return false;
+        }
+        QFile::remove(dst);    // OK if dst doesn't exist
+        if (!QFile::copy(src, dst)) {
+            // QFile doesn't expose errno reliably — best we can do is
+            // report both paths and check permissions/existence.
+            QFileInfo dstInfo(dst);
+            QFileInfo dirInfo(dstInfo.absolutePath());
+            const QString hint =
+                !dirInfo.isWritable() ? "parent directory not writable by current user"
+              : QFileInfo::exists(dst) ? "destination still present after remove() — likely owned by another user, or immutable (chattr +i)"
+              : "QFile::copy refused — check file ownership and parent-directory write permission";
+            if (firstError.isEmpty()) {
+                firstError = QString(
+                    "Cannot commit %1:\n  %2\n→ %3\n\nHint: %4")
+                    .arg(QString::fromLatin1(label))
+                    .arg(src).arg(dst).arg(hint);
+            }
+            qWarning().noquote() << "[commitAndRenewPending]" << label
+                                 << "copy failed:" << src << "->" << dst
+                                 << "hint:" << hint;
+            return false;
+        }
+        return true;
     };
-    copyOver(pendingSpkPath, origSpkPath);
-    copyOver(pendingResPath, origResPath);
-    copyOver(pendingFetPath, origFetPath);
-    copyOver(pendingCluPath, docUrl);
+    bool allOk = true;
+    allOk &= copyOver(pendingSpkPath, origSpkPath, "spk");
+    allOk &= copyOver(pendingResPath, origResPath, "res");
+    allOk &= copyOver(pendingFetPath, origFetPath, "fet");
+    allOk &= copyOver(pendingCluPath, docUrl,      "clu");
 
-    // Clear the in-memory queue — all realignment batches are now on disk.
+    // Clear the in-memory queue — all realignment batches have been
+    // applied to disk (even if a later step failed).  Don't replay them.
     pendingRealign.clear();
 
     // Step 2 — renew: re-seed the pending files from the fresh originals so
     // the next realignment (or another save cycle) starts from a clean slate.
     initPendingFiles();
+
+    if (!allOk && outError) *outError = firstError;
+    return allOk;
 }
 
 void KlustersDoc::rejectLastRealign()

@@ -2046,7 +2046,13 @@ void KlustersApp::customEvent (QEvent* event){
                 setWindowTitle(doc->documentName());
             }
         } else {
-            QMessageBox::critical (this,tr("I/O Error !"), tr("Could not save the current document !"));
+            // patch63 — show the actual error rather than a generic "I/O Error"
+            // that left the user with no information about what failed.
+            const QString detail = saveEvent->error();
+            const QString msg = detail.isEmpty()
+                ? tr("Could not save the current document.")
+                : detail;
+            QMessageBox::critical(this, tr("Save failed"), msg);
         }
 
         slotStatusMsg(tr("Ready."));
