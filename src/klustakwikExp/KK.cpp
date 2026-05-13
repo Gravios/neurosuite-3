@@ -9206,6 +9206,53 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 tmpl[static_cast<size_t>(e)] = static_cast<int16_t>(
                     accCh[static_cast<size_t>(e)] / Nc);
 
+            // patch64 — pre-align the template to PeakSampleIndex.
+            //
+            // Without this, the template's actual peak is wherever the
+            // cluster's MEAN peaks (typically near PeakSampleIndex but
+            // not exactly on it, due to initial spike-detection jitter).
+            // xcorr would push every spike toward that mean's peak rather
+            // than toward the configured PeakSampleIndex, and a fraction
+            // of spikes whose required shift exceeds m_timeShiftMaxAbs
+            // would be rejected outright (line 9249), staying at their
+            // original mis-detected positions.  The visible symptom is
+            // ±5-sample temporal dispersion in the cluster's spikes
+            // after KlustaKwikExp finishes.
+            //
+            // Klusters' interactive spikerealign.cpp does this same step
+            // at lines 419-438; we mirror the algorithm here.  Channel
+            // layout differs: spikerealign.cpp's meanWv is sample-major
+            // (s*nChan + ch); our tmpl is channel-major
+            // (ch*nSamplesPerSpike + s) since that's what XcorrDispatch
+            // expects.  Account for that in both the peak search and the
+            // shift.
+            if (PeakSampleIndex >= 0 && PeakSampleIndex < nSamplesPerSpike) {
+                int    meanPeakSamp = PeakSampleIndex;
+                double bestAmp      = -1.0;
+                for (int s = 0; s < nSamplesPerSpike; ++s) {
+                    double amp = 0.0;
+                    for (int ch = 0; ch < nChan; ++ch)
+                        amp += std::abs(static_cast<double>(
+                            accCh[static_cast<size_t>(ch * nSamplesPerSpike + s)]));
+                    if (amp > bestAmp) { bestAmp = amp; meanPeakSamp = s; }
+                }
+                const int tmplShift = PeakSampleIndex - meanPeakSamp;
+                if (tmplShift != 0) {
+                    // Shift channel-major tmpl: new[ch, s] = old[ch, s - tmplShift]
+                    // Out-of-bounds source samples → 0 (zero-pad edges).
+                    std::vector<int16_t> shifted(static_cast<size_t>(waveSamples), 0);
+                    for (int ch = 0; ch < nChan; ++ch) {
+                        for (int s = 0; s < nSamplesPerSpike; ++s) {
+                            const int src = s - tmplShift;
+                            if (src < 0 || src >= nSamplesPerSpike) continue;
+                            shifted[static_cast<size_t>(ch * nSamplesPerSpike + s)] =
+                                tmpl[static_cast<size_t>(ch * nSamplesPerSpike + src)];
+                        }
+                    }
+                    tmpl = std::move(shifted);
+                }
+            }
+
             // Repack cluster's waveforms into channel-major batch
             xcWfm.assign(static_cast<size_t>(Nc) * waveSamples, 0);
             for (int sp = 0; sp < Nc; sp++) {

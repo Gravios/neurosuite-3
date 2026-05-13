@@ -83,20 +83,28 @@ static void k_xcorr_scores(
 static void k_reduce(
     item<1> it,
     const float* scores,   // [nSpikes × nLags]
-    int nLags, int maxShift, float minScore,
+    int nLags, int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out)
 {
     int sp = static_cast<int>(it.get_id(0));
     float best = -FLT_MAX;
     int   blag = 0;
+    // patch61 — track lag=0 score for stay-at-zero tie-margin.  In the
+    // scores buffer, lag=0 sits at offset maxShift within each spike's
+    // nLags-long row (lag = li - maxShift, so li == maxShift means lag = 0).
+    float score0 = scores[sp * nLags + maxShift];
     for (int li = 0; li < nLags; ++li) {
         float s = scores[sp * nLags + li];
         if (s > best) { best = s; blag = li - maxShift; }
     }
+    if (blag != 0 && best < score0 + zeroTieMargin) {
+        blag = 0;
+        best = score0;
+    }
     // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
-        // caller does newTs = ts + shifts_out to correct.
-        shifts_out[sp] = (best >= minScore) ? blag : 0;
+    // caller does newTs = ts + shifts_out to correct.
+    shifts_out[sp] = (best >= minScore) ? blag : 0;
     scores_out[sp] = best;
 }
 
@@ -189,7 +197,7 @@ int xcorr_sycl_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out)
 {
@@ -303,7 +311,7 @@ int xcorr_sycl_compute(
             h.parallel_for(
                 range<1>(static_cast<size_t>(nSpikes)),
                 [=](item<1> it) {
-                    k_reduce(it, d_scores, nLags, maxShift, minScore,
+                    k_reduce(it, d_scores, nLags, maxShift, minScore, zeroTieMargin,
                              d_shifts, d_sout);
                 });
         });

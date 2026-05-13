@@ -60,6 +60,12 @@ int xcorr_sycl_available();
  * @param nSamples    samples per channel per spike
  * @param maxShift    maximum search radius in samples (search ±maxShift)
  * @param minScore    minimum normalised xcorr to accept a shift (e.g. 0.7)
+ * @param zeroTieMargin  patch61 — STAY-AT-ZERO threshold.  When the best
+ *                    non-zero lag exceeds lag=0's score by less than this
+ *                    margin, revert to lag=0.  Suppresses noise-driven
+ *                    micro-improvements that disperse already-tightened
+ *                    clusters on repeated nudge invocations.  Typical
+ *                    value 0.005 (0.5% of the [-1,1] xcorr range).
  * @param shifts_out  output: optimal lag per spike (0 = no shift needed)
  * @param scores_out  output: normalised xcorr at best lag
  * @return 0 on success, non-zero on failure
@@ -68,7 +74,7 @@ int xcorr_cuda_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out);
 
@@ -76,7 +82,7 @@ int xcorr_hip_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out);
 
@@ -84,7 +90,7 @@ int xcorr_sycl_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out);
 
@@ -92,7 +98,7 @@ int xcorr_omp_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out);
 
@@ -114,7 +120,7 @@ int compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
     int nSpikes, int nChannels, int nSamples,
-    int maxShift, float minScore,
+    int maxShift, float minScore, float zeroTieMargin,
     int*   shifts_out,
     float* scores_out);
 
