@@ -197,7 +197,9 @@ void usage(const char* prog) {
         "  --merge-thresh   D    average residual below which to merge (default 0.05)\n"
         "  --max-shift      K    cyclic-shift search half-width (default 3)\n"
         "  --min-win-overlap N   min co-alive windows to compare a pair (default 3)\n"
-        "  --spk-suffix     ext  spk file suffix (default 'spk'; use 'spkD' for stderiv)\n"
+        "  --spk-suffix     ext  spk file suffix (default 'spk'; auto-falls back\n"
+        "                         to 'spkD' for stderiv pipelines when .spk is\n"
+        "                         absent — pass an explicit value to disable fallback)\n"
         "  --out-clu-tag    tag  output .clu suffix (default 'drift')\n"
         "  --dry-run             read inputs, compute, print summary; don't write outputs\n"
         "  --quiet               suppress per-window log lines\n"
@@ -897,7 +899,38 @@ int main(int argc, char** argv)
     };
     const std::string resPath = path("res");
     const std::string cluPath = path("clu");
-    const std::string spkPath = path(p.spkSuffix);
+
+    // Resolve the spike-file path with .spk → .spkD fallback (canonical
+    // first, matching KlustaKwikExp's pickInputPath convention).  Some
+    // pipelines (process_extractspikes_stderiv) emit .spkD only; others
+    // emit .spk only; either is valid input.
+    //
+    // If the user passed --spk-suffix explicitly, honour it exactly (no
+    // fallback) — that's the override path.  Otherwise (default suffix
+    // "spk"), try .spk first, then .spkD, then error.
+    std::string spkPath = path(p.spkSuffix);
+    std::string resolvedSpkSuffix = p.spkSuffix;
+    {
+        auto fileExists = [](const std::string& q) -> bool {
+            std::FILE* f = std::fopen(q.c_str(), "rb");
+            if (f) { std::fclose(f); return true; }
+            return false;
+        };
+        if (!fileExists(spkPath) && p.spkSuffix == "spk") {
+            const std::string altPath = path("spkD");
+            if (fileExists(altPath)) {
+                if (p.verbose) {
+                    std::fprintf(stderr,
+                        "[drifttracker]   spike file: %s not found; "
+                        "using stderiv variant %s\n",
+                        spkPath.c_str(), altPath.c_str());
+                }
+                spkPath           = altPath;
+                resolvedSpkSuffix = "spkD";
+            }
+        }
+    }
+
     const std::string outClu  = cluPath + "." + p.outCluTag;
     const std::string outYaml = p.sessionBase + ".drift." +
                                 std::to_string(p.grp) + ".yaml";
@@ -906,10 +939,11 @@ int main(int argc, char** argv)
         std::fprintf(stderr,
             "[drifttracker] session=%s grp=%d  nChan=%d nSamp=%d Hz=%.0f\n"
             "[drifttracker]   window=%.2fmin overlap=%.2fmin "
-            "lambda=%.3f thresh=%.4f maxShift=±%d\n",
+            "lambda=%.3f thresh=%.4f maxShift=±%d  spk=.%s\n",
             p.sessionBase.c_str(), p.grp,
             p.nChan, p.nSamp, p.samplingRate,
-            p.windowMin, p.overlapMin, p.lambda, p.mergeThresh, p.maxShift);
+            p.windowMin, p.overlapMin, p.lambda, p.mergeThresh, p.maxShift,
+            resolvedSpkSuffix.c_str());
     }
 
     // ── Read inputs ────────────────────────────────────────────────────────
