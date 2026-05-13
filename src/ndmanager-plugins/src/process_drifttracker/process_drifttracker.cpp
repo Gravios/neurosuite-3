@@ -199,6 +199,28 @@ struct Params {
     double      positionThresh = 0.0;   // 0 = off; otherwise μm (or channels)
     double      positionSmoothLambda = 5.0;  // Tikhonov ridge on COM(t) smoothness
 
+    // ── Shared population-level drift (patch57) ────────────────────────────
+    //
+    // When clusters are temporally fragmented — many sortings produce hundreds
+    // of clusters whose lifetimes don't span the full session — pairwise
+    // per-cluster COM comparison can't directly compare clusters that lived
+    // in disjoint windows.  This option estimates a SHARED probe-wide drift
+    // signal D(w) from the collective motion of all clusters whose lifetimes
+    // happen to overlap each window pair, then subtracts D(w) from every
+    // cluster's COM trajectory.  Disjoint clusters that represent the same
+    // drifting unit collapse to the same absolute position after correction.
+    //
+    // Method: for each pair of windows (w_i, w_j) that share ≥ K clusters,
+    // compute the mean displacement of those shared clusters' COMs.  This
+    // gives a sparse pairwise observation graph.  Solve for D(w) by
+    // least squares on the graph Laplacian, anchored at D(0) = 0 (Tikhonov
+    // ridge stabilises disconnected windows).  This is the
+    // tetrode/octrode analogue of DREDge (Windolf et al., Nature Methods
+    // 2025) reduced to a rigid 2D translation per time window.
+    bool   sharedDrift              = false;     // --shared-drift  (off by default)
+    int    sharedDriftMinClusters   = 5;         // K — min shared clusters per window edge
+    double sharedDriftPrior         = 0.01;      // Tikhonov ridge on D(w) magnitude
+
     // File-name suffixes (override for stderiv variant: spkD)
     std::string spkSuffix     = "spk";
     std::string outCluTag     = "drift";
@@ -265,6 +287,26 @@ void usage(const char* prog) {
         "                         'channels' otherwise).  Useful when the\n"
         "                         positions file uses mm, normalized, or\n"
         "                         non-μm coordinates.\n"
+        "\n"
+        "Shared population drift (patch57 — for fragmented-cluster sessions):\n"
+        "  --shared-drift          estimate a shared probe-wide drift signal\n"
+        "                          D(w) from the collective motion of all\n"
+        "                          clusters with pairwise window overlap,\n"
+        "                          and subtract it from every cluster's COM\n"
+        "                          trajectory.  Enables comparison of clusters\n"
+        "                          whose lifetimes don't overlap directly —\n"
+        "                          essential for sessions with hundreds of\n"
+        "                          temporally-fragmented clusters where no\n"
+        "                          subset spans the full session.\n"
+        "  --shared-drift-min-clusters N  min shared clusters required to\n"
+        "                          define a window-pair edge in the drift\n"
+        "                          inference graph (default 5).  Lower values\n"
+        "                          give a denser graph but noisier per-edge\n"
+        "                          displacement estimates.\n"
+        "  --shared-drift-prior L  Tikhonov ridge on D(w) magnitude — keeps\n"
+        "                          the system well-conditioned for sparse\n"
+        "                          graphs and disconnected components\n"
+        "                          (default 0.01)\n"
         "  --spk-suffix     ext  spk file suffix (default 'spk'; auto-falls back\n"
         "                         to 'spkD' for stderiv pipelines when .spk is\n"
         "                         absent — pass an explicit value to disable fallback)\n"
@@ -329,6 +371,9 @@ bool parseArgs(int argc, char** argv, Params& p)
         else if (a == "--position-thresh")         { if (!next (&p.positionThresh,        a.c_str())) return false; }
         else if (a == "--position-smooth-lambda")  { if (!next (&p.positionSmoothLambda,  a.c_str())) return false; }
         else if (a == "--position-units")          { if (!nexts(&p.positionUnits,         a.c_str())) return false; }
+        else if (a == "--shared-drift")            { p.sharedDrift = true; }
+        else if (a == "--shared-drift-min-clusters") { if (!nexti(&p.sharedDriftMinClusters, a.c_str())) return false; }
+        else if (a == "--shared-drift-prior")      { if (!next (&p.sharedDriftPrior,      a.c_str())) return false; }
         else if (a == "--peak-sample")             { if (!nexti(&p.peakSample,    a.c_str())) return false; }
         else if (a == "--spk-suffix")              { if (!nexts(&p.spkSuffix,     a.c_str())) return false; }
         else if (a == "--out-clu-tag")             { if (!nexts(&p.outCluTag,     a.c_str())) return false; }
@@ -1013,6 +1058,220 @@ void smoothCOMTrajectoriesTikhonov(double lambda, ClusterCOMTrajectory& com)
     }
 }
 
+// ─── Phase B.6: shared population-level drift (patch57) ─────────────────────
+//
+// When clusters are temporally fragmented — many sortings produce hundreds
+// of clusters whose lifetimes don't span the full session — pairwise
+// per-cluster COM comparison can't directly compare clusters that lived
+// in disjoint windows.  This phase estimates a SHARED probe-wide drift
+// D(w) from the collective motion of all clusters with pairwise window
+// overlap, then subtracts D(w) from every cluster's COM trajectory.
+// Disjoint clusters representing the same drifting unit then collapse to
+// the same absolute position, enabling Phase C to find them as candidate
+// merges.
+//
+// Method (DREDge-inspired, rigid-2D reduction):
+//
+//   1. For each pair of windows (w_i, w_j) i < j:
+//        S = { c : com[c, w_i] defined AND com[c, w_j] defined }
+//        skip if |S| < sharedDriftMinClusters
+//        observed displacement:
+//          d_ij = mean_{c in S}( com[c, w_j] - com[c, w_i] )
+//        edge weight w_ij = |S|
+//
+//   2. Solve for D(w) by weighted least squares on the window-pair graph:
+//        minimise sum_{ij} w_ij · | D(j) - D(i) - d_ij |²   per axis
+//        anchored at D(0) = 0
+//
+//      The normal-equation matrix is the graph Laplacian; SPD by
+//      construction.  Tikhonov ridge `sharedDriftPrior * I` on the diagonal
+//      handles disconnected components (their D collapses to 0 — the
+//      minimum-norm solution) and ill-conditioned graphs.
+//
+//   3. Subtract D(w) from every cluster's COM trajectory in place.
+//
+// Returns the per-window drift vector + diagnostics.  D[0] is forced to
+// (0, 0) as the reference window.
+
+struct SharedDriftResult {
+    std::vector<std::pair<double, double>> D;       // (Dx, Dy) per window
+    int                                    nEdges        = 0;
+    int                                    nDisconnected = 0;
+    bool                                   solveOk       = true;
+};
+
+// Cholesky factorise (LLᵀ) of an SPD matrix A stored row-major in flat
+// vector of size n×n.  Lower triangle of A (incl. diagonal) is overwritten
+// with L.  Upper triangle is read but not written; on return its content
+// is meaningless.  Returns false if A is not numerically SPD (encountered
+// non-positive pivot).
+bool choleskyFactor(std::vector<double>& A, int n)
+{
+    for (int j = 0; j < n; ++j) {
+        double s = A[(size_t)j * n + j];
+        for (int k = 0; k < j; ++k) {
+            const double v = A[(size_t)j * n + k];
+            s -= v * v;
+        }
+        if (s <= 0.0) return false;
+        const double pivot = std::sqrt(s);
+        A[(size_t)j * n + j] = pivot;
+        const double invPivot = 1.0 / pivot;
+        for (int i = j + 1; i < n; ++i) {
+            double s2 = A[(size_t)i * n + j];
+            for (int k = 0; k < j; ++k)
+                s2 -= A[(size_t)i * n + k] * A[(size_t)j * n + k];
+            A[(size_t)i * n + j] = s2 * invPivot;
+        }
+    }
+    return true;
+}
+
+// Solve L Lᵀ x = b given the lower-triangular L (factored A from above)
+// stored in the lower triangle of A.  b is modified in place to hold x.
+// Safe to call multiple times for different b vectors with the same factor.
+void choleskySolve(const std::vector<double>& A, int n, std::vector<double>& b)
+{
+    // Forward substitution: L y = b  →  y in b
+    for (int i = 0; i < n; ++i) {
+        double s = b[(size_t)i];
+        for (int k = 0; k < i; ++k) s -= A[(size_t)i * n + k] * b[(size_t)k];
+        b[(size_t)i] = s / A[(size_t)i * n + i];
+    }
+    // Backward substitution: Lᵀ x = y  →  x in b
+    for (int i = n - 1; i >= 0; --i) {
+        double s = b[(size_t)i];
+        for (int k = i + 1; k < n; ++k)
+            s -= A[(size_t)k * n + i] * b[(size_t)k];
+        b[(size_t)i] = s / A[(size_t)i * n + i];
+    }
+}
+
+SharedDriftResult
+estimateSharedDrift(const ClusterCOMTrajectory& com, int nWin, const Params& p)
+{
+    SharedDriftResult r;
+    r.D.assign((size_t)nWin, {0.0, 0.0});
+    if (nWin <= 1 || com.x.empty()) return r;
+
+    // ── (1) inverted index: clusters defined in each window ──
+    std::vector<std::vector<int32_t>> clustersInWin((size_t)nWin);
+    for (const auto& kv : com.defined) {
+        const int32_t c = kv.first;
+        const auto& dV = kv.second;
+        for (int w = 0; w < nWin && w < (int)dV.size(); ++w)
+            if (dV[(size_t)w]) clustersInWin[(size_t)w].push_back(c);
+    }
+
+    // ── (2) edges: per window pair, mean displacement of shared clusters ──
+    struct Edge { int i, j; double dx, dy; int w; };
+    std::vector<Edge> edges;
+    edges.reserve((size_t)nWin * (nWin - 1) / 2);
+    for (int i = 0; i < nWin; ++i) {
+        const auto& Si = clustersInWin[(size_t)i];
+        if ((int)Si.size() < p.sharedDriftMinClusters) continue;
+        std::unordered_set<int32_t> setI(Si.begin(), Si.end());
+        for (int j = i + 1; j < nWin; ++j) {
+            const auto& Sj = clustersInWin[(size_t)j];
+            if ((int)Sj.size() < p.sharedDriftMinClusters) continue;
+            std::vector<int32_t> shared;
+            shared.reserve(std::min(Si.size(), Sj.size()));
+            for (int32_t c : Sj) if (setI.count(c)) shared.push_back(c);
+            if ((int)shared.size() < p.sharedDriftMinClusters) continue;
+            double sumDx = 0.0, sumDy = 0.0;
+            for (int32_t c : shared) {
+                sumDx += com.x.at(c)[(size_t)j] - com.x.at(c)[(size_t)i];
+                sumDy += com.y.at(c)[(size_t)j] - com.y.at(c)[(size_t)i];
+            }
+            const double n = (double)shared.size();
+            edges.push_back({i, j, sumDx / n, sumDy / n, (int)shared.size()});
+        }
+    }
+    r.nEdges = (int)edges.size();
+    if (edges.empty()) return r;
+
+    // ── (3) assemble Laplacian + RHS, anchored at D[0] = 0 ──
+    // The reduced system has size n = nWin - 1, indexed [0..n-1] = [1..nWin-1].
+    const int n = nWin - 1;
+    std::vector<double> L((size_t)n * n, 0.0);
+    std::vector<double> rx((size_t)n, 0.0), ry((size_t)n, 0.0);
+
+    auto idx = [&](int i, int j) -> size_t { return (size_t)i * n + j; };
+
+    // Per edge (i, j): constraint D[j] - D[i] = d_ij (weighted by w_ij = |S|).
+    // Contributions when re-indexed by k = idx - 1:
+    //   L[k_i, k_i] += w   (if i > 0)
+    //   L[k_j, k_j] += w   (if j > 0)
+    //   L[k_i, k_j] -= w,  L[k_j, k_i] -= w   (if both > 0)
+    //   rx[k_i]   -= w * dx   (if i > 0)
+    //   rx[k_j]   += w * dx   (if j > 0)
+    // (same shape for y).  i == 0 contributes only to the j-side, since
+    // D[0] is the anchor.
+    for (const auto& e : edges) {
+        const double w = (double)e.w;
+        if (e.i > 0) {
+            L[idx(e.i - 1, e.i - 1)] += w;
+            rx[(size_t)(e.i - 1)] -= w * e.dx;
+            ry[(size_t)(e.i - 1)] -= w * e.dy;
+        }
+        if (e.j > 0) {
+            L[idx(e.j - 1, e.j - 1)] += w;
+            rx[(size_t)(e.j - 1)] += w * e.dx;
+            ry[(size_t)(e.j - 1)] += w * e.dy;
+        }
+        if (e.i > 0 && e.j > 0) {
+            L[idx(e.i - 1, e.j - 1)] -= w;
+            L[idx(e.j - 1, e.i - 1)] -= w;
+        }
+    }
+
+    // Tikhonov ridge on the diagonal — stabilises disconnected components.
+    const double prior = std::max(p.sharedDriftPrior, 1e-9);
+    for (int i = 0; i < n; ++i) L[idx(i, i)] += prior;
+
+    // ── (4) diagnose disconnected windows ──
+    // A window is "disconnected" if its diagonal degree (= sum of edge
+    // weights touching it) is zero — only the prior term remains.
+    for (int i = 0; i < n; ++i) {
+        const double deg = L[idx(i, i)] - prior;
+        if (deg < 1e-9) r.nDisconnected += 1;
+    }
+
+    // ── (5) solve L · Dx = rx and L · Dy = ry by Cholesky ──
+    std::vector<double> Lcopy = L;
+    if (!choleskyFactor(Lcopy, n)) {
+        r.solveOk = false;
+        return r;
+    }
+    std::vector<double> dx = rx, dy = ry;
+    choleskySolve(Lcopy, n, dx);
+    choleskySolve(Lcopy, n, dy);
+
+    r.D[0] = {0.0, 0.0};
+    for (int i = 0; i < n; ++i) r.D[(size_t)(i + 1)] = {dx[(size_t)i], dy[(size_t)i]};
+    return r;
+}
+
+// Subtract a per-window drift signal from every cluster's COM trajectory
+// in place.  Skips clusters whose 'defined' flag is 0 at a given window
+// (their values are meaningless and shouldn't shift).
+void subtractSharedDrift(ClusterCOMTrajectory& com,
+                         const std::vector<std::pair<double, double>>& D)
+{
+    if (com.x.empty()) return;
+    const int nWin = (int)D.size();
+    for (auto& kv : com.x) {
+        const int32_t c = kv.first;
+        auto& xV = kv.second;
+        auto& yV = com.y.at(c);
+        const int len = std::min((int)xV.size(), nWin);
+        for (int w = 0; w < len; ++w) {
+            xV[(size_t)w] -= D[(size_t)w].first;
+            yV[(size_t)w] -= D[(size_t)w].second;
+        }
+    }
+}
+
 // ─── Phase C: drift-aware subtraction merge ─────────────────────────────────
 //
 // For each pair of clusters, compute the cyclic-shift L2 residual at each
@@ -1401,6 +1660,7 @@ bool writeReport(const Params& p,
                  const ClusterCOMTrajectory& com,
                  const std::vector<MergePair>& cands,
                  const std::unordered_map<int32_t,int32_t>& merges,
+                 const std::vector<std::pair<double, double>>& sharedDriftD,
                  const std::string& path)
 {
     // patch55 — write to a sibling tempfile, then atomic rename onto
@@ -1435,6 +1695,11 @@ bool writeReport(const Params& p,
     }
     f << "  position_thresh: "        << p.positionThresh       << "\n";
     f << "  position_smooth_lambda: " << p.positionSmoothLambda << "\n";
+    f << "  shared_drift: "            << (p.sharedDrift ? "true" : "false") << "\n";
+    if (p.sharedDrift) {
+        f << "  shared_drift_min_clusters: " << p.sharedDriftMinClusters << "\n";
+        f << "  shared_drift_prior: "        << p.sharedDriftPrior       << "\n";
+    }
     f << "  channel_positions_file: \""
       << (p.channelPositionsFile.empty() ? "(channel index)" : p.channelPositionsFile)
       << "\"\n";
@@ -1453,6 +1718,16 @@ bool writeReport(const Params& p,
         const double t1 = wins[i].second / p.samplingRate;
         f << "  - { i: " << i << ", t0_sec: " << t0
           << ", t1_sec: " << t1 << " }\n";
+    }
+
+    // ── Shared population drift trajectory (patch57; empty when off) ──
+    if (!sharedDriftD.empty()) {
+        f << "shared_drift:  # per-window probe drift D(w) subtracted from COM\n";
+        for (size_t w = 0; w < sharedDriftD.size(); ++w) {
+            f << "  - { w: " << w
+              << ", dx: " << sharedDriftD[w].first
+              << ", dy: " << sharedDriftD[w].second << " }\n";
+        }
     }
 
     f << "cluster_counts:  # per-window member count, per cluster\n";
@@ -1673,20 +1948,78 @@ int main(int argc, char** argv)
             100.0 * nDefinedTotal / std::max(1, nWindowsTotal));
     }
 
-    // ── Phase B: Tikhonov smoothing ────────────────────────────────────────
-    smoothTemplatesTikhonov(p.lambda, tpl);
-    if (p.verbose)
-        std::fprintf(stderr, "[drifttracker]   Phase B: Tikhonov smoothing applied (λ=%.3f)\n",
-                     p.lambda);
-
-    // ── Phase B.5: position-aware drift tracking ──────────────────────────
-    // Always compute when channel positions are available.  Position becomes
-    // an AND-filter on merge candidates only when --position-thresh > 0.
+    // ── Phase B.5a: COMs from RAW templates (must precede Phase B) ────────
+    // Phase B's per-cluster template smoothing (λ ≥ 1) attenuates per-window
+    // template differences and bleeds the per-window position signal across
+    // adjacent windows.  For accurate drift recovery — both per-cluster
+    // (Phase B.5) and shared-population (Phase B.6) — compute COMs from
+    // RAW (un-smoothed) templates first.  Per-cluster jitter is denoised
+    // later by `smoothCOMTrajectoriesTikhonov` on the COM trajectories
+    // themselves (operating on a 1D scalar per axis is far less
+    // information-destructive than smoothing a full (nChan × nSamp) template).
     std::vector<double> chPosX, chPosY;
     if (!loadOrDefaultChannelPositions(p.channelPositionsFile, p.nChan, chPosX, chPosY))
         return 1;
     ClusterCOMTrajectory com;
     computeCOMTrajectories(tpl, chPosX, chPosY, p.nChan, p.nSamp, com);
+
+    // ── Phase B: Tikhonov smoothing of templates (for Phase C shape match) ─
+    smoothTemplatesTikhonov(p.lambda, tpl);
+    if (p.verbose)
+        std::fprintf(stderr, "[drifttracker]   Phase B: Tikhonov smoothing applied (λ=%.3f)\n",
+                     p.lambda);
+
+    // ── Phase B.6: shared population-level drift (patch57) ────────────────
+    // When enabled, estimate a probe-wide drift D(w) from clusters with
+    // pairwise window overlap, and subtract it from every cluster's COM
+    // trajectory.  This collapses temporally-disjoint clusters that
+    // represent the same drifting unit onto a consistent absolute
+    // position, letting Phase C find them as merge candidates.
+    //
+    // ORDER MATTERS: B.6 must run on RAW (unsmoothed) COMs because the
+    // per-cluster Tikhonov smoother (lambda ≥ 1) suppresses fast drift
+    // signal before B.6 can see it.  We estimate + subtract drift first,
+    // THEN smooth the residual — the smoother now only denoises per-unit
+    // jitter, not the population-level motion.
+    std::vector<std::pair<double, double>> sharedDriftD;  // empty unless run
+    if (p.sharedDrift) {
+        const int nWin = (int)com.x.begin()->second.size();
+        SharedDriftResult sr = estimateSharedDrift(com, nWin, p);
+        if (!sr.solveOk) {
+            std::fprintf(stderr,
+                "[drifttracker]   Phase B.6: Cholesky factorisation failed — "
+                "graph too degenerate; --shared-drift disabled for this run\n");
+        } else if (sr.nEdges == 0) {
+            if (p.verbose) std::fprintf(stderr,
+                "[drifttracker]   Phase B.6: no window pairs share "
+                "≥ %d clusters; --shared-drift had nothing to estimate\n",
+                p.sharedDriftMinClusters);
+        } else {
+            sharedDriftD = sr.D;
+            subtractSharedDrift(com, sharedDriftD);
+            if (p.verbose) {
+                const std::string posUnitsDefault =
+                    p.channelPositionsFile.empty() ? "ch" : "μm";
+                const std::string& posUnits =
+                    p.positionUnits.empty() ? posUnitsDefault : p.positionUnits;
+                double maxMag = 0.0;
+                int    maxW   = 0;
+                for (int w = 0; w < (int)sharedDriftD.size(); ++w) {
+                    const double dx = sharedDriftD[(size_t)w].first;
+                    const double dy = sharedDriftD[(size_t)w].second;
+                    const double m  = std::sqrt(dx * dx + dy * dy);
+                    if (m > maxMag) { maxMag = m; maxW = w; }
+                }
+                std::fprintf(stderr,
+                    "[drifttracker]   Phase B.6: shared drift from "
+                    "%d window-pair edge(s) (≥ %d shared clusters), "
+                    "max |D(w)| = %.2f %s @ w=%d, %d disconnected window(s)\n",
+                    sr.nEdges, p.sharedDriftMinClusters, maxMag,
+                    posUnits.c_str(), maxW, sr.nDisconnected);
+            }
+        }
+    }
+
     smoothCOMTrajectoriesTikhonov(p.positionSmoothLambda, com);
     if (p.verbose) {
         // patch51: user override > auto-detect from positions file presence
@@ -1777,7 +2110,7 @@ int main(int argc, char** argv)
     }
 
     if (!writeCluFile(outClu, mergedClu)) return 1;
-    if (!writeReport(p, wins, tpl, com, cands, rootMap, outYaml)) return 1;
+    if (!writeReport(p, wins, tpl, com, cands, rootMap, sharedDriftD, outYaml)) return 1;
 
     if (p.verbose) {
         std::fprintf(stderr,
