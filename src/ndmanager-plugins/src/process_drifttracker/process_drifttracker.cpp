@@ -130,6 +130,8 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <unistd.h>     // patch55: fsync, getpid
+#include <sys/stat.h>   // patch55: fsync error reporting
 #include <limits>
 #include <map>
 #include <set>
@@ -532,25 +534,64 @@ bool readSpkRow(std::FILE* f, size_t spikeIdx, int nChan, int nSamp,
 
 // Write merged .clu file: int32 header followed by int32 IDs.  Header is the
 // number of distinct cluster IDs (matches neurosuite convention).
+//
+// patch55 — atomic write semantics: writes to a sibling tempfile
+// "<path>.tmp.<pid>", flushes + fsyncs it, then atomically rename()s onto
+// the destination.  Guarantees the destination is either the prior content
+// (if anything fails before rename) or the FULL new content (if rename
+// succeeds) — never a partial / truncated file.
+//
+// Also: every step's failure is reported with strerror(errno) and the
+// tempfile is unlinked, so a failed write doesn't leave debris behind.
+//
+// fclose() return value is checked too (deferred-write errors surface
+// there, not in the fwrite calls).
 bool writeCluFile(const std::string& path, const std::vector<int32_t>& ids)
 {
     std::set<int32_t> uniq(ids.begin(), ids.end());
-    std::FILE* f = std::fopen(path.c_str(), "wb");
+    const std::string tmpPath = path + ".tmp." + std::to_string((long)getpid());
+
+    std::FILE* f = std::fopen(tmpPath.c_str(), "wb");
     if (!f) {
-        std::fprintf(stderr, "ERROR: cannot write %s (errno=%d)\n",
-                     path.c_str(), errno);
+        std::fprintf(stderr, "ERROR: cannot create tempfile %s: %s\n",
+                     tmpPath.c_str(), std::strerror(errno));
         return false;
     }
-    int32_t header = static_cast<int32_t>(uniq.size());
-    if (std::fwrite(&header, sizeof(int32_t), 1, f) != 1) {
+
+    auto cleanupAndFail = [&](const char* what) -> bool {
+        std::fprintf(stderr, "ERROR: %s on %s: %s\n",
+                     what, tmpPath.c_str(), std::strerror(errno));
         std::fclose(f);
+        ::unlink(tmpPath.c_str());
+        return false;
+    };
+
+    const int32_t header = static_cast<int32_t>(uniq.size());
+    if (std::fwrite(&header, sizeof(int32_t), 1, f) != 1)
+        return cleanupAndFail("fwrite(header) failed");
+    if (std::fwrite(ids.data(), sizeof(int32_t), ids.size(), f) != ids.size())
+        return cleanupAndFail("fwrite(ids) failed");
+    if (std::fflush(f) != 0)
+        return cleanupAndFail("fflush failed");
+    // fsync the data before closing — guarantees durability so a crash
+    // between fclose() and the rename() can't lose the new content.
+    if (::fsync(fileno(f)) != 0)
+        return cleanupAndFail("fsync failed");
+    if (std::fclose(f) != 0) {
+        // f is already closed; nothing to clean up on the FILE side.
+        std::fprintf(stderr, "ERROR: fclose failed on %s: %s\n",
+                     tmpPath.c_str(), std::strerror(errno));
+        ::unlink(tmpPath.c_str());
         return false;
     }
-    if (std::fwrite(ids.data(), sizeof(int32_t), ids.size(), f) != ids.size()) {
-        std::fclose(f);
+    // Atomic rename: POSIX guarantees the destination is replaced
+    // in a single inode swap, never half-replaced.
+    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+        std::fprintf(stderr, "ERROR: rename %s → %s failed: %s\n",
+                     tmpPath.c_str(), path.c_str(), std::strerror(errno));
+        ::unlink(tmpPath.c_str());
         return false;
     }
-    std::fclose(f);
     return true;
 }
 
@@ -1362,9 +1403,14 @@ bool writeReport(const Params& p,
                  const std::unordered_map<int32_t,int32_t>& merges,
                  const std::string& path)
 {
-    std::ofstream f(path);
+    // patch55 — write to a sibling tempfile, then atomic rename onto
+    // the destination.  Same rationale as writeCluFile: never leave a
+    // partial YAML report on disk if anything fails mid-write.
+    const std::string tmpPath = path + ".tmp." + std::to_string((long)getpid());
+    std::ofstream f(tmpPath);
     if (!f) {
-        std::fprintf(stderr, "ERROR: cannot write %s\n", path.c_str());
+        std::fprintf(stderr, "ERROR: cannot create tempfile %s: %s\n",
+                     tmpPath.c_str(), std::strerror(errno));
         return false;
     }
     f << "# process_drifttracker report\n";
@@ -1473,7 +1519,20 @@ bool writeReport(const Params& p,
             f << " }\n";
         }
     }
-    return f.good();
+    f.close();
+    if (!f) {
+        std::fprintf(stderr, "ERROR: close failed on %s: %s\n",
+                     tmpPath.c_str(), std::strerror(errno));
+        ::unlink(tmpPath.c_str());
+        return false;
+    }
+    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+        std::fprintf(stderr, "ERROR: rename %s → %s failed: %s\n",
+                     tmpPath.c_str(), path.c_str(), std::strerror(errno));
+        ::unlink(tmpPath.c_str());
+        return false;
+    }
+    return true;
 }
 
 } // namespace

@@ -49,18 +49,52 @@
 source ndm_functions
 
 program=$(basename $0)
-if [ $# -gt 2 ]
-then
-    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+
+# patch56 — accept process_pca flags after the positional args.  Bash
+# arg parsing: positionals come FIRST (up to 2: parameter-file and
+# electrodeGroup), then any number of '-' / '--' flags are collected
+# into extra_args and forwarded verbatim to process_pca.  The '--'
+# separator is also honoured if the user wants to be explicit:
+#
+#   ndm_pca_stderiv session 8 --varimax
+#   ndm_pca_stderiv session 8 --varimax --varimax-max-iter 50
+#   ndm_pca_stderiv session 8 -- --varimax        # explicit
+positionals=()
+extra_args=()
+collect_positional=true
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --)
+            collect_positional=false
+            shift
+            ;;
+        -*)
+            # First flag implicitly ends positional collection.
+            collect_positional=false
+            extra_args+=("$1")
+            shift
+            ;;
+        *)
+            if $collect_positional; then
+                positionals+=("$1")
+            else
+                extra_args+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup] [-- process_pca flags ...]"
     exit $GENERAL_ERROR
 fi
 directory=$(basename "$(pwd)")
-session=${1:-$directory}
+session=${positionals[0]:-$directory}
 session=${session%.xml}
 session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
-electrodeGroup=$2
+electrodeGroup=${positionals[1]:-}
 
 print_header "$session - Computing PCA on spatial+temporal derivative waveforms"
 
@@ -202,7 +236,7 @@ then
     pids=()
     for ((i=1;i<=$nGroups;i++))
     do
-        (once $i $PCA_THREAD_OPT) > /tmp/ndm_pca_stderiv_${session}_$i.log 2>&1 &
+        (once $i $PCA_THREAD_OPT "${extra_args[@]}") > /tmp/ndm_pca_stderiv_${session}_$i.log 2>&1 &
         pids+=($!)
     done
 
@@ -227,6 +261,6 @@ then
     done
     exit $overallStatus
 else
-    once $electrodeGroup
+    once $electrodeGroup "${extra_args[@]}"
     exit $NO_ERROR
 fi
