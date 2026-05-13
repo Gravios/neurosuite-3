@@ -75,6 +75,18 @@ struct arguments {
 	bool        isCluFileProvided;
 	const char *excludeClustersStr;   ///< -e: raw arg string, e.g. "0,1,5,12"
 	bool        isExcludeClustersProvided;
+
+	// ─── Varimax rotation (patch52) ─────────────────────────────────────
+	// Optional orthogonal rotation of the per-channel kept-K eigenvectors
+	// that maximises the variance of the squared loadings within each
+	// component.  Result: each rotated component tends to "localise" onto
+	// a small set of time samples rather than mixing energy across the
+	// full waveform.  Same total explained variance (it's an orthogonal
+	// rotation within the kept subspace), better cluster geometry for
+	// hand sorting.  See README for details.
+	bool   varimax;                   ///< --varimax: 0/1, default 0
+	int    varimaxMaxIter;            ///< --varimax-max-iter: default 30
+	double varimaxTol;                ///< --varimax-tol: change in criterion to call convergence, default 1e-6
 };
 
 

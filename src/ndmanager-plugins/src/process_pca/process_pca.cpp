@@ -217,6 +217,14 @@ void help(const char* name)
 	cout << "                 '-e 5,12').  Useful for dropping high-rate units (interneurons)" << endl;
 	cout << "                 that would otherwise pull eigenvectors toward whatever" << endl;
 	cout << "                 distinguishes their fast waveforms.  Requires -l." << endl;
+	cout << " --varimax       apply Varimax rotation to each channel's kept-K eigenvectors" << endl;
+	cout << "                 before projection.  Same explained variance, but each rotated" << endl;
+	cout << "                 component tends to localise onto a small set of time samples" << endl;
+	cout << "                 rather than mix energy across the full waveform.  Improves" << endl;
+	cout << "                 hand-sorting in Klusters by aligning feature axes with the" << endl;
+	cout << "                 most parsimonious spike-shape sources." << endl;
+	cout << " --varimax-max-iter N  max rotation iterations (default 30)" << endl;
+	cout << " --varimax-tol T      relative change in criterion to call convergence (default 1e-6)" << endl;
 	cout << " -v              verbose mode" << endl;
 	cout << " -h              display help" << endl;
 	cout << endl << "All arguments are mandatory except" << endl;
@@ -226,6 +234,140 @@ void help(const char* name)
 	cout << endl;
 	exit(0);
 } // help
+
+
+// ── Varimax rotation (patch52) ─────────────────────────────────────────────
+//
+// Apply an orthogonal Varimax rotation to a (data2use × nComp) loadings
+// matrix L in place.  The rotation maximises the Kaiser variance criterion
+//
+//     V = Σ_j  [ (1/p) Σ_i  L²_ij  −  ( (1/p) Σ_i L_ij )²]
+//        ≈ Σ_j Var_i(L²_ij)
+//
+// across the kept components, encouraging each component to load strongly
+// on a few time samples and near zero on the rest.
+//
+// IMPORTANT: total explained variance is INVARIANT under orthogonal rotation
+// — Varimax does not "extract more variance" than the original PCA's top-K
+// projection.  What it does is redistribute the SAME total variance into a
+// basis that is more parsimonious for hand-sorting interpretation:
+//
+//   * Each rotated component tends to localise on specific waveform features
+//     (rising edge, trough, recovery shoulder) rather than mixing them.
+//   * Cluster scatter plots in (PC_i, PC_j) reveal physical spike-shape
+//     differences more directly.
+//
+// Algorithm: pairwise (j, k) sweeps (Kaiser 1958).  Each sweep rotates one
+// pair of columns by an angle θ chosen to maximise the criterion over that
+// pair while holding all other columns fixed.  Pairwise updates commute
+// with the optimum within numerical tolerance, so the algorithm converges
+// monotonically.  Single-precision tol of 1e-6 is overkill; the default
+// converges in 5–15 sweeps for nComp ≤ 5 on typical spike data.
+//
+// Caller-controlled escape valves: maxIter caps total sweeps; tol short-
+// circuits when the criterion's relative change drops below tol.
+//
+// Returns the number of sweeps performed.
+int applyVarimaxRotation(gsl_matrix *L, int maxIter, double tol)
+{
+	const size_t p = L->size1;        // rows: data2use (time samples)
+	const size_t k = L->size2;        // cols: nComponents
+
+	if (k < 2) return 0;              // nothing to rotate against
+
+	// Track criterion across sweeps for convergence check.
+	auto criterion = [&]() {
+		double V = 0.0;
+		for (size_t j = 0; j < k; ++j) {
+			double s2 = 0.0, s4 = 0.0;
+			for (size_t i = 0; i < p; ++i) {
+				const double v = gsl_matrix_get(L, i, j);
+				const double v2 = v * v;
+				s2 += v2;
+				s4 += v2 * v2;
+			}
+			V += s4 - (s2 * s2) / (double)p;
+		}
+		return V;
+	};
+
+	double prevV = criterion();
+	int    iter  = 0;
+	for (iter = 1; iter <= maxIter; ++iter) {
+		// One sweep: rotate every (j, k') pair once.
+		for (size_t j = 0; j + 1 < k; ++j) {
+			for (size_t kk = j + 1; kk < k; ++kk) {
+				// Build u_i = L²_ij − L²_ikk,  v_i = 2 L_ij L_ikk
+				// Then the optimal rotation angle for (j, kk) is
+				//   4θ = atan2(  2 (p Σ uv − Σu · Σv),  p Σ(u²−v²) − (Σu)² + (Σv)² )
+				double sU = 0.0, sV = 0.0;
+				double sUU_VV = 0.0, sUV = 0.0;
+				for (size_t i = 0; i < p; ++i) {
+					const double a = gsl_matrix_get(L, i, j);
+					const double b = gsl_matrix_get(L, i, kk);
+					const double u = a * a - b * b;
+					const double v = 2.0 * a * b;
+					sU      += u;
+					sV      += v;
+					sUU_VV  += u * u - v * v;
+					sUV     += u * v;
+				}
+				const double pD       = (double)p;
+				const double num      = 2.0 * (pD * sUV - sU * sV);
+				const double den      = pD * sUU_VV - (sU * sU - sV * sV);
+				if (num == 0.0 && den == 0.0) continue;   // degenerate
+				const double theta    = 0.25 * std::atan2(num, den);
+				const double c        = std::cos(theta);
+				const double s        = std::sin(theta);
+				if (std::fabs(theta) < 1e-12) continue;   // already optimal
+				// Apply 2-D rotation to columns j and kk:
+				//   [L_ij'  L_ikk'] = [L_ij  L_ikk] · [[c, -s], [s, c]]
+				for (size_t i = 0; i < p; ++i) {
+					const double a = gsl_matrix_get(L, i, j);
+					const double b = gsl_matrix_get(L, i, kk);
+					gsl_matrix_set(L, i, j,  c * a + s * b);
+					gsl_matrix_set(L, i, kk, -s * a + c * b);
+				}
+			}
+		}
+		const double V = criterion();
+		// Relative-change convergence test on the criterion.
+		const double rel = (prevV > 0.0) ? std::fabs(V - prevV) / prevV
+		                                 : std::fabs(V - prevV);
+		if (rel < tol) break;
+		prevV = V;
+	}
+
+	// After rotation the columns are no longer in any particular order.
+	// Re-sort columns by descending ||column||² (which under orthogonal
+	// rotation also equals the per-component variance after projection),
+	// so PC_0 still carries the "biggest" rotated factor.  This keeps the
+	// .fet output indexing semantically close to the un-rotated case.
+	{
+		std::vector<std::pair<double, size_t>> norms(k);
+		for (size_t j = 0; j < k; ++j) {
+			double s = 0.0;
+			for (size_t i = 0; i < p; ++i) {
+				const double v = gsl_matrix_get(L, i, j);
+				s += v * v;
+			}
+			norms[j] = {s, j};
+		}
+		std::sort(norms.begin(), norms.end(),
+		          [](const auto& x, const auto& y) { return x.first > y.first; });
+		// Apply column permutation.  Copy old columns into a temp.
+		gsl_matrix *tmp = gsl_matrix_alloc(p, k);
+		gsl_matrix_memcpy(tmp, L);
+		for (size_t j = 0; j < k; ++j) {
+			const size_t src = norms[j].second;
+			for (size_t i = 0; i < p; ++i)
+				gsl_matrix_set(L, i, j, gsl_matrix_get(tmp, i, src));
+		}
+		gsl_matrix_free(tmp);
+	}
+
+	return iter;
+}
 
 
 // Start here
@@ -258,6 +400,9 @@ int main(int argc,char *argv[])
 	arguments.isCluFileProvided = false;
 	arguments.excludeClustersStr = nullptr;
 	arguments.isExcludeClustersProvided = false;
+	arguments.varimax        = false;      // patch52 defaults
+	arguments.varimaxMaxIter = 30;
+	arguments.varimaxTol     = 1e-6;
 	
 	parseArgs(argc,argv,arguments); // Parse command-line
 	
@@ -575,6 +720,24 @@ int main(int argc,char *argv[])
 		// keep only eigen vectors for the given first principal components
 		gsl_matrix_view tReducedEigenVectors = gsl_matrix_submatrix(tEigenVectors,0,0,data2use,arguments.nComponents);
 
+		// patch52: optional Varimax rotation of the kept basis.  Operates
+		// in-place on the submatrix view, so both the projection (below)
+		// and the saved .pca.N basis use the rotated version.  No-op when
+		// nComponents < 2 or --varimax was not requested.
+		if (arguments.varimax && arguments.nComponents >= 2) {
+			int nSweeps = applyVarimaxRotation(
+				&tReducedEigenVectors.matrix,
+				arguments.varimaxMaxIter,
+				arguments.varimaxTol);
+			if (verbose) {
+				#pragma omp critical
+				cout << "  Varimax channel #" << i << ": "
+				     << nSweeps << " sweep(s)"
+				     << (nSweeps >= arguments.varimaxMaxIter ? " (hit max-iter)" : "")
+				     << endl;
+			}
+		}
+
 		// compute new coordinates for data : Trans(evec_reduce) x Trans(data)
 		if(!arguments.isCenteredData)
 			gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&tReducedEigenVectors.matrix,datSpkChan[i],0.0,reducedData[i]);
@@ -752,6 +915,33 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 	{
 		if ( argv[i][0] != '-' ) break;
 		if ( strlen(argv[i]) < 2 || argv[i][0] != '-' ) error(argv[0]);
+
+		// patch52: long options ("--varimax", "--varimax-max-iter", "--varimax-tol")
+		// are matched on the full string before falling into the single-char
+		// switch.  Continue with `continue` so the switch below doesn't see them.
+		if ( !strcmp(argv[i], "--varimax") ) {
+			arguments.varimax = true;
+			continue;
+		}
+		if ( !strcmp(argv[i], "--varimax-max-iter") ) {
+			if ( i+1 >= nOptions ) error(argv[0]);
+			arguments.varimaxMaxIter = atoi(argv[++i]);
+			if ( arguments.varimaxMaxIter < 1 ) {
+				cerr << "error: --varimax-max-iter must be >= 1" << endl;
+				exit(1);
+			}
+			continue;
+		}
+		if ( !strcmp(argv[i], "--varimax-tol") ) {
+			if ( i+1 >= nOptions ) error(argv[0]);
+			arguments.varimaxTol = atof(argv[++i]);
+			if ( !(arguments.varimaxTol > 0.0) ) {
+				cerr << "error: --varimax-tol must be > 0" << endl;
+				exit(1);
+			}
+			continue;
+		}
+
 		switch ( argv[i][1] )
 		{
 			case 's': // input size

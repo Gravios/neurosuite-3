@@ -1,0 +1,114 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Compute multi-channel PCA features with probe-geometry awareness
+#//
+#//   copyright    (C) 2026 Gravios / NeuroSuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+#
+#  DESCRIPTION
+#  -----------
+#  Drop-in alternative to ndm_pca that computes PCA features over the
+#  entire (nChan × nSamp) waveform jointly rather than per-channel.
+#  Captures spatial correlations between channels — a real action potential
+#  appears as correlated signal across nearby channels, which per-channel
+#  PCA throws away.
+#
+#  Uses probe geometry (auto-detected or specified) to:
+#    - record per-channel (x, y) coordinates in the .pcaM file for
+#      downstream tools to map feature directions back to physical space
+#    - optionally weight the covariance by spatial distance, focusing PCA
+#      on spike-bearing channels for large groups (Neuropixels-scale)
+#
+#  Output:
+#    .fetM.<grp>   single-block PCA features (NOT per-channel)
+#    .pcaM.<grp>   eigenvectors + geometry header (see process_pca_multichannel.h)
+#
+#  Usage:
+#    ndm_pca_multichannel [session] [electrodeGroup]
+#
+#  Additional flags are passed through to process_pca_multichannel:
+#    --probe-template NAME     (tetrode | octrode-linear | neuropixels1 | ...)
+#    --channel-positions FILE  override built-in geometry
+#    --spatial-weight RADIUS   Gaussian downweight beyond RADIUS μm
+#    --varimax                 sparser loadings via orthogonal rotation
+#
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 2 ]
+then
+    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+    exit $GENERAL_ERROR
+fi
+directory=$(basename "$(pwd)")
+session=${1:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+print_header "$session - Computing multi-channel PCA features"
+
+check_commands_installed xpathReader process_pca_multichannel process_mergefeatures
+
+once()
+{
+    local electrodeGroup=$1
+
+    # Check input files
+    inputs_missing "$session.$param_ext" $session.spk.$electrodeGroup && exit $INPUTS_MISSING
+
+    # Check output file
+    local outputFile=$session.fetM.$electrodeGroup
+    outputs_exist $outputFile && return
+
+    # Read parameters from session YAML
+    local nElectrodes=$(read_xpath_int "$session.$param_ext" "//spikeDetection/channelGroups/group[$electrodeGroup]/channels" 2>/dev/null || echo 0)
+    if [ "$nElectrodes" -eq 0 ]; then
+        nElectrodes=$(read_xpath_int "$session.$param_ext" "//spikeDetection/channelGroups/$((electrodeGroup-1))/channels" 2>/dev/null || echo 0)
+    fi
+    local waveformLength=$(read_xpath_int "$session.$param_ext" "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+    local peakPosition=$(read_xpath_int "$session.$param_ext" "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+    local nFeatures=$(read_xpath_int "$session.$param_ext" "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures" 2>/dev/null || echo 6)
+
+    process_pca_multichannel \
+        -g $electrodeGroup \
+        -f $session.fetM.$electrodeGroup.tmp \
+        -n $nElectrodes \
+        -w $waveformLength \
+        -d $nFeatures \
+        $options ${@:2} \
+        $session.spk.$electrodeGroup
+    check_command_status process_pca_multichannel
+
+    # Merge with timestamps to produce final .fetM
+    process_mergefeatures \
+        $session.fetM.$electrodeGroup.tmp \
+        $session.res.$electrodeGroup \
+        $outputFile
+    check_command_status process_mergefeatures
+
+    rm -f $session.fetM.$electrodeGroup.tmp
+}
+
+# Process groups
+if [ -n "$electrodeGroup" ]; then
+    once $electrodeGroup
+else
+    nGroups=$(read_xpath_count "$session.$param_ext" "//spikeDetection/channelGroups/group")
+    for grp in $(seq 1 $nGroups); do
+        once $grp
+    done
+fi
