@@ -21,18 +21,47 @@ source ndm_functions
 
 # Parse command-line
 program=$(basename $0)
-if [ $# -gt 2 ]
-then
-	echo_error "usage: $program [parameter-file] [electrodeGroup]"
+
+# patch56 — accept process_pca flags after positional args.  See
+# ndm_pca_stderiv for the full rationale.  Pattern:
+#   ndm_pca session 8 --varimax
+#   ndm_pca session 8 --varimax --varimax-max-iter 50
+#   ndm_pca session 8 -- --varimax        # explicit separator
+positionals=()
+extra_args=()
+collect_positional=true
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--)
+			collect_positional=false
+			shift
+			;;
+		-*)
+			collect_positional=false
+			extra_args+=("$1")
+			shift
+			;;
+		*)
+			if $collect_positional; then
+				positionals+=("$1")
+			else
+				extra_args+=("$1")
+			fi
+			shift
+			;;
+	esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+	echo_error "usage: $program [parameter-file] [electrodeGroup] [-- process_pca flags ...]"
 	exit $GENERAL_ERROR
 fi
 directory=$(basename "$(pwd)")
-session=${1:-$directory}
+session=${positionals[0]:-$directory}
 session=${session%.xml}
 session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
-electrodeGroup=$2
+electrodeGroup=${positionals[1]:-}
 
 # Print a header to indicate current processing step
 print_header "$session - Computing PCA for spike sorting"
@@ -172,7 +201,7 @@ then
 	pids=()
 	for ((i=1;i<=$nGroups;i++))
 	do
-		(once $i $PCA_THREAD_OPT) > /tmp/ndm_pca_${session}_$i.log 2>&1 &
+		(once $i $PCA_THREAD_OPT "${extra_args[@]}") > /tmp/ndm_pca_${session}_$i.log 2>&1 &
 		pids+=($!)
 	done
 
@@ -198,7 +227,7 @@ then
 
 	exit $overallStatus
 else
-	once $electrodeGroup
+	once $electrodeGroup "${extra_args[@]}"
 	exit $NO_ERROR
 fi
 

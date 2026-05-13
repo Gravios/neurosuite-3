@@ -46,18 +46,47 @@ source ndm_functions
 
 # Parse command-line
 program=$(basename $0)
-if [ $# -gt 2 ]
-then
-    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+
+# patch56 — accept process_pca_multichannel flags after the positional
+# args.  See ndm_pca for the full rationale.  Examples:
+#   ndm_pca_multichannel session 8 --probe-template neuropixels1
+#   ndm_pca_multichannel session 8 --varimax --spatial-weight 40
+#   ndm_pca_multichannel session 8 -- --channel-positions geom.txt
+positionals=()
+extra_args=()
+collect_positional=true
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --)
+            collect_positional=false
+            shift
+            ;;
+        -*)
+            collect_positional=false
+            extra_args+=("$1")
+            shift
+            ;;
+        *)
+            if $collect_positional; then
+                positionals+=("$1")
+            else
+                extra_args+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup] [-- process_pca_multichannel flags ...]"
     exit $GENERAL_ERROR
 fi
 directory=$(basename "$(pwd)")
-session=${1:-$directory}
+session=${positionals[0]:-$directory}
 session=${session%.xml}
 session=${session%.yaml}
 session=${session%.yml}
 param_ext=$(param_file_ext "$session")
-electrodeGroup=$2
+electrodeGroup=${positionals[1]:-}
 
 print_header "$session - Computing multi-channel PCA features"
 
@@ -105,10 +134,10 @@ once()
 
 # Process groups
 if [ -n "$electrodeGroup" ]; then
-    once $electrodeGroup
+    once $electrodeGroup "${extra_args[@]}"
 else
     nGroups=$(read_xpath_count "$session.$param_ext" "//spikeDetection/channelGroups/group")
     for grp in $(seq 1 $nGroups); do
-        once $grp
+        once $grp "${extra_args[@]}"
     done
 fi
