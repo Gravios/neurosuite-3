@@ -246,6 +246,49 @@ struct Params {
     double sharedDriftHuberK        = 1.345;     // MAD-multiples breakpoint
     double sharedDriftTol           = 1e-3;      // convergence in D-units (channels/μm)
 
+    // ── Runaway-chain guardrail (patch59) ──────────────────────────────────
+    //
+    // Union-find merges are transitive: pair (A,B) + pair (B,C) → group {A,B,C}
+    // regardless of whether (A,C) was ever a candidate.  If the user sets a
+    // loose threshold or one pathological cluster gets matched repeatedly,
+    // the chain can absorb dozens of unrelated units into a single
+    // mega-cluster.  This cap rejects any candidate that would grow either
+    // root's merged group past maxMergeChain original clusters.  Set to 0
+    // to disable.  Default 8 protects against catastrophic runaway while
+    // still allowing realistic drift chains.
+    int    maxMergeChain            = 8;
+
+    // ── Cross-temporal pairing for fragmented clusters (patch60) ───────────
+    //
+    // Phase C only compares pairs that share ≥ minWinOverlap co-alive
+    // windows.  In sessions with strong drift fragmentation — clusters
+    // that live for a few minutes, then disappear as drift moves them off
+    // the spike-detector threshold, with a "successor" cluster appearing
+    // at the new position — most successor pairs DON'T overlap in time at
+    // all and Phase C cannot see them.
+    //
+    // Phase C2 (this option) handles those: for each pair NOT already a
+    // Phase C candidate AND with no sufficient co-alive overlap, identify
+    // the boundary between their alive intervals (earlier cluster's last
+    // K_a alive windows × later cluster's first K_b alive windows),
+    // compute the same cyclic-shift residual + meanCOM averaged over the
+    // K_a · K_b pairings, and apply the same --merge-thresh and
+    // --position-thresh.  Operates on the same drift-corrected COMs
+    // produced by Phase B.6, so disjoint clusters representing the same
+    // unit at different probe positions collapse onto each other.
+    //
+    // - crossTemporal: opt-in (off by default).  Phase C alone is correct
+    //   for well-curated sessions; Phase C2 is for the fragmented case.
+    // - crossTemporalMaxGap: max number of windows between earlier
+    //   cluster's last alive and later cluster's first alive.  Skip pairs
+    //   separated by more than this — they're not plausibly the same unit.
+    // - crossTemporalNeighborhood: width K of the boundary window range
+    //   on each side.  Larger = more comparisons = more robust mean D but
+    //   slower.  Default 3 covers typical drift transition periods.
+    bool   crossTemporal              = false;
+    int    crossTemporalMaxGap        = 4;
+    int    crossTemporalNeighborhood  = 3;
+
     // File-name suffixes (override for stderiv variant: spkD)
     std::string spkSuffix     = "spk";
     std::string outCluTag     = "drift";
@@ -283,6 +326,27 @@ void usage(const char* prog) {
         "  --merge-thresh   D    average residual below which to merge (default 0.05)\n"
         "  --max-shift      K    cyclic-shift search half-width (default 3)\n"
         "  --min-win-overlap N   min co-alive windows to compare a pair (default 3)\n"
+        "  --max-merge-chain N   hard cap on transitive-merge chain size — reject\n"
+        "                         any candidate that would grow either root's\n"
+        "                         merged group past N original clusters (default 8,\n"
+        "                         0 = disabled).  Guards against runaway union-find\n"
+        "                         chains caused by loose --merge-thresh or one\n"
+        "                         pathological cluster matching many partners.\n"
+        "\n"
+        "Cross-temporal pairing for fragmented clusters (patch60 — off by default):\n"
+        "  --cross-temporal       enable Phase C2: pair clusters whose alive\n"
+        "                         intervals DON'T overlap, by comparing the\n"
+        "                         earlier cluster's last K windows to the later\n"
+        "                         cluster's first K windows.  Essential when no\n"
+        "                         single cluster spans the whole session (drift\n"
+        "                         fragmentation regime).  Honours --merge-thresh\n"
+        "                         and --position-thresh on the drift-corrected COMs.\n"
+        "  --cross-temporal-max-gap N   max window gap between earlier cluster's\n"
+        "                         last alive and later cluster's first alive\n"
+        "                         (default 4).  Pairs more than N windows apart\n"
+        "                         are skipped — not plausibly the same unit.\n"
+        "  --cross-temporal-neighborhood K  width K of the boundary window range\n"
+        "                         compared on each side (default 3).\n"
         "\n"
         "Per-channel drift model (patch47 — off by default):\n"
         "  --gain-fit       0|1  fit per-channel time-varying gain on each pair\n"
@@ -417,6 +481,10 @@ bool parseArgs(int argc, char** argv, Params& p)
         else if (a == "--shared-drift-iter")       { if (!nexti(&p.sharedDriftIter,       a.c_str())) return false; }
         else if (a == "--shared-drift-huber-k")    { if (!next (&p.sharedDriftHuberK,     a.c_str())) return false; }
         else if (a == "--shared-drift-tol")        { if (!next (&p.sharedDriftTol,        a.c_str())) return false; }
+        else if (a == "--max-merge-chain")         { if (!nexti(&p.maxMergeChain,         a.c_str())) return false; }
+        else if (a == "--cross-temporal")          { p.crossTemporal = true; }
+        else if (a == "--cross-temporal-max-gap")  { if (!nexti(&p.crossTemporalMaxGap,       a.c_str())) return false; }
+        else if (a == "--cross-temporal-neighborhood") { if (!nexti(&p.crossTemporalNeighborhood, a.c_str())) return false; }
         else if (a == "--peak-sample")             { if (!nexti(&p.peakSample,    a.c_str())) return false; }
         else if (a == "--spk-suffix")              { if (!nexts(&p.spkSuffix,     a.c_str())) return false; }
         else if (a == "--out-clu-tag")             { if (!nexts(&p.outCluTag,     a.c_str())) return false; }
@@ -1766,29 +1834,262 @@ driftAwareSubtractionMerge(
     return candidates;
 }
 
+// ─── Phase C2: cross-temporal pairing (patch60) ─────────────────────────────
+//
+// For sessions where most clusters live for a few-window block and are
+// then "replaced" by a successor cluster at a different probe position
+// (caused by drift moving the unit on/off the spike-detection threshold),
+// Phase C cannot find the successor relationship — Phase C requires
+// minWinOverlap co-alive windows, which the disjoint clusters don't have.
+//
+// Phase C2 enumerates pairs whose alive intervals DON'T overlap (or
+// barely do), checks the time gap is within maxGap windows, and compares
+// the earlier cluster's last K alive windows to the later cluster's
+// first K alive windows.  Uses the same residual function and the same
+// merge/position thresholds as Phase C.  Operates on the
+// shared-drift-corrected COMs so disjoint clusters at "the same absolute
+// position after drift correction" get paired.
+//
+// Skips pairs that Phase C already produced (looked up via the supplied
+// existingCandidates list).  The returned candidates are appended to
+// Phase C's list before Phase D's union-find.
+
+std::vector<MergePair>
+crossTemporalMerge(
+    const Params& p,
+    const PerClusterTemplates& tpl,
+    const ClusterCOMTrajectory* com,
+    const std::vector<MergePair>& existing)
+{
+    std::vector<MergePair> additional;
+    if (!p.crossTemporal) return additional;
+
+    std::vector<int32_t> clusters;
+    clusters.reserve(tpl.mean.size());
+    for (const auto& kv : tpl.mean) clusters.push_back(kv.first);
+    std::sort(clusters.begin(), clusters.end());
+    if (clusters.empty()) return additional;
+    const int nWin = (int)tpl.mean.at(clusters[0]).size();
+
+    // Index of pairs already in 'existing' to avoid duplicate candidates.
+    auto pairKey = [](int32_t a, int32_t b) -> int64_t {
+        const int32_t lo = std::min(a, b), hi = std::max(a, b);
+        return ((int64_t)lo << 32) | (uint32_t)hi;
+    };
+    std::unordered_set<int64_t> seen;
+    seen.reserve(existing.size() * 2);
+    for (const auto& mp : existing) seen.insert(pairKey(mp.a, mp.b));
+
+    // Pre-compute each cluster's sorted list of alive window indices.
+    std::unordered_map<int32_t, std::vector<int>> aliveWins;
+    aliveWins.reserve(clusters.size() * 2);
+    for (int32_t c : clusters) {
+        const auto& Av = tpl.count.at(c);
+        std::vector<int>& v = aliveWins[c];
+        for (int w = 0; w < (int)Av.size(); ++w) if (Av[w] > 0) v.push_back(w);
+    }
+
+    const int K      = std::max(1, p.crossTemporalNeighborhood);
+    const int maxGap = std::max(0, p.crossTemporalMaxGap);
+
+    for (size_t i = 0; i < clusters.size(); ++i) {
+        const int32_t ca = clusters[i];
+        const auto& aliveA = aliveWins.at(ca);
+        if (aliveA.empty()) continue;
+        const auto& Ma = tpl.mean.at(ca);
+
+        for (size_t j = i + 1; j < clusters.size(); ++j) {
+            const int32_t cb = clusters[j];
+            if (seen.count(pairKey(ca, cb))) continue;
+            const auto& aliveB = aliveWins.at(cb);
+            if (aliveB.empty()) continue;
+            const auto& Mb = tpl.mean.at(cb);
+
+            // Co-alive count: skip if Phase C should have handled this.
+            int coAlive = 0;
+            {
+                size_t ia = 0, ib = 0;
+                while (ia < aliveA.size() && ib < aliveB.size()) {
+                    if (aliveA[ia] == aliveB[ib]) { ++coAlive; ++ia; ++ib; }
+                    else if (aliveA[ia] < aliveB[ib]) ++ia;
+                    else ++ib;
+                }
+            }
+            if (coAlive >= p.minWinOverlap) continue;
+
+            // Determine temporal ordering: which cluster's alive interval
+            // ends FIRST?  That's the "earlier" one.  We want
+            //   earlier.lastAlive < later.firstAlive   (no overlap, or
+            //   marginal overlap below minWinOverlap).
+            const int firstA = aliveA.front(), lastA = aliveA.back();
+            const int firstB = aliveB.front(), lastB = aliveB.back();
+            int32_t cE, cL;
+            const std::vector<int>* aliveE_p = nullptr;
+            const std::vector<int>* aliveL_p = nullptr;
+            const std::vector<std::vector<double>>* ME_p = nullptr;
+            const std::vector<std::vector<double>>* ML_p = nullptr;
+            int earlierLast = -1, laterFirst = -1;
+
+            if (lastA <= firstB) {
+                cE = ca; cL = cb;
+                aliveE_p = &aliveA; aliveL_p = &aliveB;
+                ME_p = &Ma; ML_p = &Mb;
+                earlierLast = lastA; laterFirst = firstB;
+            } else if (lastB <= firstA) {
+                cE = cb; cL = ca;
+                aliveE_p = &aliveB; aliveL_p = &aliveA;
+                ME_p = &Mb; ML_p = &Ma;
+                earlierLast = lastB; laterFirst = firstA;
+            } else {
+                // Intervals overlap but co-alive count is below minWinOverlap.
+                // Pick the cluster that starts earlier as "earlier".
+                if (firstA <= firstB) {
+                    cE = ca; cL = cb;
+                    aliveE_p = &aliveA; aliveL_p = &aliveB;
+                    ME_p = &Ma; ML_p = &Mb;
+                    earlierLast = lastA; laterFirst = firstB;
+                } else {
+                    cE = cb; cL = ca;
+                    aliveE_p = &aliveB; aliveL_p = &aliveA;
+                    ME_p = &Mb; ML_p = &Ma;
+                    earlierLast = lastB; laterFirst = firstA;
+                }
+            }
+
+            // Gap test: skip pairs too far apart in time.
+            const int gap = laterFirst - earlierLast;
+            if (gap > maxGap) continue;
+
+            // Boundary window neighbourhoods: last K alive of earlier,
+            // first K alive of later.
+            const auto& aliveE = *aliveE_p;
+            const auto& aliveL = *aliveL_p;
+            const auto& ME     = *ME_p;
+            const auto& ML     = *ML_p;
+            const int Ka = std::min(K, (int)aliveE.size());
+            const int Kb = std::min(K, (int)aliveL.size());
+
+            // Compute mean residual + COM distance over all Ka·Kb pairings.
+            double sumD = 0.0, sumCOM = 0.0;
+            int    nPairs = 0;
+            std::vector<int> shifts;
+            shifts.reserve(Ka * Kb);
+            for (int u = 0; u < Ka; ++u) {
+                const int we = aliveE[(size_t)((int)aliveE.size() - Ka + u)];
+                for (int v = 0; v < Kb; ++v) {
+                    const int wl = aliveL[(size_t)v];
+                    double D; int tau;
+                    pairwiseResidualOneWindow(ME[(size_t)we], ML[(size_t)wl],
+                                              p.nChan, p.nSamp, p.maxShift,
+                                              D, tau);
+                    if (!std::isfinite(D)) continue;
+                    sumD += D;
+                    shifts.push_back(tau);
+                    ++nPairs;
+                    if (com != nullptr) {
+                        const auto& xE = com->x.at(cE);
+                        const auto& yE = com->y.at(cE);
+                        const auto& xL = com->x.at(cL);
+                        const auto& yL = com->y.at(cL);
+                        const double dx = xE[(size_t)we] - xL[(size_t)wl];
+                        const double dy = yE[(size_t)we] - yL[(size_t)wl];
+                        sumCOM += std::sqrt(dx * dx + dy * dy);
+                    }
+                }
+            }
+            if (nPairs == 0) continue;
+            const double meanD   = sumD   / nPairs;
+            const double meanCOM = (com != nullptr) ? sumCOM / nPairs : -1.0;
+
+            // Position filter (same as Phase C).
+            if (com != nullptr && p.positionThresh > 0.0 && meanCOM > p.positionThresh)
+                continue;
+            if (meanD >= p.mergeThresh) continue;
+
+            // Per-cluster session-wide drift magnitude (same as Phase C).
+            double driftE = 0.0, driftL = 0.0;
+            if (com != nullptr) {
+                const auto& xE = com->x.at(cE);
+                const auto& yE = com->y.at(cE);
+                const auto& xL = com->x.at(cL);
+                const auto& yL = com->y.at(cL);
+                {
+                    const double dx = xE[(size_t)aliveE.back()] - xE[(size_t)aliveE.front()];
+                    const double dy = yE[(size_t)aliveE.back()] - yE[(size_t)aliveE.front()];
+                    driftE = std::sqrt(dx * dx + dy * dy);
+                }
+                {
+                    const double dx = xL[(size_t)aliveL.back()] - xL[(size_t)aliveL.front()];
+                    const double dy = yL[(size_t)aliveL.back()] - yL[(size_t)aliveL.front()];
+                    driftL = std::sqrt(dx * dx + dy * dy);
+                }
+            }
+
+            MergePair mp;
+            mp.a               = std::min(cE, cL);
+            mp.b               = std::max(cE, cL);
+            mp.D               = meanD;
+            mp.nWinsUsed       = nPairs;       // boundary-pair count, not co-alive
+            mp.bestShifts      = std::move(shifts);
+            mp.meanAbsGainDev  = 0.0;          // gain-fit not applied in Phase C2
+            mp.meanCOMDistance = meanCOM;
+            mp.comDriftA       = (mp.a == cE) ? driftE : driftL;
+            mp.comDriftB       = (mp.a == cE) ? driftL : driftE;
+            additional.push_back(std::move(mp));
+        }
+    }
+    std::sort(additional.begin(), additional.end(),
+              [](const MergePair& x, const MergePair& y) { return x.D < y.D; });
+    return additional;
+}
+
 // ─── Phase D: apply merges, write outputs ───────────────────────────────────
 
 // Resolve transitive merges via union-find on the candidate list (smallest
 // ID always wins so cluster IDs stay close to their original layout).
+//
+// patch59 — chain-size cap.  If maxChain > 0, reject any candidate that
+// would push either root's accumulated group size past maxChain original
+// clusters.  Guards against runaway chains caused by loose --merge-thresh
+// or by one pathological cluster matching many partners.
+//
+// On return, *outRejectedByCap receives the number of candidates that were
+// rejected by the cap (for verbose / YAML diagnostics).  Pass nullptr to
+// ignore.
 std::unordered_map<int32_t, int32_t>
 resolveMerges(const std::vector<MergePair>& cands,
-              const std::vector<int32_t>&   clusters)
+              const std::vector<int32_t>&   clusters,
+              int                           maxChain,
+              int*                          outRejectedByCap = nullptr)
 {
     std::unordered_map<int32_t, int32_t> parent;
-    for (int32_t c : clusters) parent[c] = c;
+    std::unordered_map<int32_t, int32_t> groupSize;     // size of each root's group
+    for (int32_t c : clusters) {
+        parent[c] = c;
+        groupSize[c] = 1;
+    }
     std::function<int32_t(int32_t)> findRoot = [&](int32_t x) -> int32_t {
         while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
         return x;
     };
+    int rejected = 0;
     for (const auto& mp : cands) {
         const int32_t ra = findRoot(mp.a);
         const int32_t rb = findRoot(mp.b);
         if (ra == rb) continue;
+        // Cap check: would merging exceed maxChain on either side?
+        if (maxChain > 0 && (groupSize[ra] + groupSize[rb]) > maxChain) {
+            ++rejected;
+            continue;
+        }
         const int32_t keep = std::min(ra, rb);
         const int32_t drop = std::max(ra, rb);
-        parent[drop] = keep;
+        parent[drop]      = keep;
+        groupSize[keep]  += groupSize[drop];
+        groupSize.erase(drop);   // tidiness; drop's slot won't be queried again
     }
-    // Materialise: for each cluster, the resolved root.
+    if (outRejectedByCap) *outRejectedByCap = rejected;
+
     std::unordered_map<int32_t, int32_t> out;
     for (int32_t c : clusters) out[c] = findRoot(c);
     return out;
@@ -1830,6 +2131,12 @@ bool writeReport(const Params& p,
     f << "  merge_thresh: "   << p.mergeThresh   << "\n";
     f << "  max_shift: "      << p.maxShift      << "\n";
     f << "  min_win_overlap: " << p.minWinOverlap << "\n";
+    f << "  max_merge_chain: " << p.maxMergeChain << "\n";
+    f << "  cross_temporal: "  << (p.crossTemporal ? "true" : "false") << "\n";
+    if (p.crossTemporal) {
+        f << "  cross_temporal_max_gap: "       << p.crossTemporalMaxGap << "\n";
+        f << "  cross_temporal_neighborhood: "  << p.crossTemporalNeighborhood << "\n";
+    }
     f << "  gain_fit: "        << p.gainFit       << "\n";
     if (p.gainFit != 0) {
         f << "  gain_smooth_lambda: " << p.gainSmoothLambda << "\n";
@@ -2236,12 +2543,47 @@ int main(int argc, char** argv)
         }
     }
 
+    // ── Phase C2: cross-temporal pairing (patch60) ────────────────────────
+    // Find merges between clusters whose alive intervals DON'T overlap
+    // enough for Phase C.  Operates on drift-corrected COMs.  Appends to
+    // the candidate list, which then goes through Phase D's union-find
+    // (with chain cap) together.
+    auto extraCands = crossTemporalMerge(p, tpl, &com, cands);
+    if (p.crossTemporal && p.verbose) {
+        const std::string posUnitsDefault =
+            p.channelPositionsFile.empty() ? "ch" : "μm";
+        const std::string& posUnits =
+            p.positionUnits.empty() ? posUnitsDefault : p.positionUnits;
+        std::fprintf(stderr,
+            "[drifttracker]   Phase C2: %zu cross-temporal candidate pair(s) "
+            "under D=%.4f (max-gap=%d, neighbourhood=±%d)\n",
+            extraCands.size(), p.mergeThresh,
+            p.crossTemporalMaxGap, p.crossTemporalNeighborhood);
+        for (const auto& mp : extraCands) {
+            std::fprintf(stderr,
+                "[drifttracker]     cross-temp %d ↔ %d  D=%.4f  over %d boundary pairs",
+                mp.a, mp.b, mp.D, mp.nWinsUsed);
+            if (mp.meanCOMDistance >= 0.0)
+                std::fprintf(stderr,
+                    "  meanCOM=%.2f%s  driftA=%.2f  driftB=%.2f",
+                    mp.meanCOMDistance, posUnits.c_str(), mp.comDriftA, mp.comDriftB);
+            std::fprintf(stderr, "\n");
+        }
+    }
+    // Append Phase C2 candidates AFTER Phase C's — D-sorted order within
+    // Phase C still holds, and Phase D processes Phase C first then C2
+    // (preserving the priority of well-supported co-alive matches).
+    cands.insert(cands.end(),
+                 std::make_move_iterator(extraCands.begin()),
+                 std::make_move_iterator(extraCands.end()));
+
     // ── Phase D: apply merges, write outputs ──────────────────────────────
     std::vector<int32_t> clusters;
     for (const auto& kv : tpl.mean) clusters.push_back(kv.first);
     std::sort(clusters.begin(), clusters.end());
 
-    auto rootMap = resolveMerges(cands, clusters);
+    int nRejectedByCap = 0;
+    auto rootMap = resolveMerges(cands, clusters, p.maxMergeChain, &nRejectedByCap);
 
     int nDistinctMerges = 0;
     for (const auto& kv : rootMap) if (kv.first != kv.second) ++nDistinctMerges;
@@ -2250,6 +2592,12 @@ int main(int argc, char** argv)
         std::fprintf(stderr,
             "[drifttracker]   Phase D: %d cluster(s) merged into peers\n",
             nDistinctMerges);
+        if (p.maxMergeChain > 0 && nRejectedByCap > 0) {
+            std::fprintf(stderr,
+                "[drifttracker]   Phase D: %d candidate(s) REJECTED by "
+                "--max-merge-chain=%d (chain would have exceeded cap)\n",
+                nRejectedByCap, p.maxMergeChain);
+        }
     }
 
     // Rewrite cluster IDs in the working clu copy.
