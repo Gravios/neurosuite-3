@@ -4050,6 +4050,131 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     pending.nFeatCols      = nFeatCols;
     pending.records.reserve(static_cast<size_t>(N));
 
+    // -----------------------------------------------------------------------
+    // patch69 — verify that the chosen raw source (.fil or .dat) actually
+    // matches what's stored in .spk.  Without this check, if .fil got
+    // deleted but the .spk was originally extracted FROM .fil (filtered),
+    // the code at lines 4013-4016 silently falls back to .dat (unfiltered)
+    // and re-extracts unfiltered waveforms into .spk slots that were
+    // filtered, corrupting the cluster a little more on every nudge.
+    //
+    // Algorithm: pick the first cluster spike whose extraction window fits
+    // entirely within the raw file, read it, apply the same stderiv
+    // transform we'd apply during normal extraction, and compare to that
+    // spike's existing .spk slot (the channel-major copy currently in
+    // wavBuf).  If RMS difference exceeds 50% of the .spk content's RMS,
+    // the chosen raw source does not match — abort with a clear error
+    // rather than silently corrupting more waveforms.
+    //
+    // Skipped only when filF is null (no raw source — log already warned).
+    // -----------------------------------------------------------------------
+    if (filF) {
+        bool verifyDone = false;
+        int  verifySkipped = 0;
+        for (int64_t csV = 0; csV < N && !verifyDone; ++csV) {
+            const int64_t tsV          = resTs[static_cast<size_t>(csV)];
+            const int64_t startSampleV = tsV - static_cast<int64_t>(peakSamp0);
+            if (startSampleV < 0 || startSampleV + nSamp > totalSamples) {
+                ++verifySkipped;
+                continue;
+            }
+            const off_t rawOffV = static_cast<off_t>(startSampleV)
+                                * static_cast<off_t>(totalNbChan)
+                                * static_cast<off_t>(sizeof(short));
+            if (fseeko(filF, rawOffV, SEEK_SET) != 0) { ++verifySkipped; continue; }
+            std::vector<int16_t> rawFrameV(static_cast<size_t>(nSamp * totalNbChan));
+            if (fread(rawFrameV.data(), sizeof(short),
+                      rawFrameV.size(), filF) != rawFrameV.size()) {
+                ++verifySkipped; continue;
+            }
+            // Channel-major raw waveform for the group's channels
+            std::vector<int16_t> verifyWav(static_cast<size_t>(nChan * nSamp));
+            for (int s = 0; s < nSamp; ++s)
+                for (int ci = 0; ci < nChan; ++ci)
+                    verifyWav[static_cast<size_t>(ci * nSamp + s)] =
+                        rawFrameV[static_cast<size_t>(s * totalNbChan + groupChannels[ci])];
+
+            // Mirror the stderiv transform used in the per-spike loop, so
+            // verifyWav lives in the same space as wavBuf for raw OR stderiv
+            // .spk formats.
+            if (spkIsTransformed) {
+                std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
+                std::vector<int16_t> sdOut(static_cast<size_t>(nChan * nSamp));
+                for (int s = 0; s < nSamp; ++s) {
+                    int64_t sum = 0;
+                    for (int ci = 0; ci < nChan; ++ci)
+                        sum += verifyWav[static_cast<size_t>(ci * nSamp + s)];
+                    for (int ci = 0; ci < nChan; ++ci) {
+                        const int v   = verifyWav[static_cast<size_t>(ci * nSamp + s)];
+                        const int sd  = nChan * v - static_cast<int>(sum);
+                        const int16_t sdCl = static_cast<int16_t>(
+                            std::max(-32768, std::min(32767, sd)));
+                        const int diff = static_cast<int>(sdCl)
+                            - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
+                        sdPrev[static_cast<size_t>(ci)] = sdCl;
+                        sdOut[static_cast<size_t>(ci * nSamp + s)] =
+                            static_cast<int16_t>(
+                                std::max(-32768, std::min(32767, diff)));
+                    }
+                }
+                verifyWav = std::move(sdOut);
+            }
+
+            // Compare to wavBuf[csV * spkElems ..] which holds the .spk
+            // contents in channel-major layout (same as verifyWav above).
+            const int16_t* refSpk = wavBuf.data()
+                + static_cast<ptrdiff_t>(csV) * static_cast<ptrdiff_t>(spkElems);
+            double sumDiff2 = 0.0, sumRef2 = 0.0;
+            for (int e = 0; e < spkElems; ++e) {
+                const double dv = static_cast<double>(verifyWav[static_cast<size_t>(e)])
+                                - static_cast<double>(refSpk[static_cast<size_t>(e)]);
+                sumDiff2 += dv * dv;
+                sumRef2  += static_cast<double>(refSpk[static_cast<size_t>(e)])
+                          * static_cast<double>(refSpk[static_cast<size_t>(e)]);
+            }
+            const double rmsRatio = (sumRef2 > 0.0)
+                ? std::sqrt(sumDiff2 / sumRef2)
+                : 0.0;
+
+            if (rmsRatio > 0.5) {
+                log << "ERROR: raw source verification FAILED\n"
+                    << "  raw file:           " << filPath << "\n"
+                    << "  verify spike index: " << csV
+                    << " (ts=" << tsV << ")\n"
+                    << "  RMS difference:     "
+                    << QString::number(rmsRatio * 100.0, 'f', 1)
+                    << "% of .spk content (threshold 50%)\n"
+                    << "  Likely cause: .spk was extracted from a different raw\n"
+                    << "  source than the one currently on disk (e.g. .fil was\n"
+                    << "  deleted and the code fell back to .dat, or the raw file\n"
+                    << "  was overwritten by a later pipeline stage).\n"
+                    << "  Aborting realignment to avoid further .spk corruption.\n"
+                    << "  Re-extract waveforms with process_extractspikes before\n"
+                    << "  retrying the nudge.\n";
+                emitFlush();
+                if (spkW) fclose(spkW);
+                if (resW) fclose(resW);
+                if (fetW) fclose(fetW);
+                fclose(filF);
+                return false;
+            }
+            log << "Raw source verified: " << filPath
+                << " matches .spk (verify spike " << csV
+                << ", RMS diff "
+                << QString::number(rmsRatio * 100.0, 'f', 1)
+                << "%, skipped " << verifySkipped
+                << " spikes near file edges)\n";
+            emitFlush();
+            verifyDone = true;
+        }
+        if (!verifyDone) {
+            log << "WARNING: could not verify raw source — no spike's extraction\n"
+                << "  window fit within the raw file (all near boundaries).\n"
+                << "  Proceeding without verification.\n";
+            emitFlush();
+        }
+    }
+
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
         const int64_t dest  = targetPos[static_cast<size_t>(j)];
