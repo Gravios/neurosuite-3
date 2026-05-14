@@ -3967,10 +3967,23 @@ void KlustersApp::slotRecluster(){
                     if(selected.isEmpty() && !iv.isEmpty())
                         selected.insert(iv[0].first);
 
-                    // Build bit-string; timestamp column is always 1.
+                    // patch75 — Build bit-string; timestamp column is set
+                    // OFF when auto-selecting features.  Including the
+                    // normalised timestamp as a clustering dimension
+                    // makes the reclusterer over-fit to within-session
+                    // drift: spikes from the same unit that fired at
+                    // different times in the recording get separated by
+                    // when they fired rather than by waveform shape.
+                    // Auto-select picks variance-ranked PCA features
+                    // precisely because they capture shape variance —
+                    // tacking the timestamp on undoes that intent.
+                    //
+                    // The manual / fallback path below still appends '1'
+                    // for the timestamp to preserve the historical
+                    // default behaviour when auto-select is off.
                     for(int i = 0; i < nFeatureCols; ++i)
                         features.append(selected.contains(i) ? QLatin1Char('1') : QLatin1Char('0'));
-                    features.append(QLatin1Char('1'));
+                    features.append(QLatin1Char('0'));
                     usedAutoSelect = true;
                 }
             }
