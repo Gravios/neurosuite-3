@@ -9391,6 +9391,88 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         // TimeShiftFinalize will still process them, but at least we
         // don't compound the damage by shifting from a wrong source.
         if (rawSourceOk) {
+
+        // patch73 — refresh waveBuf for spikes with non-zero m_cumShift.
+        //
+        // At function entry, waveBuf was loaded via TimeShiftReadSpikeWave
+        // which reads .spk verbatim (no m_cumShift applied — see the
+        // comment at line 9118 about parallel-safety).  If Phase 1
+        // (cross-chunk alignment) or Phase 2.5 already populated
+        // m_cumShift with non-zero values, those shifts are NOT reflected
+        // in waveBuf at entry.  Iter 0's cluster mean is then built from
+        // un-shifted .spk content, producing a slightly-off template,
+        // and the iter-0 xcorr lag is computed against a not-quite-right
+        // mean.
+        //
+        // Spikes whose iter-0 lag is zero (already match the off-mean)
+        // never trigger the on-the-spot .fil re-extract in the iter
+        // loop, so their waveBuf stays in the .spk state and the
+        // prior-phase shifts remain "invisible" through all iters of
+        // this function.  Final disk output is still correct (finalize
+        // re-extracts everyone), but per-iter mean quality suffers and
+        // alignment converges to a slightly-suboptimal m_cumShift.
+        //
+        // Fix: at function entry into the alignment block, for every
+        // chunk-spike with prior m_cumShift != 0, re-extract its
+        // waveform from .fil at (rawTs + prevCum - PeakSampleIndex) and
+        // overwrite waveBuf[iLocal] so iter 0's mean is built from
+        // already-shifted content.  Sample-major layout matches the
+        // .spk load.  Spikes that fail the bounds or read check stay
+        // in their .spk state — same fallback as the iter-loop body.
+        //
+        // Cost: one .fil read per pre-shifted spike at function entry,
+        // independent of the iter loop.  For sessions where most chunks
+        // have m_cumShift == 0 (the common case before Phase 1 starts
+        // operating), this is a no-op.
+        if (filFpP71 && hasBasis) {
+            int prerefreshed = 0;
+            for (int i = 0; i < nPts; ++i) {
+                const int gp = pts[static_cast<size_t>(i)];
+                if (gp < 0 || gp >= static_cast<int>(m_cumShift.size()))
+                    continue;
+                const int prevCum = m_cumShift[static_cast<size_t>(gp)];
+                if (prevCum == 0) continue;
+                const int64_t tsP = rawTsByLocal[static_cast<size_t>(i)];
+                if (tsP <= 0) continue;
+                const int64_t offP = tsP + prevCum - PeakSampleIndex;
+                if (offP < 0 ||
+                    offP + nSamplesPerSpike > sessionSamplesP71 + 1)
+                    continue;
+                if (fseeko(filFpP71,
+                           offP * static_cast<off_t>(NbTotalChannels)
+                                * static_cast<off_t>(sizeof(int16_t)),
+                           SEEK_SET) != 0) continue;
+                bool okR = true;
+                for (int s = 0; s < nSamplesPerSpike && okR; ++s) {
+                    if (fread(filRowP71.data(), sizeof(int16_t),
+                              static_cast<size_t>(NbTotalChannels),
+                              filFpP71)
+                        != static_cast<size_t>(NbTotalChannels)) {
+                        okR = false; break;
+                    }
+                    for (int c = 0; c < nChan; ++c)
+                        waveScratchP71[static_cast<size_t>(s * nChan + c)] =
+                            filRowP71[static_cast<size_t>(GroupChannelIds[c])];
+                }
+                if (!okR) continue;
+                if (isStderiv)
+                    ApplySdiffAllpairsTemporalDiff(
+                        waveScratchP71.data(), nChan, nSamplesPerSpike);
+                int16_t* dstBuf = waveBuf.data()
+                    + static_cast<ptrdiff_t>(i)
+                    * static_cast<ptrdiff_t>(waveSamples);
+                std::copy(waveScratchP71.begin(),
+                          waveScratchP71.end(), dstBuf);
+                ++prerefreshed;
+            }
+            if (prerefreshed > 0) {
+                Output("[Phase 2b m3] chunk %d patch73: pre-refreshed "
+                       "waveBuf for %d spikes with non-zero prior "
+                       "m_cumShift before iter loop\n",
+                       chunkIdx, prerefreshed);
+            }
+        }
+
         for (int iterAlign = 0; iterAlign < alignMaxIter; ++iterAlign) {
             ++alignItersRun;
             int shiftsThisIter = 0;
