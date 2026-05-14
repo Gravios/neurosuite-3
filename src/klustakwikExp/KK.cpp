@@ -9684,6 +9684,81 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         }   // end iter loop
         }   // end if (rawSourceOk) — patch72
 
+        // patch74 — post-alignment .res monotonicity check.
+        //
+        // After cumulative shifts are applied, two adjacent spikes whose
+        // original detection timestamps were close together may end up
+        // with crossed (newTs1 > newTs2 where origTs1 < origTs2).
+        // Klusters explicitly handles this case (klustersdoc.cpp lines
+        // 3922-3938) by sorting spikes by their new timestamps before
+        // writing .res, but KKExp leaves spikes in original detection
+        // order — TimeShiftFinalize writes them at their original .res
+        // slots with only the shifted-timestamp value updated.
+        //
+        // Non-monotonic .res is technically valid (most consumers index
+        // by spike number, not by sample-time), but several tools assume
+        // .res is sorted (process_smrconvert, some plotting helpers,
+        // grep-by-time analyses).  And a non-monotonic .res signals
+        // something has likely gone wrong with the alignment — large
+        // cross-detection shifts that the alignment shouldn't be
+        // producing under normal operation.
+        //
+        // This check scans this chunk's pts in their original gp order,
+        // computes the effective post-shift timestamp for each
+        // (rawTs + m_cumShift), and warns when adjacent pairs cross.
+        // It does NOT modify .res or m_cumShift — the audit purpose is
+        // visibility, not correction.  If crossings are detected and
+        // matter, the user can decide whether to: (a) tighten
+        // m_timeShiftMaxAbs to prevent them, (b) port Klusters' sort
+        // step into TimeShiftFinalize, or (c) accept them.
+        {
+            int crossings = 0;
+            int64_t maxCross = 0;
+            int firstCrossGp1 = -1, firstCrossGp2 = -1;
+            for (int i = 1; i < nPts; ++i) {
+                const int gpPrev = pts[static_cast<size_t>(i - 1)];
+                const int gpCur  = pts[static_cast<size_t>(i)];
+                if (gpPrev < 0 || gpCur < 0) continue;
+                if (gpPrev >= static_cast<int>(m_cumShift.size()) ||
+                    gpCur  >= static_cast<int>(m_cumShift.size())) continue;
+                const int64_t tsPrev = rawTsByLocal[
+                    static_cast<size_t>(i - 1)];
+                const int64_t tsCur  = rawTsByLocal[
+                    static_cast<size_t>(i)];
+                if (tsPrev <= 0 || tsCur <= 0) continue;
+                const int64_t effPrev = tsPrev
+                    + m_cumShift[static_cast<size_t>(gpPrev)];
+                const int64_t effCur  = tsCur
+                    + m_cumShift[static_cast<size_t>(gpCur)];
+                // Original order: tsPrev <= tsCur (assuming .res was
+                // monotonic to start with — true for typical sessions).
+                // Crossing: post-shift, effPrev > effCur.
+                if (effPrev > effCur) {
+                    if (crossings == 0) {
+                        firstCrossGp1 = gpPrev;
+                        firstCrossGp2 = gpCur;
+                    }
+                    const int64_t gap = effPrev - effCur;
+                    if (gap > maxCross) maxCross = gap;
+                    ++crossings;
+                }
+            }
+            if (crossings > 0) {
+                Output("[Phase 2b m3] chunk %d patch74: WARNING — "
+                       "%d adjacent-spike timestamp crossings detected "
+                       "after alignment (max gap %lld samples, "
+                       "first at gp %d → gp %d).  .res will be written "
+                       "non-monotonic by TimeShiftFinalize.  Tools that "
+                       "assume .res is sorted may misbehave; consider "
+                       "lowering m_timeShiftMaxAbs or porting Klusters' "
+                       "sortedOrder+targetPos permutation (klustersdoc."
+                       "cpp:3922-3938) into TimeShiftFinalize.\n",
+                       chunkIdx, crossings,
+                       static_cast<long long>(maxCross),
+                       firstCrossGp1, firstCrossGp2);
+            }
+        }
+
         if (filFpP71) fclose(filFpP71);
     }
 
