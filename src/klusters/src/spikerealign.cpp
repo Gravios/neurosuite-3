@@ -57,10 +57,96 @@ QString SpikeRealign::evecPath() const
 
 QString SpikeRealign::filPath()  const
 {
-    // Prefer .fil (high-pass filtered), fall back to .dat
+    // Prefer .fil (high-pass filtered) — that's what process_extractspikes
+    // produces .spk from in the standard pipeline.  Fall back to .dat only
+    // if .fil is missing; in that case the caller must verify that the
+    // .spk content matches a sample re-extraction (see verifyRawSource()),
+    // otherwise re-extracted waveforms will have completely different
+    // frequency content (DC offset, slow drift, full bandwidth) and will
+    // look "corrupted" compared to the rest of the cluster.
     QString fil = m_basePath + ".fil";
     if (QFile::exists(fil)) return fil;
     return m_basePath + ".dat";
+}
+
+// patch62 — sanity-check that the file we're about to re-extract from
+// actually produces waveforms compatible with the existing .spk content.
+// Compares ONE existing .spk waveform (sh=0, no extraction needed) to a
+// fresh read from filPath() at the same timestamp.  If the RMS difference
+// exceeds a calibration threshold, the source files are mismatched — most
+// likely .fil missing and we fell back to .dat while .spk was extracted
+// from a different .fil.  Aborts the realign with a clear error message.
+bool SpikeRealign::verifyRawSource(const QVector<long long>& globalIndices,
+                                    const QVector<QVector<short>>& waveforms,
+                                    FILE* rawFile,
+                                    int peakPos,
+                                    QString& outError)
+{
+    if (globalIndices.isEmpty() || waveforms.isEmpty()) return true;
+
+    const int nChan    = m_data->nbOfchannels();
+    const int nSamples = m_data->nbOfSampleInWaveform();
+    const int totalNbChan = m_data->getTotalNbChannels();
+    const QList<int> channelIds = m_data->getChannelIds();
+
+    // Read the first cluster spike's original timestamp.
+    QVector<long long> allRes;
+    if (!readAllRes(allRes)) return true;   // can't verify, but don't block
+    const long long gidx = globalIndices[0];
+    if (gidx - 1 >= (long long)allRes.size()) return true;
+    const long long oldTs = allRes[(int)(gidx - 1)];
+    const long long startSample = oldTs - peakPos;
+
+    const long long totalSamples =
+        QFileInfo(filPath()).size() / ((long long)sizeof(short) * totalNbChan);
+    if (startSample < 0 || startSample + nSamples > totalSamples) return true;
+
+    off_t rawOff = (off_t)startSample * totalNbChan * sizeof(short);
+    if (fseeko(rawFile, rawOff, SEEK_SET) != 0) return true;
+
+    QVector<short> rawFrame((size_t)nSamples * totalNbChan);
+    if ((int)fread(rawFrame.data(), sizeof(short),
+                   (size_t)nSamples * totalNbChan, rawFile)
+        != nSamples * totalNbChan)
+        return true;
+
+    // Compare: RMS difference between fresh-read and .spk-stored waveform.
+    const QVector<short>& spkWv = waveforms[0];
+    double sumSq = 0.0, sumRefSq = 0.0;
+    for (int s = 0; s < nSamples; ++s) {
+        for (int ci = 0; ci < nChan; ++ci) {
+            short fresh = rawFrame[s * totalNbChan + channelIds[ci]];
+            short spk   = spkWv[s * nChan + ci];
+            double d = (double)fresh - (double)spk;
+            sumSq    += d * d;
+            sumRefSq += (double)spk * (double)spk;
+        }
+    }
+    const double rmsDiff = std::sqrt(sumSq / (nSamples * nChan));
+    const double rmsRef  = std::sqrt(sumRefSq / (nSamples * nChan));
+
+    // Quantisation can produce small differences (rounding in the original
+    // extraction).  A factor-of-2 disagreement signals a fundamentally
+    // different source (e.g. unfiltered vs filtered).  RMS-relative > 0.5
+    // is the cutoff — generous enough to allow integer rounding, tight
+    // enough to catch source mismatch.
+    if (rmsRef > 1.0 && rmsDiff > 0.5 * rmsRef) {
+        outError = QString(
+            "Re-extracted waveform does not match .spk content "
+            "(RMS difference = %1, reference RMS = %2).\n\n"
+            "This usually means the original .spk was extracted from .fil "
+            "(filtered) but spikerealign is reading from .dat (unfiltered), "
+            "because .fil is missing.\n\n"
+            "Source file in use: %3\n\n"
+            "Generate the .fil file (e.g. via process_filter / ndm_filter) "
+            "and retry, or accept that re-extracted waveforms will not "
+            "match the rest of the cluster.")
+            .arg(rmsDiff, 0, 'f', 1)
+            .arg(rmsRef,  0, 'f', 1)
+            .arg(filPath());
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -536,8 +622,27 @@ RealignResult SpikeRealign::run()
     // ------------------------------------------------------------------
     // 8. Main loop over spikes in cluster
     // ------------------------------------------------------------------
-    const int totalSamples = (int)(QFileInfo(filPath()).size()
-                                   / (sizeof(short) * totalNbChan));
+    // patch62 — totalSamples was previously int, overflows at ~18h × 32kHz
+    // × 64 channels.  Use long long throughout for future-proofing.
+    const long long totalSamples = QFileInfo(filPath()).size()
+                                 / ((long long)sizeof(short) * totalNbChan);
+
+    // patch62 — verify the raw file we'll re-extract from actually
+    // produces waveforms compatible with the existing .spk content.
+    // Catches the .fil-missing → .dat-fallback case where re-extracted
+    // waveforms have wrong frequency content and look "corrupted".
+    {
+        QString verifyError;
+        if (!verifyRawSource(globalIndices, waveforms, rawFile, peakPos,
+                             verifyError)) {
+            fclose(rawFile);
+            result.success = false;
+            result.errorMessage = verifyError;
+            return result;
+        }
+        // Rewind so the main loop starts from a known seek offset.
+        fseeko(rawFile, 0, SEEK_SET);
+    }
 
     // Collect channels for this electrode group from data
     // (stored in Data but not publicly accessible; we use the features layout
@@ -583,13 +688,21 @@ RealignResult SpikeRealign::run()
                             newWv[s * nChan + ci] =
                                 rawFrame[s * totalNbChan + channelIds[ci]];
                 } else {
-                    newWv = waveforms[si];  // fallback: keep original
+                    // patch62 — fread failure (disk error / truncated raw
+                    // file).  Previously only `newWv` and `newTs` were
+                    // reverted; `sh` stayed non-zero so the outer block
+                    // entered write-back with no-op data (rewriting the
+                    // .spk slot with the same bytes and incrementing
+                    // nRealigned spuriously).  Reset sh=0 like the
+                    // canExtract=false branch does.
+                    newWv = waveforms[si];
                     newTs = oldTs;
+                    sh    = 0;
                 }
             } else {
                 newWv = waveforms[si];
                 newTs = oldTs;
-                sh = 0;
+                sh    = 0;
             }
 
             if (sh != 0) {
@@ -618,37 +731,52 @@ RealignResult SpikeRealign::run()
 
                 result.nRealigned++;
 
-                // -- g. Bubble-sort: if out of order, swap neighbours --
-                // Check the spike immediately before and after in the global array.
-                // We only need to swap with its immediate neighbours because the
-                // maximum shift is small (maxShift samples).
+                // -- g. Bubble-sort the shifted spike into its correct position.
+                //
+                // patch62 — fix: we MUST update vecIdx/gidx after each swap to
+                // continue tracking OUR moved spike, not the displaced neighbour.
+                // The previous implementation kept vecIdx fixed and ended up
+                // looking at the neighbour's timestamp after a swap, terminating
+                // the sort early.  For 1-sample shifts in dense spike trains
+                // one swap usually sufficed; for ±2/±3 crossings the .res file
+                // could be left with multi-sample out-of-order regions.
+                //
+                // After a swap with idxB, our spike now occupies idxB's slot.
+                // Update curVec/curGidx accordingly and loop until our spike
+                // is sandwiched between predecessors with smaller timestamps
+                // and successors with larger ones.
+                int       curVec  = vecIdx;
+                long long curGidx = gidx;
                 bool swapped = true;
                 while (swapped) {
                     swapped = false;
                     // Check with previous spike
-                    if (vecIdx > 0 && allRes[vecIdx] < allRes[vecIdx - 1]) {
-                        long long idxB = gidx - 1;
-                        swapSpikes(gidx, idxB, allRes, allClu, nClustersHeader);
-                        // Also swap fet lines
-                        if (vecIdx < fetLines.size() - 1 &&
-                            vecIdx - 1 + 1 < fetLines.size())
-                            fetLines.swapItemsAt(vecIdx + 1, vecIdx);
-                        // Swap in-memory spikesByCluster
-                        m_data->swapSpikesByClusterRows(gidx, idxB);
+                    if (curVec > 0 && allRes[curVec] < allRes[curVec - 1]) {
+                        long long idxB = curGidx - 1;
+                        swapSpikes(curGidx, idxB, allRes, allClu, nClustersHeader);
+                        if (curVec - 1 >= 0 && curVec < fetLines.size())
+                            fetLines.swapItemsAt(curVec, curVec + 1 - 1);
+                        m_data->swapSpikesByClusterRows(curGidx, idxB);
                         result.nSwapped++;
+                        // OUR spike now lives at curVec-1.  Track it there.
+                        curVec  -= 1;
+                        curGidx -= 1;
                         swapped = true;
-                        break;  // restart check after swap; positions changed
+                        continue;
                     }
                     // Check with next spike
-                    if (vecIdx < totalSpikes - 1 && allRes[vecIdx] > allRes[vecIdx + 1]) {
-                        long long idxB = gidx + 1;
-                        swapSpikes(gidx, idxB, allRes, allClu, nClustersHeader);
-                        if (vecIdx + 1 < fetLines.size() - 1)
-                            fetLines.swapItemsAt(vecIdx + 1, vecIdx + 2);
-                        m_data->swapSpikesByClusterRows(gidx, idxB);
+                    if (curVec < totalSpikes - 1 && allRes[curVec] > allRes[curVec + 1]) {
+                        long long idxB = curGidx + 1;
+                        swapSpikes(curGidx, idxB, allRes, allClu, nClustersHeader);
+                        if (curVec + 2 < fetLines.size())
+                            fetLines.swapItemsAt(curVec + 1, curVec + 2);
+                        m_data->swapSpikesByClusterRows(curGidx, idxB);
                         result.nSwapped++;
+                        // OUR spike now lives at curVec+1.  Track it there.
+                        curVec  += 1;
+                        curGidx += 1;
                         swapped = true;
-                        break;
+                        continue;
                     }
                 }
             }

@@ -4,9 +4,12 @@ project(klusters-src)
 # Sources
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# Shared xcorr kernel sources (live in src/shared/xcorr/ — no Qt dependency)
+# Shared xcorr kernel sources (live in src/libklustersshared/src/xcorr/ —
+# no Qt dependency).  Relocated from src/shared/xcorr/ in patch66 to
+# consolidate with libklustersshared and eliminate the duplicate that
+# previously lived in src/klusters/src/realign_xcorr_*.
 # ---------------------------------------------------------------------------
-set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../shared/xcorr")
+set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../libklustersshared/src/xcorr")
 
 set(klusters_SRCS
     autosavethread.cpp
