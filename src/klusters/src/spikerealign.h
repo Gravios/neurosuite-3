@@ -136,6 +136,16 @@ private:
                          const PcaEigenvectors& pca,
                          QVector<double>& features);
 
+    // patch62 — sanity-check that filPath()'s content matches the existing
+    // .spk (catches .fil-missing → .dat-fallback corruption).  Returns
+    // true on match (or on inability to verify); false + outError on
+    // mismatch.
+    bool verifyRawSource(const QVector<long long>& globalIndices,
+                         const QVector<QVector<short>>& waveforms,
+                         FILE* rawFile,
+                         int peakPos,
+                         QString& outError);
+
     bool readAllRes(QVector<long long>& timestamps);
     bool writeAllRes(const QVector<long long>& timestamps);
 

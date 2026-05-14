@@ -180,12 +180,13 @@ else()
 endif()
 
 # =============================================================================
-# Shared xcorr kernel (lives in src/shared/xcorr — no Qt/yaml dependency)
+# Shared xcorr kernel (lives in src/libklustersshared/src/xcorr — no Qt/yaml
+# dependency).  Relocated from src/shared/xcorr in patch66.
 # The OMP + dispatch sources go into every executable via _cpu_srcs.
 # GPU backend sources are added per-target below, matching how KK_cuda.cu
 # and KK_hip.cpp are handled.
 # =============================================================================
-set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../shared/xcorr")
+set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../libklustersshared/src/xcorr")
 
 # =============================================================================
 # Common sources and dependencies

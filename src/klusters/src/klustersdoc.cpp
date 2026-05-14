@@ -3733,7 +3733,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         int rc = XcorrDispatch::compute(
             xcorrWav, xcorrTmpl,
             static_cast<int>(N), nChan, nSamp,
-            maxShift, minScore, sh.data(), sc.data());
+            maxShift, minScore, 0.005f, sh.data(), sc.data());
         if (rc != 0) {
             log << "ERROR: XcorrDispatch rc=" << rc << "\n";
             return false;
@@ -3851,7 +3851,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         XcorrDispatch::compute(
             scoreWav, scoreTmpl,
             static_cast<int>(N), nChan, nSamp,
-            0, 0.0f, dummySh.data(), allScores.data());
+            0, 0.0f, 0.005f, dummySh.data(), allScores.data());
 
         float scoreMin =  2.0f, scoreMax = -2.0f, scoreSum = 0.0f;
         int   nBelow   = 0;
