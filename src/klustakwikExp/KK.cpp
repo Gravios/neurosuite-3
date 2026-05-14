@@ -9136,35 +9136,68 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     }
 
     // ──── Final per-cluster alignment (post-split-iterations) ────────────
-    // One single pass on the converged labels, using the proven shared
-    // normalised-xcorr library (XcorrDispatch::compute) that Klusters'
-    // interactive realignSpikes calls.  Why one pass:
-    //  - cluster mean is computed from .spk reads which don't change
-    //    inside this chunk loop (no .fil re-extract mid-chunk for
-    //    parallel-safety), so a second pass would compute identical
-    //    lags and either double-shift or cap-clamp;
-    //  - one Klusters realignSpikes pass on a problematic cluster is
-    //    empirically sufficient to collapse the within-cluster waveform
-    //    variance — see the sirotaA-jg-000005 cluster 197 comparison.
     //
-    // Algorithm (per cluster c):
-    //   1. Build channel-major cluster mean tmpl[ch * nSamples + s] by
-    //      averaging the cluster's .spk waveforms (int16, with
-    //      truncation rather than round to match Klusters' meanWav
-    //      build at KK.cpp:3537-3539).
-    //   2. Repack the cluster's .spk waveforms from sample-major
-    //      .spk layout (waveBuf[i*waveSamples + s*nChan + ch]) into
-    //      the channel-major XcorrDispatch layout
-    //      (xcWfm[(sp*nChan + ch)*nSamples + s]).
-    //   3. XcorrDispatch::compute returns optimal lag and normalised
-    //      score per spike.  Shifts below ResidualPCAMinScore default
-    //      to lag = 0 (left alone) — matches Klusters' minScore gate.
-    //   4. Apply lag to m_cumShift[gp] additively, with the same cap
-    //      check (|new shift| ≤ m_timeShiftMaxAbs) used everywhere
-    //      else.
-    int finalAligned = 0;
-    int finalLowScore = 0;
-    int finalCapClamped = 0;
+    // patch71 — Iterative on-the-spot xcorr alignment.
+    //
+    // Replaces the prior single-pass-with-cap-rejection design with an
+    // iterative one that re-extracts each spike's waveform from .fil at
+    // its updated position IMMEDIATELY after each xcorr step, and
+    // re-projects features into Data[] in the same place.  Three things
+    // changed from the original:
+    //
+    //   (a) DROP CAP-REJECTION on the cumulative shift.  The previous
+    //       version refused any shift whose accumulated magnitude would
+    //       exceed m_timeShiftMaxAbs (default 3), leaving spikes that
+    //       needed larger total motion STUCK at their original
+    //       mis-detected positions.  Visible result: ±5-sample
+    //       within-cluster temporal dispersion after KlustaKwikExp
+    //       completes.  Per-iter lag is naturally bounded by xcorr's
+    //       maxShift parameter; cumulative motion across iters is
+    //       unbounded by design — a spike needing 5 samples can get
+    //       +3 in iter 0, then +2 in iter 1, then 0 in iter 2.  The
+    //       only safety gate is the extraction-window bounds check
+    //       (off must fit within sessionSamples).
+    //
+    //   (b) RE-EXTRACT AND RE-FEATURIZE ON THE SPOT.  After updating
+    //       m_cumShift[gp], read the new waveform from .fil at
+    //       (rawTs + cumShift - PeakSampleIndex), apply the stderiv
+    //       transform if the pipeline is .pcaD/.spkD, overwrite
+    //       waveBuf[i_local] so the NEXT iter's xcorr sees the
+    //       re-extracted waveform, and project through the canonical
+    //       PCA basis to update Data[gp].  This is what makes "merge
+    //       toward the centre" converge: subsequent iters see the
+    //       already-shifted waveforms and the cluster mean re-built
+    //       from them is well-centred on PeakSampleIndex.
+    //
+    //   (c) USE INT64 rawTs from .res, NOT float-recovery from
+    //       Data[timeDim].  RefeaturizeFromShifts at lines 2818-2822
+    //       explicitly warns that recovering rawTs by inverse-
+    //       normalising the float feature introduces up to ±13 samples
+    //       of error for late-session spikes.  For a 1-hour 32 kHz
+    //       session that error is ±~7 samples on the last spike —
+    //       larger than the per-iter maxShift, so any code relying on
+    //       float recovery never converges.  We pre-load int64 rawTs
+    //       for every chunk-spike from .res ONCE at function entry and
+    //       index by local i_local.
+    //
+    // "Merge toward the centre": the existing patch64 template pre-
+    // alignment forces every cluster's mean template peak to land on
+    // PeakSampleIndex (the waveform-window centre).  When two clusters
+    // would merge (similar waveforms), both pre-aligned templates land
+    // on the same centre; xcorr pulls both clusters' spikes there.
+    // Clusters therefore merge AT the centre rather than at one
+    // cluster's drifted peak.
+    //
+    // Disk writes (.spk / .fet / .res .pending) remain deferred to the
+    // existing TimeShiftFinalize → RefeaturizeFromShifts path.  This
+    // function only updates in-memory state (waveBuf, Data[], m_cumShift)
+    // because the parallel chunk loop would race on the global disk
+    // files otherwise.  TimeShiftFinalize is single-threaded and reads
+    // the final m_cumShift values to do the actual disk write.
+    int finalAligned     = 0;
+    int finalLowScore    = 0;
+    int finalOutOfBounds = 0;
+    int alignItersRun    = 0;
     {
         // Re-collect alive non-noise cluster ids from final labels
         std::vector<int> finalIds;
@@ -9181,8 +9214,70 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         std::vector<int16_t> xcWfm;
         std::vector<int>     xcShifts;
         std::vector<float>   xcScores;
-        const float minScore  = ResidualPCAMinScore;
-        const int   maxShift  = m_timeShiftMaxAbs;
+        const float minScore = ResidualPCAMinScore;
+        const int   maxShift = m_timeShiftMaxAbs;
+
+        // ── Re-extract / re-featurize setup ──────────────────────────────
+        char filPathP71[STRLEN + 16] = {0};
+        pickInputPath(filPathP71, sizeof(filPathP71), FileBase, "fil", ElecNo);
+        FILE* filFpP71 = fopen(filPathP71, "rb");
+
+        const float   sessionSamplesF   = timeRawMax - timeRawMin;
+        const int64_t sessionSamplesP71 = static_cast<int64_t>(
+            std::max(0.0f, sessionSamplesF));
+        const int     timeDimIdxP71     = nDims - 1;
+
+        const bool hasBasis = m_timeShiftBasis.valid() &&
+                              !m_timeShiftBasis.meanShifted.empty();
+        const int  candCanonical = hasBasis ? m_timeShiftBasis.N : 0;
+        const int  basisNComp    = hasBasis ? m_timeShiftBasis.nComp : 0;
+        const int  basisData2use = hasBasis ? m_timeShiftBasis.data2use : 0;
+        const int  basisRecShift = hasBasis ? m_timeShiftBasis.recShift : 0;
+        const int  basisNChan    = hasBasis ? m_timeShiftBasis.nChan : nChan;
+        const bool basisCentered = hasBasis ? m_timeShiftBasis.isCentered : false;
+        const bool isStderiv     = hasBasis ? m_timeShiftBasis.isStderiv : false;
+        const int  nPCAFeatsP71  = hasBasis ? basisNChan * basisNComp : 0;
+
+        // Pre-load int64 rawTs for this chunk's pts from .res.  Indexed
+        // by local i_local.  Avoids the ±~7 sample float-precision error
+        // (see paragraph (c) above).
+        std::vector<int64_t> rawTsByLocal(static_cast<size_t>(nPts), 0);
+        {
+            char resPathP71[STRLEN + 16] = {0};
+            snprintf(resPathP71, sizeof(resPathP71),
+                     "%s.res.%d", FileBase, ElecNo);
+            FILE* resFpP71 = fopen(resPathP71, "rb");
+            if (resFpP71) {
+                for (int i = 0; i < nPts; ++i) {
+                    const int gp = pts[static_cast<size_t>(i)];
+                    if (gp < 0) continue;
+                    if (fseeko(resFpP71,
+                               static_cast<off_t>(gp)
+                                 * static_cast<off_t>(sizeof(int64_t)),
+                               SEEK_SET) != 0) continue;
+                    int64_t ts = 0;
+                    if (fread(&ts, sizeof(int64_t), 1, resFpP71) == 1
+                            && ts > 0) {
+                        rawTsByLocal[static_cast<size_t>(i)] = ts;
+                    }
+                }
+                fclose(resFpP71);
+            }
+        }
+
+        // Iteration bound: collapses to 1 if we can't refresh waveBuf
+        // (no .fil or no PCA basis), where iterating is pointless.
+        const int alignMaxIter = (filFpP71 && hasBasis)
+            ? std::clamp(ResidualPCAIter, 2, 10)
+            : 1;
+
+        // Scratch row buffers reused across iterations
+        std::vector<int16_t> filRowP71(static_cast<size_t>(NbTotalChannels));
+        std::vector<int16_t> waveScratchP71(static_cast<size_t>(waveSamples));
+
+        for (int iterAlign = 0; iterAlign < alignMaxIter; ++iterAlign) {
+            ++alignItersRun;
+            int shiftsThisIter = 0;
 
         for (int cid : finalIds) {
             members.clear();
@@ -9206,26 +9301,9 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 tmpl[static_cast<size_t>(e)] = static_cast<int16_t>(
                     accCh[static_cast<size_t>(e)] / Nc);
 
-            // patch64 — pre-align the template to PeakSampleIndex.
-            //
-            // Without this, the template's actual peak is wherever the
-            // cluster's MEAN peaks (typically near PeakSampleIndex but
-            // not exactly on it, due to initial spike-detection jitter).
-            // xcorr would push every spike toward that mean's peak rather
-            // than toward the configured PeakSampleIndex, and a fraction
-            // of spikes whose required shift exceeds m_timeShiftMaxAbs
-            // would be rejected outright (line 9249), staying at their
-            // original mis-detected positions.  The visible symptom is
-            // ±5-sample temporal dispersion in the cluster's spikes
-            // after KlustaKwikExp finishes.
-            //
-            // Klusters' interactive spikerealign.cpp does this same step
-            // at lines 419-438; we mirror the algorithm here.  Channel
-            // layout differs: spikerealign.cpp's meanWv is sample-major
-            // (s*nChan + ch); our tmpl is channel-major
-            // (ch*nSamplesPerSpike + s) since that's what XcorrDispatch
-            // expects.  Account for that in both the peak search and the
-            // shift.
+            // patch64 — pre-align the template to PeakSampleIndex (so
+            // xcorr pulls every spike toward the window centre, and any
+            // two clusters that would merge converge at the same point).
             if (PeakSampleIndex >= 0 && PeakSampleIndex < nSamplesPerSpike) {
                 int    meanPeakSamp = PeakSampleIndex;
                 double bestAmp      = -1.0;
@@ -9238,8 +9316,6 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 }
                 const int tmplShift = PeakSampleIndex - meanPeakSamp;
                 if (tmplShift != 0) {
-                    // Shift channel-major tmpl: new[ch, s] = old[ch, s - tmplShift]
-                    // Out-of-bounds source samples → 0 (zero-pad edges).
                     std::vector<int16_t> shifted(static_cast<size_t>(waveSamples), 0);
                     for (int ch = 0; ch < nChan; ++ch) {
                         for (int s = 0; s < nSamplesPerSpike; ++s) {
@@ -9267,10 +9343,6 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
 
             xcShifts.assign(static_cast<size_t>(Nc), 0);
             xcScores.assign(static_cast<size_t>(Nc), 0.0f);
-            // XcorrDispatch returns normalised xcorr in [-1,1]; shifts
-            // below minScore stay at 0 (no realignment).  Returns 0
-            // on success; failures are not catastrophic — left-shifts
-            // simply stay 0 and the cluster's spikes aren't realigned.
             const int rc = XcorrDispatch::compute(
                 xcWfm.data(), tmpl.data(),
                 Nc, nChan, nSamplesPerSpike,
@@ -9278,9 +9350,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 xcShifts.data(), xcScores.data());
             (void)rc;
 
-            // Apply lags to m_cumShift, with the global cap.  The lag
-            // sign convention matches m_cumShift: positive lag = spike
-            // late vs. template = read further into .fil = positive sh.
+            // Apply each non-zero lag on the spot.
             for (int sp = 0; sp < Nc; sp++) {
                 const int lag = xcShifts[static_cast<size_t>(sp)];
                 if (lag == 0) {
@@ -9288,20 +9358,134 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                         ++finalLowScore;
                     continue;
                 }
-                const int gp = pts[static_cast<size_t>(members[sp])];
+                const int iLocal = members[static_cast<size_t>(sp)];
+                const int gp     = pts[static_cast<size_t>(iLocal)];
                 if (gp < 0 || gp >= static_cast<int>(m_cumShift.size()))
                     continue;
-                const int curr = m_cumShift[static_cast<size_t>(gp)];
-                const int wb   = curr + lag;
-                if (std::abs(wb) > m_timeShiftMaxAbs) {
-                    ++finalCapClamped;
+                const int prevCum = m_cumShift[static_cast<size_t>(gp)];
+                const int newCum  = prevCum + lag;
+
+                // Fast path when re-extract is unavailable: just bump
+                // m_cumShift and let TimeShiftFinalize handle the disk
+                // catch-up.  No cap-reject regardless.
+                if (!filFpP71 || !hasBasis) {
+                    m_cumShift[static_cast<size_t>(gp)] = newCum;
+                    ++finalAligned;
+                    ++totalRealigned;
+                    ++shiftsThisIter;
                     continue;
                 }
-                m_cumShift[static_cast<size_t>(gp)] = wb;
+
+                // Use precise int64 rawTs from .res (no float recovery).
+                const int64_t rawTsInt = rawTsByLocal[static_cast<size_t>(iLocal)];
+                if (rawTsInt <= 0) {
+                    // No valid .res entry — skip rather than fall back
+                    // to lossy float recovery.
+                    ++finalOutOfBounds;
+                    continue;
+                }
+                const int64_t off = rawTsInt + newCum - PeakSampleIndex;
+                if (off < 0 ||
+                    off + nSamplesPerSpike > sessionSamplesP71 + 1) {
+                    // Window off the recording — skip without committing.
+                    ++finalOutOfBounds;
+                    continue;
+                }
+
+                // Tentative commit; reverted on .fil read failure.
+                m_cumShift[static_cast<size_t>(gp)] = newCum;
+
+                // Read sample-major waveform from .fil.
+                bool readOk = true;
+                if (fseeko(filFpP71,
+                           off * static_cast<off_t>(NbTotalChannels)
+                               * static_cast<off_t>(sizeof(int16_t)),
+                           SEEK_SET) != 0) {
+                    readOk = false;
+                }
+                for (int s = 0; s < nSamplesPerSpike && readOk; ++s) {
+                    if (fread(filRowP71.data(), sizeof(int16_t),
+                              static_cast<size_t>(NbTotalChannels), filFpP71)
+                        != static_cast<size_t>(NbTotalChannels)) {
+                        readOk = false; break;
+                    }
+                    for (int c = 0; c < nChan; ++c)
+                        waveScratchP71[static_cast<size_t>(s * nChan + c)] =
+                            filRowP71[static_cast<size_t>(GroupChannelIds[c])];
+                }
+                if (!readOk) {
+                    m_cumShift[static_cast<size_t>(gp)] = prevCum;
+                    ++finalOutOfBounds;
+                    continue;
+                }
+
+                if (isStderiv) {
+                    ApplySdiffAllpairsTemporalDiff(
+                        waveScratchP71.data(), nChan, nSamplesPerSpike);
+                }
+
+                // Overwrite waveBuf so next iter's xcorr sees the
+                // re-extracted waveform (sample-major, matching the
+                // original TimeShiftReadSpikeWave load).
+                int16_t* dstBuf = waveBuf.data() +
+                                  static_cast<ptrdiff_t>(iLocal)
+                                * static_cast<ptrdiff_t>(waveSamples);
+                std::copy(waveScratchP71.begin(),
+                          waveScratchP71.end(), dstBuf);
+
+                // Re-project through the canonical (cand=N) PCA basis
+                // and update Data[gp] features in place.  Eigenvector
+                // indexing matches RefeaturizeFromShifts:
+                //     ev[k * data2use + s]   (col-major)
+                {
+                    float* dataRow = Data.m_Data + gp * nDims;
+                    const auto& meanCanon = m_timeShiftBasis.meanShifted[
+                        static_cast<size_t>(candCanonical)];
+                    const auto& evecCanon = m_timeShiftBasis.eigvecShifted[
+                        static_cast<size_t>(candCanonical)];
+                    for (int ch = 0; ch < basisNChan; ++ch) {
+                        const auto& mu = meanCanon[static_cast<size_t>(ch)];
+                        const auto& ev = evecCanon[static_cast<size_t>(ch)];
+                        for (int k = 0; k < basisNComp; ++k) {
+                            double val = 0.0;
+                            for (int s = 0; s < basisData2use; ++s) {
+                                const int sIdx = basisRecShift + s;
+                                double xraw = static_cast<double>(
+                                    waveScratchP71[static_cast<size_t>(
+                                        sIdx * nChan + ch)]);
+                                if (basisCentered)
+                                    xraw -= mu[static_cast<size_t>(s)];
+                                val += ev[static_cast<size_t>(
+                                    k * basisData2use + s)] * xraw;
+                            }
+                            const int featIdx = ch * basisNComp + k;
+                            if (featIdx < nPCAFeatsP71 &&
+                                featIdx < static_cast<int>(dimMin_.size())) {
+                                dataRow[featIdx] =
+                                    (static_cast<float>(val) - dimMin_[featIdx])
+                                    * dimRange_[featIdx];
+                            }
+                        }
+                    }
+                    if (sessionSamplesF > 0.0f) {
+                        dataRow[timeDimIdxP71] =
+                            (static_cast<float>(rawTsInt + newCum) - timeRawMin)
+                            / sessionSamplesF;
+                    }
+                }
+
                 ++finalAligned;
                 ++totalRealigned;
+                ++shiftsThisIter;
             }
-        }
+        }   // end cluster loop
+
+            // Converged: nobody moved this iter (every remaining shift
+            // is below minScore or out-of-bounds).  Stop early.
+            if (shiftsThisIter == 0) break;
+        }   // end iter loop
+
+        if (filFpP71) fclose(filFpP71);
     }
 
     // Write final labels back into the sub-KK and refresh its bookkeeping.
@@ -9324,10 +9508,10 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     // Per-chunk final-alignment summary — bookend to the chunk-START
     // banner so each chunk has a paired START/ALIGN/END trio in the log.
     Output("[Phase 2b m3] chunk %d ALIGN: %d spike realigns (xcorr >= %.2f); "
-           "skipped: %d low-score, %d cap-clamped\n",
+           "skipped: %d low-score, %d out-of-bounds; ran %d align iters\n",
            chunkIdx, finalAligned,
            static_cast<double>(ResidualPCAMinScore),
-           finalLowScore, finalCapClamped);
+           finalLowScore, finalOutOfBounds, alignItersRun);
     Output("[Phase 2b m3] chunk %d END: %d total splits, %d total realigns, "
            "ran %d/%d iters\n",
            chunkIdx, totalSplitsApplied, totalRealigned,
