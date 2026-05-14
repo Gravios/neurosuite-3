@@ -9275,6 +9275,122 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         std::vector<int16_t> filRowP71(static_cast<size_t>(NbTotalChannels));
         std::vector<int16_t> waveScratchP71(static_cast<size_t>(waveSamples));
 
+        // patch72 — verify that .fil content matches .spk before any
+        // alignment work.
+        //
+        // Ports the verifyRawSource check from Klusters' patch69
+        // (klustersdoc.cpp:4046-4188) into KKExp.  Without it, a stale
+        // .fil (e.g. recompiled with different filter settings, or
+        // overwritten by a later pipeline stage) would silently corrupt
+        // .spk on every shifted spike during the patch71 on-the-spot
+        // re-extract and again during TimeShiftFinalize's
+        // RefeaturizeFromShifts re-projection.
+        //
+        // Algorithm: pick the first chunk-spike whose extraction window
+        // fits inside the .fil, read its waveform at the spike's
+        // ORIGINAL timestamp (rawTsByLocal, no m_cumShift applied yet),
+        // apply the stderiv transform if .spk is in stderiv format,
+        // compare to that spike's existing waveBuf slot (loaded from
+        // .spk at function entry).  RMS difference exceeding 50% of the
+        // .spk content's RMS indicates the two raw sources do not
+        // match — abort this chunk's alignment to prevent further
+        // corruption.
+        //
+        // Skipped when .fil is unavailable or no spike's window fits
+        // inside the recording (extremely unusual; would only happen
+        // if every chunk-spike sits at a file boundary).
+        bool rawSourceOk = true;
+        if (filFpP71) {
+            bool verifyDone = false;
+            for (int iV = 0; iV < nPts && !verifyDone; ++iV) {
+                const int64_t tsV = rawTsByLocal[static_cast<size_t>(iV)];
+                if (tsV <= 0) continue;
+                const int64_t startV = tsV - PeakSampleIndex;
+                if (startV < 0 ||
+                    startV + nSamplesPerSpike > sessionSamplesP71 + 1) continue;
+                if (fseeko(filFpP71,
+                           startV * static_cast<off_t>(NbTotalChannels)
+                                  * static_cast<off_t>(sizeof(int16_t)),
+                           SEEK_SET) != 0) continue;
+
+                bool readVOk = true;
+                for (int s = 0; s < nSamplesPerSpike && readVOk; ++s) {
+                    if (fread(filRowP71.data(), sizeof(int16_t),
+                              static_cast<size_t>(NbTotalChannels),
+                              filFpP71)
+                        != static_cast<size_t>(NbTotalChannels)) {
+                        readVOk = false; break;
+                    }
+                    for (int c = 0; c < nChan; ++c)
+                        waveScratchP71[static_cast<size_t>(s * nChan + c)] =
+                            filRowP71[static_cast<size_t>(GroupChannelIds[c])];
+                }
+                if (!readVOk) continue;
+
+                if (isStderiv)
+                    ApplySdiffAllpairsTemporalDiff(
+                        waveScratchP71.data(), nChan, nSamplesPerSpike);
+
+                // Compare to waveBuf[iV * waveSamples ..] which holds the
+                // .spk contents in the same sample-major layout.
+                const int16_t* refSpk = waveBuf.data()
+                    + static_cast<ptrdiff_t>(iV)
+                    * static_cast<ptrdiff_t>(waveSamples);
+                double sumDiff2 = 0.0, sumRef2 = 0.0;
+                for (int e = 0; e < waveSamples; ++e) {
+                    const double dv =
+                        static_cast<double>(waveScratchP71[
+                            static_cast<size_t>(e)])
+                      - static_cast<double>(refSpk[static_cast<size_t>(e)]);
+                    sumDiff2 += dv * dv;
+                    sumRef2  += static_cast<double>(refSpk[
+                        static_cast<size_t>(e)])
+                              * static_cast<double>(refSpk[
+                        static_cast<size_t>(e)]);
+                }
+                const double rmsRatio = (sumRef2 > 0.0)
+                    ? std::sqrt(sumDiff2 / sumRef2)
+                    : 0.0;
+
+                if (rmsRatio > 0.5) {
+                    Output("[Phase 2b m3] chunk %d patch72: RAW SOURCE "
+                           "MISMATCH — .fil content does not match .spk\n"
+                           "  verify spike local idx %d (gp=%d, ts=%lld)\n"
+                           "  RMS difference: %.1f%% of .spk content "
+                           "(threshold 50%%)\n"
+                           "  Likely cause: .spk was extracted from a "
+                           "different raw source than the .fil currently "
+                           "on disk (e.g. .fil overwritten by a later "
+                           "pipeline stage, or filter settings changed).\n"
+                           "  Aborting alignment for this chunk to "
+                           "prevent further .spk corruption.  Re-extract "
+                           "waveforms with process_extractspikes before "
+                           "re-running.\n",
+                           chunkIdx, iV,
+                           pts[static_cast<size_t>(iV)],
+                           static_cast<long long>(tsV),
+                           rmsRatio * 100.0);
+                    rawSourceOk = false;
+                } else {
+                    Output("[Phase 2b m3] chunk %d patch72: raw source "
+                           "verified (verify spike %d, RMS diff %.1f%%)\n",
+                           chunkIdx, iV, rmsRatio * 100.0);
+                }
+                verifyDone = true;
+            }
+            if (!verifyDone) {
+                Output("[Phase 2b m3] chunk %d patch72: WARNING — could "
+                       "not verify raw source (no spike's window fit "
+                       "within .fil); proceeding without verification\n",
+                       chunkIdx);
+            }
+        }
+
+        // Skip the iteration loop entirely if raw-source verification
+        // tripped.  m_cumShift values from prior phases stay untouched;
+        // TimeShiftFinalize will still process them, but at least we
+        // don't compound the damage by shifting from a wrong source.
+        if (rawSourceOk) {
         for (int iterAlign = 0; iterAlign < alignMaxIter; ++iterAlign) {
             ++alignItersRun;
             int shiftsThisIter = 0;
@@ -9484,6 +9600,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
             // is below minScore or out-of-bounds).  Stop early.
             if (shiftsThisIter == 0) break;
         }   // end iter loop
+        }   // end if (rawSourceOk) — patch72
 
         if (filFpP71) fclose(filFpP71);
     }
