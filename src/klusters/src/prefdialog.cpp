@@ -93,6 +93,9 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->useWhiteColorPrinting, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectFeaturesCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->autoSelectNFeaturesSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
+    // patch76 — mean-subtracted sub-dimensional recluster checkbox
+    connect(prefGeneral->reclusterMeanSubtractedSubdimCheckBox,
+            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->realignThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefGeneral->realignIterationsSpinBox, &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefGeneral->realignMaxShiftSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
@@ -143,6 +146,7 @@ void PrefDialog::updateDialog() {
   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
   prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
   prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
+  prefGeneral->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());  // patch76
   prefGeneral->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
   prefGeneral->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
   enableButtonApply(false);   // disable apply button
@@ -173,6 +177,7 @@ void PrefDialog::updateConfiguration(){
   configuration().setUseWhiteColorDuringPrinting(prefGeneral->useWhiteColorDuringPrinting());
   configuration().setAutoSelectFeatures(prefGeneral->getAutoSelectFeatures());
   configuration().setAutoSelectNFeatures(prefGeneral->getAutoSelectNFeatures());
+  configuration().setReclusterMeanSubtractedSubdim(prefGeneral->getReclusterMeanSubtractedSubdim());  // patch76
   configuration().setTemplateThresholdMin(prefGeneral->getTemplateThresholdMin());
   configuration().setTemplateThresholdMax(prefGeneral->getTemplateThresholdMax());
   enableButtonApply(false);   // disable apply button
@@ -203,6 +208,7 @@ void PrefDialog::slotDefault() {
    prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
    prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
    prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
+   prefGeneral->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());  // patch76
 
    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
    prefWaveformView->setGain(configuration().getGainDefault());

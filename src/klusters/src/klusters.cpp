@@ -4010,8 +4010,63 @@ void KlustersApp::slotRecluster(){
     reclusteringFetFileName += QLatin1String(".fet.");
     reclusteringFetFileName += electrodeGroupID;
 
+    // patch76 — Mean-subtracted sub-dimensional path takes precedence
+    // when the user has opted into it AND exactly one non-noise cluster
+    // is being reclustered.  Generates a small K-component residual-PCA
+    // feature file in place of the canonical full-feature .fet, and
+    // overrides %features to match (K '1's + '0' for time).  For all
+    // other cases (multi-cluster recluster, or mode off) we fall through
+    // to the original createFeatureFile path below.
+    bool usedSubdim = false;
+    if (configuration().getReclusterMeanSubtractedSubdim() &&
+        clustersToRecluster.size() == 1 &&
+        clustersToRecluster.first() > 1) {
+        const int singleCid = clustersToRecluster.first();
+        const int K = qBound(1, autoSelectNFeatures, doc->nbDimensions() - 1);
+        QVector<double> eigvals;
+        int nDimWritten = doc->createMeanSubtractedSubdimFeatureFile(
+            singleCid, K, reclusteringFetFileName, &eigvals);
+        if (nDimWritten == KlustersDoc::OPEN_ERROR) {
+            QMessageBox::critical(this,tr("Error !"),
+                tr("The reclustering feature file cannot be created (mean-"
+                   "subtracted subdim path). Falling back to standard "
+                   "feature file."));
+            // fall through to the standard path
+        } else if (nDimWritten == KlustersDoc::CREATION_ERROR ||
+                   nDimWritten <= 0) {
+            QMessageBox::critical(this,tr("IO Error !"),
+                tr("Mean-subtracted subdim feature-file creation failed. "
+                   "Falling back to standard feature file."));
+            // fall through
+        } else {
+            // Success — override %features.  nDimWritten == K + 1; bit
+            // string is K '1's (residual PCA components) then '0' for
+            // the timestamp column.
+            QString fSubdim;
+            for (int j = 0; j < nDimWritten - 1; ++j)
+                fSubdim.append(QLatin1Char('1'));
+            fSubdim.append(QLatin1Char('0'));
+            for (QString &arg : argList) {
+                if (arg.contains(QLatin1String("%features")))
+                    arg.replace(QLatin1String("%features"), fSubdim);
+            }
+            // Log the eigenvalues so the user can see how the cluster's
+            // residual structure decomposes.
+            QString evMsg = QString("[recluster] mean-subtracted "
+                "subdim: cluster %1, K=%2 residual-PCA components; "
+                "eigenvalues:")
+                .arg(singleCid).arg(nDimWritten - 1);
+            for (double e : eigvals)
+                evMsg.append(QString(" %1").arg(e, 0, 'g', 4));
+            qDebug() << evMsg;
+            usedSubdim = true;
+        }
+    }
+
     //Create the feature file for the selected clusters and get its name.
-    int returnStatus = doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
+    int returnStatus = usedSubdim
+        ? KlustersDoc::OK
+        : doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
     if(returnStatus == KlustersDoc::OPEN_ERROR){
         QMessageBox::critical (this,tr("Error !"),tr("The reclustering feature file cannot be created (possibly because of insufficient file access permissions).\n Reclustering can not be done."));
         return;

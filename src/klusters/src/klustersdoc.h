@@ -474,6 +474,19 @@ public:
   */
     int createFeatureFile(QList<int>& clustersToRecluster, const QString &reclusteringFetFileName);
 
+    /** patch76 — build a mean-subtracted sub-dimensional feature file
+     *  for a single cluster.  Each spike's feature vector is centered
+     *  on the cluster mean, projected onto the top K eigenvectors of
+     *  the residual covariance, and written as int64 to the .fet file
+     *  alongside the original timestamp.
+     *  Returns K+1 (the dimensions written) on success; OPEN_ERROR /
+     *  CREATION_ERROR on failure.
+     */
+    int createMeanSubtractedSubdimFeatureFile(
+        int clusterId, int K,
+        const QString& reclusteringFetFileName,
+        QVector<double>* eigvalsOut = nullptr);
+
     /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).
      *  Updates .res and .fet (time feature column). Marks doc modified. */
     bool nudgeClusterTimestamps(int clusterId, int deltaSamples);

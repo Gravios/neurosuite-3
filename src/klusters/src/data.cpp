@@ -4757,6 +4757,233 @@ void Data::duplicate(SortableTable* & spikesOfClusterTemp,ClusterInfoMap* & clus
     }
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// patch76 — Mean-subtracted sub-dimensional feature file for a single
+// cluster.  Algorithm (works on feature columns 1..nbDimensions-1; the
+// last column is the timestamp and gets passed through unchanged):
+//
+//   1. Pool the cluster's spike feature rows into a centered matrix R,
+//      where R[i,j] = features(spikeRow_i, j) − mean[j].
+//   2. Build the D×D symmetric covariance matrix C = R^T R / nSpikes.
+//   3. Diagonalise C with cyclic Jacobi rotations (D small, ≤ ~50 for
+//      typical electrode-group sizes; converges in 10-20 sweeps).
+//   4. Sort eigenpairs by descending eigenvalue, keep top K.
+//   5. Project each spike's residual onto those K eigenvectors:
+//        residPCA[i, k] = sum_j R[i, j] * eigvec[j, k]
+//   6. Quantise to int64 and write the .fet file with K+1 dimensions
+//      (K residual-PCA dims + 1 original timestamp dim).
+//
+// Quantisation: feature values in the existing .fet files are int64.
+// Residual-PCA outputs are doubles that can have a wide dynamic range.
+// We rescale each output column independently so its range matches
+// the dynamic range of the original features in that cluster (the
+// 99.5 percentile spread).  This keeps the K residual columns
+// numerically commensurate with each other and with the timestamp
+// column, so KKExp's variance-based feature scaling treats them on
+// equal footing.
+//
+// Cost: O(nSpikes × D²) for the covariance build, O(D³) per Jacobi
+// sweep, O(nSpikes × D × K) for the projection.  For typical D ≈ 24
+// and nSpikes ≈ 10000, the whole thing runs in a fraction of a
+// second.  No external linear-algebra dependency required.
+// ────────────────────────────────────────────────────────────────────────
+int Data::createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
+                                                QFile& fetFile,
+                                                QVector<double>* eigvalsOut)
+{
+    if (!clusterInfoMap || !spikesByCluster)
+        return 0;
+    const dataType cid = static_cast<dataType>(clusterId);
+    if (!clusterInfoMap->contains(cid)) return 0;
+    const ClusterInfo info = (*clusterInfoMap)[cid];
+    const dataType firstPos = info.firstSpikePosition();
+    const dataType nSp      = info.nbSpikes();
+    if (nSp < 3) return 0;        // need at least 3 spikes for a meaningful covariance
+    if (nbDimensions < 2) return 0;
+
+    // D = feature columns excluding the trailing timestamp column.
+    const int D = nbDimensions - 1;
+    K = std::max(1, std::min(K, D));
+
+    // ── (1) Compute the cluster's mean over the D non-time columns. ──
+    std::vector<double> mu(static_cast<size_t>(D), 0.0);
+    for (dataType s = 0; s < nSp; ++s) {
+        const dataType row = (*spikesByCluster)(1, firstPos + s);
+        for (int j = 0; j < D; ++j) {
+            // features is 1-indexed in both row and column.
+            mu[static_cast<size_t>(j)] +=
+                static_cast<double>(features(row, j + 1));
+        }
+    }
+    const double invN = 1.0 / static_cast<double>(nSp);
+    for (int j = 0; j < D; ++j) mu[static_cast<size_t>(j)] *= invN;
+
+    // ── (2) Build symmetric covariance C = R^T R / nSp. ──
+    std::vector<double> C(static_cast<size_t>(D) * D, 0.0);
+    std::vector<double> resid(static_cast<size_t>(D));
+    for (dataType s = 0; s < nSp; ++s) {
+        const dataType row = (*spikesByCluster)(1, firstPos + s);
+        for (int j = 0; j < D; ++j)
+            resid[static_cast<size_t>(j)] =
+                static_cast<double>(features(row, j + 1))
+              - mu[static_cast<size_t>(j)];
+        for (int j = 0; j < D; ++j) {
+            const double rj = resid[static_cast<size_t>(j)];
+            for (int k = j; k < D; ++k)
+                C[static_cast<size_t>(j) * D + k] +=
+                    rj * resid[static_cast<size_t>(k)];
+        }
+    }
+    for (int j = 0; j < D; ++j) {
+        for (int k = j; k < D; ++k) {
+            C[static_cast<size_t>(j) * D + k] *= invN;
+            C[static_cast<size_t>(k) * D + j] =
+                C[static_cast<size_t>(j) * D + k];
+        }
+    }
+
+    // ── (3) Cyclic Jacobi eigendecomposition. ──
+    //   Maintains an eigenvector matrix V (initially identity).
+    //   Each sweep zeroes the largest off-diagonal then rotates rows
+    //   and columns of both C and V by the corresponding 2×2 Givens.
+    std::vector<double> V(static_cast<size_t>(D) * D, 0.0);
+    for (int j = 0; j < D; ++j) V[static_cast<size_t>(j) * D + j] = 1.0;
+    const int    maxSweeps = 100;
+    const double tol       = 1e-12;
+    for (int sweep = 0; sweep < maxSweeps; ++sweep) {
+        double offSum = 0.0;
+        for (int p = 0; p < D - 1; ++p)
+            for (int q = p + 1; q < D; ++q) {
+                const double cpq = C[static_cast<size_t>(p) * D + q];
+                offSum += cpq * cpq;
+            }
+        if (offSum < tol) break;
+        for (int p = 0; p < D - 1; ++p) {
+            for (int q = p + 1; q < D; ++q) {
+                const double apq = C[static_cast<size_t>(p) * D + q];
+                if (std::abs(apq) < 1e-18) continue;
+                const double app = C[static_cast<size_t>(p) * D + p];
+                const double aqq = C[static_cast<size_t>(q) * D + q];
+                const double theta = (aqq - app) / (2.0 * apq);
+                const double t = (theta >= 0.0)
+                    ?  1.0 / (theta + std::sqrt(1.0 + theta * theta))
+                    :  1.0 / (theta - std::sqrt(1.0 + theta * theta));
+                const double c = 1.0 / std::sqrt(1.0 + t * t);
+                const double s = t * c;
+                C[static_cast<size_t>(p) * D + p] = app - t * apq;
+                C[static_cast<size_t>(q) * D + q] = aqq + t * apq;
+                C[static_cast<size_t>(p) * D + q] = 0.0;
+                C[static_cast<size_t>(q) * D + p] = 0.0;
+                for (int r = 0; r < D; ++r) {
+                    if (r != p && r != q) {
+                        const double arp = C[static_cast<size_t>(r) * D + p];
+                        const double arq = C[static_cast<size_t>(r) * D + q];
+                        C[static_cast<size_t>(r) * D + p] = c * arp - s * arq;
+                        C[static_cast<size_t>(p) * D + r] =
+                            C[static_cast<size_t>(r) * D + p];
+                        C[static_cast<size_t>(r) * D + q] = s * arp + c * arq;
+                        C[static_cast<size_t>(q) * D + r] =
+                            C[static_cast<size_t>(r) * D + q];
+                    }
+                    const double vrp = V[static_cast<size_t>(r) * D + p];
+                    const double vrq = V[static_cast<size_t>(r) * D + q];
+                    V[static_cast<size_t>(r) * D + p] = c * vrp - s * vrq;
+                    V[static_cast<size_t>(r) * D + q] = s * vrp + c * vrq;
+                }
+            }
+        }
+    }
+
+    // ── (4) Sort eigenpairs by descending eigenvalue, take top K. ──
+    std::vector<std::pair<double, int>> sortedEv(D);
+    for (int j = 0; j < D; ++j)
+        sortedEv[static_cast<size_t>(j)] =
+            std::make_pair(C[static_cast<size_t>(j) * D + j], j);
+    std::sort(sortedEv.begin(), sortedEv.end(),
+        [](const std::pair<double,int>& a, const std::pair<double,int>& b) {
+            return a.first > b.first;
+        });
+    if (eigvalsOut) {
+        eigvalsOut->clear();
+        eigvalsOut->reserve(K);
+        for (int k = 0; k < K; ++k)
+            eigvalsOut->append(sortedEv[static_cast<size_t>(k)].first);
+    }
+
+    // Pack top-K eigenvectors into evK[D × K] (column-major: evK[j*K+k]).
+    std::vector<double> evK(static_cast<size_t>(D) * K, 0.0);
+    for (int k = 0; k < K; ++k) {
+        const int origCol = sortedEv[static_cast<size_t>(k)].second;
+        for (int r = 0; r < D; ++r)
+            evK[static_cast<size_t>(r) * K + k] =
+                V[static_cast<size_t>(r) * D + origCol];
+    }
+
+    // ── (5) Project residuals onto top-K eigenvectors.  Also tally
+    //       per-column min/max so we can rescale to a sensible int64
+    //       quantisation range. ──
+    std::vector<double> proj(static_cast<size_t>(nSp) * K, 0.0);
+    std::vector<double> minVal(static_cast<size_t>(K),
+                               std::numeric_limits<double>::infinity());
+    std::vector<double> maxVal(static_cast<size_t>(K),
+                               -std::numeric_limits<double>::infinity());
+    for (dataType s = 0; s < nSp; ++s) {
+        const dataType row = (*spikesByCluster)(1, firstPos + s);
+        for (int j = 0; j < D; ++j)
+            resid[static_cast<size_t>(j)] =
+                static_cast<double>(features(row, j + 1))
+              - mu[static_cast<size_t>(j)];
+        for (int k = 0; k < K; ++k) {
+            double val = 0.0;
+            for (int j = 0; j < D; ++j)
+                val += resid[static_cast<size_t>(j)]
+                     * evK[static_cast<size_t>(j) * K + k];
+            proj[static_cast<size_t>(s) * K + k] = val;
+            if (val < minVal[static_cast<size_t>(k)])
+                minVal[static_cast<size_t>(k)] = val;
+            if (val > maxVal[static_cast<size_t>(k)])
+                maxVal[static_cast<size_t>(k)] = val;
+        }
+    }
+
+    // Rescale each projected column to ±2^28 range (well clear of
+    // int64 overflow, comparable to the dynamic range of normalised
+    // features in the original .fet).
+    const double targetMax = static_cast<double>(1 << 28);
+    std::vector<double> scale(static_cast<size_t>(K), 1.0);
+    for (int k = 0; k < K; ++k) {
+        const double span = std::max(std::abs(minVal[static_cast<size_t>(k)]),
+                                     std::abs(maxVal[static_cast<size_t>(k)]));
+        scale[static_cast<size_t>(k)] = (span > 1e-12)
+            ? targetMax / span
+            : 1.0;
+    }
+
+    // ── (6) Write .fet: int32 nDim header, then per-spike int64 rows
+    //       of (K residual-PCA + 1 timestamp).  Match the existing
+    //       binary format used by createFeatureFile above. ──
+    fetFile.close();
+    FILE* ff = fopen(fetFile.fileName().toLocal8Bit().constData(), "wb");
+    if (!ff) return 0;
+    const int32_t nDim32 = static_cast<int32_t>(K + 1);
+    fwrite(&nDim32, sizeof(int32_t), 1, ff);
+    for (dataType s = 0; s < nSp; ++s) {
+        const dataType row = (*spikesByCluster)(1, firstPos + s);
+        for (int k = 0; k < K; ++k) {
+            const double v = proj[static_cast<size_t>(s) * K + k]
+                           * scale[static_cast<size_t>(k)];
+            const int64_t iv = static_cast<int64_t>(v);
+            fwrite(&iv, sizeof(int64_t), 1, ff);
+        }
+        // Pass timestamp through unchanged so KKExp's chunk-by-time
+        // machinery still works.
+        const int64_t ts = static_cast<int64_t>(features(row, nbDimensions));
+        fwrite(&ts, sizeof(int64_t), 1, ff);
+    }
+    fclose(ff);
+    return K + 1;
+}
+
 void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     dataType reclusteringNbSpikes = 0;
     //Loop on the selected clusters to calculate the total number of spikes

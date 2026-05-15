@@ -236,6 +236,18 @@ public:
     /**Sets number of top-variance features to pass to KlustaKwik (clamped 1-25).*/
     void setAutoSelectNFeatures(int n)         { autoSelectNFeatures = qBound(1, n, 25); }
 
+    // patch76 — mean-subtracted sub-dimensional reclustering mode for a
+    // single cluster.  Independent of autoSelectFeatures; activating it
+    // takes precedence when exactly one cluster is selected for recluster.
+    // Reuses autoSelectNFeatures as the K (number of residual-PCA
+    // components) to avoid introducing a second knob with the same role.
+    bool getReclusterMeanSubtractedSubdim() const
+        { return reclusterMeanSubtractedSubdim; }
+    bool getReclusterMeanSubtractedSubdimDefault() const
+        { return reclusterMeanSubtractedSubdimDefault; }
+    void setReclusterMeanSubtractedSubdim(bool b)
+        { reclusterMeanSubtractedSubdim = b; }
+
     /**Returns the fractional margin applied to the autoscale fit in
      * ClusterView (F key), expressed as a percent of the data extent on
      * each side.  Default 5 (i.e. 5% on each side).  Range 0–50.*/
@@ -293,6 +305,10 @@ private:
     static const bool autoSelectFeaturesDefault;
     int  autoSelectNFeatures;
     static const int  autoSelectNFeaturesDefault;
+
+    // patch76 — mean-subtracted sub-dimensional reclustering for one cluster
+    bool reclusterMeanSubtractedSubdim;
+    static const bool reclusterMeanSubtractedSubdimDefault;
     /**Margin (percent of data extent) added on each side of the autoscale fit
      * in ClusterView (F key).  0 = tight fit, 5 = original behaviour.*/
     double autoscaleMarginPercent;

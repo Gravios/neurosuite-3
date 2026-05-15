@@ -27,6 +27,8 @@
 const bool Configuration::crashRecoveryDefault = true;
 const bool Configuration::autoSelectFeaturesDefault = false;
 const int  Configuration::autoSelectNFeaturesDefault = 7;
+// patch76 — opt-in: off by default to preserve existing recluster behaviour
+const bool Configuration::reclusterMeanSubtractedSubdimDefault = false;
 const double Configuration::autoscaleMarginPercentDefault = 5.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
@@ -70,6 +72,10 @@ void Configuration::read() {
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
+    // patch76 — single-cluster mean-subtracted sub-dimensional recluster
+    reclusterMeanSubtractedSubdim = settings.value(
+        "reclusterMeanSubtractedSubdim",
+        reclusterMeanSubtractedSubdimDefault).toBool();
     autoscaleMarginPercent = settings.value("autoscaleMarginPercent", autoscaleMarginPercentDefault).toDouble();
     settings.endGroup();
 
@@ -109,6 +115,9 @@ void Configuration::write() const {
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.setValue("autoSelectFeatures", autoSelectFeatures);
     settings.setValue("autoSelectNFeatures", autoSelectNFeatures);
+    // patch76
+    settings.setValue("reclusterMeanSubtractedSubdim",
+                      reclusterMeanSubtractedSubdim);
     settings.setValue("autoscaleMarginPercent", autoscaleMarginPercent);
     settings.endGroup();
     
