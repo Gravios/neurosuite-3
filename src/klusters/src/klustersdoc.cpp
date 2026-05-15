@@ -2937,6 +2937,27 @@ int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
     return OK;
 }
 
+// patch81 — Remove the staged YAML (and .yml fallback) that
+// KlustersApp::slotRecluster copied next to the temp .fet so that
+// KlustaKwikYaml.cpp's tryPath("<fileBase>", ".yaml") would find it.
+//
+// The temp YAML lives next to reclusteringFetFileName with the same
+// basename but a different extension.  Strip ".fet.<elecID>" off the
+// end and try .yaml + .yml.  Failures are silent: the file may not
+// exist (orig YAML was missing, or this is a second-attempt cleanup
+// where a prior call already removed it), and either case is fine.
+static void patch81_cleanupTempYaml(const QString& reclusteringFetFileName)
+{
+    const int dotFet = reclusteringFetFileName.lastIndexOf(
+        QLatin1String(".fet."));
+    if (dotFet < 0) return;
+    const QString base = reclusteringFetFileName.left(dotFet);
+    const QString yamlPath = base + QLatin1String(".yaml");
+    const QString ymlPath  = base + QLatin1String(".yml");
+    if (QFile::exists(yamlPath)) QFile::remove(yamlPath);
+    if (QFile::exists(ymlPath))  QFile::remove(ymlPath);
+}
+
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
 
     // Capture cluster state before KlustaKwik's output is integrated
@@ -2961,6 +2982,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
             QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
         if(!QFile::remove(cluFileName))
             QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+        patch81_cleanupTempYaml(reclusteringFetFileName);
         return OPEN_ERROR;
     }
 
@@ -2971,6 +2993,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
             QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
         if(!QFile::remove(cluFileName))
             QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+        patch81_cleanupTempYaml(reclusteringFetFileName);
         return INCORRECT_CONTENT;
     }
     cluFile.close();
@@ -2980,6 +3003,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
     if(!QFile::remove(cluFileName))
         QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+    patch81_cleanupTempYaml(reclusteringFetFileName);
 
     // Log the newly created clusters — reclusteredClusterList is populated by
     // integrateReclusteredClusters() above and contains the KlustaKwik outputs.

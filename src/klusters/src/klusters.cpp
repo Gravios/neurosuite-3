@@ -4054,6 +4054,63 @@ void KlustersApp::slotRecluster(){
     reclusteringFetFileName += QLatin1String(".fet.");
     reclusteringFetFileName += electrodeGroupID;
 
+    // patch81 — Make the session YAML reachable from the recluster temp
+    // basename.
+    //
+    // KlustaKwikYaml.cpp:34 only looks for "<fileBase>.yaml" (then .yml).
+    // Klusters reinvents fileBaseName per-recluster as
+    //   <origBaseName>--<clusterIDs>--<MM.dd.yyyy-hh.mm>
+    // so the temp basename never has a matching YAML and KKExp falls
+    // back to its hard-coded SamplingRate=20000 default.  At 32 kHz
+    // that mis-tunes every duration-derived parameter (chunk count,
+    // dead time, refractory windows), and at the very least surfaces
+    // as:
+    //   KlustaKwik: SamplingRate defaulting to 20000 Hz
+    //               (no YAML found and -SamplingRate not given)
+    //
+    // Fix: copy the original session YAML to the temp basename before
+    // launching, so KKExp's tryPath("<tempBase>", ".yaml") finds it.
+    // The temp YAML is removed by patch81_cleanupTempYaml() at every
+    // existing reclusteringFetFileName cleanup site.
+    //
+    // Order matters: this happens AFTER reclusteringFetFileName is
+    // computed (so the path-derivation in cleanupTempYaml stays
+    // consistent), but BEFORE the feature-file creation calls, so
+    // even if createFeatureFile fails the cleanup logic still finds
+    // and removes the staged YAML.
+    {
+        const QString origYaml = doc->documentDirectory()
+                               + QLatin1Char('/')
+                               + doc->documentBaseName()
+                               + QLatin1String(".yaml");
+        const QString tempYaml = doc->documentDirectory()
+                               + QLatin1Char('/')
+                               + fileBaseName
+                               + QLatin1String(".yaml");
+        if (QFile::exists(origYaml)) {
+            if (!QFile::exists(tempYaml)) {
+                if (!QFile::copy(origYaml, tempYaml)) {
+                    qWarning() << "[recluster] patch81: could not copy"
+                               << origYaml << "to" << tempYaml
+                               << "— KlustaKwik will fall back to "
+                                  "default sampling rate";
+                }
+            }
+        } else {
+            // .yml fallback (KKExp tries both extensions)
+            const QString origYml = doc->documentDirectory()
+                                  + QLatin1Char('/')
+                                  + doc->documentBaseName()
+                                  + QLatin1String(".yml");
+            const QString tempYml = doc->documentDirectory()
+                                  + QLatin1Char('/')
+                                  + fileBaseName
+                                  + QLatin1String(".yml");
+            if (QFile::exists(origYml) && !QFile::exists(tempYml))
+                QFile::copy(origYml, tempYml);
+        }
+    }
+
     // patch76 — Mean-subtracted sub-dimensional path takes precedence
     // when the user has opted into it AND exactly one non-noise cluster
     // is being reclustered.  Generates a small K-component residual-PCA
@@ -4179,6 +4236,16 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
 
         if(!QFile::remove(reclusteringFetFileName))
             QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
+        // patch81 — also clean up the staged YAML
+        {
+            const int dotFet = reclusteringFetFileName.lastIndexOf(
+                QLatin1String(".fet."));
+            if (dotFet >= 0) {
+                const QString base = reclusteringFetFileName.left(dotFet);
+                QFile::remove(base + QLatin1String(".yaml"));
+                QFile::remove(base + QLatin1String(".yml"));
+            }
+        }
 
         processFinished = true;
         processOutputsFinished = true;
