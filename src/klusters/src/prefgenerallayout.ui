@@ -431,6 +431,37 @@
             </item>
            </layout>
           </item>
+          <item>
+           <!-- patch79: auto-show error & template matrices on document open -->
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QCheckBox" name="autoShowMatricesOnOpenCheckBox">
+              <property name="text">
+               <string>Auto-show error &amp;&amp; template matrices on open</string>
+              </property>
+              <property name="toolTip">
+               <string>When checked, opening a document automatically creates a Grouping Assistant Display with both the Error Matrix and Template Matrix docks, then triggers an Update Error Matrix to populate them.  Saves the user from manually doing this on every document open.  Combines with the global window-geometry restore (already saved on close) to give a consistent layout across sessions.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer_automx">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
          </layout>
         </item>
        </layout>
@@ -1088,6 +1119,7 @@
   <tabstop>autoSelectFeaturesCheckBox</tabstop>
   <tabstop>autoSelectNFeaturesSpinBox</tabstop>
   <tabstop>reclusterMeanSubtractedSubdimCheckBox</tabstop>
+  <tabstop>autoShowMatricesOnOpenCheckBox</tabstop>
   <tabstop>realignThresholdSpinBox</tabstop>
   <tabstop>realignIterationsSpinBox</tabstop>
   <tabstop>realignMaxShiftSpinBox</tabstop>
