@@ -148,6 +148,7 @@ extern int   ResidualPCASubK;
 extern int   ResidualPCADominantChannels;
 extern float ResidualPCAConvTol;
 extern float ResidualPCAMinScore;
+extern int   AlignPcaCenter;   // patch83 — opt-in PCA-centering refine pass
 extern float TemplateMatchEigRatio;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;

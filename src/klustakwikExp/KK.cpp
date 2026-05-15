@@ -9682,6 +9682,186 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
             // is below minScore or out-of-bounds).  Stop early.
             if (shiftsThisIter == 0) break;
         }   // end iter loop
+
+        // patch83 — PCA-centering refine pass (opt-in via AlignPcaCenter)
+        //
+        // After the xcorr alignment loop converges, optionally run a
+        // second pass that refines each spike's position to MINIMIZE
+        // its distance to the cluster's mean PCA position:
+        //
+        //     dist²(s) = sum_f (pca_f(spike at shift s) − μ_pca[f])²
+        //
+        // where μ_pca[f] is the mean of feature f across the cluster's
+        // current members and pca_f comes from projecting the freshly
+        // re-extracted waveform through the canonical .pca basis with
+        // the same normalisation Data[] uses (dimMin_/dimRange_).
+        //
+        // This is the KKExp analogue of klusters' patch82 PCA-energy
+        // refine pass, but with the energy criterion (||pca||²) swapped
+        // for the centering criterion (||pca − μ_pca_cluster||²).  The
+        // centering version directly tightens cluster compactness in
+        // PCA space — exactly the geometric property that downstream
+        // EM / merge decisions key off.  Energy is useful when there
+        // is no cluster mean to compare against (e.g. the klusters
+        // single-cluster refine path); here we have full cluster
+        // membership from the converged iter loop, so centering is
+        // the natural choice.
+        //
+        // Cost: per qualifying spike, (2·m_timeShiftMaxAbs + 1) .fil
+        // reads + PCA projections.  For typical maxShift=3, that's
+        // 7 reads/projections per spike — well under a second per
+        // chunk on a warm cache.
+        //
+        // Falls back silently (logs an info line, runs no refine) when:
+        //   - filFpP71 is null (no .fil available)
+        //   - hasBasis is false (no canonical PCA basis loaded)
+        //   - AlignPcaCenter is 0 (the default)
+        if (AlignPcaCenter && filFpP71 && hasBasis) {
+            int p83Refined  = 0;
+            int p83Skipped  = 0;
+            int p83Examined = 0;
+            for (int cid : finalIds) {
+                members.clear();
+                for (int i = 0; i < nPts; i++)
+                    if (labels[i] == cid) members.push_back(i);
+                const int Nc = static_cast<int>(members.size());
+                if (Nc < 3) continue;
+
+                // Compute cluster mean PCA position μ_pca over the kept
+                // PCA feature columns.  Read straight from Data[] — it
+                // was kept in sync by the iter loop's on-the-spot
+                // re-featurize step.
+                std::vector<double> muPca(
+                    static_cast<size_t>(nPCAFeatsP71), 0.0);
+                int clusterMembersWithGp = 0;
+                for (int m : members) {
+                    const int gp = pts[static_cast<size_t>(m)];
+                    if (gp < 0 || gp >=
+                        static_cast<int>(m_cumShift.size())) continue;
+                    const float* row = Data.m_Data + gp * nDims;
+                    for (int f = 0; f < nPCAFeatsP71; ++f)
+                        muPca[static_cast<size_t>(f)] +=
+                            static_cast<double>(row[f]);
+                    ++clusterMembersWithGp;
+                }
+                if (clusterMembersWithGp < 3) continue;
+                const double invN = 1.0 / clusterMembersWithGp;
+                for (int f = 0; f < nPCAFeatsP71; ++f)
+                    muPca[static_cast<size_t>(f)] *= invN;
+
+                // Per-spike: sweep candidate shifts, pick the one that
+                // minimizes distance² to μ_pca.
+                for (int sp = 0; sp < Nc; ++sp) {
+                    const int iLocal = members[static_cast<size_t>(sp)];
+                    const int gp     = pts[static_cast<size_t>(iLocal)];
+                    if (gp < 0 || gp >=
+                        static_cast<int>(m_cumShift.size())) continue;
+
+                    const int     prevCum   = m_cumShift[static_cast<size_t>(gp)];
+                    const int64_t rawTsInt  = rawTsByLocal[static_cast<size_t>(iLocal)];
+                    if (rawTsInt <= 0) continue;
+                    ++p83Examined;
+
+                    int    bestS    = 0;
+                    double bestDist = std::numeric_limits<double>::infinity();
+                    int    nValid   = 0;
+
+                    for (int s = -m_timeShiftMaxAbs;
+                             s <=  m_timeShiftMaxAbs; ++s) {
+                        const int     candCum = prevCum + s;
+                        const int64_t off     = rawTsInt + candCum - PeakSampleIndex;
+                        if (off < 0 ||
+                            off + nSamplesPerSpike > sessionSamplesP71 + 1)
+                            continue;
+
+                        if (fseeko(filFpP71,
+                                   off * static_cast<off_t>(NbTotalChannels)
+                                       * static_cast<off_t>(sizeof(int16_t)),
+                                   SEEK_SET) != 0) continue;
+
+                        bool readOk = true;
+                        for (int t = 0; t < nSamplesPerSpike && readOk; ++t) {
+                            if (fread(filRowP71.data(), sizeof(int16_t),
+                                      static_cast<size_t>(NbTotalChannels),
+                                      filFpP71)
+                                != static_cast<size_t>(NbTotalChannels)) {
+                                readOk = false; break;
+                            }
+                            for (int c = 0; c < nChan; ++c)
+                                waveScratchP71[static_cast<size_t>(t * nChan + c)] =
+                                    filRowP71[static_cast<size_t>(GroupChannelIds[c])];
+                        }
+                        if (!readOk) continue;
+
+                        if (isStderiv)
+                            ApplySdiffAllpairsTemporalDiff(
+                                waveScratchP71.data(), nChan, nSamplesPerSpike);
+
+                        // PCA projection.  Mirrors the per-spike code in
+                        // the iter loop body — same basis access, same
+                        // dimMin_/dimRange_ normalisation.  Distance² is
+                        // accumulated against muPca[featIdx] in the same
+                        // normalised feature space.
+                        double dist2 = 0.0;
+                        const auto& meanCanon = m_timeShiftBasis.meanShifted[
+                            static_cast<size_t>(candCanonical)];
+                        const auto& evecCanon = m_timeShiftBasis.eigvecShifted[
+                            static_cast<size_t>(candCanonical)];
+                        for (int ch = 0; ch < basisNChan; ++ch) {
+                            const auto& mu = meanCanon[static_cast<size_t>(ch)];
+                            const auto& ev = evecCanon[static_cast<size_t>(ch)];
+                            for (int k = 0; k < basisNComp; ++k) {
+                                double val = 0.0;
+                                for (int u = 0; u < basisData2use; ++u) {
+                                    const int sIdx = basisRecShift + u;
+                                    double xraw = static_cast<double>(
+                                        waveScratchP71[static_cast<size_t>(
+                                            sIdx * nChan + ch)]);
+                                    if (basisCentered)
+                                        xraw -= mu[static_cast<size_t>(u)];
+                                    val += ev[static_cast<size_t>(
+                                        k * basisData2use + u)] * xraw;
+                                }
+                                const int featIdx = ch * basisNComp + k;
+                                if (featIdx >= nPCAFeatsP71 ||
+                                    featIdx >= static_cast<int>(dimMin_.size()))
+                                    continue;
+                                const double normVal =
+                                    (static_cast<float>(val) - dimMin_[featIdx])
+                                  * dimRange_[featIdx];
+                                const double diff = normVal
+                                  - muPca[static_cast<size_t>(featIdx)];
+                                dist2 += diff * diff;
+                            }
+                        }
+
+                        ++nValid;
+                        if (dist2 < bestDist) {
+                            bestDist = dist2;
+                            bestS    = s;
+                        }
+                    }   // end candidate-shift loop
+
+                    if (nValid == 0) { ++p83Skipped; continue; }
+                    if (bestS == 0) continue;   // already at the centre
+
+                    m_cumShift[static_cast<size_t>(gp)] = prevCum + bestS;
+                    ++p83Refined;
+                }
+            }   // end cluster loop
+
+            Output("[Phase 2b m3] chunk %d patch83 PCA-centering: "
+                   "examined %d, refined %d, skipped %d (off-edge)\n",
+                   chunkIdx, p83Examined, p83Refined, p83Skipped);
+        } else if (AlignPcaCenter) {
+            Output("[Phase 2b m3] chunk %d patch83: AlignPcaCenter "
+                   "requested but %s%s%s — skipping.\n",
+                   chunkIdx,
+                   !filFpP71 ? ".fil unavailable" : "",
+                   (!filFpP71 && !hasBasis) ? " and " : "",
+                   !hasBasis ? "PCA basis not loaded" : "");
+        }
+
         }   // end if (rawSourceOk) — patch72
 
         // patch74 — post-alignment .res monotonicity check.
