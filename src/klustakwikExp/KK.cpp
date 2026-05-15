@@ -5274,6 +5274,97 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
         Output("  .fet updated\n");
     }
     skip_fet:;
+
+    // ── patch85: .res rewrite ────────────────────────────────────────────
+    //
+    // Bug fix: pre-patch, WritePhase15Checkpoint re-extracted .spk content
+    // from .fil at rawTs + sh - PeakSampleIndex and wrote .fet's last
+    // column as rawTs + sh — but NEVER rewrote .res.  The on-disk
+    // asymmetry left .res holding original detection times while
+    // .spk/.fet content was anchored at sh-shifted positions.  Klusters
+    // (and any other reader that uses .res[i] as the anchor for spike
+    // i's window) saw spike windows offset from each other by exactly
+    // the per-spike shift, producing peaks scattered across a
+    // 2*m_timeShiftMaxAbs + 1 sample range when cluster members were
+    // overlaid.  Mean waveforms smeared.  Cluster sorting itself stayed
+    // good because feature-space distances are independent of the
+    // absolute time anchor.
+    //
+    // Fix: write .res.pending with rawTs + sh for shifted spikes,
+    // rawTs for the rest, then atomic rename to .res.  Same .pending
+    // discipline as .spk and .fet above so a crash mid-write doesn't
+    // leave a half-written .res.
+    //
+    // Skipped (no-op, original .res preserved) when:
+    //   - resWPC failed to open earlier (we'd have to fall back to
+    //     Data[]'s normalised time-dim, which has ±13 sample float-
+    //     precision loss at session-scale timestamps — that would
+    //     CREATE dispersion rather than fix it).
+    //   - the .res.pending file can't be created.
+    //   - the rewrite loop aborts mid-write (partial .pending removed).
+    if (resWPC) {
+        char resOrigP85[STRLEN + 16];
+        char resTmpP85 [STRLEN + 32];
+        snprintf(resOrigP85, sizeof(resOrigP85), "%s.res.%d", FileBase, ElecNo);
+        snprintf(resTmpP85,  sizeof(resTmpP85),  "%s.pending", resOrigP85);
+
+        FILE* resWriteP85 = fopen(resTmpP85, "wb");
+        if (!resWriteP85) {
+            Output("WritePhase15Checkpoint: cannot create %s — .res preserved\n",
+                   resTmpP85);
+        } else {
+            fseeko(resWPC, 0, SEEK_SET);
+            int nResWritten = 0;
+            bool resOk = true;
+            int  nResShifted = 0;
+            for (int p = 0; p < nPoints && resOk; ++p) {
+                int64_t rawTsP85 = 0;
+                if (fread(&rawTsP85, sizeof(int64_t), 1, resWPC) != 1) {
+                    Output("WritePhase15Checkpoint: .res short read at "
+                           "spike %d — aborting .res rewrite\n", p);
+                    resOk = false;
+                    break;
+                }
+                const int shP85 = (p < static_cast<int>(spikeShifts.size()))
+                                ? spikeShifts[p] : 0;
+                const bool shiftValid = (shP85 != 0 &&
+                                         shP85 != std::numeric_limits<int>::min());
+                const int64_t outTs = shiftValid
+                                    ? (rawTsP85 + static_cast<int64_t>(shP85))
+                                    : rawTsP85;
+                if (fwrite(&outTs, sizeof(int64_t), 1, resWriteP85) != 1) {
+                    Output("WritePhase15Checkpoint: .res write failed at "
+                           "spike %d — aborting .res rewrite\n", p);
+                    resOk = false;
+                    break;
+                }
+                ++nResWritten;
+                if (shiftValid) ++nResShifted;
+            }
+            fclose(resWriteP85);
+
+            if (resOk && nResWritten == nPoints) {
+                // Atomic rename — same discipline as .spk / .fet above.
+                if (rename(resTmpP85, resOrigP85) == 0) {
+                    Output("  .res updated (%d spikes, %d shifted)\n",
+                           nResWritten, nResShifted);
+                } else {
+                    Output("WritePhase15Checkpoint: rename %s -> %s failed "
+                           "— .res preserved\n", resTmpP85, resOrigP85);
+                    ::remove(resTmpP85);
+                }
+            } else {
+                // Partial write — leave original .res intact.
+                ::remove(resTmpP85);
+                Output("  .res NOT updated (wrote %d of %d) — "
+                       "original preserved\n", nResWritten, nPoints);
+            }
+        }
+    } else {
+        Output("WritePhase15Checkpoint: .res not opened for read — "
+               "cannot rewrite (would lose precision via Data[] fallback)\n");
+    }
+
     if (resWPC) fclose(resWPC);
     Output("WritePhase15Checkpoint: done\n");
 }
