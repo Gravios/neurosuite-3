@@ -105,6 +105,10 @@ public:
     bool getReclusterMeanSubtractedSubdim() const;
     void setReclusterMeanSubtractedSubdim(bool checked);
 
+    // patch79 — auto-show error & template matrices on document open
+    bool getAutoShowMatricesOnOpen() const;
+    void setAutoShowMatricesOnOpen(bool checked);
+
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size);
 

@@ -96,6 +96,9 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     // patch76 — mean-subtracted sub-dimensional recluster checkbox
     connect(prefGeneral->reclusterMeanSubtractedSubdimCheckBox,
             &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    // patch79 — auto-show matrices on open checkbox
+    connect(prefGeneral->autoShowMatricesOnOpenCheckBox,
+            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->realignThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefGeneral->realignIterationsSpinBox, &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefGeneral->realignMaxShiftSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
@@ -147,6 +150,7 @@ void PrefDialog::updateDialog() {
   prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
   prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
   prefGeneral->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());  // patch76
+  prefGeneral->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpen());  // patch79
   prefGeneral->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
   prefGeneral->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
   enableButtonApply(false);   // disable apply button
@@ -178,6 +182,7 @@ void PrefDialog::updateConfiguration(){
   configuration().setAutoSelectFeatures(prefGeneral->getAutoSelectFeatures());
   configuration().setAutoSelectNFeatures(prefGeneral->getAutoSelectNFeatures());
   configuration().setReclusterMeanSubtractedSubdim(prefGeneral->getReclusterMeanSubtractedSubdim());  // patch76
+  configuration().setAutoShowMatricesOnOpen(prefGeneral->getAutoShowMatricesOnOpen());  // patch79
   configuration().setTemplateThresholdMin(prefGeneral->getTemplateThresholdMin());
   configuration().setTemplateThresholdMax(prefGeneral->getTemplateThresholdMax());
   enableButtonApply(false);   // disable apply button
@@ -209,6 +214,7 @@ void PrefDialog::slotDefault() {
    prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
    prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
    prefGeneral->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());  // patch76
+   prefGeneral->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());  // patch79
 
    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
    prefWaveformView->setGain(configuration().getGainDefault());

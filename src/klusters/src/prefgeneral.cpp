@@ -117,6 +117,12 @@ bool PrefGeneral::getReclusterMeanSubtractedSubdim() const
 void PrefGeneral::setReclusterMeanSubtractedSubdim(bool checked)
     { reclusterMeanSubtractedSubdimCheckBox->setChecked(checked); }
 
+// patch79 — auto-show error & template matrices on document open
+bool PrefGeneral::getAutoShowMatricesOnOpen() const
+    { return autoShowMatricesOnOpenCheckBox->isChecked(); }
+void PrefGeneral::setAutoShowMatricesOnOpen(bool checked)
+    { autoShowMatricesOnOpenCheckBox->setChecked(checked); }
+
 bool PrefGeneral::useWhiteColorDuringPrinting() const
 {
     return useWhiteColorPrinting->isChecked();

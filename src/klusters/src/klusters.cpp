@@ -1625,6 +1625,50 @@ void KlustersApp::initDisplay(){
 
     //Enable some actions now that a document is open (see the klustersui.rc file)
     slotStateChanged("documentState");
+
+    // patch79 — auto-show error & template matrices on document open.
+    //
+    // The user-facing intent: when this preference is on, opening a
+    // document should produce the same workflow-ready layout every
+    // time — Overview display + Grouping Assistant display with both
+    // matrix docks populated.  Saves a manual sequence of:
+    //   Display → New Grouping Assistant Display
+    //   (within GA) add Error Matrix dock
+    //   (within GA) add Template Matrix dock
+    //   Actions → Update Error Matrix
+    // on every document open.
+    //
+    // The main-window position/size and dock-widget layout already get
+    // saved by closeEvent (settings.setValue("geometry", saveGeometry())
+    // and ("windowState", saveState())) and restored on construction
+    // (line 2367-2368).  This patch adds the missing piece: the inner
+    // matrix docks, which live inside a Grouping Assistant child
+    // QMainWindow and so aren't covered by the top-level saveState.
+    //
+    // Defer the work to the next event-loop iteration so the Overview
+    // window's threads (WaveformThread, CorrelationThread) have time to
+    // finish their initial loads before the matrix computations start
+    // queuing additional CPU work.  QTimer::singleShot(0, ...) is
+    // sufficient — Qt processes pending events before firing zero-delay
+    // timers.
+    if (configuration().getAutoShowMatricesOnOpen()) {
+        QTimer::singleShot(0, this, [this]() {
+            if (!doc) return;                       // document was closed mid-defer
+            slotWindowNewGroupingAssistantDisplay();
+            // After the call, activeView() is the new GA view.  Add
+            // both matrix docks via the same entry point manual menu
+            // actions go through, so the post-add bookkeeping
+            // (errorMatrixExists / m_lastMatrixUsed / signal wiring) is
+            // identical to the manual path.
+            widgetAddToDisplay(KlustersView::ERROR_MATRIX);
+            widgetAddToDisplay(KlustersView::TEMPLATE_MATRIX);
+            // Populate both matrices.  view->updateErrorMatrix() +
+            // view->updateTemplateMatrix() in slotUpdateErrorMatrix
+            // are no-ops if no matrix dock listens, so the order vs
+            // the addDisplay calls above doesn't matter.
+            slotUpdateErrorMatrix();
+        });
+    }
 }
 
 void KlustersApp::createDisplay(KlustersView::DisplayType type)

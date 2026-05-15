@@ -248,6 +248,21 @@ public:
     void setReclusterMeanSubtractedSubdim(bool b)
         { reclusterMeanSubtractedSubdim = b; }
 
+    // patch79 — auto-show the error & template matrices when a document
+    // is opened.  Saves the user from manually triggering a new Grouping
+    // Assistant Display + Error Matrix dock + Template Matrix dock +
+    // Update Error Matrix every time they open a file.  Off by default;
+    // an opt-in convenience for users who consistently want both
+    // matrices visible after a document loads.  Combines with the
+    // existing global geometry/windowState save (closeEvent) to give
+    // the requested "same layout on restart" behaviour.
+    bool getAutoShowMatricesOnOpen() const
+        { return autoShowMatricesOnOpen; }
+    bool getAutoShowMatricesOnOpenDefault() const
+        { return autoShowMatricesOnOpenDefault; }
+    void setAutoShowMatricesOnOpen(bool b)
+        { autoShowMatricesOnOpen = b; }
+
     /**Returns the fractional margin applied to the autoscale fit in
      * ClusterView (F key), expressed as a percent of the data extent on
      * each side.  Default 5 (i.e. 5% on each side).  Range 0–50.*/
@@ -309,6 +324,10 @@ private:
     // patch76 — mean-subtracted sub-dimensional reclustering for one cluster
     bool reclusterMeanSubtractedSubdim;
     static const bool reclusterMeanSubtractedSubdimDefault;
+
+    // patch79 — auto-show error & template matrices on document open
+    bool autoShowMatricesOnOpen;
+    static const bool autoShowMatricesOnOpenDefault;
     /**Margin (percent of data extent) added on each side of the autoscale fit
      * in ClusterView (F key).  0 = tight fit, 5 = original behaviour.*/
     double autoscaleMarginPercent;

@@ -29,6 +29,8 @@ const bool Configuration::autoSelectFeaturesDefault = false;
 const int  Configuration::autoSelectNFeaturesDefault = 7;
 // patch76 — opt-in: off by default to preserve existing recluster behaviour
 const bool Configuration::reclusterMeanSubtractedSubdimDefault = false;
+// patch79 — opt-in: off by default
+const bool Configuration::autoShowMatricesOnOpenDefault = false;
 const double Configuration::autoscaleMarginPercentDefault = 5.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
@@ -76,6 +78,10 @@ void Configuration::read() {
     reclusterMeanSubtractedSubdim = settings.value(
         "reclusterMeanSubtractedSubdim",
         reclusterMeanSubtractedSubdimDefault).toBool();
+    // patch79 — auto-show error & template matrices on document open
+    autoShowMatricesOnOpen = settings.value(
+        "autoShowMatricesOnOpen",
+        autoShowMatricesOnOpenDefault).toBool();
     autoscaleMarginPercent = settings.value("autoscaleMarginPercent", autoscaleMarginPercentDefault).toDouble();
     settings.endGroup();
 
@@ -118,6 +124,9 @@ void Configuration::write() const {
     // patch76
     settings.setValue("reclusterMeanSubtractedSubdim",
                       reclusterMeanSubtractedSubdim);
+    // patch79
+    settings.setValue("autoShowMatricesOnOpen",
+                      autoShowMatricesOnOpen);
     settings.setValue("autoscaleMarginPercent", autoscaleMarginPercent);
     settings.endGroup();
     
