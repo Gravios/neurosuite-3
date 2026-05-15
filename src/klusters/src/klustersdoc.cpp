@@ -3327,6 +3327,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     float minScore  = 0.70f;
     int   nIter     = 2;
     int   nTopChan  = 0;   // 0 = use all channels (legacy behaviour)
+    bool  pcaRefine = false;   // patch82: second-pass PCA-energy-max alignment
     {
         const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
@@ -3347,6 +3348,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     && ti + 1 < tokens.size()) {
                 bool ok2; int v = tokens[++ti].toInt(&ok2);
                 if (ok2 && v >= 0) nTopChan = v;
+            } else if (tok == QStringLiteral("--pca-refine") ||
+                       tok == QStringLiteral("-p")) {
+                // patch82 — no value, just a boolean flag.
+                pcaRefine = true;
             }
         }
     }
@@ -3820,6 +3825,245 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
     log << nShifted << " spike(s) shifted.\n";
     emitFlush();
+
+    // -----------------------------------------------------------------------
+    // patch82 — PCA-projection-maximizing refine pass (opt-in via --pca-refine)
+    //
+    // After the mean-template xcorr alignment converges, refine each
+    // spike's position by trying candidate shifts s in [-maxShift, +maxShift]
+    // and picking the one that MAXIMIZES the spike's PCA-projection energy:
+    //
+    //     energy(s) = sum_ch sum_k <basis_ch_k, spike(s) - mean_ch>²
+    //
+    // Intuition: a well-aligned spike concentrates its variance in the
+    // directions of greatest cluster variance (the kept PCA components);
+    // a misaligned spike spreads variance across all directions,
+    // suppressing this sum.  energy(s) peaks where the spike most
+    // strongly looks like a member of the cluster as measured by the
+    // canonical PCA basis.
+    //
+    // Reads each candidate window FRESH from .fil (no circular wrap
+    // artifacts that would skew the PCA scores near the window edges).
+    // Uses a local FILE* so the existing .fil open at line ~4060 stays
+    // untouched.
+    //
+    // Update propagation: when bestS != 0,
+    //   - cumShift[i] += bestS (so the existing sort + disk-write code
+    //     downstream uses the refined position)
+    //   - wavBuf[i] is overwritten with the freshly-extracted window
+    //     at the refined position, so the score statistics block below
+    //     (computing finalTmpl + scores) sees post-refine waveforms
+    //     instead of stale circular-shifted ones.
+    //
+    // Falls back silently to no-op when:
+    //   - .pca eigenvector basis didn't load (pca.valid() == false)
+    //   - .fil can't be opened
+    //   - the cluster's spikes' windows would run off the end of .fil
+    //     at any candidate shift (handled per-spike)
+    if (pcaRefine && pca.valid()) {
+        log << "PCA-projection refine pass: search ±" << maxShift
+            << " samples, "
+            << pca.nCh << " channels × " << pca.nComp << " components\n";
+        emitFlush();
+
+        const int totalNbChanP82 = clusteringData->getTotalNbChannels();
+        const QList<int>& groupChannelsP82 = clusteringData->getCurrentChannels();
+        QString filPathP82;
+        {
+            const QString baseSpk = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
+            const QString noExt = baseSpk.left(baseSpk.lastIndexOf(QLatin1Char('.')));
+            if (QFileInfo::exists(noExt + QStringLiteral(".fil")))
+                filPathP82 = noExt + QStringLiteral(".fil");
+            else
+                filPathP82 = noExt + QStringLiteral(".dat");
+        }
+        FILE* filFp82 = fopen(filPathP82.toLocal8Bit().constData(), "rb");
+        if (!filFp82) {
+            log << "  WARNING: cannot open " << filPathP82
+                << " for PCA-refine — skipping.\n";
+            emitFlush();
+        } else {
+            const int64_t totalSamplesP82 =
+                static_cast<int64_t>(QFileInfo(filPathP82).size())
+              / (static_cast<int64_t>(sizeof(short)) * totalNbChanP82);
+
+            // Scratch buffers reused across spikes.
+            std::vector<int16_t> rawFrame(
+                static_cast<size_t>(nSamp * totalNbChanP82));
+            std::vector<int16_t> candCM(static_cast<size_t>(spkElems));
+
+            // Use the SMALLER of pca.nCh and nChan in case they disagree
+            // (stderiv pipelines drop one channel; pca.nCh = nChan - 1).
+            const int chForPca = std::min(pca.nCh, nChan);
+            const int kComp    = pca.nComp;
+            const int d2u      = pca.data2use;
+            const int rShift   = pca.recShift;
+            const bool centered = pca.centered;
+            const bool useStder = isStderivRealign;
+
+            int nRefined = 0;
+            int nClamped = 0;   // spikes where the search bumped the .fil edge
+            for (int64_t i = 0; i < N; ++i) {
+                const int   curr = cumShift[static_cast<size_t>(i)];
+                const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
+                int bestS = 0;
+                double bestEnergy = -1.0;
+                int validCandidates = 0;
+                for (int s = -maxShift; s <= maxShift; ++s) {
+                    const int64_t candStart = baseTs + s
+                                            - static_cast<int64_t>(peakSamp0);
+                    if (candStart < 0 ||
+                        candStart + nSamp > totalSamplesP82) continue;
+
+                    const off_t rawOff = static_cast<off_t>(candStart)
+                                       * static_cast<off_t>(totalNbChanP82)
+                                       * static_cast<off_t>(sizeof(short));
+                    if (fseeko(filFp82, rawOff, SEEK_SET) != 0) continue;
+                    if (fread(rawFrame.data(), sizeof(short),
+                              rawFrame.size(), filFp82)
+                            != rawFrame.size()) continue;
+
+                    // Subset to group channels (sample-major in rawFrame
+                    // → channel-major for PCA projection).
+                    for (int t = 0; t < nSamp; ++t)
+                        for (int ci = 0; ci < nChan; ++ci)
+                            candCM[static_cast<size_t>(ci * nSamp + t)] =
+                                rawFrame[static_cast<size_t>(
+                                    t * totalNbChanP82 + groupChannelsP82[ci])];
+
+                    // Apply stderiv transform in-place if pipeline needs it.
+                    // Mirrors the disk-write block's transform (lines 4280+).
+                    if (useStder) {
+                        std::vector<int16_t> sdPrev(
+                            static_cast<size_t>(nChan), 0);
+                        for (int t = 0; t < nSamp; ++t) {
+                            int64_t sum = 0;
+                            for (int ci = 0; ci < nChan; ++ci)
+                                sum += candCM[static_cast<size_t>(ci * nSamp + t)];
+                            for (int ci = 0; ci < nChan; ++ci) {
+                                const int v = candCM[static_cast<size_t>(ci * nSamp + t)];
+                                const int sd = nChan * v - static_cast<int>(sum);
+                                const int16_t sdCl = static_cast<int16_t>(
+                                    std::max(-32768, std::min(32767, sd)));
+                                const int diff = static_cast<int>(sdCl)
+                                    - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
+                                sdPrev[static_cast<size_t>(ci)] = sdCl;
+                                candCM[static_cast<size_t>(ci * nSamp + t)] =
+                                    static_cast<int16_t>(
+                                        std::max(-32768, std::min(32767, diff)));
+                            }
+                        }
+                    }
+
+                    // PCA projection energy.  candCM is channel-major:
+                    //   candCM[ch * nSamp + t]
+                    // pca.means[ch] is [data2use], pca.evec[ch] is
+                    // [data2use * nComp] in col-major (same layout the
+                    // makeFetRow lambda uses below at ~line 3995).
+                    double energy = 0.0;
+                    for (int ch = 0; ch < chForPca; ++ch) {
+                        const auto& mu = pca.means[static_cast<size_t>(ch)];
+                        const auto& ev = pca.evec[static_cast<size_t>(ch)];
+                        for (int k = 0; k < kComp; ++k) {
+                            double score = 0.0;
+                            for (int u = 0; u < d2u; ++u) {
+                                const int sIdx = rShift + u;
+                                double x = static_cast<double>(
+                                    candCM[static_cast<size_t>(ch * nSamp + sIdx)]);
+                                if (centered)
+                                    x -= mu[static_cast<size_t>(u)];
+                                score += ev[static_cast<size_t>(k * d2u + u)] * x;
+                            }
+                            energy += score * score;
+                        }
+                    }
+                    ++validCandidates;
+
+                    if (energy > bestEnergy) {
+                        bestEnergy = energy;
+                        bestS = s;
+                    }
+                }
+
+                if (validCandidates == 0) {
+                    // Every candidate ran off the .fil edge — nothing we
+                    // can do, leave cumShift unchanged.
+                    ++nClamped;
+                    continue;
+                }
+                if (bestS == 0) continue;   // already optimal
+
+                cumShift[static_cast<size_t>(i)] = curr + bestS;
+                ++nRefined;
+
+                // Refresh wavBuf[i] from the .fil at the chosen position
+                // so the downstream score-stats block uses post-refine
+                // content.  We need to re-extract once more (we don't
+                // cache the per-candidate candCM, only the winning bestS).
+                {
+                    const int64_t bestStart =
+                        clusterTs[static_cast<size_t>(i)]
+                      + cumShift[static_cast<size_t>(i)]
+                      - static_cast<int64_t>(peakSamp0);
+                    const off_t bestOff = static_cast<off_t>(bestStart)
+                                        * static_cast<off_t>(totalNbChanP82)
+                                        * static_cast<off_t>(sizeof(short));
+                    if (fseeko(filFp82, bestOff, SEEK_SET) == 0 &&
+                        fread(rawFrame.data(), sizeof(short),
+                              rawFrame.size(), filFp82) == rawFrame.size()) {
+                        int16_t* wTgt = wavBuf.data()
+                            + static_cast<ptrdiff_t>(i)
+                            * static_cast<ptrdiff_t>(spkElems);
+                        for (int t = 0; t < nSamp; ++t)
+                            for (int ci = 0; ci < nChan; ++ci)
+                                wTgt[static_cast<size_t>(ci * nSamp + t)] =
+                                    rawFrame[static_cast<size_t>(
+                                        t * totalNbChanP82
+                                      + groupChannelsP82[ci])];
+                        if (useStder) {
+                            std::vector<int16_t> sdPrev(
+                                static_cast<size_t>(nChan), 0);
+                            for (int t = 0; t < nSamp; ++t) {
+                                int64_t sum = 0;
+                                for (int ci = 0; ci < nChan; ++ci)
+                                    sum += wTgt[static_cast<size_t>(ci * nSamp + t)];
+                                for (int ci = 0; ci < nChan; ++ci) {
+                                    const int v = wTgt[static_cast<size_t>(ci * nSamp + t)];
+                                    const int sd = nChan * v - static_cast<int>(sum);
+                                    const int16_t sdCl = static_cast<int16_t>(
+                                        std::max(-32768, std::min(32767, sd)));
+                                    const int diff = static_cast<int>(sdCl)
+                                        - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
+                                    sdPrev[static_cast<size_t>(ci)] = sdCl;
+                                    wTgt[static_cast<size_t>(ci * nSamp + t)] =
+                                        static_cast<int16_t>(
+                                            std::max(-32768, std::min(32767, diff)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            fclose(filFp82);
+
+            log << "  PCA-refine: " << nRefined
+                << " spike(s) refined";
+            if (nClamped > 0)
+                log << " (" << nClamped << " skipped — window off edge)";
+            log << ".\n";
+
+            // Recompute nShifted from the now-refined cumShift.
+            nShifted = 0;
+            for (int64_t i = 0; i < N; ++i)
+                if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
+            log << "  total shifted after refine: " << nShifted << "\n";
+            emitFlush();
+        }
+    } else if (pcaRefine) {
+        log << "PCA-projection refine requested but PCA basis not loaded "
+               "— skipping.\n";
+        emitFlush();
+    }
 
     // -----------------------------------------------------------------------
     // Score / shift statistics
