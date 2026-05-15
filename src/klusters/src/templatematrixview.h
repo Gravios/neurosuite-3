@@ -120,10 +120,11 @@ protected:
     void customEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     QSize sizeHint() const override;
-    void mousePressEvent(QMouseEvent*) override {}
+    void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent*) override {}
+    void wheelEvent(QWheelEvent* event) override;   // patch80
     void keyPressEvent(QKeyEvent* event) override;
 
 private Q_SLOTS:
@@ -135,6 +136,41 @@ private:
     KlustersDoc& doc;
     KlustersView& view;
     QStatusBar*   statusBar;
+
+    // ── patch80: pan + zoom state ───────────────────────────────────────────
+    // The matrix is rendered at an effective top-left of
+    //   matrixTopLeft() + (m_panX, m_panY)
+    // with each cell drawn at effective size
+    //   cellWidth * m_zoom
+    // Pan is in widget pixels; zoom is a unitless multiplier clamped to
+    // [m_zoomMin, m_zoomMax].  Hit-testing (cellAtX/Y) and drawing
+    // (drawMatrix, drawClusterIds) consult these via effCellSize() and
+    // effMatrixTopLeft() so the same transform applies to both.
+    //
+    // Activation:
+    //   Ctrl + Left-drag      → pan
+    //   Ctrl + Mouse Wheel    → zoom around the cursor position
+    //   +/=  /  -             → zoom in / zoom out (around the centre)
+    //   0                     → reset pan & zoom
+    double  m_panX{0.0};
+    double  m_panY{0.0};
+    double  m_zoom{1.0};
+    bool    m_panning{false};
+    QPoint  m_panAnchorPx;        // mouse position where Ctrl-drag started
+    double  m_panAnchorX{0.0};    // m_panX at drag start
+    double  m_panAnchorY{0.0};    // m_panY at drag start
+    static constexpr double m_zoomMin{0.5};
+    static constexpr double m_zoomMax{20.0};
+    static constexpr double m_zoomStep{1.15};  // wheel/key zoom multiplier per tick
+    static constexpr int    m_panDragThreshold{3};  // px before press → pan
+
+    inline double effCellSize() const { return cellWidth * m_zoom; }
+    inline QPointF effMatrixTopLeft() const {
+        const QPoint b = matrixTopLeft();
+        return QPointF(b.x() + m_panX, b.y() + m_panY);
+    }
+    void  zoomAroundPoint(double newZoom, const QPointF& pivot);
+    void  resetPanZoom();
 
     // ── matrix data (from main thread) ──────────────────────────────────────
     Array<double>* scores;        // [nClusters × nClusters], 1-based mean xcorr
