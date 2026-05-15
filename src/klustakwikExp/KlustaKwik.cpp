@@ -117,6 +117,7 @@ int   ResidualPCASubK             = 4;     ///< (Phase2bMode=3) initial K for th
 int   ResidualPCADominantChannels = 2;     ///< (DEPRECATED in mode 3) — formerly used by the per-iter dominant-channel xcorr; the post-loop realign now uses the shared XcorrDispatch::compute (all channels, normalised xcorr) for proper Klusters-style alignment.  Flag retained for backwards compatibility; ignored in the current implementation.
 float ResidualPCAConvTol          = 0.01f; ///< (Phase2bMode=3) early-stop threshold: when the fraction of spikes whose label changed in this iteration is < ResidualPCAConvTol, the chunk's loop terminates.  0.01 = 1% of spikes changing.
 float ResidualPCAMinScore         = 0.7f;  ///< (Phase2bMode=3) minimum normalised cross-correlation (in [-1,1]) required to accept a per-spike alignment shift in the post-loop XcorrDispatch realign pass.  Below this, the spike's shift stays at zero (matches Klusters' realignSpikes gate).  0.7 is the conventional value; lower (0.5) admits noisier alignments; higher (0.85) restricts to high-confidence matches.
+int   AlignPcaCenter              = 0;     ///< patch83: (Phase2bMode=3) opt-in second-pass alignment that runs AFTER the iter loop converges.  For each spike, sweeps candidate shifts s in [-m_timeShiftMaxAbs, +m_timeShiftMaxAbs] and picks the shift that MINIMIZES the spike's distance to the cluster's mean PCA position (measured in the canonical .pca basis).  Pulls each spike toward the cluster centre in PCA space — directly tightens cluster compactness rather than indirectly via xcorr against a mean template.  0 = off (default); 1 = on.  Falls back silently when .fil unavailable or PCA basis didn't load.
 float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-top-eig / max(per-cluster-top-eig). 0 disables (xcorr only).
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
@@ -298,6 +299,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(ResidualPCADominantChannels);
     FLOAT_PARAM(ResidualPCAConvTol);
     FLOAT_PARAM(ResidualPCAMinScore);
+    INT_PARAM(AlignPcaCenter);   // patch83
     FLOAT_PARAM(TemplateMatchEigRatio);
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
