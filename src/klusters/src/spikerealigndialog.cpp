@@ -15,6 +15,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QCheckBox>     // patch82
 #include <QFileInfo>
 #include <QFrame>
 #include <algorithm>
@@ -119,6 +120,51 @@ void SpikeRealignDialog::buildUi()
     line->setFrameShadow(QFrame::Sunken);
     vlay->addWidget(line);
 
+    // patch82 — PCA-projection-maximizing refine pass (opt-in).
+    //
+    // After the mean-template xcorr alignment converges, a second pass
+    // can further refine each spike's position by trying candidate
+    // shifts in [-maxShift, +maxShift] and picking the one that
+    // MAXIMIZES the spike's PCA projection energy:
+    //
+    //     energy(s) = sum_ch sum_k <basis_ch_k, spike(s) - mean_ch>²
+    //
+    // The intuition: a well-aligned spike concentrates its variance in
+    // the directions of greatest cluster variance (the kept PCA
+    // components); a misaligned spike spreads variance across all
+    // directions, suppressing this sum.  Maximizing energy(s) picks the
+    // shift where the spike most strongly "looks like a member of this
+    // cluster" as measured by the canonical PCA basis.
+    //
+    // Per-spike .fil re-extract at every candidate shift means this is
+    // O(N_spikes × (2·maxShift+1) × nSamp × nChan) more I/O than the
+    // mean-only path, but on a typical 32-channel, 32-sample spike with
+    // maxShift=2 and 5000 spikes it adds < 1 second on a warm cache.
+    bool pcaRefineInitial = false;
+    {
+        const QStringList tokens = m_args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        for (const QString& tok : tokens) {
+            if (tok == QStringLiteral("--pca-refine") || tok == QStringLiteral("-p")) {
+                pcaRefineInitial = true;
+                break;
+            }
+        }
+    }
+    m_pcaRefineCheck = new QCheckBox(
+        tr("Refine with PCA-projection maximization (after mean alignment)"));
+    m_pcaRefineCheck->setChecked(pcaRefineInitial);
+    m_pcaRefineCheck->setToolTip(
+        tr("When checked, runs a second alignment pass after the mean-"
+           "template xcorr converges.  For each spike, sweeps candidate "
+           "shifts in [-maxShift, +maxShift] and picks the shift that "
+           "maximizes the spike's PCA-projection energy (sum of squared "
+           "scores onto the kept .pca eigenvectors).  Tightens alignment "
+           "in directions of greatest cluster variance; sometimes catches "
+           "alignment offsets that the global mean template can't.  Adds "
+           "one extra .fil read per candidate shift per spike — usually "
+           "under a second total."));
+    vlay->addWidget(m_pcaRefineCheck);
+
     // ── Description ──────────────────────────────────────────────────────────
     auto* desc = new QLabel(
         tr("For each spike in the cluster the normalised cross-correlation "
@@ -186,4 +232,27 @@ void SpikeRealignDialog::buildUi()
                "file (%1%2) was not found. Run %3 first.</font></b>")
             .arg(ext).arg(grpId).arg(tool));
     }
+}
+
+// patch82 — Add (or remove) "--pca-refine" from the args string based on
+// the new checkbox state, so the chosen mode reaches realignSpikes via
+// the same string-based knob plumbing as --threshold / --iterations /
+// --maxshift / --topchannels.  Caller (slotRealignSpikes) reads this
+// instead of the original args.
+QString SpikeRealignDialog::finalArgs() const
+{
+    const bool wantRefine = m_pcaRefineCheck && m_pcaRefineCheck->isChecked();
+
+    // Strip any existing --pca-refine / -p flag, then append iff wanted.
+    // Tokens are space-separated; the flag takes no value.
+    QStringList tokens = m_args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    QStringList out;
+    out.reserve(tokens.size() + 1);
+    for (const QString& tok : tokens) {
+        if (tok == QStringLiteral("--pca-refine") ||
+            tok == QStringLiteral("-p")) continue;
+        out.append(tok);
+    }
+    if (wantRefine) out.append(QStringLiteral("--pca-refine"));
+    return out.join(QLatin1Char(' '));
 }

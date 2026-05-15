@@ -40,6 +40,13 @@ public:
     /** Cluster ID selected for realignment. */
     int clusterId() const { return m_clusterId; }
 
+    /** patch82 — args string with --pca-refine appended/removed based on
+     *  the new checkbox state.  Callers should use this instead of the
+     *  args passed in to the constructor when building the RealignWorker,
+     *  so the user's choice in the dialog takes effect.
+     */
+    QString finalArgs() const;
+
 private:
     void buildUi();
 
@@ -51,4 +58,5 @@ private:
     QLabel*      m_pcaFileLabel;
     QLabel*      m_backendLabel;
     QPushButton* m_startBtn;
+    class QCheckBox* m_pcaRefineCheck{nullptr};  // patch82
 };

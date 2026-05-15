@@ -5095,7 +5095,13 @@ void KlustersApp::slotRealignSpikes()
         realignWorker = nullptr;
     }
 
-    auto* worker = new RealignWorker(doc, clusterId, realignArgs);
+    // patch82 — read finalArgs() so the dialog's new --pca-refine
+    // checkbox state is reflected in the args passed to the worker.
+    // Also persist back to realignArgs so the choice survives across
+    // subsequent realignment invocations in the same session.
+    const QString launchArgs = dlg.finalArgs();
+    realignArgs = launchArgs;
+    auto* worker = new RealignWorker(doc, clusterId, launchArgs);
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
 
