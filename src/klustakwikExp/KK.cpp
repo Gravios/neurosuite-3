@@ -9198,6 +9198,284 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     int finalLowScore    = 0;
     int finalOutOfBounds = 0;
     int alignItersRun    = 0;
+    if (AlignPcaCenter == 2) {
+        // ─── patch84: in-memory circular-shift PCA-centering, no m_cumShift ───
+        //
+        // REPLACES the xcorr iter loop + patch83 refine + patch74 monotonicity
+        // entirely.  Designed to avoid the temporal-dispersion failure mode
+        // that surfaces when cumulative shifts (m_cumShift) accumulate across
+        // phases and survive into TimeShiftFinalize's disk writes.
+        //
+        // Algorithm:
+        //   for iter = 0 .. alignMaxIter:
+        //       for each alive cluster cid:
+        //           μ_pca[f] = mean over cluster of Data[gp * nDims + f]
+        //                      for f in 0 .. (basisNChan*basisNComp - 1)
+        //           for each spike (member i) of cluster:
+        //               for each candidate shift s in [-maxShift, +maxShift]:
+        //                   scratch = circular_shift(waveBuf[i], s)
+        //                   project scratch through canonical PCA basis with
+        //                       dimMin_/dimRange_ normalisation
+        //                   dist²(s) = sum_f (pca_f - μ_pca[f])²
+        //               bestS = argmin_s dist²(s)
+        //               if bestS != 0:
+        //                   waveBuf[i] = circular_shift(waveBuf[i], bestS)
+        //                   Data[gp]   = recomputed PCA features of new wave
+        //       if no spike moved this iter: break
+        //
+        // What it touches:
+        //   waveBuf[]      → circularly shifted in-place per spike
+        //   Data[gp][f<D]  → PCA columns refreshed from shifted waveform
+        //                    (NOT the time column at index nDims-1 —
+        //                    circular shift doesn't change detection time)
+        //
+        // What it deliberately does NOT touch:
+        //   m_cumShift[]   → left exactly as found.  If prior phases set
+        //                    nonzero values, those are preserved; if zero,
+        //                    they stay zero.  This is the design point:
+        //                    TimeShiftFinalize keys off m_cumShift to write
+        //                    .spk/.fet/.res, and we want it to write nothing
+        //                    (for chunks running mode 2 fresh) or only what
+        //                    earlier phases already settled.
+        //
+        // What's deliberately SKIPPED relative to modes 0/1:
+        //   - raw-source verify (no .fil reads in mode 2)
+        //   - patch73 pre-refresh of waveBuf from .fil (waveBuf stays in
+        //     its as-loaded .spk state; circular shifts compose from there)
+        //   - patch74 monotonicity check (m_cumShift unchanged so .res
+        //     order is preserved by construction)
+        //
+        // Why circular shift is safe here: the .spk content is highpass-
+        // filtered (or stderiv-transformed, which is doubly high-pass-like),
+        // so there's effectively no DC and the wrap discontinuity at the
+        // window edge is small.  More importantly, the PCA basis windows
+        // around basisRecShift .. basisRecShift + basisData2use — typically
+        // centered on the peak with margin — so a few samples of wrap at
+        // the window EDGE don't enter the projection at small shift sizes.
+        //
+        // What the user does afterward: if they want the on-disk .spkD /
+        // .fetD to reflect the alignment chosen in mode 2, they re-extract
+        // out-of-band from .fil using their own tooling.  KKExp neither
+        // assumes nor performs that step.
+        const bool hasBasisP84 = m_timeShiftBasis.valid() &&
+                                 !m_timeShiftBasis.meanShifted.empty();
+        if (!hasBasisP84) {
+            Output("[Phase 2b m3] chunk %d patch84 mode 2: "
+                   "PCA basis not loaded — alignment skipped entirely.\n",
+                   chunkIdx);
+        } else {
+            const int   candCanonicalP84 = m_timeShiftBasis.N;
+            const int   basisNCompP84    = m_timeShiftBasis.nComp;
+            const int   basisData2useP84 = m_timeShiftBasis.data2use;
+            const int   basisRecShiftP84 = m_timeShiftBasis.recShift;
+            const int   basisNChanP84    = m_timeShiftBasis.nChan;
+            const bool  basisCenteredP84 = m_timeShiftBasis.isCentered;
+            const int   nPCAFeatsP84     = basisNChanP84 * basisNCompP84;
+            const int   maxShiftP84      = m_timeShiftMaxAbs;
+            const int   alignMaxIterP84  = std::clamp(ResidualPCAIter, 2, 10);
+            const int   nSampP84         = nSamplesPerSpike;
+
+            const auto& meanCanonP84 =
+                m_timeShiftBasis.meanShifted[
+                    static_cast<size_t>(candCanonicalP84)];
+            const auto& evecCanonP84 =
+                m_timeShiftBasis.eigvecShifted[
+                    static_cast<size_t>(candCanonicalP84)];
+
+            std::vector<int16_t> scratchWaveP84(
+                static_cast<size_t>(waveSamples));
+
+            int p84TotalShifts = 0;
+            int p84ItersRun    = 0;
+
+            // The candidate-shift sweep and the post-commit refeaturize
+            // both project a sample-major waveform through the canonical
+            // PCA basis using dimMin_/dimRange_ normalisation.  Both are
+            // inlined below (rather than factored into a lambda) because
+            // (a) the hot path is the inner-most loop, function-call
+            // overhead matters, and (b) the sweep version also needs to
+            // accumulate distance² against muPca, while the refeaturize
+            // version writes into Data[gp] — fusing those into a single
+            // lambda would force conditional branching inside the loop.
+
+            for (int iterP84 = 0; iterP84 < alignMaxIterP84; ++iterP84) {
+                ++p84ItersRun;
+                int shiftsThisIter = 0;
+
+                // Recollect alive cluster ids from CURRENT labels (clusters
+                // may have died/split between iters of the outer phase).
+                std::vector<int> idsP84;
+                idsP84.reserve(64);
+                for (int v : labels) {
+                    if (v <= 0) continue;
+                    bool found = false;
+                    for (int s : idsP84)
+                        if (s == v) { found = true; break; }
+                    if (!found) idsP84.push_back(v);
+                }
+
+                for (int cid : idsP84) {
+                    std::vector<int> members;
+                    for (int i = 0; i < nPts; ++i)
+                        if (labels[i] == cid) members.push_back(i);
+                    const int Nc = static_cast<int>(members.size());
+                    if (Nc < 3) continue;
+
+                    // μ_pca over cluster from current Data[]
+                    std::vector<double> muPca(
+                        static_cast<size_t>(nPCAFeatsP84), 0.0);
+                    int contributors = 0;
+                    for (int m : members) {
+                        const int gp = pts[static_cast<size_t>(m)];
+                        if (gp < 0) continue;
+                        const float* row = Data.m_Data + gp * nDims;
+                        for (int f = 0; f < nPCAFeatsP84; ++f)
+                            muPca[static_cast<size_t>(f)] +=
+                                static_cast<double>(row[f]);
+                        ++contributors;
+                    }
+                    if (contributors < 3) continue;
+                    const double invN = 1.0 / contributors;
+                    for (int f = 0; f < nPCAFeatsP84; ++f)
+                        muPca[static_cast<size_t>(f)] *= invN;
+
+                    for (int sp = 0; sp < Nc; ++sp) {
+                        const int iLocal = members[static_cast<size_t>(sp)];
+                        const int gp     = pts[static_cast<size_t>(iLocal)];
+                        if (gp < 0) continue;
+
+                        int16_t* wave = waveBuf.data()
+                            + static_cast<ptrdiff_t>(iLocal)
+                            * static_cast<ptrdiff_t>(waveSamples);
+
+                        int    bestS    = 0;
+                        double bestDist = std::numeric_limits<double>::infinity();
+
+                        for (int s = -maxShiftP84; s <= maxShiftP84; ++s) {
+                            // Circular shift wave by s into scratchWaveP84.
+                            // Sample-major: scratch[((t + s) mod N) * nChan + c]
+                            //               = wave[t * nChan + c]
+                            for (int t = 0; t < nSampP84; ++t) {
+                                int tNew = (t + s) % nSampP84;
+                                if (tNew < 0) tNew += nSampP84;
+                                const int rowDst = tNew * nChan;
+                                const int rowSrc = t    * nChan;
+                                for (int c = 0; c < nChan; ++c)
+                                    scratchWaveP84[
+                                        static_cast<size_t>(rowDst + c)] =
+                                            wave[rowSrc + c];
+                            }
+
+                            // PCA project scratchWaveP84 and accumulate
+                            // distance² to muPca, inline (lambda-free for
+                            // speed — this is the inner-most loop).
+                            double dist2 = 0.0;
+                            for (int ch = 0; ch < basisNChanP84; ++ch) {
+                                const auto& mu = meanCanonP84[
+                                    static_cast<size_t>(ch)];
+                                const auto& ev = evecCanonP84[
+                                    static_cast<size_t>(ch)];
+                                for (int k = 0; k < basisNCompP84; ++k) {
+                                    double val = 0.0;
+                                    for (int u = 0; u < basisData2useP84; ++u) {
+                                        const int sIdx = basisRecShiftP84 + u;
+                                        double x = static_cast<double>(
+                                            scratchWaveP84[
+                                                static_cast<size_t>(
+                                                    sIdx * nChan + ch)]);
+                                        if (basisCenteredP84)
+                                            x -= mu[static_cast<size_t>(u)];
+                                        val += ev[static_cast<size_t>(
+                                            k * basisData2useP84 + u)] * x;
+                                    }
+                                    const int featIdx = ch * basisNCompP84 + k;
+                                    if (featIdx >= nPCAFeatsP84 ||
+                                        featIdx >= static_cast<int>(
+                                            dimMin_.size()))
+                                        continue;
+                                    const double normVal =
+                                        (static_cast<float>(val)
+                                       - dimMin_[featIdx])
+                                      * dimRange_[featIdx];
+                                    const double diff = normVal
+                                      - muPca[static_cast<size_t>(featIdx)];
+                                    dist2 += diff * diff;
+                                }
+                            }
+
+                            if (dist2 < bestDist) {
+                                bestDist = dist2;
+                                bestS    = s;
+                            }
+                        }
+
+                        if (bestS == 0) continue;  // already at the centre
+
+                        // Commit the chosen circular shift to waveBuf in
+                        // place (via scratch since source and dest overlap).
+                        for (int t = 0; t < nSampP84; ++t) {
+                            int tNew = (t + bestS) % nSampP84;
+                            if (tNew < 0) tNew += nSampP84;
+                            const int rowDst = tNew * nChan;
+                            const int rowSrc = t    * nChan;
+                            for (int c = 0; c < nChan; ++c)
+                                scratchWaveP84[
+                                    static_cast<size_t>(rowDst + c)] =
+                                        wave[rowSrc + c];
+                        }
+                        std::memcpy(wave, scratchWaveP84.data(),
+                                    static_cast<size_t>(waveSamples)
+                                  * sizeof(int16_t));
+
+                        // Refresh Data[gp]'s PCA features (only — the
+                        // timestamp at index nDims-1 stays put because
+                        // circular shift does not change detection time).
+                        float* dataRow = Data.m_Data + gp * nDims;
+                        for (int ch = 0; ch < basisNChanP84; ++ch) {
+                            const auto& mu = meanCanonP84[
+                                static_cast<size_t>(ch)];
+                            const auto& ev = evecCanonP84[
+                                static_cast<size_t>(ch)];
+                            for (int k = 0; k < basisNCompP84; ++k) {
+                                double val = 0.0;
+                                for (int u = 0; u < basisData2useP84; ++u) {
+                                    const int sIdx = basisRecShiftP84 + u;
+                                    double x = static_cast<double>(
+                                        wave[sIdx * nChan + ch]);
+                                    if (basisCenteredP84)
+                                        x -= mu[static_cast<size_t>(u)];
+                                    val += ev[static_cast<size_t>(
+                                        k * basisData2useP84 + u)] * x;
+                                }
+                                const int featIdx = ch * basisNCompP84 + k;
+                                if (featIdx >= nPCAFeatsP84 ||
+                                    featIdx >= static_cast<int>(
+                                        dimMin_.size()))
+                                    continue;
+                                dataRow[featIdx] =
+                                    (static_cast<float>(val)
+                                   - dimMin_[featIdx])
+                                  * dimRange_[featIdx];
+                            }
+                        }
+
+                        ++shiftsThisIter;
+                        ++p84TotalShifts;
+                    }  // end per-spike loop
+                }      // end per-cluster loop
+
+                if (shiftsThisIter == 0) break;
+            }          // end iter loop
+
+            alignItersRun = p84ItersRun;
+            finalAligned  = p84TotalShifts;
+
+            Output("[Phase 2b m3] chunk %d patch84 PCA-centering (circular): "
+                   "%d total shifts over %d iter(s); "
+                   "m_cumShift NOT modified (mode 2)\n",
+                   chunkIdx, p84TotalShifts, p84ItersRun);
+        }
+    } else
     {
         // Re-collect alive non-noise cluster ids from final labels
         std::vector<int> finalIds;
