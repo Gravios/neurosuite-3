@@ -12,6 +12,8 @@
 #include <QEvent>
 #include <QFont>
 #include <QKeyEvent>
+#include <QMouseEvent>   // patch80
+#include <QWheelEvent>   // patch80
 #include <QVector>
 #include <cmath>
 #include <algorithm>
@@ -368,13 +370,21 @@ QPoint TemplateMatrixView::matrixTopLeft() const
 
 int TemplateMatrixView::cellAtX(int viewX) const
 {
-    int ci = (viewX - matrixTopLeft().x()) / cellWidth;
+    // patch80 — account for pan + zoom.  Use double arithmetic and
+    // floor() so cells just inside the grid don't round into -1.
+    const double eff = effCellSize();
+    if (eff <= 0.0) return -1;
+    const double mx = effMatrixTopLeft().x();
+    const int ci = static_cast<int>(std::floor((viewX - mx) / eff));
     return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
 }
 
 int TemplateMatrixView::cellAtY(int viewY) const
 {
-    int ci = (viewY - matrixTopLeft().y()) / cellWidth;
+    const double eff = effCellSize();
+    if (eff <= 0.0) return -1;
+    const double my = effMatrixTopLeft().y();
+    const int ci = static_cast<int>(std::floor((viewY - my) / eff));
     return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
 }
 
@@ -405,34 +415,39 @@ void TemplateMatrixView::paintEvent(QPaintEvent*)
 void TemplateMatrixView::drawMatrix(QPainter& p)
 {
     const int n      = clusterList.size();
-    const QPoint ori = matrixTopLeft();
+    // patch80 — render at the pan/zoom transform.  Use floating-point
+    // for accumulation so sub-pixel zoom levels don't drift visibly.
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+    const int     w    = std::max(1, static_cast<int>(std::round(eff)));
 
     if (isStale) {
         QPen pen(Qt::red); pen.setWidth(2);
         p.setPen(pen);
-        p.drawRect(ori.x()-1, ori.y()-1, n*cellWidth+2, n*cellWidth+2);
+        p.drawRect(QRectF(oriF.x()-1, oriF.y()-1,
+                          n * eff + 2, n * eff + 2));
         p.setPen(Qt::NoPen);
     }
 
     for (int row = 0; row < n; ++row) {
         for (int col = 0; col < n; ++col) {
-            const int px = ori.x() + col * cellWidth;
-            const int py = ori.y() + row * cellWidth;
+            const int px = static_cast<int>(std::round(oriF.x() + col * eff));
+            const int py = static_cast<int>(std::round(oriF.y() + row * eff));
 
             if (row == col) {
-                p.fillRect(px, py, cellWidth, cellWidth, Qt::black);
+                p.fillRect(px, py, w, w, Qt::black);
                 continue;
             }
 
             const double sc = (*scores)(row+1, col+1);
             int idx = static_cast<int>(sc * (NB_COLORS-1) + 0.5);
             idx = std::max(0, std::min(NB_COLORS-1, idx));
-            p.fillRect(px, py, cellWidth, cellWidth, colorMap[idx]);
+            p.fillRect(px, py, w, w, colorMap[idx]);
 
             if (sc >= currentThreshold) {
                 QPen wp(Qt::white); wp.setWidth(2);
                 p.setPen(wp);
-                p.drawRect(px+1, py+1, cellWidth-3, cellWidth-3);
+                p.drawRect(px+1, py+1, w-3, w-3);
                 p.setPen(Qt::NoPen);
             }
 
@@ -440,7 +455,7 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
             if (clusterList[row] == selectedB && clusterList[col] == selectedA) {
                 QPen yp(Qt::yellow); yp.setWidth(3);
                 p.setPen(yp);
-                p.drawRect(px, py, cellWidth-1, cellWidth-1);
+                p.drawRect(px, py, w-1, w-1);
                 p.setPen(Qt::NoPen);
             }
         }
@@ -450,27 +465,95 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
 void TemplateMatrixView::drawClusterIds(QPainter& p)
 {
     const int n      = clusterList.size();
-    const QPoint ori = matrixTopLeft();
-    const int fontSize = std::max(5, std::min(9, cellWidth/5));
+    // patch80 — label margin stays anchored at screen edge for legibility,
+    // but per-column / per-row labels track the cell positions through
+    // the pan/zoom transform.  Column labels live in the top strip
+    // (y = 0 .. base.y()), so they pan/zoom horizontally only; row
+    // labels live in the left strip (x = 0 .. LABEL_MARGIN-2), so they
+    // pan/zoom vertically only.  When pan/zoom would push a label
+    // outside the strip it just clips — acceptable for now; a future
+    // patch could hide off-screen labels and add a scroll indicator.
+    const QPoint  base = matrixTopLeft();
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+    const int     w    = std::max(1, static_cast<int>(std::round(eff)));
+    const int fontSize = std::max(5, std::min(14,
+                            static_cast<int>(std::round(eff / 5.0))));
     QFont f("Helvetica", fontSize);
     p.setFont(f);
     p.setPen(palette().color(QPalette::WindowText));
 
-    for (int col = 0; col < n; ++col)
-        p.drawText(QRect(ori.x()+col*cellWidth, 0, cellWidth, ori.y()),
+    for (int col = 0; col < n; ++col) {
+        const int px = static_cast<int>(std::round(oriF.x() + col * eff));
+        p.drawText(QRect(px, 0, w, base.y()),
                    Qt::AlignHCenter | Qt::AlignBottom,
                    QString::number(clusterList[col]));
+    }
 
-    for (int row = 0; row < n; ++row)
-        p.drawText(QRect(0, ori.y()+row*cellWidth, LABEL_MARGIN-2, cellWidth),
+    for (int row = 0; row < n; ++row) {
+        const int py = static_cast<int>(std::round(oriF.y() + row * eff));
+        p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
                    QString::number(clusterList[row]));
+    }
 }
 
 // ── mouse ────────────────────────────────────────────────────────────────────
 
+// patch80 — Ctrl + Left-drag pans; everything else (plain click, Ctrl-click
+// without drag) keeps its original meaning.  The state machine:
+//
+//   press      : if Ctrl held, record anchor pos and current pan offsets.
+//                We do NOT start panning yet — only after the cursor moves
+//                m_panDragThreshold pixels, so a quick Ctrl-click still
+//                hits the click path (which adds clusters to the active
+//                view; see mouseReleaseEvent line ~510 in the original).
+//   move       : if anchor recorded AND mouse moved past threshold, set
+//                m_panning = true and update m_panX/Y from the delta.
+//                If not panning, keep the original status-bar hover
+//                feedback.
+//   release    : if we ended up panning, swallow the click (the user was
+//                dragging the view, not selecting a cell).  Otherwise
+//                run the original click logic.
+
+void TemplateMatrixView::mousePressEvent(QMouseEvent* e)
+{
+    if ((e->buttons() & Qt::LeftButton) &&
+        (e->modifiers() & Qt::ControlModifier)) {
+        m_panAnchorPx = e->position().toPoint();
+        m_panAnchorX  = m_panX;
+        m_panAnchorY  = m_panY;
+        // Do NOT set m_panning yet — wait for move past threshold.
+        // This keeps Ctrl + quick-click → add-clusters working.
+        setCursor(Qt::ClosedHandCursor);
+        e->accept();
+        return;
+    }
+    // Pass through to base.  Note: the previous header had this as an
+    // empty {} override, so no behaviour change for non-Ctrl clicks.
+}
+
 void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
 {
+    // patch80 — pan path takes priority while the left button is held
+    // with Ctrl and we've passed the drag threshold.
+    if ((e->buttons() & Qt::LeftButton) &&
+        (e->modifiers() & Qt::ControlModifier)) {
+        const QPoint d = e->position().toPoint() - m_panAnchorPx;
+        if (!m_panning &&
+            (std::abs(d.x()) + std::abs(d.y()) >= m_panDragThreshold)) {
+            m_panning = true;
+        }
+        if (m_panning) {
+            m_panX = m_panAnchorX + d.x();
+            m_panY = m_panAnchorY + d.y();
+            update();
+            e->accept();
+            return;
+        }
+    }
+
+    // Original hover-feedback path.
     if (!dataReady || clusterList.isEmpty()) return;
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
@@ -487,6 +570,22 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
 
 void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
+    // patch80 — if the user just finished a pan drag, swallow the click
+    // and reset cursor.  The original click logic (cluster selection /
+    // add-clusters) is only reachable when m_panning was never set.
+    if (m_panning) {
+        m_panning = false;
+        unsetCursor();
+        e->accept();
+        return;
+    }
+    // If Ctrl was held but we never crossed the drag threshold, the
+    // cursor is still ClosedHand — restore it before running the
+    // original click logic.
+    if (e->modifiers() & Qt::ControlModifier) {
+        unsetCursor();
+    }
+
     // Tell KlustersApp's last-interacted tracker BEFORE the early-return
     // guards — even a click on an empty/stale matrix counts as the
     // user "focusing" this view for the Shift+S reorder selection.
@@ -516,6 +615,54 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 
     setFocus();
     update();
+}
+
+// patch80 — zoom helpers.  Ctrl + wheel zooms around the cursor; the
+// +/= and - keys zoom around the widget centre; the 0 key resets.
+//
+// Zoom-around-pivot derivation: the matrix point under widget-pixel P
+// is matCoord = (P - base - pan) / (cellW * zoom).  We want this same
+// matCoord to stay under P after zoom changes:
+//   P - base - panNew = matCoord * cellW * zoomNew
+//                     = (P - base - panOld) * (zoomNew / zoomOld)
+//   ⇒ panNew = P - base - (P - base - panOld) * ratio
+// which simplifies to:
+//   panNew = panOld + (P - base - panOld) * (1 - ratio)
+
+void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
+{
+    newZoom = std::clamp(newZoom, m_zoomMin, m_zoomMax);
+    if (m_zoom <= 0.0) return;
+    const double ratio = newZoom / m_zoom;
+    const QPoint  base = matrixTopLeft();
+    const double dx = (pivot.x() - base.x() - m_panX) * (1.0 - ratio);
+    const double dy = (pivot.y() - base.y() - m_panY) * (1.0 - ratio);
+    m_panX += dx;
+    m_panY += dy;
+    m_zoom = newZoom;
+    update();
+}
+
+void TemplateMatrixView::resetPanZoom()
+{
+    m_panX = m_panY = 0.0;
+    m_zoom = 1.0;
+    update();
+}
+
+void TemplateMatrixView::wheelEvent(QWheelEvent* event)
+{
+    if (!(event->modifiers() & Qt::ControlModifier)) {
+        // Without Ctrl, defer to base (lets scroll behaviour pass through
+        // to a parent QScrollArea if one is ever introduced).
+        QWidget::wheelEvent(event);
+        return;
+    }
+    const int delta = event->angleDelta().y();
+    if (delta == 0) { event->accept(); return; }
+    const double factor = (delta > 0) ? m_zoomStep : 1.0 / m_zoomStep;
+    zoomAroundPoint(m_zoom * factor, event->position());
+    event->accept();
 }
 
 // ── slider / apply ────────────────────────────────────────────────────────────
@@ -593,6 +740,23 @@ void TemplateMatrixView::keyPressEvent(QKeyEvent* event)
         applyButton->setEnabled(false);
         countLabel->setText("");
         update(); event->accept(); return;
+    }
+    // patch80 — keyboard zoom around the widget centre.
+    if (key == Qt::Key_Plus || key == Qt::Key_Equal) {
+        const QPointF c(width() * 0.5,
+                        (height() - CONTROLS_H) * 0.5);
+        zoomAroundPoint(m_zoom * m_zoomStep, c);
+        event->accept(); return;
+    }
+    if (key == Qt::Key_Minus || key == Qt::Key_Underscore) {
+        const QPointF c(width() * 0.5,
+                        (height() - CONTROLS_H) * 0.5);
+        zoomAroundPoint(m_zoom / m_zoomStep, c);
+        event->accept(); return;
+    }
+    if (key == Qt::Key_0) {
+        resetPanZoom();
+        event->accept(); return;
     }
     QWidget::keyPressEvent(event);
 }
