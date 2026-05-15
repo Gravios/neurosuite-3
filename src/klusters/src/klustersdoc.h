@@ -479,12 +479,16 @@ public:
      *  on the cluster mean, projected onto the top K eigenvectors of
      *  the residual covariance, and written as int64 to the .fet file
      *  alongside the original timestamp.
-     *  Returns K+1 (the dimensions written) on success; OPEN_ERROR /
-     *  CREATION_ERROR on failure.
+     *  Returns one of the standard enum codes (OK / OPEN_ERROR /
+     *  CREATION_ERROR).  The actual number of dimensions written (K+1
+     *  on success) is returned via the *nDimWritten out-parameter; it
+     *  is NOT the function's return value because that would collide
+     *  with the enum codes (CREATION_ERROR=8 etc.).
      */
     int createMeanSubtractedSubdimFeatureFile(
         int clusterId, int K,
         const QString& reclusteringFetFileName,
+        int* nDimWritten = nullptr,
         QVector<double>* eigvalsOut = nullptr);
 
     /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).

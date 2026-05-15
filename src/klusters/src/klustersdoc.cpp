@@ -2912,15 +2912,20 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
         return CREATION_ERROR;
 }
 
-// patch76 — wrapper for the mean-subtracted sub-dimensional path.
-// Returns the number of dimensions written to the .fet file (K+1), or
-// 0/OPEN_ERROR/CREATION_ERROR on failure.  Only valid when called with
-// exactly one cluster.
+// patch78 — wrapper for the mean-subtracted sub-dimensional path.
+// Returns one of the standard enum values (OK / OPEN_ERROR /
+// CREATION_ERROR) to avoid colliding the success path's K+1 dim count
+// with the enum codes (CREATION_ERROR=8, SAVE_ERROR=5, UPLOAD_ERROR=6,
+// INCORRECT_CONTENT=7, etc.).  The actual number of dimensions written
+// is returned via the *nDimWritten out-parameter so the caller can
+// build the right %features bit-string.
 int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
         int clusterId, int K,
         const QString& reclusteringFetFileName,
+        int* nDimWritten,
         QVector<double>* eigvalsOut)
 {
+    if (nDimWritten) *nDimWritten = 0;
     QFile fetFile(reclusteringFetFileName);
     if (!fetFile.open(QIODevice::WriteOnly)) return OPEN_ERROR;
     const int nDim = clusteringData->createMeanSubtractedSubdimFeatureFile(
@@ -2928,7 +2933,8 @@ int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
     // createMeanSubtractedSubdimFeatureFile closes fetFile internally
     // (it re-opens via fopen for binary I/O).
     if (nDim <= 0) return CREATION_ERROR;
-    return nDim;   // KlustersApp inspects > 0 vs error codes itself.
+    if (nDimWritten) *nDimWritten = nDim;
+    return OK;
 }
 
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
