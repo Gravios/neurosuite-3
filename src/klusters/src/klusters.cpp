@@ -4017,6 +4017,13 @@ void KlustersApp::slotRecluster(){
     // overrides %features to match (K '1's + '0' for time).  For all
     // other cases (multi-cluster recluster, or mode off) we fall through
     // to the original createFeatureFile path below.
+    //
+    // patch78 — return value is now an OpenSaveCreateReturnMessage enum
+    // (OK / OPEN_ERROR / CREATION_ERROR); the actual dim count comes
+    // back via the out-parameter.  Previously the function returned
+    // K+1 directly, which collided with enum codes for many K values
+    // (e.g. K=7 → 8 == CREATION_ERROR, falsely tripping the IO Error
+    // dialog even though the file had been written successfully).
     bool usedSubdim = false;
     if (configuration().getReclusterMeanSubtractedSubdim() &&
         clustersToRecluster.size() == 1 &&
@@ -4024,26 +4031,26 @@ void KlustersApp::slotRecluster(){
         const int singleCid = clustersToRecluster.first();
         const int K = qBound(1, autoSelectNFeatures, doc->nbDimensions() - 1);
         QVector<double> eigvals;
-        int nDimWritten = doc->createMeanSubtractedSubdimFeatureFile(
-            singleCid, K, reclusteringFetFileName, &eigvals);
-        if (nDimWritten == KlustersDoc::OPEN_ERROR) {
+        int dimsWritten = 0;
+        const int rc = doc->createMeanSubtractedSubdimFeatureFile(
+            singleCid, K, reclusteringFetFileName, &dimsWritten, &eigvals);
+        if (rc == KlustersDoc::OPEN_ERROR) {
             QMessageBox::critical(this,tr("Error !"),
                 tr("The reclustering feature file cannot be created (mean-"
                    "subtracted subdim path). Falling back to standard "
                    "feature file."));
             // fall through to the standard path
-        } else if (nDimWritten == KlustersDoc::CREATION_ERROR ||
-                   nDimWritten <= 0) {
+        } else if (rc != KlustersDoc::OK || dimsWritten <= 0) {
             QMessageBox::critical(this,tr("IO Error !"),
                 tr("Mean-subtracted subdim feature-file creation failed. "
                    "Falling back to standard feature file."));
             // fall through
         } else {
-            // Success — override %features.  nDimWritten == K + 1; bit
+            // Success — override %features.  dimsWritten == K + 1; bit
             // string is K '1's (residual PCA components) then '0' for
             // the timestamp column.
             QString fSubdim;
-            for (int j = 0; j < nDimWritten - 1; ++j)
+            for (int j = 0; j < dimsWritten - 1; ++j)
                 fSubdim.append(QLatin1Char('1'));
             fSubdim.append(QLatin1Char('0'));
             for (QString &arg : argList) {
@@ -4055,7 +4062,7 @@ void KlustersApp::slotRecluster(){
             QString evMsg = QString("[recluster] mean-subtracted "
                 "subdim: cluster %1, K=%2 residual-PCA components; "
                 "eigenvalues:")
-                .arg(singleCid).arg(nDimWritten - 1);
+                .arg(singleCid).arg(dimsWritten - 1);
             for (double e : eigvals)
                 evMsg.append(QString(" %1").arg(e, 0, 'g', 4));
             qDebug() << evMsg;
