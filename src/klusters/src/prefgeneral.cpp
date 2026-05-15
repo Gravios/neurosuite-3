@@ -111,6 +111,12 @@ void PrefGeneral::setAutoSelectFeatures(bool checked) {
 int  PrefGeneral::getAutoSelectNFeatures() const  { return autoSelectNFeaturesSpinBox->value(); }
 void PrefGeneral::setAutoSelectNFeatures(int n)   { autoSelectNFeaturesSpinBox->setValue(n); }
 
+// patch76 — mean-subtracted sub-dimensional recluster mode
+bool PrefGeneral::getReclusterMeanSubtractedSubdim() const
+    { return reclusterMeanSubtractedSubdimCheckBox->isChecked(); }
+void PrefGeneral::setReclusterMeanSubtractedSubdim(bool checked)
+    { reclusterMeanSubtractedSubdimCheckBox->setChecked(checked); }
+
 bool PrefGeneral::useWhiteColorDuringPrinting() const
 {
     return useWhiteColorPrinting->isChecked();

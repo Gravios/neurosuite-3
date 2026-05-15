@@ -702,6 +702,23 @@ public:
   */
     void createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile);
 
+    /** patch76 — Build a mean-subtracted sub-dimensional feature file for
+     *  ONE cluster.  For each spike, subtract the cluster's mean feature
+     *  vector to get the residual, then project the residuals onto the
+     *  top K eigenvectors of the residual covariance matrix.  The output
+     *  .fet has K residual-PCA dimensions plus the original timestamp
+     *  column (so KKExp's chunk-by-time machinery still works).
+     *  Returns the number of dimensions actually written (K + 1), or 0
+     *  on failure.
+     *  @param clusterId  ID of the single cluster to recluster.
+     *  @param K          desired number of residual-PCA components.
+     *  @param fetFile    output .fet file (will be re-opened in binary).
+     *  @param eigvals    optional out: top-K eigenvalues in descending order.
+     */
+    int createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
+                                              QFile& fetFile,
+                                              QVector<double>* eigvals = nullptr);
+
     /**Integrates the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.
   * @param clustersToRecluster list of clusters reclustered.

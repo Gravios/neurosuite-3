@@ -101,6 +101,10 @@ public:
     int  getAutoSelectNFeatures() const;
     void setAutoSelectNFeatures(int n);
 
+    // patch76 — mean-subtracted sub-dimensional recluster mode
+    bool getReclusterMeanSubtractedSubdim() const;
+    void setReclusterMeanSubtractedSubdim(bool checked);
+
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size);
 

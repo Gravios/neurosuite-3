@@ -2912,6 +2912,25 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
         return CREATION_ERROR;
 }
 
+// patch76 — wrapper for the mean-subtracted sub-dimensional path.
+// Returns the number of dimensions written to the .fet file (K+1), or
+// 0/OPEN_ERROR/CREATION_ERROR on failure.  Only valid when called with
+// exactly one cluster.
+int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
+        int clusterId, int K,
+        const QString& reclusteringFetFileName,
+        QVector<double>* eigvalsOut)
+{
+    QFile fetFile(reclusteringFetFileName);
+    if (!fetFile.open(QIODevice::WriteOnly)) return OPEN_ERROR;
+    const int nDim = clusteringData->createMeanSubtractedSubdimFeatureFile(
+        clusterId, K, fetFile, eigvalsOut);
+    // createMeanSubtractedSubdimFeatureFile closes fetFile internally
+    // (it re-opens via fopen for binary I/O).
+    if (nDim <= 0) return CREATION_ERROR;
+    return nDim;   // KlustersApp inspects > 0 vs error codes itself.
+}
+
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
 
     // Capture cluster state before KlustaKwik's output is integrated

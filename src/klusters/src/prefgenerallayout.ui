@@ -400,6 +400,37 @@
             </item>
            </layout>
           </item>
+          <item>
+           <!-- patch76: mean-subtracted sub-dimensional recluster mode -->
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QCheckBox" name="reclusterMeanSubtractedSubdimCheckBox">
+              <property name="text">
+               <string>Mean-subtracted subdim (single cluster)</string>
+              </property>
+              <property name="toolTip">
+               <string>When checked and exactly one cluster is being reclustered, klusters subtracts the cluster's mean from each spike's features, projects the residuals onto the top N PCA components of the cluster, and feeds those to KlustaKwik instead of the full feature set. Reveals sub-structure in a cluster that the canonical PCA basis can't separate. N is taken from the N-features spin-box above. No effect when more than one cluster is reclustered.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer_subdim">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
          </layout>
         </item>
        </layout>
@@ -1056,6 +1087,7 @@
   <tabstop>reclusteringArgsLineEdit</tabstop>
   <tabstop>autoSelectFeaturesCheckBox</tabstop>
   <tabstop>autoSelectNFeaturesSpinBox</tabstop>
+  <tabstop>reclusterMeanSubtractedSubdimCheckBox</tabstop>
   <tabstop>realignThresholdSpinBox</tabstop>
   <tabstop>realignIterationsSpinBox</tabstop>
   <tabstop>realignMaxShiftSpinBox</tabstop>
