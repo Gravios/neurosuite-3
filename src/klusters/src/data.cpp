@@ -4805,6 +4805,30 @@ int Data::createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
     const int D = nbDimensions - 1;
     K = std::max(1, std::min(K, D));
 
+    // patch76-fix1 — populate reclusteringSpikesByCluster.
+    //
+    // integrateReclusteredClusters → loadReclusteredClusters reads
+    // reclusteringSpikesByCluster.nbOfColumns() to know how many
+    // spike labels to expect from the .clu file, and uses row 1 to
+    // map back to global spike row indices.  Without this setup the
+    // integration aborts with INCORRECT_CONTENT and the user sees
+    // "The temporary file containing the new clusters contains
+    // incorrect data." — the canonical createFeatureFile does this
+    // setup; we missed it on the subdim path.
+    //
+    // Mirror the createFeatureFile setup for the single cluster:
+    //   row 1 of reclusteringSpikesByCluster gets the global spike
+    //                row indices into the features table
+    //   row 2 is overwritten by loadReclusteredClusters with the
+    //                offset-by-highestClusterId new labels
+    reclusteringSpikesByCluster.setSize(nSp);
+    memcpy(&(reclusteringSpikesByCluster)(1, 1),
+           &(*spikesByCluster)(1, firstPos),
+           nSp * sizeof(dataType));
+    memcpy(&(reclusteringSpikesByCluster)(2, 1),
+           &(*spikesByCluster)(2, firstPos),
+           nSp * sizeof(dataType));
+
     // ── (1) Compute the cluster's mean over the D non-time columns. ──
     std::vector<double> mu(static_cast<size_t>(D), 0.0);
     for (dataType s = 0; s < nSp; ++s) {
