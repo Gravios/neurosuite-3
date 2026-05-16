@@ -4970,14 +4970,23 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // ── Per-spike waveform re-extraction helper ───────────────────────────
     // Reads raw waveform from .fil into channel-major layout [ch*nSamp+s].
     //
-    // The `prevSample` out-parameter is retained on the signature for
-    // call-site compatibility but is always returned empty.  The canonical
-    // stderiv pipeline (process_extractspikes_stderiv, process_pca_stderiv)
-    // applies the temporal first-difference per spike with sdiff[-1] = 0,
-    // so the value of the raw sample preceding the spike window has no
-    // effect on the transformed waveform — see the comment on `prev` in
-    // applyStderivTransform below.  Earlier builds read it; that read is
-    // now elided.
+    // patch89: also reads ONE EXTRA raw sample at (startSample - 1) into
+    // `prevSample` (channel-major, group channels only, nChan int16s).
+    // applyStderivTransform uses this to compute the correct prev_sdiff
+    // for the sample-0 temporal first-difference, matching the canonical
+    // extractor's g_prev_sdiff behaviour across chunk boundaries in
+    // fill_sdiff_buffer (process_extractspikes_stderiv.cpp:181-186).
+    //
+    // Pre-patch89 this lambda always returned `prevSample` empty and
+    // applyStderivTransform fell back to sd[-1]=0 per spike — that did
+    // NOT match the canonical extractor (which uses the prior sample's
+    // spatial derivative as prev_sdiff for sample 0), so every nudged
+    // spike differed from a canonically-extracted spike by exactly
+    // sdiff[ws-1] at sample 0.  Visible as cluster mean dispersion
+    // accumulating across nudges.  Edge case: when startSample==0 (spike
+    // at the very start of the recording), no prev sample exists;
+    // prevSample stays empty and the transform falls back to prev=0 to
+    // match the canonical extractor's first-chunk startup behaviour.
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
 
     auto extractWaveform = [&](int64_t ts,
@@ -4989,20 +4998,34 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
         if (startSample < 0 || startSample + nSamp > totalSamples) return false;
 
-        // Read exactly the spike window.
-        const off_t rawOff = static_cast<off_t>(startSample)
+        // patch89: read (nSamp + 1) raw samples starting at (startSample - 1)
+        // when we have a sample to spare; the leading sample feeds prev_sdiff.
+        const bool hasPrev = (startSample >= 1);
+        const int64_t readStart = hasPrev ? (startSample - 1) : startSample;
+        const int nReadSamples  = nSamp + (hasPrev ? 1 : 0);
+
+        const off_t rawOff = static_cast<off_t>(readStart)
                            * static_cast<off_t>(totalNbChan) * 2;
         if (fseeko(filF, rawOff, SEEK_SET) != 0) return false;
         std::vector<int16_t> rawFrame(
-            static_cast<size_t>(nSamp) * static_cast<size_t>(totalNbChan));
+            static_cast<size_t>(nReadSamples) * static_cast<size_t>(totalNbChan));
         if (fread(rawFrame.data(), 2, rawFrame.size(), filF) != rawFrame.size())
             return false;
 
-        // Group-channel slice — channel-major output layout [ch*nSamp+s].
+        // Split rawFrame: when hasPrev, sample 0 of rawFrame is the prev
+        // sample; samples [1..nSamp] are the spike window.  When !hasPrev,
+        // all nSamp samples are the spike window.
+        if (hasPrev) {
+            prevSample.resize(static_cast<size_t>(nChan));
+            for (int ci = 0; ci < nChan; ++ci)
+                prevSample[static_cast<size_t>(ci)] =
+                    rawFrame[static_cast<size_t>(groupChannels[ci])];
+        }
+        const int wavOffset = hasPrev ? 1 : 0;
         for (int s = 0; s < nSamp; ++s)
             for (int ci = 0; ci < nChan; ++ci)
                 wav[static_cast<size_t>(ci * nSamp + s)] =
-                    rawFrame[static_cast<size_t>(s * totalNbChan
+                    rawFrame[static_cast<size_t>((s + wavOffset) * totalNbChan
                              + groupChannels[ci])];
         return true;
     };
@@ -5135,32 +5158,83 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             }
         }
 
-        // Boundary condition: sdiff[-1, ch] = 0 PER SPIKE.  This is the
-        // canonical contract used by both ndm_extractspikes_stderiv (Pass 2
-        // waveform write) and ndm_pca_stderiv (basis training); see the
-        // matching comments at the temporal-difference loops in those tools.
-        // Each spike's transformed waveform is treated as starting from
-        // baseline, so output sample 0 equals the spatial derivative itself
-        // rather than a true first-difference against the preceding raw
-        // sample.  This is the convention the existing .spkD / .fetD /
-        // .pcaD on disk were built on.
+        // patch89: initial prev[] for the temporal first-difference.
         //
-        // Earlier nudge builds primed `prev` with the spatial derivative of
-        // the *actual* preceding raw sample.  That is theoretically the
-        // proper temporal first-difference, but it does not match the
-        // canonical pipeline: for typical baseline-dominant signal just
-        // before a spike, sd[0] − sd[−1] ≈ 0, so the first sample of every
-        // nudged waveform collapsed to ~zero.  Visible symptom: a flat-line
-        // "step" at the start of nudged spike traces in the waveform view.
-        // Quiet symptom: nudged .fetD rows land in a slightly off-axis
-        // subspace of the .pcaD eigenvector basis the original spikes were
-        // projected into, biasing the refeaturization.
+        // The canonical extractor (fill_sdiff_buffer in
+        // process_extractspikes_stderiv.cpp:181-194) computes the temporal
+        // first-difference as:
         //
-        // `prevRaw` is consequently no longer used by this transform.  It
-        // is retained on the call signature so existing call sites compile
-        // unchanged; the matching read in extractWaveform has been pruned.
-        (void)prevRaw;
+        //     diff[t] = sd[t] - sd[t-1]                      if t > 0
+        //     diff[0] = sd[0] - g_prev_sdiff[ch]             if g_prev_sdiff non-empty
+        //     diff[0] = sd[0] - 0                            otherwise (first chunk only)
+        //
+        // where g_prev_sdiff carries the previous chunk's last sample's
+        // spatial derivative.  Across all but the very first chunk, sample 0
+        // sees a non-zero prev.  For typical mid-recording spikes the prev
+        // sample is baseline noise so sd[ws-1] is small but non-zero — and
+        // critically, the .spkD content on disk was written using this
+        // non-zero prev.  Sample-0 of every spike in the on-disk .spkD
+        // therefore reflects (sd[ws] - sd[ws-1]), NOT just sd[ws].
+        //
+        // Pre-patch89 nudge code used prev=0 unconditionally, producing
+        // sample-0 = sd[ws] for nudged spikes.  This differed from the
+        // canonical content by exactly sd[ws-1] at sample 0.  The .pcaD
+        // basis was trained on canonical content, so the offset projected
+        // as a constant feature-space displacement, dispersing nudged
+        // cluster spikes.  Visible symptom: cluster mean dispersion that
+        // accumulates with every nudge.
+        //
+        // Fix: when prevRaw is provided (size == nChan), compute its
+        // spatial derivative using the same kSdiffOrder logic as above and
+        // use it as the initial prev[].  When prevRaw is empty (only at
+        // startSample == 0, i.e. spike at the very start of the recording),
+        // fall back to prev[]=0 to match the canonical extractor's
+        // first-chunk startup behaviour.
         std::vector<int16_t> prev(static_cast<size_t>(nChan), 0);
+        if (!prevRaw.empty() && static_cast<int>(prevRaw.size()) == nChan) {
+            for (int ci = 0; ci < nChan; ++ci) {
+                const int val = prevRaw[static_cast<size_t>(ci)];
+                int sd;
+                switch (kSdiffOrder) {
+                case 0:  // SDIFF_NONE — pass-through
+                    sd = val;
+                    break;
+                case 1: {  // SDIFF_FIRST
+                    const int other = (ci < nChan - 1)
+                        ? prevRaw[static_cast<size_t>(ci + 1)]
+                        : (nChan > 1
+                            ? prevRaw[static_cast<size_t>(ci - 1)]
+                            : 0);
+                    sd = val - other;
+                    break; }
+                case 2: {  // SDIFF_LAPLACIAN
+                    if (nChan == 1) { sd = val; break; }
+                    if (ci == 0)
+                        sd = val - prevRaw[1];
+                    else if (ci == nChan - 1)
+                        sd = val - prevRaw[static_cast<size_t>(nChan - 2)];
+                    else {
+                        const int p = prevRaw[static_cast<size_t>(ci - 1)];
+                        const int n = prevRaw[static_cast<size_t>(ci + 1)];
+                        const int twoVal = 2 * val - p - n;
+                        sd = (twoVal >= 0)
+                            ? (twoVal + 1) / 2
+                            : -((-twoVal + 1) / 2);
+                    }
+                    break; }
+                case 3:  // SDIFF_ALLPAIRS (default)
+                default: {
+                    int sum = 0;
+                    for (int cj = 0; cj < nChan; ++cj)
+                        sum += prevRaw[static_cast<size_t>(cj)];
+                    sd = nChan * val - sum;
+                    break; }
+                }
+                if (sd >  32767) sd =  32767;
+                else if (sd < -32768) sd = -32768;
+                prev[static_cast<size_t>(ci)] = static_cast<int16_t>(sd);
+            }
+        }
 
         // Step 2: temporal first-difference in-place, using prev as the
         // baseline for output sample 0.
@@ -5479,10 +5553,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                     clusteringData->featureValue(row, col + 1)));
         }
 
-        // Re-extract waveform at new timestamp.  prevSample is always
-        // returned empty (canonical contract: temporal first-difference
-        // boundary is sdiff[-1]=0 per spike); kept on the call signature
-        // for compatibility with applyStderivTransform.
+        // Re-extract waveform at new timestamp.  patch89: prevSample is
+        // populated with the raw sample at (startSample - 1) when one is
+        // available, so applyStderivTransform's sample-0 temporal-diff uses
+        // the correct prev_sdiff matching the canonical extractor's
+        // g_prev_sdiff behaviour.  prevSample is empty only when the spike
+        // sits at the very start of the recording (startSample == 0).
         std::vector<int16_t> wav;
         std::vector<int16_t> prevSample;
         const bool gotWav = extractWaveform(ts64, wav, prevSample);
