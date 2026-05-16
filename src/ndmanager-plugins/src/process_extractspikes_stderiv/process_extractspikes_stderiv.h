@@ -86,6 +86,12 @@ struct arguments {
 
     // Detection mode (true = prefer negative peak, same default as original)
     bool isDisableAbs;
+
+    // patch86: when true, read per-group .res files instead of detecting,
+    // then re-extract waveforms at those exact timestamps (with the same
+    // spatial+temporal derivative transform as the detection path).  The
+    // thresholdFactor/refractoryPeriod/peakLength args are ignored.
+    bool useExistingRes;
 };
 
 // ── Function declarations ─────────────────────────────────────────────────

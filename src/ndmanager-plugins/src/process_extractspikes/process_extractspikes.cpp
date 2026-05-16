@@ -48,6 +48,14 @@
 #include <vector>
 #include <algorithm>
 
+// patch86: for -R mode (mmap .fil)
+#include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 using namespace std;
 #ifdef __linux__
 #include <sys/sysinfo.h>
@@ -92,6 +100,9 @@ void help(const char* name) {
 	cout << " -l peakSearchLength\t(size of the window within which to look for"
 	<< " the peak; do not change this unless you know what you are doing)" 
 	<< endl;
+	cout << " -R\t\t\tre-extract mode: read existing basename.res.<grp>" << endl
+	<< "\t\t\tand re-extract .spk waveforms at those exact timestamps" << endl
+	<< "\t\t\t(no detection; threshold/refractory/-l ignored)" << endl;
 //	cout << " -a look for the maxi absolute value to look for a spike peak" 
 //	<< endl; // Cheat option
 	cout << " -v\t\t\tverbose mode" << endl;
@@ -100,6 +111,172 @@ void help(const char* name) {
 	cout << ")." << endl;
 	exit(0);
 } // help
+
+
+// patch86 ---------------------------------------------------------------
+// runFromRes: re-extract waveforms at timestamps from existing .res files.
+// Skips detection entirely.  Used by the -R flag.
+//
+// Per group:
+//   1. open <outputBaseFileName>.res.<grp+1> and read int64 timestamps
+//   2. for each timestamp ts, extract a spikeLength-sample window from
+//      .fil starting at sample (ts - timeBeforeSpike), copying only
+//      group channels into the destination spike record
+//   3. write the spike record to <outputBaseFileName>.spk.<grp+1>
+//
+// The .fil is mmap'd read-only so seeks are free; waveforms are appended
+// to the .spk file in .res chronological order (which is also disk
+// chronological order, since .res is sorted).
+//
+// Returns 0 on success, non-zero on I/O error.
+static int runFromRes(const arguments &args,
+                      int **channelList,
+                      const int *channelNb_group,
+                      int nbGroups,
+                      bool verboseFlag)
+{
+	using std::string;
+	using std::vector;
+	using std::ostringstream;
+
+	const int nChanTot   = args.totalChannelNumber;
+	const int spikeLen   = args.spikeLength;
+	const int timeBefore = args.timeBeforeSpike;
+
+	// mmap the .fil
+	int fd = open(args.inputFileName, O_RDONLY);
+	if(fd < 0) {
+		fprintf(stderr, "[-R] cannot open '%s' for reading: %s\n",
+		        args.inputFileName, strerror(errno));
+		return 1;
+	}
+	struct stat st;
+	if(fstat(fd, &st) < 0) {
+		fprintf(stderr, "[-R] fstat failed on '%s': %s\n",
+		        args.inputFileName, strerror(errno));
+		close(fd);
+		return 1;
+	}
+	const size_t filBytes  = (size_t)st.st_size;
+	const size_t bytesPerSample = (size_t)nChanTot * sizeof(short);
+	if(bytesPerSample == 0) { close(fd); return 1; }
+	const int64_t nSamples = (int64_t)(filBytes / bytesPerSample);
+
+	const short *fil = (const short *)mmap(nullptr, filBytes,
+	                                       PROT_READ, MAP_PRIVATE, fd, 0);
+	if(fil == MAP_FAILED) {
+		fprintf(stderr, "[-R] mmap failed on '%s': %s\n",
+		        args.inputFileName, strerror(errno));
+		close(fd);
+		return 1;
+	}
+
+	if(verboseFlag) {
+		cout << "[-R] re-extract mode active" << endl;
+		cout << "[-R]   .fil          = " << args.inputFileName
+		     << " (" << nSamples << " samples, " << nChanTot << " ch)" << endl;
+		cout << "[-R]   output stem   = " << args.outputBaseFileName << endl;
+		cout << "[-R]   spikeLength   = " << spikeLen
+		     << ", peakSampleIndex (timeBefore+1) = " << (timeBefore + 1) << endl;
+	}
+
+	int errors    = 0;
+	int64_t totalSpikes = 0;
+	int64_t totalSkipped = 0;
+
+	for(int grp = 0; grp < nbGroups; grp++) {
+		const int nCG = channelNb_group[grp];
+		if(nCG <= 0) continue;
+
+		ostringstream resPath;
+		resPath << args.outputBaseFileName << "." << SPIKE_TIME_OUT_EXT
+		        << "." << (grp + 1);
+		FILE *resFp = fopen(resPath.str().c_str(), "rb");
+		if(!resFp) {
+			fprintf(stderr, "[-R] cannot open '%s' for reading: %s\n",
+			        resPath.str().c_str(), strerror(errno));
+			errors++;
+			continue;
+		}
+		fseeko(resFp, 0, SEEK_END);
+		const off_t resBytes = ftello(resFp);
+		fseeko(resFp, 0, SEEK_SET);
+		const size_t nResSpikes = (size_t)(resBytes / (off_t)sizeof(int64_t));
+		vector<int64_t> resTs(nResSpikes);
+		if(nResSpikes > 0) {
+			size_t r = fread(resTs.data(), sizeof(int64_t), nResSpikes, resFp);
+			if(r != nResSpikes) {
+				fprintf(stderr, "[-R] short read on '%s' (%zu/%zu)\n",
+				        resPath.str().c_str(), r, nResSpikes);
+				fclose(resFp);
+				errors++;
+				continue;
+			}
+		}
+		fclose(resFp);
+
+		// Open .spk.<grp+1> for writing
+		ostringstream spkPath;
+		spkPath << args.outputBaseFileName << "." << "spk" << "." << (grp + 1);
+		FILE *spkFp = fopen(spkPath.str().c_str(), "wb");
+		if(!spkFp) {
+			fprintf(stderr, "[-R] cannot open '%s' for writing: %s\n",
+			        spkPath.str().c_str(), strerror(errno));
+			errors++;
+			continue;
+		}
+
+		vector<short> waveBuf((size_t)spikeLen * (size_t)nCG);
+		int64_t nWritten   = 0;
+		int64_t nSkippedBd = 0;
+
+		for(size_t i = 0; i < nResSpikes; i++) {
+			const int64_t ts = resTs[i];
+			const int64_t ws = ts - (int64_t)timeBefore;
+			if(ws < 0 || ws + spikeLen > nSamples) {
+				nSkippedBd++;
+				continue;
+			}
+			for(int s = 0; s < spikeLen; s++) {
+				const short *frame =
+				    fil + (size_t)(ws + s) * (size_t)nChanTot;
+				short *out = waveBuf.data() + (size_t)s * (size_t)nCG;
+				for(int c = 0; c < nCG; c++)
+					out[c] = frame[ channelList[grp][c] ];
+			}
+			if(fwrite(waveBuf.data(), sizeof(short),
+			          (size_t)spikeLen * (size_t)nCG, spkFp)
+			   != (size_t)spikeLen * (size_t)nCG) {
+				fprintf(stderr, "[-R] short write on '%s'\n",
+				        spkPath.str().c_str());
+				errors++;
+				break;
+			}
+			nWritten++;
+		}
+		fclose(spkFp);
+
+		totalSpikes  += nWritten;
+		totalSkipped += nSkippedBd;
+
+		if(verboseFlag)
+			cout << "[-R] group " << (grp + 1) << ": "
+			     << nResSpikes << " timestamps -> wrote " << nWritten
+			     << " spikes to " << spkPath.str()
+			     << " (skipped " << nSkippedBd << " at .fil boundary)"
+			     << endl;
+	}
+
+	munmap((void*)fil, filBytes);
+	close(fd);
+
+	if(verboseFlag)
+		cout << "[-R] DONE. Total: " << totalSpikes << " spikes written, "
+		     << totalSkipped << " skipped (out-of-range), "
+		     << errors << " errors." << endl;
+
+	return errors;
+}
 
 
 // Start here
@@ -121,6 +298,7 @@ int main(int argc,char *argv[]) {
 	arguments.isSpikeLengthProvided = false;
 	arguments.isTimeBeforeSpikeProvided = false;
 	arguments.isDisableAbs = true; // use real value as default
+	arguments.useExistingRes = false; // patch86: -R flag flips this
 	
 	// buffers with current, previous and next datas value
 	short *cur_buffer, *prev_buffer, *nextRec;
@@ -216,6 +394,32 @@ int main(int argc,char *argv[]) {
 
 	// get channels groups
 	nbGroups = getChannelsFromArg(channelNb_group, channelList, arguments);
+
+	// patch86: in -R mode, threshold parsing/checks are not needed.
+	// Dispatch to runFromRes immediately after channel parsing; the
+	// detection state machine setup below is skipped.
+	if(arguments.useExistingRes) {
+		if(!arguments.isInputFileProvided || !inputFile) {
+			cerr << "error: -R mode requires .fil input file." << endl;
+			return 1;
+		}
+		// inputFile FILE* not needed for mmap; close the duplicate fopen handle
+		fclose(inputFile);
+		inputFile = nullptr;
+		int rc = runFromRes(arguments, channelList, channelNb_group,
+		                    nbGroups, verbose);
+		// Best-effort cleanup of the channel arrays before returning
+		for(int i = 0; i < MAX_CHANNO; i++) {
+			delete[] channelList[i];
+			delete[] thresList[i];
+		}
+		delete[] channelList;
+		delete[] channelNb_group;
+		delete[] thresList;
+		delete[] thresNb_group;
+		return rc;
+	}
+
 	// get threshold groups
 	nbThres = getThresholdsFromArg(thresNb_group, thresList, arguments);
 
@@ -1647,7 +1851,11 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 			case 'a': // use Absolute value for threshold
 				arguments.isDisableAbs = false;
 				break;
-			
+
+			case 'R': // patch86: re-extract using existing .res files (skip detection)
+				arguments.useExistingRes = true;
+				break;
+
 			case 'v': // verbose mode
 				verbose = true;
 				break;
@@ -1679,16 +1887,19 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 	}
 	
 	// Make sure we get the correct arguments.
-	if(!arguments.isThresListProvided)  {
+	// patch86: in -R mode, detection-only args (threshold, refractory,
+	// peakLength) are not consulted, so don't require them.
+	if(!arguments.isThresListProvided && !arguments.useExistingRes)  {
 		cerr << "error: missing list of thresholds." << endl;
 		exit(1);
 	}
 	if(!arguments.isPeakLengthProvided)  {
-		cerr << "warning : missing peak search length." 
-		<< " Using default value " << arguments.spikeLength << endl;
+		if(!arguments.useExistingRes)
+			cerr << "warning : missing peak search length."
+			<< " Using default value " << arguments.spikeLength << endl;
 		arguments.peakLength = arguments.spikeLength; // default
 	}
-	if(!arguments.isRefractoryPeriodProvided)  {
+	if(!arguments.isRefractoryPeriodProvided && !arguments.useExistingRes)  {
 		cerr << "error: missing refractory period." << endl;
 		exit(1);
 	}

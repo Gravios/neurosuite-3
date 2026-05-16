@@ -57,6 +57,12 @@ struct arguments {
 	bool isSpikeLengthProvided;
 	bool isTimeBeforeSpikeProvided;
 	bool isDisableAbs;
+
+	// patch86: when true, read per-group .res files instead of detecting,
+	// then re-extract waveforms at those exact timestamps.  Used by KKExp
+	// post-TimeShiftFinalize to refresh .spk content after alignment.
+	// Threshold / refractory / peak-search args are ignored in this mode.
+	bool useExistingRes;
 };
 
 // Write a spike apparition time (in timestamp)
