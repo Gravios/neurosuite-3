@@ -316,6 +316,414 @@ The inherited canonical changelog is preserved as
 
 All other files are byte-identical to their canonical counterparts.
 
+## [2026-05-16f] patch87 — Auto-invoke `-R` re-extract at end of TimeShiftFinalize
+
+After `WritePhase15Checkpoint` commits the `.res`/`.spk`/`.fet`
+rewrites, `TimeShiftFinalize` now invokes the appropriate
+extractspikes binary (`process_extractspikes_stderiv` or
+`process_extractspikes`) in `-R` mode to refresh `.spk(D)` content
+from `.fil` at the corrected `.res` timestamps for the current group.
+
+### Why even when WritePhase15Checkpoint already rewrites .spkD
+
+`WritePhase15Checkpoint`'s per-spike re-extract computes the
+stderiv temporal first-difference at sample `s=0` with `prev_sdiff=0`
+because it has no cross-spike state.  This injects a sample-0 error
+in every re-extracted spike — visible per-spike only as a 1-sample
+amplitude shift, but accumulates into the residual cluster-mean
+dispersion that survives patches 83–85.
+
+The patch86 `-R` mode reads one extra raw sample at `(ws - 1)` and
+computes the spatial derivative there as `prev_sdiff` for the
+temporal-diff at s=0.  Bit-correct `.spkD` content.
+
+### Strategy
+
+1. `mkdtemp("/tmp/kkexp-rxn-XXXXXX")`.
+2. Symlinks: `<tmp>/x.fil` → `<FileBase>.fil`,
+   `<tmp>/x.res.1` → `<FileBase>.res.<ElecNo>`.
+3. `popen("<tool> -n N -c CHANS -w W -p P [-d ORD] -R <tmp>/x 2>&1")`.
+4. Stream tool output through `Output(...)`.
+5. On tool exit 0: `rename <tmp>/x.spk(D).1` →
+   `<FileBase>.spk(D).<ElecNo>` (atomic-ish replace).
+6. Cleanup symlinks + tmpdir.
+
+Any failure along the way is logged and leaves the original `.spk(D)`
+untouched.  The rename in step 5 is the only write to the canonical
+path and runs only on tool exit status 0.
+
+### Configuration
+
+- `KKEXP_AUTO_REEXTRACT=0` disables the auto-invoke entirely.
+- `KKEXP_REEXTRACT_TOOL=<name>` overrides tool selection (e.g.
+  `process_extractspikes_sdiff` for sdiff pipelines, which KKExp
+  can't auto-detect — both write `.spk`).
+- `KKEXP_REEXTRACT_SDIFF_ORDER=<0..3>` overrides the stderiv `-d`
+  default (3 = ALLPAIRS).
+- `KKEXP_REEXTRACT_VERBOSE=1` passes `-v` to the tool.
+
+### Sanity guards
+
+- `NbTotalChannels > 0` and `GroupChannelIds` non-empty
+- `nSamplesPerSpike > 0` and `PeakSampleIndex > 0`
+- `realpath()` resolves both `.fil` and `.res.<ElecNo>` (handles
+  relative `FileBase`)
+
+Any missing precondition is logged and the auto-invoke is skipped;
+KKExp completes normally with the patch85-consistent state on disk.
+
+`PeakSampleIndex` is 0-based in `KlustaKwik.h`; the binary's `-p`
+flag expects 1-based, so the invocation adds 1.
+
+### Files changed
+
+- `src/klustakwikExp/KK.cpp`: new static `AutoReextractAfterFinalize`
+  helper (~165 lines) just above `TimeShiftFinalize`; one call site
+  added at the end of `TimeShiftFinalize`'s `nShifted > 0` branch.
+
+Requires patch86.
+
+
+## [2026-05-16e] patch85 — Rewrite .res alongside .spk/.fet in WritePhase15Checkpoint
+
+Pre-patch, `WritePhase15Checkpoint` rewrote `.spk` content (shifted
+by `m_cumShift`) and rewrote `.fet`'s last column (shifted
+timestamps), but never rewrote `.res` itself.  Klusters then
+displayed `.spk` windows whose peaks aligned across cluster
+members, but whose `.res`-stored timestamps disagreed by exactly
+`m_cumShift` samples — the residual cluster-mean dispersion the user
+was seeing post-clustering.
+
+### Fix
+
+After the existing `.fet` block in `WritePhase15Checkpoint`, before
+closing `resWPC` (the .res file used during re-extract math):
+
+1. Open `<base>.res.<elec>.pending` for writing.
+2. Iterate p in `[0, nPoints)`, read `rawTs` from `resWPC`, write
+   `rawTs + sh` if the spike was shifted, else `rawTs` unchanged.
+3. `rename` `.res.pending` → `.res` (atomic).
+
+The `.pending` pattern matches `.spk.pending` and `.fet.pending`
+already used.  Any partial state on crash is the still-good
+`.pending` file alongside the still-good original `.res`.
+
+### Log output
+
+New line emitted at the end of the function:
+
+```
+.res updated (M spikes, N shifted)
+```
+
+Pre-patch this line never appeared; its presence in `KlustaKwikExp`'s
+stderr is the fastest confirmation that a build has patch85.
+
+Skipped (`.res` preserved) when `resWPC` failed to open, `.res.pending`
+fopen failed, or the rewrite was partial.
+
+### Files changed
+
+- `src/klustakwikExp/KK.cpp`: 1 hunk, ~178 lines added in
+  `WritePhase15Checkpoint`.
+
+
+## [2026-05-16d] patch84 — `AlignPcaCenter=2`: circular-shift PCA-centring (no `m_cumShift`)
+
+Replaces the existing xcorr iter loop in `RunPhase2bMode3Chunk`
+when `AlignPcaCenter == 2` is set: instead of iterating xcorr-based
+shift commits, sweep each spike through circular shifts of
+`waveBuf` in memory and pick the argmin distance to the cluster
+mean's PCA centroid.  Never modifies `m_cumShift`.
+
+### Algorithm
+
+For each iter (capped via `clamp(ResidualPCAIter, 2, 10)`):
+  for each cluster c with at least one chunk member:
+    compute μ_pca[c] from the cluster's current `Data[]` PCA cols
+  for each spike p in this chunk:
+    for each candidate shift s in `[-maxShift, +maxShift]`:
+      apply circular shift of `waveBuf[p]` to `scratchWave`
+      project `scratchWave` onto cluster c's PCA basis →
+        `cand_pca[s]`
+    pick `bestShift = argmin_s dist²(cand_pca[s], μ_pca[c])`
+    commit: copy `scratchWave` of `bestShift` back into `waveBuf[p]`,
+      update `Data[gp]` PCA cols only (NOT the time column)
+
+Sample-major scratch indexing (rather than channel-major) keeps the
+circular shift cache-friendly:
+
+```cpp
+scratch[((t + s) % N + N) % N * nChan + c] = wave[t * nChan + c]
+```
+
+### Differences from mode 1
+
+| Aspect | mode 1 (patch83) | mode 2 (patch84) |
+|---|---|---|
+| Runs after xcorr iter loop | Yes (refine pass) | No (replaces it) |
+| Writes `m_cumShift` | Yes | No |
+| Touches `Data[]` time column | No | No |
+| Disk impact | Via `TimeShiftFinalize` | None |
+| Use case | Fix existing dispersion | Diagnose / pristine work |
+
+Mode 2 is purely diagnostic: it shows whether circular-shift
+PCA-centring CAN bring the in-memory features into alignment.  It
+does not modify disk state.  Pristine-data workflows that want the
+benefit on disk should use mode 1 (with patch85 applied) instead.
+
+### Skipped paths in mode 2
+
+- Raw-source verification (`.fil` matches `.spk`) — not needed since
+  we're not re-extracting.
+- patch73 pre-refresh of `waveBuf` from prior `m_cumShift` —
+  irrelevant; we don't read prior `m_cumShift`.
+- patch83 PCA-centring refine — superseded by the mode 2 path.
+- patch74 monotonicity warning — `m_cumShift` is untouched, so no
+  crossings can be introduced.
+
+### Log output
+
+Per-chunk:
+
+```
+patch84 PCA-centering (circular): K total shifts over I iters;
+m_cumShift NOT modified (mode 2)
+```
+
+### Files changed
+
+- `src/klustakwikExp/KK.cpp`: wraps the existing alignment block in
+  `if (AlignPcaCenter == 2) { mode 2 } else { existing }`.  2 hunks,
+  ~383 lines.
+- `src/klustakwikExp/KlustaKwik.cpp`: `AlignPcaCenter` already
+  registered by patch83.
+
+
+## [2026-05-16c] patch83 — `AlignPcaCenter=1`: post-xcorr PCA-centring refine pass
+
+Adds an opt-in refine pass that runs after the xcorr iter loop in
+`RunPhase2bMode3Chunk`.  For each spike, sweep candidate shifts in
+`[-maxShift, +maxShift]` and pick the one that minimises the squared
+distance from the spike's PCA representation to the cluster mean's
+PCA centroid.  Writes `m_cumShift[]` so the disk-commit path
+captures it.
+
+### Why a second pass
+
+The xcorr iter loop (patches 71–74) aligns spikes by waveform
+similarity in the time domain.  Cluster-mean templates are
+reasonable but not perfect — they're built from spikes that have
+themselves been imperfectly aligned.  A spike whose true peak is
+1 sample off the mean's peak will get a 0-lag from xcorr (it's
+already at the closest grid point to the noisy mean) but a non-zero
+shift from PCA-centring (which uses all PCA dimensions, not just
+peak overlap).
+
+The PCA-centring refine therefore catches sub-xcorr-resolution
+residual dispersion that the iter loop leaves on the table.
+
+### Algorithm
+
+Reuses patches 71–74 infrastructure:
+
+- `filFpP71` / `rawTsByLocal` for `.fil`-source per-spike access
+- `filRowP71` / `waveScratchP71` scratch buffers
+- Per-spike basis locals (computed at iter-0 of the main loop and
+  reused across iters)
+
+For each spike p:
+  if `m_cumShift[gp] != 0`, use that as the starting shift; else 0
+  for each candidate s in `[start-maxShift, start+maxShift]`:
+    extract from `.fil` at `(rawTs + s - PeakSampleIndex)` into
+      `waveScratchP71`
+    apply stderiv transform if needed
+    project onto cluster c's basis → `cand_pca[s]`
+    compute `dist²(cand_pca[s], μ_pca[c])`
+  pick `bestShift = argmin_s dist²`
+  if `bestShift != m_cumShift[gp]`:
+    update `m_cumShift[gp] = bestShift`
+    overwrite `waveBuf[iLocal]` with the bestShift waveform
+
+### Configuration
+
+- `AlignPcaCenter=0` — disabled (xcorr only); default
+- `AlignPcaCenter=1` — refine pass active
+
+### Log output
+
+Per-chunk:
+
+```
+[Phase 2b m3] chunk N patch83 PCA-centering:
+  examined K, refined R, skipped S (off-edge)
+```
+
+### Files changed
+
+- `src/klustakwikExp/KK.cpp`: 4 hunks, ~295 lines.
+- `src/klustakwikExp/KlustaKwik.cpp`: `INT_PARAM(AlignPcaCenter)`
+  registered at line 302.
+- `src/klustakwikExp/KK.h`: `AlignPcaCenter` declared.
+
+
+## [2026-05-16b] patches 71–74 — Phase 2b m3 alignment hardening
+
+A four-patch series that turned `RunPhase2bMode3Chunk`'s post-CEM
+alignment from a single-pass best-effort into a verifiable iterative
+loop with raw-source guards and post-pass diagnostics.
+
+### patch71 — Iter loop + on-the-spot .fil re-extract
+
+(Pre-existed in the codebase before this consolidation pass;
+documented here for completeness.)  Replaced the single-pass
+template-then-xcorr with an iterative loop: build template, xcorr
+all spikes, commit non-trivial shifts, rebuild template, repeat.
+Spikes that shift this iter get re-extracted from `.fil` at the
+shifted position, the stderiv transform reapplied, and `waveBuf`
+overwritten so the next iter's template uses the shifted content.
+Capped at `TimeShiftAlignIter` iterations (default 5).
+
+### patch72 — Verify .fil matches .spk before alignment
+
+Ports Klusters' patch69 raw-source verifier into the entry of the
+alignment block.  Without it, a stale `.fil` (overwritten by a
+later pipeline stage, or recompiled with different filter settings)
+silently corrupts `.spk` on every shifted spike during patch71's
+on-the-spot re-extract.
+
+Algorithm:
+
+1. After loading `rawTsByLocal` and opening `.fil`, pick the first
+   chunk-spike whose extraction window fits inside `.fil`.
+2. Read that spike's waveform from `.fil` at its ORIGINAL timestamp
+   (no `m_cumShift` applied yet).
+3. Apply stderiv transform if `.spk` is in stderiv format.
+4. Compare to the spike's existing `waveBuf` slot (loaded from `.spk`
+   at function entry).
+5. Compute RMS difference relative to `.spk` content's RMS.
+6. If ratio > 50%, abort this chunk's alignment with a clear log
+   message identifying the failing spike, the measured RMS
+   difference, and the likely cause + remediation.
+
+Existing `m_cumShift` values from prior phases stay untouched when
+verification trips.  `TimeShiftFinalize` will still process them
+(re-extracting at the wrong positions if `.fil` is stale), but at
+least this chunk's alignment doesn't compound the damage.
+
+When `.fil` is unavailable or no spike's window fits inside the
+recording (extremely unusual), logs a WARNING and proceeds without
+verification — same fallback as Klusters.
+
+### patch73 — Pre-refresh waveBuf from prior `m_cumShift`
+
+Audit finding #1.  At function entry, `waveBuf` was loaded via
+`TimeShiftReadSpikeWave` which reads `.spk` verbatim — no
+`m_cumShift` applied (per the comment at line 9118 on
+parallel-safety).  If Phase 1 (cross-chunk alignment) or Phase 2.5
+already populated `m_cumShift`, those shifts were NOT reflected in
+`waveBuf` at the alignment block's entry.
+
+Symptom: iter 0's cluster mean is built from un-shifted `.spk`
+content, producing a slightly-off template.  Iter 0's xcorr lags are
+computed against that mean.  Spikes whose iter-0 lag happens to be
+zero (because their unshifted waveform matches the off-mean) never
+trigger patch71's on-the-spot .fil re-extract and stay in their
+`.spk` state through all iters.  Final disk output is still correct
+(`TimeShiftFinalize` re-extracts everyone at the final `m_cumShift`),
+but per-iter mean quality and alignment convergence are suboptimal.
+
+Fix: at function entry into the alignment block — after `.fil` is
+opened, `rawTsByLocal` is loaded, and raw-source verification has
+passed — iterate over chunk spikes and, for any spike with
+`m_cumShift[gp] != 0`, re-extract its waveform from `.fil` at
+`(rawTs + prevCum - PeakSampleIndex)` and overwrite `waveBuf[iLocal]`.
+Iter 0's mean is then built from already-shifted content.
+
+Bounds checking, stderiv handling, and fallback behaviour match the
+iter-loop body — spikes that fail any check stay in their `.spk`
+state, same as the iter loop's fallback.
+
+### patch74 — Post-alignment `.res` monotonicity warning
+
+Audit finding #14.  After cumulative shifts are applied, adjacent
+spikes whose original detection timestamps were close may end up
+with crossed `newTs1 > newTs2` (where `origTs1 < origTs2`).
+Klusters explicitly handles this (`klustersdoc.cpp:3922-3938`) by
+sorting spikes by their new timestamps before writing `.res`; KKExp
+leaves them in original detection order.
+
+Non-monotonic `.res` is technically valid (most consumers index by
+spike number, not by sample-time), but several tools assume `.res`
+is sorted (`process_smrconvert`, plotting helpers, grep-by-time
+analyses).  Crossings also signal something may have gone wrong —
+large cross-detection shifts the alignment shouldn't be producing
+in normal operation.
+
+This patch adds a visibility check that runs once after the
+alignment block: scan this chunk's pts in their original gp order,
+compute the effective post-shift timestamp for each
+`(rawTs + m_cumShift)`, warn when adjacent pairs cross.  Reports
+the number of crossings, the maximum gap, and the first crossing
+location.
+
+Does NOT modify `.res` or `m_cumShift`.
+
+### Files changed
+
+- `src/klustakwikExp/KK.cpp`: all four patches modify
+  `RunPhase2bMode3Chunk`.  Combined ~600 lines.
+
+
+## [2026-05-16a] patch64 — Template pre-alignment + xcorr API sync
+
+Two issues, shipped together because they were discovered together.
+
+### Issue 1: Cluster-mean template never centred before xcorr
+
+`RunPhase2bMode3Chunk` built the per-cluster mean template, then
+xcorr'd each spike against it — but the template was used as-is,
+with its peak wherever the mean naturally peaks (typically near
+`PeakSampleIndex` but not exactly on it, due to initial
+spike-detection jitter).
+
+xcorr then pushed every spike toward the mean's actual peak rather
+than toward the configured `PeakSampleIndex`.  Spikes whose required
+shift exceeded `m_timeShiftMaxAbs` (default 3) were rejected outright
+at line 9249 — they stayed at their original positions while
+neighbours got aligned.  Net effect: cluster spikes left scattered
+up to ±5 samples around the cluster mean.
+
+Fix: mirror Klusters' interactive `spikerealign.cpp` pre-alignment
+(lines 419–438): find the summed-|amp| peak of the mean, shift the
+template so that peak lands on `PeakSampleIndex`, then xcorr.
+
+The non-Exp `klustakwik/KK.cpp` at line 2004 intentionally omits this
+step (per-channel temporal offsets concern), but compensates with
+iterative refinement (multi-pass xcorr with in-place `waveBuf`
+shifting) and a strict `minScore=0.70` gate.  The Exp version is
+structurally single-pass, so pre-alignment is what brings it in line
+with what works.
+
+### Issue 2: patch61 zeroTieMargin not propagated to libklustersshared
+
+patch61 added a `zeroTieMargin` parameter to the xcorr public API
+for stay-at-zero suppression of noise-driven dispersion, but only
+applied it locally in KKExp.  The shared xcorr in
+`libklustersshared/src/xcorr/realign_xcorr.h` (used by Klusters)
+still had the old signature.  Effect: calls from Klusters silently
+linked against a function that ignored the margin.
+
+Fix: add `double zeroTieMargin = 0.0` (default-valued, source-compat)
+to the shared header's `XcorrDispatch::compute` signature.
+
+### Files changed
+
+- `src/klustakwikExp/KK.cpp`: pre-alignment block before the xcorr
+  call in `RunPhase2bMode3Chunk`.
+- `src/libklustersshared/src/xcorr/realign_xcorr.h`: signature.
+
+
 ## [2026-04-28e] Quality warning removed — mass distribution can't detect failures
 
 The `gini > 0.7 && maxFrac > 0.4` warning introduced in 2026-04-28d was
