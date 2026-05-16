@@ -50,6 +50,14 @@
 #  include <omp.h>
 #endif
 
+// patch86: for -R mode (mmap .fil)
+#include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 using namespace std;
 
 static int  buffer_size     = BUFFER_CHANNEL_SIZE; // scaled by nChanTot in main
@@ -622,6 +630,11 @@ static void help(const char *name)
          << "  -Z sizeBytes    byte length of noise window\n\n"
          << "Spatial derivative:\n"
          << "  -d order        0=none  1=first-diff  2=Laplacian  3=allpairs (default)\n\n"
+         << "Re-extract mode (patch86):\n"
+         << "  -R              skip detection; read basename.res.<grp> instead\n"
+         << "                  and re-extract waveforms at those exact timestamps,\n"
+         << "                  applying the same spatial+temporal derivative\n"
+         << "                  transform as the detection path.  Ignores -r/-f/-l/-Z.\n\n"
          << "  -v              verbose\n"
          << "  -h              this message\n\n"
          << "Order 3 (allpairs): s[i] = n*x[i] - sum_j(x[j])\n"
@@ -654,6 +667,7 @@ void parseArgs(int argc, char **argv, arguments &a)
     a.isThreshStartByteProvided    = false;
     a.isThreshSizeBytesProvided    = false;
     a.isSdiffOrderProvided         = false;
+    a.useExistingRes               = false;  // patch86
 
     if(argc < 2) usage(argv[0]);
 
@@ -665,6 +679,7 @@ void parseArgs(int argc, char **argv, arguments &a)
         case 'h': help(argv[0]); break;
         case 'v': verbose = true; break;
         case 'a': a.isDisableAbs = false; break;
+        case 'R': a.useExistingRes = true; break;  // patch86
         case 'n': a.totalChannelNumber = atoi(argv[++i]);
                   a.isTotalChannelNumberProvided = true; break;
         case 'c': a.channelList = argv[++i];
@@ -711,14 +726,18 @@ void parseArgs(int argc, char **argv, arguments &a)
     if(!a.isChannelListProvided)        { cerr<<"error: missing -c\n"; ok=false; }
     if(!a.isSpikeLengthProvided)        { cerr<<"error: missing -w\n"; ok=false; }
     if(!a.isTimeBeforeSpikeProvided)    { cerr<<"error: missing -p\n"; ok=false; }
-    if(!a.isRefractoryPeriodProvided)   { cerr<<"error: missing -r\n"; ok=false; }
-    if(!a.isThresholdFactorProvided)    { cerr<<"error: missing -f\n"; ok=false; }
-    if(!a.isThreshSizeBytesProvided)    { cerr<<"error: missing -Z\n"; ok=false; }
+    // patch86: detection-only args are skipped in -R mode
+    if(!a.useExistingRes) {
+        if(!a.isRefractoryPeriodProvided)   { cerr<<"error: missing -r\n"; ok=false; }
+        if(!a.isThresholdFactorProvided)    { cerr<<"error: missing -f\n"; ok=false; }
+        if(!a.isThreshSizeBytesProvided)    { cerr<<"error: missing -Z\n"; ok=false; }
+    }
     if(!ok) exit(1);
 
     if(!a.isPeakLengthProvided) {
-        cerr << "warning: -l not given; defaulting to waveformLen="
-             << a.spikeLength << "\n";
+        if(!a.useExistingRes)
+            cerr << "warning: -l not given; defaulting to waveformLen="
+                 << a.spikeLength << "\n";
         a.peakLength = a.spikeLength;
     }
 }
@@ -753,6 +772,196 @@ bool checkInputs(const arguments &a, int buf_sz, const FILE *fp)
     return true;
 }
 
+// patch86 ---------------------------------------------------------------
+// runFromRes (stderiv variant): re-extract waveforms at timestamps from
+// existing .res files, applying the same SDIFF + temporal first-difference
+// transform as the detection path.
+//
+// Per group, per timestamp ts:
+//   1. raw window [ts - timeBefore, ts - timeBefore + spikeLength)
+//   2. one extra sample at (ts - timeBefore - 1) for the temporal-diff
+//      continuity at s=0 (matches fill_sdiff_buffer's chunk-boundary
+//      behaviour with g_prev_sdiff carrying the prior chunk's last sample)
+//   3. compute SDIFF on all spikeLength+1 samples
+//   4. temporal first-diff: out[s, c] = sd[s, c] - sd[s-1, c]
+//   5. write to .spkD.<grp+1>
+//
+// Returns 0 on success, non-zero on I/O error.
+static int runFromRes(const arguments &args,
+                      int **channelList,
+                      const int *channelNb_grp,
+                      int nbGroups)
+{
+    const int nChanTot   = args.totalChannelNumber;
+    const int spikeLen   = args.spikeLength;
+    const int timeBefore = args.timeBeforeSpike;
+    const SdiffOrder ord = args.sdiffOrder;
+
+    int fd = open(args.inputFileName, O_RDONLY);
+    if(fd < 0) {
+        fprintf(stderr, "[-R] cannot open '%s' for reading: %s\n",
+                args.inputFileName, strerror(errno));
+        return 1;
+    }
+    struct stat st;
+    if(fstat(fd, &st) < 0) {
+        fprintf(stderr, "[-R] fstat failed: %s\n", strerror(errno));
+        close(fd);
+        return 1;
+    }
+    const size_t filBytes       = (size_t)st.st_size;
+    const size_t bytesPerSample = (size_t)nChanTot * sizeof(short);
+    if(bytesPerSample == 0) { close(fd); return 1; }
+    const int64_t nSamples = (int64_t)(filBytes / bytesPerSample);
+
+    const short *fil = (const short *)mmap(nullptr, filBytes,
+                                           PROT_READ, MAP_PRIVATE, fd, 0);
+    if(fil == MAP_FAILED) {
+        fprintf(stderr, "[-R] mmap failed on '%s': %s\n",
+                args.inputFileName, strerror(errno));
+        close(fd);
+        return 1;
+    }
+
+    if(verbose) {
+        cout << "[-R] re-extract mode (stderiv) active" << endl;
+        cout << "[-R]   .fil          = " << args.inputFileName
+             << " (" << nSamples << " samples, " << nChanTot << " ch)" << endl;
+        cout << "[-R]   output stem   = " << args.outputBaseFileName << endl;
+        cout << "[-R]   spikeLength   = " << spikeLen
+             << ", peakSampleIndex (timeBefore+1) = " << (timeBefore + 1) << endl;
+        cout << "[-R]   sdiff order   = " << (int)ord << endl;
+    }
+
+    int errors      = 0;
+    int64_t totalSpikes = 0;
+    int64_t totalSkipped = 0;
+
+    for(int grp = 0; grp < nbGroups; grp++) {
+        const int nCG = channelNb_grp[grp];
+        if(nCG <= 0) continue;
+
+        ostringstream resPath;
+        resPath << args.outputBaseFileName << "." << SPIKE_TIME_OUT_EXT
+                << "." << (grp + 1);
+        FILE *resFp = fopen(resPath.str().c_str(), "rb");
+        if(!resFp) {
+            fprintf(stderr, "[-R] cannot open '%s' for reading: %s\n",
+                    resPath.str().c_str(), strerror(errno));
+            errors++;
+            continue;
+        }
+        fseeko(resFp, 0, SEEK_END);
+        const off_t resBytes = ftello(resFp);
+        fseeko(resFp, 0, SEEK_SET);
+        const size_t nResSpikes = (size_t)(resBytes / (off_t)sizeof(int64_t));
+        vector<int64_t> resTs(nResSpikes);
+        if(nResSpikes > 0) {
+            size_t r = fread(resTs.data(), sizeof(int64_t), nResSpikes, resFp);
+            if(r != nResSpikes) {
+                fprintf(stderr, "[-R] short read on '%s' (%zu/%zu)\n",
+                        resPath.str().c_str(), r, nResSpikes);
+                fclose(resFp);
+                errors++;
+                continue;
+            }
+        }
+        fclose(resFp);
+
+        ostringstream spkPath;
+        spkPath << args.outputBaseFileName << "." << SPIKE_REC_OUT_EXT
+                << "." << (grp + 1);
+        FILE *spkFp = fopen(spkPath.str().c_str(), "wb");
+        if(!spkFp) {
+            fprintf(stderr, "[-R] cannot open '%s' for writing: %s\n",
+                    spkPath.str().c_str(), strerror(errno));
+            errors++;
+            continue;
+        }
+
+        // sd holds the spatial derivative at samples [ws-1 .. ws+spikeLen-1]
+        // (spikeLen + 1 rows), packed by group channels only (nCG wide).
+        vector<short> sd((size_t)(spikeLen + 1) * (size_t)nCG);
+        // out is the temporal first-diff, sd[s+1] - sd[s], rows [0..spikeLen)
+        vector<short> waveBuf((size_t)spikeLen * (size_t)nCG);
+
+        int64_t nWritten   = 0;
+        int64_t nSkippedBd = 0;
+
+        for(size_t i = 0; i < nResSpikes; i++) {
+            const int64_t ts = resTs[i];
+            const int64_t ws = ts - (int64_t)timeBefore;
+            // need samples in [ws-1, ws+spikeLen) for temporal-diff continuity
+            if(ws < 1 || ws + spikeLen > nSamples) {
+                nSkippedBd++;
+                continue;
+            }
+
+            // step 1: SDIFF over spikeLen+1 raw samples starting at (ws-1)
+            for(int s = 0; s < spikeLen + 1; s++) {
+                const short *raw =
+                    fil + (size_t)(ws - 1 + s) * (size_t)nChanTot;
+                short *sdRow = sd.data() + (size_t)s * (size_t)nCG;
+                for(int ci = 0; ci < nCG; ci++) {
+                    double v;
+                    if(ord == SDIFF_NONE) {
+                        v = (double)raw[ channelList[grp][ci] ];
+                    } else {
+                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord);
+                    }
+                    int iv = (int)round(v);
+                    if(iv >  32767) iv =  32767;
+                    if(iv < -32768) iv = -32768;
+                    sdRow[ci] = (short)iv;
+                }
+            }
+
+            // step 2: temporal first-difference into waveBuf
+            for(int s = 0; s < spikeLen; s++) {
+                const short *sdCur  = sd.data() + (size_t)(s + 1) * (size_t)nCG;
+                const short *sdPrev = sd.data() + (size_t)s       * (size_t)nCG;
+                short *outRow = waveBuf.data() + (size_t)s * (size_t)nCG;
+                for(int ci = 0; ci < nCG; ci++) {
+                    int diff = (int)sdCur[ci] - (int)sdPrev[ci];
+                    if(diff >  32767) diff =  32767;
+                    if(diff < -32768) diff = -32768;
+                    outRow[ci] = (short)diff;
+                }
+            }
+
+            if(fwrite(waveBuf.data(), sizeof(short),
+                      (size_t)spikeLen * (size_t)nCG, spkFp)
+               != (size_t)spikeLen * (size_t)nCG) {
+                fprintf(stderr, "[-R] short write on '%s'\n",
+                        spkPath.str().c_str());
+                errors++;
+                break;
+            }
+            nWritten++;
+        }
+        fclose(spkFp);
+
+        totalSpikes  += nWritten;
+        totalSkipped += nSkippedBd;
+
+        if(verbose)
+            cout << "[-R] group " << (grp + 1) << ": "
+                 << nResSpikes << " timestamps -> wrote " << nWritten
+                 << " spikes to " << spkPath.str()
+                 << " (skipped " << nSkippedBd << " at .fil boundary)" << endl;
+    }
+
+    munmap((void*)fil, filBytes);
+    close(fd);
+
+    if(verbose)
+        cout << "[-R] DONE. Total: " << totalSpikes << " spikes written, "
+             << totalSkipped << " skipped (out-of-range), "
+             << errors << " errors." << endl;
+
+    return errors;
+}
+
 // =========================================================================
 // main()
 // =========================================================================
@@ -763,7 +972,12 @@ int main(int argc, char *argv[])
     buffer_size *= args.totalChannelNumber;
 
     FILE *inputFile = fopen(args.inputFileName, "rb");
-    if(!checkInputs(args, buffer_size, inputFile)) exit(1);
+    // patch86: skip checkInputs in -R mode (refractoryPeriod stays -1)
+    if(!args.useExistingRes && !checkInputs(args, buffer_size, inputFile)) exit(1);
+    if(args.useExistingRes && !inputFile) {
+        cerr << "error: cannot open '" << args.inputFileName << "'" << endl;
+        exit(1);
+    }
 
     if(verbose) {
         cout << "\n" << program_version << "\n"
@@ -776,7 +990,9 @@ int main(int argc, char *argv[])
              << "threshFactor : " << args.thresholdFactor     << "\n"
              << "threshStart  : " << args.threshStartByte     << " B\n"
              << "threshSize   : " << args.threshSizeBytes     << " B\n"
-             << "sdiffOrder   : " << (int)args.sdiffOrder     << "\n\n";
+             << "sdiffOrder   : " << (int)args.sdiffOrder     << "\n";
+        if(args.useExistingRes) cout << "mode         : RE-EXTRACT (-R)\n";
+        cout << "\n";
     }
 
     // ── channel layout ────────────────────────────────────────────────────
@@ -788,6 +1004,17 @@ int main(int argc, char *argv[])
         for(int j = 0; j < MAX_CHANNO; j++) channelList[i][j] = -1;
     }
     const int nbGroups = getChannelsFromArg(channelNb_grp, channelList, args);
+
+    // patch86: in -R mode, dispatch to mmap-based re-extract and return.
+    // The detection state machine + threshold setup below is skipped.
+    if(args.useExistingRes) {
+        if(inputFile) { fclose(inputFile); inputFile = nullptr; }
+        const int rc = runFromRes(args, channelList, channelNb_grp, nbGroups);
+        for(int i = 0; i < MAX_CHANNO; i++) delete[] channelList[i];
+        delete[] channelList;
+        delete[] channelNb_grp;
+        return rc;
+    }
 
     // ── per-group thresholds (sdiff domain) ───────────────────────────────
     double **thresList   = new double*[MAX_CHANNO];
