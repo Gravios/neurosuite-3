@@ -1,4 +1,49 @@
 ------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-05-16
+
+* process_extractspikes, process_extractspikes_stderiv,
+  process_extractspikes_sdiff — added -R re-extract mode (patch86)
+
+  When invoked with -R, each variant skips the chunked detection
+  state machine entirely.  Instead it reads the per-group .res.N
+  files from disk, mmaps the .fil read-only, and for each existing
+  timestamp re-extracts a waveform window at exactly that sample
+  position (ts - timeBefore) with the variant's appropriate
+  transform applied:
+
+      process_extractspikes        - identity (raw .spk)
+      process_extractspikes_sdiff  - spatial derivative
+      process_extractspikes_stderiv - spatial derivative
+                                       + temporal first-difference
+
+  The stderiv variant reads one extra raw sample at (ws - 1) so the
+  s=0 temporal-diff in the extracted window uses the actual
+  previous-sample value rather than zero.  This matches the
+  fill_sdiff_buffer behaviour across chunk boundaries and removes
+  the sample-0 dispersion that WritePhase15Checkpoint's per-spike
+  re-extract path injects (it has no cross-spike state for
+  prev_sdiff).
+
+  In -R mode the detection-only CLI args are not consulted:
+      -t   threshold list           (vanilla)
+      -r   refractory period
+      -l   peak-search length
+      -f   threshold factor         (stderiv/sdiff)
+      -Z   noise window size        (stderiv/sdiff)
+  The args struct still parses them for backward compatibility with
+  existing script wrappers; they're silently ignored when -R is set.
+
+  This is the disk-side companion to KlustaKwikExp patch85.  Where
+  patch85 ensures .spk/.fet/.res stay consistent during alignment,
+  the -R mode lets a follow-up tool refresh the .spk content from
+  .fil using the corrected .res, fixing residual stderiv
+  temporal-diff dispersion.
+
+  KlustaKwikExp now invokes one of these binaries automatically at
+  the end of TimeShiftFinalize (patch87) — see
+  src/klustakwikExp/CHANGES.md.
+
+------------------------------------------------------------------------------------------------------------
 1.4.13 ==> 1.4.14
 
 * change time precision for events in process_smrconvert
