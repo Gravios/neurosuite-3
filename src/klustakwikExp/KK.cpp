@@ -32,6 +32,8 @@
 #include <map>
 #include <numeric>
 #include <random>
+#include <sstream>     // patch87: AutoReextractAfterFinalize needs ostringstream
+#include <string>      // patch87: std::string for cmd builder
 #include <unordered_map>
 #include <unordered_set>
 #ifdef _OPENMP
@@ -7584,6 +7586,200 @@ int KK::TimeShiftSplitCluster(int clusterId, int nChan, int nSamplesPerSpike)
 // time.  Phase 1a is now cluster alignment (TimeShiftAlignPhase);
 // Phase 4 is the final disk commit that closes the probe session.
 // ---------------------------------------------------------------------------
+
+// patch87 ----------------------------------------------------------------
+// AutoReextractAfterFinalize: after TimeShiftFinalize has committed the
+// .res / .spk / .fet rewrites via WritePhase15Checkpoint, invoke the
+// appropriate extractspikes binary in -R mode to refresh the .spk(D)
+// content from .fil for the CURRENT group at the now-corrected .res
+// timestamps.
+//
+// Why this is needed even though WritePhase15Checkpoint also rewrites
+// .spk(D): for stderiv pipelines, the per-spike re-extract in
+// WritePhase15Checkpoint computes the temporal first-difference at
+// sample s=0 with prev_sdiff = 0, because it has no cross-spike state.
+// That introduces a small sample-0 error in every re-extracted spike.
+// The full streaming re-extractor — but using mmap-and-jump in -R mode
+// (patch86), which reads one extra sample at (ws - 1) and uses its
+// spatial derivative as prev_sdiff — produces bit-correct .spkD content.
+//
+// For non-stderiv pipelines (vanilla .spk) the sample-0 issue doesn't
+// exist, but running this is still harmless: the re-extracted content
+// matches what WritePhase15Checkpoint wrote.  Caller can disable via
+// KKEXP_AUTO_REEXTRACT=0.
+//
+// Pipeline detection:
+//   m_timeShiftBasis.isStderiv == true   → process_extractspikes_stderiv
+//   otherwise                            → process_extractspikes
+//   override:  KKEXP_REEXTRACT_TOOL=...   (e.g. for sdiff pipeline)
+//
+// Strategy:
+//   1. mkdtemp /tmp/kkexp-rxn-XXXXXX
+//   2. symlink <tmp>/x.fil  → <FileBase>.fil
+//   3. symlink <tmp>/x.res.1 → <FileBase>.res.<ElecNo>
+//   4. popen("<tool> -n N -c chans -w W -p P [-d ord] -R <tmp>/x")
+//   5. rename <tmp>/x.spk(D).1 → <FileBase>.spk(D).<ElecNo>
+//   6. clean up symlinks + tmpdir
+//
+// Failures along the way are logged; the original files are preserved
+// (the rename in step 5 is the only write to the canonical paths).
+static void AutoReextractAfterFinalize(int nChan,
+                                       int nSamplesPerSpike,
+                                       bool isStderiv,
+                                       int peakSampleIdx)
+{
+    (void)nChan;
+    (void)nSamplesPerSpike;
+
+    // ── 1. env gating ────────────────────────────────────────────────────
+    const char *disable = getenv("KKEXP_AUTO_REEXTRACT");
+    if (disable && strcmp(disable, "0") == 0) {
+        Output("[Phase 6d] auto-reextract disabled by KKEXP_AUTO_REEXTRACT=0\n");
+        return;
+    }
+
+    // ── 2. pick the tool ─────────────────────────────────────────────────
+    const char *tool = getenv("KKEXP_REEXTRACT_TOOL");
+    const char *spkExt = isStderiv ? "spkD" : "spk";
+    if (!tool || !*tool) {
+        tool = isStderiv ? "process_extractspikes_stderiv"
+                         : "process_extractspikes";
+    }
+
+    // ── 3. session-level inputs we need from the runtime ─────────────────
+    if (NbTotalChannels <= 0 || GroupChannelIds.empty()) {
+        Output("[Phase 6d] auto-reextract: missing NbTotalChannels or "
+               "GroupChannelIds — skipping\n");
+        return;
+    }
+    if (nSamplesPerSpike <= 0 || peakSampleIdx <= 0) {
+        Output("[Phase 6d] auto-reextract: missing waveform geometry "
+               "(nSamplesPerSpike=%d peakSampleIdx=%d) — skipping\n",
+               nSamplesPerSpike, peakSampleIdx);
+        return;
+    }
+
+    // ── 4. build the channel-list string (single group) ──────────────────
+    std::string chans;
+    for (size_t i = 0; i < GroupChannelIds.size(); i++) {
+        if (i > 0) chans += ",";
+        chans += std::to_string(GroupChannelIds[i]);
+    }
+
+    // ── 5. temp dir + symlinks ───────────────────────────────────────────
+    char tmpDirTemplate[] = "/tmp/kkexp-rxn-XXXXXX";
+    if (!mkdtemp(tmpDirTemplate)) {
+        Output("[Phase 6d] auto-reextract: mkdtemp failed (%s) — skipping\n",
+               strerror(errno));
+        return;
+    }
+    const std::string tmpDir   = tmpDirTemplate;
+    const std::string tmpStem  = tmpDir + "/x";
+    const std::string filLink  = tmpStem + ".fil";
+    const std::string resLink  = tmpStem + ".res.1";
+
+    char filReal[1024], resReal[1024], spkReal[1024];
+    snprintf(filReal, sizeof(filReal), "%s.fil",            FileBase);
+    snprintf(resReal, sizeof(resReal), "%s.res.%d",         FileBase, ElecNo);
+    snprintf(spkReal, sizeof(spkReal), "%s.%s.%d",          FileBase, spkExt,
+             ElecNo);
+
+    // Resolve to absolute paths for the symlinks (in case FileBase is
+    // relative — symlinks resolve relative to the symlink's *directory*,
+    // not the cwd).
+    char filAbs[1024], resAbs[1024];
+    if (!realpath(filReal, filAbs)) {
+        Output("[Phase 6d] auto-reextract: cannot resolve %s (%s) — skipping\n",
+               filReal, strerror(errno));
+        rmdir(tmpDir.c_str());
+        return;
+    }
+    if (!realpath(resReal, resAbs)) {
+        Output("[Phase 6d] auto-reextract: cannot resolve %s (%s) — skipping\n",
+               resReal, strerror(errno));
+        rmdir(tmpDir.c_str());
+        return;
+    }
+
+    if (symlink(filAbs, filLink.c_str()) != 0) {
+        Output("[Phase 6d] auto-reextract: symlink %s → %s failed (%s) — "
+               "skipping\n", filLink.c_str(), filAbs, strerror(errno));
+        rmdir(tmpDir.c_str());
+        return;
+    }
+    if (symlink(resAbs, resLink.c_str()) != 0) {
+        Output("[Phase 6d] auto-reextract: symlink %s → %s failed (%s) — "
+               "skipping\n", resLink.c_str(), resAbs, strerror(errno));
+        unlink(filLink.c_str());
+        rmdir(tmpDir.c_str());
+        return;
+    }
+
+    // ── 6. build command line ────────────────────────────────────────────
+    std::ostringstream cmd;
+    cmd << tool;
+    cmd << " -n " << NbTotalChannels;
+    cmd << " -c " << chans;
+    cmd << " -w " << nSamplesPerSpike;
+    // PeakSampleIndex in KKExp is 0-based (per KlustaKwik.h declaration);
+    // the binary's -p flag expects 1-based and subtracts 1 internally.
+    cmd << " -p " << (peakSampleIdx + 1);
+    if (isStderiv) {
+        // Default sdiff order if not overridden.  3 = ALLPAIRS matches the
+        // wrapper script default.  Configurable via env for non-default
+        // sessions (e.g. probes that require a specific spatial-derivative
+        // order, or stderiv-on-raw with order 0).
+        const char *sdiffOrder = getenv("KKEXP_REEXTRACT_SDIFF_ORDER");
+        cmd << " -d " << (sdiffOrder && *sdiffOrder ? sdiffOrder : "3");
+    }
+    cmd << " -R";
+    if (getenv("KKEXP_REEXTRACT_VERBOSE")) cmd << " -v";
+    cmd << " " << tmpStem;
+    cmd << " 2>&1";  // fold stderr into stdout for popen capture
+
+    Output("[Phase 6d] auto-reextract: %s\n", cmd.str().c_str());
+
+    // ── 7. popen + stream output ─────────────────────────────────────────
+    FILE *pipe = popen(cmd.str().c_str(), "r");
+    if (!pipe) {
+        Output("[Phase 6d] auto-reextract: popen failed (%s) — skipping\n",
+               strerror(errno));
+        unlink(filLink.c_str());
+        unlink(resLink.c_str());
+        rmdir(tmpDir.c_str());
+        return;
+    }
+    char buf[1024];
+    while (fgets(buf, sizeof(buf), pipe)) {
+        Output("[Phase 6d]   %s", buf);  // tool output already has '\n'
+    }
+    const int rc = pclose(pipe);
+
+    // ── 8. rename output to canonical location, only on success ──────────
+    const std::string spkOut = tmpStem + "." + spkExt + ".1";
+    if (rc == 0) {
+        if (rename(spkOut.c_str(), spkReal) == 0) {
+            Output("[Phase 6d] auto-reextract: refreshed %s from %s\n",
+                   spkReal, filAbs);
+        } else {
+            Output("[Phase 6d] auto-reextract: rename %s → %s failed (%s) — "
+                   "ORIGINAL .%s PRESERVED, tmp output discarded\n",
+                   spkOut.c_str(), spkReal, strerror(errno), spkExt);
+            unlink(spkOut.c_str());
+        }
+    } else {
+        Output("[Phase 6d] auto-reextract: tool exited with status %d — "
+               "ORIGINAL .%s PRESERVED, tmp output discarded\n",
+               rc, spkExt);
+        unlink(spkOut.c_str());  // tool may have created a partial file
+    }
+
+    // ── 9. cleanup symlinks + tmpdir ─────────────────────────────────────
+    unlink(filLink.c_str());
+    unlink(resLink.c_str());
+    rmdir(tmpDir.c_str());
+}
+
 void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
 {
     if (m_cumShift.empty()) { CloseTimeShift(); return; }
@@ -7606,6 +7802,16 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
         // the corrected .spk / .fet / .res via the .*.pending mechanism.
         RefeaturizeFromShifts(m_cumShift, nChan, nSamplesPerSpike);
         WritePhase15Checkpoint(m_cumShift, nChan, nSamplesPerSpike);
+
+        // patch87: after the .pending files are committed, invoke the
+        // extractspikes binary in -R mode to refresh .spk(D) content from
+        // .fil at the now-corrected .res timestamps.  Fixes the stderiv
+        // sample-0 dispersion that WritePhase15Checkpoint can't fully
+        // address per-spike (it has no cross-spike continuity for the
+        // temporal first-difference).
+        AutoReextractAfterFinalize(nChan, nSamplesPerSpike,
+                                   m_timeShiftBasis.isStderiv,
+                                   PeakSampleIndex);
     } else {
         Output("[Phase 6c] Shift commit: %d probe calls, 0 spikes shifted "
                "— nothing to write back\n", m_timeShiftCallCount);
