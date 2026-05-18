@@ -74,40 +74,95 @@ except ImportError:
 # ─── readers ─────────────────────────────────────────────────────────────
 
 
-def parse_xml(session_path: Path, group: int):
+def parse_session_params(session_path: Path, group: int):
     """Extract nChannelsInGroup, nSamples, peakSampleIndex, samplingRate
-    from the session's .xml.  Returns dict with keys nChanGroup,
-    nSamples, peakIdx, samplingRate, channelList."""
+    from the session YAML (canonical) or .xml (legacy fallback).
+    Returns dict with keys nChanGroup, nSamples, peakIdx, samplingRate,
+    channelList.
+
+    YAML schema (see src/libklustersshared/src/klustersshared/
+    parameteryamlreader.cpp):
+        acquisitionSystem:
+          nChannels: <int>            # total channels in .fil
+          samplingRate: <float>
+        spikeDetection:
+          channelGroups:
+            - channels: [<int>, ...]  # group-1 channel IDs
+              nSamples: <int>
+              peakSampleIndex: <int>  # 0-based per YAML convention
+              nFeatures: <int>
+            - ...                     # group 2, 3, ...
+
+    `group` is 1-based on the CLI (matches Klusters convention)."""
+    yaml_path = session_path.with_suffix(".yaml")
     xml_path = session_path.with_suffix(".xml")
-    if not xml_path.is_file():
-        raise FileNotFoundError(f"{xml_path} not found")
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
 
-    # Sampling rate (acquisitionSystem/samplingRate)
-    sr_node = root.find(".//acquisitionSystem/samplingRate")
-    sampling_rate = float(sr_node.text) if sr_node is not None else 20000.0
+    if yaml_path.is_file():
+        try:
+            import yaml
+        except ImportError:
+            raise RuntimeError(
+                f"{yaml_path} exists but PyYAML not installed.  "
+                "pip install pyyaml"
+            )
+        with open(yaml_path) as f:
+            doc = yaml.safe_load(f)
 
-    # Spike detection group params (1-based group index in the XML)
-    sd_groups = root.findall(".//spikeDetection/channelGroups/group")
-    if group < 1 or group > len(sd_groups):
-        raise ValueError(
-            f"group {group} out of range (XML has {len(sd_groups)} groups)"
-        )
-    g = sd_groups[group - 1]
-    chans = [int(c.text) for c in g.findall("./channels/channel")]
-    n_samples_node = g.find("./nSamples")
-    peak_node = g.find("./peakSampleIndex")
-    n_samples = int(n_samples_node.text) if n_samples_node is not None else 32
-    peak_idx = int(peak_node.text) if peak_node is not None else 16
+        acq = doc.get("acquisitionSystem", {}) or {}
+        sampling_rate = float(acq.get("samplingRate", 20000.0))
 
-    return {
-        "nChanGroup": len(chans),
-        "nSamples": n_samples,
-        "peakIdx": peak_idx,
-        "samplingRate": sampling_rate,
-        "channelList": chans,
-    }
+        groups = (doc.get("spikeDetection", {}) or {}).get("channelGroups", []) or []
+        if group < 1 or group > len(groups):
+            raise ValueError(
+                f"group {group} out of range (YAML has {len(groups)} "
+                f"spikeDetection groups)"
+            )
+        g = groups[group - 1]
+        chans = list(g.get("channels", []) or [])
+        n_samples = int(g.get("nSamples", 32))
+        peak_idx = int(g.get("peakSampleIndex", 16))
+
+        return {
+            "nChanGroup": len(chans),
+            "nSamples": n_samples,
+            "peakIdx": peak_idx,
+            "samplingRate": sampling_rate,
+            "channelList": chans,
+            "schemaSource": str(yaml_path),
+        }
+
+    if xml_path.is_file():
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        sr_node = root.find(".//acquisitionSystem/samplingRate")
+        sampling_rate = float(sr_node.text) if sr_node is not None else 20000.0
+        sd_groups = root.findall(".//spikeDetection/channelGroups/group")
+        if group < 1 or group > len(sd_groups):
+            raise ValueError(
+                f"group {group} out of range (XML has {len(sd_groups)} groups)"
+            )
+        g = sd_groups[group - 1]
+        chans = [int(c.text) for c in g.findall("./channels/channel")]
+        n_samples_node = g.find("./nSamples")
+        peak_node = g.find("./peakSampleIndex")
+        n_samples = int(n_samples_node.text) if n_samples_node is not None else 32
+        peak_idx = int(peak_node.text) if peak_node is not None else 16
+        return {
+            "nChanGroup": len(chans),
+            "nSamples": n_samples,
+            "peakIdx": peak_idx,
+            "samplingRate": sampling_rate,
+            "channelList": chans,
+            "schemaSource": str(xml_path),
+        }
+
+    raise FileNotFoundError(
+        f"Neither {yaml_path} nor {xml_path} found — session params unavailable"
+    )
+
+
+# Back-compat alias (callers using the old name still work)
+parse_xml = parse_session_params
 
 
 def read_spkD(session_path: Path, group: int, n_chan: int, n_samples: int) -> np.ndarray:
@@ -667,8 +722,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     print(f"Reading {session} group {group} ...")
-    geom = parse_xml(session, group)
-    print(f"  XML: {geom['nChanGroup']} chan × {geom['nSamples']} samples "
+    geom = parse_session_params(session, group)
+    schema_basename = Path(geom["schemaSource"]).name
+    print(f"  {schema_basename}: {geom['nChanGroup']} chan × {geom['nSamples']} samples "
           f"(peak at idx {geom['peakIdx']}, sr={geom['samplingRate']:.1f} Hz)")
     print(f"  channelList: {geom['channelList']}")
 
