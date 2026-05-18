@@ -190,31 +190,40 @@ def read_res(session_path: Path, group: int) -> np.ndarray:
 
 
 def read_clu(session_path: Path, group: int) -> np.ndarray:
-    """Read .clu.<group>. Auto-detects ASCII (classic Klusters) vs
-    binary (some forks) formats.  Returns (nSpikes,) cluster IDs."""
+    """Read .clu.<group>. Binary only — this fork uses no ASCII path.
+
+    Mirrors Data::loadClusters at src/klusters/src/data.cpp:241
+    (reader) and Data::saveClusters at data.cpp:3490 (writer):
+
+        int32_t  nClusters     # count of distinct cluster IDs in file;
+                               # canonical reader validates 0..65536
+        nSpikes × int32_t      # cluster IDs in timestamp order
+
+    Returns (nSpikes,) int64 array.  Caller is responsible for length
+    matching with spk/res — this function does not enforce that.
+    """
     clu_path = Path(f"{session_path}.clu.{group}")
     if not clu_path.is_file():
         raise FileNotFoundError(f"{clu_path} not found")
 
-    # Try ASCII first: first line is #clusters declared, rest are IDs
-    with open(clu_path, "rb") as f:
-        head = f.read(1024)
-    try:
-        # ASCII heuristic: head decodes cleanly and starts with a digit + newline
-        text_head = head.decode("ascii")
-        first_line = text_head.split("\n", 1)[0]
-        int(first_line)  # parse-check
-        clu = np.loadtxt(clu_path, dtype=np.int64, skiprows=1)
-        return clu
-    except (UnicodeDecodeError, ValueError):
-        pass
+    file_bytes = clu_path.stat().st_size
+    if file_bytes < 4 or (file_bytes - 4) % 4 != 0:
+        raise RuntimeError(
+            f"{clu_path}: size {file_bytes} not compatible with int32 "
+            f"header + int32 cluster ID array (canonical .clu format)"
+        )
 
-    # Binary fallback: int32 header (#spikes), then int32 cluster IDs
-    raw = np.fromfile(clu_path, dtype=np.int32)
-    if raw.size > 1 and raw[0] == raw.size - 1:
-        return raw[1:].astype(np.int64)
-    # Unknown format — just return everything as int64
-    return raw.astype(np.int64)
+    with open(clu_path, "rb") as f:
+        nClu = int(np.frombuffer(f.read(4), dtype=np.int32, count=1)[0])
+
+    if not (0 <= nClu <= 65536):
+        raise RuntimeError(
+            f"{clu_path}: header nClusters={nClu} out of canonical "
+            f"range [0, 65536] — file is not a valid binary .clu"
+        )
+
+    ids = np.fromfile(clu_path, dtype=np.int32, offset=4)
+    return ids.astype(np.int64)
 
 
 # ─── footprint computation ───────────────────────────────────────────────
@@ -740,6 +749,15 @@ def main():
         print(f"  truncated to {n} spikes")
 
     print(f"  {len(spk)} spikes total")
+
+    # Quick sanity check on the .clu read — print unique-cluster summary
+    unique_ids, id_counts = np.unique(clu, return_counts=True)
+    print(f"  .clu: {len(unique_ids)} unique IDs, "
+          f"range [{int(unique_ids.min())}, {int(unique_ids.max())}]")
+    if unique_ids.max() <= 1:
+        print(f"  WARN: all cluster IDs ≤ 1 — .clu reader likely produced garbage. "
+              f"Top counts: {sorted(zip(id_counts.tolist(), unique_ids.tolist()), reverse=True)[:5]}",
+              file=sys.stderr)
 
     top = pick_top_clusters(clu, args.top_clusters)
     print(f"  top {len(top)} clusters by size: {top}")
