@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-drift_fit_single_cluster_2d.py — stage 3 (v2), 2D drift fit.
+drift_fit_single_cluster_2d.py — stage 3 (v3), 2D drift fit.
 
 Replaces the 1D channel-index model in drift_fit_single_cluster.py with
 a 2D model that uses real probe geometry:
@@ -454,7 +454,7 @@ def main():
         print(f"  plots written to {out}/")
 
     with open(out / "fit_summary.txt", "w") as f:
-        f.write("drift_fit_single_cluster_2d — stage 3 (v2) result\n")
+        f.write("drift_fit_single_cluster_2d — stage 3 (v3) result\n")
         f.write("=" * 70 + "\n")
         f.write(f"session         : {args.session}\n")
         f.write(f"group           : {args.group}\n")
