@@ -90,24 +90,40 @@ void KK::AllocateArrays() {
     NoisePoint = 1;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
-    Data.SetSize(nPoints * nDims);
-    Centres.SetSize(MaxPossibleClusters * nDims);  // farthest-point seeds
-    Weight.SetSize(MaxPossibleClusters);
-    Mean.SetSize(MaxPossibleClusters * nDims);
-    Cov.SetSize(MaxPossibleClusters * nDims2);
-    LogP.SetSize(MaxPossibleClusters * nPoints);   // zeroed by SetSize
+    // Unconditional pre-allocation diagnostics: bypasses Output()'s
+    // Screen/Log gating so that callers running with -Log 0 -Screen 0
+    // (klusters' default) still see *why* an Array::SetSize(n<1) would
+    // throw next.  Cheap (one line) and printed exactly once per KK
+    // instance.
+    fprintf(stderr,
+            "KlustaKwik: AllocateArrays: nPoints=%d nDims=%d nDims2=%d "
+            "MaxPossibleClusters=%d\n",
+            nPoints, nDims, nDims2, MaxPossibleClusters);
+    if (nPoints < 1 || nDims < 1 || MaxPossibleClusters < 1) {
+        fprintf(stderr,
+                "KlustaKwik: AllocateArrays: refusing to allocate with a "
+                "zero/negative dimension — see the SetSize diagnostic "
+                "thrown below.\n");
+    }
 
-    Class.SetSize(nPoints);
-    OldClass.SetSize(nPoints);
-    Class2.SetSize(nPoints);
-    BestClass.SetSize(nPoints);
-    ClassAlive.SetSize(MaxPossibleClusters);
-    AliveIndex.SetSize(MaxPossibleClusters);
+    Data       .SetSize(nPoints * nDims,                "Data (nPoints*nDims)");
+    Centres    .SetSize(MaxPossibleClusters * nDims,    "Centres (MaxPossibleClusters*nDims)");
+    Weight     .SetSize(MaxPossibleClusters,            "Weight (MaxPossibleClusters)");
+    Mean       .SetSize(MaxPossibleClusters * nDims,    "Mean (MaxPossibleClusters*nDims)");
+    Cov        .SetSize(MaxPossibleClusters * nDims2,   "Cov (MaxPossibleClusters*nDims2)");
+    LogP       .SetSize(MaxPossibleClusters * nPoints,  "LogP (MaxPossibleClusters*nPoints)");
+
+    Class      .SetSize(nPoints,                        "Class (nPoints)");
+    OldClass   .SetSize(nPoints,                        "OldClass (nPoints)");
+    Class2     .SetSize(nPoints,                        "Class2 (nPoints)");
+    BestClass  .SetSize(nPoints,                        "BestClass (nPoints)");
+    ClassAlive .SetSize(MaxPossibleClusters,            "ClassAlive (MaxPossibleClusters)");
+    AliveIndex .SetSize(MaxPossibleClusters,            "AliveIndex (MaxPossibleClusters)");
 
     // Persistent scratch arrays — reused by MStep and ConsiderDeletion
     // to avoid per-iteration heap allocation.
-    m_classMembers.SetSize(MaxPossibleClusters);
-    m_deletionLoss.SetSize(MaxPossibleClusters);
+    m_classMembers.SetSize(MaxPossibleClusters,         "m_classMembers (MaxPossibleClusters)");
+    m_deletionLoss.SetSize(MaxPossibleClusters,         "m_deletionLoss (MaxPossibleClusters)");
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +196,13 @@ void KK::LoadData() {
             Error("Failed to read nFeatures from binary .fet header");
         nFeatures = (int)nFeatures32;
         Output("nFeatures=%d (binary .fet)\n", nFeatures);
+        // Guard the modulo on line below: dataBytes % (8 * nFeatures) is
+        // undefined behaviour when nFeatures == 0.  Some platforms surface
+        // it as SIGFPE/abort, others as a fast-divide that yields random
+        // bytes that survive the subsequent != 0 test.  Bail explicitly.
+        if (nFeatures < 1)
+            Error("Binary .fet header nFeatures=%d is invalid (file=%s)\n",
+                  nFeatures, fname);
 
         // Derive spike count from remaining file size
         fseeko(fp, 0, SEEK_END);
@@ -204,6 +227,16 @@ void KK::LoadData() {
         nDims = 0;
         for (int i = 0; i < nFeatures; i++)
             nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
+
+        // Unconditional binary-path diagnostic — bypasses Screen/Log so
+        // -Log 0 -Screen 0 callers (klusters' default) still see the
+        // sizes that AllocateArrays is about to receive.  Pairs with the
+        // matching diagnostic in AllocateArrays so each KlustaKwik run
+        // emits two correlated lines when something is off.
+        fprintf(stderr,
+                "KlustaKwik: LoadData[bin]: file=%s nFeatures=%d "
+                "dataBytes=%lld nPoints=%d UseLen=%d nDims=%d\n",
+                fname, nFeatures, (long long)dataBytes, nPoints, UseLen, nDims);
 
         if (fSaveModel) {
             ksv().FileBase = FileBase;
