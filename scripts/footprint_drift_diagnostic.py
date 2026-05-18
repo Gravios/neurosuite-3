@@ -276,15 +276,23 @@ def compute_footprints(
     return out, chunk_edges, n_chunks
 
 
-def pick_top_clusters(clu: np.ndarray, n_top: int) -> list[int]:
-    """Pick the n_top largest clusters, excluding cluster 0 (artifacts)
-    and cluster 1 (unsorted) per Klusters convention."""
+def pick_top_clusters(clu: np.ndarray, n_top: int,
+                      skip_ids: tuple = ()) -> list[int]:
+    """Pick the n_top largest clusters.
+
+    By default, includes all cluster IDs.  Pass skip_ids=(0,) to exclude
+    artefacts, or skip_ids=(0, 1) to also exclude the Klusters MUA pool,
+    when you know the data has been sorted past those conventions.
+    Default is unfiltered because in a fresh (post-extractspikes,
+    pre-cluster) state, every spike sits in cluster 1 and excluding it
+    would discard the entire population."""
     ids, counts = np.unique(clu, return_counts=True)
     order = np.argsort(counts)[::-1]
     picked = []
+    skip = set(skip_ids)
     for i in order:
         cid = int(ids[i])
-        if cid <= 1:
+        if cid in skip:
             continue
         picked.append(cid)
         if len(picked) >= n_top:
@@ -716,6 +724,12 @@ def main():
     ap.add_argument("--min-spikes-per-chunk", type=int, default=10)
     ap.add_argument("--output", type=Path, default=Path("footprint_diag"))
     ap.add_argument(
+        "--skip-clusters", type=str, default="",
+        help="Comma-separated cluster IDs to exclude from top-cluster "
+             "selection (e.g. '0' to skip artefacts, '0,1' to also skip "
+             "Klusters MUA pool).  Default empty: include all clusters."
+    )
+    ap.add_argument(
         "--compare", type=str, default="",
         help="Comma-separated cluster IDs to compare in detail "
              "(e.g. '227,228,229,230').  Outputs normalised-footprint "
@@ -750,16 +764,18 @@ def main():
 
     print(f"  {len(spk)} spikes total")
 
-    # Quick sanity check on the .clu read — print unique-cluster summary
+    # Quick sanity report on the .clu read
     unique_ids, id_counts = np.unique(clu, return_counts=True)
     print(f"  .clu: {len(unique_ids)} unique IDs, "
           f"range [{int(unique_ids.min())}, {int(unique_ids.max())}]")
     if unique_ids.max() <= 1:
-        print(f"  WARN: all cluster IDs ≤ 1 — .clu reader likely produced garbage. "
-              f"Top counts: {sorted(zip(id_counts.tolist(), unique_ids.tolist()), reverse=True)[:5]}",
-              file=sys.stderr)
+        print(f"  note: data is unsorted (all spikes in clusters 0/1) — "
+              f"diagnostic will treat cluster 1 as the MUA pool and plot "
+              f"its population-wide footprint trajectory")
 
-    top = pick_top_clusters(clu, args.top_clusters)
+    skip_tuple = tuple(int(x) for x in args.skip_clusters.split(",")
+                       if x.strip()) if args.skip_clusters else ()
+    top = pick_top_clusters(clu, args.top_clusters, skip_ids=skip_tuple)
     print(f"  top {len(top)} clusters by size: {top}")
 
     footprints, chunk_edges, n_chunks = compute_footprints(
