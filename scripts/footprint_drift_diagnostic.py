@@ -23,6 +23,17 @@ OUTPUTS (in `--output`):
                                  analysis you want
   summary.txt                  — human-readable run summary
 
+OPTIONAL compare-mode outputs (when --compare <ids> is given):
+  compare_footprints.png        — side-by-side normalised footprint bar
+                                 chart for the selected clusters (top row
+                                 = shape; bottom row = raw amplitude)
+  compare_cosine_heatmap.png    — pairwise cosine similarity of normalised
+                                 footprints with values overlaid
+  compare_trajectory_overlay.png — per-channel trajectory overlay; one
+                                 subplot per channel, lines for each
+                                 compared cluster
+  compare_summary.txt           — verdict and similarity matrix as text
+
 WHAT TO LOOK FOR IN THE OUTPUT:
   - Smooth amplitude trajectories per channel (drift is gradual)
   - Coordinated shifts across clusters in the population plot
@@ -369,6 +380,263 @@ def save_footprint_csv(
                     ])
 
 
+# ─── cluster comparison (same-unit fragmentation diagnostic) ─────────────
+
+
+def compute_normalised_footprint(fp: np.ndarray) -> np.ndarray:
+    """Collapse a (nChunks, nChan) footprint to a single nChan vector
+    by taking the chunk-median, then normalise to unit L2 norm.
+
+    Robust to (a) chunks where the cluster had no spikes (NaN rows
+    ignored) and (b) overall amplitude scaling — the normalised
+    footprint encodes the *shape* of the spatial profile, not its
+    magnitude.  Two same-unit fragments with different amplitudes
+    should yield near-identical normalised footprints."""
+    valid_rows = ~np.all(np.isnan(fp), axis=1)
+    if not valid_rows.any():
+        return np.zeros(fp.shape[1])
+    median = np.nanmedian(fp[valid_rows], axis=0)
+    median = np.nan_to_num(median, nan=0.0)
+    norm = np.linalg.norm(median)
+    return median / norm if norm > 0 else median
+
+
+def cosine_similarity_matrix(vecs: dict) -> tuple:
+    """Pairwise cosine similarity between normalised footprint vectors.
+    Returns (cluster_ids_sorted, similarity_matrix).
+    Clamped to [-1, 1] to absorb floating-point rounding (self-similarity
+    can otherwise come back as 1.0 + 2e-16 and trip downstream checks)."""
+    ids = sorted(vecs.keys())
+    n = len(ids)
+    sim = np.zeros((n, n))
+    for i, ci in enumerate(ids):
+        vi = vecs[ci]
+        ni = np.linalg.norm(vi) or 1.0
+        for j, cj in enumerate(ids):
+            vj = vecs[cj]
+            nj = np.linalg.norm(vj) or 1.0
+            s = float(np.dot(vi, vj) / (ni * nj))
+            sim[i, j] = max(-1.0, min(1.0, s))
+    return ids, sim
+
+
+def plot_compare_footprints(
+    cluster_ids: list[int],
+    normalised: dict,
+    raw_footprints: dict,
+    channel_list: list[int],
+    out_path: Path,
+):
+    """Side-by-side bar plot of normalised footprints + raw-amplitude
+    bar plot.  Same-unit fragments: normalised bars look identical,
+    raw bars scale together."""
+    if not HAVE_MPL:
+        return
+    n_clusters = len(cluster_ids)
+    if n_clusters == 0:
+        return
+
+    fig, axes = plt.subplots(2, n_clusters, figsize=(3.5 * n_clusters, 7),
+                              sharey="row")
+    if n_clusters == 1:
+        axes = axes[:, None]
+
+    n_chan = len(channel_list)
+    chan_pos = np.arange(n_chan)
+
+    for col, cid in enumerate(cluster_ids):
+        if cid not in normalised:
+            continue
+        norm_fp = normalised[cid]
+        raw_fp = raw_footprints[cid]
+        chunk_median = np.nanmedian(raw_fp, axis=0)
+        chunk_median = np.nan_to_num(chunk_median, nan=0.0)
+
+        # Row 0: normalised footprint (shape)
+        axes[0, col].bar(chan_pos, norm_fp, color="C0", alpha=0.85)
+        axes[0, col].set_xticks(chan_pos)
+        axes[0, col].set_xticklabels([str(c) for c in channel_list], fontsize=7)
+        axes[0, col].set_title(f"cluster {cid}\nnormalised footprint", fontsize=9)
+        axes[0, col].set_xlabel("channel" if col == 0 else "")
+        if col == 0:
+            axes[0, col].set_ylabel("normalised amplitude")
+        axes[0, col].grid(alpha=0.3, axis="y")
+
+        # Row 1: raw amplitude (median across chunks)
+        axes[1, col].bar(chan_pos, chunk_median, color="C3", alpha=0.85)
+        axes[1, col].set_xticks(chan_pos)
+        axes[1, col].set_xticklabels([str(c) for c in channel_list], fontsize=7)
+        axes[1, col].set_title(f"cluster {cid}\nraw median ptp", fontsize=9)
+        axes[1, col].set_xlabel("channel")
+        if col == 0:
+            axes[1, col].set_ylabel("median ptp (raw int16)")
+        axes[1, col].grid(alpha=0.3, axis="y")
+
+    fig.suptitle(
+        "Footprint comparison — same-unit fragments should have "
+        "identical normalised bars (top) and proportional raw bars (bottom)",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=110)
+    plt.close(fig)
+
+
+def plot_cosine_heatmap(
+    cluster_ids: list[int],
+    sim: np.ndarray,
+    out_path: Path,
+):
+    """Cosine similarity heatmap with values overlaid in each cell."""
+    if not HAVE_MPL:
+        return
+    n = len(cluster_ids)
+    if n == 0:
+        return
+
+    fig, ax = plt.subplots(figsize=(1.0 + 0.6 * n, 1.0 + 0.6 * n))
+    im = ax.imshow(sim, cmap="RdYlGn", vmin=0.0, vmax=1.0, aspect="equal")
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels([str(c) for c in cluster_ids], fontsize=9)
+    ax.set_yticklabels([str(c) for c in cluster_ids], fontsize=9)
+    for i in range(n):
+        for j in range(n):
+            colour = "black" if sim[i, j] > 0.5 else "white"
+            ax.text(j, i, f"{sim[i, j]:.3f}", ha="center", va="center",
+                    color=colour, fontsize=8)
+    ax.set_title("Normalised-footprint cosine similarity\n"
+                 "(>0.95 → same spatial source; <0.7 → different units)",
+                 fontsize=10)
+    plt.colorbar(im, ax=ax, label="cosine similarity")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=110)
+    plt.close(fig)
+
+
+def plot_compare_trajectory_overlay(
+    cluster_ids: list[int],
+    footprints: dict,
+    chunk_edges: np.ndarray,
+    channel_list: list[int],
+    out_path: Path,
+):
+    """Per-channel trajectory overlay: one subplot per channel, each
+    subplot shows all compared clusters' amplitude on that channel
+    over time.
+
+    Same-unit fragmentation: trajectories will either (a) be parallel
+    (constant scaling between clusters), or (b) be temporally
+    segregated (cluster A occupies early chunks, cluster B occupies
+    later chunks → strong evidence of drift-driven fragmentation).
+
+    Truly different units: trajectories will be independent and
+    non-parallel."""
+    if not HAVE_MPL:
+        return
+    if not cluster_ids:
+        return
+    n_chan = len(channel_list)
+    n_clusters = len(cluster_ids)
+
+    t_minutes = (chunk_edges[:-1] + chunk_edges[1:]) / 2 / 60
+
+    n_cols = min(4, n_chan)
+    n_rows = int(np.ceil(n_chan / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols,
+                              figsize=(4 * n_cols, 2.6 * n_rows),
+                              sharex=True)
+    axes = np.atleast_2d(axes)
+    if axes.shape[0] == 1 and n_rows > 1:
+        axes = axes.T
+    axes_flat = axes.ravel()
+
+    cmap = plt.cm.tab10
+    for ax_idx, ch in enumerate(range(n_chan)):
+        ax = axes_flat[ax_idx]
+        for k, cid in enumerate(cluster_ids):
+            if cid not in footprints:
+                continue
+            ch_traj = footprints[cid][:, ch]
+            ax.plot(t_minutes, ch_traj,
+                    marker=".", markersize=3, alpha=0.8,
+                    color=cmap(k % 10),
+                    linewidth=1.0,
+                    label=f"cl {cid}")
+        ax.set_title(f"channel {channel_list[ch]}", fontsize=9)
+        ax.grid(alpha=0.3)
+        if ax_idx == 0:
+            ax.legend(fontsize=7, loc="best", ncol=min(4, n_clusters))
+        if ax_idx % n_cols == 0:
+            ax.set_ylabel("ptp")
+
+    # Hide unused subplots
+    for ax_idx in range(n_chan, len(axes_flat)):
+        axes_flat[ax_idx].set_visible(False)
+
+    # Bottom-row x labels
+    for ax in axes_flat[-n_cols:]:
+        if ax.get_visible():
+            ax.set_xlabel("time (minutes)")
+
+    fig.suptitle(
+        f"Per-channel trajectory overlay: clusters {cluster_ids}\n"
+        "Parallel curves → same source, scale-shifted.  "
+        "Temporally segregated → drift-driven fragmentation.  "
+        "Independent → different units.",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=110)
+    plt.close(fig)
+
+
+def write_compare_summary(
+    cluster_ids: list[int],
+    sim: np.ndarray,
+    cluster_sizes: dict,
+    out_path: Path,
+):
+    """Human-readable compare summary with verdict."""
+    n = len(cluster_ids)
+    with open(out_path, "w") as f:
+        f.write("Cluster comparison — normalised-footprint cosine similarity\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"\nCompared clusters: {cluster_ids}\n")
+        f.write("Cluster sizes (spikes):\n")
+        for cid in cluster_ids:
+            f.write(f"  {cid:5d}: {cluster_sizes.get(cid, 0):8d}\n")
+        f.write("\nCosine similarity matrix:\n")
+        header = "       " + " ".join(f"{c:>7d}" for c in cluster_ids) + "\n"
+        f.write(header)
+        for i, ci in enumerate(cluster_ids):
+            row = f"  {ci:5d}: " + " ".join(f"{sim[i, j]:7.4f}"
+                                             for j in range(n))
+            f.write(row + "\n")
+
+        f.write("\nInterpretation:\n")
+        # Off-diagonal stats
+        if n > 1:
+            off_diag = sim[~np.eye(n, dtype=bool)]
+            f.write(f"  off-diagonal similarity: min={off_diag.min():.4f}, "
+                    f"max={off_diag.max():.4f}, mean={off_diag.mean():.4f}\n")
+            if off_diag.min() > 0.95:
+                f.write("  VERDICT: all clusters have near-identical normalised\n"
+                        "           footprints.  Strong evidence of same-unit\n"
+                        "           fragmentation; merging is appropriate.\n")
+            elif off_diag.min() > 0.85:
+                f.write("  VERDICT: highly similar footprints; LIKELY same unit\n"
+                        "           with amplitude or timing variation.  Inspect\n"
+                        "           the trajectory overlay before merging.\n")
+            elif off_diag.max() < 0.5:
+                f.write("  VERDICT: distinct footprints; clusters appear to be\n"
+                        "           biologically different units.\n")
+            else:
+                f.write("  VERDICT: mixed — some pairs look like same-unit,\n"
+                        "           others look distinct.  Inspect each pair\n"
+                        "           in the cosine-heatmap and trajectory plots.\n")
+
+
 # ─── main ────────────────────────────────────────────────────────────────
 
 
@@ -383,6 +651,14 @@ def main():
     ap.add_argument("--top-clusters", type=int, default=8)
     ap.add_argument("--min-spikes-per-chunk", type=int, default=10)
     ap.add_argument("--output", type=Path, default=Path("footprint_diag"))
+    ap.add_argument(
+        "--compare", type=str, default="",
+        help="Comma-separated cluster IDs to compare in detail "
+             "(e.g. '227,228,229,230').  Outputs normalised-footprint "
+             "side-by-side, cosine-similarity matrix, and trajectory "
+             "overlay.  Use to test whether suspected same-unit "
+             "fragments are actually the same unit by spatial footprint."
+    )
     args = ap.parse_args()
 
     session = args.session
@@ -463,6 +739,70 @@ def main():
 
     print(f"  CSV: {out / 'footprint_stats.csv'}")
     print(f"  summary: {out / 'summary.txt'}")
+
+    # ── Cluster comparison (same-unit fragmentation diagnostic) ─────────
+    if args.compare.strip():
+        try:
+            compare_ids = [int(x.strip()) for x in args.compare.split(",")
+                           if x.strip()]
+        except ValueError as e:
+            print(f"  ERROR parsing --compare: {e}", file=sys.stderr)
+            compare_ids = []
+
+        if compare_ids:
+            print(f"\nComparing clusters: {compare_ids}")
+            # Compute footprints for these specifically (they may not be in `top`)
+            compare_fps, _, _ = compute_footprints(
+                spk, res, clu,
+                sampling_rate=geom["samplingRate"],
+                chunk_minutes=args.chunk_minutes,
+                min_spikes_per_chunk=args.min_spikes_per_chunk,
+                cluster_ids=compare_ids,
+            )
+
+            present = [cid for cid in compare_ids if cid in compare_fps]
+            missing = [cid for cid in compare_ids if cid not in compare_fps]
+            if missing:
+                print(f"  WARN: no spikes for clusters {missing} — skipping",
+                      file=sys.stderr)
+
+            if len(present) >= 1:
+                normalised = {cid: compute_normalised_footprint(compare_fps[cid])
+                              for cid in present}
+                ids_sorted, sim = cosine_similarity_matrix(normalised)
+                cluster_sizes = {cid: int((clu == cid).sum())
+                                 for cid in present}
+
+                if HAVE_MPL:
+                    plot_compare_footprints(
+                        ids_sorted, normalised, compare_fps,
+                        geom["channelList"],
+                        out / "compare_footprints.png",
+                    )
+                    plot_cosine_heatmap(
+                        ids_sorted, sim,
+                        out / "compare_cosine_heatmap.png",
+                    )
+                    plot_compare_trajectory_overlay(
+                        ids_sorted, compare_fps, chunk_edges,
+                        geom["channelList"],
+                        out / "compare_trajectory_overlay.png",
+                    )
+                write_compare_summary(
+                    ids_sorted, sim, cluster_sizes,
+                    out / "compare_summary.txt",
+                )
+
+                # Print the cosine matrix to stdout for immediate feedback
+                print("  cosine similarity matrix:")
+                hdr = "         " + " ".join(f"{c:>7d}" for c in ids_sorted)
+                print(hdr)
+                for i, ci in enumerate(ids_sorted):
+                    row = f"    {ci:5d}: " + " ".join(f"{sim[i, j]:7.4f}"
+                                                       for j in range(len(ids_sorted)))
+                    print(row)
+                print(f"  compare outputs in {out}/compare_*")
+
     print("Done.")
 
 
