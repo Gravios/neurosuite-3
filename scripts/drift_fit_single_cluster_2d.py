@@ -1,40 +1,24 @@
 #!/usr/bin/env python3
 """
-drift_fit_single_cluster_2d.py — stage 3 (v3), 2D drift fit.
+drift_fit_single_cluster_2d.py — stage 3 (v5), 2D drift fit.
 
-Replaces the 1D channel-index model in drift_fit_single_cluster.py with
-a 2D model that uses real probe geometry:
+Probe geometry is loaded automatically from the session YAML's
+`probes:` section + the referenced .probe file (canonical schema; see
+src/libklustersshared/src/klustersshared/parameteryamlreader_probes.cpp).
+No hardcoded probe geometry.
 
-    A_pred(c, t) = α · exp(-‖q_c − (s + d_t)‖ / λ)
+Forward model — K-source multi-pole:
 
-where:
-    α       — intrinsic source strength (scalar, fitted)
-    s       — source position at t=0 as 2D (s_x, s_y) in µm (fitted)
-    λ       — spatial attenuation length in µm (fitted)
-    d_t     — 2D drift trajectory, (d_x, d_y) per chunk (fitted, t=1..T-1;
-              d_0 ≡ (0, 0) by anchor)
-    q_c     — channel position (x_c, y_c) in µm (from probe geometry)
+    A_pred(c, t) = Σ_k α_k · exp(-‖q_c − (s_k + d_t)‖ / λ) + ε_c
 
-PROBE GEOMETRY
---------------
-Three ways to supply it, in order of precedence:
-  1. --probe-geometry <csv>      Custom: rows of "channel_local_idx,x_um,y_um"
-                                  (one row per channel in the group)
-  2. --probe buzsaki64l          Built-in: NeuroNexus Buzsaki64L shank,
-                                  staggered 8-site layout (Sirota lab default)
-  3. (no flag)                   ERROR — geometry required.
+Real spikes are NOT point sources — the extracellular waveform spans
+soma + apical dendrite + axon, producing a multipolar spatial template
+that a single exp(-r/λ) cannot fit.  K=2 captures dipole structure
+(soma + descending axon trunk → moderate amplitude on deeper channels).
+K=3 adds room for tripolar structure (apical dendrite contribution).
 
-The Buzsaki64L built-in is offered because that's the canonical probe for
-sirotaA-jg sessions per the nphys-data probe library.  If your data is
-from a different probe (A1x32-Poly2, etc.), supply --probe-geometry.
-
-OUTPUTS (in --output):
-  observed.png         — observed (n_chunks × n_chan) amplitude heatmap
-  predicted.png        — predicted heatmap from fitted parameters
-  residuals.png        — observed − predicted
-  drift_trajectory.png — fitted d_t(x, y) over time; 2D path + components
-  geometry.png         — probe geometry + fitted source-position trajectory
-  fit_summary.txt      — fitted parameters, RMSE, R², per-channel stats
+All sources translate rigidly under a single drift trajectory d_t —
+they belong to one neuron, so probe motion shifts them together.
 """
 
 import argparse
@@ -48,18 +32,18 @@ from scipy.optimize import least_squares
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from footprint_drift_diagnostic import (
-        parse_session_params,
-        read_spkD,
-        read_res,
-        read_clu,
+        parse_session_params, read_spkD, read_res, read_clu,
         compute_footprints,
     )
 except ImportError:
-    sys.stderr.write(
-        "ERROR: cannot import from footprint_drift_diagnostic.py — "
-        "place this script next to it.\n"
-    )
+    sys.stderr.write("ERROR: place this next to footprint_drift_diagnostic.py\n")
     sys.exit(1)
+
+try:
+    import yaml
+    HAVE_YAML = True
+except ImportError:
+    HAVE_YAML = False
 
 try:
     import matplotlib
@@ -70,160 +54,212 @@ except ImportError:
     HAVE_MPL = False
 
 
-# ─── built-in probe geometries ───────────────────────────────────────────
+# ─── probe geometry loader ───────────────────────────────────────────────
 
 
-# NeuroNexus Buzsaki64L — single shank, sites ordered tip-to-base.
-# Source: src/nphys-data/src/probes/neuronexus/Buzsaki64L.probe in this fork.
-# Per shank: 8 sites; (x, y) µm relative to shank tip.
-BUZSAKI64L_SHANK_GEOMETRY = np.array([
-    [   0,   0],   # site 0
-    [ -11,  20],   # site 1
-    [  11,  40],   # site 2
-    [ -11,  60],   # site 3
-    [  11,  80],   # site 4
-    [ -11, 100],   # site 5
-    [  11, 120],   # site 6
-    [ -11, 140],   # site 7
-], dtype=np.float64)
+def load_probe_geometry(session_path: Path, group: int):
+    """Return (q_c [n_chan, 2] in µm, probe_path str).
 
-
-def get_geometry(args, n_chan: int) -> np.ndarray:
-    """Resolve the (n_chan, 2) geometry array from CLI args."""
-    if args.probe_geometry:
-        rows = []
-        with open(args.probe_geometry, "r") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if not row or row[0].lstrip().startswith("#"):
-                    continue
-                # Accept header row if present
-                try:
-                    idx, x, y = int(row[0]), float(row[1]), float(row[2])
-                except ValueError:
-                    continue
-                rows.append((idx, x, y))
-        rows.sort()
-        if len(rows) != n_chan:
-            raise ValueError(
-                f"--probe-geometry: expected {n_chan} rows for this group, "
-                f"got {len(rows)}"
-            )
-        return np.array([[r[1], r[2]] for r in rows], dtype=np.float64)
-
-    if args.probe == "buzsaki64l":
-        if n_chan != 8:
-            raise ValueError(
-                f"--probe buzsaki64l: expected 8 channels per group, "
-                f"this group has {n_chan}.  Supply --probe-geometry instead."
-            )
-        return BUZSAKI64L_SHANK_GEOMETRY.copy()
-
-    raise ValueError(
-        "Probe geometry required.  Pass --probe buzsaki64l for sirotaA-jg "
-        "data, or --probe-geometry <csv> with rows 'idx,x_um,y_um'."
-    )
-
-
-# ─── forward model (2D) ──────────────────────────────────────────────────
-
-
-def unpack_params(params, n_chunks):
-    """params = [α, s_x, s_y, λ, ε, d_x_1, d_y_1, ..., d_x_{T-1}, d_y_{T-1}].
-    d_0 = (0, 0) by anchor.  ε ≥ 0 is the per-channel noise floor on ptp."""
-    alpha = params[0]
-    s_x = params[1]
-    s_y = params[2]
-    lam = params[3]
-    eps = params[4]
-    d_rest = params[5:].reshape(n_chunks - 1, 2)
-    d_t = np.vstack([[0.0, 0.0], d_rest])
-    return alpha, s_x, s_y, lam, eps, d_t
-
-
-def pack_params(alpha, s_x, s_y, lam, eps, d_t):
-    return np.concatenate([[alpha, s_x, s_y, lam, eps], d_t[1:].ravel()])
-
-
-def forward(params, q_c, n_chunks):
-    """Predicted (n_chunks, n_chan) amplitude matrix.
-
-    Model:  A_pred(c, t) = α · exp(-‖q_c − (s + d_t)‖ / λ) + ε
-
-    The noise floor ε accounts for the baseline ptp that any channel
-    sees even when the spike source is far away — measurement noise
-    plus background activity contribute to per-spike ptp regardless
-    of geometry.  Without ε the fit can't satisfy both 'sharp local
-    contrast' (requires small λ) and 'non-zero amplitude at distance'
-    (requires large λ) — it has to broaden λ and push the source off-
-    axis to reconcile them.
+    Mirrors readProbesSection at src/libklustersshared/src/klustersshared/
+    parameteryamlreader_probes.cpp:56 — session YAML has a `probes:`
+    sequence; each entry has probeFile + channelOffset + anatomicalGroups
+    /spikeGroups.  The referenced .probe file has totalChannels, sites
+    (count_per_shank, geometry as flat [x_um, y_um] list ordered tip-
+    to-base per shank then next shank), and optional channelMap.
     """
-    alpha, s_x, s_y, lam, eps, d_t = unpack_params(params, n_chunks)
-    s = np.array([s_x, s_y])
+    if not HAVE_YAML:
+        raise RuntimeError("pyyaml required: pip install pyyaml")
+
+    yaml_path = session_path.with_suffix(".yaml")
+    with open(yaml_path) as f:
+        sess = yaml.safe_load(f) or {}
+
+    sd_groups = (sess.get("spikeDetection") or {}).get("channelGroups") or []
+    if group < 1 or group > len(sd_groups):
+        raise ValueError(f"group {group} out of range "
+                         f"({len(sd_groups)} spikeDetection groups)")
+    group_channels = list(sd_groups[group - 1].get("channels") or [])
+
+    probes = sess.get("probes")
+    if not probes:
+        raise RuntimeError(f"{yaml_path}: no `probes:` section. "
+                           f"Either add it or use --probe-geometry-csv.")
+    library_path = sess.get("probeLibraryPath")
+
+    # Find probe entry covering this group
+    chosen = None
+    for entry in probes:
+        groups = entry.get("spikeGroups") or entry.get("anatomicalGroups") or []
+        if group in groups:
+            chosen = entry
+            break
+    if chosen is None and len(probes) == 1:
+        chosen = probes[0]
+    if chosen is None:
+        raise RuntimeError(
+            f"no probe entry lists group {group} in spike/anatomicalGroups; "
+            f"available: {[e.get('label') or e.get('probeFile') for e in probes]}"
+        )
+
+    probe_file_ref = chosen.get("probeFile")
+    channel_offset = int(chosen.get("channelOffset", 0))
+    if not probe_file_ref:
+        raise RuntimeError(f"probe entry missing probeFile: {chosen}")
+
+    # Resolve .probe file path: absolute, then library, then session dir
+    candidates = [Path(probe_file_ref)]
+    if library_path:
+        candidates.append(Path(library_path) / probe_file_ref)
+    candidates.append(session_path.parent / probe_file_ref)
+    probe_path = next((c for c in candidates if c.is_file()), None)
+    if probe_path is None:
+        raise FileNotFoundError(
+            f"probe file {probe_file_ref!r} not found in any of: "
+            f"{[str(c) for c in candidates]}"
+        )
+
+    with open(probe_path) as f:
+        probe = (yaml.safe_load(f) or {}).get("probeFile") or {}
+    geometry = (probe.get("sites") or {}).get("geometry") or []
+    channel_map = probe.get("channelMap") or []   # empty = sequential
+
+    if not geometry:
+        raise RuntimeError(f"{probe_path}: empty sites.geometry")
+
+    n_chan = len(group_channels)
+    q_c = np.zeros((n_chan, 2), dtype=np.float64)
+    for c_idx, hw_id in enumerate(group_channels):
+        local_hw = int(hw_id) - channel_offset
+        site_idx = (int(channel_map[local_hw]) if channel_map else local_hw)
+        if not (0 <= site_idx < len(geometry)):
+            raise RuntimeError(
+                f"site index {site_idx} (hw {hw_id}, offset {channel_offset}) "
+                f"out of geometry range [0, {len(geometry)})"
+            )
+        x, y = geometry[site_idx]
+        q_c[c_idx] = [float(x), float(y)]
+    return q_c, str(probe_path)
+
+
+def load_geometry_csv(path: Path, n_chan: int) -> np.ndarray:
+    rows = []
+    with open(path) as f:
+        for row in csv.reader(f):
+            if not row or row[0].lstrip().startswith("#"):
+                continue
+            try:
+                rows.append((int(row[0]), float(row[1]), float(row[2])))
+            except ValueError:
+                continue
+    rows.sort()
+    if len(rows) != n_chan:
+        raise ValueError(f"expected {n_chan} rows, got {len(rows)}")
+    return np.array([[r[1], r[2]] for r in rows], dtype=np.float64)
+
+
+# ─── forward model ───────────────────────────────────────────────────────
+
+
+def unpack_params(params, n_chunks, n_chan, n_sources):
+    """params layout:
+       [α_1, s1_x, s1_y, ..., α_K, sK_x, sK_y,
+        λ,
+        ε_0, ..., ε_{n_chan-1},
+        d_x_1, d_y_1, ..., d_x_{T-1}, d_y_{T-1}]"""
+    K = n_sources
+    src = params[:3 * K].reshape(K, 3)
+    alphas = src[:, 0]
+    s_xy = src[:, 1:3]
+    lam = params[3 * K]
+    eps_c = params[3 * K + 1: 3 * K + 1 + n_chan]
+    d_rest = params[3 * K + 1 + n_chan:].reshape(n_chunks - 1, 2)
+    d_t = np.vstack([[0.0, 0.0], d_rest])
+    return alphas, s_xy, lam, eps_c, d_t
+
+
+def forward(params, q_c, n_chunks, n_sources):
     n_chan = q_c.shape[0]
-    A = np.full((n_chunks, n_chan), eps, dtype=np.float64)
+    alphas, s_xy, lam, eps_c, d_t = unpack_params(
+        params, n_chunks, n_chan, n_sources)
+    A = np.broadcast_to(eps_c, (n_chunks, n_chan)).copy()
     for t in range(n_chunks):
-        src = s + d_t[t]
-        dist = np.linalg.norm(q_c - src, axis=1)
-        A[t, :] = alpha * np.exp(-dist / lam) + eps
+        for k in range(n_sources):
+            src = s_xy[k] + d_t[t]
+            dist = np.linalg.norm(q_c - src, axis=1)
+            A[t, :] += alphas[k] * np.exp(-dist / lam)
     return A
 
 
-def residuals(params, A_obs, mask, q_c, n_chunks):
-    A_pred = forward(params, q_c, n_chunks)
-    diff = A_pred - A_obs
-    return diff[mask].ravel()
+def residuals(params, A_obs, mask, q_c, n_chunks, n_sources):
+    return (forward(params, q_c, n_chunks, n_sources) - A_obs)[mask].ravel()
 
 
-def initial_guess(A_obs, mask, q_c, n_chunks):
-    """Seed: α = (max − min) observed, s = position of brightest channel,
-    λ = inter-site spacing, ε = min observed, d_t = 0."""
+def initial_guess(A_obs, mask, q_c, n_chunks, n_sources):
+    n_chan = q_c.shape[0]
     chunk_validity = mask.sum(axis=1)
-    if chunk_validity.max() == 0:
-        return np.zeros(5 + 2 * (n_chunks - 1))
-    seed_chunk = int(np.argmax(chunk_validity))
-    seed_row = np.where(mask[seed_chunk], A_obs[seed_chunk], 0.0)
-    seed_ch = int(np.argmax(seed_row))
-    s_x_init, s_y_init = q_c[seed_ch]
-    obs_max = float(np.nanmax(A_obs[mask])) if mask.any() else 1.0
-    obs_min = float(np.nanmin(A_obs[mask])) if mask.any() else 0.0
-    alpha_init = max(1.0, obs_max - obs_min)
-    eps_init = max(1.0, obs_min)
-    diffs = np.linalg.norm(q_c[1:] - q_c[:-1], axis=1)
-    lam_init = float(np.median(diffs)) if len(diffs) else 25.0
+
+    eps_init = np.zeros(n_chan)
+    for c in range(n_chan):
+        col = A_obs[:, c][mask[:, c]]
+        if col.size:
+            cut = max(1, int(col.size * 0.25))
+            eps_init[c] = float(np.partition(col, cut - 1)[:cut].mean())
+
+    seed_chunk = int(np.argmax(chunk_validity)) if chunk_validity.max() else 0
+    available = np.where(mask[seed_chunk], A_obs[seed_chunk] - eps_init, 0.0)
+
+    src_params = []
+    for k in range(n_sources):
+        c_max = int(np.argmax(available))
+        amp = max(1.0, float(available[c_max]))
+        src_params.extend([amp, q_c[c_max, 0], q_c[c_max, 1]])
+        # Suppress 40 µm neighborhood of this seed
+        dists = np.linalg.norm(q_c - q_c[c_max], axis=1)
+        available = available * (dists > 40)
+
+    # λ: median nearest-neighbour distance
+    nn_dists = []
+    for i in range(n_chan):
+        d = np.linalg.norm(q_c - q_c[i], axis=1)
+        d[i] = np.inf
+        nn_dists.append(d.min())
+    lam_init = float(np.median(nn_dists)) if nn_dists else 25.0
+
     d_rest = np.zeros(2 * (n_chunks - 1))
-    return np.concatenate(
-        [[alpha_init, s_x_init, s_y_init, lam_init, eps_init], d_rest])
+    return np.concatenate([src_params, [lam_init], eps_init, d_rest])
 
 
-def fit_drift_2d(A_obs, q_c):
+def fit_drift(A_obs, q_c, n_sources):
     n_chunks, n_chan = A_obs.shape
     mask = np.isfinite(A_obs) & (A_obs > 0)
     n_obs = int(mask.sum())
 
-    x0 = initial_guess(A_obs, mask, q_c, n_chunks)
+    x0 = initial_guess(A_obs, mask, q_c, n_chunks, n_sources)
 
     x_min, x_max = q_c[:, 0].min(), q_c[:, 0].max()
     y_min, y_max = q_c[:, 1].min(), q_c[:, 1].max()
-    x_span = max(100.0, x_max - x_min)        # widened from 50 → 100
+    x_span = max(100.0, x_max - x_min)
     y_span = max(100.0, y_max - y_min)
     obs_max = float(np.nanmax(A_obs[mask])) if mask.any() else 1e8
 
+    per_src_lo = [1.0, x_min - x_span, y_min - y_span]
+    per_src_hi = [1e8, x_max + x_span, y_max + y_span]
     lo = np.concatenate([
-        [1.0, x_min - x_span, y_min - y_span, 5.0, 0.0],
+        np.tile(per_src_lo, n_sources),
+        [2.0],
+        np.zeros(n_chan),
         np.tile([-x_span, -y_span], n_chunks - 1),
     ])
     hi = np.concatenate([
-        [1e8, x_max + x_span, y_max + y_span, 500.0, obs_max],
+        np.tile(per_src_hi, n_sources),
+        [500.0],
+        np.full(n_chan, obs_max),
         np.tile([+x_span, +y_span], n_chunks - 1),
     ])
 
     res = least_squares(
-        residuals, x0, args=(A_obs, mask, q_c, n_chunks),
-        bounds=(lo, hi),
-        method="trf",
-        max_nfev=100000,
-        verbose=0,
+        residuals, x0, args=(A_obs, mask, q_c, n_chunks, n_sources),
+        bounds=(lo, hi), method="trf", max_nfev=200000, verbose=0,
     )
     return res, mask, n_obs
 
@@ -233,120 +269,98 @@ def fit_drift_2d(A_obs, q_c):
 
 def plot_heatmap(A, channel_list, chunk_minutes, out_path, title,
                  vmin=None, vmax=None):
-    if not HAVE_MPL:
-        return
+    if not HAVE_MPL: return
     n_chunks, n_chan = A.shape
     fig, ax = plt.subplots(figsize=(8, max(4, n_chunks * 0.15)))
-    im = ax.imshow(
-        A, aspect="auto", origin="lower", cmap="viridis",
-        extent=[-0.5, n_chan - 0.5, 0, n_chunks * chunk_minutes],
-        vmin=vmin, vmax=vmax,
-    )
+    im = ax.imshow(A, aspect="auto", origin="lower", cmap="viridis",
+                   extent=[-0.5, n_chan - 0.5, 0, n_chunks * chunk_minutes],
+                   vmin=vmin, vmax=vmax)
     ax.set_xlabel("channel (group-local idx)")
     ax.set_ylabel("time (minutes)")
     ax.set_xticks(range(n_chan))
     ax.set_xticklabels([str(c) for c in channel_list], fontsize=8)
     ax.set_title(title)
-    plt.colorbar(im, ax=ax, label="median ptp (raw int16)")
+    plt.colorbar(im, ax=ax, label="median ptp")
     fig.tight_layout()
     fig.savefig(out_path, dpi=110)
     plt.close(fig)
 
 
 def plot_residual_heatmap(R, channel_list, chunk_minutes, out_path):
-    if not HAVE_MPL:
-        return
+    if not HAVE_MPL: return
     n_chunks, n_chan = R.shape
     vmax = float(np.nanmax(np.abs(R)))
     fig, ax = plt.subplots(figsize=(8, max(4, n_chunks * 0.15)))
-    im = ax.imshow(
-        R, aspect="auto", origin="lower", cmap="RdBu_r",
-        extent=[-0.5, n_chan - 0.5, 0, n_chunks * chunk_minutes],
-        vmin=-vmax, vmax=vmax,
-    )
+    im = ax.imshow(R, aspect="auto", origin="lower", cmap="RdBu_r",
+                   extent=[-0.5, n_chan - 0.5, 0, n_chunks * chunk_minutes],
+                   vmin=-vmax, vmax=vmax)
     ax.set_xlabel("channel (group-local idx)")
     ax.set_ylabel("time (minutes)")
     ax.set_xticks(range(n_chan))
     ax.set_xticklabels([str(c) for c in channel_list], fontsize=8)
-    ax.set_title("residuals (observed − predicted)\n"
-                 "(structureless = model right; stripes = model wrong)")
-    plt.colorbar(im, ax=ax, label="residual (raw int16)")
+    ax.set_title("residuals (obs − pred); structureless = model right")
+    plt.colorbar(im, ax=ax, label="residual")
     fig.tight_layout()
     fig.savefig(out_path, dpi=110)
     plt.close(fig)
 
 
-def plot_drift_trajectory(d_t, s_x, s_y, lam, chunk_minutes, out_path):
-    if not HAVE_MPL:
-        return
+def plot_drift_trajectory(d_t, s_xy, lam, chunk_minutes, out_path):
+    if not HAVE_MPL: return
     t = np.arange(len(d_t)) * chunk_minutes + chunk_minutes / 2
     fig, (ax_xy, ax_t) = plt.subplots(1, 2, figsize=(14, 5))
-
-    # 2D path
-    ax_xy.plot(d_t[:, 0], d_t[:, 1], "o-", linewidth=1.0, markersize=4,
-               color="C0")
-    ax_xy.scatter([d_t[0, 0]], [d_t[0, 1]], c="green", s=80, zorder=5,
-                  label="start (t=0)")
-    ax_xy.scatter([d_t[-1, 0]], [d_t[-1, 1]], c="red", s=80, zorder=5,
-                  label="end")
+    ax_xy.plot(d_t[:, 0], d_t[:, 1], "o-", linewidth=1.0,
+               markersize=4, color="C0")
+    ax_xy.scatter([d_t[0, 0]], [d_t[0, 1]], c="green", s=80, zorder=5, label="t=0")
+    ax_xy.scatter([d_t[-1, 0]], [d_t[-1, 1]], c="red", s=80, zorder=5, label="t=end")
     ax_xy.axhline(0, color="gray", linewidth=0.4)
     ax_xy.axvline(0, color="gray", linewidth=0.4)
     ax_xy.set_xlabel("d_x (µm)")
     ax_xy.set_ylabel("d_y (µm)")
-    ax_xy.set_title(f"Fitted 2D drift trajectory\n"
-                    f"s_0 = ({s_x:.2f}, {s_y:.2f}) µm  •  λ = {lam:.2f} µm")
-    ax_xy.legend()
-    ax_xy.grid(alpha=0.3)
+    src_str = "  •  ".join(f"s{k+1}=({s[0]:+.1f},{s[1]:+.1f})"
+                            for k, s in enumerate(s_xy))
+    ax_xy.set_title(f"2D drift trajectory\n{src_str}  •  λ={lam:.1f} µm")
+    ax_xy.legend(); ax_xy.grid(alpha=0.3)
     ax_xy.set_aspect("equal", adjustable="datalim")
 
-    # Components vs time
     ax_t.plot(t, d_t[:, 0], "o-", linewidth=1.5, markersize=4,
               color="C0", label="d_x (lateral)")
     ax_t.plot(t, d_t[:, 1], "o-", linewidth=1.5, markersize=4,
               color="C1", label="d_y (depth)")
     ax_t.axhline(0, color="black", linewidth=0.5)
     ax_t.set_xlabel("time (minutes)")
-    ax_t.set_ylabel("drift component (µm)")
+    ax_t.set_ylabel("drift (µm)")
     ax_t.set_title("Drift components over time")
-    ax_t.grid(alpha=0.3)
-    ax_t.legend()
-
+    ax_t.grid(alpha=0.3); ax_t.legend()
     fig.tight_layout()
     fig.savefig(out_path, dpi=110)
     plt.close(fig)
 
 
-def plot_geometry(q_c, channel_list, s_x, s_y, d_t, lam, out_path):
-    if not HAVE_MPL:
-        return
-    fig, ax = plt.subplots(figsize=(6, 9))
-    # Channels
-    ax.scatter(q_c[:, 0], q_c[:, 1], c="black", s=80, zorder=3,
-               marker="s", label="channel")
+def plot_geometry(q_c, channel_list, s_xy, alphas, d_t, lam, out_path):
+    if not HAVE_MPL: return
+    fig, ax = plt.subplots(figsize=(7, 10))
+    ax.scatter(q_c[:, 0], q_c[:, 1], c="black", s=120, zorder=3,
+               marker="s", label="channels")
     for c, (x, y) in enumerate(q_c):
-        ax.annotate(f"ch{channel_list[c]}", (x, y), xytext=(5, 0),
+        ax.annotate(f"ch{channel_list[c]}", (x, y), xytext=(8, 0),
                     textcoords="offset points", fontsize=8)
 
-    # Source trajectory: s + d_t for each t
-    src_x = s_x + d_t[:, 0]
-    src_y = s_y + d_t[:, 1]
-    ax.plot(src_x, src_y, "o-", color="C3", linewidth=1.0, markersize=4,
-            alpha=0.7, label="fitted source position over time")
-    ax.scatter([src_x[0]], [src_y[0]], c="green", s=80, zorder=5,
-               label="t=0")
-    ax.scatter([src_x[-1]], [src_y[-1]], c="red", s=80, zorder=5,
-               label="t=end")
-
-    # Attenuation length scale visualisation: circle of radius λ around start
-    circle = plt.Circle((src_x[0], src_y[0]), lam, fill=False, color="C3",
-                        linestyle="--", alpha=0.6, label=f"λ = {lam:.1f} µm")
-    ax.add_patch(circle)
-
+    colors = ["C3", "C2", "C4", "C5", "C6"]
+    for k, s in enumerate(s_xy):
+        traj_x = s[0] + d_t[:, 0]
+        traj_y = s[1] + d_t[:, 1]
+        c = colors[k % len(colors)]
+        ax.plot(traj_x, traj_y, "o-", color=c, alpha=0.7, linewidth=1.0,
+                markersize=4, label=f"src {k+1} (α={alphas[k]:.0f})")
+        ax.scatter([traj_x[0]], [traj_y[0]], c=c, s=80, marker="^",
+                   zorder=5, edgecolor="black", linewidth=0.5)
+        ax.scatter([traj_x[-1]], [traj_y[-1]], c=c, s=80, marker="v",
+                   zorder=5, edgecolor="black", linewidth=0.5)
     ax.set_xlabel("x (µm, lateral)")
     ax.set_ylabel("y (µm, depth from tip)")
-    ax.set_title("Channel geometry + fitted source trajectory")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
+    ax.set_title(f"Probe + fitted source trajectories\n(▲=start, ▼=end; λ={lam:.1f} µm)")
+    ax.legend(fontsize=9, loc="best"); ax.grid(alpha=0.3)
     ax.set_aspect("equal", adjustable="datalim")
     fig.tight_layout()
     fig.savefig(out_path, dpi=110)
@@ -365,29 +379,35 @@ def main():
     ap.add_argument("--chunk-minutes", type=float, default=10.0)
     ap.add_argument("--min-spikes-per-chunk", type=int, default=10)
     ap.add_argument("--output", type=Path, default=Path("drift_fit_2d"))
-    ap.add_argument("--probe", choices=["buzsaki64l"], default=None,
-                    help="Built-in probe geometry to use.")
-    ap.add_argument("--probe-geometry", type=Path, default=None,
-                    help="CSV with rows 'channel_local_idx,x_um,y_um' "
-                         "(overrides --probe).")
+    ap.add_argument("--n-sources", type=int, default=2,
+                    help="K, number of point-source components.  K=2 dipole "
+                         "(default), K=3 tripolar, K=1 legacy point-source.")
+    ap.add_argument("--probe-geometry-csv", type=Path, default=None,
+                    help="Override probe geometry with a CSV (idx,x_um,y_um). "
+                         "Default: auto-load from session YAML probes section.")
     args = ap.parse_args()
 
     out = args.output
     out.mkdir(parents=True, exist_ok=True)
+    K = args.n_sources
 
-    print(f"Stage 3 (2D) — drift fit for {args.session} group {args.group} "
-          f"cluster {args.cluster}")
+    print(f"Stage 3 (v5) — drift fit for {args.session} group {args.group} "
+          f"cluster {args.cluster}, K={K} source(s)")
 
     geom = parse_session_params(args.session, args.group)
-    print(f"  yaml: {geom['nChanGroup']} chan × {geom['nSamples']} samples, "
+    n_chan = geom["nChanGroup"]
+    print(f"  yaml: {n_chan} chan × {geom['nSamples']} samples, "
           f"sr={geom['samplingRate']:.1f} Hz")
 
-    n_chan = geom["nChanGroup"]
-    q_c = get_geometry(args, n_chan)
-    print(f"  probe geometry: {n_chan} channels")
+    if args.probe_geometry_csv:
+        q_c = load_geometry_csv(args.probe_geometry_csv, n_chan)
+        probe_src = str(args.probe_geometry_csv)
+    else:
+        q_c, probe_src = load_probe_geometry(args.session, args.group)
+    print(f"  probe geometry: {probe_src}")
     for c in range(n_chan):
         print(f"    ch {geom['channelList'][c]:3d} (idx {c}): "
-              f"({q_c[c, 0]:+7.2f}, {q_c[c, 1]:+7.2f}) µm")
+              f"({q_c[c, 0]:+8.2f}, {q_c[c, 1]:+8.2f}) µm")
 
     spk = read_spkD(args.session, args.group, n_chan, geom["nSamples"])
     res = read_res(args.session, args.group)
@@ -396,38 +416,39 @@ def main():
     spk, res, clu = spk[:n], res[:n], clu[:n]
 
     if not (clu == args.cluster).any():
-        print(f"  ERROR: no spikes assigned to cluster {args.cluster}",
-              file=sys.stderr)
+        print(f"  ERROR: no spikes in cluster {args.cluster}", file=sys.stderr)
         sys.exit(1)
     n_in_cluster = int((clu == args.cluster).sum())
     print(f"  cluster {args.cluster}: {n_in_cluster} spikes")
 
     footprints, chunk_edges, n_chunks = compute_footprints(
-        spk, res, clu,
-        sampling_rate=geom["samplingRate"],
+        spk, res, clu, sampling_rate=geom["samplingRate"],
         chunk_minutes=args.chunk_minutes,
         min_spikes_per_chunk=args.min_spikes_per_chunk,
-        cluster_ids=[args.cluster],
-    )
+        cluster_ids=[args.cluster])
     A_obs = footprints[args.cluster]
-    print(f"  observation matrix: {n_chunks} chunks × {n_chan} channels")
     n_valid = int((np.isfinite(A_obs) & (A_obs > 0)).sum())
-    print(f"  valid cells: {n_valid} / {n_chunks * n_chan}")
+    print(f"  observation matrix: {n_chunks}×{n_chan}, "
+          f"{n_valid}/{n_chunks * n_chan} valid")
 
     print("  fitting...")
-    result, mask, n_obs = fit_drift_2d(A_obs, q_c)
-    alpha, s_x, s_y, lam, eps, d_t = unpack_params(result.x, n_chunks)
-    A_pred = forward(result.x, q_c, n_chunks)
+    result, mask, n_obs = fit_drift(A_obs, q_c, K)
+    alphas, s_xy, lam, eps_c, d_t = unpack_params(
+        result.x, n_chunks, n_chan, K)
+    A_pred = forward(result.x, q_c, n_chunks, K)
     R = A_obs - A_pred
 
     rmse = float(np.sqrt(np.mean(R[mask] ** 2)))
     rss = float(np.sum(R[mask] ** 2))
     tss = float(np.sum((A_obs[mask] - A_obs[mask].mean()) ** 2))
     r2 = 1.0 - rss / tss if tss > 0 else float("nan")
-    print(f"  fit: α={alpha:.0f}  ε={eps:.0f}  "
-          f"s=({s_x:.2f}, {s_y:.2f}) µm  λ={lam:.2f} µm")
-    print(f"       d_x range=[{d_t[:, 0].min():.2f}, {d_t[:, 0].max():.2f}] µm")
-    print(f"       d_y range=[{d_t[:, 1].min():.2f}, {d_t[:, 1].max():.2f}] µm")
+    for k in range(K):
+        print(f"  src {k+1}: α={alphas[k]:.0f}  "
+              f"s=({s_xy[k][0]:+.2f}, {s_xy[k][1]:+.2f}) µm")
+    print(f"  λ={lam:.2f} µm  ε_c: min={eps_c.min():.0f}, "
+          f"max={eps_c.max():.0f}, mean={eps_c.mean():.0f}")
+    print(f"  d_x range=[{d_t[:, 0].min():.2f}, {d_t[:, 0].max():.2f}] µm")
+    print(f"  d_y range=[{d_t[:, 1].min():.2f}, {d_t[:, 1].max():.2f}] µm")
     print(f"  RMSE={rmse:.0f}  R²={r2:.4f}  "
           f"(obs mean={A_obs[mask].mean():.0f}, n_obs={n_obs})")
     print(f"  converged: {result.success}  nfev={result.nfev}  "
@@ -442,73 +463,77 @@ def main():
                      vmin=vmin, vmax=vmax)
         plot_heatmap(A_pred, geom["channelList"], args.chunk_minutes,
                      out / "predicted.png",
-                     f"Cluster {args.cluster} — PREDICTED 2D "
-                     f"(s=({s_x:.1f},{s_y:.1f}) λ={lam:.1f})",
+                     f"Cluster {args.cluster} — PREDICTED (K={K})",
                      vmin=vmin, vmax=vmax)
         plot_residual_heatmap(R, geom["channelList"], args.chunk_minutes,
                               out / "residuals.png")
-        plot_drift_trajectory(d_t, s_x, s_y, lam, args.chunk_minutes,
+        plot_drift_trajectory(d_t, s_xy, lam, args.chunk_minutes,
                               out / "drift_trajectory.png")
-        plot_geometry(q_c, geom["channelList"], s_x, s_y, d_t, lam,
+        plot_geometry(q_c, geom["channelList"], s_xy, alphas, d_t, lam,
                       out / "geometry.png")
         print(f"  plots written to {out}/")
 
     with open(out / "fit_summary.txt", "w") as f:
-        f.write("drift_fit_single_cluster_2d — stage 3 (v3) result\n")
+        f.write("drift_fit_single_cluster_2d — stage 3 (v5)\n")
         f.write("=" * 70 + "\n")
         f.write(f"session         : {args.session}\n")
         f.write(f"group           : {args.group}\n")
         f.write(f"cluster         : {args.cluster}\n")
         f.write(f"spikes used     : {n_in_cluster}\n")
         f.write(f"chunks          : {n_chunks} @ {args.chunk_minutes} min\n")
-        f.write(f"valid obs cells : {n_obs} of {n_chunks * n_chan}\n")
-        f.write(f"probe           : {args.probe or 'custom CSV'}\n")
-        f.write("\nFitted parameters (units = µm)\n")
+        f.write(f"valid obs cells : {n_obs}/{n_chunks * n_chan}\n")
+        f.write(f"probe geometry  : {probe_src}\n")
+        f.write(f"n_sources (K)   : {K}\n")
+
+        f.write("\nProbe geometry (channel local idx → global, x, y µm)\n")
         f.write("-" * 40 + "\n")
-        f.write(f"  α                          : {alpha:.2f}\n")
-        f.write(f"  ε  (noise floor)           : {eps:.2f}\n")
-        f.write(f"  s_0  (source at t=0)       : ({s_x:.4f}, {s_y:.4f}) µm\n")
-        f.write(f"  λ    (attenuation length)  : {lam:.4f} µm\n")
-        f.write(f"  d_x  range                 : [{d_t[:,0].min():+.3f}, "
-                f"{d_t[:,0].max():+.3f}] µm\n")
-        f.write(f"  d_y  range                 : [{d_t[:,1].min():+.3f}, "
-                f"{d_t[:,1].max():+.3f}] µm\n")
-        # Monotonicity per axis
-        for axis, name in enumerate(["d_x", "d_y"]):
-            diffs = np.diff(d_t[:, axis])
-            mono = (np.all(diffs >= -1e-3) or np.all(diffs <= 1e-3))
-            f.write(f"  {name} monotonic              : {'yes' if mono else 'no'}\n")
+        for c in range(n_chan):
+            f.write(f"  idx {c} → ch{geom['channelList'][c]:3d}  "
+                    f"({q_c[c,0]:+8.2f}, {q_c[c,1]:+8.2f})\n")
+
+        f.write("\nFitted source parameters (µm)\n")
+        f.write("-" * 40 + "\n")
+        for k in range(K):
+            f.write(f"  source {k+1}: α = {alphas[k]:10.2f}   "
+                    f"s = ({s_xy[k][0]:+8.3f}, {s_xy[k][1]:+8.3f})\n")
+        f.write(f"  λ                  : {lam:.4f} µm\n")
+        f.write(f"  d_x range          : [{d_t[:,0].min():+.3f}, "
+                f"{d_t[:,0].max():+.3f}]\n")
+        f.write(f"  d_y range          : [{d_t[:,1].min():+.3f}, "
+                f"{d_t[:,1].max():+.3f}]\n")
+
+        f.write("\nPer-channel ε_c (baseline)\n")
+        f.write("-" * 40 + "\n")
+        for c in range(n_chan):
+            f.write(f"  ch{geom['channelList'][c]:3d} (idx {c}) "
+                    f"@({q_c[c,0]:+6.1f},{q_c[c,1]:+6.1f}): {eps_c[c]:8.1f}\n")
+
         f.write("\nFit quality\n")
         f.write("-" * 40 + "\n")
-        f.write(f"  RMSE                       : {rmse:.2f}\n")
-        f.write(f"  R²                         : {r2:.4f}\n")
-        f.write(f"  obs mean                   : {A_obs[mask].mean():.2f}\n")
-        f.write(f"  obs std                    : {A_obs[mask].std():.2f}\n")
-        f.write(f"  RMSE / obs mean            : {rmse/A_obs[mask].mean()*100:.2f}%\n")
-        f.write(f"  converged                  : {result.success}\n")
-        f.write(f"  nfev                       : {result.nfev}\n")
+        f.write(f"  RMSE        : {rmse:.2f}\n")
+        f.write(f"  R²          : {r2:.4f}\n")
+        f.write(f"  obs mean    : {A_obs[mask].mean():.2f}\n")
+        f.write(f"  RMSE/mean   : {rmse/A_obs[mask].mean()*100:.2f}%\n")
+        f.write(f"  converged   : {result.success}  (nfev={result.nfev})\n")
 
         f.write("\nPer-channel residual stats\n")
         f.write("-" * 40 + "\n")
         for c in range(n_chan):
             col = R[:, c][mask[:, c]]
             if col.size == 0:
-                f.write(f"  ch {geom['channelList'][c]:3d} (no data)\n")
+                f.write(f"  ch{geom['channelList'][c]:3d}: no data\n")
                 continue
-            f.write(f"  ch {geom['channelList'][c]:3d} (idx {c}) "
-                    f"@({q_c[c,0]:+5.1f},{q_c[c,1]:+5.1f}): "
+            f.write(f"  ch{geom['channelList'][c]:3d} (idx {c}) "
+                    f"@({q_c[c,0]:+6.1f},{q_c[c,1]:+6.1f}): "
                     f"mean={col.mean():+7.0f}  rms={np.sqrt(np.mean(col**2)):6.0f}  "
                     f"max|r|={np.abs(col).max():6.0f}\n")
 
-        f.write("\nFitted source trajectory s_0 + d_t\n")
+        f.write("\nFitted drift trajectory\n")
         f.write("-" * 40 + "\n")
         for t in range(n_chunks):
             t_min = (chunk_edges[t] + chunk_edges[t + 1]) / 2 / 60
-            src_x = s_x + d_t[t, 0]
-            src_y = s_y + d_t[t, 1]
             f.write(f"  chunk {t:2d} (t={t_min:6.1f} min): "
-                    f"source=({src_x:+7.2f}, {src_y:+7.2f}) µm  "
-                    f"d=({d_t[t,0]:+6.2f}, {d_t[t,1]:+6.2f})\n")
+                    f"d=({d_t[t,0]:+7.2f}, {d_t[t,1]:+7.2f})\n")
 
     print(f"  summary: {out / 'fit_summary.txt'}")
     print("Done.")
