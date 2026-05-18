@@ -84,8 +84,19 @@ public:
 
     // --- sizing -----------------------------------------------------------
 
-    void SetSize(int n) {
-        if (n < 1) throw std::runtime_error("Array::SetSize: n < 1");
+    // Optional 'tag' is a static string (e.g. "Data", "Centres") used only
+    // for diagnostics: it lets the caller name *which* array failed when
+    // SetSize is invoked with n<1, so we don't have to disassemble the
+    // call site from a generic error message.  Callers that don't supply
+    // a tag still get a meaningful message including n.
+    void SetSize(int n, const char* tag = nullptr) {
+        if (n < 1) {
+            std::string msg = "Array::SetSize: n < 1 (n=";
+            msg += std::to_string(n);
+            if (tag) { msg += ", tag="; msg += tag; }
+            msg += ")";
+            throw std::runtime_error(msg);
+        }
         delete[] m_Data;
         m_Size = n;
         m_Data = new T[n]();   // value-initialise (zero for arithmetic types)
