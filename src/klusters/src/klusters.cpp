@@ -3860,6 +3860,16 @@ void KlustersApp::slotReorderClustersBySimilarity()
             .arg(nRenamed)
             .arg(QString::fromLatin1(matrixLabel)),
         4000);
+
+    // After renaming, both the error matrix and the template matrix are
+    // keyed to stale cluster IDs.  slotUpdateErrorMatrix() recomputes the
+    // error matrix and unconditionally also emits the template-matrix
+    // refresh (see comment at slotUpdateErrorMatrix definition) — same
+    // contract as the U key — so any visible matrix dock catches up
+    // automatically.  Cheap if neither dock is open: the slot calls
+    // view->updateErrorMatrix()/updateTemplateMatrix() which short-circuit
+    // when their respective Qt-connected listeners are gone.
+    slotUpdateErrorMatrix();
 }
 
 void KlustersApp::slotSelectAll(){
