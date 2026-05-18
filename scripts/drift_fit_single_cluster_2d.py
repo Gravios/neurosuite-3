@@ -129,31 +129,43 @@ def get_geometry(args, n_chan: int) -> np.ndarray:
 
 
 def unpack_params(params, n_chunks):
-    """params = [α, s_x, s_y, λ, d_x_1, d_y_1, ..., d_x_{T-1}, d_y_{T-1}].
-    d_0 = (0, 0) by anchor."""
+    """params = [α, s_x, s_y, λ, ε, d_x_1, d_y_1, ..., d_x_{T-1}, d_y_{T-1}].
+    d_0 = (0, 0) by anchor.  ε ≥ 0 is the per-channel noise floor on ptp."""
     alpha = params[0]
     s_x = params[1]
     s_y = params[2]
     lam = params[3]
-    d_rest = params[4:].reshape(n_chunks - 1, 2)
-    d_t = np.vstack([[0.0, 0.0], d_rest])  # (n_chunks, 2)
-    return alpha, s_x, s_y, lam, d_t
+    eps = params[4]
+    d_rest = params[5:].reshape(n_chunks - 1, 2)
+    d_t = np.vstack([[0.0, 0.0], d_rest])
+    return alpha, s_x, s_y, lam, eps, d_t
 
 
-def pack_params(alpha, s_x, s_y, lam, d_t):
-    return np.concatenate([[alpha, s_x, s_y, lam], d_t[1:].ravel()])
+def pack_params(alpha, s_x, s_y, lam, eps, d_t):
+    return np.concatenate([[alpha, s_x, s_y, lam, eps], d_t[1:].ravel()])
 
 
 def forward(params, q_c, n_chunks):
-    """Predicted (n_chunks, n_chan) amplitude matrix."""
-    alpha, s_x, s_y, lam, d_t = unpack_params(params, n_chunks)
+    """Predicted (n_chunks, n_chan) amplitude matrix.
+
+    Model:  A_pred(c, t) = α · exp(-‖q_c − (s + d_t)‖ / λ) + ε
+
+    The noise floor ε accounts for the baseline ptp that any channel
+    sees even when the spike source is far away — measurement noise
+    plus background activity contribute to per-spike ptp regardless
+    of geometry.  Without ε the fit can't satisfy both 'sharp local
+    contrast' (requires small λ) and 'non-zero amplitude at distance'
+    (requires large λ) — it has to broaden λ and push the source off-
+    axis to reconcile them.
+    """
+    alpha, s_x, s_y, lam, eps, d_t = unpack_params(params, n_chunks)
     s = np.array([s_x, s_y])
     n_chan = q_c.shape[0]
-    A = np.zeros((n_chunks, n_chan))
+    A = np.full((n_chunks, n_chan), eps, dtype=np.float64)
     for t in range(n_chunks):
         src = s + d_t[t]
         dist = np.linalg.norm(q_c - src, axis=1)
-        A[t, :] = alpha * np.exp(-dist / lam)
+        A[t, :] = alpha * np.exp(-dist / lam) + eps
     return A
 
 
@@ -164,23 +176,24 @@ def residuals(params, A_obs, mask, q_c, n_chunks):
 
 
 def initial_guess(A_obs, mask, q_c, n_chunks):
-    """Seed:  α = max obs,  s = position of channel with max amplitude at the
-    chunk with most data,  λ = inter-site spacing,  d_t = 0."""
+    """Seed: α = (max − min) observed, s = position of brightest channel,
+    λ = inter-site spacing, ε = min observed, d_t = 0."""
     chunk_validity = mask.sum(axis=1)
     if chunk_validity.max() == 0:
-        return np.zeros(4 + 2 * (n_chunks - 1))
+        return np.zeros(5 + 2 * (n_chunks - 1))
     seed_chunk = int(np.argmax(chunk_validity))
     seed_row = np.where(mask[seed_chunk], A_obs[seed_chunk], 0.0)
     seed_ch = int(np.argmax(seed_row))
     s_x_init, s_y_init = q_c[seed_ch]
-    alpha_init = float(np.nanmax(A_obs[mask])) if mask.any() else 1.0
-
-    # λ: median pairwise neighbour distance in geometry
+    obs_max = float(np.nanmax(A_obs[mask])) if mask.any() else 1.0
+    obs_min = float(np.nanmin(A_obs[mask])) if mask.any() else 0.0
+    alpha_init = max(1.0, obs_max - obs_min)
+    eps_init = max(1.0, obs_min)
     diffs = np.linalg.norm(q_c[1:] - q_c[:-1], axis=1)
     lam_init = float(np.median(diffs)) if len(diffs) else 25.0
-
     d_rest = np.zeros(2 * (n_chunks - 1))
-    return np.concatenate([[alpha_init, s_x_init, s_y_init, lam_init], d_rest])
+    return np.concatenate(
+        [[alpha_init, s_x_init, s_y_init, lam_init, eps_init], d_rest])
 
 
 def fit_drift_2d(A_obs, q_c):
@@ -190,18 +203,18 @@ def fit_drift_2d(A_obs, q_c):
 
     x0 = initial_guess(A_obs, mask, q_c, n_chunks)
 
-    # Bounds — geometry-aware
     x_min, x_max = q_c[:, 0].min(), q_c[:, 0].max()
     y_min, y_max = q_c[:, 1].min(), q_c[:, 1].max()
-    x_span = max(50.0, x_max - x_min)
-    y_span = max(50.0, y_max - y_min)
+    x_span = max(100.0, x_max - x_min)        # widened from 50 → 100
+    y_span = max(100.0, y_max - y_min)
+    obs_max = float(np.nanmax(A_obs[mask])) if mask.any() else 1e8
 
     lo = np.concatenate([
-        [1.0, x_min - x_span, y_min - y_span, 5.0],
+        [1.0, x_min - x_span, y_min - y_span, 5.0, 0.0],
         np.tile([-x_span, -y_span], n_chunks - 1),
     ])
     hi = np.concatenate([
-        [1e8, x_max + x_span, y_max + y_span, 500.0],
+        [1e8, x_max + x_span, y_max + y_span, 500.0, obs_max],
         np.tile([+x_span, +y_span], n_chunks - 1),
     ])
 
@@ -209,7 +222,7 @@ def fit_drift_2d(A_obs, q_c):
         residuals, x0, args=(A_obs, mask, q_c, n_chunks),
         bounds=(lo, hi),
         method="trf",
-        max_nfev=50000,
+        max_nfev=100000,
         verbose=0,
     )
     return res, mask, n_obs
@@ -403,7 +416,7 @@ def main():
 
     print("  fitting...")
     result, mask, n_obs = fit_drift_2d(A_obs, q_c)
-    alpha, s_x, s_y, lam, d_t = unpack_params(result.x, n_chunks)
+    alpha, s_x, s_y, lam, eps, d_t = unpack_params(result.x, n_chunks)
     A_pred = forward(result.x, q_c, n_chunks)
     R = A_obs - A_pred
 
@@ -411,7 +424,8 @@ def main():
     rss = float(np.sum(R[mask] ** 2))
     tss = float(np.sum((A_obs[mask] - A_obs[mask].mean()) ** 2))
     r2 = 1.0 - rss / tss if tss > 0 else float("nan")
-    print(f"  fit: α={alpha:.0f}  s=({s_x:.2f}, {s_y:.2f}) µm  λ={lam:.2f} µm")
+    print(f"  fit: α={alpha:.0f}  ε={eps:.0f}  "
+          f"s=({s_x:.2f}, {s_y:.2f}) µm  λ={lam:.2f} µm")
     print(f"       d_x range=[{d_t[:, 0].min():.2f}, {d_t[:, 0].max():.2f}] µm")
     print(f"       d_y range=[{d_t[:, 1].min():.2f}, {d_t[:, 1].max():.2f}] µm")
     print(f"  RMSE={rmse:.0f}  R²={r2:.4f}  "
@@ -452,6 +466,7 @@ def main():
         f.write("\nFitted parameters (units = µm)\n")
         f.write("-" * 40 + "\n")
         f.write(f"  α                          : {alpha:.2f}\n")
+        f.write(f"  ε  (noise floor)           : {eps:.2f}\n")
         f.write(f"  s_0  (source at t=0)       : ({s_x:.4f}, {s_y:.4f}) µm\n")
         f.write(f"  λ    (attenuation length)  : {lam:.4f} µm\n")
         f.write(f"  d_x  range                 : [{d_t[:,0].min():+.3f}, "
