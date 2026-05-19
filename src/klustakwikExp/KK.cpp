@@ -90,22 +90,6 @@ void KK::AllocateArrays() {
     NoisePoint = 1;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
-    // Unconditional pre-allocation diagnostics: bypasses Output()'s
-    // Screen/Log gating so that callers running with -Log 0 -Screen 0
-    // (klusters' default) still see *why* an Array::SetSize(n<1) would
-    // throw next.  Cheap (one line) and printed exactly once per KK
-    // instance.
-    fprintf(stderr,
-            "KlustaKwik: AllocateArrays: nPoints=%d nDims=%d nDims2=%d "
-            "MaxPossibleClusters=%d\n",
-            nPoints, nDims, nDims2, MaxPossibleClusters);
-    if (nPoints < 1 || nDims < 1 || MaxPossibleClusters < 1) {
-        fprintf(stderr,
-                "KlustaKwik: AllocateArrays: refusing to allocate with a "
-                "zero/negative dimension — see the SetSize diagnostic "
-                "thrown below.\n");
-    }
-
     Data       .SetSize(nPoints * nDims,                "Data (nPoints*nDims)");
     Centres    .SetSize(MaxPossibleClusters * nDims,    "Centres (MaxPossibleClusters*nDims)");
     Weight     .SetSize(MaxPossibleClusters,            "Weight (MaxPossibleClusters)");
@@ -227,16 +211,6 @@ void KK::LoadData() {
         nDims = 0;
         for (int i = 0; i < nFeatures; i++)
             nDims += (i < UseLen && UseFeatures[i] == '1') ? 1 : 0;
-
-        // Unconditional binary-path diagnostic — bypasses Screen/Log so
-        // -Log 0 -Screen 0 callers (klusters' default) still see the
-        // sizes that AllocateArrays is about to receive.  Pairs with the
-        // matching diagnostic in AllocateArrays so each KlustaKwik run
-        // emits two correlated lines when something is off.
-        fprintf(stderr,
-                "KlustaKwik: LoadData[bin]: file=%s nFeatures=%d "
-                "dataBytes=%lld nPoints=%d UseLen=%d nDims=%d\n",
-                fname, nFeatures, (long long)dataBytes, nPoints, UseLen, nDims);
 
         if (fSaveModel) {
             ksv().FileBase = FileBase;
