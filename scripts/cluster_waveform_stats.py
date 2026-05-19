@@ -86,6 +86,129 @@ except ImportError:
         "(needed for the YAML + .res + .clu readers).\n")
     sys.exit(1)
 
+try:
+    import yaml as _yaml
+except ImportError:
+    sys.stderr.write("ERROR: PyYAML required (`pip install pyyaml`)\n")
+    sys.exit(1)
+
+
+# ─── probe geometry loader (mirrors libklustersshared/parameteryamlreader_probes) ─
+
+
+def load_probe_geometry(session_path: Path, group: int):
+    """Load per-channel (x, y) coordinates in µm for the given spike group.
+
+    Mirrors libklustersshared/parameteryamlreader_probes.cpp:
+      1. Read session YAML.  Group's channels come from
+         `spikeDetection.channelGroups[group-1].channels` (1-indexed group
+         number — matches Klusters .spk.N/.clu.N/.res.N file naming).
+      2. Find the probe owning this group by matching `channelOffset` to
+         the group's first channel (probes[].channelOffset is the first
+         hardware ID covered by that probe).
+      3. Load the referenced .probe file (path resolution tries
+         probeLibraryPath, session directory, and the path as-given).
+      4. Map each group channel → site_index via channelMap (sequential
+         if null) → (x, y) from probeFile.sites.geometry.
+
+    Returns dict with keys:
+      x_um, y_um         (C,) float arrays — channel coordinates
+      probe_label        str — for diagnostic logging
+      probe_file         str — absolute path of the .probe file used
+      site_indices       (C,) int — site index per channel within the probe
+    or None if geometry can't be resolved (probe section absent or .probe
+    file missing) — caller falls back to channel-index ordering with a
+    warning.
+    """
+    yaml_path = Path(f"{session_path}.yaml")
+    if not yaml_path.is_file():
+        return None
+    with open(yaml_path) as f:
+        sess = _yaml.safe_load(f)
+
+    # 1. group channels from spikeDetection
+    sd = (sess or {}).get("spikeDetection", {}).get("channelGroups", [])
+    if not sd or group <= 0 or group > len(sd):
+        return None
+    grp_entry = sd[group - 1]
+    grp_channels = grp_entry.get("channels", [])
+    if not grp_channels:
+        return None
+    # channels may be plain int list (current schema) or list of {id: int} dicts
+    if isinstance(grp_channels[0], dict):
+        grp_channels = [c["id"] for c in grp_channels]
+    grp_channels = [int(c) for c in grp_channels]
+
+    # 2. find the probe entry that owns these channels (largest channelOffset
+    # such that offset <= min(grp_channels))
+    probes = sess.get("probes", [])
+    if not probes:
+        return None
+    first_ch = min(grp_channels)
+    probe_entry = None
+    for p in probes:
+        off = int(p.get("channelOffset", 0))
+        if off <= first_ch and (probe_entry is None
+                                 or off > probe_entry.get("channelOffset", 0)):
+            probe_entry = p
+    if probe_entry is None:
+        return None
+
+    # 3. resolve the probe file path
+    probe_file = probe_entry.get("probeFile", "")
+    if not probe_file:
+        return None
+    library_path = sess.get("probeLibraryPath", "")
+    candidates = []
+    if library_path:
+        candidates.append(Path(library_path) / probe_file)
+    candidates.append(session_path.parent / probe_file)
+    candidates.append(Path(probe_file))
+    probe_path = next((p for p in candidates if p.is_file()), None)
+    if probe_path is None:
+        return None
+
+    with open(probe_path) as f:
+        probe_doc = _yaml.safe_load(f)
+    pf = (probe_doc or {}).get("probeFile", {})
+    sites = pf.get("sites", {})
+    geometry = sites.get("geometry")            # list of [x, y]
+    if not geometry:
+        return None
+
+    # 4. map channels to site coords via channelMap
+    channel_map_block = pf.get("channelMap", {}) or {}
+    channel_map = channel_map_block.get("map")  # None → sequential
+    offset = int(probe_entry.get("channelOffset", 0))
+
+    x_um = np.zeros(len(grp_channels), dtype=np.float64)
+    y_um = np.zeros(len(grp_channels), dtype=np.float64)
+    site_indices = np.zeros(len(grp_channels), dtype=np.int32)
+    for i, ch in enumerate(grp_channels):
+        sidx = ch - offset
+        if channel_map is not None:
+            if 0 <= sidx < len(channel_map):
+                sidx = int(channel_map[sidx])
+            else:
+                sidx = -1
+        if 0 <= sidx < len(geometry):
+            xy = geometry[sidx]
+            x_um[i] = float(xy[0])
+            y_um[i] = float(xy[1])
+            site_indices[i] = sidx
+        else:
+            x_um[i] = float("nan")
+            y_um[i] = float("nan")
+            site_indices[i] = -1
+
+    return {
+        "x_um": x_um,
+        "y_um": y_um,
+        "probe_label": str(probe_entry.get("label", "")),
+        "probe_file": str(probe_path),
+        "site_indices": site_indices,
+    }
+
 
 # ─── waveform readers ────────────────────────────────────────────────────
 
@@ -122,6 +245,57 @@ def memmap_spk(session: Path, group: int, n_chan: int, n_samples: int,
     mm = np.memmap(path, dtype=np.int16, mode="r",
                    shape=(n_spikes, n_samples, n_chan))
     return mm, str(path)
+
+
+# ─── per-cluster time statistics from .res.N ─────────────────────────────
+
+
+def compute_time_stats(clu, res, clusters, sampling_rate):
+    """Per-cluster spike-time statistics.
+
+    Each cluster typically occupies a single temporal span in the
+    recording (CEM with chunked structure creates chunk-local clusters).
+    For merge diagnostics: two clusters that are the SAME unit at
+    different drift positions should be TEMPORALLY ADJACENT (low
+    temporal overlap), while two clusters that are concurrent must
+    represent different units.
+
+    Returns dict with keys (all (nClusters,) arrays):
+      t_mean_s        mean spike time, seconds from start
+      t_std_s         std of spike times, seconds (≈ half-span)
+      t_min_s, t_max_s  min/max spike time, seconds
+      t_range_s       max - min
+      t_chunk_density spikes per second within [t_min, t_max] — for
+                      sparse-vs-dense diagnostics
+    """
+    n = min(len(clu), len(res))
+    clu = clu[:n].astype(np.int64); res = res[:n].astype(np.int64)
+    K = len(clusters)
+    sr = float(sampling_rate)
+    t_mean = np.zeros(K, dtype=np.float64)
+    t_std  = np.zeros(K, dtype=np.float64)
+    t_min  = np.zeros(K, dtype=np.float64)
+    t_max  = np.zeros(K, dtype=np.float64)
+    t_dens = np.zeros(K, dtype=np.float64)
+    for i, cid in enumerate(clusters):
+        mask = (clu == cid)
+        if not mask.any():
+            continue
+        r = res[mask].astype(np.float64) / sr
+        t_mean[i] = float(r.mean())
+        t_std[i]  = float(r.std())
+        t_min[i]  = float(r.min())
+        t_max[i]  = float(r.max())
+        span = max(t_max[i] - t_min[i], 1e-6)
+        t_dens[i] = float(mask.sum()) / span
+    return {
+        "t_mean_s":  t_mean.astype(np.float32),
+        "t_std_s":   t_std.astype(np.float32),
+        "t_min_s":   t_min.astype(np.float32),
+        "t_max_s":   t_max.astype(np.float32),
+        "t_range_s": (t_max - t_min).astype(np.float32),
+        "t_chunk_density": t_dens.astype(np.float32),
+    }
 
 
 # ─── stats ───────────────────────────────────────────────────────────────
@@ -372,7 +546,40 @@ def main():
     print(f"  cluster ids: {np.unique(clu).size} unique, "
           f"range [{int(clu.min())}, {int(clu.max())}]")
 
-    # Compute
+    # Probe geometry from YAML → .probe (libklustersshared schema)
+    geometry = load_probe_geometry(args.session, args.group)
+    if geometry is not None:
+        x_um = geometry["x_um"]; y_um = geometry["y_um"]
+        n_with_coords = int(np.sum(~np.isnan(y_um)))
+        y_span = float(np.nanmax(y_um) - np.nanmin(y_um))
+        # estimate uniform-spacing if applicable
+        y_sorted = np.sort(y_um[~np.isnan(y_um)])
+        diffs = np.diff(y_sorted) if len(y_sorted) >= 2 else np.array([0.0])
+        print(f"  geometry: {geometry['probe_label'] or 'probe'} "
+              f"({n_with_coords}/{n_chan} channels mapped, "
+              f"y span {y_span:.0f} µm, median Δy {float(np.median(diffs)):.1f} µm)")
+        print(f"            probe file: {geometry['probe_file']}")
+    else:
+        x_um = np.full(n_chan, np.nan, dtype=np.float64)
+        y_um = np.full(n_chan, np.nan, dtype=np.float64)
+        print(f"  geometry: NOT FOUND (no probes section, or .probe file "
+              f"missing).  NPZ will record NaN coordinates; downstream "
+              f"tools must fall back to channel-index ordering.")
+
+    # Read .res.N for per-cluster temporal stats — used by merge
+    # recommender for drift comparison (same-unit-under-drift pairs
+    # should be TEMPORALLY ADJACENT, concurrent pairs OVERLAPPING).
+    try:
+        res = read_res(args.session, args.group)
+        if len(res) < n:
+            print(f"  WARNING: .res ({len(res)}) shorter than spk/clu ({n}); "
+                  f"using min")
+        n_res = min(n, len(res))
+    except FileNotFoundError:
+        res = None
+        print(f"  .res file not found — skipping per-cluster time stats")
+
+    # Compute waveform stats
     print("  computing per-cluster mean, std, and kurtosis...")
     clusters, nspikes, means, stds, kurts = compute_cluster_stats(spk_view, clu)
     ptp_mean, snr_per_ch = ptp_and_snr(means, stds)
@@ -387,10 +594,23 @@ def main():
           f"min_kurt_dom < −0.5 (suspect split); "
           f"{n_strong} with < −1.0 (strong)")
 
+    # Per-cluster time stats
+    time_stats = None
+    if res is not None:
+        time_stats = compute_time_stats(clu[:n_res], res[:n_res], clusters,
+                                         sampling_rate)
+        # Diagnostic: how time-localized are the clusters?
+        ranges = time_stats["t_range_s"]
+        rec_span = max(time_stats["t_max_s"].max() -
+                        time_stats["t_min_s"].min(), 1.0)
+        compact = float(np.median(ranges) / rec_span)
+        print(f"  time stats: recording span {rec_span:.0f}s; "
+              f"per-cluster median range {np.median(ranges):.0f}s "
+              f"({compact:.1%} of session — small = chunk-localised)")
+
     # Transpose to user's preferred layout for saving: cluster is the
     # trailing axis, so means[:, :, k] is cluster k's full (T,C) template
     # and ptp_mean[:, k] is its per-channel amplitude footprint.
-    # Internal stats stay (K, T, C) / (K, C) for natural iteration.
     means_save      = np.ascontiguousarray(means.transpose(1, 2, 0))   # (T,C,K)
     stds_save       = np.ascontiguousarray(stds .transpose(1, 2, 0))
     kurts_save      = np.ascontiguousarray(kurts.transpose(1, 2, 0))
@@ -409,24 +629,32 @@ def main():
         "sampling_rate": float(sampling_rate),
         "peak_sample": int(peak_sample),
         "channel_list": channel_list.tolist(),
+        "probe_label": geometry["probe_label"] if geometry else "",
+        "probe_file":  geometry["probe_file"]  if geometry else "",
         "layout": "means/stds/kurts: (nSamples, nChan, nClusters); "
                   "ptp_mean/snr_per_ch: (nChan, nClusters); "
-                  "min_kurt_dom: (nClusters,)",
+                  "min_kurt_dom: (nClusters,); "
+                  "x_um/y_um: (nChan,) µm; "
+                  "t_*_s: (nClusters,) seconds",
         "min_kurt_window": "[peak_sample - 3, peak_sample + 3]",
     })
-    np.savez_compressed(
-        out_npz,
+    payload = dict(
         means=means_save, stds=stds_save, kurts=kurts_save,
         clusters=clusters, nspikes=nspikes,
         ptp_mean=ptp_mean_save, snr_per_ch=snr_per_ch_save,
         min_kurt_dom=min_kurt_dom,
         channel_list=channel_list,
+        x_um=x_um.astype(np.float32),
+        y_um=y_um.astype(np.float32),
         sampling_rate=np.float32(sampling_rate),
         peak_sample=np.int32(peak_sample),
         source=spk_path, session=session_basename,
         group=np.int32(args.group),
         meta=meta,
     )
+    if time_stats is not None:
+        payload.update(time_stats)
+    np.savez_compressed(out_npz, **payload)
     npz_size = out_npz.stat().st_size
     print(f"  wrote {out_npz} ({npz_size/1024:.1f} KB)")
 
