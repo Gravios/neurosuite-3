@@ -274,7 +274,8 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
-        int nFullDims);
+        int nFullDims,
+        const char* phaseLabel = "Phase 1c");
 
     // Refractory-period guided split: after SubspaceReclusterPerChunk, for
     // each cluster whose ISI violation rate exceeds minContamRate, attempt a
