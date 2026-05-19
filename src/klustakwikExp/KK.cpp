@@ -3384,7 +3384,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
-                     "Phase 1c");
+                     "Phase 1b");
     RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
@@ -3462,9 +3462,14 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // ── Post-Phase-2 alignment site ─────────────────────────────────────
     RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Phase 2c");
 
-    // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
-    // this function.  Running it here would operate on stale per-chunk
-    // LogP[] values and produce wrong bloat-gate decisions.
+    // Phase-ordering note: Phase 8 (global post-merge DipSplit) was
+    // removed.  Its function is now served by per-chunk DipSplit at
+    // Phase 1b and a second pass at Phase 2.5 — operating per-chunk
+    // avoids the drift-axis false positives a global pass produces on
+    // session-spanning clusters.  Phases 3 (mean-waveform harvest, the
+    // [Phase 3] log tag below), 4, and 8 are intentionally non-major
+    // phase numbers in the current pipeline; the comment block above
+    // RunChunkedCEM enumerates which numbers are alive.
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
@@ -3598,7 +3603,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             fclose(spkTM);
         }
     }
-    // ── Phase 6: cross-chunk model matching ─────────────────────────────────
+    // ── Phase 6 preflight: MergeThresh sanity check ─────────────────────────
+    // The cross-chunk matching body follows the Phase 5 xcorr-iteration
+    // block below.  This block only emits a warning if MergeThresh is
+    // far outside chi2(nSpatialDims, 0.9999), which would make Phase 6
+    // merges either too eager or never trigger.
     {
         const float d_    = static_cast<float>(nSpatialDims);
         const float chi2_9999 = d_ * std::pow(1.0f - 2.0f/(9.0f*d_) + 3.719f * std::sqrt(2.0f/(9.0f*d_)), 3.0f);
@@ -3886,10 +3895,15 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     ReportClusterQuality("Phase 7");
 
     // ── Phase 6a (optional): post-merge cluster realignment ────────────────
-    // When -TimeShiftAlignPostMerge != 0, run another TimeShiftAlignPhase
-    // pass against the post-Phase-7 global cluster state.  This catches
-    // realignment opportunities that opened up only after Phase 6's
-    // cross-chunk merges consolidated chunk-local clusters into global
+    // Named "6a" because it refines Phase 6's cross-chunk merges, but
+    // EXECUTES AFTER Phase 7 (Global EM) has consolidated chunk-local
+    // clusters into the final global cluster set — only at that point
+    // are the merged means stable enough for a meaningful alignment
+    // pass.  When -TimeShiftAlignPostMerge != 0, run another
+    // TimeShiftAlignPhase pass against the post-Phase-7 global cluster
+    // state.  This catches realignment opportunities that opened up
+    // only after Phase 6's cross-chunk merges consolidated chunk-local
+    // clusters into global
     // units: a spike whose Phase-1.5 alignment was optimal vs. its
     // chunk-local cluster mean may not be optimal vs. the global cluster
     // mean (which is the weighted average across all the chunk-local
@@ -3938,8 +3952,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     }
 
     // ── Phase 6b (optional): mean-waveform subtraction merge ─────────
-    // Runs after Phase 6a so the means it aggregates already reflect
-    // the final post-merge alignment.  Opt-in via
+    // Same naming logic as Phase 6a: named "6b" because it refines the
+    // Phase 6 merge decisions using post-merged means, but EXECUTES
+    // AFTER Phase 7 (and after Phase 6a if enabled).  Runs after
+    // Phase 6a so the means it aggregates already reflect the final
+    // post-merge alignment.  Opt-in via
     // -MeanSubtractionMergeEnable 1; threshold via
     // -MeanSubtractionMergeThresh (default 0.05), cyclic-shift radius
     // via -MeanSubtractionMergeMaxShift (default 3).  See
@@ -4015,11 +4032,36 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 //   Phase 8   Legacy global DipSplit (deprecated; gated off by default).
 //   Phase 9   Shift commit (write refined .spk/.fet/.res).
 //
-// Phase 3 is intentionally absent — historical artifact of an earlier
-// pipeline organisation that was removed.  Phase 8 was demoted to legacy
-// because per-chunk DipSplit (Phase 1b) catches the same bimodality at
-// chunk scope where drift hasn't accumulated; on drift-affected sessions
-// the post-merge global DipSplit falsely bisects single drifting units.
+// Pipeline phase map (RunChunkedCEM — both overloads):
+//   Phase 0   global preseed (optional)
+//   Phase 1   per-chunk CEMTwoPhase (parallel over chunks)
+//     1a      per-cluster shift-probe alignment
+//     1b      per-chunk DipSplit  ← KDE valley split, runs before Phase 2
+//     1c      alignment after DipSplit
+//   Phase 2   per-chunk refractory split + subspace recluster
+//     2.D     refractory split (physical prior, runs FIRST inside Phase 2)
+//     2a      per-cluster ordinary CEM in full feature space
+//     2b      chunk-level warm-start CEM (boundary reassignment + merging)
+//     2.5     SECOND per-chunk DipSplit (catches bimodality EXPOSED by 2a)
+//     2c      alignment after the chunk-level re-CEM
+//   Phase 3   mean-waveform harvest ([Phase 3] log tag — a setup step
+//             for the cross-chunk template matching in Phases 5/6,
+//             not an independent clustering phase)
+//   Phase 5   within-Phase-6-iteration circular xcorr template matching
+//   Phase 6   cross-chunk model matching (begins with a mergeThresh
+//             calibration check)
+//   Phase 7   global warm-start EM (full dimensionality)
+//   Phase 6a  post-Phase-7 cluster realignment (named '6a' because it's
+//             a refinement of Phase 6's merge decisions, but executes
+//             AFTER Phase 7 has consolidated chunk-locals into globals)
+//   Phase 6b  post-Phase-7 mean-waveform subtraction merge (same naming
+//             logic as 6a)
+//   Phase 9   TimeShiftFinalize (final commit of cumulative shifts)
+//
+// Phases 4 and 8 are intentionally unused.  Phase 8 was the legacy
+// global post-merge DipSplit; per-chunk DipSplit at 1b + 2.5 supplants
+// it without the drift-axis false positives that bisect single drifting
+// units across the session boundary.
 // ---------------------------------------------------------------------------
 float KK::RunChunkedCEM(float chunkMinutes,
                          float samplingRate,
@@ -4440,7 +4482,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
-                     "Phase 1c");
+                     "Phase 1b");
     RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
@@ -4518,9 +4560,14 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // ── Post-Phase-2 alignment site ─────────────────────────────────────
     RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Phase 2c");
 
-    // Note: DipSplit (Phase 8) runs AFTER Phase 7 completes — see end of
-    // this function.  Running it here would operate on stale per-chunk
-    // LogP[] values and produce wrong bloat-gate decisions.
+    // Phase-ordering note: Phase 8 (global post-merge DipSplit) was
+    // removed.  Its function is now served by per-chunk DipSplit at
+    // Phase 1b and a second pass at Phase 2.5 — operating per-chunk
+    // avoids the drift-axis false positives a global pass produces on
+    // session-spanning clusters.  Phases 3 (mean-waveform harvest, the
+    // [Phase 3] log tag below), 4, and 8 are intentionally non-major
+    // phase numbers in the current pipeline; the comment block above
+    // RunChunkedCEM enumerates which numbers are alive.
 
     // ── Serial meanWav harvest (post-realignment) ────────────────────────────
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
