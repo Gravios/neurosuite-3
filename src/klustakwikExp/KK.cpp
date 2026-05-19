@@ -3383,7 +3383,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // on the most-correctly-split inputs, and so cross-chunk merge in
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
-    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
+                     "Phase 1c");
     RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
@@ -3428,6 +3429,27 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // perChunkModels[] from the converged state.
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Phase 2.5: second per-chunk DipSplit pass.
+        //
+        // The Phase 1c DipSplit ran before subspace reclustering, so it
+        // could only see bimodality in the parent clusters produced by
+        // Phase 1 CEM.  PerClusterCEMPerChunk (Phase 2a) re-partitions
+        // those parents into finer pieces via likelihood-based CEM with
+        // splits enabled — but CEM is a parametric Gaussian test that
+        // absorbs single-dimension bimodality by inflating variance
+        // along the bimodal axis (the inflation penalty is smaller than
+        // the constant cost of a new cluster).  Clusters that emerge
+        // from Phase 2a with a clear KDE valley in one PC projection
+        // but a covariance the parametric test accepts are exactly the
+        // cases this second pass catches.
+        //
+        // Per-chunk (not global) for the same reason as Phase 1c: a
+        // chunk's spikes don't span the session-drift range, so apparent
+        // bimodality from drift is suppressed.
+        DipSplitPerChunk(
+            chunkPoints, perChunkClass, perChunkModels, nFullDims,
+            "Phase 2.5");
     }
 
 
@@ -4417,7 +4439,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // on the most-correctly-split inputs, and so cross-chunk merge in
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
-    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
+                     "Phase 1c");
     RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
@@ -4462,6 +4485,27 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // perChunkModels[] from the converged state.
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Phase 2.5: second per-chunk DipSplit pass.
+        //
+        // The Phase 1c DipSplit ran before subspace reclustering, so it
+        // could only see bimodality in the parent clusters produced by
+        // Phase 1 CEM.  PerClusterCEMPerChunk (Phase 2a) re-partitions
+        // those parents into finer pieces via likelihood-based CEM with
+        // splits enabled — but CEM is a parametric Gaussian test that
+        // absorbs single-dimension bimodality by inflating variance
+        // along the bimodal axis (the inflation penalty is smaller than
+        // the constant cost of a new cluster).  Clusters that emerge
+        // from Phase 2a with a clear KDE valley in one PC projection
+        // but a covariance the parametric test accepts are exactly the
+        // cases this second pass catches.
+        //
+        // Per-chunk (not global) for the same reason as Phase 1c: a
+        // chunk's spikes don't span the session-drift range, so apparent
+        // bimodality from drift is suppressed.
+        DipSplitPerChunk(
+            chunkPoints, perChunkClass, perChunkModels, nFullDims,
+            "Phase 2.5");
     }
 
 
@@ -7860,7 +7904,8 @@ void KK::DipSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& perChunkModels,
-    int nFullDims)
+    int nFullDims,
+    const char* phaseLabel)
 {
     if (DipSplitEnable == 0) return;
     const int nCh = static_cast<int>(chunkPoints.size());
@@ -7870,8 +7915,9 @@ void KK::DipSplitPerChunk(
     int totalChunksWithSplits   = 0;
 
     fprintf(stderr,
-            "[Phase 1b] Per-chunk DipSplit (bloat=%.2f, elong=%.2f, "
+            "[%s] Per-chunk DipSplit (bloat=%.2f, elong=%.2f, "
             "valley=%.2f, minSize=%d)\n",
+            phaseLabel,
             DipSplitBloatFactor, DipSplitElongationFactor,
             DipSplitValleyThresh, DipSplitMinSize);
 
