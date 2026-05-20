@@ -3192,6 +3192,7 @@ void KlustersDoc::showUserClusterInformation(){
 // spikes detected on different channels within the same cluster.
 
 #include "realign_xcorr.h"   // XcorrDispatch lives here via the dispatch TU
+#include "pca_refine_dispatch.h"
 
 // Forward declaration — XcorrDispatch is defined in realign_xcorr_dispatch.cpp
 namespace XcorrDispatch {
@@ -3903,6 +3904,175 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
             int nRefined = 0;
             int nClamped = 0;   // spikes where the search bumped the .fil edge
+
+            // ── GPU PCA-refine fast path ─────────────────────────────────
+            // For large clusters this replaces the per-spike per-candidate
+            // CPU loop below with: one wide .fil read per spike (covers all
+            // candidates) + one GPU kernel that evaluates every (spike,
+            // candidate) PCA energy and returns the argmax shift per spike.
+            //
+            // Returns true when the GPU path completed; otherwise we fall
+            // through to the CPU loop unchanged.
+            bool gpuPathRan = false;
+            do {
+                if (!PcaRefineGpu::hasGpu()) break;
+                if (N < PcaRefineGpu::gpuThreshold()) break;
+                if (nChan > 256) break;        // safety — kernel sums across nChan in one block
+                const int M       = 2 * maxShift + 1;
+                const int wideLen = nSamp + 2 * maxShift;
+
+                // Bound the working buffer at ~512 MB to avoid surprising
+                // the GPU on very large clusters.  Above this the CPU loop
+                // is still fast enough that splitting the batch isn't
+                // worth the code.
+                const long long rawBytes =
+                    (long long)N * nChan * wideLen * sizeof(int16_t);
+                if (rawBytes > (long long)512 * 1024 * 1024) break;
+
+                std::vector<int16_t> rawWindows(
+                    (size_t)N * nChan * wideLen, 0);
+                std::vector<int> validRow((size_t)N, 1);
+
+                // ── Phase A — read one wide window per spike ────────────
+                // Saves ~M× the .fil syscalls vs the CPU per-candidate loop.
+                // A spike whose widest candidate runs off the .fil edge
+                // gets validRow[i]=0 — those drop into the CPU path so
+                // edge-clamp accounting (nClamped) matches the legacy
+                // behaviour exactly.
+                int prepared = 0;
+                for (int64_t i = 0; i < N; ++i) {
+                    const int   curr = cumShift[(size_t)i];
+                    const int64_t baseTs = clusterTs[(size_t)i] + curr;
+                    const int64_t leftStart = baseTs - maxShift
+                                            - (int64_t)peakSamp0;
+                    if (leftStart < 0 ||
+                        leftStart + wideLen > totalSamplesP82) {
+                        validRow[(size_t)i] = 0;
+                        continue;
+                    }
+                    const off_t rawOff = (off_t)leftStart
+                                       * (off_t)totalNbChanP82
+                                       * (off_t)sizeof(short);
+                    if (fseeko(filFp82, rawOff, SEEK_SET) != 0) {
+                        validRow[(size_t)i] = 0;
+                        continue;
+                    }
+                    // Read sample-major into rawFrame (reused), then
+                    // gather to channel-major into rawWindows.
+                    std::vector<int16_t> wide(
+                        (size_t)wideLen * totalNbChanP82);
+                    if (fread(wide.data(), sizeof(short),
+                              wide.size(), filFp82) != wide.size()) {
+                        validRow[(size_t)i] = 0;
+                        continue;
+                    }
+                    int16_t* spkBase = rawWindows.data()
+                                     + (size_t)i * nChan * wideLen;
+                    for (int t = 0; t < wideLen; ++t)
+                        for (int ci = 0; ci < nChan; ++ci)
+                            spkBase[(size_t)ci * wideLen + t] =
+                                wide[(size_t)t * totalNbChanP82
+                                   + groupChannelsP82[ci]];
+                    ++prepared;
+                }
+
+                if (prepared < PcaRefineGpu::gpuThreshold()) break;
+
+                // ── Phase B — pack PCA basis into flat float arrays ─────
+                std::vector<float> evecFlat(
+                    (size_t)chForPca * kComp * d2u);
+                std::vector<float> meansFlat(
+                    centered ? (size_t)chForPca * d2u : 0);
+                for (int ch = 0; ch < chForPca; ++ch) {
+                    const auto& ev = pca.evec[(size_t)ch];
+                    for (int k = 0; k < kComp; ++k)
+                        for (int u = 0; u < d2u; ++u)
+                            evecFlat[(size_t)ch * kComp * d2u
+                                   + (size_t)k * d2u + u] =
+                                (float)ev[(size_t)k * d2u + u];
+                    if (centered) {
+                        const auto& mu = pca.means[(size_t)ch];
+                        for (int u = 0; u < d2u; ++u)
+                            meansFlat[(size_t)ch * d2u + u] =
+                                (float)mu[(size_t)u];
+                    }
+                }
+
+                // ── Phase C — kernel launch + best-shift collection ─────
+                std::vector<int> bestShiftGpu((size_t)N, 0);
+                const int rc = PcaRefineGpu::refine(
+                    (int)N, M, wideLen, nSamp, nChan, chForPca,
+                    kComp, d2u, rShift, maxShift,
+                    centered ? 1 : 0, useStder ? 1 : 0,
+                    rawWindows.data(),
+                    evecFlat.data(),
+                    centered ? meansFlat.data() : nullptr,
+                    bestShiftGpu.data());
+                if (rc != 0) {
+                    log << "  PCA-refine GPU dispatch returned "
+                        << rc << " — falling back to CPU.\n";
+                    emitFlush();
+                    break;
+                }
+
+                // ── Phase D — apply shifts + refresh wavBuf per spike ────
+                // For spikes where validRow[i] == 0 (edge-clamped), we
+                // mark them as clamped and leave cumShift untouched —
+                // matches the CPU path's "every candidate ran off the
+                // .fil edge" accounting.
+                std::vector<int16_t> rawFrame(
+                    (size_t)nSamp * totalNbChanP82);
+                for (int64_t i = 0; i < N; ++i) {
+                    if (!validRow[(size_t)i]) { ++nClamped; continue; }
+                    const int bestS = bestShiftGpu[(size_t)i];
+                    if (bestS == 0) continue;
+
+                    cumShift[(size_t)i] = cumShift[(size_t)i] + bestS;
+                    ++nRefined;
+
+                    // Refresh wavBuf[i] from .fil at the chosen position
+                    // (same logic as the CPU branch below).
+                    const int64_t bestStart =
+                        clusterTs[(size_t)i] + cumShift[(size_t)i]
+                      - (int64_t)peakSamp0;
+                    const off_t bestOff = (off_t)bestStart
+                                        * (off_t)totalNbChanP82
+                                        * (off_t)sizeof(short);
+                    if (fseeko(filFp82, bestOff, SEEK_SET) != 0) continue;
+                    if (fread(rawFrame.data(), sizeof(short),
+                              rawFrame.size(), filFp82)
+                            != rawFrame.size()) continue;
+                    int16_t* wTgt = wavBuf.data()
+                        + (ptrdiff_t)i * (ptrdiff_t)spkElems;
+                    for (int t = 0; t < nSamp; ++t)
+                        for (int ci = 0; ci < nChan; ++ci)
+                            wTgt[(size_t)ci * nSamp + t] =
+                                rawFrame[(size_t)t * totalNbChanP82
+                                       + groupChannelsP82[ci]];
+                    if (useStder) {
+                        std::vector<int16_t> sdPrev((size_t)nChan, 0);
+                        for (int t = 0; t < nSamp; ++t) {
+                            int64_t sum = 0;
+                            for (int ci = 0; ci < nChan; ++ci)
+                                sum += wTgt[(size_t)ci * nSamp + t];
+                            for (int ci = 0; ci < nChan; ++ci) {
+                                const int v = wTgt[(size_t)ci * nSamp + t];
+                                const int sd = nChan * v - (int)sum;
+                                const int16_t sdCl = (int16_t)
+                                    std::max(-32768, std::min(32767, sd));
+                                const int diff = (int)sdCl
+                                    - (int)sdPrev[(size_t)ci];
+                                sdPrev[(size_t)ci] = sdCl;
+                                wTgt[(size_t)ci * nSamp + t] = (int16_t)
+                                    std::max(-32768, std::min(32767, diff));
+                            }
+                        }
+                    }
+                }
+                gpuPathRan = true;
+            } while (false);
+
+            if (!gpuPathRan)
             for (int64_t i = 0; i < N; ++i) {
                 const int   curr = cumShift[static_cast<size_t>(i)];
                 const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
