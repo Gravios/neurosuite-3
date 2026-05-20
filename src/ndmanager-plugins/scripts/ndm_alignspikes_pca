@@ -1,0 +1,304 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Two-stage per-cluster spike realignment using PCA projection energy.
+#//
+#//   PURPOSE
+#//   ───────
+#//   Klusters' batch realign aligns each spike to a global modal-peak
+#//   position, which over-fits mixture clusters (different sub-populations
+#//   get forced onto the same canonical sample → cluster dispersion).
+#//
+#//   This plugin operates per-cluster in two stages:
+#//
+#//     STAGE 1 (per-spike, intra-cluster)
+#//       Align each spike to its cluster mean waveform via normalised
+#//       cross-correlation across lags ±maxShift.  Spikes above minScore
+#//       and with non-zero best lag are re-extracted from the raw .fil
+#//       at their corrected timestamp.  Iterates (default 2) to converge.
+#//
+#//     STAGE 2 (cluster-level, rigid translation)
+#//       Recompute the cluster mean after Stage 1.  Search global shifts
+#//       s ∈ [-maxShiftGlobal, +maxShiftGlobal] maximising the PCA-
+#//       projection energy of the cluster mean against the pre-computed
+#//       .pca.N / .pcaD.N basis:
+#//
+#//           E(s) = Σ_ch Σ_k ⟨ϕ_ch,k, μ_shifted(s) − μ̄_ch⟩²
+#//
+#//       The argmax shift s* is applied uniformly to every cluster spike.
+#//       Because the shift is rigid (single value per cluster, applied
+#//       identically to all members), Stage 2 does not disperse mixture
+#//       clusters the way Klusters' patch82 (per-spike PCA refine) can.
+#//
+#//   PIPELINE POSITION
+#//   ─────────────────
+#//   ndm_extractspikes (or _stderiv)
+#//           ↓
+#//   ndm_pca           (or _stderiv)            ← Stage 2 needs this
+#//           ↓
+#//   ndm_klustakwik
+#//           ↓
+#//   ndm_alignspikes_pca   ← this script (operates on existing .clu)
+#//           ↓
+#//   ndm_pca               ← re-train basis on realigned waveforms (optional)
+#//           ↓
+#//   ndm_alignspikes_pca   ← iterate for refinement (optional, 1-2 passes)
+#//
+#//   Pre-requisites: .clu.N must exist (i.e. KlustaKwik has already run).
+#//   Without clusters the plugin has nothing to align.
+#//
+#//   PARAMETERS (set in session YAML under program: ndm_alignspikes_pca)
+#//   ──────────────────────────────────────────────────────────────────
+#//   maxShift        Stage-1 per-spike shift bound, samples [default 3]
+#//   maxShiftGlobal  Stage-2 global cluster shift bound [default 4]
+#//   iterations      Stage-1 passes per cluster [default 2]
+#//   minScore        xcorr score threshold for Stage 1 [default 0.70]
+#//   minSpikes       skip clusters with fewer than this many spikes
+#//                   [default 5 — needs enough to compute a stable mean]
+#//   skipPca         "true" to disable Stage 2 (xcorr-only) [default false]
+#//
+#//   USAGE
+#//   ─────
+#//     ndm_alignspikes_pca [session]                 # all groups
+#//     ndm_alignspikes_pca [session] [group]         # single group
+#//     ndm_alignspikes_pca [session] [group] -- --skip-pca   # extra flags
+#//
+#//   copyright       (C) 2026  Gravios / NeuroSuite-3 contributors
+#//   GNU GPL v3 or later.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+
+# ── Parse positionals + extra args (--separator handled, matches ndm_pca) ─
+positionals=()
+extra_args=()
+collect_positional=true
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --)
+            collect_positional=false
+            shift
+            ;;
+        -*)
+            collect_positional=false
+            extra_args+=("$1")
+            shift
+            ;;
+        *)
+            if $collect_positional; then
+                positionals+=("$1")
+            else
+                extra_args+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup] [-- extra flags]"
+    exit $GENERAL_ERROR
+fi
+
+directory=$(basename "$(pwd)")
+session=${positionals[0]:-$directory}
+session=${session%.xml}
+session=${session%.yaml}
+session=${session%.yml}
+param_ext=$(param_file_ext "$session")
+electrodeGroup=${positionals[1]:-}
+
+print_header "$session - Per-cluster spike alignment (xcorr + PCA-projection refine)"
+
+check_commands_installed process_alignspikes_pca
+
+inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
+# .fil or .dat must exist for raw re-extraction
+if [ ! -f "$session.fil" ] && [ ! -f "$session.dat" ]; then
+    echo_error "neither $session.fil nor $session.dat found"
+    exit $INPUTS_MISSING
+fi
+
+# ── Session-level parameters ──────────────────────────────────────────────
+
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+
+check_mandatory_variable $nChannels       "missing total channel count"
+check_mandatory_variable $nElectrodeGroups "missing electrode groups"
+
+# Script-specific parameters from YAML (with defaults)
+maxShift=$(read_script_parameter $session maxShift)
+maxShiftGlobal=$(read_script_parameter $session maxShiftGlobal)
+iterations=$(read_script_parameter $session iterations)
+minScore=$(read_script_parameter $session minScore)
+minSpikes=$(read_script_parameter $session minSpikes)
+skipPca=$(read_script_parameter $session skipPca)
+
+maxShift=${maxShift:-3}
+maxShiftGlobal=${maxShiftGlobal:-4}
+iterations=${iterations:-2}
+minScore=${minScore:-0.70}
+minSpikes=${minSpikes:-5}
+skipPca=${skipPca:-false}
+
+skipPcaFlag=""
+if [ "$skipPca" = "true" ] || [ "$skipPca" = "yes" ] || [ "$skipPca" = "1" ]; then
+    skipPcaFlag="--skip-pca"
+fi
+
+echo_info "Alignment parameters:"
+echo_info "  maxShift        = $maxShift samples (per-spike Stage 1)"
+echo_info "  maxShiftGlobal  = $maxShiftGlobal samples (per-cluster Stage 2)"
+echo_info "  iterations      = $iterations (Stage 1 inner-loop)"
+echo_info "  minScore        = $minScore (Stage 1 xcorr threshold)"
+echo_info "  skipPca         = $skipPca"
+if [ ${#extra_args[@]} -gt 0 ]; then
+    echo_info "  extra flags     = ${extra_args[*]}"
+fi
+
+# ── Per-group function ────────────────────────────────────────────────────
+
+once()
+{
+    local group=$1
+    shift
+    local groupExtra=("$@")
+
+    # Required for this group
+    if [ ! -f "$session.clu.$group" ]; then
+        echo_warning "  group $group: $session.clu.$group missing — skip "\
+"(run ndm_klustakwik first)"
+        return $INPUTS_MISSING
+    fi
+    if [ ! -f "$session.res.$group" ]; then
+        echo_warning "  group $group: $session.res.$group missing — skipping"
+        return $INPUTS_MISSING
+    fi
+
+    # Pipeline detection — prefer .spk (raw), fall back to .spkD (stderiv)
+    local stderivFlag=""
+    local spkFile="$session.spk.$group"
+    if [ ! -f "$spkFile" ]; then
+        spkFile="$session.spkD.$group"
+        if [ ! -f "$spkFile" ]; then
+            echo_warning "  group $group: no .spk.$group or .spkD.$group — skipping"
+            return $INPUTS_MISSING
+        fi
+        stderivFlag="--stderiv"
+        echo_info "  group $group: using stderiv pipeline (.spkD/.pcaD/.fetD)"
+    fi
+
+    # Stage 2 needs .pca/.pcaD — warn if missing (won't crash; binary falls
+    # back to Stage-1-only when skipPcaFlag is set or basis is unloadable).
+    local pcaExt="pca"
+    [ -n "$stderivFlag" ] && pcaExt="pcaD"
+    if [ -z "$skipPcaFlag" ] && [ ! -f "$session.$pcaExt.$group" ]; then
+        echo_warning "  group $group: $session.$pcaExt.$group missing — "\
+"Stage 2 will be skipped for this group (run ndm_pca first)"
+    fi
+
+    # Read group geometry
+    local electrodes=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/channels/channel")
+    local nSamples=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/nSamples")
+    local peakIdx=$(yaml_read $session \
+        "//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
+    check_mandatory_variable "$electrodes" "missing channel list for group $group"
+    check_mandatory_variable "$nSamples"   "missing nSamples for group $group"
+    check_mandatory_variable "$peakIdx"    "missing peakSampleIndex for group $group"
+
+    local chanList=$(echo $electrodes | sed 's/ /,/g')
+
+    echo_info "  realigning group $group (${nSamples} samples, "\
+"$(echo $electrodes | wc -w) channels, peak=$peakIdx)"
+
+    process_alignspikes_pca \
+        -n "$nChannels" \
+        -c "$chanList" \
+        -w "$nSamples" \
+        -p "$peakIdx" \
+        -m "$maxShift" \
+        -M "$maxShiftGlobal" \
+        -i "$iterations" \
+        -t "$minScore" \
+        $stderivFlag \
+        $skipPcaFlag \
+        "${groupExtra[@]}" \
+        "$session" "$group"
+
+    local rc=$?
+    if [ $rc -ne 0 ]; then
+        echo_error "  group $group: process_alignspikes_pca failed (status $rc)"
+        return $rc
+    fi
+
+    # Invalidate downstream artifacts that depend on the now-shifted .spk:
+    #   .fet/.fetD — features (PC scores at the OLD waveform position)
+    # We leave .pca/.pcaD in place because the user may want to inspect
+    # what basis was used; the next ndm_pca run will overwrite it.
+    local fetExt="fet"
+    [ -n "$stderivFlag" ] && fetExt="fetD"
+    local fetFile="$session.$fetExt.$group"
+    if [ -f "$fetFile" ]; then
+        mv "$fetFile" "${fetFile}.preAlignPca"
+        echo_info "  group $group: moved $fetFile → ${fetFile}.preAlignPca "\
+"(re-run ndm_pca or process_refeaturize)"
+    fi
+
+    return $NO_ERROR
+}
+
+# ── Dispatch: single group OR parallel across all groups ─────────────────
+
+if [ -n "$electrodeGroup" ]; then
+    # Single-group mode
+    if ! [[ "$electrodeGroup" =~ ^[0-9]+$ ]]; then
+        echo_error "electrodeGroup must be a positive integer (got: $electrodeGroup)"
+        exit $GENERAL_ERROR
+    fi
+    if [ $electrodeGroup -lt 1 ] || [ $electrodeGroup -gt $nElectrodeGroups ]; then
+        echo_error "electrodeGroup $electrodeGroup out of range (1..$nElectrodeGroups)"
+        exit $GENERAL_ERROR
+    fi
+    once $electrodeGroup "${extra_args[@]}"
+    rc=$?
+    if [ $rc -ne 0 ] && [ $rc -ne $INPUTS_MISSING ]; then
+        exit $rc
+    fi
+else
+    # All groups, sequential (per-group I/O dominated by .fil reads —
+    # running groups in parallel competes for disk bandwidth without
+    # speedup on rotational/SATA SSD; each group internally uses
+    # OpenMP for spike-level parallelism within Stage 1).
+    overallStatus=$NO_ERROR
+    nProcessed=0
+    nSkipped=0
+    for ((g=1; g<=nElectrodeGroups; g++)); do
+        once $g "${extra_args[@]}"
+        rc=$?
+        if [ $rc -eq $NO_ERROR ]; then
+            nProcessed=$((nProcessed + 1))
+        elif [ $rc -eq $INPUTS_MISSING ]; then
+            nSkipped=$((nSkipped + 1))
+        else
+            overallStatus=$rc
+        fi
+    done
+    echo_info ""
+    echo_info "Done — $nProcessed group(s) realigned ($nSkipped skipped)"
+    if [ $nProcessed -gt 0 ]; then
+        echo_info ""
+        echo_info "IMPORTANT: .fet/.fetD files for processed groups are now "\
+"stale.  Re-run ndm_pca (or ndm_pca_stderiv) to regenerate features from "\
+"the realigned waveforms:"
+        echo_info "  ndm_pca $session"
+        echo_info ""
+        echo_info "Per-cluster shift logs: $session.alignspikes_pca.log.<group>"
+    fi
+    exit $overallStatus
+fi
