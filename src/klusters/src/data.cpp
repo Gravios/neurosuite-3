@@ -1639,6 +1639,27 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
 {
     // 1. Mirror createFeatureFile's first half: bucket all spikes from
     //    clustersToRecluster into reclusteringSpikesByCluster.
+
+    // Sanity check: every input cluster must be present in clusterInfoMap.
+    // Without this, default-constructed ClusterInfo's nbSpikes=0 would
+    // silently drop the cluster from basin labeling — the bucket loop
+    // would skip its spikes (memcpy 0 bytes), the basin map would still
+    // contain row indices for those skipped spikes, and the column-2
+    // rewrite at step 2 would either find no entry for the skipped row
+    // (triggering the "no basin label" qWarning + abort) or, worse,
+    // assign labels to rows belonging to a still-existing cluster.
+    // Catch the desync at the entry instead of letting it cascade.
+    for (int cid : clustersToRecluster) {
+        if (!clusterInfoMap->contains(static_cast<dataType>(cid))) {
+            qWarning("integrateBasinLabeling: cluster %d is in the input "
+                     "list but absent from clusterInfoMap "
+                     "(spikesByCluster ↔ clusterInfoMap desync) — "
+                     "aborting basin labeling.  Save the session and "
+                     "re-open to resync.", cid);
+            return false;
+        }
+    }
+
     dataType reclusteringNbSpikes = 0;
     for (int cid : clustersToRecluster) {
         ClusterInfo info = (*clusterInfoMap)[static_cast<dataType>(cid)];
@@ -2879,6 +2900,25 @@ void Data::moveClusters(QList<int>& clustersToDelete,SortableTable* spikesByClus
     for(clustersToDeleteIterator = clustersToDelete.begin(); clustersToDeleteIterator != clustersToDelete.end(); ++clustersToDeleteIterator ){
         dataType clusterId = static_cast<dataType>(*clustersToDeleteIterator);
         if(clusterId == destinationId) continue;
+        // Desync guard: a missing key here would default-construct a
+        // ClusterInfo (firstPos=0, nbSpikes=0), making the memcpy below
+        // a 0-byte no-op AND still appending a (bogus) entry to
+        // positions/nbOfspikes — the caller (moveClustersToArtefact /
+        // moveClustersToNoise) would then operate on a list with extra
+        // zero-spike entries, producing wrong totals and an
+        // inconsistent destination cluster.  Skip with a warning so
+        // the user can see something went wrong, and the
+        // positions/nbOfspikes lists stay self-consistent.
+        if (!clusterInfoMap->contains(clusterId)) {
+            qWarning("moveClusters: cluster %lld is in the delete list "
+                     "but absent from clusterInfoMap (spikesByCluster ↔ "
+                     "clusterInfoMap desync) — skipping.  The "
+                     "destination bin (cluster %d) will be missing this "
+                     "cluster's spikes until the session is saved and "
+                     "re-opened.",
+                     static_cast<long long>(clusterId), destinationId);
+            continue;
+        }
         ClusterInfo currentClusterInfo = (*clusterInfoMap)[clusterId];
         dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
         dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
@@ -5009,6 +5049,26 @@ int Data::createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
 }
 
 void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
+    // Desync guard: KlustersApp::slotRecluster also pre-validates this
+    // via Data::clusterHasMembers before reaching us, so a desync
+    // shouldn't make it this far.  Repeat the check here for
+    // defence-in-depth — if a future code path calls createFeatureFile
+    // outside slotRecluster, the same silent-empty-.fet bug must not
+    // resurface.  Same handling as integrateBasinLabeling: abort early
+    // (the temp file is left as-is; the QFile destructor closes it; the
+    // caller checks the file exists / has the expected size).
+    for (int cid : clustersToRecluster) {
+        if (!clusterInfoMap->contains(static_cast<dataType>(cid))) {
+            qWarning("createFeatureFile: cluster %d is in the recluster "
+                     "list but absent from clusterInfoMap "
+                     "(spikesByCluster ↔ clusterInfoMap desync) — "
+                     "aborting before writing the temp .fet.  "
+                     "KlustaKwik would otherwise see an empty .fet and "
+                     "abort with the cryptic 'Array::SetSize: n < 1' "
+                     "exception.", cid);
+            return;
+        }
+    }
     dataType reclusteringNbSpikes = 0;
     //Loop on the selected clusters to calculate the total number of spikes
     QList<int>::iterator iterator;
