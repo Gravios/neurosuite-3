@@ -491,6 +491,21 @@ public:
         return highestClusterId() + 1;
     }
 
+    /** True iff `clusterInfoMap` has an entry for `clusterId` with a
+     *  non-zero spike count.  createFeatureFile / integrateBasinLabeling
+     *  / integrateReclusteredClusters all read this map; if the key is
+     *  missing, Qt's QMap::operator[] silently inserts a default
+     *  ClusterInfo (nbSpikes=0), causing the recluster temp .fet to be
+     *  written with a valid header but zero data rows — KK then aborts
+     *  on the very first SetSize.  KlustersApp::slotRecluster uses this
+     *  predicate to refuse such launches with a useful error message. */
+    bool clusterHasMembers(int clusterId) const {
+        if (!clusterInfoMap) return false;
+        const auto it = clusterInfoMap->constFind(
+            static_cast<dataType>(clusterId));
+        return it != clusterInfoMap->constEnd() && it.value().nbSpikes() > 0;
+    }
+
     /**Returns the maximum for the dimension
   * @param dimension for which the maximum is requested. Numbering starts at 1
   * @return maximum of the dimension

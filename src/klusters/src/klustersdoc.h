@@ -495,6 +495,18 @@ public:
      *  Updates .res and .fet (time feature column). Marks doc modified. */
     bool nudgeClusterTimestamps(int clusterId, int deltaSamples);
 
+    /** True iff @p clusterId is registered in clusterInfoMap with at
+     *  least one spike.  Used by slotRecluster as a pre-launch
+     *  validation step — the cluster palette reads from
+     *  spikesByCluster while createFeatureFile reads from
+     *  clusterInfoMap, and these can desync (e.g. after a curation
+     *  rollback, an undone merge/split, or an aborted reorder),
+     *  producing an empty .fet that triggers a cryptic KK abort.
+     *  Nudge does not itself desync the map; if recluster fails right
+     *  after a nudge the desync predates it.  See
+     *  KlustersApp::slotRecluster. */
+    bool clusterHasMembers(int clusterId) const;
+
     /**
      * Re-aligns the spikes of @p clusterId to their true peak position.
      *

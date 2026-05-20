@@ -3988,6 +3988,64 @@ void KlustersApp::slotRecluster(){
         clustersToRecluster.append(*shownClustersIterator);
     std::sort(clustersToRecluster.begin(), clustersToRecluster.end());
 
+    // ── Pre-launch desync check ──────────────────────────────────────────
+    // The cluster palette reads its membership counts from spikesByCluster
+    // (a row → cluster table) while createFeatureFile reads from
+    // clusterInfoMap.  Under normal operation these are kept in sync, but
+    // there are paths where they desync — most notably:
+    //
+    //   • A curation-log replay that rebuilds spikesByCluster but skips
+    //     the clusterInfoMap pass.
+    //   • An aborted merge / split / reorder where the row-table commit
+    //     landed but the clusterInfoMap rebuild didn't fire.
+    //   • A reclustered-cluster IDs collision that consumes a stale key
+    //     during integrateReclusteredClusters without restoring it.
+    //
+    // Note that nudge does NOT directly desync the map — it only touches
+    // feature rows and timestamps via updateFeatureRow / updateTimestamp,
+    // never the map.  If recluster fails immediately after a nudge, the
+    // desync was already present BEFORE the nudge (typically from an
+    // earlier merge/split/undo); nudge just happens to be the last
+    // operation the user remembers performing.
+    //
+    // When desynced, createFeatureFile sizes its output from a default-
+    // constructed ClusterInfo (nbSpikes=0) and writes a header-only .fet.
+    // KK then aborts with "Array::SetSize: n < 1 (n=0, tag=Data
+    // (nPoints*nDims))" — a cryptic exception that gives the user no
+    // hint why their visibly-1500-spike cluster failed to recluster.
+    //
+    // Catch the desync here, refuse to launch, and tell the user what
+    // recovery action will fix it.  Save+reopen IS safe: saveClusters()
+    // writes .clu from spikesByCluster (the source of truth), and the
+    // load path rebuilds clusterInfoMap from .clu — so the in-memory
+    // desync does not survive a round-trip through disk.
+    //
+    // Apply to every selected ID including 0 (artifact) and 1 (MUA):
+    // both can be legitimately reclustered, and both can in principle
+    // desync the same way.  Skipping them would only mask the bug.
+    {
+        QStringList emptyIds;
+        for (int id : clustersToRecluster) {
+            if (!doc->clusterHasMembers(id))
+                emptyIds.append(QString::number(id));
+        }
+        if (!emptyIds.isEmpty()) {
+            QMessageBox::critical(this, tr("Recluster aborted"),
+                tr("Cluster(s) %1 appear in the palette but have zero "
+                   "spikes registered in the clusterInfoMap — this is a "
+                   "desync between the row table and the cluster map. "
+                   "It is typically caused by an earlier merge, split, "
+                   "or undo that committed partially; nudge is not the "
+                   "source even when it is the most recent action.\n\n"
+                   "Save the session and re-open before reclustering. "
+                   "Saving writes .clu from the row table (the source "
+                   "of truth) and reopening rebuilds the cluster map "
+                   "from .clu, so the in-memory desync does not "
+                   "survive a disk round-trip.").arg(emptyIds.join(", ")));
+            return;
+        }
+    }
+
     //Build the command line to launch the reclustering
 
     //Create the fet file name: baseName + -- + -clusterIDs -- + timestamp + .fet + .electrodeGroupID
