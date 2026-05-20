@@ -559,7 +559,21 @@ def main():
     # indicating contamination — they sit closer to the noise floor.
     # A contaminated cluster shows elevated CV on its DOMINANT channel,
     # which is what we actually want to catch.
-    S_peak_all   = stds[peak_sample, :, :].T              # (K, C)
+    # Per-cluster trough: prefer the value saved in the NPZ; fall back
+    # to a global peak_sample if working with an older NPZ that doesn't
+    # have it.
+    if "peak_sample_per_cluster" in d:
+        peak_per_clust = d["peak_sample_per_cluster"].astype(np.int64)
+    else:
+        peak_per_clust = np.full(K_all, peak_sample, dtype=np.int64)
+        print(f"  NOTE: NPZ has no peak_sample_per_cluster; using global "
+              f"peak_sample={peak_sample} for all clusters.  Regenerate "
+              f"with the latest cluster_waveform_stats.py for tighter "
+              f"per-cluster metrics.")
+    # CV at each cluster's empirical trough (fancy indexing):
+    #   stds shape is (T, C, K); we want stds[peak_per_clust[k], c, k]
+    # for every (k, c), yielding (K, C).
+    S_peak_all   = stds[peak_per_clust, :, np.arange(K_all)]   # (K, C)
     ptp_per_ch   = ptp_mean.T                             # (K, C)
     cv_all       = S_peak_all / np.maximum(ptp_per_ch, 100.0)   # 100 µV floor
     strong_mask  = ptp_per_ch >= 0.5 * ptp_max[:, None]    # ≥ 50% peak ptp
@@ -593,8 +607,8 @@ def main():
         chunk_id = None
         n_chunks = 0
     ch_dom = np.argmax(P, axis=1)
-    peak_slice = slice(max(0, peak_sample - args.peak_window),
-                        min(T, peak_sample + args.peak_window + 1))
+    # Per-cluster peak sample for the kept subset
+    peak_per_idx = peak_per_clust[idx]              # (n,) int64
 
     # Pairwise matrices: cos templates, cos footprints, xcorr
     print("  computing pairwise cosine + xcorr ...")
@@ -611,6 +625,12 @@ def main():
         for j in range(i + 1, n_keep):
             if cosW[i, j] < args.candidate_cosw:
                 continue
+            # α-window centred on the MIDPOINT of the two clusters'
+            # empirical troughs.  Sub-sample alignment differences (±1
+            # sample) are absorbed by the ±peak_window slack.
+            peak_mid = (peak_per_idx[i] + peak_per_idx[j]) // 2
+            peak_slice = slice(max(0, peak_mid - args.peak_window),
+                                min(T, peak_mid + args.peak_window + 1))
             scores = score_pair(
                 i, j,
                 M3=M3, P=P, S_peak=S_peak, ids=ids, nspikes_idx=nspikes_idx,

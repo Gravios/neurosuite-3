@@ -224,7 +224,15 @@ def main():
     ptp_mean = d["ptp_mean"]        # (C, K_npz)
     clusters_npz = d["clusters"]    # (K_npz,)
     peak_sample = int(d["peak_sample"])
-    print(f"  NPZ: K={len(clusters_npz)}, peak at sample {peak_sample}")
+    # Per-cluster trough (empirical) with fallback to global peak_sample
+    if "peak_sample_per_cluster" in d:
+        peak_per_npz = d["peak_sample_per_cluster"].astype(np.int64)
+        print(f"  NPZ: K={len(clusters_npz)}, per-cluster trough samples "
+              f"(median={int(np.median(peak_per_npz))})")
+    else:
+        peak_per_npz = np.full(len(clusters_npz), peak_sample, dtype=np.int64)
+        print(f"  NPZ: K={len(clusters_npz)}, peak at sample {peak_sample} "
+              f"(no per-cluster trough; regenerate stats for better results)")
     # Map cluster_id → npz index for fast lookup
     cid_to_npz = {int(cid): i for i, cid in enumerate(clusters_npz)}
     # Per-cluster dominant channel (peak ptp)
@@ -282,10 +290,11 @@ def main():
             detection_channels = np.arange(mean_TC.shape[1], dtype=np.int64)
 
         # Per-spike collision scores (mean-subtracted surround residual)
+        peak_this = int(peak_per_npz[npz_idx])
         spikes_NTC = np.asarray(spk[mask])     # materialize to RAM
         scores = collision_scores_for_cluster(
             spikes_NTC, mean_TC, detection_channels,
-            peak_sample, args.peak_halfwin)
+            peak_this, args.peak_halfwin)
         is_collision, threshold, med, mad = find_collisions(
             scores, args.k_mad, args.score_floor)
         n_collisions = int(is_collision.sum())
