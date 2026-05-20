@@ -4159,12 +4159,19 @@ void KlustersApp::slotRecluster(){
     }
 
     // Split the args template into tokens then substitute each independently.
+    // Note: %features is NOT replaced here — its value depends on whether the
+    // subdim path below succeeds (which writes a small-nFeatures .fet and
+    // needs a matching short UseFeatures string).  Doing the replacement
+    // here would commit to the auto-select pattern before the subdim path
+    // decides, and the override at the end of the subdim block would then
+    // become a no-op (the token would already be gone), causing KK to
+    // launch with a long UseFeatures against a short .fet → nDims=0 →
+    // "Array::SetSize: n < 1 (n=0, tag=Data (nPoints*nDims))" abort.
+    // The single deferred replacement happens at the unified site below.
     QStringList argList = QProcess::splitCommand(reclusteringArgs);
     for(QString &arg : argList){
         arg.replace(QLatin1String("%fileBaseName"),     fileBaseName);
         arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
-        if(!features.isEmpty())
-            arg.replace(QLatin1String("%features"),     features);
     }
 
     reclusteringFetFileName  = doc->documentDirectory() + QLatin1Char('/');
@@ -4267,15 +4274,14 @@ void KlustersApp::slotRecluster(){
         } else {
             // Success — override %features.  dimsWritten == K + 1; bit
             // string is K '1's (residual PCA components) then '0' for
-            // the timestamp column.
+            // the timestamp column.  The replacement itself is deferred
+            // to the unified site after this block so it can't be
+            // shadowed by an earlier replacement.
             QString fSubdim;
             for (int j = 0; j < dimsWritten - 1; ++j)
                 fSubdim.append(QLatin1Char('1'));
             fSubdim.append(QLatin1Char('0'));
-            for (QString &arg : argList) {
-                if (arg.contains(QLatin1String("%features")))
-                    arg.replace(QLatin1String("%features"), fSubdim);
-            }
+            features = fSubdim;             // overrides the auto-select string
             // Log the eigenvalues so the user can see how the cluster's
             // residual structure decomposes.
             QString evMsg = QString("[recluster] mean-subtracted "
@@ -4287,6 +4293,21 @@ void KlustersApp::slotRecluster(){
             qDebug() << evMsg;
             usedSubdim = true;
         }
+    }
+
+    // ── Deferred %features replacement ────────────────────────────────────
+    // Single point of truth for the UseFeatures bit-string.  By this point
+    // `features` is either the original auto-select / fallback pattern (if
+    // subdim was off or fell through) or the subdim K-ones-plus-trailing-0
+    // override (if subdim succeeded).  Either way the .fet on disk and the
+    // command-line UseFeatures string now agree on nFeatures, so KK's nDims
+    // computation
+    //     nDims += (UseFeatures[i] == '1') for i in [0, nFeatures)
+    // produces the right answer and Data.SetSize(nPoints * nDims) doesn't
+    // get a zero.
+    if (!features.isEmpty()) {
+        for (QString &arg : argList)
+            arg.replace(QLatin1String("%features"), features);
     }
 
     //Create the feature file for the selected clusters and get its name.
