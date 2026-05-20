@@ -57,6 +57,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QListWidget>
+#include <QProgressBar>
 #include <QScrollArea>
 #include <QVBoxLayout>
 #include <QFormLayout>
@@ -139,6 +140,7 @@ KlustersApp::KlustersApp()
       m_realignBatchAccepted(0),
       m_realignBatchFailed(0),
       m_realignBatchShiftedTotal(0),
+      m_realignProgressBar(nullptr),
       errorMatrixExists(false),
       templateMatrixExists(false)
 {
@@ -5159,6 +5161,11 @@ void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
     worker->moveToThread(thread);
 
     // Stream log lines to the output tab (queued — crosses thread boundary).
+    // After each insert we scroll to the bottom: ProcessWidget extends
+    // QListWidget but doesn't auto-track new items, so without scrollToBottom
+    // the visible viewport stays anchored to the top and the user sees only
+    // the opening header lines while later progress disappears below the
+    // fold.  Cheap on QListWidget — just a viewport invalidate.
     connect(worker, &RealignWorker::logLine,
             this, [this](const QString& line, bool isError) {
                 if (!realignOutputWidget) return;
@@ -5166,6 +5173,7 @@ void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
                     realignOutputWidget->insertStderrLine(line);
                 else
                     realignOutputWidget->insertStdoutLine(line);
+                realignOutputWidget->scrollToBottom();
             }, Qt::QueuedConnection);
 
     // When the worker signals finished, call our slot on the GUI thread.
@@ -5286,11 +5294,31 @@ void KlustersApp::slotPcaAlignAllClusters()
         tr("=== PCA-Center alignment batch — %1 cluster(s), top 2 channels ===")
         .arg(clusters.size()));
     realignOutputWidget->insertStdoutLine(tr("    args: %1").arg(m_realignBatchArgs));
+    realignOutputWidget->scrollToBottom();
 
     // Tab-change wiring (idempotent — UniqueConnection guards re-adding).
     connect(tabsParent, &QTabWidget::currentChanged,
             this, &KlustersApp::slotTabChange,
             Qt::UniqueConnection);
+
+    // ── Status-bar progress widget ───────────────────────────────────────────
+    // Always-visible feedback so the user can see batch progress even when
+    // they switch away from the Realign output tab (which is the more common
+    // case — they switch to Overview to watch waveforms updating in place
+    // as each cluster completes its forceClusterRefresh).
+    if (!m_realignProgressBar) {
+        m_realignProgressBar = new QProgressBar(this);
+        m_realignProgressBar->setObjectName(QStringLiteral("realignProgress"));
+        m_realignProgressBar->setTextVisible(true);
+        m_realignProgressBar->setMaximumWidth(280);
+        // Permanent widget on the right of the status bar so it isn't
+        // displaced by transient slotStatusMsg() updates.
+        statusBar()->addPermanentWidget(m_realignProgressBar);
+    }
+    m_realignProgressBar->setRange(0, clusters.size());
+    m_realignProgressBar->setValue(0);
+    m_realignProgressBar->setFormat(tr("PCA align: %v / %m clusters"));
+    m_realignProgressBar->show();
 
     // Clean up any leftover thread / worker from a prior single-cluster run.
     if (realignThread) {
@@ -5320,6 +5348,9 @@ void KlustersApp::slotPcaAlignAllClusters()
     const int firstCluster = m_realignBatchQueue.takeFirst();
     realignOutputWidget->insertStdoutLine(
         tr("--- cluster %1 (1/%2) ---").arg(firstCluster).arg(m_realignBatchTotal));
+    realignOutputWidget->scrollToBottom();
+    slotStatusMsg(tr("PCA-Center align: cluster %1 (1/%2) …")
+                  .arg(firstCluster).arg(m_realignBatchTotal));
     startRealignWorker(firstCluster, m_realignBatchArgs);
 }
 
@@ -5352,7 +5383,11 @@ void KlustersApp::slotAbortRealign()
             realignOutputWidget->insertStderrLine(
                 tr("--- Batch aborted: %1 cluster(s) skipped, %2 already accepted ---")
                 .arg(remaining).arg(m_realignBatchAccepted));
+            realignOutputWidget->scrollToBottom();
         }
+        if (m_realignProgressBar) m_realignProgressBar->hide();
+        slotStatusMsg(tr("PCA-Center align aborted: %1 accepted, %2 skipped.")
+                      .arg(m_realignBatchAccepted).arg(remaining));
     }
 
     if (realignOutputWidget)
@@ -5407,6 +5442,14 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
         }
         realignClusterId = -1;
 
+        // Bump the status-bar progress bar by one — counts clusters whose
+        // worker has returned, regardless of ok/fail.  Done before the queue
+        // check so the bar reads N/N when the batch finalises.
+        if (m_realignProgressBar) {
+            m_realignProgressBar->setValue(
+                m_realignBatchAccepted + m_realignBatchFailed);
+        }
+
         if (!m_realignBatchQueue.isEmpty()) {
             // Advance: launch the next cluster.  The realignState lock stays
             // applied across the whole batch — we just flip realignRunning
@@ -5417,7 +5460,10 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
                 realignOutputWidget->insertStdoutLine(
                     tr("--- cluster %1 (%2/%3) ---")
                     .arg(next).arg(pos).arg(m_realignBatchTotal));
+                realignOutputWidget->scrollToBottom();
             }
+            slotStatusMsg(tr("PCA-Center align: cluster %1 (%2/%3) …")
+                          .arg(next).arg(pos).arg(m_realignBatchTotal));
             realignRunning = true;
             startRealignWorker(next, m_realignBatchArgs);
             return;
@@ -5432,8 +5478,30 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
                 .arg(m_realignBatchAccepted)
                 .arg(m_realignBatchFailed)
                 .arg(m_realignBatchShiftedTotal));
+            realignOutputWidget->scrollToBottom();
         }
+        // Hide and reset the status-bar progress bar; keep the widget around
+        // so a subsequent batch can reuse it without re-adding to the bar.
+        if (m_realignProgressBar) m_realignProgressBar->hide();
+        slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
+                         "%3 spike(s) shifted total.")
+                      .arg(m_realignBatchAccepted)
+                      .arg(m_realignBatchFailed)
+                      .arg(m_realignBatchShiftedTotal));
         slotStateChanged(QStringLiteral("noRealignState"));
+        // Switch back to the Overview Display so the user can immediately
+        // arrow-key through clusters and see updated waveforms — staying on
+        // the Realign output tab would leave them stranded on the log with
+        // no obvious next step.
+        if (tabsParent) {
+            for (int i = 0; i < tabsParent->count(); ++i) {
+                if (tabsParent->tabText(i).contains(tr("Overview"),
+                                                    Qt::CaseInsensitive)) {
+                    tabsParent->setCurrentIndex(i);
+                    break;
+                }
+            }
+        }
         updateUndoRedoDisplay();
         return;
     }
