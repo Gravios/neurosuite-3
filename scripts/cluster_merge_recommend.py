@@ -147,14 +147,83 @@ def temporal_iou(tmin_i, tmax_i, tmin_j, tmax_j):
     return inter / union if union > 0 else 0.0
 
 
+# ─── chunk assignment + drift coherence ──────────────────────────────────
+
+
+def assign_chunks(t_means, gap_threshold_s):
+    """Assign each cluster to a chunk index based on 1-D gap clustering
+    of t_mean values.  Two clusters belong to the same chunk if their
+    sorted t_mean values are within `gap_threshold_s` of each other.
+
+    Returns (chunk_id_per_cluster (n,), n_chunks).
+    """
+    n = len(t_means)
+    order = np.argsort(t_means)
+    chunks = np.zeros(n, dtype=np.int32)
+    if n == 0:
+        return chunks, 0
+    sorted_t = t_means[order]
+    gaps = np.diff(sorted_t)
+    # New chunk starts wherever the gap exceeds threshold.  cumsum gives
+    # an ascending chunk index in sorted order.
+    chunk_in_sorted = np.concatenate(([0], np.cumsum(gaps > gap_threshold_s)))
+    # Invert the sort to get chunk per original index
+    chunks[order] = chunk_in_sorted
+    return chunks, int(chunk_in_sorted.max() + 1)
+
+
+def drift_coherence_outlier_mask(pair_data, k_mad):
+    """For each chunk-transition (cA, cB) with ≥3 AUTO_DRIFT pairs,
+    flag pairs whose drift_um deviates >k_mad×MAD from the transition
+    median.  Returns set of pair indices to demote from AUTO_DRIFT.
+
+    Rationale: a single biological drift event affects ALL units active
+    in both chunks coherently.  A pair claiming +30 µm drift when 20
+    peer pairs all show +5 µm is structurally inconsistent — either
+    the pair is not a real same-unit-drift (different units, contamination),
+    or the chunk boundary itself is the wrong assignment.
+    """
+    # Group AUTO_DRIFT pair indices by their (chunk_A, chunk_B) tuple.
+    by_transition = {}
+    for k, p in enumerate(pair_data):
+        if p["tier"] != "AUTO_DRIFT":
+            continue
+        # Canonical ordering of chunks so (cA, cB) and (cB, cA) collapse
+        key = (min(p["chunk_A"], p["chunk_B"]),
+               max(p["chunk_A"], p["chunk_B"]))
+        if key[0] == key[1]:
+            continue   # same-chunk AUTO_DRIFT shouldn't happen, but skip
+        by_transition.setdefault(key, []).append(k)
+
+    outliers = set()
+    for trans_key, idx_list in by_transition.items():
+        if len(idx_list) < 3:
+            continue   # too few peers for a reliable median
+        drifts = np.array([pair_data[k]["drift_um"] for k in idx_list])
+        med = float(np.median(drifts))
+        mad = float(np.median(np.abs(drifts - med)))
+        # Floor: with very tight clusters (MAD ≈ 0), use 1 µm so we don't
+        # demote pairs that are essentially on the median.
+        mad_floor = max(mad, 1.0)
+        for k in idx_list:
+            if abs(pair_data[k]["drift_um"] - med) > k_mad * mad_floor:
+                outliers.add(k)
+    return outliers, by_transition
+
+
 # ─── pair scoring + tier classification ──────────────────────────────────
 
 
-def score_pair(i, j, *, M3, P, ids, nspikes_idx, ch_dom, y_um,
-               peak_slice, cosW, cosFP, xcc, tmin, tmax, tmean,
+def score_pair(i, j, *, M3, P, S_peak, ids, nspikes_idx, ch_dom, y_um,
+               peak_slice, cosW, cosFP, xcc,
+               tmin, tmax, tmean, chunk_id,
                have_time, signal_ptp_frac):
     """Compute every per-pair criterion.  Returns a dict OR None if
-    the pair has no signal channels in common (should be filtered)."""
+    the pair has no signal channels in common (should be filtered).
+
+    S_peak: (n, C) per-cluster, per-channel std at peak sample.
+    chunk_id: (n,) chunk index per cluster (or None if no time stats).
+    """
     α = per_channel_alpha(M3[i], M3[j], peak_slice)
     # Signal mask: only channels with significant ptp in BOTH clusters
     # contribute to α-structure tests.  Noise channels give random α.
@@ -177,6 +246,16 @@ def score_pair(i, j, *, M3, P, ids, nspikes_idx, ch_dom, y_um,
     else:
         smooth = 0.0  # too sparse to test — don't penalise
 
+    # Per-channel std ratio at peak sample — empirical variance bound.
+    # Same biological unit at similar drift positions = similar SNR floor
+    # = similar per-channel std.  Wildly different stds on the SAME signal
+    # channel mean one cluster is contaminated.
+    sA = S_peak[i, signal_mask]
+    sB = S_peak[j, signal_mask]
+    std_lo = np.maximum(np.minimum(sA, sB), 1e-6)
+    std_hi = np.maximum(sA, sB)
+    std_ratio_max = float((std_hi / std_lo).max())
+
     drift_um = centroid_drift(P[i], P[j], y_um)
     iou = (temporal_iou(tmin[i], tmax[i], tmin[j], tmax[j])
            if have_time else float("nan"))
@@ -187,6 +266,8 @@ def score_pair(i, j, *, M3, P, ids, nspikes_idx, ch_dom, y_um,
     return {
         "cid_A": int(ids[i]), "cid_B": int(ids[j]),
         "nspk_A": int(nspikes_idx[i]), "nspk_B": int(nspikes_idx[j]),
+        "chunk_A": int(chunk_id[i]) if chunk_id is not None else -1,
+        "chunk_B": int(chunk_id[j]) if chunk_id is not None else -1,
         "cosW": float(cosW[i, j]),
         "cosFP": float(cosFP[i, j]),
         "xcorr": float(xcc[i, j]),
@@ -196,6 +277,7 @@ def score_pair(i, j, *, M3, P, ids, nspikes_idx, ch_dom, y_um,
         "alpha_max_signal": float(α_signal.max()),
         "alpha_spread": spread,
         "alpha_all_pos": int(alpha_all_pos),
+        "std_ratio_max": std_ratio_max,
         "smoothness": float(smooth),
         "drift_um": float(drift_um),
         "t_iou": float(iou),
@@ -208,38 +290,42 @@ def classify_tier(scores, args, have_time):
 
     Tiers:
       AUTO_DRIFT           same unit at different chunks (waveform good, IoU low)
-      AUTO_OVERSPLIT       same unit in same chunk over-split (stricter waveform,
-                           full structural checks, high IoU)
+      AUTO_OVERSPLIT       same unit in same chunk over-split — STRICTER
+                           than DRIFT on alpha_spread, drift_um, cosW, xcorr
+                           because same time = same source position.
       REVIEW_PARTIAL_OVERLAP  base waveform/structure pass but IoU is
                               borderline (0.1..0.7) — manual decision
       REVIEW               at least one structural check failed
     """
-    # Base structural pass: pair survives all the geometry- and waveform-
-    # consistency checks at the default thresholds.  BOTH tiers require it.
+    # Base structural pass — applies to BOTH tiers.
     base_pass = (
-        scores["cosW"]         >= args.cosw_thresh and
-        scores["cosFP"]        >= args.cosfp_thresh and
-        scores["same_dom_ch"]  == 1 and
-        scores["xcorr"]        >= args.xcorr_thresh and
+        scores["cosW"]          >= args.cosw_thresh and
+        scores["cosFP"]         >= args.cosfp_thresh and
+        scores["same_dom_ch"]   == 1 and
+        scores["xcorr"]         >= args.xcorr_thresh and
         scores["alpha_all_pos"] == 1 and
-        scores["alpha_spread"] <  args.alpha_spread_max and
-        scores["smoothness"]   <  args.smoothness_max and
-        scores["drift_um"]     <  args.drift_max_um
+        scores["alpha_spread"]  <  args.alpha_spread_max and
+        scores["std_ratio_max"] <  args.std_ratio_max and
+        scores["smoothness"]    <  args.smoothness_max and
+        scores["drift_um"]      <  args.drift_max_um
     )
     if not base_pass:
         return "REVIEW"
 
     if not have_time:
-        return "AUTO_DRIFT"   # no temporal info: treat as drift-style merge
+        return "AUTO_DRIFT"
 
     iou = scores["t_iou"]
     if iou < args.drift_iou_max:
         return "AUTO_DRIFT"
 
-    # AUTO_OVERSPLIT also requires base_pass AND stricter waveform AND high IoU
+    # AUTO_OVERSPLIT: stricter than base — same time = nearly identical
+    # source position = drift_um near 0 and alpha_spread near 1.
     if (iou >= args.oversplit_iou_min and
-            scores["cosW"]  >= args.oversplit_cosw and
-            scores["xcorr"] >= args.oversplit_cosw):
+            scores["cosW"]         >= args.oversplit_cosw and
+            scores["xcorr"]        >= args.oversplit_cosw and
+            scores["drift_um"]     <  args.oversplit_drift_um and
+            scores["alpha_spread"] <  args.oversplit_alpha_spread):
         return "AUTO_OVERSPLIT"
 
     return "REVIEW_PARTIAL_OVERLAP"
@@ -285,13 +371,25 @@ def main():
     # Thresholds
     ap.add_argument("--cosw-thresh", type=float, default=0.95)
     ap.add_argument("--cosfp-thresh", type=float, default=0.95)
-    ap.add_argument("--xcorr-thresh", type=float, default=0.95)
+    ap.add_argument("--xcorr-thresh", type=float, default=0.97,
+                    help="xcorr ≥ cosW by construction (max over shifts), "
+                         "so threshold must exceed cosw-thresh to add info")
     ap.add_argument("--alpha-spread-max", type=float, default=5.0)
     ap.add_argument("--smoothness-max", type=float, default=2.5)
     ap.add_argument("--drift-max-um", type=float, default=40.0)
     ap.add_argument("--drift-iou-max", type=float, default=0.1)
+    ap.add_argument("--std-ratio-max", type=float, default=3.0,
+                    help="reject pair if any signal channel has "
+                         "max(σ_A,σ_B)/min(σ_A,σ_B) > this — contamination guard")
+    # OVERSPLIT-specific (stricter than DRIFT — same source, same time)
     ap.add_argument("--oversplit-cosw", type=float, default=0.98)
     ap.add_argument("--oversplit-iou-min", type=float, default=0.7)
+    ap.add_argument("--oversplit-drift-um", type=float, default=5.0,
+                    help="OVERSPLIT pairs must have centroid drift < this "
+                         "(same time = same source position)")
+    ap.add_argument("--oversplit-alpha-spread", type=float, default=1.3,
+                    help="OVERSPLIT pairs must have α-spread < this "
+                         "(same time = uniform scaling near 1)")
     ap.add_argument("--candidate-cosw", type=float, default=0.85,
                     help="cosW > this for any pair to enter the CSV")
     ap.add_argument("--peak-window", type=int, default=3,
@@ -299,6 +397,32 @@ def main():
     ap.add_argument("--signal-ptp-frac", type=float, default=0.3,
                     help="channel counts as 'signal' if its ptp ≥ this "
                          "fraction of the pair's max ptp (default 0.3)")
+    # Per-cluster quality filter (D)
+    ap.add_argument("--max-cluster-cv", type=float, default=0.5,
+                    help="skip clusters whose max-CV on signal channels "
+                         "exceeds this (within-cluster amp variance too "
+                         "high → contamination or mixture)")
+    # Drift coherence across chunks (E)
+    ap.add_argument("--chunk-gap-s", type=float, default=180.0,
+                    help="t_mean gap > this defines a chunk boundary "
+                         "(default 180 s; smaller than your 720 s chunks)")
+    ap.add_argument("--no-drift-coherence", dest="drift_coherence",
+                    action="store_false", default=True,
+                    help="Disable per-transition drift coherence check "
+                         "(default: pairs whose centroid_drift_um deviates "
+                         ">3 MAD from the median across pairs spanning the "
+                         "SAME chunk-transition get demoted from AUTO_DRIFT "
+                         "to REVIEW)")
+    ap.add_argument("--drift-coherence-k", type=float, default=3.0,
+                    help="MAD multiplier for drift outlier detection")
+    ap.add_argument("--no-require-complete-link", dest="require_complete_link",
+                    action="store_false", default=True,
+                    help="Disable complete-link verification (use raw single-link "
+                         "union-find).  Default is to verify: a proposed merge "
+                         "group is only accepted if EVERY internal pair passed "
+                         "AUTO_DRIFT/AUTO_OVERSPLIT.  Without this check, "
+                         "single-link chaining can absorb hundreds of clusters "
+                         "via mid-cosine bridges.")
     # Filters on which clusters to consider
     ap.add_argument("--min-spikes", type=int, default=50)
     ap.add_argument("--min-ptp", type=float, default=1000.0)
@@ -358,21 +482,49 @@ def main():
               f"(smoothness, centroid drift) will be qualitatively right "
               f"but absolute thresholds may need rescaling.")
 
-    # Filter to well-isolated, reasonably-sized clusters
+    # Filter to well-isolated, reasonably-sized clusters.  Two passes:
+    # (1) basic — id, nspikes, ptp; (2) per-cluster CV filter — reject
+    # clusters whose within-cluster amplitude variance is too high on
+    # signal channels (contamination / mixture of units).
     ptp_max = ptp_mean.max(axis=0)
     keep = (clusters > 1) & (nspikes >= args.min_spikes) & (ptp_max >= args.min_ptp)
+
+    # Per-cluster CV at peak sample on signal channels
+    S_peak_all = stds[peak_sample, :, :].T  # (K, C) std at peak per cluster
+    mean_peak_all = np.abs(means[peak_sample, :, :].T)
+    cv_all = S_peak_all / np.maximum(mean_peak_all, 1.0)  # avoid /0 on noise ch
+    # Signal channels for the CV test: top channel + any ≥30% of peak
+    cluster_signal_mask = ptp_mean.T >= 0.3 * ptp_max[:, None]   # (K, C)
+    # max CV across signal channels, per cluster
+    cv_masked = np.where(cluster_signal_mask, cv_all, 0.0)
+    max_cv_signal = cv_masked.max(axis=1)
+    n_high_cv = int(((max_cv_signal > args.max_cluster_cv) & keep).sum())
+    keep &= (max_cv_signal <= args.max_cluster_cv)
     idx = np.flatnonzero(keep)
     n_keep = len(idx)
     print(f"  filtered: {n_keep}/{K_all} clusters (id>1, nspk≥{args.min_spikes}, "
-          f"max_ptp≥{args.min_ptp:.0f})")
+          f"max_ptp≥{args.min_ptp:.0f}, max-CV-signal ≤ {args.max_cluster_cv})")
+    if n_high_cv:
+        print(f"    ({n_high_cv} additional clusters rejected on CV "
+              f"threshold — contamination / mixture)")
 
     # Reshape per-cluster arrays for the selected subset
     M3 = means.transpose(2, 0, 1)[idx]              # (n, T, C)
     M  = M3.reshape(n_keep, T * C)
     P  = ptp_mean.T[idx]                            # (n, C)
+    S_peak = S_peak_all[idx]                        # (n, C) — for std-ratio test
     ids = clusters[idx]
     if have_time:
         tmin = t_min[idx]; tmax = t_max[idx]; tmean = t_mean[idx]
+        # Chunk assignment from t_mean — pairs spanning the same
+        # chunk-transition are peer groups for drift coherence.
+        chunk_id, n_chunks = assign_chunks(tmean, args.chunk_gap_s)
+        print(f"  chunk assignment: {n_chunks} chunks detected "
+              f"(gap threshold {args.chunk_gap_s:.0f} s)")
+    else:
+        tmin = tmax = tmean = None
+        chunk_id = None
+        n_chunks = 0
     ch_dom = np.argmax(P, axis=1)
     peak_slice = slice(max(0, peak_sample - args.peak_window),
                         min(T, peak_sample + args.peak_window + 1))
@@ -394,12 +546,10 @@ def main():
                 continue
             scores = score_pair(
                 i, j,
-                M3=M3, P=P, ids=ids, nspikes_idx=nspikes_idx,
+                M3=M3, P=P, S_peak=S_peak, ids=ids, nspikes_idx=nspikes_idx,
                 ch_dom=ch_dom, y_um=y_um, peak_slice=peak_slice,
                 cosW=cosW, cosFP=cosFP, xcc=xcc,
-                tmin=tmin if have_time else None,
-                tmax=tmax if have_time else None,
-                tmean=tmean if have_time else None,
+                tmin=tmin, tmax=tmax, tmean=tmean, chunk_id=chunk_id,
                 have_time=have_time,
                 signal_ptp_frac=args.signal_ptp_frac,
             )
@@ -407,6 +557,26 @@ def main():
                 continue
             scores["tier"] = classify_tier(scores, args, have_time)
             pair_data.append(scores)
+
+    # Drift coherence pass — clusters in one chunk-pair-transition all
+    # experience the same drift event.  AUTO_DRIFT pairs whose drift_um
+    # deviates >K MAD from their transition's median are flagged as
+    # incoherent (likely different units, not real drift) and demoted
+    # to REVIEW.  Transitions with <3 AUTO_DRIFT peers can't establish
+    # a reliable median and are skipped.
+    if args.drift_coherence and have_time:
+        outliers, by_trans = drift_coherence_outlier_mask(
+            pair_data, args.drift_coherence_k)
+        n_demoted = 0
+        for k in outliers:
+            pair_data[k]["tier"] = "REVIEW"
+            pair_data[k]["demoted_reason"] = "drift_incoherent"
+            n_demoted += 1
+        n_trans = sum(1 for v in by_trans.values() if len(v) >= 3)
+        if n_demoted or n_trans:
+            print(f"  drift coherence: {n_trans} chunk-transitions had "
+                  f"≥3 peer pairs; demoted {n_demoted} outliers "
+                  f"(>{args.drift_coherence_k}×MAD from transition median)")
 
     print(f"  {len(pair_data)} candidate pairs (cosW > {args.candidate_cosw})")
     tier_counts = {}
@@ -416,10 +586,18 @@ def main():
         if t in tier_counts:
             print(f"     {t:<24s} {tier_counts[t]:>5d}")
 
-    # Apply auto-accepted merges via union-find
+    # Apply auto-accepted merges via union-find, then VALIDATE each
+    # proposed group via complete-link verification.  Pure union-find is
+    # single-link clustering — it merges A and C whenever A↔B and B↔C
+    # both pass, even if A↔C itself fails.  With many broadly-similar
+    # waveforms this chains uncontrollably (a single group can absorb
+    # 100+ clusters via mid-cosine bridges).  Complete-link demands that
+    # every internal pair within a merge group independently passed
+    # AUTO_DRIFT or AUTO_OVERSPLIT.
     accepted_pairs = [(p["cid_A"], p["cid_B"]) for p in pair_data
                       if p["tier"] in ("AUTO_DRIFT", "AUTO_OVERSPLIT")]
-    print(f"\n  applying {len(accepted_pairs)} auto-accepted merges (union-find)...")
+    print(f"\n  proposing merges from {len(accepted_pairs)} auto-accepted pairs "
+          f"(union-find)...")
 
     clu_orig = read_clu(args.session, args.group).astype(np.int32)
     all_cids = np.unique(clu_orig).tolist()
@@ -427,25 +605,82 @@ def main():
     for a, b in accepted_pairs:
         uf.union(a, b)
 
-    # Build remap: each cluster → its root (smallest ID in its group)
+    # Build pair lookup for complete-link verification
+    pair_lookup = {}
+    for p in pair_data:
+        key = (min(p["cid_A"], p["cid_B"]), max(p["cid_A"], p["cid_B"]))
+        pair_lookup[key] = p["tier"]
+
+    # Validate each proposed group: ALL internal pairs must be in
+    # pair_lookup with AUTO tier.  Missing pairs (cosW < candidate_cosw)
+    # are treated as failed — they were never auto-accepted.
+    if args.require_complete_link:
+        print(f"  complete-link verification of proposed merge groups...")
     groups = uf.groups()
-    # Choose label per group = smallest member, preserving id 0 / 1 as roots
-    remap = {}
+    remap = {c: c for c in all_cids}
+    valid_groups = []
+    rejected_groups = []
     for root, members in groups.items():
-        label = min(members)
-        for m in members:
-            remap[m] = label
-    # Build merge counts log
-    merge_summary = [(min(g), len(g), sorted(g)) for g in groups.values() if len(g) > 1]
-    merge_summary.sort()
-    n_merged = sum(len(g) - 1 for g in groups.values() if len(g) > 1)
-    n_groups_changed = sum(1 for g in groups.values() if len(g) > 1)
-    print(f"  cluster count: {len(all_cids)} → {len(set(remap.values()))} "
-          f"({n_groups_changed} groups merged from {n_groups_changed + n_merged} clusters)")
-    for label, sz, members in merge_summary[:20]:
+        if len(members) < 2:
+            continue
+        if not args.require_complete_link:
+            # Original single-link behaviour — accept all
+            label = min(members)
+            for m in members:
+                remap[m] = label
+            valid_groups.append(members)
+            continue
+        # Check all C(n,2) internal pairs
+        bad = []
+        members_sorted = sorted(members)
+        for ii, a in enumerate(members_sorted):
+            for b in members_sorted[ii + 1:]:
+                key = (a, b)
+                tier = pair_lookup.get(key, "MISSING")
+                if tier not in ("AUTO_DRIFT", "AUTO_OVERSPLIT"):
+                    bad.append((a, b, tier))
+                    if len(bad) >= 3:
+                        break   # 3 examples is enough for diagnostic
+            if len(bad) >= 3:
+                break
+        if not bad:
+            label = min(members)
+            for m in members:
+                remap[m] = label
+            valid_groups.append(members)
+        else:
+            rejected_groups.append((sorted(members), bad))
+
+    # Reporting
+    n_valid_merged = sum(len(g) - 1 for g in valid_groups)
+    n_valid_groups = len(valid_groups)
+    n_rejected = len(rejected_groups)
+    n_rejected_members = sum(len(m) for m, _ in rejected_groups)
+    new_count = len(set(remap.values()))
+    print(f"  cluster count: {len(all_cids)} → {new_count} "
+          f"({n_valid_groups} groups merged from "
+          f"{n_valid_groups + n_valid_merged} clusters)")
+    if rejected_groups:
+        print(f"  REJECTED: {n_rejected} proposed groups containing "
+              f"{n_rejected_members} clusters had internal-pair failures")
+        print(f"           (each rejected cluster KEEPS its original ID)")
+    # Show valid merges
+    valid_summary = sorted([(min(g), len(g), sorted(g)) for g in valid_groups])
+    for label, sz, members in valid_summary[:20]:
         print(f"    {label} ← {members}")
-    if len(merge_summary) > 20:
-        print(f"    ... and {len(merge_summary) - 20} more merge groups")
+    if len(valid_summary) > 20:
+        print(f"    ... and {len(valid_summary) - 20} more valid merge groups")
+    # Show a few rejected groups so user can inspect in CSV
+    if rejected_groups:
+        rejected_groups.sort(key=lambda x: -len(x[0]))
+        print(f"\n  Top rejected groups (largest first):")
+        for members, bad in rejected_groups[:5]:
+            example = bad[0]
+            print(f"    {len(members):>4d} clusters proposed (root={min(members)}): "
+                  f"e.g. pair ({example[0]}, {example[1]}) tier={example[2]} "
+                  f"breaks the chain")
+        if len(rejected_groups) > 5:
+            print(f"    ... and {len(rejected_groups) - 5} more rejected groups")
 
     clu_new = np.fromiter((remap.get(c, c) for c in clu_orig.tolist()),
                            dtype=np.int32, count=len(clu_orig))
