@@ -24,6 +24,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QWidgetAction>
+#include <QTimer>
 
 // include files for Qt
 #include <QPainter>
@@ -92,8 +93,11 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
     removedClusters = new QList<int>();
 
     setAttribute(Qt::WA_DeleteOnClose, true);
-    //Create the mainDock
-    mainDock = new QDockWidget(doc.documentName());
+    //Create the mainDock — the descriptive window title is set inside each
+    //switch case below once the widget type is known.  Leaving the title
+    //empty here avoids the session-path title that used to leak when a
+    //case forgot to override.
+    mainDock = new QDockWidget(QString());
     mainDock->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     mainDock->setAttribute(Qt::WA_DeleteOnClose, true);
     //If the type of view is a not base one, call the function to call the complex views.
@@ -109,6 +113,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereTemplateMatrixView = false;
         isThereTraceView = false;
         mainDock->setWidget(new ClusterView(doc,*this,backgroundColor,timeInterval,statusBar,mainDock));
+        mainDock->setWindowTitle(tr("Cluster Features"));
         currentViewWidget = dynamic_cast<ViewWidget*>(mainDock->widget());
         viewList.append(currentViewWidget);
         currentViewWidget->installEventFilter(this);//To enable right click popup menu
@@ -127,6 +132,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereTraceView = false;
         mainDock->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,mainDock,
                                              inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));
+        mainDock->setWindowTitle(tr("Waveforms"));
 
         currentViewWidget = dynamic_cast<ViewWidget*>(mainDock->widget());
         viewList.append(currentViewWidget);
@@ -146,6 +152,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereTraceView = false;
         mainDock->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,mainDock,correlationScale,
                                                 binSize,correlogramTimeFrame,shoulderLine));
+        mainDock->setWindowTitle(tr("Auto-correlogram"));
 
         currentViewWidget = dynamic_cast<ViewWidget*>(mainDock->widget());
         viewList.append(currentViewWidget);
@@ -199,6 +206,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
                                             true,labelsDisplay,doc.getCurrentChannels(),doc.getGain(),doc.getAcquisitionGain(),doc.channelColors(),
                                             doc.getDisplayGroupsChannels(),doc.getDisplayChannelsGroups(),offsets,gains,skippedChannels,mainDock,"traces",
                                             backgroundColor,statusBar,5));
+        mainDock->setWindowTitle(tr("Traces"));
 
         traceWidget = dynamic_cast<TraceWidget*>(mainDock->widget());
         //Set the list of the current view as the list of clusters to look up in the ClusterProvider.
@@ -216,6 +224,14 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         break;
     }
     addDockWidget(Qt::TopDockWidgetArea,mainDock);
+
+    // Apply the canonical layout for composite views.  For plain OVERVIEW
+    // this stacks Cluster Features / Waveforms / Auto-correlogram
+    // vertically; for GROUPING_ASSISTANT_VIEW it additionally tabifies the
+    // Error Matrix and Template Matrix on the right.
+    if (type == OVERVIEW || type == GROUPING_ASSISTANT_VIEW) {
+        applyOverviewLayout();
+    }
 
 }
 
@@ -264,6 +280,10 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     //The main dock will be the cluster view
     ClusterView* view = new ClusterView(doc,*this,backgroundColor,timeInterval,statusBar,mainDock);
     mainDock->setWidget(view);
+    // Descriptive title — the previous doc.documentName() showed the full
+    // session path on every frame, which is uninformative when the title
+    // bar of the parent window already shows it.
+    mainDock->setWindowTitle(tr("Cluster Features"));
 
     currentViewWidget = view;
     viewList.append(currentViewWidget);
@@ -275,7 +295,7 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
 
 
     //Create and add the waveforms view
-    QDockWidget* waveforms = new QDockWidget(doc.documentName());
+    QDockWidget* waveforms = new QDockWidget(tr("Waveforms"));
     waveforms->setAttribute(Qt::WA_DeleteOnClose, true);
     waveforms->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     //createDockWidget( "WaveForm", QPixmap(), 0L, doc.documentName(), doc.documentName());
@@ -287,11 +307,12 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     waveforms->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,waveforms);
     viewCounter.insert("WaveformView",1);
+    m_overviewWaveformDock = waveforms;
 
     setConnections(WAVEFORMS,waveformView,waveforms);
 
     //Create and add the correlations view
-    QDockWidget* correlations = new QDockWidget(doc.documentName());
+    QDockWidget* correlations = new QDockWidget(tr("Auto-correlogram"));
     correlations->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     correlations->setAttribute(Qt::WA_DeleteOnClose, true);
             //createDockWidget( "Correlation", QPixmap(), 0L, doc.documentName(), doc.documentName());
@@ -302,6 +323,7 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     correlations->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,correlations);
     viewCounter.insert("CorrelationView",1);
+    m_overviewCorrelationDock = correlations;
 
     setConnections(CORRELATIONS,correlationView,correlations);
 }
@@ -310,8 +332,10 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     //First create the overview
     createOverview(backgroundColor,statusBar,timeInterval,maxAmplitude,positions);
 
-    //Create and add the errorMatrixView beneath the clusterView (mainDock)
-    QDockWidget* errorMatrix = new QDockWidget(doc.documentName());
+    //Create and add the errorMatrixView.  Position and tabification are
+    //handled later in applyOverviewLayout(); here we just add it so the
+    //QMainWindow takes ownership.
+    QDockWidget* errorMatrix = new QDockWidget(tr("Error Matrix"));
     errorMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
     errorMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     //createDockWidget("ErrorMatrix", QPixmap(), 0L, doc.documentName(), doc.documentName());
@@ -321,17 +345,98 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     errorMatrixView->installEventFilter(this);//To enable right click popup menu
     errorMatrix->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,errorMatrix);
+    m_overviewErrorMatrixDock = errorMatrix;
     setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
 
-    //Create and add the templateMatrixView beneath the errorMatrixView
-    QDockWidget* templateMatrix = new QDockWidget(doc.documentName());
+    //Create and add the templateMatrixView
+    QDockWidget* templateMatrix = new QDockWidget(tr("Template Matrix"));
     templateMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
     templateMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
     TemplateMatrixView* tmView = qobject_cast<TemplateMatrixView*>(templateMatrix->widget());
     isThereTemplateMatrixView = true;
     addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
+    m_overviewTemplateMatrixDock = templateMatrix;
     setConnections(TEMPLATE_MATRIX,tmView,templateMatrix);
+}
+
+
+void KlustersView::applyOverviewLayout(){
+    // Stack the left column vertically: Cluster Features (mainDock) on
+    // top, Waveforms in the middle, Auto-correlogram on the bottom.
+    //
+    // splitDockWidget needs both docks to be already owned by the
+    // QMainWindow.  By the time this runs all child docks have been
+    // added via addDockWidget() (either inside createOverview /
+    // createGroupingAssistantView, or via addView() at startup) and
+    // mainDock itself has been added to TopDockWidgetArea at the end of
+    // the constructor — so the calls are safe.  Topology changes work
+    // pre-show; only the resizeDocks step further down needs to wait
+    // for the layout to activate.
+    if (m_overviewWaveformDock) {
+        splitDockWidget(mainDock, m_overviewWaveformDock, Qt::Vertical);
+    }
+    if (m_overviewWaveformDock && m_overviewCorrelationDock) {
+        splitDockWidget(m_overviewWaveformDock,
+                        m_overviewCorrelationDock,
+                        Qt::Vertical);
+    }
+
+    // Matrices go on the right and are tabified together so they share
+    // one frame with tabs at the bottom.  Both addDockWidget(Right, ...)
+    // calls re-anchor any matrix dock that was previously placed at the
+    // bottom (which is the default landing site used by addView() before
+    // applyOverviewLayout runs).
+    if (m_overviewErrorMatrixDock) {
+        addDockWidget(Qt::RightDockWidgetArea, m_overviewErrorMatrixDock);
+    }
+    if (m_overviewTemplateMatrixDock) {
+        addDockWidget(Qt::RightDockWidgetArea, m_overviewTemplateMatrixDock);
+        if (m_overviewErrorMatrixDock) {
+            tabifyDockWidget(m_overviewErrorMatrixDock,
+                             m_overviewTemplateMatrixDock);
+            // Front-tab is the Error Matrix — the cluster-quality review
+            // workflow reads errors first, then flips to templates.
+            m_overviewErrorMatrixDock->raise();
+        }
+    }
+
+    // Proportions are deferred to the next event-loop iteration.  Qt
+    // documents that resizeDocks() "might not be applied correctly" if
+    // called before the QMainWindow's layout is activated, which on the
+    // constructor path is true — the view hasn't been shown yet.  Using
+    // `this` as the context object makes Qt skip the call if the view
+    // is destroyed first, so no extra QPointer guard is needed.  Member
+    // QPointers are re-checked inside the lambda because a dock could
+    // have been closed between scheduling and firing.
+    QTimer::singleShot(0, this, [this]() {
+        // Horizontal 45/55 split between the left column (anchored on
+        // mainDock) and the right matrix pane.  Pixel values are sized
+        // close to a typical Klusters window so the relative-weight
+        // fallback for the un-allocated space lands on the intended
+        // ratio even when child min-sizes consume some of the budget.
+        QDockWidget* rightAnchor = nullptr;
+        if (m_overviewErrorMatrixDock)
+            rightAnchor = m_overviewErrorMatrixDock.data();
+        else if (m_overviewTemplateMatrixDock)
+            rightAnchor = m_overviewTemplateMatrixDock.data();
+        if (rightAnchor) {
+            resizeDocks({mainDock, rightAnchor}, {450, 550}, Qt::Horizontal);
+        }
+
+        // Equal vertical thirds for the left column.
+        QList<QDockWidget*> column;
+        column << mainDock;
+        if (m_overviewWaveformDock)
+            column << m_overviewWaveformDock.data();
+        if (m_overviewCorrelationDock)
+            column << m_overviewCorrelationDock.data();
+        if (column.size() >= 2) {
+            QList<int> sizes;
+            for (int i = 0; i < column.size(); ++i) sizes << 300;
+            resizeDocks(column, sizes, Qt::Vertical);
+        }
+    });
 }
 
 
@@ -785,7 +890,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereClusterView = true;
         count = QString::number(viewCounter["ClusterView"]);
 
-        clusters = new QDockWidget(doc.documentName());
+        clusters = new QDockWidget(tr("Cluster Features"));
         clusters->setAttribute(Qt::WA_DeleteOnClose, true);
         clusters->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
                 //createDockWidget(count.prepend("ClusterView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
@@ -826,7 +931,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereWaveformView = true;
         count = QString::number(viewCounter["WaveformView"]);
 
-        waveforms = new QDockWidget(doc.documentName());
+        waveforms = new QDockWidget(tr("Waveforms"));
         waveforms->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         waveforms->setAttribute(Qt::WA_DeleteOnClose, true);
                 //createDockWidget(count.prepend("WaveformView"), QPixmap(), 0L, doc.documentName(), doc.documentName());
@@ -849,7 +954,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereCorrelationView = true;
         count = QString::number(viewCounter["CorrelationView"]);
 
-        correlations = new QDockWidget(doc.documentName());
+        correlations = new QDockWidget(tr("Auto-correlogram"));
         correlations->setAttribute(Qt::WA_DeleteOnClose, true);
         correlations->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
 
@@ -876,7 +981,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         newViewType = true;
         isThereErrorMatrixView = true;
 
-        errorMatrix = new QDockWidget(doc.documentName());
+        errorMatrix = new QDockWidget(tr("Error Matrix"));
         errorMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         errorMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         //createDockWidget("ErrorMatrix", QPixmap(), 0L, doc.documentName(), doc.documentName());
@@ -885,18 +990,33 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         viewList.append(errorMatrixView);
         errorMatrixView->installEventFilter(this);//To enable right click popup menu
         errorMatrix->installEventFilter(this);
-        addDockWidget(Qt::BottomDockWidgetArea,errorMatrix);
+        // Matrices live on the right side and are tabified when both exist.
+        // If a TemplateMatrix dock is already present, tabify with it so
+        // the two share one tabbed pane on the right.
+        addDockWidget(Qt::RightDockWidgetArea,errorMatrix);
+        m_overviewErrorMatrixDock = errorMatrix;
+        if (m_overviewTemplateMatrixDock) {
+            tabifyDockWidget(m_overviewTemplateMatrixDock, errorMatrix);
+        }
         setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
         break;
     case TEMPLATE_MATRIX:
         newViewType = true;
         isThereTemplateMatrixView = true;
-        templateMatrix = new QDockWidget(doc.documentName());
+        templateMatrix = new QDockWidget(tr("Template Matrix"));
         templateMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         templateMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
         templateMatrix->installEventFilter(this);
-        addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
+        addDockWidget(Qt::RightDockWidgetArea,templateMatrix);
+        m_overviewTemplateMatrixDock = templateMatrix;
+        if (m_overviewErrorMatrixDock) {
+            tabifyDockWidget(m_overviewErrorMatrixDock, templateMatrix);
+            // Keep the Error Matrix as the front tab — it's the one most
+            // workflows start from (the U-shortcut updates both, but the
+            // user reads from Error first then flips to Template).
+            m_overviewErrorMatrixDock->raise();
+        }
         setConnections(TEMPLATE_MATRIX,qobject_cast<TemplateMatrixView*>(templateMatrix->widget()),templateMatrix);
         break;
     case TRACES:
@@ -910,7 +1030,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         isThereTraceView = true;
         count = QString::number(viewCounter["TraceView"]);
 
-        traces = new QDockWidget(doc.documentName());
+        traces = new QDockWidget(tr("Traces"));
         traces->setAttribute(Qt::WA_DeleteOnClose, true);
         traces->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
                 //createDockWidget(count.prepend("TraceView"), QPixmap(), 0L, doc.documentName(), doc.documentName());

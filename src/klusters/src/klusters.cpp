@@ -1626,46 +1626,49 @@ void KlustersApp::initDisplay(){
     //Enable some actions now that a document is open (see the klustersui.rc file)
     slotStateChanged("documentState");
 
-    // patch79 — auto-show error & template matrices on document open.
+    // Auto-show error & template matrices on document open.
     //
     // The user-facing intent: when this preference is on, opening a
     // document should produce the same workflow-ready layout every
-    // time — Overview display + Grouping Assistant display with both
-    // matrix docks populated.  Saves a manual sequence of:
+    // time — a single Overview Display tab containing Cluster Features /
+    // Waveforms / Auto-correlogram stacked vertically on the left and
+    // the Error Matrix / Template Matrix tabified together on the right.
+    // Saves a manual sequence of:
     //   Display → New Grouping Assistant Display
     //   (within GA) add Error Matrix dock
     //   (within GA) add Template Matrix dock
     //   Actions → Update Error Matrix
     // on every document open.
     //
-    // The main-window position/size and dock-widget layout already get
-    // saved by closeEvent (settings.setValue("geometry", saveGeometry())
-    // and ("windowState", saveState())) and restored on construction
-    // (line 2367-2368).  This patch adds the missing piece: the inner
-    // matrix docks, which live inside a Grouping Assistant child
-    // QMainWindow and so aren't covered by the top-level saveState.
+    // The matrices are added directly to the Overview Display rather
+    // than to a separate Grouping Assistant Display tab — the latter
+    // tab is the historical home of the matrix views but is no longer
+    // needed when the matrices live in the Overview itself.  The user
+    // can still open one manually via Display → New Grouping Assistant
+    // Display if they want a second view of the same data.
     //
-    // Defer the work to the next event-loop iteration so the Overview
-    // window's threads (WaveformThread, CorrelationThread) have time to
-    // finish their initial loads before the matrix computations start
-    // queuing additional CPU work.  QTimer::singleShot(0, ...) is
-    // sufficient — Qt processes pending events before firing zero-delay
-    // timers.
+    // Defer to the next event-loop iteration so the Overview window's
+    // threads (WaveformThread, CorrelationThread) have time to finish
+    // their initial loads before the matrix computations start queuing
+    // additional CPU work.  QTimer::singleShot(0, ...) processes pending
+    // events before firing.
     if (configuration().getAutoShowMatricesOnOpen()) {
         QTimer::singleShot(0, this, [this]() {
             if (!doc) return;                       // document was closed mid-defer
-            slotWindowNewGroupingAssistantDisplay();
-            // After the call, activeView() is the new GA view.  Add
-            // both matrix docks via the same entry point manual menu
-            // actions go through, so the post-add bookkeeping
-            // (errorMatrixExists / m_lastMatrixUsed / signal wiring) is
-            // identical to the manual path.
+            // The Overview Display is the active view at this point —
+            // widgetAddToDisplay routes through view->addView() which
+            // adds the matrix docks to it.  Order matters: ERROR_MATRIX
+            // first so it ends up as the front tab (TEMPLATE_MATRIX
+            // tabifies on top of it then raise() restores Error in
+            // applyOverviewLayout / addView's TEMPLATE_MATRIX case).
             widgetAddToDisplay(KlustersView::ERROR_MATRIX);
             widgetAddToDisplay(KlustersView::TEMPLATE_MATRIX);
-            // Populate both matrices.  view->updateErrorMatrix() +
-            // view->updateTemplateMatrix() in slotUpdateErrorMatrix
-            // are no-ops if no matrix dock listens, so the order vs
-            // the addDisplay calls above doesn't matter.
+            // Now arrange the dock layout — splits the left column
+            // vertically and positions the matrices on the right.
+            if (KlustersView* view = activeView()) {
+                view->applyOverviewLayout();
+            }
+            // Populate both matrices.
             slotUpdateErrorMatrix();
         });
     }
