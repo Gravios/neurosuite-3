@@ -334,6 +334,56 @@ def classify_tier(scores, args, have_time):
 # ─── union-find for transitive merges ────────────────────────────────────
 
 
+def greedy_max_clique(members, accepted_pair_set, max_seeds=20):
+    """Find a maximal clique among `members` such that every pairwise
+    edge is in `accepted_pair_set` (canonical (min, max) tuples).
+
+    Algorithm: degree-ordered greedy expansion with multi-seed search.
+    For each of the top-`max_seeds` highest-degree members, start a
+    clique and iteratively add every other member that is connected to
+    ALL current clique members.  Return the largest clique found across
+    all seed attempts.
+
+    Maximum clique is NP-hard in general, but for the sizes we see
+    (rejected groups of 4-100 clusters with sparse internal AUTO_*
+    edges), this heuristic finds the global optimum or close to it.
+
+    Used to RECOVER valid sub-merges from groups that fail strict
+    complete-link verification.  Without this, a single-link chain
+    bridging 100 similar clusters loses every internal valid drift
+    sub-sequence (typically 3-10 clusters each).
+    """
+    members = sorted(members)
+    n = len(members)
+    if n < 2:
+        return set()
+
+    # Build adjacency restricted to AUTO_* edges within the group
+    adj = {m: set() for m in members}
+    for i, a in enumerate(members):
+        for b in members[i + 1:]:
+            if (a, b) in accepted_pair_set:
+                adj[a].add(b)
+                adj[b].add(a)
+
+    # Seed candidates: highest internal degree first
+    by_degree = sorted(members, key=lambda m: -len(adj[m]))
+
+    best = set()
+    for seed in by_degree[:min(max_seeds, n)]:
+        clique = {seed}
+        # Try to add every other member, in degree order
+        for cand in by_degree:
+            if cand == seed or cand in clique:
+                continue
+            # cand joins iff connected to ALL current clique members
+            if clique.issubset(adj[cand]):
+                clique.add(cand)
+        if len(clique) > len(best):
+            best = clique
+    return best
+
+
 class UnionFind:
     def __init__(self, items):
         self.parent = {x: x for x in items}
@@ -424,6 +474,15 @@ def main():
                          "AUTO_DRIFT/AUTO_OVERSPLIT.  Without this check, "
                          "single-link chaining can absorb hundreds of clusters "
                          "via mid-cosine bridges.")
+    ap.add_argument("--no-clique-recovery", dest="clique_recovery",
+                    action="store_false", default=True,
+                    help="Disable greedy clique recovery on rejected merge "
+                         "groups.  Default: when complete-link rejects a "
+                         "group, find the largest internally-consistent "
+                         "sub-clique (all pairs AUTO_*) and merge that "
+                         "instead.  Without this, all clusters in a rejected "
+                         "group stay separate even if some legitimate sub-"
+                         "merges exist.")
     # Filters on which clusters to consider
     ap.add_argument("--min-spikes", type=int, default=50)
     ap.add_argument("--min-ptp", type=float, default=1000.0)
@@ -659,29 +718,85 @@ def main():
         else:
             rejected_groups.append((sorted(members), bad))
 
+    # Clique recovery: for each rejected group, ITERATIVELY find the
+    # largest internally-consistent sub-clique, merge it, remove its
+    # members, and repeat until no more cliques ≥2 can be found.  This
+    # extracts ALL valid sub-merges from a single rejected runaway in
+    # one pass — e.g., a 100-cluster chain containing 3 real drift
+    # sequences yields 3 separate merge groups.  Every clique returned
+    # is guaranteed complete-link by construction.
+    recovered_groups = []
+    if args.clique_recovery and rejected_groups:
+        accepted_pair_set = set()
+        for p in pair_data:
+            if p["tier"] in ("AUTO_DRIFT", "AUTO_OVERSPLIT"):
+                accepted_pair_set.add(
+                    (min(p["cid_A"], p["cid_B"]),
+                     max(p["cid_A"], p["cid_B"])))
+        rejected_sorted = sorted(rejected_groups, key=lambda x: -len(x[0]))
+        still_rejected = []
+        for members, bad_examples in rejected_sorted:
+            parent_size = len(members)
+            remaining = set(members)
+            while len(remaining) >= 2:
+                clique = greedy_max_clique(sorted(remaining), accepted_pair_set)
+                if len(clique) < 2:
+                    break
+                # Defensive complete-link check on extracted clique
+                clique_sorted = sorted(clique)
+                if not all(
+                    (a, b) in accepted_pair_set
+                    for i, a in enumerate(clique_sorted)
+                    for b in clique_sorted[i + 1:]
+                ):
+                    break  # algorithm error — shouldn't happen
+                label = min(clique)
+                for m in clique:
+                    remap[m] = label
+                recovered_groups.append((clique_sorted, parent_size))
+                remaining -= clique
+            if remaining:
+                # Singletons / fully disconnected leftovers
+                still_rejected.append((sorted(remaining), bad_examples))
+        rejected_groups = still_rejected
+
     # Reporting
     n_valid_merged = sum(len(g) - 1 for g in valid_groups)
     n_valid_groups = len(valid_groups)
+    n_recovered_groups = len(recovered_groups)
+    n_recovered_merged = sum(len(g) - 1 for g, _ in recovered_groups)
     n_rejected = len(rejected_groups)
     n_rejected_members = sum(len(m) for m, _ in rejected_groups)
     new_count = len(set(remap.values()))
-    print(f"  cluster count: {len(all_cids)} → {new_count} "
-          f"({n_valid_groups} groups merged from "
-          f"{n_valid_groups + n_valid_merged} clusters)")
+    print(f"  cluster count: {len(all_cids)} → {new_count}")
+    print(f"    {n_valid_groups} groups merged via complete-link "
+          f"({n_valid_groups + n_valid_merged} clusters)")
+    if n_recovered_groups:
+        print(f"    {n_recovered_groups} groups merged via clique recovery "
+              f"({n_recovered_groups + n_recovered_merged} clusters)")
     if rejected_groups:
         print(f"  REJECTED: {n_rejected} proposed groups containing "
-              f"{n_rejected_members} clusters had internal-pair failures")
+              f"{n_rejected_members} clusters had NO recoverable clique")
         print(f"           (each rejected cluster KEEPS its original ID)")
     # Show valid merges
     valid_summary = sorted([(min(g), len(g), sorted(g)) for g in valid_groups])
     for label, sz, members in valid_summary[:20]:
-        print(f"    {label} ← {members}")
+        print(f"    {label} ← {members}    (complete-link)")
     if len(valid_summary) > 20:
-        print(f"    ... and {len(valid_summary) - 20} more valid merge groups")
-    # Show a few rejected groups so user can inspect in CSV
+        print(f"    ... and {len(valid_summary) - 20} more complete-link merges")
+    # Show recovered cliques — note how big the rejected parent was
+    if recovered_groups:
+        recovered_groups.sort(key=lambda x: -len(x[0]))
+        print(f"\n  Recovered cliques (sub-clique extracted from rejected groups):")
+        for clique, parent_size in recovered_groups[:15]:
+            print(f"    {min(clique)} ← {clique}    "
+                  f"(clique from {parent_size}-cluster rejected group)")
+        if len(recovered_groups) > 15:
+            print(f"    ... and {len(recovered_groups) - 15} more recovered cliques")
+    # Show a few still-rejected groups so user can inspect in CSV
     if rejected_groups:
         rejected_groups.sort(key=lambda x: -len(x[0]))
-        print(f"\n  Top rejected groups (largest first):")
+        print(f"\n  Top still-rejected groups (no usable clique found):")
         for members, bad in rejected_groups[:5]:
             example = bad[0]
             print(f"    {len(members):>4d} clusters proposed (root={min(members)}): "
