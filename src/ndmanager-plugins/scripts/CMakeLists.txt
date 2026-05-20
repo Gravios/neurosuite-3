@@ -26,6 +26,18 @@ install(PROGRAMS
     # re-run ndm_pca / ndm_pca_stderiv.  Backed by process_alignspikes
     # (already installed via src/process_alignspikes/CMakeLists.txt).
     ndm_alignspikes
+    # Two-stage per-cluster spike realignment.  Operates AFTER KlustaKwik
+    # has produced .clu.N.  Stage 1 aligns each spike to its cluster
+    # template via normalised xcorr (similar to Klusters' realignSpikes).
+    # Stage 2 rigidly translates each cluster by a single global shift
+    # maximising the PCA-projection energy of its mean waveform against
+    # the existing .pca.N / .pcaD.N basis — unlike Klusters' --pca-refine
+    # (patch82) which acts per-spike and can disperse mixture clusters,
+    # this version preserves intra-cluster variance and only corrects
+    # systematic per-cluster mis-alignments.  Invalidates .fet/.fetD on
+    # exit; re-run ndm_pca / ndm_pca_stderiv to regenerate features.
+    # Backed by process_alignspikes_pca (src/process_alignspikes_pca/).
+    ndm_alignspikes_pca
     # Second-pass spike re-extraction + shadow clustering.  The _stderiv
     # variant re-uses the spatial-derivative detection pipeline's
     # extensions (.spkD / .fetD / .pcaD); the plain variant works on raw
