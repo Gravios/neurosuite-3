@@ -35,6 +35,7 @@ set(klusters_SRCS
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp
     reorder_similarity_gpu_dispatch.cpp
+    pca_refine_gpu_dispatch.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
     realignworker.cpp
@@ -74,6 +75,7 @@ set(klusters_SRCS
 if(USE_CUDA)
     list(APPEND klusters_SRCS groupingassistant_cuda.cu)
     list(APPEND klusters_SRCS reorder_similarity_cuda.cu)
+    list(APPEND klusters_SRCS pca_refine_cuda.cu)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_cuda.cu)
 endif()
 if(USE_HIP)
