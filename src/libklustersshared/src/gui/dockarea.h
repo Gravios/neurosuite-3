@@ -73,6 +73,32 @@ class KLUSTERSSHARED_EXPORT DockArea : public QScrollArea {
    
     void removeDockWidget ( QDockWidget * dockwidget );
 
+    /** Split the space covered by @p pFirst into two parts and place
+     *  @p pSecond into the second part.  Thin wrapper around the inner
+     *  QMainWindow's splitDockWidget so callers can arrange child docks
+     *  without needing access to the private main window.
+     */
+    void splitDockWidget ( QDockWidget * pFirst, QDockWidget * pSecond,
+                           Qt::Orientation pOrientation );
+
+    /** Move @p pSecond to be tabified with @p pFirst.  Thin wrapper
+     *  around the inner QMainWindow's tabifyDockWidget.
+     */
+    void tabifyDockWidget ( QDockWidget * pFirst, QDockWidget * pSecond );
+
+    /** Resize the given dock widgets along @p pOrientation
+     *  (Qt::Horizontal for widths, Qt::Vertical for heights).  Sizes are
+     *  pixel hints — any difference between their sum and the available
+     *  space is distributed across the docks by relative weight, so the
+     *  ratio between values is what dominates in practice
+     *  (e.g. {300, 300, 300} delivers equal thirds; {450, 550} delivers
+     *  a 45/55 split).  Min/max-size constraints are respected.
+     *  Thin wrapper around the inner QMainWindow's resizeDocks.
+     */
+    void resizeDocks ( const QList<QDockWidget *> & pDocks,
+                       const QList<int> & pSizes,
+                       Qt::Orientation pOrientation );
+
   public slots:
 
     /**Change the background color.*/

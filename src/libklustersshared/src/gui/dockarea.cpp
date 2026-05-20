@@ -107,6 +107,21 @@ void DockArea::removeDockWidget ( QDockWidget * dockwidget ) {
     mMainWindow.removeDockWidget ( dockwidget );
 }
 
+void DockArea::splitDockWidget ( QDockWidget * pFirst, QDockWidget * pSecond,
+                                 Qt::Orientation pOrientation ) {
+    mMainWindow.splitDockWidget ( pFirst, pSecond, pOrientation );
+}
+
+void DockArea::tabifyDockWidget ( QDockWidget * pFirst, QDockWidget * pSecond ) {
+    mMainWindow.tabifyDockWidget ( pFirst, pSecond );
+}
+
+void DockArea::resizeDocks ( const QList<QDockWidget *> & pDocks,
+                             const QList<int> & pSizes,
+                             Qt::Orientation pOrientation ) {
+    mMainWindow.resizeDocks ( pDocks, pSizes, pOrientation );
+}
+
 void DockArea::deleteWidgets ( const QString& pName ){
     QList< QPointer<QDockWidget> > vDockWidgetList = mDockWidgetByNameMap.take ( pName );
 
