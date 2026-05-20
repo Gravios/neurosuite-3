@@ -30,6 +30,7 @@
 #include <QList>
 #include <QEvent>
 #include <QCloseEvent>
+#include <QPointer>
 
 //include files for the application
 #include "itemcolors.h"
@@ -142,6 +143,20 @@ public:
     * @return false if there was already a view of @displayType in the view, true otherwise.
     */
     bool addView(DisplayType displayType,const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,QList<int> positions);
+
+    /** Arranges the tracked OVERVIEW docks into the canonical layout:
+     *  Cluster Features / Waveforms / Auto-correlogram stacked vertically
+     *  on the left, with the Error Matrix and Template Matrix (when present)
+     *  tabified together on the right.  Sets default proportions of
+     *  approximately 45 / 55 horizontal and equal vertical thirds.
+     *
+     *  Idempotent and tolerant of missing docks — callers can invoke it
+     *  after createOverview() alone (left column only), after
+     *  createGroupingAssistantView() (both columns), or after the auto-show
+     *  startup path adds the matrices to an existing Overview Display via
+     *  addView(ERROR_MATRIX) + addView(TEMPLATE_MATRIX).
+     */
+    void applyOverviewLayout();
     
     /**List of the names for the different type of view available.*/
     static const QString DisplayTypeNames[];
@@ -898,6 +913,18 @@ private:
 
     /**True if labels are drawn next to the traces, false otherwise.*/
     bool labelsDisplay;
+
+    /** Tracked dock-widget pointers for the OVERVIEW / GROUPING_ASSISTANT
+     *  layout.  These are populated by createOverview(),
+     *  createGroupingAssistantView() and addView() — applyOverviewLayout()
+     *  uses them to stack the left column vertically and tabify the
+     *  error/template matrices on the right.  QPointer because the user
+     *  can close any of these docks via the dock-widget's X.
+     */
+    QPointer<QDockWidget> m_overviewWaveformDock;
+    QPointer<QDockWidget> m_overviewCorrelationDock;
+    QPointer<QDockWidget> m_overviewErrorMatrixDock;
+    QPointer<QDockWidget> m_overviewTemplateMatrixDock;
 
     //methods
     
