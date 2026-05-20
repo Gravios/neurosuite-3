@@ -4941,6 +4941,32 @@ void KlustersDoc::rejectLastRealign()
 }
 
 // ---------------------------------------------------------------------------
+// KlustersDoc::clusterHasMembers
+// ---------------------------------------------------------------------------
+// Returns true iff `clusterId` is present in Data::clusterInfoMap with
+// nbSpikes() > 0.  This is the same map createFeatureFile() reads when
+// building the recluster temp .fet, so a false return here will produce
+// an empty .fet → KK aborts with the cryptic "Array::SetSize: n < 1
+// (n=0, tag=Data (nPoints*nDims))" once it tries to allocate.
+//
+// The cluster palette reads its membership counts from spikesByCluster
+// (a row → cluster table) which can stay populated even when
+// clusterInfoMap loses the corresponding key — typically after a
+// curation-log replay, an undone merge/split, or an aborted reorder
+// where the row-table commit landed but the clusterInfoMap rebuild
+// didn't fire.  (Note: nudge itself does NOT desync the map — it only
+// mutates feature rows and timestamps.  If recluster fails right after
+// a nudge, the desync was already present BEFORE the nudge.)  Catching
+// the desync here turns a downstream KK exception into a useful UI
+// message and lets the user save / reopen to resync.
+// ---------------------------------------------------------------------------
+bool KlustersDoc::clusterHasMembers(int clusterId) const
+{
+    if (!clusteringData) return false;
+    return clusteringData->clusterHasMembers(clusterId);
+}
+
+// ---------------------------------------------------------------------------
 // KlustersDoc::nudgeClusterTimestamps
 // ---------------------------------------------------------------------------
 // Shift every spike in @p clusterId by @p deltaSamples raw samples.
