@@ -21,6 +21,7 @@
 #include "klusters.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
+#include "reorder_similarity_dispatch.h"
 #include "clusterPalette.h"
 #include "savethread.h"
 #include "prefdialog.h"
@@ -3805,34 +3806,63 @@ void KlustersApp::slotReorderClustersBySimilarity()
     std::vector<bool>             alive(N, true);
     for (int i = 0; i < N; ++i) leaves[i].push_back(i);
 
-    for (int step = 0; step < N - 1; ++step) {
-        // Find best (i*, j*) among alive nodes
-        double bestSim = -std::numeric_limits<double>::infinity();
-        int    bi = -1, bj = -1;
-        for (int i = 0; i < N; ++i) {
-            if (!alive[i]) continue;
-            for (int j = i + 1; j < N; ++j) {
-                if (!alive[j]) continue;
-                const double s = S[static_cast<size_t>(i) * N + j];
-                if (s > bestSim) { bestSim = s; bi = i; bj = j; }
-            }
+    // GPU acceleration.  For N below a small threshold (handled inside the
+    // dispatcher) and when no GPU backend is compiled in or no device is
+    // available, the call returns non-zero and we fall through to the CPU
+    // loop below.  The GPU produces a merge log (bi, bj per step) rather
+    // than the leaf order itself — leaf-list bookkeeping with variable-
+    // length per-node lists is awkward on the device, and cheap to
+    // reconstruct on the host (N simple appends).
+    std::vector<int> mergeBi(N - 1, -2);
+    std::vector<int> mergeBj(N - 1, -2);
+    const int gpuRc = ReorderSimilarityGpu::singleLinkage(
+        S.data(), N, mergeBi.data(), mergeBj.data());
+
+    if (gpuRc == 0) {
+        // GPU path — replay the merge log to build leaves[] and alive[].
+        // S is no longer needed (the GPU consumed/updated its own copy)
+        // but we keep the host vector around in case the CPU branch is
+        // re-entered for any later assertion.
+        for (int step = 0; step < N - 1; ++step) {
+            const int bi = mergeBi[step];
+            const int bj = mergeBj[step];
+            if (bi < 0 || bj < 0) break;     // disconnected — sentinel
+            leaves[bi].insert(leaves[bi].end(),
+                              leaves[bj].begin(), leaves[bj].end());
+            alive[bj] = false;
         }
-        if (bi < 0 || bj < 0) break;   // disconnected — leave the rest
+    } else {
+        // CPU fallback — O(N³) merge loop, fast for N ≤ ~200 and the
+        // sole code path when no GPU is available.
+        for (int step = 0; step < N - 1; ++step) {
+            // Find best (i*, j*) among alive nodes
+            double bestSim = -std::numeric_limits<double>::infinity();
+            int    bi = -1, bj = -1;
+            for (int i = 0; i < N; ++i) {
+                if (!alive[i]) continue;
+                for (int j = i + 1; j < N; ++j) {
+                    if (!alive[j]) continue;
+                    const double s = S[static_cast<size_t>(i) * N + j];
+                    if (s > bestSim) { bestSim = s; bi = i; bj = j; }
+                }
+            }
+            if (bi < 0 || bj < 0) break;   // disconnected — leave the rest
 
-        // Merge bj into bi
-        leaves[bi].insert(leaves[bi].end(),
-                          leaves[bj].begin(), leaves[bj].end());
-        alive[bj] = false;
+            // Merge bj into bi
+            leaves[bi].insert(leaves[bi].end(),
+                              leaves[bj].begin(), leaves[bj].end());
+            alive[bj] = false;
 
-        // Update similarities to all remaining alive nodes (single-linkage
-        // = max).  Diagonal kept at 0; symmetric write.
-        for (int k = 0; k < N; ++k) {
-            if (!alive[k] || k == bi) continue;
-            const double a = S[static_cast<size_t>(bi) * N + k];
-            const double b = S[static_cast<size_t>(bj) * N + k];
-            const double m = std::max(a, b);
-            S[static_cast<size_t>(bi) * N + k] = m;
-            S[static_cast<size_t>(k)  * N + bi] = m;
+            // Update similarities to all remaining alive nodes (single-linkage
+            // = max).  Diagonal kept at 0; symmetric write.
+            for (int k = 0; k < N; ++k) {
+                if (!alive[k] || k == bi) continue;
+                const double a = S[static_cast<size_t>(bi) * N + k];
+                const double b = S[static_cast<size_t>(bj) * N + k];
+                const double m = std::max(a, b);
+                S[static_cast<size_t>(bi) * N + k] = m;
+                S[static_cast<size_t>(k)  * N + bi] = m;
+            }
         }
     }
 
