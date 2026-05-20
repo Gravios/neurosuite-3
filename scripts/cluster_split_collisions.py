@@ -77,34 +77,43 @@ def memmap_spk(session: Path, group: int, n_chan: int, n_samples: int,
 # ─── collision detection ─────────────────────────────────────────────────
 
 
-def collision_scores_for_cluster(spikes_NTC, mean_TC, dom_ch, peak_sample,
-                                  peak_halfwin):
-    """Per-spike mean-subtracted residual energy in the SURROUND region
-    of the dominant channel.
+def collision_scores_for_cluster(spikes_NTC, mean_TC, channels_to_use,
+                                  peak_sample, peak_halfwin):
+    """Per-spike mean-subtracted residual energy in the SURROUND region,
+    summed across `channels_to_use`.
 
     For each spike:
-        residual_t = spike_t − mean_t                    (per sample, dom channel)
-        score = Σ residual_t²  for t outside [peak − halfwin, peak + halfwin]
+        residual[t, c] = spike[t, c] − mean[t, c]
+        score = Σ residual[t, c]²  for t outside [peak−halfwin, peak+halfwin]
+                                    and c ∈ channels_to_use
 
-    A clean spike has residual ≈ noise on every sample → score is just
-    (noise_std² × n_surround_samples), tight distribution across the
-    cluster.  A collision contributes a secondary spike's energy to the
-    surround region → score is an outlier far above median.
+    Multi-channel summation catches BOTH:
+      - Self-collisions  (second spike on the same channel as this unit's
+                          peak — residual bump on the dominant channel)
+      - Cross-collisions (second spike on a NEARBY unit's channel —
+                          residual bump on a non-dominant channel)
+    Cross-collisions are common on dense probes (20 µm spacing) where
+    multiple units are visible within one spike-detection group.
 
-    Returns (N,) array of surround residual energies (absolute units²;
-    MAD-based thresholding makes the scale irrelevant).
+    A clean spike has residual = noise on every channel and sample →
+    tight distribution.  Either kind of collision contributes a
+    secondary spike's energy on at least one channel → outlier in the
+    summed distribution.
+
+    Returns (N,) array of summed surround residual energies.  MAD-based
+    thresholding downstream makes the absolute scale irrelevant.
     """
     T = spikes_NTC.shape[1]
     peak_lo = max(0, peak_sample - peak_halfwin)
     peak_hi = min(T, peak_sample + peak_halfwin + 1)
-    # Surround mask: True for samples OUTSIDE the peak window
     surround_mask = np.ones(T, dtype=bool)
     surround_mask[peak_lo:peak_hi] = False
-    # Residual on dominant channel
-    wf_dom = spikes_NTC[:, :, dom_ch].astype(np.float64)
-    mean_dom = mean_TC[:, dom_ch].astype(np.float64)
-    residual = wf_dom - mean_dom[None, :]
-    return np.sum(residual[:, surround_mask] ** 2, axis=1)
+    # Residuals on selected channels: (N, T, len(channels_to_use))
+    wf = spikes_NTC[:, :, channels_to_use].astype(np.float64)
+    mean = mean_TC[:, channels_to_use].astype(np.float64)
+    residual = wf - mean[None, :, :]
+    # Sum energy across surround samples AND selected channels
+    return np.sum(residual[:, surround_mask, :] ** 2, axis=(1, 2))
 
 
 def find_collisions(scores, k_mad, score_floor):
@@ -152,6 +161,21 @@ def main():
                          "windows).  Surround = outside, where "
                          "collisions show as elevated residual energy "
                          "after mean subtraction.")
+    ap.add_argument("--detection-channels",
+                    choices=["dom", "signal", "all"], default="signal",
+                    help="Which channels to use for collision detection: "
+                         "'dom' = dominant channel only (fastest, but "
+                         "misses cross-channel collisions); 'signal' = "
+                         "channels with ptp ≥ signal-ptp-frac × peak ptp "
+                         "(default; catches collisions from nearby units "
+                         "on adjacent channels of the same group); "
+                         "'all' = every channel (most sensitive, adds "
+                         "some noise contribution from baseline-only "
+                         "channels).")
+    ap.add_argument("--signal-ptp-frac", type=float, default=0.3,
+                    help="when --detection-channels=signal, a channel "
+                         "counts as signal if its ptp ≥ this fraction "
+                         "of peak ptp (default 0.3)")
     ap.add_argument("--min-spikes", type=int, default=50,
                     help="skip clusters with fewer spikes (no robust "
                          "MAD estimate possible)")
@@ -243,11 +267,25 @@ def main():
         dom_ch = int(ch_dom_per_npz[npz_idx])
         # Cluster mean from NPZ: means is (T, C, K_npz)
         mean_TC = means[:, :, npz_idx]
+        ptp_this = ptp_mean[:, npz_idx]    # (C,) per-channel ptp
 
-        # Per-spike collision scores (mean-subtracted surround residual energy)
+        # Choose detection channels based on CLI
+        if args.detection_channels == "dom":
+            detection_channels = np.array([dom_ch], dtype=np.int64)
+        elif args.detection_channels == "signal":
+            ptp_max_this = ptp_this.max()
+            detection_channels = np.where(
+                ptp_this >= args.signal_ptp_frac * ptp_max_this)[0]
+            if len(detection_channels) == 0:
+                detection_channels = np.array([dom_ch], dtype=np.int64)
+        else:  # "all"
+            detection_channels = np.arange(mean_TC.shape[1], dtype=np.int64)
+
+        # Per-spike collision scores (mean-subtracted surround residual)
         spikes_NTC = np.asarray(spk[mask])     # materialize to RAM
         scores = collision_scores_for_cluster(
-            spikes_NTC, mean_TC, dom_ch, peak_sample, args.peak_halfwin)
+            spikes_NTC, mean_TC, detection_channels,
+            peak_sample, args.peak_halfwin)
         is_collision, threshold, med, mad = find_collisions(
             scores, args.k_mad, args.score_floor)
         n_collisions = int(is_collision.sum())
@@ -263,6 +301,7 @@ def main():
                 original_id=int(cid), n_total=n_in_cluster,
                 n_core=n_in_cluster, tail_id=-1, n_tail=n_collisions,
                 tail_fraction=tail_frac, dom_ch=dom_ch,
+                n_detection_channels=len(detection_channels),
                 threshold=threshold, score_median=med, score_mad=mad,
                 action="SKIPPED_TAIL_TOO_LARGE",
             ))
@@ -276,7 +315,9 @@ def main():
             original_id=int(cid), n_total=n_in_cluster,
             n_core=n_in_cluster - n_collisions, tail_id=next_new_id,
             n_tail=n_collisions, tail_fraction=tail_frac,
-            dom_ch=dom_ch, threshold=threshold,
+            dom_ch=dom_ch,
+            n_detection_channels=len(detection_channels),
+            threshold=threshold,
             score_median=med, score_mad=mad,
             action="SPLIT",
         ))
