@@ -429,6 +429,14 @@ private Q_SLOTS:
      * launches realignment on a background thread with output in a tab.*/
     void slotRealignSpikes();
 
+    /**Run PCA-centered spike realignment over every cluster (skipping
+     * noise=0 and artifact=1) using the top 2 channels per cluster.
+     * Reuses the same RealignWorker as slotRealignSpikes() but iterates
+     * through the cluster list sequentially, suppresses the per-cluster
+     * review dialog, and auto-accepts each result as a pending change.
+     * Aborts cleanly via slotAbortRealign() if the user cancels.*/
+    void slotPcaAlignAllClusters();
+
     /**Abort a running realignment job.*/
     void slotAbortRealign();
 
@@ -702,6 +710,14 @@ private:
     QAction *mAbortReclustering;
     QAction *mAbortRealign;
     QAction *mRealignSpikes;
+    /** PCA-centered batch realignment across every cluster (skipping
+     *  noise=0 and artifact=1), using the top 2 channels per cluster.
+     *  Runs sequentially in the background and auto-accepts each result
+     *  as a pending change (no per-cluster review dialog).  The user can
+     *  abort mid-batch via the existing "Abort Realignment" action and
+     *  commit (Save) or discard (close without saving) the batch as a
+     *  whole.*/
+    QAction *mPcaAlignAllClusters;
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
@@ -1024,6 +1040,34 @@ private:
     bool realignRunning;
     /**The cluster ID currently being realigned (valid while realignRunning).*/
     int realignClusterId;
+
+    // ── PCA-center batch state ───────────────────────────────────────────────
+    /**True while slotPcaAlignAllClusters is iterating the cluster list.
+     * Makes slotRealignFinished skip the per-cluster review dialog and
+     * auto-accept the result instead.*/
+    bool m_realignBatchActive;
+    /**Remaining cluster IDs to process in the current batch (FIFO).*/
+    QList<int> m_realignBatchQueue;
+    /**Total number of clusters scheduled at batch start — used to render
+     * the "(i/N)" progress prefix in the output tab.*/
+    int m_realignBatchTotal;
+    /**Number of clusters whose realignment has completed successfully
+     * and been auto-accepted so far in this batch.*/
+    int m_realignBatchAccepted;
+    /**Number of clusters whose worker returned ok=false this batch.*/
+    int m_realignBatchFailed;
+    /**Sum of nShifted across all clusters processed in this batch.*/
+    int m_realignBatchShiftedTotal;
+    /**Fixed args string used for every worker invocation in the current
+     * batch (built from realignArgs with --topchannels and --pca-refine
+     * normalised).*/
+    QString m_realignBatchArgs;
+
+    /**Launch a single RealignWorker for @p clusterId with @p launchArgs.
+     * Encapsulates the worker / thread / signal-wiring boilerplate that
+     * both slotRealignSpikes and the batch driver need.  Caller is
+     * responsible for the output widget and UI lock state.*/
+    void startRealignWorker(int clusterId, const QString& launchArgs);
 
     /**True if a Error Martix exists, false otherwise.*/
     bool errorMatrixExists;

@@ -134,6 +134,11 @@ KlustersApp::KlustersApp()
       realignOutputWidget(nullptr),
       realignRunning(false),
       realignClusterId(-1),
+      m_realignBatchActive(false),
+      m_realignBatchTotal(0),
+      m_realignBatchAccepted(0),
+      m_realignBatchFailed(0),
+      m_realignBatchShiftedTotal(0),
       errorMatrixExists(false),
       templateMatrixExists(false)
 {
@@ -382,6 +387,16 @@ void KlustersApp::createMenus()
     mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
+
+    mPcaAlignAllClusters = actionMenu->addAction(tr("&PCA-Center Align All Clusters (top 2 ch)"));
+    mPcaAlignAllClusters->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
+    mPcaAlignAllClusters->setToolTip(tr(
+        "Run PCA-centered spike alignment across every cluster (skipping "
+        "noise=0 and artifact=1) using the top 2 channels per cluster. "
+        "Each cluster's result is auto-accepted as a pending change; the "
+        "batch can be aborted via \"Abort Realignment\"."));
+    connect(mPcaAlignAllClusters, &QAction::triggered,
+            this, &KlustersApp::slotPcaAlignAllClusters);
 
     mDipSplit = actionMenu->addAction(tr("&DipSplit Selected Cluster"));
     mDipSplit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
@@ -4651,6 +4666,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         mGenerateProbeDrift->setEnabled(false);
@@ -4708,6 +4724,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
         mRealignSpikes->setEnabled(true);
+        mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
         mGenerateProbeDrift->setEnabled(true);
@@ -4842,6 +4859,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         scaleByShouler->setEnabled(false);
@@ -4872,6 +4890,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         mRenumberClusters->setEnabled(false);
@@ -4882,6 +4901,7 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("noReclusterState")) {
         mReCluster->setEnabled(true);
         mRealignSpikes->setEnabled(true);
+        mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
         mAbortReclustering->setEnabled(false);
@@ -4900,6 +4920,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         mRenumberClusters->setEnabled(false);
@@ -4916,6 +4937,7 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("noRealignState")) {
         // Restore all actions that realignState locked.
         mRealignSpikes->setEnabled(true);
+        mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
         mAbortRealign->setEnabled(false);
@@ -4955,6 +4977,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mRealignSpikes->setEnabled(false);
+        mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         scaleByShouler->setEnabled(false);
@@ -5114,6 +5137,23 @@ void KlustersApp::slotRealignSpikes()
     // subsequent realignment invocations in the same session.
     const QString launchArgs = dlg.finalArgs();
     realignArgs = launchArgs;
+    startRealignWorker(clusterId, launchArgs);
+}
+
+// ---------------------------------------------------------------------------
+// startRealignWorker
+//
+// Encapsulates the QThread / RealignWorker / signal-wiring boilerplate.
+// Called by slotRealignSpikes for the single-cluster path and by
+// slotPcaAlignAllClusters (via slotRealignFinished's batch advance) for the
+// batch path.  The caller owns:
+//   * output widget setup / log header lines,
+//   * UI lock state (realignRunning + slotStateChanged("realignState")),
+//   * realignArgs persistence.
+// This helper only handles the per-cluster worker spin-up.
+// ---------------------------------------------------------------------------
+void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
+{
     auto* worker = new RealignWorker(doc, clusterId, launchArgs);
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
@@ -5139,10 +5179,148 @@ void KlustersApp::slotRealignSpikes()
     // Start() triggers RealignWorker::run() via QThread::started.
     connect(thread, &QThread::started, worker, &RealignWorker::run);
 
-    realignWorker  = worker;
-    realignThread  = thread;
+    realignWorker    = worker;
+    realignThread    = thread;
     realignClusterId = clusterId;
     thread->start();
+}
+
+// ---------------------------------------------------------------------------
+// slotPcaAlignAllClusters
+//
+// Iterates every cluster ID > 1 (skipping noise=0 and artifact=1) and runs
+// PCA-centered spike realignment with --topchannels 2 on each, sequentially.
+// Workers are launched one at a time from slotRealignFinished's batch branch;
+// here we only set up state and kick off the first cluster.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotPcaAlignAllClusters()
+{
+    if (!doc) {
+        QMessageBox::information(this, tr("No document"),
+                                 tr("Please open a file first."));
+        return;
+    }
+
+    if (realignRunning) {
+        QMessageBox::information(this, tr("Realignment in progress"),
+            tr("A realignment job is already running.\n"
+               "Use \"Abort Realignment\" to cancel it first."));
+        return;
+    }
+
+    // Build the cluster list — skip 0 (noise) and 1 (artifact).  clusterIds()
+    // returns a QMap key list, so it's already sorted ascending; we iterate in
+    // that order to give the user a predictable progression in the log.
+    QList<int> clusters;
+    {
+        const QList<dataType> ids = doc->data().clusterIds();
+        for (dataType id : ids) {
+            if (id > 1) clusters.append(static_cast<int>(id));
+        }
+    }
+    if (clusters.isEmpty()) {
+        QMessageBox::information(this, tr("PCA-Center Align All Clusters"),
+            tr("No clusters with id > 1 found in the current document."));
+        return;
+    }
+
+    // Confirm — this commits a pending change to every cluster.  No per-cluster
+    // review dialog is shown during the batch, so we want the user to opt in
+    // up front rather than discover the commit mid-flight.
+    const QString question = tr(
+        "Run PCA-centered spike alignment on %1 cluster(s) using the top 2 "
+        "channels per cluster?\n\n"
+        "Each cluster's result is auto-accepted as a pending change. "
+        "Save the document to commit or close without saving to discard "
+        "the batch.  Use \"Abort Realignment\" to stop mid-batch.")
+        .arg(clusters.size());
+    if (QMessageBox::question(this, tr("PCA-Center Align All Clusters"),
+                              question,
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes) {
+        return;
+    }
+
+    // Build the args string for every worker invocation in this batch.  Start
+    // from realignArgs (carries the user's threshold / iterations / maxshift
+    // preferences) and normalise --topchannels and --pca-refine to fixed
+    // values: 2 channels, refine on.  Stripping any pre-existing instance
+    // before appending avoids duplicate tokens that the parser would silently
+    // last-write-wins.
+    {
+        const QStringList toks =
+            realignArgs.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        QStringList kept;
+        for (qsizetype i = 0; i < toks.size(); ++i) {
+            const QString& tok = toks[i];
+            if (tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k")) {
+                ++i;                  // also skip the value
+                continue;
+            }
+            if (tok == QStringLiteral("--pca-refine") || tok == QStringLiteral("-p")) {
+                continue;
+            }
+            kept << tok;
+        }
+        m_realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
+        if (!m_realignBatchArgs.isEmpty()) m_realignBatchArgs += QLatin1Char(' ');
+        m_realignBatchArgs += QStringLiteral("--topchannels 2 --pca-refine");
+    }
+
+    // Recycle the output tab the same way slotRealignSpikes does.
+    if (realignOutputWidget) {
+        const int tabIndex = tabsParent->indexOf(realignOutputWidget);
+        if (tabIndex != -1) {
+            tabsParent->removeTab(tabIndex);
+            displayCount--;
+        }
+        delete realignOutputWidget;
+        realignOutputWidget = nullptr;
+    }
+    realignOutputWidget = new ProcessWidget(this);
+    realignOutputWidget->setFocusPolicy(Qt::NoFocus);
+    tabsParent->addTab(realignOutputWidget, tr("Realign output"));
+    displayCount++;
+    tabsParent->setCurrentWidget(realignOutputWidget);
+    realignOutputWidget->insertStdoutLine(
+        tr("=== PCA-Center alignment batch — %1 cluster(s), top 2 channels ===")
+        .arg(clusters.size()));
+    realignOutputWidget->insertStdoutLine(tr("    args: %1").arg(m_realignBatchArgs));
+
+    // Tab-change wiring (idempotent — UniqueConnection guards re-adding).
+    connect(tabsParent, &QTabWidget::currentChanged,
+            this, &KlustersApp::slotTabChange,
+            Qt::UniqueConnection);
+
+    // Clean up any leftover thread / worker from a prior single-cluster run.
+    if (realignThread) {
+        realignThread->quit();
+        realignThread->wait(2000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    if (realignWorker) {
+        delete realignWorker;
+        realignWorker = nullptr;
+    }
+
+    // Initialise batch state and launch the first cluster.  Subsequent
+    // clusters fire from slotRealignFinished's batch branch as each worker
+    // completes.
+    m_realignBatchActive       = true;
+    m_realignBatchQueue        = clusters;
+    m_realignBatchTotal        = clusters.size();
+    m_realignBatchAccepted     = 0;
+    m_realignBatchFailed       = 0;
+    m_realignBatchShiftedTotal = 0;
+
+    realignRunning = true;
+    slotStateChanged(QStringLiteral("realignState"));
+
+    const int firstCluster = m_realignBatchQueue.takeFirst();
+    realignOutputWidget->insertStdoutLine(
+        tr("--- cluster %1 (1/%2) ---").arg(firstCluster).arg(m_realignBatchTotal));
+    startRealignWorker(firstCluster, m_realignBatchArgs);
 }
 
 void KlustersApp::slotAbortRealign()
@@ -5162,6 +5340,20 @@ void KlustersApp::slotAbortRealign()
     }
     realignWorker  = nullptr;   // already scheduled for deleteLater
     realignRunning = false;
+
+    // If a batch was running, drop the remaining queue and log how many were
+    // skipped — finished clusters keep their pending changes (the user can
+    // still Save to commit the partial batch).
+    if (m_realignBatchActive) {
+        const int remaining = m_realignBatchQueue.size();
+        m_realignBatchQueue.clear();
+        m_realignBatchActive = false;
+        if (realignOutputWidget) {
+            realignOutputWidget->insertStderrLine(
+                tr("--- Batch aborted: %1 cluster(s) skipped, %2 already accepted ---")
+                .arg(remaining).arg(m_realignBatchAccepted));
+        }
+    }
 
     if (realignOutputWidget)
         realignOutputWidget->insertStderrLine(
@@ -5188,6 +5380,63 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
         realignThread = nullptr;
     }
     realignWorker = nullptr;   // already deleteLater'd
+
+    // ── Batch path ───────────────────────────────────────────────────────────
+    // PCA-Center Align All Clusters runs the same worker per cluster but
+    // skips the per-cluster review dialog and auto-accepts each result.
+    // Unused meanBefore/meanAfter/nChan/nSamp/backupBase reflect the
+    // single-cluster review-dialog interface; in batch mode we only need ok
+    // and nShifted.  When the queue empties, we finalise the batch summary
+    // and unlock the UI; otherwise we launch the next cluster.
+    if (m_realignBatchActive) {
+        (void)meanBefore; (void)meanAfter; (void)backupBase; (void)nChan; (void)nSamp;
+        (void)nSwapped;
+        if (ok && realignClusterId >= 0) {
+            // Auto-accept: same bookkeeping the single-cluster path does when
+            // the user clicks Accept in the review dialog, minus the focus /
+            // tab-switch UX (which would be disruptive on every iteration of
+            // a long batch).
+            doc->setModified(true);
+            doc->invalidateWaveformCache(realignClusterId);
+            doc->invalidateCorrelogramCache(realignClusterId);
+            doc->forceClusterRefresh(realignClusterId);
+            m_realignBatchAccepted++;
+            m_realignBatchShiftedTotal += nShifted;
+        } else {
+            m_realignBatchFailed++;
+        }
+        realignClusterId = -1;
+
+        if (!m_realignBatchQueue.isEmpty()) {
+            // Advance: launch the next cluster.  The realignState lock stays
+            // applied across the whole batch — we just flip realignRunning
+            // back on for the next worker.
+            const int next = m_realignBatchQueue.takeFirst();
+            const int pos  = m_realignBatchTotal - m_realignBatchQueue.size();
+            if (realignOutputWidget) {
+                realignOutputWidget->insertStdoutLine(
+                    tr("--- cluster %1 (%2/%3) ---")
+                    .arg(next).arg(pos).arg(m_realignBatchTotal));
+            }
+            realignRunning = true;
+            startRealignWorker(next, m_realignBatchArgs);
+            return;
+        }
+
+        // Batch complete.
+        m_realignBatchActive = false;
+        if (realignOutputWidget) {
+            realignOutputWidget->insertStdoutLine(
+                tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
+                   "shifted total — Save to commit or discard via File > Close ===")
+                .arg(m_realignBatchAccepted)
+                .arg(m_realignBatchFailed)
+                .arg(m_realignBatchShiftedTotal));
+        }
+        slotStateChanged(QStringLiteral("noRealignState"));
+        updateUndoRedoDisplay();
+        return;
+    }
 
     // Summary line in the output tab.
     if (realignOutputWidget) {
