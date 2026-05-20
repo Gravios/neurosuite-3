@@ -398,10 +398,11 @@ def main():
                     help="channel counts as 'signal' if its ptp ≥ this "
                          "fraction of the pair's max ptp (default 0.3)")
     # Per-cluster quality filter (D)
-    ap.add_argument("--max-cluster-cv", type=float, default=0.5,
-                    help="skip clusters whose max-CV on signal channels "
-                         "exceeds this (within-cluster amp variance too "
-                         "high → contamination or mixture)")
+    ap.add_argument("--max-cluster-cv", type=float, default=0.30,
+                    help="reject clusters whose max-CV on STRONG signal "
+                         "channels (≥50%% peak ptp) exceeds this.  CV = "
+                         "std_at_peak / ptp_per_channel: clean clusters "
+                         "0.05-0.15, contaminated >0.30.")
     # Drift coherence across chunks (E)
     ap.add_argument("--chunk-gap-s", type=float, default=180.0,
                     help="t_mean gap > this defines a chunk boundary "
@@ -489,17 +490,24 @@ def main():
     ptp_max = ptp_mean.max(axis=0)
     keep = (clusters > 1) & (nspikes >= args.min_spikes) & (ptp_max >= args.min_ptp)
 
-    # Per-cluster CV at peak sample on signal channels
-    S_peak_all = stds[peak_sample, :, :].T  # (K, C) std at peak per cluster
-    mean_peak_all = np.abs(means[peak_sample, :, :].T)
-    cv_all = S_peak_all / np.maximum(mean_peak_all, 1.0)  # avoid /0 on noise ch
-    # Signal channels for the CV test: top channel + any ≥30% of peak
-    cluster_signal_mask = ptp_mean.T >= 0.3 * ptp_max[:, None]   # (K, C)
-    # max CV across signal channels, per cluster
-    cv_masked = np.where(cluster_signal_mask, cv_all, 0.0)
-    max_cv_signal = cv_masked.max(axis=1)
-    n_high_cv = int(((max_cv_signal > args.max_cluster_cv) & keep).sum())
-    keep &= (max_cv_signal <= args.max_cluster_cv)
+    # Per-cluster CV at peak sample — within-cluster amplitude variance
+    # bound.  CV is std_at_peak / ptp_per_channel: physical normalization
+    # (peak-to-peak amplitude is the channel's effective signal level),
+    # robust to where exactly the trough sample sits.
+    #
+    # IMPORTANT: restrict to STRONG signal channels (≥ 50% of peak ptp).
+    # Secondary channels at 30-40% ptp naturally have higher CV without
+    # indicating contamination — they sit closer to the noise floor.
+    # A contaminated cluster shows elevated CV on its DOMINANT channel,
+    # which is what we actually want to catch.
+    S_peak_all   = stds[peak_sample, :, :].T              # (K, C)
+    ptp_per_ch   = ptp_mean.T                             # (K, C)
+    cv_all       = S_peak_all / np.maximum(ptp_per_ch, 100.0)   # 100 µV floor
+    strong_mask  = ptp_per_ch >= 0.5 * ptp_max[:, None]    # ≥ 50% peak ptp
+    cv_masked    = np.where(strong_mask, cv_all, 0.0)
+    max_cv_strong = cv_masked.max(axis=1)                  # (K,)
+    n_high_cv = int(((max_cv_strong > args.max_cluster_cv) & keep).sum())
+    keep &= (max_cv_strong <= args.max_cluster_cv)
     idx = np.flatnonzero(keep)
     n_keep = len(idx)
     print(f"  filtered: {n_keep}/{K_all} clusters (id>1, nspk≥{args.min_spikes}, "
