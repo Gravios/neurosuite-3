@@ -362,17 +362,67 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
 
 
 void KlustersView::applyOverviewLayout(){
-    // Stack the left column vertically: Cluster Features (mainDock) on
-    // top, Waveforms in the middle, Auto-correlogram on the bottom.
+    // Idempotent — may be called multiple times on the same view (e.g. once
+    // from the constructor before auto-show adds matrices, then a second
+    // time after the matrices land).  To make repeat calls robust, the
+    // routine first **resets** all tracked docks by re-adding them to a
+    // single base dock area, which collapses any prior nested splits, and
+    // then builds the canonical layout from scratch.
     //
-    // splitDockWidget needs both docks to be already owned by the
-    // QMainWindow.  By the time this runs all child docks have been
-    // added via addDockWidget() (either inside createOverview /
-    // createGroupingAssistantView, or via addView() at startup) and
-    // mainDock itself has been added to TopDockWidgetArea at the end of
-    // the constructor — so the calls are safe.  Topology changes work
-    // pre-show; only the resizeDocks step further down needs to wait
-    // for the layout to activate.
+    // Layout strategy:
+    //   1. Reset — move every dock we know about into TopDockWidgetArea.
+    //      addDockWidget on a dock already in the QMainWindow moves it,
+    //      so this clears any splits left over from a previous call.
+    //   2. Carve the right pane.  splitDockWidget(mainDock, rightAnchor,
+    //      Horizontal) makes the right pane span the entire height —
+    //      crucial that this runs BEFORE the vertical splits, because
+    //      after those splits mainDock's space is only a thin top-third
+    //      strip and a horizontal split would land the matrices in the
+    //      top-right rather than the full right half.
+    //   3. Tabify the second matrix on top of the first.
+    //   4. Stack the left column vertically: Cluster Features (mainDock)
+    //      top, Waveforms middle, Auto-correlogram bottom.
+    //
+    // Tolerates missing docks — when called from a plain OVERVIEW
+    // constructor, no matrices are tracked yet so step 2/3 are skipped
+    // and the result is just the vertical-stack left column.
+
+    // Step 1 — reset.
+    addDockWidget(Qt::TopDockWidgetArea, mainDock);
+    if (m_overviewWaveformDock)
+        addDockWidget(Qt::TopDockWidgetArea, m_overviewWaveformDock);
+    if (m_overviewCorrelationDock)
+        addDockWidget(Qt::TopDockWidgetArea, m_overviewCorrelationDock);
+    if (m_overviewErrorMatrixDock)
+        addDockWidget(Qt::TopDockWidgetArea, m_overviewErrorMatrixDock);
+    if (m_overviewTemplateMatrixDock)
+        addDockWidget(Qt::TopDockWidgetArea, m_overviewTemplateMatrixDock);
+
+    // Step 2 — carve the right pane (full window height) BEFORE any
+    // vertical splits.  Pick whichever matrix dock exists as the anchor.
+    QDockWidget* rightAnchor = nullptr;
+    if (m_overviewErrorMatrixDock)
+        rightAnchor = m_overviewErrorMatrixDock.data();
+    else if (m_overviewTemplateMatrixDock)
+        rightAnchor = m_overviewTemplateMatrixDock.data();
+    if (rightAnchor) {
+        splitDockWidget(mainDock, rightAnchor, Qt::Horizontal);
+    }
+
+    // Step 3 — tabify the second matrix on top of the first so they
+    // share a single frame with tabs at the bottom.
+    if (m_overviewErrorMatrixDock && m_overviewTemplateMatrixDock) {
+        tabifyDockWidget(m_overviewErrorMatrixDock,
+                         m_overviewTemplateMatrixDock);
+        // Front-tab is the Error Matrix — the cluster-quality review
+        // workflow reads errors first, then flips to templates.
+        m_overviewErrorMatrixDock->raise();
+    }
+
+    // Step 4 — stack the left column vertically.  Each call splits the
+    // anchor dock's space, so the order builds a top-to-bottom chain:
+    //   mainDock  →  waveforms below mainDock
+    //   waveforms →  correlations below waveforms
     if (m_overviewWaveformDock) {
         splitDockWidget(mainDock, m_overviewWaveformDock, Qt::Vertical);
     }
@@ -382,46 +432,27 @@ void KlustersView::applyOverviewLayout(){
                         Qt::Vertical);
     }
 
-    // Matrices go on the right and are tabified together so they share
-    // one frame with tabs at the bottom.  Both addDockWidget(Right, ...)
-    // calls re-anchor any matrix dock that was previously placed at the
-    // bottom (which is the default landing site used by addView() before
-    // applyOverviewLayout runs).
-    if (m_overviewErrorMatrixDock) {
-        addDockWidget(Qt::RightDockWidgetArea, m_overviewErrorMatrixDock);
-    }
-    if (m_overviewTemplateMatrixDock) {
-        addDockWidget(Qt::RightDockWidgetArea, m_overviewTemplateMatrixDock);
-        if (m_overviewErrorMatrixDock) {
-            tabifyDockWidget(m_overviewErrorMatrixDock,
-                             m_overviewTemplateMatrixDock);
-            // Front-tab is the Error Matrix — the cluster-quality review
-            // workflow reads errors first, then flips to templates.
-            m_overviewErrorMatrixDock->raise();
-        }
-    }
-
-    // Proportions are deferred to the next event-loop iteration.  Qt
-    // documents that resizeDocks() "might not be applied correctly" if
-    // called before the QMainWindow's layout is activated, which on the
-    // constructor path is true — the view hasn't been shown yet.  Using
-    // `this` as the context object makes Qt skip the call if the view
-    // is destroyed first, so no extra QPointer guard is needed.  Member
-    // QPointers are re-checked inside the lambda because a dock could
-    // have been closed between scheduling and firing.
+    // Step 5 — proportions, deferred to the next event-loop iteration
+    // because resizeDocks() may not be applied correctly before the
+    // QMainWindow's layout is activated (Qt docs warning), and the
+    // constructor path is pre-show.  Using `this` as the singleShot
+    // context object makes Qt skip the call if the view is destroyed
+    // first, so no extra QPointer guard is needed.  Member QPointers are
+    // re-checked inside the lambda because a dock could have been closed
+    // between scheduling and firing.
     QTimer::singleShot(0, this, [this]() {
         // Horizontal 45/55 split between the left column (anchored on
         // mainDock) and the right matrix pane.  Pixel values are sized
         // close to a typical Klusters window so the relative-weight
         // fallback for the un-allocated space lands on the intended
         // ratio even when child min-sizes consume some of the budget.
-        QDockWidget* rightAnchor = nullptr;
+        QDockWidget* rDock = nullptr;
         if (m_overviewErrorMatrixDock)
-            rightAnchor = m_overviewErrorMatrixDock.data();
+            rDock = m_overviewErrorMatrixDock.data();
         else if (m_overviewTemplateMatrixDock)
-            rightAnchor = m_overviewTemplateMatrixDock.data();
-        if (rightAnchor) {
-            resizeDocks({mainDock, rightAnchor}, {450, 550}, Qt::Horizontal);
+            rDock = m_overviewTemplateMatrixDock.data();
+        if (rDock) {
+            resizeDocks({mainDock, rDock}, {450, 550}, Qt::Horizontal);
         }
 
         // Equal vertical thirds for the left column.
