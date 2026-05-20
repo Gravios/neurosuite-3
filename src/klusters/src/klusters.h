@@ -64,6 +64,7 @@ class SaveThread;
 class PrefDialog;
 class QShortcut;       // for dipsplit post-commit Esc/Enter shortcuts
 class ProcessWidget;
+class QProgressBar;
 class QRecentFileAction;
 class QExtendTabWidget;
 
@@ -1062,6 +1063,12 @@ private:
      * batch (built from realignArgs with --topchannels and --pca-refine
      * normalised).*/
     QString m_realignBatchArgs;
+    /**Status-bar progress bar shown for the duration of a batch.  Lazily
+     * created on first batch start (added as a permanent widget so it
+     * stays visible regardless of which tab is active) and hidden on
+     * batch completion or abort.  Kept across batches to avoid widget
+     * churn — only the visibility and range/value are toggled.*/
+    QProgressBar* m_realignProgressBar;
 
     /**Launch a single RealignWorker for @p clusterId with @p launchArgs.
      * Encapsulates the worker / thread / signal-wiring boilerplate that
