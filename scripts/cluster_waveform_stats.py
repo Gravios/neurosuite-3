@@ -585,6 +585,21 @@ def main():
     ptp_mean, snr_per_ch = ptp_and_snr(means, stds)
     min_kurt_dom = min_kurt_on_dominant(kurts, ptp_mean, peak_sample,
                                          half_window=3)
+
+    # Empirical per-cluster peak sample: each cluster's actual trough on
+    # its dominant channel.  Replaces the global YAML peak_sample for
+    # downstream metric computation (CV at peak, α-windows, collision
+    # surround mask), which need to be evaluated AT the spike body of
+    # each cluster — not at a single sample dictated by config.  Klusters'
+    # batch realign optimizes PC-space variance, not trough position, so
+    # trough samples naturally distribute across ±2 samples around the
+    # global value; per-cluster anchoring handles this correctly.
+    K_total, _, _ = means.shape          # means is (K, T, C) here
+    dom_ch_per_cluster = np.argmax(ptp_mean, axis=1)                  # (K,)
+    peak_sample_per_cluster = np.zeros(K_total, dtype=np.int32)
+    for k in range(K_total):
+        peak_sample_per_cluster[k] = int(
+            np.argmin(means[k, :, dom_ch_per_cluster[k]]))
     print(f"  {len(clusters)} clusters processed")
     print(f"  spike-count range: [{int(nspikes.min())}, "
           f"{int(nspikes.max())}]  median {int(np.median(nspikes))}")
@@ -593,6 +608,13 @@ def main():
     print(f"  triage: {n_suspect}/{len(clusters)} clusters with "
           f"min_kurt_dom < −0.5 (suspect split); "
           f"{n_strong} with < −1.0 (strong)")
+    # Per-cluster trough distribution: how much do empirical peaks drift
+    # from the YAML peak_sample?  A tight distribution means alignment
+    # is uniform; spread means tools should use per-cluster peak.
+    p_med = int(np.median(peak_sample_per_cluster))
+    p_off = int(np.sum(peak_sample_per_cluster != peak_sample))
+    print(f"  per-cluster trough: median sample {p_med}, "
+          f"{p_off}/{K_total} clusters offset from YAML peak={peak_sample}")
 
     # Per-cluster time stats
     time_stats = None
@@ -634,6 +656,7 @@ def main():
         "layout": "means/stds/kurts: (nSamples, nChan, nClusters); "
                   "ptp_mean/snr_per_ch: (nChan, nClusters); "
                   "min_kurt_dom: (nClusters,); "
+                  "peak_sample_per_cluster: (nClusters,) int32; "
                   "x_um/y_um: (nChan,) µm; "
                   "t_*_s: (nClusters,) seconds",
         "min_kurt_window": "[peak_sample - 3, peak_sample + 3]",
@@ -648,6 +671,7 @@ def main():
         y_um=y_um.astype(np.float32),
         sampling_rate=np.float32(sampling_rate),
         peak_sample=np.int32(peak_sample),
+        peak_sample_per_cluster=peak_sample_per_cluster,
         source=spk_path, session=session_basename,
         group=np.int32(args.group),
         meta=meta,
