@@ -32,6 +32,7 @@
 #include <map>
 #include <numeric>
 #include <random>
+#include <set>         // patch100: std::set in KnnSplitPerChunk
 #include <sstream>     // patch87: AutoReextractAfterFinalize needs ostringstream
 #include <string>      // patch87: std::string for cmd builder
 #include <unordered_map>
@@ -3430,6 +3431,17 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
 
+        // Phase 2b.5: K-template chunk split (optional, off by default).
+        // For each chunk, picks K well-isolated reference cluster means
+        // and partitions every "source" cluster's spikes by their
+        // nearest reference template.  Each viable (source, ref) bucket
+        // becomes a new chunk-local cluster.  Phase 6 (cross-chunk
+        // model matching) handles consolidation of the new clusters
+        // into global units.  Enable with -KnnSplitPerChunkEnable 1.
+        if (KnnSplitPerChunkEnable)
+            KnnSplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels, nFullDims);
+	
         // Phase 2.5: second per-chunk DipSplit pass.
         //
         // The Phase 1c DipSplit ran before subspace reclustering, so it
@@ -4548,6 +4560,18 @@ float KK::RunChunkedCEM(float chunkMinutes,
         DipSplitPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims,
             "Phase 2.5");
+
+        // Phase 2b.5: K-template chunk split (optional, off by default).
+        // For each chunk, picks K well-isolated reference cluster means
+        // and partitions every "source" cluster's spikes by their
+        // nearest reference template.  Each viable (source, ref) bucket
+        // becomes a new chunk-local cluster.  Phase 6 (cross-chunk
+        // model matching) handles consolidation of the new clusters
+        // into global units.  Enable with -KnnSplitPerChunkEnable 1.
+        if (KnnSplitPerChunkEnable)
+            KnnSplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels, nFullDims);
+	
     }
 
 
@@ -11789,4 +11813,245 @@ void KK::RefractorySplitPerChunk(
             nVisited, nSkipTooSmall, minSplitSpikes,
             nSkipLowContam, minContamRate * 100.0f,
             nRejNoSplit, nRejWorseNull);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::KnnSplitPerChunk  (Phase 2b.5)
+// ---------------------------------------------------------------------------
+// K-template chunk split.  After Phase 2b has converged each chunk's
+// classification, identify the K best-isolated clusters in the chunk as
+// reference templates and partition the remaining "source" clusters'
+// spikes by their nearest-template assignment.  Each (source, ref)
+// bucket of sufficient size becomes a NEW chunk-local cluster; Phase 6
+// cross-chunk template matching consolidates the new clusters into
+// global units.
+//
+// The point: when Phase 2b's ConsiderDeletion leaves behind clusters
+// with high residual variance (mixtures or drift-tail fragments), the
+// parametric merge decision is unreliable precisely because the source
+// cluster's own Σ estimate is bad.  K-template nearest-mean bypasses
+// the bad covariance entirely — it just asks "which good template is
+// each spike closest to?" — and the partition that emerges tells Phase 6
+// what the source cluster ACTUALLY was a mixture of.  No spike is
+// assigned to an existing reference cluster; the algorithm only
+// generates new clusters (consistent with the user-side GUI version,
+// see KlustersDoc::splitClusterByKnnVsReferences, patch99).
+//
+// Performance: brute-force O(nSrc × K × nSpatial) per chunk.  For a
+// 5000-spike chunk with 2000 source spikes, K=10, 22 spatial dims:
+// ~440k FLOPs — under 0.1 ms single-threaded.  No OMP parallel needed
+// at this scale; the outer chunk loop is already serial-friendly.
+// ---------------------------------------------------------------------------
+void KK::KnnSplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    if (KnnSplitK < 2) return;
+
+    const int K                   = KnnSplitK;
+    const int minRefSize          = KnnSplitMinRefSize;
+    const int minSourceSize       = KnnSplitMinSourceSize;
+    const int minNewClusterSize   = KnnSplitMinNewClusterSize;
+    const int nSpatial            = nFullDims - 1;     // exclude time dim
+    const int nCh                 = static_cast<int>(chunkPoints.size());
+
+    // ── Diagnostic accounting ────────────────────────────────────────────────
+    // Mirrors the funnel-style accounting in SubspaceReclusterPerChunk /
+    // RefractorySplitPerChunk so the user can see how many clusters
+    // were considered and where the filter dropped them.
+    int chunksTotal           = 0;
+    int chunksProcessed       = 0;
+    int chunksSkippedNoRefs   = 0;
+    int chunksSkippedNoSrc    = 0;
+    int refClustersUsed       = 0;
+    int sourceClustersVisited = 0;
+    int sourceClustersSplit   = 0;
+    int newClustersGenerated  = 0;
+    int spikesReassigned      = 0;
+
+    fprintf(stderr,
+        "[Phase 2b.5] KnnSplitPerChunk: K=%d, minRefSize=%d, "
+        "minSourceSize=%d, minNewClusterSize=%d\n",
+        K, minRefSize, minSourceSize, minNewClusterSize);
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts  = chunkPoints[ck];
+        auto&       cls  = perChunkClass[ck];
+        auto&       mdls = perChunkModels[ck];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts == 0 || mdls.empty()) continue;
+        chunksTotal++;
+
+        // 1. Compute trace(Σ)/nSpatial for every non-noise non-empty
+        //    chunk-local cluster, and index ChunkModels by localClusterId.
+        std::map<int, float>  traceByLocal;
+        std::map<int, int>    nByLocal;
+        std::map<int, size_t> mdlIdxByLocal;  // index into mdls[]
+        for (size_t k = 0; k < mdls.size(); ++k) {
+            const auto& cm = mdls[k];
+            if (cm.localClusterId == 0) continue;
+            if (cm.nMembers == 0) continue;
+            float tr = 0.0f;
+            for (int j = 0; j < nSpatial; ++j)
+                tr += cm.cov[static_cast<size_t>(j) * nFullDims + j];
+            traceByLocal[cm.localClusterId] = tr / std::max(1, nSpatial);
+            nByLocal[cm.localClusterId] = cm.nMembers;
+            mdlIdxByLocal[cm.localClusterId] = k;
+        }
+
+        // 2. Reference selection: nbSpikes ≥ minRefSize AND trace below
+        //    the chunk median (the "low variance" criterion).  Sort by
+        //    trace ascending and take top K.
+        std::vector<int>   sizeOkCandidates;
+        std::vector<float> allTraces;
+        for (const auto& kv : traceByLocal) allTraces.push_back(kv.second);
+        if (allTraces.size() < 2) { chunksSkippedNoRefs++; continue; }
+        std::sort(allTraces.begin(), allTraces.end());
+        const float medianTrace = allTraces[allTraces.size() / 2];
+
+        for (const auto& kv : nByLocal)
+            if (kv.second >= minRefSize
+                && traceByLocal[kv.first] < medianTrace)
+                sizeOkCandidates.push_back(kv.first);
+
+        if (sizeOkCandidates.size() < 2) { chunksSkippedNoRefs++; continue; }
+
+        std::sort(sizeOkCandidates.begin(), sizeOkCandidates.end(),
+                  [&](int a, int b) {
+                      return traceByLocal[a] < traceByLocal[b];
+                  });
+        if (static_cast<int>(sizeOkCandidates.size()) > K)
+            sizeOkCandidates.resize(K);
+        const int nRefs = static_cast<int>(sizeOkCandidates.size());
+        const std::vector<int>& refs = sizeOkCandidates;
+
+        // Pre-cache reference mean pointers — stable because mdls[] is
+        // not mutated during the partitioning loop (we only push_back
+        // new entries afterwards, see step 6).
+        std::vector<const float*> refMeans(nRefs);
+        for (int r = 0; r < nRefs; ++r)
+            refMeans[r] = mdls[mdlIdxByLocal[refs[r]]].mean.data();
+
+        // 3. Source selection: every other non-noise cluster with
+        //    nbSpikes ≥ minSourceSize.  No upper-percentile filter — once
+        //    refs are fixed, anything not in the ref set with enough
+        //    spikes is a candidate.
+        std::set<int> refSet(refs.begin(), refs.end());
+        std::vector<int> sources;
+        for (const auto& kv : nByLocal)
+            if (!refSet.count(kv.first) && kv.second >= minSourceSize)
+                sources.push_back(kv.first);
+        if (sources.empty()) { chunksSkippedNoSrc++; continue; }
+        sourceClustersVisited += static_cast<int>(sources.size());
+
+        // 4. Next free local cluster ID — new clusters appended at tail.
+        int nextLocalId = 0;
+        for (const auto& cm : mdls)
+            nextLocalId = std::max(nextLocalId, cm.localClusterId);
+        nextLocalId++;
+
+        // 5. Per source-cluster, partition each spike by nearest template.
+        //    bucket[srcId][refIdx] = LOCAL chunk-relative indices.
+        std::map<int, std::vector<std::vector<int>>> bucket;
+        for (int srcId : sources) bucket[srcId].resize(nRefs);
+        std::set<int> sourceSet(sources.begin(), sources.end());
+
+        for (int i = 0; i < nPts; ++i) {
+            const int c = cls[i];
+            if (!sourceSet.count(c)) continue;
+            const float* x = &Data[static_cast<size_t>(pts[i]) * nFullDims];
+            float bestD = std::numeric_limits<float>::max();
+            int   bestR = 0;
+            for (int r = 0; r < nRefs; ++r) {
+                const float* rm = refMeans[r];
+                float d = 0.0f;
+                for (int j = 0; j < nSpatial; ++j) {
+                    const float diff = x[j] - rm[j];
+                    d += diff * diff;
+                }
+                if (d < bestD) { bestD = d; bestR = r; }
+            }
+            bucket[c][bestR].push_back(i);
+        }
+
+        // 6. Materialize buckets ≥ minNewClusterSize as new chunk-local
+        //    clusters.  Smaller buckets leave their spikes in source.
+        bool anySplit = false;
+        for (int srcId : sources) {
+            int srcSplit = 0;
+            for (int r = 0; r < nRefs; ++r) {
+                auto& indices = bucket[srcId][r];
+                if (static_cast<int>(indices.size()) < minNewClusterSize)
+                    continue;
+
+                const int newId = nextLocalId++;
+                for (int i : indices) cls[i] = newId;
+
+                ChunkModel newCm{};
+                newCm.chunkIdx        = ck;
+                newCm.localClusterId  = newId;
+                newCm.globalClusterId = -1;
+                newCm.nMembers        = static_cast<int>(indices.size());
+                newCm.mean.assign(nFullDims, 0.0f);
+                newCm.cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+                mdls.push_back(newCm);
+
+                spikesReassigned     += static_cast<int>(indices.size());
+                newClustersGenerated++;
+                srcSplit++;
+                anySplit = true;
+            }
+            if (srcSplit > 0) sourceClustersSplit++;
+        }
+
+        if (!anySplit) continue;
+        refClustersUsed += nRefs;
+        chunksProcessed++;
+
+        // 7. Rebuild .mean and .nMembers for every cluster in this chunk
+        //    from the updated label assignment.  Cov is left zero-filled
+        //    for new clusters — Phase 2c alignment and Phase 3 template
+        //    harvest only read .mean here; Phase 6 recomputes its own
+        //    statistics from the realigned waveforms.
+        std::map<int, int>                  newN;
+        std::map<int, std::vector<double>>  newMeanAcc;
+        for (int i = 0; i < nPts; ++i) {
+            const int c = cls[i];
+            if (c == 0) continue;
+            const float* x = &Data[static_cast<size_t>(pts[i]) * nFullDims];
+            newN[c]++;
+            auto& acc = newMeanAcc[c];
+            if (acc.empty()) acc.assign(nFullDims, 0.0);
+            for (int j = 0; j < nFullDims; ++j) acc[j] += x[j];
+        }
+        for (auto& cm : mdls) {
+            if (cm.localClusterId == 0) continue;
+            const int n = newN[cm.localClusterId];
+            cm.nMembers = n;
+            if (n == 0) { cm.mean.assign(nFullDims, 0.0f); continue; }
+            const auto& acc = newMeanAcc[cm.localClusterId];
+            cm.mean.assign(nFullDims, 0.0f);
+            for (int j = 0; j < nFullDims; ++j)
+                cm.mean[j] = static_cast<float>(acc[j] / n);
+        }
+        // Drop emptied source ChunkModels.
+        mdls.erase(
+            std::remove_if(mdls.begin(), mdls.end(),
+                [](const ChunkModel& cm) {
+                    return cm.localClusterId != 0 && cm.nMembers == 0;
+                }),
+            mdls.end());
+    }
+
+    fprintf(stderr,
+        "[Phase 2b.5] KnnSplitPerChunk: chunks=%d (processed=%d, "
+        "skipped[no refs]=%d, skipped[no sources]=%d), "
+        "ref clusters used=%d, source clusters visited=%d, "
+        "split=%d, new clusters generated=%d, spikes reassigned=%d\n",
+        chunksTotal, chunksProcessed, chunksSkippedNoRefs,
+        chunksSkippedNoSrc, refClustersUsed, sourceClustersVisited,
+        sourceClustersSplit, newClustersGenerated, spikesReassigned);
 }

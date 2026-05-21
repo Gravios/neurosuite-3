@@ -289,6 +289,36 @@ public:
         float minContamRate,    // minimum ISI contamination rate to trigger split (e.g. 0.01)
         float sessionSamples);  // total recording length in raw samples (for normalisation)
 
+    // Phase 2b.5: K-template chunk split.  After Phase 2b
+    // (ChunkReCEMPerChunk) has converged each chunk's classification,
+    // pick the K best-isolated clusters in each chunk as reference
+    // templates and partition every remaining "source" cluster's spikes
+    // by their nearest-template assignment.  Materialize each (source,
+    // ref) bucket that meets KnnSplitMinNewClusterSize as a new chunk-
+    // local cluster.  Phase 6 cross-chunk template matching consolidates
+    // the new chunk-local clusters into global units.
+    //
+    // Reference selection per chunk: nbSpikes ≥ KnnSplitMinRefSize AND
+    // trace(Σ)/nSpatial below the chunk's median (the "low variance"
+    // criterion), sorted by trace(Σ)/nSpatial ascending, top KnnSplitK
+    // taken.
+    //
+    // Source selection per chunk: every non-noise non-reference cluster
+    // with nbSpikes ≥ KnnSplitMinSourceSize.  Each source spike is
+    // assigned to its nearest reference template by Euclidean distance
+    // over the spatial PC dims (time dim excluded).
+    //
+    // Models for affected clusters are rebuilt (means + counts) before
+    // returning so Phase 2c alignment and Phase 3 template harvest see
+    // a consistent state.  Cov fields are zero-filled and recomputed by
+    // the downstream phases as needed.
+    void KnnSplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
+  
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,
                         float mergeThresh,
