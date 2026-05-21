@@ -165,6 +165,33 @@ extern int   EnergyCOMMetric;
 extern int   MeanSubtractionMergeEnable;   ///< Phase 6b enable
 extern float MeanSubtractionMergeThresh;   ///< Phase 6b residual threshold
 extern int   MeanSubtractionMergeMaxShift; ///< Phase 6b cyclic-shift half-width
+// ---- KnnSplitPerChunk parameters (Phase 2b.5, K-template chunk split) ---
+// KnnSplitPerChunkEnable: on/off gate.  Default 0 (off).  When enabled,
+// runs immediately after Phase 2b (ChunkReCEMPerChunk).  For each chunk,
+// picks K well-isolated reference clusters (largest by nbSpikes, lowest
+// by trace(Σ)/nSpatial) and partitions each remaining "source" cluster's
+// spikes by their nearest reference template, materializing each
+// (source, ref) bucket of ≥ KnnSplitMinNewClusterSize spikes as a new
+// chunk-local cluster.  Phase 6 cross-chunk template matching then
+// consolidates the new chunk-local clusters into global units.
+extern int   KnnSplitPerChunkEnable;
+// KnnSplitK: number of reference templates (cluster means) per chunk.
+// Default 10.  Lower → coarser split; higher → finer.
+extern int   KnnSplitK;
+// KnnSplitMinRefSize: minimum spikes per reference cluster.  A "good"
+// reference must have at least this many spikes AND be in the bottom-
+// half-of-the-chunk by trace(Σ)/nSpatial (the "low variance" criterion).
+// Default 50.
+extern int   KnnSplitMinRefSize;
+// KnnSplitMinSourceSize: minimum spikes per source cluster to consider
+// splitting.  Default 20.  Below this, tiny noise / fragment clusters
+// are left alone (they would just shatter into noise across templates).
+extern int   KnnSplitMinSourceSize;
+// KnnSplitMinNewClusterSize: minimum bucket size to materialize as a new
+// chunk-local cluster.  Smaller buckets leave their spikes in the source.
+// Default 10.
+extern int   KnnSplitMinNewClusterSize;
+
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;

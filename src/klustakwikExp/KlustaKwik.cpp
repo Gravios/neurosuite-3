@@ -191,6 +191,20 @@ int   MeanSubtractionMergeMaxShift = 3;  ///< Phase 6b cyclic-shift search half-
                                           ///< samples; cyclic search adds robustness to
                                           ///< sub-sample drift between clusters).  Hard-
                                           ///< capped to nSamplesPerSpike/2 at runtime.
+
+// KnnSplitPerChunk parameters (Phase 2b.5, K-template chunk split).
+// Disabled by default.  Enable with -KnnSplitPerChunkEnable 1 to run a
+// per-chunk K-template nearest-mean partition between Phase 2b
+// (ChunkReCEMPerChunk) and Phase 2c (alignment).  Generates new
+// chunk-local clusters from high-residual-variance sources using the
+// chunk's K best-isolated cluster means as a vocabulary; Phase 6
+// cross-chunk template matching handles consolidation.
+int   KnnSplitPerChunkEnable    = 0;
+int   KnnSplitK                 = 10;
+int   KnnSplitMinRefSize        = 50;
+int   KnnSplitMinSourceSize     = 20;
+int   KnnSplitMinNewClusterSize = 10;
+
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -316,6 +330,11 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(MeanSubtractionMergeThresh);
     INT_PARAM(MeanSubtractionMergeMaxShift);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
+    INT_PARAM(KnnSplitPerChunkEnable);
+    INT_PARAM(KnnSplitK);
+    INT_PARAM(KnnSplitMinRefSize);
+    INT_PARAM(KnnSplitMinSourceSize);
+    INT_PARAM(KnnSplitMinNewClusterSize);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
