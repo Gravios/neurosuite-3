@@ -48,6 +48,7 @@
 
 
 #include "timer.h"
+#include <queue>
 
 extern int nbUndo;
 
