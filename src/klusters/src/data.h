@@ -279,6 +279,60 @@ public:
                                 const QHash<dataType,int>& featureRowToBasin,
                                 QList<int>& newClusterList);
 
+    /** Split @p sourceCluster into N new clusters using a K-nearest-
+     *  neighbour majority-vote classifier whose reference vocabulary is
+     *  built from existing well-isolated clusters.
+     *
+     *  Reference pool: every cluster c with
+     *      c != sourceCluster,  c > 1 (skip artifact + MUA),
+     *      clusterInfoMap[c].nbSpikes() >= minRefClusterSize.
+     *  Source spikes are NEVER candidates for their own classification —
+     *  the algorithm asks "if I had to assign this spike to one of the
+     *  existing good units, which one would it be?".
+     *
+     *  For each source spike s:
+     *    1. Find its @p K nearest neighbours in feature space (Euclidean,
+     *       dims 1..nbDimensions-1 — timestamp excluded) among the
+     *       reference pool only.
+     *    2. Tally neighbour cluster IDs; the dominant ID is the label
+     *       iff its share of the K votes is >= @p majorityThreshold,
+     *       else the spike is marked ambiguous.
+     *
+     *  Group source spikes by label:
+     *    - Each distinct dominant-reference label becomes a new cluster
+     *      at the tail of the palette (IDs starting at highestId+1).
+     *    - All ambiguous spikes form an additional "residual" new
+     *      cluster, IF the ambiguous group meets @p minNewClusterSize.
+     *    - Any per-label group below @p minNewClusterSize is folded
+     *      into the residual.
+     *    - The source cluster remains in place ONLY if all per-label
+     *      groups (including residual) are dropped; otherwise the
+     *      source is emptied and removed.
+     *
+     *  Returned:
+     *    @param newClusters         new cluster IDs in creation order.
+     *    @param matchedReferences   parallel array — reference cluster
+     *                                each new cluster matched, or -1
+     *                                for the residual group.
+     *    @param emptiedClusters     contains sourceCluster iff it was
+     *                                fully consumed.
+     *    @param errorMessage        non-empty on failure with a human-
+     *                                readable cause (no reference pool,
+     *                                cluster too small, etc.).
+     *
+     *  @return true on a committed split (prepareUndo called),
+     *           false on any error or no-op (no state mutation). */
+    bool splitClusterByKnnVsReferences(int sourceCluster,
+                                        int K,
+                                        double majorityThreshold,
+                                        int minNewClusterSize,
+                                        int minRefClusterSize,
+                                        QList<int>& newClusters,
+                                        QList<int>& matchedReferences,
+                                        QList<int>& emptiedClusters,
+                                        QString& errorMessage);
+
+  
     /**
   * Removes spikes from some clusters and assign them to the cluster @p destinationCluster
   * which is either the cluster 0, corresponding to the artifact, or the cluster 1, corresponding to the noise.
