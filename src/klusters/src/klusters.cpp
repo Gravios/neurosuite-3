@@ -63,6 +63,7 @@
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QSlider>
 #include <QGridLayout>
@@ -376,6 +377,17 @@ void KlustersApp::createMenus()
     mReCluster->setShortcut(QKeySequence(Qt::SHIFT  | Qt::Key_R));
     connect(mReCluster,&QAction::triggered, this,&KlustersApp::slotRecluster);
 
+    mSplitByKnn = actionMenu->addAction(tr("Split by &KNN voting…"));
+    mSplitByKnn->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_K));
+    mSplitByKnn->setToolTip(
+        tr("Partition the selected cluster into new sub-clusters using "
+           "a K-nearest-neighbour vote against existing well-isolated "
+           "clusters as references."));
+    mSplitByKnn->setEnabled(false);
+    connect(mSplitByKnn, &QAction::triggered,
+            this, &KlustersApp::slotSplitClusterByKnn);
+
+    
     mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
     connect(mAbortReclustering, &QAction::triggered, this, &KlustersApp::slotStopRecluster);
 
@@ -4776,6 +4788,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mSplitByKnn->setEnabled(false);	
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
@@ -4834,6 +4847,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         newGroupingAssistantDisplay->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
+        mSplitByKnn->setEnabled(true);	
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
@@ -5158,6 +5172,136 @@ void KlustersApp::slotUpdateStartTime(int start)
         activeView()->updateTimeFrame(static_cast<long>(start),timeWindow);
     }
 }
+
+// ---------------------------------------------------------------------------
+// KlustersApp::slotSplitClusterByKnn
+// ---------------------------------------------------------------------------
+// Action handler for "Split by KNN voting…".  Validates that exactly one
+// non-special (id > 1) cluster is selected, prompts the user for
+// algorithm parameters, runs the doc-side wrapper, and reports the
+// resulting partition.
+//
+// Parameter defaults (K=10, threshold=0.5, minNew=5, minRef=100) follow
+// the convention used in the cluster_merge_recommend.py pipeline:
+//   - K=10 balances locality vs noise tolerance for typical sessions
+//   - threshold=0.5 demands a simple majority of K
+//   - minNew=5 filters bins too small to inspect meaningfully
+//   - minRef=100 matches the user's "good cluster" threshold elsewhere
+//     in the pipeline (cluster_waveform_stats classes).
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSplitClusterByKnn()
+{
+    if (!doc) {
+        QMessageBox::information(this, tr("No document"),
+                                 tr("Open a session before splitting by KNN."));
+        return;
+    }
+    KlustersView* view = activeView();
+    if (!view) {
+        QMessageBox::information(this, tr("No view"),
+                                 tr("Open a cluster view first."));
+        return;
+    }
+    const QList<int> selected = view->clusters();
+    if (selected.size() != 1) {
+        QMessageBox::information(this, tr("Split by KNN voting"),
+            tr("Select exactly one cluster to split (currently %1 "
+               "selected).").arg(selected.size()));
+        return;
+    }
+    const int sourceCluster = selected.first();
+    if (sourceCluster <= 1) {
+        QMessageBox::information(this, tr("Split by KNN voting"),
+            tr("Cluster %1 (%2) is not eligible for KNN-split.  Pick a "
+               "real cluster (id ≥ 2).")
+                .arg(sourceCluster)
+                .arg(sourceCluster == 0 ? tr("artifact") : tr("MUA")));
+        return;
+    }
+
+    // ── Parameter dialog ─────────────────────────────────────────────────
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Split cluster %1 by KNN voting").arg(sourceCluster));
+    QVBoxLayout* outer = new QVBoxLayout(&dlg);
+    QLabel* intro = new QLabel(tr(
+        "<p>For each spike in cluster <b>%1</b>, find its K nearest "
+        "neighbours in feature space — restricted to spikes from "
+        "well-isolated existing clusters (≥ <i>min reference size</i> "
+        "spikes each).  Group spikes by which reference cluster they "
+        "most resemble.  Each group becomes a <b>new</b> cluster (no "
+        "spike is moved into an existing cluster).</p>")
+            .arg(sourceCluster), &dlg);
+    intro->setWordWrap(true);
+    outer->addWidget(intro);
+
+    QFormLayout* form = new QFormLayout();
+    QSpinBox*       kBox        = new QSpinBox(&dlg);
+    kBox->setRange(2, 200);            kBox->setValue(10);
+    QDoubleSpinBox* thrBox      = new QDoubleSpinBox(&dlg);
+    thrBox->setRange(0.0, 1.0);        thrBox->setSingleStep(0.05);
+    thrBox->setDecimals(2);            thrBox->setValue(0.50);
+    QSpinBox*       minNewBox   = new QSpinBox(&dlg);
+    minNewBox->setRange(1, 10000);     minNewBox->setValue(5);
+    QSpinBox*       minRefBox   = new QSpinBox(&dlg);
+    minRefBox->setRange(10, 100000);   minRefBox->setValue(100);
+    form->addRow(tr("K (neighbours per spike):"),                kBox);
+    form->addRow(tr("Majority threshold (fraction of K):"),       thrBox);
+    form->addRow(tr("Min new-cluster size:"),                     minNewBox);
+    form->addRow(tr("Min reference-cluster size (\"good\"):"),    minRefBox);
+    outer->addLayout(form);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    outer->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const int    K           = kBox->value();
+    const double thr         = thrBox->value();
+    const int    minNew      = minNewBox->value();
+    const int    minRef      = minRefBox->value();
+
+    // ── Run the split ────────────────────────────────────────────────────
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    KlustersDoc::KnnSplitResult R = doc->splitClusterByKnnVsReferences(
+        sourceCluster, K, thr, minNew, minRef);
+    QApplication::restoreOverrideCursor();
+
+    // ── Report result ────────────────────────────────────────────────────
+    if (!R.accepted) {
+        QMessageBox::warning(this, tr("Split by KNN voting"),
+            tr("No split was committed.\n\n%1").arg(R.reason));
+        return;
+    }
+
+    // Build a per-cluster summary so the user can see which reference
+    // each new cluster was matched against (and whether anything ended
+    // up in the residual bin).
+    QString summary;
+    summary += tr("Cluster %1 was split into %2 new cluster(s)")
+                .arg(R.sourceId).arg(R.newClusters.size());
+    if (R.emptiedClusters.contains(R.sourceId))
+        summary += tr(" — source fully consumed");
+    summary += QStringLiteral(":\n\n");
+    for (int i = 0; i < R.newClusters.size(); ++i) {
+        const int newId  = R.newClusters[i];
+        const int refId  = R.matchedReferences.value(i, 0);
+        const long nSpk  = static_cast<long>(
+            doc->data().nbOfSpikes(static_cast<dataType>(newId)));
+        if (refId == -1)
+            summary += tr("  cluster %1 (%2 spikes) — residual / ambiguous\n")
+                            .arg(newId).arg(nSpk);
+        else
+            summary += tr("  cluster %1 (%2 spikes) — matches reference %3\n")
+                            .arg(newId).arg(nSpk).arg(refId);
+    }
+    summary += QStringLiteral("\nUndo with Ctrl+Z if the partition isn't useful.");
+    QMessageBox::information(this, tr("Split by KNN voting — done"), summary);
+}
+
+
 
 void KlustersApp::slotRealignSpikes()
 {

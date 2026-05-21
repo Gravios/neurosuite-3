@@ -6538,3 +6538,181 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     R.rightId = rightId;
     return R;
 }
+
+
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::splitClusterByKnnVsReferences
+//
+// Doc-level orchestration for the K-nearest-neighbour N-way split.  The
+// shape mirrors dipSplitApply:
+//
+//   1. Validate the source via clusterHasMembers (patch96 desync guard).
+//   2. Open the curation log for this action.
+//   3. Call Data::splitClusterByKnnVsReferences — pure algorithm; on
+//      success, prepareUndo has been called (single Data-side undo).
+//   4. Update the colour palette: append a colour entry per new cluster
+//      (HSV-cycled by id, same scheme as commitTwoClusterCreation).
+//   5. Record one doc-side undo via prepareReclusteringUndo (treating
+//      the operation as N-source → M-new — the source is in
+//      emptiedClusters iff fully consumed).
+//   6. Update every KlustersView with addNewClustersToView (single
+//      view-side entry each — the recluster variant).
+//   7. Record curation-log details + after-snapshot.
+//
+// One Ctrl+Z fully reverts.  No rename, no asymmetric undo.
+// ---------------------------------------------------------------------------
+KlustersDoc::KnnSplitResult
+KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
+                                            int    K,
+                                            double majorityThreshold,
+                                            int    minNewClusterSize,
+                                            int    minRefClusterSize)
+{
+    KnnSplitResult R;
+    R.sourceId = sourceCluster;
+
+    // ── Desync guard (same predicate as slotRecluster) ────────────────────
+    if (!clusterHasMembers(sourceCluster)) {
+        R.reason = tr("Cluster %1 is not registered in clusterInfoMap "
+                      "(spikesByCluster ↔ clusterInfoMap desync). "
+                      "Save the session and re-open before retrying.")
+                      .arg(sourceCluster);
+        return R;
+    }
+
+    // ── Open curation log ─────────────────────────────────────────────────
+    logBefore(CurationLogger::ActionType::SPLIT, QList<int>{ sourceCluster });
+
+    // ── Run the algorithm (single Data-side undo entry on success) ────────
+    QList<int> newClusters;
+    QList<int> matchedReferences;
+    QList<int> emptiedClusters;
+    QString    err;
+    const bool ok = clusteringData->splitClusterByKnnVsReferences(
+        sourceCluster, K, majorityThreshold,
+        minNewClusterSize, minRefClusterSize,
+        newClusters, matchedReferences, emptiedClusters, err);
+    if (!ok) {
+        // Nothing was mutated.  Close the log entry as "no-op" and bail.
+        if (curationLogger && curationLogger->isOpen()) {
+            QMap<QString, QVariant> details;
+            details.insert(QStringLiteral("algorithm"),       QStringLiteral("knn_split_vs_references"));
+            details.insert(QStringLiteral("source_cluster"),  sourceCluster);
+            details.insert(QStringLiteral("k"),               K);
+            details.insert(QStringLiteral("majority_thresh"), majorityThreshold);
+            details.insert(QStringLiteral("min_new_size"),    minNewClusterSize);
+            details.insert(QStringLiteral("min_ref_size"),    minRefClusterSize);
+            details.insert(QStringLiteral("status"),          QStringLiteral("rejected"));
+            details.insert(QStringLiteral("reason"),          err);
+            curationLogger->recordActionDetails(details);
+        }
+        logAfter(QList<int>{ sourceCluster });
+        R.reason = err;
+        return R;
+    }
+
+    R.accepted          = true;
+    R.newClusters       = newClusters;
+    R.matchedReferences = matchedReferences;
+    R.emptiedClusters   = emptiedClusters;
+    R.nResidual         = 0;
+    for (int i = 0; i < newClusters.size(); ++i)
+        if (matchedReferences.value(i, 0) == -1)
+            R.nResidual = clusteringData->nbOfSpikes(
+                static_cast<dataType>(newClusters[i]));
+
+    // ── Doc-side undo entry (one for the whole N-way operation) ───────────
+    prepareReclusteringUndo(newClusters, emptiedClusters);
+
+    // ── UI plumbing: palette colours + view notifications ─────────────────
+    // Mirrors commitTwoClusterCreation exactly, generalised to N new
+    // clusters.  Builds clustersToShow as: current view contents minus
+    // emptied sources, plus all new clusters.
+    KlustersView* activeView = app()->activeView();
+    QList<int> clustersToShow;
+    if (activeView) {
+        const QList<int> currentlyShown = activeView->clusters();
+        for (int c : currentlyShown)
+            if (!emptiedClusters.contains(c)) clustersToShow.append(c);
+    }
+    QColor color;
+    for (int newId : newClusters) {
+        // Same HSV scheme used by commitTwoClusterCreation — keeps the
+        // palette stable and visually consistent with other split paths.
+        color.setHsv(static_cast<int>(std::fmod(newId * 7.0, 36.0)) * 10,
+                     200, 255);
+        clusterColorList->append(newId, color);
+        clustersToShow.append(newId);
+    }
+    for (int oldId : emptiedClusters)
+        clusterColorList->remove(oldId);
+
+    // Per-view notification: recluster-variant primitive — one view-side
+    // undo entry per view.
+    for (KlustersView* v : *viewList) {
+        const bool isActive = (v == activeView);
+        v->addNewClustersToView(emptiedClusters, newClusters, isActive);
+        v->updateTraceView(electrodeGroupID, clusterColorList, isActive);
+    }
+    // Matrix-view / signal-bus notification — recluster shape (dissolved
+    // sources only, new clusters appear at the tail).
+    emit newClustersAdded(emptiedClusters);
+
+    if (clusterColorList->isColorChanged())
+        clusterColorList->resetAllColorStatus();
+
+    if (activeView) activeView->showAllWidgets();
+
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(clustersToShow);
+
+    // The source cluster (if not fully consumed) has stale waveform /
+    // correlogram caches — invalidate them.  emptied clusters' caches
+    // vanish with the cluster itself, so skip those.
+    QList<int> fromClusters;
+    fromClusters.append(sourceCluster);
+    for (int cid : fromClusters) {
+        if (emptiedClusters.contains(cid)) continue;
+        invalidateWaveformCache(cid);
+        invalidateCorrelogramCache(cid);
+    }
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* v = viewList->at(i);
+        for (int cid : fromClusters) {
+            if (emptiedClusters.contains(cid)) continue;
+            v->invalidateClusterDisplay(cid);
+        }
+    }
+
+    setModified(true);
+
+    // ── Curation-log details ──────────────────────────────────────────────
+    if (curationLogger && curationLogger->isOpen()) {
+        QMap<QString, QVariant> details;
+        details.insert(QStringLiteral("algorithm"),       QStringLiteral("knn_split_vs_references"));
+        details.insert(QStringLiteral("source_cluster"),  sourceCluster);
+        details.insert(QStringLiteral("k"),               K);
+        details.insert(QStringLiteral("majority_thresh"), majorityThreshold);
+        details.insert(QStringLiteral("min_new_size"),    minNewClusterSize);
+        details.insert(QStringLiteral("min_ref_size"),    minRefClusterSize);
+        details.insert(QStringLiteral("n_new_clusters"),  newClusters.size());
+        QList<QVariant> newIdsV;     for (int i : newClusters)       newIdsV.append(i);
+        QList<QVariant> refIdsV;     for (int i : matchedReferences) refIdsV.append(i);
+        QList<QVariant> emptiedV;    for (int i : emptiedClusters)   emptiedV.append(i);
+        details.insert(QStringLiteral("new_clusters"),       newIdsV);
+        details.insert(QStringLiteral("matched_references"), refIdsV);
+        details.insert(QStringLiteral("emptied"),            emptiedV);
+        details.insert(QStringLiteral("status"),             QStringLiteral("accepted"));
+        curationLogger->recordActionDetails(details);
+    }
+    logAfter(newClusters);
+
+    R.reason = tr("Split %1 into %2 new cluster(s)%3.")
+                .arg(sourceCluster)
+                .arg(newClusters.size())
+                .arg(emptiedClusters.contains(sourceCluster)
+                     ? tr(" (source consumed)") : tr(""));
+    return R;
+}
+

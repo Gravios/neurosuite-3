@@ -426,6 +426,13 @@ private Q_SLOTS:
     /**Launchs a separate process to recluster the selected clusters.*/
     void slotRecluster();
 
+    /** Splits the currently selected single cluster into N new clusters
+     *  using a K-nearest-neighbour majority vote against a reference
+     *  pool of existing well-isolated clusters (those with at least
+     *  minRefClusterSize spikes, excluding artifact / MUA / source).
+     *  See KlustersDoc::splitClusterByKnnVsReferences for the algorithm. */
+    void slotSplitClusterByKnn();
+  
     /**Opens the spike realignment pre-flight dialog and, if confirmed,
      * launches realignment on a background thread with output in a tab.*/
     void slotRealignSpikes();
@@ -708,6 +715,7 @@ private:
     QAction *mUpdateDisplay;
     QAction *mRenumberClusters;
     QAction *mReCluster;
+    QAction *mSplitByKnn;
     QAction *mAbortReclustering;
     QAction *mAbortRealign;
     QAction *mRealignSpikes;

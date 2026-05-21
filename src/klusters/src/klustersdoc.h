@@ -345,6 +345,42 @@ public:
                                   float bloatFactor,
                                   float valleyThresh);
 
+    /** Result of splitClusterByKnnVsReferences (palette + log payload). */
+    struct KnnSplitResult {
+        int            sourceId       = 0;     ///< source cluster, copied for the caller
+        bool           accepted       = false; ///< true iff prepareUndo was called
+        QList<int>     newClusters;            ///< new cluster IDs in creation order
+        QList<int>     matchedReferences;      ///< parallel: refId each new cluster matched, or -1 for residual
+        QList<int>     emptiedClusters;        ///< contains sourceId iff fully consumed
+        int            nRefClusters   = 0;     ///< size of the reference pool (info)
+        int            nRefSpikes     = 0;     ///< total spikes in the reference pool
+        int            nResidual      = 0;     ///< size of the residual new cluster, 0 if absent
+        QString        reason;                 ///< user-facing summary or error
+    };
+
+    /** N-way split using K-nearest-neighbour majority vote against a
+     *  reference pool of well-isolated clusters.  Thin wrapper around
+     *  Data::splitClusterByKnnVsReferences: validates the source via
+     *  clusterHasMembers, runs the algorithm, then handles UI
+     *  plumbing (palette colours, view notifications, doc-side undo,
+     *  curation log) exactly the way dipSplitApply does — but
+     *  generalised to N new clusters instead of 2.
+     *
+     *  @param sourceCluster      cluster id to split.
+     *  @param K                  neighbours per source spike (>= 2).
+     *  @param majorityThreshold  fraction of K votes needed to commit
+     *                             a label (0.0–1.0).
+     *  @param minNewClusterSize  smallest size for a new cluster;
+     *                             smaller per-label groups fold into
+     *                             the residual.
+     *  @param minRefClusterSize  smallest reference-cluster size
+     *                             (≥100 recommended — "well-isolated"). */
+    KnnSplitResult splitClusterByKnnVsReferences(int    sourceCluster,
+                                                 int    K,
+                                                 double majorityThreshold,
+                                                 int    minNewClusterSize,
+                                                 int    minRefClusterSize);
+ 
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
 

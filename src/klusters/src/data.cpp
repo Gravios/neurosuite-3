@@ -1637,6 +1637,60 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
                                    const QHash<dataType,int>& featureRowToBasin,
                                    QList<int>& newClusterList)
 {
+    /** Split @p sourceCluster into N new clusters using a K-nearest-
+     *  neighbour majority-vote classifier whose reference vocabulary is
+     *  built from existing well-isolated clusters.
+     *
+     *  Reference pool: every cluster c with
+     *      c != sourceCluster,  c > 1 (skip artifact + MUA),
+     *      clusterInfoMap[c].nbSpikes() >= minRefClusterSize.
+     *  Source spikes are NEVER candidates for their own classification —
+     *  the algorithm asks "if I had to assign this spike to one of the
+     *  existing good units, which one would it be?".
+     *
+     *  For each source spike s:
+     *    1. Find its @p K nearest neighbours in feature space (Euclidean,
+     *       dims 1..nbDimensions-1 — timestamp excluded) among the
+     *       reference pool only.
+     *    2. Tally neighbour cluster IDs; the dominant ID is the label
+     *       iff its share of the K votes is >= @p majorityThreshold,
+     *       else the spike is marked ambiguous.
+     *
+     *  Group source spikes by label:
+     *    - Each distinct dominant-reference label becomes a new cluster
+     *      at the tail of the palette (IDs starting at highestId+1).
+     *    - All ambiguous spikes form an additional "residual" new
+     *      cluster, IF the ambiguous group meets @p minNewClusterSize.
+     *    - Any per-label group below @p minNewClusterSize is folded
+     *      into the residual.
+     *    - The source cluster remains in place ONLY if all per-label
+     *      groups (including residual) are dropped; otherwise the
+     *      source is emptied and removed.
+     *
+     *  Returned:
+     *    @param newClusters         new cluster IDs in creation order.
+     *    @param matchedReferences   parallel array — reference cluster
+     *                                each new cluster matched, or -1
+     *                                for the residual group.
+     *    @param emptiedClusters     contains sourceCluster iff it was
+     *                                fully consumed.
+     *    @param errorMessage        non-empty on failure with a human-
+     *                                readable cause (no reference pool,
+     *                                cluster too small, etc.).
+     *
+     *  @return true on a committed split (prepareUndo called),
+     *           false on any error or no-op (no state mutation). */
+    bool splitClusterByKnnVsReferences(int sourceCluster,
+                                        int K,
+                                        double majorityThreshold,
+                                        int minNewClusterSize,
+                                        int minRefClusterSize,
+                                        QList<int>& newClusters,
+                                        QList<int>& matchedReferences,
+                                        QList<int>& emptiedClusters,
+                                        QString& errorMessage);
+
+ 
     // 1. Mirror createFeatureFile's first half: bucket all spikes from
     //    clustersToRecluster into reclusteringSpikesByCluster.
 
@@ -1781,6 +1835,306 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
 
     return true;
 }
+
+
+// ---------------------------------------------------------------------------
+// Data::splitClusterByKnnVsReferences
+// ---------------------------------------------------------------------------
+// KNN-classifier-driven N-way split.  For each spike in sourceCluster,
+// find its K nearest neighbours in feature space — restricted to the
+// reference pool (well-isolated existing clusters, nbSpikes >= minRef).
+// Majority-vote the neighbours' cluster IDs.  Spikes sharing the same
+// majority-vote reference become one new cluster.  Spikes that fail the
+// majority threshold form the "residual" new cluster.
+//
+// Brute-force KNN (Euclidean over dims 1..nbDimensions-1, OMP-parallel
+// over source spikes) — fast enough for typical sessions (source size
+// up to ~5k spikes, reference pool ~10k-50k spikes, 20-30 dims).  For
+// very large sessions a kd-tree would help; not implemented here.
+//
+// Source cluster is REMOVED if all its spikes get reassigned to new
+// clusters; otherwise it keeps whatever spikes ended up below the
+// per-label minimum size AND below the residual minimum size.
+// ---------------------------------------------------------------------------
+bool Data::splitClusterByKnnVsReferences(int sourceCluster,
+                                          int K,
+                                          double majorityThreshold,
+                                          int minNewClusterSize,
+                                          int minRefClusterSize,
+                                          QList<int>& newClusters,
+                                          QList<int>& matchedReferences,
+                                          QList<int>& emptiedClusters,
+                                          QString& errorMessage)
+{
+    newClusters.clear();
+    matchedReferences.clear();
+    emptiedClusters.clear();
+    errorMessage.clear();
+
+    // ── Validation ──────────────────────────────────────────────────────
+    if (!clusterInfoMap->contains(static_cast<dataType>(sourceCluster))) {
+        errorMessage = QStringLiteral("source cluster %1 is not registered "
+            "in clusterInfoMap").arg(sourceCluster);
+        return false;
+    }
+    if (K < 2) {
+        errorMessage = QStringLiteral("K must be >= 2 (got %1)").arg(K);
+        return false;
+    }
+    if (majorityThreshold < 0.0 || majorityThreshold > 1.0) {
+        errorMessage = QStringLiteral("majorityThreshold must be in [0, 1] "
+            "(got %1)").arg(majorityThreshold);
+        return false;
+    }
+    if (nbDimensions < 2) {
+        errorMessage = QStringLiteral("feature table has < 2 dimensions");
+        return false;
+    }
+
+    const dataType srcFirst = (*clusterInfoMap)[sourceCluster].firstSpikePosition();
+    const dataType srcN     = (*clusterInfoMap)[sourceCluster].nbSpikes();
+    if (srcN < static_cast<dataType>(K + 1)) {
+        errorMessage = QStringLiteral("source cluster has %1 spikes, need "
+            "at least K+1 = %2").arg(srcN).arg(K + 1);
+        return false;
+    }
+
+    // ── Build reference pool: well-isolated clusters only ───────────────
+    QVector<dataType> refRows;
+    QVector<int>      refRowCluster;
+    QList<int>        refClusterIds;
+    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+        const int cid = static_cast<int>(it.key());
+        if (cid == sourceCluster) continue;
+        if (cid <= 1) continue;                       // skip artifact + MUA
+        const dataType nSpk = it.value().nbSpikes();
+        if (nSpk < minRefClusterSize) continue;
+        refClusterIds.append(cid);
+        const dataType fp = it.value().firstSpikePosition();
+        for (dataType i = fp; i < fp + nSpk; ++i) {
+            const dataType r = (*spikesByCluster)(1, i);
+            if (r >= 1 && r <= nbSpikes) {
+                refRows.append(r);
+                refRowCluster.append(cid);
+            }
+        }
+    }
+    if (refClusterIds.isEmpty()) {
+        errorMessage = QStringLiteral("no reference clusters meet "
+            "minRefClusterSize = %1 (excluding source, artifact, MUA). "
+            "Lower the threshold or label more clusters first.")
+            .arg(minRefClusterSize);
+        return false;
+    }
+    if (refRows.size() < K) {
+        errorMessage = QStringLiteral("reference pool has %1 spikes "
+            "across %2 clusters, fewer than K = %3")
+            .arg(refRows.size()).arg(refClusterIds.size()).arg(K);
+        return false;
+    }
+
+    // ── Extract feature vectors into a flat float buffer ────────────────
+    // Cache-friendly layout: row r's features at &featBuf[(r-1)*nDims].
+    const int nDimsForKnn = nbDimensions - 1;          // exclude timestamp
+    QVector<float> featBuf(static_cast<qsizetype>(nbSpikes) * nDimsForKnn);
+    for (dataType r = 1; r <= nbSpikes; ++r) {
+        float* dst = &featBuf[(r - 1) * nDimsForKnn];
+        for (int d = 0; d < nDimsForKnn; ++d)
+            dst[d] = static_cast<float>(features(r, d + 1));
+    }
+
+    // ── Collect source spike feature-row indices ────────────────────────
+    QVector<dataType> srcRows;
+    srcRows.reserve(srcN);
+    for (dataType i = srcFirst; i < srcFirst + srcN; ++i)
+        srcRows.append((*spikesByCluster)(1, i));
+
+    // ── KNN search per source spike (OMP-parallel over source) ──────────
+    QVector<int> spikeLabel(srcRows.size(), -1);       // -1 = ambiguous
+    const int    voteMinCount = static_cast<int>(
+        std::ceil(majorityThreshold * static_cast<double>(K)));
+
+    #pragma omp parallel for schedule(dynamic, 16)
+    for (qsizetype si = 0; si < srcRows.size(); ++si) {
+        const dataType targetRow = srcRows[si];
+        const float*   tFeat     = &featBuf[(targetRow - 1) * nDimsForKnn];
+
+        typedef std::pair<float, int> HeapEntry;
+        std::priority_queue<HeapEntry> heap;
+
+        const qsizetype nRef = refRows.size();
+        for (qsizetype ri = 0; ri < nRef; ++ri) {
+            const dataType refRow = refRows[ri];
+            const float*   rFeat  = &featBuf[(refRow - 1) * nDimsForKnn];
+            float d = 0.0f;
+            for (int j = 0; j < nDimsForKnn; ++j) {
+                const float diff = tFeat[j] - rFeat[j];
+                d += diff * diff;
+            }
+            if (static_cast<int>(heap.size()) < K) {
+                heap.push({d, static_cast<int>(ri)});
+            } else if (d < heap.top().first) {
+                heap.pop();
+                heap.push({d, static_cast<int>(ri)});
+            }
+        }
+
+        QHash<int, int> tally;
+        while (!heap.empty()) {
+            tally[refRowCluster[heap.top().second]]++;
+            heap.pop();
+        }
+
+        int bestId = -1, bestCount = 0;
+        for (auto it = tally.begin(); it != tally.end(); ++it) {
+            if (it.value() > bestCount) {
+                bestCount = it.value();
+                bestId    = it.key();
+            }
+        }
+        spikeLabel[si] = (bestCount >= voteMinCount) ? bestId : -1;
+    }
+
+    // ── Partition source spikes by label ────────────────────────────────
+    // QMap (not QHash) — deterministic ascending iteration order so the
+    // resulting new clusters get matched to references in refId order.
+    QMap<int, QList<dataType>> partitions;
+    for (qsizetype si = 0; si < srcRows.size(); ++si)
+        partitions[spikeLabel[si]].append(srcRows[si]);
+
+    // Per-label minimum-size: small per-label partitions fold into the
+    // ambiguous residual.  If the residual itself doesn't meet the
+    // threshold, its spikes stay in the source cluster.
+    QList<dataType> ambiguousFloor;
+    if (partitions.contains(-1)) {
+        ambiguousFloor = partitions.take(-1);
+    }
+    for (auto it = partitions.begin(); it != partitions.end(); ) {
+        if (it.value().size() < minNewClusterSize) {
+            ambiguousFloor.append(it.value());
+            it = partitions.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    QSet<dataType> keepInSource;
+    if (ambiguousFloor.size() >= minNewClusterSize) {
+        partitions[-1] = ambiguousFloor;
+    } else {
+        for (dataType r : ambiguousFloor)
+            keepInSource.insert(r);
+    }
+
+    if (partitions.isEmpty()) {
+        errorMessage = QStringLiteral("no new clusters meet "
+            "minNewClusterSize = %1 — try a smaller K, lower "
+            "majorityThreshold, or lower minNewClusterSize")
+            .arg(minNewClusterSize);
+        return false;
+    }
+
+    // ── Allocate new cluster IDs ────────────────────────────────────────
+    int nextId = static_cast<int>(highestClusterId()) + 1;
+    // Real-reference labels first (ascending refId), residual (-1) last
+    QList<int> labelsInOrder;
+    for (auto it = partitions.constBegin(); it != partitions.constEnd(); ++it)
+        if (it.key() != -1) labelsInOrder.append(it.key());
+    std::sort(labelsInOrder.begin(), labelsInOrder.end());
+    if (partitions.contains(-1)) labelsInOrder.append(-1);
+
+    QHash<int, int> labelToNewId;
+    for (int lbl : labelsInOrder) {
+        const int nid = nextId++;
+        labelToNewId.insert(lbl, nid);
+        newClusters.append(nid);
+        matchedReferences.append(lbl);                 // -1 for residual
+    }
+
+    // ── Build new spikesByCluster + clusterInfoMap ──────────────────────
+    SortableTable*  newSpk  = new SortableTable();
+    ClusterInfoMap* newInfo = new ClusterInfoMap();
+    newSpk->setSize(nbSpikes);
+
+    dataType pos = 1;
+
+    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+        const dataType cid      = it.key();
+        const dataType firstPos = it.value().firstSpikePosition();
+        const dataType nSpk     = it.value().nbSpikes();
+
+        if (cid == static_cast<dataType>(sourceCluster)) {
+            const dataType clStart = pos;
+            dataType kept = 0;
+            for (dataType i = firstPos; i < firstPos + nSpk; ++i) {
+                const dataType row1 = (*spikesByCluster)(1, i);
+                if (keepInSource.contains(row1)) {
+                    (*newSpk)(1, pos) = row1;
+                    (*newSpk)(2, pos) = cid;
+                    ++pos;
+                    ++kept;
+                }
+            }
+            if (kept > 0) {
+                newInfo->insert(cid,
+                    ClusterInfo(clStart, kept,
+                                it.value().getStructure(),
+                                it.value().getType(),
+                                it.value().getId(),
+                                it.value().getQuality(),
+                                it.value().getNotes()));
+            } else {
+                emptiedClusters.append(sourceCluster);
+            }
+        } else {
+            // Other clusters: copy unchanged.
+            const dataType clStart = pos;
+            for (dataType i = firstPos; i < firstPos + nSpk; ++i) {
+                (*newSpk)(1, pos) = (*spikesByCluster)(1, i);
+                (*newSpk)(2, pos) = cid;
+                ++pos;
+            }
+            if (nSpk > 0) {
+                newInfo->insert(cid,
+                    ClusterInfo(clStart, nSpk,
+                                it.value().getStructure(),
+                                it.value().getType(),
+                                it.value().getId(),
+                                it.value().getQuality(),
+                                it.value().getNotes()));
+            }
+        }
+    }
+
+    // Append new clusters at the tail, in label-order.  Within each
+    // cluster, sort the spike feature-row indices ascending — that
+    // matches the time-ordered convention used everywhere else
+    // (features are loaded time-sorted; row 1 of spikesByCluster
+    // therefore stores .fet row indices in time order).
+    for (int lbl : labelsInOrder) {
+        const int             newId = labelToNewId[lbl];
+        const QList<dataType>& rows = partitions[lbl];
+        const dataType clStart = pos;
+        std::vector<dataType> rowsSorted(rows.begin(), rows.end());
+        std::sort(rowsSorted.begin(), rowsSorted.end());
+        for (dataType row : rowsSorted) {
+            (*newSpk)(1, pos) = row;
+            (*newSpk)(2, pos) = static_cast<dataType>(newId);
+            ++pos;
+        }
+        newInfo->insert(static_cast<dataType>(newId),
+                        ClusterInfo(clStart,
+                                    static_cast<dataType>(rowsSorted.size())));
+    }
+
+    // ── Commit via prepareUndo ──────────────────────────────────────────
+    // dimChanged is false: KNN-split never touches cluster 0 (it is
+    // explicitly excluded from both source and reference pool).
+    prepareUndo(newSpk, newInfo, false);
+
+    return true;
+}
+
+
 
 
 
