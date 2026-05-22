@@ -61,9 +61,17 @@ inputs_missing "$driftfile" && {
     echo_error "Drift file $driftfile not found. Run ndm_estimatedrift first."
     exit $INPUTS_MISSING; }
 
-# Read parameters
-sourceGroup=$(read_script_parameter "$session" ndm_applydrift sourceGroup)
-check_optional_variable $sourceGroup || sourceGroup=${2:-1}
+# Read parameters.
+# sourceGroup precedence: CLI arg ($2) > YAML ndm_applydrift.sourceGroup > 1.
+# CLI args must win — otherwise typing `ndm_applydrift session 6` silently
+# does the wrong thing when the YAML already sets sourceGroup to something
+# else (e.g. a stale default from a previous shank's curation pass).
+if [ -n "${2:-}" ]; then
+    sourceGroup=$2
+else
+    sourceGroup=$(read_script_parameter "$session" ndm_applydrift sourceGroup)
+    check_optional_variable $sourceGroup || sourceGroup=1
+fi
 
 threshUm=$(read_script_parameter "$session" ndm_applydrift threshUm)
 check_optional_variable $threshUm || threshUm=5.0
