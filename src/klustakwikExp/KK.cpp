@@ -7809,16 +7809,26 @@ static void AutoReextractAfterFinalize(int nChan,
     // Resolve to absolute paths for the symlinks (in case FileBase is
     // relative — symlinks resolve relative to the symlink's *directory*,
     // not the cwd).
-    char filAbs[1024], resAbs[1024];
-    if (!realpath(filReal, filAbs)) {
+    //
+    // Pass NULL as the destination so realpath() malloc's a buffer of
+    // up to PATH_MAX bytes itself.  Using a fixed-size stack buffer
+    // (e.g. char[1024]) triggers glibc's __realpath_chk FORTIFY abort
+    // ("*** buffer overflow detected ***: terminated") even when the
+    // actual resolved path would have fit, because the check refuses
+    // any destination smaller than PATH_MAX at compile time.  Caller
+    // must free() the returned pointer.
+    char* filAbs = realpath(filReal, nullptr);
+    if (!filAbs) {
         Output("[Phase 6d] auto-reextract: cannot resolve %s (%s) — skipping\n",
                filReal, strerror(errno));
         rmdir(tmpDir.c_str());
         return;
     }
-    if (!realpath(resReal, resAbs)) {
+    char* resAbs = realpath(resReal, nullptr);
+    if (!resAbs) {
         Output("[Phase 6d] auto-reextract: cannot resolve %s (%s) — skipping\n",
                resReal, strerror(errno));
+        free(filAbs);
         rmdir(tmpDir.c_str());
         return;
     }
@@ -7826,12 +7836,14 @@ static void AutoReextractAfterFinalize(int nChan,
     if (symlink(filAbs, filLink.c_str()) != 0) {
         Output("[Phase 6d] auto-reextract: symlink %s → %s failed (%s) — "
                "skipping\n", filLink.c_str(), filAbs, strerror(errno));
+        free(filAbs); free(resAbs);
         rmdir(tmpDir.c_str());
         return;
     }
     if (symlink(resAbs, resLink.c_str()) != 0) {
         Output("[Phase 6d] auto-reextract: symlink %s → %s failed (%s) — "
                "skipping\n", resLink.c_str(), resAbs, strerror(errno));
+        free(filAbs); free(resAbs);
         unlink(filLink.c_str());
         rmdir(tmpDir.c_str());
         return;
@@ -7866,6 +7878,7 @@ static void AutoReextractAfterFinalize(int nChan,
     if (!pipe) {
         Output("[Phase 6d] auto-reextract: popen failed (%s) — skipping\n",
                strerror(errno));
+        free(filAbs); free(resAbs);
         unlink(filLink.c_str());
         unlink(resLink.c_str());
         rmdir(tmpDir.c_str());
@@ -7900,6 +7913,8 @@ static void AutoReextractAfterFinalize(int nChan,
     unlink(filLink.c_str());
     unlink(resLink.c_str());
     rmdir(tmpDir.c_str());
+    free(filAbs);
+    free(resAbs);
 }
 
 void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
