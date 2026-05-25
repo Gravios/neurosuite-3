@@ -512,6 +512,65 @@ check_empty_variables()
 }
 
 #////////////////////////////////////////////////////////////////////////////
+#//  Session resolution
+#//
+#//  ndm_resolve_session: resolve the session name without forcing the user
+#//  to pass it on the command line.  Eliminates the historic
+#//  `ndm_xxx SESSION arg1 arg2 ...` ambiguity that bit `ndm_applydrift 6`
+#//  (the 6 was silently consumed as SESSION because there was no parameter
+#//  file with that name, then the script fell back through YAML defaults).
+#//
+#//  Resolution order:
+#//    1. If $1 looks like a session — i.e. a parameter file with that base
+#//       name exists in the current directory (.yaml, .yml, or .xml) — use it.
+#//    2. Otherwise, derive the session from the current directory's basename.
+#//
+#//  Side effects (globals set):
+#//    $session       resolved session name (no extension)
+#//    $directory     basename of cwd (preserved for the small number of
+#//                   ndm_* scripts that still reference this name —
+#//                   ndm_extractleds, ndm_ncs2dat, ndm_smr2dat, etc.)
+#//    $NDM_SHIFTED   1 if $1 was consumed as a session, 0 otherwise.
+#//
+#//  Recommended caller pattern (replaces the old 3-line block):
+#//
+#//      ndm_resolve_session "$@"
+#//      [ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+#//
+#//  The `set --` line padds the positional args so the rest of the script
+#//  body — which was written assuming $1 = session and $2+ = real args —
+#//  needs no further changes.  Whether the caller invokes
+#//      ndm_xxx                  (new: bare, session from cwd)
+#//      ndm_xxx session_name     (new: explicit session)
+#//      ndm_xxx 6                (new: 6 is first real arg, session from cwd)
+#//      ndm_xxx session_name 6   (old: explicit session, 6 is first real arg)
+#//  the script body sees the same $1=session, $2=6 layout.
+#//
+#//  For scripts that flag-parse into a `positionals` array (variant B),
+#//  the pad step uses the array instead:
+#//      ndm_resolve_session "${positionals[@]}"
+#//      [ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
+#////////////////////////////////////////////////////////////////////////////
+
+ndm_resolve_session()
+{
+	NDM_SHIFTED=0
+	directory=$(basename "$(pwd)")
+	session=${directory%.xml}
+	session=${session%.yaml}
+	session=${session%.yml}
+	if [ -n "${1:-}" ]; then
+		local cand=${1%.xml}
+		cand=${cand%.yaml}
+		cand=${cand%.yml}
+		if [ -f "${cand}.yaml" ] || [ -f "${cand}.yml" ] || [ -f "${cand}.xml" ]; then
+			session=$cand
+			NDM_SHIFTED=1
+		fi
+	fi
+}
+
+#////////////////////////////////////////////////////////////////////////////
 #//  KlustaKwik three- or four-tier parameter reader (shared)
 #//
 #//  Resolves a KlustaKwik parameter for a given electrode group using

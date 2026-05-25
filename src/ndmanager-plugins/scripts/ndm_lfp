@@ -29,11 +29,8 @@ then
 	echo_error "usage: $program [parameter-file]"
 	exit $GENERAL_ERROR
 fi
-directory=$(basename "$(pwd)")
-session=${1:-$directory}
-session=${session%.xml}
-session=${session%.yaml}
-session=${session%.yml}
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
 param_ext=$(param_file_ext "$session")
 
 print_header "$session - Creating LFP file"
