@@ -193,12 +193,14 @@ set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../libklustersshared/src/xcorr")
 # =============================================================================
 set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
     dipsplit.cpp
+    proxy_isi.cpp
     shiftprobe_disabled.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
 set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
               Array.h KlustaSave.h KlustaKwikYaml.h param.h
-              dipsplit.h)
+              dipsplit.h
+              proxy_isi.h)
 
 find_package(OpenMP)
 find_package(yaml-cpp REQUIRED)
@@ -397,6 +399,7 @@ if(_SYCL_ACTIVE)
     add_executable(KlustaKwikExp_sycl
         KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp
         dipsplit.cpp
+        proxy_isi.cpp
         shiftprobe_disabled.cpp
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
