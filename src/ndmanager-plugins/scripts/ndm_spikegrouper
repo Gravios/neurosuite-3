@@ -45,11 +45,8 @@ fi
 
 # Default to the parent directory name when no argument is given.
 # Strip any known extension to get the bare session name.
-directory=$(basename "$(pwd)")
-session=${1:-$directory}
-session=${session%.xml}
-session=${session%.yaml}
-session=${session%.yml}
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
 
 # Print a header to indicate current processing step
 print_header "$session - Discovering optimal spikeDetection groups from .fil"

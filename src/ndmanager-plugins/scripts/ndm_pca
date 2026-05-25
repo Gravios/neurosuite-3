@@ -55,11 +55,8 @@ if [ ${#positionals[@]} -gt 2 ]; then
 	echo_error "usage: $program [parameter-file] [electrodeGroup] [-- process_pca flags ...]"
 	exit $GENERAL_ERROR
 fi
-directory=$(basename "$(pwd)")
-session=${positionals[0]:-$directory}
-session=${session%.xml}
-session=${session%.yaml}
-session=${session%.yml}
+ndm_resolve_session "${positionals[@]}"
+[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
 param_ext=$(param_file_ext "$session")
 electrodeGroup=${positionals[1]:-}
 
