@@ -41,6 +41,14 @@
 #include <omp.h>
 #endif
 
+// Phase-4 rewrite modules (klusters-faithful KNN, adaptation modelling,
+// improved xcorr template matching).  Each module is independently
+// testable and only invoked from KK.cpp via thin dispatch hooks.
+#include "wave_knn_split.h"
+#include "adapt_model.h"
+#include "xcorr_match.h"
+#include "clust_quality.h"
+
 // ── mmap for time-shift .spk/.spkD shared-memory access ──────────────────
 // These POSIX headers are NOT OpenMP-related; the mmap/open/munmap call
 // sites later in this file are unconditional, so the headers must be
@@ -3438,10 +3446,18 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // becomes a new chunk-local cluster.  Phase 6 (cross-chunk
         // model matching) handles consolidation of the new clusters
         // into global units.  Enable with -KnnSplitPerChunkEnable 1.
-        if (KnnSplitPerChunkEnable)
-            KnnSplitPerChunk(
-                chunkPoints, perChunkClass, perChunkModels, nFullDims);
-	
+        // -KnnSplitMode 0 (default): legacy nearest-template; mode 1:
+        // klusters-faithful K-NN majority-vote (see wave_knn_split.h).
+        if (KnnSplitPerChunkEnable) {
+            if (KnnSplitMode == 1) {
+                WaveKnnSplitPerChunk(
+                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
+            } else {
+                KnnSplitPerChunk(
+                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
+            }
+        }
+
         // Phase 2.5: second per-chunk DipSplit pass.
         //
         // The Phase 1c DipSplit ran before subspace reclustering, so it
@@ -4568,9 +4584,17 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // becomes a new chunk-local cluster.  Phase 6 (cross-chunk
         // model matching) handles consolidation of the new clusters
         // into global units.  Enable with -KnnSplitPerChunkEnable 1.
-        if (KnnSplitPerChunkEnable)
-            KnnSplitPerChunk(
-                chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        // -KnnSplitMode 0 (default): legacy nearest-template; mode 1:
+        // klusters-faithful K-NN majority-vote (see wave_knn_split.h).
+        if (KnnSplitPerChunkEnable) {
+            if (KnnSplitMode == 1) {
+                WaveKnnSplitPerChunk(
+                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
+            } else {
+                KnnSplitPerChunk(
+                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
+            }
+        }
 	
     }
 
@@ -12070,3 +12094,170 @@ void KK::KnnSplitPerChunk(
         chunksSkippedNoSrc, refClustersUsed, sourceClustersVisited,
         sourceClustersSplit, newClustersGenerated, spikesReassigned);
 }
+
+// ---------------------------------------------------------------------------
+// KK::WaveKnnSplitPerChunk  (Phase 2b.5, klusters-faithful variant)
+// ---------------------------------------------------------------------------
+// Replaces KKE's nearest-template KnnSplitPerChunk with the klusters-
+// faithful K-nearest-neighbours majority-vote split.  The semantic
+// differences (see wave_knn_split.h for full details):
+//
+//   • Per-spike K-NN against a POOL of reference SPIKES (not means)
+//   • Majority-vote threshold (WaveKnnMajorityThreshold) — spikes whose
+//     K nearest neighbours don't agree above the threshold stay in
+//     source (residual bucket).
+//
+// The latter is the missing mechanism that bounds fragmentation:
+// klusters' algorithm leaves ambiguous spikes alone; KKE's existing
+// version force-assigns every source spike to the closest reference,
+// producing up to K-way fragmentation per source.  In the sirotaA
+// group-6 benchmark this generated 3125 new clusters from 753 sources
+// (avg 4.1-way split), most too small for downstream xcorr template-
+// matching to behave sanely, leading to cascade collapse-to-noise.
+//
+// Activated via -KnnSplitPerChunkEnable 1 -KnnSplitMode 1.
+// ---------------------------------------------------------------------------
+void KK::WaveKnnSplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims) {
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    fprintf(stderr,
+        "[Phase 2b.5] WaveKnnSplitPerChunk (klusters-faithful): "
+        "K=%d majThr=%.2f minRefSize=%d minSourceSize=%d minNewClusterSize=%d\n",
+        KnnSplitK, WaveKnnMajorityThreshold,
+        KnnSplitMinRefSize, KnnSplitMinSourceSize, KnnSplitMinNewClusterSize);
+
+    int chunksTotal           = 0;
+    int chunksProcessed       = 0;
+    int totalSourcesConsidered = 0;
+    int totalSourcesSplit      = 0;
+    int totalNewClusters       = 0;
+    int totalSpikesReassigned  = 0;
+    int totalSpikesResidual    = 0;
+
+    for (int ck = 0; ck < nCh; ++ck) {
+        const auto& pts  = chunkPoints[ck];
+        auto&       cls  = perChunkClass[ck];
+        auto&       mdls = perChunkModels[ck];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts == 0 || mdls.empty()) continue;
+        chunksTotal++;
+
+        // Build per-chunk feature scratch: copy the slice of Data
+        // corresponding to chunkPoints[ck] into a contiguous buffer the
+        // way wave_knn_split expects (nPts × nFullDims, row-major).
+        std::vector<float> chunkFeat(static_cast<size_t>(nPts) * nFullDims);
+        for (int i = 0; i < nPts; ++i) {
+            const float* src = &Data[static_cast<size_t>(pts[i]) * nFullDims];
+            std::copy(src, src + nFullDims,
+                      chunkFeat.data() + static_cast<size_t>(i) * nFullDims);
+        }
+
+        // Build the chunk-local label array (copy in, modify, copy out).
+        std::vector<int> chunkLabels(cls.begin(), cls.end());
+
+        // Build trace vector (one entry per non-zero localClusterId).
+        const int nSpatial = nFullDims - 1;
+        std::vector<float> traces;
+        std::vector<int>   traceIds;
+        traces.reserve(mdls.size());
+        traceIds.reserve(mdls.size());
+        for (const auto& cm : mdls) {
+            if (cm.localClusterId == 0) continue;
+            if (cm.nMembers == 0) continue;
+            float tr = 0.0f;
+            for (int j = 0; j < nSpatial; ++j) {
+                tr += cm.cov[static_cast<size_t>(j) * nFullDims + j];
+            }
+            traces.push_back(tr / std::max(1, nSpatial));
+            traceIds.push_back(cm.localClusterId);
+        }
+
+        wave_knn_split::Config cfg;
+        cfg.K                          = KnnSplitK;
+        cfg.majorityThreshold          = WaveKnnMajorityThreshold;
+        cfg.minRefClusterSize          = KnnSplitMinRefSize;
+        cfg.minSourceClusterSize       = KnnSplitMinSourceSize;
+        cfg.minNewClusterSize          = KnnSplitMinNewClusterSize;
+        cfg.referencesBelowMedianTrace = true;
+        cfg.Verbose                    = (Verbose >= 2);
+
+        auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
+                                      chunkLabels, traces, traceIds, cfg);
+
+        if (r.nNewClusters == 0) continue;
+
+        // Identify which labels appeared in chunkLabels that weren't in
+        // the original `cls` — these are the new sub-clusters introduced
+        // by wave_knn_split (IDs allocated after maxLabel+1).
+        std::set<int> oldIds;
+        for (const auto& cm : mdls) oldIds.insert(cm.localClusterId);
+
+        // Apply updated labels back to cls.
+        for (int i = 0; i < nPts; ++i) cls[i] = chunkLabels[i];
+
+        // Materialise ChunkModels for the new clusters.  Means recomputed
+        // below; cov left zero (recomputed by downstream phases).
+        std::map<int, int>                 newN;
+        std::map<int, std::vector<double>> newMeanAcc;
+        for (int i = 0; i < nPts; ++i) {
+            const int c = cls[i];
+            if (c == 0) continue;
+            const float* x = &Data[static_cast<size_t>(pts[i]) * nFullDims];
+            newN[c]++;
+            auto& acc = newMeanAcc[c];
+            if (acc.empty()) acc.assign(nFullDims, 0.0);
+            for (int j = 0; j < nFullDims; ++j) acc[j] += x[j];
+        }
+        // Append entries for new IDs.
+        for (const auto& kv : newN) {
+            if (oldIds.count(kv.first)) continue;
+            ChunkModel newCm{};
+            newCm.chunkIdx        = ck;
+            newCm.localClusterId  = kv.first;
+            newCm.globalClusterId = -1;
+            newCm.nMembers        = kv.second;
+            newCm.mean.assign(nFullDims, 0.0f);
+            newCm.cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+            mdls.push_back(newCm);
+        }
+        // Rebuild means + counts for all clusters in the chunk.
+        for (auto& cm : mdls) {
+            if (cm.localClusterId == 0) continue;
+            const int n = newN[cm.localClusterId];
+            cm.nMembers = n;
+            if (n == 0) { cm.mean.assign(nFullDims, 0.0f); continue; }
+            const auto& acc = newMeanAcc[cm.localClusterId];
+            cm.mean.assign(nFullDims, 0.0f);
+            for (int j = 0; j < nFullDims; ++j)
+                cm.mean[j] = static_cast<float>(acc[j] / n);
+        }
+        // Drop emptied source ChunkModels.
+        mdls.erase(
+            std::remove_if(mdls.begin(), mdls.end(),
+                [](const ChunkModel& cm) {
+                    return cm.localClusterId != 0 && cm.nMembers == 0;
+                }),
+            mdls.end());
+
+        chunksProcessed++;
+        totalSourcesConsidered += r.nSourcesConsidered;
+        totalSourcesSplit      += r.nSourcesSplit;
+        totalNewClusters       += r.nNewClusters;
+        totalSpikesReassigned  += r.nSpikesReassigned;
+        totalSpikesResidual    += r.nSpikesResidual;
+    }
+
+    fprintf(stderr,
+        "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (processed=%d), "
+        "sources visited=%d, split=%d, new clusters=%d, "
+        "spikes reassigned=%d, residual (stayed in source)=%d\n",
+        chunksTotal, chunksProcessed,
+        totalSourcesConsidered, totalSourcesSplit, totalNewClusters,
+        totalSpikesReassigned, totalSpikesResidual);
+}
+

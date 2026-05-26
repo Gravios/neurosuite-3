@@ -205,6 +205,54 @@ int   KnnSplitMinRefSize        = 50;
 int   KnnSplitMinSourceSize     = 20;
 int   KnnSplitMinNewClusterSize = 10;
 
+// ---- Phase 4 rewrite (klusters-faithful KNN + adaptation modelling) ----
+// KnnSplitMode: 0 = legacy nearest-template (KKE built-in, every spike
+// reassigned to the closest reference mean — fragments source clusters
+// up to K-way regardless of confidence), 1 = klusters-faithful K-nearest-
+// neighbours majority vote (per-spike K-NN in feature space against a
+// pool of reference SPIKES, with a majority-vote threshold; spikes with
+// no clear majority stay in the source).  Mode 1 is the fix for the
+// 3125-fragment cascade observed in the sirotaA group-6 benchmark.
+// Default 0 (legacy behaviour preserved).
+int   KnnSplitMode              = 0;
+// WaveKnnMajorityThreshold: fraction of the K neighbours that must share
+// the winning label for a spike to be reassigned.  Below this threshold
+// the spike stays in source (residual bucket).  Klusters' GUI default
+// is 0.6.  Stricter values (0.7–0.8) produce more residual but cleaner
+// splits.  Only used in KnnSplitMode=1.
+float WaveKnnMajorityThreshold  = 0.6f;
+
+// Phase4RefineEnable: master switch for the new Phase-4 rewrite.  When
+// enabled, replaces the existing WithinChunkTemplateMatch loop with the
+// new pipeline:  proxy_isi → adaptation model fit → cluster-quality
+// scoring → amplitude-scaled xcorr_match with sub-sample alignment.
+// Default 0 (legacy WithinChunkTemplateMatch preserved).
+int   Phase4RefineEnable        = 0;
+// Phase4RefineIters: number of refine-loop passes when Phase4RefineEnable=1.
+// Replaces the existing TemplateMatchIters when the new pipeline is active.
+// Default 10.
+int   Phase4RefineIters         = 10;
+// AdaptModelEnable: fit per-cluster ISI-conditional adaptation model
+// (w_i ≈ w₀ + α·h(ISI;τ)·v) before computing residuals.  0 = no fit
+// (residuals against raw mean), 1 = fit.  Default 1 when Phase4RefineEnable=1.
+int   AdaptModelEnable          = 1;
+// AdaptTauGridCSV: comma-separated grid of τ values in seconds for the
+// adaptation model fit.  Empty string → default grid (5, 15, 50, 150 ms).
+// Example: "0.003,0.010,0.030,0.100".
+char  AdaptTauGridCSV[STRLEN]   = "";
+// Phase4MinClusterSize: minimum cluster spikes for the refine-loop to
+// touch a cluster.  Below this, the cluster is left alone.  Default 50.
+int   Phase4MinClusterSize      = 50;
+// XcorrResidualThresh: minimum residualScore for a within-chunk merge
+// in the new pipeline (replaces TemplateMatchScore when Phase4RefineEnable=1).
+// residualScore = fraction of waveform energy explained at α* alignment.
+// Default 0.85; raise to 0.90 for tighter merges if false-merges seen.
+float XcorrResidualThresh       = 0.85f;
+// XcorrMaxShiftSamples: half-width of the integer-lag search in samples
+// for the new xcorr_match.  Default 0 → use NbSamplesPerSpike/4 at runtime.
+int   XcorrMaxShiftSamples      = 0;
+
+
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
@@ -335,6 +383,16 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(KnnSplitMinRefSize);
     INT_PARAM(KnnSplitMinSourceSize);
     INT_PARAM(KnnSplitMinNewClusterSize);
+    // Phase-4 rewrite controls
+    INT_PARAM(KnnSplitMode);
+    FLOAT_PARAM(WaveKnnMajorityThreshold);
+    INT_PARAM(Phase4RefineEnable);
+    INT_PARAM(Phase4RefineIters);
+    INT_PARAM(AdaptModelEnable);
+    STRING_PARAM(AdaptTauGridCSV);
+    INT_PARAM(Phase4MinClusterSize);
+    FLOAT_PARAM(XcorrResidualThresh);
+    INT_PARAM(XcorrMaxShiftSamples);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
