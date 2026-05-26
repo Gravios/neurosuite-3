@@ -103,6 +103,19 @@ int   MaxTimeShift           = 3;    ///< pre-shifted PCA basis half-width (0 di
 int   TimeShiftMergeEnable   = 1;    ///< apply min-Mahalanobis probe during cluster deletion
 int   TimeShiftSplitEnable   = 0;    ///< apply ±1-sample shift probe at split-test time
 int   Phase2bMode            = 0;    ///< 0 = warm-start CEM, 1 = VB-GMM, 2 = CEM-with-splits + VB-GMM, 3 = residual-PCA refinement + dominant-channel xcorr realign
+int   Phase2bEnableSplits    = 0;    ///< Phase 2b mode 0 only: enable TrySplits inside the inner CEM.
+                                     ///< 0 (default, recommended for batch): disable.  Phase 2a's
+                                     ///<   per-cluster CEM has already done split discovery; calling
+                                     ///<   TrySplits again in Phase 2b is mostly redundant work and
+                                     ///<   for high-K chunks (K > ~60 from Phase 2a's fan-out) costs
+                                     ///<   244*K inner CEM invocations per outer iter — dominates
+                                     ///<   the per-phase runtime.
+                                     ///< 1: enable.  Use when working with data where Phase 2a's
+                                     ///<   per-cluster discovery misses bimodality that only emerges
+                                     ///<   when the chunk's clusters are seen together (rare).
+int   Phase2bMaxIter         = 60;   ///< Max iterations of inner CEM per chunk in Phase 2b.  Lower
+                                     ///< values bound the per-chunk runtime; warm-start CEM converges
+                                     ///< in 10-30 iter typically.  Set to 0 to use the global MaxIter.
 int   VBGMMMaxIter           = 50;   ///< VB-GMM max iterations (Phase2bMode 1 or 2)
 float VBGMMConvTol           = 1e-3f;///< VB-GMM convergence tol on max |Δr| across (n,k)
 float VBGMMAlpha0            = 1.0f; ///< VB-GMM Dirichlet concentration; <1 favours sparsity (more pruning)
@@ -382,6 +395,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(TimeShiftMergeEnable);
     INT_PARAM(TimeShiftSplitEnable);
     INT_PARAM(Phase2bMode);
+    INT_PARAM(Phase2bEnableSplits);
+    INT_PARAM(Phase2bMaxIter);
     INT_PARAM(VBGMMMaxIter);
     FLOAT_PARAM(VBGMMConvTol);
     FLOAT_PARAM(VBGMMAlpha0);
