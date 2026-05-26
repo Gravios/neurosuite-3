@@ -10751,6 +10751,53 @@ void KK::ChunkReCEMPerChunk(
     }
     fprintf(stderr, "[Phase 2b] Chunk re-CEM (%s)\n", p2bDesc);
 
+    // ── LPT scheduling: sort chunks by descending expected work ─────────
+    // Without this sort, with schedule(dynamic), heterogeneously-sized
+    // chunks leave straggler-tail behaviour: smaller chunks finish quickly
+    // and the largest chunk (most cluster-spikes after Phase 2a's splits)
+    // runs alone on one core for the remainder of the phase.  Phase 2a
+    // has the same machinery; Phase 2b was missed.
+    //
+    // Expected work ~ O(K · N · D²) per CEM iter × max-iter cap.  With N
+    // ~ uniform across chunks and D constant, the dominant variable is K
+    // = number of distinct alive clusters from Phase 2a.  We sort by
+    // K·N descending so the heaviest chunk gets a worker thread while
+    // the pool is still full.
+    std::vector<int> chunkOrder(nCh);
+    {
+        std::vector<int> chunkK(nCh, 0);
+        for (int ck = 0; ck < nCh; ck++) {
+            const auto& cls = perChunkClass[static_cast<size_t>(ck)];
+            std::unordered_set<int> uniq(cls.begin(), cls.end());
+            chunkK[static_cast<size_t>(ck)] = static_cast<int>(uniq.size());
+            chunkOrder[static_cast<size_t>(ck)] = ck;
+        }
+        std::sort(chunkOrder.begin(), chunkOrder.end(),
+                  [&](int a, int b) {
+                      const long long workA =
+                          static_cast<long long>(chunkK[static_cast<size_t>(a)]) *
+                          static_cast<long long>(chunkPoints[static_cast<size_t>(a)].size());
+                      const long long workB =
+                          static_cast<long long>(chunkK[static_cast<size_t>(b)]) *
+                          static_cast<long long>(chunkPoints[static_cast<size_t>(b)].size());
+                      return workA > workB;
+                  });
+        if (Verbose >= 1) {
+            int kMax = 0, kMin = INT_MAX;
+            size_t nMax = 0, nMin = SIZE_MAX;
+            for (int ck = 0; ck < nCh; ck++) {
+                kMax = std::max(kMax, chunkK[static_cast<size_t>(ck)]);
+                kMin = std::min(kMin, chunkK[static_cast<size_t>(ck)]);
+                nMax = std::max(nMax, chunkPoints[static_cast<size_t>(ck)].size());
+                nMin = std::min(nMin, chunkPoints[static_cast<size_t>(ck)].size());
+            }
+            fprintf(stderr,
+                    "[Phase 2b] LPT order: nChunks=%d, K range %d-%d, "
+                    "N range %zu-%zu (heaviest first)\n",
+                    nCh, kMin, kMax, nMin, nMax);
+        }
+    }
+
     struct ChunkResult {
         bool                    changed = false;
         int                     deltaClusters = 0;
@@ -10764,7 +10811,8 @@ void KK::ChunkReCEMPerChunk(
 
     #pragma omp parallel for schedule(dynamic) \
         reduction(+:totalChunksProcessed,totalDeltaClusters)
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int oi = 0; oi < nCh; oi++) {
+        const int ck = chunkOrder[static_cast<size_t>(oi)];
         const auto& pts = chunkPoints[static_cast<size_t>(ck)];
         const int   nPts = static_cast<int>(pts.size());
         if (nPts == 0) continue;
@@ -11057,11 +11105,22 @@ void KK::ChunkReCEMPerChunk(
             // sees Phase 2a's clusters intact; subsequent EStep refines the
             // assignments; TrySplits and ConsiderDeletion adjust K only if
             // BIC strictly prefers the change.
+            //
+            // Cap the inner CEM iteration count: at the chunk scale a
+            // properly-warm-started CEM converges in 10-30 iterations.
+            // Letting it loop the full MaxIter (default 500) is wasteful
+            // and, with split/delete oscillation around a marginal-BIC
+            // boundary, can pin a single chunk on a single thread for
+            // many minutes while other chunks have long finished (the
+            // straggler-tail symptom).  60 is a defensive cap; rare
+            // chunks that need more iterations to converge are no worse
+            // off than the warm-start equilibrium they're already near,
+            // which Phase 4/5/6 will refine further anyway.
             Ks.MStep();
             Ks.EStep();
             Ks.RunEMLoop(/*enableSplits=*/  true,
                          /*enableDistDump=*/ false,
-                         /*maxIter=*/        0,
+                         /*maxIter=*/        60,
                          /*phaseLabel=*/     "[2b]");
         }
 
