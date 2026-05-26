@@ -126,6 +126,25 @@ struct Config {
     //         only when your label conventions don't reserve cluster 1.
     bool skipMuaCluster1 = true;
 
+    // Anisotropy gate on source candidates.  When > 0.0 AND a per-
+    // cluster anisotropy ratio λ_max(Σ)/tr(Σ) is supplied to Run(),
+    // any cluster whose anisotropy is BELOW this threshold is removed
+    // from the source-candidate set (refs are unaffected).
+    //
+    // Rationale: a unimodal cluster has roughly isotropic residual
+    // covariance, so λ_max ≈ tr/nDim → anisotropy ≈ 1/nDim (≈ 0.045
+    // for nDim=22).  A mixture stretches Σ along the axis separating
+    // its sub-units, pushing the leading eigenvalue well above
+    // tr/nDim and anisotropy into the 0.3–0.7 range.  Gating on
+    // anisotropy is therefore a mixture-detector: we only K-NN-split
+    // clusters that LOOK like mixtures, sparing well-isolated units.
+    //
+    // Recommended default 0.10 (~ 2.2× the isotropic floor at nDim=22)
+    // — high enough to spare unimodals, low enough to admit obvious
+    // mixtures.  0.0 disables the gate (every cluster is a candidate,
+    // as before patch 0021).
+    float minSourceAnisotropy = 0.0f;
+
     // Noise-cluster (cid=0) inclusion probability.  Default 0.0 (noise
     // cluster never used as a source).  When > 0, before each Run()
     // call a uniform [0, 1) draw is compared against this value; on
@@ -174,6 +193,7 @@ struct Config {
 struct Result {
     // After-the-fact diagnostics.
     int nSourcesConsidered  = 0;
+    int nSourcesAnisotropyFiltered = 0;   // dropped by the anisotropy gate
     int nSourcesSplit       = 0;   // produced ≥1 new sub-cluster (winner OR residual)
     int nNewClusters        = 0;   // total new IDs allocated (winners + residuals)
     int nResidualClusters   = 0;   // of nNewClusters, how many were residual buckets
@@ -198,6 +218,14 @@ struct Result {
 //                         ID, used by the useTraceFilter auto-pick filter.
 //                         If empty AND useTraceFilter=true, the filter
 //                         is skipped (all-clusters used as references).
+//   clusterTraceIds       parallel array of cluster IDs for clusterTraces.
+//   clusterAnisotropy     optional [labels] map of λ_max(Σ)/tr(Σ) per
+//                         cluster ID, used by the source-side anisotropy
+//                         gate (cfg.minSourceAnisotropy).  Parallel to
+//                         clusterAnisotropyIds.  When empty OR
+//                         minSourceAnisotropy ≤ 0 the gate is bypassed.
+//   clusterAnisotropyIds  parallel array of cluster IDs for the
+//                         anisotropy values.
 //   cfg                   configuration
 //
 // Returns:
@@ -210,6 +238,24 @@ Result Run(const float*                       features,
            std::vector<int>&                  labels,
            const std::vector<float>&          clusterTraces,
            const std::vector<int>&            clusterTraceIds,
+           const std::vector<float>&          clusterAnisotropy,
+           const std::vector<int>&            clusterAnisotropyIds,
            const Config&                      cfg);
+
+// Backward-compatible overload — forwards to the 9-arg form with empty
+// anisotropy vectors so the gate is bypassed.  Pre-patch-0021 callers
+// (including the test suite) continue to compile unchanged.
+inline Result Run(const float*                features,
+                  int                         nPoints,
+                  int                         nDims,
+                  std::vector<int>&           labels,
+                  const std::vector<float>&   clusterTraces,
+                  const std::vector<int>&     clusterTraceIds,
+                  const Config&               cfg) {
+    static const std::vector<float> kEmptyF;
+    static const std::vector<int>   kEmptyI;
+    return Run(features, nPoints, nDims, labels, clusterTraces,
+               clusterTraceIds, kEmptyF, kEmptyI, cfg);
+}
 
 }  // namespace wave_knn_split

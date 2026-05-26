@@ -244,6 +244,28 @@ extern float WaveKnnMajorityThreshold;
 // cluster if large enough); 0 = ambiguous spikes always stay in source.
 // Default 1.
 extern int   WaveKnnResidualBecomesCluster;
+
+// WaveKnnMinSourceAnisotropy: mixture-detector gate for source-candidate
+// selection in wave_knn_split (applies to BOTH the Phase 2b.5 single-
+// pass call AND the Phase 4b alternating call).  For each cluster the
+// anisotropy ratio λ_max(Σ)/tr(Σ) of its residual covariance is
+// computed via power iteration on the [nDims×nDims] cov matrix.
+// Clusters whose ratio is BELOW this threshold are removed from the
+// source-candidate set (references are unaffected).
+//
+// Rationale: a unimodal cluster has roughly isotropic residuals so
+// anisotropy ≈ 1/nDims (≈ 0.045 for nDims=22).  A mixture stretches
+// Σ along the separation axis and the ratio rises to 0.3–0.7.  The
+// gate prevents WaveKnnSplit from attacking well-isolated clusters
+// and producing spurious "splits" from random K-NN voting noise —
+// the root cause of the runaway over-fragmentation when Phase 4b
+// alternation was enabled without the gate (10k+ local clusters
+// across 36 chunks).
+//
+// Default 0.10 (~2.2× the isotropic floor for nDims=22) — admits
+// obvious mixtures while sparing unimodals.  0.0 disables the gate
+// (pre-patch-0021 behaviour).
+extern float WaveKnnMinSourceAnisotropy;
 // WaveKnnUseTraceFilter: in mode 1, 1 = KKE auto-pick (low-trace = ref,
 // high-trace = source); 0 = klusters mode (every cluster is both ref and
 // source candidate, own-cluster excluded per-spike).  Default 1.

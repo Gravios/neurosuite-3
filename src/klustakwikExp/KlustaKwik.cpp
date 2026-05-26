@@ -271,6 +271,7 @@ float WaveKnnMajorityThreshold  = 0.6f;
 //   0: small winners revert to source; ambiguous spikes stay in source;
 //     no residual cluster ever materialised.
 int   WaveKnnResidualBecomesCluster = 1;
+float WaveKnnMinSourceAnisotropy    = 0.10f; ///< default mixture gate; see KlustaKwik.h.
 // WaveKnnUseTraceFilter: when KnnSplitMode=1 and no explicit references
 // are provided, controls auto-pick of refs vs sources.
 //   0 (default, klusters mode): no trace filter.  Every sized-OK cluster
@@ -506,6 +507,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(KnnSplitMode);
     FLOAT_PARAM(WaveKnnMajorityThreshold);
     INT_PARAM(WaveKnnResidualBecomesCluster);
+    FLOAT_PARAM(WaveKnnMinSourceAnisotropy);
     INT_PARAM(WaveKnnUseTraceFilter);
     INT_PARAM(WaveKnnSkipMuaCluster1);
     FLOAT_PARAM(WaveKnnNoiseSourceProbability);
