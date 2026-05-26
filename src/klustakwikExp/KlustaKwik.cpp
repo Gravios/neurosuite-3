@@ -271,7 +271,7 @@ float WaveKnnMajorityThreshold  = 0.6f;
 //   0: small winners revert to source; ambiguous spikes stay in source;
 //     no residual cluster ever materialised.
 int   WaveKnnResidualBecomesCluster = 1;
-float WaveKnnMinSourceAnisotropy    = 0.10f; ///< default mixture gate; see KlustaKwik.h.
+float WaveKnnMinSourceAnisotropy    = 0.20f; ///< default mixture gate; see KlustaKwik.h.
 // WaveKnnUseTraceFilter: when KnnSplitMode=1 and no explicit references
 // are provided, controls auto-pick of refs vs sources.
 //   0 (default, klusters mode): no trace filter.  Every sized-OK cluster
@@ -368,6 +368,21 @@ int   PerChannelSplitUseTroughTime     = 1;
 
 // AlternatingSplitMerge — see KlustaKwik.h for description.
 int   AlternatingSplitMergeEnable     = 0;
+// Maximum number of Phase 4 iterations in which WaveKnnSplit is allowed
+// to run.  Once this is reached, the Phase 4 loop continues with
+// template-match-only iters (so any over-fragments produced by split
+// can still get merged) up to the existing TemplateMatchIters cap.
+// Default 2 — conservative; the alternation is fundamentally a tug-of-
+// war between template-match (merge) and K-NN (split) responding to the
+// same similarity signal in opposite directions, and split tends to win
+// unbounded.  Capping the split phase at 2 lets the merge side win the
+// remaining iters.
+int   AlternatingSplitMergeMaxIters   = 2;
+// Net-growth abort: if a Phase 4b iter produces more new clusters than
+// the iter's template-match merged, AND the same is true of the
+// preceding iter, abort further split iterations (template-match-only
+// from then on).  Default 1 = enabled; 0 = disabled (run all iters).
+int   AlternatingSplitMergeAbortOnNetGrowth = 1;
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
 float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
                                           ///< lowered from 2.0 because the χ² test is itself
@@ -537,6 +552,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(PerChannelSplitUseTroughAmp);
     INT_PARAM(PerChannelSplitUseTroughTime);
     INT_PARAM(AlternatingSplitMergeEnable);
+    INT_PARAM(AlternatingSplitMergeMaxIters);
+    INT_PARAM(AlternatingSplitMergeAbortOnNetGrowth);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
     FLOAT_PARAM(DipSplitElongationFactor);

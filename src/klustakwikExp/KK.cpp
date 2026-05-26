@@ -3733,6 +3733,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
+        int _altNetGrowthStreak = 0;
         for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
             // Re-harvest meanWav with current perChunkClass
             if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f) &&
@@ -3845,12 +3846,27 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             // loop.  Drives intra-cluster waveform variance towards a
             // minimum by re-splitting clusters that look like mixtures,
             // then letting the next iter's TemplateMatch re-merge any
-            // over-fragments.  Convergence: stop when neither merge NOR
-            // split changed labels.
+            // over-fragments.
+            //
+            // Two guards against runaway split-domination:
+            //   * iter cap (AlternatingSplitMergeMaxIters, default 2)
+            //   * net-growth abort (if WaveKnnSplit produced more new
+            //     clusters than template-match merged for two iters in
+            //     a row, stop running split; template-match-only iters
+            //     continue up to TemplateMatchIters).
             int _nSpikesSplit = 0;
-            if (AlternatingSplitMergeEnable != 0 &&
-                KnnSplitPerChunkEnable != 0 && KnnSplitMode == 1) {
+            const bool _altGate =
+                AlternatingSplitMergeEnable != 0 &&
+                KnnSplitPerChunkEnable != 0 && KnnSplitMode == 1 &&
+                _tmIter < AlternatingSplitMergeMaxIters &&
+                !(AlternatingSplitMergeAbortOnNetGrowth != 0 &&
+                  _altNetGrowthStreak >= 2);
+            if (_altGate) {
                 std::vector<std::vector<int>> _beforeSplit = perChunkClass;
+                // Count cluster IDs present BEFORE split.
+                std::set<int> _kBefore;
+                for (const auto& v : perChunkClass)
+                    for (int c : v) if (c != 0) _kBefore.insert(c);
                 WaveKnnSplitPerChunk(
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
@@ -3860,10 +3876,36 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     for (size_t _ii = 0; _ii < aft.size(); ++_ii)
                         if (aft[_ii] != bef[_ii]) ++_nSpikesSplit;
                 }
+                // Count cluster IDs AFTER split.
+                std::set<int> _kAfter;
+                for (const auto& v : perChunkClass)
+                    for (int c : v) if (c != 0) _kAfter.insert(c);
+                const int _kNew = static_cast<int>(_kAfter.size())
+                                - static_cast<int>(_kBefore.size());
+                if (_kNew > _nMerged) ++_altNetGrowthStreak;
+                else                  _altNetGrowthStreak = 0;
                 LockedStderr(
                     "[Phase 4b] AlternatingKnnSplit (iter %d): %d spike "
-                    "labels changed (template-match merged %d this iter)\n",
-                    _tmIter + 1, _nSpikesSplit, _nMerged);
+                    "labels changed; +%d new clusters vs %d merged (net "
+                    "growth streak %d/2)\n",
+                    _tmIter + 1, _nSpikesSplit, _kNew, _nMerged,
+                    _altNetGrowthStreak);
+            } else if (AlternatingSplitMergeEnable != 0 &&
+                       _tmIter == AlternatingSplitMergeMaxIters) {
+                LockedStderr(
+                    "[Phase 4b] AlternatingKnnSplit: iter cap reached "
+                    "(%d); continuing with template-match only\n",
+                    AlternatingSplitMergeMaxIters);
+            } else if (AlternatingSplitMergeEnable != 0 &&
+                       AlternatingSplitMergeAbortOnNetGrowth != 0 &&
+                       _altNetGrowthStreak >= 2 &&
+                       _tmIter < AlternatingSplitMergeMaxIters) {
+                // Print once at the iter we abort split.
+                LockedStderr(
+                    "[Phase 4b] AlternatingKnnSplit: aborted by "
+                    "net-growth streak; continuing with template-match "
+                    "only\n");
+                _altNetGrowthStreak = 1000;  // suppress further logs
             }
 
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
@@ -4978,6 +5020,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // re-runs at the top of each iteration before the next xcorr comparison.
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
+        int _altNetGrowthStreak = 0;
         for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
             // Re-harvest meanWav with current perChunkClass
             if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f) &&
@@ -5090,12 +5133,27 @@ float KK::RunChunkedCEM(float chunkMinutes,
             // loop.  Drives intra-cluster waveform variance towards a
             // minimum by re-splitting clusters that look like mixtures,
             // then letting the next iter's TemplateMatch re-merge any
-            // over-fragments.  Convergence: stop when neither merge NOR
-            // split changed labels.
+            // over-fragments.
+            //
+            // Two guards against runaway split-domination:
+            //   * iter cap (AlternatingSplitMergeMaxIters, default 2)
+            //   * net-growth abort (if WaveKnnSplit produced more new
+            //     clusters than template-match merged for two iters in
+            //     a row, stop running split; template-match-only iters
+            //     continue up to TemplateMatchIters).
             int _nSpikesSplit = 0;
-            if (AlternatingSplitMergeEnable != 0 &&
-                KnnSplitPerChunkEnable != 0 && KnnSplitMode == 1) {
+            const bool _altGate =
+                AlternatingSplitMergeEnable != 0 &&
+                KnnSplitPerChunkEnable != 0 && KnnSplitMode == 1 &&
+                _tmIter < AlternatingSplitMergeMaxIters &&
+                !(AlternatingSplitMergeAbortOnNetGrowth != 0 &&
+                  _altNetGrowthStreak >= 2);
+            if (_altGate) {
                 std::vector<std::vector<int>> _beforeSplit = perChunkClass;
+                // Count cluster IDs present BEFORE split.
+                std::set<int> _kBefore;
+                for (const auto& v : perChunkClass)
+                    for (int c : v) if (c != 0) _kBefore.insert(c);
                 WaveKnnSplitPerChunk(
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
@@ -5105,10 +5163,36 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     for (size_t _ii = 0; _ii < aft.size(); ++_ii)
                         if (aft[_ii] != bef[_ii]) ++_nSpikesSplit;
                 }
+                // Count cluster IDs AFTER split.
+                std::set<int> _kAfter;
+                for (const auto& v : perChunkClass)
+                    for (int c : v) if (c != 0) _kAfter.insert(c);
+                const int _kNew = static_cast<int>(_kAfter.size())
+                                - static_cast<int>(_kBefore.size());
+                if (_kNew > _nMerged) ++_altNetGrowthStreak;
+                else                  _altNetGrowthStreak = 0;
                 LockedStderr(
                     "[Phase 4b] AlternatingKnnSplit (iter %d): %d spike "
-                    "labels changed (template-match merged %d this iter)\n",
-                    _tmIter + 1, _nSpikesSplit, _nMerged);
+                    "labels changed; +%d new clusters vs %d merged (net "
+                    "growth streak %d/2)\n",
+                    _tmIter + 1, _nSpikesSplit, _kNew, _nMerged,
+                    _altNetGrowthStreak);
+            } else if (AlternatingSplitMergeEnable != 0 &&
+                       _tmIter == AlternatingSplitMergeMaxIters) {
+                LockedStderr(
+                    "[Phase 4b] AlternatingKnnSplit: iter cap reached "
+                    "(%d); continuing with template-match only\n",
+                    AlternatingSplitMergeMaxIters);
+            } else if (AlternatingSplitMergeEnable != 0 &&
+                       AlternatingSplitMergeAbortOnNetGrowth != 0 &&
+                       _altNetGrowthStreak >= 2 &&
+                       _tmIter < AlternatingSplitMergeMaxIters) {
+                // Print once at the iter we abort split.
+                LockedStderr(
+                    "[Phase 4b] AlternatingKnnSplit: aborted by "
+                    "net-growth streak; continuing with template-match "
+                    "only\n");
+                _altNetGrowthStreak = 1000;  // suppress further logs
             }
 
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
