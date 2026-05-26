@@ -308,6 +308,15 @@ public:
         const std::vector<std::vector<int>>& perChunkClass,
         const char* phaseLabel) const;
 
+    // Global counterpart to LogPerChunkClusterState.  After the chunked
+    // phases have completed and Phase 5/6/7 operate on the global
+    // Class[] / ClassAlive[] state, this helper logs the global cluster
+    // count and noise fraction.  Same diagnostic role as the chunked
+    // version — when total drops to 1 or noise% jumps to 100% between
+    // two consecutive log lines, the phase between them is the
+    // collapse-cause.
+    void LogGlobalClusterState(const char* phaseLabel) const;
+
     // Refractory-period guided split: after SubspaceReclusterPerChunk, for
     // each cluster whose ISI violation rate exceeds minContamRate, attempt a
     // BIC-checked 2-cluster split seeded by violator vs non-violator centroids.

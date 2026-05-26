@@ -3805,6 +3805,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
             if (_nMerged == 0) break;
         }
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
 
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
@@ -3840,6 +3841,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     fprintf(stderr, "[Phase 5] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
+    fprintf(stderr, "[Phase 5] Cross-chunk merge produced %d global clusters\n", nGlobal);
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 5");
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
         return CEMTwoPhase(timeMergeIter);
@@ -3962,6 +3965,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     // Per-phase quality summary after Phase 7 (Global EM) — gives a
     // checkpoint before DipSplit potentially mutates the cluster set.
+    LogGlobalClusterState("Phase 6 (Global EM)");
     ReportClusterQuality("Phase 7");
 
     // ── Phase 6a (optional): post-merge cluster realignment ────────────────
@@ -4017,7 +4021,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            ReportClusterQuality("Phase 7a");
+            LogGlobalClusterState("Phase 6a (post-merge realign)"); ReportClusterQuality("Phase 7a");
         }
     }
 
@@ -4065,7 +4069,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            ReportClusterQuality("Phase 7b");
+            LogGlobalClusterState("Phase 6b (mean-sub merge)"); ReportClusterQuality("Phase 7b");
         }
     }
 
@@ -4985,6 +4989,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
             if (_nMerged == 0) break;
         }
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
 
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
@@ -5020,6 +5025,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     fprintf(stderr, "[Phase 5] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
+    fprintf(stderr, "[Phase 5] Cross-chunk merge produced %d global clusters\n", nGlobal);
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 5");
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
         return CEMTwoPhase(timeMergeIter);
@@ -5161,6 +5168,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     // Per-phase quality summary after Phase 7 (Global EM) — gives a
     // checkpoint before DipSplit potentially mutates the cluster set.
+    LogGlobalClusterState("Phase 6 (Global EM)");
     ReportClusterQuality("Phase 7");
 
     // ── Phase 6a (optional): post-merge cluster realignment ────────────────
@@ -5201,7 +5209,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            ReportClusterQuality("Phase 7a");
+            LogGlobalClusterState("Phase 6a (post-merge realign)"); ReportClusterQuality("Phase 7a");
         }
     }
 
@@ -5241,7 +5249,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            ReportClusterQuality("Phase 7b");
+            LogGlobalClusterState("Phase 6b (mean-sub merge)"); ReportClusterQuality("Phase 7b");
         }
     }
 
@@ -8556,6 +8564,81 @@ void KK::LogPerChunkClusterState(
             "[%s] CLUSTER STATE: total=%d (K/chunk min=%d median=%d max=%d), "
             "noise=%d/%d spikes (%.1f%%)\n",
             phaseLabel, total, kMin, kMedian, kMax,
+            noiseSpikes, totalSpikes, noisePct);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::LogGlobalClusterState
+//
+// Global counterpart to LogPerChunkClusterState.  Called from the
+// post-chunked phases (Phase 4, 5, 6, 6a, 6b, 7) where the perChunkClass
+// labels have been promoted to global Class[]/ClassAlive[] and chunked
+// diagnostics no longer apply.
+//
+// Output:
+//   [<phase>] GLOBAL STATE: alive=N (incl noise), spikes per cluster
+//             min=a median=b max=c, noise=X/Y spikes (Z.Z%)
+//
+// Same collapse-detection role: if alive drops to 1 or noise% goes to
+// 100%, the phase between this line and the previous log entry is the
+// offender.
+// ---------------------------------------------------------------------------
+void KK::LogGlobalClusterState(const char* phaseLabel) const
+{
+    // Defensive: if Class[] hasn't been populated yet (early in the
+    // pipeline) the report is meaningless — emit a one-line note so the
+    // log shows the call happened but no global state existed.
+    if (nPoints <= 0 || !Class.m_Data) {
+        fprintf(stderr, "[%s] GLOBAL STATE: (no global Class state yet)\n",
+                phaseLabel);
+        return;
+    }
+
+    // Count spikes per cluster from Class[].  Don't trust ClassAlive[]
+    // alone — a cluster can be marked alive with zero members between
+    // certain phase transitions (race between deletion and reassign).
+    std::vector<int> sizeByCluster(static_cast<size_t>(MaxPossibleClusters), 0);
+    int noiseSpikes = 0;
+    int totalSpikes = nPoints;
+    for (int p = 0; p < nPoints; ++p) {
+        const int c = Class[p];
+        if (c >= 0 && c < MaxPossibleClusters) {
+            ++sizeByCluster[static_cast<size_t>(c)];
+            if (c == 0) ++noiseSpikes;
+        }
+    }
+
+    // Stats over non-noise non-empty clusters.
+    std::vector<int> sizes;
+    sizes.reserve(static_cast<size_t>(MaxPossibleClusters));
+    int aliveNonNoise = 0;
+    for (int c = 1; c < MaxPossibleClusters; ++c) {
+        if (sizeByCluster[static_cast<size_t>(c)] > 0) {
+            sizes.push_back(sizeByCluster[static_cast<size_t>(c)]);
+            ++aliveNonNoise;
+        }
+    }
+
+    int sMin = 0, sMax = 0, sMedian = 0;
+    if (!sizes.empty()) {
+        sMin = *std::min_element(sizes.begin(), sizes.end());
+        sMax = *std::max_element(sizes.begin(), sizes.end());
+        std::vector<int> sorted = sizes;
+        std::sort(sorted.begin(), sorted.end());
+        sMedian = sorted[sorted.size() / 2];
+    }
+
+    const double noisePct = (totalSpikes > 0)
+        ? 100.0 * static_cast<double>(noiseSpikes) / totalSpikes
+        : 0.0;
+
+    fprintf(stderr,
+            "[%s] GLOBAL STATE: alive=%d non-noise clusters, "
+            "spikes/cluster min=%d median=%d max=%d, "
+            "noise=%d/%d spikes (%.1f%%)\n",
+            phaseLabel, aliveNonNoise,
+            sMin, sMedian, sMax,
             noiseSpikes, totalSpikes, noisePct);
 }
 
