@@ -40,6 +40,8 @@ Result Run(const float*                       features,
            std::vector<int>&                  labels,
            const std::vector<float>&          clusterTraces,
            const std::vector<int>&            clusterTraceIds,
+           const std::vector<float>&          clusterAnisotropy,
+           const std::vector<int>&            clusterAnisotropyIds,
            const Config&                      cfg) {
     Result out;
     if (nPoints <= 0 || nDims < 2 || static_cast<int>(labels.size()) != nPoints) {
@@ -49,6 +51,20 @@ Result Run(const float*                       features,
     const int nDimsUse = nDims - 1;  // exclude last (time) dim
     const int minVotes = static_cast<int>(
         std::ceil(static_cast<double>(K) * static_cast<double>(cfg.majorityThreshold)));
+
+    // Anisotropy map (optional gate on source candidates).  When both
+    // a per-cluster anisotropy value AND a positive minSourceAnisotropy
+    // are supplied, any cluster whose anisotropy is BELOW the threshold
+    // is removed from the source-candidate set later.
+    std::unordered_map<int, float> anisoMap;
+    const bool useAniso = (cfg.minSourceAnisotropy > 0.0f) &&
+                          !clusterAnisotropy.empty() &&
+                          clusterAnisotropy.size() == clusterAnisotropyIds.size();
+    if (useAniso) {
+        anisoMap.reserve(clusterAnisotropyIds.size());
+        for (size_t k = 0; k < clusterAnisotropyIds.size(); ++k)
+            anisoMap[clusterAnisotropyIds[k]] = clusterAnisotropy[k];
+    }
 
     // 1. Count cluster sizes.  Skip cluster 0 (noise) entirely from the
     //    auto-pick tally; skip cluster 1 only if cfg.skipMuaCluster1.
@@ -166,6 +182,36 @@ Result Run(const float*                       features,
             }
         }
     }
+
+    // 3b. Anisotropy gate (mixture detector).  Remove from the source
+    //     set any cluster whose λ_max(Σ)/tr(Σ) is below threshold.
+    //     A unimodal cluster has roughly isotropic residuals so
+    //     anisotropy ≈ 1/nDim; a mixture is stretched along the
+    //     separation axis so anisotropy is much higher.  Sparing
+    //     unimodals avoids the runaway over-splitting that occurs
+    //     when WaveKnnSplit attacks well-isolated clusters and
+    //     generates "splits" from random K-NN voting noise.  Refs are
+    //     NOT filtered — well-isolated unimodals are exactly the
+    //     references we want to vote against.
+    int nFilteredAniso = 0;
+    if (useAniso && !sourceClusters.empty()) {
+        std::set<int> kept;
+        for (int cid : sourceClusters) {
+            auto it = anisoMap.find(cid);
+            if (it == anisoMap.end()) {
+                // No anisotropy info for this cluster — be permissive
+                // (admit, matching pre-gate behaviour).  This keeps
+                // the gate opt-in rather than failure-by-default if
+                // the caller forgets to compute the vector.
+                kept.insert(cid);
+                continue;
+            }
+            if (it->second >= cfg.minSourceAnisotropy) kept.insert(cid);
+            else ++nFilteredAniso;
+        }
+        sourceClusters.swap(kept);
+    }
+    out.nSourcesAnisotropyFiltered = nFilteredAniso;
 
     // 4. Noise-cluster (cid=0) as a source candidate, drawn at this
     //    probability per Run() invocation.  Noise is NEVER part of the

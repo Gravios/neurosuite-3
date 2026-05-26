@@ -13117,6 +13117,7 @@ void KK::WaveKnnSplitPerChunk(
     int chunksCalled          = 0;
     int chunksProcessed       = 0;
     int totalSourcesConsidered = 0;
+    int totalSourcesAnisoFiltered = 0;
     int totalSourcesSplit      = 0;
     int totalNewClusters       = 0;
     int totalResidualClusters  = 0;
@@ -13145,11 +13146,23 @@ void KK::WaveKnnSplitPerChunk(
         std::vector<int> chunkLabels(cls.begin(), cls.end());
 
         // Build trace vector (one entry per non-zero localClusterId).
+        // Also compute anisotropy ratio λ_max(Σ)/tr(Σ) via power iteration
+        // — this is the mixture detector that gates source candidates
+        // when WaveKnnMinSourceAnisotropy > 0.  For nDim=22 a unimodal
+        // cluster has anisotropy ≈ 1/22 ≈ 0.045; a clear 2-unit mixture
+        // gives 0.3–0.7.
         const int nSpatial = nFullDims - 1;
         std::vector<float> traces;
         std::vector<int>   traceIds;
+        std::vector<float> aniso;
+        std::vector<int>   anisoIds;
         traces.reserve(mdls.size());
         traceIds.reserve(mdls.size());
+        aniso.reserve(mdls.size());
+        anisoIds.reserve(mdls.size());
+
+        // Scratch vectors for power iteration (re-used per cluster).
+        std::vector<double> v(nSpatial), w(nSpatial);
         for (const auto& cm : mdls) {
             if (cm.localClusterId == 0) continue;
             if (cm.nMembers == 0) continue;
@@ -13159,6 +13172,48 @@ void KK::WaveKnnSplitPerChunk(
             }
             traces.push_back(tr / std::max(1, nSpatial));
             traceIds.push_back(cm.localClusterId);
+
+            // Skip anisotropy if trace is degenerate.
+            if (tr <= 1e-20f || nSpatial < 2) continue;
+
+            // Power iteration: λ_max of the upper-triangle-populated
+            // cov matrix.  Symmetrise on-the-fly by reading
+            // cov[i,j] = cov[min(i,j), max(i,j)].
+            auto C = [&](int i, int j) -> float {
+                if (i > j) std::swap(i, j);
+                return cm.cov[static_cast<size_t>(i) * nFullDims + j];
+            };
+            // Seed v with normalised diagonal — biases toward the
+            // largest-variance axis, converges in ~10-20 iters for the
+            // matrices we see.
+            double sumAbs = 0.0;
+            for (int i = 0; i < nSpatial; ++i) {
+                v[i] = std::abs(C(i, i)) + 1e-12;
+                sumAbs += v[i] * v[i];
+            }
+            const double invNorm0 = 1.0 / std::sqrt(sumAbs);
+            for (int i = 0; i < nSpatial; ++i) v[i] *= invNorm0;
+
+            double lambda = 0.0;
+            const int powerIters = 30;
+            for (int it = 0; it < powerIters; ++it) {
+                // w = C * v
+                for (int i = 0; i < nSpatial; ++i) {
+                    double acc = 0.0;
+                    for (int j = 0; j < nSpatial; ++j) acc += C(i, j) * v[j];
+                    w[i] = acc;
+                }
+                // λ = ||w||
+                double n2 = 0.0;
+                for (int i = 0; i < nSpatial; ++i) n2 += w[i] * w[i];
+                if (n2 < 1e-40) { lambda = 0.0; break; }
+                lambda = std::sqrt(n2);
+                const double inv = 1.0 / lambda;
+                for (int i = 0; i < nSpatial; ++i) v[i] = w[i] * inv;
+            }
+            const float ratio = static_cast<float>(lambda / tr);
+            aniso.push_back(ratio);
+            anisoIds.push_back(cm.localClusterId);
         }
 
         wave_knn_split::Config cfg;
@@ -13182,17 +13237,20 @@ void KK::WaveKnnSplitPerChunk(
               (static_cast<unsigned>(ck) * 1000003u)
             : 0u;
         cfg.residualBecomesNewCluster  = (WaveKnnResidualBecomesCluster != 0);
+        cfg.minSourceAnisotropy        = WaveKnnMinSourceAnisotropy;
         cfg.Verbose                    = (Verbose >= 2);
 
         auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
-                                      chunkLabels, traces, traceIds, cfg);
+                                      chunkLabels, traces, traceIds,
+                                      aniso, anisoIds, cfg);
 
         // Always counted: wave_knn_split was invoked on this chunk and
         // reported how many source clusters it considered.  These counters
         // are needed to distinguish "wave_knn_split rejected every
         // candidate" from "wave_knn_split was never called".
         chunksCalled++;
-        totalSourcesConsidered += r.nSourcesConsidered;
+        totalSourcesConsidered    += r.nSourcesConsidered;
+        totalSourcesAnisoFiltered += r.nSourcesAnisotropyFiltered;
 
         if (r.nNewClusters == 0) continue;
 
@@ -13259,11 +13317,12 @@ void KK::WaveKnnSplitPerChunk(
 
     LockedStderr(
         "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (called=%d, with-splits=%d), "
-        "sources visited=%d, split=%d, new clusters=%d "
+        "sources visited=%d, aniso-filtered=%d, split=%d, new clusters=%d "
         "(of which residual=%d), spikes reassigned=%d, "
         "spikes kept-in-source=%d\n",
         chunksTotal, chunksCalled, chunksProcessed,
-        totalSourcesConsidered, totalSourcesSplit, totalNewClusters,
+        totalSourcesConsidered, totalSourcesAnisoFiltered,
+        totalSourcesSplit, totalNewClusters,
         totalResidualClusters,
         totalSpikesReassigned, totalSpikesResidual);
 }
