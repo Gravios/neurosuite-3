@@ -2635,6 +2635,25 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         std::unordered_map<int, std::pair<int,float>> bestForward;   // li -> (j, score)
         std::unordered_map<int, std::pair<int,float>> bestBackward;  // j  -> (li, score)
 
+        // Adjacent-chunk gate (default 1 = adjacent only).  Without this
+        // the inner loop is O(N²) over ALL cluster pairs across ALL
+        // chunks — for typical fragmented sessions (~10k local clusters
+        // across 36 chunks) that is ~100M xcorr calls and dominates wall
+        // time.  Setting CrossChunkMaxChunkDistance=1 keeps the work
+        // O(N × K_per_chunk × 2 neighbours), which is what the drift
+        // model assumes anyway (Pass 1 drift table is per-adjacent-pair).
+        const int maxChunkDist = std::max(0, CrossChunkMaxChunkDistance);
+        if (maxChunkDist == 0) {
+            Output("MergeChunkModels: Pass 2 (edge xcorr): disabled "
+                   "(CrossChunkMaxChunkDistance = 0)\n");
+        } else {
+            Output("MergeChunkModels: Pass 2 (edge xcorr): max chunk "
+                   "distance = %d (default 1 = adjacent only; raise to "
+                   "match cross-chunk gaps from missing-data periods)\n",
+                   maxChunkDist);
+        }
+
+        if (maxChunkDist > 0)
         for (int li : leftovers) {
             const ChunkModel& mA = models[li];
             for (int j = 0; j < n; j++) {
@@ -2642,6 +2661,8 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                 const ChunkModel& mB = models[j];
                 if (mB.localClusterId == 0)        continue;  // noise
                 if (mB.chunkIdx == mA.chunkIdx)    continue;  // same chunk
+                if (std::abs(mB.chunkIdx - mA.chunkIdx) > maxChunkDist)
+                    continue;                                  // distance gate
                 const auto* wA = pickWav(mA, mB);
                 const auto* wB = pickWav(mB, mA);
                 if (!wA || !wB) continue;

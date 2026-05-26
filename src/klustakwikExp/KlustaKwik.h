@@ -166,6 +166,23 @@ extern float TemplateMatchEigRatio;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
+
+// CrossChunkMaxChunkDistance — Phase 5 Pass 2 (edge xcorr) candidate-pair
+// gate.  Restricts the cross-chunk xcorr search to chunk pairs whose
+// chunkIdx differ by AT MOST this value.  Default 1 (adjacent chunks
+// only) — the typical and physically correct setting for drift-aware
+// recording: a unit's mean-waveform template persists across adjacent
+// chunks but can only match non-adjacent ones via a chain of adjacent
+// matches.  Larger values widen the search; 0 disables Pass 2 entirely;
+// >=nChunks restores the legacy O(N²) all-pairs behaviour.
+//
+// Without this gate, Pass 2 is O(N_leftovers × N_total) over ALL cluster
+// pairs across ALL chunks — for typical fragmented sessions (~10k local
+// clusters across 36 chunks) that is ~100M xcorr calls, dominating
+// wall time and pinning multi-GB of GPU workspace for the duration.
+// With default=1 the work drops to O(N × K_per_chunk × 2) which is
+// roughly nChunks× smaller (~3M for the same session).
+extern int   CrossChunkMaxChunkDistance;
 extern int   TimeShiftAlignPostMerge;
 extern float TimeShiftAlignScoreThresh;
 extern int   TimeShiftAlignAfterPhase1;
