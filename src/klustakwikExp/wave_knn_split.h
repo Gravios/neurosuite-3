@@ -99,6 +99,25 @@ struct Config {
     // refs.  Ignored when referenceIds is non-empty.
     bool referencesBelowMedianTrace = true;
 
+    // Residual handling — matches klusters' behaviour when true (default):
+    //
+    //   true  : Small confident winners (< minNewClusterSize) are folded
+    //           into the ambiguous (no-majority) bucket.  If the resulting
+    //           pool size ≥ minNewClusterSize, it materialises as a NEW
+    //           cluster ID (a "residual" cluster).  Otherwise its spikes
+    //           stay in source.  This is the klusters semantics from
+    //           Data::splitClusterByKnnVsReferences (data.cpp:1956–1974).
+    //           In batch mode this isolates ambiguous spikes from the
+    //           source's confidently-kept ones, so downstream Phase 5
+    //           cross-chunk matching sees the residual as its own object
+    //           and doesn't contaminate the source's mean waveform.
+    //
+    //   false : Small winners simply revert to source (no fold); ambiguous
+    //           spikes always stay in source.  No residual cluster is
+    //           ever materialised.  Use this if downstream phases don't
+    //           handle the extra cluster cleanly.
+    bool residualBecomesNewCluster = true;
+
     bool Verbose = false;
 };
 
@@ -108,10 +127,11 @@ struct Config {
 struct Result {
     // After-the-fact diagnostics.
     int nSourcesConsidered  = 0;
-    int nSourcesSplit       = 0;   // produced ≥1 new sub-cluster
-    int nNewClusters        = 0;
-    int nSpikesReassigned   = 0;
-    int nSpikesResidual     = 0;   // would-have-been-reassigned but below threshold
+    int nSourcesSplit       = 0;   // produced ≥1 new sub-cluster (winner OR residual)
+    int nNewClusters        = 0;   // total new IDs allocated (winners + residuals)
+    int nResidualClusters   = 0;   // of nNewClusters, how many were residual buckets
+    int nSpikesReassigned   = 0;   // spikes moved out of source to ANY new cluster
+    int nSpikesResidual     = 0;   // ambiguous + small-winner spikes that stayed in source
 };
 
 // -----------------------------------------------------------------------------

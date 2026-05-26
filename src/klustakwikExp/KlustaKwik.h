@@ -198,6 +198,11 @@ extern int   KnnSplitMinNewClusterSize;
 extern int   KnnSplitMode;
 // WaveKnnMajorityThreshold: majority fraction in mode 1.  Default 0.6.
 extern float WaveKnnMajorityThreshold;
+// WaveKnnResidualBecomesCluster: in mode 1, 1 = klusters-faithful (residual
+// pool of ambiguous + small-winner spikes materialises as its own new
+// cluster if large enough); 0 = ambiguous spikes always stay in source.
+// Default 1.
+extern int   WaveKnnResidualBecomesCluster;
 // Phase4RefineEnable: master switch for the rewritten Phase-4 pipeline
 // (proxy_isi → adapt_model → clust_quality → xcorr_match).  Default 0
 // (legacy WithinChunkTemplateMatch preserved).

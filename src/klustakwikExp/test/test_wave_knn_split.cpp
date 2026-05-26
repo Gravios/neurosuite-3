@@ -120,13 +120,13 @@ static void test_two_refs_mixed_source() {
 }
 
 // -----------------------------------------------------------------------------
-// T3: source whose spikes are exactly equidistant from two references —
-//     should produce 0 new clusters (no confident majority).  This is the
-//     key property that KKE's existing nearest-template version VIOLATES
-//     (it forces every spike to a winner).
+// T3 (klusters-faithful default): source whose spikes are equidistant from
+//     two references — ambiguous spikes pool into a RESIDUAL CLUSTER
+//     (residualBecomesNewCluster=true by default).  Matches klusters'
+//     Data::splitClusterByKnnVsReferences behaviour.
 // -----------------------------------------------------------------------------
-static void test_low_confidence_no_split() {
-    std::puts("T3: low-confidence source produces NO new clusters");
+static void test_residual_becomes_cluster_default() {
+    std::puts("T3: ambiguous spikes form a residual cluster (klusters default)");
 
     std::mt19937 rng(7);
     std::normal_distribution<float> refNz(0.0f, 0.5f);   // ref spread
@@ -145,14 +145,12 @@ static void test_low_confidence_no_split() {
         }
     };
 
-    // TWO references on the x-axis
     addRefCluster(2,  0.0f, 0.0f, 300);
     addRefCluster(3, 10.0f, 0.0f, 300);
 
-    // Source: 200 spikes clustered TIGHTLY at (5, 0) — exact midpoint.
-    // Each source spike's K-NN will be ~5/5 from the two refs (by
-    // symmetry), and with strict majority threshold 0.8 no winner
-    // emerges, so all spikes remain in source.
+    // 200 source spikes tightly at midpoint — equidistant, K-NN ~5/5,
+    // no winner above majThr=0.8.  Klusters' fold turns the ambiguous
+    // bucket into a single new residual cluster.
     for (int i = 0; i < 200; ++i) {
         feat.push_back(5.0f + srcNz(rng));
         feat.push_back(0.0f + srcNz(rng));
@@ -166,23 +164,151 @@ static void test_low_confidence_no_split() {
 
     wave_knn_split::Config cfg;
     cfg.K = 10;
-    cfg.majorityThreshold = 0.8f;  // strict — needs 8/10 votes
+    cfg.majorityThreshold = 0.8f;
+    cfg.minRefClusterSize = 50;
+    cfg.minSourceClusterSize = 20;
+    cfg.minNewClusterSize = 30;
+    cfg.referenceIds = {2, 3};
+    cfg.sourceIds    = {5};
+    // residualBecomesNewCluster defaults to true (klusters semantics)
+
+    auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
+                                  traces, traceIds, cfg);
+    CHECK(r.nSourcesConsidered == 1, "source 5 considered");
+    CHECK(r.nResidualClusters == 1, "residual cluster formed");
+    CHECK(r.nNewClusters == 1, "exactly 1 new cluster (the residual)");
+    CHECK(r.nSpikesReassigned >= 190, "≥95% of source spikes moved to residual");
+    CHECK(r.nSpikesResidual <= 10, "few spikes stayed in source");
+    int still5 = 0;
+    for (int i = 600; i < nPoints; ++i) {
+        if (labels[i] == 5) ++still5;
+    }
+    CHECK(still5 <= 10, "source cluster 5 mostly emptied");
+}
+
+// -----------------------------------------------------------------------------
+// T5 (residualBecomesNewCluster=false): ambiguous spikes stay in source.
+//     KKE-friendly mode for callers not wanting extra cluster IDs.
+// -----------------------------------------------------------------------------
+static void test_residual_disabled_stays_in_source() {
+    std::puts("T5: residualBecomesNewCluster=false → ambiguous spikes stay in source");
+
+    std::mt19937 rng(7);
+    std::normal_distribution<float> refNz(0.0f, 0.5f);
+    std::normal_distribution<float> srcNz(0.0f, 0.05f);
+
+    const int nDims = 3;
+    std::vector<float> feat;
+    std::vector<int>   labels;
+
+    auto addRefCluster = [&](int label, float cx, float cy, int n) {
+        for (int i = 0; i < n; ++i) {
+            feat.push_back(cx + refNz(rng));
+            feat.push_back(cy + refNz(rng));
+            feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+            labels.push_back(label);
+        }
+    };
+    addRefCluster(2,  0.0f, 0.0f, 300);
+    addRefCluster(3, 10.0f, 0.0f, 300);
+    for (int i = 0; i < 200; ++i) {
+        feat.push_back(5.0f + srcNz(rng));
+        feat.push_back(0.0f + srcNz(rng));
+        feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+        labels.push_back(5);
+    }
+    const int nPoints = static_cast<int>(labels.size());
+
+    wave_knn_split::Config cfg;
+    cfg.K = 10;
+    cfg.majorityThreshold = 0.8f;
+    cfg.minRefClusterSize = 50;
+    cfg.minSourceClusterSize = 20;
+    cfg.minNewClusterSize = 30;
+    cfg.referenceIds = {2, 3};
+    cfg.sourceIds    = {5};
+    cfg.residualBecomesNewCluster = false;  // KKE-compat mode
+
+    std::vector<float> traces;
+    std::vector<int>   traceIds;
+    auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
+                                  traces, traceIds, cfg);
+    CHECK(r.nResidualClusters == 0, "no residual cluster formed");
+    CHECK(r.nNewClusters == 0, "no new clusters");
+    CHECK(r.nSpikesReassigned == 0, "no spikes moved");
+    CHECK(r.nSpikesResidual >= 190, "ambiguous spikes counted as residual-in-source");
+    int still5 = 0;
+    for (int i = 600; i < nPoints; ++i) {
+        if (labels[i] == 5) ++still5;
+    }
+    CHECK(still5 >= 190, "source cluster 5 retains its spikes");
+}
+
+// -----------------------------------------------------------------------------
+// T6 (small-winner fold): a small confident winner (size < minNewClusterSize)
+//     is FOLDED into the residual bucket, not directly dropped to source.
+//     Matches klusters' data.cpp:1960-1967 fold loop.
+//
+//     Source 5: 20 spikes confidently near cluster 2 (too small to be its
+//     own cluster) + 180 ambiguous midpoint spikes.  Expected:
+//       - 20-spike confident bucket → folded into ambiguous
+//       - 180 + 20 = 200 ≥ minNewClusterSize → 1 residual cluster
+//       - 0 surviving normal winners
+// -----------------------------------------------------------------------------
+static void test_small_winner_folds_into_residual() {
+    std::puts("T6: small confident winner folds into residual, not source");
+
+    std::mt19937 rng(31);
+    std::normal_distribution<float> refNz(0.0f, 0.5f);
+    std::normal_distribution<float> srcNz(0.0f, 0.05f);
+
+    const int nDims = 3;
+    std::vector<float> feat;
+    std::vector<int>   labels;
+
+    auto addRefCluster = [&](int label, float cx, float cy, int n) {
+        for (int i = 0; i < n; ++i) {
+            feat.push_back(cx + refNz(rng));
+            feat.push_back(cy + refNz(rng));
+            feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+            labels.push_back(label);
+        }
+    };
+    addRefCluster(2,  0.0f, 0.0f, 300);
+    addRefCluster(3, 10.0f, 0.0f, 300);
+
+    // Source A: 20 spikes very near cluster 2 (confident vote, small)
+    for (int i = 0; i < 20; ++i) {
+        feat.push_back(0.5f + srcNz(rng));
+        feat.push_back(0.0f + srcNz(rng));
+        feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+        labels.push_back(5);
+    }
+    // Source B: 180 spikes at midpoint (ambiguous)
+    for (int i = 0; i < 180; ++i) {
+        feat.push_back(5.0f + srcNz(rng));
+        feat.push_back(0.0f + srcNz(rng));
+        feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+        labels.push_back(5);
+    }
+    const int nPoints = static_cast<int>(labels.size());
+
+    wave_knn_split::Config cfg;
+    cfg.K = 10;
+    cfg.majorityThreshold = 0.8f;
     cfg.minRefClusterSize = 50;
     cfg.minSourceClusterSize = 20;
     cfg.minNewClusterSize = 30;
     cfg.referenceIds = {2, 3};
     cfg.sourceIds    = {5};
 
+    std::vector<float> traces;
+    std::vector<int>   traceIds;
     auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
                                   traces, traceIds, cfg);
-    CHECK(r.nSourcesConsidered == 1, "source 5 considered");
-    CHECK(r.nNewClusters == 0, "NO new clusters at the midpoint (strict threshold)");
-    CHECK(r.nSpikesReassigned == 0, "no spikes reassigned at midpoint");
-    int still5 = 0;
-    for (int i = 600; i < nPoints; ++i) {
-        if (labels[i] == 5) ++still5;
-    }
-    CHECK(still5 == 200, "all source spikes remain in cluster 5");
+    CHECK(r.nResidualClusters == 1, "1 residual cluster (the fold target)");
+    CHECK(r.nNewClusters == 1, "no surviving confident winner — all folded");
+    CHECK(r.nSpikesReassigned >= 180, "≥180 spikes moved to residual");
 }
 
 // -----------------------------------------------------------------------------
@@ -248,8 +374,10 @@ int main() {
     std::puts("===============================================");
     test_trivial();
     test_two_refs_mixed_source();
-    test_low_confidence_no_split();
+    test_residual_becomes_cluster_default();
     test_trace_filter();
+    test_residual_disabled_stays_in_source();
+    test_small_winner_folds_into_residual();
     std::puts("===============================================");
     std::printf(" Results: %d passed, %d failed\n", g_pass, g_fail);
     std::puts("===============================================");

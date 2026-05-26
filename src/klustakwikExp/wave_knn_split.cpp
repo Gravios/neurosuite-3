@@ -215,46 +215,96 @@ Result Run(const float*                       features,
         }
     }  // omp parallel
 
-    // 6. Group source spikes by (source_id, proposal_id).  Materialise each
-    //    bucket of size ≥ minNewClusterSize as a NEW cluster ID.  Smaller
-    //    buckets and -1-proposal spikes stay in the source.
+    // 6. Per-source partition + klusters-faithful fold.
     //
-    //    Note: matches klusters' semantics — we do NOT actually move
-    //    spikes into the reference cluster.  We only create new sub-clusters
-    //    of the source.  Phase 5 cross-chunk template matching then
-    //    consolidates these into global units.
+    //    Build, for each source cluster, the partition:
+    //        partitions[source][winner_id]  = list of spike indices
+    //    with winner_id = -1 for spikes that didn't reach majority.
+    //
+    //    Then for each source:
+    //      a. Pull out the ambiguous (-1) bucket
+    //      b. For each remaining (confident-winner) partition < minNewClusterSize,
+    //         FOLD it into the ambiguous bucket
+    //      c. If the folded ambiguous bucket has ≥ minNewClusterSize spikes
+    //         AND residualBecomesNewCluster is true, materialise it as a
+    //         NEW cluster ID (the "residual" cluster).  Otherwise its
+    //         spikes stay in the source.
+    //      d. Materialise surviving confident partitions as new cluster IDs.
+    //
+    //    Klusters allocates winner IDs in ascending refId order with the
+    //    residual last (data.cpp:1985-1999); std::map iterates in ascending
+    //    key order which gives us that for free.  We allocate winner IDs
+    //    first, residual ID last, to match.
+    //
+    //    Matches Data::splitClusterByKnnVsReferences (data.cpp:1949-1999).
+
     std::map<int, std::map<int, std::vector<int>>> bucket;  // source -> winner -> idx
     for (int i : sourceIdx) {
-        if (proposal[i] < 0) continue;
-        bucket[labels[i]][proposal[i]].push_back(i);
+        bucket[labels[i]][proposal[i]].push_back(i);  // proposal=-1 → ambiguous
     }
 
     int nextId = maxLabel + 1;
-    int nResidual = 0;
+    int totalResidualSpikesKeptInSource = 0;
+
     for (auto& srcKv : bucket) {
-        bool srcSplit = false;
-        for (auto& winKv : srcKv.second) {
-            auto& idxs = winKv.second;
-            if (static_cast<int>(idxs.size()) < cfg.minNewClusterSize) {
-                nResidual += static_cast<int>(idxs.size());  // stays in source
-                continue;
+        auto& parts = srcKv.second;
+
+        // a. Pull ambiguous bucket out (key -1)
+        std::vector<int> residual;
+        {
+            auto it = parts.find(-1);
+            if (it != parts.end()) {
+                residual = std::move(it->second);
+                parts.erase(it);
             }
+        }
+
+        // b. Fold small confident winners into the residual bucket
+        for (auto it = parts.begin(); it != parts.end(); ) {
+            if (static_cast<int>(it->second.size()) < cfg.minNewClusterSize) {
+                residual.insert(residual.end(),
+                                it->second.begin(), it->second.end());
+                it = parts.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        bool srcSplit = false;
+
+        // d (first — allocate winner IDs in ascending refId order, then
+        //    residual last, to match klusters' allocation order)
+        for (auto& winKv : parts) {
             const int newId = nextId++;
-            for (int i : idxs) labels[i] = newId;
+            for (int i : winKv.second) labels[i] = newId;
             out.nNewClusters++;
-            out.nSpikesReassigned += static_cast<int>(idxs.size());
+            out.nSpikesReassigned += static_cast<int>(winKv.second.size());
             srcSplit = true;
         }
+
+        // c. Residual bucket disposition
+        if (static_cast<int>(residual.size()) >= cfg.minNewClusterSize
+            && cfg.residualBecomesNewCluster) {
+            const int newId = nextId++;
+            for (int i : residual) labels[i] = newId;
+            out.nNewClusters++;
+            out.nResidualClusters++;
+            out.nSpikesReassigned += static_cast<int>(residual.size());
+            srcSplit = true;
+        } else {
+            totalResidualSpikesKeptInSource += static_cast<int>(residual.size());
+        }
+
         if (srcSplit) out.nSourcesSplit++;
     }
-    out.nSpikesResidual = nResidual;
+    out.nSpikesResidual = totalResidualSpikesKeptInSource;
 
     if (cfg.Verbose) {
         std::fprintf(stderr,
             "[wave_knn_split] K=%d majThr=%.2f sources=%d split=%d "
-            "newClusters=%d reassigned=%d residual=%d\n",
+            "newClusters=%d (residualClusters=%d) reassigned=%d residual=%d\n",
             K, cfg.majorityThreshold, out.nSourcesConsidered,
-            out.nSourcesSplit, out.nNewClusters,
+            out.nSourcesSplit, out.nNewClusters, out.nResidualClusters,
             out.nSpikesReassigned, out.nSpikesResidual);
     }
     return out;

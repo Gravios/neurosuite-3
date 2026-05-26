@@ -221,6 +221,17 @@ int   KnnSplitMode              = 0;
 // is 0.6.  Stricter values (0.7–0.8) produce more residual but cleaner
 // splits.  Only used in KnnSplitMode=1.
 float WaveKnnMajorityThreshold  = 0.6f;
+// WaveKnnResidualBecomesCluster: when KnnSplitMode=1, controls what
+// happens to ambiguous (no-majority) spikes plus small confident winners
+// (those below KnnSplitMinNewClusterSize):
+//   1 (default, klusters semantics): they pool together; if the pool
+//     reaches KnnSplitMinNewClusterSize it materialises as its own new
+//     cluster ID (a "residual" cluster), otherwise stays in source.
+//     Isolates ambiguous spikes from the source mean waveform so
+//     downstream Phase 5 cross-chunk matching sees them separately.
+//   0: small winners revert to source; ambiguous spikes stay in source;
+//     no residual cluster ever materialised.
+int   WaveKnnResidualBecomesCluster = 1;
 
 // Phase4RefineEnable: master switch for the new Phase-4 rewrite.  When
 // enabled, replaces the existing WithinChunkTemplateMatch loop with the
@@ -386,6 +397,7 @@ void SetupParams(int argc, char **argv) {
     // Phase-4 rewrite controls
     INT_PARAM(KnnSplitMode);
     FLOAT_PARAM(WaveKnnMajorityThreshold);
+    INT_PARAM(WaveKnnResidualBecomesCluster);
     INT_PARAM(Phase4RefineEnable);
     INT_PARAM(Phase4RefineIters);
     INT_PARAM(AdaptModelEnable);
