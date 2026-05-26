@@ -735,6 +735,39 @@ void Output(const char *fmt, ...) {
     }
 }
 
+// LockedStderr — see KlustaKwik.h for rationale.
+//
+// Format into a stack buffer first so the actual write is one fputs.  The
+// critical section is shared with Output() (same omp critical name), so the
+// kernel ordering of stdout/stderr bytes when `2>&1` merges the two streams
+// is now deterministic at line granularity: a LockedStderr() call cannot
+// interleave its bytes into the middle of an Output() call and vice versa.
+//
+// Buffer is 2 KB - sufficient for the multi-field GLOBAL STATE / CLUSTER
+// STATE lines (the largest current call sites are < 200 chars); messages
+// longer than 2 KB get truncated with no continuation marker, which is
+// preferable to heap-allocating during diagnostic logging.
+void LockedStderr(const char *fmt, ...) {
+    char buf[2048];
+    {
+        va_list arg;
+        va_start(arg, fmt);
+        const int n = vsnprintf(buf, sizeof(buf), fmt, arg);
+        va_end(arg);
+        // n < 0: encoding error; n >= sizeof(buf): truncated.  Both cases:
+        // buf is still null-terminated, fputs is safe.  We don't try to
+        // signal truncation - this is a logging path, not data.
+        (void)n;
+    }
+#ifdef _OPENMP
+    #pragma omp critical(output_lock)
+#endif
+    {
+        std::fputs(buf, stderr);
+        std::fflush(stderr);
+    }
+}
+
 int irand(int min, int max) {
     return rand() % (max - min + 1) + min;
 }

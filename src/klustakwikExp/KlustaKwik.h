@@ -22,6 +22,12 @@ void export_model(FILE *fp, KK& K1);
 void SetupParams(int argc, char **argv);
 [[noreturn]] void Error(const char *fmt, ...);
 void Output(const char *fmt, ...);
+
+// Same OpenMP critical section as Output(), but writes to stderr instead of
+// stdout.  Use this for status/diagnostic lines that must always be visible
+// (regardless of -Screen) AND should not splice into the middle of Output()'s
+// stdout text when both streams are merged by `2>&1 | tee` at the shell.
+void LockedStderr(const char *fmt, ...);
 int  irand(int min, int max);
 FILE *fopen_safe(const char *fname, const char *mode);
 
