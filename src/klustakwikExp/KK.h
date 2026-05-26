@@ -293,6 +293,21 @@ public:
         int nFullDims,
         const char* phaseLabel = "Phase 2a.6");
 
+    // Per-phase cluster-state diagnostic.  Walks perChunkClass[] and
+    // reports total distinct non-noise local IDs (summed across chunks),
+    // per-chunk K stats (min/median/max), and total spike counts per
+    // chunk.  Cheap (one O(nSpikes) pass plus a sort over K_per_chunk
+    // values); intended to be called after every Phase X mutation so
+    // the log shows how K evolves through the pipeline.
+    //
+    // Note: a "cluster" here is a (chunk, local_id) pair.  Cross-chunk
+    // identity comes only after Phase 5 / Phase 6 globalise.  The total
+    // is therefore an upper bound on final unique units.
+    void LogPerChunkClusterState(
+        const std::vector<std::vector<int>>& chunkPoints,
+        const std::vector<std::vector<int>>& perChunkClass,
+        const char* phaseLabel) const;
+
     // Refractory-period guided split: after SubspaceReclusterPerChunk, for
     // each cluster whose ISI violation rate exceeds minContamRate, attempt a
     // BIC-checked 2-cluster split seeded by violator vs non-violator centroids.

@@ -3328,6 +3328,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
 
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1");
+
     // ── Provisional Class[] seeding for Phase 2 ─────────────────────────────
     // Phase 1 ran on local threadKc[] objects; K1.Class[] is all-zero here.
     // Phase 2 SubspaceReclusterPerChunk needs alive cluster statistics.
@@ -3395,6 +3397,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
                      "Phase 1b");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1b");
     RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
@@ -3424,6 +3427,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             RefractorySplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels,
                 nFullDims, refractSamp, 0.01f, sessLenSamp);
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2");
         }
 
         // Phase 2a: per-cluster ordinary CEM in the full feature space.
@@ -3432,6 +3436,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // updates perChunkClass[] only.
         PerClusterCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a");
 
         // Phase 2a.5: per-chunk DipSplit between Phase 2a and Phase 2b.
         //
@@ -3454,6 +3459,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             DipSplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels, nFullDims,
                 "Phase 2a.5");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.5");
         }
 
         // Phase 2a.6: per-chunk HullSplit (k-NN-graph connected components).
@@ -3463,6 +3469,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (HullSplitEnable != 0) {
             HullSplitPerChunk(
                 chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.6");
         }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
@@ -3471,6 +3478,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // perChunkModels[] from the converged state.
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2b");
 
         // Phase 2b.5: K-template chunk split (optional, off by default).
         // For each chunk, picks K well-isolated reference cluster means
@@ -3511,6 +3519,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         DipSplitPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims,
             "Phase 2.5");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2.5");
     }
 
 
@@ -4477,6 +4486,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
         for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
 
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1");
+
     // ── Provisional Class[] seeding for Phase 2 ─────────────────────────────
     // Phase 1 ran on local threadKc[] objects; K1.Class[] is all-zero here.
     // Phase 2 SubspaceReclusterPerChunk needs alive cluster statistics.
@@ -4544,6 +4555,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
                      "Phase 1b");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1b");
     RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
@@ -4573,6 +4585,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             RefractorySplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels,
                 nFullDims, refractSamp, 0.01f, sessLenSamp);
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2");
         }
 
         // Phase 2a: per-cluster ordinary CEM in the full feature space.
@@ -4581,6 +4594,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // updates perChunkClass[] only.
         PerClusterCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a");
 
         // Phase 2a.5: per-chunk DipSplit (see commentary at the matching
         // insertion in the first overload of RunChunkedCEM).  Gated by
@@ -4589,6 +4603,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             DipSplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels, nFullDims,
                 "Phase 2a.5");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.5");
         }
 
         // Phase 2a.6: per-chunk HullSplit, see commentary at the matching
@@ -4596,6 +4611,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         if (HullSplitEnable != 0) {
             HullSplitPerChunk(
                 chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.6");
         }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
@@ -4604,6 +4620,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // perChunkModels[] from the converged state.
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2b");
 
         // Phase 2.5: second per-chunk DipSplit pass.
         //
@@ -8460,6 +8477,86 @@ void KK::HullSplitPerChunk(
             "%d chunks affected\n",
             phaseLabel, totalSplitsAcrossChunks, totalNewSubClusters,
             totalChunksWithSplits);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::LogPerChunkClusterState
+//
+// Diagnostic: one summary line per phase showing how the chunked label
+// state evolves.  Reports:
+//   • TOTAL across chunks: sum of distinct non-noise local IDs (upper bound
+//     on final unique units; cross-chunk identity comes later in Phase 5/6)
+//   • PER-CHUNK K: min/median/max of distinct non-noise local IDs
+//   • NOISE: total spikes labelled 0 (cluster 0 = noise convention)
+//   • SPIKES: total non-noise vs total
+//
+// Output format (one line, stderr):
+//   [<phase>] CLUSTER STATE: total=N (K/chunk min=a median=b max=c),
+//             noise=X/Y spikes (Z.Z%)
+//
+// Catches the "everything collapsed to noise" failure mode the user
+// reported: when total drops to ~0 or noise% jumps to ~100%, the
+// preceding phase is the culprit.
+// ---------------------------------------------------------------------------
+void KK::LogPerChunkClusterState(
+    const std::vector<std::vector<int>>& chunkPoints,
+    const std::vector<std::vector<int>>& perChunkClass,
+    const char* phaseLabel) const
+{
+    const int nCh = static_cast<int>(perChunkClass.size());
+    if (nCh == 0) {
+        fprintf(stderr, "[%s] CLUSTER STATE: (no chunks)\n", phaseLabel);
+        return;
+    }
+
+    int total      = 0;
+    int totalSpikes = 0;
+    int noiseSpikes = 0;
+    std::vector<int> kPerChunk;
+    kPerChunk.reserve(static_cast<size_t>(nCh));
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& cls = perChunkClass[static_cast<size_t>(ck)];
+        totalSpikes += static_cast<int>(cls.size());
+
+        // Bound check chunkPoints sizes (defensive — they should match).
+        if (ck < static_cast<int>(chunkPoints.size()) &&
+            cls.size() != chunkPoints[static_cast<size_t>(ck)].size()) {
+            // size mismatch — skip K count for this chunk but still count spikes
+            kPerChunk.push_back(0);
+            continue;
+        }
+
+        std::unordered_set<int> uniq;
+        for (int c : cls) {
+            if (c == 0) ++noiseSpikes;
+            else        uniq.insert(c);
+        }
+        kPerChunk.push_back(static_cast<int>(uniq.size()));
+        total += static_cast<int>(uniq.size());
+    }
+
+    // Per-chunk K stats: min, median, max
+    int kMin = INT_MAX, kMax = 0;
+    for (int k : kPerChunk) {
+        if (k < kMin) kMin = k;
+        if (k > kMax) kMax = k;
+    }
+    if (kPerChunk.empty()) { kMin = 0; }
+    std::vector<int> kSorted = kPerChunk;
+    std::sort(kSorted.begin(), kSorted.end());
+    const int kMedian = kSorted.empty() ? 0 : kSorted[kSorted.size() / 2];
+
+    const double noisePct = (totalSpikes > 0)
+        ? 100.0 * static_cast<double>(noiseSpikes) / totalSpikes
+        : 0.0;
+
+    fprintf(stderr,
+            "[%s] CLUSTER STATE: total=%d (K/chunk min=%d median=%d max=%d), "
+            "noise=%d/%d spikes (%.1f%%)\n",
+            phaseLabel, total, kMin, kMedian, kMax,
+            noiseSpikes, totalSpikes, noisePct);
 }
 
 
