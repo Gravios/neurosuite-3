@@ -12187,8 +12187,17 @@ void KK::WaveKnnSplitPerChunk(
         cfg.useTraceFilter             = (WaveKnnUseTraceFilter != 0);
         cfg.skipMuaCluster1            = (WaveKnnSkipMuaCluster1 != 0);
         cfg.noiseSourceProbability     = WaveKnnNoiseSourceProbability;
-        cfg.rngSeed                    = static_cast<unsigned>(
-            (RandomSeed != 0) ? RandomSeed : 0);  // 0 = time-based
+        // Vary the RNG seed per chunk so the noiseSourceProbability draw
+        // is INDEPENDENT across chunks.  If RandomSeed=0 (time-based),
+        // wave_knn_split will use std::time(nullptr); same effect (each
+        // chunk gets a different stream because std::time() advances).
+        // Otherwise: deterministic, but per-chunk-unique = RandomSeed XOR
+        // (chunk_idx * 1000003), a prime offset that avoids low-bit
+        // collisions in the mt19937 stream.
+        cfg.rngSeed                    = (RandomSeed != 0)
+            ? static_cast<unsigned>(RandomSeed) ^
+              (static_cast<unsigned>(ck) * 1000003u)
+            : 0u;
         cfg.residualBecomesNewCluster  = (WaveKnnResidualBecomesCluster != 0);
         cfg.Verbose                    = (Verbose >= 2);
 
