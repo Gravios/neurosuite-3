@@ -6286,6 +6286,21 @@ int KK::TimeShiftMergeTighten(
                                     m_timeShiftWaveScratch.data())) {
             ++nSkippedRead; continue;
         }
+        // CRITICAL: bring the freshly-read .spk waveform forward by the
+        // cumulative shift already committed for this spike before we
+        // project through any candidate basis.  Without this step the
+        // probe interprets `bestDelta` as an ABSOLUTE shift from raw .spk
+        // rather than an INCREMENT from the current state — yielding a
+        // runaway when chained across multiple alignment passes
+        // (TimeShiftAlignPhase calls this in a loop of TimeShiftAlignIter
+        // passes, ConsiderDeletion's post-merge tightener is itself called
+        // from the various TimeShiftAlignAfterPhase* hooks).  With the
+        // shift applied here, ci=N (bestDelta=0) correctly means "stay at
+        // the current cumulative position" and convergence is possible.
+        // (The mean-waveform harvest path applies this same correction;
+        // see Phase 4 callers at ~3565/3704/4683/4860/7132.)
+        ShiftWaveformRowInPlace(m_timeShiftWaveScratch.data(), p,
+                                nChan, nSamplesPerSpike);
 
         const int baseCum = m_cumShift[static_cast<size_t>(p)];
         const int16_t* raw = m_timeShiftWaveScratch.data();
@@ -6515,6 +6530,14 @@ bool KK::TimeShiftMergeEvaluate(
         const int p = idxs[mi];
         if (!TimeShiftReadSpikeWave(p, waveSamples,
                                     m_timeShiftWaveScratch.data())) continue;
+        // Bring the read waveform to the current cumulative frame — see
+        // the matching commentary in TimeShiftMergeTighten.  Without this,
+        // any prior cumShift on a victim spike from an earlier alignment
+        // pass causes the candidate-shift selection to be biased by the
+        // current cumulative shift's magnitude rather than the deviation
+        // from current state.
+        ShiftWaveformRowInPlace(m_timeShiftWaveScratch.data(), p,
+                                nChan, nSamplesPerSpike);
 
         const int baseCum = m_cumShift[static_cast<size_t>(p)];
         const int16_t* raw = m_timeShiftWaveScratch.data();
