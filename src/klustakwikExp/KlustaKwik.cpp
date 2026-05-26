@@ -135,6 +135,7 @@ float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-to
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
+int   CrossChunkMaxChunkDistance = 1;   ///< Phase 5 Pass 2 candidate gate — see KlustaKwik.h.
 int   TimeShiftAlignPostMerge = 0;   ///< If 1, run TimeShiftAlignPhase one more time after Phase 6 EM, with the post-merge global cluster state.  Catches misalignments that arose from boundary spike reassignments in Phase 6 / Phase 7.
 float TimeShiftAlignScoreThresh = 0.0f; ///< Phase 1a / 7a minimum Mahalanobis² improvement required to commit a per-spike shift in TimeShiftMergeTighten. Best non-baseline (δ≠0) candidate must satisfy `baselineMahal² - bestMahal² > threshold`; otherwise the spike stays at δ=0. 0.0 = no gate (pure argmin, original behaviour) — any improvement, however small, accepted. Raise to suppress micro-shifts from numerical noise compounding over `TimeShiftAlignIter` passes, or to keep Phase 6a from tightening a post-merge composite cluster mean around spikes that don't really belong (the "reinforce a bad Phase 6 merge" failure mode).  Typical experiment values: 0.5 (loose), 1.0 (moderate), 2.0 (strict).  Applies to all TimeShiftMergeTighten callers including Phase 1a, Phase 7a, and merge-time victim tightening.
 
@@ -479,6 +480,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
     FLOAT_PARAM(CrossChunkDriftSigma);
+    INT_PARAM(CrossChunkMaxChunkDistance);
     INT_PARAM(TimeShiftAlignPostMerge);
     INT_PARAM(TimeShiftAlignAfterPhase1);
     INT_PARAM(TimeShiftAlignAfterPhase1b);
