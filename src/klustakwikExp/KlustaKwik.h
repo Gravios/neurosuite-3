@@ -296,6 +296,24 @@ extern int   PerChannelSplitUsePeakAmp;         ///< default 1
 extern int   PerChannelSplitUsePeakTime;        ///< default 1
 extern int   PerChannelSplitUseTroughAmp;       ///< default 1
 extern int   PerChannelSplitUseTroughTime;      ///< default 1
+
+// AlternatingSplitMerge (Phase 4 alternation): interleave per-chunk
+// WaveKnnSplit with WithinChunkTemplateMatch inside Phase 4's existing
+// loop.  The goal is to drive intra-cluster spike waveform variance to a
+// minimum per chunk BEFORE Phase 5 cross-chunk template matching:
+// templates that look like mixtures get re-split; over-fragments produced
+// by the split that share a true mean template get re-merged in the
+// following iteration's TemplateMatch.  The loop's natural convergence
+// criterion is "neither nMerged nor nSpikesSplit changed in this iter".
+//
+// Requires both -KnnSplitPerChunkEnable 1 and -KnnSplitMode 1 (klusters-
+// faithful K-NN majority-vote variant — the only variant that respects
+// the "low-confidence spikes stay in source" convention needed to avoid
+// runaway over-splitting).
+//
+// Default off.  The existing Phase 2b.5 single-pass KnnSplit is still
+// the default entry; this flag adds re-splitting inside Phase 4.
+extern int   AlternatingSplitMergeEnable;
 // DipSplitMinSize: minimum spike count per child cluster for an accepted
 // split, and minimum per parent cluster for the splitter to even look
 // (parent must have ≥ 2·DipSplitMinSize members).  Default 50.

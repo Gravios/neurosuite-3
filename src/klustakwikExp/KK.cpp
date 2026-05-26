@@ -3819,7 +3819,33 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     _tmIter + 1);
             int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
-            if (_nMerged == 0) break;
+
+            // Phase 4b: optional alternating KnnSplit inside the Phase 4
+            // loop.  Drives intra-cluster waveform variance towards a
+            // minimum by re-splitting clusters that look like mixtures,
+            // then letting the next iter's TemplateMatch re-merge any
+            // over-fragments.  Convergence: stop when neither merge NOR
+            // split changed labels.
+            int _nSpikesSplit = 0;
+            if (AlternatingSplitMergeEnable != 0 &&
+                KnnSplitPerChunkEnable != 0 && KnnSplitMode == 1) {
+                std::vector<std::vector<int>> _beforeSplit = perChunkClass;
+                WaveKnnSplitPerChunk(
+                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
+                    const auto& aft = perChunkClass[_ckb];
+                    const auto& bef = _beforeSplit[_ckb];
+                    if (aft.size() != bef.size()) continue;
+                    for (size_t _ii = 0; _ii < aft.size(); ++_ii)
+                        if (aft[_ii] != bef[_ii]) ++_nSpikesSplit;
+                }
+                LockedStderr(
+                    "[Phase 4b] AlternatingKnnSplit (iter %d): %d spike "
+                    "labels changed (template-match merged %d this iter)\n",
+                    _tmIter + 1, _nSpikesSplit, _nMerged);
+            }
+
+            if (_nMerged == 0 && _nSpikesSplit == 0) break;
         }
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
@@ -5038,7 +5064,33 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     _tmIter + 1);
             int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
                                                     NbChannels, NbSamplesPerSpike, TemplateMatchScore);
-            if (_nMerged == 0) break;
+
+            // Phase 4b: optional alternating KnnSplit inside the Phase 4
+            // loop.  Drives intra-cluster waveform variance towards a
+            // minimum by re-splitting clusters that look like mixtures,
+            // then letting the next iter's TemplateMatch re-merge any
+            // over-fragments.  Convergence: stop when neither merge NOR
+            // split changed labels.
+            int _nSpikesSplit = 0;
+            if (AlternatingSplitMergeEnable != 0 &&
+                KnnSplitPerChunkEnable != 0 && KnnSplitMode == 1) {
+                std::vector<std::vector<int>> _beforeSplit = perChunkClass;
+                WaveKnnSplitPerChunk(
+                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
+                    const auto& aft = perChunkClass[_ckb];
+                    const auto& bef = _beforeSplit[_ckb];
+                    if (aft.size() != bef.size()) continue;
+                    for (size_t _ii = 0; _ii < aft.size(); ++_ii)
+                        if (aft[_ii] != bef[_ii]) ++_nSpikesSplit;
+                }
+                LockedStderr(
+                    "[Phase 4b] AlternatingKnnSplit (iter %d): %d spike "
+                    "labels changed (template-match merged %d this iter)\n",
+                    _tmIter + 1, _nSpikesSplit, _nMerged);
+            }
+
+            if (_nMerged == 0 && _nSpikesSplit == 0) break;
         }
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
