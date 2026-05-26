@@ -192,6 +192,35 @@ extern int   KnnSplitMinSourceSize;
 // Default 10.
 extern int   KnnSplitMinNewClusterSize;
 
+// ---- Phase-4 rewrite controls --------------------------------------------
+// KnnSplitMode: 0 = legacy nearest-template, 1 = klusters-faithful KNN
+// majority-vote (see wave_knn_split.h).  Default 0.
+extern int   KnnSplitMode;
+// WaveKnnMajorityThreshold: majority fraction in mode 1.  Default 0.6.
+extern float WaveKnnMajorityThreshold;
+// Phase4RefineEnable: master switch for the rewritten Phase-4 pipeline
+// (proxy_isi → adapt_model → clust_quality → xcorr_match).  Default 0
+// (legacy WithinChunkTemplateMatch preserved).
+extern int   Phase4RefineEnable;
+// Phase4RefineIters: number of refine-loop passes; replaces
+// TemplateMatchIters when Phase4RefineEnable=1.  Default 10.
+extern int   Phase4RefineIters;
+// AdaptModelEnable: fit ISI-conditional adaptation model before computing
+// residuals.  Default 1 when Phase4RefineEnable=1.
+extern int   AdaptModelEnable;
+// AdaptTauGridCSV: comma-separated τ grid in seconds.  Empty → default
+// {0.005, 0.015, 0.050, 0.150}.
+extern char  AdaptTauGridCSV[STRLEN];
+// Phase4MinClusterSize: minimum cluster spikes for the refine-loop to
+// touch a cluster.  Default 50.
+extern int   Phase4MinClusterSize;
+// XcorrResidualThresh: minimum residualScore for a within-chunk merge in
+// the new pipeline.  Default 0.85.
+extern float XcorrResidualThresh;
+// XcorrMaxShiftSamples: half-width of integer-lag xcorr search.  0 →
+// NbSamplesPerSpike/4 at runtime.  Default 0.
+extern int   XcorrMaxShiftSamples;
+
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;

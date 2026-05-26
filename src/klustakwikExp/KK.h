@@ -318,6 +318,20 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims);
 
+    // Klusters-faithful KNN majority-vote split.  Same parameters as
+    // KnnSplitPerChunk above but uses per-spike K-NN against a pool of
+    // reference spikes (not means) with a majority-vote threshold.  Low-
+    // confidence spikes stay in source (residual bucket) instead of being
+    // force-assigned to a reference, which bounds the fragmentation.
+    // Implementation in wave_knn_split.cpp; this method is the per-chunk
+    // wrapper.  Activated when both -KnnSplitPerChunkEnable 1 and
+    // -KnnSplitMode 1 are set.
+    void WaveKnnSplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
   
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,
