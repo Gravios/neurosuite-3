@@ -133,6 +133,13 @@ extern int   MaxTimeShift;
 extern int   TimeShiftMergeEnable;
 extern int   TimeShiftSplitEnable;
 extern int   Phase2bMode;
+// Phase2bEnableSplits: in Phase 2b mode 0 (default), 0 disables TrySplits
+// inside the inner CEM (recommended; Phase 2a already discovered splits);
+// 1 enables.  Default 0.
+extern int   Phase2bEnableSplits;
+// Phase2bMaxIter: max inner CEM iterations per chunk in Phase 2b.
+// Default 60.  0 falls back to global MaxIter.
+extern int   Phase2bMaxIter;
 extern int   VBGMMMaxIter;
 extern float VBGMMConvTol;
 extern float VBGMMAlpha0;

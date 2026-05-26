@@ -11106,21 +11106,33 @@ void KK::ChunkReCEMPerChunk(
             // assignments; TrySplits and ConsiderDeletion adjust K only if
             // BIC strictly prefers the change.
             //
-            // Cap the inner CEM iteration count: at the chunk scale a
-            // properly-warm-started CEM converges in 10-30 iterations.
-            // Letting it loop the full MaxIter (default 500) is wasteful
-            // and, with split/delete oscillation around a marginal-BIC
-            // boundary, can pin a single chunk on a single thread for
-            // many minutes while other chunks have long finished (the
-            // straggler-tail symptom).  60 is a defensive cap; rare
-            // chunks that need more iterations to converge are no worse
-            // off than the warm-start equilibrium they're already near,
-            // which Phase 4/5/6 will refine further anyway.
+            // Two flag-controlled bounds prevent the per-chunk runtime from
+            // exploding on K-heavy chunks (K = 122 was reported with
+            // -KnnSplitMinNewClusterSize 50 in user testing):
+            //
+            //   -Phase2bEnableSplits 0 (default)
+            //     Disable TrySplits inside the inner CEM.  Phase 2a's
+            //     per-cluster CEM has already done split discovery; the
+            //     244·K inner-CEM cost of repeating it here dominates the
+            //     phase runtime for chunks with K > ~50.  ConsiderDeletion
+            //     remains active (essential for merging Phase 2a's over-
+            //     splits via warm-start CEM at the chunk level).
+            //
+            //   -Phase2bMaxIter 60 (default)
+            //     Cap inner CEM iterations.  Warm-start CEM converges in
+            //     10-30 iter typically; the cap bounds straggler chunks
+            //     where TrySplits/ConsiderDeletion oscillate around a
+            //     marginal BIC boundary and the convergence predicate
+            //     stays true forever.
+            const bool enableSplits =
+                (Phase2bEnableSplits != 0);
+            const int  innerMaxIter =
+                (Phase2bMaxIter > 0) ? Phase2bMaxIter : 0;  // 0 → use MaxIter
             Ks.MStep();
             Ks.EStep();
-            Ks.RunEMLoop(/*enableSplits=*/  true,
+            Ks.RunEMLoop(enableSplits,
                          /*enableDistDump=*/ false,
-                         /*maxIter=*/        60,
+                         /*maxIter=*/        innerMaxIter,
                          /*phaseLabel=*/     "[2b]");
         }
 
