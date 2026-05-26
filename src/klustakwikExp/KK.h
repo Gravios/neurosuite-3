@@ -277,6 +277,22 @@ public:
         int nFullDims,
         const char* phaseLabel = "Phase 1b");
 
+    // Phase 2a.6: k-NN-graph connected-components split.  Per-chunk,
+    // per-cluster: build a k-NN graph in feature space, find connected
+    // components, materialise multi-component clusters as separate
+    // local IDs.  Default off (HullSplitEnable=0).  See
+    // cluster_hull_split.h for the algorithm.
+    //
+    // Model rebuild is deferred to Phase 2b (ChunkReCEMPerChunk) which
+    // always runs after this and regenerates ChunkModels from the
+    // updated labels — so HullSplitPerChunk leaves perChunkModels
+    // untouched.
+    void HullSplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        int nFullDims,
+        const char* phaseLabel = "Phase 2a.6");
+
     // Refractory-period guided split: after SubspaceReclusterPerChunk, for
     // each cluster whose ISI violation rate exceeds minContamRate, attempt a
     // BIC-checked 2-cluster split seeded by violator vs non-violator centroids.

@@ -309,6 +309,18 @@ int   DipSplitBeforePhase2b     = 1;     ///< Phase 2a.5: per-chunk DipSplit bet
                                          ///< ConsiderDeletion-driven merging of any oversplits.  The
                                          ///< existing Phase 2.5 (after-Phase-2b) DipSplit pass continues
                                          ///< to run as a safety net.  Default 1 (enabled).
+
+// ─── HullSplit: Phase 2a.6 k-NN-graph connected-components split ─────────
+// Complementary mechanism to DipSplit at Phase 2a.5.  DipSplit catches 1D
+// bimodality per PC marginal; HullSplit catches multi-D topology — two
+// distinct units occupying separate regions of (PC1, PC2, ..., PC_K) space
+// that no single PC marginal would reveal.  Default off pending real-data
+// validation; cluster_hull_split.h has the algorithm rationale.
+int   HullSplitEnable           = 0;     ///< 0 (default) disables.  1 enables Phase 2a.6.
+int   HullSplitK                = 10;    ///< k for the k-NN graph.
+int   HullSplitMinComponentSize = 50;    ///< components below this are absorbed.
+float HullSplitMutualReachScale = 1.5f;  ///< edge cutoff = scale · median(d_k).
+int   HullSplitUseMutualReach   = 1;     ///< 1 = HDBSCAN mutual-reachability; 0 = raw Euclidean.
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
 float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
                                           ///< lowered from 2.0 because the χ² test is itself
@@ -455,6 +467,11 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(XcorrMaxShiftSamples);
     INT_PARAM(DipSplitEnable);
     INT_PARAM(DipSplitBeforePhase2b);
+    INT_PARAM(HullSplitEnable);
+    INT_PARAM(HullSplitK);
+    INT_PARAM(HullSplitMinComponentSize);
+    FLOAT_PARAM(HullSplitMutualReachScale);
+    INT_PARAM(HullSplitUseMutualReach);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
     FLOAT_PARAM(DipSplitElongationFactor);

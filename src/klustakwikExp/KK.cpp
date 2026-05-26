@@ -45,6 +45,7 @@
 // improved xcorr template matching).  Each module is independently
 // testable and only invoked from KK.cpp via thin dispatch hooks.
 #include "wave_knn_split.h"
+#include "cluster_hull_split.h"
 #include "adapt_model.h"
 #include "xcorr_match.h"
 #include "clust_quality.h"
@@ -3455,6 +3456,15 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 "Phase 2a.5");
         }
 
+        // Phase 2a.6: per-chunk HullSplit (k-NN-graph connected components).
+        // Complement to Phase 2a.5 DipSplit — catches multi-D topology
+        // (two disconnected components in feature space) that 1D-projected
+        // DipSplit misses.  Default off (HullSplitEnable=0).
+        if (HullSplitEnable != 0) {
+            HullSplitPerChunk(
+                chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
+        }
+
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
         // reassign across the new fine-grained label set and lets CEM
         // merge oversplit fragments via ConsiderDeletion.  Rebuilds
@@ -4579,6 +4589,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
             DipSplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels, nFullDims,
                 "Phase 2a.5");
+        }
+
+        // Phase 2a.6: per-chunk HullSplit, see commentary at the matching
+        // insertion in the first overload of RunChunkedCEM.
+        if (HullSplitEnable != 0) {
+            HullSplitPerChunk(
+                chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
         }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
@@ -8254,6 +8271,195 @@ void KK::DipSplitPerChunk(
     fprintf(stderr,
             "[Phase 1b] DipSplit per-chunk: %d splits across %d chunks\n",
             totalSplitsAcrossChunks, totalChunksWithSplits);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::HullSplitPerChunk
+//
+// Phase 2a.6: k-NN-graph connected-components split.  Per-cluster, treats
+// each cluster's spikes as a point cloud in feature space, builds a k-NN
+// graph, and asks: is this cluster topologically a single connected blob,
+// or does it fall into multiple distinct components?  Components ≥
+// minComponentSize materialise as new local clusters within the chunk;
+// smaller components are absorbed (stay in the parent cluster).
+//
+// Complement to Phase 2a.5 DipSplit: DipSplit catches 1D-projected
+// bimodality; HullSplit catches multi-D topology — two distinct units
+// that occupy separate regions of (PC1, PC2, …, PC_K) feature space
+// that no single PC marginal reveals.
+//
+// Model rebuild deferred to Phase 2b (ChunkReCEMPerChunk regenerates
+// ChunkModels from the post-HullSplit labels via its MStep pass).  So
+// HullSplitPerChunk only updates perChunkClass[].
+//
+// Cluster ID allocation: the largest component keeps the original local
+// ID; additional components get fresh IDs starting from chunk's current
+// maxLocalId+1.
+//
+// Cost: per-chunk parallel; brute-force k-NN within each cluster is
+// O(n² · d / 16) with AVX-512 batched distance (~10 ms for a 5000-spike
+// cluster at d=22).  Most clusters are small (≤500 spikes) so the dominant
+// cost is the long tail.
+// ---------------------------------------------------------------------------
+void KK::HullSplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    int nFullDims,
+    const char* phaseLabel)
+{
+    if (HullSplitEnable == 0) return;
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    fprintf(stderr,
+            "[%s] HullSplit per-chunk (k=%d, minSize=%d, reachScale=%.2f, "
+            "metric=%s)\n",
+            phaseLabel, HullSplitK, HullSplitMinComponentSize,
+            HullSplitMutualReachScale,
+            HullSplitUseMutualReach ? "mutual-reachability" : "raw-euclidean");
+
+    int totalSplitsAcrossChunks = 0;
+    int totalChunksWithSplits   = 0;
+    int totalNewSubClusters     = 0;
+
+    struct ChunkResult {
+        bool             changed = false;
+        std::vector<int> newClass;
+        int              nSplits = 0;
+        int              nNewSubClusters = 0;
+    };
+    std::vector<ChunkResult> results(static_cast<size_t>(nCh));
+
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalSplitsAcrossChunks,totalChunksWithSplits,totalNewSubClusters)
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& pts = chunkPoints[static_cast<size_t>(ck)];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts < 2 * HullSplitMinComponentSize) continue;
+        if (perChunkClass[static_cast<size_t>(ck)].size() != static_cast<size_t>(nPts))
+            continue;
+
+        // Copy current labels so we mutate a local buffer and only
+        // commit at the end.
+        std::vector<int> newCls = perChunkClass[static_cast<size_t>(ck)];
+
+        // Track maxLc across the chunk; new sub-cluster IDs allocate
+        // starting from maxLc+1.  Each accepted split bumps maxLc.
+        int maxLc = 0;
+        for (int c : newCls) if (c > maxLc) maxLc = c;
+
+        // Find unique non-noise local cluster IDs in this chunk.
+        std::vector<int> uniqueLcs;
+        {
+            std::vector<bool> seen(static_cast<size_t>(maxLc + 1), false);
+            for (int c : newCls)
+                if (c > 0 && c < static_cast<int>(seen.size()) &&
+                    !seen[static_cast<size_t>(c)]) {
+                    seen[static_cast<size_t>(c)] = true;
+                    uniqueLcs.push_back(c);
+                }
+        }
+
+        int chunkSplits         = 0;
+        int chunkNewSubClusters = 0;
+
+        for (int lc : uniqueLcs) {
+            // Gather this cluster's spike indices and feature buffer.
+            std::vector<int> memberIdx;  // indices into pts[] / newCls[]
+            memberIdx.reserve(64);
+            for (int i = 0; i < nPts; i++)
+                if (newCls[static_cast<size_t>(i)] == lc) memberIdx.push_back(i);
+
+            const int nMem = static_cast<int>(memberIdx.size());
+            if (nMem < 2 * HullSplitMinComponentSize) continue;
+
+            // Pack feature vectors into a contiguous nMem × nFullDims
+            // buffer (point-major, same stride as Data).  cluster_hull_split
+            // reads with cfg.excludeTimeDim, so we keep all dims in the
+            // buffer and let it drop the last one internally.
+            std::vector<float> featBuf(
+                static_cast<size_t>(nMem) * nFullDims);
+            for (int i = 0; i < nMem; i++) {
+                const int p = pts[static_cast<size_t>(memberIdx[static_cast<size_t>(i)])];
+                for (int d = 0; d < nFullDims; d++) {
+                    featBuf[static_cast<size_t>(i) * nFullDims + d] =
+                        Data[static_cast<size_t>(p) * nFullDims + d];
+                }
+            }
+
+            cluster_hull_split::Config cfg;
+            cfg.k                       = HullSplitK;
+            cfg.minComponentSize        = HullSplitMinComponentSize;
+            cfg.mutualReachabilityScale = HullSplitMutualReachScale;
+            cfg.useMutualReachability   = (HullSplitUseMutualReach != 0);
+            cfg.excludeTimeDim          = true;
+
+            cluster_hull_split::Result hr =
+                cluster_hull_split::Run(featBuf.data(), nMem, nFullDims, cfg);
+
+            if (!hr.didSplit) continue;
+
+            // Identify the largest component — it keeps lc.  Other
+            // components get fresh local IDs from maxLc+1.
+            std::vector<int> compSize(
+                static_cast<size_t>(hr.nComponents + 1), 0);
+            for (int lbl : hr.componentLabels) {
+                if (lbl >= 0 && lbl <= hr.nComponents)
+                    ++compSize[static_cast<size_t>(lbl)];
+            }
+            int largestComp = 1;
+            for (int c = 2; c <= hr.nComponents; c++)
+                if (compSize[static_cast<size_t>(c)] >
+                    compSize[static_cast<size_t>(largestComp)])
+                    largestComp = c;
+
+            // Allocate new local IDs for all non-largest non-zero components.
+            std::vector<int> compToLc(
+                static_cast<size_t>(hr.nComponents + 1), 0);
+            compToLc[0]            = lc;  // absorbed → stay in parent
+            compToLc[static_cast<size_t>(largestComp)] = lc;  // largest → keep
+            int newIds = 0;
+            for (int c = 1; c <= hr.nComponents; c++) {
+                if (c == largestComp) continue;
+                compToLc[static_cast<size_t>(c)] = ++maxLc;
+                ++newIds;
+            }
+
+            // Write back per-member labels.
+            for (int i = 0; i < nMem; i++) {
+                const int lbl = hr.componentLabels[static_cast<size_t>(i)];
+                const int newLc = compToLc[static_cast<size_t>(lbl)];
+                newCls[static_cast<size_t>(memberIdx[static_cast<size_t>(i)])] = newLc;
+            }
+
+            ++chunkSplits;
+            chunkNewSubClusters += newIds;
+        }
+
+        if (chunkSplits > 0) {
+            results[static_cast<size_t>(ck)].changed         = true;
+            results[static_cast<size_t>(ck)].newClass        = std::move(newCls);
+            results[static_cast<size_t>(ck)].nSplits         = chunkSplits;
+            results[static_cast<size_t>(ck)].nNewSubClusters = chunkNewSubClusters;
+            totalSplitsAcrossChunks += chunkSplits;
+            totalChunksWithSplits   += 1;
+            totalNewSubClusters     += chunkNewSubClusters;
+        }
+    }
+
+    // Serial application.
+    for (int ck = 0; ck < nCh; ck++) {
+        if (!results[static_cast<size_t>(ck)].changed) continue;
+        perChunkClass[static_cast<size_t>(ck)] =
+            std::move(results[static_cast<size_t>(ck)].newClass);
+    }
+
+    fprintf(stderr,
+            "[%s] HullSplit per-chunk: %d clusters split, +%d new sub-clusters, "
+            "%d chunks affected\n",
+            phaseLabel, totalSplitsAcrossChunks, totalNewSubClusters,
+            totalChunksWithSplits);
 }
 
 

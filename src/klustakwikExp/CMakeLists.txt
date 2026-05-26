@@ -195,6 +195,7 @@ set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
     dipsplit.cpp
     proxy_isi.cpp
     wave_knn_split.cpp
+    cluster_hull_split.cpp
     xcorr_match.cpp
     clust_quality.cpp
     adapt_model.cpp
@@ -409,6 +410,7 @@ if(_SYCL_ACTIVE)
         dipsplit.cpp
         proxy_isi.cpp
         wave_knn_split.cpp
+        cluster_hull_split.cpp
         xcorr_match.cpp
         clust_quality.cpp
         adapt_model.cpp

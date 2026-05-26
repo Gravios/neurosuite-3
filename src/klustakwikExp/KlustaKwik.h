@@ -250,6 +250,14 @@ extern int   DipSplitEnable;
 // between Phase 2a (per-cluster CEM) and Phase 2b (chunk warm-start CEM).
 // Catches single-dim bimodality that Phase 2a's parametric CEM misses.
 extern int   DipSplitBeforePhase2b;
+
+// HullSplit (Phase 2a.6): k-NN-graph connected-components split.
+// Default off; see cluster_hull_split.h.
+extern int   HullSplitEnable;
+extern int   HullSplitK;
+extern int   HullSplitMinComponentSize;
+extern float HullSplitMutualReachScale;
+extern int   HullSplitUseMutualReach;
 // DipSplitMinSize: minimum spike count per child cluster for an accepted
 // split, and minimum per parent cluster for the splitter to even look
 // (parent must have ≥ 2·DipSplitMinSize members).  Default 50.
