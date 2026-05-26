@@ -585,6 +585,36 @@ public:
     // MStep + EStep beforehand.
     int TimeShiftAlignPhase(int nChan, int nSamplesPerSpike);
 
+    // Klusters-faithful per-spike realignment pass.  For each alive cluster
+    // (excluding noise and clusters with fewer than KlustersRealignMinSize
+    // spikes), runs the exact algorithm that src/klusters/src/spikerealign.cpp
+    // uses for the interactive "Realign top-ch" button:
+    //   1. Build the cluster's mean waveform from .spk content (via
+    //      TimeShiftReadSpikeWave, which already accounts for m_cumShift).
+    //   2. Pre-align the template so its peak sits at PeakSampleIndex (using
+    //      Σ_ch |amp| as the peak metric, like klusters does).
+    //   3. Per-spike normalised cross-correlation against the pre-aligned
+    //      template using XcorrDispatch (same library klusters uses, routes
+    //      to CUDA→HIP→SYCL→OpenMP).
+    //   4. Add each spike's computed shift to m_cumShift[p].  No .fil
+    //      re-extraction happens here — TimeShiftFinalize handles that at
+    //      the end of the run, so .spk/.fet/.res get rewritten in one pass
+    //      using the accumulated shifts.
+    //
+    // Differences from TimeShiftAlignPhase:
+    //   • Per-spike shifts (klusters style) rather than per-cluster shift
+    //     selection via variance minimisation across pre-shifted PCA bases.
+    //   • Sample-major xcorr operates directly on raw int16 waveforms; no
+    //     intermediate PCA projection.
+    //   • Designed to be run AFTER the legacy TimeShift mechanism (or with
+    //     it disabled), as a final tightening pass before TimeShiftFinalize.
+    //
+    // Returns the number of spikes whose cumulative shift changed in this
+    // pass.  Caller is responsible for running MStep/EStep before the next
+    // log-likelihood evaluation, since spike features will be re-projected
+    // by TimeShiftFinalize.
+    int KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike);
+
     // Energy-COM (centre-of-mass) per-spike realignment.  For each spike,
     // sums channel-energy across the .spk window, computes the
     // weighted-mean time index of that energy distribution, and applies

@@ -205,6 +205,31 @@ int   MeanSubtractionMergeMaxShift = 3;  ///< Phase 6b cyclic-shift search half-
                                           ///< sub-sample drift between clusters).  Hard-
                                           ///< capped to nSamplesPerSpike/2 at runtime.
 
+// ── Phase 7c — klusters-faithful per-spike realignment ────────────────────
+// Ports the algorithm used by klusters' interactive "Realign top-ch" button
+// (src/klusters/src/spikerealign.cpp).  Per-spike normalised xcorr against
+// a pre-aligned cluster mean, sample-major.  Updates m_cumShift so that
+// TimeShiftFinalize's RefeaturizeFromShifts re-extracts each spike from
+// .fil at the new offset and reprojects through the saved PCA basis.
+//
+// Designed as an OPTIONAL final tightening pass at the end of Phase 7,
+// after Phase 7a (TimeShiftAlignPhase) and Phase 7b (mean-subtraction
+// merge).  Disabled by default; opt in with -KlustersRealignEnable 1.
+//
+// On the user's sirotaA-jg-000005 data (189k spikes, 8 channels, 32
+// samples) the OpenMP CPU backend completes a full pass in ~1-2 seconds;
+// the RTX 5070 Ti backend completes in well under 1 second.
+int   KlustersRealignEnable   = 0;    ///< 0 = off; 1 = run Phase 7c after Phase 7b.
+int   KlustersRealignMaxShift = 8;    ///< Search radius in samples.  Matches klusters
+                                       ///< spikerealign.cpp default (maxShift=8).  Capped
+                                       ///< at nSamplesPerSpike/4 at runtime so the cyclic
+                                       ///< xcorr never gets close to half-window.
+int   KlustersRealignMinSize  = 10;   ///< Skip clusters with fewer spikes (mean too noisy
+                                       ///< to make a useful template).  Klusters skips
+                                       ///< empty clusters but otherwise applies the same
+                                       ///< algorithm regardless of size; we pick a small
+                                       ///< floor to avoid degenerate single-spike "means".
+
 // KnnSplitPerChunk parameters (Phase 2b.5, K-template chunk split).
 // Disabled by default.  Enable with -KnnSplitPerChunkEnable 1 to run a
 // per-chunk K-template nearest-mean partition between Phase 2b
@@ -445,6 +470,10 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(MeanSubtractionMergeEnable);
     FLOAT_PARAM(MeanSubtractionMergeThresh);
     INT_PARAM(MeanSubtractionMergeMaxShift);
+
+    INT_PARAM(KlustersRealignEnable);
+    INT_PARAM(KlustersRealignMaxShift);
+    INT_PARAM(KlustersRealignMinSize);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(KnnSplitPerChunkEnable);
     INT_PARAM(KnnSplitK);

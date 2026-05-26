@@ -172,6 +172,17 @@ extern int   EnergyCOMMetric;
 extern int   MeanSubtractionMergeEnable;   ///< Phase 6b enable
 extern float MeanSubtractionMergeThresh;   ///< Phase 6b residual threshold
 extern int   MeanSubtractionMergeMaxShift; ///< Phase 6b cyclic-shift half-width
+
+// ── Phase 7c — klusters-faithful per-spike realignment ────────────────────
+// Per-cluster, per-spike normalised xcorr against a pre-aligned mean
+// template (same algorithm as klusters' interactive realign).  Final
+// tightening pass after Phase 7a/7b; updates m_cumShift so
+// TimeShiftFinalize's RefeaturizeFromShifts re-extracts shifted spikes
+// from .fil and reprojects through the PCA basis.  See KK::KlustersStyle-
+// RealignAllClusters and klusters_realign.{h,cpp}.
+extern int   KlustersRealignEnable;    ///< Phase 7c enable (0 off, 1 on)
+extern int   KlustersRealignMaxShift;  ///< xcorr search radius (samples), capped at nSamp/4
+extern int   KlustersRealignMinSize;   ///< skip clusters smaller than this
 // ---- KnnSplitPerChunk parameters (Phase 2b.5, K-template chunk split) ---
 // KnnSplitPerChunkEnable: on/off gate.  Default 0 (off).  When enabled,
 // runs immediately after Phase 2b (ChunkReCEMPerChunk).  For each chunk,
