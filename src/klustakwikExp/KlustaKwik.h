@@ -353,6 +353,18 @@ extern int   PerChannelSplitUseTroughTime;      ///< default 1
 // Default off.  The existing Phase 2b.5 single-pass KnnSplit is still
 // the default entry; this flag adds re-splitting inside Phase 4.
 extern int   AlternatingSplitMergeEnable;
+// Cap on the number of Phase 4 iterations in which WaveKnnSplit runs.
+// Once reached, the Phase 4 loop continues with template-match-only
+// iters (still bounded by TemplateMatchIters) so over-fragments get
+// merged.  Default 2 — conservative; alternation is a tug-of-war
+// and unbounded split tends to win.
+extern int   AlternatingSplitMergeMaxIters;
+// Stop further Phase 4b split-iters when iter K-growth (new clusters
+// from split minus pairs merged by template-match) is positive for
+// two consecutive iters.  Net-growth indicates split is winning the
+// tug-of-war and further iters will diverge.  1 = enable, 0 = run all
+// allowed iters.
+extern int   AlternatingSplitMergeAbortOnNetGrowth;
 // DipSplitMinSize: minimum spike count per child cluster for an accepted
 // split, and minimum per parent cluster for the splitter to even look
 // (parent must have ≥ 2·DipSplitMinSize members).  Default 50.
