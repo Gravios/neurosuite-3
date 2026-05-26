@@ -12136,6 +12136,7 @@ void KK::WaveKnnSplitPerChunk(
     int totalSourcesConsidered = 0;
     int totalSourcesSplit      = 0;
     int totalNewClusters       = 0;
+    int totalResidualClusters  = 0;
     int totalSpikesReassigned  = 0;
     int totalSpikesResidual    = 0;
 
@@ -12184,6 +12185,7 @@ void KK::WaveKnnSplitPerChunk(
         cfg.minSourceClusterSize       = KnnSplitMinSourceSize;
         cfg.minNewClusterSize          = KnnSplitMinNewClusterSize;
         cfg.referencesBelowMedianTrace = true;
+        cfg.residualBecomesNewCluster  = (WaveKnnResidualBecomesCluster != 0);
         cfg.Verbose                    = (Verbose >= 2);
 
         auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
@@ -12248,16 +12250,19 @@ void KK::WaveKnnSplitPerChunk(
         totalSourcesConsidered += r.nSourcesConsidered;
         totalSourcesSplit      += r.nSourcesSplit;
         totalNewClusters       += r.nNewClusters;
+        totalResidualClusters  += r.nResidualClusters;
         totalSpikesReassigned  += r.nSpikesReassigned;
         totalSpikesResidual    += r.nSpikesResidual;
     }
 
     fprintf(stderr,
         "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (processed=%d), "
-        "sources visited=%d, split=%d, new clusters=%d, "
-        "spikes reassigned=%d, residual (stayed in source)=%d\n",
+        "sources visited=%d, split=%d, new clusters=%d "
+        "(of which residual=%d), spikes reassigned=%d, "
+        "spikes kept-in-source=%d\n",
         chunksTotal, chunksProcessed,
         totalSourcesConsidered, totalSourcesSplit, totalNewClusters,
+        totalResidualClusters,
         totalSpikesReassigned, totalSpikesResidual);
 }
 
