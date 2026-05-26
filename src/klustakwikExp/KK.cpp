@@ -46,6 +46,7 @@
 // testable and only invoked from KK.cpp via thin dispatch hooks.
 #include "wave_knn_split.h"
 #include "cluster_hull_split.h"
+#include "klusters_realign.h"
 #include "adapt_model.h"
 #include "xcorr_match.h"
 #include "clust_quality.h"
@@ -4084,6 +4085,21 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         }
     }
 
+    // ── Phase 7c — klusters-faithful per-spike realignment ─────────────
+    // Mirror of Driver B (second overload).  See KK::KlustersStyleRealign-
+    // AllClusters for algorithm details.  Opt-in via -KlustersRealignEnable 1.
+    if (KlustersRealignEnable != 0) {
+        fprintf(stderr,
+                "[Phase 7c] Klusters-faithful per-spike realignment "
+                "(maxShift=%d samples, minSize=%d)\n",
+                KlustersRealignMaxShift, KlustersRealignMinSize);
+        const int nChanged =
+            KlustersStyleRealignAllClusters(NbChannels, NbSamplesPerSpike);
+        if (nChanged > 0) {
+            LogGlobalClusterState("Phase 7c (klusters realign)");
+        }
+    }
+
     // Phase 8 DipSplit removed: per-chunk DipSplit now runs as Phase 1b,
     // before cross-chunk model matching, so global splits at this stage
     // would be operating on already-merged clusters where apparent
@@ -5272,6 +5288,35 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 ksv().BestScoreSave = score;
             }
             LogGlobalClusterState("Phase 6b (mean-sub merge)"); ReportClusterQuality("Phase 7b");
+        }
+    }
+
+    // ── Phase 7c — klusters-faithful per-spike realignment ─────────────
+    // Final tightening pass that uses XcorrDispatch (the same library
+    // klusters' interactive "Realign top-ch" button uses) to compute a
+    // per-spike shift against each cluster's pre-aligned mean template.
+    // Updates m_cumShift; TimeShiftFinalize at the very end of the run
+    // will read .fil at the new offsets and rewrite .spk/.fet.
+    //
+    // Opt-in via -KlustersRealignEnable 1.  No-op when the time-shift
+    // probe never initialised or no spikes meet the min-cluster-size
+    // threshold.  See KK::KlustersStyleRealignAllClusters for details.
+    if (KlustersRealignEnable != 0) {
+        fprintf(stderr,
+                "[Phase 7c] Klusters-faithful per-spike realignment "
+                "(maxShift=%d samples, minSize=%d)\n",
+                KlustersRealignMaxShift, KlustersRealignMinSize);
+        const int nChanged =
+            KlustersStyleRealignAllClusters(NbChannels, NbSamplesPerSpike);
+        if (nChanged > 0) {
+            // m_cumShift was updated.  We do NOT re-run MStep/EStep here:
+            // the clustering result (.clu) is final at this point, and
+            // .spk/.fet re-projection happens in TimeShiftFinalize at the
+            // very end.  Re-running EStep would require fresh features
+            // which we don't have yet (would need RefeaturizeFromShifts
+            // first, doubling the .fil-read cost).  Leave the score and
+            // BestMeans as-is.
+            LogGlobalClusterState("Phase 7c (klusters realign)");
         }
     }
 
@@ -7148,6 +7193,160 @@ int KK::EnergyCOMRealignPhase(int nChan, int nSamplesPerSpike)
     }
 
     return nSpikesShifted;
+}
+
+// ---------------------------------------------------------------------------
+// KlustersStyleRealignAllClusters — Phase 7c
+//
+// Klusters-faithful per-spike realignment.  See KK.h for the algorithmic
+// description.  This is the same algorithm that powers klusters' interactive
+// "Realign top-ch" button (src/klusters/src/spikerealign.cpp); KKE reuses
+// the same XcorrDispatch library and just supplies its own per-cluster
+// spike lists and waveform reader.
+//
+// Per-cluster cost (N = cluster size, C = nChan, S = nSamples, M = maxShift):
+//   Mean build      O(N·C·S)            CPU memcpy + accumulate
+//   Pre-align       O(C·S)              CPU
+//   xcorr           O(N·C·S·M)          GPU when available, OpenMP otherwise
+//
+// Whole-session cost on the user's sirotaA-jg-000005 data (189k spikes, 8
+// channels, 32 samples, maxShift=8) is ~1-2 seconds end-to-end on CPU and
+// well under 1 second on the RTX 5070 Ti.
+//
+// Sign convention (matches klusters spikerealign.cpp:669):
+//   m_cumShift[p] += newShift  →  re-extraction reads from .fil starting
+//   `newShift` samples LATER (or earlier when newShift is negative).
+//
+// Caller is responsible for:
+//   • Running MStep + EStep beforehand if cluster means need to be fresh
+//     (this function uses the .spk content, not Data[], so the cluster mean
+//     is computed from the raw waveform — independent of stale Class[]
+//     assignments).
+//   • Calling RefeaturizeFromShifts (via TimeShiftFinalize) afterward to
+//     turn the m_cumShift updates into actual .spk/.fet writes.
+// ---------------------------------------------------------------------------
+int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
+{
+    if (nChan <= 0 || nSamplesPerSpike <= 0) return 0;
+    if (!m_timeShiftReady) {
+        // No .spk probe initialised — without it we can't read waveforms.
+        // Skip silently (caller decides whether to warn).
+        return 0;
+    }
+    if (PeakSampleIndex < 0 || PeakSampleIndex >= nSamplesPerSpike) {
+        fprintf(stderr,
+                "[Phase 7c] PeakSampleIndex=%d out of [0,%d) — skipping "
+                "klusters-style realignment.\n",
+                PeakSampleIndex, nSamplesPerSpike);
+        return 0;
+    }
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int peakPos     = PeakSampleIndex;
+    const int maxShift    = std::max(1, std::min(nSamplesPerSpike / 4,
+                                                  KlustersRealignMaxShift));
+    const int minSize     = std::max(2, KlustersRealignMinSize);
+
+    // Group spike global indices by cluster ID.  Using nClustersAlive +
+    // AliveIndex[] gives us live clusters only; the noise cluster (id 0)
+    // is skipped explicitly.
+    std::vector<std::vector<int>> clusterSpikes(MaxPossibleClusters);
+    for (int p = 0; p < nPoints; ++p) {
+        const int c = Class[p];
+        if (c <= 0 || c >= MaxPossibleClusters) continue;  // noise / OOB
+        clusterSpikes[static_cast<size_t>(c)].push_back(p);
+    }
+
+    KlustersRealign::RealignStats stats;
+    long long sumAbsShift = 0;
+    int       nSpikesChanged = 0;
+
+    // Scratch buffer reused across clusters — sized to the largest cluster.
+    std::vector<int16_t> waveBuf;       // flat: nSpikes × waveSamples
+    std::vector<int>     shifts;
+    std::vector<float>   scores;
+
+    for (int cc = 0; cc < nClustersAlive; ++cc) {
+        const int c = AliveIndex[cc];
+        if (c <= 0 || c >= MaxPossibleClusters) continue;  // skip noise
+        const auto& pts = clusterSpikes[static_cast<size_t>(c)];
+        const int N     = static_cast<int>(pts.size());
+
+        if (N < minSize) { ++stats.nClustersSkipped; continue; }
+
+        // ── Read all N spikes' waveforms from .spk (or .spkD) ─────────
+        waveBuf.assign(static_cast<size_t>(N) * waveSamples, 0);
+        int nReadOk = 0;
+        for (int i = 0; i < N; ++i) {
+            int16_t* dst = waveBuf.data() +
+                           static_cast<ptrdiff_t>(i) * waveSamples;
+            if (TimeShiftReadSpikeWave(pts[static_cast<size_t>(i)],
+                                       waveSamples, dst)) {
+                ++nReadOk;
+            } else {
+                // Zero-fill the failed slot; it will contribute zero to the
+                // mean and the xcorr will return shift=0 for it.
+                std::memset(dst, 0,
+                            static_cast<size_t>(waveSamples) *
+                            sizeof(int16_t));
+                ++stats.nSpikesReadFailed;
+            }
+        }
+        if (nReadOk < minSize) {
+            ++stats.nClustersSkipped;
+            continue;
+        }
+
+        // ── Compute per-spike shifts via XcorrDispatch ────────────────
+        const bool ok = KlustersRealign::ComputeClusterShiftsFlat(
+            waveBuf.data(), N,
+            nChan, nSamplesPerSpike, peakPos, maxShift,
+            shifts, scores);
+        if (!ok) { ++stats.nClustersSkipped; continue; }
+
+        // ── Commit shifts to m_cumShift, clamping to maxAbs.
+        //    Klusters writes back to .fil immediately; here we let
+        //    TimeShiftFinalize handle that at the end of the run.
+        for (int i = 0; i < N; ++i) {
+            const int p  = pts[static_cast<size_t>(i)];
+            const int sh = shifts[static_cast<size_t>(i)];
+            if (sh == 0) continue;
+
+            const int oldCum = m_cumShift[static_cast<size_t>(p)];
+            int       newCum = oldCum + sh;
+            if (newCum >  m_timeShiftMaxAbs) newCum =  m_timeShiftMaxAbs;
+            if (newCum < -m_timeShiftMaxAbs) newCum = -m_timeShiftMaxAbs;
+            if (newCum == oldCum) continue;  // clamped out
+
+            m_cumShift[static_cast<size_t>(p)] = newCum;
+            ++nSpikesChanged;
+            sumAbsShift += std::abs(sh);
+            stats.maxAbsShift = std::max(stats.maxAbsShift, std::abs(sh));
+        }
+
+        stats.nSpikesEvaluated += N;
+        stats.nSpikesRealigned += static_cast<int>(
+            std::count_if(shifts.begin(), shifts.end(),
+                          [](int s){ return s != 0; }));
+        ++stats.nClustersProcessed;
+    }
+
+    stats.meanAbsShift = stats.nSpikesEvaluated > 0
+        ? static_cast<double>(sumAbsShift) / stats.nSpikesEvaluated
+        : 0.0;
+
+    fprintf(stderr,
+            "[Phase 7c] KlustersStyle realignment: "
+            "%d clusters processed (%d skipped), "
+            "%d/%d spikes shifted, "
+            "mean|Δ|=%.2f samples (max %d), "
+            "%d read failures.\n",
+            stats.nClustersProcessed, stats.nClustersSkipped,
+            stats.nSpikesRealigned, stats.nSpikesEvaluated,
+            stats.meanAbsShift, stats.maxAbsShift,
+            stats.nSpikesReadFailed);
+
+    return nSpikesChanged;
 }
 
 // ---------------------------------------------------------------------------
