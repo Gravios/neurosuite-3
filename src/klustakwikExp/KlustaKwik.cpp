@@ -359,6 +359,9 @@ int   PerChannelSplitUsePeakAmp        = 1;
 int   PerChannelSplitUsePeakTime       = 1;
 int   PerChannelSplitUseTroughAmp      = 1;
 int   PerChannelSplitUseTroughTime     = 1;
+
+// AlternatingSplitMerge — see KlustaKwik.h for description.
+int   AlternatingSplitMergeEnable     = 0;
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
 float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
                                           ///< lowered from 2.0 because the χ² test is itself
@@ -525,6 +528,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(PerChannelSplitUsePeakTime);
     INT_PARAM(PerChannelSplitUseTroughAmp);
     INT_PARAM(PerChannelSplitUseTroughTime);
+    INT_PARAM(AlternatingSplitMergeEnable);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
     FLOAT_PARAM(DipSplitElongationFactor);
