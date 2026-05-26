@@ -46,6 +46,7 @@
 // testable and only invoked from KK.cpp via thin dispatch hooks.
 #include "wave_knn_split.h"
 #include "cluster_hull_split.h"
+#include "per_channel_split.h"
 #include "klusters_realign.h"
 #include "adapt_model.h"
 #include "xcorr_match.h"
@@ -3473,6 +3474,20 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.6");
         }
 
+        // Phase 2a.7: per-channel amplitude+phase bimodality split.  Reads
+        // raw waveforms and tests each channel's (peak amp, peak time,
+        // trough amp, trough time) 4-vector for 1D / 2D-angle-sweep KDE
+        // valleys.  Catches the failure mode that DipSplit and HullSplit
+        // both miss — two units differing by a small combination of
+        // amplitude AND phase on a single channel.  Default off
+        // (PerChannelSplitEnable=0).
+        if (PerChannelSplitEnable != 0) {
+            PerChannelSplitPerChunk(
+                chunkPoints, perChunkClass,
+                NbChannels, NbSamplesPerSpike, "Phase 2a.7");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.7");
+        }
+
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
         // reassign across the new fine-grained label set and lets CEM
         // merge oversplit fragments via ConsiderDeletion.  Rebuilds
@@ -4643,6 +4658,15 @@ float KK::RunChunkedCEM(float chunkMinutes,
             HullSplitPerChunk(
                 chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
             LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.6");
+        }
+
+        // Phase 2a.7: per-channel amplitude+phase split, see commentary at
+        // the matching insertion in the first overload.
+        if (PerChannelSplitEnable != 0) {
+            PerChannelSplitPerChunk(
+                chunkPoints, perChunkClass,
+                NbChannels, NbSamplesPerSpike, "Phase 2a.7");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.7");
         }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
@@ -8706,6 +8730,155 @@ void KK::HullSplitPerChunk(
             "%d chunks affected\n",
             phaseLabel, totalSplitsAcrossChunks, totalNewSubClusters,
             totalChunksWithSplits);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::PerChannelSplitPerChunk
+//
+// Phase 2a.7: per-channel amplitude+phase bimodality split.  Per chunk,
+// per cluster: read each spike's full waveform, extract 4 features per
+// channel (peak amp, peak time, trough amp, trough time), run 1D + 2D
+// angle-sweep valley tests across channels, and split clusters whose
+// strongest channel shows a KDE-detectable valley.  See per_channel_split.h
+// for the algorithm in detail.
+//
+// Catches the failure mode where two real units share most of their
+// waveform but differ by a small combination of amplitude AND phase on
+// one specific channel (klusters cluster #131 case).  DipSplit misses
+// this because the signal spreads across multiple PCA dims; HullSplit
+// misses it because the clusters are topologically connected.
+//
+// Like HullSplit, defers model rebuild to Phase 2b (ChunkReCEMPerChunk
+// will regenerate ChunkModels from the post-split labels via its MStep
+// pass).  So this method only updates perChunkClass[].
+//
+// Cost: per-chunk parallel; dominated by waveform reads (one mmap memcpy
+// per spike) and the KDE-based valley_test (O(n log n + G) per scan).
+// ~200ms total for 36 chunks × 25 clusters × 8 channels × 22 tests.
+// ---------------------------------------------------------------------------
+void KK::PerChannelSplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    int nChan, int nSamplesPerSpike,
+    const char* phaseLabel)
+{
+    if (PerChannelSplitEnable == 0) return;
+    if (!m_timeShiftReady) {
+        LockedStderr(
+                "[%s] PerChannelSplit skipped: TimeShift backing store not "
+                "initialised (need .spk mmap/fp for waveform reads).\n",
+                phaseLabel);
+        return;
+    }
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0 || nChan <= 0 || nSamplesPerSpike <= 0) return;
+
+    LockedStderr(
+            "[%s] PerChannelSplit per-chunk (minSize=%d, valley=%.2f, "
+            "minSubSize=%d, bicMargin=%.1f+%.1f·logN, snrRatio=%.2f)\n",
+            phaseLabel, PerChannelSplitMinClusterSize,
+            PerChannelSplitValleyThreshold, PerChannelSplitMinSubClusterSize,
+            PerChannelSplitBicMarginConstant, PerChannelSplitBicMarginPerLogN,
+            PerChannelSplitMinChannelSnrRatio);
+
+    const int waveSamples = nChan * nSamplesPerSpike;
+
+    int totalSplits         = 0;
+    int totalChunksWithSplit = 0;
+    int totalNewClusters    = 0;
+
+    struct ChunkResult {
+        bool             changed = false;
+        std::vector<int> newClass;
+        int              nSplits = 0;
+        int              nNewClusters = 0;
+    };
+    std::vector<ChunkResult> results(static_cast<size_t>(nCh));
+
+    // NOTE: per-chunk parallelism is safe because each chunk has an
+    // independent perChunkClass[ck] vector and an independent set of
+    // (global) spike indices.  TimeShiftReadSpikeWave is thread-safe
+    // when m_timeShiftSpkMap is non-null (read-only memcpy); the
+    // fseeko+fread fallback path is NOT thread-safe so we serialise
+    // if mmap is unavailable.
+    const bool mapBacked = (m_timeShiftSpkMap != nullptr);
+    const int  maxThreads = mapBacked ? omp_get_max_threads() : 1;
+
+    #pragma omp parallel for schedule(dynamic) num_threads(maxThreads) \
+        reduction(+:totalSplits,totalChunksWithSplit,totalNewClusters)
+    for (int ck = 0; ck < nCh; ++ck) {
+        const auto& pts  = chunkPoints[static_cast<size_t>(ck)];
+        const int   nPts = static_cast<int>(pts.size());
+        if (nPts < 2 * PerChannelSplitMinSubClusterSize) continue;
+        if (perChunkClass[static_cast<size_t>(ck)].size() !=
+            static_cast<size_t>(nPts)) continue;
+
+        // Build local labels indexed [0, nPts) and per-cluster spike lists
+        // (also using local indices).  per_channel_split::Run will receive
+        // local indices and we translate them to global at read time.
+        std::vector<int> localLabels =
+            perChunkClass[static_cast<size_t>(ck)];
+
+        int maxLc = 0;
+        for (int c : localLabels) if (c > maxLc) maxLc = c;
+
+        // Per-cluster spike lists (local indices).
+        std::vector<std::vector<int>> clusterSpikes(
+            static_cast<size_t>(maxLc + 1));
+        for (int i = 0; i < nPts; ++i) {
+            const int c = localLabels[static_cast<size_t>(i)];
+            if (c <= 0) continue;
+            clusterSpikes[static_cast<size_t>(c)].push_back(i);
+        }
+
+        // readWaveform callback: translates local idx → global spike id.
+        auto readWave = [&](int localIdx, int16_t* dst) -> bool {
+            if (localIdx < 0 || localIdx >= nPts) return false;
+            const int p = pts[static_cast<size_t>(localIdx)];
+            return TimeShiftReadSpikeWave(p, waveSamples, dst);
+        };
+
+        per_channel_split::Config cfg;
+        cfg.minClusterSize       = PerChannelSplitMinClusterSize;
+        cfg.valleyThreshold      = PerChannelSplitValleyThreshold;
+        cfg.minSubClusterSize    = PerChannelSplitMinSubClusterSize;
+        cfg.bicMarginConstant    = PerChannelSplitBicMarginConstant;
+        cfg.bicMarginPerLogN     = PerChannelSplitBicMarginPerLogN;
+        cfg.minChannelSnrRatio   = PerChannelSplitMinChannelSnrRatio;
+        cfg.usePeakAmplitude     = (PerChannelSplitUsePeakAmp    != 0);
+        cfg.usePeakTime          = (PerChannelSplitUsePeakTime   != 0);
+        cfg.useTroughAmplitude   = (PerChannelSplitUseTroughAmp  != 0);
+        cfg.useTroughTime        = (PerChannelSplitUseTroughTime != 0);
+        cfg.firstNewClusterId    = maxLc + 1;
+
+        auto rr = per_channel_split::Run(
+            clusterSpikes, readWave,
+            nChan, nSamplesPerSpike,
+            localLabels, cfg);
+
+        if (rr.nClustersSplit > 0) {
+            results[static_cast<size_t>(ck)].changed      = true;
+            results[static_cast<size_t>(ck)].newClass     = std::move(localLabels);
+            results[static_cast<size_t>(ck)].nSplits      = rr.nClustersSplit;
+            results[static_cast<size_t>(ck)].nNewClusters = rr.nNewClusters;
+            totalSplits          += rr.nClustersSplit;
+            totalChunksWithSplit += 1;
+            totalNewClusters     += rr.nNewClusters;
+        }
+    }
+
+    // Serial application.
+    for (int ck = 0; ck < nCh; ++ck) {
+        if (!results[static_cast<size_t>(ck)].changed) continue;
+        perChunkClass[static_cast<size_t>(ck)] =
+            std::move(results[static_cast<size_t>(ck)].newClass);
+    }
+
+    LockedStderr(
+            "[%s] PerChannelSplit per-chunk: %d clusters split, +%d new "
+            "sub-clusters, %d chunks affected\n",
+            phaseLabel, totalSplits, totalNewClusters, totalChunksWithSplit);
 }
 
 
