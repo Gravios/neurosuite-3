@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <limits>
 #include <map>
+#include <random>
 #include <set>
 #include <unordered_map>
 
@@ -48,24 +50,28 @@ Result Run(const float*                       features,
     const int minVotes = static_cast<int>(
         std::ceil(static_cast<double>(K) * static_cast<double>(cfg.majorityThreshold)));
 
-    // 1. Count cluster sizes.
+    // 1. Count cluster sizes.  Skip cluster 0 (noise) entirely from the
+    //    auto-pick tally; skip cluster 1 only if cfg.skipMuaCluster1.
+    //    BUT track maxLabel across ALL clusters (incl. filtered ones) so
+    //    new cluster IDs we allocate don't collide with an existing
+    //    cluster 1 that we chose not to consider.
     std::unordered_map<int, int> clusterSize;
     int maxLabel = 0;
     for (int i = 0; i < nPoints; ++i) {
         const int c = labels[i];
-        if (c <= 0) continue;  // noise/MUA — ignore
-        clusterSize[c]++;
         if (c > maxLabel) maxLabel = c;
+        if (c <= 0) continue;                          // noise: never in tally
+        if (cfg.skipMuaCluster1 && c == 1) continue;   // klusters-compat MUA skip
+        clusterSize[c]++;
     }
     if (clusterSize.empty()) return out;
 
-    // 2. Compute trace filter cutoff (chunk-median over non-noise clusters
-    //    of sufficient size to be eligible as references).  Only used in
-    //    AUTO-PICK mode when no explicit referenceIds were supplied.
+    // 2. Compute trace filter cutoff (chunk-median).  Only used in auto-pick
+    //    + useTraceFilter mode when no explicit referenceIds were supplied.
     float medianTrace = std::numeric_limits<float>::infinity();
     std::unordered_map<int, float> traceMap;
     const bool autoPickRefs = cfg.referenceIds.empty();
-    if (autoPickRefs && cfg.referencesBelowMedianTrace
+    if (autoPickRefs && cfg.useTraceFilter
         && !clusterTraces.empty()
         && clusterTraces.size() == clusterTraceIds.size()) {
         std::vector<float> sizedOk;
@@ -85,58 +91,112 @@ Result Run(const float*                       features,
         }
     }
 
-    // 3. Reference-cluster set.
-    //    Mode A (explicit refIds supplied): intersect with size threshold.
-    //    Mode B (auto-pick): size ≥ minRefClusterSize AND, if traces
-    //    supplied with the filter on, trace < median.
-    std::set<int> refClusters;
+    // 3. Reference cluster set + source cluster set + pool-exclusion mode.
+    //
+    //    Three configurations:
+    //      (A) Explicit referenceIds given           → fixed ref set
+    //      (B) Auto-pick + useTraceFilter=true        → KKE mode: ref =
+    //          low-trace clusters, source = the rest.  Refs and sources
+    //          are disjoint; no own-cluster exclusion needed in K-NN.
+    //      (C) Auto-pick + useTraceFilter=false       → klusters mode:
+    //          every sized-OK cluster is BOTH a reference (in the pool)
+    //          AND a source candidate.  The K-NN loop excludes own-cluster
+    //          pool entries per source spike so it doesn't trivially vote
+    //          for itself.  Matches klusters' algorithm where the source
+    //          is excluded from the reference pool.
+    std::set<int> refClusters;   // pool contributors (klusters semantics: incl. all eligible)
+    std::set<int> sourceClusters;
+    bool klustersMode = false;
     if (!autoPickRefs) {
+        // Mode A
         for (int cid : cfg.referenceIds) {
             const auto it = clusterSize.find(cid);
             if (it != clusterSize.end() && it->second >= cfg.minRefClusterSize) {
                 refClusters.insert(cid);
             }
         }
-    } else {
+    } else if (cfg.useTraceFilter) {
+        // Mode B: trace filter selects refs; sources = the complement
         for (const auto& kv : clusterSize) {
             if (kv.second < cfg.minRefClusterSize) continue;
-            if (cfg.referencesBelowMedianTrace && !traceMap.empty()) {
+            if (!traceMap.empty()) {
                 auto it = traceMap.find(kv.first);
                 if (it == traceMap.end() || it->second >= medianTrace) continue;
             }
             refClusters.insert(kv.first);
         }
+    } else {
+        // Mode C: klusters semantics — every sized-OK cluster is in the pool
+        klustersMode = true;
+        for (const auto& kv : clusterSize) {
+            if (kv.second < cfg.minRefClusterSize) continue;
+            refClusters.insert(kv.first);
+        }
     }
     if (refClusters.size() < 2) {
         if (cfg.Verbose) {
-            std::fprintf(stderr, "[wave_knn_split] only %zu eligible references; skipping\n",
-                         refClusters.size());
+            std::fprintf(stderr,
+                "[wave_knn_split] only %zu eligible references; skipping\n",
+                refClusters.size());
         }
         return out;
     }
 
-    // 4. Source-cluster set.
-    //    Mode A (explicit sourceIds): use them (size threshold still applies).
-    //    Mode B (auto-pick): every non-ref non-noise cluster ≥ minSource.
-    std::set<int> sourceClusters;
+    // Source set
     if (!cfg.sourceIds.empty()) {
         for (int cid : cfg.sourceIds) {
             const auto it = clusterSize.find(cid);
             if (it != clusterSize.end() && it->second >= cfg.minSourceClusterSize
-                && !refClusters.count(cid)) {
+                && (klustersMode || !refClusters.count(cid))) {
                 sourceClusters.insert(cid);
             }
         }
-    } else {
+    } else if (cfg.useTraceFilter) {
+        // Mode B: sources = clusters NOT picked as refs
         for (const auto& kv : clusterSize) {
             if (refClusters.count(kv.first)) continue;
             if (kv.second < cfg.minSourceClusterSize) continue;
             sourceClusters.insert(kv.first);
         }
+    } else {
+        // Mode C: sources = same set as refs (every eligible cluster)
+        for (int cid : refClusters) {
+            if (clusterSize[cid] >= cfg.minSourceClusterSize) {
+                sourceClusters.insert(cid);
+            }
+        }
+    }
+
+    // 4. Noise-cluster (cid=0) as a source candidate, drawn at this
+    //    probability per Run() invocation.  Noise is NEVER part of the
+    //    reference pool (it's noise by definition).
+    if (cfg.noiseSourceProbability > 0.0f) {
+        // Count noise-cluster spikes
+        int noiseSize = 0;
+        for (int i = 0; i < nPoints; ++i) {
+            if (labels[i] == 0) ++noiseSize;
+        }
+        if (noiseSize >= cfg.minSourceClusterSize) {
+            const unsigned seed = cfg.rngSeed ? cfg.rngSeed
+                : static_cast<unsigned>(std::time(nullptr));
+            std::mt19937 rng(seed);
+            std::uniform_real_distribution<float> u(0.0f, 1.0f);
+            if (u(rng) < cfg.noiseSourceProbability) {
+                sourceClusters.insert(0);
+                out.noiseClusterTried = true;
+                if (cfg.Verbose) {
+                    std::fprintf(stderr,
+                        "[wave_knn_split] noise cluster (cid=0, %d spikes) "
+                        "drawn as source (p=%.2f)\n",
+                        noiseSize, cfg.noiseSourceProbability);
+                }
+            }
+        }
     }
 
     // 5. Build the reference POOL: indices of all spikes whose label is in
-    //    refClusters.
+    //    refClusters.  Noise spikes are NEVER pool members regardless of
+    //    whether cluster 0 was drawn as a source.
     std::vector<int> poolIdx;
     poolIdx.reserve(static_cast<size_t>(nPoints));
     for (int i = 0; i < nPoints; ++i) {
@@ -176,12 +236,23 @@ Result Run(const float*                       features,
         #pragma omp for schedule(dynamic, 64)
         for (int si = 0; si < static_cast<int>(sourceIdx.size()); ++si) {
             const int i = sourceIdx[si];
+            const int srcLabel = labels[i];
             const float* fi = features + static_cast<size_t>(i) * nDims;
 
-            // Top-K heap of (d², poolPos) — max-heap by d²
+            // Top-K heap of (d², poolPos) — max-heap by d².
+            //
+            // In klusters mode (or whenever the source cluster's spikes are
+            // also pool members — e.g. when caller passed overlapping
+            // sourceIds/referenceIds), exclude pool entries that share the
+            // source spike's cluster.  Otherwise a source spike would just
+            // vote for itself.  In trace-filter mode refs and sources are
+            // disjoint so the exclusion is a no-op (but cheap to check).
             heap.clear();
+            int nUsablePool = 0;
             for (int p = 0; p < static_cast<int>(poolIdx.size()); ++p) {
                 const int j = poolIdx[p];
+                if (labels[j] == srcLabel) continue;        // own-cluster exclusion
+                ++nUsablePool;
                 const float* fj = features + static_cast<size_t>(j) * nDims;
                 const double d2 = sqDist(fi, fj, nDimsUse);
                 if (static_cast<int>(heap.size()) < K) {
@@ -193,7 +264,7 @@ Result Run(const float*                       features,
                     std::push_heap(heap.begin(), heap.end(), cmpMaxByD2);
                 }
             }
-            if (static_cast<int>(heap.size()) < std::min(K, static_cast<int>(poolIdx.size()))) {
+            if (static_cast<int>(heap.size()) < std::min(K, nUsablePool)) {
                 continue;  // not enough neighbours; leave proposal[i] = -1
             }
 

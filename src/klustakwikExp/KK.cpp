@@ -12184,7 +12184,11 @@ void KK::WaveKnnSplitPerChunk(
         cfg.minRefClusterSize          = KnnSplitMinRefSize;
         cfg.minSourceClusterSize       = KnnSplitMinSourceSize;
         cfg.minNewClusterSize          = KnnSplitMinNewClusterSize;
-        cfg.referencesBelowMedianTrace = true;
+        cfg.useTraceFilter             = (WaveKnnUseTraceFilter != 0);
+        cfg.skipMuaCluster1            = (WaveKnnSkipMuaCluster1 != 0);
+        cfg.noiseSourceProbability     = WaveKnnNoiseSourceProbability;
+        cfg.rngSeed                    = static_cast<unsigned>(
+            (RandomSeed != 0) ? RandomSeed : 0);  // 0 = time-based
         cfg.residualBecomesNewCluster  = (WaveKnnResidualBecomesCluster != 0);
         cfg.Verbose                    = (Verbose >= 2);
 

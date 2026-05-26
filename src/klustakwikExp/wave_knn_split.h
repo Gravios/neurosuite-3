@@ -59,8 +59,8 @@ struct Config {
     // cluster; all others become references.
     //
     // If empty, references are auto-selected: clusters with ≥
-    // minRefClusterSize members, AND (if referencesBelowMedianTrace=true
-    // and traces are supplied) trace below the chunk-median.
+    // minRefClusterSize members (filtered by useTraceFilter or
+    // skipMuaCluster1 as configured).
     std::vector<int> referenceIds;
 
     // Explicit source cluster IDs.  If non-empty, only these clusters
@@ -93,11 +93,56 @@ struct Config {
     // sub-cluster.  Below this, those spikes go to residual.
     int minNewClusterSize = 30;
 
-    // Optional reference-quality filter (auto-pick mode only): only
-    // clusters whose tr(Σ)/nDim is below the chunk-median trace
-    // participate as references.  Helps avoid using noisy mixtures as
-    // refs.  Ignored when referenceIds is non-empty.
-    bool referencesBelowMedianTrace = true;
+    // Reference-selection mode (auto-pick path only — ignored when
+    // explicit referenceIds are supplied).
+    //
+    //   true  (KKE default): the auto-pick uses the chunk-median trace
+    //         filter — clusters with tr(Σ)/nDim below the median become
+    //         references, the rest become sources.  This auto-distinguishes
+    //         "well-isolated" references from "needs splitting" sources
+    //         without user input.  Pool and source sets are DISJOINT.
+    //
+    //   false (klusters-compat): no trace filter.  Every cluster ≥
+    //         minRefClusterSize is BOTH a pool member and a source
+    //         candidate; each source spike's K-NN is computed against
+    //         the pool WITH OWN-CLUSTER EXCLUSION (a source spike's K
+    //         nearest neighbours come from clusters other than its own).
+    //         Matches klusters semantics where user picks one source
+    //         and everyone else is a reference, generalised to all
+    //         clusters in turn.  More expensive (no shared "trusted ref"
+    //         subset) but lets cluster A's spikes potentially merge into
+    //         cluster B if their K-NN votes for B.
+    bool useTraceFilter = true;
+
+    // Cluster-1 (klusters: MUA) policy.
+    //   false (KKE default): cluster 1 participates normally as both a
+    //         potential reference and a potential source.  Matches KKE
+    //         convention where cluster 1 is not reserved.
+    //   true  (klusters-compat): cluster 1 is excluded from both pool
+    //         and source candidates, matching klusters' `cid ≤ 1` skip
+    //         at data.cpp:1857.  Use when working with klusters-style
+    //         files where cluster 1 is reserved for multi-unit activity.
+    bool skipMuaCluster1 = false;
+
+    // Noise-cluster (cid=0) inclusion probability.  Default 0.0 (noise
+    // cluster never used as a source).  When > 0, before each Run()
+    // call a uniform [0, 1) draw is compared against this value; on
+    // hit, cluster 0 is added to the source candidate set for this run.
+    // The reasoning: the noise cluster in a well-tuned pipeline holds
+    // mostly genuine noise, but a fraction is misclassified real spikes
+    // that should be recoverable by KNN majority-vote against the
+    // well-isolated reference clusters.  Re-running periodically
+    // (probability > 0) lets those spikes drift back; not every run
+    // (probability < 1) avoids over-eager re-classification and
+    // fragmentation.  Typical: 0.1 - 0.3.
+    //
+    // The noise cluster is NEVER a member of the reference pool
+    // regardless of size — it's only ever a source candidate.
+    float noiseSourceProbability = 0.0f;
+
+    // RNG seed for the noise-source decision.  0 = use system time
+    // (non-reproducible).  Any positive value is used directly.
+    unsigned rngSeed = 0;
 
     // Residual handling — matches klusters' behaviour when true (default):
     //
@@ -132,6 +177,7 @@ struct Result {
     int nResidualClusters   = 0;   // of nNewClusters, how many were residual buckets
     int nSpikesReassigned   = 0;   // spikes moved out of source to ANY new cluster
     int nSpikesResidual     = 0;   // ambiguous + small-winner spikes that stayed in source
+    bool noiseClusterTried  = false;  // true if cluster 0 was a source candidate this run
 };
 
 // -----------------------------------------------------------------------------
@@ -147,9 +193,9 @@ struct Result {
 //   labels                [nPoints] cluster ID per spike; updated in place.
 //                         0 = noise (untouched); ≥ 2 = real clusters.
 //   clusterTraces         optional [labels] map of tr(Σ)/nDim per cluster
-//                         ID, used by referencesBelowMedianTrace filter.
-//                         If empty AND referencesBelowMedianTrace=true,
-//                         the filter is skipped (all-clusters used).
+//                         ID, used by the useTraceFilter auto-pick filter.
+//                         If empty AND useTraceFilter=true, the filter
+//                         is skipped (all-clusters used as references).
 //   cfg                   configuration
 //
 // Returns:
