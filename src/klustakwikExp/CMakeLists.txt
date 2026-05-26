@@ -196,6 +196,8 @@ set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
     proxy_isi.cpp
     wave_knn_split.cpp
     cluster_hull_split.cpp
+    klusters_realign.cpp
+    per_channel_split.cpp
     xcorr_match.cpp
     clust_quality.cpp
     adapt_model.cpp
@@ -207,6 +209,9 @@ set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
               dipsplit.h
               proxy_isi.h
               wave_knn_split.h
+              cluster_hull_split.h
+              klusters_realign.h
+              per_channel_split.h
               xcorr_match.h
               clust_quality.h
               adapt_model.h)
@@ -411,6 +416,8 @@ if(_SYCL_ACTIVE)
         proxy_isi.cpp
         wave_knn_split.cpp
         cluster_hull_split.cpp
+        klusters_realign.cpp
+        per_channel_split.cpp
         xcorr_match.cpp
         clust_quality.cpp
         adapt_model.cpp
