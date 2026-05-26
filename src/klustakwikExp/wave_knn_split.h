@@ -96,33 +96,35 @@ struct Config {
     // Reference-selection mode (auto-pick path only — ignored when
     // explicit referenceIds are supplied).
     //
-    //   true  (KKE default): the auto-pick uses the chunk-median trace
-    //         filter — clusters with tr(Σ)/nDim below the median become
-    //         references, the rest become sources.  This auto-distinguishes
-    //         "well-isolated" references from "needs splitting" sources
-    //         without user input.  Pool and source sets are DISJOINT.
-    //
-    //   false (klusters-compat): no trace filter.  Every cluster ≥
-    //         minRefClusterSize is BOTH a pool member and a source
+    //   false (klusters-compat, default): no trace filter.  Every cluster
+    //         ≥ minRefClusterSize is BOTH a pool member and a source
     //         candidate; each source spike's K-NN is computed against
     //         the pool WITH OWN-CLUSTER EXCLUSION (a source spike's K
     //         nearest neighbours come from clusters other than its own).
     //         Matches klusters semantics where user picks one source
     //         and everyone else is a reference, generalised to all
-    //         clusters in turn.  More expensive (no shared "trusted ref"
-    //         subset) but lets cluster A's spikes potentially merge into
-    //         cluster B if their K-NN votes for B.
-    bool useTraceFilter = true;
+    //         clusters in turn.  Lets cluster A's spikes potentially
+    //         merge into cluster B if their K-NN votes for B.
+    //
+    //   true  (KKE alternative): the auto-pick uses the chunk-median
+    //         trace filter — clusters with tr(Σ)/nDim below the median
+    //         become references, the rest become sources.  Pool and
+    //         source sets are DISJOINT.  Cheaper (no own-cluster
+    //         exclusion needed) but excludes the common case "cluster A
+    //         is a mixture whose spikes K-NN-vote for cluster B" when
+    //         both are well-isolated (low trace) at the median split.
+    bool useTraceFilter = false;
 
     // Cluster-1 (klusters: MUA) policy.
-    //   false (KKE default): cluster 1 participates normally as both a
-    //         potential reference and a potential source.  Matches KKE
-    //         convention where cluster 1 is not reserved.
-    //   true  (klusters-compat): cluster 1 is excluded from both pool
-    //         and source candidates, matching klusters' `cid ≤ 1` skip
-    //         at data.cpp:1857.  Use when working with klusters-style
-    //         files where cluster 1 is reserved for multi-unit activity.
-    bool skipMuaCluster1 = false;
+    //   true  (klusters-compat, default): cluster 1 is excluded from
+    //         both pool and source candidates, matching klusters' `cid
+    //         ≤ 1` skip at data.cpp:1857.  Klusters reserves cluster 1
+    //         for multi-unit activity; it must not participate in the
+    //         K-NN vote.
+    //   false (KKE alternative): cluster 1 participates normally as
+    //         both a potential reference and a potential source.  Use
+    //         only when your label conventions don't reserve cluster 1.
+    bool skipMuaCluster1 = true;
 
     // Noise-cluster (cid=0) inclusion probability.  Default 0.0 (noise
     // cluster never used as a source).  When > 0, before each Run()
