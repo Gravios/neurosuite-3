@@ -13299,6 +13299,62 @@ void KK::WaveKnnSplitPerChunk(
             for (int j = 0; j < nFullDims; ++j)
                 cm.mean[j] = static_cast<float>(acc[j] / n);
         }
+
+        // CRITICAL: rebuild covariances for all clusters with current
+        // membership.  Without this, the anisotropy gate (patch 0021)
+        // sees zero-cov on every cluster wave_knn_split touched — including
+        // newly-created sub-clusters — and admits them all on the next
+        // Phase 4b iteration regardless of whether they look like
+        // mixtures.  That's the cluster-explosion regression where
+        // a session ends up with 10k+ local clusters before merge.
+        //
+        // Upper-triangle accumulation, divide by n at end (population
+        // covariance, matches ChunkReCEM convention).  O(nPts·nDims²/2)
+        // per chunk; ~60ms total for the user's session (36 chunks,
+        // nFullDims=22, ~7k pts/chunk).
+        std::map<int, std::vector<double>> newCovAcc;
+        for (int i = 0; i < nPts; ++i) {
+            const int c = cls[i];
+            if (c == 0) continue;
+            const float* x = &Data[static_cast<size_t>(pts[i]) * nFullDims];
+            // Find the cluster's mean we just computed (use newMeanAcc/n).
+            auto itAcc = newMeanAcc.find(c);
+            const int n = newN[c];
+            if (itAcc == newMeanAcc.end() || n == 0) continue;
+            const auto& meanAcc = itAcc->second;
+            auto& covAcc = newCovAcc[c];
+            if (covAcc.empty())
+                covAcc.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0);
+            for (int j = 0; j < nFullDims; ++j) {
+                const double dj = static_cast<double>(x[j])
+                                - meanAcc[j] / n;
+                for (int k = j; k < nFullDims; ++k) {
+                    const double dk = static_cast<double>(x[k])
+                                    - meanAcc[k] / n;
+                    covAcc[static_cast<size_t>(j) * nFullDims + k] += dj * dk;
+                }
+            }
+        }
+        // Assign to ChunkModels (upper triangle; symmetric reader assumed).
+        for (auto& cm : mdls) {
+            if (cm.localClusterId == 0) continue;
+            const int n = cm.nMembers;
+            if (n == 0) continue;
+            auto it = newCovAcc.find(cm.localClusterId);
+            if (it == newCovAcc.end()) continue;
+            const auto& acc = it->second;
+            if (cm.cov.size() != static_cast<size_t>(nFullDims) * nFullDims)
+                cm.cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+            const double invN = 1.0 / n;
+            for (int j = 0; j < nFullDims; ++j) {
+                for (int k = j; k < nFullDims; ++k) {
+                    cm.cov[static_cast<size_t>(j) * nFullDims + k] =
+                        static_cast<float>(
+                            acc[static_cast<size_t>(j) * nFullDims + k] * invN);
+                }
+            }
+        }
+
         // Drop emptied source ChunkModels.
         mdls.erase(
             std::remove_if(mdls.begin(), mdls.end(),

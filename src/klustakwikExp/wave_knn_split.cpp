@@ -193,17 +193,26 @@ Result Run(const float*                       features,
     //     generates "splits" from random K-NN voting noise.  Refs are
     //     NOT filtered — well-isolated unimodals are exactly the
     //     references we want to vote against.
+    //
+    // Missing-entry policy: REJECT (defensive).  When the caller has
+    // computed anisotropy for some clusters but not others — typically
+    // because a freshly-created cluster from an earlier Phase 4b
+    // iteration has zero covariance and was skipped by the caller —
+    // we treat the absence as "cannot judge unimodality, refuse to
+    // split" rather than admit.  Admitting was the regression that
+    // produced 10k+ local clusters: every freshly-split cluster came
+    // back with no anisotropy entry, got a free pass, and was re-
+    // split again on the next iter.  The user can revert to the
+    // permissive policy by computing valid anisotropy for every
+    // cluster (e.g. by ensuring cov is rebuilt before each call) and
+    // would get identical behaviour.
     int nFilteredAniso = 0;
     if (useAniso && !sourceClusters.empty()) {
         std::set<int> kept;
         for (int cid : sourceClusters) {
             auto it = anisoMap.find(cid);
             if (it == anisoMap.end()) {
-                // No anisotropy info for this cluster — be permissive
-                // (admit, matching pre-gate behaviour).  This keeps
-                // the gate opt-in rather than failure-by-default if
-                // the caller forgets to compute the vector.
-                kept.insert(cid);
+                ++nFilteredAniso;          // missing-entry → reject
                 continue;
             }
             if (it->second >= cfg.minSourceAnisotropy) kept.insert(cid);
