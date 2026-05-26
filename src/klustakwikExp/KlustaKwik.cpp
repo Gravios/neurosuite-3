@@ -232,6 +232,29 @@ float WaveKnnMajorityThreshold  = 0.6f;
 //   0: small winners revert to source; ambiguous spikes stay in source;
 //     no residual cluster ever materialised.
 int   WaveKnnResidualBecomesCluster = 1;
+// WaveKnnUseTraceFilter: when KnnSplitMode=1 and no explicit references
+// are provided, controls auto-pick of refs vs sources.
+//   1 (default, KKE mode): trace filter — clusters with tr(Σ)/nDim below
+//     the chunk median are references; the rest are sources.  Pool and
+//     source sets DISJOINT.  Cheap, but requires trace info to work.
+//   0 (klusters mode): no trace filter.  Every sized-OK cluster is both
+//     a pool member AND a source candidate; per-spike K-NN excludes
+//     own-cluster pool entries so a source spike doesn't trivially vote
+//     for itself.  Matches klusters' algorithm semantics.  More expensive
+//     (no trusted-ref subset) but allows cluster A to receive spikes
+//     from cluster B if their K-NN votes for B.
+int   WaveKnnUseTraceFilter         = 1;
+// WaveKnnSkipMuaCluster1: when KnnSplitMode=1, controls whether cluster 1
+// (klusters MUA convention) is excluded from both pool and source
+// candidates.  0 = include (KKE default; cluster 1 not reserved).
+// 1 = exclude (klusters-compat).  Default 0.
+int   WaveKnnSkipMuaCluster1        = 0;
+// WaveKnnNoiseSourceProbability: probability that the noise cluster
+// (cid=0) is added as a source candidate this Run.  0.0 = never (default;
+// matches klusters' cid≤1 skip).  Use 0.1-0.3 to occasionally recover
+// real-but-misclassified spikes from the noise cluster via KNN majority
+// vote.  Noise cluster is NEVER part of the reference pool.
+float WaveKnnNoiseSourceProbability = 0.0f;
 
 // Phase4RefineEnable: master switch for the new Phase-4 rewrite.  When
 // enabled, replaces the existing WithinChunkTemplateMatch loop with the
@@ -398,6 +421,9 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(KnnSplitMode);
     FLOAT_PARAM(WaveKnnMajorityThreshold);
     INT_PARAM(WaveKnnResidualBecomesCluster);
+    INT_PARAM(WaveKnnUseTraceFilter);
+    INT_PARAM(WaveKnnSkipMuaCluster1);
+    FLOAT_PARAM(WaveKnnNoiseSourceProbability);
     INT_PARAM(Phase4RefineEnable);
     INT_PARAM(Phase4RefineIters);
     INT_PARAM(AdaptModelEnable);

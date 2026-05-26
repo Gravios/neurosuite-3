@@ -203,6 +203,16 @@ extern float WaveKnnMajorityThreshold;
 // cluster if large enough); 0 = ambiguous spikes always stay in source.
 // Default 1.
 extern int   WaveKnnResidualBecomesCluster;
+// WaveKnnUseTraceFilter: in mode 1, 1 = KKE auto-pick (low-trace = ref,
+// high-trace = source); 0 = klusters mode (every cluster is both ref and
+// source candidate, own-cluster excluded per-spike).  Default 1.
+extern int   WaveKnnUseTraceFilter;
+// WaveKnnSkipMuaCluster1: in mode 1, 1 = klusters-compat (exclude cluster 1);
+// 0 = KKE default (include cluster 1).  Default 0.
+extern int   WaveKnnSkipMuaCluster1;
+// WaveKnnNoiseSourceProbability: probability the noise cluster (cid=0)
+// is treated as a source candidate in mode 1.  0.0 = never (default).
+extern float WaveKnnNoiseSourceProbability;
 // Phase4RefineEnable: master switch for the rewritten Phase-4 pipeline
 // (proxy_isi → adapt_model → clust_quality → xcorr_match).  Default 0
 // (legacy WithinChunkTemplateMatch preserved).

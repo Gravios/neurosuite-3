@@ -359,13 +359,237 @@ static void test_trace_filter() {
     cfg.minRefClusterSize = 50;
     cfg.minSourceClusterSize = 20;
     cfg.minNewClusterSize = 30;
-    cfg.referencesBelowMedianTrace = true;  // ON; auto-pick refs by trace
+    cfg.useTraceFilter = true;  // ON; auto-pick refs by trace
     cfg.sourceIds = {5};                     // explicit source only
 
     auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
                                   traces, traceIds, cfg);
     CHECK(r.nSourcesSplit == 1, "source split using filtered refs");
     CHECK(r.nNewClusters == 2, "2 new clusters (only refs 2 and 3 picked up source's bimodal structure)");
+}
+
+// -----------------------------------------------------------------------------
+// T7 (klusters mode): useTraceFilter=false → every sized-OK cluster is
+//     both a pool member and a source candidate, per-spike K-NN excludes
+//     own-cluster pool entries.  Source clusters A and B both well-
+//     populated; expect their spikes to potentially merge into the
+//     opposite cluster (which they wouldn't in trace-filter mode).
+// -----------------------------------------------------------------------------
+static void test_klusters_mode_overlapping() {
+    std::puts("T7: klusters mode (useTraceFilter=false) — pool == sources");
+
+    std::mt19937 rng(42);
+    std::normal_distribution<float> nz(0.0f, 0.5f);
+
+    const int nDims = 3;
+    std::vector<float> feat;
+    std::vector<int>   labels;
+    auto add = [&](int label, float cx, float cy, int n) {
+        for (int i = 0; i < n; ++i) {
+            feat.push_back(cx + nz(rng));
+            feat.push_back(cy + nz(rng));
+            feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+            labels.push_back(label);
+        }
+    };
+    // Two well-separated clusters of equal size — in trace-filter mode
+    // neither would be tagged as the "source" (no trace info supplied),
+    // but in klusters mode both are pool AND source candidates.
+    add(2,  0.0f, 0.0f, 200);
+    add(3, 10.0f, 0.0f, 200);
+
+    const int nPoints = static_cast<int>(labels.size());
+    std::vector<float> traces;
+    std::vector<int>   traceIds;
+
+    wave_knn_split::Config cfg;
+    cfg.K = 10;
+    cfg.majorityThreshold = 0.6f;
+    cfg.minRefClusterSize = 50;
+    cfg.minSourceClusterSize = 50;
+    cfg.minNewClusterSize = 50;
+    cfg.useTraceFilter = false;  // klusters mode
+
+    auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
+                                  traces, traceIds, cfg);
+    // Both clusters are now sources.  Their spikes are well-isolated
+    // around their own centres, so each spike's K-NN (with own-cluster
+    // excluded) finds the K nearest from the OPPOSITE cluster, far away.
+    // The K-NN is unanimous for the opposite cluster — but those votes
+    // are above the threshold, so spikes get reassigned.  In practice
+    // with well-separated clusters this confidently REASSIGNS each
+    // cluster's spikes to the OTHER cluster (a flip).
+    CHECK(r.nSourcesConsidered == 2, "both clusters are source candidates");
+    // The interesting property to verify: own-cluster exclusion is
+    // actually happening.  If it weren't, a cluster-2 spike's K-NN
+    // would be all cluster-2 (it's surrounded by its own kind), and
+    // the vote would be 10/10 for cluster 2 → no reassignment.
+    // With exclusion, the K-NN is 10/10 for cluster 3, → reassignment.
+    CHECK(r.nSpikesReassigned > 300, "own-cluster exclusion fires reassignment");
+}
+
+// -----------------------------------------------------------------------------
+// T8 (skipMuaCluster1): cluster 1 is excluded from refs AND sources
+//     when skipMuaCluster1=true, matching klusters' cid≤1 skip.
+// -----------------------------------------------------------------------------
+static void test_skip_mua_cluster_1() {
+    std::puts("T8: skipMuaCluster1=true excludes cluster 1 entirely");
+
+    std::mt19937 rng(13);
+    std::normal_distribution<float> nz(0.0f, 0.5f);
+
+    const int nDims = 3;
+    std::vector<float> feat;
+    std::vector<int>   labels;
+    auto add = [&](int label, float cx, float cy, int n) {
+        for (int i = 0; i < n; ++i) {
+            feat.push_back(cx + nz(rng));
+            feat.push_back(cy + nz(rng));
+            feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+            labels.push_back(label);
+        }
+    };
+    // Cluster 1 (MUA in klusters convention) at (0, 0), 200 spikes
+    add(1,  0.0f, 0.0f, 200);
+    // Real clusters 2 and 3
+    add(2, 10.0f, 0.0f, 200);
+    add(3,  5.0f, 8.0f, 200);
+
+    const int nPoints = static_cast<int>(labels.size());
+    std::vector<float> traces;
+    std::vector<int>   traceIds;
+
+    wave_knn_split::Config cfg;
+    cfg.K = 10;
+    cfg.majorityThreshold = 0.6f;
+    cfg.minRefClusterSize = 50;
+    cfg.minSourceClusterSize = 50;
+    cfg.minNewClusterSize = 50;
+    cfg.useTraceFilter = false;
+    cfg.skipMuaCluster1 = true;
+
+    auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
+                                  traces, traceIds, cfg);
+    // Only clusters 2 and 3 are eligible.  Cluster 1 spikes should NEVER
+    // be touched (not in source set, not in pool).
+    CHECK(r.nSourcesConsidered == 2, "only 2 clusters considered (cluster 1 skipped)");
+    int still1 = 0;
+    for (int i = 0; i < 200; ++i) {
+        if (labels[i] == 1) ++still1;
+    }
+    CHECK(still1 == 200, "cluster 1 spikes untouched");
+}
+
+// -----------------------------------------------------------------------------
+// T9 (noise as source): with noiseSourceProbability=1.0 and a fixed
+//     rngSeed, cluster 0 spikes near a real reference get reassigned.
+// -----------------------------------------------------------------------------
+static void test_noise_as_source() {
+    std::puts("T9: noiseSourceProbability=1.0 → cluster 0 spikes get split");
+
+    std::mt19937 rng(99);
+    std::normal_distribution<float> refNz(0.0f, 0.5f);
+    std::normal_distribution<float> srcNz(0.0f, 0.1f);  // tight near refs
+
+    const int nDims = 3;
+    std::vector<float> feat;
+    std::vector<int>   labels;
+    auto add = [&](int label, float cx, float cy, int n,
+                    std::normal_distribution<float>& nz) {
+        for (int i = 0; i < n; ++i) {
+            feat.push_back(cx + nz(rng));
+            feat.push_back(cy + nz(rng));
+            feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+            labels.push_back(label);
+        }
+    };
+    // Two real clusters
+    add(2,  0.0f, 0.0f, 200, refNz);
+    add(3, 10.0f, 0.0f, 200, refNz);
+    // "Noise" cluster (cid=0): half is real spikes near cluster 2's
+    // centre, half real near cluster 3's centre.  These were misclassified
+    // and should be recoverable via KNN voting.
+    add(0,  0.0f, 0.0f, 100, srcNz);   // 100 misclassified as noise but really near cluster 2
+    add(0, 10.0f, 0.0f, 100, srcNz);   // 100 misclassified as noise but really near cluster 3
+
+    const int nPoints = static_cast<int>(labels.size());
+    std::vector<float> traces;
+    std::vector<int>   traceIds;
+
+    wave_knn_split::Config cfg;
+    cfg.K = 10;
+    cfg.majorityThreshold = 0.6f;
+    cfg.minRefClusterSize = 50;
+    cfg.minSourceClusterSize = 50;
+    cfg.minNewClusterSize = 50;
+    cfg.useTraceFilter = false;
+    cfg.referenceIds = {2, 3};
+    cfg.noiseSourceProbability = 1.0f;
+    cfg.rngSeed = 1;  // deterministic for the test
+
+    auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
+                                  traces, traceIds, cfg);
+    CHECK(r.noiseClusterTried, "noise cluster was drawn as a source");
+    CHECK(r.nSourcesConsidered >= 1, "≥1 source considered (noise)");
+    CHECK(r.nNewClusters >= 2, "≥2 new clusters from noise split");
+    // Count how many noise-cluster spikes still have label 0
+    int still0 = 0;
+    for (int i = 400; i < nPoints; ++i) {  // noise spikes are at indices 400..599
+        if (labels[i] == 0) ++still0;
+    }
+    CHECK(still0 < 50, "most noise spikes (≥75%) recovered to real clusters");
+}
+
+// -----------------------------------------------------------------------------
+// T10 (noise probability = 0): cluster 0 is never a source when the
+//     probability is zero — even with mock spikes near real clusters.
+// -----------------------------------------------------------------------------
+static void test_noise_excluded_by_default() {
+    std::puts("T10: noiseSourceProbability=0.0 → noise cluster untouched");
+
+    std::mt19937 rng(99);
+    std::normal_distribution<float> refNz(0.0f, 0.5f);
+    std::normal_distribution<float> srcNz(0.0f, 0.1f);
+
+    const int nDims = 3;
+    std::vector<float> feat;
+    std::vector<int>   labels;
+    auto add = [&](int label, float cx, float cy, int n,
+                    std::normal_distribution<float>& nz) {
+        for (int i = 0; i < n; ++i) {
+            feat.push_back(cx + nz(rng));
+            feat.push_back(cy + nz(rng));
+            feat.push_back(static_cast<float>(labels.size()) / 1000.0f);
+            labels.push_back(label);
+        }
+    };
+    add(2,  0.0f, 0.0f, 200, refNz);
+    add(3, 10.0f, 0.0f, 200, refNz);
+    add(0,  0.0f, 0.0f, 100, srcNz);
+    add(0, 10.0f, 0.0f, 100, srcNz);
+
+    const int nPoints = static_cast<int>(labels.size());
+    std::vector<float> traces;
+    std::vector<int>   traceIds;
+
+    wave_knn_split::Config cfg;
+    cfg.K = 10;
+    cfg.majorityThreshold = 0.6f;
+    cfg.minRefClusterSize = 50;
+    cfg.minSourceClusterSize = 50;
+    cfg.minNewClusterSize = 50;
+    cfg.useTraceFilter = false;
+    cfg.referenceIds = {2, 3};
+    cfg.noiseSourceProbability = 0.0f;  // OFF
+
+    auto r = wave_knn_split::Run(feat.data(), nPoints, nDims, labels,
+                                  traces, traceIds, cfg);
+    CHECK(!r.noiseClusterTried, "noise cluster NOT considered");
+    int still0 = 0;
+    for (int i = 400; i < nPoints; ++i) {
+        if (labels[i] == 0) ++still0;
+    }
+    CHECK(still0 == 200, "all noise spikes remain in cluster 0");
 }
 
 int main() {
@@ -378,6 +602,10 @@ int main() {
     test_trace_filter();
     test_residual_disabled_stays_in_source();
     test_small_winner_folds_into_residual();
+    test_klusters_mode_overlapping();
+    test_skip_mua_cluster_1();
+    test_noise_as_source();
+    test_noise_excluded_by_default();
     std::puts("===============================================");
     std::printf(" Results: %d passed, %d failed\n", g_pass, g_fail);
     std::puts("===============================================");
