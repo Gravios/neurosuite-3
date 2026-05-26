@@ -275,6 +275,27 @@ extern int   HullSplitK;
 extern int   HullSplitMinComponentSize;
 extern float HullSplitMutualReachScale;
 extern int   HullSplitUseMutualReach;
+
+// PerChannelSplit (Phase 2a.7): per-channel amplitude+phase bimodality split.
+// Reads full waveforms per cluster, extracts 4 features per channel (peak
+// amplitude, peak time, trough amplitude, trough time), and tests 1D and
+// 2D-angle-sweep projections per channel for KDE-detectable valleys.
+// Catches the failure mode where two units differ by a small combination
+// of amplitude AND phase on a single channel — invisible to PCA-based
+// DipSplit (which spreads the signal across multiple PCs) and HullSplit
+// (since the clusters are topologically connected in feature space).
+// Default off (PerChannelSplitEnable=0).  See per_channel_split.h.
+extern int   PerChannelSplitEnable;
+extern int   PerChannelSplitMinClusterSize;     ///< default 50
+extern float PerChannelSplitValleyThreshold;    ///< default 0.50
+extern int   PerChannelSplitMinSubClusterSize;  ///< default 25
+extern float PerChannelSplitBicMarginConstant;  ///< default 12.0
+extern float PerChannelSplitBicMarginPerLogN;   ///< default 6.0
+extern float PerChannelSplitMinChannelSnrRatio; ///< default 0.5
+extern int   PerChannelSplitUsePeakAmp;         ///< default 1
+extern int   PerChannelSplitUsePeakTime;        ///< default 1
+extern int   PerChannelSplitUseTroughAmp;       ///< default 1
+extern int   PerChannelSplitUseTroughTime;      ///< default 1
 // DipSplitMinSize: minimum spike count per child cluster for an accepted
 // split, and minimum per parent cluster for the splitter to even look
 // (parent must have ≥ 2·DipSplitMinSize members).  Default 50.

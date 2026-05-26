@@ -293,6 +293,24 @@ public:
         int nFullDims,
         const char* phaseLabel = "Phase 2a.6");
 
+    // Phase 2a.7: per-channel amplitude+phase bimodality split.  Reads
+    // full spike waveforms for each cluster, extracts 4 features per
+    // channel (peak amplitude, peak time, trough amplitude, trough time)
+    // and tests 1D-per-feature + 2D-angle-sweep on (amp, time) pairs for
+    // KDE-detectable valleys.  Catches the failure mode where two units
+    // differ by a small combination of amplitude AND phase on a single
+    // channel — invisible to DipSplit (signal spreads across multiple
+    // PCs) and HullSplit (clusters are topologically connected in PCA
+    // feature space).  Default off (PerChannelSplitEnable=0).
+    //
+    // Like HullSplit, leaves perChunkModels untouched — Phase 2b
+    // (ChunkReCEMPerChunk) regenerates models from the post-split labels.
+    void PerChannelSplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        int nChan, int nSamplesPerSpike,
+        const char* phaseLabel = "Phase 2a.7");
+
     // Per-phase cluster-state diagnostic.  Walks perChunkClass[] and
     // reports total distinct non-noise local IDs (summed across chunks),
     // per-chunk K stats (min/median/max), and total spike counts per

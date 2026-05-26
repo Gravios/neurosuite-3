@@ -346,6 +346,19 @@ int   HullSplitK                = 10;    ///< k for the k-NN graph.
 int   HullSplitMinComponentSize = 50;    ///< components below this are absorbed.
 float HullSplitMutualReachScale = 1.5f;  ///< edge cutoff = scale · median(d_k).
 int   HullSplitUseMutualReach   = 1;     ///< 1 = HDBSCAN mutual-reachability; 0 = raw Euclidean.
+
+// PerChannelSplit (Phase 2a.7) — see KlustaKwik.h for description.
+int   PerChannelSplitEnable           = 0;
+int   PerChannelSplitMinClusterSize   = 50;
+float PerChannelSplitValleyThreshold  = 0.50f;
+int   PerChannelSplitMinSubClusterSize = 25;
+float PerChannelSplitBicMarginConstant = 12.0f;
+float PerChannelSplitBicMarginPerLogN  = 6.0f;
+float PerChannelSplitMinChannelSnrRatio = 0.5f;
+int   PerChannelSplitUsePeakAmp        = 1;
+int   PerChannelSplitUsePeakTime       = 1;
+int   PerChannelSplitUseTroughAmp      = 1;
+int   PerChannelSplitUseTroughTime     = 1;
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
 float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
                                           ///< lowered from 2.0 because the χ² test is itself
@@ -501,6 +514,17 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(HullSplitMinComponentSize);
     FLOAT_PARAM(HullSplitMutualReachScale);
     INT_PARAM(HullSplitUseMutualReach);
+    INT_PARAM(PerChannelSplitEnable);
+    INT_PARAM(PerChannelSplitMinClusterSize);
+    FLOAT_PARAM(PerChannelSplitValleyThreshold);
+    INT_PARAM(PerChannelSplitMinSubClusterSize);
+    FLOAT_PARAM(PerChannelSplitBicMarginConstant);
+    FLOAT_PARAM(PerChannelSplitBicMarginPerLogN);
+    FLOAT_PARAM(PerChannelSplitMinChannelSnrRatio);
+    INT_PARAM(PerChannelSplitUsePeakAmp);
+    INT_PARAM(PerChannelSplitUsePeakTime);
+    INT_PARAM(PerChannelSplitUseTroughAmp);
+    INT_PARAM(PerChannelSplitUseTroughTime);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
     FLOAT_PARAM(DipSplitElongationFactor);
