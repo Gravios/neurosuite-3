@@ -302,6 +302,13 @@ int   XcorrMaxShiftSamples      = 0;
 
 // DipSplit parameters (Phase 8 bimodal splitter)
 int   DipSplitEnable            = 1;     ///< 0 disables automatic DipSplit pass
+int   DipSplitBeforePhase2b     = 1;     ///< Phase 2a.5: per-chunk DipSplit between Phase 2a and Phase 2b.
+                                         ///< Catches single-dim bimodality that Phase 2a's parametric CEM
+                                         ///< absorbs into inflated variance.  With this on, Phase 2b sees
+                                         ///< finer-grained warm-start clusters and converges faster via
+                                         ///< ConsiderDeletion-driven merging of any oversplits.  The
+                                         ///< existing Phase 2.5 (after-Phase-2b) DipSplit pass continues
+                                         ///< to run as a safety net.  Default 1 (enabled).
 int   DipSplitMinSize           = 50;    ///< min spikes per child cluster for accepted split
 float DipSplitBloatFactor       = 1.0f;  ///< mahal²₉₀ > factor · χ²(d,0.9) triggers evaluation;
                                           ///< lowered from 2.0 because the χ² test is itself
@@ -447,6 +454,7 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(XcorrResidualThresh);
     INT_PARAM(XcorrMaxShiftSamples);
     INT_PARAM(DipSplitEnable);
+    INT_PARAM(DipSplitBeforePhase2b);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
     FLOAT_PARAM(DipSplitElongationFactor);

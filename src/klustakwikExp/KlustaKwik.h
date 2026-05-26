@@ -246,6 +246,10 @@ extern int   XcorrMaxShiftSamples;
 // ---- DipSplit parameters (bimodal-cluster splitter, Phase 8) -----------
 // DipSplitEnable: on/off gate for the automatic DipSplit pass.  Default 1.
 extern int   DipSplitEnable;
+// DipSplitBeforePhase2b: when 1 (default), runs a per-chunk DipSplit pass
+// between Phase 2a (per-cluster CEM) and Phase 2b (chunk warm-start CEM).
+// Catches single-dim bimodality that Phase 2a's parametric CEM misses.
+extern int   DipSplitBeforePhase2b;
 // DipSplitMinSize: minimum spike count per child cluster for an accepted
 // split, and minimum per parent cluster for the splitter to even look
 // (parent must have ≥ 2·DipSplitMinSize members).  Default 50.
