@@ -3,11 +3,9 @@
  *
  * In-place modifier for the neurosuite YAML parameter file.
  *
- * Mirrors the ParameterXmlModifier / ParameterXmlCreator API so that
- * NeuroscopeDoc::saveSession() can dispatch to YAML or XML with a
- * trivial branch.  The full YAML tree is read into yaml-cpp, the
- * relevant nodes are patched, and the file is written atomically
- * (tmp file + rename) to avoid corruption on crash.
+ * Used by NeuroscopeDoc::saveSession().  The full YAML tree is read
+ * into yaml-cpp, the relevant nodes are patched, and the file is
+ * written atomically (tmp file + rename) to avoid corruption on crash.
  *
  * The class handles both the "modify existing file" (parseFile + set* +
  * writeToFile) and the "create new file" (default-construct + set* +
@@ -79,7 +77,7 @@ public:
     bool writeToFile(const QString& path);
 
     // ----------------------------------------------------------------
-    // Acquisition system  (mirrors ParameterXmlModifier API)
+    // Acquisition system
     // ----------------------------------------------------------------
     bool setAcquisitionSystemInformation(int resolution, int nbChannels,
                                          double samplingRate, int voltageRange,

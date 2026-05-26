@@ -22,7 +22,7 @@
 #include <QString>
 
 /**
-  * This class contains the XML tags used in the paaramter files.
+  * This class contains the YAML keys used in the parameter files.
   *@author Lynn Hazan
   */
 
