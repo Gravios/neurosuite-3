@@ -3,12 +3,11 @@
  *
  * Write-from-scratch YAML parameter file writer.
  *
- * Mirrors the ndmanager XmlWriter public API so ndmanagerdoc.cpp can
- * switch to it with minimal changes.  Moved here from ndmanager so the
- * implementation can be shared and bugs fixed in one place.
+ * Used by ndmanagerdoc.cpp when saving a new session.  Shared across
+ * the Qt packages so improvements land in one place.
  *
- * Bugs fixed vs the original NdManagerYamlWriter:
- *   - setAnatomicalDescription and setSpikeDetectionInformation now iterate
+ * Notes:
+ *   - setAnatomicalDescription and setSpikeDetectionInformation iterate
  *     the QMap with an iterator instead of a 1..size() index loop, so
  *     groups are written correctly even when keys are non-contiguous.
  *   - writeTofile uses atomic tmp-file + rename (crash-safe).

@@ -1905,13 +1905,6 @@ void KlustersApp::openDocumentFile(const QString& url)
             QApplication::restoreOverrideCursor();
             slotStatusMsg(tr("Ready."));
             return;
-        } else if(false) { // PARXML_DOWNLOAD_ERROR removed
-            //close the document
-            doc->closeDocument();
-            resetState();
-            QApplication::restoreOverrideCursor();
-            slotStatusMsg(tr("Ready."));
-            return;
         } else if(returnStatus == KlustersDoc::OPEN_ERROR)
         {
             QApplication::restoreOverrideCursor();

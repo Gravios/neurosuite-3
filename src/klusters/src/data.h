@@ -204,7 +204,7 @@ public:
     /** Set the peak sample position (1-based) used as the alignment
      *  anchor by nudge / realign / trace-overlay rendering.  Updates
      *  the in-memory value only; the parameter file on disk (.par.N or
-     *  .xml <peakSampleIndex>) is NOT modified.  Reloading the session
+     *  .yaml peakSampleIndex) is NOT modified.  Reloading the session
      *  will read the disk value again, so the user must persist this
      *  separately if they want it to stick.
      *
@@ -1319,7 +1319,7 @@ private:
     SortableTable reclusteringSpikesByCluster;
 
     /** Map given the cluster user information, the key is the cluster id and the value an instance of ClusterUserInformation.
-  This map is only used to store the data read from or write to the parameter file (xml).
+  This map is only used to store the data read from or write to the parameter file (YAML).
   */
     QMap<int,ClusterUserInformation> clusterUserInformationMap;
 

@@ -342,7 +342,6 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     // Parameter file: YAML only
     const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
     parameterFile = yamlParFileUrl;
-    QString xmlParFileUrl = yamlParFileUrl;  // alias for legacy variables below
 
 
 
@@ -378,26 +377,26 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     long spkFileLength = spikeFile.size();
     spikeFile.close();
 
-    bool isXmlParExist = false;
-    QString tmpXmlParFile;
+    bool isYamlParExist = false;
+    QString tmpYamlParFile;
     QString tmpParXFile;
     QString tmpParFile;
-    QFileInfo xmlParFileInfo(xmlParFileUrl);
-    QFile xmlParFile;
+    QFileInfo yamlParFileInfo(yamlParFileUrl);
+    QFile yamlParFile;
     QFile parXFile;
     QFile parFile;
-    if(xmlParFileInfo.exists()){
-        tmpXmlParFile = xmlParFileUrl;
-        isXmlParExist = true;
+    if(yamlParFileInfo.exists()){
+        tmpYamlParFile = yamlParFileUrl;
+        isYamlParExist = true;
         //Check if the generic parameter file also exist, if so, warn the user that the YAML parameter file will be used.
         QFileInfo parFileInfo(parFileUrl);
         if(parFileInfo.exists()){
             QApplication::restoreOverrideCursor();
-            QMessageBox::information(0, tr("Warning!"), tr("Two parameter files were found, %1 and %2. The parameter file %3 will be used.").arg(xmlParFileUrl).arg(parFileUrl).arg(xmlParFileUrl));
+            QMessageBox::information(0, tr("Warning!"), tr("Two parameter files were found, %1 and %2. The parameter file %3 will be used.").arg(yamlParFileUrl).arg(parFileUrl).arg(yamlParFileUrl));
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         }
-        xmlParFile.setFileName(tmpXmlParFile);
-        if(!xmlParFile.open(QIODevice::ReadOnly)){
+        yamlParFile.setFileName(tmpYamlParFile);
+        if(!yamlParFile.open(QIODevice::ReadOnly)){
             fetFile.close();
             return OPEN_ERROR;
         }
@@ -466,8 +465,8 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     if(cluFile.exists()){
         tmpCluFile = cluFileUrl;
         if(!cluFile.open(QIODevice::ReadOnly)) {
-            if(isXmlParExist){
-                xmlParFile.close();
+            if(isYamlParExist){
+                yamlParFile.close();
             }
             else{
                 parXFile.close();
@@ -478,15 +477,15 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         }
 
         //Initialize the data
-        if(isXmlParExist){
-            if(!clusteringData->initialize(fetFile,cluFile,spkFileLength,tmpSpikeFile,xmlParFile,electrodeGroupID.toInt(),errorInformation)){
+        if(isYamlParExist){
+            if(!clusteringData->initialize(fetFile,cluFile,spkFileLength,tmpSpikeFile,yamlParFile,electrodeGroupID.toInt(),errorInformation)){
                 //close the files
-                xmlParFile.close();
+                yamlParFile.close();
                 fetFile.close();
                 cluFile.close();
                 return INCORRECT_CONTENT;
             }
-            xmlParFile.close();
+            yamlParFile.close();
             fetFile.close();
             cluFile.close();
         }
@@ -510,14 +509,14 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         tmpCluFile =  cluFileUrl;
 
         //Initialize the data
-        if(isXmlParExist){
-            if(!clusteringData->initialize(fetFile,spkFileLength,tmpSpikeFile,xmlParFile,electrodeGroupID.toInt(),errorInformation)){
+        if(isYamlParExist){
+            if(!clusteringData->initialize(fetFile,spkFileLength,tmpSpikeFile,yamlParFile,electrodeGroupID.toInt(),errorInformation)){
                 //close the files
-                xmlParFile.close();
+                yamlParFile.close();
                 fetFile.close();
                 return INCORRECT_CONTENT;
             }
-            xmlParFile.close();
+            yamlParFile.close();
             fetFile.close();
         }
         else{

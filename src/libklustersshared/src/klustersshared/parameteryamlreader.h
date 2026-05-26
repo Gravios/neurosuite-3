@@ -8,12 +8,11 @@
  *
  * Design
  * ------
- * The class parses the YAML file once (parseFile) and then exposes the
- * same accessor API that the legacy XmlReader / KlustersXmlReader /
- * NeuroscopeXmlReader classes provide, so callers can be updated by
- * swapping the reader type with minimal changes.
+ * The class parses the YAML file once (parseFile) and then exposes
+ * typed accessors for every section of the parameter schema.  Three
+ * Qt packages (klusters, neuroscope, ndmanager) share this reader.
  *
- * The YAML schema mirrors the XML schema exactly:
+ * YAML schema:
  *
  *   parameters:
  *     version: "1.0"
@@ -111,8 +110,8 @@
 /**
  * @brief Reads the neurosuite YAML parameter file.
  *
- * Mirrors the accessor API of the legacy XML readers so that Qt packages
- * can adopt it with minimal changes to their document-open code.
+ * Used by all three Qt packages (klusters, neuroscope, ndmanager)
+ * via their document-open code paths.
  */
 class KLUSTERSSHARED_EXPORT ParameterYamlReader
 {
@@ -180,8 +179,9 @@ public:
     /**
      * @brief Fills @p displayChannelsGroups and @p displayGroupsChannels.
      *
-     * Matches the NeuroscopeXmlReader::getAnatomicalDescription() signature
-     * used by neuroscopedoc.cpp.
+     * The neuroscope variant: returns per-channel group assignment and
+     * per-group channel lists for the anatomical display.  Used by
+     * neuroscopedoc.cpp.
      */
     void getAnatomicalDescription(int nbChannels,
                                   QMap<int,int>&         displayChannelsGroups,
@@ -191,7 +191,8 @@ public:
     /**
      * @brief Fills @p anatomicalGroups and @p attributes.
      *
-     * Matches the ndmanager XmlReader::getAnatomicalDescription() signature.
+     * The ndmanager variant: returns anatomical groups plus per-channel
+     * attribute maps (skip status, colour, etc.).
      */
     void getAnatomicalDescription(int nbChannels,
                                   QMap<int,QList<int>>&              anatomicalGroups,
@@ -239,7 +240,8 @@ public:
     /**
      * @brief Fills spikeChannelsGroups and spikeGroupsChannels.
      *
-     * Matches the NeuroscopeXmlReader::getSpikeDescription() signature.
+     * The neuroscope variant: returns per-channel spike group assignment
+     * and per-group channel lists for the spike display.
      */
     void getSpikeDescription(int nbChannels,
                              QMap<int,int>&        spikeChannelsGroups,
@@ -248,7 +250,8 @@ public:
     /**
      * @brief Fills spikeGroups and information.
      *
-     * Matches the ndmanager XmlReader::getSpikeDescription() signature.
+     * The ndmanager variant: returns spike groups and a per-group
+     * attribute map (nSamples, peakSampleIndex, nFeatures).
      */
     void getSpikeDescription(int nbChannels,
                              QMap<int,QList<int>>&            spikeGroups,
@@ -332,8 +335,8 @@ public:
     /**
      * @brief Fills @p info from the top-level \"video\" section.
      *
-     * Keys written match the ndmanager XmlReader::getVideoInfo() contract:
-     * \"samplingRate\", \"width\", \"height\".  Used by ndmanager's VideoPage.
+     * Keys written: \"samplingRate\", \"width\", \"height\".
+     * Used by ndmanager's VideoPage.
      */
     void getTopLevelVideoInfo(QMap<QString,double>& info) const;
 

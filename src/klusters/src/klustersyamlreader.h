@@ -1,12 +1,9 @@
 /***************************************************************************
  * klustersyamlreader.h
  *
- * Drop-in companion to KlustersXmlReader that reads the YAML parameter file.
- * The public API is identical so callers can use either class without
- * restructuring their open-document code.
+ * Reads klusters-relevant fields from the YAML parameter file.
  *
  * Usage:
- *   // Detect format from extension, then use the appropriate reader:
  *   if (fileName.endsWith(".yaml") || fileName.endsWith(".yml")) {
  *       KlustersYamlReader reader;
  *       if (!reader.parseFile(fileName)) { // error /// }
@@ -30,8 +27,6 @@ class ClusterUserInformation;
 
 /**
  * @brief Reads klusters-relevant fields from a YAML parameter file.
- *
- * Mirrors the KlustersXmlReader API exactly.
  */
 class KlustersYamlReader
 {

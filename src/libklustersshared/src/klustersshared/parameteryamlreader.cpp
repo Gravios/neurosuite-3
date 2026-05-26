@@ -179,7 +179,7 @@ void ParameterYamlReader::getSampleRateByExtension(QMap<QString,double>& result)
 // Anatomical description
 // ---------------------------------------------------------------------------
 
-// NeuroscopeXmlReader variant
+// neuroscope variant — fills per-channel group + per-group channel maps
 void ParameterYamlReader::getAnatomicalDescription(
         int /*nbChannels*/,
         QMap<int,int>&        displayChannelsGroups,
@@ -207,7 +207,7 @@ void ParameterYamlReader::getAnatomicalDescription(
     }
 }
 
-// ndmanager XmlReader variant
+// ndmanager variant — fills anatomical groups + per-channel attributes
 void ParameterYamlReader::getAnatomicalDescription(
         int /*nbChannels*/,
         QMap<int,QList<int>>&              anatomicalGroups,
@@ -301,13 +301,13 @@ int ParameterYamlReader::getNbFeatures(int electrodeGroupID) const
     return nodeAs<int>(spikeGroup(electrodeGroupID)["nFeatures"], 0);
 }
 
-// NeuroscopeXmlReader variant
+// neuroscope variant — fills per-channel spike group + per-group channel maps
 void ParameterYamlReader::getSpikeDescription(
         int nbChannels,
         QMap<int,int>&        spikeChannelsGroups,
         QMap<int,QList<int>>& spikeGroupsChannels) const
 {
-    // Mirror the XML reader behaviour: every channel starts in the spike
+    // Convention: every channel starts in the spike
     // trash group (-1).  Channels that appear in spikeDetection groups get
     // reassigned.  Channels that are in the anatomical trash group (0) keep
     // group 0.  This ensures channelsSpikeGroups has an entry for every
@@ -350,7 +350,7 @@ void ParameterYamlReader::getSpikeDescription(
         spikeGroupsChannels.insert(-1, spikeTrashList);
 }
 
-// ndmanager XmlReader variant
+// ndmanager variant — fills spike groups + per-group attribute maps
 void ParameterYamlReader::getSpikeDescription(
         int /*nbChannels*/,
         QMap<int,QList<int>>&            spikeGroups,
@@ -389,7 +389,7 @@ void ParameterYamlReader::getUnits(QMap<int,QStringList>& units) const
     if (!unitsList || !unitsList.IsSequence()) return;
 
     // Key is a sequential document-order index (0, 1, 2, …) matching the
-    // contract of ndmanager's XmlReader::getUnits().  Using cluster id as
+    // contract of ndmanager's getUnits().  Using cluster id as
     // the key is WRONG: every electrode group has its own cluster 1, 2, 3…
     // so entries from different groups would collide and one would be silently
     // dropped.  setUnitsInformation ignores the key entirely (it only uses the
@@ -631,8 +631,7 @@ void ParameterYamlReader::getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo)
 void ParameterYamlReader::getTopLevelVideoInfo(QMap<QString,double>& info) const
 {
     // Top-level "video" section written by ndmanager (width/height/samplingRate).
-    // Keys match the ndmanager XmlReader::getVideoInfo() contract so the VideoPage
-    // receives the same data regardless of file format.
+    // Keys: "samplingRate", "width", "height".  Consumed by ndmanager's VideoPage.
     const auto v = root["video"];
     if (!v || !v.IsMap()) return;
     if (v["samplingRate"])

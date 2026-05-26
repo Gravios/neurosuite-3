@@ -34,7 +34,7 @@ KKYamlSpikeParams kkReadYamlSpikeParams(const char* fileBase, int elecNo)
     std::string path = tryPath(fileBase, ".yaml");
     if (path.empty()) path = tryPath(fileBase, ".yml");
     if (path.empty()) {
-        // No YAML present — silent, not an error; XML-only setups are fine.
+        // No YAML present — caller must supply all required values via CLI
         return out;
     }
 

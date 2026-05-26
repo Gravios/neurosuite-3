@@ -1081,7 +1081,7 @@ private:
     /**The base name of the document. */
     QString baseName;
 
-    /**The path to the xml þarameter file. */
+    /**The path to the YAML parameter file. */
     QString parameterFile;
 
     /**The electrode number*/
