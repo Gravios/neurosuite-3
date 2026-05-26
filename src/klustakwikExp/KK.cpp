@@ -3432,6 +3432,29 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         PerClusterCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
 
+        // Phase 2a.5: per-chunk DipSplit between Phase 2a and Phase 2b.
+        //
+        // Rationale: Phase 2a's per-cluster CEM is a parametric Gaussian
+        // test that absorbs single-dimension bimodality by inflating the
+        // covariance along the bimodal axis (the inflation penalty in BIC
+        // is smaller than the constant cost of accepting a new cluster).
+        // DipSplit looks for KDE valleys in 1D projections — exactly the
+        // structure CEM misses.
+        //
+        // Inserting BEFORE Phase 2b gives Phase 2b finer-grained
+        // warm-start clusters.  With Phase2bEnableSplits=0 (default
+        // since patch 0007), Phase 2b only runs warm-start CEM plus
+        // ConsiderDeletion — which converges faster from a finer
+        // partition because boundary-spike reassignment is local and
+        // ConsiderDeletion's per-iter K-loop catches any oversplits
+        // cheaply.  The existing Phase 2.5 (after-Phase-2b) DipSplit
+        // continues to run as a safety net.
+        if (DipSplitEnable != 0 && DipSplitBeforePhase2b != 0) {
+            DipSplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels, nFullDims,
+                "Phase 2a.5");
+        }
+
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
         // reassign across the new fine-grained label set and lets CEM
         // merge oversplit fragments via ConsiderDeletion.  Rebuilds
@@ -4548,6 +4571,15 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // updates perChunkClass[] only.
         PerClusterCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // Phase 2a.5: per-chunk DipSplit (see commentary at the matching
+        // insertion in the first overload of RunChunkedCEM).  Gated by
+        // DipSplitEnable AND DipSplitBeforePhase2b.
+        if (DipSplitEnable != 0 && DipSplitBeforePhase2b != 0) {
+            DipSplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels, nFullDims,
+                "Phase 2a.5");
+        }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
         // reassign across the new fine-grained label set and lets CEM
