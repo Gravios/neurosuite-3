@@ -3848,6 +3848,17 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         return CEMTwoPhase(timeMergeIter);
     }
     if (nGlobal >= MaxPossibleClusters) {
+        // Emit on stderr unconditionally — this is a hard fall-back from
+        // chunked CEM to single-pass CEMTwoPhase that the user must know
+        // about (it dramatically changes the output cluster set and was
+        // silent under Output() unless -Screen 1 was set).  Keep the
+        // Output() call so logging still captures it.
+        fprintf(stderr,
+                "[Phase 5] WARNING: MergeChunkModels produced %d global "
+                "clusters >= MaxPossibleClusters (%d) — falling back to "
+                "CEMTwoPhase.  Fix: re-run with -MaxPossibleClusters %d "
+                "or higher (rule of thumb: nChunks * MaxClusters).\n",
+                nGlobal, MaxPossibleClusters, nGlobal + 100);
         Output("WARNING: MergeChunkModels produced %d global clusters >= "
                "MaxPossibleClusters (%d).\n"
                "  The cross-chunk merge succeeded (clusters matched between\n"
@@ -5039,6 +5050,17 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // relative to nChunks * MaxClusters.  Fall back to CEMTwoPhase and emit
     // a precise diagnostic so the user knows what to increase.
     if (nGlobal >= MaxPossibleClusters) {
+        // Emit on stderr unconditionally — this is a hard fall-back from
+        // chunked CEM to single-pass CEMTwoPhase that the user must know
+        // about (it dramatically changes the output cluster set and was
+        // silent under Output() unless -Screen 1 was set).  Keep the
+        // Output() call so logging still captures it.
+        fprintf(stderr,
+                "[Phase 5] WARNING: MergeChunkModels produced %d global "
+                "clusters >= MaxPossibleClusters (%d) — falling back to "
+                "CEMTwoPhase.  Fix: re-run with -MaxPossibleClusters %d "
+                "or higher (rule of thumb: nChunks * MaxClusters).\n",
+                nGlobal, MaxPossibleClusters, nGlobal + 100);
         Output("WARNING: MergeChunkModels produced %d global clusters >= "
                "MaxPossibleClusters (%d).\n"
                "  The cross-chunk merge itself succeeded — this is a table-size\n"
