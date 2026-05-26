@@ -13093,6 +13093,7 @@ void KK::WaveKnnSplitPerChunk(
         KnnSplitMinRefSize, KnnSplitMinSourceSize, KnnSplitMinNewClusterSize);
 
     int chunksTotal           = 0;
+    int chunksCalled          = 0;
     int chunksProcessed       = 0;
     int totalSourcesConsidered = 0;
     int totalSourcesSplit      = 0;
@@ -13165,6 +13166,13 @@ void KK::WaveKnnSplitPerChunk(
         auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
                                       chunkLabels, traces, traceIds, cfg);
 
+        // Always counted: wave_knn_split was invoked on this chunk and
+        // reported how many source clusters it considered.  These counters
+        // are needed to distinguish "wave_knn_split rejected every
+        // candidate" from "wave_knn_split was never called".
+        chunksCalled++;
+        totalSourcesConsidered += r.nSourcesConsidered;
+
         if (r.nNewClusters == 0) continue;
 
         // Identify which labels appeared in chunkLabels that weren't in
@@ -13221,7 +13229,6 @@ void KK::WaveKnnSplitPerChunk(
             mdls.end());
 
         chunksProcessed++;
-        totalSourcesConsidered += r.nSourcesConsidered;
         totalSourcesSplit      += r.nSourcesSplit;
         totalNewClusters       += r.nNewClusters;
         totalResidualClusters  += r.nResidualClusters;
@@ -13230,11 +13237,11 @@ void KK::WaveKnnSplitPerChunk(
     }
 
     LockedStderr(
-        "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (processed=%d), "
+        "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (called=%d, with-splits=%d), "
         "sources visited=%d, split=%d, new clusters=%d "
         "(of which residual=%d), spikes reassigned=%d, "
         "spikes kept-in-source=%d\n",
-        chunksTotal, chunksProcessed,
+        chunksTotal, chunksCalled, chunksProcessed,
         totalSourcesConsidered, totalSourcesSplit, totalNewClusters,
         totalResidualClusters,
         totalSpikesReassigned, totalSpikesResidual);

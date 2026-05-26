@@ -272,21 +272,25 @@ float WaveKnnMajorityThreshold  = 0.6f;
 int   WaveKnnResidualBecomesCluster = 1;
 // WaveKnnUseTraceFilter: when KnnSplitMode=1 and no explicit references
 // are provided, controls auto-pick of refs vs sources.
-//   1 (default, KKE mode): trace filter — clusters with tr(Σ)/nDim below
-//     the chunk median are references; the rest are sources.  Pool and
-//     source sets DISJOINT.  Cheap, but requires trace info to work.
-//   0 (klusters mode): no trace filter.  Every sized-OK cluster is both
-//     a pool member AND a source candidate; per-spike K-NN excludes
-//     own-cluster pool entries so a source spike doesn't trivially vote
-//     for itself.  Matches klusters' algorithm semantics.  More expensive
-//     (no trusted-ref subset) but allows cluster A to receive spikes
-//     from cluster B if their K-NN votes for B.
-int   WaveKnnUseTraceFilter         = 1;
+//   0 (default, klusters mode): no trace filter.  Every sized-OK cluster
+//     is both a pool member AND a source candidate; per-spike K-NN
+//     excludes own-cluster pool entries so a source spike doesn't
+//     trivially vote for itself.  Matches klusters' interactive
+//     splitClusterByKnnVsReferences algorithm exactly.
+//   1 (KKE mode): trace filter — clusters with tr(Σ)/nDim below the
+//     chunk median are references; the rest are sources.  Pool and
+//     source sets DISJOINT.  Cheap (no own-cluster exclusion needed),
+//     but disjoint sets exclude the common case "cluster A is a
+//     mixture whose spikes K-NN-vote for cluster B" when both are
+//     well-isolated (low trace) at the median split.
+int   WaveKnnUseTraceFilter         = 0;
 // WaveKnnSkipMuaCluster1: when KnnSplitMode=1, controls whether cluster 1
 // (klusters MUA convention) is excluded from both pool and source
-// candidates.  0 = include (KKE default; cluster 1 not reserved).
-// 1 = exclude (klusters-compat).  Default 0.
-int   WaveKnnSkipMuaCluster1        = 0;
+// candidates.  1 (default, klusters-compat): skip cluster 1; matches
+// klusters which treats cid<=1 (noise + MUA) as ineligible.  0: include
+// cluster 1 as a regular cluster (use only when your label conventions
+// reserve no special meaning for cluster 1).
+int   WaveKnnSkipMuaCluster1        = 1;
 // WaveKnnNoiseSourceProbability: probability that the noise cluster
 // (cid=0) is added as a source candidate this Run.  0.0 = never (default;
 // matches klusters' cid≤1 skip).  Use 0.1-0.3 to occasionally recover
