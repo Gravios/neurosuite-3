@@ -267,6 +267,25 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims);
 
+    // Phase 4b: per-cluster full CEM splitter.  Same kernel as
+    // PerClusterCEMPerChunk (scratch sub-KK, warm-start, RunEMLoop with
+    // TrySplits enabled) but with a random shuffle of source clusters
+    // and an optional cap on sources processed per call
+    // (FullCemSplitMaxSourcesPerCall).  Designed to be called alongside
+    // WaveKnnSplitPerChunk in the Phase 4b alternation loop; the merge
+    // step between iters consolidates either splitter's output before
+    // the next iter picks another source.
+    //
+    // Unlike Phase 2a's variant, no large-cluster subdivision (the cap
+    // controls per-call volume instead).  Each picked source cluster is
+    // processed whole, exactly like klusters' interactive Recluster
+    // action on that cluster's spikes.
+    void FullCemSplitPerChunk(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
     // Phase 2b: chunk-level warm-start CEM after PerClusterCEMPerChunk.
     // Runs ordinary CEM on the chunk's full data with the new fine-grained
     // labels as initial Class[], letting boundary spikes reassign and

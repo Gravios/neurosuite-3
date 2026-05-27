@@ -395,6 +395,37 @@ int   WaveKnnMaskNeighbors          = 1;
 // work scales accordingly: 1000 source clusters / 10-per-call * 50
 // alternation iters = 200 source-cluster decisions per Phase 4 pass.
 int   WaveKnnMaxSourcesPerCall      = 0;
+
+// ---------------------------------------------------------------------------
+// FullCemSplit — Phase 4b alternative splitter that runs full CEM
+// (Phase 1 spatial + TrySplits + Phase 2 temporal merge logic, via
+// RunEMLoop with enableSplits=true) on a single source cluster's
+// spikes per invocation.  Mirrors klusters' "Recluster" action where
+// the user picks one cluster and KlustaKwikExp is spawned on its
+// spikes alone.
+//
+// Distinct from WaveKnnSplit:
+//   * WaveKnnSplit decides "this cluster has external neighbors that
+//     win majority votes → split off the matching subsets" — driven
+//     by inter-cluster similarity in feature space.
+//   * FullCemSplit decides "this cluster has internal bimodal
+//     structure → split it along whatever directions the BIC-gated
+//     EM finds" — driven by intra-cluster feature distribution.
+//
+// Both can be enabled simultaneously; the Phase 4b alternation loop
+// runs whichever are enabled and accumulates label changes from
+// either.  The intervening merge step gets to consolidate either
+// splitter's output before the next iter.
+//
+// Reuses the same scratch-KK pattern as Phase 2a's PerClusterCEMPerChunk
+// (build sub-KK with just this cluster's spikes, warm-start at K=2 or
+// SubspaceDims, run RunEMLoop with splits enabled).  Sub-cluster ID
+// assignment follows the same convention: sub-label 1 keeps the
+// parent's local ID, sub-labels >= 2 get fresh chunk-local IDs.
+// ---------------------------------------------------------------------------
+int   FullCemSplitEnable              = 0;
+int   FullCemSplitMaxSourcesPerCall   = 0;  // 0 = unlimited
+int   FullCemSplitMinClusterSize      = 0;  // 0 = use max(nFullDims+5, 25)
 // ── MedianKnnTemplateMatch (Phase 4 alternative merge) ───────────────────
 // k-NN-restricted variant of WithinChunkTemplateMatch that operates on
 // per-cluster MEDIAN waveforms.  When MedianKnnTemplateMatchEnable != 0,
@@ -670,6 +701,9 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(WaveKnnNoiseSourceProbability);
     INT_PARAM(WaveKnnMaskNeighbors);
     INT_PARAM(WaveKnnMaxSourcesPerCall);
+    INT_PARAM(FullCemSplitEnable);
+    INT_PARAM(FullCemSplitMaxSourcesPerCall);
+    INT_PARAM(FullCemSplitMinClusterSize);
     INT_PARAM(MedianKnnTemplateMatchEnable);
     INT_PARAM(MedianKnnTemplateMatchK);
     INT_PARAM(Phase4RefineEnable);

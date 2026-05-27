@@ -3780,7 +3780,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
             }
         }
-
+        if (FullCemSplitEnable) {
+            FullCemSplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        }
         // Phase 2.5: second per-chunk DipSplit pass.
         //
         // The Phase 1c DipSplit ran before subspace reclustering, so it
@@ -4007,6 +4010,10 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     for (int c : v) if (c != 0) _kBefore.insert(c);
                 WaveKnnSplitPerChunk(
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                if (FullCemSplitEnable) {
+                    FullCemSplitPerChunk(
+                        chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                }
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
                     const auto& aft = perChunkClass[_ckb];
                     const auto& bef = _beforeSplit[_ckb];
@@ -5087,6 +5094,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
             }
         }
+        if (FullCemSplitEnable) {
+            FullCemSplitPerChunk(
+                chunkPoints, perChunkClass, perChunkModels, nFullDims);
+        }
 	
     }
 
@@ -5331,6 +5342,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     for (int c : v) if (c != 0) _kBefore.insert(c);
                 WaveKnnSplitPerChunk(
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                if (FullCemSplitEnable) {
+                    FullCemSplitPerChunk(
+                        chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                }
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
                     const auto& aft = perChunkClass[_ckb];
                     const auto& bef = _beforeSplit[_ckb];
@@ -10335,6 +10350,247 @@ void KK::PerClusterCEMPerChunk(
             "%d chunks affected\n",
             totalSplits, totalNewSubClusters,
             static_cast<int>(chunksAffected.size()));
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::FullCemSplitPerChunk  (Phase 4b alternative splitter)
+//
+// Per-cluster full CEM splitter intended to run inside the Phase 4b
+// alternation loop alongside (or instead of) WaveKnnSplitPerChunk.
+//
+// Differences from Phase 2a's PerClusterCEMPerChunk:
+//   * Random shuffle of source clusters per call (rngSeed XOR'd with
+//     a salt so different alternation iters surface different
+//     clusters).
+//   * Optional cap on # sources processed per call
+//     (FullCemSplitMaxSourcesPerCall).  Default 0 = unlimited.
+//   * No large-cluster subdivision.  The cap controls per-call
+//     volume; each picked source is processed whole, mirroring
+//     klusters' interactive Recluster-on-one-cluster workflow.
+//   * Honours FullCemSplitMinClusterSize as the size floor (or
+//     max(nFullDims+5, 25) when that flag is 0).
+//
+// Same scratch-KK pattern + sub-cluster ID assignment convention as
+// PerClusterCEMPerChunk.  See that function for the design rationale
+// of the inner per-cluster CEM body — this function deliberately
+// duplicates it rather than refactoring, to keep the two phases'
+// behaviour independent (Phase 2a can evolve its load-balancing
+// strategy without affecting Phase 4b, and vice-versa).
+// ---------------------------------------------------------------------------
+void KK::FullCemSplitPerChunk(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& /*perChunkModels*/,
+    int nFullDims)
+{
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    const int minClusterSize = (FullCemSplitMinClusterSize > 0)
+                             ? FullCemSplitMinClusterSize
+                             : std::max(nFullDims + 5, 25);
+
+    // ── Phase A: build (chunk, cluster) work items, ONE per source
+    //    cluster.  No subdivision.  Filter by minClusterSize.
+    struct WorkItem {
+        int ck;
+        int lc;                      // chunk-local cluster id
+        std::vector<int> members;    // indices into chunkPoints[ck]
+    };
+    std::vector<WorkItem> items;
+
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& cls = perChunkClass[static_cast<size_t>(ck)];
+        // Group spike-indices by local cluster id.
+        std::unordered_map<int, std::vector<int>> byLc;
+        const int n = static_cast<int>(cls.size());
+        for (int i = 0; i < n; i++) {
+            const int lc = cls[static_cast<size_t>(i)];
+            if (lc <= 0) continue;       // skip noise (lc==0)
+            byLc[lc].push_back(i);
+        }
+        for (auto& kv : byLc) {
+            if (static_cast<int>(kv.second.size()) < minClusterSize) continue;
+            items.push_back({ck, kv.first, std::move(kv.second)});
+        }
+    }
+
+    if (items.empty()) {
+        LockedStderr("[Phase 4b] FullCemSplit: no eligible source clusters "
+                     "(minClusterSize=%d)\n", minClusterSize);
+        return;
+    }
+
+    // ── Phase B: random shuffle + optional cap.  Salt the seed
+    //    differently from WaveKnnSplit so the two splitters don't pick
+    //    the same sources in the same order.
+    {
+        const unsigned seed = static_cast<unsigned>(RandomSeed)
+                                ? static_cast<unsigned>(RandomSeed)
+                                : static_cast<unsigned>(std::time(nullptr));
+        std::mt19937 ordRng(seed ^ 0xc1d2e3f4u);
+        std::shuffle(items.begin(), items.end(), ordRng);
+    }
+    if (FullCemSplitMaxSourcesPerCall > 0
+        && static_cast<int>(items.size()) > FullCemSplitMaxSourcesPerCall) {
+        items.resize(static_cast<size_t>(FullCemSplitMaxSourcesPerCall));
+    }
+
+    LockedStderr("[Phase 4b] FullCemSplit: probing %d source cluster(s) "
+                 "(minClusterSize=%d, cap=%d)\n",
+                 static_cast<int>(items.size()), minClusterSize,
+                 FullCemSplitMaxSourcesPerCall);
+
+    // ── Phase C: parallel per-cluster CEM.  Inner body MIRRORS
+    //    PerClusterCEMPerChunk's non-subdivided path (item.lc >= 0)
+    //    -- see that function for the SubspaceDims rationale, the
+    //    K=2 warm-start, and the spatial-only-dims convention.
+    struct ItemResult {
+        bool changed = false;
+        int  nSubClusters = 0;
+        std::vector<int> newSubLabels;
+    };
+    std::vector<ItemResult> results(items.size());
+
+    int totalSplits         = 0;
+    int totalNewSubClusters = 0;
+
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalSplits,totalNewSubClusters)
+    for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
+        const auto& item = items[static_cast<size_t>(wi)];
+        const int   nMem = static_cast<int>(item.members.size());
+        const auto& pts  = chunkPoints[item.ck];
+
+        const int nSpatialDimsFull = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
+
+        // Per-cluster feature selection (same logic as Phase 2a).
+        int  nSubDims;
+        std::vector<int> selFeat;
+        if (SubspaceDims > 0 && SubspaceDims < nSpatialDimsFull) {
+            std::vector<double> sum(nSpatialDimsFull, 0.0);
+            std::vector<double> sqsum(nSpatialDimsFull, 0.0);
+            for (int i = 0; i < nMem; i++) {
+                const int p = pts[static_cast<size_t>(item.members[static_cast<size_t>(i)])];
+                for (int d = 0; d < nSpatialDimsFull; d++) {
+                    const double v = Data[static_cast<size_t>(p) * nFullDims + d];
+                    sum[d]   += v;
+                    sqsum[d] += v * v;
+                }
+            }
+            std::vector<std::pair<double,int>> rank(nSpatialDimsFull);
+            const double invN = 1.0 / nMem;
+            for (int d = 0; d < nSpatialDimsFull; d++) {
+                const double m = sum[d] * invN;
+                const double v = std::max(0.0, sqsum[d] * invN - m * m);
+                rank[d] = {v, d};
+            }
+            std::sort(rank.begin(), rank.end(),
+                      [](const auto& a, const auto& b){ return a.first > b.first; });
+            nSubDims = SubspaceDims;
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int k = 0; k < nSubDims; k++)
+                selFeat[static_cast<size_t>(k)] = rank[static_cast<size_t>(k)].second;
+            std::sort(selFeat.begin(), selFeat.end());
+        } else {
+            nSubDims = nSpatialDimsFull;
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int d = 0; d < nSubDims; d++)
+                selFeat[static_cast<size_t>(d)] = d;
+        }
+
+        KK Ks;
+        Ks.nDims              = nSubDims;
+        Ks.nPoints            = nMem;
+        Ks.penaltyMix         = penaltyMix;
+        Ks.suppressBestSave   = true;
+        Ks.minClustersAlive   = 1;
+        Ks.NoisePoint         = 0;
+
+        Ks.AllocateArrays();
+        Ks.AllocateCholeskyVecs();
+        Ks.ReinitForSplit(nMem, nSubDims, penaltyMix);
+
+        // Pack with selected features.
+        for (int i = 0; i < nMem; i++) {
+            const int p = pts[static_cast<size_t>(item.members[static_cast<size_t>(i)])];
+            for (int k = 0; k < nSubDims; k++) {
+                const int d = selFeat[static_cast<size_t>(k)];
+                Ks.Data[static_cast<size_t>(i) * nSubDims + k] =
+                    Data[static_cast<size_t>(p) * nFullDims + d];
+            }
+        }
+        Ks.timeRawMin = timeRawMin;
+        Ks.timeRawMax = timeRawMax;
+
+        // Warm-start at K=2; TrySplits drives growth.
+        Ks.nStartingClusters = 2;
+        for (int c = 0; c < MaxPossibleClusters; c++)
+            Ks.ClassAlive[c] = (c < 2) ? 1 : 0;
+        for (int i = 0; i < nMem; i++) Ks.Class[i] = 1;
+        Ks.Reindex();
+
+        Ks.MStep();
+        Ks.EStep();
+        Ks.RunEMLoop(/*enableSplits=*/   true,
+                     /*enableDistDump=*/ false,
+                     /*maxIter=*/        0,
+                     /*phaseLabel=*/     "[4b-cem]");
+
+        if (Ks.nClustersAlive <= 2) continue;     // no split
+
+        auto& r        = results[static_cast<size_t>(wi)];
+        r.changed      = true;
+        r.nSubClusters = Ks.nClustersAlive - 1;
+        r.newSubLabels.resize(static_cast<size_t>(nMem));
+        for (int i = 0; i < nMem; i++)
+            r.newSubLabels[static_cast<size_t>(i)] = Ks.Class[i];
+
+        totalSplits         += 1;
+        totalNewSubClusters += (Ks.nClustersAlive - 2);
+    }
+
+    // ── Phase D: serial commit — assign fresh chunk-local IDs ────────
+    std::vector<int> nextLc(nCh, 1);
+    for (int ck = 0; ck < nCh; ck++) {
+        int maxLc = 0;
+        for (int c : perChunkClass[static_cast<size_t>(ck)])
+            if (c > maxLc) maxLc = c;
+        nextLc[static_cast<size_t>(ck)] = maxLc + 1;
+    }
+
+    std::unordered_set<int> chunksAffected;
+    for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
+        const auto& res = results[static_cast<size_t>(wi)];
+        if (!res.changed) continue;
+        const auto& item = items[static_cast<size_t>(wi)];
+        auto& cls = perChunkClass[static_cast<size_t>(item.ck)];
+
+        // sub-label 0 -> 0 (noise; empty under NoisePoint=0)
+        // sub-label 1 -> parent's local id (item.lc)
+        // sub-label >= 2 -> fresh chunk-local id
+        std::unordered_map<int,int> subToLc;
+        subToLc[0] = 0;
+        subToLc[1] = item.lc;
+
+        const int nMem = static_cast<int>(item.members.size());
+        for (int i = 0; i < nMem; i++) {
+            const int sc = res.newSubLabels[static_cast<size_t>(i)];
+            auto it = subToLc.find(sc);
+            if (it == subToLc.end()) {
+                subToLc[sc] = nextLc[static_cast<size_t>(item.ck)]++;
+                it = subToLc.find(sc);
+            }
+            cls[static_cast<size_t>(item.members[static_cast<size_t>(i)])] = it->second;
+        }
+        chunksAffected.insert(item.ck);
+    }
+
+    LockedStderr("[Phase 4b] FullCemSplit: %d clusters split, +%d new "
+                 "sub-clusters, %d chunks affected\n",
+                 totalSplits, totalNewSubClusters,
+                 static_cast<int>(chunksAffected.size()));
 }
 
 
