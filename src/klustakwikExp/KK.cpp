@@ -5252,34 +5252,24 @@ float KK::RunChunkedCEM(float chunkMinutes,
             fclose(spkTM);
         }
     }
-    // Build overlap vote matrices for MergeChunkModels.
+    // Declare overlap vote container here; ACTUAL build is deferred to
+    // AFTER Phase 4 within-chunk merge has finalised the per-chunk
+    // cluster IDs.  See the build block just before MergeChunkModels.
+    //
+    // Why deferred: vote keys are (clsK, clsK1) cluster ID pairs.
+    // Building them from pre-Phase-4 perChunkClass bakes in cluster IDs
+    // that Phase 4's lcRemap then merges away.  Phase 5 would receive
+    // votes keyed by clusters that no longer exist, causing missed
+    // cross-chunk matches (the vote-match step would search for
+    // {origK.clsK_pre <-> origK1.clsK1_pre} pairs that have since
+    // become {origK.canon_post <-> origK1.canon_post}).
+    //
+    // The companion comment at the allModels rebuild site below
+    // documented the cluster-ID-consistency requirement but the
+    // overlapVotes build had been left at its original pre-Phase-4
+    // position.  This fix relocates it.
     std::vector<std::unordered_map<int,int>> overlapVotes(
         nActive > 0 ? nActive - 1 : 0);
-    if (chunkOverlapFrac > 0.0f) {
-        for (int k = 0; k < nActive - 1; k++) {
-            // Translate compacted chunk index k to the original chunk index that
-            // was used when building overlapForPair.  If the compacted chunks k
-            // and k+1 are NOT consecutive in the original numbering, the boundary
-            // was absorbed by a chunk merge and no overlap entries are valid here.
-            const int origK = activeOrigIdx[k];
-            if (origK + 1 != activeOrigIdx[k + 1]) continue;
-            if (origK >= static_cast<int>(overlapForPair.size())) continue;
-
-            auto& votes = overlapVotes[k];
-            for (const auto& oe : overlapForPair[origK]) {
-                if (oe.localK  >= static_cast<int>(perChunkClass[k].size()))   continue;
-                if (oe.localK1 >= static_cast<int>(perChunkClass[k+1].size())) continue;
-                const int clsK  = perChunkClass[k][oe.localK];
-                const int clsK1 = perChunkClass[k+1][oe.localK1];
-                if (clsK == 0 || clsK1 == 0) continue;  // noise
-                votes[clsK * MaxPossibleClusters + clsK1]++;
-            }
-            int totalVotes = 0;
-            for (const auto& [key, cnt] : votes) totalVotes += cnt;
-            Output("  Overlap pair orig%d/orig%d (active %d/%d): %d shared spikes, %d (clsK,clsK1) pairs\n",
-                   origK, origK + 1, k, k + 1, totalVotes, static_cast<int>(votes.size()));
-        }
-    }
 
     // -------------------------------------------------------------------
     // Phase 6: cross-chunk model matching
@@ -5559,6 +5549,44 @@ float KK::RunChunkedCEM(float chunkMinutes,
     for (int k = 0; k < nActive; k++)
         for (auto& cm : perChunkModels[k])
             allModels.push_back(cm);  // copy — perChunkModels still needed below
+
+    // ── Build overlap vote matrix (deferred from Phase 3) ─────────────
+    // Now that Phase 4's lcRemap chain has settled and perChunkClass
+    // reflects the final per-chunk cluster IDs, build the (clsK, clsK1)
+    // vote keys against the CURRENT cluster set.  Phase 5's
+    // MergeChunkModels reads these keys directly.
+    //
+    // (Vote VALUES — shared spike counts per cluster-id pair — are also
+    // affected by the move: a pre-Phase-4 vote key {clsA_pre,
+    // clsB_pre} with N votes that gets merged in chunk K into
+    // {canonA_post, clsB_pre} now correctly aggregates with any other
+    // pre-merge keys that landed on canonA_post in the same chunk.
+    // No vote double-counting because each shared spike contributes
+    // exactly one (clsK, clsK1) increment, regardless of which pre-
+    // merge cluster ID it had.)
+    if (chunkOverlapFrac > 0.0f) {
+        for (int k = 0; k < nActive - 1; k++) {
+            const int origK = activeOrigIdx[k];
+            if (origK + 1 != activeOrigIdx[k + 1]) continue;
+            if (origK >= static_cast<int>(overlapForPair.size())) continue;
+
+            auto& votes = overlapVotes[k];
+            for (const auto& oe : overlapForPair[origK]) {
+                if (oe.localK  >= static_cast<int>(perChunkClass[k].size()))   continue;
+                if (oe.localK1 >= static_cast<int>(perChunkClass[k+1].size())) continue;
+                const int clsK  = perChunkClass[k][oe.localK];
+                const int clsK1 = perChunkClass[k+1][oe.localK1];
+                if (clsK == 0 || clsK1 == 0) continue;  // noise
+                votes[clsK * MaxPossibleClusters + clsK1]++;
+            }
+            int totalVotes = 0;
+            for (const auto& [key, cnt] : votes) totalVotes += cnt;
+            Output("  [Phase 4→5] Overlap pair orig%d/orig%d (active %d/%d): "
+                   "%d shared spikes, %d (clsK,clsK1) pairs\n",
+                   origK, origK + 1, k, k + 1, totalVotes,
+                   static_cast<int>(votes.size()));
+        }
+    }
 
     // ── Post-Phase-5 alignment site ─────────────────────────────────────
     // Within-chunk template merges have consolidated per-chunk clusters.
