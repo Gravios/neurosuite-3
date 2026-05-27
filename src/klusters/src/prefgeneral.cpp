@@ -63,6 +63,11 @@ void PrefGeneral::setDipSplitMinSize(int n)         { dipSplitMinSizeSpinBox->se
 void PrefGeneral::setDipSplitBloatFactor(double v)  { dipSplitBloatFactorSpinBox->setValue(v); }
 void PrefGeneral::setDipSplitValleyThresh(double v) { dipSplitValleyThreshSpinBox->setValue(v); }
 
+void PrefGeneral::setKnnK(int n)             { knnKSpinBox->setValue(n); }
+void PrefGeneral::setKnnThreshold(double v)  { knnThresholdSpinBox->setValue(v); }
+void PrefGeneral::setKnnMinNew(int n)        { knnMinNewSpinBox->setValue(n); }
+void PrefGeneral::setKnnMinRef(int n)        { knnMinRefSpinBox->setValue(n); }
+
 bool PrefGeneral::isCrashRecovery() const{return crashRecoveryCheckBox->isChecked();}
 
 int PrefGeneral::crashRecoveryIntervalIndex() const{return crashRecoveryComboBox->currentIndex();}
@@ -85,6 +90,11 @@ int    PrefGeneral::getRealignMaxShift()   const { return realignMaxShiftSpinBox
 int    PrefGeneral::getDipSplitMinSize()      const { return dipSplitMinSizeSpinBox->value(); }
 double PrefGeneral::getDipSplitBloatFactor()  const { return dipSplitBloatFactorSpinBox->value(); }
 double PrefGeneral::getDipSplitValleyThresh()const { return dipSplitValleyThreshSpinBox->value(); }
+
+int    PrefGeneral::getKnnK()         const { return knnKSpinBox->value(); }
+double PrefGeneral::getKnnThreshold() const { return knnThresholdSpinBox->value(); }
+int    PrefGeneral::getKnnMinNew()    const { return knnMinNewSpinBox->value(); }
+int    PrefGeneral::getKnnMinRef()    const { return knnMinRefSpinBox->value(); }
 
 void PrefGeneral::updateCrashRecoveryTimeInterval(int state){
     if(state == Qt::Checked)

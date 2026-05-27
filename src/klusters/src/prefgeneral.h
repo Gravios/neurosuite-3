@@ -67,6 +67,11 @@ public:
     void setDipSplitBloatFactor(double v);
     void setDipSplitValleyThresh(double v);
 
+    void setKnnK(int n);
+    void setKnnThreshold(double v);
+    void setKnnMinNew(int n);
+    void setKnnMinRef(int n);
+
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const;
 
@@ -92,6 +97,11 @@ public:
     int    getDipSplitMinSize() const;
     double getDipSplitBloatFactor() const;
     double getDipSplitValleyThresh() const;
+
+    int    getKnnK() const;
+    double getKnnThreshold() const;
+    int    getKnnMinNew() const;
+    int    getKnnMinRef() const;
 
     bool useWhiteColorDuringPrinting() const;
 

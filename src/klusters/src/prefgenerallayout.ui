@@ -759,6 +759,152 @@
    </item>
    
    <item row="5" column="0">
+    <widget class="QGroupBox" name="groupBox_knn">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>32767</width>
+       <height>130</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>KNN voting split (Shift+K)</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_knn">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="knnDescLabel">
+        <property name="text">
+         <string>For each spike in the selected cluster, K nearest neighbours from well-isolated reference clusters cast a vote; the cluster is split by majority winner.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <layout class="QHBoxLayout">
+        <item>
+         <widget class="QLabel" name="knnKLabel">
+          <property name="text">
+           <string>K</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="knnKSpinBox">
+          <property name="toolTip">
+           <string>K nearest neighbours per spike (2-200). Higher = noisier votes averaged out at the cost of locality.</string>
+          </property>
+          <property name="minimum"><number>2</number></property>
+          <property name="maximum"><number>200</number></property>
+          <property name="value"><number>10</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_1">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="knnThresholdLabel">
+          <property name="text">
+           <string>Threshold</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="knnThresholdSpinBox">
+          <property name="toolTip">
+           <string>Majority threshold as a fraction of K (0.0-1.0). 0.5 = simple majority. Spikes that don't reach any majority go to a residual bin.</string>
+          </property>
+          <property name="minimum"><double>0.000000000000000</double></property>
+          <property name="maximum"><double>1.000000000000000</double></property>
+          <property name="singleStep"><double>0.050000000000000</double></property>
+          <property name="decimals"><number>2</number></property>
+          <property name="value"><double>0.500000000000000</double></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_2">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item row="2" column="0">
+       <layout class="QHBoxLayout">
+        <item>
+         <widget class="QLabel" name="knnMinNewLabel">
+          <property name="text">
+           <string>Min new size</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="knnMinNewSpinBox">
+          <property name="toolTip">
+           <string>Smallest new cluster size to keep (1-10000). Smaller groups are merged into the residual bin.</string>
+          </property>
+          <property name="minimum"><number>1</number></property>
+          <property name="maximum"><number>10000</number></property>
+          <property name="value"><number>5</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_3">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="knnMinRefLabel">
+          <property name="text">
+           <string>Min reference size</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="knnMinRefSpinBox">
+          <property name="toolTip">
+           <string>Minimum size for a cluster to be used as a KNN reference (10-100000). Excludes noisy or under-populated clusters from voting.</string>
+          </property>
+          <property name="minimum"><number>10</number></property>
+          <property name="maximum"><number>100000</number></property>
+          <property name="value"><number>100</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_4">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   
+   <item row="6" column="0">
     <widget class="QGroupBox" name="groupBox3">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
@@ -953,7 +1099,7 @@
     </widget>
    </item>
    
-   <item row="6" column="0">
+   <item row="7" column="0">
     <layout class="QHBoxLayout">
      <item>
       <spacer name="spacer17_4">
@@ -1083,7 +1229,7 @@
     </layout>
    </item>
    
-   <item row="7" column="0">
+   <item row="8" column="0">
     <spacer name="spacer1">
      <property name="orientation">
       <enum>Qt::Vertical</enum>
@@ -1126,6 +1272,10 @@
   <tabstop>dipSplitMinSizeSpinBox</tabstop>
   <tabstop>dipSplitBloatFactorSpinBox</tabstop>
   <tabstop>dipSplitValleyThreshSpinBox</tabstop>
+  <tabstop>knnKSpinBox</tabstop>
+  <tabstop>knnThresholdSpinBox</tabstop>
+  <tabstop>knnMinNewSpinBox</tabstop>
+  <tabstop>knnMinRefSpinBox</tabstop>
   <tabstop>backgroundColorButton</tabstop>
   <tabstop>markerSizeSpinBox</tabstop>
   <tabstop>selectionLineWidthSpinBox</tabstop>

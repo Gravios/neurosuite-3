@@ -105,6 +105,10 @@ PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
     connect(prefGeneral->dipSplitMinSizeSpinBox,      &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefGeneral->dipSplitBloatFactorSpinBox,  &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefGeneral->dipSplitValleyThreshSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefGeneral->knnKSpinBox,         &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefGeneral->knnThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefGeneral->knnMinNewSpinBox,    &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefGeneral->knnMinRefSpinBox,    &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefGeneral->templateThresholdMinSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
     connect(prefGeneral->templateThresholdMaxSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
     
@@ -141,6 +145,10 @@ void PrefDialog::updateDialog() {
   prefGeneral->setDipSplitMinSize(configuration().getDipSplitMinSize());
   prefGeneral->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
   prefGeneral->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
+  prefGeneral->setKnnK(configuration().getKnnK());
+  prefGeneral->setKnnThreshold(configuration().getKnnThreshold());
+  prefGeneral->setKnnMinNew(configuration().getKnnMinNew());
+  prefGeneral->setKnnMinRef(configuration().getKnnMinRef());
   prefGeneral->setMarkerSize(configuration().getMarkerSize());
   prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidth());
   prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
@@ -171,6 +179,10 @@ void PrefDialog::updateConfiguration(){
   configuration().setDipSplitMinSize(prefGeneral->getDipSplitMinSize());
   configuration().setDipSplitBloatFactor(prefGeneral->getDipSplitBloatFactor());
   configuration().setDipSplitValleyThresh(prefGeneral->getDipSplitValleyThresh());
+  configuration().setKnnK(prefGeneral->getKnnK());
+  configuration().setKnnThreshold(prefGeneral->getKnnThreshold());
+  configuration().setKnnMinNew(prefGeneral->getKnnMinNew());
+  configuration().setKnnMinRef(prefGeneral->getKnnMinRef());
   configuration().setMarkerSize(prefGeneral->getMarkerSize());
   configuration().setSelectionLineWidth(prefGeneral->getSelectionLineWidth());
   configuration().setAutoscaleMarginPercent(prefGeneral->getAutoscaleMarginPercent());
@@ -207,6 +219,10 @@ void PrefDialog::slotDefault() {
    prefGeneral->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
    prefGeneral->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
    prefGeneral->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());
+   prefGeneral->setKnnK(configuration().getKnnKDefault());
+   prefGeneral->setKnnThreshold(configuration().getKnnThresholdDefault());
+   prefGeneral->setKnnMinNew(configuration().getKnnMinNewDefault());
+   prefGeneral->setKnnMinRef(configuration().getKnnMinRefDefault());
    prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
    prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
    prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
