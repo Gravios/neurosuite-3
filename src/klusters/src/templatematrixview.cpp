@@ -317,6 +317,12 @@ void TemplateMatrixView::customEvent(QEvent* event)
                 setCursor(Qt::ArrowCursor);
             }
             update();
+            // Notify external listeners (e.g. KlustersApp Shift+S reorder
+            // waiting for a stale matrix to refresh).  Emitted only on the
+            // accepted branch and only after update() so observers receive
+            // an in-sync (freshly painted, freshly read-able) view.
+            if (accepted)
+                emit matrixUpdated();
         }
         return;
     }

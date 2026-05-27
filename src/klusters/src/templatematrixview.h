@@ -103,6 +103,11 @@ public:
 
     /// True once at least one template-matrix computation has completed.
     bool hasComputedData() const { return dataReady; }
+    /// True if the matrix has never been computed OR has been invalidated
+    /// (isStale) by a cluster-mutating action since the last
+    /// updateMatrixContents().  Mirrors ErrorMatrixView::isOutOfDate so
+    /// callers (Shift+S reorder) can check both with the same API.
+    bool isOutOfDate() const { return !dataReady || isStale; }
     /// Cluster IDs corresponding to matrix rows/columns (1-based mapping).
     QList<int> matrixClusterList() const { return clusterList; }
     /// Pointer to the [N x N] score matrix (1-based; may be null).
@@ -114,6 +119,12 @@ Q_SIGNALS:
     /// interacted with — Shift+S reorder uses that matrix when both
     /// error and template matrices coexist.
     void viewInteracted();
+
+    /// Emitted from customEvent() each time a freshly computed matrix is
+    /// accepted.  Symmetric with ErrorMatrixView::matrixUpdated() so
+    /// Shift+S can defer the reorder until a stale template matrix has
+    /// finished recomputing.
+    void matrixUpdated();
 
 protected:
     void paintEvent(QPaintEvent*) override;

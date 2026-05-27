@@ -74,6 +74,12 @@ public:
 
     /// True once at least one matrix computation has completed.
     bool hasComputedData() const { return dataReady; }
+    /// True if the matrix has never been computed OR has been invalidated
+    /// by a cluster-mutating action since the last updateMatrixContents().
+    /// `isNotUpToDate` is the same flag used to draw the red "stale" border
+    /// in paintEvent — exposing it lets the Shift+S reorder check freshness
+    /// without poking around in our private state.
+    bool isOutOfDate() const { return !dataReady || isNotUpToDate; }
     /// Cluster IDs present in the matrix (including noise/artefact).
     QList<int> matrixClusterList() const { return clusterList; }
     /// Cluster IDs that actually have computed probabilities.
@@ -87,6 +93,14 @@ Q_SIGNALS:
     /// interacted with — Shift+S reorder uses that matrix when both
     /// error and template matrices coexist.
     void viewInteracted();
+
+    /// Emitted from customEvent() each time a freshly computed matrix is
+    /// accepted (i.e. dataReady has just gone true and the result was not
+    /// superseded by a later updateMatrixContents() call).  Lets external
+    /// callers — notably the Shift+S reorder, which auto-recomputes a
+    /// stale matrix before reordering — defer work until fresh data is in
+    /// hand without polling or blocking.
+    void matrixUpdated();
 
 public Q_SLOTS:
 
