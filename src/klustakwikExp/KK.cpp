@@ -2280,7 +2280,9 @@ float KK::CEMTwoPhase(int timeMergeIter) {
             /*enableDistDump=*/ false,
             /*maxIter=*/        0,
             /*phaseLabel=*/     "P1");
-        Output("Phase 1 converged: %d clusters, score %.7g\n", nClustersAlive, score);
+        if (Verbose >= 2)
+            Output("Phase 1 converged: %d clusters, score %.7g\n",
+                   nClustersAlive, score);
     }
 
     // -----------------------------------------------------------------------
@@ -2295,8 +2297,9 @@ float KK::CEMTwoPhase(int timeMergeIter) {
 
     nDims      = nFullDims;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
-    Output("CEMTwoPhase Phase 2: temporal merge pass (%d dims, max %d iters)\n",
-           nDims, timeMergeIter);
+    if (Verbose >= 2)
+        Output("CEMTwoPhase Phase 2: temporal merge pass (%d dims, max %d iters)\n",
+               nDims, timeMergeIter);
 
     // Phase 2 is a bounded pass (no splits, always full step).
     // RunEMLoop's FullStep heuristic applies; the cap enforces the time budget.
@@ -2307,7 +2310,9 @@ float KK::CEMTwoPhase(int timeMergeIter) {
             /*enableDistDump=*/ false,
             /*maxIter=*/        timeMergeIter,
             /*phaseLabel=*/     "P2");
-        Output("Phase 2 done: %d clusters, score %.7g\n", nClustersAlive, score);
+        if (Verbose >= 2)
+            Output("Phase 2 done: %d clusters, score %.7g\n",
+                   nClustersAlive, score);
 
         // klustakwikExp Phase 8: DipSplit — bimodal-cluster detection.
         // Only fires on the main instance (scratch Kc's set suppressBestSave
