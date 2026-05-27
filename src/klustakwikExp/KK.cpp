@@ -589,7 +589,8 @@ void KK::EStep() {
     for (int cc = 1; cc < nClustersAlive; cc++) {
         const int c = AliveIndex[cc];
         if (Cholesky(Cov.m_Data + c * nDims2, cholFlat.data() + c * nDims2, nDims)) {
-            Output("Deleting class %d: covariance matrix is singular\n", c);
+            if (Verbose >= 2)
+                Output("Deleting class %d: covariance matrix is singular\n", c);
             ClassAlive[c] = 0;
         }
     }
@@ -917,9 +918,10 @@ void KK::ConsiderDeletion() {
     }
 
     if (effectiveMinLoss < deltaPen) {
-        Output("Deleting Class %d. Lose %f but Gain %f%s\n",
-               candidateClass, effectiveMinLoss, deltaPen,
-               (effectiveMinLoss != minLoss) ? " (shift-aware)" : "");
+        if (Verbose >= 2)
+            Output("Deleting Class %d. Lose %f but Gain %f%s\n",
+                   candidateClass, effectiveMinLoss, deltaPen,
+                   (effectiveMinLoss != minLoss) ? " (shift-aware)" : "");
         ClassAlive[candidateClass] = 0;
 
         // Commit planned per-destination cluster-wide δs BEFORE reassignment.
@@ -7209,8 +7211,9 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
                 const int c = AliveIndex[cc];
                 if (Cholesky(Cov.m_Data + c * nDims2,
                              cholFlat.data() + c * nDims2, nDims)) {
-                    Output("[Phase 1a] class %d deleted: covariance "
-                           "matrix is singular after shifts\n", c);
+                    if (Verbose >= 2)
+                        Output("[Phase 1a] class %d deleted: covariance "
+                               "matrix is singular after shifts\n", c);
                     ClassAlive[c] = 0;
                 }
             }
