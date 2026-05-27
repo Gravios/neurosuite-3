@@ -242,6 +242,16 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nChan, int nSamplesPerSpike, float minScore);
 
+    // k-NN-restricted variant of WithinChunkTemplateMatch.  See
+    // KK.cpp for the algorithm and motivation.  Same signature so
+    // callers can dispatch via a flag at the call site.  Gated by
+    // MedianKnnTemplateMatchEnable; K via MedianKnnTemplateMatchK.
+    int  WithinChunkTemplateMatchMedianKnn(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nChan, int nSamplesPerSpike, float minScore);
+
 
 
     // Phase 2a: per-cluster ordinary CEM in the full feature space.  For
