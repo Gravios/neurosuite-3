@@ -13094,6 +13094,63 @@ static double tmpl_union_eig_ratio(const KK::ChunkModel& A,
 }  // anonymous namespace
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// build_hann_weights — precompute Hann window weights of full width hannN,
+// centered on `peak`, for a waveform of length nSamples.
+//
+//   k = s - peak
+//   w(s) = 0.5 * (1 + cos(2π·k / hannN))   for |k| ≤ hannN/2
+//   w(s) = 0                               otherwise
+//
+// Returns all-ones (no taper) when hannN <= 0 or hannN >= nSamples.
+// ---------------------------------------------------------------------------
+namespace {
+static inline void build_hann_weights(std::vector<float>& w,
+                                       int nSamples, int peak, int hannN)
+{
+    w.assign(static_cast<size_t>(nSamples), 1.0f);
+    if (hannN <= 0 || hannN >= nSamples) return;
+    std::fill(w.begin(), w.end(), 0.0f);
+    const int half   = hannN / 2;
+    const int sStart = std::max(0, peak - half);
+    const int sEnd   = std::min(nSamples, peak + (hannN - half));
+    const double inv = 2.0 * M_PI / static_cast<double>(hannN);
+    for (int s = sStart; s < sEnd; ++s) {
+        const int k = s - peak;
+        w[static_cast<size_t>(s)] =
+            static_cast<float>(0.5 * (1.0 + std::cos(inv * k)));
+    }
+}
+
+// Apply precomputed Hann weights to a sample-major [nSamples × nChan]
+// template in place.  Each sample's nChan values get scaled by w[s].
+// Round-to-int16 (templates carry the full int16 range so this is lossy
+// only at the bit-1 level; insignificant vs the noise floor).  No-op
+// when w is all-ones (set by build_hann_weights for the no-taper case).
+static inline void apply_hann_weights(std::vector<int16_t>& tpl,
+                                       const std::vector<float>& w,
+                                       int nChan, int nSamples)
+{
+    if (nChan <= 0 || nSamples <= 0)                         return;
+    if (static_cast<int>(tpl.size()) != nChan * nSamples)    return;
+    if (static_cast<int>(w.size())   != nSamples)            return;
+    for (int s = 0; s < nSamples; ++s) {
+        const float ws = w[static_cast<size_t>(s)];
+        if (ws == 1.0f) continue;       // skip the no-taper region (small win)
+        if (ws == 0.0f) {                // hot path: flanks
+            std::memset(tpl.data() + static_cast<size_t>(s) * nChan, 0,
+                        static_cast<size_t>(nChan) * sizeof(int16_t));
+            continue;
+        }
+        int16_t* row = tpl.data() + static_cast<size_t>(s) * nChan;
+        for (int c = 0; c < nChan; ++c) {
+            row[c] = static_cast<int16_t>(
+                std::lround(static_cast<float>(row[c]) * ws));
+        }
+    }
+}
+}  // namespace
+
 int  KK::WithinChunkTemplateMatch(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
@@ -13105,11 +13162,48 @@ int  KK::WithinChunkTemplateMatch(
     const int nCh     = static_cast<int>(chunkPoints.size());
     int totalMerged   = 0;
 
+    // ── Hann taper precompute (no-op when flag = 0). ──
+    const bool _useTaper = (TemplateMatchTaperHannSamples > 0
+                            && TemplateMatchTaperHannSamples < nSamplesPerSpike);
+    std::vector<float> hannW;
+    if (_useTaper) {
+        build_hann_weights(hannW, nSamplesPerSpike, PeakSampleIndex,
+                            TemplateMatchTaperHannSamples);
+    }
+
+    // ── Post-merge realign accumulator (no-op when MergeRealignEnable = 0).
+    //    Each chunk's merge step appends global spike IDs whose cumulative
+    //    shift was just updated; refeaturized once at end of call. ──
+    std::vector<int> mergeRealignChangedSpikes;
+    KlustersRealign::RealignStats mergeRealignStats;
+    int mergeRealignClustersTouched = 0;
+
     for (int ck = 0; ck < nCh; ck++) {
         auto& cls  = perChunkClass[ck];
         auto& mdls = perChunkModels[ck];
         const int n = static_cast<int>(mdls.size());
         if (n < 2) continue;
+
+        // ── Build Hann-tapered templates once per chunk (no-op when
+        //    TemplateMatchTaperHannSamples <= 0).  Used only for xcorr;
+        //    the original meanWav stays intact for the post-merge
+        //    weighted accumulation below.
+        std::vector<std::vector<int16_t>> taperedMeanWav;
+        if (_useTaper) {
+            taperedMeanWav.resize(static_cast<size_t>(n));
+            for (int a = 0; a < n; a++) {
+                const auto& src = mdls[static_cast<size_t>(a)].meanWav;
+                if (static_cast<int>(src.size()) != wElems) continue;
+                taperedMeanWav[static_cast<size_t>(a)] = src;
+                apply_hann_weights(taperedMeanWav[static_cast<size_t>(a)],
+                                    hannW, nChan, nSamplesPerSpike);
+            }
+        }
+        auto xcorrPtr = [&](int a) -> const int16_t* {
+            if (_useTaper && !taperedMeanWav[static_cast<size_t>(a)].empty())
+                return taperedMeanWav[static_cast<size_t>(a)].data();
+            return mdls[static_cast<size_t>(a)].meanWav.data();
+        };
 
         // ── Compute all pairwise xcorr scores ─────────────────────────────
         // score[a][b] = normalised xcorr of mdls[a].meanWav vs mdls[b].meanWav
@@ -13123,8 +13217,7 @@ int  KK::WithinChunkTemplateMatch(
                 if (static_cast<int>(mdls[static_cast<size_t>(b)].meanWav.size()) != wElems) continue;
                 int sh = 0; float sc = 0.0f;
                 XcorrDispatch::compute(
-                    mdls[static_cast<size_t>(a)].meanWav.data(),
-                    mdls[static_cast<size_t>(b)].meanWav.data(),
+                    xcorrPtr(a), xcorrPtr(b),
                     1, nChan, nSamplesPerSpike,
                     maxShft, 0.0f, &sh, &sc);
                 scoreAB[static_cast<size_t>(a * n + b)] = sc;
@@ -13223,6 +13316,24 @@ int  KK::WithinChunkTemplateMatch(
             int canon = mdls[static_cast<size_t>(rootToCanonIdx[Find(a)])].localClusterId;
             lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canon;
         }
+
+        // Capture which canonicals absorbed >= 1 other cluster — these
+        // are the ones that need post-merge realignment (when
+        // MergeRealignEnable).  Snapshot now, before the cls remap;
+        // unchanged-canonicals (lcRemap maps them to themselves) and
+        // already-canonical (no other cluster mapping to it) get
+        // skipped.
+        std::unordered_set<int> mergedCanonicalLcs;
+        if (MergeRealignEnable != 0 && m_timeShiftReady) {
+            std::unordered_map<int,int> canonAbsorbCount;
+            for (auto& [src, canon] : lcRemap) {
+                if (src != canon) canonAbsorbCount[canon]++;
+            }
+            for (auto& [canon, cnt] : canonAbsorbCount) {
+                if (cnt > 0) mergedCanonicalLcs.insert(canon);
+            }
+        }
+
         for (auto& lc : cls)
             if (lcRemap.count(lc)) lc = lcRemap[lc];
 
@@ -13292,6 +13403,61 @@ int  KK::WithinChunkTemplateMatch(
             for (const auto& lc : cls)
                 if (lc == cm.localClusterId) cm.nMembers++;
         }
+
+        // ── Post-merge realignment for canonicals that absorbed >= 1
+        //    other cluster.  Gathers the canonical's now-merged spike
+        //    set (chunk-local indices where cls[i] == canonLc, mapped
+        //    to global spike IDs via chunkPoints[ck]) and runs the
+        //    klusters-faithful per-cluster realign.  Shifts commit to
+        //    m_cumShift; changed-spike list is appended for a single
+        //    end-of-call RefeaturizeChangedSpikes.
+        //
+        //    Why here: at this point cls[] reflects the post-merge
+        //    label state, mdls' canonical models exist, the absorbed
+        //    spikes are now visible under canonLc.  Realigning to the
+        //    canonical's (newly weighted-meaned) template tightens the
+        //    spike-to-template variance that the merge introduced.
+        if (MergeRealignEnable != 0 && m_timeShiftReady
+            && !mergedCanonicalLcs.empty()) {
+            const int peakPos  = PeakSampleIndex;
+            const int maxShift = std::max(1,
+                std::min(nSamplesPerSpike / 4, KlustersRealignMaxShift));
+            const int minSize  = std::max(2, KlustersRealignMinSize);
+            for (int canonLc : mergedCanonicalLcs) {
+                std::vector<int> spikeIds;
+                spikeIds.reserve(256);
+                for (size_t i = 0; i < cls.size(); ++i) {
+                    if (cls[i] == canonLc) {
+                        spikeIds.push_back(
+                            chunkPoints[static_cast<size_t>(ck)][i]);
+                    }
+                }
+                if (static_cast<int>(spikeIds.size()) < minSize) continue;
+                KlustersStyleRealignOneCluster(
+                    spikeIds, nChan, nSamplesPerSpike,
+                    peakPos, maxShift, minSize,
+                    mergeRealignChangedSpikes, mergeRealignStats);
+                ++mergeRealignClustersTouched;
+            }
+        }
+    }
+
+    // ── End of call: refeaturize the spikes whose m_cumShift changed
+    //    via post-merge realign.  Single call (better than per-chunk
+    //    because the PCA model load + .fil cache check happens once).
+    //    No-op when MergeRealignEnable == 0 (vector stays empty).
+    if (!mergeRealignChangedSpikes.empty()) {
+        RefeaturizeChangedSpikes(mergeRealignChangedSpikes,
+                                  nChan, nSamplesPerSpike);
+        LockedStderr(
+            "  [WithinChunkTemplateMatch] post-merge realign: "
+            "%d clusters touched, %d/%d spikes shifted (max|Δ|=%d), "
+            "%zu spikes refeaturized\n",
+            mergeRealignClustersTouched,
+            mergeRealignStats.nSpikesRealigned,
+            mergeRealignStats.nSpikesEvaluated,
+            mergeRealignStats.maxAbsShift,
+            mergeRealignChangedSpikes.size());
     }
 
     Output("WithinChunkTemplateMatch: %d cluster pair(s) merged across all chunks\n",
@@ -13373,6 +13539,20 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
     const int nCh     = static_cast<int>(chunkPoints.size());
     const int K       = std::max(1, MedianKnnTemplateMatchK);
     int totalMerged   = 0;
+
+    // ── Hann taper precompute (no-op when flag = 0). ──
+    const bool _useTaper = (TemplateMatchTaperHannSamples > 0
+                            && TemplateMatchTaperHannSamples < nSamplesPerSpike);
+    std::vector<float> hannW;
+    if (_useTaper) {
+        build_hann_weights(hannW, nSamplesPerSpike, PeakSampleIndex,
+                            TemplateMatchTaperHannSamples);
+    }
+
+    // ── Post-merge realign accumulator (no-op when flag = 0). ──
+    std::vector<int> mergeRealignChangedSpikes;
+    KlustersRealign::RealignStats mergeRealignStats;
+    int mergeRealignClustersTouched = 0;
 
     for (int ck = 0; ck < nCh; ck++) {
         auto& cls  = perChunkClass[ck];
@@ -13474,6 +13654,28 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
             return m.empty() ? mdls[static_cast<size_t>(a)].meanWav : m;
         };
 
+        // ── If TemplateMatchTaperHannSamples > 0, apply the Hann taper
+        //    to whichever template tpl() resolves to (median preferred,
+        //    meanWav fallback).  The tapered copies replace the
+        //    accessor for downstream L2 + xcorr; the originals stay
+        //    in medianTpls / mdls.meanWav for any other consumer. ──
+        std::vector<std::vector<int16_t>> taperedTpls;
+        if (_useTaper) {
+            taperedTpls.resize(static_cast<size_t>(n));
+            for (int a = 0; a < n; a++) {
+                const auto& src = tpl(a);
+                if (static_cast<int>(src.size()) != wElems) continue;
+                taperedTpls[static_cast<size_t>(a)] = src;
+                apply_hann_weights(taperedTpls[static_cast<size_t>(a)],
+                                    hannW, nChan, nSamplesPerSpike);
+            }
+        }
+        auto effTpl = [&](int a) -> const std::vector<int16_t>& {
+            if (_useTaper && !taperedTpls[static_cast<size_t>(a)].empty())
+                return taperedTpls[static_cast<size_t>(a)];
+            return tpl(a);
+        };
+
         // ── 1. Raw-L2 pre-screen between cluster MEDIAN templates
         //       (with fall-through to meanWav for clusters that didn't
         //       get a median; see `tpl` accessor above).
@@ -13486,13 +13688,13 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
         for (int a = 0; a < n; a++) {
             const auto& A = mdls[static_cast<size_t>(a)];
             if (A.localClusterId == 0) continue;
-            const auto& tA = tpl(a);
+            const auto& tA = effTpl(a);
             if (static_cast<int>(tA.size()) != wElems) continue;
             dist[static_cast<size_t>(a * n + a)] = INF;   // exclude self
             for (int b = a + 1; b < n; b++) {
                 const auto& B = mdls[static_cast<size_t>(b)];
                 if (B.localClusterId == 0) continue;
-                const auto& tB = tpl(b);
+                const auto& tB = effTpl(b);
                 if (static_cast<int>(tB.size()) != wElems) continue;
                 double d2 = 0.0;
                 for (int i = 0; i < wElems; i++) {
@@ -13541,8 +13743,8 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                 if (b <= a) continue;   // process each pair once
                 if (!topK[static_cast<size_t>(b)].count(a)) continue;   // mutual
 
-                const auto& tA = tpl(a);
-                const auto& tB = tpl(b);
+                const auto& tA = effTpl(a);
+                const auto& tB = effTpl(b);
                 if (static_cast<int>(tA.size()) != wElems) continue;
                 if (static_cast<int>(tB.size()) != wElems) continue;
 
@@ -13637,6 +13839,21 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                 rootToCanonIdx[Find(a)])].localClusterId;
             lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canon;
         }
+
+        // Capture merged canonicals before the cls remap (same as in
+        // WithinChunkTemplateMatch).  See that function's identical
+        // block for the rationale.
+        std::unordered_set<int> mergedCanonicalLcs;
+        if (MergeRealignEnable != 0 && m_timeShiftReady) {
+            std::unordered_map<int,int> canonAbsorbCount;
+            for (auto& [src, canon] : lcRemap) {
+                if (src != canon) canonAbsorbCount[canon]++;
+            }
+            for (auto& [canon, cnt] : canonAbsorbCount) {
+                if (cnt > 0) mergedCanonicalLcs.insert(canon);
+            }
+        }
+
         for (auto& lc : cls)
             if (lcRemap.count(lc)) lc = lcRemap[lc];
 
@@ -13685,6 +13902,46 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
             for (const auto& lc : cls)
                 if (lc == cm.localClusterId) cm.nMembers++;
         }
+
+        // Post-merge realignment (see WithinChunkTemplateMatch for the
+        // rationale; identical algorithm here).
+        if (MergeRealignEnable != 0 && m_timeShiftReady
+            && !mergedCanonicalLcs.empty()) {
+            const int peakPos  = PeakSampleIndex;
+            const int maxShift = std::max(1,
+                std::min(nSamplesPerSpike / 4, KlustersRealignMaxShift));
+            const int minSize  = std::max(2, KlustersRealignMinSize);
+            for (int canonLc : mergedCanonicalLcs) {
+                std::vector<int> spikeIds;
+                spikeIds.reserve(256);
+                for (size_t i = 0; i < cls.size(); ++i) {
+                    if (cls[i] == canonLc) {
+                        spikeIds.push_back(
+                            chunkPoints[static_cast<size_t>(ck)][i]);
+                    }
+                }
+                if (static_cast<int>(spikeIds.size()) < minSize) continue;
+                KlustersStyleRealignOneCluster(
+                    spikeIds, nChan, nSamplesPerSpike,
+                    peakPos, maxShift, minSize,
+                    mergeRealignChangedSpikes, mergeRealignStats);
+                ++mergeRealignClustersTouched;
+            }
+        }
+    }
+
+    if (!mergeRealignChangedSpikes.empty()) {
+        RefeaturizeChangedSpikes(mergeRealignChangedSpikes,
+                                  nChan, nSamplesPerSpike);
+        LockedStderr(
+            "  [WithinChunkTemplateMatchMedianKnn] post-merge realign: "
+            "%d clusters touched, %d/%d spikes shifted (max|Δ|=%d), "
+            "%zu spikes refeaturized\n",
+            mergeRealignClustersTouched,
+            mergeRealignStats.nSpikesRealigned,
+            mergeRealignStats.nSpikesEvaluated,
+            mergeRealignStats.maxAbsShift,
+            mergeRealignChangedSpikes.size());
     }
 
     Output("WithinChunkTemplateMatchMedianKnn (K=%d): %d cluster pair(s) "

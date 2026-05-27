@@ -181,6 +181,12 @@ extern float ResidualPCAConvTol;
 extern float ResidualPCAMinScore;
 extern int   AlignPcaCenter;   // patch83 — opt-in PCA-centering refine pass
 extern float TemplateMatchEigRatio;
+// Phase 4 within-chunk merge: Hann-taper templates (width N centred on
+// PeakSampleIndex) before xcorr.  See KlustaKwik.cpp.  Default 0 = no taper.
+extern int   TemplateMatchTaperHannSamples;
+// Phase 4 within-chunk merge: realign+refeaturize merged clusters
+// immediately after merge commit.  See KlustaKwik.cpp.  Default 0.
+extern int   MergeRealignEnable;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
