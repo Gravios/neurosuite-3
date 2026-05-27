@@ -184,6 +184,31 @@ struct Config {
     //           handle the extra cluster cleanly.
     bool residualBecomesNewCluster = true;
 
+    // When true (default), source clusters are processed in randomised
+    // sequential order within a single Run() invocation, and after each
+    // cluster's split commits, the k-NN pool members of every reassigned
+    // spike are MASKED OFF from being eligible sources later in the
+    // same call.
+    //
+    // Rationale: two clusters whose feature distributions overlap will
+    // each "see" spikes in the overlap region as candidates to be split
+    // out — one cluster's split moves spikes to a new sub-cluster; if
+    // the OTHER cluster is then processed without masking, it tends to
+    // create a near-mirror-image sub-cluster from the SAME overlap
+    // region, observed from the second cluster's side.  Net result:
+    // one physical overlap region gets carved into two redundant
+    // sub-clusters.  Masking the neighborhood after the first split
+    // prevents the mirror.
+    //
+    // The randomised order means no source cluster is systematically
+    // privileged across runs; combined with the Phase 4 alternation
+    // loop (multiple Phase 4b calls per Phase 4 pass), every cluster
+    // gets a chance to be processed first across iterations.
+    //
+    // When false, behaviour reverts to the original flat-parallel-over-
+    // all-source-spikes algorithm (no masking, no sequential ordering).
+    bool maskNeighbors = true;
+
     bool Verbose = false;
 };
 
@@ -199,6 +224,9 @@ struct Result {
     int nResidualClusters   = 0;   // of nNewClusters, how many were residual buckets
     int nSpikesReassigned   = 0;   // spikes moved out of source to ANY new cluster
     int nSpikesResidual     = 0;   // ambiguous + small-winner spikes that stayed in source
+    int nSpikesMaskedFromSplit = 0;  // spikes excluded as sources by the
+                                     // neighborhood-mask after another
+                                     // cluster claimed their region this round
     bool noiseClusterTried  = false;  // true if cluster 0 was a source candidate this run
 };
 

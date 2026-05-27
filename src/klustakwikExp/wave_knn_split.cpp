@@ -267,115 +267,147 @@ Result Run(const float*                       features,
     }
     out.nSourcesConsidered = static_cast<int>(sourceClusters.size());
 
-    // 5. For each source spike, find K nearest neighbours in pool, vote.
-    //    new_label_proposal[i] = winning ref label, or -1 = stay in source.
-    std::vector<int> proposal(static_cast<size_t>(nPoints), -1);
-
-    // Collect source-spike indices for OMP-balanced work distribution.
-    std::vector<int> sourceIdx;
-    sourceIdx.reserve(static_cast<size_t>(nPoints));
-    for (int i = 0; i < nPoints; ++i) {
-        if (sourceClusters.count(labels[i])) sourceIdx.push_back(i);
-    }
+    // ── 5. Per-source-cluster sequential processing with neighborhood mask.
+    //
+    // The original algorithm processed ALL source spikes in one flat
+    // parallel sweep and bucketed by (sourceCluster, winnerRef) at the
+    // end.  That doubles up overlap regions between clusters: cluster A
+    // sees its half of an overlap with B and produces a sub-cluster;
+    // cluster B sees its half (same physical region) and produces a
+    // near-mirror sub-cluster — two new IDs for one real region.
+    //
+    // This loop processes source clusters one at a time in randomised
+    // order (so no cluster is systematically privileged across runs),
+    // commits each cluster's split immediately, and MASKS the k-NN
+    // pool spikes of every reassigned spike from being eligible
+    // sources later in the same call.  When the second cluster's
+    // overlap-region spikes look up their k-NN, they discover the
+    // just-allocated sub-cluster and either fold into it (via the
+    // majority vote) or end up in their own residual.  Either way:
+    // no mirror.
+    //
+    // Parallelism: outer loop is sequential (it MUST be — later
+    // iterations depend on earlier iterations' label assignments and
+    // masks), inner k-NN voting within one source cluster is parallel.
+    // Pool/source within one cluster is identical to the original
+    // algorithm so the per-spike vote is unchanged.
+    //
+    // Sequential ordering can be disabled via cfg.maskNeighbors = false,
+    // which restores the flat-parallel algorithm.
 
     struct DistIdx { double d2; int poolPos; };
 
-    #pragma omp parallel
+    // Randomised source-cluster ordering.  XOR salt 0xa1b2c3d4u to
+    // decorrelate from the noise-cluster probability draw above
+    // (which uses the unsalted seed).
+    std::vector<int> sourceOrder(sourceClusters.begin(), sourceClusters.end());
     {
-        std::vector<DistIdx> heap;
-        heap.reserve(static_cast<size_t>(K + 1));
-        auto cmpMaxByD2 = [](const DistIdx& a, const DistIdx& b) {
-            return a.d2 < b.d2;
-        };
-
-        #pragma omp for schedule(dynamic, 64)
-        for (int si = 0; si < static_cast<int>(sourceIdx.size()); ++si) {
-            const int i = sourceIdx[si];
-            const int srcLabel = labels[i];
-            const float* fi = features + static_cast<size_t>(i) * nDims;
-
-            // Top-K heap of (d², poolPos) — max-heap by d².
-            //
-            // In klusters mode (or whenever the source cluster's spikes are
-            // also pool members — e.g. when caller passed overlapping
-            // sourceIds/referenceIds), exclude pool entries that share the
-            // source spike's cluster.  Otherwise a source spike would just
-            // vote for itself.  In trace-filter mode refs and sources are
-            // disjoint so the exclusion is a no-op (but cheap to check).
-            heap.clear();
-            int nUsablePool = 0;
-            for (int p = 0; p < static_cast<int>(poolIdx.size()); ++p) {
-                const int j = poolIdx[p];
-                if (labels[j] == srcLabel) continue;        // own-cluster exclusion
-                ++nUsablePool;
-                const float* fj = features + static_cast<size_t>(j) * nDims;
-                const double d2 = sqDist(fi, fj, nDimsUse);
-                if (static_cast<int>(heap.size()) < K) {
-                    heap.push_back({d2, p});
-                    std::push_heap(heap.begin(), heap.end(), cmpMaxByD2);
-                } else if (d2 < heap.front().d2) {
-                    std::pop_heap(heap.begin(), heap.end(), cmpMaxByD2);
-                    heap.back() = {d2, p};
-                    std::push_heap(heap.begin(), heap.end(), cmpMaxByD2);
-                }
-            }
-            if (static_cast<int>(heap.size()) < std::min(K, nUsablePool)) {
-                continue;  // not enough neighbours; leave proposal[i] = -1
-            }
-
-            // Majority vote — small map, OK to use std::map for this size
-            std::map<int, int> tally;
-            for (const auto& di : heap) {
-                tally[labels[poolIdx[di.poolPos]]]++;
-            }
-            int bestLabel = -1, bestCount = 0;
-            for (const auto& kv : tally) {
-                if (kv.second > bestCount) {
-                    bestCount = kv.second;
-                    bestLabel = kv.first;
-                }
-            }
-            if (bestCount >= minVotes) {
-                proposal[i] = bestLabel;
-            }
-        }
-    }  // omp parallel
-
-    // 6. Per-source partition + klusters-faithful fold.
-    //
-    //    Build, for each source cluster, the partition:
-    //        partitions[source][winner_id]  = list of spike indices
-    //    with winner_id = -1 for spikes that didn't reach majority.
-    //
-    //    Then for each source:
-    //      a. Pull out the ambiguous (-1) bucket
-    //      b. For each remaining (confident-winner) partition < minNewClusterSize,
-    //         FOLD it into the ambiguous bucket
-    //      c. If the folded ambiguous bucket has ≥ minNewClusterSize spikes
-    //         AND residualBecomesNewCluster is true, materialise it as a
-    //         NEW cluster ID (the "residual" cluster).  Otherwise its
-    //         spikes stay in the source.
-    //      d. Materialise surviving confident partitions as new cluster IDs.
-    //
-    //    Klusters allocates winner IDs in ascending refId order with the
-    //    residual last (data.cpp:1985-1999); std::map iterates in ascending
-    //    key order which gives us that for free.  We allocate winner IDs
-    //    first, residual ID last, to match.
-    //
-    //    Matches Data::splitClusterByKnnVsReferences (data.cpp:1949-1999).
-
-    std::map<int, std::map<int, std::vector<int>>> bucket;  // source -> winner -> idx
-    for (int i : sourceIdx) {
-        bucket[labels[i]][proposal[i]].push_back(i);  // proposal=-1 → ambiguous
+        const unsigned seed = cfg.rngSeed ? cfg.rngSeed
+            : static_cast<unsigned>(std::time(nullptr));
+        std::mt19937 ordRng(seed ^ 0xa1b2c3d4u);
+        std::shuffle(sourceOrder.begin(), sourceOrder.end(), ordRng);
     }
+
+    // Spike-level mask: once a spike is in here, it is excluded from
+    // being a source in any subsequent cluster's loop iteration.
+    std::vector<char> maskedAsSrc(static_cast<size_t>(nPoints), 0);
 
     int nextId = maxLabel + 1;
     int totalResidualSpikesKeptInSource = 0;
+    int nMaskedTotal = 0;
 
-    for (auto& srcKv : bucket) {
-        auto& parts = srcKv.second;
+    for (int sourceCid : sourceOrder) {
+        // Collect this cluster's eligible source spike indices, filtered
+        // against the running mask.
+        std::vector<int> srcIdx;
+        srcIdx.reserve(static_cast<size_t>(nPoints));
+        int nThisClusterMasked = 0;
+        for (int i = 0; i < nPoints; ++i) {
+            if (labels[i] != sourceCid) continue;
+            if (cfg.maskNeighbors && maskedAsSrc[static_cast<size_t>(i)]) {
+                ++nThisClusterMasked;
+                continue;
+            }
+            srcIdx.push_back(i);
+        }
+        nMaskedTotal += nThisClusterMasked;
+        const int nSrcThisCluster = static_cast<int>(srcIdx.size());
+        if (nSrcThisCluster < cfg.minSourceClusterSize) continue;
 
-        // a. Pull ambiguous bucket out (key -1)
+        // Per-spike state for this cluster.  proposal[si] = winner label
+        // (-1 = ambiguous / didn't reach majority); srcKnnPool[si] =
+        // the spike indices of the top-K pool neighbours, retained so
+        // we can mask them after commit if this spike gets reassigned.
+        std::vector<int>                 proposal(
+            static_cast<size_t>(nSrcThisCluster), -1);
+        std::vector<std::vector<int>>    srcKnnPool(
+            static_cast<size_t>(nSrcThisCluster));
+
+        #pragma omp parallel
+        {
+            std::vector<DistIdx> heap;
+            heap.reserve(static_cast<size_t>(K + 1));
+            auto cmpMaxByD2 = [](const DistIdx& a, const DistIdx& b) {
+                return a.d2 < b.d2;
+            };
+
+            #pragma omp for schedule(dynamic, 64)
+            for (int si = 0; si < nSrcThisCluster; ++si) {
+                const int i        = srcIdx[static_cast<size_t>(si)];
+                const int srcLabel = labels[i];
+                const float* fi    = features + static_cast<size_t>(i) * nDims;
+
+                heap.clear();
+                int nUsablePool = 0;
+                for (int p = 0; p < static_cast<int>(poolIdx.size()); ++p) {
+                    const int j = poolIdx[static_cast<size_t>(p)];
+                    if (labels[j] == srcLabel) continue;
+                    ++nUsablePool;
+                    const float* fj = features + static_cast<size_t>(j) * nDims;
+                    const double d2 = sqDist(fi, fj, nDimsUse);
+                    if (static_cast<int>(heap.size()) < K) {
+                        heap.push_back({d2, p});
+                        std::push_heap(heap.begin(), heap.end(), cmpMaxByD2);
+                    } else if (d2 < heap.front().d2) {
+                        std::pop_heap(heap.begin(), heap.end(), cmpMaxByD2);
+                        heap.back() = {d2, p};
+                        std::push_heap(heap.begin(), heap.end(), cmpMaxByD2);
+                    }
+                }
+                if (static_cast<int>(heap.size()) < std::min(K, nUsablePool)) {
+                    continue;   // leave proposal[si] = -1
+                }
+
+                std::map<int, int> tally;
+                for (const auto& di : heap) {
+                    tally[labels[poolIdx[static_cast<size_t>(di.poolPos)]]]++;
+                }
+                int bestLabel = -1, bestCount = 0;
+                for (const auto& kv : tally) {
+                    if (kv.second > bestCount) {
+                        bestCount = kv.second;
+                        bestLabel = kv.first;
+                    }
+                }
+                if (bestCount >= minVotes) {
+                    proposal[static_cast<size_t>(si)] = bestLabel;
+                    // Retain pool spike indices for masking.
+                    auto& nn = srcKnnPool[static_cast<size_t>(si)];
+                    nn.reserve(heap.size());
+                    for (const auto& di : heap) {
+                        nn.push_back(poolIdx[static_cast<size_t>(di.poolPos)]);
+                    }
+                }
+            }
+        }   // omp parallel
+
+        // ── Bucket THIS cluster's source spikes by winner.  Positions in
+        //    `parts` are indices into srcIdx (NOT global spike indices).
+        std::map<int, std::vector<int>> parts;   // winner -> srcIdx positions
+        for (int si = 0; si < nSrcThisCluster; ++si) {
+            parts[proposal[static_cast<size_t>(si)]].push_back(si);
+        }
+        // Pull ambiguous bucket (key -1) into residual.
         std::vector<int> residual;
         {
             auto it = parts.find(-1);
@@ -384,8 +416,7 @@ Result Run(const float*                       features,
                 parts.erase(it);
             }
         }
-
-        // b. Fold small confident winners into the residual bucket
+        // Fold small winners into residual.
         for (auto it = parts.begin(); it != parts.end(); ) {
             if (static_cast<int>(it->second.size()) < cfg.minNewClusterSize) {
                 residual.insert(residual.end(),
@@ -397,41 +428,68 @@ Result Run(const float*                       features,
         }
 
         bool srcSplit = false;
+        std::vector<int> reassignedSrcPositions;
+        reassignedSrcPositions.reserve(static_cast<size_t>(nSrcThisCluster));
 
-        // d (first — allocate winner IDs in ascending refId order, then
-        //    residual last, to match klusters' allocation order)
+        // Winner buckets first (ascending refId).
         for (auto& winKv : parts) {
             const int newId = nextId++;
-            for (int i : winKv.second) labels[i] = newId;
+            for (int pos : winKv.second) {
+                labels[srcIdx[static_cast<size_t>(pos)]] = newId;
+                reassignedSrcPositions.push_back(pos);
+            }
             out.nNewClusters++;
             out.nSpikesReassigned += static_cast<int>(winKv.second.size());
             srcSplit = true;
         }
-
-        // c. Residual bucket disposition
+        // Residual bucket disposition.
         if (static_cast<int>(residual.size()) >= cfg.minNewClusterSize
             && cfg.residualBecomesNewCluster) {
             const int newId = nextId++;
-            for (int i : residual) labels[i] = newId;
+            for (int pos : residual) {
+                labels[srcIdx[static_cast<size_t>(pos)]] = newId;
+                reassignedSrcPositions.push_back(pos);
+            }
             out.nNewClusters++;
             out.nResidualClusters++;
             out.nSpikesReassigned += static_cast<int>(residual.size());
             srcSplit = true;
         } else {
-            totalResidualSpikesKeptInSource += static_cast<int>(residual.size());
+            totalResidualSpikesKeptInSource +=
+                static_cast<int>(residual.size());
         }
 
-        if (srcSplit) out.nSourcesSplit++;
+        if (srcSplit) {
+            out.nSourcesSplit++;
+
+            // Mask the pool neighbours of every reassigned source spike.
+            // Only the confident-winner spikes had their k-NN retained
+            // (proposal != -1); residual/folded spikes have empty
+            // srcKnnPool entries so their iteration is a no-op.
+            if (cfg.maskNeighbors) {
+                for (int pos : reassignedSrcPositions) {
+                    const auto& nn = srcKnnPool[static_cast<size_t>(pos)];
+                    for (int j : nn) {
+                        maskedAsSrc[static_cast<size_t>(j)] = 1;
+                    }
+                }
+            }
+        }
     }
-    out.nSpikesResidual = totalResidualSpikesKeptInSource;
+    out.nSpikesResidual        = totalResidualSpikesKeptInSource;
+    out.nSpikesMaskedFromSplit = nMaskedTotal;
 
     if (cfg.Verbose) {
         std::fprintf(stderr,
             "[wave_knn_split] K=%d majThr=%.2f sources=%d split=%d "
-            "newClusters=%d (residualClusters=%d) reassigned=%d residual=%d\n",
+            "newClusters=%d (residualClusters=%d) reassigned=%d "
+            "residual=%d maskedFromSplit=%d "
+            "(maskNeighbors=%s)\n",
             K, cfg.majorityThreshold, out.nSourcesConsidered,
             out.nSourcesSplit, out.nNewClusters, out.nResidualClusters,
-            out.nSpikesReassigned, out.nSpikesResidual);
+            out.nSpikesReassigned, out.nSpikesResidual,
+            out.nSpikesMaskedFromSplit,
+            cfg.maskNeighbors ? "on" : "off");
     }
     return out;
 }

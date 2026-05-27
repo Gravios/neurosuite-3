@@ -294,6 +294,9 @@ extern int   WaveKnnSkipMuaCluster1;
 // WaveKnnNoiseSourceProbability: probability the noise cluster (cid=0)
 // is treated as a source candidate in mode 1.  0.0 = never (default).
 extern float WaveKnnNoiseSourceProbability;
+// See KlustaKwik.cpp.  Sequential per-source-cluster processing with
+// k-NN-neighborhood masking inside wave_knn_split::Run.  Default 1.
+extern int   WaveKnnMaskNeighbors;
 // Phase4RefineEnable: master switch for the rewritten Phase-4 pipeline
 // (proxy_isi → adapt_model → clust_quality → xcorr_match).  Default 0
 // (legacy WithinChunkTemplateMatch preserved).
