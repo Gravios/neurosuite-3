@@ -13180,24 +13180,26 @@ int  KK::WithinChunkTemplateMatch(
                     mdls[static_cast<size_t>(a)],
                     mdls[static_cast<size_t>(b)]);
                 if (eigRatio > static_cast<double>(TemplateMatchEigRatio)) {
-                    Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f "
-                           "eig-ratio=%.2f > %.2f → VETO\n",
-                           ck,
-                           mdls[static_cast<size_t>(a)].localClusterId,
-                           mdls[static_cast<size_t>(b)].localClusterId,
-                           bestS[static_cast<size_t>(a)],
-                           eigRatio,
-                           static_cast<double>(TemplateMatchEigRatio));
+                    if (Verbose >= 1)
+                        Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f "
+                               "eig-ratio=%.2f > %.2f → VETO\n",
+                               ck,
+                               mdls[static_cast<size_t>(a)].localClusterId,
+                               mdls[static_cast<size_t>(b)].localClusterId,
+                               bestS[static_cast<size_t>(a)],
+                               eigRatio,
+                               static_cast<double>(TemplateMatchEigRatio));
                     continue;
                 }
             }
 
             Union(a, b);
-            Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f\n",
-                   ck,
-                   mdls[static_cast<size_t>(a)].localClusterId,
-                   mdls[static_cast<size_t>(b)].localClusterId,
-                   bestS[static_cast<size_t>(a)]);
+            if (Verbose >= 1)
+                Output("  tmpl-within: chunk%d c%d+c%d xcorr=%.3f\n",
+                       ck,
+                       mdls[static_cast<size_t>(a)].localClusterId,
+                       mdls[static_cast<size_t>(b)].localClusterId,
+                       bestS[static_cast<size_t>(a)]);
             chunkMerged++;
             totalMerged++;
         }
