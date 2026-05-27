@@ -13446,6 +13446,25 @@ int  KK::WithinChunkTemplateMatch(
     const int nCh     = static_cast<int>(chunkPoints.size());
     int totalMerged   = 0;
 
+    // ── Identity-flow instrumentation.  Counts per call:
+    //     spikesRelabeled   — # spikes whose cls[] value changed via lcRemap
+    //     canonicalsTouched — # unique canonicals that absorbed >= 1 cluster
+    //     absorbedClusters  — # clusters that were absorbed into a canonical
+    //
+    // Designed to make Phase 4 convergence behaviour directly inspectable:
+    //   * Healthy convergence: spikesRelabeled DECREASES across iters
+    //     (fewer spikes need to move because fewer clusters remain to
+    //     consolidate).
+    //   * Pathological shuffling: spikesRelabeled stays high across iters
+    //     while pair count drops (would indicate spikes oscillating
+    //     between clusters without genuine consolidation).
+    //   * Genuine large-cluster sweep: absorbedClusters drops but
+    //     spikesRelabeled stays high or rises (later iters merging
+    //     fewer-but-larger clusters).
+    int callSpikesRelabeled   = 0;
+    int callCanonicalsTouched = 0;
+    int callAbsorbedClusters  = 0;
+
     // ── Hann taper precompute (no-op when flag = 0). ──
     const bool _useTaper = (TemplateMatchTaperHannSamples > 0
                             && TemplateMatchTaperHannSamples < nSamplesPerSpike);
@@ -13601,25 +13620,38 @@ int  KK::WithinChunkTemplateMatch(
             lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canon;
         }
 
-        // Capture which canonicals absorbed >= 1 other cluster — these
-        // are the ones that need post-merge realignment (when
-        // MergeRealignEnable).  Snapshot now, before the cls remap;
-        // unchanged-canonicals (lcRemap maps them to themselves) and
-        // already-canonical (no other cluster mapping to it) get
-        // skipped.
+        // Capture which canonicals absorbed >= 1 other cluster.  Used
+        // by both the post-merge realign (when MergeRealignEnable) AND
+        // by the identity-flow instrumentation below.
         std::unordered_set<int> mergedCanonicalLcs;
-        if (MergeRealignEnable != 0 && m_timeShiftReady) {
+        int chunkAbsorbedClusters = 0;
+        {
             std::unordered_map<int,int> canonAbsorbCount;
             for (auto& [src, canon] : lcRemap) {
-                if (src != canon) canonAbsorbCount[canon]++;
+                if (src != canon) {
+                    canonAbsorbCount[canon]++;
+                    ++chunkAbsorbedClusters;
+                }
             }
             for (auto& [canon, cnt] : canonAbsorbCount) {
                 if (cnt > 0) mergedCanonicalLcs.insert(canon);
             }
         }
+        callCanonicalsTouched += static_cast<int>(mergedCanonicalLcs.size());
+        callAbsorbedClusters  += chunkAbsorbedClusters;
 
-        for (auto& lc : cls)
-            if (lcRemap.count(lc)) lc = lcRemap[lc];
+        // Remap labels.  Count spikes whose label changed (lcRemap maps
+        // them to something different from themselves) -- this is the
+        // # of cls[] entries that will actually change value.
+        int chunkSpikesRelabeled = 0;
+        for (auto& lc : cls) {
+            auto it = lcRemap.find(lc);
+            if (it != lcRemap.end() && it->second != lc) {
+                lc = it->second;
+                ++chunkSpikesRelabeled;
+            }
+        }
+        callSpikesRelabeled += chunkSpikesRelabeled;
 
         // ── Aggregate waveforms from merged-away models into canonicals ───
         //
@@ -13744,8 +13776,13 @@ int  KK::WithinChunkTemplateMatch(
             mergeRealignChangedSpikes.size());
     }
 
-    Output("WithinChunkTemplateMatch: %d cluster pair(s) merged across all chunks\n",
-           totalMerged);
+    Output("WithinChunkTemplateMatch: %d cluster pair(s) merged across all "
+           "chunks  [identity flow: %d spikes relabeled, %d canonicals "
+           "absorbed %d clusters]\n",
+           totalMerged,
+           callSpikesRelabeled,
+           callCanonicalsTouched,
+           callAbsorbedClusters);
     return totalMerged;
 }
 
@@ -13823,6 +13860,12 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
     const int nCh     = static_cast<int>(chunkPoints.size());
     const int K       = std::max(1, MedianKnnTemplateMatchK);
     int totalMerged   = 0;
+
+    // Identity-flow instrumentation; see the identical block in
+    // WithinChunkTemplateMatch for semantics.
+    int callSpikesRelabeled   = 0;
+    int callCanonicalsTouched = 0;
+    int callAbsorbedClusters  = 0;
 
     // ── Hann taper precompute (no-op when flag = 0). ──
     const bool _useTaper = (TemplateMatchTaperHannSamples > 0
@@ -14124,22 +14167,35 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
             lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canon;
         }
 
-        // Capture merged canonicals before the cls remap (same as in
-        // WithinChunkTemplateMatch).  See that function's identical
-        // block for the rationale.
+        // Capture merged canonicals + identity-flow counters before
+        // the cls remap.  Mirrors the equivalent block in
+        // WithinChunkTemplateMatch.
         std::unordered_set<int> mergedCanonicalLcs;
-        if (MergeRealignEnable != 0 && m_timeShiftReady) {
+        int chunkAbsorbedClusters = 0;
+        {
             std::unordered_map<int,int> canonAbsorbCount;
             for (auto& [src, canon] : lcRemap) {
-                if (src != canon) canonAbsorbCount[canon]++;
+                if (src != canon) {
+                    canonAbsorbCount[canon]++;
+                    ++chunkAbsorbedClusters;
+                }
             }
             for (auto& [canon, cnt] : canonAbsorbCount) {
                 if (cnt > 0) mergedCanonicalLcs.insert(canon);
             }
         }
+        callCanonicalsTouched += static_cast<int>(mergedCanonicalLcs.size());
+        callAbsorbedClusters  += chunkAbsorbedClusters;
 
-        for (auto& lc : cls)
-            if (lcRemap.count(lc)) lc = lcRemap[lc];
+        int chunkSpikesRelabeled = 0;
+        for (auto& lc : cls) {
+            auto it = lcRemap.find(lc);
+            if (it != lcRemap.end() && it->second != lc) {
+                lc = it->second;
+                ++chunkSpikesRelabeled;
+            }
+        }
+        callSpikesRelabeled += chunkSpikesRelabeled;
 
         auto wmerge = [](std::vector<int16_t>& d, int& dN,
                          const std::vector<int16_t>& s, int sN) {
@@ -14229,7 +14285,12 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
     }
 
     Output("WithinChunkTemplateMatchMedianKnn (K=%d): %d cluster pair(s) "
-           "merged across all chunks\n", K, totalMerged);
+           "merged across all chunks  [identity flow: %d spikes relabeled, "
+           "%d canonicals absorbed %d clusters]\n",
+           K, totalMerged,
+           callSpikesRelabeled,
+           callCanonicalsTouched,
+           callAbsorbedClusters);
     return totalMerged;
 }
 
