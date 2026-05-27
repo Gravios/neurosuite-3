@@ -300,6 +300,17 @@ int   WaveKnnSkipMuaCluster1        = 1;
 // real-but-misclassified spikes from the noise cluster via KNN majority
 // vote.  Noise cluster is NEVER part of the reference pool.
 float WaveKnnNoiseSourceProbability = 0.0f;
+// WaveKnnMaskNeighbors — when 1 (default), wave_knn_split processes
+// source clusters sequentially in randomised order within each Run()
+// invocation, and masks the k-NN pool neighbours of every reassigned
+// spike from being eligible as a source later in the SAME call.
+// Prevents the mirror-split pathology: two clusters that overlap in
+// feature space would each carve a near-mirror sub-cluster out of
+// the same overlap region, producing two redundant new IDs for one
+// real region.  Masking the neighborhood after the first split
+// suppresses the mirror.  When 0, behaviour reverts to the original
+// flat-parallel algorithm with no ordering or masking.
+int   WaveKnnMaskNeighbors          = 1;
 
 // Phase4RefineEnable: master switch for the new Phase-4 rewrite.  When
 // enabled, replaces the existing WithinChunkTemplateMatch loop with the
@@ -545,6 +556,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(WaveKnnUseTraceFilter);
     INT_PARAM(WaveKnnSkipMuaCluster1);
     FLOAT_PARAM(WaveKnnNoiseSourceProbability);
+    INT_PARAM(WaveKnnMaskNeighbors);
     INT_PARAM(Phase4RefineEnable);
     INT_PARAM(Phase4RefineIters);
     INT_PARAM(AdaptModelEnable);

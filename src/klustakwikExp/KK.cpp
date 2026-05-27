@@ -14049,6 +14049,7 @@ void KK::WaveKnnSplitPerChunk(
             : 0u;
         cfg.residualBecomesNewCluster  = (WaveKnnResidualBecomesCluster != 0);
         cfg.minSourceAnisotropy        = WaveKnnMinSourceAnisotropy;
+        cfg.maskNeighbors              = (WaveKnnMaskNeighbors != 0);
         cfg.Verbose                    = (Verbose >= 2);
 
         auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
