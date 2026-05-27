@@ -4124,8 +4124,13 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             }
             LockedStderr( "[Phase 4] Within-chunk xcorr template matching (iter %d)\n",
                     _tmIter + 1);
-            int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
-                                                    NbChannels, NbSamplesPerSpike, TemplateMatchScore);
+            int _nMerged = (MedianKnnTemplateMatchEnable != 0)
+                ? WithinChunkTemplateMatchMedianKnn(
+                      chunkPoints, perChunkClass, perChunkModels,
+                      NbChannels, NbSamplesPerSpike, TemplateMatchScore)
+                : WithinChunkTemplateMatch(
+                      chunkPoints, perChunkClass, perChunkModels,
+                      NbChannels, NbSamplesPerSpike, TemplateMatchScore);
 
             // Phase 4b streak update — now that this iter's merge count
             // is known, compare against the iter's split-induced cluster
@@ -5443,8 +5448,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
             }
             LockedStderr( "[Phase 4] Within-chunk xcorr template matching (iter %d)\n",
                     _tmIter + 1);
-            int _nMerged = WithinChunkTemplateMatch(chunkPoints, perChunkClass, perChunkModels,
-                                                    NbChannels, NbSamplesPerSpike, TemplateMatchScore);
+            int _nMerged = (MedianKnnTemplateMatchEnable != 0)
+                ? WithinChunkTemplateMatchMedianKnn(
+                      chunkPoints, perChunkClass, perChunkModels,
+                      NbChannels, NbSamplesPerSpike, TemplateMatchScore)
+                : WithinChunkTemplateMatch(
+                      chunkPoints, perChunkClass, perChunkModels,
+                      NbChannels, NbSamplesPerSpike, TemplateMatchScore);
 
             // Phase 4b streak update — now that this iter's merge count
             // is known, compare against the iter's split-induced cluster
@@ -13268,6 +13278,371 @@ int  KK::WithinChunkTemplateMatch(
 
     Output("WithinChunkTemplateMatch: %d cluster pair(s) merged across all chunks\n",
            totalMerged);
+    return totalMerged;
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::WithinChunkTemplateMatchMedianKnn  (Phase 4 alternative)
+//
+// k-NN-restricted variant of WithinChunkTemplateMatch that operates on
+// per-cluster MEDIAN waveforms instead of the stored mean waveforms.
+//
+// Per Phase 4 iteration:
+//   0. For each cluster, gather its spike waveforms via
+//      TimeShiftReadSpikeWave and call BuildClusterMedianWaveform.
+//   1. Pre-screen: raw L2 between each pair of cluster MEDIAN templates
+//      (no xcorr alignment).
+//   2. For each cluster A, keep the top-K closest others by that L2.
+//   3. For each MUTUAL k-NN pair (B ∈ A.topK ∧ A ∈ B.topK), run the
+//      full xcorr-alignment merge gate (+ optional eigenvalue veto)
+//      on the MEDIAN templates.
+//   4. Union-find + canonical-id remap + weighted-mean accumulation +
+//      perChunkModels pruning — identical to WithinChunkTemplateMatch's
+//      commit path.
+//
+// Two reasons for median, not mean:
+//   * Robust to outlier spikes contaminating the template.  Mixture
+//     clusters where a minority sub-unit pulls the mean toward a
+//     misleading shape are handled cleanly — the median tracks the
+//     dominant sub-unit and ignores the minority.
+//   * For genuinely similar clusters (the merge targets), the median
+//     suppresses spike-to-spike variance that the alignment search
+//     would otherwise have to absorb; xcorr scores between true
+//     duplicates rise, scores between coincidentally-similar
+//     clusters fall.
+//
+// Cost analysis (n = clusters in chunk, w = nChan*nSamples, N̄ = mean
+// cluster size, M = maxShift):
+//   median build:    O(n · N̄ · w)            — sequential .spk reads
+//                                              (memcpy from mmap)
+//                                              + std::nth_element per
+//                                              waveform position
+//   L2 pre-screen:   O(n² · w)
+//   topK selection:  O(n · n log n)
+//   xcorr merge:     O(n · K · w · M)        — only on mutual k-NN pairs
+//
+// For a typical 30-cluster chunk with N̄ ≈ 500, this adds ~4 MB of
+// .spk reads (memory-bound when mmap'd) and ~15M nth_element ops
+// per chunk per iter.  Net runtime cost vs the mean version:
+// ~50–200 ms per chunk per iter on the user's RTX 5070 Ti / 9800X3D.
+//
+// Mutual k-NN gate motivation: relaxing the existing mutual-BEST
+// (k=1) requirement to mutual-K-NN lets a cluster have multiple
+// merge candidates per pass, but each merge still requires
+// symmetric agreement, so no cluster drags another into a merge
+// against its own ranking.  The k=K relaxation matters specifically
+// when several clusters are tightly grouped: with k=1, only the
+// strongest pair merges per pass and the rest wait for the next
+// alternation iter; with k=K, the whole group merges in one pass.
+//
+// Fallback: clusters whose median couldn't be built (no time-shift
+// backing store, or fewer than 2 member spikes) keep meanWav as
+// their template via the `tpl()` accessor inside the function.
+//
+// CLI: -MedianKnnTemplateMatchEnable / -MedianKnnTemplateMatchK
+// Drop-in replacement when MedianKnnTemplateMatchEnable != 0; same
+// return value (total pair-merges across all chunks).
+// ---------------------------------------------------------------------------
+int  KK::WithinChunkTemplateMatchMedianKnn(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nChan, int nSamplesPerSpike, float minScore)
+{
+    const int wElems  = nChan * nSamplesPerSpike;
+    const int maxShft = std::max(1, nSamplesPerSpike / 4);
+    const int nCh     = static_cast<int>(chunkPoints.size());
+    const int K       = std::max(1, MedianKnnTemplateMatchK);
+    int totalMerged   = 0;
+
+    for (int ck = 0; ck < nCh; ck++) {
+        auto& cls  = perChunkClass[ck];
+        auto& mdls = perChunkModels[ck];
+        const int n = static_cast<int>(mdls.size());
+        if (n < 2) continue;
+
+        // ── 0. Build a median template per cluster.
+        //
+        // Per Phase 4 iter, for each cluster, gather its spike waveforms
+        // via TimeShiftReadSpikeWave and call BuildClusterMedianWaveform.
+        // Median (not mean) is what distinguishes this variant from the
+        // all-pairs WithinChunkTemplateMatch — robust to outlier spikes
+        // contaminating a cluster's mean template, and (more importantly
+        // for the merge decision) sharper peaks when clusters share most
+        // of their structure but differ at a few sample positions.
+        //
+        // Cost: O(N · wElems) per cluster for the median computation
+        // (std::nth_element per position).  Across a 30-cluster, 500-
+        // spike-avg chunk and a 256-sample waveform, ~3.8 MB of .spk
+        // reads (memcpy from mmap when m_timeShiftSpkMap is non-null),
+        // ~15M nth_element ops — typically < 200 ms per chunk.
+        std::vector<std::vector<int16_t>> medianTpls(
+            static_cast<size_t>(n));
+        if (m_timeShiftReady) {
+            // Per-cluster spike global indices in this chunk.
+            std::vector<std::vector<int>> clusterSpikes(static_cast<size_t>(n));
+            std::unordered_map<int, int> lcToIdx;
+            for (int a = 0; a < n; a++) {
+                lcToIdx[mdls[static_cast<size_t>(a)].localClusterId] = a;
+            }
+            for (size_t i = 0; i < cls.size(); i++) {
+                auto it = lcToIdx.find(cls[i]);
+                if (it == lcToIdx.end()) continue;
+                clusterSpikes[static_cast<size_t>(it->second)]
+                    .push_back(chunkPoints[static_cast<size_t>(ck)][i]);
+            }
+
+            for (int a = 0; a < n; a++) {
+                const auto& cm = mdls[static_cast<size_t>(a)];
+                if (cm.localClusterId == 0) continue;
+                const auto& sp = clusterSpikes[static_cast<size_t>(a)];
+                const int   N  = static_cast<int>(sp.size());
+                if (N < 2) continue;   // can't median 0-1 spike clusters
+
+                std::vector<int16_t> waveBuf(
+                    static_cast<size_t>(N) * wElems, 0);
+                for (int i = 0; i < N; i++) {
+                    int16_t* dst = waveBuf.data() +
+                                   static_cast<ptrdiff_t>(i) * wElems;
+                    if (!TimeShiftReadSpikeWave(sp[static_cast<size_t>(i)],
+                                                 wElems, dst)) {
+                        std::memset(dst, 0,
+                                    static_cast<size_t>(wElems) *
+                                    sizeof(int16_t));
+                    }
+                }
+                KlustersRealign::BuildClusterMedianWaveform(
+                    waveBuf.data(), N,
+                    nChan, nSamplesPerSpike,
+                    medianTpls[static_cast<size_t>(a)]);
+            }
+        }
+
+        // Fallback: clusters that didn't get a median (no time-shift
+        // backing store, or N < 2) keep meanWav as the template.  This
+        // lets the function run even when realignment isn't initialised;
+        // the merge gate just degrades to the meanWav comparison for
+        // those specific clusters.  Tracked by `usingMedian[a]` only
+        // for log clarity below.
+        auto tpl = [&](int a) -> const std::vector<int16_t>& {
+            const auto& m = medianTpls[static_cast<size_t>(a)];
+            return m.empty() ? mdls[static_cast<size_t>(a)].meanWav : m;
+        };
+
+        // ── 1. Raw-L2 pre-screen between cluster MEDIAN templates
+        //       (with fall-through to meanWav for clusters that didn't
+        //       get a median; see `tpl` accessor above).
+        // dist[a*n + b] = Σ_i (median_a[i] - median_b[i])² over wElems.
+        // Sentinel for invalid pairs (noise cluster or size-mismatched
+        // template): std::numeric_limits<float>::infinity() so the
+        // partial_sort sends them to the end.
+        const float INF = std::numeric_limits<float>::infinity();
+        std::vector<float> dist(static_cast<size_t>(n) * n, INF);
+        for (int a = 0; a < n; a++) {
+            const auto& A = mdls[static_cast<size_t>(a)];
+            if (A.localClusterId == 0) continue;
+            const auto& tA = tpl(a);
+            if (static_cast<int>(tA.size()) != wElems) continue;
+            dist[static_cast<size_t>(a * n + a)] = INF;   // exclude self
+            for (int b = a + 1; b < n; b++) {
+                const auto& B = mdls[static_cast<size_t>(b)];
+                if (B.localClusterId == 0) continue;
+                const auto& tB = tpl(b);
+                if (static_cast<int>(tB.size()) != wElems) continue;
+                double d2 = 0.0;
+                for (int i = 0; i < wElems; i++) {
+                    const double diff =
+                        static_cast<double>(tA[static_cast<size_t>(i)])
+                      - static_cast<double>(tB[static_cast<size_t>(i)]);
+                    d2 += diff * diff;
+                }
+                const float fd = static_cast<float>(d2);
+                dist[static_cast<size_t>(a * n + b)] = fd;
+                dist[static_cast<size_t>(b * n + a)] = fd;
+            }
+        }
+
+        // ── 2. For each cluster A, find its top-K closest other clusters
+        //       (partial_sort by L2 distance).  Store as a set per A so
+        //       the mutual-k-NN check is O(1) lookup.
+        std::vector<std::set<int>> topK(static_cast<size_t>(n));
+        std::vector<int> idxBuf(static_cast<size_t>(n));
+        for (int a = 0; a < n; a++) {
+            if (mdls[static_cast<size_t>(a)].localClusterId == 0) continue;
+            std::iota(idxBuf.begin(), idxBuf.end(), 0);
+            const float* dA = &dist[static_cast<size_t>(a) * n];
+            const int kClamp = std::min(K, n - 1);
+            std::partial_sort(
+                idxBuf.begin(),
+                idxBuf.begin() + kClamp,
+                idxBuf.end(),
+                [dA](int u, int v) { return dA[u] < dA[v]; });
+            for (int t = 0; t < kClamp; t++) {
+                const int b = idxBuf[static_cast<size_t>(t)];
+                if (b == a) continue;
+                if (!std::isfinite(dA[b])) continue;
+                topK[static_cast<size_t>(a)].insert(b);
+            }
+        }
+
+        // ── 3. For each mutual-k-NN candidate pair (A, B), run the full
+        //       xcorr alignment + eigenvalue veto.  Same gate as the
+        //       all-pairs version; we just restrict which pairs reach it.
+        struct Edge { int a, b; float score; };
+        std::vector<Edge> edges;
+        edges.reserve(static_cast<size_t>(n) * K);
+        for (int a = 0; a < n; a++) {
+            for (int b : topK[static_cast<size_t>(a)]) {
+                if (b <= a) continue;   // process each pair once
+                if (!topK[static_cast<size_t>(b)].count(a)) continue;   // mutual
+
+                const auto& tA = tpl(a);
+                const auto& tB = tpl(b);
+                if (static_cast<int>(tA.size()) != wElems) continue;
+                if (static_cast<int>(tB.size()) != wElems) continue;
+
+                int sh = 0; float sc = 0.0f;
+                XcorrDispatch::compute(
+                    tA.data(), tB.data(),
+                    1, nChan, nSamplesPerSpike,
+                    maxShft, 0.0f, &sh, &sc);
+                if (sc < minScore) continue;
+
+                if (TemplateMatchEigRatio > 0.0f) {
+                    const double eigRatio = tmpl_union_eig_ratio(
+                        mdls[static_cast<size_t>(a)],
+                        mdls[static_cast<size_t>(b)]);
+                    if (eigRatio > static_cast<double>(TemplateMatchEigRatio)) {
+                        Output("  tmpl-medknn: chunk%d c%d+c%d xcorr=%.3f "
+                               "eig-ratio=%.2f > %.2f → VETO\n",
+                               ck,
+                               mdls[static_cast<size_t>(a)].localClusterId,
+                               mdls[static_cast<size_t>(b)].localClusterId,
+                               sc, eigRatio,
+                               static_cast<double>(TemplateMatchEigRatio));
+                        continue;
+                    }
+                }
+
+                edges.push_back({a, b, sc});
+            }
+        }
+
+        if (edges.empty()) continue;
+
+        // ── 4. Union-Find for transitive merges.  Apply edges in
+        //       descending xcorr score so the strongest pair "leads"
+        //       the component.  Same algorithm as the all-pairs version;
+        //       only the candidate set differs.
+        std::sort(edges.begin(), edges.end(),
+                  [](const Edge& x, const Edge& y) { return x.score > y.score; });
+
+        std::vector<int> parent(static_cast<size_t>(n));
+        std::iota(parent.begin(), parent.end(), 0);
+        auto Find = [&](int x) -> int {
+            while (parent[static_cast<size_t>(x)] != x) {
+                parent[static_cast<size_t>(x)] = parent[static_cast<size_t>(
+                    parent[static_cast<size_t>(x)])];
+                x = parent[static_cast<size_t>(x)];
+            }
+            return x;
+        };
+        auto Union = [&](int a, int b) {
+            a = Find(a); b = Find(b);
+            if (a != b) parent[static_cast<size_t>(b)] = a;
+        };
+
+        int chunkMerged = 0;
+        for (const Edge& e : edges) {
+            if (Find(e.a) == Find(e.b)) continue;
+            Union(e.a, e.b);
+            Output("  tmpl-medknn: chunk%d c%d+c%d xcorr=%.3f\n",
+                   ck,
+                   mdls[static_cast<size_t>(e.a)].localClusterId,
+                   mdls[static_cast<size_t>(e.b)].localClusterId,
+                   e.score);
+            chunkMerged++;
+            totalMerged++;
+        }
+
+        if (chunkMerged == 0) continue;
+
+        // ── 5. Remap perChunkClass + weighted mean accumulation +
+        //       model pruning — IDENTICAL to WithinChunkTemplateMatch's
+        //       post-merge logic.  Copy-paste rather than refactor:
+        //       both functions live in the same file and either could
+        //       evolve independently (e.g. if WithinChunkTemplateMatch
+        //       grows new gate semantics, the k-NN variant might not
+        //       inherit them automatically — that's intentional, the
+        //       user chose which version to run via the flag).
+        std::unordered_map<int,int> rootToCanonIdx;
+        for (int a = 0; a < n; a++) {
+            int root = Find(a);
+            auto it = rootToCanonIdx.find(root);
+            if (it == rootToCanonIdx.end() ||
+                mdls[static_cast<size_t>(a)].localClusterId <
+                mdls[static_cast<size_t>(it->second)].localClusterId)
+                rootToCanonIdx[root] = a;
+        }
+        std::unordered_map<int,int> lcRemap;
+        for (int a = 0; a < n; a++) {
+            int canon = mdls[static_cast<size_t>(
+                rootToCanonIdx[Find(a)])].localClusterId;
+            lcRemap[mdls[static_cast<size_t>(a)].localClusterId] = canon;
+        }
+        for (auto& lc : cls)
+            if (lcRemap.count(lc)) lc = lcRemap[lc];
+
+        auto wmerge = [](std::vector<int16_t>& d, int& dN,
+                         const std::vector<int16_t>& s, int sN) {
+            if (s.empty() || sN <= 0) return;
+            if (d.empty() || dN <= 0) { d = s; dN = sN; return; }
+            const size_t L = d.size();
+            for (size_t e = 0; e < L; e++) {
+                const int64_t num = static_cast<int64_t>(d[e]) * dN
+                                  + static_cast<int64_t>(s[e]) * sN;
+                d[e] = static_cast<int16_t>(num / (dN + sN));
+            }
+            dN += sN;
+        };
+
+        // Accumulate merged-away models into canonicals
+        for (auto& [root, canonIdx] : rootToCanonIdx) {
+            auto& dst = mdls[static_cast<size_t>(canonIdx)];
+            int runningN      = dst.nMembers;
+            int runningNLeft  = dst.nMembersLeft;
+            int runningNRight = dst.nMembersRight;
+            for (int a = 0; a < n; a++) {
+                if (a == canonIdx) continue;
+                if (Find(a) != root) continue;
+                auto& src = mdls[static_cast<size_t>(a)];
+                wmerge(dst.meanWav,      runningN,      src.meanWav,      src.nMembers);
+                wmerge(dst.meanWavLeft,  runningNLeft,  src.meanWavLeft,  src.nMembersLeft);
+                wmerge(dst.meanWavRight, runningNRight, src.meanWavRight, src.nMembersRight);
+            }
+            dst.nMembersLeft  = runningNLeft;
+            dst.nMembersRight = runningNRight;
+        }
+
+        // Remove merged-away ChunkModels
+        std::unordered_set<int> keepLc;
+        for (auto& [root, idx2] : rootToCanonIdx)
+            keepLc.insert(mdls[static_cast<size_t>(idx2)].localClusterId);
+        mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
+            [&](const ChunkModel& cm){ return !keepLc.count(cm.localClusterId); }),
+            mdls.end());
+
+        // Recompute nMembers on surviving models
+        for (auto& cm : mdls) {
+            cm.nMembers = 0;
+            for (const auto& lc : cls)
+                if (lc == cm.localClusterId) cm.nMembers++;
+        }
+    }
+
+    Output("WithinChunkTemplateMatchMedianKnn (K=%d): %d cluster pair(s) "
+           "merged across all chunks\n", K, totalMerged);
     return totalMerged;
 }
 

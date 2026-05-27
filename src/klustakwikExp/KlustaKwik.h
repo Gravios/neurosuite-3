@@ -297,6 +297,12 @@ extern float WaveKnnNoiseSourceProbability;
 // See KlustaKwik.cpp.  Sequential per-source-cluster processing with
 // k-NN-neighborhood masking inside wave_knn_split::Run.  Default 1.
 extern int   WaveKnnMaskNeighbors;
+
+// MedianKnnTemplateMatch — alternative Phase 4 merge.  See KlustaKwik.cpp
+// and KK::WithinChunkTemplateMatchMedianKnn.  Default 0 (off, use
+// all-pairs WithinChunkTemplateMatch).
+extern int   MedianKnnTemplateMatchEnable;
+extern int   MedianKnnTemplateMatchK;
 // Phase4RefineEnable: master switch for the rewritten Phase-4 pipeline
 // (proxy_isi → adapt_model → clust_quality → xcorr_match).  Default 0
 // (legacy WithinChunkTemplateMatch preserved).

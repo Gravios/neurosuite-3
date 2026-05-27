@@ -311,6 +311,32 @@ float WaveKnnNoiseSourceProbability = 0.0f;
 // suppresses the mirror.  When 0, behaviour reverts to the original
 // flat-parallel algorithm with no ordering or masking.
 int   WaveKnnMaskNeighbors          = 1;
+// ── MedianKnnTemplateMatch (Phase 4 alternative merge) ───────────────────
+// k-NN-restricted variant of WithinChunkTemplateMatch that operates on
+// per-cluster MEDIAN waveforms.  When MedianKnnTemplateMatchEnable != 0,
+// Phase 4's per-iter merge step dispatches to
+// WithinChunkTemplateMatchMedianKnn instead of the all-pairs
+// WithinChunkTemplateMatch.  See KK.cpp for the algorithm.
+//
+// Per iter, for each cluster: build median waveform from member spikes
+// (BuildClusterMedianWaveform via TimeShiftReadSpikeWave), then compute
+// raw L2 between every pair of cluster medians (cheap pre-screen),
+// keep each cluster's top-K closest others by L2, and run the full
+// xcorr-alignment merge gate + optional eigenvalue veto on the
+// resulting mutual k-NN pairs.  Merges fire when both clusters agree
+// the other is in their top-K closest AND the xcorr-aligned score
+// passes the threshold.
+//
+// Median (vs mean) is robust to outlier spikes and sharper for
+// mixture clusters where minority sub-units would otherwise pull
+// the mean toward a misleading shape.  k-NN restriction (vs all-
+// pairs) filters out spurious xcorr-amplified scores between
+// clusters that don't actually look like each other.
+//
+// Both functions co-exist; the flag picks which one runs.  Default 0
+// = all-pairs WithinChunkTemplateMatch (original behaviour).
+int   MedianKnnTemplateMatchEnable    = 0;
+int   MedianKnnTemplateMatchK         = 5;
 
 // Phase4RefineEnable: master switch for the new Phase-4 rewrite.  When
 // enabled, replaces the existing WithinChunkTemplateMatch loop with the
@@ -557,6 +583,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(WaveKnnSkipMuaCluster1);
     FLOAT_PARAM(WaveKnnNoiseSourceProbability);
     INT_PARAM(WaveKnnMaskNeighbors);
+    INT_PARAM(MedianKnnTemplateMatchEnable);
+    INT_PARAM(MedianKnnTemplateMatchK);
     INT_PARAM(Phase4RefineEnable);
     INT_PARAM(Phase4RefineIters);
     INT_PARAM(AdaptModelEnable);
