@@ -81,6 +81,7 @@ float ChunkMinutes           = 7.0f;    // chunk size; 0 disables chunking
 float ChunkOverlapMinutes    = 4.0f;    // trailing overlap appended to next chunk; 0 disables
 float ChunkPreseedFraction   = 0.1f;    // fraction of spikes for Phase 0 preseed; 0 disables
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
+char  PreseedCacheFile[STRLEN] = "";    // path to preseed cache file; empty = disabled
 float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML at startup
 float MergeThresh            = 0.0f;    // 0 = auto-calibrate to χ²(nDims, 0.99) at runtime
 int   GlobalMergeIter        = 0;       // Phase 6 warm-start EM iterations; 0 skips Phase 7 entirely
@@ -459,6 +460,7 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(ChunkOverlapMinutes);
     FLOAT_PARAM(ChunkPreseedFraction);
     STRING_PARAM(ChunkFile);
+    STRING_PARAM(PreseedCacheFile);
     FLOAT_PARAM(SamplingRate);
     FLOAT_PARAM(MergeThresh);
     INT_PARAM(GlobalMergeIter);

@@ -96,6 +96,24 @@ extern float ChunkMinutes;
 extern float ChunkOverlapMinutes;
 extern float ChunkPreseedFraction;
 extern char  ChunkFile[];
+
+// PreseedCacheFile — path to a binary file that holds the output of
+// PreseedSubsampleCEM (the global preseed cluster centres) keyed to the
+// input data and the relevant CEM parameters.  When set and the file
+// exists, KKE skips the preseed CEM and loads the cached centres
+// directly.  After computing fresh centres, KKE writes them to this
+// path for the next run.
+//
+// Cache invalidation is automatic: the file embeds the input .fet's
+// mtime + size and the parameters that affect preseed output
+// (RandomSeed, MaxClusters, ChunkPreseedFraction, PenaltyMix,
+// TimeMergeIter, nPoints, nDims, nSpatialDims).  Any mismatch
+// triggers a recompute.
+//
+// Empty (default) — disabled, run preseed every time.
+// Suggested path: "<dataset>.preseed.<group>.cache" alongside the
+// .fet file, so the cache is naturally co-located with its input.
+extern char  PreseedCacheFile[];
 extern float SamplingRate;
 extern float MergeThresh;
 extern int   GlobalMergeIter;
