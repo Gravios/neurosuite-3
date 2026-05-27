@@ -482,7 +482,8 @@ void KK::MStep() {
         const int c = AliveIndex[cc];
         if (c > 0 && nClassMembers[c] <= nDims) {
             ClassAlive[c] = 0;
-            Output("Deleted class %d: not enough members\n", c);
+            if (Verbose >= 2)
+                Output("Deleted class %d: not enough members\n", c);
         }
     }
     Reindex();
@@ -1220,7 +1221,7 @@ int KK::TrySplits() {
             if (!ClassAlive[c2]) { unusedCluster = c2; break; }
         if (unusedCluster == -1) { Output("No free clusters, abandoning split"); return DidSplit; }
 
-        if (Verbose >= 1) Output("Trying to split cluster %d (%d points)\n", c, clusterSize);
+        if (Verbose >= 2) Output("Trying to split cluster %d (%d points)\n", c, clusterSize);
         K2.nStartingClusters = 2;
         const float unsplitScore = K2.CEM(nullptr, 0);  // splits disabled: pure 1-cluster baseline
         K2.nStartingClusters = 13;  // noise + 12 real: gives CEM room to find multi-cluster structure
@@ -1266,10 +1267,13 @@ int KK::TrySplits() {
                          /*maxIter=*/       3,
                          /*phaseLabel=*/    "[trySplit-recheck]");
             const float newScore = K3.ComputeScore();
-            Output("Splitting cluster %d changes total score from %f to %f\n", c, Score, newScore);
+            if (Verbose >= 2)
+                Output("Splitting cluster %d changes total score from %f to %f\n",
+                       c, Score, newScore);
             if (newScore < Score) {
                 DidSplit = 1;
-                Output("So it's getting split into cluster %d.\n", unusedCluster);
+                if (Verbose >= 2)
+                    Output("So it's getting split into cluster %d.\n", unusedCluster);
                 for (int c2 = 0; c2 < MaxPossibleClusters; c2++) ClassAlive[c2] = K3.ClassAlive[c2];
                 for (int p  = 0; p  < nPoints;               p++) Class[p] = K3.Class[p];
 
@@ -1301,7 +1305,7 @@ int KK::TrySplits() {
                         }
                     }
                 }
-            } else Output("So it's not getting split.\n");
+            } else if (Verbose >= 2) Output("So it's not getting split.\n");
         }
     }
     return DidSplit;
