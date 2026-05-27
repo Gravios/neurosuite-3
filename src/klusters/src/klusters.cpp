@@ -5228,15 +5228,20 @@ void KlustersApp::slotSplitClusterByKnn()
     outer->addWidget(intro);
 
     QFormLayout* form = new QFormLayout();
+    // Prefill from the persisted user preferences (Settings → Preferences →
+    // General → KNN voting split).  On accept we write the values back so
+    // the dialog also acts as a "remember last-used" knob — matches what
+    // the user expects when the same action is invoked repeatedly during a
+    // session.
     QSpinBox*       kBox        = new QSpinBox(&dlg);
-    kBox->setRange(2, 200);            kBox->setValue(10);
+    kBox->setRange(2, 200);            kBox->setValue(configuration().getKnnK());
     QDoubleSpinBox* thrBox      = new QDoubleSpinBox(&dlg);
     thrBox->setRange(0.0, 1.0);        thrBox->setSingleStep(0.05);
-    thrBox->setDecimals(2);            thrBox->setValue(0.50);
+    thrBox->setDecimals(2);            thrBox->setValue(configuration().getKnnThreshold());
     QSpinBox*       minNewBox   = new QSpinBox(&dlg);
-    minNewBox->setRange(1, 10000);     minNewBox->setValue(5);
+    minNewBox->setRange(1, 10000);     minNewBox->setValue(configuration().getKnnMinNew());
     QSpinBox*       minRefBox   = new QSpinBox(&dlg);
-    minRefBox->setRange(10, 100000);   minRefBox->setValue(100);
+    minRefBox->setRange(10, 100000);   minRefBox->setValue(configuration().getKnnMinRef());
     form->addRow(tr("K (neighbours per spike):"),                kBox);
     form->addRow(tr("Majority threshold (fraction of K):"),       thrBox);
     form->addRow(tr("Min new-cluster size:"),                     minNewBox);
@@ -5255,6 +5260,17 @@ void KlustersApp::slotSplitClusterByKnn()
     const double thr         = thrBox->value();
     const int    minNew      = minNewBox->value();
     const int    minRef      = minRefBox->value();
+
+    // Persist the user's choices so the next Shift+K invocation prefills
+    // them (and so the values surface in Settings → Preferences).  Done
+    // unconditionally on accept, before any chance of an early return
+    // from the actual split — even a "no useful split" result is
+    // informative about the user's intent for the next attempt.
+    configuration().setKnnK(K);
+    configuration().setKnnThreshold(thr);
+    configuration().setKnnMinNew(minNew);
+    configuration().setKnnMinRef(minRef);
+    configuration().write();
 
     // ── Run the split ────────────────────────────────────────────────────
     QApplication::setOverrideCursor(Qt::WaitCursor);

@@ -67,6 +67,10 @@ void Configuration::read() {
     dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
     dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
     dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();
+    knnK         = settings.value("knnK",         10).toInt();
+    knnThreshold = settings.value("knnThreshold", 0.50).toDouble();
+    knnMinNew    = settings.value("knnMinNew",    5).toInt();
+    knnMinRef    = settings.value("knnMinRef",    100).toInt();
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     templateThresholdMin = settings.value("templateThresholdMin", 0.5).toDouble();
@@ -114,6 +118,10 @@ void Configuration::write() const {
     settings.setValue("dipSplitMinSize",      dipSplitMinSize);
     settings.setValue("dipSplitBloatFactor",  dipSplitBloatFactor);
     settings.setValue("dipSplitValleyThresh", dipSplitValleyThresh);
+    settings.setValue("knnK",         knnK);
+    settings.setValue("knnThreshold", knnThreshold);
+    settings.setValue("knnMinNew",    knnMinNew);
+    settings.setValue("knnMinRef",    knnMinRef);
     settings.setValue("markerSize", markerSize);
     settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("templateThresholdMin", templateThresholdMin);

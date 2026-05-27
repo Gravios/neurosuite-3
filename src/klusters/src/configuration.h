@@ -93,6 +93,16 @@ public:
     void setDipSplitBloatFactor(double v){dipSplitBloatFactor = qBound(0.0, v, 10.0);}
     void setDipSplitValleyThresh(double v){dipSplitValleyThresh = qBound(0.0, v, 1.0);}
 
+    // KNN voting split (Shift+K) defaults.  Mirrors the dipSplit pattern
+    // above: persisted in QSettings, prefilled into the modal Shift+K
+    // dialog, written back on accept so the dialog remembers the user's
+    // last-used values across sessions.  Bounds match the spinbox ranges
+    // in slotSplitClusterByKnn.
+    void setKnnK(int n)              {knnK         = qBound(2, n, 200);}
+    void setKnnThreshold(double v)   {knnThreshold = qBound(0.0, v, 1.0);}
+    void setKnnMinNew(int n)         {knnMinNew    = qBound(1, n, 10000);}
+    void setKnnMinRef(int n)         {knnMinRef    = qBound(10, n, 100000);}
+
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size) {markerSize = qBound(1, size, 10);}
 
@@ -166,6 +176,11 @@ public:
     double getDipSplitBloatFactor() const {return dipSplitBloatFactor;}
     double getDipSplitValleyThresh()const {return dipSplitValleyThresh;}
 
+    int    getKnnK()         const {return knnK;}
+    double getKnnThreshold() const {return knnThreshold;}
+    int    getKnnMinNew()    const {return knnMinNew;}
+    int    getKnnMinRef()    const {return knnMinRef;}
+
     /**Returns the scatter plot marker size.*/
     int getMarkerSize() const{return markerSize;}
 
@@ -214,6 +229,11 @@ public:
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
     double getDipSplitValleyThreshDefault() const {return 0.20;}
+
+    int    getKnnKDefault()         const {return 10;}
+    double getKnnThresholdDefault() const {return 0.50;}
+    int    getKnnMinNewDefault()    const {return 5;}
+    int    getKnnMinRefDefault()    const {return 100;}
 
     /**Returns the default scatter plot marker size.*/
     int getMarkerSizeDefault() const{return markerSizeDefault;}
@@ -308,6 +328,12 @@ private:
     int     dipSplitMinSize;       ///< minimum cluster size to consider for DipSplit
     double  dipSplitBloatFactor;   ///< Mahalanobis bloat threshold (× χ²(d, 0.9))
     double  dipSplitValleyThresh;  ///< minimum KDE valley depth in [0, 1]
+
+    // KNN voting split (Shift+K) — see slotSplitClusterByKnn.
+    int     knnK;                  ///< K neighbours per spike (2-200)
+    double  knnThreshold;          ///< majority vote threshold (fraction of K, 0-1)
+    int     knnMinNew;             ///< min size for a new cluster to be kept (1-10000)
+    int     knnMinRef;             ///< min "good" reference-cluster size (10-100000)
     /**Scatter plot marker size in pixels.*/
     int markerSize;
     /**Selection polygon line width in pixels.*/
