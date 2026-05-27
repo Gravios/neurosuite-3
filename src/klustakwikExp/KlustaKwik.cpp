@@ -133,6 +133,73 @@ float ResidualPCAConvTol          = 0.01f; ///< (Phase2bMode=3) early-stop thres
 float ResidualPCAMinScore         = 0.7f;  ///< (Phase2bMode=3) minimum normalised cross-correlation (in [-1,1]) required to accept a per-spike alignment shift in the post-loop XcorrDispatch realign pass.  Below this, the spike's shift stays at zero (matches Klusters' realignSpikes gate).  0.7 is the conventional value; lower (0.5) admits noisier alignments; higher (0.85) restricts to high-confidence matches.
 int   AlignPcaCenter              = 0;     ///< patch83/patch84: (Phase2bMode=3) PCA-centering alignment.  0 = off (default, classic xcorr alignment, m_cumShift updated).  1 = patch83 second-pass refine AFTER the xcorr iter loop, m_cumShift updated.  2 = patch84 REPLACEMENT mode: xcorr iter loop SKIPPED, replaced with in-memory circular-shift PCA-centering iter loop, m_cumShift NEVER touched (so TimeShiftFinalize writes no .spk/.fet/.res changes for any chunk run in mode 2).  Mode 2 exists to avoid the temporal-dispersion failure mode that comes from cumulative-shift accumulation: highpass-filtered waveforms tolerate circular wrap at their edges (no DC content), the PCA features are recomputed from the shifted in-memory waveforms each iter, and the resulting clustering benefits from alignment while leaving on-disk waveforms intact.  The user re-extracts .spk/.fet from .fil out-of-band after clustering if they want disk content to match.
 float TemplateMatchEigRatio  = 0.0f; ///< Phase 5 merge veto threshold: union-top-eig / max(per-cluster-top-eig). 0 disables (xcorr only).
+// TemplateMatchTaperHannSamples — when > 0, apply a Hann window taper
+// of full width N centred on PeakSampleIndex to each cluster's template
+// before xcorr in the Phase 4 within-chunk merge.
+//
+// Sample weighting:
+//     k = s - PeakSampleIndex
+//     w(s) = 0.5 * (1 + cos(2π·k / N))   for |k| ≤ N/2
+//     w(s) = 0                           otherwise
+//
+// At k=0 (peak): weight 1.  At k=±N/2 (window edge): weight 0.
+// Outside the window: zero (same as the previous boxcar version),
+// but the boundary is smooth instead of a step.
+//
+// Why a smooth taper (Hann) rather than a hard mask (boxcar):
+//   * Boxcar masks introduce a sharp on/off boundary; the xcorr is
+//     sensitive to whether two templates' baseline values at that
+//     boundary happen to line up.  Spurious lift in the score when
+//     they do, spurious depression when they don't.
+//   * Hann is the natural smooth analogue: same single "window
+//     width" parameter, no discontinuity, contribution of each
+//     sample decreases gracefully as you move from peak toward
+//     the window edges.
+//
+// Why a taper at all:
+//   * Spike-shape identity lives in the central peak region.  The
+//     flanks (start and end of the waveform window) carry mostly
+//     baseline noise.  Restricting the xcorr to the central
+//     samples lets two clusters that ARE the same unit but have
+//     different flank noise patterns pass the merge gate.
+//
+// Both WithinChunkTemplateMatch and WithinChunkTemplateMatchMedianKnn
+// honour this; for the median-knn variant the tapered templates are
+// used for both the L2 pre-screen and the xcorr merge gate so
+// candidate selection is consistent with merge gating.
+//
+// Default 0 = no taper (full-window xcorr, prior behaviour exactly).
+// Useful values: N ≈ half to two-thirds of nSamplesPerSpike (e.g. 16
+// for a 32-sample window, focusing on the central peak ±8 samples).
+int   TemplateMatchTaperHannSamples = 0;
+
+// MergeRealignEnable — when 1, after every chunk's merge commit in
+// WithinChunkTemplateMatch / WithinChunkTemplateMatchMedianKnn, run
+// klusters-faithful per-cluster realignment on each newly-merged
+// canonical cluster's spikes and refeaturize the changed spikes.
+//
+// Why: a merge combines two pre-merge clusters' spikes into one
+// canonical cluster.  The two source clusters may have been
+// individually aligned to slightly different peak positions; the
+// merged cluster's per-spike variance is then inflated by that
+// inter-source-cluster offset.  Realigning all spikes of the merged
+// cluster to its new (post-merge) mean template tightens this
+// variance — and Phase 5's cross-chunk vote + xcorr sees a more
+// confident template for the merged unit.
+//
+// Default 0 = no post-merge realignment.  Cost when enabled is
+// roughly proportional to (# merges per iter × mean cluster size);
+// for a 30-cluster chunk with 5 merges × 200 spikes each, ~50 ms
+// per chunk per iter on the user's hardware.  Uses the .fil
+// group-channel cache that patch 0031 introduced — no extra disk
+// reads beyond the first iter's cache warm-up.
+//
+// Independent of KlustersRealignAfterPhase4 (patch 0031): that one
+// realigns ALL clusters at the END of each Phase 4 iter; this one
+// realigns ONLY merged clusters IMMEDIATELY after each merge.
+// Both can be on at once — duplicate work on merged clusters is
+// idempotent (shifts converge after 1-2 calls).
+int   MergeRealignEnable              = 0;
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
@@ -549,6 +616,8 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(ResidualPCAMinScore);
     INT_PARAM(AlignPcaCenter);   // patch83
     FLOAT_PARAM(TemplateMatchEigRatio);
+    INT_PARAM(TemplateMatchTaperHannSamples);
+    INT_PARAM(MergeRealignEnable);
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
     FLOAT_PARAM(CrossChunkDriftSigma);
