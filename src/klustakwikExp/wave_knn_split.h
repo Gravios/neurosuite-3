@@ -209,6 +209,30 @@ struct Config {
     // all-source-spikes algorithm (no masking, no sequential ordering).
     bool maskNeighbors = true;
 
+    // When > 0, after the source-cluster random shuffle, truncate the
+    // processing list to AT MOST `maxSourcesPerCall` clusters per
+    // invocation.  Mimics klusters' interactive workflow where the
+    // user picks one source, processes it, observes the result, then
+    // picks the next.  Combined with the Phase 4b alternation loop's
+    // merge-after-split sequence, setting this to 1 means: each
+    // alternation iter splits exactly one source cluster, then the
+    // merge step runs and gets a chance to consolidate the resulting
+    // sub-clusters BEFORE the next iter picks another source.
+    //
+    // Trade-off:
+    //   * Smaller N (e.g. 1): conservative, slow convergence, but
+    //     fewer fragmentation/over-merge runaways.  Alternation loop
+    //     iterates more times (effectively once per source).
+    //   * 0 (default): all sources in one call.  Original behaviour;
+    //     with maskNeighbors=true this is the "sequential with
+    //     neighborhood mask" path from patch 0034.
+    //
+    // Source selection is random (uses cfg.rngSeed XOR'd with the
+    // same salt patch 0034 uses for ordering), so different
+    // alternation iters pick different sources.  No bias toward
+    // larger/smaller clusters.
+    int maxSourcesPerCall = 0;
+
     bool Verbose = false;
 };
 
