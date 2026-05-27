@@ -308,6 +308,17 @@ Result Run(const float*                       features,
         std::shuffle(sourceOrder.begin(), sourceOrder.end(), ordRng);
     }
 
+    // Optional cap: process at most cfg.maxSourcesPerCall sources this
+    // call.  When > 0 and shorter than the source set, the truncated
+    // tail is just left for a future call -- the cluster IDs that
+    // didn't run this time will be re-evaluated next call (with a fresh
+    // shuffle from the salted seed, so different sources surface across
+    // alternation iters).
+    if (cfg.maxSourcesPerCall > 0
+        && static_cast<int>(sourceOrder.size()) > cfg.maxSourcesPerCall) {
+        sourceOrder.resize(static_cast<size_t>(cfg.maxSourcesPerCall));
+    }
+
     // Spike-level mask: once a spike is in here, it is excluded from
     // being a source in any subsequent cluster's loop iteration.
     std::vector<char> maskedAsSrc(static_cast<size_t>(nPoints), 0);

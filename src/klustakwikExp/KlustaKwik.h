@@ -303,6 +303,9 @@ extern float WaveKnnNoiseSourceProbability;
 // See KlustaKwik.cpp.  Sequential per-source-cluster processing with
 // k-NN-neighborhood masking inside wave_knn_split::Run.  Default 1.
 extern int   WaveKnnMaskNeighbors;
+// Cap on source clusters processed per wave_knn_split::Run.  See
+// KlustaKwik.cpp.  Default 0 = unlimited.
+extern int   WaveKnnMaxSourcesPerCall;
 
 // MedianKnnTemplateMatch — alternative Phase 4 merge.  See KlustaKwik.cpp
 // and KK::WithinChunkTemplateMatchMedianKnn.  Default 0 (off, use

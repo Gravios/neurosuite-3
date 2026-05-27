@@ -378,6 +378,23 @@ float WaveKnnNoiseSourceProbability = 0.0f;
 // suppresses the mirror.  When 0, behaviour reverts to the original
 // flat-parallel algorithm with no ordering or masking.
 int   WaveKnnMaskNeighbors          = 1;
+// WaveKnnMaxSourcesPerCall — cap on number of source clusters
+// processed per wave_knn_split::Run invocation.  Default 0 = unlimited
+// (the patch-0034 sequential-with-mask path processes them all).
+//
+// Set to 1 to closely mimic klusters' interactive workflow: each
+// Phase 4b alternation iter picks one random source cluster, splits
+// it, and lets the subsequent merge step (WithinChunkTemplateMatch or
+// MedianKnn) consolidate the result before the next iter picks
+// another source.  Trades convergence speed for finer-grained
+// per-cluster diagnosis -- useful when default behaviour produces
+// runaway fragmentation.
+//
+// Reasonable intermediate values: 5-20 (handful of sources per iter).
+// Combined with the alternation loop's MaxIters cap, total per-pass
+// work scales accordingly: 1000 source clusters / 10-per-call * 50
+// alternation iters = 200 source-cluster decisions per Phase 4 pass.
+int   WaveKnnMaxSourcesPerCall      = 0;
 // ── MedianKnnTemplateMatch (Phase 4 alternative merge) ───────────────────
 // k-NN-restricted variant of WithinChunkTemplateMatch that operates on
 // per-cluster MEDIAN waveforms.  When MedianKnnTemplateMatchEnable != 0,
@@ -652,6 +669,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(WaveKnnSkipMuaCluster1);
     FLOAT_PARAM(WaveKnnNoiseSourceProbability);
     INT_PARAM(WaveKnnMaskNeighbors);
+    INT_PARAM(WaveKnnMaxSourcesPerCall);
     INT_PARAM(MedianKnnTemplateMatchEnable);
     INT_PARAM(MedianKnnTemplateMatchK);
     INT_PARAM(Phase4RefineEnable);
