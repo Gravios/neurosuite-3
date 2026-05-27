@@ -54,6 +54,12 @@ extern KlustaSave kSv;  // global in KlustaKwik.cpp
 #include <unordered_map>
 #include <vector>
 
+// Forward declaration of KlustersRealign::RealignStats so the per-cluster
+// realign helper below can take it by reference without pulling
+// klusters_realign.h into every translation unit that includes KK.h.
+// Definition lives in klusters_realign.h; KK.cpp includes that.
+namespace KlustersRealign { struct RealignStats; }
+
 class KK {
 public:
     // -----------------------------------------------------------------------
@@ -633,6 +639,59 @@ public:
     // by TimeShiftFinalize.
     int KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike);
 
+    // Per-chunk variant of KlustersStyleRealignAllClusters — operates on
+    // the live per-chunk cluster labels (perChunkClass) rather than the
+    // global Class[].  Used by the Phase 4 in-loop realignment hook.
+    //
+    // For each chunk:
+    //   * builds a [localClusterId -> spike global IDs] map from
+    //     chunkPoints[ck] indexed by perChunkClass[ck];
+    //   * calls KlustersStyleRealignOneCluster for each local cluster
+    //     (>= minSize, != 0/noise).
+    //
+    // Shifts commit to m_cumShift just like the global variant, and the
+    // changed-spike list is appended to outChangedSpikeIds for an
+    // efficient RefeaturizeChangedSpikes pass downstream.
+    //
+    // Returns total nSpikesChanged across all chunks.
+    int KlustersStyleRealignPerChunkClusters(
+            const std::vector<std::vector<int>>& chunkPoints,
+            const std::vector<std::vector<int>>& perChunkClass,
+            int nChan, int nSamplesPerSpike,
+            std::vector<int>& outChangedSpikeIds);
+
+    // Per-cluster realignment helper shared by the global and per-chunk
+    // variants.  Reads spike waveforms via TimeShiftReadSpikeWave (which
+    // honours m_cumShift), computes optimal per-spike shifts via
+    // KlustersRealign::ComputeClusterShiftsFlat, and commits to
+    // m_cumShift (clamped to ±m_timeShiftMaxAbs).  Returns the number
+    // of spikes whose cumulative shift changed; appends those spike
+    // global IDs to outChangedSpikeIds.
+    int KlustersStyleRealignOneCluster(
+            const std::vector<int>& spikeGlobalIds,
+            int nChan, int nSamplesPerSpike,
+            int peakPos, int maxShift, int minSize,
+            std::vector<int>& outChangedSpikeIds,
+            KlustersRealign::RealignStats& stats);
+
+    // Lazy load of <FileBase>.fil's group-channel subset into the
+    // m_filGroupCache buffer.  Reads .fil sequentially once, projecting
+    // each row through GroupChannelIds to drop the channels we don't
+    // need.  Returns true on success; false if .fil is missing,
+    // NbTotalChannels is unset, or memory allocation fails.  Cached
+    // for the lifetime of the KK instance.  Subsequent calls are no-ops.
+    bool EnsureFilGroupCache(int nChan);
+
+    // Selective version of RefeaturizeFromShifts: refeaturizes only the
+    // spikes listed in changedSpikeIds.  Reads from the mmap'd .fil
+    // (loaded lazily on first call) so repeated invocations are cheap.
+    // For each listed spike, uses m_cumShift[p] as the absolute shift
+    // from the original timestamp (matching RefeaturizeFromShifts'
+    // semantics).  No-op if the changed list is empty.
+    void RefeaturizeChangedSpikes(
+            const std::vector<int>& changedSpikeIds,
+            int nChan, int nSamplesPerSpike);
+
     // Energy-COM (centre-of-mass) per-spike realignment.  For each spike,
     // sums channel-energy across the .spk window, computes the
     // weighted-mean time index of that energy distribution, and applies
@@ -951,6 +1010,32 @@ public:
     // instead of running InitCentresFarthestPoint.
     // Layout: [nCentres × nDims], spatial dims only (time column = 0).
     std::vector<float> preseedCentres;
+
+    // ── .fil group-channel cache (for in-loop RefeaturizeChangedSpikes) ─
+    // The .fil file is sample-interleaved across ALL ADC channels in
+    // the recording (NbTotalChannels, typically 32–64).  For one spike
+    // group we only need GroupChannelIds (typically 4–8 of those
+    // channels).  Reading the full .fil into memory for every
+    // refeaturize call is wasteful; instead we read the .fil once
+    // sequentially and project just the group's channels into this
+    // cache, packed as int16_t [sessionSamples × nChan] in
+    // [sample][group-channel] order.
+    //
+    // Subsequent spike reads index directly:
+    //   int16_t v = m_filGroupCache[sampleOffset * nChan + c];
+    //
+    // Memory footprint for a typical 30-min, 32.5 kHz, 8-channel-per-
+    // group session is ~0.9 GB — vs ~7 GB for the full 64-ch file.
+    //
+    // Lazily populated by EnsureFilGroupCache() on first call; reused
+    // across the run.  m_filGroupSessionSamples is the sample count
+    // computed from the .fil's byte size; m_filGroupNChan records the
+    // nChan that was current at load time (the cache becomes invalid
+    // if nChan changes mid-run, which doesn't happen in practice).
+    // The std::vector cleans itself up; no explicit dtor needed.
+    std::vector<int16_t> m_filGroupCache;
+    int64_t              m_filGroupSessionSamples = 0;
+    int                  m_filGroupNChan          = 0;
 
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // GPU context — allocated by LoadData() when a device is present.

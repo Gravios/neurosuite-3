@@ -371,6 +371,12 @@ extern int   PerChannelSplitUseTroughTime;      ///< default 1
 // Default off.  The existing Phase 2b.5 single-pass KnnSplit is still
 // the default entry; this flag adds re-splitting inside Phase 4.
 extern int   AlternatingSplitMergeEnable;
+// See KlustaKwik.cpp for the full description.  Heavy in-Phase-4
+// realignment: applies the klusters-style xcorr realign per cluster
+// per chunk at the end of every Phase 4 iteration, with full
+// RefeaturizeChangedSpikes propagation so subsequent iters see the
+// shifts in both meanWav and PCA features.  Default 0.
+extern int   KlustersRealignAfterPhase4;
 // Cap on the number of Phase 4 iterations in which WaveKnnSplit runs.
 // Once reached, the Phase 4 loop continues with template-match-only
 // iters (still bounded by TemplateMatchIters) so over-fragments get
