@@ -1513,7 +1513,17 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
                     || nChanged == 0
                     || iter % FullStepEvery == 0);
 
-        if (iter > maxIter) { Output("%s: max iterations exceeded\n", phaseLabel); break; }
+        if (iter > maxIter) {
+            // The trySplit-recheck phase uses maxIter=3 as a stabiliser
+            // pass, not a convergence loop — hitting the cap is expected
+            // and not informative.  For real CEM convergence loops the
+            // warning stays useful at Verbose >= 1.
+            const bool _isTrySplitRecheck =
+                phaseLabel && std::strstr(phaseLabel, "trySplit") != nullptr;
+            if (!_isTrySplitRecheck)
+                Output("%s: max iterations exceeded\n", phaseLabel);
+            break;
+        }
 
         didSplit = 0;
         if (enableSplits && SplitEvery > 0 &&
@@ -12728,10 +12738,11 @@ void KK::RefractorySplitPerChunk(
             ++nAttempted;
 
             // Log the violation
-            Output("  RefractorySplit: chunk%d cluster%d  %d spikes  "
-                   "%.1f%% ISI contamination (%.1fms refract)\\n",
-                   ck, lc, nMem, contamRate * 100.0f,
-                   refractSamples / (SamplingRate > 0.0f ? SamplingRate : 30000.0f) * 1000.0f);
+            if (Verbose >= 2)
+                Output("  RefractorySplit: chunk%d cluster%d  %d spikes  "
+                       "%.1f%% ISI contamination (%.1fms refract)\n",
+                       ck, lc, nMem, contamRate * 100.0f,
+                       refractSamples / (SamplingRate > 0.0f ? SamplingRate : 30000.0f) * 1000.0f);
 
             // Partition: violators vs clean.
             // If all spikes are violators (highly contaminated), fall back to
@@ -12852,24 +12863,27 @@ void KK::RefractorySplitPerChunk(
             // but the rejection was logged as "no improvement" rather than
             // "no split", masking what actually happened.
             if (Ks.nClustersAlive <= 2) {
-                Output("  RefractorySplit: chunk%d cluster%d — CEM did not split "
-                       "(splitScore=%.4g, null=%.4g)\\n",
-                       ck, lc, splitScore, nullScore);
+                if (Verbose >= 2)
+                    Output("  RefractorySplit: chunk%d cluster%d — CEM did not split "
+                           "(splitScore=%.4g, null=%.4g)\n",
+                           ck, lc, splitScore, nullScore);
                 ++nRejNoSplit;
                 continue;
             }
             if (splitScore >= nullScore) {
-                Output("  RefractorySplit: chunk%d cluster%d — split worse than null "
-                       "(splitScore=%.4g, null=%.4g), keeping\\n",
-                       ck, lc, splitScore, nullScore);
+                if (Verbose >= 2)
+                    Output("  RefractorySplit: chunk%d cluster%d — split worse than null "
+                           "(splitScore=%.4g, null=%.4g), keeping\n",
+                           ck, lc, splitScore, nullScore);
                 ++nRejWorseNull;
                 continue;
             }
 
             // Apply split
-            Output("  RefractorySplit: chunk%d cluster%d -> %d sub-clusters "
-                   "(splitScore=%.4g < null=%.4g)\\n",
-                   ck, lc, Ks.nClustersAlive, splitScore, nullScore);
+            if (Verbose >= 2)
+                Output("  RefractorySplit: chunk%d cluster%d -> %d sub-clusters "
+                       "(splitScore=%.4g < null=%.4g)\n",
+                       ck, lc, Ks.nClustersAlive, splitScore, nullScore);
 
             // Find next free local ID
             int nextLocalId = 0;
