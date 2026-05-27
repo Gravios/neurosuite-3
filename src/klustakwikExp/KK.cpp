@@ -3070,10 +3070,15 @@ struct PreseedCacheHeader {
     int32_t  timeMergeIter;
 };
 
-// Stat the input .fet file; returns false if not found.
+// Stat the input .fet file (canonical .fet or stderiv .fetD variant);
+// returns false if neither exists.  Uses pickInputPath to match the
+// same resolution logic the rest of KKE uses to actually open the .fet.
 bool StatFetFile(uint64_t* outMtimeSec, uint64_t* outSize) {
-    char path[STRLEN];
-    snprintf(path, sizeof(path), "%s.fet.%d", FileBase, ElecNo);
+    char path[STRLEN + 32];
+    if (pickInputPath(path, sizeof(path), FileBase, "fet", ElecNo) < 0) {
+        // Neither .fet.<n> nor .fetD.<n> exists — caller error path.
+        return false;
+    }
     struct stat st{};
     if (stat(path, &st) != 0) return false;
     *outMtimeSec = static_cast<uint64_t>(st.st_mtime);
