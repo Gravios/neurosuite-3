@@ -13412,10 +13412,36 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                                     sizeof(int16_t));
                     }
                 }
-                KlustersRealign::BuildClusterMedianWaveform(
-                    waveBuf.data(), N,
-                    nChan, nSamplesPerSpike,
-                    medianTpls[static_cast<size_t>(a)]);
+                // Compute per-sample median across this cluster's spikes.
+                //
+                // Inlined here rather than calling
+                // KlustersRealign::BuildClusterMedianWaveform so this
+                // function doesn't depend on patch 0033's exposure of
+                // that helper (the patches went out in a bundle but
+                // may be applied independently — keep them composable).
+                //
+                // For each (channel, sample) position p, gather the N
+                // spike values into a scratch vector, std::nth_element
+                // to find the middle element, store.  O(N · wElems)
+                // per cluster — ~15M ops for a 30-cluster chunk with
+                // N=500 and wElems=256.
+                {
+                    auto& medianTpl = medianTpls[static_cast<size_t>(a)];
+                    medianTpl.assign(static_cast<size_t>(wElems), 0);
+                    std::vector<int16_t> col(static_cast<size_t>(N));
+                    const int midIdx = N / 2;
+                    for (int p = 0; p < wElems; ++p) {
+                        for (int i = 0; i < N; ++i) {
+                            col[static_cast<size_t>(i)] = waveBuf[
+                                static_cast<size_t>(i) * wElems + p];
+                        }
+                        std::nth_element(col.begin(),
+                                         col.begin() + midIdx,
+                                         col.end());
+                        medianTpl[static_cast<size_t>(p)] =
+                            col[static_cast<size_t>(midIdx)];
+                    }
+                }
             }
         }
 
