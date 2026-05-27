@@ -1501,7 +1501,15 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            if (Verbose >= 1)
+            // Per-iter trace.  Sub-trial CEMs (TrySplits' K2/K3, Phase 2b
+            // split test, RefractorySplit's per-cluster split test) are
+            // identified by 'split' in the phase label — they can fire
+            // thousands of times per run, drowning the top-level trace.
+            // Promoted to Verbose >= 2 to keep production runs readable.
+            const bool _isSubTrial =
+                phaseLabel && std::strstr(phaseLabel, "split") != nullptr;
+            const int  _traceVerbose = _isSubTrial ? 2 : 1;
+            if (Verbose >= _traceVerbose)
                 Output("  %s iter %d%c: %d clusters score %.7g nChanged %d\n",
                        phaseLabel, iter, FullStep ? 'F' : 'Q',
                        nClustersAlive, score, nChanged);
@@ -1554,7 +1562,7 @@ float KK::CEM(const char *CluFile, int Recurse) {
         /*enableSplits=*/   Recurse != 0,
         /*enableDistDump=*/ true,
         /*maxIter=*/        0,       // use global MaxIter
-        /*phaseLabel=*/     Recurse ? "iter" : "\titer");
+        /*phaseLabel=*/     Recurse ? "[CEM]" : "[CEM-split]");
 
     if (DistDump) fprintf(Distfp, "\n");
 
