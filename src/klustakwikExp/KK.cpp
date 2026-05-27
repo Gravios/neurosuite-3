@@ -1473,6 +1473,15 @@ void KK::ReportClusterQuality(const char* phaseLabel) const {
 float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
                     int maxIter, const char *phaseLabel)
 {
+    // Distinguish caller-supplied iter caps (Phase 2's timeMergeIter,
+    // Phase 2b's Phase2bMaxIter, etc) from the global-MaxIter default
+    // that's used when caller passes 0.  Hitting an explicit cap is
+    // EXPECTED — caller knew the phase would saturate the budget — and
+    // emitting "max iterations exceeded" for it spams the log (one line
+    // per chunk for Phase 2b on a 36-chunk run).  Hitting the global
+    // default IS informative: it means a CEM that should have converged
+    // didn't.  Only the latter case logs.
+    const bool _explicitCap = (maxIter > 0);
     if (maxIter <= 0) maxIter = MaxIter;
 
     int   iter = 0, nChanged = 1, lastStepFull = 1, didSplit = 0;
@@ -1522,13 +1531,14 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
                     || iter % FullStepEvery == 0);
 
         if (iter > maxIter) {
-            // The trySplit-recheck phase uses maxIter=3 as a stabiliser
-            // pass, not a convergence loop — hitting the cap is expected
-            // and not informative.  For real CEM convergence loops the
-            // warning stays useful at Verbose >= 1.
-            const bool _isTrySplitRecheck =
-                phaseLabel && std::strstr(phaseLabel, "trySplit") != nullptr;
-            if (!_isTrySplitRecheck)
+            // Only warn when the cap is the GLOBAL default — that signals
+            // a CEM phase that should have converged but didn't.  When
+            // the caller passed an explicit cap (Phase 2's timeMergeIter,
+            // Phase 2b's Phase2bMaxIter, trySplit-recheck's 3-iter
+            // stabiliser, …), hitting it is expected and the warning is
+            // pure noise (one line per chunk × runs).  See _explicitCap
+            // docstring at the top of RunEMLoop.
+            if (!_explicitCap)
                 Output("%s: max iterations exceeded\n", phaseLabel);
             break;
         }
@@ -2209,8 +2219,9 @@ float KK::CEMTwoPhase(int timeMergeIter) {
     // -----------------------------------------------------------------------
     // Phase 1: spatial CEM with farthest-point seeding
     // -----------------------------------------------------------------------
-    Output("CEMTwoPhase Phase 1: spatial clustering (%d dims, %d clusters)\n",
-           nSpatialDims, nStartingClusters);
+    if (Verbose >= 2)
+        Output("CEMTwoPhase Phase 1: spatial clustering (%d dims, %d clusters)\n",
+               nSpatialDims, nStartingClusters);
 
     // Temporarily reduce nDims so EStep/MStep operate on spatial dims only.
     // LogP, Mean, Cov are already allocated for nFullDims; we simply lie about
@@ -13545,11 +13556,12 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                         mdls[static_cast<size_t>(a)],
                         mdls[static_cast<size_t>(b)]);
                     if (eigRatio > static_cast<double>(TemplateMatchEigRatio)) {
-                        Output("  tmpl-medknn: chunk%d c%d+c%d xcorr=%.3f "
-                               "eig-ratio=%.2f > %.2f → VETO\n",
-                               ck,
-                               mdls[static_cast<size_t>(a)].localClusterId,
-                               mdls[static_cast<size_t>(b)].localClusterId,
+                        if (Verbose >= 1)
+                            Output("  tmpl-medknn: chunk%d c%d+c%d xcorr=%.3f "
+                                   "eig-ratio=%.2f > %.2f → VETO\n",
+                                   ck,
+                                   mdls[static_cast<size_t>(a)].localClusterId,
+                                   mdls[static_cast<size_t>(b)].localClusterId,
                                sc, eigRatio,
                                static_cast<double>(TemplateMatchEigRatio));
                         continue;
@@ -13588,8 +13600,9 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
         for (const Edge& e : edges) {
             if (Find(e.a) == Find(e.b)) continue;
             Union(e.a, e.b);
-            Output("  tmpl-medknn: chunk%d c%d+c%d xcorr=%.3f\n",
-                   ck,
+            if (Verbose >= 1)
+                Output("  tmpl-medknn: chunk%d c%d+c%d xcorr=%.3f\n",
+                       ck,
                    mdls[static_cast<size_t>(e.a)].localClusterId,
                    mdls[static_cast<size_t>(e.b)].localClusterId,
                    e.score);
