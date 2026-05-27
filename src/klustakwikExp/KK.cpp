@@ -3018,6 +3018,189 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// PreseedSubsampleCEM — cache helpers
+//
+// On-disk format (little-endian; KKE only runs on x86_64 / aarch64 in
+// practice).  Header followed by the flat centres array:
+//
+//   char     magic[8]        = "KKEPRSD1"   // KKE PReSeeD format v1
+//   uint32_t headerSize      = sizeof(header bytes that follow magic)
+//   uint64_t fetMtimeSec     = mtime of input .fet file
+//   uint64_t fetSize         = bytes of input .fet file
+//   int32_t  nPoints
+//   int32_t  nDims
+//   int32_t  nSpatialDims
+//   int32_t  nCentres        = nFound returned by the CEM
+//   float    preseedFraction
+//   int32_t  randomSeed
+//   int32_t  maxClusters
+//   float    penaltyMix
+//   int32_t  timeMergeIter
+//   ── then nCentres * nSpatialDims float32 values ──
+//
+// Cache is rejected (recompute) if ANY field differs from the current
+// run's value.  Input-file mtime+size guards against changing input
+// data without changing parameters.
+// ---------------------------------------------------------------------------
+namespace {
+
+constexpr char kPreseedMagic[8] = {'K','K','E','P','R','S','D','1'};
+
+struct PreseedCacheHeader {
+    char     magic[8];
+    uint32_t headerSize;
+    uint64_t fetMtimeSec;
+    uint64_t fetSize;
+    int32_t  nPoints;
+    int32_t  nDims;
+    int32_t  nSpatialDims;
+    int32_t  nCentres;
+    float    preseedFraction;
+    int32_t  randomSeed;
+    int32_t  maxClusters;
+    float    penaltyMix;
+    int32_t  timeMergeIter;
+};
+
+// Stat the input .fet file; returns false if not found.
+bool StatFetFile(uint64_t* outMtimeSec, uint64_t* outSize) {
+    char path[STRLEN];
+    snprintf(path, sizeof(path), "%s.fet.%d", FileBase, ElecNo);
+    struct stat st{};
+    if (stat(path, &st) != 0) return false;
+    *outMtimeSec = static_cast<uint64_t>(st.st_mtime);
+    *outSize     = static_cast<uint64_t>(st.st_size);
+    return true;
+}
+
+// Try to load cached preseed centres.  Returns empty vector on any
+// mismatch or I/O failure.
+std::vector<float> TryLoadPreseedCache(int    nPoints,
+                                        int    nDims,
+                                        int    nSpatialDims,
+                                        float  preseedFraction,
+                                        int    timeMergeIter) {
+    if (PreseedCacheFile[0] == '\0') return {};
+
+    FILE* fp = fopen(PreseedCacheFile, "rb");
+    if (!fp) return {};   // first run, expected
+
+    PreseedCacheHeader h{};
+    if (fread(&h, sizeof(h), 1, fp) != 1) {
+        fclose(fp);
+        Output("PreseedSubsampleCEM: cache header read failed — recomputing\n");
+        return {};
+    }
+    if (memcmp(h.magic, kPreseedMagic, 8) != 0 ||
+        h.headerSize != sizeof(PreseedCacheHeader) - 8) {
+        fclose(fp);
+        Output("PreseedSubsampleCEM: cache magic/size mismatch — recomputing\n");
+        return {};
+    }
+
+    uint64_t curMtime = 0, curSize = 0;
+    if (!StatFetFile(&curMtime, &curSize)) {
+        fclose(fp);
+        Output("PreseedSubsampleCEM: input .fet stat failed — recomputing\n");
+        return {};
+    }
+
+    // Validate every field.
+    const bool valid =
+        h.fetMtimeSec     == curMtime &&
+        h.fetSize         == curSize  &&
+        h.nPoints         == nPoints  &&
+        h.nDims           == nDims    &&
+        h.nSpatialDims    == nSpatialDims &&
+        h.preseedFraction == preseedFraction &&
+        h.randomSeed      == RandomSeed &&
+        h.maxClusters     == MaxClusters &&
+        h.penaltyMix      == PenaltyMix &&
+        h.timeMergeIter   == timeMergeIter;
+
+    if (!valid) {
+        fclose(fp);
+        Output("PreseedSubsampleCEM: cache key mismatch — recomputing "
+               "(input or parameter changed since last run)\n");
+        return {};
+    }
+    if (h.nCentres <= 0 || h.nCentres > 1000000) {
+        fclose(fp);
+        Output("PreseedSubsampleCEM: cache nCentres=%d out of range — recomputing\n",
+               h.nCentres);
+        return {};
+    }
+
+    std::vector<float> centres(
+        static_cast<size_t>(h.nCentres) * nSpatialDims, 0.0f);
+    const size_t want = centres.size();
+    if (fread(centres.data(), sizeof(float), want, fp) != want) {
+        fclose(fp);
+        Output("PreseedSubsampleCEM: cache body read failed (wanted %zu floats) — "
+               "recomputing\n", want);
+        return {};
+    }
+    fclose(fp);
+
+    Output("PreseedSubsampleCEM: cache HIT — loaded %d centres from %s\n",
+           h.nCentres, PreseedCacheFile);
+    return centres;
+}
+
+// Write computed centres to the cache file.  Errors are logged but not
+// fatal; failing to write a cache shouldn't break the run.
+void SavePreseedCache(const std::vector<float>& centres,
+                      int    nPoints,
+                      int    nDims,
+                      int    nSpatialDims,
+                      float  preseedFraction,
+                      int    timeMergeIter) {
+    if (PreseedCacheFile[0] == '\0') return;
+    if (centres.empty()) return;
+
+    uint64_t mtime = 0, size = 0;
+    if (!StatFetFile(&mtime, &size)) {
+        Output("PreseedSubsampleCEM: input .fet stat failed — cache not written\n");
+        return;
+    }
+    FILE* fp = fopen(PreseedCacheFile, "wb");
+    if (!fp) {
+        Output("PreseedSubsampleCEM: cannot open %s for writing — cache not written\n",
+               PreseedCacheFile);
+        return;
+    }
+
+    PreseedCacheHeader h{};
+    memcpy(h.magic, kPreseedMagic, 8);
+    h.headerSize      = static_cast<uint32_t>(sizeof(PreseedCacheHeader) - 8);
+    h.fetMtimeSec     = mtime;
+    h.fetSize         = size;
+    h.nPoints         = nPoints;
+    h.nDims           = nDims;
+    h.nSpatialDims    = nSpatialDims;
+    h.nCentres        = static_cast<int32_t>(centres.size() / nSpatialDims);
+    h.preseedFraction = preseedFraction;
+    h.randomSeed      = RandomSeed;
+    h.maxClusters     = MaxClusters;
+    h.penaltyMix      = PenaltyMix;
+    h.timeMergeIter   = timeMergeIter;
+
+    const bool ok_h = (fwrite(&h, sizeof(h), 1, fp) == 1);
+    const bool ok_b = (fwrite(centres.data(), sizeof(float), centres.size(), fp)
+                       == centres.size());
+    fclose(fp);
+    if (!ok_h || !ok_b) {
+        Output("PreseedSubsampleCEM: short write to %s — cache may be corrupt\n",
+               PreseedCacheFile);
+        return;
+    }
+    Output("PreseedSubsampleCEM: cache SAVED — %d centres to %s\n",
+           h.nCentres, PreseedCacheFile);
+}
+
+}   // anonymous namespace
+
+// ---------------------------------------------------------------------------
 // PreseedSubsampleCEM
 //
 // Phase 0 for chunked CEM: randomly sample preseedFraction of all spikes,
@@ -3030,6 +3213,11 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
 // model matching sees more consistent cluster IDs and fewer spurious splits.
 //
 // Returns empty vector on failure (too few spikes, bad fraction, etc.).
+//
+// If PreseedCacheFile is set and the cache validates against the current
+// inputs and parameters, the cached centres are returned without
+// recomputing.  After a fresh compute, centres are written back to the
+// cache for the next run.
 // ---------------------------------------------------------------------------
 std::vector<float> KK::PreseedSubsampleCEM(float preseedFraction,
                                             int   nCentres,
@@ -3040,6 +3228,13 @@ std::vector<float> KK::PreseedSubsampleCEM(float preseedFraction,
         Output("PreseedSubsampleCEM: invalid fraction %.3f or nCentres %d\n",
                preseedFraction, nCentres);
         return {};
+    }
+
+    // ── Try cache first ──
+    {
+        std::vector<float> cached = TryLoadPreseedCache(
+            nPoints, nDims, nSpatialDims, preseedFraction, timeMergeIter);
+        if (!cached.empty()) return cached;
     }
 
     const int nSub = std::max(nCentres * nSpatialDims * 3,
@@ -3098,6 +3293,11 @@ std::vector<float> KK::PreseedSubsampleCEM(float preseedFraction,
         for (int d = 0; d < nSpatialDims; d++)
             centres[cc * nSpatialDims + d] = Ks.Mean[c * nDims + d];
     }
+
+    // ── Persist for next run ──
+    SavePreseedCache(centres, nPoints, nDims, nSpatialDims,
+                     preseedFraction, timeMergeIter);
+
     return centres;
 }
 
