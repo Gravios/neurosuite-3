@@ -137,6 +137,11 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 dataReady = true;
                 setCursor(Qt::ArrowCursor);
                 update();
+                // Notify external listeners (e.g. KlustersApp Shift+S reorder
+                // waiting for a stale matrix to refresh) that fresh data is in.
+                // Emitted last so observers seeing the signal can immediately
+                // read matrixData() / matrixComputedClusterList() and trust it.
+                emit matrixUpdated();
             } else {
                 // Stale result discarded — restore cursor if no other thread is still
                 // computing, so the UI is not stuck in wait-cursor state.

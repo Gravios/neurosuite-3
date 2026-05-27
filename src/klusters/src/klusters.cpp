@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <memory>     // std::make_shared — used by Shift+S stale-matrix wait
 /***************************************************************************
                           klusters.cpp  -  description
                              -------------------
@@ -85,6 +86,7 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QAbstractSpinBox>
+#include <QPointer>   // QPointer guard for the Shift+S stale-matrix wait
 #include "spinbox.h"
 
 #include <QDebug>
@@ -3763,6 +3765,67 @@ void KlustersApp::slotReorderClustersBySimilarity()
     }
 
     if (!simMatrix) return;
+
+    // ── Auto-update if the chosen matrix is stale ─────────────────────────
+    // Reordering uses the similarity matrix as ground truth for the
+    // single-linkage merge.  If the matrix is out of date (red-bordered
+    // ErrorMatrixView, or isStale TemplateMatrixView) the reorder would
+    // operate on cluster IDs and similarities that no longer match the
+    // current cluster state — producing a wrong rename in the best case
+    // and a renumberPartial reject (nRenamed < 0) in the worst.
+    //
+    // Strategy: hook a one-shot connection on the matrix's matrixUpdated()
+    // signal that re-invokes this same slot, then trigger the update and
+    // return.  On the second invocation the matrix is fresh and we fall
+    // through to the algorithm.  QPointer guards against the view being
+    // destroyed while we wait (dock close, document close).  The
+    // single-shot connection self-disconnects so a later natural
+    // matrixUpdated() (e.g. user presses U) won't accidentally re-fire
+    // the reorder.
+    QObject* chosenMatrixView = nullptr;
+    bool     chosenIsStale    = false;
+    if (emvReady && !tmvReady) {
+        chosenMatrixView = emv;
+        chosenIsStale    = emv->isOutOfDate();
+    } else if (tmvReady && !emvReady) {
+        chosenMatrixView = tmv;
+        chosenIsStale    = tmv->isOutOfDate();
+    } else if (emvReady && tmvReady) {
+        if (m_lastMatrixUsed == MatrixKind::TEMPLATE_MATRIX_KIND) {
+            chosenMatrixView = tmv;
+            chosenIsStale    = tmv->isOutOfDate();
+        } else {
+            chosenMatrixView = emv;
+            chosenIsStale    = emv->isOutOfDate();
+        }
+    }
+    if (chosenIsStale && chosenMatrixView) {
+        statusBar()->showMessage(
+            tr("Reorder: %1 matrix is out of date; recomputing then "
+               "reordering…").arg(QString::fromLatin1(matrixLabel)),
+            3000);
+        QPointer<QObject> guarded(chosenMatrixView);
+        // Use a self-disconnecting lambda rather than a Qt::SingleShotConnection
+        // for portability — SingleShotConnection requires Qt 6.0+, and
+        // disconnect-by-Connection-handle works on every Qt version the
+        // project supports.
+        auto conn = std::make_shared<QMetaObject::Connection>();
+        auto callback = [this, guarded, conn]() {
+            QObject::disconnect(*conn);
+            if (guarded)  // matrix view may have been closed while we waited
+                this->slotReorderClustersBySimilarity();
+        };
+        if (auto* emvP = qobject_cast<ErrorMatrixView*>(chosenMatrixView)) {
+            *conn = connect(emvP, &ErrorMatrixView::matrixUpdated,
+                            this, callback);
+            emvP->updateMatrixContents();
+        } else if (auto* tmvP = qobject_cast<TemplateMatrixView*>(chosenMatrixView)) {
+            *conn = connect(tmvP, &TemplateMatrixView::matrixUpdated,
+                            this, callback);
+            tmvP->updateMatrixContents();
+        }
+        return;
+    }
 
     // ── Build the working order, excluding 0 and 1 (pinned at the front) ──
     // matrixCidToRow gives, for each cluster ID c in the matrix, its
