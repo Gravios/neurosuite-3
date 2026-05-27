@@ -307,6 +307,12 @@ extern int   WaveKnnMaskNeighbors;
 // KlustaKwik.cpp.  Default 0 = unlimited.
 extern int   WaveKnnMaxSourcesPerCall;
 
+// FullCemSplit — Phase 4b per-cluster full CEM splitter.  See
+// KlustaKwik.cpp doc block for design.
+extern int   FullCemSplitEnable;
+extern int   FullCemSplitMaxSourcesPerCall;
+extern int   FullCemSplitMinClusterSize;
+
 // MedianKnnTemplateMatch — alternative Phase 4 merge.  See KlustaKwik.cpp
 // and KK::WithinChunkTemplateMatchMedianKnn.  Default 0 (off, use
 // all-pairs WithinChunkTemplateMatch).
