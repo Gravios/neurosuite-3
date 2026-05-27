@@ -4144,6 +4144,31 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             }
 
 
+            // Phase 4b heavy realignment: at the END of every Phase 4 iter,
+            // realign each per-chunk cluster's spikes (klusters-faithful
+            // xcorr against the cluster's mean) and refeaturize only the
+            // changed spikes from the cached .fil group channels.  The
+            // next iter's meanWav harvest (which reads .spk through
+            // m_cumShift) and Phase 4b WaveKnnSplit (which reads Data[])
+            // both see the realigned state.
+            //
+            // Gated on KlustersRealignAfterPhase4; requires
+            // KlustersRealignEnable so MaxShift/MinSize have valid values.
+            if (KlustersRealignAfterPhase4 != 0 &&
+                m_timeShiftReady &&
+                NbChannels > 0 && NbSamplesPerSpike > 0) {
+                std::vector<int> _changedSpikes;
+                _changedSpikes.reserve(1024);
+                const int _nChanged = KlustersStyleRealignPerChunkClusters(
+                    chunkPoints, perChunkClass,
+                    NbChannels, NbSamplesPerSpike,
+                    _changedSpikes);
+                if (_nChanged > 0) {
+                    RefeaturizeChangedSpikes(
+                        _changedSpikes, NbChannels, NbSamplesPerSpike);
+                }
+            }
+
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
         }
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
@@ -5437,6 +5462,31 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     _altNetGrowthStreak);
             }
 
+
+            // Phase 4b heavy realignment: at the END of every Phase 4 iter,
+            // realign each per-chunk cluster's spikes (klusters-faithful
+            // xcorr against the cluster's mean) and refeaturize only the
+            // changed spikes from the cached .fil group channels.  The
+            // next iter's meanWav harvest (which reads .spk through
+            // m_cumShift) and Phase 4b WaveKnnSplit (which reads Data[])
+            // both see the realigned state.
+            //
+            // Gated on KlustersRealignAfterPhase4; requires
+            // KlustersRealignEnable so MaxShift/MinSize have valid values.
+            if (KlustersRealignAfterPhase4 != 0 &&
+                m_timeShiftReady &&
+                NbChannels > 0 && NbSamplesPerSpike > 0) {
+                std::vector<int> _changedSpikes;
+                _changedSpikes.reserve(1024);
+                const int _nChanged = KlustersStyleRealignPerChunkClusters(
+                    chunkPoints, perChunkClass,
+                    NbChannels, NbSamplesPerSpike,
+                    _changedSpikes);
+                if (_nChanged > 0) {
+                    RefeaturizeChangedSpikes(
+                        _changedSpikes, NbChannels, NbSamplesPerSpike);
+                }
+            }
 
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
         }
@@ -7772,6 +7822,435 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
             stats.nSpikesReadFailed);
 
     return nSpikesChanged;
+}
+
+// ---------------------------------------------------------------------------
+// KK::KlustersStyleRealignOneCluster
+//
+// Per-cluster body of the realign algorithm — shared by the global
+// AllClusters variant (above) and the per-chunk variant (below).  Reads
+// each spike's waveform via TimeShiftReadSpikeWave (which honours
+// m_cumShift), computes optimal integer shifts via
+// KlustersRealign::ComputeClusterShiftsFlat, and commits to m_cumShift
+// (clamped at ±m_timeShiftMaxAbs).
+//
+// Spikes whose committed shift actually changed are appended to
+// outChangedSpikeIds so the caller can drive a focused refeaturize
+// pass over just those spikes.
+//
+// Returns nSpikesChanged for this cluster.  stats accumulates across
+// calls.
+// ---------------------------------------------------------------------------
+int KK::KlustersStyleRealignOneCluster(
+        const std::vector<int>& spikeGlobalIds,
+        int nChan, int nSamplesPerSpike,
+        int peakPos, int maxShift, int minSize,
+        std::vector<int>& outChangedSpikeIds,
+        KlustersRealign::RealignStats& stats)
+{
+    (void)peakPos;   // peakPos consumed by ComputeClusterShiftsFlat below
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int N           = static_cast<int>(spikeGlobalIds.size());
+    if (N < minSize) { ++stats.nClustersSkipped; return 0; }
+
+    // ── Read all N spikes' waveforms ──
+    std::vector<int16_t> waveBuf(static_cast<size_t>(N) * waveSamples, 0);
+    int nReadOk = 0;
+    for (int i = 0; i < N; ++i) {
+        int16_t* dst = waveBuf.data() +
+                       static_cast<ptrdiff_t>(i) * waveSamples;
+        if (TimeShiftReadSpikeWave(spikeGlobalIds[static_cast<size_t>(i)],
+                                   waveSamples, dst)) {
+            ++nReadOk;
+        } else {
+            std::memset(dst, 0,
+                        static_cast<size_t>(waveSamples) * sizeof(int16_t));
+            ++stats.nSpikesReadFailed;
+        }
+    }
+    if (nReadOk < minSize) { ++stats.nClustersSkipped; return 0; }
+
+    // ── Compute per-spike shifts ──
+    std::vector<int>   shifts;
+    std::vector<float> scores;
+    const bool ok = KlustersRealign::ComputeClusterShiftsFlat(
+        waveBuf.data(), N,
+        nChan, nSamplesPerSpike, peakPos, maxShift,
+        shifts, scores);
+    if (!ok) { ++stats.nClustersSkipped; return 0; }
+
+    // ── Commit shifts ──
+    int nChanged = 0;
+    long long sumAbs = 0;
+    int maxAbs = 0;
+    for (int i = 0; i < N; ++i) {
+        const int p  = spikeGlobalIds[static_cast<size_t>(i)];
+        const int sh = shifts[static_cast<size_t>(i)];
+        if (sh == 0) continue;
+
+        const int oldCum = m_cumShift[static_cast<size_t>(p)];
+        int       newCum = oldCum + sh;
+        if (newCum >  m_timeShiftMaxAbs) newCum =  m_timeShiftMaxAbs;
+        if (newCum < -m_timeShiftMaxAbs) newCum = -m_timeShiftMaxAbs;
+        if (newCum == oldCum) continue;
+
+        m_cumShift[static_cast<size_t>(p)] = newCum;
+        outChangedSpikeIds.push_back(p);
+        ++nChanged;
+        sumAbs += std::abs(sh);
+        if (std::abs(sh) > maxAbs) maxAbs = std::abs(sh);
+    }
+
+    stats.nSpikesEvaluated += N;
+    stats.nSpikesRealigned += static_cast<int>(
+        std::count_if(shifts.begin(), shifts.end(),
+                      [](int s){ return s != 0; }));
+    stats.maxAbsShift = std::max(stats.maxAbsShift, maxAbs);
+    ++stats.nClustersProcessed;
+    (void)sumAbs;   // accumulated globally by caller via stats.nSpikesRealigned
+    return nChanged;
+}
+
+// ---------------------------------------------------------------------------
+// KK::KlustersStyleRealignPerChunkClusters
+//
+// Per-chunk variant.  Iterates over chunks; for each chunk, groups
+// chunk-local spike indices by their per-chunk cluster label and calls
+// KlustersStyleRealignOneCluster on each.  Shifts commit to m_cumShift
+// just like the global variant; changed spike global IDs are appended
+// to outChangedSpikeIds so the caller can refeaturize selectively.
+//
+// Designed to be called inside the Phase 4 loop, AFTER the merge step
+// (so meanWav harvesting at the top of the next iter sees the freshly
+// realigned spikes).  Caller is expected to follow up with
+// RefeaturizeChangedSpikes to propagate the shifts into Data[].
+//
+// Returns total nSpikesChanged across all chunks.
+// ---------------------------------------------------------------------------
+int KK::KlustersStyleRealignPerChunkClusters(
+        const std::vector<std::vector<int>>& chunkPoints,
+        const std::vector<std::vector<int>>& perChunkClass,
+        int nChan, int nSamplesPerSpike,
+        std::vector<int>& outChangedSpikeIds)
+{
+    if (nChan <= 0 || nSamplesPerSpike <= 0) return 0;
+    if (!m_timeShiftReady)                   return 0;
+    if (PeakSampleIndex < 0 || PeakSampleIndex >= nSamplesPerSpike) {
+        LockedStderr(
+                "[Phase 4 realign] PeakSampleIndex=%d out of [0,%d) — skipping.\n",
+                PeakSampleIndex, nSamplesPerSpike);
+        return 0;
+    }
+    if (chunkPoints.size() != perChunkClass.size()) return 0;
+
+    const int peakPos  = PeakSampleIndex;
+    const int maxShift = std::max(1, std::min(nSamplesPerSpike / 4,
+                                              KlustersRealignMaxShift));
+    const int minSize  = std::max(2, KlustersRealignMinSize);
+
+    KlustersRealign::RealignStats stats;
+    int totalChanged = 0;
+
+    const size_t nChunks = chunkPoints.size();
+    for (size_t ck = 0; ck < nChunks; ++ck) {
+        const auto& pts = chunkPoints[ck];
+        const auto& cls = perChunkClass[ck];
+        if (pts.size() != cls.size() || pts.empty()) continue;
+
+        // Bucket spike global IDs by local cluster.
+        std::unordered_map<int, std::vector<int>> bucket;
+        bucket.reserve(64);
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const int c = cls[i];
+            if (c <= 0) continue;          // skip noise
+            bucket[c].push_back(pts[i]);
+        }
+
+        for (auto& kv : bucket) {
+            totalChanged += KlustersStyleRealignOneCluster(
+                kv.second, nChan, nSamplesPerSpike,
+                peakPos, maxShift, minSize,
+                outChangedSpikeIds, stats);
+        }
+    }
+
+    // Note: per-chunk variant doesn't accumulate a true sum-of-shifts
+    // across clusters (the helper's local sumAbs is per-cluster).
+    // Reporting maxAbsShift only is informative enough for the in-
+    // pipeline use; the global variant's log line includes the proper
+    // mean.  If the per-iter mean becomes important, add a sumAbsShift
+    // out-param to KlustersStyleRealignOneCluster and accumulate here.
+
+    LockedStderr(
+            "[Phase 4 realign] Per-chunk klusters-style: "
+            "%d clusters processed (%d skipped), "
+            "%d/%d spikes shifted (max|Δ|=%d), "
+            "%d read failures.\n",
+            stats.nClustersProcessed, stats.nClustersSkipped,
+            stats.nSpikesRealigned, stats.nSpikesEvaluated,
+            stats.maxAbsShift,
+            stats.nSpikesReadFailed);
+
+    return totalChanged;
+}
+
+// ---------------------------------------------------------------------------
+// KK::EnsureFilGroupCache
+//
+// Lazily read <FileBase>.fil and extract just the group's channels into
+// m_filGroupCache.  Returns true on success, false if .fil is missing
+// or memory allocation fails.  Cached for the lifetime of the KK
+// instance — subsequent calls are no-ops.
+//
+// Memory layout: m_filGroupCache[sample * nChan + c]
+// where c indexes into GroupChannelIds.
+// ---------------------------------------------------------------------------
+bool KK::EnsureFilGroupCache(int nChan)
+{
+    if (!m_filGroupCache.empty() && m_filGroupNChan == nChan) return true;
+    if (nChan <= 0 || NbTotalChannels <= 0) return false;
+
+    char filPath[STRLEN + 8];
+    snprintf(filPath, sizeof(filPath), "%s.fil", FileBase);
+    FILE* fp = fopen(filPath, "rb");
+    if (!fp) {
+        Output("EnsureFilGroupCache: %s not found — cache not built\n", filPath);
+        return false;
+    }
+
+    if (fseeko(fp, 0, SEEK_END) != 0) { fclose(fp); return false; }
+    const int64_t filBytes = static_cast<int64_t>(ftello(fp));
+    if (filBytes <= 0) { fclose(fp); return false; }
+    const int64_t bytesPerSample = static_cast<int64_t>(NbTotalChannels) * 2;
+    if (bytesPerSample <= 0 || filBytes % bytesPerSample != 0) {
+        Output("EnsureFilGroupCache: %s size %lld not a multiple of "
+               "NbTotalChannels(%d)*2 — cache not built\n",
+               filPath, static_cast<long long>(filBytes), NbTotalChannels);
+        fclose(fp); return false;
+    }
+    const int64_t totalSamples = filBytes / bytesPerSample;
+
+    // Allocate the cache.  May throw bad_alloc on huge files; surface
+    // that gracefully instead of crashing the whole run.
+    try {
+        m_filGroupCache.assign(
+            static_cast<size_t>(totalSamples) * static_cast<size_t>(nChan), 0);
+    } catch (const std::bad_alloc&) {
+        Output("EnsureFilGroupCache: out of memory allocating %lld bytes "
+               "(%lld samples × %d ch × 2) — falling back to streamed reads\n",
+               static_cast<long long>(totalSamples * nChan * 2),
+               static_cast<long long>(totalSamples), nChan);
+        fclose(fp);
+        return false;
+    }
+
+    if (fseeko(fp, 0, SEEK_SET) != 0) {
+        m_filGroupCache.clear(); m_filGroupCache.shrink_to_fit();
+        fclose(fp); return false;
+    }
+
+    // Sequential read in chunks; project each row through GroupChannelIds.
+    // Block size tuned for SSD throughput (8 MiB / row stride).
+    const int blockRows = std::max(1, static_cast<int>(
+        (8 * 1024 * 1024) / std::max<int>(1, NbTotalChannels * 2)));
+    std::vector<int16_t> buf(
+        static_cast<size_t>(blockRows) * static_cast<size_t>(NbTotalChannels));
+
+    int64_t doneSamples = 0;
+    while (doneSamples < totalSamples) {
+        const int64_t want = std::min<int64_t>(blockRows, totalSamples - doneSamples);
+        const size_t  nRead = fread(buf.data(), bytesPerSample,
+                                    static_cast<size_t>(want), fp);
+        if (static_cast<int64_t>(nRead) != want) {
+            Output("EnsureFilGroupCache: short read at sample %lld "
+                   "(wanted %lld got %zu) — cache built partially\n",
+                   static_cast<long long>(doneSamples),
+                   static_cast<long long>(want), nRead);
+            break;
+        }
+        // Extract group channels.  Cache layout: [sample][c].
+        for (int64_t r = 0; r < want; ++r) {
+            const int16_t* srcRow = &buf[static_cast<size_t>(r) * NbTotalChannels];
+            int16_t*       dstRow = &m_filGroupCache[
+                static_cast<size_t>((doneSamples + r) * nChan)];
+            for (int c = 0; c < nChan; ++c) {
+                dstRow[c] = srcRow[GroupChannelIds[static_cast<size_t>(c)]];
+            }
+        }
+        doneSamples += want;
+    }
+    fclose(fp);
+
+    m_filGroupSessionSamples = doneSamples;
+    m_filGroupNChan          = nChan;
+
+    const double mbCached = (m_filGroupCache.size() * 2) / (1024.0 * 1024.0);
+    Output("EnsureFilGroupCache: cached %lld samples × %d channels "
+           "(%.1f MiB) from %s\n",
+           static_cast<long long>(doneSamples), nChan, mbCached, filPath);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// KK::RefeaturizeChangedSpikes
+//
+// Selective version of RefeaturizeFromShifts.  Reads each listed
+// spike's window from the group-channel .fil cache, applies the
+// stderiv transform if needed, projects through the PCA model, and
+// writes the result back into Data[].  m_cumShift[p] supplies the
+// absolute shift (matching RefeaturizeFromShifts semantics).
+//
+// Uses the same PCA model loading + per-channel projection logic as
+// RefeaturizeFromShifts but iterates only the spikes in
+// changedSpikeIds, avoiding the O(nPoints) scan that's wasteful when
+// only a handful of spikes changed in a Phase 4 iter.
+// ---------------------------------------------------------------------------
+void KK::RefeaturizeChangedSpikes(
+        const std::vector<int>& changedSpikeIds,
+        int nChan, int nSamplesPerSpike)
+{
+    if (changedSpikeIds.empty()) return;
+    if (nChan <= 0 || nSamplesPerSpike <= 0) return;
+    if (PeakSampleIndex < 0 || PeakSampleIndex >= nSamplesPerSpike) return;
+
+    if (!EnsureFilGroupCache(nChan)) {
+        // Fall back to the existing full-file reader by constructing a
+        // per-spike shift vector and calling RefeaturizeFromShifts.
+        // This costs an O(nPoints) scan but is correctness-preserving.
+        std::vector<int> shifts(static_cast<size_t>(nPoints), 0);
+        for (int p : changedSpikeIds) {
+            if (p < 0 || p >= nPoints) continue;
+            shifts[static_cast<size_t>(p)] =
+                m_cumShift[static_cast<size_t>(p)];
+        }
+        RefeaturizeFromShifts(shifts, nChan, nSamplesPerSpike);
+        return;
+    }
+
+    // ── Load PCA model (same path as RefeaturizeFromShifts).  Local
+    //    copy of the loader keeps this function self-contained; if
+    //    you change the model format, update both call sites. ──
+    char pcaPath[STRLEN + 16];
+    pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
+    FILE* pf = fopen(pcaPath, "rb");
+    if (!pf) {
+        Output("RefeaturizeChangedSpikes: %s not found — skipping\n", pcaPath);
+        return;
+    }
+    int pcaNChan = 0, pcaData2use = 0, pcaNComp = 0, pcaRecShift = 0;
+    int pcaIsCentered = 0;
+    if (fread(&pcaNChan,    sizeof(int), 1, pf) != 1 ||
+        fread(&pcaData2use, sizeof(int), 1, pf) != 1 ||
+        fread(&pcaNComp,    sizeof(int), 1, pf) != 1 ||
+        fread(&pcaRecShift, sizeof(int), 1, pf) != 1 ||
+        fread(&pcaIsCentered, sizeof(int), 1, pf) != 1) {
+        Output("RefeaturizeChangedSpikes: truncated PCA header — skipping\n");
+        fclose(pf); return;
+    }
+    if (pcaNChan != nChan) {
+        Output("RefeaturizeChangedSpikes: PCA nChan=%d != spike-group nChan=%d "
+               "— skipping\n", pcaNChan, nChan);
+        fclose(pf); return;
+    }
+
+    std::vector<std::vector<float>> pcaMean(pcaNChan);
+    std::vector<std::vector<float>> pcaEv  (pcaNChan);
+    for (int ch = 0; ch < pcaNChan; ++ch) {
+        pcaMean[ch].resize(pcaData2use);
+        if (fread(pcaMean[ch].data(), sizeof(float), pcaData2use, pf)
+                != static_cast<size_t>(pcaData2use)) {
+            Output("RefeaturizeChangedSpikes: PCA means truncated\n");
+            fclose(pf); return;
+        }
+    }
+    for (int ch = 0; ch < pcaNChan; ++ch) {
+        pcaEv[ch].resize(static_cast<size_t>(pcaNComp) * pcaData2use);
+        if (fread(pcaEv[ch].data(), sizeof(float),
+                  static_cast<size_t>(pcaNComp) * pcaData2use, pf)
+                != static_cast<size_t>(pcaNComp) * static_cast<size_t>(pcaData2use)) {
+            Output("RefeaturizeChangedSpikes: PCA eigvecs truncated\n");
+            fclose(pf); return;
+        }
+    }
+    fclose(pf);
+
+    // ── Read int64 timestamps once (for affected spikes). ──
+    char resPath[STRLEN + 8];
+    snprintf(resPath, sizeof(resPath), "%s.res.%d", FileBase, ElecNo);
+    FILE* resFp = fopen(resPath, "rb");
+
+    const int   waveSamples = nChan * nSamplesPerSpike;
+    const int   timeDimIdx  = nDims - 1;
+    std::vector<int16_t> wave(static_cast<size_t>(waveSamples));
+
+    int nReproj = 0, nSkipped = 0;
+    const int64_t sessionSamplesLocal = m_filGroupSessionSamples;
+
+    for (int p : changedSpikeIds) {
+        if (p < 0 || p >= nPoints) { ++nSkipped; continue; }
+        const int sh = m_cumShift[static_cast<size_t>(p)];
+
+        int64_t rawTsInt = 0;
+        if (resFp) {
+            fseeko(resFp, static_cast<off_t>(p) * sizeof(int64_t), SEEK_SET);
+            { size_t _r = fread(&rawTsInt, sizeof(int64_t), 1, resFp); (void)_r; }
+        }
+        const float normTs = Data.m_Data[p * nDims + timeDimIdx];
+        const float rawTs  = (rawTsInt > 0)
+            ? static_cast<float>(rawTsInt)
+            : normTs * static_cast<float>(sessionSamplesLocal);
+
+        // Read shifted window from group-channel cache.
+        const int64_t off = (rawTsInt > 0 ? rawTsInt : static_cast<int64_t>(rawTs))
+                          + sh - PeakSampleIndex;
+        if (off < 0 || off + nSamplesPerSpike > sessionSamplesLocal) {
+            ++nSkipped; continue;
+        }
+        for (int s = 0; s < nSamplesPerSpike; ++s) {
+            const int16_t* srcRow = &m_filGroupCache[
+                static_cast<size_t>((off + s) * nChan)];
+            for (int c = 0; c < nChan; ++c) {
+                wave[s * nChan + c] = srcRow[c];
+            }
+        }
+        if (m_timeShiftBasis.isStderiv) {
+            ApplySdiffAllpairsTemporalDiff(wave.data(), nChan, nSamplesPerSpike);
+        }
+
+        // PCA projection (same math as RefeaturizeFromShifts).
+        float* dataRow = Data.m_Data + p * nDims;
+        for (int ch = 0; ch < pcaNChan; ++ch) {
+            const auto& mu = pcaMean[ch];
+            const auto& ev = pcaEv[ch];
+            for (int k = 0; k < pcaNComp; ++k) {
+                double val = 0.0;
+                for (int s = 0; s < pcaData2use; ++s) {
+                    const int sIdx = pcaRecShift + s;
+                    double raw = static_cast<double>(
+                        wave[static_cast<size_t>(sIdx * nChan + ch)]);
+                    if (pcaIsCentered) raw -= mu[static_cast<size_t>(s)];
+                    val += ev[static_cast<size_t>(k * pcaData2use + s)] * raw;
+                }
+                const int featIdx = ch * pcaNComp + k;
+                dataRow[featIdx] = (static_cast<float>(val) - dimMin_[featIdx])
+                                   * dimRange_[featIdx];
+            }
+        }
+        // Update timestamp dim.
+        if (sessionSamplesLocal > 0) {
+            const int64_t baseTs = (rawTsInt > 0) ? rawTsInt
+                                                   : static_cast<int64_t>(rawTs);
+            dataRow[timeDimIdx] =
+                static_cast<float>(baseTs + sh)
+                / static_cast<float>(sessionSamplesLocal);
+        }
+        ++nReproj;
+    }
+    if (resFp) fclose(resFp);
+
+    Output("RefeaturizeChangedSpikes: re-projected %d / %zu spikes "
+           "from .fil group cache (%d skipped)\n",
+           nReproj, changedSpikeIds.size(), nSkipped);
 }
 
 // ---------------------------------------------------------------------------

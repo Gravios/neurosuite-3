@@ -369,6 +369,23 @@ int   PerChannelSplitUseTroughTime     = 1;
 
 // AlternatingSplitMerge — see KlustaKwik.h for description.
 int   AlternatingSplitMergeEnable     = 0;
+// KlustersRealignAfterPhase4 — when set, run a per-chunk klusters-faithful
+// realignment + RefeaturizeChangedSpikes pass at the end of every Phase 4
+// iteration.  This is the heavy version: shifts AND refeaturized PCA
+// features become visible to subsequent iters' WaveKnnSplit (Phase 4b)
+// and WithinChunkTemplateMatch (Phase 4).  Memory cost: one read of
+// <FileBase>.fil into a [sessionSamples × nChan] int16 cache (typically
+// ~1 GB for an 8-channel 30-minute session).  CPU cost: a Phase-7c-style
+// xcorr per cluster per iter, plus PCA re-projection of the changed
+// spikes only — usually <2 s per iter once the .fil cache is warm.
+//
+// Uses the same MaxShift / MinSize tunables as Phase 7c
+// (-KlustersRealignMaxShift / -KlustersRealignMinSize) but is gated
+// independently — enabling in-loop realignment does NOT imply enabling
+// the end-of-pipeline Phase 7c, and vice versa.
+//
+// Default 0 = off.
+int   KlustersRealignAfterPhase4      = 0;
 // Maximum number of Phase 4 iterations in which WaveKnnSplit is allowed
 // to run.  Once this is reached, the Phase 4 loop continues with
 // template-match-only iters (so any over-fragments produced by split
@@ -554,6 +571,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(PerChannelSplitUseTroughAmp);
     INT_PARAM(PerChannelSplitUseTroughTime);
     INT_PARAM(AlternatingSplitMergeEnable);
+    INT_PARAM(KlustersRealignAfterPhase4);
     INT_PARAM(AlternatingSplitMergeMaxIters);
     INT_PARAM(AlternatingSplitMergeAbortOnNetGrowth);
     INT_PARAM(DipSplitMinSize);
