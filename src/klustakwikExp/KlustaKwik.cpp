@@ -483,6 +483,18 @@ int   FullCemSplitReprobePasses       = 0;
 int   FullCemSplitRefractoryGate      = 0;
 float FullCemSplitRefractoryGateMinSep = 0.5f;
 
+// ── Phase 4c neighborhood-remix split (patch 0062) ──────────────────────────
+int   Phase4cRemixEnable          = 0;     // master switch (default off)
+int   Phase4cMaxIters             = 5;     // remix split→merge passes
+int   Phase4cKnnSources           = 4;     // random sources routed to knn-split / iter
+int   Phase4cFullCemSources       = 4;     // random sources routed to FullCEM / iter
+int   Phase4cNeighbors            = 3;     // N closest clusters pooled into each source
+int   Phase4cMinClusterSize       = 0;     // 0 = max(nFullDims+5, 25)
+int   Phase4cMaskTightClusters    = 1;     // exclude tight clusters from remix
+float Phase4cTightnessThreshold   = 0.02f; // rho = Vres/Psig below this = masked
+float Phase4cSignalChannelFraction= 0.1f;  // tau: signal channel if Ech >= tau*maxEch
+float Phase4cTightnessSpreadBeta  = 0.0f;  // rho_thresh_eff = thresh * nSig^beta (0 = off)
+
 // ---------------------------------------------------------------------------
 // QualityWeightedSplit — Phase 4b dispatcher that routes source clusters to
 // the splitter best suited to their failure mode, instead of letting each
@@ -817,6 +829,16 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(FullCemSplitReprobePasses);
     INT_PARAM(FullCemSplitRefractoryGate);
     FLOAT_PARAM(FullCemSplitRefractoryGateMinSep);
+    INT_PARAM(Phase4cRemixEnable);
+    INT_PARAM(Phase4cMaxIters);
+    INT_PARAM(Phase4cKnnSources);
+    INT_PARAM(Phase4cFullCemSources);
+    INT_PARAM(Phase4cNeighbors);
+    INT_PARAM(Phase4cMinClusterSize);
+    INT_PARAM(Phase4cMaskTightClusters);
+    FLOAT_PARAM(Phase4cTightnessThreshold);
+    FLOAT_PARAM(Phase4cSignalChannelFraction);
+    FLOAT_PARAM(Phase4cTightnessSpreadBeta);
     INT_PARAM(QualityWeightedSplitEnable);
     INT_PARAM(QualityWeightedSplitN);
     INT_PARAM(QualityWeightedSplitPoolFactor);

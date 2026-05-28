@@ -4287,6 +4287,12 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
 
+        // ── Phase 4c: neighborhood-remix split (patch 0062) ──────────────
+        // Runs after Phase 4 converges; pools each random source with its N
+        // closest clusters and re-splits, guarded by disjointness + a
+        // tightness mask.  No-op unless -Phase4cRemixEnable 1.
+        RunPhase4cRemix(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
     // perChunkAssign was built with original Phase 1 IDs; after
     // WithinChunkTemplateMatch the IDs in perChunkClass differ.
@@ -5708,6 +5714,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
         }
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
+
+        // ── Phase 4c: neighborhood-remix split (patch 0062) ──────────────
+        // Runs after Phase 4 converges; pools each random source with its N
+        // closest clusters and re-splits, guarded by disjointness + a
+        // tightness mask.  No-op unless -Phase4cRemixEnable 1.
+        RunPhase4cRemix(chunkPoints, perChunkClass, perChunkModels, nFullDims);
 
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
     // perChunkAssign was built with original Phase 1 IDs; after
@@ -11083,6 +11095,385 @@ void KK::QualityWeightedSplitDispatch(
 
 
 // ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────
+// KK::RunPhase4cRemix — Phase 4c neighborhood-remix split (patch 0062)
+// ─────────────────────────────────────────────────────────────────────────
+// Runs once after the Phase 4 loop converges, gated by -Phase4cRemixEnable.
+// Structurally a small split→harvest→merge loop like Phase 4b, but the source
+// assembly is different: random source clusters are each POOLED with their N
+// closest clusters (transient merge), and the splitter re-partitions the
+// pooled super-cluster.  Intent: de-fragmentation — give the splitter a second
+// look at a cluster together with its nearest neighbours so over-split pieces
+// get redrawn or reabsorbed.  knn-split and FullCEM get separate source counts.
+//
+// Guards:
+//   * Disjointness — across the selected work items, if any two pools share a
+//     cluster (overlapping spikes) a whole source is dropped at random until
+//     all surviving pools are pairwise spike-disjoint, so the parallel
+//     dispatch is race-free.
+//   * Tightness mask — clusters whose post-alignment residual dispersion is
+//     low relative to their own signal power (a scale-free inverse-SNR², so a
+//     single threshold is comparable across high-amplitude/concentrated and
+//     low-amplitude/diffuse units) are excluded entirely: never a source,
+//     never pooled into a neighbourhood.  Protects already-clean units.
+//
+// CLI: -Phase4cRemixEnable -Phase4cMaxIters -Phase4cKnnSources
+//      -Phase4cFullCemSources -Phase4cNeighbors -Phase4cMinClusterSize
+//      -Phase4cMaskTightClusters -Phase4cTightnessThreshold
+//      -Phase4cSignalChannelFraction -Phase4cTightnessSpreadBeta
+void KK::RunPhase4cRemix(
+    const std::vector<std::vector<int>>&  chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    if (Phase4cRemixEnable == 0) return;
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    const int nChan     = NbChannels;
+    const int nSamp     = NbSamplesPerSpike;
+    const int wElems    = nChan * nSamp;
+    if (nChan <= 0 || nSamp <= 0) {
+        LockedStderr("[Phase 4c] skipped: missing spike geometry\n");
+        return;
+    }
+    const int minSize = (Phase4cMinClusterSize > 0)
+                      ? Phase4cMinClusterSize
+                      : std::max(nFullDims + 5, 25);
+    const int nNeigh  = std::max(0, Phase4cNeighbors);
+    const int maxIters = std::max(1, Phase4cMaxIters);
+    const bool doMask = (Phase4cMaskTightClusters != 0) && m_timeShiftReady;
+    const double tau  = std::max(0.0, static_cast<double>(Phase4cSignalChannelFraction));
+
+    LockedStderr("[Phase 4c] Neighborhood-remix split: up to %d iters, "
+                 "sources knn=%d cem=%d, N=%d neighbours%s\n",
+                 maxIters, Phase4cKnnSources, Phase4cFullCemSources, nNeigh,
+                 doMask ? ", tight-cluster mask ON" : "");
+
+    std::vector<int16_t> rbuf(static_cast<size_t>(wElems));
+
+    // Residual dispersion ρ = V_res / P_sig on the signal-support channels for
+    // one cluster's global spike ids.  Scale-free (≈1/SNR²): amplitude cancels
+    // (both terms ∝ k²) and per-element averaging on the signal support makes
+    // concentrated and diffuse footprints comparable.  Returns +inf if it
+    // cannot be measured (so such a cluster is never masked).
+    auto clusterTightness = [&](const std::vector<int>& gids) -> double {
+        const int N = static_cast<int>(gids.size());
+        if (N < 2) return std::numeric_limits<double>::infinity();
+        std::vector<double> mean(static_cast<size_t>(wElems), 0.0);
+        int ok = 0;
+        std::vector<std::vector<int16_t>> cache;
+        cache.reserve(static_cast<size_t>(N));
+        for (int i = 0; i < N; ++i) {
+            if (!TimeShiftReadSpikeWave(gids[static_cast<size_t>(i)],
+                                        wElems, rbuf.data())) continue;
+            cache.push_back(rbuf);
+            for (int e = 0; e < wElems; ++e)
+                mean[static_cast<size_t>(e)] +=
+                    static_cast<double>(rbuf[static_cast<size_t>(e)]);
+            ++ok;
+        }
+        if (ok < 2) return std::numeric_limits<double>::infinity();
+        const double invOk = 1.0 / ok;
+        for (int e = 0; e < wElems; ++e) mean[static_cast<size_t>(e)] *= invOk;
+
+        // Per-channel energy → signal support (channel-major: ch*nSamp+samp).
+        double maxE = 0.0;
+        std::vector<double> Ech(static_cast<size_t>(nChan), 0.0);
+        for (int ch = 0; ch < nChan; ++ch) {
+            double e2 = 0.0;
+            for (int s = 0; s < nSamp; ++s) {
+                const double m = mean[static_cast<size_t>(ch) * nSamp + s];
+                e2 += m * m;
+            }
+            Ech[static_cast<size_t>(ch)] = e2;
+            if (e2 > maxE) maxE = e2;
+        }
+        if (maxE <= 0.0) return std::numeric_limits<double>::infinity();
+
+        double Psig = 0.0, Vres = 0.0;
+        long   nSig = 0;
+        long long nResElem = 0;
+        for (int ch = 0; ch < nChan; ++ch) {
+            if (Ech[static_cast<size_t>(ch)] < tau * maxE) continue;
+            ++nSig;
+            for (int s = 0; s < nSamp; ++s) {
+                const int e = ch * nSamp + s;
+                const double m = mean[static_cast<size_t>(e)];
+                Psig += m * m;
+            }
+        }
+        if (nSig == 0) return std::numeric_limits<double>::infinity();
+        const long sigElems = nSig * nSamp;
+        Psig /= static_cast<double>(sigElems);
+
+        for (const auto& w : cache)
+            for (int ch = 0; ch < nChan; ++ch) {
+                if (Ech[static_cast<size_t>(ch)] < tau * maxE) continue;
+                for (int s = 0; s < nSamp; ++s) {
+                    const int e = ch * nSamp + s;
+                    const double d = static_cast<double>(w[static_cast<size_t>(e)])
+                                   - mean[static_cast<size_t>(e)];
+                    Vres += d * d;
+                    ++nResElem;
+                }
+            }
+        if (nResElem == 0 || Psig <= 0.0)
+            return std::numeric_limits<double>::infinity();
+        Vres /= static_cast<double>(nResElem);
+        // Effective threshold scaling lives at the call site (uses nSig).
+        m_phase4cLastNSig = static_cast<int>(nSig);
+        return Vres / Psig;
+    };
+
+    std::mt19937 rng(RandomSeed != 0
+                     ? static_cast<unsigned>(RandomSeed ^ 0x4c4c4c4cu)
+                     : std::random_device{}());
+
+    int grandChanged = 0;
+    for (int it = 0; it < maxIters; ++it) {
+        int changedThisIter = 0;
+
+        // Per-route allowlists assembled this iteration.
+        std::map<int, std::vector<int>> knnAllow, cemAllow;
+
+        for (int ck = 0; ck < nCh; ++ck) {
+            const auto& pts = chunkPoints[static_cast<size_t>(ck)];
+            auto&       cls = perChunkClass[static_cast<size_t>(ck)];
+            auto&       mdls = perChunkModels[static_cast<size_t>(ck)];
+            const int   nPts = static_cast<int>(pts.size());
+            if (nPts == 0 || mdls.empty()) continue;
+
+            // Members per local cluster.
+            std::unordered_map<int, std::vector<int>> memLocal;  // lc -> local idx
+            for (int i = 0; i < nPts; ++i) {
+                const int c = cls[static_cast<size_t>(i)];
+                if (c != 0) memLocal[c].push_back(i);
+            }
+
+            // Eligible clusters: size ≥ minSize, not tight-masked.
+            std::vector<int> eligible;
+            for (const auto& [lc, idx] : memLocal) {
+                if (static_cast<int>(idx.size()) < minSize) continue;
+                if (doMask) {
+                    std::vector<int> gids; gids.reserve(idx.size());
+                    for (int li : idx) gids.push_back(pts[static_cast<size_t>(li)]);
+                    const double rho = clusterTightness(gids);
+                    const double thr = static_cast<double>(Phase4cTightnessThreshold)
+                        * std::pow(std::max(1, m_phase4cLastNSig),
+                                   static_cast<double>(Phase4cTightnessSpreadBeta));
+                    if (rho < thr) continue;   // tight → masked out
+                }
+                eligible.push_back(lc);
+            }
+            if (static_cast<int>(eligible.size()) < 2) continue;
+
+            // meanWav L2 between eligible clusters → each source's N closest.
+            auto modelOf = [&](int lc) -> ChunkModel* {
+                for (auto& cm : mdls)
+                    if (cm.chunkIdx == ck && cm.localClusterId == lc) return &cm;
+                return nullptr;
+            };
+            auto tmplL2 = [&](int a, int b) -> double {
+                ChunkModel* ma = modelOf(a); ChunkModel* mb = modelOf(b);
+                if (!ma || !mb) return std::numeric_limits<double>::infinity();
+                const auto& wa = ma->meanWav; const auto& wb = mb->meanWav;
+                if (wa.empty() || wb.empty() || wa.size() != wb.size())
+                    return std::numeric_limits<double>::infinity();
+                double s = 0.0;
+                for (size_t e = 0; e < wa.size(); ++e) {
+                    const double d = static_cast<double>(wa[e])
+                                   - static_cast<double>(wb[e]);
+                    s += d * d;
+                }
+                return s;
+            };
+
+            // Random source order.
+            std::vector<int> order = eligible;
+            std::shuffle(order.begin(), order.end(), rng);
+
+            const int wantKnn = std::max(0, Phase4cKnnSources);
+            const int wantCem = std::max(0, Phase4cFullCemSources);
+            const int wantTot = wantKnn + wantCem;
+            if (wantTot == 0) continue;
+
+            // Build candidate pools: source + its N closest eligible clusters.
+            struct Pool { int src; int route; std::vector<int> members; };  // route 0=knn 1=cem
+            std::vector<Pool> pools;
+            int kCount = 0, cCount = 0;
+            for (int src : order) {
+                if (kCount >= wantKnn && cCount >= wantCem) break;
+                // N closest eligible neighbours by template L2.
+                std::vector<std::pair<double,int>> rank;
+                for (int other : eligible)
+                    if (other != src) rank.push_back({ tmplL2(src, other), other });
+                std::sort(rank.begin(), rank.end());
+                std::vector<int> nb;  nb.push_back(src);
+                for (int n = 0; n < nNeigh && n < static_cast<int>(rank.size()); ++n)
+                    nb.push_back(rank[static_cast<size_t>(n)].second);
+
+                int route;
+                if (kCount < wantKnn) { route = 0; ++kCount; }
+                else                  { route = 1; ++cCount; }
+                pools.push_back({ src, route, std::move(nb) });
+            }
+
+            // ── Disjointness guard ──────────────────────────────────────
+            // Drop whole sources at random until no two surviving pools share
+            // a cluster (→ no overlapping spikes).
+            {
+                bool conflict = true;
+                while (conflict && !pools.empty()) {
+                    conflict = false;
+                    // cluster -> list of pool indices claiming it
+                    std::unordered_map<int, std::vector<int>> claim;
+                    for (size_t pi = 0; pi < pools.size(); ++pi)
+                        for (int lc : pools[pi].members)
+                            claim[lc].push_back(static_cast<int>(pi));
+                    std::set<int> conflicting;
+                    for (auto& [lc, owners] : claim)
+                        if (owners.size() > 1) {
+                            conflict = true;
+                            for (int pi : owners) conflicting.insert(pi);
+                        }
+                    if (conflict) {
+                        std::vector<int> cv(conflicting.begin(), conflicting.end());
+                        std::uniform_int_distribution<size_t> pick(0, cv.size() - 1);
+                        const int drop = cv[pick(rng)];
+                        pools.erase(pools.begin() + drop);
+                    }
+                }
+            }
+            if (pools.empty()) continue;
+
+            // ── Transient relabel: pool neighbours → source; refresh source
+            //    model (mean/cov/meanWav) and drop absorbed-neighbour models.
+            for (const auto& P : pools) {
+                std::set<int> absorbed(P.members.begin(), P.members.end());
+                absorbed.erase(P.src);
+                if (!absorbed.empty()) {
+                    for (int i = 0; i < nPts; ++i)
+                        if (absorbed.count(cls[static_cast<size_t>(i)]))
+                            cls[static_cast<size_t>(i)] = P.src;
+                }
+
+                // Recompute source mean/cov directly from its (enlarged) members.
+                std::vector<int> mem;
+                for (int i = 0; i < nPts; ++i)
+                    if (cls[static_cast<size_t>(i)] == P.src) mem.push_back(i);
+                const int M = static_cast<int>(mem.size());
+                ChunkModel* sm = modelOf(P.src);
+                if (sm && M > 0) {
+                    std::vector<double> mu(static_cast<size_t>(nFullDims), 0.0);
+                    for (int li : mem)
+                        for (int d = 0; d < nFullDims; ++d)
+                            mu[static_cast<size_t>(d)] +=
+                                Data[static_cast<size_t>(pts[static_cast<size_t>(li)])
+                                     * nFullDims + d];
+                    const double invM = 1.0 / M;
+                    for (int d = 0; d < nFullDims; ++d) mu[static_cast<size_t>(d)] *= invM;
+                    sm->mean.assign(static_cast<size_t>(nFullDims), 0.0f);
+                    for (int d = 0; d < nFullDims; ++d)
+                        sm->mean[static_cast<size_t>(d)] =
+                            static_cast<float>(mu[static_cast<size_t>(d)]);
+                    sm->cov.assign(static_cast<size_t>(nFullDims) * nFullDims, 0.0f);
+                    for (int li : mem) {
+                        const int p = pts[static_cast<size_t>(li)];
+                        for (int r = 0; r < nFullDims; ++r) {
+                            const double dr = Data[static_cast<size_t>(p) * nFullDims + r]
+                                            - mu[static_cast<size_t>(r)];
+                            for (int col = r; col < nFullDims; ++col) {
+                                const double dc =
+                                    Data[static_cast<size_t>(p) * nFullDims + col]
+                                    - mu[static_cast<size_t>(col)];
+                                sm->cov[static_cast<size_t>(r) * nFullDims + col] +=
+                                    static_cast<float>(dr * dc * invM);
+                            }
+                        }
+                    }
+                    sm->nMembers = M;
+                    // Refresh meanWav from current alignment.
+                    if (m_timeShiftReady) {
+                        std::vector<double> mw(static_cast<size_t>(wElems), 0.0);
+                        int okw = 0;
+                        for (int li : mem) {
+                            if (!TimeShiftReadSpikeWave(pts[static_cast<size_t>(li)],
+                                                        wElems, rbuf.data())) continue;
+                            for (int e = 0; e < wElems; ++e)
+                                mw[static_cast<size_t>(e)] +=
+                                    static_cast<double>(rbuf[static_cast<size_t>(e)]);
+                            ++okw;
+                        }
+                        if (okw > 0) {
+                            sm->meanWav.assign(static_cast<size_t>(wElems), 0);
+                            for (int e = 0; e < wElems; ++e)
+                                sm->meanWav[static_cast<size_t>(e)] =
+                                    static_cast<int16_t>(std::lround(
+                                        mw[static_cast<size_t>(e)] / okw));
+                        }
+                    }
+                }
+
+                // Remove absorbed-neighbour models so they are not phantom
+                // references for WaveKnn.
+                if (!absorbed.empty()) {
+                    mdls.erase(std::remove_if(mdls.begin(), mdls.end(),
+                        [&](const ChunkModel& cm){
+                            return cm.chunkIdx == ck
+                                && absorbed.count(cm.localClusterId) > 0;
+                        }), mdls.end());
+                }
+
+                if (P.route == 0) knnAllow[ck].push_back(P.src);
+                else              cemAllow[ck].push_back(P.src);
+            }
+        }
+
+        if (knnAllow.empty() && cemAllow.empty()) {
+            LockedStderr("[Phase 4c] iter %d: no eligible pools; stopping\n", it + 1);
+            break;
+        }
+
+        // Snapshot to count spikes changed by the re-split.
+        std::vector<std::vector<int>> before = perChunkClass;
+
+        // ── Re-split each pooled super-cluster (allowlisted) ────────────
+        if (!knnAllow.empty())
+            WaveKnnSplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                                 nFullDims, &knnAllow);
+        if (!cemAllow.empty())
+            FullCemSplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                                 nFullDims, &cemAllow);
+
+        // ── Harvest + merge (reuse Phase 4 within-chunk template merge) ──
+        const int merged = MedianKnnTemplateMatchEnable
+            ? WithinChunkTemplateMatchMedianKnn(chunkPoints, perChunkClass,
+                                                perChunkModels, nChan, nSamp,
+                                                TemplateMatchScore)
+            : WithinChunkTemplateMatch(chunkPoints, perChunkClass,
+                                       perChunkModels, nChan, nSamp,
+                                       TemplateMatchScore);
+
+        for (size_t k = 0; k < perChunkClass.size(); ++k) {
+            const auto& a = perChunkClass[k];
+            const auto& b = before[k];
+            if (a.size() != b.size()) continue;
+            for (size_t i = 0; i < a.size(); ++i)
+                if (a[i] != b[i]) ++changedThisIter;
+        }
+        grandChanged += changedThisIter;
+
+        LockedStderr("[Phase 4c] iter %d/%d: %d spikes relabeled, %d merge(s)\n",
+                     it + 1, maxIters, changedThisIter, merged);
+        if (changedThisIter == 0 && merged == 0) break;   // converged
+    }
+
+    LockedStderr("[Phase 4c] done: %d spikes relabeled across remix passes\n",
+                 grandChanged);
+}
+
 void KK::FullCemSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
