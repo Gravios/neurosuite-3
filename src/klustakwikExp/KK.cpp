@@ -8131,6 +8131,81 @@ int KK::KlustersStyleRealignOneCluster(
 }
 
 // ---------------------------------------------------------------------------
+// KK::RealignSpikesAgainstTemplate
+//
+// Incremental-realign primitive (patch 0054): align a subset of spikes
+// (e.g. the spikes just absorbed into a canonical by a merge) against an
+// EXTERNALLY-supplied template (the canonical's post-merge meanWav),
+// committing the resulting shifts to m_cumShift.  Unlike
+// KlustersStyleRealignOneCluster, the template is NOT built from the
+// passed spikes — so aligning a handful of newly-merged spikes uses the
+// canonical's actual shape, not a template derived from the few spikes.
+//
+// tmplSampleMajor: [nChan*nSamples] int16, sample-major (s*nChan+ch),
+//                  i.e. the ChunkModel::meanWav / median layout.
+// Returns nSpikesChanged; appends changed global IDs to outChangedSpikeIds.
+// ---------------------------------------------------------------------------
+int KK::RealignSpikesAgainstTemplate(
+        const std::vector<int>& spikeGlobalIds,
+        const int16_t* tmplSampleMajor,
+        int nChan, int nSamplesPerSpike,
+        int peakPos, int maxShift,
+        std::vector<int>& outChangedSpikeIds,
+        KlustersRealign::RealignStats& stats)
+{
+    (void)peakPos;
+    const int waveSamples = nChan * nSamplesPerSpike;
+    const int N           = static_cast<int>(spikeGlobalIds.size());
+    if (N <= 0 || !tmplSampleMajor) return 0;
+
+    std::vector<int16_t> waveBuf(static_cast<size_t>(N) * waveSamples, 0);
+    int nReadOk = 0;
+    for (int i = 0; i < N; ++i) {
+        int16_t* dst = waveBuf.data() +
+                       static_cast<ptrdiff_t>(i) * waveSamples;
+        if (TimeShiftReadSpikeWave(spikeGlobalIds[static_cast<size_t>(i)],
+                                   waveSamples, dst)) {
+            ++nReadOk;
+        } else {
+            std::memset(dst, 0,
+                        static_cast<size_t>(waveSamples) * sizeof(int16_t));
+            ++stats.nSpikesReadFailed;
+        }
+    }
+    if (nReadOk == 0) { ++stats.nClustersSkipped; return 0; }
+
+    std::vector<int>   shifts;
+    std::vector<float> scores;
+    const bool ok = KlustersRealign::ComputeShiftsAgainstTemplateFlat(
+        waveBuf.data(), N, tmplSampleMajor,
+        nChan, nSamplesPerSpike, peakPos, maxShift, shifts, scores);
+    if (!ok) { ++stats.nClustersSkipped; return 0; }
+
+    int nChanged = 0, maxAbs = 0;
+    for (int i = 0; i < N; ++i) {
+        const int p  = spikeGlobalIds[static_cast<size_t>(i)];
+        const int sh = shifts[static_cast<size_t>(i)];
+        if (sh == 0) continue;
+        const int oldCum = m_cumShift[static_cast<size_t>(p)];
+        int       newCum = oldCum + sh;
+        if (newCum >  m_timeShiftMaxAbs) newCum =  m_timeShiftMaxAbs;
+        if (newCum < -m_timeShiftMaxAbs) newCum = -m_timeShiftMaxAbs;
+        if (newCum == oldCum) continue;
+        m_cumShift[static_cast<size_t>(p)] = newCum;
+        outChangedSpikeIds.push_back(p);
+        ++nChanged;
+        if (std::abs(sh) > maxAbs) maxAbs = std::abs(sh);
+    }
+    stats.nSpikesEvaluated += N;
+    stats.nSpikesRealigned += static_cast<int>(
+        std::count_if(shifts.begin(), shifts.end(),
+                      [](int s){ return s != 0; }));
+    stats.maxAbsShift = std::max(stats.maxAbsShift, maxAbs);
+    ++stats.nClustersProcessed;
+    return nChanged;
+}
+
+// ---------------------------------------------------------------------------
 // KK::KlustersStyleRealignPerChunkClusters
 //
 // Per-chunk variant.  Iterates over chunks; for each chunk, groups
@@ -14179,10 +14254,22 @@ int  KK::WithinChunkTemplateMatch(
         // them to something different from themselves) -- this is the
         // # of cls[] entries that will actually change value.
         int chunkSpikesRelabeled = 0;
-        for (auto& lc : cls) {
+        // Incremental realign (patch 0054): record GLOBAL spike IDs newly
+        // absorbed into each canonical this merge.  Only these need
+        // realigning against the canonical's updated template.
+        std::unordered_map<int, std::vector<int>> canonNewSpikes;
+        const bool _wantIncremental =
+            (MergeRealignEnable != 0 && MergeRealignIncremental != 0
+             && m_timeShiftReady);
+        for (size_t _i = 0; _i < cls.size(); ++_i) {
+            int& lc = cls[_i];
             auto it = lcRemap.find(lc);
             if (it != lcRemap.end() && it->second != lc) {
-                lc = it->second;
+                const int canon = it->second;
+                if (_wantIncremental)
+                    canonNewSpikes[canon].push_back(
+                        chunkPoints[static_cast<size_t>(ck)][_i]);
+                lc = canon;
                 ++chunkSpikesRelabeled;
             }
         }
@@ -14274,7 +14361,34 @@ int  KK::WithinChunkTemplateMatch(
             const int maxShift = std::max(1,
                 std::min(nSamplesPerSpike / 4, KlustersRealignMaxShift));
             const int minSize  = std::max(2, KlustersRealignMinSize);
+            // Lookup canonLc -> model index for the incremental template.
+            std::unordered_map<int,int> _lcToIdx;
+            if (MergeRealignIncremental != 0) {
+                for (int _a = 0; _a < n; ++_a)
+                    _lcToIdx[mdls[static_cast<size_t>(_a)].localClusterId] = _a;
+            }
             for (int canonLc : mergedCanonicalLcs) {
+                if (MergeRealignIncremental != 0) {
+                    // Incremental: align ONLY the spikes just absorbed
+                    // into this canonical, against the canonical's
+                    // post-wmerge meanWav (its actual shape) -- not a
+                    // template re-derived from the few absorbed spikes,
+                    // and not the whole canonical (wasteful).
+                    auto _ns = canonNewSpikes.find(canonLc);
+                    if (_ns == canonNewSpikes.end() || _ns->second.empty())
+                        continue;
+                    auto _mi = _lcToIdx.find(canonLc);
+                    if (_mi == _lcToIdx.end()) continue;
+                    const auto& _tmpl =
+                        mdls[static_cast<size_t>(_mi->second)].meanWav;
+                    if (static_cast<int>(_tmpl.size()) != wElems) continue;
+                    RealignSpikesAgainstTemplate(
+                        _ns->second, _tmpl.data(), nChan, nSamplesPerSpike,
+                        peakPos, maxShift,
+                        mergeRealignChangedSpikes, mergeRealignStats);
+                    ++mergeRealignClustersTouched;
+                    continue;
+                }
                 std::vector<int> spikeIds;
                 spikeIds.reserve(256);
                 for (size_t i = 0; i < cls.size(); ++i) {
@@ -14776,10 +14890,22 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
         callAbsorbedClusters  += chunkAbsorbedClusters;
 
         int chunkSpikesRelabeled = 0;
-        for (auto& lc : cls) {
+        // Incremental realign (patch 0054): record GLOBAL spike IDs newly
+        // absorbed into each canonical this merge.  Only these need
+        // realigning against the canonical's updated template.
+        std::unordered_map<int, std::vector<int>> canonNewSpikes;
+        const bool _wantIncremental =
+            (MergeRealignEnable != 0 && MergeRealignIncremental != 0
+             && m_timeShiftReady);
+        for (size_t _i = 0; _i < cls.size(); ++_i) {
+            int& lc = cls[_i];
             auto it = lcRemap.find(lc);
             if (it != lcRemap.end() && it->second != lc) {
-                lc = it->second;
+                const int canon = it->second;
+                if (_wantIncremental)
+                    canonNewSpikes[canon].push_back(
+                        chunkPoints[static_cast<size_t>(ck)][_i]);
+                lc = canon;
                 ++chunkSpikesRelabeled;
             }
         }
@@ -14839,7 +14965,34 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
             const int maxShift = std::max(1,
                 std::min(nSamplesPerSpike / 4, KlustersRealignMaxShift));
             const int minSize  = std::max(2, KlustersRealignMinSize);
+            // Lookup canonLc -> model index for the incremental template.
+            std::unordered_map<int,int> _lcToIdx;
+            if (MergeRealignIncremental != 0) {
+                for (int _a = 0; _a < n; ++_a)
+                    _lcToIdx[mdls[static_cast<size_t>(_a)].localClusterId] = _a;
+            }
             for (int canonLc : mergedCanonicalLcs) {
+                if (MergeRealignIncremental != 0) {
+                    // Incremental: align ONLY the spikes just absorbed
+                    // into this canonical, against the canonical's
+                    // post-wmerge meanWav (its actual shape) -- not a
+                    // template re-derived from the few absorbed spikes,
+                    // and not the whole canonical (wasteful).
+                    auto _ns = canonNewSpikes.find(canonLc);
+                    if (_ns == canonNewSpikes.end() || _ns->second.empty())
+                        continue;
+                    auto _mi = _lcToIdx.find(canonLc);
+                    if (_mi == _lcToIdx.end()) continue;
+                    const auto& _tmpl =
+                        mdls[static_cast<size_t>(_mi->second)].meanWav;
+                    if (static_cast<int>(_tmpl.size()) != wElems) continue;
+                    RealignSpikesAgainstTemplate(
+                        _ns->second, _tmpl.data(), nChan, nSamplesPerSpike,
+                        peakPos, maxShift,
+                        mergeRealignChangedSpikes, mergeRealignStats);
+                    ++mergeRealignClustersTouched;
+                    continue;
+                }
                 std::vector<int> spikeIds;
                 spikeIds.reserve(256);
                 for (size_t i = 0; i < cls.size(); ++i) {

@@ -145,6 +145,32 @@ bool ComputeClusterShiftsFlat(
     std::vector<float>& outScores);
 
 /* ---------------------------------------------------------------------------
+ * ComputeShiftsAgainstTemplateFlat — align a set of spikes against an
+ * EXTERNALLY-supplied template, instead of building the template from the
+ * spikes themselves.  Used for incremental realign: align a handful of
+ * newly-merged spikes against the canonical cluster's existing template
+ * (its post-merge mean/median), rather than re-deriving a template from
+ * just those few spikes (which would be wrong) or re-aligning the whole
+ * canonical (which is wasteful).
+ *
+ * waveforms:        [nSpikes × (nChan*nSamples)] int16, sample-major
+ *                   (waveforms[si*(nChan*nSamples) + s*nChan + ch]).
+ * tmplSampleMajor:  [nChan*nSamples] int16, sample-major (s*nChan + ch) —
+ *                   same layout as build_cluster_mean output and as
+ *                   ChunkModel::meanWav.  Pre-alignment is applied
+ *                   internally, so pass the raw cluster template.
+ *
+ * Outputs/return identical to ComputeClusterShiftsFlat.  Pure; caller
+ * commits shifts.
+ * --------------------------------------------------------------------------- */
+bool ComputeShiftsAgainstTemplateFlat(
+    const int16_t* waveforms, int nSpikes,
+    const int16_t* tmplSampleMajor,
+    int nChan, int nSamples, int peakPos, int maxShift,
+    std::vector<int>&   outShifts,
+    std::vector<float>& outScores);
+
+/* ---------------------------------------------------------------------------
  * BuildClusterMedianWaveform — public median-template builder.
  *
  * Computes per-sample median across nSpikes waveforms (sample-major

@@ -146,6 +146,59 @@ bool ComputeClusterShiftsFlat(
 }
 
 // ---------------------------------------------------------------------------
+// ComputeShiftsAgainstTemplateFlat — like ComputeClusterShiftsFlat but the
+// template is supplied by the caller (not built from the waveforms).
+// ---------------------------------------------------------------------------
+bool ComputeShiftsAgainstTemplateFlat(
+    const int16_t* waveforms, int nSpikes,
+    const int16_t* tmplSampleMajor,
+    int nChan, int nSamples, int peakPos, int maxShift,
+    std::vector<int>&   outShifts,
+    std::vector<float>& outScores)
+{
+    if (!waveforms || !tmplSampleMajor || nSpikes <= 0
+        || nChan <= 0 || nSamples <= 0)                           return false;
+    if (peakPos < 0 || peakPos >= nSamples)                       return false;
+    if (maxShift < 0 || maxShift >= nSamples / 2)                 return false;
+
+    const size_t nPts = static_cast<size_t>(nChan) * nSamples;
+
+    // Copy the supplied template (sample-major), pre-align it so its peak
+    // sits at peakPos — exactly as ComputeClusterShiftsFlat does for the
+    // internally-built template.
+    std::vector<int16_t> tmplWv(tmplSampleMajor, tmplSampleMajor + nPts);
+    PreAlignTemplate(tmplWv.data(), nChan, nSamples, peakPos);
+
+    // Re-pack template to channel-major for the dispatcher.
+    std::vector<int16_t> tmplBuf(nPts);
+    for (int ch = 0; ch < nChan; ++ch)
+        for (int s = 0; s < nSamples; ++s)
+            tmplBuf[static_cast<size_t>(ch) * nSamples + s] =
+                tmplWv[s * nChan + ch];
+
+    // Re-pack waveforms to channel-major per-spike.
+    std::vector<int16_t> waveBuf(static_cast<size_t>(nSpikes) * nPts);
+    for (int si = 0; si < nSpikes; ++si) {
+        const int16_t* src = waveforms + static_cast<ptrdiff_t>(si) * nPts;
+        int16_t* dst = waveBuf.data() + static_cast<ptrdiff_t>(si) * nPts;
+        for (int ch = 0; ch < nChan; ++ch)
+            for (int s = 0; s < nSamples; ++s)
+                dst[ch * nSamples + s] = src[s * nChan + ch];
+    }
+
+    outShifts.assign(static_cast<size_t>(nSpikes), 0);
+    outScores.assign(static_cast<size_t>(nSpikes), 0.0f);
+
+    const int rc = XcorrDispatch::compute(
+        waveBuf.data(), tmplBuf.data(),
+        nSpikes, nChan, nSamples,
+        maxShift, /*minScore=*/0.0f,
+        outShifts.data(), outScores.data());
+
+    return rc == 0;
+}
+
+// ---------------------------------------------------------------------------
 // ComputeClusterShifts — vector-of-vector entry point, delegates to Flat.
 // ---------------------------------------------------------------------------
 bool ComputeClusterShifts(
