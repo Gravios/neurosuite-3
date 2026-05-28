@@ -343,11 +343,65 @@ static void test_compute_flat_matches_vec_of_vec()
     }
 }
 
+static void test_compute_against_external_template()
+{
+    TEST("ComputeShiftsAgainstTemplateFlat: matches internal-template path "
+         "when the external template IS the cluster mean");
+    const int nChan = 4, nSamples = 32, peakPos = 16, maxShift = 6;
+    const int nSpikes = 20;
+
+    std::vector<std::vector<int16_t>> spikes;
+    spikes.reserve(nSpikes);
+    for (int i = 0; i < nSpikes; ++i)
+        spikes.push_back(make_synthetic_spike(nChan, nSamples,
+                                              peakPos + (i % 3 - 1),
+                                              -5000, 4000 + i));
+    const size_t nPts = static_cast<size_t>(nChan) * nSamples;
+    std::vector<int16_t> flat(nSpikes * nPts);
+    for (int i = 0; i < nSpikes; ++i)
+        std::memcpy(flat.data() + i * nPts, spikes[i].data(),
+                    nPts * sizeof(int16_t));
+
+    // Internal-template path: builds the mean from the spikes, aligns to it.
+    std::vector<int> sh1; std::vector<float> sc1;
+    KlustersRealign::ComputeClusterShiftsFlat(
+        flat.data(), nSpikes, nChan, nSamples, peakPos, maxShift,
+        sh1, sc1);
+
+    // External-template path: pass the SAME mean explicitly; results must
+    // match (PreAlignTemplate is applied identically in both).  Note the
+    // external API does NOT pre-align the supplied template the same way
+    // build+PreAlign does only if we feed the raw mean -- so feed the raw
+    // (un-prealigned) mean, matching what ComputeClusterShiftsFlat builds
+    // before its own PreAlignTemplate call.
+    std::vector<int16_t> meanTmpl;
+    {
+        // Reconstruct the raw mean (sample-major) the same way the Flat
+        // path does internally, BEFORE pre-alignment.
+        std::vector<double> acc(nPts, 0.0);
+        for (int i = 0; i < nSpikes; ++i)
+            for (size_t e = 0; e < nPts; ++e)
+                acc[e] += flat[i * nPts + e];
+        meanTmpl.resize(nPts);
+        for (size_t e = 0; e < nPts; ++e)
+            meanTmpl[e] = static_cast<int16_t>(
+                std::lround(acc[e] / nSpikes));
+    }
+    std::vector<int> sh2; std::vector<float> sc2;
+    KlustersRealign::ComputeShiftsAgainstTemplateFlat(
+        flat.data(), nSpikes, meanTmpl.data(),
+        nChan, nSamples, peakPos, maxShift, sh2, sc2);
+
+    for (int i = 0; i < nSpikes; ++i) {
+        EXPECT_EQ(sh1[i], sh2[i]);
+        EXPECT_NEAR(sc1[i], sc2[i], 1e-4);
+    }
+}
+
 int main()
 {
     std::fprintf(stdout, "test_klusters_realign\n");
     std::fprintf(stdout, "---------------------\n");
-
     test_prealign_already_aligned();
     test_prealign_peak_late();
     test_prealign_peak_early();
@@ -358,6 +412,7 @@ int main()
     test_compute_with_misaligned_template_input();
     test_compute_arg_validation();
     test_compute_flat_matches_vec_of_vec();
+    test_compute_against_external_template();
 
     std::fprintf(stdout, "---------------------\n");
     std::fprintf(stdout, "%d/%d assertions passed%s\n",

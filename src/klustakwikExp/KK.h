@@ -760,6 +760,17 @@ public:
             std::vector<int>& outChangedSpikeIds,
             KlustersRealign::RealignStats& stats);
 
+    // Incremental-realign primitive (patch 0054): align a subset of
+    // spikes against an externally-supplied template (the canonical's
+    // post-merge meanWav), committing shifts.  See KK.cpp.
+    int RealignSpikesAgainstTemplate(
+            const std::vector<int>& spikeGlobalIds,
+            const int16_t* tmplSampleMajor,
+            int nChan, int nSamplesPerSpike,
+            int peakPos, int maxShift,
+            std::vector<int>& outChangedSpikeIds,
+            KlustersRealign::RealignStats& stats);
+
     // Lazy load of <FileBase>.fil's group-channel subset into the
     // m_filGroupCache buffer.  Reads .fil sequentially once, projecting
     // each row through GroupChannelIds to drop the channels we don't
