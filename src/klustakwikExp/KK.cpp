@@ -15072,11 +15072,28 @@ int  KK::WithinChunkTemplateMatch(
 
     // ── Post-merge realign accumulator (no-op when MergeRealignEnable = 0).
     //    Each chunk's merge step appends global spike IDs whose cumulative
-    //    shift was just updated; refeaturized once at end of call. ──
-    std::vector<int> mergeRealignChangedSpikes;
-    KlustersRealign::RealignStats mergeRealignStats;
+    //    shift was just updated; refeaturized once at end of call.
+    //
+    //    Per-chunk scratch (patch 0066): each chunk writes to its own
+    //    chunkChangedSpikes[ck] / chunkStats[ck] slot while the outer ck
+    //    loop runs in parallel.  Concatenated/summed into the final
+    //    mergeRealign* variables after the parallel section. ──
+    std::vector<std::vector<int>> chunkChangedSpikes(static_cast<size_t>(nCh));
+    std::vector<KlustersRealign::RealignStats> chunkStats(static_cast<size_t>(nCh));
     int mergeRealignClustersTouched = 0;
 
+    // ── Per-chunk parallelism (patch 0066) ─────────────────────────────
+    // Each iteration mutates only perChunkClass[ck] / perChunkModels[ck]
+    // (disjoint slots) and writes its own chunkChangedSpikes[ck] /
+    // chunkStats[ck] entry.  Counters via reduction.  m_cumShift writes
+    // from realign callers go to disjoint per-spike indices (each chunk
+    // owns disjoint global spike IDs via chunkPoints[ck]).  Local scratch
+    // (taperedMeanWav, lcRemap, canonNewSpikes, mergedCanonicalLcs) is
+    // iteration-local.
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalMerged,callSpikesRelabeled, \
+                  callCanonicalsTouched,callAbsorbedClusters, \
+                  mergeRealignClustersTouched)
     for (int ck = 0; ck < nCh; ck++) {
         auto& cls  = perChunkClass[ck];
         auto& mdls = perChunkModels[ck];
@@ -15416,7 +15433,7 @@ int  KK::WithinChunkTemplateMatch(
                     RealignSpikesAgainstTemplate(
                         _ns->second, _tmpl.data(), nChan, nSamplesPerSpike,
                         peakPos, maxShift,
-                        mergeRealignChangedSpikes, mergeRealignStats);
+                        chunkChangedSpikes[static_cast<size_t>(ck)], chunkStats[static_cast<size_t>(ck)]);
                     ++mergeRealignClustersTouched;
                     continue;
                 }
@@ -15432,7 +15449,7 @@ int  KK::WithinChunkTemplateMatch(
                 KlustersStyleRealignOneCluster(
                     spikeIds, nChan, nSamplesPerSpike,
                     peakPos, maxShift, minSize,
-                    mergeRealignChangedSpikes, mergeRealignStats);
+                    chunkChangedSpikes[static_cast<size_t>(ck)], chunkStats[static_cast<size_t>(ck)]);
                 ++mergeRealignClustersTouched;
             }
         }
@@ -15442,6 +15459,35 @@ int  KK::WithinChunkTemplateMatch(
     //    via post-merge realign.  Single call (better than per-chunk
     //    because the PCA model load + .fil cache check happens once).
     //    No-op when MergeRealignEnable == 0 (vector stays empty).
+    // ── Gather: concatenate per-chunk changed spikes; sum / max stats.
+    //    Sums for counters; max for maxAbsShift; weighted mean for
+    //    meanAbsShift (weighted by nSpikesRealigned per chunk).
+    std::vector<int> mergeRealignChangedSpikes;
+    KlustersRealign::RealignStats mergeRealignStats;
+    {
+        size_t total = 0;
+        for (const auto& v : chunkChangedSpikes) total += v.size();
+        mergeRealignChangedSpikes.reserve(total);
+        double weightedShift = 0.0;
+        for (size_t k = 0; k < chunkChangedSpikes.size(); ++k) {
+            mergeRealignChangedSpikes.insert(
+                mergeRealignChangedSpikes.end(),
+                chunkChangedSpikes[k].begin(), chunkChangedSpikes[k].end());
+            const auto& s = chunkStats[k];
+            mergeRealignStats.nClustersProcessed += s.nClustersProcessed;
+            mergeRealignStats.nClustersSkipped   += s.nClustersSkipped;
+            mergeRealignStats.nSpikesEvaluated   += s.nSpikesEvaluated;
+            mergeRealignStats.nSpikesRealigned   += s.nSpikesRealigned;
+            mergeRealignStats.nSpikesReadFailed  += s.nSpikesReadFailed;
+            if (s.maxAbsShift > mergeRealignStats.maxAbsShift)
+                mergeRealignStats.maxAbsShift = s.maxAbsShift;
+            weightedShift += s.meanAbsShift * s.nSpikesRealigned;
+        }
+        if (mergeRealignStats.nSpikesRealigned > 0)
+            mergeRealignStats.meanAbsShift =
+                weightedShift / mergeRealignStats.nSpikesRealigned;
+    }
+
     if (!mergeRealignChangedSpikes.empty()) {
         RefeaturizeChangedSpikes(mergeRealignChangedSpikes,
                                   nChan, nSamplesPerSpike);
@@ -15557,10 +15603,25 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
     }
 
     // ── Post-merge realign accumulator (no-op when flag = 0). ──
-    std::vector<int> mergeRealignChangedSpikes;
-    KlustersRealign::RealignStats mergeRealignStats;
+    //    Per-chunk scratch for the parallel outer loop (patch 0066).
+    std::vector<std::vector<int>> chunkChangedSpikes(static_cast<size_t>(nCh));
+    std::vector<KlustersRealign::RealignStats> chunkStats(static_cast<size_t>(nCh));
     int mergeRealignClustersTouched = 0;
 
+    // ── Per-chunk parallelism (patch 0066) ─────────────────────────────
+    // Same independence argument as WithinChunkTemplateMatch.  Extra care:
+    //   * m_medianCache is a class-member std::unordered_map keyed by
+    //     (ck * MaxPossibleClusters + lc) — disjoint keys per chunk, but
+    //     map structural mutations during insert/find still race; guarded
+    //     by #pragma omp critical(median_cache) at the access sites.
+    //   * The inner per-cluster median-build parallel for (patch 0051) is
+    //     gated by if(!omp_in_parallel()) so it does not nest under this
+    //     outer parallel region (nested OMP off by default; the if-clause
+    //     makes it explicit and correct under any nesting setting).
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalMerged,callSpikesRelabeled, \
+                  callCanonicalsTouched,callAbsorbedClusters, \
+                  mergeRealignClustersTouched)
     for (int ck = 0; ck < nCh; ck++) {
         auto& cls  = perChunkClass[ck];
         auto& mdls = perChunkModels[ck];
@@ -15620,10 +15681,25 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                 const long long key =
                     static_cast<long long>(ck) * MaxPossibleClusters
                     + cm.localClusterId;
-                auto it = m_medianCache.find(key);
-                if (it != m_medianCache.end() && it->second.first == hh
-                    && static_cast<int>(it->second.second.size()) == wElems) {
-                    medianTpls[static_cast<size_t>(a)] = it->second.second;
+                // Patch 0066: m_medianCache (std::unordered_map) accessed
+                // by multiple threads concurrently when the outer chunk
+                // loop is parallel.  Different chunks → disjoint keys, but
+                // std::unordered_map's structural mutation (rehash on
+                // insert) still races.  Critical section is short (single
+                // find + copy of a small vector), so contention is low.
+                bool cacheHit = false;
+                std::vector<int16_t> cachedTpl;
+                #pragma omp critical(median_cache)
+                {
+                    auto it = m_medianCache.find(key);
+                    if (it != m_medianCache.end() && it->second.first == hh
+                        && static_cast<int>(it->second.second.size()) == wElems) {
+                        cachedTpl = it->second.second;
+                        cacheHit = true;
+                    }
+                }
+                if (cacheHit) {
+                    medianTpls[static_cast<size_t>(a)] = std::move(cachedTpl);
                     ++nReused;
                 } else {
                     dirty[static_cast<size_t>(a)] = 1;
@@ -15633,8 +15709,14 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
 
             // Parallel pass: build the dirty clusters only.  (mmap-safe;
             // see patch 0051 note.)
+            //
+            // Patch 0066: also gated by !omp_in_parallel() so this inner
+            // parallel does not nest under the outer chunk loop when that
+            // is parallelized.  When outer is parallel, each thread runs
+            // this inner serially (its assigned chunk's per-cluster work
+            // sums across chunks at the outer level).
             #pragma omp parallel for schedule(dynamic) \
-                if(m_timeShiftSpkMap != nullptr)
+                if(m_timeShiftSpkMap != nullptr && !omp_in_parallel())
             for (int a = 0; a < n; a++) {
                 if (!dirty[static_cast<size_t>(a)]) continue;
                 const auto& sp = clusterSpikes[static_cast<size_t>(a)];
@@ -15694,8 +15776,12 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                 const long long key =
                     static_cast<long long>(ck) * MaxPossibleClusters
                     + mdls[static_cast<size_t>(a)].localClusterId;
-                m_medianCache[key] = { wantHash[static_cast<size_t>(a)],
-                                       medianTpls[static_cast<size_t>(a)] };
+                // Patch 0066: see read-side note above.
+                #pragma omp critical(median_cache)
+                {
+                    m_medianCache[key] = { wantHash[static_cast<size_t>(a)],
+                                           medianTpls[static_cast<size_t>(a)] };
+                }
             }
             if (Verbose >= 1 && (nReused + nRebuilt) > 0) {
                 LockedStderr("  [MedianKnn] chunk%d median cache: "
@@ -16020,7 +16106,7 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                     RealignSpikesAgainstTemplate(
                         _ns->second, _tmpl.data(), nChan, nSamplesPerSpike,
                         peakPos, maxShift,
-                        mergeRealignChangedSpikes, mergeRealignStats);
+                        chunkChangedSpikes[static_cast<size_t>(ck)], chunkStats[static_cast<size_t>(ck)]);
                     ++mergeRealignClustersTouched;
                     continue;
                 }
@@ -16036,10 +16122,39 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                 KlustersStyleRealignOneCluster(
                     spikeIds, nChan, nSamplesPerSpike,
                     peakPos, maxShift, minSize,
-                    mergeRealignChangedSpikes, mergeRealignStats);
+                    chunkChangedSpikes[static_cast<size_t>(ck)], chunkStats[static_cast<size_t>(ck)]);
                 ++mergeRealignClustersTouched;
             }
         }
+    }
+
+    // ── Gather: concatenate per-chunk changed spikes; sum / max stats.
+    //    Sums for counters; max for maxAbsShift; weighted mean for
+    //    meanAbsShift (weighted by nSpikesRealigned per chunk).
+    std::vector<int> mergeRealignChangedSpikes;
+    KlustersRealign::RealignStats mergeRealignStats;
+    {
+        size_t total = 0;
+        for (const auto& v : chunkChangedSpikes) total += v.size();
+        mergeRealignChangedSpikes.reserve(total);
+        double weightedShift = 0.0;
+        for (size_t k = 0; k < chunkChangedSpikes.size(); ++k) {
+            mergeRealignChangedSpikes.insert(
+                mergeRealignChangedSpikes.end(),
+                chunkChangedSpikes[k].begin(), chunkChangedSpikes[k].end());
+            const auto& s = chunkStats[k];
+            mergeRealignStats.nClustersProcessed += s.nClustersProcessed;
+            mergeRealignStats.nClustersSkipped   += s.nClustersSkipped;
+            mergeRealignStats.nSpikesEvaluated   += s.nSpikesEvaluated;
+            mergeRealignStats.nSpikesRealigned   += s.nSpikesRealigned;
+            mergeRealignStats.nSpikesReadFailed  += s.nSpikesReadFailed;
+            if (s.maxAbsShift > mergeRealignStats.maxAbsShift)
+                mergeRealignStats.maxAbsShift = s.maxAbsShift;
+            weightedShift += s.meanAbsShift * s.nSpikesRealigned;
+        }
+        if (mergeRealignStats.nSpikesRealigned > 0)
+            mergeRealignStats.meanAbsShift =
+                weightedShift / mergeRealignStats.nSpikesRealigned;
     }
 
     if (!mergeRealignChangedSpikes.empty()) {
