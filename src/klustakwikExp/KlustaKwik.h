@@ -313,6 +313,13 @@ extern int   FullCemSplitEnable;
 extern int   FullCemSplitMaxSourcesPerCall;
 extern int   FullCemSplitMinClusterSize;
 
+// QualityWeightedSplit — Phase 4b quality-routed splitter dispatch.
+// See KlustaKwik.cpp doc block.
+extern int   QualityWeightedSplitEnable;
+extern int   QualityWeightedSplitN;
+extern int   QualityWeightedSplitPoolFactor;
+extern float QualityWeightedISIRefractoryMs;
+
 // MedianKnnTemplateMatch — alternative Phase 4 merge.  See KlustaKwik.cpp
 // and KK::WithinChunkTemplateMatchMedianKnn.  Default 0 (off, use
 // all-pairs WithinChunkTemplateMatch).

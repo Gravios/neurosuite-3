@@ -4008,11 +4008,20 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 std::set<int> _kBefore;
                 for (const auto& v : perChunkClass)
                     for (int c : v) if (c != 0) _kBefore.insert(c);
-                WaveKnnSplitPerChunk(
-                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
-                if (FullCemSplitEnable) {
-                    FullCemSplitPerChunk(
+                if (QualityWeightedSplitEnable) {
+                    // Quality-routed: dispatcher computes ISI contamination
+                    // + waveform variance for an oversampled pool and routes
+                    // each neediest cluster to CEM or knn.  Replaces the
+                    // direct WaveKnn+FullCem calls.
+                    QualityWeightedSplitDispatch(
                         chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                } else {
+                    WaveKnnSplitPerChunk(
+                        chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                    if (FullCemSplitEnable) {
+                        FullCemSplitPerChunk(
+                            chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                    }
                 }
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
                     const auto& aft = perChunkClass[_ckb];
@@ -5330,11 +5339,20 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 std::set<int> _kBefore;
                 for (const auto& v : perChunkClass)
                     for (int c : v) if (c != 0) _kBefore.insert(c);
-                WaveKnnSplitPerChunk(
-                    chunkPoints, perChunkClass, perChunkModels, nFullDims);
-                if (FullCemSplitEnable) {
-                    FullCemSplitPerChunk(
+                if (QualityWeightedSplitEnable) {
+                    // Quality-routed: dispatcher computes ISI contamination
+                    // + waveform variance for an oversampled pool and routes
+                    // each neediest cluster to CEM or knn.  Replaces the
+                    // direct WaveKnn+FullCem calls.
+                    QualityWeightedSplitDispatch(
                         chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                } else {
+                    WaveKnnSplitPerChunk(
+                        chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                    if (FullCemSplitEnable) {
+                        FullCemSplitPerChunk(
+                            chunkPoints, perChunkClass, perChunkModels, nFullDims);
+                    }
                 }
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
                     const auto& aft = perChunkClass[_ckb];
@@ -10406,11 +10424,229 @@ void KK::PerClusterCEMPerChunk(
 // behaviour independent (Phase 2a can evolve its load-balancing
 // strategy without affecting Phase 4b, and vice-versa).
 // ---------------------------------------------------------------------------
+// KK::ClusterISIContamination — fraction of inter-spike intervals below the
+// refractory window.  A clean single unit has ~0 (true refractoriness); a
+// temporal mixture of >= 2 units has elevated violations because the units
+// fire independently and their pooled spike train has short cross-unit gaps.
+//
+// globalSpikeIds: indices into Data[] (time = last feature dim, raw samples).
+// refractorySamples: refractory window in raw samples.
+// Returns violations / (nSpikes - 1) in [0, 1]; 0 for < 2 spikes.
+// ---------------------------------------------------------------------------
+double KK::ClusterISIContamination(const std::vector<int>& globalSpikeIds,
+                                   float refractorySamples) const
+{
+    const int n = static_cast<int>(globalSpikeIds.size());
+    if (n < 2 || refractorySamples <= 0.0f) return 0.0;
+    const int timeDim = nDims - 1;
+    std::vector<double> t;
+    t.reserve(static_cast<size_t>(n));
+    for (int p : globalSpikeIds)
+        t.push_back(static_cast<double>(
+            Data[static_cast<size_t>(p) * nDims + timeDim]));
+    std::sort(t.begin(), t.end());
+    int violations = 0;
+    for (int i = 1; i < n; i++)
+        if ((t[static_cast<size_t>(i)] - t[static_cast<size_t>(i - 1)])
+                < static_cast<double>(refractorySamples))
+            ++violations;
+    return static_cast<double>(violations) / static_cast<double>(n - 1);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::ClusterWaveformVariance — mean squared deviation of member spikes from
+// the cluster's MEDIAN template, normalised per sample.  A clean unit has
+// low spread around its template; a waveform mixture (two shapes sharing a
+// cluster) has high spread.  Median template (not mean) so a minority shape
+// doesn't drag the reference toward itself and mask the spread.
+//
+// Reads spike waveforms via TimeShiftReadSpikeWave (requires m_timeShiftReady).
+// Returns 0 if backing store unavailable or < 2 spikes.
+// ---------------------------------------------------------------------------
+double KK::ClusterWaveformVariance(const std::vector<int>& globalSpikeIds,
+                                   int nChan, int nSamples)
+{
+    const int n = static_cast<int>(globalSpikeIds.size());
+    const int wElems = nChan * nSamples;
+    if (n < 2 || wElems <= 0 || !m_timeShiftReady) return 0.0;
+
+    std::vector<int16_t> waves(static_cast<size_t>(n) * wElems);
+    int got = 0;
+    for (int i = 0; i < n; i++) {
+        if (TimeShiftReadSpikeWave(globalSpikeIds[static_cast<size_t>(i)],
+                                   wElems,
+                                   waves.data() + static_cast<size_t>(got) * wElems))
+            ++got;
+    }
+    if (got < 2) return 0.0;
+
+    std::vector<int16_t> med;
+    KlustersRealign::BuildClusterMedianWaveform(
+        waves.data(), got, nChan, nSamples, med);
+    if (static_cast<int>(med.size()) != wElems) return 0.0;
+
+    double acc = 0.0;
+    for (int i = 0; i < got; i++) {
+        const int16_t* w = waves.data() + static_cast<size_t>(i) * wElems;
+        for (int e = 0; e < wElems; e++) {
+            const double d = static_cast<double>(w[e])
+                           - static_cast<double>(med[static_cast<size_t>(e)]);
+            acc += d * d;
+        }
+    }
+    return acc / (static_cast<double>(got) * wElems);
+}
+
+
+// ---------------------------------------------------------------------------
+// KK::QualityWeightedSplitDispatch — Phase 4b quality-routed splitter.
+// See the QualityWeightedSplit doc block in KlustaKwik.cpp.
+// ---------------------------------------------------------------------------
+void KK::QualityWeightedSplitDispatch(
+    const std::vector<std::vector<int>>& chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    // Effective N: explicit flag, else max of the two per-call caps,
+    // else 4.
+    int N = QualityWeightedSplitN;
+    if (N <= 0) N = std::max(WaveKnnMaxSourcesPerCall,
+                             FullCemSplitMaxSourcesPerCall);
+    if (N <= 0) N = 4;
+    const int poolFactor = std::max(1, QualityWeightedSplitPoolFactor);
+    const int poolSize   = poolFactor * N;
+
+    const int minClusterSize = (FullCemSplitMinClusterSize > 0)
+                             ? FullCemSplitMinClusterSize
+                             : std::max(nFullDims + 5, 25);
+
+    // ── Gather eligible source clusters across all chunks. ──
+    struct Cand {
+        int ck;
+        int lc;
+        std::vector<int> globalIds;   // global spike indices
+    };
+    std::vector<Cand> pool;
+    for (int ck = 0; ck < nCh; ck++) {
+        const auto& cls = perChunkClass[static_cast<size_t>(ck)];
+        const auto& pts = chunkPoints[static_cast<size_t>(ck)];
+        std::unordered_map<int, std::vector<int>> byLc;
+        const int n = static_cast<int>(cls.size());
+        for (int i = 0; i < n; i++) {
+            const int lc = cls[static_cast<size_t>(i)];
+            if (lc <= 0) continue;
+            byLc[lc].push_back(pts[static_cast<size_t>(i)]);
+        }
+        for (auto& kv : byLc) {
+            if (static_cast<int>(kv.second.size()) < minClusterSize) continue;
+            pool.push_back({ck, kv.first, std::move(kv.second)});
+        }
+    }
+    if (pool.empty()) {
+        LockedStderr("[Phase 4b] QualityWeightedSplit: no eligible sources "
+                     "(minClusterSize=%d)\n", minClusterSize);
+        return;
+    }
+
+    // ── Random oversample to poolSize (callSalt-varied). ──
+    const int nEligible = static_cast<int>(pool.size());
+    const unsigned callSalt = m_phase4SplitCallCount++;
+    {
+        const unsigned base = (RandomSeed != 0)
+            ? static_cast<unsigned>(RandomSeed) : static_cast<unsigned>(std::time(nullptr));
+        std::mt19937 rng(base ^ 0x5a5a5a5au ^ (callSalt * 2654435761u));
+        std::shuffle(pool.begin(), pool.end(), rng);
+    }
+    if (static_cast<int>(pool.size()) > poolSize)
+        pool.resize(static_cast<size_t>(poolSize));
+
+    // ── Compute metrics for each candidate. ──
+    const float refractorySamples =
+        (SamplingRate > 0.0f && QualityWeightedISIRefractoryMs > 0.0f)
+            ? SamplingRate * QualityWeightedISIRefractoryMs / 1000.0f
+            : 0.0f;
+
+    const int nC = static_cast<int>(pool.size());
+    std::vector<double> contam(static_cast<size_t>(nC), 0.0);
+    std::vector<double> wavVar(static_cast<size_t>(nC), 0.0);
+    for (int i = 0; i < nC; i++) {
+        contam[static_cast<size_t>(i)] =
+            ClusterISIContamination(pool[static_cast<size_t>(i)].globalIds,
+                                    refractorySamples);
+        wavVar[static_cast<size_t>(i)] =
+            ClusterWaveformVariance(pool[static_cast<size_t>(i)].globalIds,
+                                    NbChannels, NbSamplesPerSpike);
+    }
+
+    // ── Min-max normalise each metric across the pool to [0,1]. ──
+    auto normalise = [](std::vector<double>& v) {
+        double lo = std::numeric_limits<double>::infinity();
+        double hi = -std::numeric_limits<double>::infinity();
+        for (double x : v) { lo = std::min(lo, x); hi = std::max(hi, x); }
+        const double range = hi - lo;
+        if (range <= 0.0) { for (double& x : v) x = 0.0; return; }
+        for (double& x : v) x = (x - lo) / range;
+    };
+    std::vector<double> contamN = contam, wavVarN = wavVar;
+    normalise(contamN);
+    normalise(wavVarN);
+
+    // ── Rank by needs-split score = max(contamN, varN); take top N. ──
+    std::vector<int> order(static_cast<size_t>(nC));
+    for (int i = 0; i < nC; i++) order[static_cast<size_t>(i)] = i;
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        const double sa = std::max(contamN[static_cast<size_t>(a)],
+                                   wavVarN[static_cast<size_t>(a)]);
+        const double sb = std::max(contamN[static_cast<size_t>(b)],
+                                   wavVarN[static_cast<size_t>(b)]);
+        return sa > sb;
+    });
+    const int take = std::min(N, nC);
+
+    // ── Route: contamination-dominant → CEM, variance-dominant → knn. ──
+    std::map<int, std::vector<int>> cemAllow, knnAllow;
+    int nCem = 0, nKnn = 0;
+    for (int r = 0; r < take; r++) {
+        const int i  = order[static_cast<size_t>(r)];
+        const Cand& c = pool[static_cast<size_t>(i)];
+        if (contamN[static_cast<size_t>(i)] >= wavVarN[static_cast<size_t>(i)]) {
+            cemAllow[c.ck].push_back(c.lc);
+            ++nCem;
+        } else {
+            knnAllow[c.ck].push_back(c.lc);
+            ++nKnn;
+        }
+    }
+
+    LockedStderr("[Phase 4b] QualityWeightedSplit: pool=%d (of %d eligible), "
+                 "routed %d→CEM (contamination) + %d→knn (variance), "
+                 "refractory=%.1f samp\n",
+                 nC, nEligible, nCem, nKnn, refractorySamples);
+
+    // ── Dispatch.  Each splitter gets ONLY its routed clusters. ──
+    if (!cemAllow.empty()) {
+        FullCemSplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                             nFullDims, &cemAllow);
+    }
+    if (!knnAllow.empty()) {
+        WaveKnnSplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                             nFullDims, &knnAllow);
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 void KK::FullCemSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& /*perChunkModels*/,
-    int nFullDims)
+    int nFullDims,
+    const std::map<int, std::vector<int>>* sourceAllowlist)
 {
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
@@ -10436,12 +10672,24 @@ void KK::FullCemSplitPerChunk(
 
     for (int ck = 0; ck < nCh; ck++) {
         const auto& cls = perChunkClass[static_cast<size_t>(ck)];
+        // If an allowlist was supplied, restrict to its clusters for
+        // this chunk (skip the chunk entirely if absent).
+        const std::vector<int>* allowed = nullptr;
+        if (sourceAllowlist) {
+            auto it = sourceAllowlist->find(ck);
+            if (it == sourceAllowlist->end() || it->second.empty()) continue;
+            allowed = &it->second;
+        }
+        std::unordered_set<int> allowedSet;
+        if (allowed) allowedSet.insert(allowed->begin(), allowed->end());
+
         // Group spike-indices by local cluster id.
         std::unordered_map<int, std::vector<int>> byLc;
         const int n = static_cast<int>(cls.size());
         for (int i = 0; i < n; i++) {
             const int lc = cls[static_cast<size_t>(i)];
             if (lc <= 0) continue;       // skip noise (lc==0)
+            if (allowed && !allowedSet.count(lc)) continue;
             byLc[lc].push_back(i);
         }
         for (auto& kv : byLc) {
@@ -10456,22 +10704,20 @@ void KK::FullCemSplitPerChunk(
         return;
     }
 
-    // ── Phase B: random shuffle + optional cap.  Salt the seed
-    //    differently from WaveKnnSplit so the two splitters don't pick
-    //    the same sources in the same order.  callSalt makes each
-    //    invocation shuffle a different order (Knuth multiplicative
-    //    hash mix); without it, every Phase 4b iter picked identical
-    //    clusters.
-    {
+    // ── Phase B: random shuffle + optional cap.  When an allowlist was
+    //    supplied (quality-weighted dispatch), the items ARE the
+    //    selection — skip the shuffle+cap so all allowlisted clusters
+    //    get processed.  Otherwise shuffle (callSalt-varied) and cap.
+    if (!sourceAllowlist) {
         const unsigned base = static_cast<unsigned>(RandomSeed)
                                 ? static_cast<unsigned>(RandomSeed)
                                 : static_cast<unsigned>(std::time(nullptr));
         std::mt19937 ordRng(base ^ 0xc1d2e3f4u ^ (callSalt * 2654435761u));
         std::shuffle(items.begin(), items.end(), ordRng);
-    }
-    if (FullCemSplitMaxSourcesPerCall > 0
-        && static_cast<int>(items.size()) > FullCemSplitMaxSourcesPerCall) {
-        items.resize(static_cast<size_t>(FullCemSplitMaxSourcesPerCall));
+        if (FullCemSplitMaxSourcesPerCall > 0
+            && static_cast<int>(items.size()) > FullCemSplitMaxSourcesPerCall) {
+            items.resize(static_cast<size_t>(FullCemSplitMaxSourcesPerCall));
+        }
     }
 
     LockedStderr("[Phase 4b] FullCemSplit: probing %d source cluster(s) "
@@ -14946,7 +15192,8 @@ void KK::WaveKnnSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& perChunkModels,
-    int nFullDims) {
+    int nFullDims,
+    const std::map<int, std::vector<int>>* sourceAllowlist) {
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
 
@@ -15093,6 +15340,19 @@ void KK::WaveKnnSplitPerChunk(
         cfg.maskNeighbors              = (WaveKnnMaskNeighbors != 0);
         cfg.maxSourcesPerCall          = WaveKnnMaxSourcesPerCall;
         cfg.Verbose                    = (Verbose >= 2);
+
+        // If an explicit source allowlist was supplied (quality-weighted
+        // dispatch), restrict this chunk's sources to the listed cluster
+        // IDs.  A chunk absent from the allowlist is skipped entirely.
+        // cfg.sourceIds non-empty makes wave_knn_split::Run use exactly
+        // those IDs (intersected with eligibility) as sources, bypassing
+        // its own random selection + maxSourcesPerCall cap.
+        if (sourceAllowlist) {
+            auto it = sourceAllowlist->find(ck);
+            if (it == sourceAllowlist->end() || it->second.empty()) continue;
+            cfg.sourceIds         = it->second;
+            cfg.maxSourcesPerCall = 0;   // allowlist already IS the cap
+        }
 
         auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
                                       chunkLabels, traces, traceIds,
