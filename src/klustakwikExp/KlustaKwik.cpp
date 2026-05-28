@@ -441,11 +441,13 @@ int   FullCemSplitMinClusterSize      = 0;  // 0 = use max(nFullDims+5, 25)
 // and starves it of the dimensions that would manufacture a false one.
 //
 // Selection: rank features by valley depth (dipsplit::valley_test),
-// take those with depth >= FullCemSplitFeatureBimodalThreshold, clamped
-// to [FullCemSplitMinFeatures, maxFeatures].  If none pass, fall back to
-// the top-FullCemSplitMinFeatures by depth (CEM still runs but on the
-// least-unimodal axes; usually yields no split, which is correct -- the
-// cluster wasn't a mixture).
+// count those with depth >= FullCemSplitFeatureBimodalThreshold, then
+// use that count PLUS ONE (the next-highest-depth axis as off-axis
+// context for the CEM covariance fit), clamped to
+// [FullCemSplitMinFeatures, maxFeatures].  If none pass the gate, the
+// +1 still applies (so CEM sees the single most-bimodal axis plus one),
+// then the minFeatures floor takes over -- usually yields no split,
+// which is correct (the cluster wasn't a mixture).
 //
 // maxFeatures = FullCemSplitMaxFeatures if > 0, else SubspaceDims if > 0,
 // else nSpatialDims.

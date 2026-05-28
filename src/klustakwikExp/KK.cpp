@@ -10791,8 +10791,12 @@ void KK::FullCemSplitPerChunk(
                 else
                     break;   // sorted desc, so first failure ends the run
             }
-            // Clamp to [minFeat, maxFeat].
-            nSubDims = std::min(std::max(nPass, minFeat), maxFeat);
+            // Use the minimum bimodal set PLUS ONE extra feature: the
+            // next-highest-depth axis (the strongest one that did NOT
+            // pass the gate) gives CEM a little off-axis context to fit
+            // the Gaussians' covariance orientation, without inflating
+            // the dimensionality.  Clamp to [minFeat, maxFeat].
+            nSubDims = std::min(std::max(nPass + 1, minFeat), maxFeat);
 
             selFeat.resize(static_cast<size_t>(nSubDims));
             for (int k = 0; k < nSubDims; k++)
@@ -10802,7 +10806,7 @@ void KK::FullCemSplitPerChunk(
 
             if (Verbose >= 2) {
                 LockedStderr("  [4b-cem] chunk%d c%d: adaptive features "
-                             "nPass=%d -> nSubDims=%d (top depth=%.3f)\n",
+                             "nPass=%d -> nSubDims=%d (nPass+1, top depth=%.3f)\n",
                              item.ck, item.lc, nPass, nSubDims,
                              depthRank.empty() ? 0.0 : depthRank[0].first);
             }
