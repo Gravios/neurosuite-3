@@ -10565,22 +10565,58 @@ void KK::QualityWeightedSplitDispatch(
     if (static_cast<int>(pool.size()) > poolSize)
         pool.resize(static_cast<size_t>(poolSize));
 
-    // ── Compute metrics for each candidate. ──
+    // ── Compute metrics for each candidate (parallel — each cluster's
+    //    metrics are independent; ClusterWaveformVariance reads spikes
+    //    from the mmap'd/cached store, safe for concurrent reads). ──
     const float refractorySamples =
         (SamplingRate > 0.0f && QualityWeightedISIRefractoryMs > 0.0f)
             ? SamplingRate * QualityWeightedISIRefractoryMs / 1000.0f
             : 0.0f;
 
+    // Fallback: when the spike-waveform store is unavailable
+    // (m_timeShiftReady == false, e.g. stderiv pipeline with TimeShift
+    // legacy off), ClusterWaveformVariance returns 0 for every cluster
+    // and ALL clusters would route to CEM.  Detect this and substitute
+    // a FEATURE-SPACE variance proxy: total within-cluster variance of
+    // the PCA features (sum of per-dim variance).  It correlates with
+    // waveform spread well enough to keep the knn route populated.
+    const bool useFeatureVarProxy = !m_timeShiftReady;
+    if (useFeatureVarProxy) {
+        LockedStderr("[Phase 4b] QualityWeightedSplit: spike store "
+                     "unavailable; using feature-space variance proxy "
+                     "for the knn-route metric\n");
+    }
+
     const int nC = static_cast<int>(pool.size());
     std::vector<double> contam(static_cast<size_t>(nC), 0.0);
     std::vector<double> wavVar(static_cast<size_t>(nC), 0.0);
+    const int timeDimDispatch = nDims - 1;
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < nC; i++) {
+        const auto& ids = pool[static_cast<size_t>(i)].globalIds;
         contam[static_cast<size_t>(i)] =
-            ClusterISIContamination(pool[static_cast<size_t>(i)].globalIds,
-                                    refractorySamples);
-        wavVar[static_cast<size_t>(i)] =
-            ClusterWaveformVariance(pool[static_cast<size_t>(i)].globalIds,
-                                    NbChannels, NbSamplesPerSpike);
+            ClusterISIContamination(ids, refractorySamples);
+        if (useFeatureVarProxy) {
+            // Sum of per-feature variance over the cluster's spikes
+            // (spatial dims only; exclude the time dim).
+            const int m = static_cast<int>(ids.size());
+            double vsum = 0.0;
+            if (m >= 2) {
+                for (int d = 0; d < timeDimDispatch; d++) {
+                    double s = 0.0, sq = 0.0;
+                    for (int p : ids) {
+                        const double v = Data[static_cast<size_t>(p) * nDims + d];
+                        s += v; sq += v * v;
+                    }
+                    const double mean = s / m;
+                    vsum += std::max(0.0, sq / m - mean * mean);
+                }
+            }
+            wavVar[static_cast<size_t>(i)] = vsum;
+        } else {
+            wavVar[static_cast<size_t>(i)] =
+                ClusterWaveformVariance(ids, NbChannels, NbSamplesPerSpike);
+        }
     }
 
     // ── Min-max normalise each metric across the pool to [0,1]. ──
@@ -10719,6 +10755,18 @@ void KK::FullCemSplitPerChunk(
             items.resize(static_cast<size_t>(FullCemSplitMaxSourcesPerCall));
         }
     }
+
+    // ── Phase B.5: LPT load-balance.  Sort work items by member count
+    //    descending so the OMP dynamic schedule hands out the biggest
+    //    (slowest) clusters first — the classic longest-processing-time
+    //    heuristic.  Matters more now that adaptive feature selection
+    //    (patch 0047/0048) makes per-cluster CEM cost vary widely with
+    //    nSubDims.  Pure reordering; does not change which clusters are
+    //    processed or the results.
+    std::sort(items.begin(), items.end(),
+              [](const WorkItem& a, const WorkItem& b) {
+                  return a.members.size() > b.members.size();
+              });
 
     LockedStderr("[Phase 4b] FullCemSplit: probing %d source cluster(s) "
                  "(minClusterSize=%d, cap=%d)\n",
