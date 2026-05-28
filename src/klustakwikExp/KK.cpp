@@ -2659,6 +2659,302 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         return {std::move(total), std::sqrt(total_var)};
     };
 
+    // ── Phase 5b: affine cross-chunk drift transforms (patch 0063) ─────
+    // Generalises the translation-only drift table.  For each adjacent
+    // chunk pair (k, k+1), fit an affine map T_k: x → M_k·x + t_k by
+    // IRLS-Huber from the Pass-1 confirmed matches' feature-space means.
+    // Captures the "constellation rotation/shear" a pure displacement
+    // vector cannot — units near probe edges drift differently from those
+    // at the centre, producing coherent non-translational structure in
+    // the cluster-mean cloud.  Subset of clusters per chunk is fine: the
+    // fit only needs m ≥ D+2 confirmed matches per pair (so the affine is
+    // identifiable); the transform then applies to ALL clusters, matched
+    // or not.  Chain smoothness via Tikhonov on each parameter (M_ij, t_j)
+    // sequence along k, since drift is continuous in time.
+    //
+    // Off by default — when off, the existing translation-only drift table
+    // path runs unchanged.  When on, both tables are built and Pass 2's
+    // smoothness gate prefers the transform.
+    struct ChunkTransform {
+        std::vector<double> M;       // D*D row-major (M[d*D+r] is M_{d,r})
+        std::vector<double> t;       // D
+        double              scatter; // robust residual scale (Huber MAD)
+        int                 n_matches;
+    };
+    std::map<std::pair<int,int>, ChunkTransform> transformTable;
+
+    if (CrossChunkTransformDriftEnable != 0 &&
+        CrossChunkDriftSigma > 0.0f && nSpatialDims > 0)
+    {
+        const int D       = nSpatialDims;
+        const int Dp1     = D + 1;
+        const int minMatch = std::max(D + 2,
+            std::max(3, CrossChunkTransformMinMatches));
+
+        // Group Pass-1 confirmed pairs by adjacent chunk pair.
+        std::map<std::pair<int,int>, std::vector<std::pair<int,int>>> pbcp;
+        for (const auto& cp : confirmedPairs)
+            pbcp[{cp.chunkA, cp.chunkB}].push_back({cp.modelA, cp.modelB});
+
+        // In-place Cholesky: G (Dp1 × Dp1, row-major) → L (lower).
+        auto cholFactor = [](std::vector<double>& G, int N) -> bool {
+            for (int i = 0; i < N; ++i) {
+                for (int j = 0; j <= i; ++j) {
+                    double s = G[i*N + j];
+                    for (int k = 0; k < j; ++k)
+                        s -= G[i*N + k] * G[j*N + k];
+                    if (i == j) {
+                        if (s <= 0.0) return false;
+                        G[i*N + j] = std::sqrt(s);
+                    } else {
+                        G[i*N + j] = s / G[j*N + j];
+                    }
+                }
+                // zero the strict upper for safety
+                for (int j = i + 1; j < N; ++j) G[i*N + j] = 0.0;
+            }
+            return true;
+        };
+        // Solve L L^T x = b in-place on x.
+        auto cholSolve = [](const std::vector<double>& L,
+                            std::vector<double>& x, int N) {
+            for (int i = 0; i < N; ++i) {
+                double s = x[i];
+                for (int k = 0; k < i; ++k) s -= L[i*N + k] * x[k];
+                x[i] = s / L[i*N + i];
+            }
+            for (int i = N - 1; i >= 0; --i) {
+                double s = x[i];
+                for (int k = i + 1; k < N; ++k) s -= L[k*N + i] * x[k];
+                x[i] = s / L[i*N + i];
+            }
+        };
+
+        const double kH = std::max(0.1,
+            static_cast<double>(CrossChunkTransformHuberK));
+        const int maxIRLS = std::max(1, CrossChunkTransformIRLSIters);
+
+        // Fit one chunk pair.
+        auto fitPair = [&](const std::vector<double>& Aflat,
+                           const std::vector<double>& Bflat,
+                           int m, ChunkTransform& out) -> bool {
+            std::vector<double> w(m, 1.0);
+            std::vector<double> M_aug(Dp1 * D, 0.0);    // [M^T ; t^T]
+            double scale = 1.0;
+
+            for (int it = 0; it < maxIRLS; ++it) {
+                // Build G = X^T W X (lower triangle) and H = X^T W B.
+                std::vector<double> G(Dp1 * Dp1, 0.0);
+                std::vector<double> H(Dp1 * D,   0.0);
+                for (int i = 0; i < m; ++i) {
+                    const double wi = w[i];
+                    // G: only lower triangle (r ≥ c)
+                    for (int r = 0; r < D; ++r) {
+                        const double ar = Aflat[i*D + r];
+                        for (int c = 0; c <= r; ++c)
+                            G[r*Dp1 + c] += wi * ar * Aflat[i*D + c];
+                        for (int d = 0; d < D; ++d)
+                            H[r*D + d] += wi * ar * Bflat[i*D + d];
+                    }
+                    // last row of G (the bias row): r = D
+                    for (int c = 0; c < D; ++c)
+                        G[D*Dp1 + c] += wi * Aflat[i*D + c];
+                    G[D*Dp1 + D] += wi;
+                    for (int d = 0; d < D; ++d) H[D*D + d] += wi * Bflat[i*D + d];
+                }
+
+                if (!cholFactor(G, Dp1)) return false;
+                // Solve for each output column.
+                for (int d = 0; d < D; ++d) {
+                    std::vector<double> x(Dp1);
+                    for (int r = 0; r < Dp1; ++r) x[r] = H[r*D + d];
+                    cholSolve(G, x, Dp1);
+                    for (int r = 0; r < Dp1; ++r) M_aug[r*D + d] = x[r];
+                }
+
+                // Residuals → robust scale (MAD) → Huber weights.
+                std::vector<double> res(static_cast<size_t>(m));
+                for (int i = 0; i < m; ++i) {
+                    double r2 = 0.0;
+                    for (int d = 0; d < D; ++d) {
+                        double pred = M_aug[D*D + d];     // t[d]
+                        for (int r = 0; r < D; ++r)
+                            pred += M_aug[r*D + d] * Aflat[i*D + r];
+                        const double e = Bflat[i*D + d] - pred;
+                        r2 += e * e;
+                    }
+                    res[static_cast<size_t>(i)] = std::sqrt(r2);
+                }
+                std::vector<double> srt = res;
+                std::nth_element(srt.begin(),
+                                 srt.begin() + m/2, srt.end());
+                const double med = srt[static_cast<size_t>(m/2)];
+                std::vector<double> ad(static_cast<size_t>(m));
+                for (int i = 0; i < m; ++i)
+                    ad[static_cast<size_t>(i)] =
+                        std::abs(res[static_cast<size_t>(i)] - med);
+                std::nth_element(ad.begin(),
+                                 ad.begin() + m/2, ad.end());
+                scale = 1.4826 * ad[static_cast<size_t>(m/2)];
+                if (scale < 1e-9) scale = 1e-9;
+                for (int i = 0; i < m; ++i) {
+                    const double rn = res[static_cast<size_t>(i)] / scale;
+                    w[static_cast<size_t>(i)] = (rn <= kH) ? 1.0 : (kH / rn);
+                }
+            }
+
+            // Extract M (D×D, row-major: M[d*D + r] = M_{d,r}) and t (D).
+            out.M.assign(static_cast<size_t>(D) * D, 0.0);
+            out.t.assign(static_cast<size_t>(D), 0.0);
+            for (int d = 0; d < D; ++d) {
+                for (int r = 0; r < D; ++r)
+                    out.M[static_cast<size_t>(d) * D + r] = M_aug[r*D + d];
+                out.t[static_cast<size_t>(d)] = M_aug[D*D + d];
+            }
+            out.scatter   = scale;
+            out.n_matches = m;
+            return true;
+        };
+
+        for (const auto& [chunkPair, modelPairs] : pbcp) {
+            if (static_cast<int>(modelPairs.size()) < minMatch) continue;
+            const int m = static_cast<int>(modelPairs.size());
+            std::vector<double> A(static_cast<size_t>(m) * D, 0.0);
+            std::vector<double> B(static_cast<size_t>(m) * D, 0.0);
+            int mUsed = 0;
+            for (const auto& [mA, mB] : modelPairs) {
+                const auto& mvA = models[mA].mean;
+                const auto& mvB = models[mB].mean;
+                if (static_cast<int>(mvA.size()) < D ||
+                    static_cast<int>(mvB.size()) < D) continue;
+                for (int j = 0; j < D; ++j) {
+                    A[static_cast<size_t>(mUsed) * D + j] =
+                        static_cast<double>(mvA[j]);
+                    B[static_cast<size_t>(mUsed) * D + j] =
+                        static_cast<double>(mvB[j]);
+                }
+                ++mUsed;
+            }
+            if (mUsed < minMatch) continue;
+            ChunkTransform T;
+            if (!fitPair(A, B, mUsed, T)) continue;
+            transformTable[chunkPair] = std::move(T);
+        }
+
+        // Chain smoothness (Tikhonov): smooth each parameter sequence
+        // (M_ij)_k and (t_j)_k along k via tridiagonal Thomas algorithm,
+        // pulling per-pair fits toward their neighbours when drift is
+        // continuous.  Pairs with poor fits (few matches → high scatter) get
+        // pulled most.  λ = 0 disables smoothing.
+        if (CrossChunkTransformChainSmoothLambda > 0.0f && !transformTable.empty()) {
+            // Collect sorted chunk pairs (assumed adjacent, sorted by start).
+            std::vector<std::pair<int,int>> keys;
+            keys.reserve(transformTable.size());
+            for (const auto& kv : transformTable) keys.push_back(kv.first);
+            std::sort(keys.begin(), keys.end());
+
+            const int K = static_cast<int>(keys.size());
+            if (K >= 3) {
+                const double lam =
+                    static_cast<double>(CrossChunkTransformChainSmoothLambda);
+
+                // Thomas-algorithm tridiagonal solver: smooth observed seq y_k.
+                //   (1 + 2λ) x_k  − λ x_{k−1} − λ x_{k+1} = y_k
+                // (endpoints have one λ neighbour each).
+                auto smooth1D = [&](std::vector<double>& y) {
+                    std::vector<double> a(K, -lam), b(K, 1.0 + 2.0 * lam),
+                                        c(K, -lam), d = y;
+                    a[0] = 0.0; b[0] = 1.0 + lam;
+                    c[K - 1] = 0.0; b[K - 1] = 1.0 + lam;
+                    // Forward sweep
+                    for (int k = 1; k < K; ++k) {
+                        const double mlt = a[k] / b[k - 1];
+                        b[k] -= mlt * c[k - 1];
+                        d[k] -= mlt * d[k - 1];
+                    }
+                    // Back substitution
+                    y[K - 1] = d[K - 1] / b[K - 1];
+                    for (int k = K - 2; k >= 0; --k)
+                        y[k] = (d[k] - c[k] * y[k + 1]) / b[k];
+                };
+
+                // Each (d, r) of M and each d of t smoothed independently.
+                for (int d = 0; d < D; ++d) {
+                    for (int r = 0; r < D; ++r) {
+                        std::vector<double> seq(K);
+                        for (int k = 0; k < K; ++k)
+                            seq[k] = transformTable[keys[k]]
+                                        .M[static_cast<size_t>(d) * D + r];
+                        smooth1D(seq);
+                        for (int k = 0; k < K; ++k)
+                            transformTable[keys[k]]
+                                .M[static_cast<size_t>(d) * D + r] = seq[k];
+                    }
+                    std::vector<double> seq(K);
+                    for (int k = 0; k < K; ++k)
+                        seq[k] = transformTable[keys[k]].t[static_cast<size_t>(d)];
+                    smooth1D(seq);
+                    for (int k = 0; k < K; ++k)
+                        transformTable[keys[k]].t[static_cast<size_t>(d)] = seq[k];
+                }
+            }
+        }
+
+        Output("MergeChunkModels: Transform table — %zu adjacent chunk pairs "
+               "fitted (affine, IRLS-Huber, min %d matches, chain smooth λ=%.2f)\n",
+               transformTable.size(), minMatch,
+               static_cast<double>(CrossChunkTransformChainSmoothLambda));
+    }
+
+    // Helper: chained transform position from chunk ca to chunk cb applied
+    // to point x_a ∈ ℝ^D (typically a cluster mean).  Returns the predicted
+    // position and the chained scatter (variance addition).  scatter = -1 if
+    // any link in the chain is missing.  For ca == cb returns (x_a, 0).
+    auto lookupTransform = [&](int ca, int cb, int D,
+                               const std::vector<float>& xA)
+        -> std::pair<std::vector<double>, double>
+    {
+        if (ca == cb) {
+            std::vector<double> p(D);
+            for (int j = 0; j < D; ++j) p[j] = static_cast<double>(xA[j]);
+            return {p, 0.0};
+        }
+        const int sgn = (ca < cb) ? 1 : -1;
+        const int ci = std::min(ca, cb);
+        const int cj = std::max(ca, cb);
+        // Compose adjacent transforms ci → ci+1 → ... → cj
+        // Forward composition:  x ← M_k x + t_k repeatedly.
+        // Reverse composition (cb < ca): apply inverse at each step.
+        std::vector<double> p(D);
+        for (int j = 0; j < D; ++j) p[j] = static_cast<double>(xA[j]);
+        double total_var = 0.0;
+        for (int k = ci; k < cj; ++k) {
+            auto it = transformTable.find({k, k + 1});
+            if (it == transformTable.end())
+                return {std::vector<double>(D, 0.0), -1.0};
+            const ChunkTransform& T = it->second;
+            if (sgn > 0) {
+                std::vector<double> np(D, 0.0);
+                for (int d = 0; d < D; ++d) {
+                    double s = T.t[static_cast<size_t>(d)];
+                    for (int r = 0; r < D; ++r)
+                        s += T.M[static_cast<size_t>(d) * D + r] * p[r];
+                    np[d] = s;
+                }
+                p = std::move(np);
+            } else {
+                // Inverse: x = M^{-1} (y − t).  For small D, invert via the
+                // adjugate/Cramer path is overkill; reuse cholFactor on M·Mᵀ
+                // would also be overkill.  In practice ca > cb is rare here
+                // (Phase 2 iterates forward).  Mark unsupported by returning
+                // missing — the smoothness gate then falls back to xcorr.
+                return {std::vector<double>(D, 0.0), -1.0};
+            }
+            total_var += T.scatter * T.scatter;
+        }
+        return {std::move(p), std::sqrt(total_var)};
+    };
+
     // ── Pass 2: F1 N×M xcorr on leftovers, directional edge waveforms ───
     //
     // For each leftover (chunk-cluster not matched by overlap voting),
@@ -2763,17 +3059,42 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                     if (static_cast<int>(mA.mean.size()) >= D &&
                         static_cast<int>(mB.mean.size()) >= D)
                     {
-                        const auto [expected, scatter] =
-                            lookupDrift(mA.chunkIdx, mB.chunkIdx, D);
-                        if (scatter > 0.0) {
-                            double dev2 = 0.0;
-                            for (int j = 0; j < D; j++) {
-                                const double d =
-                                    (static_cast<double>(mB.mean[j])
-                                   - static_cast<double>(mA.mean[j]))
-                                  - expected[j];
-                                dev2 += d * d;
+                        // Patch 0063: prefer the affine transform when
+                        // enabled and the chunk pair has a fitted T;
+                        // else fall back to translation-only drift table.
+                        double dev2 = 0.0;
+                        double scatter = -1.0;
+                        if (CrossChunkTransformDriftEnable != 0
+                            && !transformTable.empty())
+                        {
+                            const auto [pred, sc_t] =
+                                lookupTransform(mA.chunkIdx, mB.chunkIdx,
+                                                D, mA.mean);
+                            if (sc_t > 0.0) {
+                                for (int j = 0; j < D; ++j) {
+                                    const double d =
+                                        static_cast<double>(mB.mean[j])
+                                        - pred[j];
+                                    dev2 += d * d;
+                                }
+                                scatter = sc_t;
                             }
+                        }
+                        if (scatter < 0.0) {
+                            const auto [expected, sc_d] =
+                                lookupDrift(mA.chunkIdx, mB.chunkIdx, D);
+                            if (sc_d > 0.0) {
+                                for (int j = 0; j < D; j++) {
+                                    const double d =
+                                        (static_cast<double>(mB.mean[j])
+                                       - static_cast<double>(mA.mean[j]))
+                                      - expected[j];
+                                    dev2 += d * d;
+                                }
+                                scatter = sc_d;
+                            }
+                        }
+                        if (scatter > 0.0) {
                             const double dev_norm =
                                 std::sqrt(dev2) / scatter;
                             const double sig =
