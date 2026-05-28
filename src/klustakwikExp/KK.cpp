@@ -10927,9 +10927,10 @@ void KK::QualityWeightedSplitDispatch(
 void KK::FullCemSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
-    std::vector<std::vector<ChunkModel>>& /*perChunkModels*/,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
     int nFullDims,
-    const std::map<int, std::vector<int>>* sourceAllowlist)
+    const std::map<int, std::vector<int>>* sourceAllowlist,
+    int reprobeDepth)
 {
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
@@ -11199,6 +11200,11 @@ void KK::FullCemSplitPerChunk(
     }
 
     std::unordered_set<int> chunksAffected;
+    // Collect newly-created sub-cluster IDs per chunk for the optional
+    // reprobe pass (patch 0055).  A sub-cluster gets its own adaptive
+    // feature selection on reprobe, catching mixtures along axes the
+    // parent split didn't select.
+    std::map<int, std::vector<int>> newSubClusterIds;
     for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
         const auto& res = results[static_cast<size_t>(wi)];
         if (!res.changed) continue;
@@ -11217,18 +11223,33 @@ void KK::FullCemSplitPerChunk(
             const int sc = res.newSubLabels[static_cast<size_t>(i)];
             auto it = subToLc.find(sc);
             if (it == subToLc.end()) {
-                subToLc[sc] = nextLc[static_cast<size_t>(item.ck)]++;
+                const int fresh = nextLc[static_cast<size_t>(item.ck)]++;
+                subToLc[sc] = fresh;
+                newSubClusterIds[item.ck].push_back(fresh);
                 it = subToLc.find(sc);
             }
             cls[static_cast<size_t>(item.members[static_cast<size_t>(i)])] = it->second;
         }
+        // The parent ID (item.lc) also survived as sub-cluster 1; include
+        // it so reprobe can split it further too.
+        newSubClusterIds[item.ck].push_back(item.lc);
         chunksAffected.insert(item.ck);
     }
 
-    LockedStderr("[Phase 4b] FullCemSplit: %d clusters split, +%d new "
+    LockedStderr("[Phase 4b] FullCemSplit%s: %d clusters split, +%d new "
                  "sub-clusters, %d chunks affected\n",
+                 reprobeDepth > 0 ? " (reprobe)" : "",
                  totalSplits, totalNewSubClusters,
                  static_cast<int>(chunksAffected.size()));
+
+    // ── Optional reprobe: feed the new sub-clusters back through FullCem,
+    //    re-selecting adaptive features per sub-cluster.  Bounded by
+    //    FullCemSplitReprobePasses (depth) to prevent runaway recursion. ──
+    if (reprobeDepth < FullCemSplitReprobePasses && totalSplits > 0
+        && !newSubClusterIds.empty()) {
+        FullCemSplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                             nFullDims, &newSubClusterIds, reprobeDepth + 1);
+    }
 }
 
 
