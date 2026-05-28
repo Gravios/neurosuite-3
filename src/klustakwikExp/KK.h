@@ -286,7 +286,8 @@ public:
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims,
-        const std::map<int, std::vector<int>>* sourceAllowlist = nullptr);
+        const std::map<int, std::vector<int>>* sourceAllowlist = nullptr,
+        int reprobeDepth = 0);
 
     // Phase 4b quality-weighted split dispatcher.  Computes ISI
     // contamination + median-waveform variance for a random oversampled

@@ -457,6 +457,13 @@ float FullCemSplitFeatureBimodalThreshold = 0.10f;  // valley depth gate
 int   FullCemSplitMinFeatures            = 2;       // floor for CEM
 int   FullCemSplitMaxFeatures            = 0;       // 0 = SubspaceDims/nSpatial
 
+// FullCemSplitReprobePasses — after a cluster is split by FullCem, feed the
+// new sub-clusters back through FullCem this many more times.  Each pass
+// RE-SELECTS adaptive features per sub-cluster, so a sub-cluster that is
+// bimodal on an axis the parent did not select gets split too (multi-way
+// mixtures).  0 = single pass (default).
+int   FullCemSplitReprobePasses       = 0;
+
 // ---------------------------------------------------------------------------
 // QualityWeightedSplit — Phase 4b dispatcher that routes source clusters to
 // the splitter best suited to their failure mode, instead of letting each
@@ -783,6 +790,7 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(FullCemSplitFeatureBimodalThreshold);
     INT_PARAM(FullCemSplitMinFeatures);
     INT_PARAM(FullCemSplitMaxFeatures);
+    INT_PARAM(FullCemSplitReprobePasses);
     INT_PARAM(QualityWeightedSplitEnable);
     INT_PARAM(QualityWeightedSplitN);
     INT_PARAM(QualityWeightedSplitPoolFactor);
