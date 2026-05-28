@@ -172,4 +172,31 @@ bool ComputeClusterShifts(
                                     outShifts, outScores);
 }
 
+// ---------------------------------------------------------------------------
+// BuildClusterMedianWaveform — per-sample median across nSpikes waveforms.
+// Self-contained: gathers each (channel,sample) point across spikes into a
+// scratch column and selects the middle element via std::nth_element.
+// ---------------------------------------------------------------------------
+void BuildClusterMedianWaveform(
+    const int16_t* waveforms, int nSpikes,
+    int nChan, int nSamples,
+    std::vector<int16_t>& medianWv)
+{
+    const size_t nPts = static_cast<size_t>(nChan) * nSamples;
+    medianWv.resize(nPts);
+    if (nSpikes <= 0) {
+        std::fill(medianWv.begin(), medianWv.end(), static_cast<int16_t>(0));
+        return;
+    }
+    std::vector<int16_t> col(static_cast<size_t>(nSpikes));
+    const int midIdx = nSpikes / 2;
+    for (size_t p = 0; p < nPts; ++p) {
+        for (int si = 0; si < nSpikes; ++si)
+            col[static_cast<size_t>(si)] =
+                waveforms[static_cast<ptrdiff_t>(si) * nPts + p];
+        std::nth_element(col.begin(), col.begin() + midIdx, col.end());
+        medianWv[static_cast<size_t>(p)] = col[static_cast<size_t>(midIdx)];
+    }
+}
+
 }  // namespace KlustersRealign
