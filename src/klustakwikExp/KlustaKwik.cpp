@@ -465,6 +465,14 @@ int   FullCemSplitMaxFeatures            = 0;       // 0 = SubspaceDims/nSpatial
 // mixtures).  0 = single pass (default).
 int   FullCemSplitReprobePasses       = 0;
 
+// FullCemSplitRefractoryGate (patch 0057) — when 1, a FullCem split is
+// ACCEPTED only if it separates the parent's sub-refractory violating spike
+// pairs into different children (fraction >= FullCemSplitRefractoryGateMinSep).
+// Makes the refractory period influence the split DECISION, not just routing.
+// Uses QualityWeightedISIRefractoryMs as the refractory window.
+int   FullCemSplitRefractoryGate      = 0;
+float FullCemSplitRefractoryGateMinSep = 0.5f;
+
 // ---------------------------------------------------------------------------
 // QualityWeightedSplit — Phase 4b dispatcher that routes source clusters to
 // the splitter best suited to their failure mode, instead of letting each
@@ -793,6 +801,8 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(FullCemSplitMinFeatures);
     INT_PARAM(FullCemSplitMaxFeatures);
     INT_PARAM(FullCemSplitReprobePasses);
+    INT_PARAM(FullCemSplitRefractoryGate);
+    FLOAT_PARAM(FullCemSplitRefractoryGateMinSep);
     INT_PARAM(QualityWeightedSplitEnable);
     INT_PARAM(QualityWeightedSplitN);
     INT_PARAM(QualityWeightedSplitPoolFactor);

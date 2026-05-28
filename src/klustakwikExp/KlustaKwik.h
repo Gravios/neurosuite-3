@@ -319,6 +319,8 @@ extern float FullCemSplitFeatureBimodalThreshold;
 extern int   FullCemSplitMinFeatures;
 extern int   FullCemSplitMaxFeatures;
 extern int   FullCemSplitReprobePasses;
+extern int   FullCemSplitRefractoryGate;
+extern float FullCemSplitRefractoryGateMinSep;
 
 // QualityWeightedSplit — Phase 4b quality-routed splitter dispatch.
 // See KlustaKwik.cpp doc block.
