@@ -1511,15 +1511,14 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            // Per-iter trace.  Sub-trial CEMs (TrySplits' K2/K3, Phase 2b
-            // split test, RefractorySplit's per-cluster split test) are
-            // identified by 'split' in the phase label — they can fire
-            // thousands of times per run, drowning the top-level trace.
-            // Promoted to Verbose >= 2 to keep production runs readable.
-            const bool _isSubTrial =
-                phaseLabel && std::strstr(phaseLabel, "split") != nullptr;
-            const int  _traceVerbose = _isSubTrial ? 2 : 1;
-            if (Verbose >= _traceVerbose)
+            // Per-iter CEM trace.  Promoted ENTIRELY to Verbose >= 2:
+            // these fire once per iteration of every CEM — including the
+            // many per-cluster sub-trials (TrySplits' K2/K3, Phase 2b /
+            // RefractorySplit split tests, the Phase 4b FullCem probes) —
+            // and at Verbose 1 they drown the per-phase summaries
+            // (convergence digest, identity flow, split/merge counts),
+            // which stay at Verbose 1.
+            if (Verbose >= 2)
                 Output("  %s iter %d%c: %d clusters score %.7g nChanged %d\n",
                        phaseLabel, iter, FullStep ? 'F' : 'Q',
                        nClustersAlive, score, nChanged);
@@ -4410,7 +4409,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
             score = ComputeScore();
             if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
-            if (Verbose >= 1)
+            if (Verbose >= 2)
                 Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
                        iter, nClustersAlive, score, nChanged);
             FullStep = 1;
@@ -5889,7 +5888,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             MStep(); EStep(); nChanged = CStep(); ConsiderDeletion();
             score = ComputeScore();
             if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
-            if (Verbose >= 1)
+            if (Verbose >= 2)
                 Output("  P3 iter %d: %d clusters score %.7g nChanged %d\n",
                        iter, nClustersAlive, score, nChanged);
             FullStep = 1;
