@@ -493,7 +493,14 @@ int   Phase4cMinClusterSize       = 0;     // 0 = max(nFullDims+5, 25)
 int   Phase4cMaskTightClusters    = 1;     // exclude tight clusters from remix
 float Phase4cTightnessThreshold   = 0.02f; // rho = Vres/Psig below this = masked
 float Phase4cSignalChannelFraction= 0.1f;  // tau: signal channel if Ech >= tau*maxEch
-float Phase4cTightnessSpreadBeta  = 0.0f;  // rho_thresh_eff = thresh * nSig^beta (0 = off)
+float Phase4cTightnessSpreadBeta  = 0.0f;
+
+// ── Phase 5b: affine cross-chunk drift transform (patch 0063) ──────────────
+int   CrossChunkTransformDriftEnable     = 0;     // master switch (default off)
+int   CrossChunkTransformIRLSIters       = 5;     // IRLS-Huber iterations
+int   CrossChunkTransformMinMatches      = 0;     // 0 = max(D+2, 3)
+float CrossChunkTransformHuberK          = 1.345f;
+float CrossChunkTransformChainSmoothLambda = 1.0f; // 0 = no chain smoothing  // rho_thresh_eff = thresh * nSig^beta (0 = off)
 
 // ---------------------------------------------------------------------------
 // QualityWeightedSplit — Phase 4b dispatcher that routes source clusters to
@@ -839,6 +846,11 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(Phase4cTightnessThreshold);
     FLOAT_PARAM(Phase4cSignalChannelFraction);
     FLOAT_PARAM(Phase4cTightnessSpreadBeta);
+    INT_PARAM(CrossChunkTransformDriftEnable);
+    INT_PARAM(CrossChunkTransformIRLSIters);
+    INT_PARAM(CrossChunkTransformMinMatches);
+    FLOAT_PARAM(CrossChunkTransformHuberK);
+    FLOAT_PARAM(CrossChunkTransformChainSmoothLambda);
     INT_PARAM(QualityWeightedSplitEnable);
     INT_PARAM(QualityWeightedSplitN);
     INT_PARAM(QualityWeightedSplitPoolFactor);

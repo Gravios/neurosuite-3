@@ -335,6 +335,11 @@ extern int   Phase4cMaskTightClusters;
 extern float Phase4cTightnessThreshold;
 extern float Phase4cSignalChannelFraction;
 extern float Phase4cTightnessSpreadBeta;
+extern int   CrossChunkTransformDriftEnable;
+extern int   CrossChunkTransformIRLSIters;
+extern int   CrossChunkTransformMinMatches;
+extern float CrossChunkTransformHuberK;
+extern float CrossChunkTransformChainSmoothLambda;
 
 // QualityWeightedSplit — Phase 4b quality-routed splitter dispatch.
 // See KlustaKwik.cpp doc block.
