@@ -5379,6 +5379,27 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
         for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
             const auto _iterT0 = std::chrono::steady_clock::now();
+            m_phase4Iter = _tmIter;
+
+            // Oscillation-guard bounce tracking (patch 0053).  A cluster
+            // hash present pre-split, ABSENT post-split (the split
+            // destroyed it), and present again post-merge (the merge
+            // exactly reassembled it) is a round-trip bounce -> cooldown.
+            std::set<uint64_t> _preSplitHashes, _postSplitHashes;
+            bool _didSplitThisIter = false;
+            auto _hashesOf = [&](const std::vector<std::vector<int>>& cls) {
+                std::set<uint64_t> out;
+                for (size_t _ck = 0; _ck < cls.size(); ++_ck) {
+                    std::unordered_map<int, std::vector<int>> byLc;
+                    const auto& cv = cls[_ck];
+                    const auto& pv = chunkPoints[_ck];
+                    for (size_t _i = 0; _i < cv.size(); ++_i)
+                        if (cv[_i] != 0) byLc[cv[_i]].push_back(pv[_i]);
+                    for (auto& _kv : byLc)
+                        out.insert(ClusterMembershipHash(_kv.second));
+                }
+                return out;
+            };
             // Phase 4b: optional alternating KnnSplit inside the Phase 4
             // loop — runs BEFORE merge so each iter is split→harvest→merge.
             // The closing iter of the loop is template-merge-only, so its
@@ -5404,6 +5425,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 std::set<int> _kBefore;
                 for (const auto& v : perChunkClass)
                     for (int c : v) if (c != 0) _kBefore.insert(c);
+                if (AlternatingSplitCooldownIters > 0)
+                    _preSplitHashes = _hashesOf(perChunkClass);
                 if (QualityWeightedSplitEnable) {
                     // Quality-routed: dispatcher computes ISI contamination
                     // + waveform variance for an oversampled pool and routes
@@ -5418,6 +5441,10 @@ float KK::RunChunkedCEM(float chunkMinutes,
                         FullCemSplitPerChunk(
                             chunkPoints, perChunkClass, perChunkModels, nFullDims);
                     }
+                }
+                if (AlternatingSplitCooldownIters > 0) {
+                    _postSplitHashes = _hashesOf(perChunkClass);
+                    _didSplitThisIter = true;
                 }
                 for (size_t _ckb = 0; _ckb < perChunkClass.size(); ++_ckb) {
                     const auto& aft = perChunkClass[_ckb];
@@ -5565,6 +5592,30 @@ float KK::RunChunkedCEM(float chunkMinutes,
             // growth.  Updating here (rather than at split time) means
             // the streak reflects the OUTCOME of an alternation round
             // (split + cleanup-merge together), not the split alone.
+            // Oscillation-guard bounce detection (patch 0053): a cluster
+            // hash that was pre-split, destroyed by the split, and exactly
+            // recreated by the merge round-tripped -> cooldown it so the
+            // next iters' split budget skips it.
+            if (_didSplitThisIter && AlternatingSplitCooldownIters > 0) {
+                const std::set<uint64_t> _postMergeHashes =
+                    _hashesOf(perChunkClass);
+                int _nBounced = 0;
+                for (uint64_t _h : _postMergeHashes) {
+                    if (_preSplitHashes.count(_h)
+                        && !_postSplitHashes.count(_h)) {
+                        m_splitCooldown[_h] =
+                            _tmIter + AlternatingSplitCooldownIters;
+                        ++_nBounced;
+                    }
+                }
+                if (_nBounced > 0) {
+                    LockedStderr("[Phase 4b] oscillation guard: %d cluster(s) "
+                                 "round-tripped (split->merge no-op); cooled "
+                                 "down for %d iter(s)\n",
+                                 _nBounced, AlternatingSplitCooldownIters);
+                }
+            }
+
             if (_altGate) {
                 if (_kNewThisIter > _nMerged) ++_altNetGrowthStreak;
                 else                          _altNetGrowthStreak = 0;
@@ -10505,6 +10556,31 @@ void KK::PerClusterCEMPerChunk(
 // behaviour independent (Phase 2a can evolve its load-balancing
 // strategy without affecting Phase 4b, and vice-versa).
 // ---------------------------------------------------------------------------
+// KK::ClusterMembershipHash — order-independent signature of a cluster's
+// membership + per-spike alignment.  Commutative fold (add of a per-spike
+// avalanche mix) of each member's (globalId, m_cumShift[globalId]).  Two
+// clusters with the same spike set AND the same shifts hash equal regardless
+// of spike order; any membership change or realign changes the hash.
+// ---------------------------------------------------------------------------
+uint64_t KK::ClusterMembershipHash(const std::vector<int>& globalSpikeIds) const
+{
+    uint64_t h = 0;
+    for (int gid : globalSpikeIds) {
+        uint64_t x = static_cast<uint64_t>(static_cast<unsigned>(gid));
+        const int sh = (!m_cumShift.empty() && gid >= 0
+                        && gid < static_cast<int>(m_cumShift.size()))
+                       ? m_cumShift[static_cast<size_t>(gid)] : 0;
+        x = x * 1099511628211ull
+            + static_cast<uint64_t>(static_cast<unsigned>(sh + 1024));
+        x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;
+        h += x;   // commutative -> order-independent
+    }
+    h ^= (static_cast<uint64_t>(globalSpikeIds.size()) << 1);
+    return h;
+}
+
+
+// ---------------------------------------------------------------------------
 // KK::ClusterISIContamination — fraction of inter-spike intervals below the
 // refractory window.  A clean single unit has ~0 (true refractoriness); a
 // temporal mixture of >= 2 units has elevated violations because the units
@@ -10613,6 +10689,7 @@ void KK::QualityWeightedSplitDispatch(
         std::vector<int> globalIds;   // global spike indices
     };
     std::vector<Cand> pool;
+    int nCooldownSkipped = 0;
     for (int ck = 0; ck < nCh; ck++) {
         const auto& cls = perChunkClass[static_cast<size_t>(ck)];
         const auto& pts = chunkPoints[static_cast<size_t>(ck)];
@@ -10625,8 +10702,22 @@ void KK::QualityWeightedSplitDispatch(
         }
         for (auto& kv : byLc) {
             if (static_cast<int>(kv.second.size()) < minClusterSize) continue;
+            // Oscillation guard (patch 0053): skip clusters on active
+            // split cooldown (their membership round-tripped recently).
+            if (!m_splitCooldown.empty()) {
+                const uint64_t h = ClusterMembershipHash(kv.second);
+                auto it = m_splitCooldown.find(h);
+                if (it != m_splitCooldown.end() && it->second > m_phase4Iter) {
+                    ++nCooldownSkipped;
+                    continue;
+                }
+            }
             pool.push_back({ck, kv.first, std::move(kv.second)});
         }
+    }
+    if (nCooldownSkipped > 0) {
+        LockedStderr("[Phase 4b] QualityWeightedSplit: skipped %d cluster(s) "
+                     "on oscillation cooldown\n", nCooldownSkipped);
     }
     if (pool.empty()) {
         LockedStderr("[Phase 4b] QualityWeightedSplit: no eligible sources "
@@ -14363,24 +14454,11 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
             }
 
             // ── Median template cache (patch 0052) ────────────────────
-            // Membership hash = order-independent fold of each member's
-            // (globalId, cumShift).  Including cumShift means a post-merge
-            // realign (which shifts member spikes) invalidates the entry.
+            // Membership hash via the shared ClusterMembershipHash method
+            // (also used by the oscillation guard).  Including cumShift
+            // means a post-merge realign invalidates the entry.
             auto membershipHash = [&](const std::vector<int>& sp) -> uint64_t {
-                uint64_t h = 0;
-                for (int gid : sp) {
-                    uint64_t x = static_cast<uint64_t>(static_cast<unsigned>(gid));
-                    const int sh = (!m_cumShift.empty()
-                                    && gid >= 0
-                                    && gid < static_cast<int>(m_cumShift.size()))
-                                   ? m_cumShift[static_cast<size_t>(gid)] : 0;
-                    x = x * 1099511628211ull
-                        + static_cast<uint64_t>(static_cast<unsigned>(sh + 1024));
-                    x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;
-                    h += x;   // commutative -> order-independent
-                }
-                h ^= (static_cast<uint64_t>(sp.size()) << 1);
-                return h;
+                return ClusterMembershipHash(sp);
             };
 
             // Serial pass: resolve cache hits, mark misses dirty.
