@@ -192,6 +192,8 @@ extern int   TemplateMatchBatchedXcorr;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
+extern float CrossChunkVoteMinFraction;
+extern float CrossChunkVoteMinMargin;
 
 // CrossChunkMaxChunkDistance — Phase 5 Pass 2 (edge xcorr) candidate-pair
 // gate.  Restricts the cross-chunk xcorr search to chunk pairs whose
