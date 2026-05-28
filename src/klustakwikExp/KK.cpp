@@ -2464,13 +2464,26 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         for (const auto& [key, count] : votes) nOverlapSpikes += count;
         const int voteFloor = std::max(3, nOverlapSpikes / 500);
 
-        // Mutual best-from-each-side
+        // Mutual best-from-each-side.  Also track, per A-cluster, its TOTAL
+        // overlap votes and its SECOND-best partner count (patch 0059) so we
+        // can report a meaningful agreement fraction and optionally gate on a
+        // best-vs-second-best margin.  The old display printed the same
+        // per-pair count from both sides (always X/X — see below), which was
+        // unanimous by construction and conveyed no confidence information.
         std::unordered_map<int, std::pair<int,int>> bestFromA, bestFromB;
+        std::unordered_map<int, int>                totalFromA;   // clsK -> Σ partner votes
+        std::unordered_map<int, int>                secondFromA;  // clsK -> 2nd-best count
         for (const auto& [key, count] : votes) {
             const int clsK  = key / MaxPossibleClusters;
             const int clsK1 = key % MaxPossibleClusters;
+            totalFromA[clsK] += count;
             auto& bA = bestFromA[clsK];
-            if (count > bA.second) bA = {clsK1, count};
+            if (count > bA.second) {
+                secondFromA[clsK] = bA.second;   // old best demoted to 2nd
+                bA = {clsK1, count};
+            } else if (count > secondFromA[clsK]) {
+                secondFromA[clsK] = count;
+            }
             auto& bB = bestFromB[clsK1];
             if (count > bB.second) bB = {clsK, count};
         }
@@ -2483,6 +2496,27 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
             auto itA2 = localToIdxA.find(clsK);
             auto itB2 = localToIdxB.find(clsK1);
             if (itA2 == localToIdxA.end() || itB2 == localToIdxB.end()) continue;
+
+            // Meaningful confidence (patch 0059): of clsK's overlap spikes,
+            // what fraction co-assigned to clsK1, and by what margin over its
+            // next-best partner.  (topB.second == itBest->second.second always,
+            // since both reference votes[clsK,clsK1] for a mutual best — that
+            // is why the legacy X/X display was uninformative.)
+            const int    kTotal = totalFromA[clsK];
+            const int    second = secondFromA.count(clsK) ? secondFromA[clsK] : 0;
+            const double purity = (kTotal > 0)
+                ? static_cast<double>(topB.second) / kTotal : 0.0;
+
+            // Optional gates — default 0.0 preserves prior accept behaviour.
+            if (CrossChunkVoteMinFraction > 0.0f
+                && purity < static_cast<double>(CrossChunkVoteMinFraction))
+                continue;
+            if (CrossChunkVoteMinMargin > 0.0f
+                && static_cast<double>(topB.second)
+                       < (1.0 + static_cast<double>(CrossChunkVoteMinMargin))
+                             * static_cast<double>(second))
+                continue;
+
             const int mA = itA2->second;
             const int mB = itB2->second;
             matched.insert(mA);
@@ -2490,15 +2524,17 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
             if (Find(mA) != Find(mB)) {
                 Union(mA, mB);
                 totalVoteMerges++;
-                Output("  vote-match  chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d\n",
+                Output("  vote-match  chunk%d.c%d <-> chunk%d.c%d  %d/%d spikes "
+                       "(purity %.2f, 2nd %d)\n",
                        models[mA].chunkIdx, clsK,
                        models[mB].chunkIdx, clsK1,
-                       topB.second, itBest->second.second);
+                       topB.second, kTotal, purity, second);
             } else {
-                Output("  vote-confirm chunk%d.c%d <-> chunk%d.c%d  votes=%d/%d (already merged)\n",
+                Output("  vote-confirm chunk%d.c%d <-> chunk%d.c%d  %d/%d spikes "
+                       "(purity %.2f, 2nd %d) (already merged)\n",
                        models[mA].chunkIdx, clsK,
                        models[mB].chunkIdx, clsK1,
-                       topB.second, itBest->second.second);
+                       topB.second, kTotal, purity, second);
             }
             // Harvest this confirmed pair so we can later compute the
             // per-adjacent-chunk-pair drift displacement vector.  These
