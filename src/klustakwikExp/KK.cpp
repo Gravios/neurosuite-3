@@ -11472,30 +11472,31 @@ void KK::RunPhase4cRemix(
                  maxIters, Phase4cKnnSources, Phase4cFullCemSources, nNeigh,
                  doMask ? ", tight-cluster mask ON" : "");
 
-    std::vector<int16_t> rbuf(static_cast<size_t>(wElems));
-
     // Residual dispersion ρ = V_res / P_sig on the signal-support channels for
     // one cluster's global spike ids.  Scale-free (≈1/SNR²): amplitude cancels
     // (both terms ∝ k²) and per-element averaging on the signal support makes
     // concentrated and diffuse footprints comparable.  Returns +inf if it
     // cannot be measured (so such a cluster is never masked).
-    auto clusterTightness = [&](const std::vector<int>& gids) -> double {
+    auto clusterTightness = [&](const std::vector<int>& gids,
+                                std::vector<int16_t>& rbufLocal)
+        -> std::pair<double,int>
+    {
         const int N = static_cast<int>(gids.size());
-        if (N < 2) return std::numeric_limits<double>::infinity();
+        if (N < 2) return { std::numeric_limits<double>::infinity(), 1 };
         std::vector<double> mean(static_cast<size_t>(wElems), 0.0);
         int ok = 0;
         std::vector<std::vector<int16_t>> cache;
         cache.reserve(static_cast<size_t>(N));
         for (int i = 0; i < N; ++i) {
             if (!TimeShiftReadSpikeWave(gids[static_cast<size_t>(i)],
-                                        wElems, rbuf.data())) continue;
-            cache.push_back(rbuf);
+                                        wElems, rbufLocal.data())) continue;
+            cache.push_back(rbufLocal);
             for (int e = 0; e < wElems; ++e)
                 mean[static_cast<size_t>(e)] +=
-                    static_cast<double>(rbuf[static_cast<size_t>(e)]);
+                    static_cast<double>(rbufLocal[static_cast<size_t>(e)]);
             ++ok;
         }
-        if (ok < 2) return std::numeric_limits<double>::infinity();
+        if (ok < 2) return { std::numeric_limits<double>::infinity(), 1 };
         const double invOk = 1.0 / ok;
         for (int e = 0; e < wElems; ++e) mean[static_cast<size_t>(e)] *= invOk;
 
@@ -11511,7 +11512,7 @@ void KK::RunPhase4cRemix(
             Ech[static_cast<size_t>(ch)] = e2;
             if (e2 > maxE) maxE = e2;
         }
-        if (maxE <= 0.0) return std::numeric_limits<double>::infinity();
+        if (maxE <= 0.0) return { std::numeric_limits<double>::infinity(), 1 };
 
         double Psig = 0.0, Vres = 0.0;
         long   nSig = 0;
@@ -11525,7 +11526,7 @@ void KK::RunPhase4cRemix(
                 Psig += m * m;
             }
         }
-        if (nSig == 0) return std::numeric_limits<double>::infinity();
+        if (nSig == 0) return { std::numeric_limits<double>::infinity(), 1 };
         const long sigElems = nSig * nSamp;
         Psig /= static_cast<double>(sigElems);
 
@@ -11541,25 +11542,39 @@ void KK::RunPhase4cRemix(
                 }
             }
         if (nResElem == 0 || Psig <= 0.0)
-            return std::numeric_limits<double>::infinity();
+            return { std::numeric_limits<double>::infinity(), 1 };
         Vres /= static_cast<double>(nResElem);
         // Effective threshold scaling lives at the call site (uses nSig).
-        m_phase4cLastNSig = static_cast<int>(nSig);
-        return Vres / Psig;
+        return { Vres / Psig, static_cast<int>(nSig) };
     };
-
-    std::mt19937 rng(RandomSeed != 0
-                     ? static_cast<unsigned>(RandomSeed ^ 0x4c4c4c4cu)
-                     : std::random_device{}());
 
     int grandChanged = 0;
     for (int it = 0; it < maxIters; ++it) {
         int changedThisIter = 0;
 
-        // Per-route allowlists assembled this iteration.
-        std::map<int, std::vector<int>> knnAllow, cemAllow;
+        // Per-route allowlists, assembled per-chunk under the parallel for
+        // (disjoint slots — no concurrent map insert).  Gathered into the
+        // final std::map serially after the loop.
+        std::vector<std::vector<int>> knnForChunk(static_cast<size_t>(nCh));
+        std::vector<std::vector<int>> cemForChunk(static_cast<size_t>(nCh));
 
+        // ── Per-chunk parallelism (patch 0064) ──────────────────────────
+        // Each iteration mutates only perChunkClass[ck] / perChunkModels[ck]
+        // (disjoint slots) and writes its own knnForChunk[ck]/cemForChunk[ck]
+        // entry.  Hazards moved per-thread: rbuf (read-spike scratch),
+        // chunkRng (deterministic per-(ck,it,seed)).  The outer `it` loop is
+        // intentionally serial — each iter depends on the previous iter's
+        // post-split/merge state.
+        #pragma omp parallel for schedule(dynamic)
         for (int ck = 0; ck < nCh; ++ck) {
+            // Per-thread scratch (lives in this iteration's stack frame).
+            std::vector<int16_t> rbuf(static_cast<size_t>(wElems));
+            std::mt19937 chunkRng((RandomSeed != 0
+                ? static_cast<unsigned>(RandomSeed) ^ 0x4c4c4c4cu
+                : std::random_device{}())
+                ^ (static_cast<unsigned>(ck) * 0x9E3779B9u)
+                ^ (static_cast<unsigned>(it) << 16));
+
             const auto& pts = chunkPoints[static_cast<size_t>(ck)];
             auto&       cls = perChunkClass[static_cast<size_t>(ck)];
             auto&       mdls = perChunkModels[static_cast<size_t>(ck)];
@@ -11580,9 +11595,9 @@ void KK::RunPhase4cRemix(
                 if (doMask) {
                     std::vector<int> gids; gids.reserve(idx.size());
                     for (int li : idx) gids.push_back(pts[static_cast<size_t>(li)]);
-                    const double rho = clusterTightness(gids);
+                    const auto [rho, nSig] = clusterTightness(gids, rbuf);
                     const double thr = static_cast<double>(Phase4cTightnessThreshold)
-                        * std::pow(std::max(1, m_phase4cLastNSig),
+                        * std::pow(std::max(1, nSig),
                                    static_cast<double>(Phase4cTightnessSpreadBeta));
                     if (rho < thr) continue;   // tight → masked out
                 }
@@ -11613,7 +11628,7 @@ void KK::RunPhase4cRemix(
 
             // Random source order.
             std::vector<int> order = eligible;
-            std::shuffle(order.begin(), order.end(), rng);
+            std::shuffle(order.begin(), order.end(), chunkRng);
 
             const int wantKnn = std::max(0, Phase4cKnnSources);
             const int wantCem = std::max(0, Phase4cFullCemSources);
@@ -11662,7 +11677,7 @@ void KK::RunPhase4cRemix(
                     if (conflict) {
                         std::vector<int> cv(conflicting.begin(), conflicting.end());
                         std::uniform_int_distribution<size_t> pick(0, cv.size() - 1);
-                        const int drop = cv[pick(rng)];
+                        const int drop = cv[pick(chunkRng)];
                         pools.erase(pools.begin() + drop);
                     }
                 }
@@ -11747,9 +11762,18 @@ void KK::RunPhase4cRemix(
                         }), mdls.end());
                 }
 
-                if (P.route == 0) knnAllow[ck].push_back(P.src);
-                else              cemAllow[ck].push_back(P.src);
+                if (P.route == 0) knnForChunk[static_cast<size_t>(ck)].push_back(P.src);
+                else              cemForChunk[static_cast<size_t>(ck)].push_back(P.src);
             }
+        }
+
+        // ── Serial gather: scratch per-chunk vectors → final allowlist maps.
+        std::map<int, std::vector<int>> knnAllow, cemAllow;
+        for (int ck = 0; ck < nCh; ++ck) {
+            if (!knnForChunk[static_cast<size_t>(ck)].empty())
+                knnAllow[ck] = std::move(knnForChunk[static_cast<size_t>(ck)]);
+            if (!cemForChunk[static_cast<size_t>(ck)].empty())
+                cemAllow[ck] = std::move(cemForChunk[static_cast<size_t>(ck)]);
         }
 
         if (knnAllow.empty() && cemAllow.empty()) {
@@ -16712,6 +16736,19 @@ void KK::WaveKnnSplitPerChunk(
     int totalSpikesReassigned  = 0;
     int totalSpikesResidual    = 0;
 
+    // ── Per-chunk parallelism (patch 0064) ─────────────────────────────
+    // Each iteration writes only to perChunkClass[ck] / perChunkModels[ck]
+    // (disjoint slots) and uses local scratch (chunkFeat, chunkLabels,
+    // traces, aniso, v, w); wave_knn_split::Run is reentrant (no statics
+    // beyond a pure inline helper).  Data[] is read-only.  callSalt was
+    // already advanced once before the loop, so per-chunk seeds (ck XOR
+    // callSalt-mixed) are deterministic and stable under reordering.
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:chunksTotal,chunksCalled,chunksProcessed, \
+                  totalSourcesConsidered,totalSourcesAnisoFiltered, \
+                  totalSourcesSplit,totalNewClusters, \
+                  totalResidualClusters,totalSpikesReassigned, \
+                  totalSpikesResidual)
     for (int ck = 0; ck < nCh; ++ck) {
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];

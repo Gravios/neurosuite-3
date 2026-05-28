@@ -608,7 +608,6 @@ public:
     // clusters -- relabeling the same spikes every round.  Starts at 0
     // each process run, so RandomSeed reproducibility is preserved.
     unsigned           m_phase4SplitCallCount = 0;
-    int                m_phase4cLastNSig = 1;  // patch 0062: signal-channel count from last tightness eval
 
     // Phase 4 median-template cache (patch 0052).  Key =
     // chunkIdx*MaxPossibleClusters + localClusterId.  Value =
