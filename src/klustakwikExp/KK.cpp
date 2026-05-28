@@ -10415,6 +10415,12 @@ void KK::FullCemSplitPerChunk(
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
 
+    // Per-call salt (see m_phase4SplitCallCount doc) — increments every
+    // invocation so the shuffle picks a different subset each Phase 4b
+    // iter.  Shared counter with WaveKnnSplitPerChunk, so the two
+    // splitters also never collide on the same call value.
+    const unsigned callSalt = m_phase4SplitCallCount++;
+
     const int minClusterSize = (FullCemSplitMinClusterSize > 0)
                              ? FullCemSplitMinClusterSize
                              : std::max(nFullDims + 5, 25);
@@ -10452,12 +10458,15 @@ void KK::FullCemSplitPerChunk(
 
     // ── Phase B: random shuffle + optional cap.  Salt the seed
     //    differently from WaveKnnSplit so the two splitters don't pick
-    //    the same sources in the same order.
+    //    the same sources in the same order.  callSalt makes each
+    //    invocation shuffle a different order (Knuth multiplicative
+    //    hash mix); without it, every Phase 4b iter picked identical
+    //    clusters.
     {
-        const unsigned seed = static_cast<unsigned>(RandomSeed)
+        const unsigned base = static_cast<unsigned>(RandomSeed)
                                 ? static_cast<unsigned>(RandomSeed)
                                 : static_cast<unsigned>(std::time(nullptr));
-        std::mt19937 ordRng(seed ^ 0xc1d2e3f4u);
+        std::mt19937 ordRng(base ^ 0xc1d2e3f4u ^ (callSalt * 2654435761u));
         std::shuffle(items.begin(), items.end(), ordRng);
     }
     if (FullCemSplitMaxSourcesPerCall > 0
@@ -14941,6 +14950,11 @@ void KK::WaveKnnSplitPerChunk(
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
 
+    // Per-call salt: increments every invocation so the random source
+    // shuffle inside wave_knn_split::Run picks a different subset each
+    // Phase 4b alternation iter (see m_phase4SplitCallCount doc).
+    const unsigned callSalt = m_phase4SplitCallCount++;
+
     LockedStderr(
         "[Phase 2b.5] WaveKnnSplitPerChunk (klusters-faithful): "
         "K=%d majThr=%.2f minRefSize=%d minSourceSize=%d minNewClusterSize=%d\n",
@@ -15065,10 +15079,14 @@ void KK::WaveKnnSplitPerChunk(
         // chunk gets a different stream because std::time() advances).
         // Otherwise: deterministic, but per-chunk-unique = RandomSeed XOR
         // (chunk_idx * 1000003), a prime offset that avoids low-bit
-        // collisions in the mt19937 stream.
+        // collisions in the mt19937 stream.  ALSO mixed with callSalt
+        // (Knuth multiplicative hash) so each Phase 4b iter shuffles a
+        // different source order; without callSalt the same clusters
+        // were picked every iter (constant spike-relabel count bug).
         cfg.rngSeed                    = (RandomSeed != 0)
             ? static_cast<unsigned>(RandomSeed) ^
-              (static_cast<unsigned>(ck) * 1000003u)
+              (static_cast<unsigned>(ck) * 1000003u) ^
+              (callSalt * 2654435761u)
             : 0u;
         cfg.residualBecomesNewCluster  = (WaveKnnResidualBecomesCluster != 0);
         cfg.minSourceAnisotropy        = WaveKnnMinSourceAnisotropy;

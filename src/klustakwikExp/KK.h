@@ -552,6 +552,16 @@ public:
     int                m_timeShiftCallCount = 0;
     int                m_timeShiftMaxAbs = 1;   // hard clamp on |cumShift|; = basis N
 
+    // Per-call counter for Phase 4b splitters (WaveKnnSplitPerChunk +
+    // FullCemSplitPerChunk).  Mixed into their random-shuffle seeds so
+    // each call (each Phase 4b alternation iter) picks a DIFFERENT
+    // random subset of source clusters when MaxSourcesPerCall caps the
+    // batch.  Without this, the shuffle seed depends only on RandomSeed
+    // (constant) + chunk index, so every iter picks the identical
+    // clusters -- relabeling the same spikes every round.  Starts at 0
+    // each process run, so RandomSeed reproducibility is preserved.
+    unsigned           m_phase4SplitCallCount = 0;
+
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // Opaque GPU handle for shift-probe kernels.  Allocated by InitTimeShift
     // when a GPU device is available; null otherwise (falls through to CPU
