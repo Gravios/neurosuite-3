@@ -7995,6 +7995,49 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
     std::vector<int>     shifts;
     std::vector<float>   scores;
 
+    // ── Per-cluster minimum-variance pass selection (patch 0061) ─────────
+    // Alignment is independent per cluster (each aligns to its OWN mean), so
+    // each cluster reaches its residual-variance minimum at its OWN pass — a
+    // high-SNR unit may bottom out at pass 2 while a faint one keeps
+    // tightening.  Selection is therefore PER CLUSTER: track each cluster's
+    // least residual variance and the m_cumShift of its spikes at that pass,
+    // and restore each cluster independently before the disk write.  (A single
+    // global best-pass would force every cluster onto whichever pass won the
+    // SUM — strictly worse, and nothing couples the clusters to justify it.)
+    const bool selMinVar =
+        (KlustersRealignSelectMinVariance != 0 && KlustersRealignIters > 1);
+    std::vector<double> bestSSEPerCluster;
+    std::vector<int>    bestCumPerSpike;
+    if (selMinVar) {
+        bestSSEPerCluster.assign(static_cast<size_t>(MaxPossibleClusters),
+                                 std::numeric_limits<double>::infinity());
+        bestCumPerSpike = m_cumShift;     // spikes never realigned keep their shift
+    }
+
+    // Residual sum-of-squares of the N spikes currently in waveBuf about
+    // their per-sample mean — the waveform variance about the cluster's
+    // template, which is what the alignment minimises.
+    auto clusterResidualSSE = [&](int N) -> double {
+        std::vector<double> mean(static_cast<size_t>(waveSamples), 0.0);
+        for (int i = 0; i < N; ++i)
+            for (int e = 0; e < waveSamples; ++e)
+                mean[static_cast<size_t>(e)] +=
+                    waveBuf[static_cast<size_t>(i) * waveSamples + e];
+        const double invN = 1.0 / N;
+        for (int e = 0; e < waveSamples; ++e)
+            mean[static_cast<size_t>(e)] *= invN;
+        double sse = 0.0;
+        for (int i = 0; i < N; ++i)
+            for (int e = 0; e < waveSamples; ++e) {
+                const double d =
+                    static_cast<double>(
+                        waveBuf[static_cast<size_t>(i) * waveSamples + e])
+                    - mean[static_cast<size_t>(e)];
+                sse += d * d;
+            }
+        return sse;
+    };
+
     // ── Iterate to convergence (patch 0060) ──────────────────────────────
     // Each pass rebuilds the per-cluster mean from the CURRENTLY-aligned
     // waveforms — TimeShiftReadSpikeWave honours the m_cumShift committed by
@@ -8040,6 +8083,20 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
             continue;
         }
 
+        // Per-cluster min-variance snapshot (patch 0061).  waveBuf reflects
+        // this cluster's state at the START of this pass (its shift below is
+        // not yet committed).  If that is this cluster's tightest seen so far,
+        // remember its spikes' current shifts.
+        if (selMinVar) {
+            const double sse = clusterResidualSSE(N);
+            if (sse < bestSSEPerCluster[static_cast<size_t>(c)]) {
+                bestSSEPerCluster[static_cast<size_t>(c)] = sse;
+                for (int i = 0; i < N; ++i)
+                    bestCumPerSpike[static_cast<size_t>(pts[i])] =
+                        m_cumShift[static_cast<size_t>(pts[i])];
+            }
+        }
+
         // ── Compute per-spike shifts via XcorrDispatch ────────────────
         const bool ok = KlustersRealign::ComputeClusterShiftsFlat(
             waveBuf.data(), N,
@@ -8079,6 +8136,53 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
                          rIter + 1, maxRealignIters, changedThisIter);
         if (changedThisIter == 0) break;   // converged — no spike moved
     }  // end realign-iteration loop
+
+    // ── Restore each cluster's own minimum-variance shifts (patch 0061) ──
+    // The final state must compete too (the start-of-pass probe never saw the
+    // last pass's commits unless it converged), so re-read each cluster once
+    // more, snapshot if it is now tighter, then restore PER CLUSTER.  Spikes
+    // in clusters never realigned keep their original shifts (bestCumPerSpike
+    // was seeded from m_cumShift).
+    if (selMinVar) {
+        int nRolledBack = 0, nEligible = 0;
+        for (int cc = 0; cc < nClustersAlive; ++cc) {
+            const int c = AliveIndex[cc];
+            if (c <= 0 || c >= MaxPossibleClusters) continue;
+            const auto& pts = clusterSpikes[static_cast<size_t>(c)];
+            const int N = static_cast<int>(pts.size());
+            if (N < minSize) continue;
+            waveBuf.assign(static_cast<size_t>(N) * waveSamples, 0);
+            int nReadOk = 0;
+            for (int i = 0; i < N; ++i) {
+                int16_t* dst = waveBuf.data() +
+                               static_cast<ptrdiff_t>(i) * waveSamples;
+                if (TimeShiftReadSpikeWave(pts[static_cast<size_t>(i)],
+                                           waveSamples, dst)) ++nReadOk;
+                else std::memset(dst, 0,
+                                 static_cast<size_t>(waveSamples) *
+                                 sizeof(int16_t));
+            }
+            if (nReadOk < minSize) continue;
+            ++nEligible;
+            const double sse = clusterResidualSSE(N);
+            if (sse < bestSSEPerCluster[static_cast<size_t>(c)]) {
+                bestSSEPerCluster[static_cast<size_t>(c)] = sse;
+                for (int i = 0; i < N; ++i)
+                    bestCumPerSpike[static_cast<size_t>(pts[i])] =
+                        m_cumShift[static_cast<size_t>(pts[i])];
+            }
+            // Did this cluster's best pass differ from its final state?
+            bool rolled = false;
+            for (int i = 0; i < N; ++i)
+                if (bestCumPerSpike[static_cast<size_t>(pts[i])] !=
+                    m_cumShift[static_cast<size_t>(pts[i])]) { rolled = true; break; }
+            if (rolled) ++nRolledBack;
+        }
+        m_cumShift = bestCumPerSpike;
+        LockedStderr("[Phase 7c] min-variance select: %d/%d clusters rolled "
+                     "back to an earlier (tighter) pass\n",
+                     nRolledBack, nEligible);
+    }
 
     stats.meanAbsShift = stats.nSpikesEvaluated > 0
         ? static_cast<double>(sumAbsShift) / stats.nSpikesEvaluated

@@ -235,6 +235,7 @@ extern int   KlustersRealignEnable;    ///< Phase 7c enable (0 off, 1 on)
 extern int   KlustersRealignMaxShift;  ///< xcorr search radius (samples), capped at nSamp/4
 extern int   KlustersRealignMinSize;   ///< skip clusters smaller than this
 extern int   KlustersRealignIters;     ///< realign passes (>1 = iterate to convergence)
+extern int   KlustersRealignSelectMinVariance; ///< per-cluster min-variance pass restore
 // ---- KnnSplitPerChunk parameters (Phase 2b.5, K-template chunk split) ---
 // KnnSplitPerChunkEnable: on/off gate.  Default 0 (off).  When enabled,
 // runs immediately after Phase 2b (ChunkReCEMPerChunk).  For each chunk,
