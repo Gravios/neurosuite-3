@@ -74,12 +74,20 @@ public:
 
     /// True once at least one matrix computation has completed.
     bool hasComputedData() const { return dataReady; }
-    /// True if the matrix has never been computed OR has been invalidated
-    /// by a cluster-mutating action since the last updateMatrixContents().
-    /// `isNotUpToDate` is the same flag used to draw the red "stale" border
-    /// in paintEvent — exposing it lets the Shift+S reorder check freshness
-    /// without poking around in our private state.
-    bool isOutOfDate() const { return !dataReady || isNotUpToDate; }
+    /// True if the matrix has never been computed OR is currently flagged
+    /// stale.  This MUST mirror exactly the predicate drawMatrix() uses to
+    /// paint the red "out of date" border:
+    ///     !modifiedClusterList.isEmpty() || hasBeenRenumbered || isNotUpToDate
+    /// plus !dataReady (never-computed).  Keeping the two in lock-step is
+    /// what lets the Shift+S reorder treat "the user sees a red border" and
+    /// "the reorder will auto-recompute first" as the same condition — if
+    /// this were narrower, a matrix that looks stale (e.g. after an ordinary
+    /// group/delete, which sets modifiedClusterList but not isNotUpToDate)
+    /// would be reordered on stale data without recomputing.
+    bool isOutOfDate() const {
+        return !dataReady || isNotUpToDate
+               || !modifiedClusterList.isEmpty() || hasBeenRenumbered;
+    }
     /// Cluster IDs present in the matrix (including noise/artefact).
     QList<int> matrixClusterList() const { return clusterList; }
     /// Cluster IDs that actually have computed probabilities.

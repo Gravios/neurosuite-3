@@ -578,6 +578,22 @@ void ErrorMatrixView::newClustersAdded(QList<int>& clustersToRecluster){
             modifiedClusterList.append(*iterator);
         }
 
+    // A recluster-shape action (watershed / dipSplit / KNN-split) always
+    // produces brand-new clusters at the tail and dissolves-or-mutates its
+    // source(s).  The matrix can never stay up to date across it, so flag
+    // stale unconditionally — mirroring TemplateMatrixView::newClustersAdded.
+    //
+    // This matters for KNN-split specifically: when the source cluster is
+    // only PARTIALLY consumed (some spikes fall below the residual size
+    // floor and stay in the source), the doc emits this signal with an
+    // EMPTY clustersToRecluster (== emptiedClusters) list — so the loop
+    // above appends nothing and, without this line, isNotUpToDate would
+    // remain false and the red "out of date" border would never appear
+    // even though the source lost spikes and new clusters now exist.
+    // nbActions is still incremented so the matching undoAddition() cleanly
+    // decrements it and clears the flag on Ctrl+Z.
+    isNotUpToDate = true;
+
     nbActions++;
     drawContentsMode = REDRAW;
 }
@@ -821,7 +837,19 @@ void ErrorMatrixView::redoAddition(QList<int>& addedClusters,QList<int>& deleted
     else if(nbActions > 0 || (nbActions == 0 && nbRedo > 0)){
         nbActions++;
         nbRedo--;
-        isNotUpToDate = false;
+        // Re-applying an addition (group → new cluster, or any recluster-
+        // shape split) always re-creates clusters, so the matrix is stale
+        // again afterwards.  This previously set isNotUpToDate = false and
+        // relied solely on the deletedClusters loop below to repopulate
+        // modifiedClusterList — but that loop appends nothing when
+        // deletedClusters is empty, which is exactly the case for a
+        // KNN-split whose source survives (partially consumed).  Without
+        // this, Ctrl+Y would leave the matrix falsely "up to date".
+        // Flagging stale unconditionally is the symmetric counterpart of
+        // newClustersAdded() setting the flag on the forward action and is
+        // always safe — a recompute is never wrong, only (for the
+        // consumed-source case the loop already covered) redundant.
+        isNotUpToDate = true;
 
         QList<int>::iterator iterator;
         for(iterator = deletedClusters.begin(); iterator != deletedClusters.end(); ++iterator)
