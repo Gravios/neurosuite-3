@@ -7995,6 +7995,20 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
     std::vector<int>     shifts;
     std::vector<float>   scores;
 
+    // ── Iterate to convergence (patch 0060) ──────────────────────────────
+    // Each pass rebuilds the per-cluster mean from the CURRENTLY-aligned
+    // waveforms — TimeShiftReadSpikeWave honours the m_cumShift committed by
+    // earlier passes — so the template sharpens and a later pass picks up the
+    // residual shifts a single pass leaves behind.  This is what klusters'
+    // interactive "Realign" does when pressed repeatedly; a single pass stops
+    // short of the fixed point because its template is built from jittered
+    // spikes.  KlustersRealignIters defaults to 1 (original single-pass
+    // behaviour); >1 iterates, breaking early once a pass moves no spike.
+    const int maxRealignIters = std::max(1, KlustersRealignIters);
+    int rItersUsed = 0;
+    for (int rIter = 0; rIter < maxRealignIters; ++rIter) {
+    int changedThisIter = 0;
+    ++rItersUsed;
     for (int cc = 0; cc < nClustersAlive; ++cc) {
         const int c = AliveIndex[cc];
         if (c <= 0 || c >= MaxPossibleClusters) continue;  // skip noise
@@ -8049,6 +8063,7 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
 
             m_cumShift[static_cast<size_t>(p)] = newCum;
             ++nSpikesChanged;
+            ++changedThisIter;
             sumAbsShift += std::abs(sh);
             stats.maxAbsShift = std::max(stats.maxAbsShift, std::abs(sh));
         }
@@ -8059,6 +8074,11 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
                           [](int s){ return s != 0; }));
         ++stats.nClustersProcessed;
     }
+        if (Verbose >= 1 && maxRealignIters > 1)
+            LockedStderr("[Phase 7c] realign pass %d/%d: %d spikes shifted\n",
+                         rIter + 1, maxRealignIters, changedThisIter);
+        if (changedThisIter == 0) break;   // converged — no spike moved
+    }  // end realign-iteration loop
 
     stats.meanAbsShift = stats.nSpikesEvaluated > 0
         ? static_cast<double>(sumAbsShift) / stats.nSpikesEvaluated
@@ -8069,11 +8089,11 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
             "%d clusters processed (%d skipped), "
             "%d/%d spikes shifted, "
             "mean|Δ|=%.2f samples (max %d), "
-            "%d read failures.\n",
+            "%d read failures, %d pass(es).\n",
             stats.nClustersProcessed, stats.nClustersSkipped,
             stats.nSpikesRealigned, stats.nSpikesEvaluated,
             stats.meanAbsShift, stats.maxAbsShift,
-            stats.nSpikesReadFailed);
+            stats.nSpikesReadFailed, rItersUsed);
 
     return nSpikesChanged;
 }

@@ -304,6 +304,7 @@ int   KlustersRealignMaxShift = 8;    ///< Search radius in samples.  Matches kl
                                        ///< at nSamplesPerSpike/4 at runtime so the cyclic
                                        ///< xcorr never gets close to half-window.
 int   KlustersRealignMinSize  = 10;   ///< Skip clusters with fewer spikes (mean too noisy
+int   KlustersRealignIters    = 1;    ///< patch 0060: realign passes; >1 iterates the mean-rebuild+xcorr to convergence (klusters-faithful), breaking early when a pass moves no spike. 1 = original single-pass.
                                        ///< to make a useful template).  Klusters skips
                                        ///< empty clusters but otherwise applies the same
                                        ///< algorithm regardless of size; we pick a small
@@ -787,6 +788,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(KlustersRealignEnable);
     INT_PARAM(KlustersRealignMaxShift);
     INT_PARAM(KlustersRealignMinSize);
+    INT_PARAM(KlustersRealignIters);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(KnnSplitPerChunkEnable);
     INT_PARAM(KnnSplitK);
