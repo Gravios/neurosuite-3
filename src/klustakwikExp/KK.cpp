@@ -14143,6 +14143,50 @@ int  KK::WithinChunkTemplateMatch(
         // score[a][b] = normalised xcorr of mdls[a].meanWav vs mdls[b].meanWav
         std::vector<float> scoreAB(static_cast<size_t>(n) * n, -1.0f);
 
+        if (TemplateMatchBatchedXcorr != 0) {
+            // Batched (patch 0056): one XcorrDispatch::compute per
+            // reference cluster a, with all partners b>a packed as the
+            // "waveform" batch.  Converts the O(n^2) individual kernel
+            // launches into O(n) batched launches -- on CUDA the per-call
+            // launch latency dominated the 256-element xcorr, so this is
+            // a large wall-clock win for cluster-rich chunks.  Numerically
+            // identical to the per-pair path (same compute(), same
+            // template layout, just many waveforms per call).
+            const int wlen = wElems;
+            std::vector<int16_t> batch;
+            std::vector<int>     bIdx;
+            std::vector<int>     shifts;
+            std::vector<float>   scores;
+            batch.reserve(static_cast<size_t>(n) * wlen);
+            for (int a = 0; a < n; a++) {
+                if (mdls[static_cast<size_t>(a)].localClusterId == 0) continue;
+                if (static_cast<int>(mdls[static_cast<size_t>(a)].meanWav.size())
+                        != wElems) continue;
+                batch.clear(); bIdx.clear();
+                for (int b = a + 1; b < n; b++) {
+                    if (mdls[static_cast<size_t>(b)].localClusterId == 0) continue;
+                    if (static_cast<int>(mdls[static_cast<size_t>(b)].meanWav.size())
+                            != wElems) continue;
+                    const int16_t* bp = xcorrPtr(b);
+                    batch.insert(batch.end(), bp, bp + wlen);
+                    bIdx.push_back(b);
+                }
+                const int nb = static_cast<int>(bIdx.size());
+                if (nb == 0) continue;
+                shifts.assign(static_cast<size_t>(nb), 0);
+                scores.assign(static_cast<size_t>(nb), -1.0f);
+                XcorrDispatch::compute(
+                    batch.data(), xcorrPtr(a),
+                    nb, nChan, nSamplesPerSpike,
+                    maxShft, 0.0f, shifts.data(), scores.data());
+                for (int j = 0; j < nb; j++) {
+                    const int b  = bIdx[static_cast<size_t>(j)];
+                    const float sc = scores[static_cast<size_t>(j)];
+                    scoreAB[static_cast<size_t>(a * n + b)] = sc;
+                    scoreAB[static_cast<size_t>(b * n + a)] = sc;
+                }
+            }
+        } else {
         for (int a = 0; a < n; a++) {
             if (mdls[static_cast<size_t>(a)].localClusterId == 0) continue;
             if (static_cast<int>(mdls[static_cast<size_t>(a)].meanWav.size()) != wElems) continue;
@@ -14157,6 +14201,7 @@ int  KK::WithinChunkTemplateMatch(
                 scoreAB[static_cast<size_t>(a * n + b)] = sc;
                 scoreAB[static_cast<size_t>(b * n + a)] = sc;  // xcorr is symmetric for single spike
             }
+        }
         }
 
         // ── Find mutual-best pairs above threshold ─────────────────────────

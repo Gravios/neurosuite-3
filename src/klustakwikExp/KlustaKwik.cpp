@@ -201,6 +201,7 @@ int   TemplateMatchTaperHannSamples = 0;
 // idempotent (shifts converge after 1-2 calls).
 int   MergeRealignEnable              = 0;
 int   MergeRealignIncremental         = 0;  // 1 = realign only newly-absorbed spikes (patch 0054)
+int   TemplateMatchBatchedXcorr       = 0;  // 1 = batch all-pairs xcorr per reference (patch 0056)
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
@@ -748,6 +749,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(TemplateMatchTaperHannSamples);
     INT_PARAM(MergeRealignEnable);
     INT_PARAM(MergeRealignIncremental);
+    INT_PARAM(TemplateMatchBatchedXcorr);
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
     FLOAT_PARAM(CrossChunkDriftSigma);
