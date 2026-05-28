@@ -188,6 +188,7 @@ extern int   TemplateMatchTaperHannSamples;
 // immediately after merge commit.  See KlustaKwik.cpp.  Default 0.
 extern int   MergeRealignEnable;
 extern int   MergeRealignIncremental;
+extern int   TemplateMatchBatchedXcorr;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
