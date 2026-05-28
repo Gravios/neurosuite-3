@@ -29,19 +29,19 @@ public:
 
     Array() noexcept : m_Data(nullptr), m_Size(0) {}
 
-    explicit Array(int n) : m_Data(nullptr), m_Size(0) { SetSize(n); }
+    explicit Array(size_t n) : m_Data(nullptr), m_Size(0) { SetSize(n); }
 
-    Array(const T a[], int n) : m_Data(nullptr), m_Size(0) {
-        if (n < 1) throw std::runtime_error("Array: size < 1");
+    Array(const T a[], size_t n) : m_Data(nullptr), m_Size(0) {
+        if (n == 0) throw std::runtime_error("Array: size == 0");
         SetSize(n);
         std::copy(a, a + n, m_Data);
     }
 
     // Construct from a sub-range of another Array
-    Array(const Array<T>& a, int start, int n) : m_Data(nullptr), m_Size(0) {
-        if (n < 1) throw std::runtime_error("Array: sub-range size < 1");
+    Array(const Array<T>& a, size_t start, size_t n) : m_Data(nullptr), m_Size(0) {
+        if (n == 0) throw std::runtime_error("Array: sub-range size == 0");
         SetSize(n);
-        for (int i = 0; i < n; i++) m_Data[i] = a[i + start];
+        for (size_t i = 0; i < n; i++) m_Data[i] = a[i + start];
     }
 
     // Deep copy constructor
@@ -86,12 +86,18 @@ public:
 
     // Optional 'tag' is a static string (e.g. "Data", "Centres") used only
     // for diagnostics: it lets the caller name *which* array failed when
-    // SetSize is invoked with n<1, so we don't have to disassemble the
+    // SetSize is invoked with n==0, so we don't have to disassemble the
     // call site from a generic error message.  Callers that don't supply
     // a tag still get a meaningful message including n.
-    void SetSize(int n, const char* tag = nullptr) {
-        if (n < 1) {
-            std::string msg = "Array::SetSize: n < 1 (n=";
+    //
+    // n is size_t so allocations beyond INT_MAX (e.g. LogP with large
+    // MaxPossibleClusters * nPoints products) are well-defined.  Callers
+    // computing n from a product of two ints MUST cast at least one
+    // operand to size_t before multiplying or the product overflows
+    // before SetSize sees it (e.g. static_cast<size_t>(MPC) * nPoints).
+    void SetSize(size_t n, const char* tag = nullptr) {
+        if (n == 0) {
+            std::string msg = "Array::SetSize: n == 0 (n=";
             msg += std::to_string(n);
             if (tag) { msg += ", tag="; msg += tag; }
             msg += ")";
@@ -102,13 +108,13 @@ public:
         m_Data = new T[n]();   // value-initialise (zero for arithmetic types)
     }
 
-    int size() const noexcept { return m_Size; }
+    size_t size() const noexcept { return m_Size; }
 
     // --- element access ---------------------------------------------------
 
     T& operator[](int i) {
 #ifndef NDEBUG
-        if (i < 0 || i >= m_Size) {
+        if (i < 0 || static_cast<size_t>(i) >= m_Size) {
             throw std::out_of_range("Array index " + std::to_string(i) +
                                     " out of bounds (size=" + std::to_string(m_Size) + ")");
         }
@@ -118,7 +124,7 @@ public:
 
     const T& operator[](int i) const {
 #ifndef NDEBUG
-        if (i < 0 || i >= m_Size) {
+        if (i < 0 || static_cast<size_t>(i) >= m_Size) {
             throw std::out_of_range("Array index " + std::to_string(i) +
                                     " out of bounds (size=" + std::to_string(m_Size) + ")");
         }
@@ -131,7 +137,7 @@ public:
     T* m_Data;
 
 private:
-    int m_Size;
+    size_t m_Size;
 };
 
 

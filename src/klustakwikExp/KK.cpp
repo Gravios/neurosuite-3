@@ -103,12 +103,12 @@ void KK::AllocateArrays() {
     NoisePoint = 1;
     log2piHalf = static_cast<float>(std::log(2.0 * PI) * nDims * 0.5);
 
-    Data       .SetSize(nPoints * nDims,                "Data (nPoints*nDims)");
-    Centres    .SetSize(MaxPossibleClusters * nDims,    "Centres (MaxPossibleClusters*nDims)");
+    Data       .SetSize(static_cast<size_t>(nPoints) * nDims,                "Data (nPoints*nDims)");
+    Centres    .SetSize(static_cast<size_t>(MaxPossibleClusters) * nDims,    "Centres (MaxPossibleClusters*nDims)");
     Weight     .SetSize(MaxPossibleClusters,            "Weight (MaxPossibleClusters)");
-    Mean       .SetSize(MaxPossibleClusters * nDims,    "Mean (MaxPossibleClusters*nDims)");
-    Cov        .SetSize(MaxPossibleClusters * nDims2,   "Cov (MaxPossibleClusters*nDims2)");
-    LogP       .SetSize(MaxPossibleClusters * nPoints,  "LogP (MaxPossibleClusters*nPoints)");
+    Mean       .SetSize(static_cast<size_t>(MaxPossibleClusters) * nDims,    "Mean (MaxPossibleClusters*nDims)");
+    Cov        .SetSize(static_cast<size_t>(MaxPossibleClusters) * nDims2,   "Cov (MaxPossibleClusters*nDims2)");
+    LogP       .SetSize(static_cast<size_t>(MaxPossibleClusters) * nPoints,  "LogP (MaxPossibleClusters*nPoints)");
 
     Class      .SetSize(nPoints,                        "Class (nPoints)");
     OldClass   .SetSize(nPoints,                        "OldClass (nPoints)");
@@ -134,8 +134,8 @@ void KK::AllocateCholeskyVecs() {
     // and RunChunkedCEM.
     // Single contiguous allocation — one block per Cholesky set.
     // Replaces MaxPossibleClusters separate heap blocks → better TLB and cache behaviour.
-    cholFlat    .assign(MaxPossibleClusters * nDims2, 0.0f);
-    bestCholFlat.assign(MaxPossibleClusters * nDims2, 0.0f);
+    cholFlat    .assign(static_cast<size_t>(MaxPossibleClusters) * nDims2, 0.0f);
+    bestCholFlat.assign(static_cast<size_t>(MaxPossibleClusters) * nDims2, 0.0f);
     ksv().BestAliveIndex.resize(MaxPossibleClusters);  // must be sized, not just reserved
 }
 
@@ -600,7 +600,7 @@ void KK::EStep() {
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     if (gpu) {
         // Flatten Cholesky factors into a contiguous host array for upload.
-        std::vector<float> h_chol(MaxPossibleClusters * nDims2, 0.0f);
+        std::vector<float> h_chol(static_cast<size_t>(MaxPossibleClusters) * nDims2, 0.0f);
         for (int c = 0; c < MaxPossibleClusters; c++)
             if (ClassAlive[c])
                 for (int i = 0; i < nDims2; i++)
@@ -650,7 +650,7 @@ void KK::EStep() {
         const int   c          = AliveIndex[cc];
         const float *chol      = cholFlat.data() + c * nDims2;
         const float *mp        = Mean.m_Data + c * nDims;
-        float *clusterLogP     = LogP.m_Data + c * nPoints;
+        float *clusterLogP     = LogP.m_Data + static_cast<size_t>(c) * nPoints;
 
         // Hoist per-cluster scalar constants
         float logRootDet = 0.0f;
@@ -769,7 +769,7 @@ void KK::EStep() {
             for (int p = 0; p < nPoints; p++) {
                 if (!FullStep
                     && Class[p] == OldClass[p]
-                    && clusterLogP[p] - LogP.m_Data[Class[p]*nPoints+p] > DistThresh) {
+                    && clusterLogP[p] - LogP.m_Data[static_cast<size_t>(Class[p]) * nPoints+p] > DistThresh) {
                     nSkipped++;
                     continue;
                 }
@@ -820,7 +820,7 @@ int KK::CStep() {
         int   topClass = 0, secondClass = 0;
         for (int cc = 0; cc < nClustersAlive; cc++) {
             const int   c = AliveIndex[cc];
-            const float s = LogP.m_Data[c * nPoints + p];  // cluster-major
+            const float s = LogP.m_Data[static_cast<size_t>(c) * nPoints + p];  // cluster-major
             if (s < bestScore) {
                 secondClass = topClass;   secondScore = bestScore;
                 topClass    = c;          bestScore   = s;
@@ -860,8 +860,8 @@ void KK::ConsiderDeletion() {
 #endif
     for (int p = 0; p < nPoints; p++)
         DeletionLoss[Class[p]] +=
-            LogP.m_Data[Class2[p] * nPoints + p] -   // cluster-major
-            LogP.m_Data[Class[p]  * nPoints + p];
+            LogP.m_Data[static_cast<size_t>(Class2[p]) * nPoints + p] -   // cluster-major
+            LogP.m_Data[static_cast<size_t>(Class[p]) * nPoints + p];
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     }
 #endif
@@ -1328,7 +1328,7 @@ float KK::ComputeScore() const {
 #endif
     float score = Penalty(nClustersAlive);
     for (int p = 0; p < nPoints; p++)
-        score += LogP.m_Data[Class[p] * nPoints + p];  // cluster-major
+        score += LogP.m_Data[static_cast<size_t>(Class[p]) * nPoints + p];  // cluster-major
     return score;
 }
 
@@ -4731,7 +4731,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             int nNan = 0;
             const float kLargeLogP = 1e15f;
             for (int p2 = 0; p2 < nPoints; p2++) {
-                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                 if (!std::isfinite(lp)) { lp = kLargeLogP; nNan++; }
             }
             if (nNan > 0)
@@ -4759,7 +4759,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         {
             const float kLargeLogP = 1e15f;
             for (int p2 = 0; p2 < nPoints; p2++) {
-                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                 if (!std::isfinite(lp)) lp = kLargeLogP;
             }
         }
@@ -4826,7 +4826,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             {
                 const float kLargeLogP = 1e15f;
                 for (int p2 = 0; p2 < nPoints; p2++) {
-                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                     if (!std::isfinite(lp)) lp = kLargeLogP;
                 }
             }
@@ -4874,7 +4874,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             {
                 const float kLargeLogP = 1e15f;
                 for (int p2 = 0; p2 < nPoints; p2++) {
-                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                     if (!std::isfinite(lp)) lp = kLargeLogP;
                 }
             }
@@ -6216,7 +6216,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             int nNan = 0;
             const float kLargeLogP = 1e15f;
             for (int p2 = 0; p2 < nPoints; p2++) {
-                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                 if (!std::isfinite(lp)) { lp = kLargeLogP; nNan++; }
             }
             if (nNan > 0)
@@ -6244,7 +6244,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         {
             const float kLargeLogP = 1e15f;
             for (int p2 = 0; p2 < nPoints; p2++) {
-                float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                 if (!std::isfinite(lp)) lp = kLargeLogP;
             }
         }
@@ -6296,7 +6296,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             {
                 const float kLargeLogP = 1e15f;
                 for (int p2 = 0; p2 < nPoints; p2++) {
-                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                     if (!std::isfinite(lp)) lp = kLargeLogP;
                 }
             }
@@ -6336,7 +6336,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             {
                 const float kLargeLogP = 1e15f;
                 for (int p2 = 0; p2 < nPoints; p2++) {
-                    float& lp = LogP.m_Data[Class[p2] * nPoints + p2];
+                    float& lp = LogP.m_Data[static_cast<size_t>(Class[p2]) * nPoints + p2];
                     if (!std::isfinite(lp)) lp = kLargeLogP;
                 }
             }

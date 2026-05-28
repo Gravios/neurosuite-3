@@ -1303,7 +1303,7 @@ void SaveOutput(const Array<int> &OutputClass) {
     Array<int> cClustMembs(MaxPossibleClusters);
     Array<int> NewLabel(MaxPossibleClusters);
 
-    for (int p = 0; p < OutputClass.size(); p++) ++cClustMembs[OutputClass[p]];
+    for (size_t p = 0; p < OutputClass.size(); p++) ++cClustMembs[OutputClass[p]];
 
     NewLabel[0] = 1;
     int maxClass = 1;
