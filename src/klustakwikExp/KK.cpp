@@ -3990,6 +3990,13 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             int totalClusters; double wallMs;
         };
         std::vector<Phase4DigestRow> _phase4Digest;
+
+        // Reset the Phase 4 median-template cache at phase start (patch
+        // 0052).  Bounds cache memory across the run; entries accumulate
+        // within this phase's iters and are reused when cluster
+        // membership is unchanged.
+        m_medianCache.clear();
+
         auto _countClusters = [&]() {
             std::set<long long> uniq;
             for (int _k = 0; _k < nActive; _k++)
@@ -5354,6 +5361,13 @@ float KK::RunChunkedCEM(float chunkMinutes,
             int totalClusters; double wallMs;
         };
         std::vector<Phase4DigestRow> _phase4Digest;
+
+        // Reset the Phase 4 median-template cache at phase start (patch
+        // 0052).  Bounds cache memory across the run; entries accumulate
+        // within this phase's iters and are reused when cluster
+        // membership is unchanged.
+        m_medianCache.clear();
+
         auto _countClusters = [&]() {
             std::set<long long> uniq;
             for (int _k = 0; _k < nActive; _k++)
@@ -14348,21 +14362,60 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                     .push_back(chunkPoints[static_cast<size_t>(ck)][i]);
             }
 
-            // Build per-cluster median templates.  Each cluster's median
-            // is independent (own clusterSpikes[a] read, own medianTpls[a]
-            // write, thread-private waveBuf/col), so this parallelizes
-            // cleanly — but ONLY when the spike store is mmap'd
-            // (TimeShiftReadSpikeWave then does a concurrent-safe memcpy).
-            // In FILE* mode it shares one handle via fseeko+fread, which
-            // is NOT thread-safe; the if() clause falls back to serial.
-            #pragma omp parallel for schedule(dynamic) \
-                if(m_timeShiftSpkMap != nullptr)
+            // ── Median template cache (patch 0052) ────────────────────
+            // Membership hash = order-independent fold of each member's
+            // (globalId, cumShift).  Including cumShift means a post-merge
+            // realign (which shifts member spikes) invalidates the entry.
+            auto membershipHash = [&](const std::vector<int>& sp) -> uint64_t {
+                uint64_t h = 0;
+                for (int gid : sp) {
+                    uint64_t x = static_cast<uint64_t>(static_cast<unsigned>(gid));
+                    const int sh = (!m_cumShift.empty()
+                                    && gid >= 0
+                                    && gid < static_cast<int>(m_cumShift.size()))
+                                   ? m_cumShift[static_cast<size_t>(gid)] : 0;
+                    x = x * 1099511628211ull
+                        + static_cast<uint64_t>(static_cast<unsigned>(sh + 1024));
+                    x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;
+                    h += x;   // commutative -> order-independent
+                }
+                h ^= (static_cast<uint64_t>(sp.size()) << 1);
+                return h;
+            };
+
+            // Serial pass: resolve cache hits, mark misses dirty.
+            std::vector<uint64_t> wantHash(static_cast<size_t>(n), 0);
+            std::vector<char>     dirty(static_cast<size_t>(n), 0);
+            int nReused = 0, nRebuilt = 0;
             for (int a = 0; a < n; a++) {
                 const auto& cm = mdls[static_cast<size_t>(a)];
                 if (cm.localClusterId == 0) continue;
                 const auto& sp = clusterSpikes[static_cast<size_t>(a)];
+                if (static_cast<int>(sp.size()) < 2) continue;
+                const uint64_t hh = membershipHash(sp);
+                wantHash[static_cast<size_t>(a)] = hh;
+                const long long key =
+                    static_cast<long long>(ck) * MaxPossibleClusters
+                    + cm.localClusterId;
+                auto it = m_medianCache.find(key);
+                if (it != m_medianCache.end() && it->second.first == hh
+                    && static_cast<int>(it->second.second.size()) == wElems) {
+                    medianTpls[static_cast<size_t>(a)] = it->second.second;
+                    ++nReused;
+                } else {
+                    dirty[static_cast<size_t>(a)] = 1;
+                    ++nRebuilt;
+                }
+            }
+
+            // Parallel pass: build the dirty clusters only.  (mmap-safe;
+            // see patch 0051 note.)
+            #pragma omp parallel for schedule(dynamic) \
+                if(m_timeShiftSpkMap != nullptr)
+            for (int a = 0; a < n; a++) {
+                if (!dirty[static_cast<size_t>(a)]) continue;
+                const auto& sp = clusterSpikes[static_cast<size_t>(a)];
                 const int   N  = static_cast<int>(sp.size());
-                if (N < 2) continue;   // can't median 0-1 spike clusters
 
                 std::vector<int16_t> waveBuf(
                     static_cast<size_t>(N) * wElems, 0);
@@ -14406,6 +14459,24 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                             col[static_cast<size_t>(midIdx)];
                     }
                 }
+            }
+
+            // Serial cache-store pass: persist the medians just built for
+            // the dirty clusters (the parallel loop above has joined, so
+            // medianTpls[a] is complete).  Concurrent map writes are
+            // avoided by doing this serially.
+            for (int a = 0; a < n; a++) {
+                if (!dirty[static_cast<size_t>(a)]) continue;
+                if (medianTpls[static_cast<size_t>(a)].empty()) continue;
+                const long long key =
+                    static_cast<long long>(ck) * MaxPossibleClusters
+                    + mdls[static_cast<size_t>(a)].localClusterId;
+                m_medianCache[key] = { wantHash[static_cast<size_t>(a)],
+                                       medianTpls[static_cast<size_t>(a)] };
+            }
+            if (Verbose >= 1 && (nReused + nRebuilt) > 0) {
+                LockedStderr("  [MedianKnn] chunk%d median cache: "
+                             "%d reused, %d rebuilt\n", ck, nReused, nRebuilt);
             }
         }
 
