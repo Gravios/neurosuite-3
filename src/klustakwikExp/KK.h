@@ -583,6 +583,16 @@ public:
     // each process run, so RandomSeed reproducibility is preserved.
     unsigned           m_phase4SplitCallCount = 0;
 
+    // Phase 4 median-template cache (patch 0052).  Key =
+    // chunkIdx*MaxPossibleClusters + localClusterId.  Value =
+    // (membershipHash, median template).  WithinChunkTemplateMatchMedianKnn
+    // reuses the cached median when a cluster's membership + per-spike
+    // cumulative shift are unchanged since the last Phase 4 iter (hash
+    // match), skipping the O(N·wElems) rebuild.  Cleared at the start of
+    // each Phase 4 phase by the caller.
+    std::unordered_map<long long,
+        std::pair<uint64_t, std::vector<int16_t>>> m_medianCache;
+
 #if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
     // Opaque GPU handle for shift-probe kernels.  Allocated by InitTimeShift
     // when a GPU device is available; null otherwise (falls through to CPU
