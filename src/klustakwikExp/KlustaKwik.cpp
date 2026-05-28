@@ -426,6 +426,43 @@ int   WaveKnnMaxSourcesPerCall      = 0;
 int   FullCemSplitEnable              = 0;
 int   FullCemSplitMaxSourcesPerCall   = 0;  // 0 = unlimited
 int   FullCemSplitMinClusterSize      = 0;  // 0 = use max(nFullDims+5, 25)
+
+// ---------------------------------------------------------------------------
+// QualityWeightedSplit — Phase 4b dispatcher that routes source clusters to
+// the splitter best suited to their failure mode, instead of letting each
+// splitter pick its own random subset.
+//
+// Per call:
+//   1. Gather all eligible source clusters across chunks.
+//   2. Randomly pick a pool of poolFactor*N candidates (default 2N).
+//   3. For each candidate, compute two mixture-diagnostic metrics:
+//        * ISI contamination — fraction of inter-spike intervals below
+//          the refractory period.  High = the cluster contains spikes
+//          from >= 2 independently-firing units (temporal mixture).
+//          CEM (re-clustering in the full feature space) is the right
+//          tool: it separates units that overlap in waveform but differ
+//          in their joint feature distribution.
+//        * Median-waveform variance — mean squared deviation of member
+//          spikes from the cluster's median template.  High = the
+//          cluster's spikes don't share a single shape (waveform
+//          mixture).  k-NN-vs-references split is the right tool: it
+//          peels off the subset that resembles a different existing
+//          cluster.
+//   4. Route the N neediest candidates: each cluster goes to CEM if its
+//      (normalised) contamination exceeds its (normalised) variance,
+//      else to k-NN.  The better-behaved N candidates are skipped this
+//      round.
+//
+// N defaults to max(WaveKnnMaxSourcesPerCall, FullCemSplitMaxSourcesPerCall)
+// when QualityWeightedSplitN == 0, falling back to 4 if both are 0.
+//
+// When enabled, this REPLACES the direct WaveKnnSplitPerChunk +
+// FullCemSplitPerChunk calls in the Phase 4b loop (the dispatcher calls
+// both internally with explicit per-chunk allowlists).
+int   QualityWeightedSplitEnable      = 0;
+int   QualityWeightedSplitN           = 0;     // 0 = derive from per-call caps
+int   QualityWeightedSplitPoolFactor  = 2;     // pool = factor * N
+float QualityWeightedISIRefractoryMs  = 2.0f;  // refractory window for ISI contam
 // ── MedianKnnTemplateMatch (Phase 4 alternative merge) ───────────────────
 // k-NN-restricted variant of WithinChunkTemplateMatch that operates on
 // per-cluster MEDIAN waveforms.  When MedianKnnTemplateMatchEnable != 0,
@@ -704,6 +741,10 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(FullCemSplitEnable);
     INT_PARAM(FullCemSplitMaxSourcesPerCall);
     INT_PARAM(FullCemSplitMinClusterSize);
+    INT_PARAM(QualityWeightedSplitEnable);
+    INT_PARAM(QualityWeightedSplitN);
+    INT_PARAM(QualityWeightedSplitPoolFactor);
+    FLOAT_PARAM(QualityWeightedISIRefractoryMs);
     INT_PARAM(MedianKnnTemplateMatchEnable);
     INT_PARAM(MedianKnnTemplateMatchK);
     INT_PARAM(Phase4RefineEnable);

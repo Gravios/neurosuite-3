@@ -52,6 +52,7 @@ extern KlustaSave kSv;  // global in KlustaKwik.cpp
 #include <memory>
 #include <numeric>
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 // Forward declaration of KlustersRealign::RealignStats so the per-cluster
@@ -284,7 +285,26 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims,
+        const std::map<int, std::vector<int>>* sourceAllowlist = nullptr);
+
+    // Phase 4b quality-weighted split dispatcher.  Computes ISI
+    // contamination + median-waveform variance for a random oversampled
+    // pool of source clusters, then routes the neediest to FullCemSplit
+    // (high contamination) or WaveKnnSplit (high variance).  See
+    // KlustaKwik.cpp QualityWeightedSplit doc.
+    void QualityWeightedSplitDispatch(
+        const std::vector<std::vector<int>>& chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims);
+
+    // Mixture-diagnostic metrics (used by QualityWeightedSplitDispatch).
+    // Both take GLOBAL spike indices (into Data[] / the .spk file).
+    double ClusterISIContamination(const std::vector<int>& globalSpikeIds,
+                                   float refractorySamples) const;
+    double ClusterWaveformVariance(const std::vector<int>& globalSpikeIds,
+                                   int nChan, int nSamples);
 
     // Phase 2b: chunk-level warm-start CEM after PerClusterCEMPerChunk.
     // Runs ordinary CEM on the chunk's full data with the new fine-grained
@@ -423,7 +443,8 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
-        int nFullDims);
+        int nFullDims,
+        const std::map<int, std::vector<int>>* sourceAllowlist = nullptr);
 
   
     float RunChunkedCEM(float chunkMinutes,
