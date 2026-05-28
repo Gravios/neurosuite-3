@@ -11034,9 +11034,10 @@ void KK::FullCemSplitPerChunk(
 
     int totalSplits         = 0;
     int totalNewSubClusters = 0;
+    int totalRefractoryVetoed = 0;   // patch 0057: splits rejected by the gate
 
     #pragma omp parallel for schedule(dynamic) \
-        reduction(+:totalSplits,totalNewSubClusters)
+        reduction(+:totalSplits,totalNewSubClusters,totalRefractoryVetoed)
     for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
         const auto& item = items[static_cast<size_t>(wi)];
         const int   nMem = static_cast<int>(item.members.size());
@@ -11186,6 +11187,71 @@ void KK::FullCemSplitPerChunk(
         for (int i = 0; i < nMem; i++)
             r.newSubLabels[static_cast<size_t>(i)] = Ks.Class[i];
 
+        // ── Refractory-aware acceptance gate (patch 0057) ──────────────
+        // A genuine split of a temporally-contaminated cluster should
+        // SEPARATE the parent's sub-refractory violating spike pairs into
+        // different children — those short intervals are cross-unit, so a
+        // correct split puts the two spikes in different clusters.  A
+        // spurious split (cutting one unit along an amplitude axis) does
+        // not preferentially separate them.  Require >= MinSep of the
+        // violating consecutive-in-time pairs to be separated; else reject
+        // and keep the parent intact (the CEM split was feature-driven but
+        // does not resolve the refractory contamination).
+        //
+        // Note: bursts (ISI ~3-10 ms) sit ABOVE the ~2 ms refractory
+        // window, so they are not counted as violations here — the gate is
+        // already burst-robust at the metric level.  (Burst-spike
+        // amplitude smear is a separate, feature-space concern.)
+        if (FullCemSplitRefractoryGate != 0 && SamplingRate > 0.0f
+            && QualityWeightedISIRefractoryMs > 0.0f && nMem >= 2) {
+            const double refr =
+                SamplingRate * QualityWeightedISIRefractoryMs / 1000.0;
+            const int gateTimeDim = nDims - 1;
+            std::vector<std::pair<double,int>> ts(
+                static_cast<size_t>(nMem));
+            for (int i = 0; i < nMem; i++) {
+                const int p = pts[static_cast<size_t>(
+                    item.members[static_cast<size_t>(i)])];
+                ts[static_cast<size_t>(i)] = {
+                    static_cast<double>(
+                        Data[static_cast<size_t>(p) * nDims + gateTimeDim]),
+                    r.newSubLabels[static_cast<size_t>(i)] };
+            }
+            std::sort(ts.begin(), ts.end(),
+                      [](const std::pair<double,int>& a,
+                         const std::pair<double,int>& b){
+                          return a.first < b.first; });
+            int nViol = 0, nSep = 0;
+            for (int i = 1; i < nMem; i++) {
+                if (ts[static_cast<size_t>(i)].first
+                        - ts[static_cast<size_t>(i - 1)].first < refr) {
+                    ++nViol;
+                    if (ts[static_cast<size_t>(i)].second
+                            != ts[static_cast<size_t>(i - 1)].second)
+                        ++nSep;
+                }
+            }
+            if (nViol > 0) {
+                const double sepRate =
+                    static_cast<double>(nSep) / static_cast<double>(nViol);
+                if (sepRate < static_cast<double>(
+                        FullCemSplitRefractoryGateMinSep)) {
+                    r.changed      = false;
+                    r.nSubClusters = 0;
+                    r.newSubLabels.clear();
+                    ++totalRefractoryVetoed;
+                    if (Verbose >= 2)
+                        LockedStderr("  [4b-cem] chunk%d c%d: split VETOED "
+                                     "by refractory gate (%d/%d viol pairs "
+                                     "separated = %.2f < %.2f)\n",
+                                     item.ck, item.lc, nSep, nViol, sepRate,
+                                     static_cast<double>(
+                                         FullCemSplitRefractoryGateMinSep));
+                    continue;
+                }
+            }
+        }
+
         totalSplits         += 1;
         totalNewSubClusters += (Ks.nClustersAlive - 2);
     }
@@ -11241,6 +11307,10 @@ void KK::FullCemSplitPerChunk(
                  reprobeDepth > 0 ? " (reprobe)" : "",
                  totalSplits, totalNewSubClusters,
                  static_cast<int>(chunksAffected.size()));
+    if (FullCemSplitRefractoryGate != 0 && totalRefractoryVetoed > 0)
+        LockedStderr("[Phase 4b] FullCemSplit: refractory gate vetoed %d "
+                     "feature-space split(s) that did not resolve sub-"
+                     "refractory contamination\n", totalRefractoryVetoed);
 
     // ── Optional reprobe: feed the new sub-clusters back through FullCem,
     //    re-selecting adaptive features per sub-cluster.  Bounded by
