@@ -144,4 +144,19 @@ bool ComputeClusterShiftsFlat(
     std::vector<int>&   outShifts,
     std::vector<float>& outScores);
 
+/* ---------------------------------------------------------------------------
+ * BuildClusterMedianWaveform — public median-template builder.
+ *
+ * Computes per-sample median across nSpikes waveforms (sample-major
+ * layout) and writes the result as int16 into outMedian.  Exposed for
+ * modules (e.g. KK::ClusterWaveformVariance) that need the median
+ * template.  waveforms: [nSpikes × (nChan × nSamples)] int16,
+ * sample-major.  outMedian resized to (nChan × nSamples).
+ * O(nSpikes · nChan · nSamples).
+ * --------------------------------------------------------------------------- */
+void BuildClusterMedianWaveform(
+    const int16_t* waveforms, int nSpikes,
+    int nChan, int nSamples,
+    std::vector<int16_t>& outMedian);
+
 }  // namespace KlustersRealign
