@@ -27,6 +27,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <chrono>
 #include <functional>
 #include <limits>
 #include <map>
@@ -3982,7 +3983,24 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
         int _altNetGrowthStreak = 0;
+
+        // Per-iter convergence digest (printed as a table after the loop).
+        struct Phase4DigestRow {
+            int iter; int merges; int spikesSplit; int kNew;
+            int totalClusters; double wallMs;
+        };
+        std::vector<Phase4DigestRow> _phase4Digest;
+        auto _countClusters = [&]() {
+            std::set<long long> uniq;
+            for (int _k = 0; _k < nActive; _k++)
+                for (int _c : perChunkClass[_k])
+                    if (_c != 0) uniq.insert(
+                        static_cast<long long>(_k) * MaxPossibleClusters + _c);
+            return static_cast<int>(uniq.size());
+        };
+
         for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
+            const auto _iterT0 = std::chrono::steady_clock::now();
             // Phase 4b: optional alternating KnnSplit inside the Phase 4
             // loop — runs BEFORE merge so each iter is split→harvest→merge.
             // The closing iter of the loop is template-merge-only, so its
@@ -4206,7 +4224,23 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 }
             }
 
+            const double _iterMs =
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - _iterT0).count();
+            _phase4Digest.push_back({ _tmIter + 1, _nMerged, _nSpikesSplit,
+                                      _kNewThisIter, _countClusters(),
+                                      _iterMs });
+
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
+        }
+        // ── Phase 4 convergence digest ────────────────────────────────
+        LockedStderr("[Phase 4] convergence digest:\n");
+        LockedStderr("    iter | merges | splits | +new | clusters | wall_ms\n");
+        LockedStderr("    -----+--------+--------+------+----------+--------\n");
+        for (const auto& _r : _phase4Digest) {
+            LockedStderr("    %4d | %6d | %6d | %4d | %8d | %7.0f\n",
+                         _r.iter, _r.merges, _r.spikesSplit, _r.kNew,
+                         _r.totalClusters, _r.wallMs);
         }
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
@@ -5313,7 +5347,24 @@ float KK::RunChunkedCEM(float chunkMinutes,
     if (TemplateMatchScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int _tmMax = (TemplateMatchIters > 0) ? TemplateMatchIters : 10;
         int _altNetGrowthStreak = 0;
+
+        // Per-iter convergence digest (printed as a table after the loop).
+        struct Phase4DigestRow {
+            int iter; int merges; int spikesSplit; int kNew;
+            int totalClusters; double wallMs;
+        };
+        std::vector<Phase4DigestRow> _phase4Digest;
+        auto _countClusters = [&]() {
+            std::set<long long> uniq;
+            for (int _k = 0; _k < nActive; _k++)
+                for (int _c : perChunkClass[_k])
+                    if (_c != 0) uniq.insert(
+                        static_cast<long long>(_k) * MaxPossibleClusters + _c);
+            return static_cast<int>(uniq.size());
+        };
+
         for (int _tmIter = 0; _tmIter < _tmMax; _tmIter++) {
+            const auto _iterT0 = std::chrono::steady_clock::now();
             // Phase 4b: optional alternating KnnSplit inside the Phase 4
             // loop — runs BEFORE merge so each iter is split→harvest→merge.
             // The closing iter of the loop is template-merge-only, so its
@@ -5537,7 +5588,23 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 }
             }
 
+            const double _iterMs =
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - _iterT0).count();
+            _phase4Digest.push_back({ _tmIter + 1, _nMerged, _nSpikesSplit,
+                                      _kNewThisIter, _countClusters(),
+                                      _iterMs });
+
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
+        }
+        // ── Phase 4 convergence digest ────────────────────────────────
+        LockedStderr("[Phase 4] convergence digest:\n");
+        LockedStderr("    iter | merges | splits | +new | clusters | wall_ms\n");
+        LockedStderr("    -----+--------+--------+------+----------+--------\n");
+        for (const auto& _r : _phase4Digest) {
+            LockedStderr("    %4d | %6d | %6d | %4d | %8d | %7.0f\n",
+                         _r.iter, _r.merges, _r.spikesSplit, _r.kNew,
+                         _r.totalClusters, _r.wallMs);
         }
         LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
     }
