@@ -306,6 +306,22 @@ public:
     double ClusterWaveformVariance(const std::vector<int>& globalSpikeIds,
                                    int nChan, int nSamples);
 
+    // Order-independent membership signature of a cluster: a commutative
+    // fold of each member's (globalId, m_cumShift[globalId]).  Stable
+    // cluster identity across Phase 4 iters (survives ID remaps; changes
+    // when membership or alignment changes).  Used by the median cache
+    // (patch 0052) and the split↔merge oscillation guard (patch 0053).
+    uint64_t ClusterMembershipHash(const std::vector<int>& globalSpikeIds) const;
+
+    // Split↔merge oscillation guard (patch 0053).  Maps a cluster
+    // membership hash -> Phase 4 iter until which it is on split
+    // cooldown.  A cluster that was split and then merged straight back
+    // to a pre-split membership is "bouncing"; the dispatcher skips it
+    // for AlternatingSplitCooldownIters iters so the split budget goes
+    // to clusters that actually make progress.
+    std::unordered_map<uint64_t, int> m_splitCooldown;
+    int m_phase4Iter = 0;
+
     // Phase 2b: chunk-level warm-start CEM after PerClusterCEMPerChunk.
     // Runs ordinary CEM on the chunk's full data with the new fine-grained
     // labels as initial Class[], letting boundary spikes reassign and

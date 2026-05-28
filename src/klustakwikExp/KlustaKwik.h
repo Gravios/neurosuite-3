@@ -418,6 +418,7 @@ extern int   KlustersRealignAfterPhase4;
 // merged.  Default 2 — conservative; alternation is a tug-of-war
 // and unbounded split tends to win.
 extern int   AlternatingSplitMergeMaxIters;
+extern int   AlternatingSplitCooldownIters;
 // Stop further Phase 4b split-iters when iter K-growth (new clusters
 // from split minus pairs merged by template-match) is positive for
 // two consecutive iters.  Net-growth indicates split is winning the

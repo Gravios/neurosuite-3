@@ -614,6 +614,13 @@ int   KlustersRealignAfterPhase4      = 0;
 // unbounded.  Capping the split phase at 2 lets the merge side win the
 // remaining iters.
 int   AlternatingSplitMergeMaxIters   = 2;
+
+// AlternatingSplitCooldownIters — split↔merge oscillation guard (patch
+// 0053).  When > 0, a source cluster that is split and then merged
+// straight back to a pre-split membership in the same iter is placed on
+// cooldown for this many Phase 4 iters; QualityWeightedSplitDispatch
+// skips clusters on active cooldown.  0 = disabled (no guard).
+int   AlternatingSplitCooldownIters   = 0;
 // Net-growth abort: if a Phase 4b iter produces more new clusters than
 // the iter's template-match merged, AND the same is true of the
 // preceding iter, abort further split iterations (template-match-only
@@ -808,6 +815,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(AlternatingSplitMergeEnable);
     INT_PARAM(KlustersRealignAfterPhase4);
     INT_PARAM(AlternatingSplitMergeMaxIters);
+    INT_PARAM(AlternatingSplitCooldownIters);
     INT_PARAM(AlternatingSplitMergeAbortOnNetGrowth);
     INT_PARAM(DipSplitMinSize);
     FLOAT_PARAM(DipSplitBloatFactor);
