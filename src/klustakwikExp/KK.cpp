@@ -14348,6 +14348,15 @@ int  KK::WithinChunkTemplateMatchMedianKnn(
                     .push_back(chunkPoints[static_cast<size_t>(ck)][i]);
             }
 
+            // Build per-cluster median templates.  Each cluster's median
+            // is independent (own clusterSpikes[a] read, own medianTpls[a]
+            // write, thread-private waveBuf/col), so this parallelizes
+            // cleanly — but ONLY when the spike store is mmap'd
+            // (TimeShiftReadSpikeWave then does a concurrent-safe memcpy).
+            // In FILE* mode it shares one handle via fseeko+fread, which
+            // is NOT thread-safe; the if() clause falls back to serial.
+            #pragma omp parallel for schedule(dynamic) \
+                if(m_timeShiftSpkMap != nullptr)
             for (int a = 0; a < n; a++) {
                 const auto& cm = mdls[static_cast<size_t>(a)];
                 if (cm.localClusterId == 0) continue;
