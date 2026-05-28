@@ -289,6 +289,15 @@ public:
         const std::map<int, std::vector<int>>* sourceAllowlist = nullptr,
         int reprobeDepth = 0);
 
+    // Phase 4c neighborhood-remix split (patch 0062).  Runs once after the
+    // Phase 4 loop converges; pools each random source with its N closest
+    // clusters and re-splits, with a disjointness guard and a tightness mask.
+    void RunPhase4cRemix(
+        const std::vector<std::vector<int>>&  chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
     // Phase 4b quality-weighted split dispatcher.  Computes ISI
     // contamination + median-waveform variance for a random oversampled
     // pool of source clusters, then routes the neediest to FullCemSplit
@@ -599,6 +608,7 @@ public:
     // clusters -- relabeling the same spikes every round.  Starts at 0
     // each process run, so RandomSeed reproducibility is preserved.
     unsigned           m_phase4SplitCallCount = 0;
+    int                m_phase4cLastNSig = 1;  // patch 0062: signal-channel count from last tightness eval
 
     // Phase 4 median-template cache (patch 0052).  Key =
     // chunkIdx*MaxPossibleClusters + localClusterId.  Value =

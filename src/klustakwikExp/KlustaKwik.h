@@ -325,6 +325,16 @@ extern int   FullCemSplitMaxFeatures;
 extern int   FullCemSplitReprobePasses;
 extern int   FullCemSplitRefractoryGate;
 extern float FullCemSplitRefractoryGateMinSep;
+extern int   Phase4cRemixEnable;
+extern int   Phase4cMaxIters;
+extern int   Phase4cKnnSources;
+extern int   Phase4cFullCemSources;
+extern int   Phase4cNeighbors;
+extern int   Phase4cMinClusterSize;
+extern int   Phase4cMaskTightClusters;
+extern float Phase4cTightnessThreshold;
+extern float Phase4cSignalChannelFraction;
+extern float Phase4cTightnessSpreadBeta;
 
 // QualityWeightedSplit — Phase 4b quality-routed splitter dispatch.
 // See KlustaKwik.cpp doc block.
