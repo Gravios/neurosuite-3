@@ -10748,10 +10748,66 @@ void KK::FullCemSplitPerChunk(
 
         const int nSpatialDimsFull = (nFullDims > 1) ? nFullDims - 1 : nFullDims;
 
-        // Per-cluster feature selection (same logic as Phase 2a).
+        // Per-cluster feature selection.
         int  nSubDims;
         std::vector<int> selFeat;
-        if (SubspaceDims > 0 && SubspaceDims < nSpatialDimsFull) {
+
+        if (FullCemSplitAdaptiveFeatures != 0) {
+            // ── Adaptive: rank features by 1-D bimodality (valley depth),
+            //    select the minimum set that shows separable structure. ──
+            int maxFeat = (FullCemSplitMaxFeatures > 0)
+                            ? FullCemSplitMaxFeatures
+                            : (SubspaceDims > 0 ? SubspaceDims : nSpatialDimsFull);
+            maxFeat = std::min(maxFeat, nSpatialDimsFull);
+            const int minFeat = std::min(std::max(1, FullCemSplitMinFeatures),
+                                         maxFeat);
+
+            // Project the cluster's spikes onto each feature, run the
+            // valley test, record depth.
+            std::vector<std::pair<double,int>> depthRank(nSpatialDimsFull);
+            std::vector<double> proj(static_cast<size_t>(nMem));
+            for (int d = 0; d < nSpatialDimsFull; d++) {
+                for (int i = 0; i < nMem; i++) {
+                    const int p = pts[static_cast<size_t>(
+                        item.members[static_cast<size_t>(i)])];
+                    proj[static_cast<size_t>(i)] =
+                        Data[static_cast<size_t>(p) * nFullDims + d];
+                }
+                // threshold 0 so valley_test always reports the raw depth;
+                // we apply our own gate below.
+                const dipsplit::ValleyResult vr =
+                    dipsplit::valley_test(proj.data(), nMem, 0.0);
+                depthRank[static_cast<size_t>(d)] = { vr.depth, d };
+            }
+            std::sort(depthRank.begin(), depthRank.end(),
+                      [](const auto& a, const auto& b){ return a.first > b.first; });
+
+            // Count features passing the bimodality gate.
+            int nPass = 0;
+            for (const auto& dr : depthRank) {
+                if (dr.first >= static_cast<double>(
+                        FullCemSplitFeatureBimodalThreshold))
+                    ++nPass;
+                else
+                    break;   // sorted desc, so first failure ends the run
+            }
+            // Clamp to [minFeat, maxFeat].
+            nSubDims = std::min(std::max(nPass, minFeat), maxFeat);
+
+            selFeat.resize(static_cast<size_t>(nSubDims));
+            for (int k = 0; k < nSubDims; k++)
+                selFeat[static_cast<size_t>(k)] =
+                    depthRank[static_cast<size_t>(k)].second;
+            std::sort(selFeat.begin(), selFeat.end());
+
+            if (Verbose >= 2) {
+                LockedStderr("  [4b-cem] chunk%d c%d: adaptive features "
+                             "nPass=%d -> nSubDims=%d (top depth=%.3f)\n",
+                             item.ck, item.lc, nPass, nSubDims,
+                             depthRank.empty() ? 0.0 : depthRank[0].first);
+            }
+        } else if (SubspaceDims > 0 && SubspaceDims < nSpatialDimsFull) {
+            // ── Variance-ranked fixed-count (original Phase 2a logic). ──
             std::vector<double> sum(nSpatialDimsFull, 0.0);
             std::vector<double> sqsum(nSpatialDimsFull, 0.0);
             for (int i = 0; i < nMem; i++) {

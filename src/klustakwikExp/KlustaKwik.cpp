@@ -427,6 +427,33 @@ int   FullCemSplitEnable              = 0;
 int   FullCemSplitMaxSourcesPerCall   = 0;  // 0 = unlimited
 int   FullCemSplitMinClusterSize      = 0;  // 0 = use max(nFullDims+5, 25)
 
+// FullCemSplitAdaptiveFeatures — when 1, the per-cluster CEM selects its
+// feature subset by BIMODALITY (valley depth of the 1-D marginal on each
+// feature) rather than by variance, and uses only the MINIMUM number of
+// features that show separable structure.
+//
+// Why: variance is a poor split selector.  An elongated single unit has
+// high variance along its major axis without being a mixture -- feeding
+// those high-variance-but-unimodal features to CEM invites false splits
+// (the K=2 warm start fits the elongation).  Valley depth instead measures
+// whether a feature's marginal is actually bimodal; selecting only the
+// bimodal features gives CEM the dimensions along which a real split lives
+// and starves it of the dimensions that would manufacture a false one.
+//
+// Selection: rank features by valley depth (dipsplit::valley_test),
+// take those with depth >= FullCemSplitFeatureBimodalThreshold, clamped
+// to [FullCemSplitMinFeatures, maxFeatures].  If none pass, fall back to
+// the top-FullCemSplitMinFeatures by depth (CEM still runs but on the
+// least-unimodal axes; usually yields no split, which is correct -- the
+// cluster wasn't a mixture).
+//
+// maxFeatures = FullCemSplitMaxFeatures if > 0, else SubspaceDims if > 0,
+// else nSpatialDims.
+int   FullCemSplitAdaptiveFeatures       = 0;
+float FullCemSplitFeatureBimodalThreshold = 0.10f;  // valley depth gate
+int   FullCemSplitMinFeatures            = 2;       // floor for CEM
+int   FullCemSplitMaxFeatures            = 0;       // 0 = SubspaceDims/nSpatial
+
 // ---------------------------------------------------------------------------
 // QualityWeightedSplit — Phase 4b dispatcher that routes source clusters to
 // the splitter best suited to their failure mode, instead of letting each
@@ -741,6 +768,10 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(FullCemSplitEnable);
     INT_PARAM(FullCemSplitMaxSourcesPerCall);
     INT_PARAM(FullCemSplitMinClusterSize);
+    INT_PARAM(FullCemSplitAdaptiveFeatures);
+    FLOAT_PARAM(FullCemSplitFeatureBimodalThreshold);
+    INT_PARAM(FullCemSplitMinFeatures);
+    INT_PARAM(FullCemSplitMaxFeatures);
     INT_PARAM(QualityWeightedSplitEnable);
     INT_PARAM(QualityWeightedSplitN);
     INT_PARAM(QualityWeightedSplitPoolFactor);

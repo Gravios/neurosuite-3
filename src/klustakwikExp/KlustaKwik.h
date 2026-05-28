@@ -312,6 +312,10 @@ extern int   WaveKnnMaxSourcesPerCall;
 extern int   FullCemSplitEnable;
 extern int   FullCemSplitMaxSourcesPerCall;
 extern int   FullCemSplitMinClusterSize;
+extern int   FullCemSplitAdaptiveFeatures;
+extern float FullCemSplitFeatureBimodalThreshold;
+extern int   FullCemSplitMinFeatures;
+extern int   FullCemSplitMaxFeatures;
 
 // QualityWeightedSplit — Phase 4b quality-routed splitter dispatch.
 // See KlustaKwik.cpp doc block.
