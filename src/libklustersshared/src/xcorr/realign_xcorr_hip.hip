@@ -64,18 +64,25 @@ __global__ void xcorr_hip_kernel(
 
     extern __shared__ float shmem[];
     const int nLags = 2 * maxShift + 1;
+    // The launch rounds the block up to the next power of two (blockDim.x) and
+    // allocates 2*blockDim.x floats.  sh_lag MUST be based at blockDim.x, not
+    // nLags: nLags is always odd so nLags < blockDim.x, and basing sh_lag at
+    // nLags makes its head alias the tail of sh_score (cells [nLags,blockDim.x)
+    // are written as both a score and a lag), which corrupts the recovered lag
+    // for the low-index (negative) candidates.
     float* sh_score = shmem;
-    float* sh_lag   = shmem + nLags;
+    float* sh_lag   = shmem + blockDim.x;
 
     sh_score[threadIdx.x] = -FLT_MAX;
     sh_lag  [threadIdx.x] = 0.0f;
     __syncthreads();
 
-    const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
-    const double denom = static_cast<double>(tmplEnergyBuf[0])
-                       * static_cast<double>(spkSqrtEnergy[sp]);
-
-    {
+    // Only the nLags real lag candidates compute and store; padding lanes keep
+    // their -FLT_MAX init so they never win the reduction (and do no work).
+    if (static_cast<int>(threadIdx.x) < nLags) {
+        const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
+        const double denom = static_cast<double>(tmplEnergyBuf[0])
+                           * static_cast<double>(spkSqrtEnergy[sp]);
         double num = 0.0;
         // Circular shift — all samples contribute at every lag.
         for (int ch = 0; ch < nChan; ++ch) {
@@ -93,7 +100,12 @@ __global__ void xcorr_hip_kernel(
     }
     __syncthreads();
 
-    for (int stride = nLags / 2; stride >= 1; stride >>= 1) {
+    // Parallel reduction over the full power-of-two block.  Starting the stride
+    // at nLags/2 (with nLags odd) silently drops the top candidate, lag
+    // +maxShift; reducing over blockDim.x with the padding lanes pinned at
+    // -FLT_MAX covers every real candidate.  A strict '>' keeps the lower index
+    // on ties, i.e. the more-negative lag, matching the OMP/SYCL backends.
+    for (int stride = blockDim.x / 2; stride >= 1; stride >>= 1) {
         if (static_cast<int>(threadIdx.x) < stride) {
             if (sh_score[threadIdx.x + stride] > sh_score[threadIdx.x]) {
                 sh_score[threadIdx.x] = sh_score[threadIdx.x + stride];
