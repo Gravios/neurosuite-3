@@ -49,6 +49,7 @@ set(klusters_SRCS
     minmaxthread.cpp
     pair.cpp
     prefclusterview.cpp
+    autoMerge.cpp
     prefdialog.cpp
     prefdisplay.cpp
     prefsession.cpp

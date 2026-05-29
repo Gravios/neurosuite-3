@@ -42,7 +42,7 @@
      <property name="title"><string>Target scope (when action is invoked)</string></property>
      <layout class="QVBoxLayout">
       <item><widget class="QRadioButton" name="scopeSelectedRadio"><property name="text"><string>&amp;Selected clusters in palette only</string></property><property name="toolTip"><string>Auto-merge considers only clusters currently selected. Safest for targeted curation.</string></property></widget></item>
-      <item><widget class="QRadioButton" name="scopeAllActiveRadio"><property name="text"><string>&amp;All active clusters (excluding 0 noise / 1 artefact)</string></property><property name="toolTip"><string>Auto-merge considers every non-special cluster in the document. Use with the preview-before-apply option to inspect proposed merges first.</string></property></widget></item>
+      <item><widget class="QRadioButton" name="scopeAllActiveRadio"><property name="text"><string>&amp;All active clusters (excluding 0 artefact / 1 noise)</string></property><property name="toolTip"><string>Auto-merge considers every non-special cluster in the document. Use with the preview-before-apply option to inspect proposed merges first.</string></property></widget></item>
      </layout>
     </widget>
    </item>

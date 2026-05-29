@@ -277,6 +277,11 @@ private Q_SLOTS:
     * @param selectedClusters list of clusters which have been selected to be grouped.
     */
     void slotGroupClusters(QList<int> selectedClusters);
+    /** Auto-merge action: template-cross-correlation between clusters; pairs
+     *  scoring above threshold are grouped via the same path as Group
+     *  Clusters.  Settings come from PrefAutoMerge / configuration().
+     *  Patch 0069. */
+    void slotAutoMerge();
     /**Calls the document to move the clusters contain in @p selectedClusters list
     * to the cluster of noise (cluster 1) and trigger the update of the displays.
     * @param selectedClusters list of clusters which have been selected to be moved
@@ -712,6 +717,7 @@ private:
     QAction *mDeleteArtifact;
     QAction *mDeleteNoisy;
     QAction *mGroupeClusters;
+    QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
     QAction *mUpdateDisplay;
     QAction *mRenumberClusters;
     QAction *mReCluster;
