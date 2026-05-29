@@ -298,6 +298,31 @@ public:
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims);
 
+    // Phase 8 variance-targeted knn-split (patch 0067).  Iterates Phase 4b's
+    // WaveKnn-split machinery on the high-variance clusters only — those whose
+    // waveform-space residual dispersion ρ = V_res / P_sig (on signal-support
+    // channels) exceeds Phase8VarianceThreshold.  FullCEM is intentionally
+    // skipped — diffuse clusters have no Gaussian-mixture modes for it to
+    // find; knn-split is the right tool for redistributing their spikes to
+    // nearby reference clusters.
+    void RunPhase8VarianceSplit(
+        const std::vector<std::vector<int>>&  chunkPoints,
+        std::vector<std::vector<int>>&        perChunkClass,
+        std::vector<std::vector<ChunkModel>>& perChunkModels,
+        int nFullDims);
+
+    // Shared waveform-space tightness metric (patch 0067).  ρ = V_res / P_sig
+    // on signal-support channels; same definition as Phase 4c's inline lambda.
+    // Returns +inf when ρ cannot be measured (too few spikes, no signal
+    // support).  nSigOut receives the count of signal channels used.  rbuf
+    // must be sized nChan*nSamp; the caller owns the allocation so the
+    // function is thread-safe with no shared state.
+    double computeClusterTightnessRho(
+        const std::vector<int>&  globalSpikeIds,
+        std::vector<int16_t>&    rbuf,
+        int nChan, int nSamp, double signalChannelFraction,
+        int& nSigOut);
+
     // Phase 4b quality-weighted split dispatcher.  Computes ISI
     // contamination + median-waveform variance for a random oversampled
     // pool of source clusters, then routes the neediest to FullCemSplit

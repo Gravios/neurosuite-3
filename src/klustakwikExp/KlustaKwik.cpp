@@ -495,6 +495,13 @@ float Phase4cTightnessThreshold   = 0.02f; // rho = Vres/Psig below this = maske
 float Phase4cSignalChannelFraction= 0.1f;  // tau: signal channel if Ech >= tau*maxEch
 float Phase4cTightnessSpreadBeta  = 0.0f;
 
+// ── Phase 8 variance-targeted knn-split (patch 0067) ──────────────────────
+int   Phase8VarianceSplitEnable        = 0;     // master switch (default off)
+int   Phase8VarianceSplitMaxIters      = 3;     // iterations
+float Phase8VarianceThreshold          = 0.10f; // ρ = V_res/P_sig; ≥ this is eligible
+float Phase8VarianceSignalChannelFraction = 0.1f;  // τ for signal support
+int   Phase8VarianceMinClusterSize     = 0;     // 0 = auto = max(nFullDims+5, 25)
+
 // ── Phase 5b: affine cross-chunk drift transform (patch 0063) ──────────────
 int   CrossChunkTransformDriftEnable     = 0;     // master switch (default off)
 int   CrossChunkTransformIRLSIters       = 5;     // IRLS-Huber iterations
@@ -846,6 +853,11 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(Phase4cTightnessThreshold);
     FLOAT_PARAM(Phase4cSignalChannelFraction);
     FLOAT_PARAM(Phase4cTightnessSpreadBeta);
+    INT_PARAM(Phase8VarianceSplitEnable);
+    INT_PARAM(Phase8VarianceSplitMaxIters);
+    FLOAT_PARAM(Phase8VarianceThreshold);
+    FLOAT_PARAM(Phase8VarianceSignalChannelFraction);
+    INT_PARAM(Phase8VarianceMinClusterSize);
     INT_PARAM(CrossChunkTransformDriftEnable);
     INT_PARAM(CrossChunkTransformIRLSIters);
     INT_PARAM(CrossChunkTransformMinMatches);
