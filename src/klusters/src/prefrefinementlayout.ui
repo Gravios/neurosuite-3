@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PrefRefinementLayout</class>
+ <widget class="QWidget" name="PrefRefinementLayout">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>420</height></rect></property>
+  <property name="windowTitle"><string>Refinement</string></property>
+  <layout class="QVBoxLayout" name="topLayout">
+   <item>
+<widget class="QGroupBox" name="groupBox_realign">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>32767</width>
+         <height>110</height>
+        </size>
+       </property>
+       <property name="title">
+        <string>Realignment (built-in xcorr)</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_realign">
+        <item row="0" column="0">
+         <widget class="QLabel" name="realignBuiltInLabel">
+          <property name="text">
+           <string>Waveform realignment uses built-in cross-correlation. No external program required.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <layout class="QHBoxLayout">
+          <item>
+           <widget class="QLabel" name="realignThresholdLabel">
+            <property name="text">
+             <string>Threshold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="realignThresholdSpinBox">
+            <property name="toolTip">
+             <string>Minimum xcorr score for a spike to be realigned (0.0–1.0)</string>
+            </property>
+            <property name="minimum">
+             <double>0.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="value">
+             <double>0.700000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_1">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignIterationsLabel">
+            <property name="text">
+             <string>Iterations</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignIterationsSpinBox">
+            <property name="toolTip">
+             <string>Number of realignment passes (1–20)</string>
+            </property>
+            <property name="minimum">
+             <number>1</number>
+            </property>
+            <property name="maximum">
+             <number>20</number>
+            </property>
+            <property name="value">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignMaxShiftLabel">
+            <property name="text">
+             <string>Max shift (samples, 0=auto)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignMaxShiftSpinBox">
+            <property name="toolTip">
+             <string>Maximum lag in samples. 0 = automatic (peak/2).</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>100</number>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_3">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+   </item>
+   <item>
+<widget class="QGroupBox" name="groupBox_dipsplit">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>32767</width>
+       <height>110</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>DipSplit (bimodality-driven cluster split)</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_dipsplit">
+      <item row="0" column="0">
+       <widget class="QLabel" name="dipSplitDescLabel">
+        <property name="text">
+         <string>Tests the selected cluster for bimodality and splits it on the deepest valley among the top-3 PCs.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <layout class="QHBoxLayout">
+        <item>
+         <widget class="QLabel" name="dipSplitMinSizeLabel">
+          <property name="text">
+           <string>Min size</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="dipSplitMinSizeSpinBox">
+          <property name="toolTip">
+           <string>Minimum spike count for either child cluster after split</string>
+          </property>
+          <property name="minimum"><number>2</number></property>
+          <property name="maximum"><number>100000</number></property>
+          <property name="value"><number>50</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_ds_1">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="dipSplitBloatFactorLabel">
+          <property name="text">
+           <string>Bloat factor</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="dipSplitBloatFactorSpinBox">
+          <property name="toolTip">
+           <string>0 disables the bloat gate (recommended for interactive use). Non-zero: cluster's 90th-percentile Mahalanobis^2 must exceed this multiple of the chi-squared 90th percentile to be considered for splitting (0.0-10.0).</string>
+          </property>
+          <property name="minimum"><double>0.000000000000000</double></property>
+          <property name="maximum"><double>10.000000000000000</double></property>
+          <property name="singleStep"><double>0.100000000000000</double></property>
+          <property name="decimals"><number>2</number></property>
+          <property name="value"><double>0.000000000000000</double></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_ds_2">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="dipSplitValleyThreshLabel">
+          <property name="text">
+           <string>Valley depth</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="dipSplitValleyThreshSpinBox">
+          <property name="toolTip">
+           <string>Minimum KDE valley depth on a top PC to accept a split (0.0-1.0). Higher = stricter.</string>
+          </property>
+          <property name="minimum"><double>0.000000000000000</double></property>
+          <property name="maximum"><double>1.000000000000000</double></property>
+          <property name="singleStep"><double>0.020000000000000</double></property>
+          <property name="decimals"><number>2</number></property>
+          <property name="value"><double>0.200000000000000</double></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_ds_3">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+<widget class="QGroupBox" name="groupBox_knn">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>32767</width>
+       <height>130</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>KNN voting split</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_knn">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="knnDescLabel">
+        <property name="text">
+         <string>For each spike in the selected cluster, K nearest neighbours from well-isolated reference clusters cast a vote; the cluster is split by majority winner.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <layout class="QHBoxLayout">
+        <item>
+         <widget class="QLabel" name="knnKLabel">
+          <property name="text">
+           <string>K</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="knnKSpinBox">
+          <property name="toolTip">
+           <string>K nearest neighbours per spike (2-200). Higher = noisier votes averaged out at the cost of locality.</string>
+          </property>
+          <property name="minimum"><number>2</number></property>
+          <property name="maximum"><number>200</number></property>
+          <property name="value"><number>10</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_1">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="knnThresholdLabel">
+          <property name="text">
+           <string>Threshold</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDoubleSpinBox" name="knnThresholdSpinBox">
+          <property name="toolTip">
+           <string>Majority threshold as a fraction of K (0.0-1.0). 0.5 = simple majority. Spikes that don't reach any majority go to a residual bin.</string>
+          </property>
+          <property name="minimum"><double>0.000000000000000</double></property>
+          <property name="maximum"><double>1.000000000000000</double></property>
+          <property name="singleStep"><double>0.050000000000000</double></property>
+          <property name="decimals"><number>2</number></property>
+          <property name="value"><double>0.500000000000000</double></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_2">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item row="2" column="0">
+       <layout class="QHBoxLayout">
+        <item>
+         <widget class="QLabel" name="knnMinNewLabel">
+          <property name="text">
+           <string>Min new size</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="knnMinNewSpinBox">
+          <property name="toolTip">
+           <string>Smallest new cluster size to keep (1-10000). Smaller groups are merged into the residual bin.</string>
+          </property>
+          <property name="minimum"><number>1</number></property>
+          <property name="maximum"><number>10000</number></property>
+          <property name="value"><number>5</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_3">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="knnMinRefLabel">
+          <property name="text">
+           <string>Min reference size</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="knnMinRefSpinBox">
+          <property name="toolTip">
+           <string>Minimum size for a cluster to be used as a KNN reference (10-100000). Excludes noisy or under-populated clusters from voting.</string>
+          </property>
+          <property name="minimum"><number>10</number></property>
+          <property name="maximum"><number>100000</number></property>
+          <property name="value"><number>100</number></property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="spacer_knn_4">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+          <property name="sizeHint" stdset="0">
+           <size><width>20</width><height>20</height></size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+  </layout>
+ </widget>
+
+ <resources/>
+ <connections/>
+</ui>

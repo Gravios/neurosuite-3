@@ -4,265 +4,307 @@
     begin                : Thu Dec 12 2003
     copyright            : (C) 2003 by Lynn Hazan
     email                :
+
+    Patch 0067: General tab split into five grouped tabs —
+    Display, Session, Reclustering, Refinement, Auto-Merge.
  ***************************************************************************/
 
-/***************************************************************************
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 3 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- ***************************************************************************/
-// include files for QT
 #include <QCheckBox>
-#include <QLayout>        // for QVBoxLayout
-#include <QLabel>         // for QLabel
-
+#include <QLayout>
+#include <QLabel>
 #include <QMessageBox>
 
-//include files for the application
-#include "prefdialog.h"     // class PrefDialog
+#include "prefdialog.h"
 
-#include "configuration.h"          // class Configuration and Config()
-#include "prefgeneral.h"            // class PrefGeneral
-#include "prefwaveformview.h" // class PrefWaveformView
-#include "prefclusterview.h"        // class PrefClusterView
+#include "configuration.h"
+#include "prefdisplay.h"
+#include "prefsession.h"
+#include "prefreclustering.h"
+#include "prefrefinement.h"
+#include "prefautomerge.h"
+#include "prefwaveformview.h"
+#include "prefclusterview.h"
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
 
-/**
-  *@author Lynn Hazan
-*/
-
-PrefDialog::PrefDialog(QWidget *parent,int nbChannels)
+PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
  : QPageDialog(parent)
 {
-
     setButtons(Help | Default | Ok | Apply | Cancel);
     setDefaultButton(Ok);
     setFaceType(List);
     setWindowTitle(tr("Preferences"));
+    setHelp("settings", "klusters");
 
-    setHelp("settings","klusters");
-    
-    QWidget * w = new QWidget(this);
-    prefGeneral = new PrefGeneral(w);
-    QPageWidgetItem *item = new QPageWidgetItem(prefGeneral,tr("General"));
-    item->setHeader(tr("Klusters General Configuration"));
-    item->setIcon(QIcon(":/shared-icons/folder-open"));
-
-
+    // ── Display ────────────────────────────────────────────────────
+    QWidget* w = new QWidget(this);
+    prefDisplay = new PrefDisplay(w);
+    QPageWidgetItem* item = new QPageWidgetItem(prefDisplay, tr("Display"));
+    item->setHeader(tr("Display Configuration"));
+    item->setIcon(QIcon(":/icons/display"));
     addPage(item);
 
+    // ── Session (crash recovery + undo) ────────────────────────────
+    w = new QWidget(this);
+    prefSession = new PrefSession(w);
+    item = new QPageWidgetItem(prefSession, tr("Session"));
+    item->setHeader(tr("Session Configuration"));
+    item->setIcon(QIcon(":/icons/session"));
+    addPage(item);
 
+    // ── Reclustering (KlustaKwik) ──────────────────────────────────
+    w = new QWidget(this);
+    prefReclustering = new PrefReclustering(w);
+    item = new QPageWidgetItem(prefReclustering, tr("Reclustering"));
+    item->setHeader(tr("Reclustering Configuration"));
+    item->setIcon(QIcon(":/icons/reclustering"));
+    addPage(item);
 
-    //adding page "Cluster view configuration"
+    // ── Refinement (realign + DipSplit + KNN) ──────────────────────
+    w = new QWidget(this);
+    prefRefinement = new PrefRefinement(w);
+    item = new QPageWidgetItem(prefRefinement, tr("Refinement"));
+    item->setHeader(tr("Cluster Refinement Configuration"));
+    item->setIcon(QIcon(":/icons/refinement"));
+    addPage(item);
+
+    // ── Auto-Merge (placeholder; populated in patch 0068) ──────────
+    w = new QWidget(this);
+    prefAutoMerge = new PrefAutoMerge(w);
+    item = new QPageWidgetItem(prefAutoMerge, tr("Auto-Merge"));
+    item->setHeader(tr("Auto-Merge Configuration"));
+    item->setIcon(QIcon(":/icons/automerge"));
+    addPage(item);
+
+    // ── Cluster view ───────────────────────────────────────────────
     w = new QWidget(this);
     prefclusterView = new PrefClusterView(w);
-
-    item = new QPageWidgetItem(prefclusterView,tr("Cluster view"));
+    item = new QPageWidgetItem(prefclusterView, tr("Cluster view"));
     item->setHeader(tr("Cluster View configuration"));
     item->setIcon(QIcon(":/icons/clusterview"));
     addPage(item);
 
-
-    //adding page "Waveform view configuration"
+    // ── Waveform view ──────────────────────────────────────────────
     w = new QWidget(this);
-    prefWaveformView = new PrefWaveformView(w,nbChannels);
-
-    item = new QPageWidgetItem(prefWaveformView,tr("Waveform view"));
+    prefWaveformView = new PrefWaveformView(w, nbChannels);
+    item = new QPageWidgetItem(prefWaveformView, tr("Waveform view"));
     item->setHeader(tr("Waveform View configuration"));
     item->setIcon(QIcon(":/icons/waveformview"));
     addPage(item);
 
+    // ── Wire enableApply on every interactive widget ───────────────
+    // Session
+    connect(prefSession->crashRecoveryCheckBox,  &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    connect(prefSession->crashRecoveryComboBox,  &QComboBox::activated,     this, &PrefDialog::enableApply);
+    connect(prefSession->undoSpinBox,            &QSpinBox::valueChanged,   this, &PrefDialog::enableApply);
 
-
-    // connect interactive widgets and selfmade signals to the enableApply slotDefault
-    connect(prefGeneral->crashRecoveryCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefGeneral->crashRecoveryComboBox,&QComboBox::activated,this,&PrefDialog::enableApply);
-    connect(prefGeneral->undoSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->backgroundColorButton,&QColorButton::colorChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->reclusteringExecutableLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
-    //connect(prefGeneral,SIGNAL(reclusteringArgsUpdate()),this,SLOT(enableApply()));
-    connect(prefGeneral->reclusteringArgsLineEdit,&QLineEdit::textChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->markerSizeSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->selectionLineWidthSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->autoscaleMarginSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->useWhiteColorPrinting, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefGeneral->autoSelectFeaturesCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefGeneral->autoSelectNFeaturesSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    // patch76 — mean-subtracted sub-dimensional recluster checkbox
-    connect(prefGeneral->reclusterMeanSubtractedSubdimCheckBox,
+    // Reclustering
+    connect(prefReclustering->reclusteringExecutableLineEdit,  &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefReclustering->reclusteringArgsLineEdit,        &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefReclustering->autoSelectFeaturesCheckBox,      &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    connect(prefReclustering->autoSelectNFeaturesSpinBox,      &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefReclustering->reclusterMeanSubtractedSubdimCheckBox,
             &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    // patch79 — auto-show matrices on open checkbox
-    connect(prefGeneral->autoShowMatricesOnOpenCheckBox,
-            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefGeneral->realignThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefGeneral->realignIterationsSpinBox, &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefGeneral->realignMaxShiftSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefGeneral->dipSplitMinSizeSpinBox,      &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefGeneral->dipSplitBloatFactorSpinBox,  &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefGeneral->dipSplitValleyThreshSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefGeneral->knnKSpinBox,         &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefGeneral->knnThresholdSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefGeneral->knnMinNewSpinBox,    &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefGeneral->knnMinRefSpinBox,    &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefGeneral->templateThresholdMinSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefGeneral->templateThresholdMaxSpinBox,&QDoubleSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    
-    connect(prefclusterView->intervalSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefWaveformView->gainSpinBox,&QSpinBox::valueChanged,this,&PrefDialog::enableApply);
-    connect(prefWaveformView,&PrefWaveformView::positionsChanged,this,&PrefDialog::enableApply);
 
+    // Refinement (realign + dipsplit + knn)
+    connect(prefRefinement->realignThresholdSpinBox,    &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefRefinement->realignIterationsSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefRefinement->realignMaxShiftSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefRefinement->dipSplitBloatFactorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefRefinement->dipSplitValleyThreshSpinBox,&QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefRefinement->knnKSpinBox,                &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefRefinement->knnThresholdSpinBox,        &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefRefinement->knnMinNewSpinBox,           &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefRefinement->knnMinRefSpinBox,           &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
 
-    connect(this, &QExtendDialog::applyClicked, this, &PrefDialog::slotApply);
+    // Display
+    connect(prefDisplay->backgroundColorButton,        &QColorButton::colorChanged,    this, &PrefDialog::enableApply);
+    connect(prefDisplay->markerSizeSpinBox,            &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
+    connect(prefDisplay->selectionLineWidthSpinBox,    &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
+    connect(prefDisplay->autoscaleMarginSpinBox,       &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
+    connect(prefDisplay->useWhiteColorPrinting,        &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
+    connect(prefDisplay->autoShowMatricesOnOpenCheckBox,&QAbstractButton::clicked,     this, &PrefDialog::enableApply);
+    connect(prefDisplay->templateThresholdMinSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
+    connect(prefDisplay->templateThresholdMaxSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
+
+    // Cluster + Waveform views (unchanged)
+    connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
+
+    connect(this, &QExtendDialog::applyClicked,   this, &PrefDialog::slotApply);
     connect(this, &QExtendDialog::defaultClicked, this, &PrefDialog::slotDefault);
-    connect(this, &QExtendDialog::helpClicked, this, &PrefDialog::slotHelp);
+    connect(this, &QExtendDialog::helpClicked,    this, &PrefDialog::slotHelp);
 
     applyEnable = false;
 }
 
 void PrefDialog::slotHelp()
 {
-    QHelpViewer *helpDialog = new QHelpViewer(this);
+    QHelpViewer* helpDialog = new QHelpViewer(this);
     helpDialog->setHtml(KLUSTER_DOC_PATH + QLatin1String("index.html"));
-    helpDialog->setAttribute( Qt::WA_DeleteOnClose );
+    helpDialog->setAttribute(Qt::WA_DeleteOnClose);
     helpDialog->show();
 }
 
-void PrefDialog::updateDialog() {  
-  prefGeneral->setCrashRecovery(configuration().isCrashRecovery());
-  prefGeneral->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndex());
-  prefGeneral->setNbUndo(configuration().getNbUndo());
-  prefGeneral->setBackgroundColor(configuration().getBackgroundColor());
-  prefGeneral->setReclusteringExecutable(configuration().getReclusteringExecutable());
-  prefGeneral->setReclusteringArguments(configuration().getReclusteringArguments());
-  prefGeneral->setRealignThreshold(configuration().getRealignThreshold());
-  prefGeneral->setRealignIterations(configuration().getRealignIterations());
-  prefGeneral->setRealignMaxShift(configuration().getRealignMaxShift());
-  prefGeneral->setDipSplitMinSize(configuration().getDipSplitMinSize());
-  prefGeneral->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
-  prefGeneral->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
-  prefGeneral->setKnnK(configuration().getKnnK());
-  prefGeneral->setKnnThreshold(configuration().getKnnThreshold());
-  prefGeneral->setKnnMinNew(configuration().getKnnMinNew());
-  prefGeneral->setKnnMinRef(configuration().getKnnMinRef());
-  prefGeneral->setMarkerSize(configuration().getMarkerSize());
-  prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidth());
-  prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
-  prefclusterView->setTimeInterval(configuration().getTimeInterval());
-  prefWaveformView->setGain(configuration().getGain());
-  prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
-  prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
-  prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
-  prefGeneral->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());  // patch76
-  prefGeneral->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpen());  // patch79
-  prefGeneral->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
-  prefGeneral->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
-  enableButtonApply(false);   // disable apply button
-  applyEnable = false;
-}
- 
+void PrefDialog::updateDialog()
+{
+    // Session
+    prefSession->setCrashRecovery(configuration().isCrashRecovery());
+    prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndex());
+    prefSession->setNbUndo(configuration().getNbUndo());
 
-void PrefDialog::updateConfiguration(){
-  configuration().setCrashRecovery(prefGeneral->isCrashRecovery());
-  configuration().setCrashRecoveryIndex(prefGeneral->crashRecoveryIntervalIndex());
-  configuration().setNbUndo(prefGeneral->getNbUndo());
-  configuration().setBackgroundColor(prefGeneral->getBackgroundColor()); 
-  configuration().setReclusteringExecutable(prefGeneral->getReclusteringExecutable());
-  configuration().setReclusteringArguments(prefGeneral->getReclusteringArguments());
-  configuration().setRealignThreshold(prefGeneral->getRealignThreshold());
-  configuration().setRealignIterations(prefGeneral->getRealignIterations());
-  configuration().setRealignMaxShift(prefGeneral->getRealignMaxShift());
-  configuration().setDipSplitMinSize(prefGeneral->getDipSplitMinSize());
-  configuration().setDipSplitBloatFactor(prefGeneral->getDipSplitBloatFactor());
-  configuration().setDipSplitValleyThresh(prefGeneral->getDipSplitValleyThresh());
-  configuration().setKnnK(prefGeneral->getKnnK());
-  configuration().setKnnThreshold(prefGeneral->getKnnThreshold());
-  configuration().setKnnMinNew(prefGeneral->getKnnMinNew());
-  configuration().setKnnMinRef(prefGeneral->getKnnMinRef());
-  configuration().setMarkerSize(prefGeneral->getMarkerSize());
-  configuration().setSelectionLineWidth(prefGeneral->getSelectionLineWidth());
-  configuration().setAutoscaleMarginPercent(prefGeneral->getAutoscaleMarginPercent());
-  configuration().setTimeInterval(prefclusterView->getTimeInterval());
-  configuration().setGain(prefWaveformView->getGain());
-  configuration().setNbChannels(prefWaveformView->getNbChannels());
-  configuration().setChannelPositions(prefWaveformView->getChannelPositions()); 
-  configuration().setUseWhiteColorDuringPrinting(prefGeneral->useWhiteColorDuringPrinting());
-  configuration().setAutoSelectFeatures(prefGeneral->getAutoSelectFeatures());
-  configuration().setAutoSelectNFeatures(prefGeneral->getAutoSelectNFeatures());
-  configuration().setReclusterMeanSubtractedSubdim(prefGeneral->getReclusterMeanSubtractedSubdim());  // patch76
-  configuration().setAutoShowMatricesOnOpen(prefGeneral->getAutoShowMatricesOnOpen());  // patch79
-  configuration().setTemplateThresholdMin(prefGeneral->getTemplateThresholdMin());
-  configuration().setTemplateThresholdMax(prefGeneral->getTemplateThresholdMax());
-  enableButtonApply(false);   // disable apply button
-  applyEnable = false;
+    // Reclustering
+    prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutable());
+    prefReclustering->setReclusteringArguments(configuration().getReclusteringArguments());
+    prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
+    prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
+    prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());
+
+    // Refinement
+    prefRefinement->setRealignThreshold(configuration().getRealignThreshold());
+    prefRefinement->setRealignIterations(configuration().getRealignIterations());
+    prefRefinement->setRealignMaxShift(configuration().getRealignMaxShift());
+    prefRefinement->setDipSplitMinSize(configuration().getDipSplitMinSize());
+    prefRefinement->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
+    prefRefinement->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
+    prefRefinement->setKnnK(configuration().getKnnK());
+    prefRefinement->setKnnThreshold(configuration().getKnnThreshold());
+    prefRefinement->setKnnMinNew(configuration().getKnnMinNew());
+    prefRefinement->setKnnMinRef(configuration().getKnnMinRef());
+
+    // Display
+    prefDisplay->setBackgroundColor(configuration().getBackgroundColor());
+    prefDisplay->setMarkerSize(configuration().getMarkerSize());
+    prefDisplay->setSelectionLineWidth(configuration().getSelectionLineWidth());
+    prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
+    prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
+    prefDisplay->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpen());
+    prefDisplay->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
+    prefDisplay->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
+
+    // Cluster + Waveform views
+    prefclusterView->setTimeInterval(configuration().getTimeInterval());
+    prefWaveformView->setGain(configuration().getGain());
+
+    enableButtonApply(false);
+    applyEnable = false;
 }
 
+void PrefDialog::updateConfiguration()
+{
+    // Session
+    configuration().setCrashRecovery(prefSession->isCrashRecovery());
+    configuration().setCrashRecoveryIndex(prefSession->crashRecoveryIntervalIndex());
+    configuration().setNbUndo(prefSession->getNbUndo());
 
-void PrefDialog::slotDefault() {
-  if (QMessageBox::question(this, tr("Set default options?"), tr("This will set the default options "
-      "in ALL pages of the preferences dialog! Do you wish to continue?"), QMessageBox::RestoreDefaults|QMessageBox::Cancel
-      )==QMessageBox::RestoreDefaults){
-        
-   prefGeneral->setCrashRecovery(configuration().isCrashRecoveryDefault());
-   prefGeneral->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndexDefault());
-   prefGeneral->setNbUndo(configuration().getNbUndoDefault());
-   prefGeneral->setBackgroundColor(configuration().getBackgroundColorDefault());
-   prefGeneral->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
-   prefGeneral->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
-   prefGeneral->setRealignThreshold(configuration().getRealignThresholdDefault());
-   prefGeneral->setRealignIterations(configuration().getRealignIterationsDefault());
-   prefGeneral->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
-   prefGeneral->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
-   prefGeneral->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
-   prefGeneral->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());
-   prefGeneral->setKnnK(configuration().getKnnKDefault());
-   prefGeneral->setKnnThreshold(configuration().getKnnThresholdDefault());
-   prefGeneral->setKnnMinNew(configuration().getKnnMinNewDefault());
-   prefGeneral->setKnnMinRef(configuration().getKnnMinRefDefault());
-   prefGeneral->setMarkerSize(configuration().getMarkerSizeDefault());
-   prefGeneral->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
-   prefGeneral->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
-   prefGeneral->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
-   prefGeneral->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
-   prefGeneral->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
-   prefGeneral->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());  // patch76
-   prefGeneral->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());  // patch79
+    // Reclustering
+    configuration().setReclusteringExecutable(prefReclustering->getReclusteringExecutable());
+    configuration().setReclusteringArguments(prefReclustering->getReclusteringArguments());
+    configuration().setAutoSelectFeatures(prefReclustering->getAutoSelectFeatures());
+    configuration().setAutoSelectNFeatures(prefReclustering->getAutoSelectNFeatures());
+    configuration().setReclusterMeanSubtractedSubdim(prefReclustering->getReclusterMeanSubtractedSubdim());
 
-   prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
-   prefWaveformView->setGain(configuration().getGainDefault());
-   prefWaveformView->resetChannelList(configuration().getNbChannels());
-   
-   enableApply();   // enable apply button
-  }
+    // Refinement
+    configuration().setRealignThreshold(prefRefinement->getRealignThreshold());
+    configuration().setRealignIterations(prefRefinement->getRealignIterations());
+    configuration().setRealignMaxShift(prefRefinement->getRealignMaxShift());
+    configuration().setDipSplitMinSize(prefRefinement->getDipSplitMinSize());
+    configuration().setDipSplitBloatFactor(prefRefinement->getDipSplitBloatFactor());
+    configuration().setDipSplitValleyThresh(prefRefinement->getDipSplitValleyThresh());
+    configuration().setKnnK(prefRefinement->getKnnK());
+    configuration().setKnnThreshold(prefRefinement->getKnnThreshold());
+    configuration().setKnnMinNew(prefRefinement->getKnnMinNew());
+    configuration().setKnnMinRef(prefRefinement->getKnnMinRef());
+
+    // Display
+    configuration().setBackgroundColor(prefDisplay->getBackgroundColor());
+    configuration().setMarkerSize(prefDisplay->getMarkerSize());
+    configuration().setSelectionLineWidth(prefDisplay->getSelectionLineWidth());
+    configuration().setAutoscaleMarginPercent(prefDisplay->getAutoscaleMarginPercent());
+    configuration().setUseWhiteColorDuringPrinting(prefDisplay->useWhiteColorDuringPrinting());
+    configuration().setAutoShowMatricesOnOpen(prefDisplay->getAutoShowMatricesOnOpen());
+    configuration().setTemplateThresholdMin(prefDisplay->getTemplateThresholdMin());
+    configuration().setTemplateThresholdMax(prefDisplay->getTemplateThresholdMax());
+
+    // Cluster + Waveform views
+    configuration().setTimeInterval(prefclusterView->getTimeInterval());
+    configuration().setGain(prefWaveformView->getGain());
+    configuration().setNbChannels(prefWaveformView->getNbChannels());
+    configuration().setChannelPositions(prefWaveformView->getChannelPositions());
+
+    enableButtonApply(false);
+    applyEnable = false;
 }
 
+void PrefDialog::slotDefault()
+{
+    if (QMessageBox::question(this, tr("Set default options?"),
+            tr("This will set the default options in ALL pages of the preferences dialog! Do you wish to continue?"),
+            QMessageBox::RestoreDefaults | QMessageBox::Cancel) != QMessageBox::RestoreDefaults)
+        return;
 
-void PrefDialog::slotApply() {
-  updateConfiguration();      // transfer settings to configuration object
-  emit settingsChanged();     // apply the preferences    
-  enableButtonApply(false);   // disable apply button again
+    prefSession->setCrashRecovery(configuration().isCrashRecoveryDefault());
+    prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndexDefault());
+    prefSession->setNbUndo(configuration().getNbUndoDefault());
+
+    prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
+    prefReclustering->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
+    prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
+    prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
+    prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());
+
+    prefRefinement->setRealignThreshold(configuration().getRealignThresholdDefault());
+    prefRefinement->setRealignIterations(configuration().getRealignIterationsDefault());
+    prefRefinement->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
+    prefRefinement->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
+    prefRefinement->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
+    prefRefinement->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());
+    prefRefinement->setKnnK(configuration().getKnnKDefault());
+    prefRefinement->setKnnThreshold(configuration().getKnnThresholdDefault());
+    prefRefinement->setKnnMinNew(configuration().getKnnMinNewDefault());
+    prefRefinement->setKnnMinRef(configuration().getKnnMinRefDefault());
+
+    prefDisplay->setBackgroundColor(configuration().getBackgroundColorDefault());
+    prefDisplay->setMarkerSize(configuration().getMarkerSizeDefault());
+    prefDisplay->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
+    prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
+    prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
+    prefDisplay->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());
+
+    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
+    prefWaveformView->setGain(configuration().getGainDefault());
+    prefWaveformView->resetChannelList(configuration().getNbChannels());
+
+    enableApply();
 }
 
+void PrefDialog::slotApply()
+{
+    updateConfiguration();
+    emit settingsChanged();
+    enableButtonApply(false);
+}
 
-void PrefDialog::enableApply() {
-    enableButtonApply(true);   // enable apply button
+void PrefDialog::enableApply()
+{
+    enableButtonApply(true);
     applyEnable = true;
 }
 
-void PrefDialog::syncAutoNFeatures(int n){
-    prefGeneral->setAutoSelectNFeatures(n);
+void PrefDialog::syncAutoNFeatures(int n)
+{
+    prefReclustering->setAutoSelectNFeatures(n);
 }
 
-void PrefDialog::resetChannelList(int nbChannels){
-  prefWaveformView->resetChannelList(nbChannels);
+void PrefDialog::resetChannelList(int nbChannels)
+{
+    prefWaveformView->resetChannelList(nbChannels);
 }
 
-void PrefDialog::enableChannelSettings(bool state){
-  prefWaveformView->enableChannelSettings(state);
+void PrefDialog::enableChannelSettings(bool state)
+{
+    prefWaveformView->enableChannelSettings(state);
 }
-    
-

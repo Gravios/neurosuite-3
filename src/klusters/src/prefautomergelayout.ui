@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PrefAutoMergeLayout</class>
+ <widget class="QWidget" name="PrefAutoMergeLayout">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>420</height></rect></property>
+  <property name="windowTitle"><string>Auto-Merge</string></property>
+  <layout class="QVBoxLayout" name="topLayout">
+   <item>
+    <widget class="QGroupBox" name="groupBoxAutoMerge">
+     <property name="title"><string>Auto-Merge (template xcorr — same mechanism as KKE)</string></property>
+     <layout class="QVBoxLayout">
+      <item>
+       <widget class="QLabel" name="placeholderLabel">
+        <property name="text"><string>Settings UI added in patch 0068.
+Action wiring added in patch 0069.
+
+Auto-merge uses the same template cross-correlation mechanism as KKE's WithinChunkTemplateMatch / WithinChunkTemplateMatchMedianKnn — building mean or median templates per cluster, scoring pairs with a configurable max shift, and merging pairs above threshold.</string></property>
+        <property name="wordWrap"><bool>true</bool></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

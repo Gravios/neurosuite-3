@@ -15,5 +15,10 @@
         <file>icons/update.png</file>
         <file>icons/waveformview.png</file>
         <file>icons/zoom_tool.png</file>
+        <file>icons/automerge.png</file>
+        <file>icons/display.png</file>
+        <file>icons/reclustering.png</file>
+        <file>icons/refinement.png</file>
+        <file>icons/session.png</file>
     </qresource>
 </RCC>
