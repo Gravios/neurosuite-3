@@ -4614,6 +4614,14 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // tightness mask.  No-op unless -Phase4cRemixEnable 1.
         RunPhase4cRemix(chunkPoints, perChunkClass, perChunkModels, nFullDims);
 
+        // ── Phase 8: variance-targeted knn-split (patch 0067) ───────────
+        // Iterates Phase 4b's WaveKnn-split on high-variance clusters
+        // only.  No-op unless -Phase8VarianceSplitEnable 1.  FullCEM is
+        // intentionally skipped — diffuse clusters have no Gaussian-
+        // mixture modes for FullCEM to find; WaveKnn redistributes their
+        // spikes to nearby reference clusters instead.
+        RunPhase8VarianceSplit(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
     // perChunkAssign was built with original Phase 1 IDs; after
     // WithinChunkTemplateMatch the IDs in perChunkClass differ.
@@ -6041,6 +6049,14 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // closest clusters and re-splits, guarded by disjointness + a
         // tightness mask.  No-op unless -Phase4cRemixEnable 1.
         RunPhase4cRemix(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
+        // ── Phase 8: variance-targeted knn-split (patch 0067) ───────────
+        // Iterates Phase 4b's WaveKnn-split on high-variance clusters
+        // only.  No-op unless -Phase8VarianceSplitEnable 1.  FullCEM is
+        // intentionally skipped — diffuse clusters have no Gaussian-
+        // mixture modes for FullCEM to find; WaveKnn redistributes their
+        // spikes to nearby reference clusters instead.
+        RunPhase8VarianceSplit(chunkPoints, perChunkClass, perChunkModels, nFullDims);
 
     // Rebuild pointPacked[] using post-template-merge cluster IDs.
     // perChunkAssign was built with original Phase 1 IDs; after
@@ -11416,6 +11432,271 @@ void KK::QualityWeightedSplitDispatch(
 
 
 // ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────
+// KK::computeClusterTightnessRho — shared waveform-space variance metric
+// ─────────────────────────────────────────────────────────────────────────
+// ρ = V_res / P_sig on signal-support channels:
+//   * mean[e] is the per-element mean of the cluster's read waveforms,
+//     channel-major (e = ch*nSamp + s)
+//   * Ech[ch]  = Σ_s mean[ch,s]²  (per-channel energy of the template)
+//   * signal channels are those with Ech ≥ τ·maxEch (τ = signalChannelFraction)
+//   * P_sig    = Σ_{signal ch, s} mean[ch,s]² / nSigElems
+//   * V_res    = Σ_{spikes, signal ch, s} (w − mean)² / (ok·nSigElems)
+//   * ρ        = V_res / P_sig  (scale-free: amplitude cancels; per-element
+//     averaging on the signal support makes concentrated and diffuse
+//     footprints comparable)
+//
+// Returns +inf when ρ cannot be measured (N < 2, ok < 2, maxE = 0, no signal
+// support, denom = 0) so the cluster is treated as "untouchable" by callers
+// using this metric (Phase 4c masks tight, Phase 8 targets loose — both want
+// a +inf to mean "leave alone").
+//
+// Caller-owned rbuf scratch (size nChan*nSamp) → no shared state → safe to
+// call from inside an OMP parallel region with each thread passing its own
+// rbuf.
+double KK::computeClusterTightnessRho(
+    const std::vector<int>&  globalSpikeIds,
+    std::vector<int16_t>&    rbuf,
+    int nChan, int nSamp, double signalChannelFraction,
+    int& nSigOut)
+{
+    const int wElems = nChan * nSamp;
+    const int N      = static_cast<int>(globalSpikeIds.size());
+    nSigOut = 1;
+    if (N < 2) return std::numeric_limits<double>::infinity();
+
+    std::vector<double> mean(static_cast<size_t>(wElems), 0.0);
+    int ok = 0;
+    std::vector<std::vector<int16_t>> cache;
+    cache.reserve(static_cast<size_t>(N));
+    for (int i = 0; i < N; ++i) {
+        if (!TimeShiftReadSpikeWave(globalSpikeIds[static_cast<size_t>(i)],
+                                    wElems, rbuf.data())) continue;
+        cache.push_back(rbuf);
+        for (int e = 0; e < wElems; ++e)
+            mean[static_cast<size_t>(e)] +=
+                static_cast<double>(rbuf[static_cast<size_t>(e)]);
+        ++ok;
+    }
+    if (ok < 2) return std::numeric_limits<double>::infinity();
+    const double invOk = 1.0 / ok;
+    for (int e = 0; e < wElems; ++e) mean[static_cast<size_t>(e)] *= invOk;
+
+    // Per-channel energy → signal support.
+    double maxE = 0.0;
+    std::vector<double> Ech(static_cast<size_t>(nChan), 0.0);
+    for (int ch = 0; ch < nChan; ++ch) {
+        double e2 = 0.0;
+        for (int s = 0; s < nSamp; ++s) {
+            const double m = mean[static_cast<size_t>(ch) * nSamp + s];
+            e2 += m * m;
+        }
+        Ech[static_cast<size_t>(ch)] = e2;
+        if (e2 > maxE) maxE = e2;
+    }
+    if (maxE <= 0.0) return std::numeric_limits<double>::infinity();
+    const double tau = std::max(0.0, signalChannelFraction);
+
+    long nSig = 0;
+    double Psig = 0.0, Vres = 0.0;
+    long long nResElem = 0;
+    for (int ch = 0; ch < nChan; ++ch) {
+        if (Ech[static_cast<size_t>(ch)] < tau * maxE) continue;
+        ++nSig;
+        for (int s = 0; s < nSamp; ++s) {
+            const int e = ch * nSamp + s;
+            const double m = mean[static_cast<size_t>(e)];
+            Psig += m * m;
+        }
+    }
+    nSigOut = static_cast<int>(nSig);
+    if (nSig == 0) return std::numeric_limits<double>::infinity();
+    const long sigElems = nSig * nSamp;
+    Psig /= static_cast<double>(sigElems);
+
+    for (const auto& w : cache)
+        for (int ch = 0; ch < nChan; ++ch) {
+            if (Ech[static_cast<size_t>(ch)] < tau * maxE) continue;
+            for (int s = 0; s < nSamp; ++s) {
+                const int e = ch * nSamp + s;
+                const double d = static_cast<double>(w[static_cast<size_t>(e)])
+                               - mean[static_cast<size_t>(e)];
+                Vres += d * d;
+                ++nResElem;
+            }
+        }
+    if (nResElem == 0 || Psig <= 0.0)
+        return std::numeric_limits<double>::infinity();
+    Vres /= static_cast<double>(nResElem);
+    return Vres / Psig;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// KK::RunPhase8VarianceSplit — Phase 8 variance-targeted knn-split (patch 0067)
+// ─────────────────────────────────────────────────────────────────────────
+// Iterates Phase 4b's WaveKnn-split machinery on the high-variance clusters
+// only.  Per iteration: for each chunk, compute ρ per cluster; clusters with
+// ρ ≥ Phase8VarianceThreshold (and size ≥ minSize) form the WaveKnn-split
+// allowlist for this iteration.  Then merge + count changes + quit when
+// stable (or maxIters reached).
+//
+// Design choice: FullCEM is intentionally NOT called here.  The target
+// scenario is diffuse clusters with no obvious Gaussian-mixture modes — the
+// kind that show up as a smear in feature space without internal structure.
+// FullCEM would either no-op (no modes for the mixture to find) or invent
+// spurious modes; both are wasteful.  WaveKnn-split is the right tool: it
+// redistributes the source cluster's spikes to nearby reference clusters
+// by k-NN voting, with anything that doesn't vote strongly staying as a
+// smaller residual.  Iterated, the diffuse cluster shrinks and concentrates
+// (or fully dissolves into its neighbors).
+//
+// Hooks in after Phase 4c at both CEM call sites; no-op unless
+// -Phase8VarianceSplitEnable 1.  Requires m_timeShiftReady (needs to read
+// waveforms for the tightness measurement); without it the phase is
+// skipped with a warning.
+//
+// CLI: -Phase8VarianceSplitEnable        0   (master switch)
+//      -Phase8VarianceSplitMaxIters      3
+//      -Phase8VarianceThreshold          0.10  (ρ threshold for eligibility)
+//      -Phase8VarianceSignalChannelFraction 0.1 (τ; same as Phase 4c)
+//      -Phase8VarianceMinClusterSize     0   (0 = max(nFullDims+5, 25))
+void KK::RunPhase8VarianceSplit(
+    const std::vector<std::vector<int>>&  chunkPoints,
+    std::vector<std::vector<int>>&        perChunkClass,
+    std::vector<std::vector<ChunkModel>>& perChunkModels,
+    int nFullDims)
+{
+    if (Phase8VarianceSplitEnable == 0) return;
+    const int nCh = static_cast<int>(chunkPoints.size());
+    if (nCh == 0) return;
+
+    const int nChan  = NbChannels;
+    const int nSamp  = NbSamplesPerSpike;
+    const int wElems = nChan * nSamp;
+    if (nChan <= 0 || nSamp <= 0) {
+        LockedStderr("[Phase 8] skipped: missing spike geometry\n");
+        return;
+    }
+    if (!m_timeShiftReady) {
+        LockedStderr("[Phase 8] skipped: time-shift machinery not ready "
+                     "(need MaxTimeShift > 0 for spike-read access)\n");
+        return;
+    }
+
+    const int    maxIters = std::max(1, Phase8VarianceSplitMaxIters);
+    const double thr      = std::max(0.0, static_cast<double>(Phase8VarianceThreshold));
+    const double tau      = static_cast<double>(Phase8VarianceSignalChannelFraction);
+    const int    minSize  = (Phase8VarianceMinClusterSize > 0)
+                          ? Phase8VarianceMinClusterSize
+                          : std::max(nFullDims + 5, 25);
+
+    LockedStderr("[Phase 8] Variance-targeted knn-split: up to %d iters, "
+                 "ρ_thresh=%.3f, min size=%d (FullCEM skipped — diffuse "
+                 "clusters have no modes)\n",
+                 maxIters, thr, minSize);
+
+    int grandRelabeled       = 0;
+    int grandSourcesProcessed = 0;
+
+    for (int it = 0; it < maxIters; ++it) {
+        // Per-chunk allowlists, written from disjoint slots under the
+        // parallel for; gathered into the std::map after the parallel
+        // section (std::map insert is not thread-safe).
+        std::vector<std::vector<int>> highVarPerChunk(static_cast<size_t>(nCh));
+        int totalHighVar = 0;
+
+        #pragma omp parallel for schedule(dynamic) reduction(+:totalHighVar)
+        for (int ck = 0; ck < nCh; ++ck) {
+            const auto& pts  = chunkPoints[static_cast<size_t>(ck)];
+            const auto& cls  = perChunkClass[static_cast<size_t>(ck)];
+            const auto& mdls = perChunkModels[static_cast<size_t>(ck)];
+            const int   nPts = static_cast<int>(pts.size());
+            if (nPts == 0 || mdls.empty()) continue;
+
+            std::vector<int16_t> rbuf(static_cast<size_t>(wElems));
+
+            // Members per cluster.
+            std::unordered_map<int, std::vector<int>> memLocal;
+            for (int i = 0; i < nPts; ++i) {
+                const int c = cls[static_cast<size_t>(i)];
+                if (c != 0) memLocal[c].push_back(i);
+            }
+
+            for (const auto& kv : memLocal) {
+                const int lc = kv.first;
+                const auto& idx = kv.second;
+                if (static_cast<int>(idx.size()) < minSize) continue;
+                std::vector<int> gids;
+                gids.reserve(idx.size());
+                for (int li : idx) gids.push_back(pts[static_cast<size_t>(li)]);
+                int nSig = 0;
+                const double rho = computeClusterTightnessRho(
+                    gids, rbuf, nChan, nSamp, tau, nSig);
+                if (std::isfinite(rho) && rho >= thr) {
+                    highVarPerChunk[static_cast<size_t>(ck)].push_back(lc);
+                    ++totalHighVar;
+                }
+            }
+        }
+
+        if (totalHighVar == 0) {
+            LockedStderr("[Phase 8] iter %d: no clusters above ρ_thresh; "
+                         "converged\n", it + 1);
+            break;
+        }
+
+        // Gather scratch → final allowlist map.
+        std::map<int, std::vector<int>> knnAllow;
+        for (int ck = 0; ck < nCh; ++ck) {
+            if (!highVarPerChunk[static_cast<size_t>(ck)].empty())
+                knnAllow[ck] = std::move(highVarPerChunk[static_cast<size_t>(ck)]);
+        }
+
+        // Snapshot perChunkClass to count spikes redistributed.
+        std::vector<std::vector<int>> before = perChunkClass;
+
+        // ── knn-split only (FullCEM intentionally skipped) ───────────────
+        WaveKnnSplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                             nFullDims, &knnAllow);
+
+        // Merge cleanup — same Phase 4 within-chunk template merge.
+        const int merged = MedianKnnTemplateMatchEnable
+            ? WithinChunkTemplateMatchMedianKnn(chunkPoints, perChunkClass,
+                                                perChunkModels, nChan, nSamp,
+                                                TemplateMatchScore)
+            : WithinChunkTemplateMatch(chunkPoints, perChunkClass,
+                                       perChunkModels, nChan, nSamp,
+                                       TemplateMatchScore);
+
+        int changedThisIter = 0;
+        for (size_t k = 0; k < perChunkClass.size(); ++k) {
+            const auto& a = perChunkClass[k];
+            const auto& b = before[k];
+            if (a.size() != b.size()) continue;
+            for (size_t i = 0; i < a.size(); ++i)
+                if (a[i] != b[i]) ++changedThisIter;
+        }
+        grandRelabeled        += changedThisIter;
+        grandSourcesProcessed += totalHighVar;
+
+        LockedStderr("[Phase 8] iter %d/%d: %d high-variance sources, "
+                     "%d spikes redistributed, %d merge(s)\n",
+                     it + 1, maxIters, totalHighVar,
+                     changedThisIter, merged);
+
+        if (changedThisIter == 0 && merged == 0) {
+            LockedStderr("[Phase 8] iter %d: no further changes; converged\n",
+                         it + 1);
+            break;
+        }
+    }
+
+    LockedStderr("[Phase 8] done: %d source-iterations, %d spikes redistributed\n",
+                 grandSourcesProcessed, grandRelabeled);
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────
 // KK::RunPhase4cRemix — Phase 4c neighborhood-remix split (patch 0062)
 // ─────────────────────────────────────────────────────────────────────────
