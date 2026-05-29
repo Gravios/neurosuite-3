@@ -103,6 +103,16 @@ public:
     void setKnnMinNew(int n)         {knnMinNew    = qBound(1, n, 10000);}
     void setKnnMinRef(int n)         {knnMinRef    = qBound(10, n, 100000);}
 
+    // Auto-Merge (patch 0068) — settings for the Auto-Merge action.
+    void setAutoMergeAlgorithm(int a)           {autoMergeAlgorithm     = qBound(0, a, 1);}
+    void setAutoMergeMedianK(int k)             {autoMergeMedianK       = qBound(1, k, 500);}
+    void setAutoMergeScoreThreshold(double v)   {autoMergeScoreThreshold= qBound(0.0, v, 1.0);}
+    void setAutoMergeMaxShift(int n)            {autoMergeMaxShift      = qBound(0, n, 128);}
+    void setAutoMergeTaperSamples(int n)        {autoMergeTaperSamples  = qBound(0, n, 64);}
+    void setAutoMergeMinClusterSize(int n)      {autoMergeMinClusterSize= qBound(2, n, 1000000);}
+    void setAutoMergeScope(int s)               {autoMergeScope         = qBound(0, s, 1);}
+    void setAutoMergePreviewBeforeApply(bool b) {autoMergePreviewBeforeApply = b;}
+
     /**Sets the scatter plot marker size.*/
     void setMarkerSize(int size) {markerSize = qBound(1, size, 10);}
 
@@ -181,6 +191,16 @@ public:
     int    getKnnMinNew()    const {return knnMinNew;}
     int    getKnnMinRef()    const {return knnMinRef;}
 
+    // Auto-Merge (patch 0068) — getters.
+    int    getAutoMergeAlgorithm()       const {return autoMergeAlgorithm;}
+    int    getAutoMergeMedianK()         const {return autoMergeMedianK;}
+    double getAutoMergeScoreThreshold()  const {return autoMergeScoreThreshold;}
+    int    getAutoMergeMaxShift()        const {return autoMergeMaxShift;}
+    int    getAutoMergeTaperSamples()    const {return autoMergeTaperSamples;}
+    int    getAutoMergeMinClusterSize()  const {return autoMergeMinClusterSize;}
+    int    getAutoMergeScope()           const {return autoMergeScope;}
+    bool   getAutoMergePreviewBeforeApply() const {return autoMergePreviewBeforeApply;}
+
     /**Returns the scatter plot marker size.*/
     int getMarkerSize() const{return markerSize;}
 
@@ -234,6 +254,16 @@ public:
     double getKnnThresholdDefault() const {return 0.50;}
     int    getKnnMinNewDefault()    const {return 5;}
     int    getKnnMinRefDefault()    const {return 100;}
+
+    // Auto-Merge (patch 0068) — defaults match KKE's flag defaults.
+    int    getAutoMergeAlgorithmDefault()        const {return 1;}      ///< median (matches KKE MedianKnn preference)
+    int    getAutoMergeMedianKDefault()          const {return 50;}     ///< matches KKE MedianKnnTemplateMatchK
+    double getAutoMergeScoreThresholdDefault()   const {return 0.98;}   ///< matches KKE TemplateMatchScore
+    int    getAutoMergeMaxShiftDefault()         const {return 0;}      ///< 0 = auto (nSamp/4)
+    int    getAutoMergeTaperSamplesDefault()     const {return 0;}      ///< off
+    int    getAutoMergeMinClusterSizeDefault()   const {return 25;}     ///< matches KKE min
+    int    getAutoMergeScopeDefault()            const {return 0;}      ///< selected only (safer default)
+    bool   getAutoMergePreviewBeforeApplyDefault() const {return true;}
 
     /**Returns the default scatter plot marker size.*/
     int getMarkerSizeDefault() const{return markerSizeDefault;}
@@ -334,6 +364,19 @@ private:
     double  knnThreshold;          ///< majority vote threshold (fraction of K, 0-1)
     int     knnMinNew;             ///< min size for a new cluster to be kept (1-10000)
     int     knnMinRef;             ///< min "good" reference-cluster size (10-100000)
+
+    // Auto-Merge (patch 0068) — settings for the upcoming Auto-Merge action.
+    // Mirrors KKE's WithinChunkTemplateMatch / MedianKnn parameters so
+    // klusters' interactive merge uses the same mechanism KKE does
+    // offline.  Persisted in QSettings, restored on dialog open.
+    int     autoMergeAlgorithm;    ///< 0 = mean templates, 1 = median templates
+    int     autoMergeMedianK;      ///< neighbour count for median template (median mode only)
+    double  autoMergeScoreThreshold; ///< minimum xcorr score to merge a pair (0.0-1.0)
+    int     autoMergeMaxShift;     ///< max xcorr shift in samples; 0 = auto (nSamp/4)
+    int     autoMergeTaperSamples; ///< Hann taper window length on each end; 0 = off
+    int     autoMergeMinClusterSize; ///< clusters smaller than this are skipped
+    int     autoMergeScope;        ///< 0 = selected only, 1 = all active
+    bool    autoMergePreviewBeforeApply;
     /**Scatter plot marker size in pixels.*/
     int markerSize;
     /**Selection polygon line width in pixels.*/
