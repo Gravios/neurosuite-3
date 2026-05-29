@@ -1101,14 +1101,9 @@ void KlustersApp::applyPreferences() {
     if(realignExecutable != configuration().getRealignExecutable())
         realignExecutable = configuration().getRealignExecutable();
 
-    // Rebuild realignArgs from structured prefs (threshold / iterations / maxshift)
+    // Rebuild realignArgs from structured prefs + gated post-alignment mode.
     {
-        const QString newArgs = QString("--threshold %1 --iterations %2%3")
-            .arg(configuration().getRealignThreshold(), 0, 'f', 2)
-            .arg(configuration().getRealignIterations())
-            .arg(configuration().getRealignMaxShift() > 0
-                 ? QString(" --maxshift %1").arg(configuration().getRealignMaxShift())
-                 : QString());
+        const QString newArgs = buildRealignArgs();
         if (realignArgs != newArgs) realignArgs = newArgs;
     }
 
@@ -1143,12 +1138,7 @@ void KlustersApp::initializePreferences(){
     reclusteringExecutable =  configuration().getReclusteringExecutable();
     reclusteringArgs = configuration().getReclusteringArguments();
     realignExecutable = configuration().getRealignExecutable();
-    realignArgs = QString("--threshold %1 --iterations %2%3")
-        .arg(configuration().getRealignThreshold(), 0, 'f', 2)
-        .arg(configuration().getRealignIterations())
-        .arg(configuration().getRealignMaxShift() > 0
-             ? QString(" --maxshift %1").arg(configuration().getRealignMaxShift())
-             : QString());
+    realignArgs = buildRealignArgs();
     markerSize = configuration().getMarkerSize();
     selectionLineWidth = configuration().getSelectionLineWidth();
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
@@ -3529,16 +3519,31 @@ void KlustersApp::slotUpdateAutoNFeatures(int n){
 
 void KlustersApp::slotUpdateRealignTopChan(int n){
     if(isInit) return;
-    // Rebuild realignArgs with the new --topchannels value.  Preserves
-    // --threshold, --iterations, and --maxshift from current configuration.
-    QString base = QString("--threshold %1 --iterations %2%3")
+    Q_UNUSED(n);  // current value is read from the spinbox by buildRealignArgs()
+    realignArgs = buildRealignArgs();
+}
+
+// Assemble realign args from structured prefs + saved post-alignment mode.
+// Gate: when the Realign top-ch spinbox is non-zero, emit --topchannels and
+// suppress the PCA/RMS mode (default plain xcorr), because neither post-pass
+// honours the top-channel mask; otherwise honour the saved radio-group mode.
+QString KlustersApp::buildRealignArgs(){
+    QString a = QString("--threshold %1 --iterations %2")
         .arg(configuration().getRealignThreshold(), 0, 'f', 2)
-        .arg(configuration().getRealignIterations())
-        .arg(configuration().getRealignMaxShift() > 0
-             ? QString(" --maxshift %1").arg(configuration().getRealignMaxShift())
-             : QString());
-    if (n > 0) base += QString(" --topchannels %1").arg(n);
-    realignArgs = base;
+        .arg(configuration().getRealignIterations());
+    if (configuration().getRealignMaxShift() > 0)
+        a += QString(" --maxshift %1").arg(configuration().getRealignMaxShift());
+    const int topCh = realignTopChanSpinBox ? realignTopChanSpinBox->value() : 0;
+    if (topCh > 0) {
+        a += QString(" --topchannels %1").arg(topCh);
+    } else {
+        switch (configuration().getRealignMode()) {
+        case 1:  a += QStringLiteral(" --pca-refine");   break;
+        case 2:  a += QStringLiteral(" --recenter-rms"); break;
+        default: break;
+        }
+    }
+    return a;
 }
 
 void KlustersApp::slotUpdateDimensionY(int dimensionYValue){
@@ -5509,6 +5514,7 @@ void KlustersApp::slotRealignSpikes()
     // ── Pre-flight dialog ────────────────────────────────────────────────────
     // Shows cluster info, PCA file status, parameters summary.
     // Does NOT run any computation — user just confirms and clicks Start.
+    realignArgs = buildRealignArgs();   // pick up saved mode + top-ch gate
     SpikeRealignDialog dlg(*doc, clusterId, realignArgs, this);
     if (dlg.exec() != QDialog::Accepted)
         return;

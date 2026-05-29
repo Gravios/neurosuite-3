@@ -12,6 +12,19 @@ double PrefRefinement::getRealignThreshold()  const { return realignThresholdSpi
 int    PrefRefinement::getRealignIterations() const { return realignIterationsSpinBox->value(); }
 int    PrefRefinement::getRealignMaxShift()   const { return realignMaxShiftSpinBox->value(); }
 
+void   PrefRefinement::setRealignMode(int m) {
+    switch (m) {
+    case 1:  realignModePcaRadio->setChecked(true); break;
+    case 2:  realignModeRmsRadio->setChecked(true); break;
+    default: realignModeOffRadio->setChecked(true); break;
+    }
+}
+int    PrefRefinement::getRealignMode() const {
+    if (realignModePcaRadio->isChecked()) return 1;
+    if (realignModeRmsRadio->isChecked()) return 2;
+    return 0;
+}
+
 void   PrefRefinement::setDipSplitMinSize(int n)         { dipSplitMinSizeSpinBox->setValue(n); }
 void   PrefRefinement::setDipSplitBloatFactor(double v)  { dipSplitBloatFactorSpinBox->setValue(v); }
 void   PrefRefinement::setDipSplitValleyThresh(double v) { dipSplitValleyThreshSpinBox->setValue(v); }

@@ -17,6 +17,9 @@ public:
     double getRealignThreshold()  const;
     int    getRealignIterations() const;
     int    getRealignMaxShift()   const;
+    // Post-alignment mode: 0 = off, 1 = PCA refine, 2 = RMS recenter
+    void   setRealignMode(int m);
+    int    getRealignMode()       const;
 
     // DipSplit
     void   setDipSplitMinSize(int n);
