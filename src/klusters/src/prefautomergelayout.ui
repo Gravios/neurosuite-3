@@ -2,22 +2,55 @@
 <ui version="4.0">
  <class>PrefAutoMergeLayout</class>
  <widget class="QWidget" name="PrefAutoMergeLayout">
-  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>420</height></rect></property>
+  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>520</height></rect></property>
   <property name="windowTitle"><string>Auto-Merge</string></property>
   <layout class="QVBoxLayout" name="topLayout">
    <item>
-    <widget class="QGroupBox" name="groupBoxAutoMerge">
-     <property name="title"><string>Auto-Merge (template xcorr — same mechanism as KKE)</string></property>
+    <widget class="QGroupBox" name="groupBoxAlgorithm">
+     <property name="title"><string>Algorithm</string></property>
+     <property name="toolTip"><string>Same mechanism as KKE: pairwise cross-correlation between cluster templates with bounded shift; pairs scoring above the threshold are merged.</string></property>
      <layout class="QVBoxLayout">
+      <item><widget class="QRadioButton" name="algoMeanRadio"><property name="text"><string>&amp;Mean templates (matches KKE WithinChunkTemplateMatch)</string></property><property name="toolTip"><string>Build the per-cluster template as the mean of its waveforms. Faster; more sensitive to outlier spikes in a cluster.</string></property></widget></item>
+      <item><widget class="QRadioButton" name="algoMedianRadio"><property name="text"><string>Me&amp;dian templates (matches KKE MedianKnn variant)</string></property><property name="toolTip"><string>Build the per-cluster template as the per-sample median. More robust against bursts and contamination; slightly slower.</string></property></widget></item>
       <item>
-       <widget class="QLabel" name="placeholderLabel">
-        <property name="text"><string>Settings UI added in patch 0068.
-Action wiring added in patch 0069.
-
-Auto-merge uses the same template cross-correlation mechanism as KKE's WithinChunkTemplateMatch / WithinChunkTemplateMatchMedianKnn — building mean or median templates per cluster, scoring pairs with a configurable max shift, and merging pairs above threshold.</string></property>
-        <property name="wordWrap"><bool>true</bool></property>
-       </widget>
+       <layout class="QHBoxLayout">
+        <item><widget class="QLabel" name="medianKLabel"><property name="text"><string>Median K (neighbours):</string></property></widget></item>
+        <item><widget class="QSpinBox" name="medianKSpinBox"><property name="minimum"><number>1</number></property><property name="maximum"><number>500</number></property><property name="toolTip"><string>Number of nearest spikes used per cluster when building the median template. Only used when Median templates is selected.</string></property></widget></item>
+        <item><spacer name="kSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+       </layout>
       </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxScoring">
+     <property name="title"><string>Scoring (pairwise template xcorr)</string></property>
+     <layout class="QGridLayout">
+      <item row="0" column="0"><widget class="QLabel" name="thresholdLabel"><property name="text"><string>Score threshold:</string></property></widget></item>
+      <item row="0" column="1"><widget class="QDoubleSpinBox" name="scoreThresholdSpinBox"><property name="minimum"><double>0.000000000000000</double></property><property name="maximum"><double>1.000000000000000</double></property><property name="singleStep"><double>0.010000000000000</double></property><property name="decimals"><number>3</number></property><property name="toolTip"><string>Minimum normalised xcorr score for a cluster pair to be merged. KKE uses 0.98 by default.</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="maxShiftLabel"><property name="text"><string>Max shift (samples, 0 = auto):</string></property></widget></item>
+      <item row="1" column="1"><widget class="QSpinBox" name="maxShiftSpinBox"><property name="minimum"><number>0</number></property><property name="maximum"><number>128</number></property><property name="toolTip"><string>Maximum sample lag for the xcorr. 0 = automatic (nSamplesPerSpike / 4, matching KKE).</string></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="taperLabel"><property name="text"><string>Hann taper (samples, 0 = off):</string></property></widget></item>
+      <item row="2" column="1"><widget class="QSpinBox" name="taperSpinBox"><property name="minimum"><number>0</number></property><property name="maximum"><number>64</number></property><property name="toolTip"><string>Taper window length on each end of the template, to suppress edge-discontinuity contributions to xcorr. 0 = off. Matches KKE's TemplateMatchTaperHannSamples.</string></property></widget></item>
+      <item row="3" column="0"><widget class="QLabel" name="minSizeLabel"><property name="text"><string>Min cluster size:</string></property></widget></item>
+      <item row="3" column="1"><widget class="QSpinBox" name="minClusterSizeSpinBox"><property name="minimum"><number>2</number></property><property name="maximum"><number>1000000</number></property><property name="toolTip"><string>Clusters smaller than this are skipped (excluded from both source and target of merges).</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxScope">
+     <property name="title"><string>Target scope (when action is invoked)</string></property>
+     <layout class="QVBoxLayout">
+      <item><widget class="QRadioButton" name="scopeSelectedRadio"><property name="text"><string>&amp;Selected clusters in palette only</string></property><property name="toolTip"><string>Auto-merge considers only clusters currently selected. Safest for targeted curation.</string></property></widget></item>
+      <item><widget class="QRadioButton" name="scopeAllActiveRadio"><property name="text"><string>&amp;All active clusters (excluding 0 noise / 1 artefact)</string></property><property name="toolTip"><string>Auto-merge considers every non-special cluster in the document. Use with the preview-before-apply option to inspect proposed merges first.</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBoxBehaviour">
+     <property name="title"><string>Behaviour</string></property>
+     <layout class="QVBoxLayout">
+      <item><widget class="QCheckBox" name="previewBeforeApplyCheckBox"><property name="text"><string>&amp;Preview proposed merges before applying</string></property><property name="toolTip"><string>Open a confirmation dialog listing the proposed merge groups before any cluster labels are changed. Recommended when scope is set to All active.</string></property></widget></item>
      </layout>
     </widget>
    </item>

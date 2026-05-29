@@ -129,6 +129,18 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefDisplay->templateThresholdMinSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
     connect(prefDisplay->templateThresholdMaxSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
 
+    // Auto-Merge (patch 0068)
+    connect(prefAutoMerge->algoMeanRadio,             &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->algoMedianRadio,           &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->medianKSpinBox,            &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->scoreThresholdSpinBox,     &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->maxShiftSpinBox,           &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->taperSpinBox,              &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->minClusterSizeSpinBox,     &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->scopeSelectedRadio,        &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->scopeAllActiveRadio,       &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->previewBeforeApplyCheckBox,&QAbstractButton::clicked,      this, &PrefDialog::enableApply);
+
     // Cluster + Waveform views (unchanged)
     connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -185,6 +197,16 @@ void PrefDialog::updateDialog()
     prefDisplay->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
     prefDisplay->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
 
+    // Auto-Merge (patch 0068)
+    prefAutoMerge->setAlgorithm(configuration().getAutoMergeAlgorithm());
+    prefAutoMerge->setMedianK(configuration().getAutoMergeMedianK());
+    prefAutoMerge->setScoreThreshold(configuration().getAutoMergeScoreThreshold());
+    prefAutoMerge->setMaxShift(configuration().getAutoMergeMaxShift());
+    prefAutoMerge->setTaperSamples(configuration().getAutoMergeTaperSamples());
+    prefAutoMerge->setMinClusterSize(configuration().getAutoMergeMinClusterSize());
+    prefAutoMerge->setScope(configuration().getAutoMergeScope());
+    prefAutoMerge->setPreviewBeforeApply(configuration().getAutoMergePreviewBeforeApply());
+
     // Cluster + Waveform views
     prefclusterView->setTimeInterval(configuration().getTimeInterval());
     prefWaveformView->setGain(configuration().getGain());
@@ -228,6 +250,16 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoShowMatricesOnOpen(prefDisplay->getAutoShowMatricesOnOpen());
     configuration().setTemplateThresholdMin(prefDisplay->getTemplateThresholdMin());
     configuration().setTemplateThresholdMax(prefDisplay->getTemplateThresholdMax());
+
+    // Auto-Merge (patch 0068)
+    configuration().setAutoMergeAlgorithm(prefAutoMerge->getAlgorithm());
+    configuration().setAutoMergeMedianK(prefAutoMerge->getMedianK());
+    configuration().setAutoMergeScoreThreshold(prefAutoMerge->getScoreThreshold());
+    configuration().setAutoMergeMaxShift(prefAutoMerge->getMaxShift());
+    configuration().setAutoMergeTaperSamples(prefAutoMerge->getTaperSamples());
+    configuration().setAutoMergeMinClusterSize(prefAutoMerge->getMinClusterSize());
+    configuration().setAutoMergeScope(prefAutoMerge->getScope());
+    configuration().setAutoMergePreviewBeforeApply(prefAutoMerge->getPreviewBeforeApply());
 
     // Cluster + Waveform views
     configuration().setTimeInterval(prefclusterView->getTimeInterval());
@@ -273,6 +305,16 @@ void PrefDialog::slotDefault()
     prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
     prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
     prefDisplay->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());
+
+    // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
+    prefAutoMerge->setAlgorithm(configuration().getAutoMergeAlgorithmDefault());
+    prefAutoMerge->setMedianK(configuration().getAutoMergeMedianKDefault());
+    prefAutoMerge->setScoreThreshold(configuration().getAutoMergeScoreThresholdDefault());
+    prefAutoMerge->setMaxShift(configuration().getAutoMergeMaxShiftDefault());
+    prefAutoMerge->setTaperSamples(configuration().getAutoMergeTaperSamplesDefault());
+    prefAutoMerge->setMinClusterSize(configuration().getAutoMergeMinClusterSizeDefault());
+    prefAutoMerge->setScope(configuration().getAutoMergeScopeDefault());
+    prefAutoMerge->setPreviewBeforeApply(configuration().getAutoMergePreviewBeforeApplyDefault());
 
     prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
     prefWaveformView->setGain(configuration().getGainDefault());

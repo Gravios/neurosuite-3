@@ -71,6 +71,16 @@ void Configuration::read() {
     knnThreshold = settings.value("knnThreshold", 0.50).toDouble();
     knnMinNew    = settings.value("knnMinNew",    5).toInt();
     knnMinRef    = settings.value("knnMinRef",    100).toInt();
+
+    // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
+    autoMergeAlgorithm           = settings.value("autoMergeAlgorithm",           1).toInt();
+    autoMergeMedianK             = settings.value("autoMergeMedianK",             50).toInt();
+    autoMergeScoreThreshold      = settings.value("autoMergeScoreThreshold",      0.98).toDouble();
+    autoMergeMaxShift            = settings.value("autoMergeMaxShift",            0).toInt();
+    autoMergeTaperSamples        = settings.value("autoMergeTaperSamples",        0).toInt();
+    autoMergeMinClusterSize      = settings.value("autoMergeMinClusterSize",      25).toInt();
+    autoMergeScope               = settings.value("autoMergeScope",               0).toInt();
+    autoMergePreviewBeforeApply  = settings.value("autoMergePreviewBeforeApply",  true).toBool();
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     templateThresholdMin = settings.value("templateThresholdMin", 0.5).toDouble();
@@ -122,6 +132,16 @@ void Configuration::write() const {
     settings.setValue("knnThreshold", knnThreshold);
     settings.setValue("knnMinNew",    knnMinNew);
     settings.setValue("knnMinRef",    knnMinRef);
+
+    // Auto-Merge (patch 0068)
+    settings.setValue("autoMergeAlgorithm",           autoMergeAlgorithm);
+    settings.setValue("autoMergeMedianK",             autoMergeMedianK);
+    settings.setValue("autoMergeScoreThreshold",      autoMergeScoreThreshold);
+    settings.setValue("autoMergeMaxShift",            autoMergeMaxShift);
+    settings.setValue("autoMergeTaperSamples",        autoMergeTaperSamples);
+    settings.setValue("autoMergeMinClusterSize",      autoMergeMinClusterSize);
+    settings.setValue("autoMergeScope",               autoMergeScope);
+    settings.setValue("autoMergePreviewBeforeApply",  autoMergePreviewBeforeApply);
     settings.setValue("markerSize", markerSize);
     settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("templateThresholdMin", templateThresholdMin);
