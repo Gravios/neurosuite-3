@@ -316,7 +316,105 @@ The inherited canonical changelog is preserved as
 
 All other files are byte-identical to their canonical counterparts.
 
-## [2026-05-16f] patch87 — Auto-invoke `-R` re-extract at end of TimeShiftFinalize
+## [2026-05-29] patch0070 — Phase 8: variance-targeted knn-split (diffuse-cluster cleanup)
+
+New phase that iterates Phase 4b's WaveKnn-split machinery on the
+high-variance clusters only.  Repurposes the Phase 8 slot (legacy global
+DipSplit, deprecated since ~patch 0058) for a new variance-targeted
+refinement pass.  Default off; opt in with `-Phase8VarianceSplitEnable 1`.
+
+### Motivation
+
+Post-Phase-4 sessions occasionally retain clusters that show up as diffuse
+smears in feature space with no obvious internal modes — the kind that
+survive Phase 4b's split passes (FullCEM finds no mixture structure) and
+survive Phase 4c's remix (gets masked by the tightness gate because its
+neighbors are tight, but the diffuse cluster itself is the problem).  These
+clusters have high waveform-space residual dispersion: their spikes are far
+from the cluster's own template, suggesting contamination or that the
+cluster occupies a low-density region that properly belongs to several
+neighbors.
+
+### Mechanism
+
+For up to `Phase8VarianceSplitMaxIters` iterations:
+
+1. Per chunk in parallel, compute `ρ = V_res / P_sig` on signal-support
+   channels for each cluster.
+2. Clusters with `ρ ≥ Phase8VarianceThreshold` and size `≥ minSize` form
+   the WaveKnn-split allowlist.
+3. `WaveKnnSplitPerChunk(allowlist)` redistributes the high-ρ clusters'
+   spikes to nearby reference clusters by k-NN voting.
+4. `WithinChunkTemplateMatch[MedianKnn]` for merge cleanup.
+5. Quit on convergence (no spikes relabeled AND no merges) or maxIters.
+
+### Why FullCEM is intentionally skipped
+
+The target case is diffuse clusters with no Gaussian-mixture modes for
+FullCEM to find.  Running FullCEM would either no-op (the EM converges
+back to the same diffuse cluster) or invent spurious modes from noise.
+WaveKnn-split is the right tool: it doesn't require internal structure —
+it asks each spike "is there a better-fitting neighbor cluster?" and
+reassigns when yes.  Iterated, the diffuse cluster shrinks as its
+peripheral spikes leak to better-fitting neighbors, leaving either a
+smaller well-fitting core or nothing.
+
+### Relationship to Phase 4c
+
+Phase 4c and Phase 8 use the **same ρ metric with inverted eligibility**:
+
+- Phase 4c **masks** `ρ < Phase4cTightnessThreshold` (tight → left alone)
+- Phase 8 **targets** `ρ ≥ Phase8VarianceThreshold` (loose → operated on)
+
+Clean design: one metric, two cutoffs, complementary phases.  The shared
+helper `KK::computeClusterTightnessRho` is extracted as a private method;
+Phase 4c's inline lambda is left in place for now (refactor to use the
+helper is a future cleanup).
+
+### CLI
+
+```
+-Phase8VarianceSplitEnable            0     # master switch
+-Phase8VarianceSplitMaxIters          3
+-Phase8VarianceThreshold              0.10  # ρ ≥ this is eligible
+-Phase8VarianceSignalChannelFraction  0.1   # τ; same default as Phase 4c
+-Phase8VarianceMinClusterSize         0     # 0 = auto = max(nFullDims+5, 25)
+```
+
+### Hook position
+
+After Phase 4c at both `RunChunkedCEM` call sites:
+
+```
+Phase 4   (CEM loop + 4b split + within-chunk merge)
+Phase 4c  (neighborhood remix, if enabled)
+Phase 8   (variance-targeted knn, if enabled)            ← NEW
+Phase 5   (cross-chunk consolidation)
+...
+```
+
+Requires `m_timeShiftReady` (waveform reads for ρ).  Skipped with a
+warning message if `MaxTimeShift = 0`.
+
+### Files changed
+
+- `KK.cpp`: added `KK::RunPhase8VarianceSplit` (~150 lines) and
+  `KK::computeClusterTightnessRho` (~80 lines); call sites at ~4615 and
+  ~6043.
+- `KK.h`: method declarations.
+- `KlustaKwik.cpp`: five new flag definitions + INT_PARAM/FLOAT_PARAM
+  registrations.
+- `KlustaKwik.h`: five new extern declarations.
+
+### Verification
+
+`c++ -std=c++20 -fsyntax-only -fopenmp -Wall -Wextra` builds clean, zero
+warnings.  Live run on `sirotaA-jg-000005-20120312` group 6 converged in
+2-3 iterations with recommended defaults.
+
+---
+
+
 
 After `WritePhase15Checkpoint` commits the `.res`/`.spk`/`.fet`
 rewrites, `TimeShiftFinalize` now invokes the appropriate

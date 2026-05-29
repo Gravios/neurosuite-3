@@ -62,3 +62,99 @@ cmake --build build
 
 Requires libklustersshared 2.0.0 (Qt6 build) to be installed or its
 cmake config file to be on `CMAKE_PREFIX_PATH`.
+
+---
+
+## Post-Migration Features
+
+### Preferences tab refactor (patch 0067, 2026-05-29)
+
+The single General preferences tab grew into a kitchen-sink of 8 group
+boxes covering display settings, crash recovery, undo, KlustaKwik
+reclustering, realignment, DipSplit, KNN-split, and template-matrix
+display.  Split into five focused tabs:
+
+| Tab | Content |
+|---|---|
+| Display | background color, marker size, line width, autoscale margin, white-on-printing, auto-show-matrices, template-matrix display thresholds |
+| Session | crash recovery, undo |
+| Reclustering | KlustaKwik executable + args, auto-select features, auto-select N features, mean-subtracted subdim |
+| Refinement | realign (threshold/iters/maxshift), DipSplit (minsize/bloat/valley), KNN-split (K/threshold/minNew/minRef) |
+| Auto-Merge | (populated in patch 0068) |
+
+All 27 controls from the original General tab kept their exact widget
+names so QSettings save/restore is unchanged across the refactor —
+existing user preferences carry over without migration.
+
+Each new tab follows the existing `PrefClusterView` / `PrefWaveformView`
+pattern (Qt Designer `.ui` + trivial `PrefXxxLayout` wrapper +
+`PrefXxx` class with getters/setters/glue).
+
+Five new 32×32 RGB tab icons in `src/klusters/src/icons/` matching the
+existing `clusterview.png` / `waveformview.png` style.  Generated with
+PIL; script preserved in the patch commit message.
+
+### Auto-Merge action (patches 0068 + 0069, 2026-05-29)
+
+New `Action → Auto-Merge Similar Clusters...` menu entry (toolbar icon,
+`Shift+G` shortcut) that applies the **same template cross-correlation
+mechanism KKE uses** in `WithinChunkTemplateMatch` /
+`WithinChunkTemplateMatchMedianKnn`.
+
+Pipeline:
+
+1. Filter candidates (skip 0 = artefact, 1 = noise, below `minClusterSize`).
+2. Build per-cluster template — mean (all spikes) or median (up to K
+   sampled spikes, fixed RNG seed for reproducible previews).
+3. Optional Hann taper to suppress edge-discontinuity xcorr contributions.
+4. Pairwise normalised xcorr with bounded shift; pairs scoring at or
+   above the user threshold are merge-edge candidates.
+5. Union-find on the score graph → connected components of size ≥ 2 are
+   merge groups.
+6. If preview is enabled, modal dialog with a checkbox per group.
+7. Apply each accepted group via `doc->groupClusters` — the existing
+   merge path, so the operation integrates with klusters' undo/redo.
+
+Settings tab (Preferences → Auto-Merge) covers algorithm (mean/median),
+median K, score threshold, max shift (0 = auto = nSamp/4 matching KKE),
+Hann taper samples, min cluster size, target scope (selected /
+all-active), preview-before-apply.  All defaults match KKE flag
+defaults so interactive klusters merges and offline KKE merges produce
+**consistent decisions on the same data**:
+
+| Setting | Default | KKE equivalent |
+|---|---|---|
+| Algorithm | Median | matches `MedianKnnTemplateMatchEnable=1` |
+| Median K | 50 | matches `MedianKnnTemplateMatchK` |
+| Score threshold | 0.98 | matches `TemplateMatchScore` |
+| Max shift | 0 = auto (`nSamp/4`) | matches `WithinChunkTemplateMatch` |
+| Hann taper | 0 = off | matches `TemplateMatchTaperHannSamples` |
+| Min cluster size | 25 | matches KKE clusters threshold |
+
+8 new fields added to `Configuration` (in the `General` QSettings
+group) with the standard `setXxx` / `getXxx` / `getXxxDefault` pattern.
+
+Files added:
+
+- `src/klusters/src/autoMerge.{h,cpp}` — algorithm + preview dialog
+- `src/klusters/src/icons/auto_merge_tool.png` — 22×22 RGBA toolbar icon
+
+Files modified:
+
+- `src/klusters/src/klusters.{h,cpp}` — `mAutoMerge` action, `slotAutoMerge`
+- `src/klusters/src/configuration.{h,cpp}` — 8 new fields + QSettings round-trip
+- `src/klusters/src/prefautomerge*.{h,cpp,ui}` — settings UI
+
+#### Known follow-ups
+
+The current `AutoMerge::computeProposals` runs synchronously on the GUI
+thread with `QApplication::processEvents()` for cancel/responsiveness.
+For selected-scope mode this is fine; for all-active-scope on large
+sessions a `QThread` async variant mirroring `TemplateMatrixThread`
+would keep the UI more responsive (queued in the roadmap; see
+`SESSION_SUMMARY_phase8_klusters_automerge.md` §7.4).
+
+`normXcorr` in `autoMerge.cpp` is a verbatim copy of
+`templatematrixthread.cpp`'s `tmNormXcorr`; extraction to a shared
+header is a future cleanup (§7.3 of the same handoff document).
+
