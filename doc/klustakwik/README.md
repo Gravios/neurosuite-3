@@ -304,6 +304,68 @@ After Phase 2's unions have been applied, a final EM run on the merged
 solution refines Gaussian parameters globally. `GlobalMergeIter` bounds
 the iteration count.
 
+### Phase 4 family — chunked-CEM refinement (patches 0040–0070)
+
+The chunked-CEM mode (`ChunkMinutes > 0`, default) adds several
+refinement phases that run inside and after the main CEM loop. Brief
+notes here; see `src/klustakwikExp/CHANGES.md` and
+`SESSION_SUMMARY_phase8_klusters_automerge.md` (top-level) for the
+detailed rationale and CLI of each.
+
+**Phase 4b — alternating split / merge**
+Inside the CEM loop, alternates split passes (`WaveKnnSplitPerChunk`
+and `FullCemSplitPerChunk`) with within-chunk template-matching merges.
+Default on (`-AlternatingSplitMergeEnable 1`). The `QualityWeightedSplit`
+dispatcher (`-QualityWeightedSplitEnable 1`) routes each candidate
+source cluster to FullCem (high ISI contamination) or WaveKnn (high
+waveform variance) so each splitter gets the work it's best at.
+
+**Phase 4c — neighborhood remix split**
+After Phase 4 converges, optionally runs one to a few iterations of a
+neighborhood-pooled split: each random source is pooled with its N
+nearest clusters, the super-cluster is re-split via FullCEM, and a
+tightness mask (`ρ = V_res / P_sig` on signal-support channels) skips
+clusters that are already tight. Enable with `-Phase4cRemixEnable 1`.
+Best suited to sessions with refractory-contaminated multi-unit
+clusters that have real Gaussian-mixture sub-structure.
+
+**Phase 8 — variance-targeted knn-split** *(new in patch 0070,
+2026-05-29)*
+Iterates Phase 4b's WaveKnn-split machinery on the high-variance
+clusters only — those whose ρ (the same metric Phase 4c uses) exceeds
+`Phase8VarianceThreshold`. **FullCEM is intentionally skipped**: the
+target case is diffuse clusters with no mixture modes for the EM to
+find; WaveKnn redistributes their spikes to nearby reference clusters
+by k-NN voting instead. Phase 4c masks low-ρ clusters; Phase 8 targets
+high-ρ clusters — same metric, inverted eligibility, complementary
+roles. Enable with `-Phase8VarianceSplitEnable 1`. For diffuse-cluster
+sessions (the user's typical case), Phase 8 is the right tool;
+Phase 4c can be disabled to skip its wasted FullCEM cycles.
+
+**Phase 5 / 5b — cross-chunk consolidation**
+After per-chunk refinement, cross-chunk merging unifies clusters across
+chunks via template matching (5) and optionally mean-subtraction with
+drift transforms (5b, `-CrossChunkTransformDriftEnable 1`).
+
+**Phase 7c — klusters-faithful realignment**
+Final realignment pass using klusters' median-template alignment
+algorithm. `-KlustersRealignEnable 1` (default on).
+
+**Phase 9 — post-Phase-4 iterated realign**
+`-KlustersRealignAfterPhase4 1` interleaves realignment with later
+phase iterations to reduce alignment-jitter artifacts. Heavy; cached.
+
+Recommended starting configuration for diffuse-cluster sessions:
+
+```
+-Phase4cRemixEnable                0    # skip — wrong tool for diffuse data
+-Phase8VarianceSplitEnable         1
+-Phase8VarianceSplitMaxIters       3
+-Phase8VarianceThreshold           0.10
+-Phase8VarianceSignalChannelFraction 0.1
+-Phase8VarianceMinClusterSize      0
+```
+
 ---
 
 ## CEM algorithm

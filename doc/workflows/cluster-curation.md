@@ -71,6 +71,28 @@ select both in the palette, press `G` (group/merge). The
 [Template Matrix Display](../klusters/README.md#template-matrix-display)
 makes near-duplicates obvious.
 
+For larger over-split situations — say a unit fragmented across 5+ IDs
+that visibly cluster together in the template matrix — use **Auto-Merge**
+(`Shift+G`, or Action → "Auto-Merge Similar Clusters..."). Auto-Merge
+runs pairwise template cross-correlation across the selected clusters
+(or all active clusters, in the *All active* scope) and proposes merge
+groups by union-find on pairs scoring at or above the threshold
+(default 0.98, matching KKE's offline `WithinChunkTemplateMatch`). A
+preview dialog lists the proposed groups with a checkbox per group so
+you can accept or reject each before committing. See
+[Auto-Merge action](../klusters/README.md#auto-merge-action) for the
+full reference.
+
+Auto-Merge complements manual `G` group-merge:
+
+- **`G` (group)**: explicit, you've already identified the duplicates
+  in the palette or template matrix. No threshold; merges whatever you
+  selected.
+- **`Shift+G` (Auto-Merge)**: lets klusters identify candidate groups
+  by template similarity. You review the proposals, accept or reject
+  each. Better when there are many near-duplicates to find than to
+  pick out manually.
+
 ### 3. Realign
 
 ```
