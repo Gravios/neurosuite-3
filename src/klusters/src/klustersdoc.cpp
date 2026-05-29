@@ -3320,14 +3320,17 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
     // -----------------------------------------------------------------------
     // Parse configurable parameters from args string.
-    // Supported: --threshold F  --iterations N  --maxshift N
-    // Defaults:  threshold=0.70  iterations=2  maxshift=peakSamp/2
+    // Supported: --threshold F  --iterations N  --maxshift N  --topchannels N
+    //            --pca-refine  --recenter-rms  --rmin F
+    // Defaults:  threshold=0.70  iterations=2  maxshift=peakSamp/2  rmin=0.40
     // -----------------------------------------------------------------------
     int   maxShift  = std::max(1, peakSamp0 / 2);
     float minScore  = 0.70f;
     int   nIter     = 2;
     int   nTopChan  = 0;   // 0 = use all channels (legacy behaviour)
     bool  pcaRefine = false;   // patch82: second-pass PCA-energy-max alignment
+    bool  rmsRecenter = false; // post-alignment RMS circular group-recenter
+    float rMin        = 0.4f;  // min mean-resultant-length to trust the centroid
     {
         const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
@@ -3352,6 +3355,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                        tok == QStringLiteral("-p")) {
                 // patch82 — no value, just a boolean flag.
                 pcaRefine = true;
+            } else if (tok == QStringLiteral("--recenter-rms")) {
+                // RMS circular group-recenter — no value, boolean flag.
+                rmsRecenter = true;
+            } else if (tok == QStringLiteral("--rmin")
+                    && ti + 1 < tokens.size()) {
+                bool ok2; float v = tokens[++ti].toFloat(&ok2);
+                if (ok2 && v >= 0.0f && v <= 1.0f) rMin = v;
             }
         }
     }
@@ -4232,6 +4242,110 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         log << "PCA-projection refine requested but PCA basis not loaded "
                "— skipping.\n";
         emitFlush();
+    }
+
+    // -----------------------------------------------------------------------
+    // RMS circular group-recenter (opt-in via --recenter-rms)
+    //
+    // After per-spike alignment, shift the WHOLE cluster by a single offset so
+    // its energy envelope sits at peakSamp0.  The anchor is the circular
+    // weighted mean of the per-sample RMS² profile (energy across the group,
+    // summed over all channels).  The sample axis of the .spk window is
+    // periodic, so a circular mean is the correct centroid; it is also exactly
+    // invariant to the RMS noise floor — Σ exp(i·2πs/N) over a full period is
+    // the sum of the Nth roots of unity, i.e. zero — so a uniform pedestal in
+    // the weights cancels with no baseline subtraction.  Weighting by energy
+    // (RMS², not RMS) concentrates the mass on the peak.
+    //
+    // The mean resultant length R (∈[0,1]) guards the degenerate case: when the
+    // energy splits into two lobes ~N/2 apart the resultant collapses and the
+    // centroid is meaningless.  A clean (bi/tri)phasic spike is a single lobe,
+    // so R stays high; if R < rMin we skip the recenter and keep the per-spike
+    // alignment rather than throw the cluster to an arbitrary offset.
+    //
+    // The shift uses the same convention as the per-spike roll
+    // (newSpike[t] = oldSpike[(t+δ)%N]; cumShift += δ), so the score stats,
+    // mean-after and fresh .fil re-extraction below all pick it up.  Note the
+    // circular roll of wavBuf only drives the diagnostics — the .spk content is
+    // re-extracted linearly from .fil at clusterTs+cumShift, so the recenter is
+    // measured circularly but realised as a clean unwrapped window.
+    if (rmsRecenter) {
+        const double TWO_PI = 6.283185307179586476925286766559;
+
+        // Per-sample energy across the group, summed over all channels.
+        std::vector<double> energy(static_cast<size_t>(nSamp), 0.0);
+        for (int64_t i = 0; i < N; ++i) {
+            const int16_t* w = wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            for (int ch = 0; ch < nChan; ++ch) {
+                const int16_t* wc = w + ch * nSamp;
+                for (int t = 0; t < nSamp; ++t) {
+                    const double v = static_cast<double>(wc[t]);
+                    energy[static_cast<size_t>(t)] += v * v;
+                }
+            }
+        }
+
+        // Circular weighted mean of the energy profile.
+        double Cc = 0.0, Ss = 0.0, Ww = 0.0;
+        for (int t = 0; t < nSamp; ++t) {
+            const double th = TWO_PI * static_cast<double>(t)
+                            / static_cast<double>(nSamp);
+            const double w  = energy[static_cast<size_t>(t)];
+            Cc += w * std::cos(th);
+            Ss += w * std::sin(th);
+            Ww += w;
+        }
+        const double R = (Ww > 0.0) ? std::hypot(Cc, Ss) / Ww : 0.0;
+
+        if (R < rMin) {
+            log << "RMS recenter: R=" << QString::number(R, 'f', 3)
+                << " < rmin=" << QString::number(rMin, 'f', 2)
+                << " (energy not single-lobed) — recenter skipped.\n";
+            emitFlush();
+        } else {
+            double centroid = std::atan2(Ss, Cc);
+            if (centroid < 0.0) centroid += TWO_PI;
+            centroid *= static_cast<double>(nSamp) / TWO_PI;   // -> sample units
+
+            // Minimal signed circular shift δg to move centroid -> peakSamp0.
+            // Roll convention new[t]=old[(t+δ)%N] sends old index c to (c-δ),
+            // so δg = c - peakSamp0, reduced to (-N/2, N/2].
+            const double Nd = static_cast<double>(nSamp);
+            double dgf = centroid - static_cast<double>(peakSamp0);
+            dgf = std::fmod(dgf, Nd);
+            if (dgf >  Nd / 2.0) dgf -= Nd;
+            if (dgf < -Nd / 2.0) dgf += Nd;
+            const int dg = static_cast<int>(std::lround(dgf));
+
+            if (dg != 0) {
+                std::vector<int16_t> tmp(spkElems);
+                for (int64_t i = 0; i < N; ++i) {
+                    int16_t* w = wavBuf.data()
+                        + static_cast<ptrdiff_t>(i)
+                        * static_cast<ptrdiff_t>(spkElems);
+                    for (int t = 0; t < nSamp; ++t) {
+                        const int src = (t + dg + nSamp) % nSamp;
+                        for (int ch = 0; ch < nChan; ++ch)
+                            tmp[static_cast<size_t>(ch * nSamp + t)] =
+                                w[static_cast<size_t>(ch * nSamp + src)];
+                    }
+                    std::copy(tmp.begin(), tmp.end(), w);
+                    cumShift[static_cast<size_t>(i)] += dg;
+                }
+                // The uniform shift can move previously-unshifted spikes.
+                nShifted = 0;
+                for (int64_t i = 0; i < N; ++i)
+                    if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
+            }
+
+            log << "RMS recenter: centroid=" << QString::number(centroid, 'f', 2)
+                << "  R=" << QString::number(R, 'f', 3)
+                << "  group shift=" << dg << " sample(s)";
+            if (dg != 0) log << "  (now " << nShifted << " shifted)";
+            log << ".\n";
+            emitFlush();
+        }
     }
 
     // -----------------------------------------------------------------------
