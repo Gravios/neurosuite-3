@@ -18,59 +18,52 @@
 #ifndef PREFDIALOG_H
 #define PREFDIALOG_H
 
-// include files for QT
 #include <QWidget>
-
-
 #include <qpagedialog.h>
 
-class PrefGeneral;
+// Forward decls — General split into 5 grouped tabs (patch 0067).
+class PrefDisplay;
+class PrefSession;
+class PrefReclustering;
+class PrefRefinement;
+class PrefAutoMerge;
 class PrefWaveformView;
 class PrefClusterView;
 
- /**
-  * Class representing the Klusters preferences dialog.
-  *@author Lynn Hazan
-  */
-  
 class PrefDialog : public QPageDialog {
     Q_OBJECT
   public:
-    /// Constructor
     explicit PrefDialog(QWidget *parent, int nbChannels = 0);
 
-    /** Transfers the settings from the configuration object to the dialog.*/
     void updateDialog();
-    /** Transfers the settings from the dialog to the configuration object.*/
     void updateConfiguration();
-    /** */
-    bool isApplyEnable() const {return applyEnable;}
+    bool isApplyEnable() const { return applyEnable; }
 
     void resetChannelList(int nbChannels);
-
     void enableChannelSettings(bool state);
 
     /** Syncs the N-features spinbox from the toolbar without triggering applyPreferences. */
     void syncAutoNFeatures(int n);
-    
-  public Q_SLOTS:
-    /// Will be called when the "Default" button has been clicked.
-    void slotDefault();
-    /// Will be called when the "Apply" button has been clicked.
-    void slotApply();
-    /// Will be called whenever a setting was changed.
-    void enableApply();
 
+  public Q_SLOTS:
+    void slotDefault();
+    void slotApply();
+    void enableApply();
     void slotHelp();
 
   Q_SIGNALS:
-    /// Will be emitted when the new settings should be applied.
     void settingsChanged();
 
   private:
-    PrefGeneral* prefGeneral;
+    // Five tabs that replace the old single PrefGeneral.
+    PrefDisplay*      prefDisplay;
+    PrefSession*      prefSession;
+    PrefReclustering* prefReclustering;
+    PrefRefinement*   prefRefinement;
+    PrefAutoMerge*    prefAutoMerge;
+
     PrefWaveformView* prefWaveformView;
-    PrefClusterView* prefclusterView;
+    PrefClusterView*  prefclusterView;
     bool applyEnable;
 };
 
