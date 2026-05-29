@@ -135,12 +135,16 @@ int compute(
                                 maxShift, minScore, shifts_out, scores_out);
         if (rc == 0) return 0;
         fprintf(stderr, "[realign] CUDA xcorr failed (rc=%d), falling back to OMP\n", rc);
+        // Permanently demote to OMP so we don't re-probe a failing GPU each call.
+        s_backend = Backend::OMP;
         break;
     case Backend::HIP:
         rc = xcorr_hip_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
                                maxShift, minScore, shifts_out, scores_out);
         if (rc == 0) return 0;
         fprintf(stderr, "[realign] HIP xcorr failed (rc=%d), falling back to OMP\n", rc);
+        // Permanently demote to OMP so we don't re-probe a failing GPU each call.
+        s_backend = Backend::OMP;
         break;
     case Backend::SYCL:
         rc = xcorr_sycl_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
