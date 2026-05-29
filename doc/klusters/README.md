@@ -281,6 +281,7 @@ All operations push onto the undo stack. The full session history is preserved u
 | Operation | Shortcut / Menu | Description |
 |---|---|---|
 | Group (merge) clusters | `G` | Merges all selected clusters into the lowest-numbered one |
+| Auto-Merge similar clusters | `Shift+G` | Same template cross-correlation mechanism KKE uses for `WithinChunkTemplateMatch`; pairs scoring at or above the threshold are merged. See [Auto-Merge action](#auto-merge-action) below. |
 | Split clusters | `2` (or `S` in palette focus) | Draw a lasso in the scatter plot; closing the polygon assigns the enclosed spikes to a new cluster |
 | Auto bimodal split (DipSplit) | `Shift+D` | Tests the active cluster for bimodality on its top PCs; if a clean valley is found, splits into two new clusters automatically |
 | Watershed split | `Shift+W` | Runs a 2D density watershed on the selected clusters in the active scatter view's X/Y dimensions; each density basin becomes one new cluster, leftover spikes (outside any peak) form a residual cluster |
@@ -368,17 +369,82 @@ first Ctrl+Z reverts the source rename (source returns to its
 original ID, both halves still split); the second Ctrl+Z reverts the
 split (source recovers all spikes).
 
-Preferences live under **Settings → Preferences → General**:
+Preferences live under **Settings → Preferences → Refinement** (DipSplit
+group; was Preferences → General before the patch 0067 tab split):
 
 | Preference | Default | Effect |
 |---|---|---|
 | `DipSplit min size` | 30 | Minimum cluster size to consider |
 | `DipSplit bloat factor` | 0 | χ²(d, 0.9) bloat gate; `0` skips it |
 | `DipSplit valley depth` | 0.3 | KDE valley depth threshold (0–1) |
-| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`F` key) |
+| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`F` key) — *moved to Preferences → Display in patch 0067* |
 
 DipSplit is intentionally conservative — it errs toward not splitting.
 Manual lasso split (`S`) remains the primary tool for ambiguous cases.
+
+### Auto-Merge action
+
+`Shift+G` (Action → "Auto-Merge Similar Clusters...", or toolbar icon
+next to the Group icon). Same template cross-correlation mechanism KKE
+uses in `WithinChunkTemplateMatch` / `WithinChunkTemplateMatchMedianKnn`
+— interactive klusters merges and offline KKE merges produce **consistent
+decisions on the same data** by design.
+
+Pipeline:
+
+1. Filter candidates (skip 0 = artefact, 1 = noise, anything below the
+   configured min cluster size).
+2. Build per-cluster template — *mean* of all member waveforms, or
+   *median* across up to K sampled waveforms (Median mode uses a fixed
+   RNG seed so previews are reproducible on the same data).
+3. Optional Hann taper on each template before scoring.
+4. Pairwise normalised cross-correlation `score = max_lag |xcorr| /
+   sqrt(|a|² · |b|²)` with bounded sample shift (0 = auto = nSamp/4
+   matching KKE's `WithinChunkTemplateMatch`).
+5. Union-find on score ≥ threshold pairs → connected components of size
+   ≥ 2 are the merge groups.
+6. If preview is enabled, modal dialog with a checkbox per group. OK
+   applies the checked subset; Cancel applies none.
+7. Apply each accepted group via the existing `groupClusters` machinery
+   — integrates with klusters' undo/redo automatically.
+
+#### Settings (Preferences → Auto-Merge tab)
+
+All defaults match KKE flag defaults:
+
+| Setting | Default | KKE equivalent |
+|---|---|---|
+| Algorithm | Median | matches `-MedianKnnTemplateMatchEnable 1` |
+| Median K | 50 | matches `-MedianKnnTemplateMatchK` |
+| Score threshold | 0.98 | matches `-TemplateMatchScore` |
+| Max shift (samples) | 0 = auto (`nSamp/4`) | matches `WithinChunkTemplateMatch` internal |
+| Hann taper samples | 0 = off | matches `-TemplateMatchTaperHannSamples` |
+| Min cluster size | 25 | matches KKE clusters threshold |
+| Target scope | Selected | (safer default) |
+| Preview before apply | On | (safer default) |
+
+The Median K row is only enabled when the Median algorithm is selected
+(greyed out otherwise so the UI doesn't suggest the value applies in
+Mean mode).
+
+#### Two scope modes
+
+- **Selected**: only the clusters currently selected in the palette are
+  considered. Safest for targeted curation — needs at least 2 clusters
+  selected or the action shows an informational dialog.
+- **All active**: every non-special cluster (skips 0 and 1) is
+  considered. Sweeps the whole document. Recommended with
+  `Preview before apply = on` so you can inspect the proposed groups
+  before committing.
+
+#### Performance
+
+Currently synchronous on the GUI thread with a modal progress dialog;
+`QApplication::processEvents()` between clusters keeps Cancel responsive.
+For *Selected* mode this is instant; for *All active* on big sessions
+expect seconds to tens of seconds for the waveform-read phase. A future
+async `QThread` variant (mirroring `TemplateMatrixThread`) is on the
+roadmap.
 
 ### Watershed split — density-based 2D segmentation
 
@@ -646,7 +712,7 @@ Klusters can launch KlustaKwik on the current electrode group:
 4. When KlustaKwik finishes, klusters reloads the `.clu.N` file automatically and all views update.
 5. **Actions → Abort Reclustering** cancels a running KlustaKwik process.
 
-KlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → KlustaKwik**.
+KlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering** (was Preferences → KlustaKwik before the patch 0067 tab split).
 
 ### Automatic feature selection
 
@@ -717,7 +783,7 @@ After realignment completes, the **Realignment Review Dialog** shows before/afte
 
 **Actions → Abort Realignment** cancels realignment in progress.
 
-Realignment parameters (maxShift, minScore) are set in **Settings → Preferences → General → Realignment**.
+Realignment parameters (maxShift, minScore) are set in **Settings → Preferences → Refinement → Realignment** (was Preferences → General → Realignment before the patch 0067 tab split).
 
 ---
 
@@ -743,7 +809,7 @@ immediately step to the next cluster with the arrow keys.
 
 ## Autosave and crash recovery
 
-A background thread periodically saves `session.#.clu.N` files (where `#` is a rotating index) to protect against crashes. The autosave interval is configured in **Settings → Preferences → General**.
+A background thread periodically saves `session.#.clu.N` files (where `#` is a rotating index) to protect against crashes. The autosave interval is configured in **Settings → Preferences → Session** (was Preferences → General before the patch 0067 tab split).
 
 On opening a session, klusters detects orphaned autosave files and offers to restore from the most recent one.
 
