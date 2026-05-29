@@ -1031,6 +1031,14 @@ private:
     /**Arguments for the realignment executable (currently unused).*/
     QString realignArgs;
 
+    /**Assemble the realign args string from the structured preferences
+       (threshold / iterations / maxshift) plus the saved post-alignment mode.
+       The mode token is gated by the Realign top-ch spinbox: when top-ch > 0
+       the top-channel restriction is emitted and the saved PCA/RMS mode is
+       suppressed (default plain xcorr), since neither post-pass honours the
+       top-channel mask.*/
+    QString buildRealignArgs();
+
     /**Scatter plot marker size in pixels — kept in sync with configuration.*/
     int markerSize;
 
