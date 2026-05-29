@@ -24,6 +24,7 @@
 #include "klustersdoc.h"
 #include "reorder_similarity_dispatch.h"
 #include "clusterPalette.h"
+#include "autoMerge.h"      // patch 0069
 #include "savethread.h"
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
@@ -340,6 +341,15 @@ void KlustersApp::createMenus()
     mGroupeClusters->setIcon(QIcon(":/icons/group"));
     mGroupeClusters->setShortcut(Qt::Key_G);
     connect(mGroupeClusters, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::groupClusters));
+
+    // Patch 0069 — Auto-Merge action.
+    // Uses the same template-cross-correlation mechanism as KKE; settings
+    // come from the Auto-Merge preferences tab (patch 0068).  Shortcut Shift+G
+    // by analogy with G for Group.
+    mAutoMerge = actionMenu->addAction(tr("&Auto-Merge Similar Clusters..."));
+    mAutoMerge->setIcon(QIcon(":/icons/auto_merge_tool"));
+    mAutoMerge->setShortcut(Qt::SHIFT | Qt::Key_G);
+    connect(mAutoMerge, &QAction::triggered, this, &KlustersApp::slotAutoMerge);
 
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
@@ -789,6 +799,7 @@ void KlustersApp::createToolBar()
     mActionBar->addAction(mUpdateErrorMatrix);
     mActionBar->addAction(mReorderClustersBySimilarity);
     mActionBar->addAction(mGroupeClusters);
+    mActionBar->addAction(mAutoMerge);  // patch 0069
 
 
     addToolBar(mActionBar);
@@ -3171,6 +3182,85 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
 }
 
 // ---------------------------------------------------------------------------
+// slotAutoMerge — patch 0069
+//
+// Pulls the Auto-Merge settings from configuration() (patch 0068), assembles
+// the candidate cluster list per the scope toggle, runs
+// AutoMerge::computeProposals (template xcorr + union-find — same mechanism
+// as KKE), optionally pops the preview dialog, and applies each accepted
+// group via doc->groupClusters so the merge integrates with klusters'
+// undo/redo.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotAutoMerge()
+{
+    if (!doc) return;
+    slotStatusMsg(tr("Auto-merge: computing proposals..."));
+
+    AutoMerge::Settings s;
+    s.algorithm          = configuration().getAutoMergeAlgorithm();
+    s.medianK            = configuration().getAutoMergeMedianK();
+    s.scoreThreshold     = configuration().getAutoMergeScoreThreshold();
+    s.maxShift           = configuration().getAutoMergeMaxShift();
+    s.taperSamples       = configuration().getAutoMergeTaperSamples();
+    s.minClusterSize     = configuration().getAutoMergeMinClusterSize();
+    s.scope              = configuration().getAutoMergeScope();
+    s.previewBeforeApply = configuration().getAutoMergePreviewBeforeApply();
+
+    // Resolve scope into a candidate list.  ScopeSelected (0): palette
+    // selection.  ScopeAllActive (1): every cluster id from Data
+    // (computeProposals strips 0 and 1 internally).
+    QList<int> candidates;
+    if (s.scope == 0) {
+        if (clusterPalette) candidates = clusterPalette->selectedClusters();
+        if (candidates.size() < 2) {
+            QMessageBox::information(this, tr("Auto-Merge"),
+                tr("Select at least 2 clusters in the palette, or switch "
+                   "the Auto-Merge scope to 'All active clusters' in "
+                   "preferences."));
+            slotStatusMsg(tr("Ready."));
+            return;
+        }
+    } else {
+        const QList<dataType> allIds = doc->data().clusterIds();
+        for (dataType id : allIds) candidates.append(static_cast<int>(id));
+    }
+
+    QList<AutoMerge::MergeGroup> proposals =
+        AutoMerge::computeProposals(doc, doc->data(), s, candidates, this);
+
+    if (proposals.isEmpty()) {
+        QMessageBox::information(this, tr("Auto-Merge"),
+            tr("No merge groups found above threshold %1.")
+                .arg(QString::number(s.scoreThreshold, 'f', 3)));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    if (s.previewBeforeApply) {
+        proposals = AutoMerge::promptPreview(proposals, this);
+        if (proposals.isEmpty()) {
+            slotStatusMsg(tr("Auto-merge cancelled."));
+            return;
+        }
+    }
+
+    KlustersView* view = activeView();
+    if (!view) { slotStatusMsg(tr("Ready.")); return; }
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    int applied = 0;
+    for (const AutoMerge::MergeGroup& g : proposals) {
+        if (g.clusters.size() < 2) continue;
+        doc->groupClusters(g.clusters, *view);
+        ++applied;
+    }
+    QApplication::restoreOverrideCursor();
+
+    slotStatusMsg(tr("Auto-merge: %1 group(s) applied.").arg(applied));
+    if (clusterPalette) clusterPalette->setFocusToList();
+}
+
+// ---------------------------------------------------------------------------
 // moveSelectedClustersToReservedId
 //
 // Shared body for slotMoveClustersToNoise / slotMoveClustersToArtefact.
@@ -4835,6 +4925,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
 
         mGroupeClusters->setEnabled(false);
+
+        mAutoMerge->setEnabled(false);
         mUpdateDisplay->setEnabled(false);
         mZoomAction->setEnabled(false);
         mUpdateErrorMatrix->setEnabled(false);
@@ -4898,6 +4990,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNewCluster->setEnabled(true);
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
+        mAutoMerge->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
         newGroupingAssistantDisplay->setEnabled(true);
@@ -4977,6 +5070,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(true);
 
         mGroupeClusters->setEnabled(true);
+
+        mAutoMerge->setEnabled(true);
     } else if(state == QLatin1String("noClusterViewState")) {
         mZoomAction->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
@@ -4996,6 +5091,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mGroupeClusters->setEnabled(true);
+        mAutoMerge->setEnabled(true);
     } else if(state == QLatin1String("noCorrelationViewState")) {
         scaleByMax->setEnabled(false);
         scaleByShouler->setEnabled(false);
@@ -5014,6 +5110,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(true);
         mRenumberClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
+        mAutoMerge->setEnabled(true);
     } else if(state == QLatin1String("noErrorMatrixViewState")) {
         mUpdateErrorMatrix->setEnabled(false);
     } else if(state == QLatin1String("errorMatrixViewState")) {
@@ -5024,6 +5121,7 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         mDeleteArtifact->setEnabled(true);
         mGroupeClusters->setEnabled(true);
+        mAutoMerge->setEnabled(true);
 
     } else if(state == QLatin1String("groupingAssistantDisplayExists")) {
         newGroupingAssistantDisplay->setEnabled(false);
@@ -5052,6 +5150,7 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
+        mAutoMerge->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
         mDecreaseAmplitude->setEnabled(false);
@@ -5067,6 +5166,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNewCluster->setEnabled(false);
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
+        mAutoMerge->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
@@ -5097,6 +5197,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNewCluster->setEnabled(false);
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
+        mAutoMerge->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
@@ -5131,6 +5232,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNewCluster->setEnabled(true);
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
+        mAutoMerge->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
@@ -5169,6 +5271,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberClusters->setEnabled(false);
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
+        mAutoMerge->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
         mDecreaseAmplitude->setEnabled(false);
