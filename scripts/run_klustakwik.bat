@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-:: run_klustakwik.bat - Run KlustaKwik on all spike groups (Windows)
+:: run_klustakwik.bat - Run KiloKlustaKwik on all spike groups (Windows)
 ::
 :: Sampling rate  : parsed from <basename>.yaml  (field: SamplingRate / samplingRate)
 :: UseFeatures    : derived from column count in each .fet file
@@ -9,11 +9,11 @@ setlocal enabledelayedexpansion
 :: Usage:
 ::   run_klustakwik.bat [basename] [options]
 ::
-:: All KlustaKwik options can be overridden on the command line, e.g.:
+:: All KiloKlustaKwik options can be overridden on the command line, e.g.:
 ::   run_klustakwik.bat jg05-20120316 -MaxClusters 16 -nStarts 3
 
 :: ---------------------------------------------------------------------------
-:: Defaults for every KlustaKwik option
+:: Defaults for every KiloKlustaKwik option
 :: ---------------------------------------------------------------------------
 set OPT_MinClusters=5
 set OPT_MaxClusters=12
@@ -140,7 +140,7 @@ for %%F in (!BASENAME!.fet.*) do (
             echo === Group !GROUP! ^| features: !N_FEATURES! ^| UseFeatures: !USE_FEATURES! ===
 
             set OMP_NUM_THREADS=!OMP_NUM_THREADS!
-            KlustaKwik "!BASENAME!" !GROUP! ^
+            KiloKlustaKwik "!BASENAME!" !GROUP! ^
                 -MinClusters        !OPT_MinClusters! ^
                 -MaxClusters        !OPT_MaxClusters! ^
                 -UseFeatures        !USE_FEATURES! ^

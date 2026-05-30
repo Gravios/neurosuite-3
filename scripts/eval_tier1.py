@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-eval_tier1.py — Evaluate KlustaKwik Tier 1 sweep results
+eval_tier1.py — Evaluate KiloKlustaKwik Tier 1 sweep results
 =========================================================
 Reads .clu and .fet files from each sweep_tier1/mt*_pm* subdirectory,
 computes per-run cluster quality metrics, and writes:
@@ -184,7 +184,7 @@ def l_ratio(features: np.ndarray, labels: np.ndarray, cluster_id: int):
 
 def compute_metrics(fet_path: str, clu_path: str):
     """
-    Return a dict of scalar metrics for one KlustaKwik run.
+    Return a dict of scalar metrics for one KiloKlustaKwik run.
     Uses only spatial features (all dims except the last timestamp column).
     """
     features_all, n_dims = read_fet(fet_path)

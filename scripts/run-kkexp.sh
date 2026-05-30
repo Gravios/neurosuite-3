@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================================
-# run-kkexp.sh — KlustaKwikExp runner for the mode-3 workflow
+# run-kkexp.sh — KiloKlustaKwik runner for the mode-3 workflow
 #                (residual-PCA split iterations + Klusters-style xcorr realign)
 #
 # Sets ONLY the flags that diverge from upstream defaults.  Everything else
-# is left to KlustaKwikExp's compiled-in defaults so this script doesn't
+# is left to KiloKlustaKwik's compiled-in defaults so this script doesn't
 # drift out of sync as upstream evolves.  Verified against patch39
 # baseline (`02d404c bugfix(kke) fixed xcorr spike realignment for good`).
 #
 # Edit the SESSION block.  Pass --dry-run to inspect the command.
 # Override threading with PARALLEL_K=N, the binary with KKEXP=path.
-# Any extra args go straight to KlustaKwikExp:
+# Any extra args go straight to KiloKlustaKwik:
 #   ./run-kkexp.sh -MaxClusters 100 -RandomSeed 7
 # ============================================================================
 
@@ -21,7 +21,7 @@ set -euo pipefail
 # If a bare positive integer appears anywhere in the args, it becomes ELEC
 # (the first such arg wins).  Everything else still flows through —
 # --dry-run is still recognised, and stray flags still forward to
-# KlustaKwikExp.  Examples:
+# KiloKlustaKwik.  Examples:
 #   ./run-kkexp.sh 8                        # cluster group 8
 #   ./run-kkexp.sh 12 --dry-run             # inspect command for group 12
 #   ./run-kkexp.sh 8 -MaxClusters 50        # group 8 with overrides
@@ -68,7 +68,7 @@ SAMPLING_RATE="${SAMPLING_RATE:-20000}"
 # SESSION_NAME="jg05-20120316"
 # SESSION_NAME="eb05-20251118"
 
-KKEXP="${KKEXP:-KlustaKwikExp}"
+KKEXP="${KKEXP:-KiloKlustaKwik}"
 # Auto-detect logical CPUs; override with PARALLEL_K=N ./run-kkexp.sh
 PARALLEL_K="${PARALLEL_K:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
@@ -182,7 +182,7 @@ export HDF5_USE_FILE_LOCKING=FALSE
 
 {
     echo "# ─────────────────────────────────────────────────────────────────"
-    echo "# KlustaKwikExp — $(date -Is)"
+    echo "# KiloKlustaKwik — $(date -Is)"
     echo "# Host:    $(hostname)"
     echo "# Binary:  $(command -v "${KKEXP}")"
     echo "# Session: ${SESSION_NAME}   group ${ELEC}"

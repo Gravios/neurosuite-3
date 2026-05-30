@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-kk_build_prior.py  —  Build a KlustaKwik empirical prior from curation logs.
+kk_build_prior.py  —  Build a KiloKlustaKwik empirical prior from curation logs.
 
 Reads one or more .curation_log.N.jl files produced by Klusters, filters to
 well-isolated clusters, learns the spatial structure of the feature space, and
-writes a .prior.N.yaml file that KlustaKwik can load via -PriorFile.
+writes a .prior.N.yaml file that KiloKlustaKwik can load via -PriorFile.
 
 The core insight encoded in the prior
 ──────────────────────────────────────
@@ -37,9 +37,9 @@ Clusters in PCA feature space are NOT homogeneous in their spatial character:
 
 The participation ratio d_eff = (Σσ²_i)² / Σ(σ²_i)²  is the key feature.
 
-KlustaKwik currently uses a fixed MergeThresh = chi²(nSpatialDims, 0.9999),
+KiloKlustaKwik currently uses a fixed MergeThresh = chi²(nSpatialDims, 0.9999),
 treating all cluster types identically.  The prior expresses the empirical
-distribution of d_eff so KlustaKwik can use chi²(d_eff, 0.9999) per pair:
+distribution of d_eff so KiloKlustaKwik can use chi²(d_eff, 0.9999) per pair:
   Type A:  chi²(3.5, 0.9999) ≈ 17   (tight — these clusters are compact)
   Type B:  chi²(13,  0.9999) ≈ 35   (loose — noise naturally inflates variance)
   nSpatialDims fixed:          ≈ 42  (current default — too permissive for A)
@@ -55,7 +55,7 @@ Usage
       [--session-preseed path/to/latest_session.curation_log.1.jl]
           # populate preseed_centres from the most recent curated session
 
-Output: a YAML file readable by KlustaKwik's -PriorFile parameter.
+Output: a YAML file readable by KiloKlustaKwik's -PriorFile parameter.
 
 Requirements: numpy, scipy, yaml (pyyaml).  No sklearn required.
 """
@@ -579,8 +579,8 @@ def main():
 
     print(f"\nPrior written to: {args.out}")
 
-    # ── Summary of what KlustaKwik will use ───────────────────────────
-    print("\nKlustaKwik will apply (when -PriorFile is set):")
+    # ── Summary of what KiloKlustaKwik will use ───────────────────────────
+    print("\nKiloKlustaKwik will apply (when -PriorFile is set):")
     print(f"  MinClusters  <- {max(2, int(round(_pct(all_counts, 5))))}")
     print(f"  MaxClusters  <- {int(round(_pct(all_counts, 95))) + 1}")
     print(f"  MergeThresh  <- {merge_thresh_median:.1f}  (chi2 at median d_eff={d_eff_median:.1f})")
@@ -588,7 +588,7 @@ def main():
     print(f"  AdaptiveMerge = 1  (per-pair d_eff threshold — no prior needed for this)")
     print()
     print("The adaptive merge threshold is the most impactful change.")
-    print("It requires no prior file: KlustaKwik computes d_eff from each")
+    print("It requires no prior file: KiloKlustaKwik computes d_eff from each")
     print("cluster's fitted covariance and uses chi²(d_eff, 0.9999) per pair.")
     print("The prior file adds empirical calibration and Min/MaxClusters tuning.")
 

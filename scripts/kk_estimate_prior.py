@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kk_estimate_prior.py  —  Estimate a KlustaKwik prior directly from raw .fet.N data.
+kk_estimate_prior.py  —  Estimate a KiloKlustaKwik prior directly from raw .fet.N data.
 
 No curation log required.  The script:
 
@@ -12,7 +12,7 @@ No curation log required.  The script:
      symmetric Mahalanobis distance is below the adaptive threshold
   6. Computes per-dimension Fisher discriminant ratios from the coarse partition
   7. Fits the SNR→variance model from spike amplitude proxies (if .spk available)
-  8. Writes a .prior.N.yaml readable by KlustaKwik's -PriorFile parameter
+  8. Writes a .prior.N.yaml readable by KiloKlustaKwik's -PriorFile parameter
 
 Geometry model
 ──────────────
@@ -29,7 +29,7 @@ Two cluster archetypes dominate the feature space:
     Correct MergeThresh = chi²(14, 0.9999) ≈ 37.
 
 The participation ratio d_eff = (Σσ²_i)² / Σ(σ²_i)² distinguishes these
-without needing any cluster labels.  KlustaKwik uses this per-pair from its
+without needing any cluster labels.  KiloKlustaKwik uses this per-pair from its
 own fitted covariances (AdaptiveMerge=1, default on); this script provides
 an empirical calibration from the feature data itself.
 
@@ -224,7 +224,7 @@ def estimate_cluster_count(centroids, var_per_cluster, sizes,
     Mahalanobis distance < chi²(d_eff_pair, 0.9999).  The number of
     surviving super-clusters is the estimated natural cluster count.
 
-    This replicates KlustaKwik's own MNN merge logic but on the coarse
+    This replicates KiloKlustaKwik's own MNN merge logic but on the coarse
     k-means output, giving an estimate before any actual CEM run.
 
     min_fraction: clusters smaller than this fraction of total spikes
@@ -688,7 +688,7 @@ def main():
 
     # ── Summary ────────────────────────────────────────────────────────────
     print("\n" + "─"*60)
-    print("What KlustaKwik will use (with -PriorFile):")
+    print("What KiloKlustaKwik will use (with -PriorFile):")
     print(f"  MinClusters  <- {max(2, n_est_lo)}")
     print(f"  MaxClusters  <- {n_est_hi + 1}")
     print(f"  MergeThresh  <- {merge_thresh:.1f}  (was {chi2_quantile_9999(n_feat):.1f})")
