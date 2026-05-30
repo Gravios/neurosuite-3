@@ -32,6 +32,7 @@
 #include "eventsprovider.h"
 #include "timer.h"
 #include "utilities.h"
+#include <klustersshared/neurofileio.h>
 
 
 EventsProvider::EventsProvider(const QString &fileUrl, double currentSamplingRate, int position): DataProvider(fileUrl),nbEvents(0),
@@ -58,64 +59,39 @@ EventsProvider::~EventsProvider(){
 int EventsProvider::loadData(){
     RestartTimer();
 
-    //Get the number of events
-    nbEvents = Utilities::getNbLines(fileName);
-
-    //qDebug()<<"nbEvents "<<nbEvents;
-
-    if(nbEvents == -1){
+    //Read all events via the shared NeuroSuite format reader (neurofileio).
+    bool readOk = false;
+    const std::vector<neurofileio::EvtEntry> ev =
+        neurofileio::readEvt(fileName.toStdString(), &readOk);
+    if(!readOk){
         events.setSize(0,0);
         timeStamps.setSize(0,0);
-        return COUNT_ERROR;
+        return OPEN_ERROR;
     }
+
+    nbEvents = static_cast<int>(ev.size());
 
     if(nbEvents == 0){
         initializeEmptyProvider();
         return OK;
     }
 
-    //Create a reader on the eventFile
-    QFile eventFile(fileName);
-    bool status = eventFile.open(QIODevice::ReadOnly);
-    if(!status){
-        events.setSize(0,0);
-        timeStamps.setSize(0,0);
-        return OPEN_ERROR;
-    }
-
     //Set the size of the Arrays containing the time and ids of the events.
     events.setSize(1,nbEvents);
     timeStamps.setSize(1,nbEvents);
 
-    QTextStream fileStream(&eventFile);
-    QString line;
-    int lineCounter = 0;
-    for(line = fileStream.readLine(); !line.isNull() && lineCounter< nbEvents;line = fileStream.readLine()){
-        line = line.trimmed();
-
-        int index1 = line.indexOf(QRegularExpression(QStringLiteral("\\s")));
-        int index2 = line.indexOf(QRegularExpression(QStringLiteral("\\S")),index1);
-
-        timeStamps[lineCounter] = line.left(index1).toDouble();
-        EventDescription label = line.right(line.length() - index2);
+    for(int lineCounter = 0; lineCounter < nbEvents; ++lineCounter){
+        timeStamps[lineCounter] = ev[static_cast<size_t>(lineCounter)].timeMs;
+        EventDescription label = QString::fromStdString(
+            ev[static_cast<size_t>(lineCounter)].label);
         events[lineCounter] = label;
         if(eventDescriptionCounter.contains(label)){
             eventDescriptionCounter.insert(label,eventDescriptionCounter[label] + 1);
         }
         else eventDescriptionCounter.insert(label,1);
-        lineCounter ++;
     }
 
-    eventFile.close();
     qDebug()<< "Loading evt file into memory: "<<Timer();
-
-
-    //The number of events read has to be coherent with the number of events read.
-    if(lineCounter != nbEvents){
-        events.setSize(0,0);
-        timeStamps.setSize(0,0);
-        return INCORRECT_CONTENT;
-    }
 
     //Assign an id to each event description
     //The iterator iterates on the keys sorted
