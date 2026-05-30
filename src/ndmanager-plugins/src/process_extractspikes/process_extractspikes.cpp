@@ -38,6 +38,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include "process_extractspikes.h"
+#include "progressbar.h"      // BlockProgress — defrag-style stage progress
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -184,6 +185,8 @@ static int runFromRes(const arguments &args,
 	int64_t totalSpikes = 0;
 	int64_t totalSkipped = 0;
 
+	BlockProgress prog(args.outputBaseFileName);
+
 	for(int grp = 0; grp < nbGroups; grp++) {
 		const int nCG = channelNb_group[grp];
 		if(nCG <= 0) continue;
@@ -230,7 +233,10 @@ static int runFromRes(const arguments &args,
 		int64_t nWritten   = 0;
 		int64_t nSkippedBd = 0;
 
+		prog.beginStage("G" + std::to_string(grp + 1), (long long)nResSpikes);
+
 		for(size_t i = 0; i < nResSpikes; i++) {
+			prog.setPosition((long long)i);
 			const int64_t ts = resTs[i];
 			const int64_t ws = ts - (int64_t)timeBefore;
 			if(ws < 0 || ws + spikeLen > nSamples) {
@@ -255,6 +261,7 @@ static int runFromRes(const arguments &args,
 			nWritten++;
 		}
 		fclose(spkFp);
+		prog.endStage();
 
 		totalSpikes  += nWritten;
 		totalSkipped += nSkippedBd;
@@ -266,6 +273,8 @@ static int runFromRes(const arguments &args,
 			     << " (skipped " << nSkippedBd << " at .fil boundary)"
 			     << endl;
 	}
+
+	prog.finish();
 
 	munmap((void*)fil, filBytes);
 	close(fd);
@@ -531,6 +540,19 @@ int main(int argc,char *argv[]) {
 			<< spikeTimeOutputFileName[grp] << endl;
 	} // for grp
 	
+	// Defrag-style stage progress over the .fil.  Only meaningful with a
+	// seekable input file (not stdin streaming).
+	BlockProgress prog(arguments.outputBaseFileName);
+	long long progTotalSamples = 0;
+	if(arguments.isInputFileProvided) {
+		off_t cur = ftello(inputFile);
+		fseeko(inputFile, 0, SEEK_END);
+		progTotalSamples = ftello(inputFile)
+		    / (arguments.totalChannelNumber * (long long)sizeof(short));
+		fseeko(inputFile, cur, SEEK_SET);
+		prog.beginStage("DETECT", progTotalSamples);
+	}
+
 	// Search spikes position loop
 	while(!feof(inputFile) && !isLastLoop) {
 		
@@ -935,7 +957,10 @@ int main(int argc,char *argv[]) {
 		
 		nRecTot += rec_nb/arguments.totalChannelNumber;
 		nbLoops++; // one more loop
+		if(arguments.isInputFileProvided) prog.setPosition(nRecTot);
 	} // while (inputFile)
+
+	if(arguments.isInputFileProvided) prog.endStage();
 
 	// Write all .res files now — detection loop is complete, no more
 	// .fil reads in flight, so .res writes are fully sequential.
@@ -1140,7 +1165,13 @@ int main(int argc,char *argv[]) {
 
 		off_t filePos = 0;
 
+		const off_t progFileBytes = (off_t)progTotalSamples
+		    * arguments.totalChannelNumber * (off_t)sizeof(short);
+		if(arguments.isInputFileProvided)
+			prog.beginStage("EXTRACT", progFileBytes);
+
 		for(const SpikeEvent &ev : allEvents) {
+			if(arguments.isInputFileProvided) prog.setPosition(filePos);
 			const int grp      = ev.grp;
 			const int nChanGrp = channelNb_group[grp];
 			const int wavLen   = arguments.spikeLength * nChanGrp;
@@ -1215,6 +1246,11 @@ int main(int argc,char *argv[]) {
 
 		fclose(seqFile);
 	} // Phase A2
+
+	if(arguments.isInputFileProvided) {
+		prog.endStage();
+		prog.finish();
+	}
 
 	// Close fallback .spk files written during the read pass.
 	for(int grp = 0; grp < nbGroups; grp++) {

@@ -463,3 +463,253 @@ void ProgressBar::finish()
         std::cout.flush();
     }
 }
+
+
+// ===========================================================================
+//  BlockProgress — defrag-style block-map progress over a staged file scan
+// ===========================================================================
+//
+// Shares ProgressBar's output model (/dev/tty → stderr → non-TTY milestones)
+// and its anonymous-namespace helpers detectTerminalWidth() / localeIsUtf8()
+// / COMPLETE_MARK_UTF8 / FAIL_MARK_UTF8, which are visible for the rest of
+// this translation unit.  Block + colour constants below are local to the
+// defrag style (solid U+2588/U+2591 blocks rather than the line-style bar).
+
+namespace {
+
+const char* const ERASE_LINE    = "\x1b[2K";          // clear whole line
+const char* const ANSI_RESET    = "\x1b[0m";
+const char* const ANSI_BOLD     = "\x1b[1m";
+const char* const ANSI_UNBOLD   = "\x1b[22m";         // bold off, keep colour
+const char* const ANSI_DIM      = "\x1b[2m";
+
+const char* const DEFRAG_FULL   = "\xE2\x96\x88";     // █ U+2588 full block
+const char* const DEFRAG_LIGHT  = "\xE2\x96\x91";     // ░ U+2591 light shade
+
+// One colour per stage, cycled by stage index.  Cyan/green read well for the
+// usual DETECT/EXTRACT pair on both light and dark terminals.
+const char* const STAGE_COLORS[] = {
+    "\x1b[36m",   // cyan    — stage 0 (DETECT)
+    "\x1b[32m",   // green   — stage 1 (EXTRACT)
+    "\x1b[33m",   // yellow
+    "\x1b[35m",   // magenta
+    "\x1b[34m",   // blue
+};
+const int NUM_STAGE_COLORS = 5;
+
+const int TAG_WIDTH = 7;    // pad stage tag so rows line up across stages
+const int MIN_CELLS = 8;    // never collapse the block row below this
+const int MAX_WIDTH = 100;  // cap total line width on very wide terminals
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+BlockProgress::BlockProgress(std::string lbl)
+    : label(lbl), stageTag(), total(1), pos(0),
+      stageIndex(-1), cells(0), lastDrawnCells(-1),
+      unicode(false), isTty(false), ttyFile(nullptr), ttyFileOwned(false),
+      nonTtyMilestones(0), stageOpen(false), failed(false), finished(false)
+{
+    detectCapabilities();
+}
+
+BlockProgress::~BlockProgress()
+{
+    finish();
+}
+
+// Mirror of ProgressBar::detectCapabilities(): /dev/tty, then stderr, then
+// stdout; Unicode only on a UTF-8 TTY.
+void BlockProgress::detectCapabilities()
+{
+    if (std::FILE* tty = std::fopen("/dev/tty", "w")) {
+        std::setvbuf(tty, nullptr, _IONBF, 0);
+        ttyFile      = tty;
+        ttyFileOwned = true;
+        isTty        = true;
+    }
+    else if (isatty(STDERR_FILENO)) {
+        std::setvbuf(stderr, nullptr, _IONBF, 0);
+        ttyFile      = stderr;
+        ttyFileOwned = false;
+        isTty        = true;
+    }
+    else if (isatty(STDOUT_FILENO)) {
+        ttyFile      = stdout;
+        ttyFileOwned = false;
+        isTty        = true;
+    } else {
+        isTty   = false;
+        ttyFile = nullptr;
+    }
+    unicode = isTty && localeIsUtf8();
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::beginStage(const std::string& tag, long long totalUnits)
+{
+    // Leave the previous stage's finished row on its own line so the run's
+    // stage history stacks vertically.
+    if (stageOpen && isTty) {
+        std::FILE* out = static_cast<std::FILE*>(ttyFile);
+        std::fputc('\n', out);
+        std::fflush(out);
+    }
+
+    ++stageIndex;                       // first stage → 0
+    stageTag         = tag;
+    total            = (totalUnits > 0) ? totalUnits : 1;
+    pos              = 0;
+    lastDrawnCells   = -1;
+    nonTtyMilestones = 0;
+    stageOpen        = true;
+
+    // Block-row width = terminal width minus the "<label> [<tag>] " prefix
+    // and the " 100%" suffix.
+    int termWidth = detectTerminalWidth();
+    if (termWidth <= 0)        termWidth = 80;
+    if (termWidth > MAX_WIDTH)  termWidth = MAX_WIDTH;
+    const int prefix = static_cast<int>(label.size()) + 2 + TAG_WIDTH + 2;
+    const int suffix = 5;               // " 100%"
+    cells = termWidth - prefix - suffix;
+    if (cells < MIN_CELLS) cells = MIN_CELLS;
+
+    if (isTty)
+        redraw();
+    else
+        std::cout << label << " [" << tag << "] 0%" << std::endl;
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::setPosition(long long position)
+{
+    if (!stageOpen) return;
+    if (position < 0)      position = 0;
+    if (position > total)  position = total;
+    pos = position;
+
+    if (isTty) {
+        const int filled = static_cast<int>((pos * (long long)cells) / total);
+        if (filled != lastDrawnCells)
+            redraw();
+    } else {
+        emitNonTtyMilestones();
+    }
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::endStage()
+{
+    if (!stageOpen) return;
+    pos = total;
+    if (isTty) {
+        redraw();                       // snap the row to 100%
+    } else {
+        const int last = 100 / NONTTY_PCT_STEP;
+        if (nonTtyMilestones < last)
+            std::cout << label << " [" << stageTag << "] 100%" << std::endl;
+    }
+    // stageOpen stays true: the row is drawn but not newline-terminated;
+    // the next beginStage()/finish() emits the newline.
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::finish()
+{
+    if (finished) return;
+    finished = true;
+
+    if (isTty) {
+        std::FILE* out = static_cast<std::FILE*>(ttyFile);
+        if (stageOpen) {
+            if (unicode)
+                std::fputs(failed ? FAIL_MARK_UTF8 : COMPLETE_MARK_UTF8, out);
+            std::fputc('\n', out);
+            std::fflush(out);
+        }
+    } else {
+        std::cout.flush();
+    }
+
+    if (ttyFileOwned && ttyFile) {
+        std::fclose(static_cast<std::FILE*>(ttyFile));
+        ttyFile      = nullptr;
+        ttyFileOwned = false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::setFailed()
+{
+    failed = true;
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::emitNonTtyMilestones()
+{
+    const int pct       = static_cast<int>((pos * 100LL) / total);
+    const int milestone = pct / NONTTY_PCT_STEP;
+    while (nonTtyMilestones < milestone) {
+        ++nonTtyMilestones;
+        std::cout << label << " [" << stageTag << "] "
+                  << (nonTtyMilestones * NONTTY_PCT_STEP) << "%" << std::endl;
+    }
+}
+
+// ---------------------------------------------------------------------------
+void BlockProgress::redraw()
+{
+    if (!isTty) return;
+    std::FILE* out = static_cast<std::FILE*>(ttyFile);
+
+    int filled = static_cast<int>((pos * (long long)cells) / total);
+    if (filled < 0)      filled = 0;
+    if (filled > cells)  filled = cells;
+    int pct = static_cast<int>((pos * 100LL) / total);
+    if (pct > 100) pct = 100;
+
+    std::string tag = stageTag;
+    if (static_cast<int>(tag.size()) < TAG_WIDTH)
+        tag.append(TAG_WIDTH - tag.size(), ' ');
+
+    const char* color = STAGE_COLORS[stageIndex % NUM_STAGE_COLORS];
+
+    std::string line;
+    line.reserve(static_cast<size_t>(cells) * 4 + 64);
+    line += ERASE_LINE;
+    line += '\r';
+    line += label;
+    line += " [";
+    line += tag;
+    line += "] ";
+
+    if (unicode) {
+        line += color;
+        for (int i = 0; i < filled; ++i) {
+            if (i == filled - 1 && filled < cells) {
+                // Bright leading edge marks the active block.
+                line += ANSI_BOLD;
+                line += DEFRAG_FULL;
+                line += ANSI_UNBOLD;
+            } else {
+                line += DEFRAG_FULL;
+            }
+        }
+        line += ANSI_RESET;
+        line += ANSI_DIM;
+        for (int i = filled; i < cells; ++i)
+            line += DEFRAG_LIGHT;
+        line += ANSI_RESET;
+    } else {
+        for (int i = 0; i < filled; ++i) line += '#';
+        for (int i = filled; i < cells; ++i) line += '.';
+    }
+
+    char pctbuf[16];
+    std::snprintf(pctbuf, sizeof pctbuf, " %3d%%", pct);
+    line += pctbuf;
+
+    std::fwrite(line.data(), 1, line.size(), out);
+    std::fflush(out);
+    lastDrawnCells = filled;
+}
