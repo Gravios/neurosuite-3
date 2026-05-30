@@ -48,6 +48,7 @@
 
 
 #include "timer.h"
+#include <klustersshared/neurofileio.h>
 #include <queue>
 
 extern int nbUndo;
@@ -253,40 +254,32 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
     nbSpikes = spkFileLength /
                (static_cast<long>(nbChannels) * static_cast<long>(nbSamplesInWaveform) * static_cast<long>(sampleSize));
 
-    // Binary .clu format:
+    // Binary .clu format (shared neurofileio::readCluBinary):
     //   int32_t  nClusters
     //   nSpikes x int32_t  cluster ids in timestamp order
     const QString path = clusterFile.fileName();
     clusterFile.close();
 
-    FILE* f = fopen(path.toLocal8Bit().constData(), "rb");
-    if (!f) {
-        errorInformation = QObject::tr("Cannot open cluster file: %1").arg(path);
+    const neurofileio::CluFile clu =
+        neurofileio::readCluBinary(path.toStdString(), nbSpikes);
+    if (!clu.ok) {
+        errorInformation = QObject::tr(
+            "Cannot open or fully read cluster file (expected %1 entries): %2")
+            .arg(nbSpikes).arg(path);
         return false;
     }
-
-    int32_t nClu = 0;
-    if (fread(&nClu, sizeof(int32_t), 1, f) != 1 || nClu < 0 || nClu > 65536) {
-        fclose(f);
-        errorInformation = QObject::tr("Invalid or missing .clu header (nClusters=%1) in: %2")
-            .arg(nClu).arg(path);
+    if (clu.nClusters < 0 || clu.nClusters > 65536) {
+        errorInformation = QObject::tr(
+            "Invalid or missing .clu header (nClusters=%1) in: %2")
+            .arg(clu.nClusters).arg(path);
         return false;
     }
 
     spikesByCluster->setSize(nbSpikes);
 
-    std::vector<int32_t> ids(static_cast<size_t>(nbSpikes));
-    if (static_cast<long>(fread(ids.data(), sizeof(int32_t), static_cast<size_t>(nbSpikes), f)) != nbSpikes) {
-        fclose(f);
-        errorInformation = QObject::tr(
-            "Short read in cluster file (expected %1 entries): %2")
-            .arg(nbSpikes).arg(path);
-        return false;
-    }
-    fclose(f);
-
     for (long k = 0; k < nbSpikes; ++k)
-        (*spikesByCluster)(2, k + 1) = static_cast<dataType>(ids[static_cast<size_t>(k)]);
+        (*spikesByCluster)(2, k + 1) =
+            static_cast<dataType>(clu.ids[static_cast<size_t>(k)]);
 
     return true;
 }
