@@ -565,7 +565,7 @@ public:
                                 int nChan, int nSamplesPerSpike);
 
     // -----------------------------------------------------------------------
-    // Post-split shift-probe refeaturization  (klustakwikExp)
+    // Post-split shift-probe refeaturization  (kiloklustakwik)
     // -----------------------------------------------------------------------
     // Hard upper bound on the pre-shifted basis fan's half-width.  A fan of
     // (2N+1) candidates means (2*5+1) = 11 worst case, which fits in a
@@ -932,7 +932,7 @@ public:
     bool DipSplitAttemptEx(int clusterId, const char*& reason_out);
 
     // -----------------------------------------------------------------------
-    // Shift-aware merge decision (klustakwikExp)
+    // Shift-aware merge decision (kiloklustakwik)
     //
     // Evaluates whether ConsiderDeletion's candidate victim cluster becomes
     // mergeable once we allow its spikes to shift temporally into their

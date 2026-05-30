@@ -676,7 +676,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             "errno %2 (%3)\n\n"
             "Likely causes:\n"
             "  • File owned by a different user (common after running\n"
-            "    process_drifttracker / KlustaKwikExp as another uid,\n"
+            "    process_drifttracker / KiloKlustaKwik as another uid,\n"
             "    e.g. via sudo or a build account)\n"
             "  • Parent directory not writable by the user running Klusters\n"
             "  • File or its directory marked immutable (chattr +i)\n"
@@ -6229,7 +6229,7 @@ void KlustersDoc::logAfter(const QList<int>& clusterIds)
 // side effects on KlustersDoc state — safe to call repeatedly, safe to use
 // from a "preview before commit" UI, safe to unit-test in isolation.
 //
-// Algorithm (ported from KlustaKwikExp Phase 8):
+// Algorithm (ported from KiloKlustaKwik Phase 8):
 //   1. Collect cluster members (nD-dim feature vectors, time dim excluded)
 //   2. Gate A (bloat):   fit μ + Σ, Cholesky, compute Mahalanobis² per spike,
 //                         reject if mahal²₉₀ < bloatFactor · χ²(d, 0.9)
@@ -6388,7 +6388,7 @@ KlustersDoc::dipSplitDecide(int   clusterId,
     // for interactive Klusters use: the user is already targeting a cluster
     // they suspect is bimodal, and a fresh-fit Gaussian (no EM context) makes
     // the gate unreliable for small or low-dimensional clusters.  Non-zero
-    // values enforce the gate as in KlustaKwikExp Phase 8.
+    // values enforce the gate as in KiloKlustaKwik Phase 8.
     if (bloatFactor > 0.0f &&
         D.mahal2P90 < bloatFactor * D.chi2_90) {
         D.reason = QStringLiteral("not_bloated");

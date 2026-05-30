@@ -8,7 +8,7 @@
  * then merges cluster pairs whose smoothed drift trajectories converge
  * under cyclic-shift subtraction.
  *
- * Conceptual map to KlustaKwikExp's Phase 6b (mean-subtraction merge):
+ * Conceptual map to KiloKlustaKwik's Phase 6b (mean-subtraction merge):
  *   - KKExp Phase 6b uses ONE global mean per cluster (no time variation)
  *     so a unit that drifts in feature space across the session looks
  *     "different from itself" and gets fragmented.
@@ -2287,7 +2287,7 @@ int main(int argc, char** argv)
     const std::string cluPath = path("clu");
 
     // Resolve the spike-file path with .spk → .spkD fallback (canonical
-    // first, matching KlustaKwikExp's pickInputPath convention).  Some
+    // first, matching KiloKlustaKwik's pickInputPath convention).  Some
     // pipelines (process_extractspikes_stderiv) emit .spkD only; others
     // emit .spk only; either is valid input.
     //
