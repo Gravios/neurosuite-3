@@ -236,6 +236,8 @@ extern int   KlustersRealignMaxShift;  ///< xcorr search radius (samples), cappe
 extern int   KlustersRealignMinSize;   ///< skip clusters smaller than this
 extern int   KlustersRealignIters;     ///< realign passes (>1 = iterate to convergence)
 extern int   KlustersRealignSelectMinVariance; ///< per-cluster min-variance pass restore
+extern int   KlustersRealignCenterMode;  ///< centering: 0 off, 1 PCA (default), 2 RMS recenter
+extern float KlustersRealignRMin;         ///< RMS recenter: min mean-resultant-length to trust centroid
 // ---- KnnSplitPerChunk parameters (Phase 2b.5, K-template chunk split) ---
 // KnnSplitPerChunkEnable: on/off gate.  Default 0 (off).  When enabled,
 // runs immediately after Phase 2b (ChunkReCEMPerChunk).  For each chunk,
