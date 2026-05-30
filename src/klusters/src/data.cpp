@@ -287,53 +287,35 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
 
 bool Data::loadFeatures(QFile& featureFile, QString& errorInformation)
 {
-    // Binary .fet format:
+    // Binary .fet format (shared neurofileio::readFetBinary):
     //   int32_t  nDimensions
     //   nSpikes x nDimensions x int64_t  (row-major, last column = timestamp)
     const QString path = featureFile.fileName();
-    featureFile.close(); // use fread for performance
+    featureFile.close();
 
-    FILE* f = fopen(path.toLocal8Bit().constData(), "rb");
-    if (!f) {
-        errorInformation = QObject::tr("Cannot open feature file: %1").arg(path);
+    const neurofileio::FetBinaryFile fet =
+        neurofileio::readFetBinary(path.toStdString());
+    if (!fet.ok || fet.nFeatures <= 0 || fet.nFeatures > 65536) {
+        errorInformation = QObject::tr(
+            "Invalid, missing, or unreadable feature file: %1").arg(path);
         return false;
     }
+    nbDimensions = fet.nFeatures;
 
-    int32_t nDim = 0;
-    if (fread(&nDim, sizeof(int32_t), 1, f) != 1 || nDim <= 0 || nDim > 65536) {
-        fclose(f);
-        errorInformation = QObject::tr("Invalid or missing .fet header (nDimensions=%1) in: %2")
-            .arg(nDim).arg(path);
-        return false;
-    }
-    nbDimensions = static_cast<int>(nDim);
-
-    fseeko(f, 0, SEEK_END);
-    int64_t dataBytes = static_cast<int64_t>(ftello(f)) - static_cast<int64_t>(sizeof(int32_t));
-    fseeko(f, sizeof(int32_t), SEEK_SET);
-    int64_t nSpikesInFile = dataBytes / (static_cast<int64_t>(sizeof(int64_t)) * nbDimensions);
-    if (nSpikesInFile != static_cast<int64_t>(nbSpikes)) {
-        fclose(f);
+    if (fet.nSpikes != static_cast<int64_t>(nbSpikes)) {
         errorInformation = QObject::tr(
             "Spike count mismatch: .fet has %1 spikes, expected %2")
-            .arg(nSpikesInFile).arg(nbSpikes);
+            .arg(fet.nSpikes).arg(nbSpikes);
         return false;
     }
 
     features.setSize(nbSpikes, nbDimensions);
 
-    // Use an explicit int64_t staging buffer so the code is correct
-    // regardless of whether dataType (long) == int64_t on this platform.
-    int64_t total = static_cast<int64_t>(nbSpikes) * nbDimensions;
-    std::vector<int64_t> buf(static_cast<size_t>(total));
-    if (static_cast<int64_t>(fread(buf.data(), sizeof(int64_t), static_cast<size_t>(total), f)) != total) {
-        fclose(f);
-        errorInformation = QObject::tr("Short read in feature file: %1").arg(path);
-        return false;
-    }
-    fclose(f);
+    // Stage through int64_t -> dataType, correct whether or not dataType == int64_t.
+    const int64_t total = static_cast<int64_t>(nbSpikes) * nbDimensions;
     for (int64_t i = 0; i < total; ++i)
-        features[static_cast<size_t>(i)] = static_cast<dataType>(buf[static_cast<size_t>(i)]);
+        features[static_cast<size_t>(i)] =
+            static_cast<dataType>(fet.values[static_cast<size_t>(i)]);
     return true;
 }
 
