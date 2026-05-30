@@ -2,7 +2,7 @@
  * klusters_realign.cpp
  *
  * Implementation of the klusters-faithful per-spike realignment algorithm
- * for KlustaKwikExp.  See header for design notes.
+ * for KiloKlustaKwik.  See header for design notes.
  *
  * Faithfulness check vs src/klusters/src/spikerealign.cpp:
  *

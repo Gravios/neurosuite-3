@@ -11025,7 +11025,7 @@ void KK::PerClusterCEMPerChunk(
         //
         // SPATIAL-ONLY: time (last dim) is excluded.  Reasoning: this is
         // the same recluster that Klusters performs when the user "splits"
-        // a cluster — Klusters spawns KlustaKwikExp on the cluster's
+        // a cluster — Klusters spawns KiloKlustaKwik on the cluster's
         // spikes, which runs CEMTwoPhase whose Phase 1 is spatial-only
         // (excludes time).  TrySplits on full-dim data was rejecting
         // bimodal pairs whose split improvement was below the BIC penalty
@@ -13635,7 +13635,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     //       exceed m_timeShiftMaxAbs (default 3), leaving spikes that
     //       needed larger total motion STUCK at their original
     //       mis-detected positions.  Visible result: ±5-sample
-    //       within-cluster temporal dispersion after KlustaKwikExp
+    //       within-cluster temporal dispersion after KiloKlustaKwik
     //       completes.  Per-iter lag is naturally bounded by xcorr's
     //       maxShift parameter; cumulative motion across iters is
     //       unbounded by design — a spike needing 5 samples can get

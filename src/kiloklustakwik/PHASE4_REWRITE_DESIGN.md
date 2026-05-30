@@ -1,4 +1,4 @@
-# KlustaKwikExp Phase-4 Rewrite — Design Document
+# KiloKlustaKwik Phase-4 Rewrite — Design Document
 
 ## Scope
 

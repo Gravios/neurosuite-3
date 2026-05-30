@@ -15,7 +15,7 @@ Both binaries coexist in the build tree:
 | target          | source dir              | binary                   |
 |-----------------|-------------------------|--------------------------|
 | `KlustaKwik`    | `src/klustakwik/`       | `KlustaKwik` (or `_cpu`) |
-| `KlustaKwikExp` | `src/klustakwikExp/`    | `KlustaKwikExp` (or `_cpu`) |
+| `KiloKlustaKwik` | `src/klustakwikExp/`    | `KiloKlustaKwik` (or `_cpu`) |
 
 The canonical binary is unaffected by anything in this directory.
 
@@ -243,7 +243,7 @@ KlustaKwik).
 ## Build
 
 ```
-cmake -B build && cmake --build build --target KlustaKwikExp_cpu
+cmake -B build && cmake --build build --target KiloKlustaKwik_cpu
 ```
 
 Both binaries can be built together by running `cmake --build build` with
@@ -258,7 +258,7 @@ cmake -B build -DNS_SKIP_KLUSTAKWIKEXP=ON
 The startup banner identifies this binary as:
 
 ```
-KlustaKwikExp  SESSION.fet.N  [build 2026-04-22 shift-probe]
+KiloKlustaKwik  SESSION.fet.N  [build 2026-04-22 shift-probe]
 ```
 
 ## GPU backends
@@ -294,7 +294,7 @@ cmake -B build -DUSE_HIP=ON                 # ROCm (RDNA/CDNA)
 cmake -B build -DUSE_SYCL=ON                # Intel Arc/Xe, oneAPI
 ```
 
-The CPU target `KlustaKwikExp_cpu` is always built.
+The CPU target `KiloKlustaKwik_cpu` is always built.
 
 ## File diff summary versus `src/klustakwik/`
 
@@ -514,7 +514,7 @@ New line emitted at the end of the function:
 .res updated (M spikes, N shifted)
 ```
 
-Pre-patch this line never appeared; its presence in `KlustaKwikExp`'s
+Pre-patch this line never appeared; its presence in `KiloKlustaKwik`'s
 stderr is the fastest confirmation that a build has patch85.
 
 Skipped (`.res` preserved) when `resWPC` failed to open, `.res.pending`

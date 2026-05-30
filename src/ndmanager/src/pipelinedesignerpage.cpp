@@ -109,7 +109,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
           {{ "before","12","Mandatory" }, { "after","12","Mandatory" },
            { "extra","false","Optional" }, { "sdiffOrder","3","Optional" }} },
         // ── Sorting ───────────────────────────────────────────────────────
-        { "ndm_klustakwik", "KlustaKwik", ".fet → .clu (CEM clustering)", "sorting", "spikes",
+        { "ndm_klustakwik", "KiloKlustaKwik", ".fet → .clu (CEM clustering)", "sorting", "spikes",
           {{ "minClusters","2","Optional" }, { "maxClusters","200","Optional" },
            { "maxPossibleClusters","500","Optional" }, { "nRuns","5","Optional" },
            { "chunkMinutes","9","Optional" }, { "chunkOverlapMinutes","3","Optional" },

@@ -147,13 +147,13 @@ if [[ $dry_run -eq 0 ]]; then
 fi
 
 # ─── pick the binary ─────────────────────────────────────────────────────────
-# Prefer the GPU build when present (KlustaKwikExp), falling back to the CPU
-# build (KlustaKwikExp_cpu) — same selection rule as the regular ndmanager-
+# Prefer the GPU build when present (KiloKlustaKwik), falling back to the CPU
+# build (KiloKlustaKwik_cpu) — same selection rule as the regular ndmanager-
 # plugins KlustaKwik invocation in ndm_klustakwik.
-if command -v KlustaKwikExp >/dev/null 2>&1; then
-    KK_BIN=KlustaKwikExp
-elif command -v KlustaKwikExp_cpu >/dev/null 2>&1; then
-    KK_BIN=KlustaKwikExp_cpu
+if command -v KiloKlustaKwik >/dev/null 2>&1; then
+    KK_BIN=KiloKlustaKwik
+elif command -v KiloKlustaKwik_cpu >/dev/null 2>&1; then
+    KK_BIN=KiloKlustaKwik_cpu
 elif command -v KlustaKwik >/dev/null 2>&1; then
     KK_BIN=KlustaKwik
 else

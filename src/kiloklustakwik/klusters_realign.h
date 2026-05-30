@@ -1,7 +1,7 @@
 /* ============================================================================
  * klusters_realign.h
  *
- * Klusters-faithful per-spike waveform realignment for KlustaKwikExp.
+ * Klusters-faithful per-spike waveform realignment for KiloKlustaKwik.
  * Ports the algorithm from src/klusters/src/spikerealign.cpp into a form
  * usable inside KKE's clustering pipeline.
  *

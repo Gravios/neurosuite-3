@@ -2,7 +2,7 @@
 
 #////////////////////////////////////////////////////////////////////////////
 #//
-#//   Run KlustaKwik spike sorting for each spikeDetection group
+#//   Run KiloKlustaKwik spike sorting for each spikeDetection group
 #//
 #//   copyright       (C) 2025 neurosuite-3 contributors
 #//
@@ -29,17 +29,17 @@ param_ext=$(param_file_ext "$session")
 electrodeGroup=$2
 
 # Print a header to indicate current processing step
-print_header "$session - Running KlustaKwik spike sorting"
+print_header "$session - Running KiloKlustaKwik spike sorting"
 
 # Check required programs
-check_commands_installed KlustaKwik
+check_commands_installed KiloKlustaKwik
 
-# Three-tier KlustaKwik parameter reader (read_kk_param) is now provided by
+# Three-tier KiloKlustaKwik parameter reader (read_kk_param) is now provided by
 # ndm_functions.  Same semantics: tier 1 per-group, tier 2 programs block,
 # tier 3 caller default.  Hoisted so wrapper scripts — ndm_subcluster_unmatched
 # in particular — can reuse identical resolution order against sandbox sessions.
 
-# Run KlustaKwik for a single electrode group
+# Run KiloKlustaKwik for a single electrode group
 once()
 {
 	local electrodeGroup=$1
@@ -51,7 +51,7 @@ once()
 	#   .fet.N   — canonical (ndm_pca, raw-ADC PCA)
 	#   .fetD.N  — stderiv pipeline (ndm_pca_stderiv or ndm_extractspikes_stderiv
 	#              followed by ndm_pca reading the already-transformed .spk).
-	# KlustaKwik itself resolves either via pickInputPath and prefers canonical
+	# KiloKlustaKwik itself resolves either via pickInputPath and prefers canonical
 	# when both exist.  Here we only need to confirm that at least one of the
 	# two is present, plus the parameter file.
 	inputs_missing "$session.$param_ext" && return $INPUTS_MISSING
@@ -99,7 +99,7 @@ once()
 	check_mandatory_variable $nFeatures "missing number of features for electrode group $electrodeGroup"
 
 	# UseFeatures: one '1' per PCA feature per channel, plus energy, plus timestamp.
-	# The timestamp MUST be the last '1' so that KlustaKwik's timeDimIdx = nDims-1
+	# The timestamp MUST be the last '1' so that KiloKlustaKwik's timeDimIdx = nDims-1
 	# points to real session timestamps.  Without it, RunChunkedCEM partitions by
 	# energy instead of time, and Phase 3 cluster realignment is meaningless.
 	nTotalFeatures=$(( nElectrodes * nFeatures + 2 ))
@@ -135,7 +135,7 @@ once()
 
 	# Subspace-recluster & template-match parameters.  These were
 	# referenced in the KK invocation below but never read — meaning
-	# every session up to now launched KlustaKwik with empty values
+	# every session up to now launched KiloKlustaKwik with empty values
 	# (-SubspaceDims '' -SubspaceRecluster '' ... ) and relied on
 	# param.c's silent fall-through to compile-time defaults.  Read
 	# them properly so the three-tier YAML resolution actually works.
@@ -148,8 +148,8 @@ once()
 	crossChunkTemplateScore=$(read_kk_param $electrodeGroup crossChunkTemplateScore 0.0)
 
 	# ── Thread count ────────────────────────────────────────────────────────
-	# nThreads controls OMP_NUM_THREADS for the KlustaKwik subprocess.
-	# KlustaKwik has no -nThreads flag; the OpenMP runtime reads the env var.
+	# nThreads controls OMP_NUM_THREADS for the KiloKlustaKwik subprocess.
+	# KiloKlustaKwik has no -nThreads flag; the OpenMP runtime reads the env var.
 	#
 	# Resolution: read_kk_param (three tiers) → 0 means "use all cores".
 	# Groups run sequentially so all cores are available to each group by
@@ -174,7 +174,7 @@ once()
 
 	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features incl. timestamp)"
 
-	KlustaKwik $session $electrodeGroup \
+	KiloKlustaKwik $session $electrodeGroup \
 		-MinClusters             $minClusters             \
 		-MaxClusters             $maxClusters             \
 		-MaxPossibleClusters     $maxPossibleClusters     \
@@ -207,7 +207,7 @@ once()
 		-SubspaceReclusterDepth  $subspaceReclusterDepth  \
 		-CrossChunkTemplateScore $crossChunkTemplateScore                   \
 
-	check_command_status KlustaKwik
+	check_command_status KiloKlustaKwik
 	unset OMP_NUM_THREADS
 	unset OMP_WAIT_POLICY
 }
@@ -222,7 +222,7 @@ then
 		exit $GENERAL_ERROR
 	fi
 
-	# KlustaKwik is CPU-intensive — run groups sequentially to avoid
+	# KiloKlustaKwik is CPU-intensive — run groups sequentially to avoid
 	# thrashing on shared memory and CPU resources
 	overallStatus=$NO_ERROR
 	for (( i=1; i<=nGroups; i++ ))
