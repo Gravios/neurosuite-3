@@ -26,6 +26,10 @@ neuroscope) and provides shared widgets (DockArea, ZoomWindow), color
 management (ItemColors, ChannelColors), schema I/O (ParameterYamlReader/
 Writer/Modifier), and the progress bar used by ndmanager-plugins CLI tools.
 
+A seventh subproject, `nphys-data` (`src/nphys-data/`), packages MIME/desktop
+resources and contains no C++.  Every subproject under `src/` follows the
+standard directory layout codified in §2.7.
+
 `process_smrconvert` is an **external package** — never modify it.
 
 ---
@@ -99,6 +103,47 @@ For commits that produce >1 new cluster (recluster, watershed, dipsplit),
 emit `newClustersAdded(QList<int>&)` — the recluster-shaped multi-cluster
 signal — **once**.  Do not emit `newClusterAdded(int)` (single-cluster
 signal) multiple times.  Doing so causes view inconsistency.
+
+### 2.7 Subproject directory layout
+
+The repo is a monorepo, but every subproject under `src/` has the same
+standard shape:
+
+```
+<subproject>/
+  CMakeLists.txt          # build entry (+ cmake/ modules, config-*.cmake.in)
+  src/                    # ALL C/C++ sources and headers
+  test/                   # unit tests, if any
+  doc/                    # subproject docs, if any
+  <packaging>             # postinst, postrm, description, AUTHORS, COPYING, …
+```
+
+- **No C/C++ sources at a subproject root** — they live under `src/`.
+  kiloklustakwik was the last flat outlier (all sources in its root);
+  they were moved into `src/` and the CMakeLists source lists are now
+  `src/`-prefixed, with a directory-scoped `include_directories(src)`
+  so every target (including the HIP/SYCL object libraries) finds them.
+- The Qt apps build via `add_subdirectory(src)`; `src/CMakeLists.txt`
+  lists sources relative to `src/` and sets the include path to `src/`.
+  libklustersshared keeps its public headers under `src/klustersshared/`.
+- **Never keep a file at both `<sub>/X` and `<sub>/src/X`.**  See §6.8.
+
+### 2.8 Documentation and changelog layout
+
+- `CHANGELOG.md` (repo root) is the **single canonical, date-ordered**
+  project changelog.  There is no `CHANGES.md` at the root — it was
+  consolidated into `CHANGELOG.md`.
+- Deep per-topic technical notes live in `doc/design/<topic>.md`, indexed
+  from `doc/design/README.md` and from the reference table at the end of
+  `CHANGELOG.md`.  Do not re-create flat `CHANGES-<topic>.md` files at the
+  root; add a `doc/design/` page and index it.
+- Task-oriented walkthroughs spanning multiple programs live in
+  `doc/workflows/`.
+- Program-internal histories (`src/<prog>/CHANGES.md`,
+  `CHANGES-inherited-from-canonical.md`) stay in the source tree on
+  purpose; the top-level changelog references them but does not absorb
+  them.
+- Vendored third-party changelogs (e.g. libsamplerate) are never touched.
 
 ---
 
@@ -187,6 +232,17 @@ Each tarball is a **complete drop-in for that topic** — not a delta.  Later
 versions supersede earlier ones.  Files inside the tarball use the same
 relative paths as the repo, so `tar xzf` lands them in the right place.
 
+**Patch-series variant.** For structural, repo-wide, or multi-commit work
+(e.g. the KiloKlustaKwik rebrand, the per-subproject `src/` standardization,
+and the changelog consolidation), deliver a numbered `git format-patch`
+series instead: stage commits in a working clone, `git format-patch
+<base>..HEAD -o patches/`, verify the whole stack applies clean with
+`git am` on a fresh detached checkout of `<base>`, then ship the `.patch`
+files via `present_files`.  Gravio applies them with `git am` and build-tests
+each on `nphy-069`.  Commit messages end with a NOTE distinguishing what was
+verified (compiles / grep / `git am`) from what still needs a hardware build
+(Qt/CUDA/HIP/SYCL wiring can't be compiled in the container).
+
 ### 4.2 Tarball discipline
 
 - Filename: `<topic>-<descriptor>[-vN].tar.gz` (e.g. `klusters-dipsplit-postcommit-v3.tar.gz`).
@@ -223,7 +279,7 @@ the things the change is supposed to alter.
 
 Only artefacts Gravio will use directly:
 - Tarballs of source changes
-- Generated docs (e.g. AUDIT.md, CHANGES.md when produced)
+- Generated docs (e.g. AUDIT.md, DEDUPE.md, or a per-topic change note)
 - Test reports if requested
 
 Not:
@@ -340,6 +396,25 @@ not yet fixed; don't replicate the bound in new code.
 When asked to audit "X", Claude tends to also fix Y and Z that look related.
 Don't.  Audit X only.  File Y and Z as deferred items in the AUDIT.md.
 
+### 6.8 Loose or duplicate sources at a subproject root
+
+The standard layout (§2.7) puts all sources under `src/`.  Two failure
+modes have appeared in the tree:
+
+- A subproject left fully flat (every source at its root).  kiloklustakwik
+  was the last one; its sources were moved under `src/`.
+- A file present at **both** `<sub>/X.h` and `<sub>/src/X.h`, where only
+  the `src/` copy is compiled and on the include path and the root copy is
+  a stale leftover from an earlier move (ndmanager and neuroscope each had
+  several, some byte-diverged from the live `src/` versions).
+
+When consolidating, do **not** "merge" blindly.  Confirm via the build
+which copy is live — `_srcs` in `src/CMakeLists.txt` is relative to `src/`,
+and the include path is `src/` (`CMAKE_CURRENT_SOURCE_DIR` inside
+`src/CMakeLists.txt`) — then remove the dead root copy.  Removing a dead
+duplicate touches no build wiring; moving a genuinely-flat subproject's
+sources does, and must be build-tested per backend.
+
 ---
 
 ## 7. Tooling
@@ -422,8 +497,10 @@ Before shipping any tarball, verify:
    still holds (read the change, not the test suite).
 4. **Tarball contents**: list with `tar tzf` and confirm only changed
    files are included (no stale staging detritus).
-5. **AUDIT.md / CHANGES.md / DEDUPE.md**: present and accurate if the
-   change is non-trivial.
+5. **AUDIT.md / DEDUPE.md / per-topic change notes**: present and accurate
+   if the change is non-trivial.  The single canonical project changelog is
+   `CHANGELOG.md` (§2.8) — record user-visible changes there, not in a new
+   root file.
 
 ---
 
