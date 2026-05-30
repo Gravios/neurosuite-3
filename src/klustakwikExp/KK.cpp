@@ -22,6 +22,7 @@
 #include "KlustaSave.h"
 #include "dipsplit.h"        // BicPair / bic_two_vs_one — used by RefineExistingClustering
 #include "realign_xcorr.h"   // XcorrDispatch::compute — shared normalised circular xcorr
+#include "realign_center.h"  // realign_center::circularRecenterShift (shared)
 
 #include <algorithm>
 #include <atomic>
@@ -8553,7 +8554,6 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
     // Gated by KlustersRealignCenterMode == 2 (RMS).  The default mode (1, PCA)
     // leaves centering to the PCA alignment phases; mode 0 disables it.
     if (KlustersRealignCenterMode == 2) {
-        const double TWO_PI = 6.283185307179586476925286766559;
         const float  rMin   = KlustersRealignRMin;
         std::vector<int16_t> row(static_cast<size_t>(waveSamples));
         std::vector<double>  energy(static_cast<size_t>(nSamplesPerSpike));
@@ -8587,28 +8587,11 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
             }
             if (nReadOk < minSize) continue;
 
-            double Cc = 0.0, Ss = 0.0, Ww = 0.0;
-            for (int s = 0; s < nSamplesPerSpike; ++s) {
-                const double th = TWO_PI * static_cast<double>(s)
-                                / static_cast<double>(nSamplesPerSpike);
-                const double w  = energy[static_cast<size_t>(s)];
-                Cc += w * std::cos(th);
-                Ss += w * std::sin(th);
-                Ww += w;
-            }
-            const double R = (Ww > 0.0) ? std::hypot(Cc, Ss) / Ww : 0.0;
-            if (R < rMin) continue;          // degenerate envelope — leave aligned
-
-            double centroid = std::atan2(Ss, Cc);
-            if (centroid < 0.0) centroid += TWO_PI;
-            centroid *= static_cast<double>(nSamplesPerSpike) / TWO_PI;
-
-            const double Nd = static_cast<double>(nSamplesPerSpike);
-            double dgf = centroid - static_cast<double>(peakPos);
-            dgf = std::fmod(dgf, Nd);
-            if (dgf >  Nd / 2.0) dgf -= Nd;
-            if (dgf < -Nd / 2.0) dgf += Nd;
-            const int dg = static_cast<int>(std::lround(dgf));
+            const realign_center::RecenterResult rc =
+                realign_center::circularRecenterShift(
+                    energy.data(), nSamplesPerSpike, peakPos, rMin);
+            if (!rc.applied) continue;       // degenerate envelope — leave aligned
+            const int dg = rc.shift;
             if (dg == 0) continue;
 
             for (int i = 0; i < N; ++i) {

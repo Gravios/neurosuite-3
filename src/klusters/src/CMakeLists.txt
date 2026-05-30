@@ -38,6 +38,7 @@ set(klusters_SRCS
     pca_refine_gpu_dispatch.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
+    ${_xcorr_dir}/realign_center.cpp
     realignworker.cpp
     realignreviewdialog.cpp
     spikerealigndialog.cpp

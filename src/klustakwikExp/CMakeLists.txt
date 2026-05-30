@@ -203,7 +203,8 @@ set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
     adapt_model.cpp
     shiftprobe_disabled.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
-    ${_xcorr_dir}/realign_xcorr_dispatch.cpp)
+    ${_xcorr_dir}/realign_xcorr_dispatch.cpp
+    ${_xcorr_dir}/realign_center.cpp)
 set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
               Array.h KlustaSave.h KlustaKwikYaml.h param.h
               dipsplit.h
@@ -425,6 +426,7 @@ if(_SYCL_ACTIVE)
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
         ${_xcorr_dir}/realign_xcorr_sycl.cpp
+        ${_xcorr_dir}/realign_center.cpp
         $<TARGET_OBJECTS:param_obj_exp>
         $<TARGET_OBJECTS:yaml_obj_exp>
         ${_headers})
