@@ -176,7 +176,41 @@ FetFile readFet(const std::string& path)
     return out;
 }
 
-// ── .evt ──────────────────────────────────────────────────────────────────
+FetBinaryFile readFetBinary(const std::string& path)
+{
+    FetBinaryFile out;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return out;
+
+    int32_t nFeat = 0;
+    in.read(reinterpret_cast<char*>(&nFeat), sizeof(nFeat));
+    if (in.gcount() != static_cast<std::streamsize>(sizeof(nFeat)) || nFeat < 1)
+        return out;
+    out.nFeatures = static_cast<int>(nFeat);
+
+    in.seekg(0, std::ios::end);
+    const std::streamoff fileBytes = in.tellg();
+    const int64_t dataBytes =
+        static_cast<int64_t>(fileBytes) - static_cast<int64_t>(sizeof(nFeat));
+    const int64_t rowBytes =
+        static_cast<int64_t>(sizeof(int64_t)) * out.nFeatures;
+    if (dataBytes <= 0 || (dataBytes % rowBytes) != 0) return out;
+    out.nSpikes = dataBytes / rowBytes;
+
+    in.seekg(static_cast<std::streamoff>(sizeof(nFeat)), std::ios::beg);
+    const int64_t total = out.nSpikes * out.nFeatures;
+    out.values.resize(static_cast<size_t>(total));
+    if (total > 0) {
+        in.read(reinterpret_cast<char*>(out.values.data()),
+                static_cast<std::streamsize>(total) * 8);
+        if (in.gcount() != static_cast<std::streamsize>(total) * 8) {
+            out.values.clear();
+            return out;
+        }
+    }
+    out.ok = true;
+    return out;
+}
 std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)
 {
     std::vector<EvtEntry> out;
