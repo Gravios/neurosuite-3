@@ -32,7 +32,7 @@
 #   CMAKE_CUDA_ARCHITECTURES  e.g. "86;89;120"
 #
 #   NS_SKIP_<N>         Set to ON to skip a component, e.g.:
-#                         -DNS_SKIP_KLUSTAKWIK=ON
+#                         -DNS_SKIP_KILOKLUSTAKWIK=ON
 #                       Valid names (case-insensitive suffix):
 #                         NPHYS_DATA  LIBKLUSTERSSHARED
 #                         KLUSTERS    NEUROSCOPE   NDMANAGER
@@ -224,7 +224,6 @@ option(NS_SKIP_KLUSTERS            "Skip klusters"           OFF)
 option(NS_SKIP_NEUROSCOPE          "Skip neuroscope"         OFF)
 option(NS_SKIP_NDMANAGER           "Skip ndmanager"          OFF)
 option(NS_SKIP_NDMANAGER_PLUGINS   "Skip ndmanager-plugins"  OFF)
-option(NS_SKIP_KLUSTAKWIK          "Skip klustakwik"         OFF)
 option(NS_SKIP_KILOKLUSTAKWIK       "Skip kiloklustakwik"      OFF)
 
 # ---------------------------------------------------------------------------
@@ -401,7 +400,7 @@ endmacro()
 #                       ├──> neuroscope                                   │
 #                       └──> ndmanager                                    │
 #   ndmanager-plugins ────────────────────────────────────────────────────┤
-#   klustakwik ───────────────────────────────────────────────────────────┘
+#   kiloklustakwik ───────────────────────────────────────────────────┘
 #
 # libklustersshared exports a build-tree targets file via export(EXPORT …)
 # alongside its install(EXPORT …).  After add_subdirectory() the config
@@ -438,13 +437,10 @@ ns_add_subdir(ndmanager  src/ndmanager)
 # 6. Preprocessing pipeline — no Qt, no libklustersshared dependency
 ns_add_subdir(ndmanager-plugins src/ndmanager-plugins)
 
-# 7. Standalone spike sorter
-ns_add_subdir(klustakwik src/klustakwik)
-
-# 7b. Experimental KlustaKwik fork — post-split shift-probe refeaturization.
-#     Built as an independent target tree so the canonical klustakwik binary
-#     is never affected by changes here.  See src/kiloklustakwik/CHANGES.md
-#     for the algorithmic differences.  Disable with -DNS_SKIP_KILOKLUSTAKWIK=ON.
+# 7. Standalone spike sorter — KiloKlustaKwik, the shift-probe refeaturization
+#    engine (formerly the experimental KlustaKwikExp fork, now the canonical and
+#    only sorter). See src/kiloklustakwik/CHANGES.md for algorithmic details.
+#    Disable with -DNS_SKIP_KILOKLUSTAKWIK=ON.
 ns_add_subdir(kiloklustakwik src/kiloklustakwik)
 
 # ---------------------------------------------------------------------------

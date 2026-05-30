@@ -10,7 +10,7 @@
 #   4. neuroscope          -- depends on libklustersshared
 #   5. ndmanager           -- depends on libklustersshared
 #   6. ndmanager-plugins   -- standalone C/C++ (no Qt); optional FFmpeg/OpenMP
-#   7. klustakwik          -- standalone C/C++; optional OpenMP (no GPU on macOS)
+#   7. kiloklustakwik          -- standalone C/C++; optional OpenMP (no GPU on macOS)
 #   8.        -- standalone C/C++; optional OpenMP (no GPU on macOS)
 #
 # GPU BACKENDS (CUDA / HIP / SYCL)
@@ -50,7 +50,7 @@
 #                         vendored fallback that needs autoconf on macOS)
 #   --skip       PKG   Skip a package (repeat for multiple). Valid names:
 #                      nphys-data libklustersshared klusters neuroscope
-#                      ndmanager ndmanager-plugins klustakwik
+#                      ndmanager ndmanager-plugins kiloklustakwik
 #   --clean            Remove each package's build tree after install
 #   --clean-on-fail    Remove build tree only when a package fails
 #   -h, --help         Show this help
@@ -59,7 +59,7 @@
 #   ./build-neurosuite-macos.sh
 #   ./build-neurosuite-macos.sh --prefix /opt/neurosuite --with-ffmpeg --with-libsamplerate
 #   ./build-neurosuite-macos.sh --qt-dir /opt/homebrew/opt/qt/lib/cmake/Qt6
-#   ./build-neurosuite-macos.sh --skip klustakwik --skip
+#   ./build-neurosuite-macos.sh --skip kiloklustakwik --skip
 #   ./build-neurosuite-macos.sh --no-brew --no-openmp
 # =============================================================================
 
@@ -464,7 +464,7 @@ PREFIX_PATH_FLAG="-DCMAKE_PREFIX_PATH=${BREW_CMAKE_PREFIX}"
 log "Verifying source trees under ${SOURCE_BASE}/src …"
 MISSING=0
 for _pkg in nphys-data libklustersshared klusters neuroscope ndmanager \
-            ndmanager-plugins klustakwik; do
+            ndmanager-plugins kiloklustakwik; do
     if [[ ! -f "${SOURCE_BASE}/src/${_pkg}/CMakeLists.txt" ]]; then
         error "Source tree not found: ${SOURCE_BASE}/src/${_pkg}"
         MISSING=1
@@ -539,12 +539,12 @@ cmake_build "ndmanager-plugins" "${SOURCE_BASE}/src/ndmanager-plugins" \
     -DUSE_CUDA=OFF
 
 # =============================================================================
-# 7/7  klustakwik
+# 7/7  kiloklustakwik
 # Deps: OpenMP (optional). GPU backends disabled on macOS.
 # NOTE: The CMakeLists will auto-select icpx if oneAPI is installed and
 #       USE_SYCL is not explicitly OFF. We pass USE_SYCL=OFF to prevent that.
 # =============================================================================
-cmake_build "klustakwik" "${SOURCE_BASE}/src/klustakwik" \
+cmake_build "kiloklustakwik" "${SOURCE_BASE}/src/kiloklustakwik" \
     "${PREFIX_PATH_FLAG}" \
     "${OMP_FLAGS[@]+"${OMP_FLAGS[@]}"}" \
     "${GPU_FLAGS[@]}"
@@ -607,7 +607,7 @@ if ${DO_INSTALL}; then
     echo "      klusters --version"
     echo "      neuroscope --version"
     echo "      ndmanager --version"
-    echo "      KlustaKwik"
+    echo "      KiloKlustaKwik"
     echo "      SpikeRealign"
     echo ""
 fi

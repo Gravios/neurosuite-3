@@ -10,11 +10,11 @@
 #   4. neuroscope          — depends on libklustersshared
 #   5. ndmanager           — depends on libklustersshared
 #   6. ndmanager-plugins   — standalone C/C++ (no Qt); optional CUDA/FFmpeg
-#   7. klustakwik          — standalone C/C++; optional CUDA/HIP/SYCL
+#   7. kiloklustakwik          — standalone C/C++; optional CUDA/HIP/SYCL
 #   8.        — standalone C/C++; optional CUDA/HIP/SYCL
 #
 # GPU BACKENDS (CUDA / HIP / SYCL)
-#   Auto-detected by CMake for klustakwik,, klusters, and the
+#   Auto-detected by CMake for kiloklustakwik,, klusters, and the
 #   CUDA-accelerated ndmanager-plugins (process_medianfilter, process_spikegrouper,
 #   process_medianthreshold).
 #   RTX 5070 Ti (Blackwell, sm_120) requires CUDA >= 12.8 and driver >= 570
@@ -52,10 +52,10 @@
 #                      All other packages are skipped. Mutually exclusive
 #                      with --skip. Valid names:
 #                      nphys-data libklustersshared klusters neuroscope
-#                      ndmanager ndmanager-plugins klustakwik
+#                      ndmanager ndmanager-plugins kiloklustakwik
 #   --skip       PKG   Skip a package; repeat for multiple. Valid names:
 #                      nphys-data libklustersshared klusters neuroscope
-#                      ndmanager ndmanager-plugins klustakwik
+#                      ndmanager ndmanager-plugins kiloklustakwik
 #   --clean            Remove each package's build tree after install
 #   --clean-on-fail    Remove build tree only when a package fails
 #   -h, --help         Show this help
@@ -64,8 +64,8 @@
 #   ./build-neurosuite.sh
 #   ./build-neurosuite.sh --prefix ~/.local --jobs 8
 #   ./build-neurosuite.sh --only klusters
-#   ./build-neurosuite.sh --only klustakwik --only --cuda-arch "120"
-#   ./build-neurosuite.sh --gpu-off --skip klustakwik --skip
+#   ./build-neurosuite.sh --only kiloklustakwik --only --cuda-arch "120"
+#   ./build-neurosuite.sh --gpu-off --skip kiloklustakwik --skip
 #   ./build-neurosuite.sh --cuda-arch "120" --clean
 # =============================================================================
 
@@ -287,7 +287,7 @@ fi
 log "Verifying source trees under ${SOURCE_BASE} …"
 MISSING=0
 for pkg in nphys-data libklustersshared klusters neuroscope ndmanager \
-           ndmanager-plugins klustakwik; do
+           ndmanager-plugins kiloklustakwik; do
     if [[ ! -f "${SOURCE_BASE}/${pkg}/CMakeLists.txt" ]]; then
         error "Source tree not found: ${SOURCE_BASE}/${pkg}"
         MISSING=1
@@ -366,14 +366,14 @@ cmake_build "ndmanager-plugins" "${SOURCE_BASE}/ndmanager-plugins" \
     "${GPU_FLAGS[@]+"${GPU_FLAGS[@]}"}"
 
 # =============================================================================
-# 7/7  klustakwik
+# 7/7  kiloklustakwik
 # Deps: OpenMP (optional, auto via GCC libgomp)
 # Optional GPU: CUDA > HIP > SYCL (auto-detected, priority order)
 # NOTE: If Intel oneAPI is installed and USE_SYCL is not explicitly OFF,
 #       CMakeLists.txt will auto-select icpx as C++ compiler before project().
 #       Pass --gpu-off to force GCC and avoid this.
 # =============================================================================
-cmake_build "klustakwik" "${SOURCE_BASE}/klustakwik" \
+cmake_build "kiloklustakwik" "${SOURCE_BASE}/kiloklustakwik" \
     "${GPU_FLAGS[@]+"${GPU_FLAGS[@]}"}" \
     "${CUDA_ARCH_FLAG[@]+"${CUDA_ARCH_FLAG[@]}"}"
 
@@ -451,7 +451,7 @@ if ${DO_INSTALL}; then
     echo "    klusters --version"
     echo "    neuroscope --version"
     echo "    ndmanager --version"
-    echo "    KlustaKwik"
+    echo "    KiloKlustaKwik"
     echo "    SpikeRealign"
     echo ""
 fi
