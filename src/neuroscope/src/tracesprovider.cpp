@@ -27,6 +27,7 @@
 #include <QRegularExpression>
 #include <QDebug>
 #include <QFileInfo>
+#include <klustersshared/neurofileio.h>
 #include <cstdint>
 
 TracesProvider::TracesProvider(const QString& fileUrl,int nbChannels,int resolution,double samplingRate,int offset)
@@ -233,27 +234,22 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
         }
         else
         {
-            QFile dataFile(fileName);
-            if (!dataFile.open(QIODevice::ReadOnly)) {
-                data.setSize(0,0);
-                emit dataReady(data,initiator);
-                return;
-            }
+            // Flat interleaved-int16 .dat/.lfp window read via the shared reader.
+            // readDatWindow folds in the open-failure case (returns -1) and a
+            // short read at end-of-file (returns < nbSamples); both fail the
+            // full-read check below, matching the previous behaviour.
+            const int64_t samplesRead = neurofileio::readDatWindow(
+                fileName.toStdString(), nbChannels,
+                static_cast<int64_t>(startInRecordingUnits),
+                static_cast<int64_t>(nbSamples),
+                reinterpret_cast<int16_t*>(&retrieveData[0]));
 
-            qint64 position = static_cast<qint64>(static_cast<qint64>(startInRecordingUnits)* static_cast<qint64>(nbChannels));
-
-            dataFile.seek(position * sizeof(short));
-            qint64 nbRead = dataFile.read(reinterpret_cast<char*>(&retrieveData[0]), sizeof(short) * nbValues);
-
-            // copy the data into retrieveData.
-            if(nbRead != qint64(nbValues*sizeof(short))){
+            if(samplesRead != static_cast<int64_t>(nbSamples)){
                 //emit the signal with an empty array, the reciever will take care of it, given a message to the user.
                 data.setSize(0,0);
-                dataFile.close();
                 emit dataReady(data,initiator);
                 return;
             }
-            dataFile.close();
         }
         //Apply the offset if need it,convert to dataType and store the values in data.
         if(offset != 0){
