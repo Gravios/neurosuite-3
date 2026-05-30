@@ -37,9 +37,9 @@ GROUP="6"
 LOG="${DATASET}.kkexp.${GROUP}.noshift_hullon.log"
 
 # Locate the binary; allow override via env.
-KKEXP="${KKEXP:-KlustaKwikExp}"
+KKEXP="${KKEXP:-KiloKlustaKwik}"
 if ! command -v "${KKEXP}" >/dev/null 2>&1; then
-    echo "ERROR: ${KKEXP} not in PATH.  Set KKEXP=/path/to/KlustaKwikExp." >&2
+    echo "ERROR: ${KKEXP} not in PATH.  Set KKEXP=/path/to/KiloKlustaKwik." >&2
     exit 1
 fi
 

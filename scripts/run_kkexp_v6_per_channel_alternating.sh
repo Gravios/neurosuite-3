@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-KKEXP=${KKEXP:-KlustaKwikExp}
+KKEXP=${KKEXP:-KiloKlustaKwik}
 DATASET=${1:?usage: $0 <session-base> <group>}
 GROUP=${2:?usage: $0 <session-base> <group>}
 

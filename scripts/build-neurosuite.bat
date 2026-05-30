@@ -11,7 +11,7 @@ setlocal EnableDelayedExpansion
 ::   4. neuroscope          -- depends on libklustersshared
 ::   5. ndmanager           -- depends on libklustersshared
 ::   6. ndmanager-plugins   -- standalone C/C++ (no Qt); optional FFmpeg/CUDA
-::   7. klustakwik          -- standalone C/C++; optional CUDA/HIP/SYCL
+::   7. kiloklustakwik          -- standalone C/C++; optional CUDA/HIP/SYCL
 ::   8.        -- standalone C/C++; optional CUDA/HIP/SYCL
 ::
 :: Usage:
@@ -32,7 +32,7 @@ setlocal EnableDelayedExpansion
 ::   --cuda-arch LIST      Semicolon-separated CUDA arch list (e.g. "75;86;89")
 ::   --skip PKG            Skip a package (repeat for multiple). Valid names:
 ::                         nphys-data libklustersshared klusters neuroscope
-::                         ndmanager ndmanager-plugins klustakwik
+::                         ndmanager ndmanager-plugins kiloklustakwik
 ::   --gpu-off             Disable all GPU backends (CUDA / HIP / SYCL)
 ::   --clean               Delete each package's build directory after install
 ::   -h / --help           Show this help
@@ -177,7 +177,7 @@ if errorlevel 1 (
 :: Verify all source trees are present
 echo %CYAN%[build]%RESET% Verifying source trees...
 set "_MISSING=0"
-for %%P in (nphys-data libklustersshared klusters neuroscope ndmanager ndmanager-plugins klustakwik) do (
+for %%P in (nphys-data libklustersshared klusters neuroscope ndmanager ndmanager-plugins kiloklustakwik) do (
     if not exist "%SOURCE_BASE%\%%P\CMakeLists.txt" (
         echo %RED%[FAIL ]%RESET% Source tree not found: %SOURCE_BASE%\%%P
         set "_MISSING=1"
@@ -395,11 +395,11 @@ if errorlevel 1 exit /b 1
 call :cmake_build "ndmanager-plugins" "%SOURCE_BASE%\ndmanager-plugins" %CUDA_ARCH_FLAG%
 if errorlevel 1 exit /b 1
 
-:: ── 7. klustakwik ────────────────────────────────────────────────────────────
+:: ── 7. kiloklustakwik ────────────────────────────────────────────────────────────
 :: Deps: OpenMP (optional). Optional GPU: CUDA, HIP, SYCL (auto-detected).
 :: NOTE: If Intel oneAPI is installed, CMake may auto-select icpx as compiler.
 ::       Pass --gpu-off (sets -DUSE_SYCL=OFF etc.) to force MSVC.
-call :cmake_build "klustakwik" "%SOURCE_BASE%\klustakwik" %GPU_FLAGS% %CUDA_ARCH_FLAG%
+call :cmake_build "kiloklustakwik" "%SOURCE_BASE%\kiloklustakwik" %GPU_FLAGS% %CUDA_ARCH_FLAG%
 if errorlevel 1 exit /b 1
 
 
@@ -439,7 +439,7 @@ if %DO_INSTALL%==1 (
     echo        klusters --version
     echo        neuroscope --version
     echo        ndmanager --version
-    echo        KlustaKwik
+    echo        KiloKlustaKwik
     echo.
 ) else (
     echo %CYAN%[build]%RESET% Build trees are in: %BUILD_BASE%

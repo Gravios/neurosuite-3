@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# run_klustakwik.sh - Run KlustaKwik on all spike groups (Linux / zsh)
+# run_klustakwik.sh - Run KiloKlustaKwik on all spike groups (Linux / zsh)
 #
 # Sampling rate  : parsed from <basename>.yaml  (field: SamplingRate / samplingRate)
 # UseFeatures    : derived from feature count in binary .fet header (first int32)
@@ -8,13 +8,13 @@
 # Usage:
 #   run_klustakwik.sh [basename] [options]
 #
-# All KlustaKwik options can be overridden on the command line, e.g.:
+# All KiloKlustaKwik options can be overridden on the command line, e.g.:
 #   run_klustakwik.sh jg05-20120316 -MaxClusters 16 -nStarts 3
 
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Defaults for every KlustaKwik option
+# Defaults for every KiloKlustaKwik option
 # ---------------------------------------------------------------------------
 OPT_MinClusters=5
 OPT_MaxClusters=12
@@ -139,7 +139,7 @@ for FET_FILE in "${fet_files[@]}"; do
     echo "=== Group $GROUP | features: $N_FEATURES | UseFeatures: $USE_FEATURES ==="
 
     OMP_NUM_THREADS=$OMP_NUM_THREADS \
-    KlustaKwik "$BASENAME" "$GROUP" \
+    KiloKlustaKwik "$BASENAME" "$GROUP" \
         -MinClusters        "$OPT_MinClusters" \
         -MaxClusters        "$OPT_MaxClusters" \
         -UseFeatures        "$USE_FEATURES" \

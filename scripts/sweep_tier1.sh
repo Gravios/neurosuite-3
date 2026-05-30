@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# sweep_tier1.sh — KlustaKwik Tier 1 parameter sweep
+# sweep_tier1.sh — KiloKlustaKwik Tier 1 parameter sweep
 #
 # Grid: MergeThresh × PenaltyMix  (5×5 = 25 runs)
 #
@@ -12,7 +12,7 @@
 #
 # Output:
 #   <data_dir>/sweep_tier1/mt<MT>_pm<PM>/
-#     <filebase>.clu.<elec>   — KlustaKwik output
+#     <filebase>.clu.<elec>   — KiloKlustaKwik output
 #     <filebase>.klg.<elec>   — run log
 #     params.txt              — parameters used
 #
@@ -47,10 +47,10 @@ MAX_ITER=500
 MERGE_THRESH_VALUES=(30 36 43 51 65)   # chi²(24): p=0.80..0.9999
 PENALTY_MIX_VALUES=(0.0 0.25 0.5 0.75 1.0)   # AIC → BIC
 
-# ── Locate KlustaKwik binary
-KK_BIN=$(command -v KlustaKwik 2>/dev/null || true)
+# ── Locate KiloKlustaKwik binary
+KK_BIN=$(command -v KiloKlustaKwik 2>/dev/null || true)
 if [[ -z "$KK_BIN" ]]; then
-    echo "ERROR: KlustaKwik not found on PATH. Build it and add to PATH."
+    echo "ERROR: KiloKlustaKwik not found on PATH. Build it and add to PATH."
     exit 1
 fi
 
@@ -102,9 +102,9 @@ DistThresh      ${DIST_THRESH}
 MaxIter         ${MAX_ITER}
 PARAMS
 
-        # Symlink the input files so KlustaKwik can find them by name in RUN_DIR
+        # Symlink the input files so KiloKlustaKwik can find them by name in RUN_DIR
         # Symlink read-only inputs only — never clu.
-        # KlustaKwik writes its own .clu output; if .clu is symlinked first,
+        # KiloKlustaKwik writes its own .clu output; if .clu is symlinked first,
         # KK follows the symlink and overwrites DATA_DIR/filebase.clu.elec,
         # corrupting the original and making all sweep runs share one file.
         for EXT in fet res spk; do
@@ -113,7 +113,7 @@ PARAMS
             [[ -f "$SRC" && ! -e "$LINK" ]] && ln -s "$SRC" "$LINK" || true
         done
 
-        # Run KlustaKwik from inside the run directory so .clu and .klg land there
+        # Run KiloKlustaKwik from inside the run directory so .clu and .klg land there
         (
             cd "$RUN_DIR"
             OMP_NUM_THREADS="${N_THREADS}" \

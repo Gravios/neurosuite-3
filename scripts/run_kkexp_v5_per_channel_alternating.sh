@@ -58,10 +58,10 @@ cp -av "${SESSION_DIR}/${SESSION_BASE}.xml" "${OUT_DIR}/" 2>/dev/null || true
 cd "${OUT_DIR}"
 
 # ── Binary ──────────────────────────────────────────────────────────────────
-KKEXP_BIN=/home/gravio/neurosuite-3/build/klustakwikExp/klustakwikExp
-test -x "${KKEXP_BIN}" || { echo "ERROR: klustakwikExp binary not found at ${KKEXP_BIN}"; exit 1; }
+KKEXP_BIN=/home/gravio/neurosuite-3/build/kiloklustakwik/KiloKlustaKwik
+test -x "${KKEXP_BIN}" || { echo "ERROR: KiloKlustaKwik binary not found at ${KKEXP_BIN}"; exit 1; }
 
-# ── Run klustakwikExp v5 ────────────────────────────────────────────────────
+# ── Run kiloklustakwik v5 ────────────────────────────────────────────────────
 LOG="${OUT_DIR}/kkexp_v5_group${GROUP}.log"
 echo "Logging to ${LOG}"
 

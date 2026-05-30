@@ -78,7 +78,7 @@ for ext in fetD spkD pcaD res; do
     fi
 done
 
-KKEXP="${KKEXP:-KlustaKwikExp}"
+KKEXP="${KKEXP:-KiloKlustaKwik}"
 PARALLEL_K="${PARALLEL_K:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="${SESSION}.kkexp.${ELEC}.v7.${TIMESTAMP}.log"
@@ -183,7 +183,7 @@ command -v "${KKEXP}" >/dev/null \
     || { echo "ERROR: ${KKEXP} not on PATH" >&2; exit 1; }
 
 {
-    echo "# KlustaKwikExp v7 (combined feature+subfeature tightening + quality gate)"
+    echo "# KiloKlustaKwik v7 (combined feature+subfeature tightening + quality gate)"
     echo "# date:    $(date -Is)"
     echo "# pwd:     $(pwd)"
     echo "# binary:  $(command -v "${KKEXP}")"

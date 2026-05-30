@@ -74,14 +74,14 @@ for ext in fetD spkD res; do
 done
 
 # ── Pre-flight: confirm patch85 build is in place ───────────────────────
-KKEXP="${KKEXP:-KlustaKwikExp}"
+KKEXP="${KKEXP:-KiloKlustaKwik}"
 if command -v "${KKEXP}" >/dev/null 2>&1; then
     # Some builds embed a version banner with a patch list; if present, look
     # for patch85.  This is best-effort — not all builds embed it.
     if "${KKEXP}" --help 2>&1 | grep -qi 'patch85\|res.pending'; then
         :
     else
-        echo "NOTE: cannot confirm patch85 is in this KlustaKwikExp build."
+        echo "NOTE: cannot confirm patch85 is in this KiloKlustaKwik build."
         echo "      If KKExp's stderr shows '.spk updated' + '.fet updated'"
         echo "      WITHOUT a matching '.res updated' line during Phase 6c,"
         echo "      you have the pre-patch85 binary — the run will not fix"
@@ -223,7 +223,7 @@ command -v "${KKEXP}" >/dev/null \
     || { echo "ERROR: ${KKEXP} not on PATH" >&2; exit 1; }
 
 {
-    echo "# KlustaKwikExp v4 (workflow A: fix dispersion via mode 1 + patch85)"
+    echo "# KiloKlustaKwik v4 (workflow A: fix dispersion via mode 1 + patch85)"
     echo "# date:    $(date -Is)"
     echo "# pwd:     $(pwd)"
     echo "# binary:  $(command -v "${KKEXP}")"
