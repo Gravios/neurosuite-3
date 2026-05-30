@@ -30,6 +30,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include "process_extractspikes_sdiff.h"
+#include "progressbar.h"      // BlockProgress - defrag-style stage progress
 
 #include <algorithm>
 #include <cmath>
@@ -783,6 +784,8 @@ static int runFromRes(const arguments &args,
     int64_t totalSpikes = 0;
     int64_t totalSkipped = 0;
 
+    BlockProgress prog(args.outputBaseFileName);
+
     for(int grp = 0; grp < nbGroups; grp++) {
         const int nCG = channelNb_grp[grp];
         if(nCG <= 0) continue;
@@ -829,7 +832,9 @@ static int runFromRes(const arguments &args,
         int64_t nWritten   = 0;
         int64_t nSkippedBd = 0;
 
+        prog.beginStage("G" + std::to_string(grp + 1), (long long)nResSpikes);
         for(size_t i = 0; i < nResSpikes; i++) {
+            prog.setPosition((long long)i);
             const int64_t ts = resTs[i];
             const int64_t ws = ts - (int64_t)timeBefore;
             if(ws < 0 || ws + spikeLen > nSamples) {
@@ -865,6 +870,7 @@ static int runFromRes(const arguments &args,
             nWritten++;
         }
         fclose(spkFp);
+        prog.endStage();
 
         totalSpikes  += nWritten;
         totalSkipped += nSkippedBd;
@@ -875,6 +881,8 @@ static int runFromRes(const arguments &args,
                  << " spikes to " << spkPath.str()
                  << " (skipped " << nSkippedBd << " at .fil boundary)" << endl;
     }
+
+    prog.finish();
 
     munmap((void*)fil, filBytes);
     close(fd);
@@ -1043,6 +1051,18 @@ int main(int argc, char *argv[])
     fseeko(inputFile, 0, SEEK_SET);
     bool isLastLoop = false;
     unsigned long long rec_nb = 0, nbLoops = 0;
+
+    BlockProgress prog(args.outputBaseFileName);
+    long long progTotalSamples = 0;
+    long long progSamplesDone   = 0;
+    if(args.isInputFileProvided) {
+        off_t cur = ftello(inputFile);
+        fseeko(inputFile, 0, SEEK_END);
+        progTotalSamples = ftello(inputFile)
+            / (args.totalChannelNumber * (long long)sizeof(short));
+        fseeko(inputFile, cur, SEEK_SET);
+        prog.beginStage("DETECT", progTotalSamples);
+    }
 
     while(!feof(inputFile) && !isLastLoop) {
 
@@ -1331,8 +1351,12 @@ int main(int argc, char *argv[])
             } // while i
         } // for grp
 
+        progSamplesDone += rec_nb / args.totalChannelNumber;
         nbLoops++;
+        if(args.isInputFileProvided) prog.setPosition(progSamplesDone);
     } // while !feof
+
+    if(args.isInputFileProvided) prog.endStage();
 
     // ── write .res files ──────────────────────────────────────────────────
     for(int g = 0; g < nbGroups; g++) {
@@ -1453,7 +1477,13 @@ int main(int argc, char *argv[])
         const int wideRawLen   = wideSpikeLen * args.totalChannelNumber;
         vector<short> wideFrame(wideRawLen);
 
+        const off_t progFileBytes = (off_t)progTotalSamples
+            * args.totalChannelNumber * (off_t)sizeof(short);
+        if(args.isInputFileProvided)
+            prog.beginStage("EXTRACT", progFileBytes);
+
         for(const SpikeEvent &ev : allEvents) {
+            if(args.isInputFileProvided) prog.setPosition((long long)ev.fileOffset);
             const int grp  = ev.grp;
             const int nCG  = channelNb_grp[grp];
             const int wLen = args.spikeLength * nCG;
@@ -1537,6 +1567,7 @@ int main(int argc, char *argv[])
             }
         }
         fclose(seqF);
+        if(args.isInputFileProvided) { prog.endStage(); prog.finish(); }
     }
 
     for(int grp = 0; grp < nbGroups; grp++)
