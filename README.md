@@ -13,8 +13,8 @@ A modernised, Qt6-compatible fork of the Neurosuite electrophysiology toolchain.
 | [ndmanager-plugins](doc/ndmanager-plugins/README.md) | Command-line preprocessing pipeline (format conversion, filtering, PCA, spike detection) |
 | [neuroscope](doc/neuroscope/README.md) | Multi-channel signal visualiser |
 | [klusters](doc/klusters/README.md) | Interactive manual spike-sorting GUI |
-| [klustakwik](doc/klustakwik/README.md) | Automatic spike sorter (Classification EM) |
-| [spikerealign](doc/spikerealign/README.md) | Spike waveform realignment engine (used inside klusters and KlustaKwik Phase 1.5) |
+| [kiloklustakwik](doc/kiloklustakwik/README.md) | Automatic spike sorter (Classification EM) |
+| [spikerealign](doc/spikerealign/README.md) | Spike waveform realignment engine (used inside klusters and KiloKlustaKwik Phase 1.5) |
 
 ---
 
@@ -180,7 +180,7 @@ libklustersshared → ndmanager
                  → klusters (includes spikerealign)
 ndmanager-plugins  (independent)
 neuroscope         (independent)
-klustakwik         (independent)
+kiloklustakwik         (independent)
 ```
 
 ---
@@ -194,7 +194,7 @@ AlphaOmega .mat file
         │
         ▼
 ndm_aom2dat session.yaml     ← converts .mat → .dat + generates session YAML
-        │                       with calibrated per-group KlustaKwik parameters
+        │                       with calibrated per-group KiloKlustaKwik parameters
         │
         ├─ ndm_hipass          → SESSION.fil
         ├─ ndm_lfp             → SESSION.lfp
@@ -258,13 +258,13 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 ### Data acquisition
 
-- **`ndm_aom2dat`** — new pipeline plugin for AlphaOmega recordings. Converts `.mat` (HDF5 v7.3) files directly to the neurosuite `.dat` binary and generates a complete session YAML with calibrated per-group KlustaKwik parameters. `process_aomconvert` streams in configurable chunks; peak RAM is independent of recording length. Supports mixed probe topologies via `topology: "1-16:16,17-32:4"`.
+- **`ndm_aom2dat`** — new pipeline plugin for AlphaOmega recordings. Converts `.mat` (HDF5 v7.3) files directly to the neurosuite `.dat` binary and generates a complete session YAML with calibrated per-group KiloKlustaKwik parameters. `process_aomconvert` streams in configurable chunks; peak RAM is independent of recording length. Supports mixed probe topologies via `topology: "1-16:16,17-32:4"`.
 
 ### Spike sorting
 
-- **Three-tier KlustaKwik parameter system** — `ndm_klustakwik` now resolves every parameter through three priority levels: (1) per-group `spikeDetection.channelGroups[g].klustakwik` block (highest — probe-type-calibrated, written by `ndm_aom2dat`), (2) global `programs[ndm_klustakwik].parameters` block (session-level override), (3) built-in bash defaults. `MergeThresh` is calibrated to χ²(`nCh×3`, 0.9999) per group, `MaxClusters` is scaled by probe type (linear: 40, tetrode: 20, single: 5), and `GlobalMergeIter` / `TimeMergeIter` scale with √(`nSpatialDims`/24).
-- **KlustaKwik chunked CEM** — three-phase temporal chunking for long recordings: Phase 0 global pre-seed (`ChunkPreseedFraction`), Phase 1 per-chunk CEM, Phase 2 overlap-vote cross-chunk merge (`ChunkOverlapMinutes`), Phase 3 global warm-start refinement. All parameters exposed in `ndm_klustakwik` and the session YAML.
-- **KlustaKwik bug fixes** — chunk boundary normalisation (spikes at recording start no longer misassigned), sentinel initialisation (unwritten spikes no longer mapped to cluster 0), `MergeThresh` range warning, `UseFeatures` length-mismatch warning (now defaults to `"all"`), GPU shared-memory overflow fallback for pre-Blackwell hardware.
+- **Three-tier KiloKlustaKwik parameter system** — `ndm_klustakwik` now resolves every parameter through three priority levels: (1) per-group `spikeDetection.channelGroups[g].kiloklustakwik` block (highest — probe-type-calibrated, written by `ndm_aom2dat`), (2) global `programs[ndm_klustakwik].parameters` block (session-level override), (3) built-in bash defaults. `MergeThresh` is calibrated to χ²(`nCh×3`, 0.9999) per group, `MaxClusters` is scaled by probe type (linear: 40, tetrode: 20, single: 5), and `GlobalMergeIter` / `TimeMergeIter` scale with √(`nSpatialDims`/24).
+- **KiloKlustaKwik chunked CEM** — three-phase temporal chunking for long recordings: Phase 0 global pre-seed (`ChunkPreseedFraction`), Phase 1 per-chunk CEM, Phase 2 overlap-vote cross-chunk merge (`ChunkOverlapMinutes`), Phase 3 global warm-start refinement. All parameters exposed in `ndm_klustakwik` and the session YAML.
+- **KiloKlustaKwik bug fixes** — chunk boundary normalisation (spikes at recording start no longer misassigned), sentinel initialisation (unwritten spikes no longer mapped to cluster 0), `MergeThresh` range warning, `UseFeatures` length-mismatch warning (now defaults to `"all"`), GPU shared-memory overflow fallback for pre-Blackwell hardware.
 
 ### LFP and post-sorting pipeline
 
@@ -281,7 +281,7 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 ### GPU acceleration
 
-- KlustaKwik and klusters support CUDA, ROCm/HIP, and SYCL (Intel Arc) for both the CEM E-step and the waveform realignment xcorr kernel. `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
+- KiloKlustaKwik and klusters support CUDA, ROCm/HIP, and SYCL (Intel Arc) for both the CEM E-step and the waveform realignment xcorr kernel. `process_medianfilter`, `process_medianthreshold`, and `process_spikegrouper` support CUDA. See [doc/gpu/README.md](doc/gpu/README.md).
 
 ### Probe library and setup
 
@@ -319,7 +319,7 @@ Per-component documentation is in `doc/`:
 - [doc/ndmanager-plugins/](doc/ndmanager-plugins/README.md)
 - [doc/neuroscope/](doc/neuroscope/README.md)
 - [doc/klusters/](doc/klusters/README.md)
-- [doc/klustakwik/](doc/klustakwik/README.md)
+- [doc/kiloklustakwik/](doc/kiloklustakwik/README.md)
 - [doc/spikerealign/](doc/spikerealign/README.md)
 
 Each component doc directory contains an `install/` subdirectory with platform-specific build instructions.
@@ -332,7 +332,7 @@ Several components use GPU acceleration when the relevant toolkit is present at 
 
 | Component | GPU backends | What is accelerated |
 |---|---|---|
-| `klustakwik` | CUDA / HIP / SYCL | CEM E-step + Phase 1.5 waveform realignment (xcorr) |
+| `kiloklustakwik` | CUDA / HIP / SYCL | CEM E-step + Phase 1.5 waveform realignment (xcorr) |
 | `klusters` | CUDA / HIP / SYCL | Grouping Assistant, interactive spike realignment (xcorr) |
 | `process_medianfilter` | CUDA | High-pass filter (`ndm_hipass`) |
 | `process_medianthreshold` | CUDA | Threshold estimation (`ndm_extractspikes`) |

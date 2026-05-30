@@ -1,7 +1,7 @@
 # ndmanager-plugins feature roadmap
 
 A focused roadmap for `src/ndmanager-plugins/` — the preprocessing pipeline
-that runs between raw acquisition data and klusters / klustakwik input.
+that runs between raw acquisition data and klusters / kiloklustakwik input.
 
 This is a **feature** roadmap (what plugins should do that they don't yet),
 distinct from the project-wide `ROADMAP.md`.  Audit and infrastructure work
@@ -48,7 +48,7 @@ Status indicators match the project ROADMAP convention:
                         │
                         ▼
             ┌───────────────────────────┐
-            │  clustering (KlustaKwik)  │  ndm_klustakwik
+            │  clustering (KiloKlustaKwik)  │  ndm_klustakwik
             └───────────────────────────┘
                         │
                         ▼
@@ -241,7 +241,7 @@ the refactor, or leave-as-is given it works?
 Currently OpenMP-parallel CPU.  PCA on `.spk.N` is the longest single
 step in the typical pipeline.  cuBLAS SGEMM + eigh on the covariance
 matrix would be ~10-50× faster on Gravio's hardware (RTX 5070 Ti).  But:
-adds CUDA dependency to the plugins (currently only KlustaKwik depends
+adds CUDA dependency to the plugins (currently only KiloKlustaKwik depends
 on CUDA), changes deployment story.  Decision needed: is the speedup
 worth the deployment complexity?
 

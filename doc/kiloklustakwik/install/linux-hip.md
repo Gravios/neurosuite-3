@@ -1,4 +1,4 @@
-# KlustaKwik — Linux Installation, AMD ROCm / HIP
+# KiloKlustaKwik — Linux Installation, AMD ROCm / HIP
 
 ## Step 1 — Install ROCm
 
@@ -13,7 +13,7 @@ sudo apt install cmake build-essential
 ## Step 3 — Build
 
 ```bash
-cd /path/to/neurosuite-3/src/klustakwik
+cd /path/to/neurosuite-3/src/kiloklustakwik
 
 cmake -B build \
   -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
@@ -41,6 +41,6 @@ cmake -B build -DUSE_CUDA=OFF -DUSE_SYCL=OFF \
 ## Verify
 
 ```bash
-KlustaKwik --help
-KlustaKwik_cpu --help
+KiloKlustaKwik --help
+KiloKlustaKwik_cpu --help
 ```

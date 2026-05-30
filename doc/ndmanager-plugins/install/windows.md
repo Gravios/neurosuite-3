@@ -94,7 +94,7 @@ cmake -B build\ndmanager-plugins ndmanager-plugins ^
 cmake --build build\ndmanager-plugins
 ```
 
-See [KlustaKwik Windows CUDA](../../klustakwik/install/windows-cuda.md) for CUDA Toolkit installation instructions — the setup is identical.
+See [KiloKlustaKwik Windows CUDA](../../kiloklustakwik/install/windows-cuda.md) for CUDA Toolkit installation instructions — the setup is identical.
 
 ---
 

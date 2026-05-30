@@ -1,9 +1,9 @@
-# KlustaKwik per-probe prior workflow
+# KiloKlustaKwik per-probe prior workflow
 
 The `kk_build_prior.py` / `kk_resolve_prior.py` pair lets you train
-empirical KlustaKwik priors once per probe-type-and-shank, then reuse
+empirical KiloKlustaKwik priors once per probe-type-and-shank, then reuse
 them silently across sessions, animals, and re-extraction passes.
-Priors feed the headline KlustaKwik parameters
+Priors feed the headline KiloKlustaKwik parameters
 (`MinClusters`, `MaxClusters`, `MergeThresh`, `PenaltyMix`) used by
 `ndm_subcluster_unmatched`, with per-session `extraInfos` overrides
 still winning when present.
@@ -123,7 +123,7 @@ Output:   /home/<you>/.ndm/priors/4-octrodes-32552Hz.7.prior.yaml
 
 [...filter & analysis output...]
 
-KlustaKwik will apply (when -PriorFile is set):
+KiloKlustaKwik will apply (when -PriorFile is set):
   MinClusters  <- 42
   MaxClusters  <- 78
   MergeThresh  <- 55.0  (chi2 at median d_eff=21.5)

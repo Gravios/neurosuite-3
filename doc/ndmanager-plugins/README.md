@@ -40,7 +40,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | [Spike detection](commands/spike-detection.md) | `ndm_extractspikes`, `ndm_extractspikes_sdiff`, `ndm_extractspikes_stderiv`, `ndm_spikecleaner`, `ndm_denoiseuniform` |
 | [`ndm_spikegrouper`](commands/ndm_spikegrouper.md) | Automatic spike-group refinement |
 | [PCA feature extraction](commands/pca.md) | `ndm_pca`, `ndm_pca_stderiv` |
-| [`ndm_klustakwik`](commands/ndm_klustakwik.md) | Run KlustaKwik for each spike group |
+| [`ndm_klustakwik`](commands/ndm_klustakwik.md) | Run KiloKlustaKwik for each spike group |
 
 ### Post-sorting commands
 
@@ -78,7 +78,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`.clu.N`](formats/clu.md) | Cluster assignments |
 | [`.col.N`](formats/col.md) | Collision decomposition results |
 | [`.drift`](formats/drift.md) | Probe drift trajectories |
-| [`.chunks.N`](formats/chunks.md) | Adaptive KlustaKwik chunk boundaries |
+| [`.chunks.N`](formats/chunks.md) | Adaptive KiloKlustaKwik chunk boundaries |
 | [`.loc.N`](formats/loc.md) | Per-spike source locations |
 | [`.probe`](formats/probe.md) | Probe configuration |
 
@@ -123,8 +123,8 @@ Within a single session, groups can freely mix pipelines. Every
 downstream tool that reads waveforms or features auto-detects both
 extensions and prefers the D variant when both are present, or picks
 the one the group was sorted with. See
-[`../../src/klustakwik/CHANGES.md`](../../src/klustakwik/CHANGES.md)
-for the fallback logic inside KlustaKwik, and
+[`../../src/kiloklustakwik/CHANGES.md`](../../src/kiloklustakwik/CHANGES.md)
+for the fallback logic inside KiloKlustaKwik, and
 [`../design/reextract-v2.md`](../design/reextract-v2.md) for the
 cross-pipeline re-extract shim.
 

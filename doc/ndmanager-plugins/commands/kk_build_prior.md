@@ -1,4 +1,4 @@
-# `kk_build_prior.py` — train a per-probe empirical KlustaKwik prior
+# `kk_build_prior.py` — train a per-probe empirical KiloKlustaKwik prior
 
 Reads one or more `.curation_log.<group>.jl` files (produced by
 Klusters), filters to curator-accepted clusters by quality / L-ratio /

@@ -47,7 +47,7 @@ cross-pipeline shim.
 ndm_subcluster_unmatched session.yaml
 ```
 
-Runs KlustaKwik on the unmatched bin only, mapping the resulting
+Runs KiloKlustaKwik on the unmatched bin only, mapping the resulting
 cluster IDs back into the host `.clu.N` above the existing max ID.
 **This step automatically picks up empirical priors** when present —
 see [Empirical priors](empirical-priors.md).

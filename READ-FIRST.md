@@ -86,17 +86,17 @@ doc/ndmanager-plugins/kk-prior-workflow.md       # → doc/workflows/empirical-p
 ```
 doc/README.md                                    # workflows section, design index
 doc/klusters/README.md                           # workflow link path update
-doc/klustakwik/README.md                         # workflow link path update
+doc/kiloklustakwik/README.md                         # workflow link path update
 ```
 
 ## What this does NOT change
 
 - `src/<prog>/CHANGES.md` files inside the source tree are untouched.
   These track program-internal changes specific to one binary
-  (KlustaKwik internals, KlustaKwikExp internals) and live in the
+  (e.g. KiloKlustaKwik internals) and live in the
   source tree on purpose.
 - All `doc/<prog>/install/*.md` install guides are untouched.
-- Per-program READMEs (klusters, klustakwik, ndmanager, neuroscope,
+- Per-program READMEs (klusters, kiloklustakwik, ndmanager, neuroscope,
   spikerealign, libklustersshared, gpu) are untouched except for the
   two stale-link fixes mentioned above.
 - No source code is touched. This is documentation-only.

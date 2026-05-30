@@ -1,4 +1,4 @@
-# KlustaKwik — Linux Installation, Intel Arc / SYCL (bare metal)
+# KiloKlustaKwik — Linux Installation, Intel Arc / SYCL (bare metal)
 
 ## Step 1 — Install oneAPI and Intel GPU runtime
 
@@ -23,7 +23,7 @@ sudo apt install cmake build-essential
 CMake detects `icpx` automatically when the oneAPI environment is sourced.
 
 ```bash
-cd /path/to/neurosuite-3/src/klustakwik
+cd /path/to/neurosuite-3/src/kiloklustakwik
 
 cmake -B build \
   -DUSE_CUDA=OFF -DUSE_HIP=OFF \
@@ -35,10 +35,10 @@ sudo cmake --install build
 ## Verify
 
 ```bash
-ONEAPI_DEVICE_SELECTOR=level_zero:gpu KlustaKwik --help
-KlustaKwik_cpu --help
+ONEAPI_DEVICE_SELECTOR=level_zero:gpu KiloKlustaKwik --help
+KiloKlustaKwik_cpu --help
 ```
 
 ## Note on Meteor Lake iGPUs
 
-Integrated Arc GPUs on Meteor Lake (Core Ultra) share memory with the CPU — SYCL USM allocations are zero-copy on this device. KlustaKwik's feature matrices are typically small enough that transfer overhead is negligible, making the iGPU effective for this workload.
+Integrated Arc GPUs on Meteor Lake (Core Ultra) share memory with the CPU — SYCL USM allocations are zero-copy on this device. KiloKlustaKwik's feature matrices are typically small enough that transfer overhead is negligible, making the iGPU effective for this workload.

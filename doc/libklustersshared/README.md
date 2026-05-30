@@ -231,7 +231,7 @@ anatomicalDescription:
 These fields are optional: group entries without `probeId`/`shankIndex` are handled correctly
 by all existing readers (the fields are simply absent).
 
-### `spikeDetection.channelGroups` — geometry and per-group KlustaKwik overrides
+### `spikeDetection.channelGroups` — geometry and per-group KiloKlustaKwik overrides
 
 Each spike-detection group entry may carry three optional extensions beyond the basic
 `channels`/`nSamples`/`peakSampleIndex`/`nFeatures` fields:
@@ -254,7 +254,7 @@ spikeDetection:
         - [22, 40]
         - [0,  60]
         - [22, 60]
-      klustakwik:                         # per-group KlustaKwik overrides (tier 1)
+      klustakwik:                         # per-group KiloKlustaKwik overrides (tier 1)
         MergeThresh: 39.13                # χ²(12, 0.9999) for this 12-dim group
         MaxClusters: 20
         GlobalMergeIter: 50

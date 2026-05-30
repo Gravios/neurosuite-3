@@ -1,4 +1,4 @@
-# KlustaKwik — WSL2 Installation, Intel Arc / SYCL
+# KiloKlustaKwik — WSL2 Installation, Intel Arc / SYCL
 
 Under WSL2 the GPU driver lives on the Windows host. The Linux side only needs the Level-Zero and OpenCL runtime packages — not the Windows GPU driver. The oneAPI compiler (`icpx`) is installed inside WSL exactly as on bare-metal Ubuntu.
 
@@ -22,5 +22,5 @@ Identical to bare-metal Linux — see [linux-sycl.md Step 2–3](linux-sycl.md).
 ## Verify
 
 ```bash
-ONEAPI_DEVICE_SELECTOR=level_zero:gpu KlustaKwik --help
+ONEAPI_DEVICE_SELECTOR=level_zero:gpu KiloKlustaKwik --help
 ```

@@ -1,4 +1,4 @@
-# KlustaKwik — C++17 Modernisation & GPU Analysis
+# KiloKlustaKwik — C++17 Modernisation & GPU Analysis
 
 ## Summary of changes from v1.7
 
@@ -29,7 +29,7 @@
 | `static char HelpString[]` hidden from `param.c` | Made non-static (extern linkage) |
 
 ### No algorithmic changes
-The output of `KlustaKwik test 1 -MinClusters 2` is **bit-identical** to v1.7 with the same random seed.
+The output of `KiloKlustaKwik test 1 -MinClusters 2` is **bit-identical** to v1.7 with the same random seed.
 
 ---
 

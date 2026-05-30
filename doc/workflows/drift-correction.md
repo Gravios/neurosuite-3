@@ -61,14 +61,14 @@ ndm_applydrift session.yaml
 ```
 
 Uses the anchor's drift to compute *adaptive chunk boundaries* for
-every other shank — a `.chunks.N` file per group. KlustaKwik's
+every other shank — a `.chunks.N` file per group. KiloKlustaKwik's
 chunked-CEM pipeline reads `.chunks.N` and uses the suggested
 boundaries instead of fixed time chunks, so each chunk corresponds
 to a stable feature-space regime rather than a fixed wall-clock
 window.
 
 For details on adaptive chunks vs fixed chunks, see
-[`../klustakwik/README.md`](../klustakwik/README.md) and
+[`../kiloklustakwik/README.md`](../kiloklustakwik/README.md) and
 [`ndm_applydrift`](../ndmanager-plugins/commands/ndm_applydrift.md).
 
 ### 5. Re-sort the affected shanks
@@ -77,7 +77,7 @@ For details on adaptive chunks vs fixed chunks, see
 ndm_klustakwik session.yaml
 ```
 
-KlustaKwik picks up the new `.chunks.N` files automatically.
+KiloKlustaKwik picks up the new `.chunks.N` files automatically.
 Clusters that previously appeared smeared across chunk boundaries
 should now be tighter.
 
@@ -99,7 +99,7 @@ need split-or-merge decisions during curation.
   shank needs its own anchor. The toolchain doesn't currently
   automate this case.
 - Drift correction is *post-hoc* — the original `.dat` and `.fil`
-  aren't modified. KlustaKwik gets time-varying chunk boundaries; the
+  aren't modified. KiloKlustaKwik gets time-varying chunk boundaries; the
   signal trace is unchanged. This is intentional, but means
   downstream waveform analyses still see the original (drifted)
   waveforms.

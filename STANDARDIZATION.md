@@ -15,8 +15,7 @@ toolchain.  The repo contains six tightly-coupled subsystems:
 | Subsystem | Path | Role |
 |---|---|---|
 | **klusters** | `src/klusters/` | interactive spike-sorting GUI (Qt6, ~30K LOC) |
-| **klustakwik** | `src/klustakwik/` | GPU-accelerated CEM clustering engine (CUDA primary, HIP/SYCL stubs) |
-| **klustakwikExp** | `src/klustakwikExp/` | experimental fork of klustakwik for in-flight algorithm work |
+| **kiloklustakwik** | `src/kiloklustakwik/` | GPU-accelerated CEM clustering engine, formerly the experimental KlustaKwikExp fork (CUDA primary, HIP/SYCL stubs) |
 | **ndmanager** | `src/ndmanager/` | session management GUI |
 | **ndmanager-plugins** | `src/ndmanager-plugins/` | preprocessing plugins (CLI tools + bash wrappers) |
 | **neuroscope** | `src/neuroscope/` | trace viewer GUI |
@@ -138,7 +137,7 @@ Don't off-by-one.
 | `.fetD.N` | int32 (nCols) | int32 features, `(nChan-1)*nComp+1` cols (last linearly-dependent channel dropped before PCA in `process_pca_stderiv`) |
 | `.col.N` | 32B + 32B params | template table + record table |
 
-### 3.4 KlustaKwik gotchas
+### 3.4 KiloKlustaKwik gotchas
 
 - `MergeThresh` must be calibrated to `chi²(nSpatialDims, 0.99)` — the
   default `200` is catastrophically large for typical feature dimensionality.

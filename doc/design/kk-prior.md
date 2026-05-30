@@ -1,8 +1,8 @@
-# CHANGES — per-probe empirical KlustaKwik priors
+# CHANGES — per-probe empirical KiloKlustaKwik priors
 
 Adds the `kk_build_prior.py` / `kk_resolve_prior.py` pair and wires
 them into `ndm_subcluster_unmatched`. Lets you train empirical
-KlustaKwik defaults once per probe-type-and-shank from accumulated
+KiloKlustaKwik defaults once per probe-type-and-shank from accumulated
 Klusters curation logs, then reuse them silently across sessions,
 animals, and re-extraction passes.
 
@@ -184,6 +184,6 @@ doc/workflows/empirical-priors.md          (new — workflow guide)
 doc/ndmanager-plugins/README.md                     (updated)
 doc/klusters/README.md                              (updated — DipSplit,
                                                      curation logging)
-doc/klustakwik/README.md                            (updated)
+doc/kiloklustakwik/README.md                            (updated)
 doc/README.md                                       (updated)
 ```

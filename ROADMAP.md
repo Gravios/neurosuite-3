@@ -52,7 +52,7 @@ The `setFailed()` API exists on `ProgressBar` but `process_pca.cpp`'s
 `exit(1)` paths don't call it.  Means red ✗ on direct CLI failure.
 Five lines of code.  Estimate: trivial.
 
-**Complete `pickInputPath` deployment in KlustaKwik.**
+**Complete `pickInputPath` deployment in KiloKlustaKwik.**
 `.fet`/`.fetD` dual-extension lookup helper is partial.  Pending sites:
 `.spk` (×9), `.pca` (×1), `.clu` (×2) read locations.  Mechanical sweep,
 ~30 minutes.  Estimate: 1 session.
@@ -63,20 +63,20 @@ infrastructure (no migrators yet — just the chain).  Cheaper to do now, while
 schema is small, than after a breakage.  Estimate: 1 session for
 infrastructure; migrators added as schema evolves.
 
-**KlustaKwik experimental sweeps.**
+**KiloKlustaKwik experimental sweeps.**
 Run with `-TimeMergeIter 100 -ChunkPreseedFraction 0.08`.  Scale vote-match
 floor to `max(3, overlapSpikes/500)` in overlap merge.  Re-run
 `eval_tier1.py` sweeps with corrected invocation (prior runs produced NaN
 metrics).  Establishes performance baseline for ongoing algorithm work.
 Estimate: 1-2 sessions including analysis writeup.
 
-**KlustaKwik 5-phase audit.**
+**KiloKlustaKwik 5-phase audit.**
 Run the same audit pipeline that hit klusters and libklustersshared over
-`src/klustakwik/`.  Expected high yield: legacy code with known issues
+`src/kiloklustakwik/`.  Expected high yield: legacy code with known issues
 (`MergeThresh` calibration, `UseFeatures` default string, `probabilities`
 init).  Estimate: 2-3 sessions.
 
-**Refactor duplicated `_RunChunkedCEMFromPoints` body in KlustaKwik.**
+**Refactor duplicated `_RunChunkedCEMFromPoints` body in KiloKlustaKwik.**
 From memory entries, this is duplicated.  Standalone refactor; doesn't
 require the full audit.  Estimate: half a session.
 
@@ -89,15 +89,11 @@ Half-merged probe migration polluting dead-code analysis (`getShankIndex`,
 or revert the partial state.  Decision needed: does Gravio plan to land it
 soon, or table it longer?
 
-**`klustakwikExp` → `klustakwik` merge strategy.**
-Two parallel KlustaKwik trees.  Exp is where active algorithm work happens
-(`DipSplitAttempt`, `TimeShiftAlignPhase`, `GlobalRealignPass`).  Cross-tree
-declaration pollution causes false-positive dead code.  Options:
-- Promote stable Exp work to klustakwik on a regular cadence
-- Make Exp the trunk; retire klustakwik proper
-- Maintain both, accept the noise
-
-Decision needed.
+**`klustakwikExp` → `klustakwik` merge — DONE.**
+Resolved by making the Exp tree the trunk: it was renamed to KiloKlustaKwik
+(`src/kiloklustakwik/`) and the old canonical `klustakwik` was retired. With a
+single engine tree the cross-tree declaration pollution that caused
+false-positive dead code is also gone.
 
 **Resolve `Validator::fixup` analyzer false positives.**
 Build base-class table from `class X : public Y` declarations; exempt
@@ -146,7 +142,7 @@ memory entries (duplication risk: STANDARDIZATION says one thing, memory
 says another, they drift).  Process item rather than code item.
 
 **neuroscope audit.**
-Has not been audited at all.  Likely lower fruit than klustakwik (less
+Has not been audited at all.  Likely lower fruit than kiloklustakwik (less
 algorithmic complexity, more straightforward Qt code) but unknown until
 scanned.  Estimate: 1-2 sessions if proceeded with.
 
@@ -199,7 +195,7 @@ Shipped: `klusters-dipsplit-postcommit-v3.tar.gz` (8 files).
 
 13 files +1062/-591 net.  Established the audit pipeline (5 phases +
 dead-code triage) that's now reused for libklustersshared and queued for
-KlustaKwik.
+KiloKlustaKwik.
 
 ---
 
@@ -244,7 +240,7 @@ These don't fit the time-horizon structure but are worth tracking.
 - `doc/formats/` doesn't exist yet (planned, see Later)
 - `CHANGES.md` not updated since last few features
 - Klusters internal architecture doc is good (`doc/klusters/CODING-STYLE-AUDIT.md`),
-  but no equivalents for KlustaKwik, ndmanager, neuroscope
+  but no equivalents for KiloKlustaKwik, ndmanager, neuroscope
 - `STANDARDIZATION.md` exists but not yet at repo root (queued, see Next)
 
 ### Test debt
@@ -260,7 +256,7 @@ These don't fit the time-horizon structure but are worth tracking.
 - Probe migration partially landed, polluting analyzer signal (decision
   needed, see Considered)
 
-### Algorithmic debt (KlustaKwik)
+### Algorithmic debt (KiloKlustaKwik)
 
 - `MergeThresh` default uncalibrated for typical feature dimensionality
 - `UseFeatures` default string causing session duration = 0
@@ -268,7 +264,7 @@ These don't fit the time-horizon structure but are worth tracking.
 - `_RunChunkedCEMFromPoints` body duplicated
 - Multiple sweep regimes not yet baselined
 
-All listed under Soon as "KlustaKwik 5-phase audit" + "experimental sweeps."
+All listed under Soon as "KiloKlustaKwik 5-phase audit" + "experimental sweeps."
 
 ---
 

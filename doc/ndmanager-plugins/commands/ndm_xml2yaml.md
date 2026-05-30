@@ -8,7 +8,7 @@ ndm_xml2yaml session.xml output.yaml # explicit output path
 After conversion, populate the `probes:` section and run
 `ndm_setupgroups` to rebuild the channel groups in the YAML format.
 The rest of the pipeline works from YAML only — there is no XML-reading
-path in the current extraction, PCA, or KlustaKwik stages.
+path in the current extraction, PCA, or KiloKlustaKwik stages.
 
 
 ---

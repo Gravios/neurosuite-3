@@ -19,7 +19,7 @@ Advanced → AMD Overclocking → Precision Boost Overdrive → Enabled
 
 The 9800X3D already boosts to 5271 MHz on lightly threaded code.  PBO
 raises the power and thermal budget for the all-core sustained workloads
-that dominate KlustaKwik OpenMP loops.
+that dominate KiloKlustaKwik OpenMP loops.
 
 ### 1.2  CPPC2 (low-latency frequency ramp)
 
@@ -159,7 +159,7 @@ The module applies the following to all Release/RelWithDebInfo builds:
 | `-funroll-loops` | Loop unrolling; pairs with AVX-512 for inner CEM / covariance passes |
 | IPO / LTO | Cross-TU inlining for Qt GUI components and shared-library boundaries |
 | `nvcc --threads 0` | Parallel device-code compilation — cuts multi-SM CUDA build time |
-| `-Xptxas -dlcm=ca` | L2-cached global loads; beneficial for KlustaKwik covariance kernels |
+| `-Xptxas -dlcm=ca` | L2-cached global loads; beneficial for KiloKlustaKwik covariance kernels |
 
 Disable for cross-compilation targets:
 
@@ -237,8 +237,8 @@ cmake -B build 2>&1 | grep -i "cuda arch"
 ### 6.2  Shared memory budget — 128 KB on Blackwell
 
 The RTX 5070 Ti (GB203) provides **128 KB** shared memory per SM, double
-Ampere/Ada.  The KlustaKwik MStep global-atomics fallback is therefore
-never triggered on this GPU.  Verify via KlustaKwik stderr:
+Ampere/Ada.  The KiloKlustaKwik MStep global-atomics fallback is therefore
+never triggered on this GPU.  Verify via KiloKlustaKwik stderr:
 `MStep: shared-memory kernel` (not `global-atomics fallback`).
 
 ### 6.3  Driver and toolkit requirements

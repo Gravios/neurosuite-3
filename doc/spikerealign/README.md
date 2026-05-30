@@ -2,7 +2,7 @@
 
 SpikeRealign is the waveform realignment engine used by the klusters interactive GUI. It aligns spike waveforms to the cluster mean template via normalised circular cross-correlation, correcting for jitter in threshold-crossing detection.
 
-Realignment is available interactively from within klusters (cluster-by-cluster from the GUI via **Realign → Realign selected cluster**) and is also invoked automatically by KlustaKwik as Phase 1.5 of chunked CEM sorting.
+Realignment is available interactively from within klusters (cluster-by-cluster from the GUI via **Realign → Realign selected cluster**) and is also invoked automatically by KiloKlustaKwik as Phase 1.5 of chunked CEM sorting.
 
 SpikeRealign is **not** a standalone binary. It is a C++ class (`SpikeRealign`) called by `RealignWorker` inside the klusters process.
 
@@ -53,9 +53,9 @@ The maximum shift search radius and minimum score threshold are configurable in 
 
 ---
 
-## KlustaKwik Phase 1.5
+## KiloKlustaKwik Phase 1.5
 
-KlustaKwik's chunked CEM mode also performs waveform realignment (Phase 1.5) directly on the `.spk` file after per-chunk sorting, before the global merge step. It uses the same `XcorrDispatch` kernel but operates on all clusters in all chunks in a single batch pass. See `src/klustakwik/CHANGES.md` for details.
+KiloKlustaKwik's chunked CEM mode also performs waveform realignment (Phase 1.5) directly on the `.spk` file after per-chunk sorting, before the global merge step. It uses the same `XcorrDispatch` kernel but operates on all clusters in all chunks in a single batch pass. See `src/kiloklustakwik/CHANGES.md` for details.
 
 ---
 

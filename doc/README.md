@@ -84,7 +84,7 @@ scatter-plot, waveform, autocorrelogram, template-similarity-matrix,
 and grouping-assistant views for cluster inspection, splitting, merging,
 and reassignment.
 
-Integrates with KlustaKwik for in-app automatic reclustering, with
+Integrates with KiloKlustaKwik for in-app automatic reclustering, with
 automatic feature selection (variance-ranked, noise-floor trimmed,
 multi-cluster aware). Interactive spike realignment via normalised
 cross-correlation and per-sample timestamp nudging are also available
@@ -97,7 +97,7 @@ Grouping Assistant matrix computation and realignment cross-correlation.
 
 ---
 
-### [klustakwik](klustakwik/README.md)
+### [klustakwik](kiloklustakwik/README.md)
 
 Automatic spike sorter using Classification EM (CEM). Reads a `.fet.N`
 or `.fetD.N` feature file and writes a `.clu.N` cluster assignment file.
@@ -123,8 +123,8 @@ runs / items), yaml-cpp. CUDA / ROCm / oneAPI optional.
 Standalone batch waveform realignment tool. Reads binary
 `.spk/.res/.clu/.fet` files, aligns each spike to the cluster mean
 template via normalised cross-correlation, and writes corrected data
-back in-place. Shares the GPU backend selection with KlustaKwik. The
-same algorithm runs as Phase 1.5 of chunked KlustaKwik sorting and as
+back in-place. Shares the GPU backend selection with KiloKlustaKwik. The
+same algorithm runs as Phase 1.5 of chunked KiloKlustaKwik sorting and as
 the interactive realignment inside klusters.
 
 **Depends on:** C++20 compiler, CMake. OpenMP, CUDA/ROCm/oneAPI optional.
@@ -146,15 +146,15 @@ is encoded in the filename extension of every downstream artefact:
 are pipeline-neutral.
 
 Within a single session, groups can mix pipelines. Every downstream
-tool (klusters, KlustaKwik, shadowcluster, nudge, realign) auto-detects
+tool (klusters, KiloKlustaKwik, shadowcluster, nudge, realign) auto-detects
 the variant per group and applies the correct transforms. See the
-ndmanager-plugins and KlustaKwik READMEs for details.
+ndmanager-plugins and KiloKlustaKwik READMEs for details.
 
 ---
 
 ## GPU Acceleration
 
-GPU acceleration is available for klustakwik, spikerealign, klusters
+GPU acceleration is available for kiloklustakwik, spikerealign, klusters
 (Grouping Assistant and realignment), and several ndmanager-plugins
 (`process_medianfilter`, `process_medianthreshold`). All GPU backends
 are auto-detected at build time; a CPU/OpenMP fallback is always
@@ -180,7 +180,7 @@ libklustersshared → ndmanager
                  → klusters
 ndmanager-plugins  (independent)
 neuroscope         (independent — does not use libklustersshared)
-klustakwik         (independent)
+kiloklustakwik         (independent)
 spikerealign       (independent)
 ```
 
@@ -206,7 +206,7 @@ session.dat → .fil → .res.N + .spk.N (or .spkD.N)
                     .fet.N (or .fetD.N)
         │
         ▼
-KlustaKwik session N         ← automatic cluster assignment
+KiloKlustaKwik session N         ← automatic cluster assignment
         │
         ▼
 session.clu.N
@@ -283,7 +283,7 @@ doc/
 │   ├── commands/<command>.md       ← per-command reference
 │   └── formats/<format>.md         ← binary/YAML format reference
 ├── klusters/README.md
-├── klustakwik/README.md
+├── kiloklustakwik/README.md
 ├── ndmanager/README.md
 ├── neuroscope/README.md
 ├── spikerealign/README.md
@@ -302,8 +302,8 @@ doc/
 - [`design/`](design/README.md) — durable design references.
   Indexed in the changelog by date; indexed by topic in
   [`design/README.md`](design/README.md).
-- [`../src/klustakwik/CHANGES.md`](../src/klustakwik/CHANGES.md) —
-  KlustaKwik-internal changes (v1.7 → neurosuite-3 diff). Lives in
+- [`../src/kiloklustakwik/CHANGES-inherited-from-canonical.md`](../src/kiloklustakwik/CHANGES-inherited-from-canonical.md) —
+  inherited canonical-engine history (v1.7 → neurosuite-3 diff). Lives in
   the source tree because it tracks code-internal changes.
-- [`../src/klustakwikExp/CHANGES.md`](../src/klustakwikExp/CHANGES.md) —
-  KlustaKwikExp-internal changes (DipSplit, time-shift merging).
+- [`../src/kiloklustakwik/CHANGES.md`](../src/kiloklustakwik/CHANGES.md) —
+  KiloKlustaKwik-internal changes (DipSplit, time-shift merging).

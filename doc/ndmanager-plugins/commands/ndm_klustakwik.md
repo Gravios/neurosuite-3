@@ -1,4 +1,4 @@
-# `ndm_klustakwik` — run KlustaKwik for each spike group
+# `ndm_klustakwik` — run KiloKlustaKwik for each spike group
 
 ## Synopsis
 
@@ -15,11 +15,11 @@ sequentially.
 
 ## Description
 
-Runs KlustaKwik sequentially for each `spikeDetection` group.
-KlustaKwik is internally multi-threaded (OpenMP across chunks and
+Runs KiloKlustaKwik sequentially for each `spikeDetection` group.
+KiloKlustaKwik is internally multi-threaded (OpenMP across chunks and
 runs); groups run sequentially to avoid CPU contention. Accepts
 either `.fet.N` or `.fetD.N` per group — the choice is made inside
-KlustaKwik at `LoadData` via `pickInputPath`, and the picked variant
+KiloKlustaKwik at `LoadData` via `pickInputPath`, and the picked variant
 is propagated through every subsequent session-file open (Phase 1.5
 checkpoint, template matching, realignment), so stderiv-sorted and
 raw-sorted groups can coexist in a single session without
@@ -27,7 +27,7 @@ cross-contamination.
 
 ## Parameter resolution
 
-Every KlustaKwik parameter is resolved in priority order:
+Every KiloKlustaKwik parameter is resolved in priority order:
 
 1. `spikeDetection.channelGroups[g].klustakwik.<param>` — per-group
    calibrated values (highest priority). `ndm_aom2dat` writes
@@ -80,7 +80,7 @@ Tier 2 — same for all groups:
 ```
 
 For full parameter semantics and the chunked-CEM phase diagram, see
-[`../../klustakwik/README.md`](../../klustakwik/README.md).
+[`../../kiloklustakwik/README.md`](../../kiloklustakwik/README.md).
 
 ## Examples
 
@@ -91,8 +91,8 @@ ndm_klustakwik session.yaml 3    # single group
 
 ## See also
 
-- [`../../klustakwik/README.md`](../../klustakwik/README.md) — full
-  KlustaKwik program reference (CEM phases, GPU dispatch, parameters)
+- [`../../kiloklustakwik/README.md`](../../kiloklustakwik/README.md) — full
+  KiloKlustaKwik program reference (CEM phases, GPU dispatch, parameters)
 - [`ndm_subcluster_unmatched`](ndm_subcluster_unmatched.md) — uses
   the same parameter resolution for re-clustering the unmatched bin
 - [`kk_build_prior`](kk_build_prior.md) — empirical priors that

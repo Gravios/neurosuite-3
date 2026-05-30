@@ -81,7 +81,7 @@ units.
 klusters session.fet.1
 ```
 
-Most curated clusters re-emerge with similar IDs (KlustaKwik tends
+Most curated clusters re-emerge with similar IDs (KiloKlustaKwik tends
 to produce the same partition when fed the same data). Cluster-info
 annotations from the previous round are preserved in the YAML, so
 you only have to re-annotate clusters that genuinely changed.

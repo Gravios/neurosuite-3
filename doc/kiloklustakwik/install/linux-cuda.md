@@ -1,4 +1,4 @@
-# KlustaKwik — Linux Installation, NVIDIA CUDA
+# KiloKlustaKwik — Linux Installation, NVIDIA CUDA
 
 ## Step 1 — Install CUDA Toolkit
 
@@ -12,10 +12,10 @@ sudo apt install cmake build-essential libgomp1
 
 ## Step 3 — Build
 
-CMake auto-detects `nvcc`. `KlustaKwik_cpu` is always built alongside the GPU binary.
+CMake auto-detects `nvcc`. `KiloKlustaKwik_cpu` is always built alongside the GPU binary.
 
 ```bash
-cd /path/to/neurosuite-3/src/klustakwik
+cd /path/to/neurosuite-3/src/kiloklustakwik
 
 cmake -B build \
   -DUSE_HIP=OFF -DUSE_SYCL=OFF \
@@ -37,6 +37,6 @@ Common targets: `86` = Ampere (RTX 30xx), `89` = Ada Lovelace (RTX 40xx), `120` 
 ## Verify
 
 ```bash
-KlustaKwik --help       # GPU binary
-KlustaKwik_cpu --help   # CPU fallback
+KiloKlustaKwik --help       # GPU binary
+KiloKlustaKwik_cpu --help   # CPU fallback
 ```

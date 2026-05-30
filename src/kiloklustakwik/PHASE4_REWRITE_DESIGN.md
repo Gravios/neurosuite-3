@@ -178,7 +178,7 @@ These are tagged for explicit decision before each module is implemented:
   per-cluster waveform estimates; subsequent refits happen via
   `adapt_model::Fit`.
 - Phase-5 (`MergeChunkModels`) and Phase-6 (warm-start EM) are unchanged.
-- All new modules live under `src/klustakwikExp/` alongside `dipsplit.*`.
+- All new modules live under `src/kiloklustakwik/` alongside `dipsplit.*`.
 - Existing `libklustersshared/xcorr/realign_xcorr_omp.cpp` is kept and
   `xcorr_match` builds on it (calls into it for the raw xcorr inner
   loop, adds parabolic refinement and amplitude-scaled scoring around it).
