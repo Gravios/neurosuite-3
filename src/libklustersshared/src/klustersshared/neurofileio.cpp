@@ -1,0 +1,165 @@
+/***************************************************************************
+ * neurofileio.cpp — see neurofileio.h
+ ***************************************************************************/
+#include "neurofileio.h"
+
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+
+namespace neurofileio {
+
+// ── .clu.N ────────────────────────────────────────────────────────────────
+CluFile readClu(const std::string& path)
+{
+    CluFile out;
+    std::ifstream in(path);
+    if (!in) return out;
+
+    std::string line;
+    if (!std::getline(in, line)) return out;       // header (cluster count)
+    {
+        std::istringstream hs(line);
+        if (!(hs >> out.nClusters)) return out;
+    }
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::istringstream ls(line);
+        int id;
+        if (ls >> id) out.ids.push_back(id);
+    }
+    out.ok = true;
+    return out;
+}
+
+bool writeClu(const std::string& path, int nClusters,
+              const std::vector<int>& ids)
+{
+    std::ofstream os(path);
+    if (!os) return false;
+    os << nClusters << '\n';
+    for (int id : ids) os << id << '\n';
+    return static_cast<bool>(os);
+}
+
+// ── .res.N ────────────────────────────────────────────────────────────────
+std::vector<int64_t> readRes(const std::string& path, bool* ok)
+{
+    std::vector<int64_t> out;
+    std::ifstream in(path);
+    if (!in) { if (ok) *ok = false; return out; }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::istringstream ls(line);
+        int64_t t;
+        if (ls >> t) out.push_back(t);
+    }
+    if (ok) *ok = true;
+    return out;
+}
+
+bool writeRes(const std::string& path, const std::vector<int64_t>& times)
+{
+    std::ofstream os(path);
+    if (!os) return false;
+    for (int64_t t : times) os << t << '\n';
+    return static_cast<bool>(os);
+}
+
+// ── .fet.N ────────────────────────────────────────────────────────────────
+FetFile readFet(const std::string& path)
+{
+    FetFile out;
+    std::ifstream in(path);
+    if (!in) return out;
+
+    std::string line;
+    if (!std::getline(in, line)) return out;       // header (feature count)
+    {
+        std::istringstream hs(line);
+        if (!(hs >> out.nFeatures)) return out;
+    }
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::istringstream ls(line);
+        std::vector<int> row;
+        row.reserve(static_cast<size_t>(out.nFeatures));
+        int v;
+        while (ls >> v) row.push_back(v);
+        if (!row.empty()) out.rows.push_back(std::move(row));
+    }
+    out.ok = true;
+    return out;
+}
+
+// ── .evt ──────────────────────────────────────────────────────────────────
+std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)
+{
+    std::vector<EvtEntry> out;
+    std::ifstream in(path);
+    if (!in) { if (ok) *ok = false; return out; }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::istringstream ls(line);
+        EvtEntry e;
+        if (!(ls >> e.timeMs)) continue;           // skip malformed lines
+        // The label is the remainder of the line after the time token.
+        std::string rest;
+        std::getline(ls, rest);
+        // trim a single leading space/tab left by the time token.
+        size_t b = rest.find_first_not_of(" \t");
+        e.label = (b == std::string::npos) ? std::string() : rest.substr(b);
+        out.push_back(std::move(e));
+    }
+    if (ok) *ok = true;
+    return out;
+}
+
+bool writeEvt(const std::string& path, const std::vector<EvtEntry>& events)
+{
+    std::ofstream os(path);
+    if (!os) return false;
+    for (const auto& e : events)
+        os << e.timeMs << '\t' << e.label << '\n';
+    return static_cast<bool>(os);
+}
+
+// ── .dat / .lfp ─────────────────────────────────────────────────────────────
+int64_t datSampleCount(const std::string& path, int nbChannels)
+{
+    if (nbChannels <= 0) return -1;
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) return -1;
+    const std::streamoff bytes = in.tellg();
+    if (bytes < 0) return -1;
+    return static_cast<int64_t>(bytes)
+         / (static_cast<int64_t>(nbChannels) * 2);
+}
+
+int64_t readDatWindow(const std::string& path, int nbChannels,
+                      int64_t startSample, int64_t nSamples, int16_t* out)
+{
+    if (nbChannels <= 0 || nSamples < 0 || startSample < 0 || !out) return -1;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return -1;
+
+    const std::streamoff byteOff =
+        static_cast<std::streamoff>(startSample)
+        * static_cast<std::streamoff>(nbChannels) * 2;
+    in.seekg(byteOff, std::ios::beg);
+    if (!in) return 0;                              // seek past EOF -> nothing
+
+    const std::streamsize want =
+        static_cast<std::streamsize>(nSamples)
+        * static_cast<std::streamsize>(nbChannels)
+        * static_cast<std::streamsize>(sizeof(int16_t));
+    in.read(reinterpret_cast<char*>(out), want);
+    const std::streamsize got = in.gcount();
+    return static_cast<int64_t>(got) / (static_cast<int64_t>(nbChannels) * 2);
+}
+
+}  // namespace neurofileio
