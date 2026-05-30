@@ -1,6 +1,6 @@
 # klustakwik — Automatic Spike Sorter
 
-KlustaKwik performs automatic spike sorting via Classification EM (CEM). It reads a `.fet` feature file produced by `ndm_pca` and writes a `.clu` cluster assignment file. GPU acceleration is available for the E-step distance computations via CUDA (NVIDIA), HIP (AMD ROCm), or SYCL (Intel Arc/oneAPI).
+KiloKlustaKwik performs automatic spike sorting via Classification EM (CEM). It reads a `.fet` feature file produced by `ndm_pca` and writes a `.clu` cluster assignment file. GPU acceleration is available for the E-step distance computations via CUDA (NVIDIA), HIP (AMD ROCm), or SYCL (Intel Arc/oneAPI).
 
 ---
 
@@ -15,14 +15,14 @@ KlustaKwik performs automatic spike sorting via Classification EM (CEM). It read
 | ROCm / HIP SDK ≥ 5.0 | AMD GPU acceleration | Optional |
 | Intel oneAPI Base Toolkit ≥ 2023.1 | Intel Arc/Xe GPU acceleration | Optional |
 
-When none of the GPU backend flags are explicitly set, CMake auto-detects in priority order CUDA > HIP > SYCL. Every GPU build also produces `KlustaKwik_cpu` as a CPU-only fallback binary.
+When none of the GPU backend flags are explicitly set, CMake auto-detects in priority order CUDA > HIP > SYCL. Every GPU build also produces `KiloKlustaKwik_cpu` as a CPU-only fallback binary.
 
 ---
 
 ## Usage
 
 ```
-KlustaKwik FileBase ElecNo [options]
+KiloKlustaKwik FileBase ElecNo [options]
 ```
 
 `FileBase` and `ElecNo` together identify the input file `FileBase.fet.ElecNo`.
@@ -31,17 +31,17 @@ KlustaKwik FileBase ElecNo [options]
 
 ```bash
 # Standard two-phase farthest-point mode
-KlustaKwik session 1 -MinClusters 2 -MaxClusters 12
+KiloKlustaKwik session 1 -MinClusters 2 -MaxClusters 12
 
 # Three-phase temporal chunking for long recordings with electrode drift
-KlustaKwik session 1 -MinClusters 2 -MaxClusters 12 \
+KiloKlustaKwik session 1 -MinClusters 2 -MaxClusters 12 \
     -ChunkMinutes 5 -SamplingRate 32572
 
 # Resume from an existing sort
-KlustaKwik session 1 -StartCluFile session.clu.1
+KiloKlustaKwik session 1 -StartCluFile session.clu.1
 
 # 80-minute silicon probe, chunked mode, all features, suppress intermediate saves
-KlustaKwik jg05-20120316 7 \
+KiloKlustaKwik jg05-20120316 7 \
     -MinClusters 2 -MaxClusters 20 \
     -UseFeatures 1111111111111111111111111 \
     -ChunkMinutes 5 -SamplingRate 32572 \
@@ -83,7 +83,7 @@ KlustaKwik jg05-20120316 7 \
 
 ### Two-phase CEM (default when `ChunkMinutes` is not set)
 
-KlustaKwik uses a two-phase algorithm by default:
+KiloKlustaKwik uses a two-phase algorithm by default:
 
 - **Phase 1** — spatial-only EM using all feature dimensions except the last (time). Centres are seeded with the farthest-point heuristic (`InitCentresFarthestPoint`), which gives better initial separation than random assignment.
 - **Phase 2** — short merge pass (`TimeMergeIter` iterations) that reintroduces the time dimension. This allows temporally drifting clusters to be identified without allowing time to dominate the spatial clustering phase.
@@ -134,7 +134,7 @@ The inner loop runs M-step → E-step → C-step → `ConsiderDeletion` until co
 
 ### GPU dispatch
 
-KlustaKwik's computationally intensive steps (E-step, M-step, C-step, `ConsiderDeletion`) are GPU-parallelisable. The `KK.h` dispatch layer maps generic `gpu_*` function calls to the active backend at compile time:
+KiloKlustaKwik's computationally intensive steps (E-step, M-step, C-step, `ConsiderDeletion`) are GPU-parallelisable. The `KK.h` dispatch layer maps generic `gpu_*` function calls to the active backend at compile time:
 
 | Backend | Compile flag | Priority |
 |---|---|---|

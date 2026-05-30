@@ -146,7 +146,7 @@ PER_SESSION_PLUGINS=(
 
 These match the plugins the legacy `do_sessions` block invoked.
 Everything else (concatenation, hipass, spike detection, PCA,
-KlustaKwik, post-sort, LFP, drift estimation, decompose collisions,
+KiloKlustaKwik, post-sort, LFP, drift estimation, decompose collisions,
 strip-dat, clean) is per-directory.
 
 The classification is bash-internal because:

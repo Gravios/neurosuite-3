@@ -1,10 +1,10 @@
-# KlustaKwik — macOS Installation
+# KiloKlustaKwik — macOS Installation
 
 ## GPU acceleration on macOS
 
 NVIDIA dropped macOS support for CUDA after CUDA 10.2 (2019). AMD ROCm/HIP has no macOS support. Intel oneAPI SYCL is available on macOS in limited form but does not support GPU dispatch on Apple hardware. **macOS builds are CPU / OpenMP only.**
 
-For GPU-accelerated KlustaKwik, use a Linux machine or WSL2 on Windows.
+For GPU-accelerated KiloKlustaKwik, use a Linux machine or WSL2 on Windows.
 
 ## Package manager
 
@@ -25,7 +25,7 @@ brew install cmake ninja libomp
 ## Build
 
 ```bash
-cd /path/to/neurosuite-3/src/klustakwik
+cd /path/to/neurosuite-3/src/kiloklustakwik
 
 cmake -B build \
   -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
@@ -53,8 +53,8 @@ sudo cmake --install build
 ## Verify
 
 ```bash
-KlustaKwik --help
-ldd KlustaKwik 2>/dev/null || otool -L $(which KlustaKwik) | grep -i omp
+KiloKlustaKwik --help
+ldd KiloKlustaKwik 2>/dev/null || otool -L $(which KiloKlustaKwik) | grep -i omp
 ```
 
 The `otool` output should show a reference to `libomp.dylib`.
@@ -71,5 +71,5 @@ export OMP_NUM_THREADS=$(sysctl -n hw.logicalcpu)
 To run on a subset of cores:
 
 ```bash
-OMP_NUM_THREADS=8 KlustaKwik session 1 -ChunkMinutes 5 -SamplingRate 32552 ...
+OMP_NUM_THREADS=8 KiloKlustaKwik session 1 -ChunkMinutes 5 -SamplingRate 32552 ...
 ```

@@ -1,7 +1,7 @@
-# `.chunks.N` — adaptive KlustaKwik chunk boundaries
+# `.chunks.N` — adaptive KiloKlustaKwik chunk boundaries
 
 Written by `ndm_applydrift`. One chunk per line:
-`start_sample end_sample`. KlustaKwik reads this file (when the
+`start_sample end_sample`. KiloKlustaKwik reads this file (when the
 `-ChunkBoundaries` flag is passed) in place of computing uniform chunks
 from `ChunkMinutes`.
 

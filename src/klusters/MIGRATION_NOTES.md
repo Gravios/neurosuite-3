@@ -70,7 +70,7 @@ cmake config file to be on `CMAKE_PREFIX_PATH`.
 ### Preferences tab refactor (patch 0067, 2026-05-29)
 
 The single General preferences tab grew into a kitchen-sink of 8 group
-boxes covering display settings, crash recovery, undo, KlustaKwik
+boxes covering display settings, crash recovery, undo, KiloKlustaKwik
 reclustering, realignment, DipSplit, KNN-split, and template-matrix
 display.  Split into five focused tabs:
 
@@ -78,7 +78,7 @@ display.  Split into five focused tabs:
 |---|---|
 | Display | background color, marker size, line width, autoscale margin, white-on-printing, auto-show-matrices, template-matrix display thresholds |
 | Session | crash recovery, undo |
-| Reclustering | KlustaKwik executable + args, auto-select features, auto-select N features, mean-subtracted subdim |
+| Reclustering | KiloKlustaKwik executable + args, auto-select features, auto-select N features, mean-subtracted subdim |
 | Refinement | realign (threshold/iters/maxshift), DipSplit (minsize/bloat/valley), KNN-split (K/threshold/minNew/minRef) |
 | Auto-Merge | (populated in patch 0068) |
 

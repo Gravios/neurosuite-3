@@ -1,4 +1,4 @@
-# KlustaKwik — Windows Installation, AMD HIP
+# KiloKlustaKwik — Windows Installation, AMD HIP
 
 AMD ships a standalone **HIP SDK** for Windows separate from the full Linux ROCm stack. It provides `hipcc`, the HIP headers, and runtime DLLs without requiring any Linux tooling.
 
@@ -30,7 +30,7 @@ hipconfig --full
 CMake needs the HIP SDK's `hip-lang-config.cmake` via `CMAKE_PREFIX_PATH`:
 
 ```bat
-cd path\to\neurosuite-3\src\klustakwik
+cd path\to\neurosuite-3\src\kiloklustakwik
 rmdir /s /q build
 mkdir build && cd build
 cmake .. -G "Ninja" ^
@@ -62,6 +62,6 @@ cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_SYCL=OFF ^
 ## Verify
 
 ```bat
-KlustaKwik.exe --help
-KlustaKwik_cpu.exe --help
+KiloKlustaKwik.exe --help
+KiloKlustaKwik_cpu.exe --help
 ```

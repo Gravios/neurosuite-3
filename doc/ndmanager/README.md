@@ -74,7 +74,7 @@ from the neuroscope-specific rotation and flip settings.
 parameters that script reads from the parameter file, with Mandatory/Optional/Dynamic status
 indicators. Parameters set here land in the `programs[name=...].parameters` section of the
 YAML (tier-2 of the three-tier resolution: per-group override → global session override → bash
-default). For KlustaKwik specifically, each `spikeDetection.channelGroups[g]` entry may also
+default). For KiloKlustaKwik specifically, each `spikeDetection.channelGroups[g]` entry may also
 carry an embedded `klustakwik:` sub-block with per-group calibrated values (tier-1, highest
 priority) — these are typically written by `ndm_aom2dat` from probe topology. See
 [ndmanager-plugins](../ndmanager-plugins/README.md) for the complete parameter reference per
@@ -124,7 +124,7 @@ Library path field      (set in the Probes tab)
 4. Run `ndm_setupgroups` (from the Plugins tab or command line). This populates the Electrode
    Groups tab automatically, writing `probeId`, `shankIndex`, and `sitePositions_um` (inline
    electrode geometry) into each anatomical and spike-detection group so downstream tools
-   (`ndm_estimatedrift`, `ndm_localise`, klustakwik drift-aware chunking) can reconstruct
+   (`ndm_estimatedrift`, `ndm_localise`, kiloklustakwik drift-aware chunking) can reconstruct
    geometry without re-reading the probe file.
 5. Verify channel assignments on the Electrode Groups tab, then proceed with the pipeline.
 

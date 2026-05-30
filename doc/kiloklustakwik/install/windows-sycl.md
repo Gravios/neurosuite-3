@@ -1,4 +1,4 @@
-# KlustaKwik — Windows Installation, Intel Arc / SYCL
+# KiloKlustaKwik — Windows Installation, Intel Arc / SYCL
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ Install in this order:
    ```powershell
    winget install Intel.OneAPI.BaseToolkit
    ```
-   Or download from https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html. The C++ Essentials bundle is a smaller download sufficient for building KlustaKwik.
+   Or download from https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html. The C++ Essentials bundle is a smaller download sufficient for building KiloKlustaKwik.
 
 3. **Intel GPU driver** — install via the Intel Driver & Support Assistant or from https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html. Minimum required version: **31.0.101.4887**.
 
@@ -41,10 +41,10 @@ sycl-ls
 
 ## Build
 
-Inside the oneAPI command prompt, from the KlustaKwik source directory:
+Inside the oneAPI command prompt, from the KiloKlustaKwik source directory:
 
 ```bat
-cd path\to\neurosuite-3\src\klustakwik
+cd path\to\neurosuite-3\src\kiloklustakwik
 rmdir /s /q build
 mkdir build && cd build
 cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF -DCMAKE_BUILD_TYPE=Release
@@ -66,6 +66,6 @@ The default build includes AOT targets for `mtl-m` (Meteor Lake), `acm-g10/g11` 
 
 ```bat
 set ONEAPI_DEVICE_SELECTOR=level_zero:gpu
-KlustaKwik.exe --help
-KlustaKwik_cpu.exe --help
+KiloKlustaKwik.exe --help
+KiloKlustaKwik_cpu.exe --help
 ```

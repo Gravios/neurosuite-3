@@ -11,7 +11,7 @@ while preserving the noise baseline.
 ### Critical — `load_clu` reads binary .clu
 
 Before: `process_subtractspikes`'s `load_clu()` opened `.clu.N` in text
-mode.  neurosuite-3's KlustaKwik and Klusters write `.clu.N` as binary
+mode.  neurosuite-3's KiloKlustaKwik and Klusters write `.clu.N` as binary
 (`int32` nClusters header + `nSpikes × int32` ids) since the
 modernization; the text reader silently produced a one-element garbage
 list or raised `ValueError` on the header bytes.  On sessions where

@@ -1,6 +1,6 @@
-# klustakwik — Automatic Spike Sorter
+# kiloklustakwik — Automatic Spike Sorter
 
-KlustaKwik performs automatic spike sorting via Classification EM (CEM).
+KiloKlustaKwik performs automatic spike sorting via Classification EM (CEM).
 It reads a `.fet.N` or `.fetD.N` feature file produced by `ndm_pca` or
 `ndm_pca_stderiv` and writes a `.clu.N` cluster assignment file. GPU
 acceleration is available for the E-step distance computations via CUDA
@@ -20,21 +20,21 @@ the pipeline to the original two-phase CEM.
 | C++20 compiler | Build | Yes |
 | CMake ≥ 3.21 | Build | Yes |
 | OpenMP | Parallel chunk / run / item processing and CPU fallback | Strongly recommended |
-| yaml-cpp | Session-YAML parsing (`KlustaKwikYaml`) | Yes |
+| yaml-cpp | Session-YAML parsing (`KiloKlustaKwikYaml`) | Yes |
 | CUDA Toolkit ≥ 11 (≥ 12.8 for sm_120 / Blackwell) | NVIDIA GPU acceleration | Optional |
 | ROCm / HIP SDK ≥ 5.0 | AMD GPU acceleration | Optional |
 | Intel oneAPI Base Toolkit ≥ 2023.1 | Intel Arc/Xe GPU acceleration | Optional |
 
 When none of the GPU backend flags are explicitly set, CMake auto-detects
 in priority order CUDA > HIP > SYCL. Every GPU build also produces
-`KlustaKwik_cpu` as a CPU-only fallback binary.
+`KiloKlustaKwik_cpu` as a CPU-only fallback binary.
 
 ---
 
 ## Usage
 
 ```
-KlustaKwik FileBase ElecNo [options]
+KiloKlustaKwik FileBase ElecNo [options]
 ```
 
 `FileBase` and `ElecNo` together identify the input file `FileBase.fet.ElecNo`.
@@ -46,19 +46,19 @@ the D variant is loaded automatically (`pickInputPath` — see the
 
 ```bash
 # Standard two-phase farthest-point mode (SamplingRate auto-detected from YAML)
-KlustaKwik session 1 -MinClusters 2 -MaxClusters 12 -ChunkMinutes 0
+KiloKlustaKwik session 1 -MinClusters 2 -MaxClusters 12 -ChunkMinutes 0
 
 # Three-phase chunked mode for long recordings with electrode drift (default)
-KlustaKwik session 1 -MinClusters 2 -MaxClusters 12 \
+KiloKlustaKwik session 1 -MinClusters 2 -MaxClusters 12 \
     -ChunkMinutes 10 -ChunkOverlapMinutes 2 -ChunkPreseedFraction 0.08
 
 # Resume from an existing sort (e.g., after klusters editing)
-KlustaKwik session 1 -StartCluFile session.clu.1
+KiloKlustaKwik session 1 -StartCluFile session.clu.1
 
 # Chunked 80-minute silicon probe with full pipeline: 3 restarts per chunk,
 # subspace reclustering inside Phase 2.5, and iterative cross-chunk template
 # matching. Suppress intermediate saves.
-KlustaKwik jg05-20120316 7 \
+KiloKlustaKwik jg05-20120316 7 \
     -MinClusters 2 -MaxClusters 20 \
     -ChunkMinutes 10 -ChunkOverlapMinutes 2 \
     -nRuns 3 -SubspaceRecluster 1 -SubspaceReclusterDepth 2 \
@@ -81,7 +81,7 @@ KlustaKwik jg05-20120316 7 \
 
 ## File extension fallback
 
-KlustaKwik auto-detects raw vs stderiv session files. For each session
+KiloKlustaKwik auto-detects raw vs stderiv session files. For each session
 file it needs (`.spk`, `.fet`, `.pca`), it resolves the path via
 `pickInputPath`, which prefers the canonical extension and falls back
 to the D variant if canonical is absent:
@@ -94,7 +94,7 @@ pickInputPath:  .fet.N   → exists → load
 ```
 
 The chosen variant is propagated through every subsequent open
-inside KlustaKwik — `LoadData`, `RealignChunkWaveforms`,
+inside KiloKlustaKwik — `LoadData`, `RealignChunkWaveforms`,
 `RefeaturizeFromShifts`, the four template-match mean-waveform harvests,
 and `WritePhase15Checkpoint` — so stderiv-sorted and raw-sorted groups
 can coexist in a single session without cross-contamination.
@@ -113,7 +113,7 @@ was chosen.
 
 ## Parameters
 
-> **Empirical priors.** When KlustaKwik is invoked from
+> **Empirical priors.** When KiloKlustaKwik is invoked from
 > `ndm_subcluster_unmatched`, the four headline parameters
 > (`MinClusters`, `MaxClusters`, `MergeThresh`, `PenaltyMix`) can be
 > taken from a per-probe prior YAML built once via `kk_build_prior.py`
@@ -121,7 +121,7 @@ was chosen.
 > [`../workflows/empirical-priors.md`](../workflows/empirical-priors.md)
 > for the workflow. Per-shank overrides in the session yaml
 > (`extraInfos`) still win over the prior; the prior wins over the
-> static defaults below. Direct `KlustaKwik`-on-the-CLI invocations
+> static defaults below. Direct `KiloKlustaKwik`-on-the-CLI invocations
 > always use the static defaults — priors are only consumed by the
 > `ndm_*` orchestrator scripts that call `kk_resolve_prior.py`.
 
@@ -203,7 +203,7 @@ This phase is always run when `ChunkMinutes > 0`. It has no user-exposed
 parameters — the algorithm is controlled by session geometry (sample
 rate, peak sample index, channels per group) read from the YAML.
 
-See `src/klustakwik/CHANGES.md` for algorithm details and the
+See `src/kiloklustakwik/CHANGES.md` for algorithm details and the
 `RefeaturizeFromShifts` fall-back path.
 
 ### Phase 2: cross-chunk template matching + merge
@@ -308,7 +308,7 @@ the iteration count.
 
 The chunked-CEM mode (`ChunkMinutes > 0`, default) adds several
 refinement phases that run inside and after the main CEM loop. Brief
-notes here; see `src/klustakwikExp/CHANGES.md` and
+notes here; see `src/kiloklustakwik/CHANGES.md` and
 `SESSION_SUMMARY_phase8_klusters_automerge.md` (top-level) for the
 detailed rationale and CLI of each.
 
@@ -390,7 +390,7 @@ falls back to a single non-recursive split attempt.
 
 ## GPU dispatch
 
-KlustaKwik's computationally intensive steps (E-step, M-step, C-step,
+KiloKlustaKwik's computationally intensive steps (E-step, M-step, C-step,
 `ConsiderDeletion`, `InitCentresFarthestPoint`) are GPU-parallelisable.
 The `KK.h` dispatch layer maps generic `gpu_*` function calls to the
 active backend at compile time:
@@ -426,11 +426,11 @@ the spike-detection group, and a `.fil` file is present,
 `_RunInlineDriftEstimation()` can be invoked to run
 `process_estimatedrift.py` and `process_applydrift.py` as subprocesses
 after the final `.clu` write. Produces `SESSION.drift` and
-`SESSION.chunks.N` so the next KlustaKwik invocation can use adaptive
+`SESSION.chunks.N` so the next KiloKlustaKwik invocation can use adaptive
 chunks.
 
 Not called by default — registered as a post-write hook that can be
-enabled in `KlustaKwikYaml.cpp`. Intended for long chronic recordings
+enabled in `KiloKlustaKwikYaml.cpp`. Intended for long chronic recordings
 where drift is severe enough to make uniform chunk boundaries
 counter-productive.
 

@@ -108,13 +108,13 @@ algorithm; results are in a `.pending` sidecar so you can reject.
 ### 4. Recluster
 
 ```
-Actions → Recluster (KlustaKwik)  (Shift+R)
+Actions → Recluster (KiloKlustaKwik)  (Shift+R)
 ```
 
-Runs KlustaKwik on the selected cluster(s) only. Useful when one
+Runs KiloKlustaKwik on the selected cluster(s) only. Useful when one
 cluster contains visible substructure that DipSplit + lasso splitting
 hasn't resolved. The
-[Automatic Reclustering](../klusters/README.md#automatic-reclustering-klustakwik)
+[Automatic Reclustering](../klusters/README.md#automatic-reclustering-kiloklustakwik)
 section covers the parameter set.
 
 ### 5. Annotate
@@ -184,5 +184,5 @@ annotation is for. Mark Uncertain, save, move on.
 
 - [`../klusters/README.md`](../klusters/README.md) — full program reference
 - [Empirical priors](empirical-priors.md) — what your curation feeds into
-- [`../klustakwik/README.md`](../klustakwik/README.md) — automatic-clustering reference
+- [`../kiloklustakwik/README.md`](../kiloklustakwik/README.md) — automatic-clustering reference
 - [Iterative refinement](iterative-refinement.md) — strip → redetect → re-sort loop

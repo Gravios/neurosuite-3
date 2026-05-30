@@ -1,4 +1,4 @@
-# KlustaKwik — Linux Installation, CPU / OpenMP
+# KiloKlustaKwik — Linux Installation, CPU / OpenMP
 
 ## System packages
 
@@ -11,7 +11,7 @@ sudo apt install \
 ## Build
 
 ```bash
-cd /path/to/neurosuite-3/src/klustakwik
+cd /path/to/neurosuite-3/src/kiloklustakwik
 
 cmake -B build \
   -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
@@ -23,8 +23,8 @@ sudo cmake --install build
 ## Verify
 
 ```bash
-KlustaKwik --help
-ldd $(which KlustaKwik) | grep -i omp    # should show libgomp.so.1
+KiloKlustaKwik --help
+ldd $(which KiloKlustaKwik) | grep -i omp    # should show libgomp.so.1
 ```
 
 ## Note on parallelism
@@ -33,5 +33,5 @@ OpenMP is used for parallel chunk processing when `-ChunkMinutes` is set. All av
 
 ```bash
 export OMP_NUM_THREADS=8
-KlustaKwik session 1 -ChunkMinutes 5 -SamplingRate 32552 ...
+KiloKlustaKwik session 1 -ChunkMinutes 5 -SamplingRate 32552 ...
 ```

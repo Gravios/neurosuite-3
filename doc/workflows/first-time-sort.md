@@ -17,7 +17,7 @@ ndm_aom2dat recording_001.yaml
 ```
 
 Produces `recording_001.dat` (interleaved int16) and a populated
-`recording_001.yaml` with calibrated per-group KlustaKwik defaults.
+`recording_001.yaml` with calibrated per-group KiloKlustaKwik defaults.
 For other systems, see [format conversion](../ndmanager-plugins/commands/format-conversion.md).
 
 ### 2. Preprocess
@@ -42,13 +42,13 @@ for the trade-offs.
 ndm_klustakwik recording_001.yaml
 ```
 
-Runs KlustaKwik for every spike group sequentially (groups are
-sequential, but KlustaKwik itself is multi-threaded across chunks and
+Runs KiloKlustaKwik for every spike group sequentially (groups are
+sequential, but KiloKlustaKwik itself is multi-threaded across chunks and
 runs). Output: `recording_001.clu.N` per group.
 
 For details on the chunked-CEM pipeline, GPU dispatch, and Phase 2.5
 subspace reclustering, see
-[`../klustakwik/README.md`](../klustakwik/README.md).
+[`../kiloklustakwik/README.md`](../kiloklustakwik/README.md).
 
 ### 4. Curate manually
 

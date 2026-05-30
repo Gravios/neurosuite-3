@@ -30,7 +30,7 @@ klusters session.yaml
 When opened from a `.fet.N` file, klusters automatically locates the paired `.clu.N`, `.spk.N`, and `.yaml` parameter file in the same directory.
 
 **Legacy formats still accepted at open time:**
-- `.par` / `.par.N` — original KlustaKwik text parameter pair
+- `.par` / `.par.N` — original KiloKlustaKwik text parameter pair
 - `.xml` — legacy neurosuite XML (read-only; save output will always be YAML)
 - `.fet.N` in text format (auto-detected alongside binary format)
 
@@ -85,7 +85,7 @@ int32_t  nDimensions          (4-byte header)
 nSpikes × nDimensions × int64_t   (row-major; last column is timestamp in samples)
 ```
 
-Text format (legacy KlustaKwik):
+Text format (legacy KiloKlustaKwik):
 ```
 nDimensions
 feat_0 feat_1 … feat_n-1 timestamp
@@ -477,7 +477,7 @@ density after smoothing, or rejected by the min-basin-size filter)
 are routed into a **residual cluster** that lands at the tail of the
 palette alongside the other new basin-clusters. The source clusters
 are fully dissolved — the same renumber-to-tail behaviour as a
-recluster (KlustaKwik) action.
+recluster (KiloKlustaKwik) action.
 
 Pressing `Shift+W` enters a **live-preview overlay mode**. The selected
 clusters' (X, Y) feature points are extracted once, the kernel runs
@@ -606,7 +606,7 @@ Consequences worth knowing:
 | `GROUP` | Merge selected clusters (`G`) | N | 1 | No |
 | `SPLIT` | Single new cluster from polygon, lasso, or DipSplit | 1 | 1 (new) + 1 (residual src) | DipSplit only |
 | `SPLIT_N` | Multiple new clusters from polygon (one per source) | N | N (new) + N (residual srcs) | No |
-| `RECLUSTER` | KlustaKwik re-run on selected clusters (`Shift+R`) | M | K | No |
+| `RECLUSTER` | KiloKlustaKwik re-run on selected clusters (`Shift+R`) | M | K | No |
 | `WATERSHED` | 2D density watershed (`W`) | M | K (basins) + 1 (residual) | Yes |
 | `REALIGN` | Spike waveform realignment (`Shift+L`) | unchanged | unchanged | No |
 | `NUDGE` | Timestamp ±1 sample shift (`PageUp` / `PageDown`) | 1 | 1 (same id) | No |
@@ -702,21 +702,21 @@ The cluster user information (structure, type, quality, etc.) is saved to the `u
 
 ---
 
-## Automatic reclustering (KlustaKwik)
+## Automatic reclustering (KiloKlustaKwik)
 
-Klusters can launch KlustaKwik on the current electrode group:
+Klusters can launch KiloKlustaKwik on the current electrode group:
 
 1. Select the clusters to recluster (or select all).
 2. **Actions → Recluster** (`Shift+R`) or toolbar button.
-3. KlustaKwik runs as a subprocess; its stdout streams into the embedded process widget.
-4. When KlustaKwik finishes, klusters reloads the `.clu.N` file automatically and all views update.
-5. **Actions → Abort Reclustering** cancels a running KlustaKwik process.
+3. KiloKlustaKwik runs as a subprocess; its stdout streams into the embedded process widget.
+4. When KiloKlustaKwik finishes, klusters reloads the `.clu.N` file automatically and all views update.
+5. **Actions → Abort Reclustering** cancels a running KiloKlustaKwik process.
 
-KlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering** (was Preferences → KlustaKwik before the patch 0067 tab split).
+KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering** (was Preferences → KiloKlustaKwik before the patch 0067 tab split).
 
 ### Automatic feature selection
 
-When **Auto-select features** is enabled in the Preferences (and the **N feat** spinbox appears in the Parameters toolbar), klusters computes per-feature variance across all spikes in the selected clusters and passes only the top-N high-variance features to KlustaKwik via the `UseFeatures` parameter.
+When **Auto-select features** is enabled in the Preferences (and the **N feat** spinbox appears in the Parameters toolbar), klusters computes per-feature variance across all spikes in the selected clusters and passes only the top-N high-variance features to KiloKlustaKwik via the `UseFeatures` parameter.
 
 **Algorithm:**
 
@@ -847,7 +847,7 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Renumber clusters (full sequential) | `R` |
 | Renumber selected to end (palette focus) | `T` |
 | Update error matrix + template matrix | `U` |
-| Recluster (KlustaKwik) | `Shift+R` |
+| Recluster (KiloKlustaKwik) | `Shift+R` |
 | Realign spikes | `Shift+L` |
 | Nudge timestamps +1 sample | `Page Down` |
 | Nudge timestamps −1 sample | `Page Up` |
@@ -923,7 +923,7 @@ The **Parameters** toolbar (Settings → Show Parameters) shows context-sensitiv
 | # spikes | Waveform View (Sample mode) | Maximum number of spikes displayed per cluster |
 | Bin size (ms) | Correlogram View | Width of each correlogram bin |
 | Half duration (ms) | Correlogram View | Half-width of the correlogram time window |
-| N feat | All (when auto-select is on) | Maximum number of features passed to KlustaKwik |
+| N feat | All (when auto-select is on) | Maximum number of features passed to KiloKlustaKwik |
 
 ---
 
@@ -935,7 +935,7 @@ The **Parameters** toolbar (Settings → Show Parameters) shows context-sensitiv
 
 ## GPU acceleration
 
-The Grouping Assistant matrix computation and the spike realignment cross-correlation use the same GPU dispatch as KlustaKwik: CUDA → HIP → SYCL → OpenMP CPU fallback. The CPU path is always compiled as a baseline.
+The Grouping Assistant matrix computation and the spike realignment cross-correlation use the same GPU dispatch as KiloKlustaKwik: CUDA → HIP → SYCL → OpenMP CPU fallback. The CPU path is always compiled as a baseline.
 
 See the [GPU installation guide](../gpu/README.md) for CUDA, ROCm/HIP, and Intel oneAPI/SYCL setup.
 

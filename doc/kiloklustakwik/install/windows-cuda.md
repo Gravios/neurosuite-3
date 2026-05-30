@@ -1,4 +1,4 @@
-# KlustaKwik — Windows Installation, NVIDIA CUDA
+# KiloKlustaKwik — Windows Installation, NVIDIA CUDA
 
 ## Prerequisites
 
@@ -26,14 +26,14 @@ If `nvcc` is not found, add to system PATH: `C:\Program Files\NVIDIA GPU Computi
 ## Build
 
 ```bat
-cd path\to\neurosuite-3\src\klustakwik
+cd path\to\neurosuite-3\src\kiloklustakwik
 rmdir /s /q build
 mkdir build && cd build
 cmake .. -G "Ninja" -DUSE_HIP=OFF -DUSE_SYCL=OFF -DCMAKE_BUILD_TYPE=Release
 ninja
 ```
 
-`KlustaKwik_cpu.exe` is always built alongside the GPU binary.
+`KiloKlustaKwik_cpu.exe` is always built alongside the GPU binary.
 
 To target a specific GPU architecture:
 
@@ -52,6 +52,6 @@ cmake --build . --config Release
 ## Verify
 
 ```bat
-KlustaKwik.exe --help
-KlustaKwik_cpu.exe --help
+KiloKlustaKwik.exe --help
+KiloKlustaKwik_cpu.exe --help
 ```

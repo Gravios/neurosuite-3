@@ -13,7 +13,7 @@ ndm_aom2dat [session.yaml]
 
 Converts an AlphaOmega `.mat` recording to the neurosuite `.dat`
 binary and generates a complete session YAML. The YAML includes
-calibrated per-group KlustaKwik parameters (`MergeThresh`,
+calibrated per-group KiloKlustaKwik parameters (`MergeThresh`,
 `MaxClusters`, merge iterations) for each spike group, computed from
 the probe topology — the same calibration used by
 [`ndm_klustakwik`](ndm_klustakwik.md).

@@ -31,10 +31,10 @@ the time-ordered index; the design docs are the durable reference.
 - **[../workflows/](../workflows/)** — task-oriented walkthroughs.
   Several design topics (priors, drift, BOTM) have a workflow
   counterpart that focuses on operational use rather than design.
-- **[../../src/klustakwik/CHANGES.md](../../src/klustakwik/CHANGES.md)** —
-  KlustaKwik-internal changes (v1.7 → neurosuite-3 diff). Lives in
+- **[../../src/kiloklustakwik/CHANGES-inherited-from-canonical.md](../../src/kiloklustakwik/CHANGES-inherited-from-canonical.md)** —
+  inherited canonical-engine history (v1.7 → neurosuite-3 diff). Lives in
   the source tree because it tracks code changes specific to that
   binary.
-- **[../../src/klustakwikExp/CHANGES.md](../../src/klustakwikExp/CHANGES.md)** —
-  KlustaKwikExp-internal changes (the experimental fork that hosts
-  DipSplit, time-shift merging, and other in-progress features).
+- **[../../src/kiloklustakwik/CHANGES.md](../../src/kiloklustakwik/CHANGES.md)** —
+  KiloKlustaKwik-internal changes (DipSplit, time-shift merging, and other
+  features that originated in the former experimental fork).

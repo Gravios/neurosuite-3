@@ -976,7 +976,7 @@ programs:
     # maxShift
 
     Maximum shift in samples in either direction (default 3).  Corresponds
-    to MaxTimeShift in KlustaKwikExp.  Values larger than 5 risk pulling
+    to MaxTimeShift in KiloKlustaKwik.  Values larger than 5 risk pulling
     spikes from neighbouring units.  At 32 kHz, 3 samples = 92 µs.
 
     # minScore
