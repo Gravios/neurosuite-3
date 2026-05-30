@@ -1,5 +1,5 @@
 // =============================================================================
-// dipsplit.h  —  bimodality-detection-driven cluster splitting for klustakwikExp
+// dipsplit.h  —  bimodality-detection-driven cluster splitting for kiloklustakwik
 //
 // Helpers for detecting and partitioning "flat" clusters — cases where CEM's
 // single-Gaussian model masks a bimodal sub-structure because the full-dim

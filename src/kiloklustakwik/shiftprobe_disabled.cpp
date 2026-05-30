@@ -25,7 +25,7 @@
  *     shiftprobe_sycl.cpp
  *
  * are retained on disk for reference but are no longer compiled (see
- * src/klustakwikExp/CMakeLists.txt).  The KK.cpp call sites still emit
+ * src/kiloklustakwik/CMakeLists.txt).  The KK.cpp call sites still emit
  * extern declarations for the three GPU entry points, so the linker
  * needs them to resolve to *something* — these stubs do the job, and
  * are unconditionally safe because the call sites are also runtime-

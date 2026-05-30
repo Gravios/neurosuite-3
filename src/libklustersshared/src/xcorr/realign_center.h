@@ -21,7 +21,7 @@
  * or sample-major, rolled by per-spike shifts or by a committed cumulative
  * shift) and pass it here; this module owns only the circular statistics and
  * the shift convention.  The two app copies that used to duplicate this math —
- * Klusters' KlustersDoc::realignSpikes and KlustaKwikExp's
+ * Klusters' KlustersDoc::realignSpikes and KiloKlustaKwik's
  * KlustersStyleRealignAllClusters — now share it and stay in lockstep.
  ***************************************************************************/
 #pragma once

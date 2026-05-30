@@ -1644,7 +1644,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        // ── klustakwikExp: post-split shift-probe refeaturization ───────────
+        // ── kiloklustakwik: post-split shift-probe refeaturization ───────────
         // Load PCA basis + open .spk read-only once for the run.  If either
         // is unavailable (legacy session without .pca or .spk), the probe
         // silently disables itself and the rest of the clustering runs
@@ -2072,7 +2072,7 @@ int main(int argc, char **argv) {
         SaveOutput(K1.BestClass);   // final write — always runs regardless of SaveIntermediates
         fprintf(stderr, "  done                    \n");  // clear the \r progress line
 
-        // ── klustakwikExp: finalize shift-probe ─────────────────────────────
+        // ── kiloklustakwik: finalize shift-probe ─────────────────────────────
         // Hand m_cumShift to RefeaturizeFromShifts + WritePhase15Checkpoint.
         // This is the ONLY point at which .fil is read and .spk/.fet are
         // rewritten — scoped to spikes whose cumulative shift is non-zero.

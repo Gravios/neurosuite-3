@@ -7,7 +7,7 @@
 # src/shared/xcorr/ in patch66 (canonical home for what was previously
 # duplicated between src/shared/xcorr and src/klusters/src/realign_xcorr_*).
 # It's a pure-C++ kernel with no Qt/yaml deps; consumers (klustakwik,
-# klustakwikExp, klusters) include its sources directly into their own
+# kiloklustakwik, klusters) include its sources directly into their own
 # targets so they control the USE_CUDA/USE_HIP/USE_SYCL macros that the
 # dispatcher conditionally compiles against.  See each consumer's
 # CMakeLists for the include-and-build wiring (_xcorr_dir variable).

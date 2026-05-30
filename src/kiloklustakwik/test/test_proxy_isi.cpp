@@ -1,7 +1,7 @@
 // =============================================================================
 // test_proxy_isi.cpp  —  unit tests for the proxy_isi module
 //
-// Build (from src/klustakwikExp/):
+// Build (from src/kiloklustakwik/):
 //   c++ -std=c++20 -O2 -fopenmp -I. -o test_proxy_isi  proxy_isi.cpp test/test_proxy_isi.cpp
 //
 // Tests

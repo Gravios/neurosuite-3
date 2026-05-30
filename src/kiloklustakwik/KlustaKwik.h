@@ -144,7 +144,7 @@ extern char  PriorFile[];  ///< path to .prior.N.yaml built by kk_build_prior.py
 extern int   AdaptiveMerge;
 /** Preseed centres from prior; populated by applyKKPrior(). */
 extern std::vector<float> ExternalPreseedCentres; ///< Phase 1.5 alignment passes (0=skip, N=run N passes with MStep between) (default 1)
-// Post-split shift-probe parameters (klustakwikExp only).
+// Post-split shift-probe parameters (kiloklustakwik only).
 // MaxTimeShift: the half-width of the pre-shifted PCA basis fan.  The probe
 // builds bases for δ ∈ {-N, …, +N} at session start, and picks the δ that
 // maximises per-dim variance on split-children (or minimises Mahalanobis

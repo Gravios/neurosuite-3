@@ -884,7 +884,7 @@ void KK::ConsiderDeletion() {
 
     const float deltaPen = Penalty(nClustersAlive) - Penalty(nClustersAlive - 1);
 
-    // ── klustakwikExp: shift-aware merge decision ───────────────────────────
+    // ── kiloklustakwik: shift-aware merge decision ───────────────────────────
     // The canonical minLoss is computed assuming each spike stays at its
     // current feature vector (no temporal shift into the second-best
     // cluster).  A cluster that's actually a temporal duplicate of another
@@ -1281,7 +1281,7 @@ int KK::TrySplits() {
                 for (int c2 = 0; c2 < MaxPossibleClusters; c2++) ClassAlive[c2] = K3.ClassAlive[c2];
                 for (int p  = 0; p  < nPoints;               p++) Class[p] = K3.Class[p];
 
-                // ── klustakwikExp: post-split shift-probe refeaturization ──
+                // ── kiloklustakwik: post-split shift-probe refeaturization ──
                 // Test δ ∈ {−1, 0, +1} on each new child cluster; commit the
                 // shift that maximises spatial-feature variance to expose any
                 // residual mixture for the next split trial.  Gates below
@@ -1577,7 +1577,7 @@ float KK::CEM(const char *CluFile, int Recurse) {
 
     if (DistDump) fprintf(Distfp, "\n");
 
-    // klustakwikExp Phase 8: DipSplit — bimodal-cluster detection & split.
+    // kiloklustakwik Phase 8: DipSplit — bimodal-cluster detection & split.
     // Runs once on converged clusters.  No-op if DipSplitEnable=0,
     // DipSplitGlobalEnable=0, or no bloated clusters are found.
     //
@@ -2326,7 +2326,7 @@ float KK::CEMTwoPhase(int timeMergeIter) {
             Output("Phase 2 done: %d clusters, score %.7g\n",
                    nClustersAlive, score);
 
-        // klustakwikExp Phase 8: DipSplit — bimodal-cluster detection.
+        // kiloklustakwik Phase 8: DipSplit — bimodal-cluster detection.
         // Only fires on the main instance (scratch Kc's set suppressBestSave
         // so chunk-local clustering doesn't run it redundantly).
         // Also gated by DipSplitGlobalEnable so users can disable Phase 8
@@ -6738,7 +6738,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
 
 
 // ===========================================================================
-// Post-split shift-probe refeaturization  (klustakwikExp)
+// Post-split shift-probe refeaturization  (kiloklustakwik)
 //
 // Purpose
 // -------
