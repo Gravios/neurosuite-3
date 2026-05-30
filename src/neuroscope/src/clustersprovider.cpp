@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QStringList>
 #include <QFileInfo>
+#include <klustersshared/neurofileio.h>
 
 #include <QList>
 #include <QMap> 
@@ -69,39 +70,18 @@ int ClustersProvider::loadData(){
         return MISSING_FILE;
     }
 
-    // ── Detect binary vs text format ─────────────────────────────────────────
-    // Binary .res: N × int64_t, no header.
-    // Text   .res: one decimal integer per line.
-    // Detection: if the file size is a non-zero multiple of 8 AND the first
-    // byte is not an ASCII decimal digit (0x30–0x39), treat as binary.
-    bool binaryFormat = false;
-    {
-        QFile probe(timeFileUrl);
-        if(probe.open(QIODevice::ReadOnly)){
-            qint64 sz = probe.size();
-            if(sz > 0 && (sz % 8) == 0){
-                char firstByte = 0;
-                probe.read(&firstByte, 1);
-                if(firstByte < '0' || firstByte > '9')
-                    binaryFormat = true;
-            }
-            probe.close();
-        }
-    }
-
-    // ── Count spikes ──────────────────────────────────────────────────────────
-    if(binaryFormat){
-        nbSpikes = static_cast<long>(QFileInfo(timeFileUrl).size() / 8);
-    } else {
-        nbSpikes = Utilities::getNbLines(timeFilePath);
-    }
-
-    qDebug() << "nbSpikes" << nbSpikes << "(binary=" << binaryFormat << ")";
-
-    if(nbSpikes == -1){
+    //Read the matched .clu/.res pair via the shared reader (neurofileio),
+    //which auto-detects binary vs text and validates spike-count consistency.
+    const neurofileio::ClusterResData data =
+        neurofileio::readClusterRes(fileName.toStdString(),
+                                    timeFilePath.toStdString());
+    if(!data.ok){
         clusters.setSize(0,0);
-        return COUNT_ERROR;
+        return INCORRECT_CONTENT;
     }
+
+    nbSpikes   = static_cast<long>(data.times.size());
+    nbClusters = data.nClusters;
 
     if(nbSpikes == 0){
         clusters.setSize(0,0);
@@ -115,115 +95,16 @@ int ClustersProvider::loadData(){
 
     RestartTimer();
 
-    //Set the size of the Array containing the spikes and clusters ids.
+    //Set the size of the Array (row 1 = cluster ids, row 2 = timestamps).
     clusters.setSize(2, nbSpikes);
-
-    // ── Read .clu ─────────────────────────────────────────────────────────────
-    QFile clusterFile(fileName);
-    bool status = clusterFile.open(QIODevice::ReadOnly);
-    if(!status){
-        clusters.setSize(0,0);
-        return OPEN_ERROR;
+    QMap<int,int> idSet;
+    for(long k = 0; k < nbSpikes; ++k){
+        const int id = data.ids[static_cast<size_t>(k)];
+        clusters(1, k+1) = static_cast<dataType>(id);
+        clusters(2, k+1) = static_cast<dataType>(data.times[static_cast<size_t>(k)]);
+        idSet.insert(id, id);
     }
-
-    if(binaryFormat){
-        // Binary .clu: int32_t nClusters header + nbSpikes × int32_t IDs
-        int32_t nClu = 0;
-        if(clusterFile.read(reinterpret_cast<char*>(&nClu), 4) != 4){
-            clusters.setSize(0,0);
-            return OPEN_ERROR;
-        }
-        nbClusters = static_cast<int>(nClu);
-
-        QMap<int,long> ids;
-        for(long k = 0; k < nbSpikes; ++k){
-            int32_t id = 0;
-            if(clusterFile.read(reinterpret_cast<char*>(&id), 4) != 4){
-                clusters.setSize(0,0);
-                return INCORRECT_CONTENT;
-            }
-            clusters(1, k+1) = static_cast<dataType>(id);
-            ids.insert(static_cast<int>(id), static_cast<long>(id));
-        }
-        clusterFile.close();
-        clusterIds = ids.keys();
-    } else {
-        // Text .clu: first line = nClusters, then one cluster ID per line
-        QByteArray buf;
-        buf.resize(255);
-        int ret = clusterFile.readLine(buf.data(), 255);
-        nbClusters = QString::fromLatin1(buf, ret).toInt();
-
-        QMap<int,long> ids;
-        QByteArray buffer = clusterFile.readAll();
-        uint size = static_cast<uint>(buffer.size());
-
-        dataType k = 0;
-        int l = 0;
-        char clusterID[255];
-        for(uint i = 0; i < size; ++i){
-            if(buffer[i] >= '0' && buffer[i] <= '9'){
-                clusterID[l++] = buffer[i];
-            } else if(l){
-                clusterID[l] = '\0';
-                long id = atol(clusterID);
-                clusters[k++] = id;
-                ids.insert(static_cast<int>(id), id);
-                l = 0;
-            }
-        }
-        clusterFile.close();
-        clusterIds = ids.keys();
-
-        if(k != nbSpikes){
-            clusters.setSize(0,0);
-            return INCORRECT_CONTENT;
-        }
-    }
-
-    // ── Read .res ─────────────────────────────────────────────────────────────
-    QFile spikeFile(timeFilePath);
-    status = spikeFile.open(QIODevice::ReadOnly);
-    if(!status){
-        clusters.setSize(0,0);
-        return OPEN_ERROR;
-    }
-
-    if(binaryFormat){
-        // Binary .res: nbSpikes × int64_t timestamps, no header
-        for(long k = 0; k < nbSpikes; ++k){
-            int64_t ts = 0;
-            if(spikeFile.read(reinterpret_cast<char*>(&ts), 8) != 8){
-                clusters.setSize(0,0);
-                return INCORRECT_CONTENT;
-            }
-            clusters(2, k+1) = static_cast<dataType>(ts);
-        }
-        spikeFile.close();
-    } else {
-        // Text .res: one timestamp per line
-        QByteArray spikeBuffer = spikeFile.readAll();
-        uint size = static_cast<uint>(spikeBuffer.size());
-
-        dataType k = nbSpikes;  // timestamps stored in row 2 (flat offset = nbSpikes)
-        int l = 0;
-        char time[255];
-        for(uint i = 0; i < size; ++i){
-            if(spikeBuffer[i] >= '0' && spikeBuffer[i] <= '9')
-                time[l++] = spikeBuffer[i];
-            else if(l){
-                time[l] = '\0';
-                clusters[k++] = static_cast<dataType>(atol(time));
-                l = 0;
-            }
-        }
-        spikeFile.close();
-
-        if(k != (2 * nbSpikes)){
-            clusters.setSize(0,0);
-            return INCORRECT_CONTENT;
-        }
-    }
+    clusterIds = idSet.keys();
 
     qDebug() << "Loading cluster files into memory:" << Timer();
 
