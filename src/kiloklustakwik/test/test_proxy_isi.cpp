@@ -20,7 +20,7 @@
 //                                                  may still resolve via
 //                                                  other neighbours
 // =============================================================================
-#include "../proxy_isi.h"
+#include "../src/proxy_isi.h"
 
 #include <algorithm>
 #include <cassert>

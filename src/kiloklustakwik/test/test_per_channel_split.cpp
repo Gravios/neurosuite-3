@@ -28,7 +28,7 @@
 #include <random>
 #include <vector>
 
-#include "../per_channel_split.h"
+#include "../src/per_channel_split.h"
 
 // ---------------------------------------------------------------------------
 // Mini test harness — same style as test_klusters_realign.cpp.

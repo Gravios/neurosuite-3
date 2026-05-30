@@ -183,39 +183,42 @@ endif()
 # Shared xcorr kernel (lives in src/libklustersshared/src/xcorr — no Qt/yaml
 # dependency).  Relocated from src/shared/xcorr in patch66.
 # The OMP + dispatch sources go into every executable via _cpu_srcs.
-# GPU backend sources are added per-target below, matching how KK_cuda.cu
-# and KK_hip.cpp are handled.
+# GPU backend sources are added per-target below, matching how src/KK_cuda.cu
+# and src/KK_hip.cpp are handled.
 # =============================================================================
 set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../libklustersshared/src/xcorr")
+
+# All of this project's own sources and headers now live under src/.
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # =============================================================================
 # Common sources and dependencies
 # =============================================================================
-set(_cpu_srcs KlustaKwik.cpp KK.cpp KlustaKwikYaml.cpp KK_prior.cpp param.c
-    dipsplit.cpp
-    proxy_isi.cpp
-    wave_knn_split.cpp
-    cluster_hull_split.cpp
-    klusters_realign.cpp
-    per_channel_split.cpp
-    xcorr_match.cpp
-    clust_quality.cpp
-    adapt_model.cpp
-    shiftprobe_disabled.cpp
+set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KlustaKwikYaml.cpp src/KK_prior.cpp src/param.c
+    src/dipsplit.cpp
+    src/proxy_isi.cpp
+    src/wave_knn_split.cpp
+    src/cluster_hull_split.cpp
+    src/klusters_realign.cpp
+    src/per_channel_split.cpp
+    src/xcorr_match.cpp
+    src/clust_quality.cpp
+    src/adapt_model.cpp
+    src/shiftprobe_disabled.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
     ${_xcorr_dir}/realign_center.cpp)
-set(_headers  KlustaKwik.h KK.h KK_cuda.h KK_sycl.h KK_hip.h
-              Array.h KlustaSave.h KlustaKwikYaml.h param.h
-              dipsplit.h
-              proxy_isi.h
-              wave_knn_split.h
-              cluster_hull_split.h
-              klusters_realign.h
-              per_channel_split.h
-              xcorr_match.h
-              clust_quality.h
-              adapt_model.h)
+set(_headers  src/KlustaKwik.h src/KK.h src/KK_cuda.h src/KK_sycl.h src/KK_hip.h
+              src/Array.h src/KlustaSave.h src/KlustaKwikYaml.h src/param.h
+              src/dipsplit.h
+              src/proxy_isi.h
+              src/wave_knn_split.h
+              src/cluster_hull_split.h
+              src/klusters_realign.h
+              src/per_channel_split.h
+              src/xcorr_match.h
+              src/clust_quality.h
+              src/adapt_model.h)
 
 find_package(OpenMP)
 find_package(yaml-cpp REQUIRED)
@@ -260,9 +263,9 @@ install(TARGETS KiloKlustaKwik_cpu DESTINATION "${CMAKE_INSTALL_BINDIR}")
 if(_CUDA_ACTIVE)
     find_package(CUDAToolkit REQUIRED)
 
-    # shiftprobe_cuda.cu is no longer compiled — see shiftprobe_disabled.cpp
+    # src/shiftprobe_cuda.cu is no longer compiled — see src/shiftprobe_disabled.cpp
     # for the rationale.
-    add_executable(KiloKlustaKwik ${_cpu_srcs} KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
+    add_executable(KiloKlustaKwik ${_cpu_srcs} src/KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
     target_include_directories(KiloKlustaKwik PRIVATE "${_xcorr_dir}")
     target_compile_options(KiloKlustaKwik PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
@@ -292,11 +295,11 @@ if(_HIP_ACTIVE)
         CACHE STRING "HIP GPU architectures to target")
     string(REPLACE ";" "," _hip_archs_comma "${KK_EXP_HIP_ARCHS}")
 
-    # KK_hip.cpp contains __global__ kernels and must be compiled by hipcc.
+    # src/KK_hip.cpp contains __global__ kernels and must be compiled by hipcc.
     # Build it as an OBJECT library under hipcc, then link the objects into
     # the main executable compiled with the system CXX — avoids changing
     # CMAKE_CXX_COMPILER globally.
-    add_library(kk_exp_hip_kernels OBJECT KK_hip.cpp)
+    add_library(kk_exp_hip_kernels OBJECT src/KK_hip.cpp)
     set_property(TARGET kk_exp_hip_kernels PROPERTY CXX_COMPILER "${_HIPCC}")
     set_target_properties(kk_exp_hip_kernels PROPERTIES CXX_COMPILER_LAUNCHER "")
     target_compile_options(kk_exp_hip_kernels PRIVATE
@@ -307,7 +310,7 @@ if(_HIP_ACTIVE)
     target_compile_definitions(kk_exp_hip_kernels PRIVATE
         USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
     target_include_directories(kk_exp_hip_kernels PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${_xcorr_dir}"
         $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
         /opt/rocm/include)
@@ -328,7 +331,7 @@ if(_HIP_ACTIVE)
         $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
         /opt/rocm/include)
 
-    # shiftprobe_hip.cpp is no longer compiled — see shiftprobe_disabled.cpp
+    # src/shiftprobe_hip.cpp is no longer compiled — see src/shiftprobe_disabled.cpp
     # for the rationale.
 
     add_executable(KiloKlustaKwik ${_cpu_srcs} ${_headers})
@@ -391,38 +394,38 @@ if(_SYCL_ACTIVE)
         message(STATUS "  For AOT: sudo apt install intel-ocloc")
     endif()
 
-    # param.c is plain C and must not receive -fsycl.  Build it separately.
-    add_library(param_obj_exp OBJECT param.c)
+    # src/param.c is plain C and must not receive -fsycl.  Build it separately.
+    add_library(param_obj_exp OBJECT src/param.c)
     target_compile_options(param_obj_exp PRIVATE -O3)
     target_compile_definitions(param_obj_exp PRIVATE
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
-    # KlustaKwikYaml.cpp is plain C++ (yaml-cpp, no SYCL kernels).
+    # src/KlustaKwikYaml.cpp is plain C++ (yaml-cpp, no SYCL kernels).
     # Must NOT be compiled with -fsycl — build as a separate OBJECT library.
-    add_library(yaml_obj_exp OBJECT KlustaKwikYaml.cpp)
+    add_library(yaml_obj_exp OBJECT src/KlustaKwikYaml.cpp)
     target_compile_options(yaml_obj_exp PRIVATE -O3 -Wall -Wextra)
     target_compile_definitions(yaml_obj_exp PRIVATE
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
-    # KlustaKwikYaml.cpp is intentionally NOT listed here — it is supplied
+    # src/KlustaKwikYaml.cpp is intentionally NOT listed here — it is supplied
     # via $<TARGET_OBJECTS:yaml_obj_exp> below.  Listing it in both places
     # causes icpx to emit two object files (one with -fsycl, one without)
     # that both define kkReadYamlSpikeParams, producing a multiple-definition
     # link error on Intel Arc / oneAPI builds.
-    # shiftprobe_sycl.cpp is no longer compiled — see shiftprobe_disabled.cpp
+    # src/shiftprobe_sycl.cpp is no longer compiled — see src/shiftprobe_disabled.cpp
     # for the rationale.
     add_executable(KiloKlustaKwik_sycl
-        KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp
-        dipsplit.cpp
-        proxy_isi.cpp
-        wave_knn_split.cpp
-        cluster_hull_split.cpp
-        klusters_realign.cpp
-        per_channel_split.cpp
-        xcorr_match.cpp
-        clust_quality.cpp
-        adapt_model.cpp
-        shiftprobe_disabled.cpp
+        src/KlustaKwik.cpp src/KK.cpp src/KK_sycl.cpp src/KK_prior.cpp
+        src/dipsplit.cpp
+        src/proxy_isi.cpp
+        src/wave_knn_split.cpp
+        src/cluster_hull_split.cpp
+        src/klusters_realign.cpp
+        src/per_channel_split.cpp
+        src/xcorr_match.cpp
+        src/clust_quality.cpp
+        src/adapt_model.cpp
+        src/shiftprobe_disabled.cpp
         ${_xcorr_dir}/realign_xcorr_omp.cpp
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
         ${_xcorr_dir}/realign_xcorr_sycl.cpp

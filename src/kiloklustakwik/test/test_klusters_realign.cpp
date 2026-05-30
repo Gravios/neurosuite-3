@@ -15,7 +15,7 @@
  * Build:
  *   c++ -std=c++20 -fopenmp -I.. \
  *       -I../../libklustersshared/src/xcorr \
- *       test_klusters_realign.cpp ../klusters_realign.cpp \
+ *       test_klusters_realign.cpp ../src/klusters_realign.cpp \
  *       ../../libklustersshared/src/xcorr/realign_xcorr_dispatch.cpp \
  *       ../../libklustersshared/src/xcorr/realign_xcorr_omp.cpp \
  *       -o test_klusters_realign
@@ -29,7 +29,7 @@
 #include <random>
 #include <vector>
 
-#include "../klusters_realign.h"
+#include "../src/klusters_realign.h"
 
 // ---------------------------------------------------------------------------
 // Mini test harness

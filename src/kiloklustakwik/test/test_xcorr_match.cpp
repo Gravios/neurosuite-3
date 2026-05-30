@@ -1,7 +1,7 @@
 // =============================================================================
 // test_xcorr_match.cpp  —  unit tests for sub-sample-refined matching
 // =============================================================================
-#include "../xcorr_match.h"
+#include "../src/xcorr_match.h"
 
 #include <cmath>
 #include <cstdio>
