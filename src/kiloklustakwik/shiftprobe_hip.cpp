@@ -1,7 +1,7 @@
 // shiftprobe_hip.cpp — HIP kernel for post-split shift-probe refeaturization.
 // Mirror of shiftprobe_cuda.cu; see that file for algorithm notes.
 // Compiled by hipcc as an OBJECT library (see CMakeLists.txt); linked into
-// KlustaKwikExp when USE_HIP is defined.
+// KiloKlustaKwik when USE_HIP is defined.
 #ifdef USE_HIP
 
 #include "KK.h"

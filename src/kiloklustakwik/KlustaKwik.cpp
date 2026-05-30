@@ -415,7 +415,7 @@ int   WaveKnnMaxSourcesPerCall      = 0;
 // (Phase 1 spatial + TrySplits + Phase 2 temporal merge logic, via
 // RunEMLoop with enableSplits=true) on a single source cluster's
 // spikes per invocation.  Mirrors klusters' "Recluster" action where
-// the user picks one cluster and KlustaKwikExp is spawned on its
+// the user picks one cluster and KiloKlustaKwik is spawned on its
 // spikes alone.
 //
 // Distinct from WaveKnnSplit:
@@ -934,7 +934,7 @@ void SetupParams(int argc, char **argv) {
     PenaltyMix = std::max(0.0f, std::min(1.0f, PenaltyMix));
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: KlustaKwik FileBase ElecNo [Arguments]\n\n");
+        fprintf(stderr, "Usage: KiloKlustaKwik FileBase ElecNo [Arguments]\n\n");
         fprintf(stderr, "Default Parameters:\n");
         print_params(stderr);
         exit(1);
@@ -1751,7 +1751,7 @@ int main(int argc, char **argv) {
                 char fetBanner[STRLEN + 16];
                 const int _fetVar = pickInputPath(fetBanner, sizeof(fetBanner),
                                                   FileBase, "fet", ElecNo);
-                fprintf(stderr, "KlustaKwikExp  %s%s  [build 2026-04-22 shift-probe]\n",
+                fprintf(stderr, "KiloKlustaKwik  %s%s  [build 2026-04-22 shift-probe]\n",
                         fetBanner, (_fetVar == 1) ? "  (stderiv variant)" : "");
             }
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",

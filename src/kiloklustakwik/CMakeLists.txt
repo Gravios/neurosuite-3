@@ -37,13 +37,13 @@ if(NOT DEFINED USE_SYCL OR NOT USE_SYCL STREQUAL "OFF")
                 set(CMAKE_C_COMPILER "${_ICPX_DIR}/icx" CACHE FILEPATH
                     "C compiler — auto-selected icx for SYCL" FORCE)
                 message(STATUS
-                    "KlustaKwikExp: auto-selected icpx (override: -DCMAKE_CXX_COMPILER=)")
+                    "KiloKlustaKwik: auto-selected icpx (override: -DCMAKE_CXX_COMPILER=)")
             endif()
         endif()
     endif()
 endif()
 
-project(KlustaKwikExp VERSION 2.0.0 LANGUAGES C CXX)
+project(KiloKlustaKwik VERSION 2.0.0 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # Language standard
@@ -62,7 +62,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
         Debug Release RelWithDebInfo MinSizeRel)
-    message(STATUS "KlustaKwikExp: CMAKE_BUILD_TYPE defaulted to Release")
+    message(STATUS "KiloKlustaKwik: CMAKE_BUILD_TYPE defaulted to Release")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -103,9 +103,9 @@ if(USE_CUDA)
         set(CMAKE_CUDA_ARCHITECTURES     "86;89;100;120"
             CACHE STRING "CUDA architectures to target")
         set(_CUDA_ACTIVE TRUE)
-        message(STATUS "KlustaKwikExp: CUDA available — ${CMAKE_CUDA_COMPILER}")
+        message(STATUS "KiloKlustaKwik: CUDA available — ${CMAKE_CUDA_COMPILER}")
     else()
-        message(STATUS "KlustaKwikExp: CUDA requested but nvcc not found")
+        message(STATUS "KiloKlustaKwik: CUDA requested but nvcc not found")
     endif()
 endif()
 
@@ -121,13 +121,13 @@ if(USE_HIP AND NOT _CUDA_ACTIVE)
         find_package(hip QUIET
             PATHS $ENV{ROCM_PATH}/lib/cmake/hip /opt/rocm/lib/cmake/hip)
         set(_HIP_ACTIVE TRUE)
-        message(STATUS "KlustaKwikExp: HIP available — ${_HIPCC}")
+        message(STATUS "KiloKlustaKwik: HIP available — ${_HIPCC}")
         if(hip_FOUND)
             message(STATUS "  ROCm CMake package version: ${hip_VERSION}")
         endif()
     else()
         message(STATUS
-            "KlustaKwikExp: HIP requested but hipcc not found — "
+            "KiloKlustaKwik: HIP requested but hipcc not found — "
             "install ROCm: https://rocm.docs.amd.com/")
     endif()
 endif()
@@ -150,17 +150,17 @@ if(USE_SYCL AND NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE)
             OUTPUT_STRIP_TRAILING_WHITESPACE)
         if(_ICPX_VER MATCHES "Intel")
             set(_SYCL_ACTIVE TRUE)
-            message(STATUS "KlustaKwikExp: SYCL available — ${_ICPX}")
+            message(STATUS "KiloKlustaKwik: SYCL available — ${_ICPX}")
             message(STATUS "  ${_ICPX_VER}")
         else()
             message(STATUS
-                "KlustaKwikExp: icpx found but does not identify as Intel — "
+                "KiloKlustaKwik: icpx found but does not identify as Intel — "
                 "skipping SYCL build (version: ${_ICPX_VER})")
             unset(_ICPX CACHE)
         endif()
     else()
         message(STATUS
-            "KlustaKwikExp: SYCL requested but icpx not found — "
+            "KiloKlustaKwik: SYCL requested but icpx not found — "
             "install oneAPI: https://www.intel.com/content/www/us/en/developer/"
             "tools/oneapi/base-toolkit.html")
     endif()
@@ -170,13 +170,13 @@ endif()
 # Backend summary
 # =============================================================================
 if(_CUDA_ACTIVE)
-    message(STATUS "KlustaKwikExp: active backend → CUDA  (NVIDIA)")
+    message(STATUS "KiloKlustaKwik: active backend → CUDA  (NVIDIA)")
 elseif(_HIP_ACTIVE)
-    message(STATUS "KlustaKwikExp: active backend → HIP   (AMD ROCm)")
+    message(STATUS "KiloKlustaKwik: active backend → HIP   (AMD ROCm)")
 elseif(_SYCL_ACTIVE)
-    message(STATUS "KlustaKwikExp: active backend → SYCL  (Intel Arc/Xe)")
+    message(STATUS "KiloKlustaKwik: active backend → SYCL  (Intel Arc/Xe)")
 else()
-    message(STATUS "KlustaKwikExp: active backend → CPU only (no GPU toolkit found)")
+    message(STATUS "KiloKlustaKwik: active backend → CPU only (no GPU toolkit found)")
 endif()
 
 # =============================================================================
@@ -232,7 +232,7 @@ target_compile_definitions(_kk_exp_cxx_flags INTERFACE
 target_include_directories(_kk_exp_cxx_flags INTERFACE "${_xcorr_dir}")
 
 # =============================================================================
-# Helper: configure one KlustaKwikExp executable (avoids repetition)
+# Helper: configure one KiloKlustaKwik executable (avoids repetition)
 # Usage: kk_exp_configure_exe(<target> [LINK_LIBS lib…])
 # =============================================================================
 function(kk_exp_configure_exe _tgt)
@@ -250,9 +250,9 @@ endfunction()
 # =============================================================================
 # CPU reference binary — always built
 # =============================================================================
-add_executable(KlustaKwikExp_cpu ${_cpu_srcs} ${_headers})
-kk_exp_configure_exe(KlustaKwikExp_cpu)
-install(TARGETS KlustaKwikExp_cpu DESTINATION "${CMAKE_INSTALL_BINDIR}")
+add_executable(KiloKlustaKwik_cpu ${_cpu_srcs} ${_headers})
+kk_exp_configure_exe(KiloKlustaKwik_cpu)
+install(TARGETS KiloKlustaKwik_cpu DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 # =============================================================================
 # CUDA build  (NVIDIA)
@@ -262,20 +262,20 @@ if(_CUDA_ACTIVE)
 
     # shiftprobe_cuda.cu is no longer compiled — see shiftprobe_disabled.cpp
     # for the rationale.
-    add_executable(KlustaKwikExp ${_cpu_srcs} KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
-    target_include_directories(KlustaKwikExp PRIVATE "${_xcorr_dir}")
-    target_compile_options(KlustaKwikExp PRIVATE
+    add_executable(KiloKlustaKwik ${_cpu_srcs} KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
+    target_include_directories(KiloKlustaKwik PRIVATE "${_xcorr_dir}")
+    target_compile_options(KiloKlustaKwik PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
             $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>>
         $<$<COMPILE_LANGUAGE:CUDA>:
             -O3 --use_fast_math -Xptxas -v --extended-lambda>)
-    target_compile_definitions(KlustaKwikExp PRIVATE
+    target_compile_definitions(KiloKlustaKwik PRIVATE
         USE_CUDA $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_link_libraries(KlustaKwikExp PRIVATE CUDA::cudart m yaml-cpp)
+    target_link_libraries(KiloKlustaKwik PRIVATE CUDA::cudart m yaml-cpp)
     if(OpenMP_CXX_FOUND)
-        target_link_libraries(KlustaKwikExp PRIVATE OpenMP::OpenMP_CXX)
+        target_link_libraries(KiloKlustaKwik PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    install(TARGETS KlustaKwikExp DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    install(TARGETS KiloKlustaKwik DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
     message(STATUS "  CUDA architectures : ${CMAKE_CUDA_ARCHITECTURES}")
     message(STATUS "  CUDA toolkit       : ${CUDAToolkit_VERSION}")
@@ -331,34 +331,34 @@ if(_HIP_ACTIVE)
     # shiftprobe_hip.cpp is no longer compiled — see shiftprobe_disabled.cpp
     # for the rationale.
 
-    add_executable(KlustaKwikExp ${_cpu_srcs} ${_headers})
-    target_compile_definitions(KlustaKwikExp PRIVATE
+    add_executable(KiloKlustaKwik ${_cpu_srcs} ${_headers})
+    target_compile_definitions(KiloKlustaKwik PRIVATE
         USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_include_directories(KlustaKwikExp PRIVATE
+    target_include_directories(KiloKlustaKwik PRIVATE
         $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
         /opt/rocm/include)
-    target_link_libraries(KlustaKwikExp PRIVATE
+    target_link_libraries(KiloKlustaKwik PRIVATE
         _kk_exp_cxx_flags
         kk_exp_hip_kernels
         xcorr_hip_kernels_exp
         yaml-cpp)
     if(hip_FOUND)
-        target_link_libraries(KlustaKwikExp PRIVATE hip::host)
+        target_link_libraries(KiloKlustaKwik PRIVATE hip::host)
     else()
         # Fall back to raw flags when the CMake package is unavailable
-        target_link_options(KlustaKwikExp PRIVATE
+        target_link_options(KiloKlustaKwik PRIVATE
             $<$<BOOL:$ENV{ROCM_PATH}>:-L$ENV{ROCM_PATH}/lib>
             -L/opt/rocm/lib -lamdhip64)
     endif()
     if(OpenMP_CXX_FOUND)
-        target_link_libraries(KlustaKwikExp PRIVATE OpenMP::OpenMP_CXX)
+        target_link_libraries(KiloKlustaKwik PRIVATE OpenMP::OpenMP_CXX)
     endif()
     # hipcc must drive the final link step when -fgpu-rdc is used
-    target_link_options(KlustaKwikExp PRIVATE
+    target_link_options(KiloKlustaKwik PRIVATE
         -fgpu-rdc --offload-arch=${_hip_archs_comma})
-    set_target_properties(KlustaKwikExp PROPERTIES LINKER "${_HIPCC}")
+    set_target_properties(KiloKlustaKwik PROPERTIES LINKER "${_HIPCC}")
 
-    install(TARGETS KlustaKwikExp DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    install(TARGETS KiloKlustaKwik DESTINATION "${CMAKE_INSTALL_BINDIR}")
     message(STATUS "  HIP architectures  : ${KK_EXP_HIP_ARCHS}")
 endif()
 
@@ -411,7 +411,7 @@ if(_SYCL_ACTIVE)
     # link error on Intel Arc / oneAPI builds.
     # shiftprobe_sycl.cpp is no longer compiled — see shiftprobe_disabled.cpp
     # for the rationale.
-    add_executable(KlustaKwikExp_sycl
+    add_executable(KiloKlustaKwik_sycl
         KlustaKwik.cpp KK.cpp KK_sycl.cpp KK_prior.cpp
         dipsplit.cpp
         proxy_isi.cpp
@@ -434,45 +434,45 @@ if(_SYCL_ACTIVE)
     # -Xs (ocloc device flag) is link-time only; suppress the noisy warning
     # it generates when passed at compile time too.
     if(_OCLOC)
-        target_compile_options(KlustaKwikExp_sycl PRIVATE
+        target_compile_options(KiloKlustaKwik_sycl PRIVATE
             -O3 -march=native -fsycl ${_sycl_target_flag}
             -Wno-unused-command-line-argument -Wall -Wextra)
-        target_link_options(KlustaKwikExp_sycl PRIVATE
+        target_link_options(KiloKlustaKwik_sycl PRIVATE
             -fsycl ${_sycl_target_flag}
             "SHELL:${_sycl_device_flag}")
     else()
-        target_compile_options(KlustaKwikExp_sycl PRIVATE
+        target_compile_options(KiloKlustaKwik_sycl PRIVATE
             -O3 -march=native -fsycl ${_sycl_target_flag}
             -Wall -Wextra)
-        target_link_options(KlustaKwikExp_sycl PRIVATE
+        target_link_options(KiloKlustaKwik_sycl PRIVATE
             -fsycl ${_sycl_target_flag})
     endif()
 
-    target_include_directories(KlustaKwikExp_sycl PRIVATE "${_xcorr_dir}")
-    target_compile_definitions(KlustaKwikExp_sycl PRIVATE
+    target_include_directories(KiloKlustaKwik_sycl PRIVATE "${_xcorr_dir}")
+    target_compile_definitions(KiloKlustaKwik_sycl PRIVATE
         USE_SYCL $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_link_libraries(KlustaKwikExp_sycl PRIVATE yaml-cpp)
+    target_link_libraries(KiloKlustaKwik_sycl PRIVATE yaml-cpp)
     if(OpenMP_CXX_FOUND)
-        target_link_libraries(KlustaKwikExp_sycl PRIVATE OpenMP::OpenMP_CXX)
+        target_link_libraries(KiloKlustaKwik_sycl PRIVATE OpenMP::OpenMP_CXX)
     endif()
 
-    set_target_properties(KlustaKwikExp_sycl PROPERTIES
-        OUTPUT_NAME KlustaKwikExp_sycl)
+    set_target_properties(KiloKlustaKwik_sycl PROPERTIES
+        OUTPUT_NAME KiloKlustaKwik_sycl)
 
-    install(TARGETS KlustaKwikExp_sycl DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    install(TARGETS KiloKlustaKwik_sycl DESTINATION "${CMAKE_INSTALL_BINDIR}")
     # Also install under the canonical name so callers need not know the backend
-    install(PROGRAMS "$<TARGET_FILE:KlustaKwikExp_sycl>"
+    install(PROGRAMS "$<TARGET_FILE:KiloKlustaKwik_sycl>"
         DESTINATION "${CMAKE_INSTALL_BINDIR}"
-        RENAME KlustaKwikExp)
+        RENAME KiloKlustaKwik)
 
     message(STATUS "  SYCL compiler      : ${_ICPX}")
 endif()
 
-# CPU-only: also install KlustaKwikExp_cpu as the canonical KlustaKwikExp
+# CPU-only: also install KiloKlustaKwik_cpu as the canonical KiloKlustaKwik
 if(NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE AND NOT _SYCL_ACTIVE)
-    install(PROGRAMS "$<TARGET_FILE:KlustaKwikExp_cpu>"
+    install(PROGRAMS "$<TARGET_FILE:KiloKlustaKwik_cpu>"
         DESTINATION "${CMAKE_INSTALL_BINDIR}"
-        RENAME KlustaKwikExp)
+        RENAME KiloKlustaKwik)
 endif()
 
 # Ergonomic wrapper for the -RefineExisting workflow (KK::RefineExistingClustering).
