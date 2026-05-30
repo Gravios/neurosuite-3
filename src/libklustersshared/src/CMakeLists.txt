@@ -35,7 +35,8 @@ set(_srcs
     klustersshared/parameteryamlreader.cpp
     klustersshared/parameteryamlmodifier.cpp
     klustersshared/parameteryamlwriter.cpp
-    klustersshared/parameteryamlreader_probes.cpp)
+    klustersshared/parameteryamlreader_probes.cpp
+    klustersshared/neurofileio.cpp)
 
 set(_hdrs
     libklustersshared_export.h
@@ -67,7 +68,8 @@ set(_hdrs
     klustersshared/fileinformation.h
     klustersshared/programinformation.h
     klustersshared/neuroscopevideoinfo.h
-    klustersshared/channelcolorentry.h)
+    klustersshared/channelcolorentry.h
+    klustersshared/neurofileio.h)
 
 qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc
