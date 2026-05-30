@@ -306,7 +306,7 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 - **klusters empty `.clu` placeholder seeding** — opening a raw `.fet.N` file before any sorting no longer fails.
 - **ndmanager `channelcolorspage` segfault on save** — null table cells and half-row-removal loop fixed.
 
-See [CHANGES.md](CHANGES.md) for the full list of fixes and improvements.
+See [CHANGELOG.md](CHANGELOG.md) for the full list of fixes and improvements.
 
 ---
 
