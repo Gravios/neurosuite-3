@@ -69,7 +69,7 @@ cmake --build build
 | `NS_VCPKG_ROOT` | `%VCPKG_ROOT%` or `C:/vcpkg` | vcpkg root (Windows, `NS_INSTALL_DEPS=ON` only) |
 | `USE_CUDA` / `USE_HIP` / `USE_SYCL` | `ON` | GPU backend enable/disable |
 | `CMAKE_CUDA_ARCHITECTURES` | auto | e.g. `"86;89;120"` for Blackwell |
-| `NS_SKIP_<n>` | `OFF` | Skip a component, e.g. `-DNS_SKIP_KLUSTAKWIK=ON` |
+| `NS_SKIP_<n>` | `OFF` | Skip a component, e.g. `-DNS_SKIP_KILOKLUSTAKWIK=ON` |
 
 Valid `NS_SKIP_*` names: `NPHYS_DATA`, `LIBKLUSTERSSHARED`, `KLUSTERS`, `NEUROSCOPE`, `NDMANAGER`, `NDMANAGER_PLUGINS`, `KLUSTAKWIK`, `SPIKEREALIGN`.
 

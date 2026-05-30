@@ -11,7 +11,7 @@
 #
 # All three default ON; whichever toolkit is present is auto-selected.
 # Priority when multiple are found: CUDA > HIP > SYCL > CPU.  This
-# matches the convention used by KlustaKwik (src/klustakwik/CMakeLists.txt
+# matches the convention used by KiloKlustaKwik (src/kiloklustakwik/CMakeLists.txt
 # lines 87-89) and the top-level neurosuite-3 build.
 #
 # Force a specific backend by turning the others off:
