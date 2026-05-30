@@ -40,10 +40,37 @@ CluFile readClu(const std::string& path);
 bool    writeClu(const std::string& path, int nClusters,
                  const std::vector<int>& ids);
 
+// Binary .clu: int32_t cluster-count header, then nSpikes × int32_t ids.
+// nSpikes must be known up front (from the matching .res — see below).
+CluFile readCluBinary(const std::string& path, int64_t nSpikes);
+
 // ── .res.N ────────────────────────────────────────────────────────────────
 std::vector<int64_t> readRes(const std::string& path, bool* ok = nullptr);
 bool                 writeRes(const std::string& path,
                               const std::vector<int64_t>& times);
+
+// Binary .res: nSpikes × int64_t timestamps, no header (nSpikes = size/8).
+std::vector<int64_t> readResBinary(const std::string& path, bool* ok = nullptr);
+
+// ── matched .clu + .res pair (auto-detecting binary vs text) ────────────────
+// NeuroSuite cluster data is a .clu/.res pair read together. Some tools write a
+// binary variant for fast loading of large datasets; this detects which and
+// returns the unified result so no consumer re-implements the detection.
+//
+// Detection (matches NeuroScope): probe the .res file — binary iff its size is
+// a non-zero multiple of 8 AND its first byte is not an ASCII digit; text
+// otherwise. The .clu is then read in the same format.
+bool isBinaryClusterRes(const std::string& resPath);
+
+struct ClusterResData {
+    int                  nClusters = 0;
+    std::vector<int>     ids;     ///< one cluster id per spike (.clu body)
+    std::vector<int64_t> times;   ///< one timestamp per spike (.res)
+    bool                 binary = false;  ///< detected format
+    bool                 ok = false;      ///< false on open/parse/size mismatch
+};
+ClusterResData readClusterRes(const std::string& cluPath,
+                              const std::string& resPath);
 
 // ── .fet.N ────────────────────────────────────────────────────────────────
 struct FetFile {
