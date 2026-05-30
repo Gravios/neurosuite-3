@@ -8533,6 +8533,98 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
                      nRolledBack, nEligible);
     }
 
+    // ── RMS circular group-recenter (centering phase) ────────────────────
+    // Matches the Klusters interactive recenter (klustersdoc --recenter-rms):
+    // after per-spike alignment, shift each cluster as a whole so its energy
+    // envelope sits at peakPos.  The anchor is the circular weighted mean of
+    // the per-sample RMS² profile (energy across the group, summed over
+    // channels); the sample axis is periodic so a circular mean is the correct
+    // centroid, and it is exactly invariant to the RMS noise floor (the Nth
+    // roots of unity sum to zero).  The mean resultant length R guards the
+    // degenerate multi-lobe case: below KlustersRealignRMin the cluster keeps
+    // its per-spike alignment.
+    //
+    // Reads are the ORIGINAL .spk slots (TimeShiftReadSpikeWave ignores
+    // m_cumShift), so each spike is rolled in-memory by its committed
+    // m_cumShift to form the aligned group — the same waveform TimeShiftFinalize
+    // will ultimately re-extract.  The per-cluster offset is then folded into
+    // every member's m_cumShift (clamped at ±m_timeShiftMaxAbs).
+    //
+    // Gated by KlustersRealignCenterMode == 2 (RMS).  The default mode (1, PCA)
+    // leaves centering to the PCA alignment phases; mode 0 disables it.
+    if (KlustersRealignCenterMode == 2) {
+        const double TWO_PI = 6.283185307179586476925286766559;
+        const float  rMin   = KlustersRealignRMin;
+        std::vector<int16_t> row(static_cast<size_t>(waveSamples));
+        std::vector<double>  energy(static_cast<size_t>(nSamplesPerSpike));
+        int nRecentered = 0;
+
+        for (int cc = 0; cc < nClustersAlive; ++cc) {
+            const int c = AliveIndex[cc];
+            if (c <= 0 || c >= MaxPossibleClusters) continue;
+            const auto& pts = clusterSpikes[static_cast<size_t>(c)];
+            const int N = static_cast<int>(pts.size());
+            if (N < minSize) continue;
+
+            std::fill(energy.begin(), energy.end(), 0.0);
+            int nReadOk = 0;
+            for (int i = 0; i < N; ++i) {
+                const int p = pts[static_cast<size_t>(i)];
+                if (!TimeShiftReadSpikeWave(p, waveSamples, row.data())) continue;
+                ++nReadOk;
+                const int sh = m_cumShift[static_cast<size_t>(p)];
+                // Roll original window by committed shift -> aligned waveform.
+                for (int s = 0; s < nSamplesPerSpike; ++s) {
+                    const int src = (s + sh + nSamplesPerSpike) % nSamplesPerSpike;
+                    double acc = 0.0;
+                    for (int ch = 0; ch < nChan; ++ch) {
+                        const double v = static_cast<double>(
+                            row[static_cast<size_t>(src * nChan + ch)]);
+                        acc += v * v;
+                    }
+                    energy[static_cast<size_t>(s)] += acc;
+                }
+            }
+            if (nReadOk < minSize) continue;
+
+            double Cc = 0.0, Ss = 0.0, Ww = 0.0;
+            for (int s = 0; s < nSamplesPerSpike; ++s) {
+                const double th = TWO_PI * static_cast<double>(s)
+                                / static_cast<double>(nSamplesPerSpike);
+                const double w  = energy[static_cast<size_t>(s)];
+                Cc += w * std::cos(th);
+                Ss += w * std::sin(th);
+                Ww += w;
+            }
+            const double R = (Ww > 0.0) ? std::hypot(Cc, Ss) / Ww : 0.0;
+            if (R < rMin) continue;          // degenerate envelope — leave aligned
+
+            double centroid = std::atan2(Ss, Cc);
+            if (centroid < 0.0) centroid += TWO_PI;
+            centroid *= static_cast<double>(nSamplesPerSpike) / TWO_PI;
+
+            const double Nd = static_cast<double>(nSamplesPerSpike);
+            double dgf = centroid - static_cast<double>(peakPos);
+            dgf = std::fmod(dgf, Nd);
+            if (dgf >  Nd / 2.0) dgf -= Nd;
+            if (dgf < -Nd / 2.0) dgf += Nd;
+            const int dg = static_cast<int>(std::lround(dgf));
+            if (dg == 0) continue;
+
+            for (int i = 0; i < N; ++i) {
+                const int p   = pts[static_cast<size_t>(i)];
+                int       nc  = m_cumShift[static_cast<size_t>(p)] + dg;
+                if (nc >  m_timeShiftMaxAbs) nc =  m_timeShiftMaxAbs;
+                if (nc < -m_timeShiftMaxAbs) nc = -m_timeShiftMaxAbs;
+                m_cumShift[static_cast<size_t>(p)] = nc;
+            }
+            ++nRecentered;
+        }
+        LockedStderr("[Phase 7c] RMS recenter: %d cluster(s) recentred "
+                     "(rmin=%.2f).\n", nRecentered,
+                     static_cast<double>(rMin));
+    }
+
     stats.meanAbsShift = stats.nSpikesEvaluated > 0
         ? static_cast<double>(sumAbsShift) / stats.nSpikesEvaluated
         : 0.0;
