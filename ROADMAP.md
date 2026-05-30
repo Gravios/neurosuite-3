@@ -238,7 +238,7 @@ These don't fit the time-horizon structure but are worth tracking.
 ### Documentation debt
 
 - `doc/formats/` doesn't exist yet (planned, see Later)
-- `CHANGES.md` not updated since last few features
+- `CHANGELOG.md` not updated since last few features
 - Klusters internal architecture doc is good (`doc/klusters/CODING-STYLE-AUDIT.md`),
   but no equivalents for KiloKlustaKwik, ndmanager, neuroscope
 - `STANDARDIZATION.md` exists but not yet at repo root (queued, see Next)

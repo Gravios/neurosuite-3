@@ -2,8 +2,199 @@
 
 Top-level changelog for this fork, consolidating every change relative
 to the original Neurosuite toolchain.  Entries are grouped by date from
-most recent at top.  Deep per-topic technical notes live in the
-design notes live in `doc/design/<topic>.md`, indexed at the end.
+most recent at top.  Deep per-topic technical notes live in
+`doc/design/<topic>.md`, indexed at the end.
+
+---
+
+## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
+
+Consolidates patches 64, 69–87, spanning several weeks of work on
+post-clustering spike alignment and the disk-commit pipeline that
+follows it.  Detailed per-patch entries live in
+`src/kiloklustakwik/CHANGES.md`; what follows is the integrating
+summary.
+
+**Symptom.** After `KlustaKwikExp` completed on a stderiv session,
+cluster mean waveforms in Klusters showed a residual ±3 sample
+temporal dispersion despite the alignment phases reporting success.
+The dispersion was visible in the cluster-mean view, in the
+template-matrix mismatch heat-map, and (subtly) in cluster-quality
+metrics.
+
+**Root causes — three independent.**
+
+1. **Template never centred before xcorr** (patch64).
+   `RunPhase2bMode3Chunk` built the per-cluster mean template, then
+   ran xcorr of each spike against it — but never shifted the mean
+   so its peak landed on `PeakSampleIndex`.  xcorr therefore pushed
+   every spike toward the mean's *natural* peak, which itself was
+   off-`PeakSampleIndex` by whatever residual detection jitter the
+   chunk's spikes happened to share.  Spikes whose required shift
+   exceeded `MaxTimeShift` were silently rejected and stayed at
+   their detection positions, leaving cluster spikes scattered up
+   to ±5 samples around their cluster mean.
+
+2. **Live-nudge in Klusters had a raw-source ambiguity** (patches
+   69, 72).  Both Klusters' `realignSpikes` and KKExp's Phase 2b m3
+   alignment block did `.fil`-or-`.dat` silent fallback when picking
+   the raw source for re-extraction.  When `.spk` was extracted from
+   `.fil` but `.fil` had been deleted or recomputed with different
+   filter settings, the code silently re-extracted from `.dat`,
+   accumulating mixed-source content in `.spk` on every nudge.
+   patch69 added an RMS-based verifier to Klusters; patch72 ported
+   it into KKExp.
+
+3. **`WritePhase15Checkpoint` wrote `.spk`/`.fet` but not `.res`**
+   (patch85).  When alignment generated non-zero cumulative shifts,
+   the checkpoint re-extracted shifted waveforms into `.spk`
+   (anchored at `rawTs + sh - PeakSampleIndex`) and wrote shifted
+   timestamps into the `.fet` last column, but **never updated
+   `.res` itself**.  Klusters then displayed `.spk` windows whose
+   peaks aligned with each other but whose stored timestamps
+   contradicted the window content — visible as the ±3-sample peak
+   scatter.
+
+**Fix path — phased.**
+
+`RunPhase2bMode3Chunk` was rewritten as an iterative xcorr loop
+(patches 71–74) that pre-aligns the template to `PeakSampleIndex`
+before correlating, accumulates cumulative shifts in `m_cumShift[]`,
+re-projects features against the pre-shifted PCA basis at each
+iter, and emits a post-pass `.res` monotonicity warning when adjacent
+spikes' new timestamps cross.  An RMS-based raw-source verifier
+guards the entry to the alignment block; verification failure aborts
+this chunk's alignment without polluting `m_cumShift` from prior
+phases.
+
+Two `AlignPcaCenter` modes were added on top of the xcorr loop
+(patches 83–84) to address residual dispersion that xcorr alone
+couldn't reach:
+
+- Mode 1: post-xcorr PCA-centring refine pass.  After the iter loop
+  converges, for each spike sweep shifts in `[-maxShift, +maxShift]`
+  and minimise the squared distance from the spike's PCA
+  representation to the cluster mean's PCA centroid.  Writes
+  `m_cumShift[]`, so the disk commit captures it.
+
+- Mode 2: in-memory circular-shift PCA-centring replacement.
+  Replaces the entire xcorr iter loop with a circular-shift sweep,
+  picking each spike's argmin distance directly.  Does NOT write
+  `m_cumShift[]` — purely diagnostic / corrective in memory.
+
+`WritePhase15Checkpoint` was made `.res`-consistent (patch85): after
+rewriting `.spk` and `.fet`, the checkpoint also reads the original
+`.res`, writes a `.pending` companion with `rawTs + sh` for each
+shifted spike, then atomically renames it into place.  All three
+files now move together via the `.*.pending` mechanism.
+
+**Residual dispersion after patch85 — stderiv sample-0 error**
+(patches 86, 87).  Even with `.res`/`.spk`/`.fet` consistent on disk,
+the user's stderiv pipeline still showed sub-sample-level dispersion
+in cluster means.  Tracked down to `WritePhase15Checkpoint`'s
+per-spike re-extract: for the stderiv variant, it has no cross-spike
+state, so the temporal first-difference at the s=0 sample of every
+shifted spike uses `prev_sdiff = 0` instead of the actual previous
+sample's spatial derivative.  This injects a sample-0 error in every
+shifted `.spkD` window — invisible per-spike but accumulates into
+cluster-mean dispersion.
+
+Fix: add a `-R` mode to all three `process_extractspikes` variants
+(patch86) that reads existing `.res.<grp>` as authoritative
+timestamps instead of detecting, then mmaps `.fil` and re-extracts at
+exactly `(ts - timeBefore)` for each.  The stderiv variant reads one
+extra raw sample at `(ws - 1)` to compute the correct `prev_sdiff`
+for the s=0 temporal-diff.  No cross-chunk state needed because
+mmap-and-jump is per-spike independent in this read pattern.
+
+KKExp now invokes the appropriate extractor in `-R` mode
+automatically at the end of `TimeShiftFinalize` (patch87) when
+non-zero shifts were committed.  Pipeline detection via
+`m_timeShiftBasis.isStderiv`; sdiff users set
+`KKEXP_REEXTRACT_TOOL` explicitly.  Auto-invoke is disabled by
+`KKEXP_AUTO_REEXTRACT=0`.
+
+**Klusters polish — separate track, same dates.**  patches 75, 79–82
+addressed UX issues surfaced by the alignment debugging work:
+
+- Time dimension excluded from auto-selected features in
+  `slotRecluster` (patch75) — including the timestamp column as a
+  clustering feature was causing drift-induced spurious splits in
+  recluster.
+- Mean-subtracted subdimensional recluster mode added for
+  single-cluster selection (patches 76–78), exposing sub-structure
+  the canonical PCA basis can't separate.  Three patches because
+  the first revealed two integration bugs (`reclusteringSpikesByCluster`
+  not populated, and a return-value enum collision with
+  `OpenSaveCreateReturnMessage`).
+- Error and Template matrices now auto-show on document open (patch79),
+  removing four mouse clicks from the standard curation entry path.
+- Template matrix gained `Ctrl+drag` pan + `Ctrl+wheel` zoom
+  (patch80) for sessions with cluster counts that overflow the
+  default cell size.
+- Session YAML is now staged at the recluster temp basename
+  (patch81) — `KlustaKwikYaml.cpp` was looking up `<tempBase>.yaml`
+  which never exists, silently defaulting `SamplingRate` to 20000.
+- A PCA-projection-energy-maximising alignment refine pass was added
+  to `realignSpikes` (patch82), opt-in via a checkbox in the realign
+  dialog.  Per-spike fresh `.fil` re-extract per candidate shift,
+  argmax of energy in the basis.
+
+### Files changed
+
+| Area | Files |
+|---|---|
+| KKExp alignment + disk commit | `src/kiloklustakwik/KK.cpp`, `KK.h`, `KlustaKwik.cpp` |
+| extractspikes `-R` mode | `src/ndmanager-plugins/src/process_extractspikes/`, `..._sdiff/`, `..._stderiv/` |
+| Klusters interactions | `src/klusters/src/klusters.cpp`, `klustersdoc.cpp`/`.h`, `data.cpp`/`.h`, `templatematrixview.cpp`/`.h`, `spikerealigndialog.cpp`/`.h`, `prefgenerallayout.ui`, `configuration.cpp`/`.h` |
+| Live-nudge raw-source verify | `src/klusters/src/klustersdoc.cpp` |
+
+### Environment knobs introduced
+
+| Variable | Effect | Default |
+|---|---|---|
+| `KKEXP_AUTO_REEXTRACT` | `0` disables patch87 auto-invoke | unset (= enabled) |
+| `KKEXP_REEXTRACT_TOOL` | Override tool binary name (e.g. `process_extractspikes_sdiff`) | auto from `isStderiv` |
+| `KKEXP_REEXTRACT_SDIFF_ORDER` | Pass `-d <0..3>` to stderiv tool | `3` (ALLPAIRS) |
+| `KKEXP_REEXTRACT_VERBOSE` | Pass `-v` to the tool | unset |
+
+### CLI knobs introduced
+
+`process_extractspikes`, `process_extractspikes_stderiv`,
+`process_extractspikes_sdiff` all accept:
+
+- `-R` — skip detection; read `<basename>.res.<grp>` and re-extract
+  waveforms at those exact timestamps.  Threshold / refractory /
+  peak-search args ignored in this mode.
+
+KKExp recognises:
+
+- `-AlignPcaCenter <0|1|2>` — 0 disables PCA-centring (xcorr only);
+  1 adds it as a refine pass after xcorr (writes `m_cumShift`); 2
+  replaces xcorr entirely with in-memory circular shifts (no
+  `m_cumShift` writes).
+
+### Migration notes
+
+For sessions clustered with pre-patch85 KKExp where the dispersion
+is already on disk: the cleanest recovery is to apply all of 85–87
+then re-run KKExp in mode 1 (`-AlignPcaCenter 1`).  Mode 1 writes
+`m_cumShift`, which triggers `WritePhase15Checkpoint`, which now
+keeps `.res`/`.spk`/`.fet` consistent, which the patch87 auto-invoke
+then refreshes from `.fil` via the patch86 `-R` path.  Mode 2 alone
+won't fix existing-disk dispersion (it never writes to disk by
+design).
+
+### Known limitations
+
+- After re-extracting `.spkD`, the `.pcaD` basis is still computed
+  from the pre-alignment dispersed data.  For maximally-clean
+  features, run `ndm_pca_stderiv` + recompute `.fetD` after the
+  KKExp run; this is not chained automatically.
+- The sdiff pipeline (`.spk` produced by `process_extractspikes_sdiff`)
+  cannot be auto-detected by KKExp — it shares the `.spk` extension
+  with the vanilla pipeline.  sdiff users must export
+  `KKEXP_REEXTRACT_TOOL=process_extractspikes_sdiff`.
 
 ---
 
@@ -766,12 +957,14 @@ for the full detail of the recent plugin patch series.
 
 | Topic | File |
 |---|---|
-| KlustaKwik internals, v1.7 → neurosuite-3 diff | `src/klustakwik/CHANGES.md` |
+| KlustaKwik canonical-engine history (v1.7 → neurosuite-3 diff) | `src/kiloklustakwik/CHANGES-inherited-from-canonical.md` |
+| KiloKlustaKwik-internal changes (DipSplit, time-shift merging) | `src/kiloklustakwik/CHANGES.md` |
 | `reextractspikes` + shadow clustering (first spec) | `doc/design/reextractspikes-v1.md` |
 | `ndm_reextractspikes{,_stderiv}` — extension handling, symlink shims | `doc/design/reextract-v2.md` |
 | `process_decomposecollisions` — collision decomposition bug fixes | `doc/design/decomposecollisions.md` |
 | `process_subtractspikes` — including `botm` mode (Proepper 2015) | `doc/design/subtractspikes-botm.md` |
 | `neuroscope` — cluster raster / overlay stall fixes | `doc/design/neuroscope-raster.md` |
+| `neuroscope` — full subsystem audit | `doc/design/neuroscope-audit.md` |
 | `templates/template.yaml` — parameter block refresh | `doc/design/template-yaml.md` |
 | Per-probe empirical KK priors (`kk_build_prior` / `kk_resolve_prior`) | `doc/design/kk-prior.md` |
 | ndmanager Pipeline tab (editable node graph + YAML-driven `ndm_start` dispatcher) | `doc/design/ndm-start-root.md` |

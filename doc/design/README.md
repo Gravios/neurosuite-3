@@ -19,6 +19,7 @@ the time-ordered index; the design docs are the durable reference.
 | [`subtractspikes-botm.md`](subtractspikes-botm.md) | BOTM derivation (Proepper 2015) for `ndm_stripdat` |
 | [`modeling-l1-vs-botm.md`](modeling-l1-vs-botm.md) | Side-by-side comparison: Layer 1/2 vs BOTM model fits |
 | [`neuroscope-raster.md`](neuroscope-raster.md) | NeuroScope cluster raster / overlay stall fixes |
+| [`neuroscope-audit.md`](neuroscope-audit.md) | NeuroScope full subsystem audit (2026-04-29) |
 | [`template-yaml.md`](template-yaml.md) | Session YAML template parameter-block refresh |
 | [`kk-prior.md`](kk-prior.md) | Per-probe empirical KK priors design (probe identity, hashes, friendly names) |
 | [`ndm-start-root.md`](ndm-start-root.md) | ndmanager Pipeline tab — editable node graph with `ndm_start` as sticky root, plus YAML-driven dispatcher |
