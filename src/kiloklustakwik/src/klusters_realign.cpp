@@ -28,7 +28,7 @@
 #include <cstring>
 #include <vector>
 
-#include "../libklustersshared/src/xcorr/realign_xcorr.h"
+#include "realign_xcorr.h"   // via ${_xcorr_dir} on the include path (see KK.cpp)
 
 namespace KlustersRealign {
 
