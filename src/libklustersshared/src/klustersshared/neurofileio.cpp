@@ -42,6 +42,29 @@ bool writeClu(const std::string& path, int nClusters,
     return static_cast<bool>(os);
 }
 
+CluFile readCluBinary(const std::string& path, int64_t nSpikes)
+{
+    CluFile out;
+    if (nSpikes < 0) return out;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return out;
+
+    int32_t header = 0;
+    in.read(reinterpret_cast<char*>(&header), sizeof(header));
+    if (in.gcount() != static_cast<std::streamsize>(sizeof(header))) return out;
+    out.nClusters = static_cast<int>(header);
+
+    out.ids.reserve(static_cast<size_t>(nSpikes));
+    for (int64_t k = 0; k < nSpikes; ++k) {
+        int32_t id = 0;
+        in.read(reinterpret_cast<char*>(&id), sizeof(id));
+        if (in.gcount() != static_cast<std::streamsize>(sizeof(id))) return out;
+        out.ids.push_back(static_cast<int>(id));
+    }
+    out.ok = true;
+    return out;
+}
+
 // ── .res.N ────────────────────────────────────────────────────────────────
 std::vector<int64_t> readRes(const std::string& path, bool* ok)
 {
@@ -66,6 +89,65 @@ bool writeRes(const std::string& path, const std::vector<int64_t>& times)
     if (!os) return false;
     for (int64_t t : times) os << t << '\n';
     return static_cast<bool>(os);
+}
+
+std::vector<int64_t> readResBinary(const std::string& path, bool* ok)
+{
+    std::vector<int64_t> out;
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) { if (ok) *ok = false; return out; }
+    const std::streamoff bytes = in.tellg();
+    if (bytes < 0 || (bytes % 8) != 0) { if (ok) *ok = false; return out; }
+    const int64_t n = static_cast<int64_t>(bytes) / 8;
+    in.seekg(0, std::ios::beg);
+    out.resize(static_cast<size_t>(n));
+    if (n > 0) {
+        in.read(reinterpret_cast<char*>(out.data()),
+                static_cast<std::streamsize>(n) * 8);
+        if (in.gcount() != static_cast<std::streamsize>(n) * 8) {
+            out.clear();
+            if (ok) *ok = false;
+            return out;
+        }
+    }
+    if (ok) *ok = true;
+    return out;
+}
+
+bool isBinaryClusterRes(const std::string& resPath)
+{
+    std::ifstream in(resPath, std::ios::binary | std::ios::ate);
+    if (!in) return false;
+    const std::streamoff sz = in.tellg();
+    if (sz <= 0 || (sz % 8) != 0) return false;
+    in.seekg(0, std::ios::beg);
+    char first = 0;
+    in.read(&first, 1);
+    if (in.gcount() != 1) return false;
+    return (first < '0' || first > '9');   // not an ASCII digit -> binary
+}
+
+ClusterResData readClusterRes(const std::string& cluPath,
+                              const std::string& resPath)
+{
+    ClusterResData out;
+    out.binary = isBinaryClusterRes(resPath);
+
+    bool rok = false;
+    out.times = out.binary ? readResBinary(resPath, &rok)
+                           : readRes(resPath, &rok);
+    if (!rok) return out;
+
+    const int64_t nSpikes = static_cast<int64_t>(out.times.size());
+    CluFile clu = out.binary ? readCluBinary(cluPath, nSpikes)
+                             : readClu(cluPath);
+    if (!clu.ok) return out;
+    if (static_cast<int64_t>(clu.ids.size()) != nSpikes) return out;  // mismatch
+
+    out.nClusters = clu.nClusters;
+    out.ids       = std::move(clu.ids);
+    out.ok        = true;
+    return out;
 }
 
 // ── .fet.N ────────────────────────────────────────────────────────────────
