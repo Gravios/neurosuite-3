@@ -8650,7 +8650,6 @@ int KK::KlustersStyleRealignOneCluster(
         std::vector<int>& outChangedSpikeIds,
         KlustersRealign::RealignStats& stats)
 {
-    (void)peakPos;   // peakPos consumed by ComputeClusterShiftsFlat below
     const int waveSamples = nChan * nSamplesPerSpike;
     const int N           = static_cast<int>(spikeGlobalIds.size());
     if (N < minSize) { ++stats.nClustersSkipped; return 0; }
@@ -8681,26 +8680,73 @@ int KK::KlustersStyleRealignOneCluster(
         shifts, scores);
     if (!ok) { ++stats.nClustersSkipped; return 0; }
 
-    // ── Commit shifts ──
-    int nChanged = 0;
-    long long sumAbs = 0;
+    // ── Snapshot entry shifts so change detection covers both the per-spike
+    //    commit and the (uniform) recenter without double-counting a spike in
+    //    outChangedSpikeIds. ──
+    std::vector<int> entryCum(static_cast<size_t>(N));
+    for (int i = 0; i < N; ++i)
+        entryCum[static_cast<size_t>(i)] = m_cumShift[
+            static_cast<size_t>(spikeGlobalIds[static_cast<size_t>(i)])];
+
+    // ── Commit per-spike shifts (clamped) ──
     int maxAbs = 0;
     for (int i = 0; i < N; ++i) {
         const int p  = spikeGlobalIds[static_cast<size_t>(i)];
         const int sh = shifts[static_cast<size_t>(i)];
         if (sh == 0) continue;
 
-        const int oldCum = m_cumShift[static_cast<size_t>(p)];
-        int       newCum = oldCum + sh;
+        int newCum = entryCum[static_cast<size_t>(i)] + sh;
         if (newCum >  m_timeShiftMaxAbs) newCum =  m_timeShiftMaxAbs;
         if (newCum < -m_timeShiftMaxAbs) newCum = -m_timeShiftMaxAbs;
-        if (newCum == oldCum) continue;
-
         m_cumShift[static_cast<size_t>(p)] = newCum;
-        outChangedSpikeIds.push_back(p);
-        ++nChanged;
-        sumAbs += std::abs(sh);
         if (std::abs(sh) > maxAbs) maxAbs = std::abs(sh);
+    }
+
+    // ── RMS circular recenter (centering phase, gated by mode 2) ──
+    // Mirrors KlustersStyleRealignAllClusters: form the aligned group (the
+    // original .spk rolled by the committed m_cumShift) and shift the whole
+    // cluster onto peakPos via the shared circular centroid.  Uniform offset.
+    if (KlustersRealignCenterMode == 2) {
+        std::vector<double> energy(static_cast<size_t>(nSamplesPerSpike), 0.0);
+        for (int i = 0; i < N; ++i) {
+            const int16_t* w = waveBuf.data()
+                + static_cast<ptrdiff_t>(i) * waveSamples;
+            const int cum = m_cumShift[static_cast<size_t>(
+                spikeGlobalIds[static_cast<size_t>(i)])];
+            for (int s = 0; s < nSamplesPerSpike; ++s) {
+                const int src = (s + cum + nSamplesPerSpike) % nSamplesPerSpike;
+                double acc = 0.0;
+                for (int ch = 0; ch < nChan; ++ch) {
+                    const double v = static_cast<double>(
+                        w[static_cast<size_t>(src * nChan + ch)]);
+                    acc += v * v;
+                }
+                energy[static_cast<size_t>(s)] += acc;
+            }
+        }
+        const realign_center::RecenterResult rc =
+            realign_center::circularRecenterShift(
+                energy.data(), nSamplesPerSpike, peakPos, KlustersRealignRMin);
+        if (rc.applied && rc.shift != 0) {
+            for (int i = 0; i < N; ++i) {
+                const int p = spikeGlobalIds[static_cast<size_t>(i)];
+                int nc = m_cumShift[static_cast<size_t>(p)] + rc.shift;
+                if (nc >  m_timeShiftMaxAbs) nc =  m_timeShiftMaxAbs;
+                if (nc < -m_timeShiftMaxAbs) nc = -m_timeShiftMaxAbs;
+                m_cumShift[static_cast<size_t>(p)] = nc;
+            }
+        }
+    }
+
+    // ── Report changed spikes (per-spike commit + recenter), no duplicates ──
+    int nChanged = 0;
+    for (int i = 0; i < N; ++i) {
+        const int p = spikeGlobalIds[static_cast<size_t>(i)];
+        if (m_cumShift[static_cast<size_t>(p)]
+                != entryCum[static_cast<size_t>(i)]) {
+            outChangedSpikeIds.push_back(p);
+            ++nChanged;
+        }
     }
 
     stats.nSpikesEvaluated += N;
@@ -8709,7 +8755,6 @@ int KK::KlustersStyleRealignOneCluster(
                       [](int s){ return s != 0; }));
     stats.maxAbsShift = std::max(stats.maxAbsShift, maxAbs);
     ++stats.nClustersProcessed;
-    (void)sumAbs;   // accumulated globally by caller via stats.nSpikesRealigned
     return nChanged;
 }
 
