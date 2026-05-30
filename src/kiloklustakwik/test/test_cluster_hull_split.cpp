@@ -1,7 +1,7 @@
 // =============================================================================
 // test_cluster_hull_split.cpp  —  unit tests for k-NN-graph cluster split
 // =============================================================================
-#include "../cluster_hull_split.h"
+#include "../src/cluster_hull_split.h"
 
 #include <algorithm>
 #include <cmath>

@@ -1,7 +1,7 @@
 // =============================================================================
 // test_wave_knn_split.cpp  —  unit tests for KNN majority-vote split
 // =============================================================================
-#include "../wave_knn_split.h"
+#include "../src/wave_knn_split.h"
 
 #include <algorithm>
 #include <cmath>

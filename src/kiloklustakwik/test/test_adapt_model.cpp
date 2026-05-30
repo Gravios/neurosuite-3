@@ -1,7 +1,7 @@
 // =============================================================================
 // test_adapt_model.cpp  —  unit tests for ISI-conditional fit
 // =============================================================================
-#include "../adapt_model.h"
+#include "../src/adapt_model.h"
 
 #include <cmath>
 #include <cstdio>
