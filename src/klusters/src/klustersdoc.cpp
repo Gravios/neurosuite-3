@@ -3191,6 +3191,7 @@ void KlustersDoc::showUserClusterInformation(){
 // spikes detected on different channels within the same cluster.
 
 #include "realign_xcorr.h"   // XcorrDispatch lives here via the dispatch TU
+#include "realign_center.h"  // realign_center::circularRecenterShift (shared)
 #include "pca_refine_dispatch.h"
 
 // Forward declaration — XcorrDispatch is defined in realign_xcorr_dispatch.cpp
@@ -4270,8 +4271,6 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // re-extracted linearly from .fil at clusterTs+cumShift, so the recenter is
     // measured circularly but realised as a clean unwrapped window.
     if (rmsRecenter) {
-        const double TWO_PI = 6.283185307179586476925286766559;
-
         // Per-sample energy across the group, summed over all channels.
         std::vector<double> energy(static_cast<size_t>(nSamp), 0.0);
         for (int64_t i = 0; i < N; ++i) {
@@ -4286,38 +4285,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             }
         }
 
-        // Circular weighted mean of the energy profile.
-        double Cc = 0.0, Ss = 0.0, Ww = 0.0;
-        for (int t = 0; t < nSamp; ++t) {
-            const double th = TWO_PI * static_cast<double>(t)
-                            / static_cast<double>(nSamp);
-            const double w  = energy[static_cast<size_t>(t)];
-            Cc += w * std::cos(th);
-            Ss += w * std::sin(th);
-            Ww += w;
-        }
-        const double R = (Ww > 0.0) ? std::hypot(Cc, Ss) / Ww : 0.0;
+        // Circular weighted mean of the energy profile (shared math).
+        const realign_center::RecenterResult rc =
+            realign_center::circularRecenterShift(energy.data(), nSamp,
+                                                  peakSamp0, rMin);
 
-        if (R < rMin) {
-            log << "RMS recenter: R=" << QString::number(R, 'f', 3)
+        if (!rc.applied) {
+            log << "RMS recenter: R=" << QString::number(rc.R, 'f', 3)
                 << " < rmin=" << QString::number(rMin, 'f', 2)
                 << " (energy not single-lobed) — recenter skipped.\n";
             emitFlush();
         } else {
-            double centroid = std::atan2(Ss, Cc);
-            if (centroid < 0.0) centroid += TWO_PI;
-            centroid *= static_cast<double>(nSamp) / TWO_PI;   // -> sample units
-
-            // Minimal signed circular shift δg to move centroid -> peakSamp0.
-            // Roll convention new[t]=old[(t+δ)%N] sends old index c to (c-δ),
-            // so δg = c - peakSamp0, reduced to (-N/2, N/2].
-            const double Nd = static_cast<double>(nSamp);
-            double dgf = centroid - static_cast<double>(peakSamp0);
-            dgf = std::fmod(dgf, Nd);
-            if (dgf >  Nd / 2.0) dgf -= Nd;
-            if (dgf < -Nd / 2.0) dgf += Nd;
-            const int dg = static_cast<int>(std::lround(dgf));
-
+            const int dg = rc.shift;
             if (dg != 0) {
                 std::vector<int16_t> tmp(spkElems);
                 for (int64_t i = 0; i < N; ++i) {
@@ -4339,8 +4318,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
             }
 
-            log << "RMS recenter: centroid=" << QString::number(centroid, 'f', 2)
-                << "  R=" << QString::number(R, 'f', 3)
+            log << "RMS recenter: centroid="
+                << QString::number(rc.centroid, 'f', 2)
+                << "  R=" << QString::number(rc.R, 'f', 3)
                 << "  group shift=" << dg << " sample(s)";
             if (dg != 0) log << "  (now " << nShifted << " shifted)";
             log << ".\n";
