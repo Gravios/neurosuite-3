@@ -17,6 +17,7 @@
 
 // include files for Qt
 #include <QDir>
+#include <QDebug>
 #include <QWidget>
 #include <QPixmap>
 #include <QImage>
@@ -367,10 +368,21 @@ int NeuroscopeDoc::openDocument(const QString& url)
                 return PARSE_ERROR;
             }
             if (sessionFileInfo.exists()) {
-                sessionFileExist = true;
+                // The session (.nrs) file holds display state only (window
+                // layout, shown channels, colours) — nothing required to open
+                // the dataset. A stale, malformed, or legacy (pre-YAML,
+                // QtXml-era) session file must not block the open: if it cannot
+                // be parsed, warn and continue with default session settings
+                // instead of failing the whole document. The parameter file
+                // (above) remains fatal, since the dataset can't open without it.
                 SessionYamlReader sessReader;
-                if (!sessReader.parseFile(sessionUrl))
-                    return PARSE_ERROR;
+                if (sessReader.parseFile(sessionUrl)) {
+                    sessionFileExist = true;
+                } else {
+                    qWarning() << "neuroscope: session file could not be parsed; "
+                                  "opening with default session settings:"
+                               << sessionUrl;
+                }
                 // loadSession deferred until after tracesProvider is created below
             }
         }
