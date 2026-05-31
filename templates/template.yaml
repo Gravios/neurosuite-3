@@ -1965,8 +1965,12 @@ programs:
 - name: ndm_autoklusta
   parameters:
   - {name: mode,           value: apply,        status: Optional}
+  - {name: group,          value: ~,            status: Optional}
   - {name: rawCluExt,      value: clu_auto,     status: Optional}
   - {name: outCluExt,      value: clu_autocur,  status: Optional}
+  - {name: rawCluTag,      value: ~,            status: Optional}
+  - {name: curatedCluTag,  value: ~,            status: Optional}
+  - {name: outCluTag,      value: ~,            status: Optional}
   - {name: modelKey,       value: default,      status: Optional}
   - {name: modelPath,      value: ~,            status: Optional}
   - {name: noiseClusters,  value: '0,1',        status: Optional}
@@ -2027,10 +2031,30 @@ programs:
     re-reading old data. reset=true starts a fresh model. Use modelKey to
     keep separate models per probe type (e.g. modelKey=buzsaki64L vs a32).
 
+    ONE GROUP AT A TIME
+    By default every group in the session is processed in one run. To act on
+    a single group, pass it as a positional argument (CLI wins over YAML):
+        ndm_autoklusta sirotaA-jg-000005-20120312 5
+    or set the group parameter in this block. In train mode this ingests just
+    that one (session:group) into the model, so you can curate and train shank
+    by shank. The store is keyed by session:group, so groups already ingested
+    are skipped on a later full-session train (unless force=true).
+
+    KLUSTERS .clu.N.<tag> NAMING
+    Klusters writes tagged cluster files, SESSION.clu.N.<tag> (for example
+    sirotaA-jg-000005-20120312.clu.5.K for the raw KlustaKwik output and
+    .clu.5.final for the curated version). Point the plugin at them with:
+        rawCluTag: K          -> reads SESSION.clu.N.K as the raw input
+        curatedCluTag: final  -> reads SESSION.clu.N.final as the curated ref
+        outCluTag: autocur    -> apply writes SESSION.clu.N.autocur
+    A set tag overrides the corresponding flat fallback (rawCluExt / .clu.N /
+    outCluExt). Leave the tags empty to use the flat names.
+
     OUTPUT
       mode=train : model file at modelPath
-      mode=apply : SESSION.<outCluExt>.N per group (canonical binary .clu;
-                   load it in Klusters, or rename to SESSION.clu.N to adopt)
+      mode=apply : the curated .clu per group (SESSION.<outCluExt>.N, or
+                   SESSION.clu.N.<outCluTag> when outCluTag is set); canonical
+                   binary .clu — load it in Klusters or rename to adopt it
       mode=eval  : per-group keep precision/recall and spike-level adjusted
                    Rand index versus the human curation
 
@@ -2040,15 +2064,26 @@ programs:
 
     train | apply | eval (default apply).
 
+    # group
+
+    Restrict the run to a single 1-based spike group (empty = all groups).
+    A positional CLI argument (ndm_autoklusta session N) overrides this.
+
     # rawCluExt
 
-    Extension of the un-curated KlustaKwik .clu read as input (default
-    clu_auto, i.e. SESSION.clu_auto.N). For apply on a fresh KlustaKwik run
-    whose output is still at SESSION.clu.N, set rawCluExt=clu.
+    Extension of the un-curated KlustaKwik .clu when no rawCluTag is set
+    (default clu_auto, i.e. SESSION.clu_auto.N). For apply on a fresh run
+    whose output is still SESSION.clu.N, set rawCluExt=clu.
 
     # outCluExt
 
-    Extension written by mode=apply (default clu_autocur).
+    Extension written by mode=apply when no outCluTag is set (default
+    clu_autocur).
+
+    # rawCluTag / curatedCluTag / outCluTag
+
+    Klusters .clu.N.<tag> selectors (see above). Each, when set, takes
+    precedence over the matching flat extension.
 
     # modelKey / modelPath
 

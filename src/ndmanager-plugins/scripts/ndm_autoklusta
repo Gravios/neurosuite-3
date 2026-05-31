@@ -40,8 +40,8 @@
 source ndm_functions
 
 program=$(basename $0)
-if [ $# -gt 1 ]; then
-    echo_error "usage: $program [parameter-file]"
+if [ $# -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [group]"
     exit $GENERAL_ERROR
 fi
 
@@ -78,6 +78,35 @@ modelKey=$(read_script_parameter    "$session" ndm_autoklusta modelKey);    mode
 modelPath=$(read_script_parameter   "$session" ndm_autoklusta modelPath)
 probeLibrary=$(read_script_parameter "$session" ndm_autoklusta probeLibrary)
 
+# Klusters .clu.N.<tag> naming (e.g. .clu.5.K raw, .clu.5.final curated).
+# When a tag is set the corresponding file is SESSION.clu.N.<tag>; when
+# empty the flat fallbacks (rawCluExt / .clu.N / outCluExt) are used.
+rawCluTag=$(read_script_parameter     "$session" ndm_autoklusta rawCluTag)
+curatedCluTag=$(read_script_parameter "$session" ndm_autoklusta curatedCluTag)
+outCluTag=$(read_script_parameter     "$session" ndm_autoklusta outCluTag)
+
+# group precedence: CLI arg ($2) > YAML ndm_autoklusta.group > "" (all).
+# CLI must win so `ndm_autoklusta session 5` trains/applies just group 5
+# regardless of the YAML default — the same rule ndm_applydrift uses for
+# its sourceGroup.
+if [ -n "${2:-}" ]; then
+    group=$2
+else
+    group=$(read_script_parameter "$session" ndm_autoklusta group)
+    check_optional_variable "$group" || group=""
+fi
+
+# Per-group file resolvers honouring the optional Klusters tags.
+_raw_path() { local g=$1
+    if [ -n "$rawCluTag" ]; then echo "$session.clu.$g.$rawCluTag"
+    else echo "$session.$rawCluExt.$g"; fi; }
+_cur_path() { local g=$1
+    if [ -n "$curatedCluTag" ]; then echo "$session.clu.$g.$curatedCluTag"
+    else echo "$session.clu.$g"; fi; }
+_out_path() { local g=$1
+    if [ -n "$outCluTag" ]; then echo "$session.clu.$g.$outCluTag"
+    else echo "$session.$outCluExt.$g"; fi; }
+
 # Resolve the persistent, cross-session model location.  Explicit
 # modelPath wins; then $NEUROSUITE_AUTOKLUSTA_MODEL; else a per-key file
 # under the user's data dir so successive sessions accumulate into it.
@@ -100,6 +129,18 @@ nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
     echo_error "No spikeDetection groups in $yamlfile"
     exit $GENERAL_ERROR; }
 
+# Which groups to act on: a single group if requested, else all of them.
+if [ -n "$group" ]; then
+    if ! [ "$group" -ge 1 ] 2>/dev/null || [ "$group" -gt "$nSpikeGroups" ]; then
+        echo_error "group '$group' out of range (session has $nSpikeGroups groups)"
+        exit $GENERAL_ERROR
+    fi
+    groupList="$group"
+    echo_message "Restricting to group $group"
+else
+    groupList=$(seq 1 "$nSpikeGroups")
+fi
+
 # Comma-separated nSamples and nChannels lists, one entry per group.
 nSamplesPerGroup=""
 nChannelsPerGroup=""
@@ -116,31 +157,32 @@ done
 case "$mode" in
     train)
         ok=0
-        for (( g=1; g<=nSpikeGroups; g++ )); do
-            { [ -f "$session.$rawCluExt.$g" ] && [ -f "$session.clu.$g" ]; } && (( ok++ ))
+        for g in $groupList; do
+            { [ -f "$(_raw_path $g)" ] && [ -f "$(_cur_path $g)" ]; } && (( ok++ ))
         done
         [ "$ok" -eq 0 ] && {
-            echo_error "train needs both raw ($session.$rawCluExt.N) and curated"
-            echo_error "($session.clu.N) files; found 0 groups with both."
-            echo_error "Archive the KlustaKwik output to .$rawCluExt.N before curating."
+            echo_error "train needs both raw ($(_raw_path N)) and curated"
+            echo_error "($(_cur_path N)) files; found 0 of the selected group(s) with both."
+            echo_error "Archive the KlustaKwik output (e.g. cp .clu.N .clu_auto.N, or"
+            echo_error "set rawCluTag) before curating overwrites it."
             exit $INPUTS_MISSING; }
-        echo_message "train: $ok/$nSpikeGroups groups with (raw, curated) pairs"
+        echo_message "train: $ok group(s) with (raw, curated) pairs"
         ;;
     apply|eval)
         ok=0
-        for (( g=1; g<=nSpikeGroups; g++ )); do
-            [ -f "$session.$rawCluExt.$g" ] && (( ok++ ))
+        for g in $groupList; do
+            [ -f "$(_raw_path $g)" ] && (( ok++ ))
         done
         [ "$ok" -eq 0 ] && {
-            echo_error "No raw .clu found ($session.$rawCluExt.N). Run ndm_klustakwik"
-            echo_error "first, or set rawCluExt to the extension of the un-curated .clu."
+            echo_error "No raw .clu found ($(_raw_path N)). Run ndm_klustakwik first,"
+            echo_error "or set rawCluExt / rawCluTag to the un-curated .clu naming."
             exit $INPUTS_MISSING; }
         if [ "$mode" = "apply" ]; then
-            for (( g=1; g<=nSpikeGroups; g++ )); do
-                outputs_exist "$session.$outCluExt.$g" && exit $OUTPUTS_EXIST
+            for g in $groupList; do
+                outputs_exist "$(_out_path $g)" && exit $OUTPUTS_EXIST
             done
         fi
-        echo_message "$mode: $ok/$nSpikeGroups groups with raw .clu"
+        echo_message "$mode: $ok group(s) with raw .clu"
         ;;
     *)
         echo_error "Unknown mode '$mode' (expected train | apply | eval)"
@@ -164,8 +206,12 @@ python3 "$PY_HELPER" \
     --n-channels-per-group  "$nChannelsPerGroup" \
     --mode                  "$mode" \
     --model-path            "$modelPath" \
+    --group                 "${group:-0}" \
     --raw-clu-ext           "$rawCluExt" \
     --out-clu-ext           "$outCluExt" \
+    --raw-clu-tag           "$rawCluTag" \
+    --curated-clu-tag       "$curatedCluTag" \
+    --out-clu-tag           "$outCluTag" \
     --noise-clusters        "$noiseClusters" \
     --keep-threshold        "$keepThreshold" \
     --merge-threshold       "$mergeThreshold" \
