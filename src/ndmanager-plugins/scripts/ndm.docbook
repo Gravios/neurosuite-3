@@ -20,7 +20,7 @@
 		<orderedlist>
 			<listitem>
 				<para>
-					Prepare data files using the simple graphical application <command>ndm_prepare</command>. This will rename and reorganize the files for <application>NDManager</application>, then check the results and help you make sure that no files are missing (this can also be done independently, using <command>ndm_checkconsistency</command>).
+					Rename and reorganize your raw data files so that they conform to the naming scheme used by <command>ndm_start</command> (see its manual page for the conventions), and verify that no expected files are missing.
 				</para>
 			</listitem>
 			<listitem>
@@ -277,22 +277,6 @@
 					<listitem>
 						<para>
 							change channel colors in a XML parameter file.
-						</para>
-					</listitem>
-				</varlistentry>
-				<varlistentry>
-					<term><command moreinfo="refentry">ndm_prepare</command></term>
-					<listitem>
-						<para>
-							rename and reorganize raw data files so that they conform to the naming scheme used by <command>ndm_start</command>.
-						</para>
-					</listitem>
-				</varlistentry>
-				<varlistentry>
-					<term><command moreinfo="refentry">ndm_checkconsistency</command></term>
-					<listitem>
-						<para>
-							check file consistency across recording sessions and setups before running <command>ndm_start</command>.
 						</para>
 					</listitem>
 				</varlistentry>

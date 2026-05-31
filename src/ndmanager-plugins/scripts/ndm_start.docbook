@@ -105,13 +105,8 @@ RadialMaze-Rat-15-20090718-03-sleep-filtered.smr
 
 	<refsect1><title>File and Directory Layout and Naming Conventions</title>
 		<para>
-			This section describes in details how files and directories should be named and organized so that <command>ndm_start</command> can recognize and process them. This should be viewed as reference documentation, as you should *not* have to manually rename your files. You should instead use the graphical application <command>ndm_prepare</command>, which will automatically handle this for you.
+			This section describes in details how files and directories should be named and organized so that <command>ndm_start</command> can recognize and process them. This should be viewed as reference documentation, as you should *not* have to manually rename your files.
 		</para>
-		<refsect2><title>Helper Applications</title>
-			<para>
-				Two simple graphical applications are available to help you rename data files so that they conform to the naming scheme described below: <command>ndm_prepare</command> and <command>ndm_checkconsistency</command>. Please refer to their respective manual pages for details.
-			</para>
-		</refsect2>
 
 		<refsect2><title>Template XML parameter file</title>
 			<para>

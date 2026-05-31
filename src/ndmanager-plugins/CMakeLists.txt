@@ -49,4 +49,4 @@ include(CPack)
 add_subdirectory(scripts)
 add_subdirectory(descriptions)
 add_subdirectory(src)
-# python/ and matlab/ require legacy PyQt4/KDE4 — include manually if needed
+# matlab/ holds standalone MATLAB helpers; it is not part of the CMake build.
