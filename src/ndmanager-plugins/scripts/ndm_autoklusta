@@ -1,0 +1,187 @@
+#!/bin/bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_autoklusta — learn manual curation from (auto, curated) .clu pairs
+#//                   and replay it on fresh KlustaKwik output
+#//
+#//  Three modes (the `mode` parameter):
+#//
+#//    train  Reads, per spikeDetection group, the raw KlustaKwik output
+#//           (SESSION.<rawCluExt>.N, default clu_auto) AND the manually
+#//           curated SESSION.clu.N.  Recovers your KEEP / DISCARD / MERGE
+#//           decisions from their overlap, extracts scale-invariant
+#//           cluster-geometry features, and ACCUMULATES them into a model
+#//           store under `modelPath`.  Re-running train on further sessions
+#//           or shanks appends to the same model and refits — so the
+#//           curator keeps improving across sessions.  `reset=true` starts
+#//           a fresh model.
+#//
+#//    apply  Replays a trained model on un-curated output: reads
+#//           SESSION.<rawCluExt>.N and writes a curated
+#//           SESSION.<outCluExt>.N (default clu_autocur) per group —
+#//           discarding predicted junk to MUA(1) and merging over-split
+#//           fragments.  Non-destructive: never overwrites SESSION.clu.N.
+#//
+#//    eval   Like apply, but where SESSION.clu.N also exists, scores the
+#//           replay against the human curation (keep precision/recall +
+#//           spike-level adjusted Rand index).
+#//
+#//  The model uses ONLY scale-invariant descriptors of each cluster's
+#//  geometry and spread in feature space (covariance eigenvalue spectrum,
+#//  anisotropy, participation ratio, Mahalanobis nearest-neighbour gap,
+#//  inter-cluster split-axis alignment, shank-whitened separation), so a
+#//  model fitted on one shank/probe transfers to another even when the
+#//  feature count and scale differ.
+#//
+#//  Output: SESSION.<outCluExt>.N  (apply);  model file at `modelPath` (train)
+#//
+#//  copyright (C) 2025 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+
+print_header "$session - Automatic cluster curation (ndm_autoklusta)"
+
+check_commands_installed python3
+python3 -c "import yaml, numpy, scipy, sklearn, joblib" 2>/dev/null || {
+    echo_error "Python packages missing: install pyyaml numpy scipy scikit-learn joblib"
+    exit $GENERAL_ERROR; }
+
+# Resolve the YAML parameter file — required; no XML fallback
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No parameter file found for session '$session' (expected ${session}.yaml)"
+    exit $INPUTS_MISSING; }
+inputs_missing "$yamlfile" && exit $INPUTS_MISSING
+
+# Parameters (all optional; defaults below)
+mode=$(read_script_parameter        "$session" ndm_autoklusta mode);        mode=${mode:-apply}
+rawCluExt=$(read_script_parameter   "$session" ndm_autoklusta rawCluExt);   rawCluExt=${rawCluExt:-clu_auto}
+outCluExt=$(read_script_parameter   "$session" ndm_autoklusta outCluExt);   outCluExt=${outCluExt:-clu_autocur}
+noiseClusters=$(read_script_parameter "$session" ndm_autoklusta noiseClusters); noiseClusters=${noiseClusters:-0,1}
+keepThreshold=$(read_script_parameter "$session" ndm_autoklusta keepThreshold); keepThreshold=${keepThreshold:--1}
+mergeThreshold=$(read_script_parameter "$session" ndm_autoklusta mergeThreshold); mergeThreshold=${mergeThreshold:--1}
+splitPurity=$(read_script_parameter "$session" ndm_autoklusta splitPurity); splitPurity=${splitPurity:-0.8}
+useWaveforms=$(read_script_parameter "$session" ndm_autoklusta useWaveforms); useWaveforms=${useWaveforms:-true}
+refractoryMs=$(read_script_parameter "$session" ndm_autoklusta refractoryMs); refractoryMs=${refractoryMs:-2.0}
+reset=$(read_script_parameter       "$session" ndm_autoklusta reset);       reset=${reset:-false}
+force=$(read_script_parameter       "$session" ndm_autoklusta force);       force=${force:-false}
+modelKey=$(read_script_parameter    "$session" ndm_autoklusta modelKey);    modelKey=${modelKey:-default}
+modelPath=$(read_script_parameter   "$session" ndm_autoklusta modelPath)
+probeLibrary=$(read_script_parameter "$session" ndm_autoklusta probeLibrary)
+
+# Resolve the persistent, cross-session model location.  Explicit
+# modelPath wins; then $NEUROSUITE_AUTOKLUSTA_MODEL; else a per-key file
+# under the user's data dir so successive sessions accumulate into it.
+if [ -z "$modelPath" ]; then
+    if [ -n "$NEUROSUITE_AUTOKLUSTA_MODEL" ]; then
+        modelPath="$NEUROSUITE_AUTOKLUSTA_MODEL"
+    else
+        modeldir="${XDG_DATA_HOME:-$HOME/.local/share}/neurosuite/autoklusta"
+        modelPath="${modeldir}/${modelKey}.curatemodel.joblib"
+    fi
+fi
+
+# Acquisition + per-group geometry from the YAML
+samplingRate=$(yaml_read  "$session" "//acquisitionSystem/samplingRate")
+nChannels=$(yaml_read     "$session" "//acquisitionSystem/nChannels")
+nBits=$(yaml_read         "$session" "//acquisitionSystem/nBits")
+nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
+
+[ -z "$nSpikeGroups" ] || [ "$nSpikeGroups" -eq 0 ] && {
+    echo_error "No spikeDetection groups in $yamlfile"
+    exit $GENERAL_ERROR; }
+
+# Comma-separated nSamples and nChannels lists, one entry per group.
+nSamplesPerGroup=""
+nChannelsPerGroup=""
+for (( g=1; g<=nSpikeGroups; g++ )); do
+    ns=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
+    ns=${ns:-32}
+    nc=$(yaml_count "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
+    nc=${nc:-0}
+    nSamplesPerGroup="${nSamplesPerGroup:+$nSamplesPerGroup,}$ns"
+    nChannelsPerGroup="${nChannelsPerGroup:+$nChannelsPerGroup,}$nc"
+done
+
+# Mode-specific input checks
+case "$mode" in
+    train)
+        ok=0
+        for (( g=1; g<=nSpikeGroups; g++ )); do
+            { [ -f "$session.$rawCluExt.$g" ] && [ -f "$session.clu.$g" ]; } && (( ok++ ))
+        done
+        [ "$ok" -eq 0 ] && {
+            echo_error "train needs both raw ($session.$rawCluExt.N) and curated"
+            echo_error "($session.clu.N) files; found 0 groups with both."
+            echo_error "Archive the KlustaKwik output to .$rawCluExt.N before curating."
+            exit $INPUTS_MISSING; }
+        echo_message "train: $ok/$nSpikeGroups groups with (raw, curated) pairs"
+        ;;
+    apply|eval)
+        ok=0
+        for (( g=1; g<=nSpikeGroups; g++ )); do
+            [ -f "$session.$rawCluExt.$g" ] && (( ok++ ))
+        done
+        [ "$ok" -eq 0 ] && {
+            echo_error "No raw .clu found ($session.$rawCluExt.N). Run ndm_klustakwik"
+            echo_error "first, or set rawCluExt to the extension of the un-curated .clu."
+            exit $INPUTS_MISSING; }
+        if [ "$mode" = "apply" ]; then
+            for (( g=1; g<=nSpikeGroups; g++ )); do
+                outputs_exist "$session.$outCluExt.$g" && exit $OUTPUTS_EXIST
+            done
+        fi
+        echo_message "$mode: $ok/$nSpikeGroups groups with raw .clu"
+        ;;
+    *)
+        echo_error "Unknown mode '$mode' (expected train | apply | eval)"
+        exit $GENERAL_ERROR
+        ;;
+esac
+
+# Locate the Python helper alongside this script, or in PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_autoklusta.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="process_autoklusta.py"
+
+python3 "$PY_HELPER" \
+    --session               "$session" \
+    --param-file            "$yamlfile" \
+    --sampling-rate         "$samplingRate" \
+    --n-channels            "${nChannels:-0}" \
+    --n-bits                "${nBits:-16}" \
+    --n-groups              "$nSpikeGroups" \
+    --n-samples-per-group   "$nSamplesPerGroup" \
+    --n-channels-per-group  "$nChannelsPerGroup" \
+    --mode                  "$mode" \
+    --model-path            "$modelPath" \
+    --raw-clu-ext           "$rawCluExt" \
+    --out-clu-ext           "$outCluExt" \
+    --noise-clusters        "$noiseClusters" \
+    --keep-threshold        "$keepThreshold" \
+    --merge-threshold       "$mergeThreshold" \
+    --split-purity          "$splitPurity" \
+    --use-waveforms         "$useWaveforms" \
+    --refractory-ms         "$refractoryMs" \
+    --reset                 "$reset" \
+    --force                 "$force" \
+    ${probeLibrary:+--probe-library "$probeLibrary"}
+
+status=$?
+[ $status -ne 0 ] && { echo_error "process_autoklusta.py failed (exit $status)"; exit $GENERAL_ERROR; }
+
+case "$mode" in
+    train) echo_message "Model updated: $modelPath" ;;
+    apply) echo_message "Curated cluster files written ($session.$outCluExt.N)." ;;
+    eval)  echo_message "Evaluation complete." ;;
+esac
+exit $NO_ERROR

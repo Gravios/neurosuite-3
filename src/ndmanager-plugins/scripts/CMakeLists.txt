@@ -12,6 +12,14 @@ install(PROGRAMS
     ndm_applydrift
     ndm_driftcorrect
     ndm_decomposecollisions
+    # Automatic cluster curation.  Learns KEEP/DISCARD/MERGE decisions from
+    # (raw KlustaKwik, manually curated) .clu pairs using scale-invariant
+    # cluster-geometry features (covariance eigenvalue spectrum, Mahalanobis
+    # NN gap, split-axis alignment, shank-whitened separation), so one model
+    # transfers across shanks/probes.  mode=train accumulates across sessions
+    # into a persistent model; mode=apply replays it on fresh output.  Backed
+    # by process_autoklusta.py (installed in the Python-helpers block below).
+    ndm_autoklusta
     ndm_localise
     ndm_setupgroups
     ndm_stripdat
@@ -70,6 +78,7 @@ install(PROGRAMS
     process_estimatedrift.py
     process_applydrift.py
     process_driftcorrect.py
+    process_autoklusta.py
     process_localise.py
     process_setupgroups.py
     kk_build_prior.py
