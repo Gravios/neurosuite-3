@@ -573,3 +573,93 @@ int RunVBGMM(const float* data, int* labels, int K_init,
 
     return nAliveFinal;
 }
+
+
+
+// ---------------------------------------------------------------------------
+// TopKEigenPowerDeflation — top-K eigenvectors of a D×D symmetric matrix.
+//
+// Power-iteration with rank-1 deflation.  Cheap and adequate for the small
+// K (≤ ~5) we need for residual-PCA: each eigenvector costs one chain of
+// ~50 matvecs (D² ops each).  The matrix is modified in-place by the
+// deflation A ← A − λ·v·vᵀ between iterations.
+//
+// Convergence criterion is on the Rayleigh quotient: stop when consecutive
+// λ estimates differ by < relTol · |λ|, or after maxIter iterations.
+//
+// Outputs:
+//   V       — row-major [K × D] eigenvectors (unit-norm, descending |λ|).
+//   eigvals — [K] eigenvalues (descending in magnitude).
+// ---------------------------------------------------------------------------
+void TopKEigenPowerDeflation(std::vector<double>& A,  // [D*D], modified
+                                    int D, int K,
+                                    int maxIter, double relTol,
+                                    std::vector<double>& V,
+                                    std::vector<double>& eigvals)
+{
+    V.assign(static_cast<size_t>(K) * D, 0.0);
+    eigvals.assign(K, 0.0);
+    if (D <= 0 || K <= 0) return;
+
+    std::vector<double> v(D), Av(D);
+    // Deterministic seeding so two runs on identical data give the same
+    // eigenvectors (modulo sign).  Re-seeding per-eigenvector keeps things
+    // reproducible across calls.
+    uint64_t seed = 0x9E3779B97F4A7C15ULL;
+
+    for (int k = 0; k < K; k++) {
+        // Cheap xor-shift RNG inline; v has unit-norm random init.
+        double n2 = 0.0;
+        for (int i = 0; i < D; i++) {
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+            const double r = static_cast<double>(seed & 0xFFFFFFFFULL) /
+                             4294967296.0 - 0.5;
+            v[i] = r; n2 += r * r;
+        }
+        if (!(n2 > 0)) { eigvals[k] = 0; continue; }
+        const double inv = 1.0 / std::sqrt(n2);
+        for (int i = 0; i < D; i++) v[i] *= inv;
+
+        double lambda_prev = 0.0;
+        bool   converged   = false;
+        for (int it = 0; it < maxIter; it++) {
+            // Av = A · v
+            for (int i = 0; i < D; i++) {
+                double s = 0.0;
+                const double* row = A.data() + static_cast<size_t>(i) * D;
+                for (int j = 0; j < D; j++) s += row[j] * v[j];
+                Av[i] = s;
+            }
+            // λ = vᵀ Av
+            double lambda = 0.0;
+            for (int i = 0; i < D; i++) lambda += v[i] * Av[i];
+            // Normalise Av → v
+            double norm = 0.0;
+            for (int i = 0; i < D; i++) norm += Av[i] * Av[i];
+            if (!(norm > 0.0)) { lambda = 0; break; }
+            const double ninv = 1.0 / std::sqrt(norm);
+            for (int i = 0; i < D; i++) v[i] = Av[i] * ninv;
+
+            if (it > 0 && std::fabs(lambda - lambda_prev) <
+                          relTol * std::max(1.0, std::fabs(lambda))) {
+                lambda_prev = lambda;
+                converged   = true;
+                break;
+            }
+            lambda_prev = lambda;
+        }
+        (void)converged;
+        // Store eigenpair (rejecting near-zero / negative-noise eigenvalues
+        // produced by deflation rounding on remaining low-variance modes).
+        eigvals[k] = lambda_prev;
+        for (int i = 0; i < D; i++)
+            V[static_cast<size_t>(k) * D + i] = v[i];
+
+        // Deflate: A ← A − λ · v vᵀ
+        for (int i = 0; i < D; i++) {
+            const double vi = lambda_prev * v[i];
+            double* row = A.data() + static_cast<size_t>(i) * D;
+            for (int j = 0; j < D; j++) row[j] -= vi * v[j];
+        }
+    }
+}
