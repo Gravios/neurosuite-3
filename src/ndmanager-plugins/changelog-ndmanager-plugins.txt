@@ -1,4 +1,40 @@
 ------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-05-31
+
+* ndm_autoklusta (new plugin) — automatic cluster curation learned from
+  (auto, curated) .clu pairs.
+
+  Both the raw KlustaKwik output and the manually curated .clu index the
+  same spikes, so their overlap matrix recovers every curation decision:
+  DISCARD (raw cluster whose spikes mostly went to a noise cluster), KEEP
+  (mostly went to a real curated unit), and MERGE (two kept raw clusters
+  pointing at the same curated unit).  Splits are detected and reported
+  but not replayed (manual splits are spike-level).
+
+  Two HistGradientBoosting classifiers — p(keep) per cluster, p(merge)
+  per pair.  Inputs are ONLY scale-invariant descriptors of cluster
+  geometry and spread in feature space: covariance eigenvalue spectrum
+  (anisotropy, participation ratio, top-1 variance fraction), Mahalanobis
+  radius, shank-normalised spread ratio, Mahalanobis nearest-neighbour gap
+  and crowding; and for pairs the shank-whitened separation, Bhattacharyya
+  overlap, split-axis alignment, gap ratio, temporal span IoU and
+  refractory/ISI contamination of the candidate merged train.  Optional
+  waveform SNR / channel-concentration / template-cosine features when
+  .spk/.spkD is present (NaN-tolerant otherwise).  All descriptors are
+  scalars regardless of feature-space dimension, so one model transfers
+  across groups, shanks and probes.
+
+  mode=train accumulates each (session:group) into a persistent model
+  store and refits on the full accumulation, so the model keeps improving
+  across sessions (groups already in the store are skipped unless
+  force=true; reset=true starts fresh).  mode=apply replays the model
+  (raw .clu -> .clu_autocur.N, non-destructive); mode=eval scores a replay
+  against a held-out human curation (keep precision/recall + spike-level
+  adjusted Rand index).  modelKey namespaces per-probe-type models.
+
+  Backed by process_autoklusta.py.  Registered in scripts/CMakeLists.txt.
+
+------------------------------------------------------------------------------------------------------------
 neurosuite-3 fork — 2026-05-16
 
 * process_extractspikes, process_extractspikes_stderiv,
