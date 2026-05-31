@@ -1966,11 +1966,9 @@ programs:
   parameters:
   - {name: mode,           value: apply,        status: Optional}
   - {name: group,          value: ~,            status: Optional}
-  - {name: rawCluExt,      value: clu_auto,     status: Optional}
-  - {name: outCluExt,      value: clu_autocur,  status: Optional}
-  - {name: rawCluTag,      value: ~,            status: Optional}
-  - {name: curatedCluTag,  value: ~,            status: Optional}
-  - {name: outCluTag,      value: ~,            status: Optional}
+  - {name: rawCluExt,      value: ~,            status: Optional}
+  - {name: curatedCluExt,  value: ~,            status: Optional}
+  - {name: outCluExt,      value: autocur,      status: Optional}
   - {name: modelKey,       value: default,      status: Optional}
   - {name: modelPath,      value: ~,            status: Optional}
   - {name: noiseClusters,  value: '0,1',        status: Optional}
@@ -1994,11 +1992,11 @@ programs:
     WORKFLOW
       ndm_extractspikes(_stderiv) -> .spk(D)
       ndm_pca(_stderiv)           -> .fet(D)
-      ndm_klustakwik              -> .clu.N   (archive a copy as .clu_auto.N)
-      Klusters manual curation    -> .clu.N   (now the curated version)
+      ndm_klustakwik              -> .clu.N   (in Klusters, Save As .clu.N.K)
+      Klusters manual curation    -> .clu.N.final
       ndm_autoklusta mode=train   -> updates the curation model
       ... repeat on more sessions / shanks; the model accumulates ...
-      ndm_autoklusta mode=apply   -> .clu_autocur.N on a new session
+      ndm_autoklusta mode=apply   -> .clu.N.autocur on a new session
 
     DECISIONS RECOVERED (from the raw x curated overlap)
       DISCARD  raw cluster whose spikes mostly went to a noise cluster
@@ -2040,21 +2038,24 @@ programs:
     by shank. The store is keyed by session:group, so groups already ingested
     are skipped on a later full-session train (unless force=true).
 
-    KLUSTERS .clu.N.<tag> NAMING
-    Klusters writes tagged cluster files, SESSION.clu.N.<tag> (for example
+    CLUSTER-FILE NAMING (Klusters convention)
+    Klusters orders cluster files SESSION.clu.N.<label>, with the per-group
+    number N BEFORE the trailing label (e.g.
     sirotaA-jg-000005-20120312.clu.5.K for the raw KlustaKwik output and
-    .clu.5.final for the curated version). Point the plugin at them with:
-        rawCluTag: K          -> reads SESSION.clu.N.K as the raw input
-        curatedCluTag: final  -> reads SESSION.clu.N.final as the curated ref
-        outCluTag: autocur    -> apply writes SESSION.clu.N.autocur
-    A set tag overrides the corresponding flat fallback (rawCluExt / .clu.N /
-    outCluExt). Leave the tags empty to use the flat names.
+    .clu.5.final for the curated version). The three *CluExt parameters are
+    that trailing label:
+        rawCluExt: K          -> reads SESSION.clu.N.K   as the raw input
+        curatedCluExt: final  -> reads SESSION.clu.N.final as the curated ref
+        outCluExt: autocur    -> apply writes SESSION.clu.N.autocur (default)
+    An empty *CluExt means the plain SESSION.clu.N (no label). raw and curated
+    must differ in train mode, or there is nothing to learn.
 
     OUTPUT
       mode=train : model file at modelPath
-      mode=apply : the curated .clu per group (SESSION.<outCluExt>.N, or
-                   SESSION.clu.N.<outCluTag> when outCluTag is set); canonical
-                   binary .clu — load it in Klusters or rename to adopt it
+      mode=apply : the curated .clu per group, SESSION.clu.N.<outCluExt>
+                   (default label autocur, so the original .clu.N is never
+                   overwritten); canonical binary .clu — load it in Klusters,
+                   or rename to adopt it
       mode=eval  : per-group keep precision/recall and spike-level adjusted
                    Rand index versus the human curation
 
@@ -2069,21 +2070,11 @@ programs:
     Restrict the run to a single 1-based spike group (empty = all groups).
     A positional CLI argument (ndm_autoklusta session N) overrides this.
 
-    # rawCluExt
+    # rawCluExt / curatedCluExt / outCluExt
 
-    Extension of the un-curated KlustaKwik .clu when no rawCluTag is set
-    (default clu_auto, i.e. SESSION.clu_auto.N). For apply on a fresh run
-    whose output is still SESSION.clu.N, set rawCluExt=clu.
-
-    # outCluExt
-
-    Extension written by mode=apply when no outCluTag is set (default
-    clu_autocur).
-
-    # rawCluTag / curatedCluTag / outCluTag
-
-    Klusters .clu.N.<tag> selectors (see above). Each, when set, takes
-    precedence over the matching flat extension.
+    Klusters labels in SESSION.clu.N.<label> (see above). raw and curated
+    select the inputs for train/eval; out is where apply writes. Empty raw or
+    curated means the plain SESSION.clu.N; outCluExt defaults to autocur.
 
     # modelKey / modelPath
 
