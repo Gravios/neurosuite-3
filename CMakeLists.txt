@@ -444,31 +444,44 @@ ns_add_subdir(ndmanager-plugins src/ndmanager-plugins)
 ns_add_subdir(kiloklustakwik src/kiloklustakwik)
 
 # ---------------------------------------------------------------------------
-# Explicit build-time dependencies for parallel builds
+# Explicit build-time dependencies for parallel builds (belt-and-suspenders)
 #
-# target_link_libraries() creates a *link-order* dependency between a
-# consumer and a shared library, but NOT a *compile-order* dependency.
-# Under "cmake --build --parallel N" (Ninja or Make -j) the compiler for
-# klusters / neuroscope / ndmanager is allowed to start before klustersshared
-# has finished compiling — the build system only ensures klustersshared.so
-# exists before the consumer's link step runs.
+# In this monorepo the ordering is already guaranteed without this block.
+# libklustersshared is add_subdirectory()'d before its consumers (above) and
+# defines both the real target `klustersshared` and the alias
+# `KlustersShared::klustersshared`.  Each consumer guards its find_package with
+# `if(NOT TARGET KlustersShared::klustersshared)`, so in the monorepo the alias
+# is already present, find_package is skipped, and the consumer links the
+# *in-tree* target.  Linking an in-tree target (even via an alias) gives CMake
+# an automatic build-order edge, so each consumer's link step waits for
+# klustersshared.so under "cmake --build --parallel N".  All of
+# libklustersshared's headers — including the committed libklustersshared_export.h
+# — exist at configure time, so consumer AUTOMOC never needs the library
+# *built*, only its headers: there is no autogen race to lose.
 #
-# That is normally fine, but in a monorepo where every subpackage has its
-# own project() call the autogen targets (klusters_autogen, etc.) are
-# generated in their own scope and Ninja/Make does not automatically chain
-# them to klustersshared_autogen.  On a fast parallel build the consumer
-# autogen can race with klustersshared still being built, and on slower
-# systems the link step occasionally races the .so write.
+# The edges below are therefore redundant in the normal monorepo build.  They
+# are kept as insurance for the cases the alias does NOT cover: a consumer built
+# standalone against an installed/build-tree libklustersshared (where
+# find_package yields an IMPORTED target, which carries no automatic build-order
+# edge), and any future change that has libklustersshared *generate* a header at
+# build time that a consumer's autogen would then consume.
 #
-# add_dependencies() adds a hard build-time ordering edge that covers both
-# the AUTOGEN and the LINK phases: no consumer target may start until the
-# named dependency target has finished.  This is the canonical CMake
-# solution for inter-project dependency races in monorepos.
+# Only targets that actually LINK libklustersshared are listed.  kiloklustakwik
+# and every ndmanager-plugin merely shared-source the Qt-free xcorr / progressbar
+# files (committed sources, no generated artifact) and so have no build-order
+# dependency on the klustersshared target; klusters_convert_binary likewise links
+# nothing from libklustersshared.  All are intentionally omitted.
 # ---------------------------------------------------------------------------
 if(NOT NS_SKIP_LIBKLUSTERSSHARED)
-    foreach(_consumer klusters klusters_convert_binary neuroscope ndmanager)
+    foreach(_consumer klusters neuroscope ndmanager)
         if(TARGET ${_consumer})
             add_dependencies(${_consumer} klustersshared)
+        else()
+            message(WARNING
+                "neurosuite-3: expected consumer target '${_consumer}' not found "
+                "when wiring the libklustersshared build-order edge — it may have "
+                "been renamed. Ordering is still enforced via the in-tree alias "
+                "link, but this redundant safety edge is now absent.")
         endif()
     endforeach()
 endif()
