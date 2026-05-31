@@ -678,26 +678,28 @@ def apply_group(bundle, g: Group, keep_thr, merge_thr):
 def raw_clu_path(args, g):
     """Resolve the un-curated .clu for group g.
 
-    Klusters tags curated/raw files as SESSION.clu.N.<tag> (e.g.
-    .clu.5.K, .clu.5.final).  When --raw-clu-tag is given we read that
-    form; otherwise the flat SESSION.<rawCluExt>.N (default clu_auto)."""
-    if args.raw_clu_tag:
-        return f"{args.session}.clu.{g}.{args.raw_clu_tag}"
-    return f"{args.session}.{args.raw_clu_ext}.{g}"
+    Klusters orders cluster files SESSION.clu.<group>.<label> (e.g.
+    .clu.5.K for raw KlustaKwik output, .clu.5.final for the curated
+    version) — the group number always precedes the trailing label.
+    --raw-clu-ext is that label; empty means the plain SESSION.clu.N."""
+    if args.raw_clu_ext:
+        return f"{args.session}.clu.{g}.{args.raw_clu_ext}"
+    return f"{args.session}.clu.{g}"
 
 
 def curated_clu_path(args, g):
-    """Resolve the manually curated .clu for group g."""
-    if args.curated_clu_tag:
-        return f"{args.session}.clu.{g}.{args.curated_clu_tag}"
+    """Resolve the manually curated .clu for group g (Klusters ordering)."""
+    if args.curated_clu_ext:
+        return f"{args.session}.clu.{g}.{args.curated_clu_ext}"
     return f"{args.session}.clu.{g}"
 
 
 def out_clu_path(args, g):
-    """Resolve where mode=apply writes the curated .clu for group g."""
-    if args.out_clu_tag:
-        return f"{args.session}.clu.{g}.{args.out_clu_tag}"
-    return f"{args.session}.{args.out_clu_ext}.{g}"
+    """Resolve where mode=apply writes the curated .clu for group g
+    (Klusters ordering SESSION.clu.<group>.<label>)."""
+    if args.out_clu_ext:
+        return f"{args.session}.clu.{g}.{args.out_clu_ext}"
+    return f"{args.session}.clu.{g}"
 
 
 def iter_groups(args, load_curated):
@@ -733,6 +735,13 @@ def iter_groups(args, load_curated):
 
 
 def mode_train(args):
+    if args.raw_clu_ext == args.curated_clu_ext:
+        sys.stderr.write(
+            "ERROR: train needs raw and curated .clu to be different files; "
+            "--raw-clu-ext and --curated-clu-ext both resolve to "
+            f"{os.path.basename(raw_clu_path(args, 'N'))}. Set distinct "
+            "Klusters labels (e.g. --raw-clu-ext K --curated-clu-ext final).\n")
+        return 1
     bundle = None if args.reset.lower() in ("1", "true", "yes") \
         else load_bundle(args.model_path)
     store = bundle["store"] if bundle and "store" in bundle else empty_store()
@@ -891,17 +900,15 @@ def parse_args():
                    help="restrict to a single group (0 = all groups)")
     p.add_argument("--mode", choices=["train", "apply", "eval"], default="apply")
     p.add_argument("--model-path", required=True)
-    p.add_argument("--raw-clu-ext", default="clu_auto")
-    p.add_argument("--out-clu-ext", default="clu_autocur")
-    p.add_argument("--raw-clu-tag", default="",
-                   help="read raw clu as SESSION.clu.N.<tag> (Klusters tag "
-                        "convention); overrides --raw-clu-ext")
-    p.add_argument("--curated-clu-tag", default="",
-                   help="read curated clu as SESSION.clu.N.<tag>; "
-                        "default is the flat SESSION.clu.N")
-    p.add_argument("--out-clu-tag", default="",
-                   help="write apply output as SESSION.clu.N.<tag>; "
-                        "overrides --out-clu-ext")
+    p.add_argument("--raw-clu-ext", default="",
+                   help="raw clu label: reads SESSION.clu.N.<ext> (Klusters "
+                        "ordering); empty = plain SESSION.clu.N")
+    p.add_argument("--curated-clu-ext", default="",
+                   help="curated clu label: reads SESSION.clu.N.<ext>; "
+                        "empty = plain SESSION.clu.N")
+    p.add_argument("--out-clu-ext", default="autocur",
+                   help="apply writes SESSION.clu.N.<ext>; empty = plain "
+                        "SESSION.clu.N (default autocur, non-destructive)")
     p.add_argument("--noise-clusters", default="0,1")
     p.add_argument("--keep-threshold", type=float, default=-1.0)
     p.add_argument("--merge-threshold", type=float, default=-1.0)

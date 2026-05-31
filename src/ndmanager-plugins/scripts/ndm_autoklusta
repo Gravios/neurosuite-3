@@ -6,18 +6,18 @@
 #//  Three modes (the `mode` parameter):
 #//
 #//    train  Reads, per spikeDetection group, the raw KlustaKwik output
-#//           (SESSION.<rawCluExt>.N, default clu_auto) AND the manually
-#//           curated SESSION.clu.N.  Recovers your KEEP / DISCARD / MERGE
-#//           decisions from their overlap, extracts scale-invariant
-#//           cluster-geometry features, and ACCUMULATES them into a model
-#//           store under `modelPath`.  Re-running train on further sessions
-#//           or shanks appends to the same model and refits — so the
-#//           curator keeps improving across sessions.  `reset=true` starts
-#//           a fresh model.
+#//           (SESSION.clu.N.<rawCluExt>, e.g. .clu.N.K) AND the manually
+#//           curated SESSION.clu.N.<curatedCluExt> (e.g. .clu.N.final).
+#//           Recovers your KEEP / DISCARD / MERGE decisions from their
+#//           overlap, extracts scale-invariant cluster-geometry features,
+#//           and ACCUMULATES them into a model store under `modelPath`.
+#//           Re-running train on further sessions or shanks appends to the
+#//           same model and refits — so the curator keeps improving across
+#//           sessions.  `reset=true` starts a fresh model.
 #//
 #//    apply  Replays a trained model on un-curated output: reads
-#//           SESSION.<rawCluExt>.N and writes a curated
-#//           SESSION.<outCluExt>.N (default clu_autocur) per group —
+#//           SESSION.clu.N.<rawCluExt> and writes a curated
+#//           SESSION.clu.N.<outCluExt> (default label autocur) per group —
 #//           discarding predicted junk to MUA(1) and merging over-split
 #//           fragments.  Non-destructive: never overwrites SESSION.clu.N.
 #//
@@ -64,8 +64,6 @@ inputs_missing "$yamlfile" && exit $INPUTS_MISSING
 
 # Parameters (all optional; defaults below)
 mode=$(read_script_parameter        "$session" ndm_autoklusta mode);        mode=${mode:-apply}
-rawCluExt=$(read_script_parameter   "$session" ndm_autoklusta rawCluExt);   rawCluExt=${rawCluExt:-clu_auto}
-outCluExt=$(read_script_parameter   "$session" ndm_autoklusta outCluExt);   outCluExt=${outCluExt:-clu_autocur}
 noiseClusters=$(read_script_parameter "$session" ndm_autoklusta noiseClusters); noiseClusters=${noiseClusters:-0,1}
 keepThreshold=$(read_script_parameter "$session" ndm_autoklusta keepThreshold); keepThreshold=${keepThreshold:--1}
 mergeThreshold=$(read_script_parameter "$session" ndm_autoklusta mergeThreshold); mergeThreshold=${mergeThreshold:--1}
@@ -78,12 +76,17 @@ modelKey=$(read_script_parameter    "$session" ndm_autoklusta modelKey);    mode
 modelPath=$(read_script_parameter   "$session" ndm_autoklusta modelPath)
 probeLibrary=$(read_script_parameter "$session" ndm_autoklusta probeLibrary)
 
-# Klusters .clu.N.<tag> naming (e.g. .clu.5.K raw, .clu.5.final curated).
-# When a tag is set the corresponding file is SESSION.clu.N.<tag>; when
-# empty the flat fallbacks (rawCluExt / .clu.N / outCluExt) are used.
-rawCluTag=$(read_script_parameter     "$session" ndm_autoklusta rawCluTag)
-curatedCluTag=$(read_script_parameter "$session" ndm_autoklusta curatedCluTag)
-outCluTag=$(read_script_parameter     "$session" ndm_autoklusta outCluTag)
+# Cluster-file naming follows the Klusters convention SESSION.clu.N.<ext>,
+# where the per-group number comes BEFORE the trailing label (e.g.
+# sirotaA-...-20120312.clu.5.K for the raw KlustaKwik output and
+# .clu.5.final for the curated version).  Each *CluExt is that trailing
+# label; empty means the plain SESSION.clu.N with no label.
+rawCluExt=$(read_script_parameter     "$session" ndm_autoklusta rawCluExt)
+curatedCluExt=$(read_script_parameter "$session" ndm_autoklusta curatedCluExt)
+outCluExt=$(read_script_parameter     "$session" ndm_autoklusta outCluExt)
+check_optional_variable "$rawCluExt"     || rawCluExt=""
+check_optional_variable "$curatedCluExt" || curatedCluExt=""
+check_optional_variable "$outCluExt"     || outCluExt="autocur"
 
 # group precedence: CLI arg ($2) > YAML ndm_autoklusta.group > "" (all).
 # CLI must win so `ndm_autoklusta session 5` trains/applies just group 5
@@ -96,16 +99,17 @@ else
     check_optional_variable "$group" || group=""
 fi
 
-# Per-group file resolvers honouring the optional Klusters tags.
+# Per-group file resolvers — Klusters ordering: SESSION.clu.<group>.<ext>
+# (the group number always precedes the trailing label).
 _raw_path() { local g=$1
-    if [ -n "$rawCluTag" ]; then echo "$session.clu.$g.$rawCluTag"
-    else echo "$session.$rawCluExt.$g"; fi; }
+    if [ -n "$rawCluExt" ]; then echo "$session.clu.$g.$rawCluExt"
+    else echo "$session.clu.$g"; fi; }
 _cur_path() { local g=$1
-    if [ -n "$curatedCluTag" ]; then echo "$session.clu.$g.$curatedCluTag"
+    if [ -n "$curatedCluExt" ]; then echo "$session.clu.$g.$curatedCluExt"
     else echo "$session.clu.$g"; fi; }
 _out_path() { local g=$1
-    if [ -n "$outCluTag" ]; then echo "$session.clu.$g.$outCluTag"
-    else echo "$session.$outCluExt.$g"; fi; }
+    if [ -n "$outCluExt" ]; then echo "$session.clu.$g.$outCluExt"
+    else echo "$session.clu.$g"; fi; }
 
 # Resolve the persistent, cross-session model location.  Explicit
 # modelPath wins; then $NEUROSUITE_AUTOKLUSTA_MODEL; else a per-key file
@@ -156,6 +160,16 @@ done
 # Mode-specific input checks
 case "$mode" in
     train)
+        # raw and curated must be DIFFERENT files, or there is nothing to
+        # learn (the overlap would be the identity).  With both rawCluExt
+        # and curatedCluExt empty they both resolve to SESSION.clu.N.
+        if [ "$(_raw_path 0)" = "$(_cur_path 0)" ]; then
+            echo_error "train: raw and curated resolve to the same file"
+            echo_error "($(_raw_path N)).  Set rawCluExt and/or curatedCluExt to"
+            echo_error "distinct Klusters labels, e.g. rawCluExt=K curatedCluExt=final"
+            echo_error "(reads SESSION.clu.N.K and SESSION.clu.N.final)."
+            exit $GENERAL_ERROR
+        fi
         ok=0
         for g in $groupList; do
             { [ -f "$(_raw_path $g)" ] && [ -f "$(_cur_path $g)" ]; } && (( ok++ ))
@@ -163,8 +177,8 @@ case "$mode" in
         [ "$ok" -eq 0 ] && {
             echo_error "train needs both raw ($(_raw_path N)) and curated"
             echo_error "($(_cur_path N)) files; found 0 of the selected group(s) with both."
-            echo_error "Archive the KlustaKwik output (e.g. cp .clu.N .clu_auto.N, or"
-            echo_error "set rawCluTag) before curating overwrites it."
+            echo_error "Set rawCluExt / curatedCluExt to the Klusters labels you used"
+            echo_error "(SESSION.clu.N.<label>) when saving in Klusters."
             exit $INPUTS_MISSING; }
         echo_message "train: $ok group(s) with (raw, curated) pairs"
         ;;
@@ -175,7 +189,8 @@ case "$mode" in
         done
         [ "$ok" -eq 0 ] && {
             echo_error "No raw .clu found ($(_raw_path N)). Run ndm_klustakwik first,"
-            echo_error "or set rawCluExt / rawCluTag to the un-curated .clu naming."
+            echo_error "or set rawCluExt to the Klusters label of the un-curated .clu"
+            echo_error "(SESSION.clu.N.<label>)."
             exit $INPUTS_MISSING; }
         if [ "$mode" = "apply" ]; then
             for g in $groupList; do
@@ -208,10 +223,8 @@ python3 "$PY_HELPER" \
     --model-path            "$modelPath" \
     --group                 "${group:-0}" \
     --raw-clu-ext           "$rawCluExt" \
+    --curated-clu-ext       "$curatedCluExt" \
     --out-clu-ext           "$outCluExt" \
-    --raw-clu-tag           "$rawCluTag" \
-    --curated-clu-tag       "$curatedCluTag" \
-    --out-clu-tag           "$outCluTag" \
     --noise-clusters        "$noiseClusters" \
     --keep-threshold        "$keepThreshold" \
     --merge-threshold       "$mergeThreshold" \
