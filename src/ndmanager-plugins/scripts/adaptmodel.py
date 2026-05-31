@@ -54,6 +54,11 @@ from dataclasses import dataclass, field, asdict
 
 import numpy as np
 
+# adapt_format.py (the single .adapt format authority) sits beside this script;
+# ensure it is importable regardless of cwd or install layout.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapt_format
+
 # ----------------------------------------------------------------------------
 # Physiological priors / gate ranges (milliseconds).  Defaults are broad;
 # cell-type specialisation only narrows them.
@@ -464,22 +469,10 @@ def _print_report(results):
 def _save_artifact(path, artifact):
     """Write the .adapt binary consumed by process_reassignspikes.
 
-    Layout (little-endian): "ADPT", int32 version, int32 nUnits, then per unit
-    int32 group/cluster/nSamples/nChan, float64 tau_f_ms/u_f/tau_s_ms/u_s,
-    float32[3*nSamples*nChan] templates (C0,C1,C2 row-major)."""
-    if not path.endswith(".adapt"):
-        path = path + ".adapt"
-    with open(path, "wb") as fh:
-        fh.write(b"ADPT")
-        np.array([1, len(artifact)], dtype="<i4").tofile(fh)
-        for m in artifact.values():
-            np.array([m["group"], m["cluster"],
-                      m["n_samples"], m["n_chan"]], dtype="<i4").tofile(fh)
-            np.array([m["tau_f_ms"], m["u_f"],
-                      m["tau_s_ms"], m["u_s"]], dtype="<f8").tofile(fh)
-            # templates: (3, nSamples*nChan) row-major -> C0,C1,C2 contiguous
-            m["templates"].astype("<f4").ravel(order="C").tofile(fh)
-    return path
+    Delegates to adapt_format.write_adapt, the single Python-side definition of
+    the format (kept in sync with the C++ reader in process_reassignspikes).
+    """
+    return adapt_format.write_adapt(path, artifact.values())
 
 
 # ============================================================================
