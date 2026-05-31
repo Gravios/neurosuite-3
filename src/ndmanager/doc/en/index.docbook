@@ -110,55 +110,16 @@
 				</mediaobject>
 			</screenshot>
 			<para>
-			Right-click a directory and select <menuchoice> <guimenu>Action</guimenu> <guimenuitem>Prepare for NDManager</guimenuitem> </menuchoice>. This only works with a KDE file manager, but the same result can be achieved from a shell by typing: <programlisting> ndm_prepare "July 18, 2011" </programlisting> This will start a graphical dialog where you can provide the information required to rename the files:
-			</para>
-			<screenshot>
-				<screeninfo>Preparing for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example1-prepare1.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Preparing for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			The <guilabel>Recording Setups</guilabel> entry is an arbitrary suffix that will be used to separate the original and processed files (see below). Here we choose <userinput>CED</userinput>. A more advanced use case will be presented in <xref linkend="example2"/>.
+			&ndmanager; expects every file of one recording session to share a common base name of the form <filename>Name-YYYYMMDD</filename>, the data type being carried by the file extension (<filename>base.dat</filename>, <filename>base.eeg</filename>, <filename>base.ext</filename>; see <xref linkend="files"/>).  Preparing the data therefore means renaming the raw files of each recording day into a directory whose files all carry that day&apos;s base name.  Here the three days become <filename>Example1-20110718</filename>, <filename>Example1-20110719</filename> and <filename>Example1-20110720</filename>.
 			</para>
 			<para>
-			Click <guibutton>OK</guibutton>. In the next dialog, you can check and confirm the information you provided before the files are actually renamed:
-			</para>
-			<screenshot>
-				<screeninfo>Preparing for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example1-prepare2.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Preparing for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			Click <guibutton>OK</guibutton>. You are now presented with a list that is intended to help you find missing files:
-			</para>
-			<screenshot>
-				<screeninfo>Checking for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example1-check.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Checking for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			Had a file been missing, e.g. the video for the sleep session, a red cross would have appeared next to its name (see <xref linkend="example2-missing"/>).
+			When several acquisition devices are used in parallel, a short recording-setup suffix is appended to keep the streams distinct and to separate original from processed files.  This example uses a single setup, for which we pick <userinput>CED</userinput>; the multi-device case is shown in <xref linkend="example2"/>.
 			</para>
 			<para>
-			Prepare the other two directories. Your data files should now look like:
+			Before launching a long run, confirm that each prepared directory holds the complete set of expected files: a missing video or channel file is much cheaper to spot now than after processing (<xref linkend="example2-missing"/> shows an incomplete set).
+			</para>
+			<para>
+			Once all three days are renamed, your data files should look like:
 			</para>
 			<screenshot>
 				<screeninfo>Checking for NDManager</screeninfo>
@@ -272,38 +233,10 @@
 				</mediaobject>
 			</screenshot>
 			<para>
-			Right-click <emphasis>both</emphasis> directories and select <menuchoice> <guimenu>Action</guimenu> <guimenuitem>Prepare for NDManager</guimenuitem> </menuchoice>. Again, the same result can be achieved from a shell by typing: <programlisting> ndm_prepare "August 13, 2011 (1)" "August 13, 2011 (2)"</programlisting>.
-			</para>
-			<screenshot>
-				<screeninfo>Preparing for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example2-prepare1.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Preparing for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			Because two recording devices were used in parallel, <guilabel>Recording Setups</guilabel> lists two entries. The actual suffixes are arbitrary, here we choose <userinput>setup1</userinput> and <userinput>setup2</userinput>.
+			Because two recording devices were used in parallel, the files of both are brought together under a single day&apos;s base name, <filename>Example2-20110813</filename>, with a recording-setup suffix distinguishing the two streams; the suffixes are arbitrary, here <userinput>setup1</userinput> and <userinput>setup2</userinput>.  The base-name and extension convention is the one described in <xref linkend="files"/>.
 			</para>
 			<para id="example2-missing" xreflabel="Example&nbsp;2">
-			Click <guibutton>OK</guibutton>. In the next dialog, check the information you provided and click <guibutton>OK</guibutton> to rename the files. In the list that is now presented, a red cross indicates that one video file is missing:
-			</para>
-			<screenshot>
-				<screeninfo>Checking for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example2-check.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Checking for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			This helps you anticipate possible problems before you start a time-consuming processing job (had you noticed that this file was missing?)
+			Once renamed, check that the prepared directory holds every expected file.  In this session one video file is in fact absent &mdash; exactly the kind of omission worth catching before a time-consuming run rather than after it (had you noticed it was missing?).
 			</para>
 			<para>
 			Your data files should now look like:
@@ -414,55 +347,13 @@
 				</mediaobject>
 			</screenshot>
 			<para>
-			Right-click <emphasis>both directories</emphasis> corresponding to the first day, and select <menuchoice> <guimenu>Action</guimenu> <guimenuitem>Prepare for NDManager</guimenuitem> </menuchoice>. This only works with a KDE file manager, but the same result can be achieved from a shell by typing: <programlisting> ndm_prepare 2011-07-18_10-22-45 2011-07-18_10-45-12</programlisting> This will start a graphical dialog where you can provide the information required to rename the files:
-			</para>
-			<screenshot>
-				<screeninfo>Preparing for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example3-prepare1.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Preparing for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			The <guilabel>Recording Setups</guilabel> entry is an arbitrary suffix that will be used to separate the original and processed files (see below). Here we choose <userinput>nlx</userinput>. A more advanced use case is presented in <xref linkend="example2"/>.
+			As before, the raw recordings are renamed so that each day&apos;s files share one base name following the <filename>Name-YYYYMMDD</filename> convention (see <xref linkend="files"/>), with a recording-setup suffix &mdash; here <userinput>nlx</userinput> &mdash; separating original from processed files.  The first day was recorded in two consecutive sessions (<filename>2011-07-18_10-22-45</filename> and <filename>2011-07-18_10-45-12</filename>), which are gathered together under <filename>Example3-20110718</filename>.
 			</para>
 			<para>
-			Click <guibutton>OK</guibutton>. In the next dialog, you can check and confirm the information you provided before the files are actually renamed:
-			</para>
-			<screenshot>
-				<screeninfo>Preparing for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example3-prepare2.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Preparing for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			Click <guibutton>OK</guibutton>. You are now presented with a list that is intended to help you find missing files:
-			</para>
-			<screenshot>
-				<screeninfo>Checking for NDManager</screeninfo>
-				<mediaobject>
-					<imageobject>
-						<imagedata fileref="Images/example3-check.png" format="PNG"/>
-					</imageobject>
-					<textobject>
-						<phrase>Checking for NDManager</phrase>
-					</textobject>
-				</mediaobject>
-			</screenshot>
-			<para>
-			Had a file been missing, e.g. the video for the sleep session, a red cross would have appeared next to its name (see <xref linkend="example2-missing"/>). Note that <filename>ncs</filename> files are counted: a missing file would yield a lower count.
+			Confirm that each prepared directory holds the complete set of expected files before processing; note in particular that the individual <filename>ncs</filename> files are counted, so a missing one shows up as a lower count (see <xref linkend="example2-missing"/>).
 			</para>
 			<para>
-			Prepare the other three directories. Your data files should now look like:
+			Once all the recording days are renamed, your data files should look like:
 			</para>
 			<screenshot>
 				<screeninfo>Checking for NDManager</screeninfo>
