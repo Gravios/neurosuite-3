@@ -74,6 +74,7 @@ install(PROGRAMS
     process_setupgroups.py
     kk_build_prior.py
     kk_resolve_prior.py
+    adaptmodel.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 foreach(_page IN ITEMS
