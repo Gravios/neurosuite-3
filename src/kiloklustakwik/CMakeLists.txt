@@ -194,7 +194,7 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/src")
 # =============================================================================
 # Common sources and dependencies
 # =============================================================================
-set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_quality.cpp src/KK_io.cpp src/KK_timeshift.cpp src/KK_vbgmm.cpp src/KK_refeaturize.cpp src/KK_split.cpp src/KlustaKwikYaml.cpp src/KK_prior.cpp src/param.c
+set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_quality.cpp src/KK_io.cpp src/KK_timeshift.cpp src/KK_vbgmm.cpp src/KK_refeaturize.cpp src/KK_split.cpp src/KK_chunked.cpp src/KlustaKwikYaml.cpp src/KK_prior.cpp src/param.c
     src/dipsplit.cpp
     src/proxy_isi.cpp
     src/wave_knn_split.cpp
@@ -415,7 +415,7 @@ if(_SYCL_ACTIVE)
     # src/shiftprobe_sycl.cpp is no longer compiled — see src/shiftprobe_disabled.cpp
     # for the rationale.
     add_executable(KiloKlustaKwik_sycl
-        src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_quality.cpp src/KK_io.cpp src/KK_timeshift.cpp src/KK_vbgmm.cpp src/KK_refeaturize.cpp src/KK_split.cpp src/KK_sycl.cpp src/KK_prior.cpp
+        src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_quality.cpp src/KK_io.cpp src/KK_timeshift.cpp src/KK_vbgmm.cpp src/KK_refeaturize.cpp src/KK_split.cpp src/KK_chunked.cpp src/KK_sycl.cpp src/KK_prior.cpp
         src/dipsplit.cpp
         src/proxy_isi.cpp
         src/wave_knn_split.cpp
