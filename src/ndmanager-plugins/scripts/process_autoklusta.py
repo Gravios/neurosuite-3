@@ -318,8 +318,9 @@ def span_iou(amin, amax, bmin, bmax):
 class Group:
     """One spikeDetection group, all arrays length-aligned."""
 
-    def __init__(self, session, group, raw_clu_path, n_chan, n_samp, sr,
-                 noise, load_curated, use_waveforms, refractory_ms):
+    def __init__(self, session, group, raw_clu_path, curated_clu_path,
+                 n_chan, n_samp, sr, noise, load_curated, use_waveforms,
+                 refractory_ms):
         self.session = Path(session)
         self.group = group
         self.name = f"{self.session.name}:{group}"
@@ -330,8 +331,7 @@ class Group:
         feats_all, n_dims = read_fet(f"{self.session}.fet.{group}")
         self.res = read_res(f"{self.session}.res.{group}")
         self.raw = read_clu(raw_clu_path)
-        cur_path = f"{self.session}.clu.{group}"
-        self.cur = read_clu(cur_path) if load_curated else None
+        self.cur = read_clu(curated_clu_path) if load_curated else None
 
         lengths = [len(feats_all), len(self.res), len(self.raw)]
         if self.cur is not None:
@@ -675,24 +675,57 @@ def apply_group(bundle, g: Group, keep_thr, merge_thr):
 #  Per-mode drivers
 # ════════════════════════════════════════════════════════════════════════
 
+def raw_clu_path(args, g):
+    """Resolve the un-curated .clu for group g.
+
+    Klusters tags curated/raw files as SESSION.clu.N.<tag> (e.g.
+    .clu.5.K, .clu.5.final).  When --raw-clu-tag is given we read that
+    form; otherwise the flat SESSION.<rawCluExt>.N (default clu_auto)."""
+    if args.raw_clu_tag:
+        return f"{args.session}.clu.{g}.{args.raw_clu_tag}"
+    return f"{args.session}.{args.raw_clu_ext}.{g}"
+
+
+def curated_clu_path(args, g):
+    """Resolve the manually curated .clu for group g."""
+    if args.curated_clu_tag:
+        return f"{args.session}.clu.{g}.{args.curated_clu_tag}"
+    return f"{args.session}.clu.{g}"
+
+
+def out_clu_path(args, g):
+    """Resolve where mode=apply writes the curated .clu for group g."""
+    if args.out_clu_tag:
+        return f"{args.session}.clu.{g}.{args.out_clu_tag}"
+    return f"{args.session}.{args.out_clu_ext}.{g}"
+
+
 def iter_groups(args, load_curated):
     n_samp = [int(x) for x in args.n_samples_per_group.split(",") if x != ""]
     n_chan = [int(x) for x in args.n_channels_per_group.split(",") if x != ""]
     noise = [int(x) for x in args.noise_clusters.split(",") if x != ""]
     use_wf = args.use_waveforms.lower() in ("1", "true", "yes")
-    for gi in range(1, args.n_groups + 1):
-        raw_path = f"{args.session}.{args.raw_clu_ext}.{gi}"
+    # --group N restricts the run to a single group; 0/absent = all groups.
+    groups = ([args.group] if args.group and args.group > 0
+              else range(1, args.n_groups + 1))
+    for gi in groups:
+        raw_path = raw_clu_path(args, gi)
+        cur_path = curated_clu_path(args, gi)
         fet_path = f"{args.session}.fet.{gi}"
         if not (os.path.isfile(raw_path) and os.path.isfile(fet_path)
                 and os.path.isfile(f"{args.session}.res.{gi}")):
+            if args.group and args.group > 0:
+                print(f"  group {gi}: missing raw .clu / .fet / .res "
+                      f"(looked for {os.path.basename(raw_path)})")
             continue
-        if load_curated and not os.path.isfile(f"{args.session}.clu.{gi}"):
-            print(f"  group {gi}: no curated .clu.{gi} — skipping")
+        if load_curated and not os.path.isfile(cur_path):
+            print(f"  group {gi}: no curated {os.path.basename(cur_path)} "
+                  f"— skipping")
             continue
         ns = n_samp[gi - 1] if gi - 1 < len(n_samp) else 32
         nc = n_chan[gi - 1] if gi - 1 < len(n_chan) else args.n_channels
         try:
-            yield Group(args.session, gi, raw_path, nc, ns,
+            yield Group(args.session, gi, raw_path, cur_path, nc, ns,
                         args.sampling_rate, noise, load_curated,
                         use_wf, args.refractory_ms)
         except Exception as e:                   # noqa: BLE001
@@ -785,7 +818,7 @@ def mode_apply(args):
     wrote = 0
     for g in iter_groups(args, load_curated=False):
         new, rep = apply_group(bundle, g, keep_thr, merge_thr)
-        out_path = f"{args.session}.{args.out_clu_ext}.{g.group}"
+        out_path = out_clu_path(args, g.group)
         write_clu(out_path, new)
         wrote += 1
         print(f"  group {g.group}: {rep['n_raw_real']} raw -> "
@@ -854,10 +887,21 @@ def parse_args():
     p.add_argument("--n-groups", type=int, required=True)
     p.add_argument("--n-samples-per-group", default="")
     p.add_argument("--n-channels-per-group", default="")
+    p.add_argument("--group", type=int, default=0,
+                   help="restrict to a single group (0 = all groups)")
     p.add_argument("--mode", choices=["train", "apply", "eval"], default="apply")
     p.add_argument("--model-path", required=True)
     p.add_argument("--raw-clu-ext", default="clu_auto")
     p.add_argument("--out-clu-ext", default="clu_autocur")
+    p.add_argument("--raw-clu-tag", default="",
+                   help="read raw clu as SESSION.clu.N.<tag> (Klusters tag "
+                        "convention); overrides --raw-clu-ext")
+    p.add_argument("--curated-clu-tag", default="",
+                   help="read curated clu as SESSION.clu.N.<tag>; "
+                        "default is the flat SESSION.clu.N")
+    p.add_argument("--out-clu-tag", default="",
+                   help="write apply output as SESSION.clu.N.<tag>; "
+                        "overrides --out-clu-ext")
     p.add_argument("--noise-clusters", default="0,1")
     p.add_argument("--keep-threshold", type=float, default=-1.0)
     p.add_argument("--merge-threshold", type=float, default=-1.0)
