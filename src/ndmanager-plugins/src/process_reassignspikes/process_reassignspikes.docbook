@@ -1,0 +1,99 @@
+<refentry xmlns="http://docbook.org/ns/docbook" version="5.2" id="process_reassignspikes">
+
+	<refmeta>
+		<refentrytitle>process_reassignspikes</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_reassignspikes</refname>
+		<refpurpose>reassign history-dependent (burst-decremented) spikes using a frozen waveform-adaptation model.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+			<command>process_reassignspikes</command>
+			<arg choice="plain"><option>-m</option> <replaceable>model.adapt</replaceable></arg>
+			<arg choice="opt"><option>-p</option> <replaceable>session.yaml</replaceable></arg>
+			<arg choice="opt"><option>-s</option> <replaceable>samplingRate</replaceable></arg>
+			<arg choice="opt"><option>-g</option> <replaceable>groups</replaceable></arg>
+			<arg choice="opt"><option>-r</option> <replaceable>refractorySamples</replaceable></arg>
+			<arg choice="opt"><option>-a</option> <replaceable>amplitudePercentile</replaceable></arg>
+			<arg choice="opt"><option>-k</option> <replaceable>priorWeight</replaceable></arg>
+			<arg choice="opt"><option>-M</option> <replaceable>scoreMargin</replaceable></arg>
+			<arg choice="opt"><option>-o</option> <replaceable>outSuffix</replaceable></arg>
+			<arg choice="opt"><option>--commit</option></arg>
+			<arg choice="opt"><option>-v</option></arg>
+			<arg choice="plain"><replaceable>basename</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>DESCRIPTION</title>
+		<para>
+			Spikes fired during a burst are progressively smaller, slower
+			and broader because each spike leaves a fraction of the unit's
+			Na+ channels inactivated and engages slow K+/AHP currents; their
+			waveform therefore depends on the unit's recent firing history.
+			In feature space this low-amplitude tail drifts toward smaller
+			neighbours and gets mis-clustered.  This tool re-scores ambiguous
+			(low-amplitude) spikes against a <emphasis>state-conditioned</emphasis>
+			waveform model and reassigns those that fit a different unit
+			better.
+		</para>
+		<para>
+			It does <emphasis>not</emphasis> fit the model.  The nonlinear
+			recovery-parameter fit and the per-unit trust gating (held-out
+			cross-validation, physiological time-constant bounds, an
+			alignment-jitter check) are performed offline by the companion
+			tool <command>adaptmodel.py</command>, which emits the
+			<filename>.adapt</filename> artifact read here.  Units absent from
+			the artifact were rejected by those gates and are never modified.
+		</para>
+		<para>
+			The curated <filename>basename.clu.N</filename> is never
+			overwritten.  Without <option>--commit</option> the tool is a
+			dry run: it writes only a move log
+			(<filename>basename<replaceable>outSuffix</replaceable>.clu.log</filename>)
+			of the changes it would make.  With <option>--commit</option> it
+			additionally writes the reassigned labels to
+			<filename>basename<replaceable>outSuffix</replaceable>.clu.N</filename>.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>OPTIONS</title>
+		<variablelist>
+			<varlistentry><term><option>-m</option> <replaceable>model.adapt</replaceable></term>
+				<listitem><para>Frozen model artifact from <command>adaptmodel.py</command> (required).</para></listitem></varlistentry>
+			<varlistentry><term><option>-p</option> <replaceable>session.yaml</replaceable></term>
+				<listitem><para>Session parameter file; supplies the sampling rate.</para></listitem></varlistentry>
+			<varlistentry><term><option>-s</option> <replaceable>samplingRate</replaceable></term>
+				<listitem><para>Sampling rate in Hz, if no YAML is given.</para></listitem></varlistentry>
+			<varlistentry><term><option>-g</option> <replaceable>groups</replaceable></term>
+				<listitem><para>Comma-separated 1-based group indices (default: all groups present in the model).</para></listitem></varlistentry>
+			<varlistentry><term><option>-r</option> <replaceable>refractorySamples</replaceable></term>
+				<listitem><para>Reject any move that would place a spike within this many samples of an existing spike in the target unit (0 disables).</para></listitem></varlistentry>
+			<varlistentry><term><option>-a</option> <replaceable>amplitudePercentile</replaceable></term>
+				<listitem><para>Only contest spikes below this within-unit amplitude percentile (default 50).</para></listitem></varlistentry>
+			<varlistentry><term><option>-k</option> <replaceable>priorWeight</replaceable></term>
+				<listitem><para>Weight of the curated-label prior; larger values bias toward leaving spikes where curation placed them.</para></listitem></varlistentry>
+			<varlistentry><term><option>-M</option> <replaceable>scoreMargin</replaceable></term>
+				<listitem><para>Minimum score gain required before a spike is moved (hysteresis against churn).</para></listitem></varlistentry>
+			<varlistentry><term><option>-o</option> <replaceable>outSuffix</replaceable></term>
+				<listitem><para>Output stem suffix (default <literal>-reassigned</literal>).</para></listitem></varlistentry>
+			<varlistentry><term><option>--commit</option></term>
+				<listitem><para>Write the reassigned <filename>.clu.N</filename> (otherwise dry-run, log only).</para></listitem></varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>SEE ALSO</title>
+		<para>
+			<citerefentry><refentrytitle>process_shadowcluster</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_decomposecollisions</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<citerefentry><refentrytitle>process_spikecleaner</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+		</para>
+	</refsect1>
+
+</refentry>
