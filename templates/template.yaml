@@ -1962,6 +1962,137 @@ programs:
     Example: 128 cores, 9 chunks → parallelK=32, 4 OMP threads/job, ~20x speedup.
 
 
+- name: ndm_autoklusta
+  parameters:
+  - {name: mode,           value: apply,        status: Optional}
+  - {name: rawCluExt,      value: clu_auto,     status: Optional}
+  - {name: outCluExt,      value: clu_autocur,  status: Optional}
+  - {name: modelKey,       value: default,      status: Optional}
+  - {name: modelPath,      value: ~,            status: Optional}
+  - {name: noiseClusters,  value: '0,1',        status: Optional}
+  - {name: keepThreshold,  value: -1,           status: Optional}
+  - {name: mergeThreshold, value: -1,           status: Optional}
+  - {name: splitPurity,    value: 0.8,          status: Optional}
+  - {name: useWaveforms,   value: 'true',       status: Optional}
+  - {name: refractoryMs,   value: 2.0,          status: Optional}
+  - {name: reset,          value: 'false',      status: Optional}
+  - {name: force,          value: 'false',      status: Optional}
+  - {name: probeLibrary,   value: ~,            status: Optional}
+  help: |-
+    Learn manual spike-sorting curation from (auto, curated) .clu pairs and
+    replay it on fresh KlustaKwik output.
+
+    Both the raw KlustaKwik output and the final, manually curated .clu index
+    the same spikes, so together they encode every curation decision you made.
+    ndm_autoklusta recovers those decisions, fits two classifiers, and applies
+    the fitted policy to un-curated output.
+
+    WORKFLOW
+      ndm_extractspikes(_stderiv) -> .spk(D)
+      ndm_pca(_stderiv)           -> .fet(D)
+      ndm_klustakwik              -> .clu.N   (archive a copy as .clu_auto.N)
+      Klusters manual curation    -> .clu.N   (now the curated version)
+      ndm_autoklusta mode=train   -> updates the curation model
+      ... repeat on more sessions / shanks; the model accumulates ...
+      ndm_autoklusta mode=apply   -> .clu_autocur.N on a new session
+
+    DECISIONS RECOVERED (from the raw x curated overlap)
+      DISCARD  raw cluster whose spikes mostly went to a noise cluster
+      KEEP     raw cluster whose spikes mostly went to a real curated unit
+      MERGE    two kept raw clusters pointing at the SAME curated unit
+    Splits (one raw cluster fanned across several curated units) are detected
+    and reported but NOT replayed -- manual splits are spike-level and cannot
+    be reconstructed from cluster-level features.
+
+    CROSS-SHANK / CROSS-SESSION GENERALISATION
+    The model never sees raw feature coordinates (which differ in count and
+    scale between, e.g., a Buzsaki64L shank and an A32 probe). It sees only
+    scale-invariant descriptors of each cluster's geometry and spread in
+    feature space: covariance eigenvalue spectrum (anisotropy, participation
+    ratio, top-1 variance fraction), Mahalanobis radius, shank-normalised
+    spread ratio, Mahalanobis nearest-neighbour gap and crowding, and -- for
+    pairs -- shank-whitened separation, Bhattacharyya overlap, split-axis
+    alignment (whether two clusters separate ALONG one's elongation, as
+    over-split fragments do, or across it, as distinct units do), gap ratio,
+    temporal span overlap and refractory / ISI contamination of the candidate
+    merged train. Because every descriptor is a scalar regardless of
+    feature-space dimension, one model transfers across groups, shanks and
+    probes.
+
+    CONTINUED TRAINING
+    mode=train accumulates each (session x group) into the model store at
+    modelPath and refits on the full accumulation. Re-running train on more
+    sessions appends to the SAME model (groups already in the store are
+    skipped unless force=true), so the curator keeps improving without
+    re-reading old data. reset=true starts a fresh model. Use modelKey to
+    keep separate models per probe type (e.g. modelKey=buzsaki64L vs a32).
+
+    OUTPUT
+      mode=train : model file at modelPath
+      mode=apply : SESSION.<outCluExt>.N per group (canonical binary .clu;
+                   load it in Klusters, or rename to SESSION.clu.N to adopt)
+      mode=eval  : per-group keep precision/recall and spike-level adjusted
+                   Rand index versus the human curation
+
+    OPTIONAL PARAMETERS
+
+    # mode
+
+    train | apply | eval (default apply).
+
+    # rawCluExt
+
+    Extension of the un-curated KlustaKwik .clu read as input (default
+    clu_auto, i.e. SESSION.clu_auto.N). For apply on a fresh KlustaKwik run
+    whose output is still at SESSION.clu.N, set rawCluExt=clu.
+
+    # outCluExt
+
+    Extension written by mode=apply (default clu_autocur).
+
+    # modelKey / modelPath
+
+    modelKey namespaces the default model file so different probe types can
+    keep separate models. modelPath overrides the location entirely. When
+    both are empty the model lives at
+    $XDG_DATA_HOME/neurosuite/autoklusta/<modelKey>.curatemodel.joblib
+    (overridable via $NEUROSUITE_AUTOKLUSTA_MODEL).
+
+    # noiseClusters
+
+    Comma-separated curated cluster ids treated as noise/artifact
+    (default 0,1).
+
+    # keepThreshold / mergeThreshold
+
+    Probability cutoffs for keeping a cluster and for merging a pair. -1 (the
+    default) uses the value stored in the model at train time (0.5).
+
+    # splitPurity
+
+    During train, a kept raw cluster whose top curated-unit share is below
+    this is reported as a likely human split (default 0.8).
+
+    # useWaveforms
+
+    If true (default) and .spk/.spkD is present, adds waveform SNR / channel
+    concentration / template-cosine features. Waveform-free sessions still
+    train and apply (those features become NaN, which the model tolerates).
+
+    # refractoryMs
+
+    Refractory window in ms for ISI-violation features (default 2.0).
+
+    # reset / force
+
+    reset=true starts a fresh model; force=true re-ingests a (session:group)
+    already present in the store.
+
+    # probeLibrary
+
+    Override the probe library search path (accepted for parity; geometry is
+    read from this YAML).
+
 - name: ndm_estimatedrift
   parameters:
   - {name: windowSec,    value: 60,      status: Optional}
