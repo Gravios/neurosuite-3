@@ -64,6 +64,10 @@
 #include <string>
 #include <vector>
 
+// The canonical writer for the .adapt layout above is the Python module
+// scripts/adapt_format.py; this reader (readModel in the .cpp) mirrors it.
+// Bump ADAPT_VERSION here and in adapt_format.py together, and land any
+// field-layout change on both sides in the same commit.
 #define ADAPT_MAGIC          "ADPT"
 #define ADAPT_VERSION        1
 #define RES_EXT              "res"
