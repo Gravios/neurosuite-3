@@ -32,7 +32,7 @@
 #include "eventsprovider.h"
 #include "timer.h"
 #include "utilities.h"
-#include <klustersshared/neurofileio.h>
+#include <neurosuite/core/neurofileio.h>
 
 
 EventsProvider::EventsProvider(const QString &fileUrl, double currentSamplingRate, int position): DataProvider(fileUrl),nbEvents(0),

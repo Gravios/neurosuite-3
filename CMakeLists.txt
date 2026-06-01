@@ -412,7 +412,13 @@ endmacro()
 # 1. MIME types and desktop icons — no compiler required
 ns_add_subdir(nphys-data src/nphys-data)
 
-# 2. Shared Qt6 library
+# 2. Qt-free core library (neurofileio, …) — linked by the Qt lib and, in
+#    future, by KiloKlustaKwik and the Python ndm_autoklusta FFI.  Must be
+#    add_subdirectory()'d before libneurosuite-qt, which links Neurosuite::core.
+ns_add_subdir(libneurosuite-core src/libneurosuite-core)
+
+# 3. Shared Qt6 library (target renamed to neurosuite-qt; still exported as
+#    KlustersShared::klustersshared for backward compatibility)
 ns_add_subdir(libklustersshared src/libklustersshared)
 
 # After add_subdirectory() libklustersshared's install(TARGETS … EXPORT …) has
@@ -475,7 +481,7 @@ ns_add_subdir(kiloklustakwik src/kiloklustakwik)
 if(NOT NS_SKIP_LIBKLUSTERSSHARED)
     foreach(_consumer klusters neuroscope ndmanager)
         if(TARGET ${_consumer})
-            add_dependencies(${_consumer} klustersshared)
+            add_dependencies(${_consumer} neurosuite-qt)
         else()
             message(WARNING
                 "neurosuite-3: expected consumer target '${_consumer}' not found "

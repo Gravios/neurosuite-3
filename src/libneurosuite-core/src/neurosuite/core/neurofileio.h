@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-#include "libklustersshared_export.h"
+#include "neurosuite_core_export.h"
 
 namespace neurofileio {
 
@@ -38,21 +38,21 @@ struct CluFile {
     std::vector<int> ids;            ///< one cluster id per spike (header excluded)
     bool             ok = false;     ///< false on open/parse failure
 };
-KLUSTERSSHARED_EXPORT CluFile readClu(const std::string& path);
-KLUSTERSSHARED_EXPORT bool    writeClu(const std::string& path, int nClusters,
+NEUROSUITE_CORE_EXPORT CluFile readClu(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool    writeClu(const std::string& path, int nClusters,
                  const std::vector<int>& ids);
 
 // Binary .clu: int32_t cluster-count header, then nSpikes × int32_t ids.
 // nSpikes must be known up front (from the matching .res — see below).
-KLUSTERSSHARED_EXPORT CluFile readCluBinary(const std::string& path, int64_t nSpikes);
+NEUROSUITE_CORE_EXPORT CluFile readCluBinary(const std::string& path, int64_t nSpikes);
 
 // ── .res.N ────────────────────────────────────────────────────────────────
-KLUSTERSSHARED_EXPORT std::vector<int64_t> readRes(const std::string& path, bool* ok = nullptr);
-KLUSTERSSHARED_EXPORT bool                 writeRes(const std::string& path,
+NEUROSUITE_CORE_EXPORT std::vector<int64_t> readRes(const std::string& path, bool* ok = nullptr);
+NEUROSUITE_CORE_EXPORT bool                 writeRes(const std::string& path,
                               const std::vector<int64_t>& times);
 
 // Binary .res: nSpikes × int64_t timestamps, no header (nSpikes = size/8).
-KLUSTERSSHARED_EXPORT std::vector<int64_t> readResBinary(const std::string& path, bool* ok = nullptr);
+NEUROSUITE_CORE_EXPORT std::vector<int64_t> readResBinary(const std::string& path, bool* ok = nullptr);
 
 // ── matched .clu + .res pair (auto-detecting binary vs text) ────────────────
 // NeuroSuite cluster data is a .clu/.res pair read together. Some tools write a
@@ -62,7 +62,7 @@ KLUSTERSSHARED_EXPORT std::vector<int64_t> readResBinary(const std::string& path
 // Detection (matches NeuroScope): probe the .res file — binary iff its size is
 // a non-zero multiple of 8 AND its first byte is not an ASCII digit; text
 // otherwise. The .clu is then read in the same format.
-KLUSTERSSHARED_EXPORT bool isBinaryClusterRes(const std::string& resPath);
+NEUROSUITE_CORE_EXPORT bool isBinaryClusterRes(const std::string& resPath);
 
 struct ClusterResData {
     int                  nClusters = 0;
@@ -71,7 +71,7 @@ struct ClusterResData {
     bool                 binary = false;  ///< detected format
     bool                 ok = false;      ///< false on open/parse/size mismatch
 };
-KLUSTERSSHARED_EXPORT ClusterResData readClusterRes(const std::string& cluPath,
+NEUROSUITE_CORE_EXPORT ClusterResData readClusterRes(const std::string& cluPath,
                               const std::string& resPath);
 
 // ── .fet.N ────────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ struct FetFile {
     std::vector<std::vector<int>> rows;   ///< nSpikes × nFeatures
     bool                          ok = false;
 };
-KLUSTERSSHARED_EXPORT FetFile readFet(const std::string& path);
+NEUROSUITE_CORE_EXPORT FetFile readFet(const std::string& path);
 
 // Binary .fet: int32_t feature-count header, then nSpikes × nFeatures int64
 // values, row-major. This is the layout written by the process_pca plugin and
@@ -92,26 +92,26 @@ struct FetBinaryFile {
     std::vector<int64_t> values;    ///< row-major, nSpikes × nFeatures
     bool                 ok = false;
 };
-KLUSTERSSHARED_EXPORT FetBinaryFile readFetBinary(const std::string& path);
+NEUROSUITE_CORE_EXPORT FetBinaryFile readFetBinary(const std::string& path);
 
 // ── .evt ──────────────────────────────────────────────────────────────────
 struct EvtEntry {
     double      timeMs = 0.0;
     std::string label;
 };
-KLUSTERSSHARED_EXPORT std::vector<EvtEntry> readEvt(const std::string& path, bool* ok = nullptr);
-KLUSTERSSHARED_EXPORT bool                  writeEvt(const std::string& path,
+NEUROSUITE_CORE_EXPORT std::vector<EvtEntry> readEvt(const std::string& path, bool* ok = nullptr);
+NEUROSUITE_CORE_EXPORT bool                  writeEvt(const std::string& path,
                                const std::vector<EvtEntry>& events);
 
 // ── .dat / .lfp (interleaved int16) ─────────────────────────────────────────
 // Number of samples in the file = fileSize / (nbChannels * 2). Returns -1 if
 // the file cannot be opened or nbChannels <= 0.
-KLUSTERSSHARED_EXPORT int64_t datSampleCount(const std::string& path, int nbChannels);
+NEUROSUITE_CORE_EXPORT int64_t datSampleCount(const std::string& path, int nbChannels);
 
 // Read nSamples samples (each nbChannels int16) starting at sample startSample.
 // `out` must hold at least nSamples*nbChannels int16. Returns the number of
 // SAMPLES actually read (may be short at end-of-file), or -1 on open error.
-KLUSTERSSHARED_EXPORT int64_t readDatWindow(const std::string& path, int nbChannels,
+NEUROSUITE_CORE_EXPORT int64_t readDatWindow(const std::string& path, int nbChannels,
                       int64_t startSample, int64_t nSamples, int16_t* out);
 
 }  // namespace neurofileio
