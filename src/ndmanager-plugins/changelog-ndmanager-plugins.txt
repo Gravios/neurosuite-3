@@ -1,6 +1,25 @@
 ------------------------------------------------------------------------------------------------------------
 neurosuite-3 fork — 2026-06-01
 
+* ndm_extractspikes / _sdiff / _stderiv — use an existing .res when present.
+
+  All three process_extractspikes* tools already implement -R (re-extract:
+  read existing .res timestamps, extract .spk/.spkD waveforms at those exact
+  positions, no detection).  The drivers now invoke it automatically: if every
+  group already has a binary .res (file size a multiple of 8 = int64
+  timestamps — the guard that distinguishes binary from legacy ASCII), the
+  driver copies each .res into the temp slot, passes -R, and skips threshold
+  detection.  Pre-existing detections — e.g. legacy ASCII .res converted to
+  binary — drive waveform extraction directly.
+
+  The .res is copied (never symlinked) into the temp basename, so a failed run
+  leaves the live .res intact; the normal rename writes back the .res
+  afterwards (recompacted, for _stderiv, which drops flat/cutout spikes).  When
+  no usable binary .res exists the behaviour is unchanged (full detection).
+
+------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-06-01
+
 * ndm_autoklusta — apply-time split prediction (the split head now fires).
 
   compute_split_features recomputes the 28 curation-log snapshot metrics for a

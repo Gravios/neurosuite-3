@@ -153,6 +153,27 @@ export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
 ln -s $session.fil $session-stderiv-tmp.fil
 
+# Re-extract mode: if every group already has a binary .res, skip detection and
+# extract at those timestamps (-R).  process_extractspikes_stderiv recompacts
+# .res/.spkD (drops flat/cutout spikes), so the .res is copied into the temp
+# slot and the rename below writes the recompacted .res back — the original is
+# untouched until the run succeeds.
+reExtract=1
+for group in $electrodeGroups; do
+    r=$session.res.$group
+    if [ ! -f "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
+done
+reExtractFlag=
+if [ "$reExtract" -eq 1 ]; then
+    echo_info "    existing .res for all groups — re-extracting at those timestamps (-R; no detection)"
+    reExtractFlag=-R
+    declare -i i=0
+    for group in $electrodeGroups; do
+        i=$i+1
+        cp $session.res.$group $session-stderiv-tmp.res.$i
+    done
+fi
+
 process_extractspikes_stderiv \
     -n $nChannels \
     -c $electrodeList \
@@ -164,6 +185,7 @@ process_extractspikes_stderiv \
     -B $startInBytes \
     -Z $durationInBytes \
     -d $sdiffOrder \
+    $reExtractFlag \
     $session-stderiv-tmp
 
 check_command_status process_extractspikes_stderiv

@@ -178,6 +178,25 @@ export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 # accidentally overwrite good existing files (mirrors ndm_extractspikes).
 ln -s $session.fil $session-sdiff-tmp.fil
 
+# Re-extract mode: if every group already has a binary .res, skip detection and
+# extract at those timestamps (-R).  The .res is copied into the temp slot, not
+# the live file, so the original survives a failed run.
+reExtract=1
+for group in $electrodeGroups; do
+    r=$session.res.$group
+    if [ ! -f "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
+done
+reExtractFlag=
+if [ "$reExtract" -eq 1 ]; then
+    echo_info "    existing .res for all groups — re-extracting at those timestamps (-R; no detection)"
+    reExtractFlag=-R
+    declare -i i=0
+    for group in $electrodeGroups; do
+        i=$i+1
+        cp $session.res.$group $session-sdiff-tmp.res.$i
+    done
+fi
+
 process_extractspikes_sdiff \
     -n $nChannels \
     -c $electrodeList \
@@ -189,6 +208,7 @@ process_extractspikes_sdiff \
     -B $startInBytes \
     -Z $durationInBytes \
     -d $sdiffOrder \
+    $reExtractFlag \
     $session-sdiff-tmp
 
 check_command_status process_extractspikes_sdiff
