@@ -151,8 +151,13 @@ nChannelsPerGroup=""
 for (( g=1; g<=nSpikeGroups; g++ )); do
     ns=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nSamples")
     ns=${ns:-32}
-    nc=$(yaml_count "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
-    nc=${nc:-0}
+    # Count channels the same way ndm_pca_stderiv does: read the channel list
+    # as an array and take its length.  yaml_count on .../channels/channel
+    # returns 0 for sessions whose YAML serialises the channel list in a flow
+    # form (notably the stderiv pipeline), which silently zeroed n_sites and
+    # disabled waveform features.
+    ncList=($(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel"))
+    nc=${#ncList[*]}
     nSamplesPerGroup="${nSamplesPerGroup:+$nSamplesPerGroup,}$ns"
     nChannelsPerGroup="${nChannelsPerGroup:+$nChannelsPerGroup,}$nc"
 done
