@@ -172,6 +172,7 @@ extern int   Phase2bEnableSplits;
 // Phase2bMaxIter: max inner CEM iterations per chunk in Phase 2b.
 // Default 60.  0 falls back to global MaxIter.
 extern int   Phase2bMaxIter;
+extern int   RefractorySplitMaxIter;
 extern int   VBGMMMaxIter;
 extern float VBGMMConvTol;
 extern float VBGMMAlpha0;
