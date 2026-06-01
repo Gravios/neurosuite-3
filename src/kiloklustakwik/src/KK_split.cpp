@@ -1723,21 +1723,37 @@ void KK::RefractorySplitPerChunk(
                 else                                      cleanIdx.push_back(ii);
             }
             if (violIdx.empty() || cleanIdx.empty()) {
-                // Fallback: split by median of first spatial feature
+                // Fallback: ignore the degenerate viol/clean partition and split
+                // by the median of the first spatial feature.  Both vectors MUST
+                // be reset first — otherwise the non-empty side keeps its entries
+                // and the median pass appends duplicates, corrupting the centroids
+                // (this path triggers on all-violator clusters, exactly the most
+                // contaminated ones the phase targets).
+                violIdx.clear();
+                cleanIdx.clear();
                 std::vector<float> vals(static_cast<size_t>(nMem));
                 for (int ii = 0; ii < nMem; ii++)
                     vals[static_cast<size_t>(ii)] =
                         Data[pts[static_cast<size_t>(members[static_cast<size_t>(ii)])]
                              * nDims + 0];
-                float med = vals[static_cast<size_t>(nMem / 2)];
                 std::nth_element(vals.begin(), vals.begin() + nMem/2, vals.end());
-                med = vals[static_cast<size_t>(nMem / 2)];
+                const float med = vals[static_cast<size_t>(nMem / 2)];
                 for (int ii = 0; ii < nMem; ii++) {
                     if (Data[pts[static_cast<size_t>(members[static_cast<size_t>(ii)])]
                              * nDims + 0] < med)
                         cleanIdx.push_back(ii);
                     else
                         violIdx.push_back(ii);
+                }
+                // A degenerate spatial dim (e.g. all values == median) can leave
+                // one side empty, which would divide the centroid by zero below.
+                // Two groups can't be formed — treat as "no split".
+                if (violIdx.empty() || cleanIdx.empty()) {
+                    if (Verbose >= 2)
+                        Output("  RefractorySplit: chunk%d cluster%d — median fallback "
+                               "could not form two groups, skipping\n", ck, lc);
+                    ++nRejNoSplit;
+                    continue;
                 }
             }
 
