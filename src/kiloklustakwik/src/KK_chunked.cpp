@@ -837,6 +837,12 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                    maxChunkDist);
         }
 
+        if (Phase6EigenResidualEnable)
+            Output("MergeChunkModels: Pass 2 [Phase 6e]: eigen-residual gate ON "
+                   "(thresh=%.3f, k=%d, c=%.1f, floorFrac=%.3f)\n",
+                   Phase6EigenResidualThresh, Phase6EigenResidualK,
+                   Phase6EigenResidualC, Phase6EigenResidualFloorFrac);
+
         if (maxChunkDist > 0)
         for (int li : leftovers) {
             const ChunkModel& mA = models[li];
@@ -872,7 +878,16 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                                  _er <= static_cast<double>(Phase6EigenResidualThresh);
                     if (_eigenPass && !_xcorrPass) {
                         ++nEigenAdmitted;
-                        sc = std::max(sc, CrossChunkTemplateScore);  // enter the MNN pool
+                        // Residual-derived MNN score so good eigen matches actually
+                        // compete (and can commit) instead of tying at the floor:
+                        // er=0 -> ~1.0, er=Thresh -> the xcorr floor.  The drift-
+                        // smoothness factor below still multiplies this.
+                        const double _frac = std::max(0.0,
+                            1.0 - static_cast<double>(_er)
+                                / std::max(static_cast<double>(Phase6EigenResidualThresh), 1e-9));
+                        sc = static_cast<float>(
+                            static_cast<double>(CrossChunkTemplateScore)
+                            + (1.0 - static_cast<double>(CrossChunkTemplateScore)) * _frac);
                     }
                 }
                 if (!_xcorrPass && !_eigenPass) continue;
@@ -965,8 +980,9 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     Output("MergeChunkModels: Pass 2 (edge xcorr): %d new merges from %d leftovers\n",
            totalXcorrMerges, nLeftovers);
     if (Phase6EigenResidualEnable)
-        Output("MergeChunkModels: Pass 2 eigen-residual: %d pair(s) admitted that "
-               "rigid xcorr rejected (thresh=%.3f, k=%d, c=%.1f)\n",
+        Output("MergeChunkModels: Pass 2 eigen-residual: %d directional candidate(s) "
+               "admitted at the gate that rigid xcorr rejected (pre-MNN; thresh=%.3f, "
+               "k=%d, c=%.1f)\n",
                nEigenAdmitted, Phase6EigenResidualThresh, Phase6EigenResidualK,
                Phase6EigenResidualC);
 
