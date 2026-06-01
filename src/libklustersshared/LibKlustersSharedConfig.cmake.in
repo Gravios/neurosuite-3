@@ -7,6 +7,8 @@
 include(CMakeFindDependencyMacro)
 find_dependency(yaml-cpp)
 find_dependency(Qt6 COMPONENTS Core Gui Widgets)
+# libneurosuite-qt PUBLIC-links Neurosuite::core (neurofileio).
+find_dependency(LibNeurosuiteCore)
 
 include("${CMAKE_CURRENT_LIST_DIR}/LibKlustersSharedTargets.cmake")
 

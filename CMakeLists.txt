@@ -219,6 +219,7 @@ endif()
 # Per-component skip flags
 # ---------------------------------------------------------------------------
 option(NS_SKIP_NPHYS_DATA          "Skip nphys-data"         OFF)
+option(NS_SKIP_LIBNEUROSUITE_CORE  "Skip libneurosuite-core" OFF)
 option(NS_SKIP_LIBKLUSTERSSHARED   "Skip libklustersshared"  OFF)
 option(NS_SKIP_KLUSTERS            "Skip klusters"           OFF)
 option(NS_SKIP_NEUROSCOPE          "Skip neuroscope"         OFF)
@@ -416,6 +417,19 @@ ns_add_subdir(nphys-data src/nphys-data)
 #    future, by KiloKlustaKwik and the Python ndm_autoklusta FFI.  Must be
 #    add_subdirectory()'d before libneurosuite-qt, which links Neurosuite::core.
 ns_add_subdir(libneurosuite-core src/libneurosuite-core)
+
+# Build-tree export for the core lib.  libneurosuite-qt is in the
+# LibKlustersSharedTargets export set and PUBLIC-links Neurosuite::core, so
+# CMake requires neurosuite-core to live in an export set too — both for the
+# build-tree export() below and for find_package(LibNeurosuiteCore) from the
+# build tree.  Must run before the libklustersshared export() that depends on it.
+if(NOT NS_SKIP_LIBNEUROSUITE_CORE)
+    export(EXPORT LibNeurosuiteCoreTargets
+        NAMESPACE Neurosuite::
+        FILE "${CMAKE_BINARY_DIR}/libneurosuite-core/LibNeurosuiteCoreTargets.cmake")
+    set(LibNeurosuiteCore_DIR "${CMAKE_BINARY_DIR}/libneurosuite-core"
+        CACHE PATH "Build-tree LibNeurosuiteCore cmake dir (set by monorepo)" FORCE)
+endif()
 
 # 3. Shared Qt6 library (target renamed to neurosuite-qt; still exported as
 #    KlustersShared::klustersshared for backward compatibility)
