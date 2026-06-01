@@ -1261,20 +1261,13 @@ void KK::InitCentresKMeansPP(int nCentres, int nSpatialDims) {
     Centres.SetSize(nCentres * nDims);
     if (nCentres < 1 || nPoints < 1) return;
 
-    // Seed the RNG from RandomSeed plus an instance-side counter so each
-    // call within a process gets a different stream.  RandomSeed comes
-    // from KlustaKwik.h (extern int).  The static counter advances every
-    // call, giving a different stream per call within a single -nRuns
-    // session even when RandomSeed is fixed.
-    static std::atomic<unsigned> kmppCallCount{0};
-    const unsigned seed = static_cast<unsigned>(RandomSeed)
-                        + 0xC0FFEEu * kmppCallCount.fetch_add(1);
-    std::mt19937 rng(seed);
+    // Draw from the shared thread-local RNG (KlustaKwik.h).  The caller seeds
+    // it per work-item (chunk/run), so KMeans++ initialisation is reproducible
+    // and thread-independent, in step with the rest of the random path.
 
     // ── Pick centre 0 uniformly at random ────────────────────────────────
     {
-        std::uniform_int_distribution<int> uni(0, nPoints - 1);
-        const int p0 = uni(rng);
+        const int p0 = irand(0, nPoints - 1);
         for (int d = 0; d < nDims; d++)
             Centres[0 * nDims + d] = Data[p0 * nDims + d];
     }
@@ -1316,8 +1309,7 @@ void KK::InitCentresKMeansPP(int nCentres, int nSpatialDims) {
                     maxMin = minDistToSet[p]; nextIdx = p;
                 }
         } else {
-            std::uniform_real_distribution<double> ud(0.0, total);
-            const double u = ud(rng);
+            const double u = kk_rand_double() * total;
             double cum = 0.0;
             for (int p = 0; p < nPoints; p++) {
                 cum += static_cast<double>(minDistToSet[p]);
@@ -1340,8 +1332,8 @@ void KK::InitCentresKMeansPP(int nCentres, int nSpatialDims) {
     }
 
     if (Verbose >= 1) {
-        Output("KMeans++ seeds (%d centres, %d spatial dims, seed=%u):\n",
-               nCentres, nSpatialDims, seed);
+        Output("KMeans++ seeds (%d centres, %d spatial dims):\n",
+               nCentres, nSpatialDims);
         for (int k = 0; k < nCentres; k++) {
             Output("  centre %d:", k);
             for (int d = 0; d < nSpatialDims; d++)

@@ -1330,9 +1330,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             0
 #endif
         ];
-        srand(static_cast<unsigned>(RandomSeed)
-              + static_cast<unsigned>(k) * 997u
-              + static_cast<unsigned>(run));
+        kk_seed_rng(kk_mix_seed(kk_mix_seed(static_cast<uint64_t>(RandomSeed),
+                                            static_cast<uint64_t>(k)),
+                                static_cast<uint64_t>(run)));
         Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
         Kc.nStartingClusters = nStartingClusters;
         Kc.NoisePoint        = 1;
@@ -2708,9 +2708,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
             0
 #endif
         ];
-        srand(static_cast<unsigned>(RandomSeed)
-              + static_cast<unsigned>(k) * 997u
-              + static_cast<unsigned>(run));
+        kk_seed_rng(kk_mix_seed(kk_mix_seed(static_cast<uint64_t>(RandomSeed),
+                                            static_cast<uint64_t>(k)),
+                                static_cast<uint64_t>(run)));
         Kc.ReinitForSplit(nPts, nFullDims, penaltyMix);
         Kc.nStartingClusters = chunkStartK;
         Kc.NoisePoint        = 1;
