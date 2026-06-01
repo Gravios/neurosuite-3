@@ -212,6 +212,19 @@ int   TemplateMatchBatchedXcorr       = 0;  // 1 = batch all-pairs xcorr per ref
 int   DipSplitGlobalEnable   = 1;    ///< Phase 8 global DipSplit (post-Phase-7).  Set to 0 in chunked mode with drift; per-chunk Phase 1b DipSplit is unaffected.
 int   DipSplit2D             = 0;    ///< 0 = test each PC1/PC2/PC3 individually (1D); 1 = directional scan in (PC1,PC2) plane (2D)
 float CrossChunkDriftSigma   = 0.0f; ///< Phase 6 Pass 2 smoothness penalty width. Multiplies xcorr score by exp(-(dev/sigma)²/2) where dev = ||actual_displacement - expected|| / scatter, expected = mean displacement of Pass 1 confirmed matches between same chunk pair. 0 disables.
+// Phase6EigenResidual* (testing) — feature-space soft-warp eigen-residual merge
+// gate for Phase 6 cross-chunk matching.  When enabled, a candidate pair is
+// admitted if EITHER the rigid edge xcorr passes OR the eigen-residual (the
+// feature-space mean difference that bounded movement along the clusters' own
+// high-variance/drift eigenmodes cannot explain) is small.  Lets the matcher
+// recover drift-separated pairs whose edge templates correlate poorly; the
+// downstream CrossChunkDriftSigma smoothness factor still gates precision.
+// Default off (0) = behaviour unchanged.
+int   Phase6EigenResidualEnable    = 0;
+float Phase6EigenResidualThresh    = 1.0f;  ///< admit a pair if eigen-residual <= this (sigma units)
+int   Phase6EigenResidualK         = 6;     ///< nuisance eigenmodes allowed bounded movement
+float Phase6EigenResidualC         = 3.0f;  ///< movement bound along each nuisance mode, in sigma
+float Phase6EigenResidualFloorFrac = 0.02f; ///< eigenvalue shrinkage floor as fraction of top eigenvalue
 
 // Cross-chunk overlap-vote acceptance gates (patch 0059).  Both default 0
 // (off) to preserve prior behaviour; only the diagnostic ratio changes.
@@ -807,6 +820,11 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(DipSplitGlobalEnable);
     INT_PARAM(DipSplit2D);
     FLOAT_PARAM(CrossChunkDriftSigma);
+    INT_PARAM(Phase6EigenResidualEnable);
+    FLOAT_PARAM(Phase6EigenResidualThresh);
+    INT_PARAM(Phase6EigenResidualK);
+    FLOAT_PARAM(Phase6EigenResidualC);
+    FLOAT_PARAM(Phase6EigenResidualFloorFrac);
     FLOAT_PARAM(CrossChunkVoteMinFraction);
     FLOAT_PARAM(CrossChunkVoteMinMargin);
     INT_PARAM(CrossChunkMaxChunkDistance);

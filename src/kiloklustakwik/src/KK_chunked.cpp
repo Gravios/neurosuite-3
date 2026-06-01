@@ -34,6 +34,111 @@
 #include <random>
 #include <set>
 #include <unordered_map>
+
+// ── Phase 6 feature-space soft-warp eigen-residual (testing) ──────────────
+// Self-contained; no external linear-algebra dependency.  See
+// Phase6EigenResidual* params and the Pass-2 gate in MergeChunkModels.
+namespace {
+
+// Cyclic Jacobi eigensolver for a small symmetric matrix A (dim*dim row-major).
+// Returns eigenvalues in eval[i] and eigenvector j as column j of V (row-major).
+void p6_jacobiSym(std::vector<double> A, int dim,
+                  std::vector<double>& eval, std::vector<double>& V) {
+    V.assign(static_cast<size_t>(dim) * dim, 0.0);
+    for (int i = 0; i < dim; i++) V[static_cast<size_t>(i) * dim + i] = 1.0;
+    for (int sweep = 0; sweep < 100; sweep++) {
+        double off = 0.0;
+        for (int p = 0; p < dim; p++)
+            for (int q = p + 1; q < dim; q++)
+                off += A[static_cast<size_t>(p)*dim+q] * A[static_cast<size_t>(p)*dim+q];
+        if (off < 1e-20) break;
+        for (int p = 0; p < dim; p++) {
+            for (int q = p + 1; q < dim; q++) {
+                double apq = A[static_cast<size_t>(p)*dim+q];
+                if (std::fabs(apq) < 1e-300) continue;
+                double app = A[static_cast<size_t>(p)*dim+p];
+                double aqq = A[static_cast<size_t>(q)*dim+q];
+                double phi = 0.5 * std::atan2(2.0*apq, aqq - app);
+                double cs = std::cos(phi), sn = std::sin(phi);
+                for (int i = 0; i < dim; i++) {
+                    double aip = A[static_cast<size_t>(i)*dim+p];
+                    double aiq = A[static_cast<size_t>(i)*dim+q];
+                    A[static_cast<size_t>(i)*dim+p] = cs*aip - sn*aiq;
+                    A[static_cast<size_t>(i)*dim+q] = sn*aip + cs*aiq;
+                }
+                for (int i = 0; i < dim; i++) {
+                    double api = A[static_cast<size_t>(p)*dim+i];
+                    double aqi = A[static_cast<size_t>(q)*dim+i];
+                    A[static_cast<size_t>(p)*dim+i] = cs*api - sn*aqi;
+                    A[static_cast<size_t>(q)*dim+i] = sn*api + cs*aqi;
+                }
+                for (int i = 0; i < dim; i++) {
+                    double vip = V[static_cast<size_t>(i)*dim+p];
+                    double viq = V[static_cast<size_t>(i)*dim+q];
+                    V[static_cast<size_t>(i)*dim+p] = cs*vip - sn*viq;
+                    V[static_cast<size_t>(i)*dim+q] = sn*vip + cs*viq;
+                }
+            }
+        }
+    }
+    eval.assign(dim, 0.0);
+    for (int i = 0; i < dim; i++) eval[i] = A[static_cast<size_t>(i)*dim+i];
+}
+
+// Feature-space soft-warp eigen-residual between two cluster Gaussians.
+// mean: [dim], cov: [dim*dim] (symmetric).  Bounded movement (c sigma) along
+// the top-k pooled eigenmodes; residual weighted by 1/max(lambda, floor).
+// Lower = mergeable.  +inf when a cluster is too small to trust its cov.
+double p6_eigenResidualFeature(
+        const std::vector<float>& meanA, const std::vector<float>& covA, int nA,
+        const std::vector<float>& meanB, const std::vector<float>& covB, int nB,
+        int k, double c, double floorFrac) {
+    const int dim = static_cast<int>(meanA.size());
+    if (dim <= 0 || static_cast<int>(meanB.size()) != dim) return INFINITY;
+    if (static_cast<int>(covA.size()) != dim*dim ||
+        static_cast<int>(covB.size()) != dim*dim) return INFINITY;
+    if (nA < dim + 2 || nB < dim + 2) return INFINITY;
+
+    std::vector<double> C(static_cast<size_t>(dim)*dim, 0.0);
+    const double wA = static_cast<double>(nA) / (nA + nB);
+    const double wB = static_cast<double>(nB) / (nA + nB);
+    for (int i = 0; i < dim; i++)
+        for (int j = 0; j < dim; j++) {
+            double a = 0.5*(covA[static_cast<size_t>(i)*dim+j] + covA[static_cast<size_t>(j)*dim+i]);
+            double b = 0.5*(covB[static_cast<size_t>(i)*dim+j] + covB[static_cast<size_t>(j)*dim+i]);
+            C[static_cast<size_t>(i)*dim+j] = wA*a + wB*b;
+        }
+    std::vector<double> lam, V;
+    p6_jacobiSym(C, dim, lam, V);
+
+    std::vector<int> ord(dim);
+    std::iota(ord.begin(), ord.end(), 0);
+    std::sort(ord.begin(), ord.end(), [&](int a, int b){ return lam[a] > lam[b]; });
+    double lamMax = (lam[ord[0]] > 0.0) ? lam[ord[0]] : 1.0;
+    double floorv = std::max(floorFrac * lamMax, 1e-12);
+
+    std::vector<double> d(dim);
+    for (int i = 0; i < dim; i++)
+        d[i] = static_cast<double>(meanB[i]) - static_cast<double>(meanA[i]);
+
+    double score2 = 0.0;
+    int kk = std::min(k, dim);
+    for (int r = 0; r < dim; r++) {
+        int e = ord[r];
+        double proj = 0.0;
+        for (int i = 0; i < dim; i++) proj += V[static_cast<size_t>(i)*dim+e] * d[i];
+        double l = lam[e];
+        double resid = (r < kk)
+            ? std::max(0.0, std::fabs(proj) - c * std::sqrt(std::max(l, 0.0)))
+            : std::fabs(proj);
+        score2 += resid*resid / std::max(l, floorv);
+    }
+    int dof = std::max(dim - kk, 1);
+    return std::sqrt(score2 / dof);
+}
+
+}  // namespace
+
 #include <unordered_set>
 #include <vector>
 
@@ -677,6 +782,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     // scores it highest.
     int totalXcorrMerges = 0;
     int nLeftovers = 0;
+    int nEigenAdmitted = 0;   // Phase6EigenResidual: pairs xcorr rejected but eigen admitted
     if (CrossChunkTemplateScore > 0.0f && NbChannels > 0 && NbSamplesPerSpike > 0) {
         const int wElems = NbChannels * NbSamplesPerSpike;
         const int mxSh   = std::max(1, NbSamplesPerSpike / 4);
@@ -749,7 +855,27 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
                 XcorrDispatch::compute(
                     wA->data(), wB->data(),
                     1, NbChannels, NbSamplesPerSpike, mxSh, 0.0f, &sh, &sc);
-                if (sc < CrossChunkTemplateScore) continue;
+                // Phase 6 eigen-residual gate (testing; -Phase6EigenResidualEnable 1):
+                // admit when EITHER rigid xcorr passes OR the feature-space
+                // soft-warp eigen-residual is small.  Default off -> the plain
+                // xcorr gate is the only condition.
+                const bool _xcorrPass = (sc >= CrossChunkTemplateScore);
+                bool _eigenPass = false;
+                if (Phase6EigenResidualEnable) {
+                    const double _er = p6_eigenResidualFeature(
+                        mA.mean, mA.cov, mA.nMembers,
+                        mB.mean, mB.cov, mB.nMembers,
+                        Phase6EigenResidualK,
+                        static_cast<double>(Phase6EigenResidualC),
+                        static_cast<double>(Phase6EigenResidualFloorFrac));
+                    _eigenPass = std::isfinite(_er) &&
+                                 _er <= static_cast<double>(Phase6EigenResidualThresh);
+                    if (_eigenPass && !_xcorrPass) {
+                        ++nEigenAdmitted;
+                        sc = std::max(sc, CrossChunkTemplateScore);  // enter the MNN pool
+                    }
+                }
+                if (!_xcorrPass && !_eigenPass) continue;
 
                 // Drift-smoothness factor.  When CrossChunkDriftSigma > 0
                 // AND the chunk pair has a drift estimate from Pass 1,
@@ -838,6 +964,11 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
     }
     Output("MergeChunkModels: Pass 2 (edge xcorr): %d new merges from %d leftovers\n",
            totalXcorrMerges, nLeftovers);
+    if (Phase6EigenResidualEnable)
+        Output("MergeChunkModels: Pass 2 eigen-residual: %d pair(s) admitted that "
+               "rigid xcorr rejected (thresh=%.3f, k=%d, c=%.1f)\n",
+               nEigenAdmitted, Phase6EigenResidualThresh, Phase6EigenResidualK,
+               Phase6EigenResidualC);
 
     // ── Assign contiguous globalClusterIds from component roots ─────────
     std::unordered_map<int,int> rootToGlobal;
