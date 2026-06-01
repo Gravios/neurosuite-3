@@ -221,6 +221,7 @@ python3 "$PY_HELPER" \
     --n-channels-per-group  "$nChannelsPerGroup" \
     --mode                  "$mode" \
     --model-path            "$modelPath" \
+    --model-key             "$modelKey" \
     --group                 "${group:-0}" \
     --raw-clu-ext           "$rawCluExt" \
     --curated-clu-ext       "$curatedCluExt" \
