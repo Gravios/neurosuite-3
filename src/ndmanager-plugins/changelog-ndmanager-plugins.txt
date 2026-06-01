@@ -1,4 +1,30 @@
 ------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-06-01
+
+* ndm_autoklusta — optional curation-log input (split supervision).
+
+  New optional parameter curationLog (''/false=off; true/auto resolves
+  <session>.curation_log.<g>.jl; or a directory / explicit path).  When set,
+  train mode folds in the Klusters per-group action log, which records every
+  GROUP/SPLIT/DELETE with before/after cluster snapshots — recovering SPLITs,
+  which the (raw, curated) endpoint diff can only flag (low purity), never
+  learn.
+
+  The log is append-mode across reopens; a reopen on a re-clustered .clu
+  starts fresh numbering while old sessions remain in the file.  Only the
+  LAST run of sessions whose n_clusters_in_group chains across boundaries
+  (end[i]==start[i+1]) is kept; earlier abandoned attempts are discarded.
+
+  SPLIT is the only action with an authoritative ACTION_DETAIL record
+  (source_cluster + accepted/rejected), so a third head — p(split) per
+  cluster — is trained on those source-cluster snapshots (28 quality metrics:
+  ISI violation profile, feature-variance moments, drift, isolation, waveform
+  morphology).  GROUP/DELETE are tallied for reporting only (already covered
+  by the merge/discard heads).  Model bumped to v4 (split_clf/split_features
+  added; v3 stores load forward-compatibly).  Off by default — behaviour
+  unchanged when curationLog is unset.
+
+------------------------------------------------------------------------------------------------------------
 neurosuite-3 fork — 2026-05-31
 
 * ndm_autoklusta (new plugin) — automatic cluster curation learned from

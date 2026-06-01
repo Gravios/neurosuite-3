@@ -127,7 +127,7 @@ except ImportError:
     sys.exit(1)
 
 
-MODEL_VERSION = 3
+MODEL_VERSION = 4
 EPS = 1e-12
 
 CLUSTER_FEATURES = [
@@ -145,6 +145,23 @@ MERGE_FEATURES = [
     "size_ratio", "span_iou",
     "cross_refractory_frac", "combined_isi_viol",
     "wf_cosine", "ptp_ratio",
+]
+
+# Split head — trained ONLY from the optional Klusters curation log, whose
+# per-cluster snapshots carry this fixed set of quality metrics.  Order is
+# load-bearing (model column layout); HistGradientBoosting tolerates NaN, so a
+# missing field (e.g. waveform_* when no .spk was open) is left NaN.
+SPLIT_FEATURES = [
+    "n_spikes", "firing_hz",
+    "isi_viol_pct", "isi_viol_pct_1ms", "isi_viol_pct_2ms",
+    "isi_burst_pct", "isi_cv", "isi_mean_ms", "isi_median_ms",
+    "feat_var_mean", "feat_var_frobenius", "feat_var_top3_mean",
+    "feat_skewness_max", "feat_kurtosis_mean", "feat_kurtosis_max",
+    "drift_ratio", "temporal_drift_index", "temporal_rate_cv",
+    "spike_fraction", "n_clusters_in_group", "nearest_centroid_dist_norm",
+    "l_ratio", "isolation_dist",
+    "waveform_snr", "waveform_peak_amp", "waveform_width_samp",
+    "waveform_asymmetry", "waveform_chan_spread",
 ]
 
 
@@ -552,6 +569,148 @@ def recover_actions(g: Group):
 
 
 # ════════════════════════════════════════════════════════════════════════
+#  Optional Klusters curation-log input (split supervision)
+# ════════════════════════════════════════════════════════════════════════
+#
+# Klusters appends a per-group JSON-Lines action log,
+# <session>.curation_log.<group>.jl, recording every GROUP/SPLIT/DELETE/...
+# action with before/after cluster snapshots.  Unlike endpoint-diffing the
+# (raw, curated) .clu pair, this captures SPLITs — a raw cluster the human
+# fanned into several units — which endpoint-diffing can detect (low purity)
+# but never replay.
+#
+# The log is append-mode across every reopen, and a reopen on a freshly
+# re-clustered .clu starts a brand-new cluster numbering while the old
+# sessions stay in the file.  Only the LAST run of sessions whose cluster
+# count chains across boundaries (end[i] == start[i+1]) pertains to the
+# current .clu; earlier sessions are abandoned attempts and are discarded.
+#
+# SPLIT is the only action with an authoritative ACTION_DETAIL record
+# (source_cluster + accepted/rejected), so the split head is trained on those
+# source-cluster snapshots; GROUP/DELETE are tallied for reporting only (they
+# are already covered by the endpoint-diff merge/discard heads).
+
+def curation_log_path(args, group):
+    """Resolve the optional curation log for a group, or None when disabled.
+
+    --curation-log: ""/false -> off; true/auto -> <session>.curation_log.<g>.jl;
+    a directory -> that dir; else an explicit path (may contain {g})."""
+    v = (getattr(args, "curation_log", "") or "").strip()
+    if v == "" or v.lower() in ("false", "no", "0", "off"):
+        return None
+    canonical = f"{args.session}.curation_log.{group}.jl"
+    if v.lower() in ("true", "auto", "yes", "on", "1"):
+        return canonical
+    if os.path.isdir(v):
+        return os.path.join(v, os.path.basename(canonical))
+    return v.replace("{g}", str(group))
+
+
+def _clog_sessions(path):
+    """Parse the JSONL log and segment into sessions (file order)."""
+    sessions, cur = [], None
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                o = json.loads(line)
+            except Exception:                       # noqa: BLE001
+                continue
+            ev = o.get("event")
+            if ev == "SESSION_OPEN":
+                cur = {"open": o, "rows": []}
+                sessions.append(cur)
+            elif cur is not None and (ev == "ACTION_DETAIL"
+                                      or o.get("role") in ("source", "result")):
+                cur["rows"].append(o)
+    return sessions
+
+
+def _clog_ncl(session, which):
+    vals = [r["n_clusters_in_group"] for r in session["rows"]
+            if "n_clusters_in_group" in r]
+    if not vals:
+        return None
+    return vals[0] if which == "first" else vals[-1]
+
+
+def _clog_last_block(sessions):
+    """Indices of the last contiguous run of non-empty sessions whose
+    n_clusters_in_group chains across boundaries."""
+    nonempty = [i for i, s in enumerate(sessions)
+                if any("n_clusters_in_group" in r for r in s["rows"])]
+    if not nonempty:
+        return []
+    block = [nonempty[-1]]
+    for k in range(len(nonempty) - 2, -1, -1):
+        i, j = nonempty[k], block[0]
+        if _clog_ncl(sessions[i], "last") == _clog_ncl(sessions[j], "first"):
+            block.insert(0, i)
+        else:
+            break
+    return block
+
+
+def split_feature_row(row):
+    def f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return np.nan
+    return np.array([f(row.get(k)) for k in SPLIT_FEATURES], dtype=np.float64)
+
+
+def parse_curation_log(path):
+    """Extract split supervision from the LAST contiguous block of the log.
+
+    Returns dict(n_sessions, block, examples, tally) where examples is a list of
+    (feature_row_dict, label, session_id): label=1 if the human ACCEPTED an
+    algorithmic split of that source cluster, 0 = rejected or never split."""
+    sessions = _clog_sessions(path)
+    block = _clog_last_block(sessions)
+    examples = []
+    tally = dict(SPLIT_accept=0, SPLIT_reject=0, GROUP=0, DELETE=0, not_split=0)
+    for i in block:
+        rows = sessions[i]["rows"]
+        sid = sessions[i]["open"].get("session_id", "?")
+        befores = {(r["action_idx"], r["cluster"]): r
+                   for r in rows if r.get("phase") == "before"}
+        pos, neg = set(), set()
+        for r in rows:
+            if r.get("event") == "ACTION_DETAIL" and \
+               r.get("action") in ("SPLIT", "SPLIT_N"):
+                key = (r["action_idx"], r.get("source_cluster"))
+                if r.get("status") == "accepted":
+                    pos.add(key); tally["SPLIT_accept"] += 1
+                else:
+                    neg.add(key); tally["SPLIT_reject"] += 1
+        for r in rows:
+            if r.get("phase") == "before":
+                a = r.get("action")
+                if a == "GROUP":
+                    tally["GROUP"] += 1
+                elif a in ("DELETE_NOISE", "DELETE_ARTEFACT"):
+                    tally["DELETE"] += 1
+        seen = set()
+        for key, row in befores.items():
+            if key in pos:
+                label = 1
+            else:
+                label = 0
+                if key not in neg:
+                    tally["not_split"] += 1
+            dedup = (sid, row.get("cluster"), row.get("n_spikes"), label)
+            if dedup in seen:
+                continue
+            seen.add(dedup)
+            examples.append((row, label, sid))
+    return dict(n_sessions=len(sessions), block=block,
+                examples=examples, tally=tally)
+
+
+# ════════════════════════════════════════════════════════════════════════
 #  Model store helpers (incremental training)
 # ════════════════════════════════════════════════════════════════════════
 
@@ -559,6 +718,7 @@ def empty_store():
     return dict(
         cluster_X=[], cluster_y=[], cluster_g=[],
         merge_X=[], merge_y=[], merge_g=[],
+        split_X=[], split_y=[], split_g=[], split_seen=[],
         seen_groups=[],
     )
 
@@ -820,7 +980,10 @@ def mode_train(args):
     bundle = None if args.reset.lower() in ("1", "true", "yes") \
         else load_bundle(args.model_path)
     store = bundle["store"] if bundle and "store" in bundle else empty_store()
+    for k in ("split_X", "split_y", "split_g", "split_seen"):
+        store.setdefault(k, [])
     seen = set(store["seen_groups"])
+    split_seen = set(store["split_seen"])
 
     n_new = 0
     for g in iter_groups(args, load_curated=True):
@@ -846,6 +1009,37 @@ def mode_train(args):
                 store["merge_g"].append(g.name)
         store["seen_groups"].append(g.name)
         seen.add(g.name)
+
+        # Optional: fold in the Klusters curation log for this group (split
+        # supervision the (raw, curated) endpoint diff cannot recover).
+        clog = curation_log_path(args, g.group)
+        force_on = args.force.lower() in ("1", "true", "yes")
+        if clog and (g.name not in split_seen or force_on):
+            if os.path.isfile(clog):
+                try:
+                    parsed = parse_curation_log(clog)
+                except Exception as e:               # noqa: BLE001
+                    print(f"    curation log {os.path.basename(clog)}: "
+                          f"parse failed ({e}) — skipped")
+                    parsed = None
+                if parsed is not None:
+                    for row, label, sid in parsed["examples"]:
+                        store["split_X"].append(split_feature_row(row).tolist())
+                        store["split_y"].append(int(label))
+                        store["split_g"].append(f"{g.name}#{sid}")
+                    store["split_seen"].append(g.name)
+                    split_seen.add(g.name)
+                    t = parsed["tally"]
+                    npos = sum(1 for _, l, _ in parsed["examples"] if l == 1)
+                    print(f"    curation log: sessions {parsed['block']} of "
+                          f"{parsed['n_sessions']} (last contiguous block); "
+                          f"splits {t['SPLIT_accept']} accept / "
+                          f"{t['SPLIT_reject']} reject, "
+                          f"GROUP {t['GROUP']}, DELETE {t['DELETE']}; "
+                          f"+{len(parsed['examples'])} split examples "
+                          f"({npos} pos)")
+            elif args.curation_log.lower() not in ("true", "auto", "yes", "on", "1"):
+                print(f"    curation log not found: {os.path.basename(clog)}")
         n_keep = sum(keep[c] for c in g.clusters)
         print(f"  {g.name}: {len(g.clusters)} raw clusters "
               f"({n_keep} keep / {len(g.clusters) - n_keep} discard) -> "
@@ -868,10 +1062,16 @@ def mode_train(args):
     print("Fitting merge classifier:")
     mclf = fit_classifier("merge", store["merge_X"], store["merge_y"],
                           store["merge_g"])
+    sclf = None
+    if store["split_y"]:
+        print("Fitting split classifier (from curation log):")
+        sclf = fit_classifier("split", store["split_X"], store["split_y"],
+                              store["split_g"])
 
     out = dict(
-        version=MODEL_VERSION, cluster_clf=cclf, merge_clf=mclf,
+        version=MODEL_VERSION, cluster_clf=cclf, merge_clf=mclf, split_clf=sclf,
         cluster_features=CLUSTER_FEATURES, merge_features=MERGE_FEATURES,
+        split_features=SPLIT_FEATURES,
         store=store,
         config=dict(
             noise_clusters=[int(x) for x in args.noise_clusters.split(",") if x != ""],
@@ -995,6 +1195,10 @@ def parse_args():
     p.add_argument("--reset", default="false")
     p.add_argument("--force", default="false")
     p.add_argument("--probe-library", default="")
+    p.add_argument("--curation-log", default="",
+                   help="optional Klusters curation log for split supervision: "
+                        "''/false=off, true/auto=<session>.curation_log.<g>.jl, "
+                        "or a directory / explicit path (may contain {g})")
     return p.parse_args()
 
 
