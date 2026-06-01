@@ -114,4 +114,42 @@ NEUROSUITE_CORE_EXPORT int64_t datSampleCount(const std::string& path, int nbCha
 NEUROSUITE_CORE_EXPORT int64_t readDatWindow(const std::string& path, int nbChannels,
                       int64_t startSample, int64_t nSamples, int16_t* out);
 
+// ── Variant-aware input resolution ──────────────────────────────────────────
+//
+// A per-group typed input file (fet/spk/pca/res/clu …) may exist in several
+// representation "variants" — most notably the stderiv-derived features.  The
+// group number is ALWAYS the trailing token; the variant, when present, sits
+// between the type and the group:
+//
+//     <base>.<type>.<group>              canonical (no variant)
+//     <base>.<type>.<variant>.<group>    dotted variant      (preferred form)
+//     <base>.<type><variant>.<group>     legacy glued form    (e.g. .fetD.N)
+//
+// The legacy glued form (a single letter glued onto the type token, as the
+// stderiv pipeline historically wrote .fetD/.spkD/.pcaD) is recognised on READ
+// only, for backward compatibility; new writers should emit the dotted form.
+//
+// resolveInput() walks `preferVariants` in order and returns the first file
+// that exists.  The empty string "" denotes the canonical (no-variant) form,
+// so callers express their own preference, e.g.:
+//     {"", "stderiv", "D"}  → prefer canonical, else a derived representation
+//     {"stderiv", "D", ""}  → prefer derived, else canonical
+// For each non-empty variant the dotted form is probed first, then the legacy
+// glued form.  If nothing exists, `found` is false and `path` is the canonical
+// path so the caller can emit a sensible "missing input" error.
+struct ResolvedInput {
+    std::string path;            ///< resolved path (canonical path if !found)
+    std::string variant;         ///< matched variant ("" = canonical)
+    bool        dotted = false;  ///< matched the dotted (vs glued/canonical) form
+    bool        found  = false;
+};
+
+NEUROSUITE_CORE_EXPORT ResolvedInput resolveInput(
+    const std::string& base, const std::string& type, int group,
+    const std::vector<std::string>& preferVariants);
+
+// Convenience preference orders for the common cases.
+NEUROSUITE_CORE_EXPORT std::vector<std::string> preferDerived();    ///< {"stderiv","D",""}
+NEUROSUITE_CORE_EXPORT std::vector<std::string> preferCanonical();  ///< {"","stderiv","D"}
+
 }  // namespace neurofileio

@@ -188,6 +188,16 @@ endif()
 # =============================================================================
 set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../libklustersshared/src/xcorr")
 
+# Canonical file IO (neurofileio: .clu/.res/.fet readers + variant-aware
+# resolveInput) lives in the Qt-free libneurosuite-core.  KK source-includes
+# it the same way it does the xcorr kernel — compiled directly into each
+# executable, with NEUROSUITE_CORE_STATIC emptying the visibility macro — so
+# KK keeps its no-Qt, no-shared-lib-link build while sharing one
+# implementation of the file formats with Klusters and the plugins.
+set(_neurofileio_dir "${CMAKE_CURRENT_SOURCE_DIR}/../libneurosuite-core/src/neurosuite/core")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../libneurosuite-core/src")
+add_compile_definitions(NEUROSUITE_CORE_STATIC)
+
 # All of this project's own sources and headers now live under src/.
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/src")
 
@@ -207,7 +217,8 @@ set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_qual
     src/shiftprobe_disabled.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
-    ${_xcorr_dir}/realign_center.cpp)
+    ${_xcorr_dir}/realign_center.cpp
+    ${_neurofileio_dir}/neurofileio.cpp)
 set(_headers  src/KlustaKwik.h src/KK.h src/KK_internal.h src/KK_cuda.h src/KK_sycl.h src/KK_hip.h
               src/Array.h src/KlustaSave.h src/KlustaKwikYaml.h src/param.h
               src/dipsplit.h
@@ -430,6 +441,7 @@ if(_SYCL_ACTIVE)
         ${_xcorr_dir}/realign_xcorr_dispatch.cpp
         ${_xcorr_dir}/realign_xcorr_sycl.cpp
         ${_xcorr_dir}/realign_center.cpp
+        ${_neurofileio_dir}/neurofileio.cpp
         $<TARGET_OBJECTS:param_obj_exp>
         $<TARGET_OBJECTS:yaml_obj_exp>
         ${_headers})
