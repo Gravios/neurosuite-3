@@ -1423,3 +1423,40 @@ list_sessions()
 	echo -e $(echo $file_list | sed 's/ /\\n/g') | sort | uniq
 }
 
+
+#//  ─────────────────────────────────────────────────────────────────────────
+#//  ndm_resolve_input: resolve a per-group typed input file across the
+#//  canonical (.fet.N), dotted-variant (.fet.stderiv.N) and legacy-glued
+#//  (.fetD.N) forms — the bash mirror of neurosuite-core
+#//  neurofileio::resolveInput.  The group is always the trailing token.
+#//
+#//      ndm_resolve_input <base> <type> <group> [variant ...]
+#//
+#//  Walks the variant preference order (default "stderiv D", i.e. derived
+#//  first), probing the dotted form <base>.<type>.<variant>.<group> then the
+#//  legacy glued <base>.<type><variant>.<group>; the canonical form (no
+#//  variant) is tried last.  Prints the first existing path, or — if none
+#//  exists — the canonical path (so callers can still report it missing) and
+#//  returns non-zero.
+#//  ─────────────────────────────────────────────────────────────────────────
+ndm_resolve_input()
+{
+    local base="$1" type="$2" group="$3"; shift 3
+    local variants=("$@")
+    [ ${#variants[@]} -eq 0 ] && variants=(stderiv D)
+    local canonical="${base}.${type}.${group}"
+    local v dotted glued
+    for v in "${variants[@]}"; do
+        if [ -z "$v" ]; then
+            [ -f "$canonical" ] && { echo "$canonical"; return 0; }
+            continue
+        fi
+        dotted="${base}.${type}.${v}.${group}"
+        [ -f "$dotted" ] && { echo "$dotted"; return 0; }
+        glued="${base}.${type}${v}.${group}"
+        [ -f "$glued" ] && { echo "$glued"; return 0; }
+    done
+    [ -f "$canonical" ] && { echo "$canonical"; return 0; }
+    echo "$canonical"
+    return 1
+}
