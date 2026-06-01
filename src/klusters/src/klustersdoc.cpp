@@ -1684,6 +1684,28 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
             if (!emptyClusters.contains(id))
                 resultIds.append(id);
         resultIds.append(newClusterIdint);
+
+        // Manual-split detail: label this polygon split like the algorithmic
+        // ones (KNN/watershed) and, crucially, preserve the projection
+        // (dimensionX, dimensionY) the curator drew it in — the discriminating
+        // view that separated the sub-units, otherwise lost.
+        if (curationLogger && curationLogger->isOpen()) {
+            QStringList srcList;
+            for (int id : fromClusters) srcList << QString::number(id);
+            QMap<QString, QVariant> details;
+            details.insert(QStringLiteral("algorithm"),     QStringLiteral("manual_polygon"));
+            details.insert(QStringLiteral("status"),        QStringLiteral("accepted"));
+            details.insert(QStringLiteral("source_cluster"),
+                           fromClusters.size() == 1 ? fromClusters.first() : -1);
+            details.insert(QStringLiteral("source_clusters"), srcList.join(QLatin1Char(',')));
+            details.insert(QStringLiteral("n_source_clusters"), static_cast<int>(fromClusters.size()));
+            details.insert(QStringLiteral("new_cluster"),    newClusterIdint);
+            details.insert(QStringLiteral("n_new_clusters"),  1);
+            details.insert(QStringLiteral("dimension_x"),     dimensionX);
+            details.insert(QStringLiteral("dimension_y"),     dimensionY);
+            details.insert(QStringLiteral("n_emptied_sources"), static_cast<int>(emptyClusters.size()));
+            curationLogger->recordActionDetails(details);
+        }
         logAfter(resultIds);
     }
 }
@@ -1761,6 +1783,30 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
                     resultIds.append(id);
             for (int id : newClusters)
                 resultIds.append(id);
+
+            // Manual SPLIT_N detail: per-source→new mapping and the projection
+            // the curator drew it in (see createNewCluster for rationale).
+            if (curationLogger && curationLogger->isOpen()) {
+                QStringList srcList, newList, pairList;
+                for (int id : fromClusters) srcList << QString::number(id);
+                for (int id : newClusters)  newList << QString::number(id);
+                for (auto it = fromToNewClusterIds.constBegin();
+                          it != fromToNewClusterIds.constEnd(); ++it)
+                    pairList << (QString::number(it.key()) + QLatin1Char(':')
+                                 + QString::number(it.value()));
+                QMap<QString, QVariant> details;
+                details.insert(QStringLiteral("algorithm"),       QStringLiteral("manual_polygon_n"));
+                details.insert(QStringLiteral("status"),          QStringLiteral("accepted"));
+                details.insert(QStringLiteral("source_clusters"), srcList.join(QLatin1Char(',')));
+                details.insert(QStringLiteral("n_source_clusters"), static_cast<int>(fromClusters.size()));
+                details.insert(QStringLiteral("new_clusters"),    newList.join(QLatin1Char(',')));
+                details.insert(QStringLiteral("n_new_clusters"),  static_cast<int>(newClusters.size()));
+                details.insert(QStringLiteral("from_to"),         pairList.join(QLatin1Char(',')));
+                details.insert(QStringLiteral("dimension_x"),     dimensionX);
+                details.insert(QStringLiteral("dimension_y"),     dimensionY);
+                details.insert(QStringLiteral("n_emptied_sources"), static_cast<int>(emptyClusters.size()));
+                curationLogger->recordActionDetails(details);
+            }
             logAfter(resultIds);
         }
     }
@@ -6826,7 +6872,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
         details.insert(QStringLiteral("majority_thresh"), majorityThreshold);
         details.insert(QStringLiteral("min_new_size"),    minNewClusterSize);
         details.insert(QStringLiteral("min_ref_size"),    minRefClusterSize);
-        details.insert(QStringLiteral("n_new_clusters"),  newClusters.size());
+        details.insert(QStringLiteral("n_new_clusters"),  static_cast<int>(newClusters.size()));
         QList<QVariant> newIdsV;     for (int i : newClusters)       newIdsV.append(i);
         QList<QVariant> refIdsV;     for (int i : matchedReferences) refIdsV.append(i);
         QList<QVariant> emptiedV;    for (int i : emptiedClusters)   emptiedV.append(i);
