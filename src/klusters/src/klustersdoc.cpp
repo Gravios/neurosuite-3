@@ -70,7 +70,55 @@
 
 #include "timer.h"
 
+#include <neurosuite/core/neurofileio.h>  // variant-aware input resolution
+
 extern int nbUndo;
+
+namespace {
+// ── stderiv / dotted-variant helpers ────────────────────────────────────────
+//
+// A per-group feature/spike/pca file can exist as the canonical form
+// (.fet.N), the legacy glued stderiv form (.fetD.N), or the new dotted
+// variant form (.fet.stderiv.N / .fet.D.N).  These helpers centralise the
+// "is this a derived representation?" test and the path resolution so the
+// many sites that previously hard-coded ".fetD."/".spkD."/".pcaD." stay
+// consistent.  They are deliberately ADDITIVE: for the legacy glued and
+// canonical forms they reproduce the prior behaviour exactly, and they
+// additionally recognise/resolve the dotted forms.
+
+// True if `path` is a derived (stderiv) representation for file type
+// "fet"/"spk"/"pca" — glued (.fetD.) or dotted (.fet.stderiv. / .fet.D.).
+bool isDerivedVariant(const QString& path, const QString& type) {
+    return path.contains("." + type + "D.")
+        || path.contains("." + type + ".stderiv.")
+        || path.contains("." + type + ".D.");
+}
+
+// Resolve <fullBase>.<type>[.<variant>].<group> across canonical / dotted /
+// legacy-glued forms, honouring a preference order (defaults to derived-first,
+// matching Klusters' historical "prefer .fetD/.spkD/.pcaD" behaviour).
+QString resolveFeature(const QString& fullBase, const QString& type,
+                       const QString& group,
+                       const std::vector<std::string>& prefer
+                           = neurofileio::preferDerived()) {
+    const neurofileio::ResolvedInput r =
+        neurofileio::resolveInput(fullBase.toStdString(), type.toStdString(),
+                                  group.toInt(), prefer);
+    return QString::fromStdString(r.path);
+}
+
+// <base>.<type>[.<variant>].<group>  ->  <base>  (handles all three forms).
+QString stripFeatureSuffix(const QString& path, const QString& type) {
+    QString b = path.left(path.lastIndexOf(QLatin1Char('.')));   // strip .<group>
+    const int lastDot = b.lastIndexOf(QLatin1Char('.'));
+    if (lastDot >= 0) {
+        const QString seg = b.mid(lastDot + 1);
+        if (seg != type && seg != (type + "D"))                  // a variant token
+            b = b.left(lastDot);
+    }
+    return b.left(b.lastIndexOf(QLatin1Char('.')));              // strip .<type>
+}
+}  // namespace
 
 KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool autoSave,int savingInterval)
     : clusterColorListUndoList(),clusterColorListRedoList(),modified(false),docUrl(),parent(parent),clusterPalette(clusterPalette),
@@ -311,15 +359,11 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.yaml)
 
-    // Prefer .spkD.N (stderiv pipeline) over .spk.N if it exists.
-    QString spkFileUrl;
-    {
-        const QString spkD = urlFileInfo.absolutePath() + QDir::separator()
-                             + baseName + ".spkD." + electrodeGroupID;
-        const QString spk  = urlFileInfo.absolutePath() + QDir::separator()
-                             + baseName + ".spk."  + electrodeGroupID;
-        spkFileUrl = QFile::exists(spkD) ? spkD : spk;
-    }
+    // Prefer a derived representation (.spk.stderiv.N / legacy .spkD.N) over
+    // canonical .spk.N if present — resolved across canonical/dotted/glued.
+    QString spkFileUrl = resolveFeature(
+        urlFileInfo.absolutePath() + QDir::separator() + baseName,
+        "spk", electrodeGroupID);
 
     QString cluFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".clu."+ electrodeGroupID;
     if (!cluVariant.isEmpty())
@@ -329,15 +373,11 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + urlFileInfo.fileName() + ".autosave";
 
 
-    // Prefer .fetD.N (stderiv pipeline) over .fet.N if it exists.
-    QString fetFileUrl;
-    {
-        const QString fetD = urlFileInfo.absolutePath() + QDir::separator()
-                             + baseName + ".fetD." + electrodeGroupID;
-        const QString fet  = urlFileInfo.absolutePath() + QDir::separator()
-                             + baseName + ".fet."  + electrodeGroupID;
-        fetFileUrl = QFile::exists(fetD) ? fetD : fet;
-    }
+    // Prefer a derived representation (.fet.stderiv.N / legacy .fetD.N) over
+    // canonical .fet.N if present.
+    QString fetFileUrl = resolveFeature(
+        urlFileInfo.absolutePath() + QDir::separator() + baseName,
+        "fet", electrodeGroupID);
     //Parameter files
     // Parameter file: YAML only
     const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
@@ -824,15 +864,13 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // copies to the correct new location.
     if (isSaveAs) {
         QFileInfo newInfo(docUrl);
-        // Preserve .spkD/.fetD suffix for stderiv sessions.
-        const bool wasSpkD = origSpkPath.contains(QStringLiteral(".spkD."));
-        const bool wasFetD = origFetPath.contains(QStringLiteral(".fetD."));
-        origSpkPath = newInfo.absolutePath() + QDir::separator()
-                        + baseName + (wasSpkD ? ".spkD." : ".spk.") + electrodeGroupID;
+        // Re-resolve at the new location so whatever derived form exists
+        // (.spkD/.fetD or dotted .spk.stderiv/.fet.stderiv) is preserved.
+        const QString newBase = newInfo.absolutePath() + QDir::separator() + baseName;
+        origSpkPath = resolveFeature(newBase, "spk", electrodeGroupID);
         origResPath = newInfo.absolutePath() + QDir::separator()
                         + baseName + ".res." + electrodeGroupID;
-        origFetPath = newInfo.absolutePath() + QDir::separator()
-                        + baseName + (wasFetD ? ".fetD." : ".fet.") + electrodeGroupID;
+        origFetPath = resolveFeature(newBase, "fet", electrodeGroupID);
     }
     // patch63 — commitAndRenewPending now reports failure.  When the
     // pending → original copy fails (typical: NTFS/fuseblk permission
@@ -3401,15 +3439,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //                      .pcaD basis.  Select .pcaD.N, and apply the
     //                      stderiv transform to the raw waveform before
     //                      projecting onto eigenvectors.
-    const bool spkIsTransformed = origSpkPath.contains(QStringLiteral(".spkD."));
-    const bool fetIsStderiv     = origFetPath.contains(QStringLiteral(".fetD."));
+    const bool spkIsTransformed = isDerivedVariant(origSpkPath, "spk");
+    const bool fetIsStderiv     = isDerivedVariant(origFetPath, "fet");
     // Kept as alias for existing legacy-named uses in this function that
     // really want the feature-space flag, not the .spk storage flag.
     const bool isStderivRealign = fetIsStderiv;
-    const QString pcaDPath_ra = dir + "/" + base + ".pcaD." + grpId;
-    const QString pcaPath = (fetIsStderiv && QFileInfo::exists(pcaDPath_ra))
-                            ? pcaDPath_ra
-                            : dir + "/" + base + ".pca." + grpId;
+    // Basis follows the feature space: a derived (.pcaD / .pca.stderiv) basis
+    // when fet is stderiv, else the canonical .pca.N.
+    const QString pcaPath = resolveFeature(
+        dir + "/" + base, "pca", grpId,
+        fetIsStderiv ? neurofileio::preferDerived()
+                     : neurofileio::preferCanonical());
+    const QString pcaDPath_ra = pcaPath;  // retained name for logging below
 
     for (const QString& p : {spkPath, resPath, fetPath}) {
         if (!QFileInfo::exists(p)) {
@@ -3466,8 +3507,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     log << "PCA file: " << pcaPath
         << (QFileInfo::exists(pcaPath) ? " [found]" : " [NOT FOUND]") << "\n";
     if (isStderivRealign && !QFileInfo::exists(pcaDPath_ra))
-        log << "WARNING: .pcaD." << grpId << " not found — "
-            << "run ndm_pca_stderiv to generate it.\n";
+        log << "WARNING: stderiv PCA basis (.pca.stderiv/.pcaD) for group "
+            << grpId << " not found — run ndm_pca_stderiv to generate it.\n";
     emitFlush();
     if (QFileInfo::exists(pcaPath)) {
         FILE* fp = fopen(pcaPath.toLocal8Bit().constData(), "rb");
@@ -5108,13 +5149,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
     } pca;
 
-    // Derive session base: strip ".spkD.N" or ".spk.N" suffix.
-    const QString sessionBase = [&]() -> QString {
-        QString b = origSpkPath;
-        b = b.left(b.lastIndexOf(QLatin1Char('.')));  // strip .N
-        b = b.left(b.lastIndexOf(QLatin1Char('.')));  // strip .spk or .spkD
-        return b;
-    }();
+    // Derive session base: strip ".<type>[.<variant>].N" (handles .spk.N,
+    // .spkD.N and dotted .spk.stderiv.N).
+    const QString sessionBase = stripFeatureSuffix(origSpkPath, "spk");
 
     // Pipeline detection — two independent signals.  Decoupling them fixes
     // Pipeline C (raw .spk + stderiv .fetD/.pcaD) which was previously
@@ -5136,8 +5173,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //                      .pcaD basis.  Select .pcaD.N and apply the
     //                      stderiv transform before projecting the raw
     //                      waveform onto the eigenvectors.
-    const bool spkIsTransformed = origSpkPath.contains(QStringLiteral(".spkD."));
-    const bool fetIsStderiv     = origFetPath.contains(QStringLiteral(".fetD."));
+    const bool spkIsTransformed = isDerivedVariant(origSpkPath, "spk");
+    const bool fetIsStderiv     = isDerivedVariant(origFetPath, "fet");
     // Legacy name retained for any downstream use that really means the
     // feature-space flag; nothing in nudge uses this directly after the
     // refactor below, but keep it for grep compatibility during review.
@@ -5147,10 +5184,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // PCA basis selection is driven by the FEATURE space: .pcaD.N stores
     // eigenvectors computed on the (nChan-1) stderiv-space channels, so it
     // must pair with .fetD.N regardless of whether .spk is raw or stderiv.
-    const QString pcaDPath = sessionBase + QStringLiteral(".pcaD.") + electrodeGroupID;
-    const QString pcaPath  = sessionBase + QStringLiteral(".pca.")  + electrodeGroupID;
-    const QString chosenPca = (fetIsStderiv && QFileInfo::exists(pcaDPath))
-                               ? pcaDPath : pcaPath;
+    const QString chosenPca = resolveFeature(
+        sessionBase, "pca", electrodeGroupID,
+        fetIsStderiv ? neurofileio::preferDerived()
+                     : neurofileio::preferCanonical());
 
     if (QFileInfo::exists(chosenPca)) {
         FILE* fp = fopen(chosenPca.toLocal8Bit().constData(), "rb");
