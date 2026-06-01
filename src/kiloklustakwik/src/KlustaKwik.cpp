@@ -9,6 +9,8 @@
 #include "KlustaKwikYaml.h"   // auto-detect spike params from YAML config
 #include "KK_prior.h"         // empirical prior loader
 
+#include <neurosuite/core/neurofileio.h>  // canonical variant-aware input resolution
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1210,27 +1212,21 @@ FILE *fopen_safe(const char *fname, const char *mode) {
 // -----------------------------------------------------------------------------
 int pickInputPath(char *out, size_t outSize,
                   const char *base, const char *ext, int elec) {
-    // Canonical first
-    snprintf(out, outSize, "%s.%s.%d", base, ext, elec);
-    if (FILE *probe = fopen(out, "rb")) {
-        fclose(probe);
-        return 0;
-    }
+    // Single canonical resolver in libneurosuite-core (source-included).
+    // Preference: canonical first, then a derived representation — the new
+    // dotted form (<base>.<ext>.stderiv.N / .<ext>.D.N) and the legacy glued
+    // form (<base>.<ext>D.N) are both discovered.  This preserves the prior
+    // "prefer .fet, fall back to .fetD" behaviour while generalising it.
+    neurofileio::ResolvedInput r =
+        neurofileio::resolveInput(base, ext, elec, {"", "stderiv", "D"});
 
-    // Try D variant
-    char dPath[STRLEN + 32];
-    snprintf(dPath, sizeof(dPath), "%s.%sD.%d", base, ext, elec);
-    if (FILE *probe = fopen(dPath, "rb")) {
-        fclose(probe);
-        if (outSize > 0) {
-            strncpy(out, dPath, outSize);
-            out[outSize - 1] = '\0';
-        }
-        return 1;
+    if (outSize > 0) {
+        std::strncpy(out, r.path.c_str(), outSize);
+        out[outSize - 1] = '\0';
     }
-
-    // Neither: leave `out` = canonical path, let caller handle the error.
-    return -1;
+    if (!r.found)
+        return -1;                       // neither: out = canonical path
+    return r.variant.empty() ? 0 : 1;    // 0 = canonical, 1 = derived variant
 }
 
 void MatPrint(FILE *fp, const float *Mat, int nRows, int nCols) {

@@ -278,4 +278,56 @@ int64_t readDatWindow(const std::string& path, int nbChannels,
     return static_cast<int64_t>(got) / (static_cast<int64_t>(nbChannels) * 2);
 }
 
+// ── Variant-aware input resolution ──────────────────────────────────────────
+
+static bool fileExists(const std::string& path)
+{
+    std::ifstream f(path, std::ios::binary);
+    return f.good();
+}
+
+ResolvedInput resolveInput(const std::string& base, const std::string& type,
+                           int group,
+                           const std::vector<std::string>& preferVariants)
+{
+    const std::string g = std::to_string(group);
+    const std::string canonical = base + "." + type + "." + g;
+
+    ResolvedInput r;
+    for (const std::string& v : preferVariants) {
+        if (v.empty()) {                          // canonical (no variant)
+            if (fileExists(canonical)) {
+                r.path = canonical; r.variant.clear();
+                r.dotted = false;   r.found = true;
+                return r;
+            }
+            continue;
+        }
+        // Preferred new form: <base>.<type>.<variant>.<group>
+        const std::string dotted = base + "." + type + "." + v + "." + g;
+        if (fileExists(dotted)) {
+            r.path = dotted; r.variant = v; r.dotted = true; r.found = true;
+            return r;
+        }
+        // Legacy glued form: <base>.<type><variant>.<group>  (e.g. .fetD.N)
+        const std::string glued = base + "." + type + v + "." + g;
+        if (fileExists(glued)) {
+            r.path = glued; r.variant = v; r.dotted = false; r.found = true;
+            return r;
+        }
+    }
+    r.path = canonical; r.found = false;
+    return r;
+}
+
+std::vector<std::string> preferDerived()
+{
+    return {"stderiv", "D", ""};
+}
+
+std::vector<std::string> preferCanonical()
+{
+    return {"", "stderiv", "D"};
+}
+
 }  // namespace neurofileio
