@@ -11,6 +11,7 @@
 #include <cmath>
 #include <ctime>
 #include <cstdarg>
+#include <cstdint>
 #include <vector>
 #include <stdexcept>
 
@@ -28,7 +29,14 @@ void Output(const char *fmt, ...);
 // (regardless of -Screen) AND should not splice into the middle of Output()'s
 // stdout text when both streams are merged by `2>&1 | tee` at the shell.
 void LockedStderr(const char *fmt, ...);
-int  irand(int min, int max);
+// Deterministic, thread-local random facility.  irand/kk_rand_double draw from
+// a per-thread mt19937_64; kk_seed_rng reseeds the calling thread from a
+// work-item key (see kk_mix_seed), so parallel regions that seed per chunk/run
+// produce identical results regardless of thread count or scheduling.
+int      irand(int min, int max);              // uniform int in [min,max] inclusive
+double   kk_rand_double();                     // uniform double in [0,1)
+void     kk_seed_rng(uint64_t seed);           // reseed the calling thread's RNG
+uint64_t kk_mix_seed(uint64_t a, uint64_t b);  // mix a work-item key into a dispersed seed
 FILE *fopen_safe(const char *fname, const char *mode);
 
 // Build a path for an ndmanager-plugins input file, preferring the canonical

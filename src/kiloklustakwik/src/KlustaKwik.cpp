@@ -18,6 +18,8 @@
 #include <cmath>
 #include <ctime>
 #include <cstdarg>
+#include <cstdint>
+#include <random>
 #include <iostream>
 #include <stdexcept>
 #include <sstream>
@@ -1172,8 +1174,44 @@ void LockedStderr(const char *fmt, ...) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic, thread-local random facility (declared in KlustaKwik.h).
+//
+// Each thread owns its own mt19937_64.  Parallel regions reseed it per
+// work-item (chunk, or chunk+run) from a stable key via kk_seed_rng, so the
+// random stream a given work-item sees depends only on its identity and the
+// RandomSeed -- never on thread count or scheduling.  This replaces the former
+// process-global rand()/srand(), whose single shared sequence was consumed in
+// a thread-race order and so was not reproducible under OpenMP.
+// ---------------------------------------------------------------------------
+namespace {
+    // Deterministic non-zero default so an unseeded draw is still well-defined.
+    thread_local std::mt19937_64 t_rng{0x9E3779B97F4A7C15ULL};
+}
+
+uint64_t kk_mix_seed(uint64_t a, uint64_t b) {
+    // splitmix64 finaliser over a combined key -> good avalanche, so adjacent
+    // work-item keys (e.g. chunks 0,1,2) yield well-separated streams.
+    uint64_t x = a + 0x9E3779B97F4A7C15ULL * (b + 0x9E3779B97F4A7C15ULL);
+    x ^= x >> 30; x *= 0xBF58476D1CE4E5B9ULL;
+    x ^= x >> 27; x *= 0x94D049BB133111EBULL;
+    x ^= x >> 31;
+    return x;
+}
+
+void kk_seed_rng(uint64_t seed) {
+    t_rng.seed(seed);
+}
+
 int irand(int min, int max) {
-    return rand() % (max - min + 1) + min;
+    if (max <= min) return min;
+    std::uniform_int_distribution<int> d(min, max);   // inclusive [min,max]
+    return d(t_rng);
+}
+
+double kk_rand_double() {
+    std::uniform_real_distribution<double> d(0.0, 1.0);
+    return d(t_rng);
 }
 
 FILE *fopen_safe(const char *fname, const char *mode) {
@@ -1677,7 +1715,7 @@ int main(int argc, char **argv) {
         kSv.BestWeight.SetSize(MaxPossibleClusters);
         kSv.BestMean.SetSize(MaxPossibleClusters * K1.nDims);
 
-        srand(RandomSeed);
+        kk_seed_rng(static_cast<uint64_t>(RandomSeed));
 
         if (DistDump) Distfp = fopen("DISTDUMP", "w");
 
@@ -1932,7 +1970,7 @@ int main(int argc, char **argv) {
                         K, MaxClusters, i + 1, nStarts);
                 fflush(stderr);
                 Output("Run %d / %d  (K=%d)...\n", run + 1, nRunsEff, K);
-                srand(RandomSeed + i);
+                kk_seed_rng(kk_mix_seed(static_cast<uint64_t>(RandomSeed), static_cast<uint64_t>(i)));
 
                     float score;
                     if (useExtChunks)
@@ -2012,7 +2050,7 @@ int main(int argc, char **argv) {
             const int K   = jobs[j].K;
             const int run = jobs[j].run;
 
-            srand(RandomSeed + run);
+            kk_seed_rng(kk_mix_seed(static_cast<uint64_t>(RandomSeed), static_cast<uint64_t>(run)));
 
             float score;
             if (useExtChunks)

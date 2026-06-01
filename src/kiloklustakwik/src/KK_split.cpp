@@ -1269,6 +1269,12 @@ void KK::FullCemSplitPerChunk(
         reduction(+:totalSplits,totalNewSubClusters,totalRefractoryVetoed)
     for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
         const auto& item = items[static_cast<size_t>(wi)];
+        // Deterministic per-work-item RNG seed (KlustaKwik.h): the split CEM
+        // trial below draws randomness, so key the stream to (chunk,cluster)
+        // identity -- reproducible and independent of thread count/schedule.
+        kk_seed_rng(kk_mix_seed(kk_mix_seed(static_cast<uint64_t>(RandomSeed),
+                                            static_cast<uint64_t>(item.ck)),
+                                static_cast<uint64_t>(item.lc)));
         const int   nMem = static_cast<int>(item.members.size());
         const auto& pts  = chunkPoints[item.ck];
 
@@ -1620,6 +1626,10 @@ void KK::RefractorySplitPerChunk(
     int nRejWorseNull = 0;   // splitScore >= nullScore
 
     for (int ck = 0; ck < nCh; ck++) {
+        // Deterministic per-chunk RNG seed (KlustaKwik.h): the refractory split
+        // trials below draw randomness, so key the stream to chunk identity --
+        // reproducible and independent of thread count/schedule.
+        kk_seed_rng(kk_mix_seed(static_cast<uint64_t>(RandomSeed), static_cast<uint64_t>(ck)));
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];
         auto&       mdls = perChunkModels[ck];
