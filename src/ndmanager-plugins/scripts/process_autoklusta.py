@@ -328,12 +328,15 @@ class Group:
         self.noise = set(int(c) for c in noise)
         self.refractory_ms = refractory_ms
 
-        feats_all, n_dims = read_fet(f"{self.session}.fet.{group}")
-        self.res = read_res(f"{self.session}.res.{group}")
+        feats_all, n_dims = read_fet(fet_file(self.session, group))
+        res_fp = resolve_input(self.session, "res", group, ["", "stderiv", "D"])
+        res_raw = read_res(res_fp) if os.path.isfile(res_fp) else None
         self.raw = read_clu(raw_clu_path)
         self.cur = read_clu(curated_clu_path) if load_curated else None
 
-        lengths = [len(feats_all), len(self.res), len(self.raw)]
+        lengths = [len(feats_all), len(self.raw)]
+        if res_raw is not None:
+            lengths.append(len(res_raw))
         if self.cur is not None:
             lengths.append(len(self.cur))
         n = min(lengths)
@@ -342,7 +345,13 @@ class Group:
                              f"truncating to {n}\n")
         self.feats = feats_all[:n, :-1].astype(np.float64)
         self.ts = feats_all[:n, -1].astype(np.float64)
-        self.res = self.res[:n].astype(np.int64)
+        # .res holds original detection times; when absent (some stderiv
+        # pipelines keep times only in the .fet timestamp column) derive
+        # them from that column — Klusters treats .fet ts as authoritative.
+        if res_raw is not None:
+            self.res = res_raw[:n].astype(np.int64)
+        else:
+            self.res = np.rint(self.ts).astype(np.int64)
         self.raw = self.raw[:n].astype(np.int64)
         if self.cur is not None:
             self.cur = self.cur[:n].astype(np.int64)
@@ -350,11 +359,10 @@ class Group:
 
         self.wf = None
         if use_waveforms:
-            for ext in ("spkD", "spk"):
-                wf = read_spk(f"{self.session}.{ext}.{group}", n_chan, n_samp)
-                if wf is not None and len(wf) >= n:
-                    self.wf = wf[:n]
-                    break
+            spk_fp = resolve_input(self.session, "spk", group, PREFER_DERIVED)
+            wf = read_spk(spk_fp, n_chan, n_samp)
+            if wf is not None and len(wf) >= n:
+                self.wf = wf[:n]
 
         # .fet ts is authoritative window position (realign writes cumulative
         # shift there); fall back to .res if it is not a real clock.
@@ -702,6 +710,50 @@ def out_clu_path(args, g):
     return f"{args.session}.clu.{g}"
 
 
+def resolve_input(session, ftype, group, prefer):
+    """Resolve a per-group typed input file, mirroring neurosuite-core's
+    neurofileio::resolveInput.  The group is ALWAYS the trailing token; a
+    variant, when present, sits between the type and the group:
+
+        <base>.<type>.<group>             canonical (no variant)
+        <base>.<type>.<variant>.<group>   dotted variant (preferred new form)
+        <base>.<type><variant>.<group>    legacy glued (.fetD/.spkD/.pcaD)
+
+    `prefer` lists variants in order; "" denotes the canonical form.  For each
+    non-empty variant the dotted form is probed first, then the legacy glued
+    form.  Returns the first existing path, or the canonical path if none
+    exists (so the caller's os.path.isfile check still reports it missing).
+    """
+    base = str(session)
+    g = str(group)
+    canonical = f"{base}.{ftype}.{g}"
+    for v in prefer:
+        if v == "":
+            if os.path.isfile(canonical):
+                return canonical
+            continue
+        dotted = f"{base}.{ftype}.{v}.{g}"
+        if os.path.isfile(dotted):
+            return dotted
+        glued = f"{base}.{ftype}{v}.{g}"   # legacy, e.g. .fetD.N
+        if os.path.isfile(glued):
+            return glued
+    return canonical
+
+
+# Prefer a derived representation (dotted .stderiv / .D, or legacy glued .D),
+# else canonical — the order Klusters uses when it favours .fetD/.spkD.
+PREFER_DERIVED = ["stderiv", "D", ""]
+
+
+def fet_file(session, g):
+    """Feature file for group g.  Prefers a derived representation
+    (.fet.stderiv.N / legacy .fetD.N) over canonical .fet.N, matching
+    Klusters and the neurosuite-core resolver.  The feature/waveform/res
+    files are SHARED across .clu variants — only .clu carries the tag."""
+    return resolve_input(session, "fet", g, PREFER_DERIVED)
+
+
 def iter_groups(args, load_curated):
     n_samp = [int(x) for x in args.n_samples_per_group.split(",") if x != ""]
     n_chan = [int(x) for x in args.n_channels_per_group.split(",") if x != ""]
@@ -713,12 +765,19 @@ def iter_groups(args, load_curated):
     for gi in groups:
         raw_path = raw_clu_path(args, gi)
         cur_path = curated_clu_path(args, gi)
-        fet_path = f"{args.session}.fet.{gi}"
-        if not (os.path.isfile(raw_path) and os.path.isfile(fet_path)
-                and os.path.isfile(f"{args.session}.res.{gi}")):
+        fet_path = fet_file(args.session, gi)
+        # Required: raw .clu and the feature file (.fetD.N preferred, else
+        # .fet.N).  .res.N is optional — derived from the .fet ts column when
+        # missing (see Group).  The .clu tag never applies to .fet/.spk/.res.
+        missing = []
+        if not os.path.isfile(raw_path):
+            missing.append(os.path.basename(raw_path))
+        if not os.path.isfile(fet_path):
+            base = os.path.basename(args.session)
+            missing.append(f"{base}.fet[.stderiv].{gi} / .fetD.{gi} / .fet.{gi}")
+        if missing:
             if args.group and args.group > 0:
-                print(f"  group {gi}: missing raw .clu / .fet / .res "
-                      f"(looked for {os.path.basename(raw_path)})")
+                print(f"  group {gi}: missing {', '.join(missing)}")
             continue
         if load_curated and not os.path.isfile(cur_path):
             print(f"  group {gi}: no curated {os.path.basename(cur_path)} "
