@@ -1780,28 +1780,11 @@ void KK::RefractorySplitPerChunk(
             Ks.minClustersAlive = 1; Ks.AllocateArrays(); Ks.AllocateCholeskyVecs();
             Ks.timeRawMin = timeRawMin; Ks.timeRawMax = timeRawMax;
 
-            Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
-            for (int ii = 0; ii < nMem; ii++) {
-                const int p = pts[static_cast<size_t>(members[static_cast<size_t>(ii)])];
-                for (int d = 0; d < nFullDims; d++)
-                    Ks.Data[ii * nFullDims + d] = Data[p * nDims + d];
-            }
-
-            // Place centroid seeds into Centres[]
-            // Centres layout: [cluster-1 (clean), cluster-2 (violator)] × nFullDims
-            Ks.Centres.SetSize(2 * nFullDims);
-            for (int d = 0; d < nFullDims; d++) {
-                Ks.Centres[0 * nFullDims + d] = centClean[static_cast<size_t>(d)];
-                Ks.Centres[1 * nFullDims + d] = centViol[static_cast<size_t>(d)];
-            }
-            Ks.nStartingClusters = 3;  // noise(0) + clean(1) + violator(2)
-            Ks.NoisePoint = 0;
-            for (int c = 0; c < MaxPossibleClusters; c++)
-                Ks.ClassAlive[c] = (c < 3) ? 1 : 0;
-            Ks.Reindex();
-            // Assign initial classes from centroid proximity
-            Ks.InitClassFromCentres(nSpatial);
-
+            // The scratch KK is allocated above.  Build the null (single-
+            // cluster) model, then the split model.  (A duplicate centroid-
+            // seed setup here was dead: ReinitForSplit below resets
+            // Class/ClassAlive, and the split block re-fills Data and re-sets
+            // Centres before use.)
             // Null score (single cluster)
             Ks.ReinitForSplit(nMem, nFullDims, penaltyMix);
             for (int ii = 0; ii < nMem; ii++) {
