@@ -18,7 +18,7 @@
 #include <QFile>
 #include <QStringList>
 #include <QFileInfo>
-#include <klustersshared/neurofileio.h>
+#include <neurosuite/core/neurofileio.h>
 
 #include <QList>
 #include <QMap> 

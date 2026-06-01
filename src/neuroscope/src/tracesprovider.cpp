@@ -27,7 +27,7 @@
 #include <QRegularExpression>
 #include <QDebug>
 #include <QFileInfo>
-#include <klustersshared/neurofileio.h>
+#include <neurosuite/core/neurofileio.h>
 #include <cstdint>
 
 TracesProvider::TracesProvider(const QString& fileUrl,int nbChannels,int resolution,double samplingRate,int offset)

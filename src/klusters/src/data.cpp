@@ -48,7 +48,7 @@
 
 
 #include "timer.h"
-#include <klustersshared/neurofileio.h>
+#include <neurosuite/core/neurofileio.h>
 #include <queue>
 
 extern int nbUndo;

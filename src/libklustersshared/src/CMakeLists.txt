@@ -35,8 +35,7 @@ set(_srcs
     klustersshared/parameteryamlreader.cpp
     klustersshared/parameteryamlmodifier.cpp
     klustersshared/parameteryamlwriter.cpp
-    klustersshared/parameteryamlreader_probes.cpp
-    klustersshared/neurofileio.cpp)
+    klustersshared/parameteryamlreader_probes.cpp)
 
 set(_hdrs
     libklustersshared_export.h
@@ -68,18 +67,23 @@ set(_hdrs
     klustersshared/fileinformation.h
     klustersshared/programinformation.h
     klustersshared/neuroscopevideoinfo.h
-    klustersshared/channelcolorentry.h
-    klustersshared/neurofileio.h)
+    klustersshared/channelcolorentry.h)
 
 qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc
     gui/libklustersshared-cursors.qrc)
 
-add_library(klustersshared SHARED ${_srcs})
-add_library(KlustersShared::klustersshared ALIAS klustersshared)
+add_library(neurosuite-qt SHARED ${_srcs})
+# Primary modern name plus backward-compatible aliases so existing consumers
+# that link KlustersShared::klustersshared (klusters, neuroscope, ndmanager …)
+# keep resolving unchanged.  EXPORT_NAME below keeps the *installed* export
+# named KlustersShared::klustersshared as well.
+add_library(Neurosuite::qt ALIAS neurosuite-qt)
+add_library(KlustersShared::klustersshared ALIAS neurosuite-qt)
+add_library(klustersshared ALIAS neurosuite-qt)
 
 # Export macro so klustersshared_export.h emits the right declspec/visibility
-target_compile_definitions(klustersshared
+target_compile_definitions(neurosuite-qt
     PRIVATE KLUSTERSSHARED_BUILD_KLUSTERSSHARED_LIB)
 
 # Include paths.
@@ -89,7 +93,7 @@ target_compile_definitions(klustersshared
 # build time (CMAKE_CURRENT_SOURCE_DIR = .../libklustersshared/src/) and
 # install time (${CMAKE_INSTALL_INCLUDEDIR}/klustersshared/).
 # No symlinks or generator-expression tricks are required.
-target_include_directories(klustersshared
+target_include_directories(neurosuite-qt
     PUBLIC
         # Build-tree consumers: the src/ parent is exposed so that
         # #include <klustersshared/header.h> resolves to src/klustersshared/header.h.
@@ -106,21 +110,24 @@ target_include_directories(klustersshared
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/klustersshared>)
 
-target_link_libraries(klustersshared
+target_link_libraries(neurosuite-qt
     PUBLIC
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
-        yaml-cpp)
+        yaml-cpp
+        Neurosuite::core)
 
-set_target_properties(klustersshared PROPERTIES
+set_target_properties(neurosuite-qt PROPERTIES
+    OUTPUT_NAME "neurosuite-qt"
+    EXPORT_NAME "klustersshared"
     VERSION   "${PROJECT_VERSION}"
     SOVERSION "${PROJECT_VERSION_MAJOR}")
 
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
-install(TARGETS klustersshared
+install(TARGETS neurosuite-qt
     EXPORT  LibKlustersSharedTargets
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
