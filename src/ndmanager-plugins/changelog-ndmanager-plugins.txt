@@ -1,6 +1,30 @@
 ------------------------------------------------------------------------------------------------------------
 neurosuite-3 fork — 2026-06-01
 
+* process_extractspikes / _sdiff / _stderiv — double-buffered reader.
+
+  Detection already runs the per-group work in parallel (OpenMP) on each block,
+  but the block read was serial: read a block, then detect, then read the next.
+  A background reader thread now prefetches the next raw .fil block into one of
+  two shared heap buffers while the main thread runs the per-group detection on
+  the other (raw waveforms for process_extractspikes; the spatial- or
+  spatial+temporal-derivative signal for _sdiff / _stderiv), so disk I/O
+  overlaps the CPU-bound detection.
+
+  Single-producer/single-consumer over two slots: the reader's fread runs
+  outside the lock; the consumer memcpy's the prefetched block into cur_buffer
+  (the carry-record / prev_buffer assembly — and the derivative computation in
+  _sdiff/_stderiv — are unchanged) under the lock; a 0..2 fill count guarantees
+  reader and consumer never touch the same slot.  The prime record is read
+  before the reader is launched, and feof/ftello are kept off the prefetch path
+  (the reader runs ahead), so termination is driven by the consumed block's
+  short read; the reader is torn down after the loop.  Output is byte-identical
+  to the serial path — only when the bytes are read changes.  File input only;
+  process_extractspikes' stdin path streams serially as before.
+
+------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-06-01
+
 * ndm_extractspikes / _sdiff / _stderiv — use an existing .res when present.
 
   All three process_extractspikes* tools already implement -R (re-extract:

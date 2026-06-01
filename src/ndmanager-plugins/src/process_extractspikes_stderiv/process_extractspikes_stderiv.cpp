@@ -43,6 +43,9 @@
 #include <sstream>
 #include <unordered_set>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 #ifdef __linux__
 #  include <sys/sysinfo.h>
@@ -1140,7 +1143,47 @@ int main(int argc, char *argv[])
         prog.beginStage("DETECT", progTotalSamples);
     }
 
-    while(!feof(inputFile) && !isLastLoop) {
+    // ── Double-buffered reader (file input only) ───────────────────────────
+    // Background thread prefetches the next raw block from the .fil into one of
+    // two shared buffers while the main thread runs the (OpenMP, per-group)
+    // detection on the spatial+temporal-derivative signal.  Only the raw read
+    // moves off the critical path; the derivative and carry-record assembly are
+    // unchanged, so output is byte-identical to the serial path.
+    const bool dblBuf = args.isInputFileProvided;
+    short* dbSlot[2]  = { nullptr, nullptr };
+    size_t dbRecNb[2] = { 0, 0 };
+    std::mutex dbMtx;
+    std::condition_variable dbFilled, dbFree;
+    int  dbFilledCount = 0, dbWriteIdx = 0, dbReadIdx = 0;
+    bool dbStop = false, dbReaderStarted = false;
+    std::thread dbReader;
+    if(dblBuf) {
+        dbSlot[0] = new short[buffer_size];
+        dbSlot[1] = new short[buffer_size];
+    }
+    auto dbReaderFn = [&]() {
+        for(;;) {
+            int idx;
+            {
+                std::unique_lock<std::mutex> lk(dbMtx);
+                dbFree.wait(lk, [&]{ return dbFilledCount < 2 || dbStop; });
+                if(dbStop) return;
+                idx = dbWriteIdx;
+            }
+            size_t got = fread(dbSlot[idx], sizeof(short), buffer_size, inputFile);
+            bool eof = (got < (size_t)buffer_size);
+            {
+                std::lock_guard<std::mutex> lk(dbMtx);
+                dbRecNb[idx] = got;
+                dbWriteIdx  ^= 1;
+                dbFilledCount++;
+                dbFilled.notify_one();
+            }
+            if(eof) return;
+        }
+    };
+
+    while(!isLastLoop && (dblBuf || !feof(inputFile))) {
 
         // ── fill raw buffer (identical to process_extractspikes) ──────────
         if(nbLoops == 0) {
@@ -1152,11 +1195,24 @@ int main(int argc, char *argv[])
             memcpy(sdiff_prev,  sdiff_cur,  sizeof(short) * buffer_size);
         }
 
-        rec_nb = fread(cur_buffer + args.totalChannelNumber,
-                        sizeof(short), buffer_size, inputFile);
+        if(dblBuf) {
+            if(!dbReaderStarted) { dbReader = std::thread(dbReaderFn); dbReaderStarted = true; }
+            std::unique_lock<std::mutex> lk(dbMtx);
+            dbFilled.wait(lk, [&]{ return dbFilledCount > 0; });
+            const int idx = dbReadIdx;
+            rec_nb = dbRecNb[idx];
+            memcpy(cur_buffer + args.totalChannelNumber, dbSlot[idx],
+                   sizeof(short) * rec_nb);
+            dbReadIdx ^= 1;
+            dbFilledCount--;
+            dbFree.notify_one();
+        } else {
+            rec_nb = fread(cur_buffer + args.totalChannelNumber,
+                            sizeof(short), buffer_size, inputFile);
+        }
         memcpy(cur_buffer, nextRec, sizeof(short) * args.totalChannelNumber);
 
-        if(rec_nb < (unsigned long long)buffer_size || feof(inputFile)) {
+        if(rec_nb < (unsigned long long)buffer_size || (!dblBuf && feof(inputFile))) {
             isLastLoop = true;
             delete[] nextRec;
             nextRec    = nullptr;
@@ -1431,6 +1487,14 @@ int main(int argc, char *argv[])
         nbLoops++;
         if(args.isInputFileProvided) prog.setPosition(progSamplesDone);
     } // while !feof
+
+    if(dblBuf) {
+        { std::lock_guard<std::mutex> lk(dbMtx); dbStop = true; }
+        dbFree.notify_all();
+        if(dbReader.joinable()) dbReader.join();
+        delete[] dbSlot[0];
+        delete[] dbSlot[1];
+    }
 
     if(args.isInputFileProvided) prog.endStage();
 
