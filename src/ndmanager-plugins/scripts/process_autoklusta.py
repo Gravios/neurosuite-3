@@ -113,6 +113,7 @@ except ImportError:
 
 try:
     import joblib
+    from scipy.stats import chi2 as _chi2
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.dummy import DummyClassifier
     from sklearn.model_selection import GroupKFold, cross_val_predict
@@ -809,7 +810,150 @@ def _connected_components(nodes, edges):
     return list(comps.values())
 
 
-def apply_group(bundle, g: Group, keep_thr, merge_thr):
+def cluster_centroids(g: Group):
+    """Per-cluster feature-space centroids over ALL clusters (incl. noise),
+    mirroring Data::computeAllCentroids (mean over the nFeat feature cols)."""
+    cents = {}
+    for cid in np.unique(g.raw):
+        m = g.raw == cid
+        if m.any():
+            cents[int(cid)] = g.feats[m].mean(axis=0)
+    return cents
+
+
+def split_feature_vec(fd):
+    return np.array([fd.get(k, np.nan) for k in SPLIT_FEATURES], dtype=np.float64)
+
+
+def compute_split_features(g: Group, cid, centroids, isi_thresh_ms):
+    """Recompute the curation-log snapshot metrics (SPLIT_FEATURES) for a raw
+    cluster from .fet/.spk, faithfully mirroring Klusters' Data::computeSnapshot,
+    so a split head trained on the log applies to the same feature space.
+    Returns a vector aligned to SPLIT_FEATURES (NaN where undefined — HGB
+    tolerates NaN)."""
+    f = {k: np.nan for k in SPLIT_FEATURES}
+    mask = g.raw == cid
+    n = int(mask.sum())
+    n_tot = len(g.raw)
+    nFeat = g.feats.shape[1]
+    f["n_spikes"] = float(n)
+    f["spike_fraction"] = (n / n_tot) if n_tot else np.nan
+    f["n_clusters_in_group"] = float(len(centroids))
+    if n == 0:
+        return split_feature_vec(f)
+
+    order = np.argsort(g.ts[mask].astype(np.float64))
+    ts = (g.ts[mask].astype(np.float64) / g.sr)[order]      # seconds, time-sorted
+    feats_t = g.feats[mask].astype(np.float64)[order]        # rows in time order
+    feats = g.feats[mask].astype(np.float64)
+
+    # A. firing rate
+    if n >= 2:
+        span = ts[-1] - ts[0]
+        f["firing_hz"] = (n / span) if span > 0 else 0.0
+    # B. ISI distribution (ms)
+    if n >= 2:
+        isi = np.diff(ts) * 1000.0
+        nPairs = isi.size
+        f["isi_viol_pct"]     = 100.0 * np.count_nonzero(isi < isi_thresh_ms) / nPairs
+        f["isi_viol_pct_1ms"] = 100.0 * np.count_nonzero(isi < 1.0) / nPairs
+        f["isi_viol_pct_2ms"] = 100.0 * np.count_nonzero(isi < 2.0) / nPairs
+        f["isi_burst_pct"]    = 100.0 * np.count_nonzero(isi < 10.0) / nPairs
+        mean_isi = float(isi.mean())
+        f["isi_mean_ms"] = mean_isi
+        s = np.sort(isi); mid = nPairs // 2
+        if nPairs % 2 == 1:
+            f["isi_median_ms"] = float(s[mid])
+        else:
+            f["isi_median_ms"] = float(0.5 * (s[mid] + s[mid + 1])) \
+                if mid + 1 < nPairs else float(s[mid])
+        if mean_isi > 0:
+            var = float((isi * isi).mean() - mean_isi * mean_isi)
+            f["isi_cv"] = (np.sqrt(var) / mean_isi) if var > 0 else 0.0
+    # E. temporal rate CV (10 equal-time bins)
+    if n >= 2:
+        span = ts[-1] - ts[0]
+        if span > 0:
+            bins = np.minimum(((ts - ts[0]) / span * 10).astype(int), 9)
+            counts = np.bincount(bins, minlength=10).astype(np.float64)
+            meanC = counts.mean()
+            if meanC > 0:
+                var = float((counts * counts).mean() - meanC * meanC)
+                f["temporal_rate_cv"] = (np.sqrt(var) / meanC) if var > 0 else 0.0
+    # Pass 2: per-feature moments
+    frob = np.nan
+    if n >= 2 and nFeat > 0:
+        mean = feats.mean(axis=0)
+        d = feats - mean
+        m2 = (d * d).sum(axis=0) / (n - 1)          # sample variance
+        m3 = (d ** 3).sum(axis=0) / n               # population 3rd moment
+        m4 = (d ** 4).sum(axis=0) / n               # population 4th moment
+        f["feat_var_mean"] = float(m2.mean())
+        frob = float(np.sqrt((m2 * m2).sum()))
+        f["feat_var_frobenius"] = frob
+        vmin, vmax = float(m2.min()), float(m2.max())
+        f["drift_ratio"] = (vmax / vmin) if vmin > 0 else 0.0
+        top = np.sort(m2)[::-1][:min(3, nFeat)]
+        f["feat_var_top3_mean"] = float(top.mean())
+        pos = m2 > 0
+        with np.errstate(invalid="ignore", divide="ignore"):
+            skew = np.where(pos, m3 / np.power(m2, 1.5), 0.0)
+            excess = m4 / (m2 * m2) - 3.0
+        f["feat_skewness_max"] = float(np.max(np.abs(skew[pos]))) if pos.any() else 0.0
+        f["feat_kurtosis_mean"] = float(np.where(pos, excess, 0.0).sum() / nFeat)
+        f["feat_kurtosis_max"] = float(np.max(excess[pos])) if pos.any() else 0.0
+        # 2e. temporal drift: first-half vs second-half centroid (time order)
+        if n >= 4 and frob > 0:
+            half = n // 2
+            dist = float(np.linalg.norm(feats_t[half:].mean(axis=0)
+                                        - feats_t[:half].mean(axis=0)))
+            f["temporal_drift_index"] = dist / frob
+        # G. nearest-cluster centroid (normalised)
+        if len(centroids) > 1 and cid in centroids and frob > 0:
+            own = centroids[cid]; best = np.inf
+            for k, c in centroids.items():
+                if k == cid or c.shape != own.shape:
+                    continue
+                dd = float(np.sum((own - c) ** 2))
+                if dd < best:
+                    best = dd
+            if np.isfinite(best):
+                f["nearest_centroid_dist_norm"] = np.sqrt(best) / frob
+        # J. L-ratio and isolation distance (diagonal Mahalanobis)
+        if frob > 0:
+            vbase = m2.copy()
+            if nFeat > 32:                          # Klusters logs only 32 dims;
+                vbase[32:] = f["feat_var_mean"]     # beyond that it uses the mean
+            invVar = np.where(vbase > 1e-12, 1.0 / np.where(vbase > 1e-12, vbase, 1.0), 0.0)
+            other = g.feats[~mask].astype(np.float64)
+            if invVar.any() and other.shape[0] > 0:
+                D2 = (((other - mean) ** 2) * invVar).sum(axis=1)
+                f["l_ratio"] = float(_chi2.sf(D2, nFeat).sum() / n)
+                if D2.size >= n:
+                    f["isolation_dist"] = float(np.sqrt(np.partition(D2, n - 1)[n - 1]))
+    # H. waveform morphology (mean waveform of the cluster's spikes)
+    if g.wf is not None:
+        mw = g.wf[mask].mean(axis=0).astype(np.float64)     # (n_samp, n_chan)
+        nSamp, nChan = mw.shape
+        chanAmp = mw.max(axis=0) - mw.min(axis=0)
+        maxI = mw.argmax(axis=0); minI = mw.argmin(axis=0)
+        bestCh = int(np.argmax(chanAmp)); bestAmp = float(chanAmp[bestCh])
+        f["waveform_peak_amp"] = bestAmp
+        f["waveform_chan_spread"] = float(np.count_nonzero(chanAmp >= 0.25 * bestAmp)) \
+            if bestAmp > 0 else 0.0
+        f["waveform_width_samp"] = float(abs(int(maxI[bestCh]) - int(minI[bestCh])))
+        posVal = float(mw[maxI[bestCh], bestCh]); negVal = float(mw[minI[bestCh], bestCh])
+        denom = posVal - negVal
+        if abs(denom) > 1e-9:
+            f["waveform_asymmetry"] = (posVal + negVal) / denom
+        nBase = min(4, nSamp)
+        baseRms = float(np.sqrt((mw[:nBase, bestCh] ** 2).mean()))
+        if baseRms > 0:
+            f["waveform_snr"] = bestAmp / (2.0 * baseRms)
+    return split_feature_vec(f)
+
+
+def apply_group(bundle, g: Group, keep_thr, merge_thr, split_thr=0.5):
     stats = cluster_stats(g)
     cclf = bundle["cluster_clf"]
     mclf = bundle["merge_clf"]
@@ -846,11 +990,26 @@ def apply_group(bundle, g: Group, keep_thr, merge_thr):
         m = g.mask(cid)
         new[m] = cid_to_new.get(cid, 1)          # discarded -> MUA(1)
 
+    # Split head (optional; from the curation log).  We do NOT auto-split —
+    # autoklusta has no split operator — we flag kept clusters whose recomputed
+    # quality metrics the model predicts the human would have split, for review
+    # in Klusters.
+    split_cand = []
+    sclf = bundle.get("split_clf")
+    if sclf is not None and kept and bundle.get("split_features"):
+        cents = cluster_centroids(g)
+        isi_thr = bundle.get("config", {}).get("refractory_ms", g.refractory_ms)
+        Xs = np.array([compute_split_features(g, c, cents, isi_thr) for c in kept])
+        ps = _proba_keep(sclf, Xs)
+        split_cand = [(c, float(p)) for c, p in zip(kept, ps) if p >= split_thr]
+        split_cand.sort(key=lambda x: -x[1])
+
     report = dict(
         group=g.group, n_raw_real=len(g.clusters), n_kept=len(kept),
         n_discarded=len(discarded), n_final=len(comps),
         merges=[sorted(c) for c in comps if len(c) > 1],
         discarded=sorted(discarded),
+        split_candidates=split_cand,
     )
     return new, report
 
@@ -1079,6 +1238,8 @@ def mode_train(args):
             keep_threshold=args.keep_threshold,
             merge_threshold=args.merge_threshold,
             split_purity=args.split_purity,
+            split_threshold=(args.split_threshold if args.split_threshold >= 0
+                             else 0.5),
         ),
     )
     os.makedirs(os.path.dirname(os.path.abspath(args.model_path)), exist_ok=True)
@@ -1098,10 +1259,13 @@ def mode_apply(args):
         else cfg.get("keep_threshold", 0.5)
     merge_thr = args.merge_threshold if args.merge_threshold >= 0 \
         else cfg.get("merge_threshold", 0.5)
+    split_thr = args.split_threshold if args.split_threshold >= 0 \
+        else cfg.get("split_threshold", 0.5)
+    has_split = bundle.get("split_clf") is not None
 
     wrote = 0
     for g in iter_groups(args, load_curated=False):
-        new, rep = apply_group(bundle, g, keep_thr, merge_thr)
+        new, rep = apply_group(bundle, g, keep_thr, merge_thr, split_thr)
         out_path = out_clu_path(args, g.group)
         write_clu(out_path, new)
         wrote += 1
@@ -1114,6 +1278,18 @@ def mode_apply(args):
             print(f"      merge {m}")
         if rep["discarded"]:
             print(f"      discard->MUA {rep['discarded']}")
+        cand = rep.get("split_candidates", [])
+        if cand:
+            sc_path = f"{args.session}.split_candidates.{g.group}"
+            with open(sc_path, "w") as fh:
+                fh.write("# cluster  p_split  (review/split in Klusters; "
+                         "autoklusta does not auto-split)\n")
+                for c, p in cand:
+                    fh.write(f"{c}\t{p:.4f}\n")
+            print(f"      split candidates ({len(cand)}, p>={split_thr:g}): "
+                  f"{[c for c, _ in cand]} -> {os.path.basename(sc_path)}")
+        elif has_split:
+            print("      split candidates: none above threshold")
     if wrote == 0:
         sys.stderr.write("ERROR: no groups with raw .clu found to curate.\n")
         return 1
@@ -1189,6 +1365,9 @@ def parse_args():
     p.add_argument("--noise-clusters", default="0,1")
     p.add_argument("--keep-threshold", type=float, default=-1.0)
     p.add_argument("--merge-threshold", type=float, default=-1.0)
+    p.add_argument("--split-threshold", type=float, default=-1.0,
+                   help="p(split) above which a kept cluster is flagged as a "
+                        "split candidate at apply time (default 0.5)")
     p.add_argument("--split-purity", type=float, default=0.8)
     p.add_argument("--use-waveforms", default="true")
     p.add_argument("--refractory-ms", type=float, default=2.0)

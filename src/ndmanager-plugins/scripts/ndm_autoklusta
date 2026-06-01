@@ -67,6 +67,7 @@ mode=$(read_script_parameter        "$session" ndm_autoklusta mode);        mode
 noiseClusters=$(read_script_parameter "$session" ndm_autoklusta noiseClusters); noiseClusters=${noiseClusters:-0,1}
 keepThreshold=$(read_script_parameter "$session" ndm_autoklusta keepThreshold); keepThreshold=${keepThreshold:--1}
 mergeThreshold=$(read_script_parameter "$session" ndm_autoklusta mergeThreshold); mergeThreshold=${mergeThreshold:--1}
+splitThreshold=$(read_script_parameter "$session" ndm_autoklusta splitThreshold); splitThreshold=${splitThreshold:--1}
 splitPurity=$(read_script_parameter "$session" ndm_autoklusta splitPurity); splitPurity=${splitPurity:-0.8}
 useWaveforms=$(read_script_parameter "$session" ndm_autoklusta useWaveforms); useWaveforms=${useWaveforms:-true}
 refractoryMs=$(read_script_parameter "$session" ndm_autoklusta refractoryMs); refractoryMs=${refractoryMs:-2.0}
@@ -235,6 +236,7 @@ python3 "$PY_HELPER" \
     --noise-clusters        "$noiseClusters" \
     --keep-threshold        "$keepThreshold" \
     --merge-threshold       "$mergeThreshold" \
+    --split-threshold       "$splitThreshold" \
     --split-purity          "$splitPurity" \
     --use-waveforms         "$useWaveforms" \
     --refractory-ms         "$refractoryMs" \

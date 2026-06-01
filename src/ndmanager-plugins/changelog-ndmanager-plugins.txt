@@ -1,6 +1,26 @@
 ------------------------------------------------------------------------------------------------------------
 neurosuite-3 fork — 2026-06-01
 
+* ndm_autoklusta — apply-time split prediction (the split head now fires).
+
+  compute_split_features recomputes the 28 curation-log snapshot metrics for a
+  raw cluster directly from .fet/.spk, faithfully mirroring Klusters'
+  Data::computeSnapshot (ISI/firing from the .fet timestamp column, sample-
+  variance moments + skew/excess-kurtosis, first/second-half temporal drift,
+  nearest-centroid normalised by the variance Frobenius norm, diagonal-
+  Mahalanobis L-ratio/isolation via chi2.sf, and peak-to-trough waveform
+  morphology from the per-cluster mean waveform).  This lets the log-trained
+  split head be applied to the same feature space it was trained on.
+
+  In apply mode, kept clusters with p(split) >= splitThreshold (default 0.5,
+  new optional parameter) are written to <session>.split_candidates.<g> and
+  printed for review.  autoklusta does NOT auto-split (it has no split
+  operator) — it only flags candidates for the human to split in Klusters.
+  Off-model-compatible: no split_clf -> no candidates, behaviour unchanged.
+
+------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-06-01
+
 * ndm_autoklusta — optional curation-log input (split supervision).
 
   New optional parameter curationLog (''/false=off; true/auto resolves
