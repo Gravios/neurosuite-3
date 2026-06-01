@@ -497,6 +497,17 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
         return;
     }
 
+    // Defensive bounds guard: the projection below reads wave[(recShift+s)*nChan+ch]
+    // for s in [0,data2use), and wave holds only nChan*nSamplesPerSpike samples.
+    // If the PCA window [recShift, recShift+data2use) exceeds the spike length
+    // (mismatched PCA model) this would read out of bounds -> skip instead.
+    if (pm.recShift < 0 || pm.recShift + pm.data2use > nSamplesPerSpike) {
+        Output("RefeaturizeFromShifts: PCA window [recShift %d, +%d) exceeds spike "
+               "length %d — skipping re-projection to avoid OOB\n",
+               pm.recShift, pm.data2use, nSamplesPerSpike);
+        return;
+    }
+
     // ── Read raw timestamps directly from .res to avoid float precision loss ──
     // Recovering rawTs from the normalised float Data[timeDimIdx] introduces
     // up to ±13 samples of error for late-session spikes (timestamp ~1.17×10^8
@@ -571,8 +582,12 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
             for (int s = 0; s < nSamplesPerSpike && ok; s++) {
                 if (fread(filRow.data(), 2, NbTotalChannels, filFp) !=
                         static_cast<size_t>(NbTotalChannels)) { ok = false; break; }
-                for (int c = 0; c < nChan; c++)
-                    wave[s * nChan + c] = filRow[GroupChannelIds[c]];
+                for (int c = 0; c < nChan; c++) {
+                    const int gc = (c < static_cast<int>(GroupChannelIds.size()))
+                                 ? GroupChannelIds[c] : -1;
+                    wave[s * nChan + c] = (gc >= 0 && gc < NbTotalChannels)
+                                        ? filRow[gc] : 0;
+                }
             }
             if (!ok) { ++nSkipped; continue; }
 
