@@ -9,6 +9,7 @@
 #include "data.h"
 #include "sortabletable.h"
 #include "realign_xcorr.h"
+#include <neurosuite/core/neurofileio.h>
 
 #include <QVBoxLayout>
 #include <QGridLayout>
@@ -201,19 +202,24 @@ void SpikeRealignDialog::buildUi()
         nbSpikes = static_cast<int>(st.nbOfRows());
     m_spikeCountLabel->setText(QString::number(nbSpikes));
 
-    // Prefer .pcaD.N for stderiv sessions, .pca.N otherwise.
+    // Resolve the PCA eigenvector basis across canonical / dotted-stderiv /
+    // legacy-glued forms (.pca.N / .pca.stderiv.N / .pcaD.N), preferring the
+    // derived basis for stderiv sessions — matches klustersdoc.cpp::realignSpikes.
+    // (ndm_pca_stderiv now writes .pca.stderiv.N, not the legacy .pcaD.N.)
     const QString grpId  = m_doc.currentElectrodeGroupID();
-    const QString pcaDPath = m_doc.documentDirectory() + QStringLiteral("/")
-                           + m_doc.documentBaseName()  + QStringLiteral(".pcaD.")
-                           + grpId;
-    const QString pcaRawPath = m_doc.documentDirectory() + QStringLiteral("/")
-                             + m_doc.documentBaseName()  + QStringLiteral(".pca.")
-                             + grpId;
     const bool isStderiv = m_doc.isStderivSession();
-    const QString pcaPath = (isStderiv && QFileInfo::exists(pcaDPath))
-                           ? pcaDPath
-                           : (isStderiv ? pcaDPath   // show expected path even when missing
-                                        : pcaRawPath);
+    const std::string fullBase =
+        (m_doc.documentDirectory() + QStringLiteral("/") + m_doc.documentBaseName())
+            .toStdString();
+    const neurofileio::ResolvedInput pcaRes = neurofileio::resolveInput(
+        fullBase, "pca", grpId.toInt(),
+        isStderiv ? neurofileio::preferDerived() : neurofileio::preferCanonical());
+    // Expected path for the "not found" message: the dotted derived form for
+    // stderiv sessions, canonical otherwise.
+    const QString pcaPath = pcaRes.found
+        ? QString::fromStdString(pcaRes.path)
+        : (isStderiv ? (QString::fromStdString(fullBase) + QStringLiteral(".pca.stderiv.") + grpId)
+                     : (QString::fromStdString(fullBase) + QStringLiteral(".pca.")         + grpId));
 
     bool pcaOk = QFileInfo::exists(pcaPath);
     if (pcaOk)
@@ -224,7 +230,7 @@ void SpikeRealignDialog::buildUi()
 
     m_startBtn->setEnabled(pcaOk && nbSpikes > 0);
     if (!pcaOk) {
-        const QString ext = isStderiv ? QStringLiteral(".pcaD.") : QStringLiteral(".pca.");
+        const QString ext = isStderiv ? QStringLiteral(".pca.stderiv.") : QStringLiteral(".pca.");
         const QString tool = isStderiv ? QStringLiteral("ndm_pca_stderiv")
                                        : QStringLiteral("ndm_pca");
         desc->setText(desc->text() +
