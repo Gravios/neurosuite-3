@@ -1821,7 +1821,7 @@ void KK::RefractorySplitPerChunk(
             const float splitScore = Ks.RunEMLoop(
                 /*enableSplits=*/   true,
                 /*enableDistDump=*/ false,
-                /*maxIter=*/        0,
+                /*maxIter=*/        RefractorySplitMaxIter,
                 /*phaseLabel=*/     "rfsplit");
 
             // nClustersAlive INCLUDES the noise slot (always alive even when
