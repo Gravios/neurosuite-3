@@ -1625,6 +1625,9 @@ void KK::RefractorySplitPerChunk(
     int nRejNoSplit   = 0;   // CEM didn't split the cluster
     int nRejWorseNull = 0;   // splitScore >= nullScore
 
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:totalSplit,nVisited,nSkipNoise,nSkipTooSmall, \
+                    nSkipLowContam,nAttempted,nRejNoSplit,nRejWorseNull)
     for (int ck = 0; ck < nCh; ck++) {
         // Deterministic per-chunk RNG seed (KlustaKwik.h): the refractory split
         // trials below draw randomness, so key the stream to chunk identity --
@@ -1961,6 +1964,10 @@ void KK::KnnSplitPerChunk(
         "minSourceSize=%d, minNewClusterSize=%d\n",
         K, minRefSize, minSourceSize, minNewClusterSize);
 
+    #pragma omp parallel for schedule(dynamic) \
+        reduction(+:chunksTotal,chunksProcessed,chunksSkippedNoRefs,chunksSkippedNoSrc, \
+                    refClustersUsed,sourceClustersVisited,sourceClustersSplit, \
+                    newClustersGenerated,spikesReassigned)
     for (int ck = 0; ck < nCh; ck++) {
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];
