@@ -105,8 +105,14 @@ once()
     local electrodeGroup=$1
     shift
 
-    inputs_missing "$session.$param_ext" $session.spkD.$electrodeGroup && exit $INPUTS_MISSING
-    outputs_exist $session.fetD.$electrodeGroup && exit $OUTPUTS_EXIST
+    # Resolve the spike input across dotted (.spk.stderiv.N) and legacy glued
+    # (.spkD.N) forms, and emit dotted feature output (.fet.stderiv.N); process_pca
+    # then derives the matching .pca.stderiv.N basis automatically.
+    local spkfile=$(ndm_resolve_input "$session" spk "$electrodeGroup")
+    local fetout="$session.fet.stderiv.$electrodeGroup"
+
+    inputs_missing "$session.$param_ext" "$spkfile" && exit $INPUTS_MISSING
+    outputs_exist "$fetout" && exit $OUTPUTS_EXIST
 
     nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
     check_mandatory_variable $nElectrodeGroups "missing electrode groups"
@@ -183,7 +189,7 @@ once()
         -n $nElectrodes \
         -w $waveformLength \
         -d 4 \
-        $session.spkD.$electrodeGroup > $tmpspk
+        "$spkfile" > $tmpspk
     check_command_status process_pca_stderiv
 
     # Compute PCA on the transformed waveforms.
@@ -192,7 +198,7 @@ once()
     # distinguishable in the terminal output.
     process_pca \
         -g $electrodeGroup \
-        -f $session.fetD.$electrodeGroup.tmp \
+        -f $fetout.tmp \
         -n $nEffective \
         -w $waveformLength \
         -d $nFeatures \
@@ -204,11 +210,11 @@ once()
 
     # Merge features with timestamps
     process_mergefeatures \
-        $session.fetD.$electrodeGroup.tmp \
+        $fetout.tmp \
         $session.res.$electrodeGroup \
-        $session.fetD.$electrodeGroup
+        $fetout
     check_command_status process_mergefeatures
-    rm $session.fetD.$electrodeGroup.tmp
+    rm $fetout.tmp
 }
 
 if [ -z "$electrodeGroup" ]
