@@ -36,6 +36,7 @@
 #include <vector>
 
 #include <omp.h>
+#include <atomic>
 
 
 // Helper: nth-percentile of a small double vector (sort-based, O(n log n)).
@@ -1625,6 +1626,18 @@ void KK::RefractorySplitPerChunk(
     int nRejNoSplit   = 0;   // CEM didn't split the cluster
     int nRejWorseNull = 0;   // splitScore >= nullScore
 
+    // ── Progress tracking ─────────────────────────────────────────────────────
+    // The loop is parallel with dynamic scheduling, so chunks finish out of
+    // order and a per-chunk line would interleave uninformatively.  Instead
+    // report aggregate progress from a shared atomic counter at ~5% milestones;
+    // LockedStderr serialises each line, so the output stays readable under any
+    // thread count.
+    const int        nThreads  = omp_get_max_threads();
+    const int        progStep  = std::max(1, nCh / 20);
+    std::atomic<int> chunksDone{0};
+    LockedStderr("[Phase 2]   refractory split: %d chunk%s across %d thread%s\n",
+                 nCh, nCh == 1 ? "" : "s", nThreads, nThreads == 1 ? "" : "s");
+
     #pragma omp parallel for schedule(dynamic) \
         reduction(+:totalSplit,nVisited,nSkipNoise,nSkipTooSmall, \
                     nSkipLowContam,nAttempted,nRejNoSplit,nRejWorseNull)
@@ -1633,6 +1646,17 @@ void KK::RefractorySplitPerChunk(
         // trials below draw randomness, so key the stream to chunk identity --
         // reproducible and independent of thread count/schedule.
         kk_seed_rng(kk_mix_seed(static_cast<uint64_t>(RandomSeed), static_cast<uint64_t>(ck)));
+
+        // Aggregate progress.  Counted as each chunk is picked up; with dynamic
+        // chunk-size-1 scheduling that tracks completion to within nThreads.
+        // Each post-increment value is unique, so a milestone fires exactly once.
+        {
+            const int done = chunksDone.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (done == nCh || done % progStep == 0)
+                LockedStderr("[Phase 2]   refractory split: %d/%d chunks (%d%%)\n",
+                             done, nCh, (100 * done) / nCh);
+        }
+
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];
         auto&       mdls = perChunkModels[ck];
