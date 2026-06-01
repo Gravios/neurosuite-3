@@ -363,6 +363,22 @@ class Group:
             wf = read_spk(spk_fp, n_chan, n_samp)
             if wf is not None and len(wf) >= n:
                 self.wf = wf[:n]
+            else:
+                # Don't silently fall back to geometry-only features: report
+                # exactly why the waveforms were dropped (missing file, bad
+                # per-group dims, or fewer spikes in .spk than in .fet/.clu).
+                exists = os.path.isfile(spk_fp)
+                size = os.path.getsize(spk_fp) if exists else 0
+                stride = max(int(n_chan), 0) * max(int(n_samp), 0)
+                k = size // (stride * 2) if stride > 0 else 0
+                sys.stderr.write(
+                    f"  [{self.name}] waveforms disabled: "
+                    f"{'file not found ' if not exists else ''}"
+                    f"{os.path.basename(spk_fp)} "
+                    f"(size={size}B, n_sites={n_chan}, n_samp={n_samp}, "
+                    f"stride={stride} int16/spike, implied spikes={k}, "
+                    f"need {n}); check this group's channel/sample counts "
+                    f"in the YAML\n")
 
         # .fet ts is authoritative window position (realign writes cumulative
         # shift there); fall back to .res if it is not a real clock.
