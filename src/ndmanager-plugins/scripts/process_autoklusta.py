@@ -959,6 +959,8 @@ def parse_args():
                    help="restrict to a single group (0 = all groups)")
     p.add_argument("--mode", choices=["train", "apply", "eval"], default="apply")
     p.add_argument("--model-path", required=True)
+    p.add_argument("--model-key", default="default",
+                   help="filename stem used when --model-path is a directory")
     p.add_argument("--raw-clu-ext", default="",
                    help="raw clu label: reads SESSION.clu.N.<ext> (Klusters "
                         "ordering); empty = plain SESSION.clu.N")
@@ -982,6 +984,14 @@ def parse_args():
 
 def main():
     args = parse_args()
+    # Normalise the model location: expand a leading ~, and if a directory was
+    # given (explicit trailing sep, or an existing dir) place the per-key model
+    # file inside it — so modelPath: ~/models/ -> ~/models/<key>.curatemodel.joblib
+    # rather than trying to open a directory for writing.
+    args.model_path = os.path.expanduser(args.model_path)
+    if args.model_path.endswith(os.sep) or os.path.isdir(args.model_path):
+        args.model_path = os.path.join(args.model_path.rstrip(os.sep),
+                                       f"{args.model_key}.curatemodel.joblib")
     if args.keep_threshold < 0 and args.mode == "train":
         args.keep_threshold = 0.5
     if args.merge_threshold < 0 and args.mode == "train":
