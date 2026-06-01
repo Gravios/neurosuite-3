@@ -1353,7 +1353,30 @@ void SaveOutput(const Array<int> &OutputClass) {
     Array<int> cClustMembs(MaxPossibleClusters);
     Array<int> NewLabel(MaxPossibleClusters);
 
-    for (size_t p = 0; p < OutputClass.size(); p++) ++cClustMembs[OutputClass[p]];
+    // Defensive bounds guard.  Cluster ids index cClustMembs/NewLabel directly,
+    // and Array::operator[] is NOT range-checked in release builds (NDEBUG), so
+    // an out-of-range id (a negative sentinel, or >= MaxPossibleClusters) would
+    // be an out-of-bounds write here -> heap corruption / segfault.  Such an id
+    // is an upstream bug; route the spike to the noise cluster (id 0) and report
+    // it, so the run completes and the condition is diagnosable rather than
+    // crashing the final write.
+    long nBadIds = 0;
+    int  firstBadP = -1, firstBadId = 0;
+    for (size_t p = 0; p < OutputClass.size(); p++) {
+        const int rawId = OutputClass[p];
+        if (rawId < 0 || rawId >= MaxPossibleClusters) {
+            if (firstBadP < 0) { firstBadP = static_cast<int>(p); firstBadId = rawId; }
+            ++nBadIds;
+            ++cClustMembs[0];
+        } else {
+            ++cClustMembs[rawId];
+        }
+    }
+    if (nBadIds > 0)
+        LockedStderr("SaveOutput: WARNING - %ld spike(s) had out-of-range cluster "
+                     "ids (first: spike %d -> id %d; valid [0,%d)); routed to the "
+                     "noise cluster.  Indicates an upstream cluster-id bug.\n",
+                     nBadIds, firstBadP, firstBadId, MaxPossibleClusters);
 
     NewLabel[0] = 1;
     int maxClass = 1;
@@ -1367,7 +1390,9 @@ void SaveOutput(const Array<int> &OutputClass) {
     fwrite(&hdr, sizeof(int32_t), 1, fp);
     const int n = OutputClass.size();
     for (int p = 0; p < n; p++) {
-        int32_t id = (int32_t)NewLabel[OutputClass[p]];
+        const int rawId = OutputClass[p];
+        const int cid   = (rawId < 0 || rawId >= MaxPossibleClusters) ? 0 : rawId;
+        int32_t id = (int32_t)NewLabel[cid];
         fwrite(&id, sizeof(int32_t), 1, fp);
     }
     fclose(fp);

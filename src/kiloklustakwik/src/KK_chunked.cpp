@@ -4010,8 +4010,12 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
                         for (int s = 0; s < nSamplesPerSpike && ok; s++) {
                             if (fread(filRow.data(), 2, NbTotalChannels, filF)
                                     != static_cast<size_t>(NbTotalChannels)) { ok=false; break; }
-                            for (int c = 0; c < nChan; c++)
-                                spkRow[s * nChan + c] = filRow[GroupChannelIds[c]];
+                            for (int c = 0; c < nChan; c++) {
+                                const int gc = (c < static_cast<int>(GroupChannelIds.size()))
+                                             ? GroupChannelIds[c] : -1;
+                                spkRow[s * nChan + c] = (gc >= 0 && gc < NbTotalChannels)
+                                                      ? filRow[gc] : 0;
+                            }
                         }
                         // For stderiv sessions the original .spkD on disk stores
                         // SDIFF_ALLPAIRS + temporal-diff output — not raw voltages.
