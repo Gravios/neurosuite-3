@@ -131,8 +131,30 @@ ln -s $session.fil $session-tmp.fil
 # Set waveform memory cap for process_extractspikes (default 2 GB if not in XML)
 export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
+# Re-extract mode: if every group already has a binary .res (size a multiple of
+# 8 = int64 timestamps), skip detection and extract waveforms at those exact
+# timestamps (process_extractspikes -R).  Lets pre-existing detections — e.g.
+# legacy .res converted to binary — drive extraction.  The .res is copied into
+# the temp slot (never the live file), so a failed run leaves the original
+# intact and the normal rename below writes back the (possibly recompacted) .res.
+reExtract=1
+for group in $electrodeGroups; do
+	r=$session.res.$group
+	if [ ! -f "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
+done
+reExtractFlag=
+if [ "$reExtract" -eq 1 ]; then
+	echo_info "    existing .res for all groups — re-extracting at those timestamps (-R; no detection)"
+	reExtractFlag=-R
+	declare -i i=0
+	for group in $electrodeGroups; do
+		i=$i+1
+		cp $session.res.$group $session-tmp.res.$i
+	done
+fi
+
 # Process
-process_extractspikes -n $nChannels -c $electrodeList -w $samplesInWaveform -p $peakSample -t $baseline -l $peakSearchLength -r $refractoryPeriod $session-tmp
+process_extractspikes -n $nChannels -c $electrodeList -w $samplesInWaveform -p $peakSample -t $baseline -l $peakSearchLength -r $refractoryPeriod $reExtractFlag $session-tmp
 check_command_status process_extractspikes
 # Rename files
 rm $session-tmp.fil
