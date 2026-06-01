@@ -201,6 +201,11 @@ extern int   TemplateMatchBatchedXcorr;
 extern int   DipSplitGlobalEnable;
 extern int   DipSplit2D;
 extern float CrossChunkDriftSigma;
+extern int   Phase6EigenResidualEnable;
+extern float Phase6EigenResidualThresh;
+extern int   Phase6EigenResidualK;
+extern float Phase6EigenResidualC;
+extern float Phase6EigenResidualFloorFrac;
 extern float CrossChunkVoteMinFraction;
 extern float CrossChunkVoteMinMargin;
 
