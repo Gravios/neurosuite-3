@@ -890,7 +890,7 @@ public:
     // unchanged and the caller can skip the state-refresh block.
     //
     // No-op when MeanSubtractionMergeEnable == 0 or no spike file is
-    // available.  Banner: "[Phase 6b] Mean-subtraction merge: …"
+    // available.  Banner: "[Stage 3.4] Mean-subtraction merge: …"
     int FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike);
 
     // ---- Phase 2b mode 3: residual-PCA refinement (per-chunk driver) ----

@@ -616,7 +616,7 @@ void KK::DipSplitPerChunk(
     }
 
     LockedStderr(
-            "[Phase 1b] DipSplit per-chunk: %d splits across %d chunks\n",
+            "[Stage 2.2] DipSplit per-chunk: %d splits across %d chunks\n",
             totalSplitsAcrossChunks, totalChunksWithSplits);
 }
 
@@ -1043,11 +1043,11 @@ void KK::QualityWeightedSplitDispatch(
         }
     }
     if (nCooldownSkipped > 0) {
-        LockedStderr("[Phase 4b] QualityWeightedSplit: skipped %d cluster(s) "
+        LockedStderr("[Stage 2.11 split] QualityWeightedSplit: skipped %d cluster(s) "
                      "on oscillation cooldown\n", nCooldownSkipped);
     }
     if (pool.empty()) {
-        LockedStderr("[Phase 4b] QualityWeightedSplit: no eligible sources "
+        LockedStderr("[Stage 2.11 split] QualityWeightedSplit: no eligible sources "
                      "(minClusterSize=%d)\n", minClusterSize);
         return;
     }
@@ -1081,7 +1081,7 @@ void KK::QualityWeightedSplitDispatch(
     // waveform spread well enough to keep the knn route populated.
     const bool useFeatureVarProxy = !m_timeShiftReady;
     if (useFeatureVarProxy) {
-        LockedStderr("[Phase 4b] QualityWeightedSplit: spike store "
+        LockedStderr("[Stage 2.11 split] QualityWeightedSplit: spike store "
                      "unavailable; using feature-space variance proxy "
                      "for the knn-route metric\n");
     }
@@ -1158,7 +1158,7 @@ void KK::QualityWeightedSplitDispatch(
         }
     }
 
-    LockedStderr("[Phase 4b] QualityWeightedSplit: pool=%d (of %d eligible), "
+    LockedStderr("[Stage 2.11 split] QualityWeightedSplit: pool=%d (of %d eligible), "
                  "routed %d→CEM (contamination) + %d→knn (variance), "
                  "refractory=%.1f samp\n",
                  nC, nEligible, nCem, nKnn, refractorySamples);
@@ -1234,7 +1234,7 @@ void KK::FullCemSplitPerChunk(
     }
 
     if (items.empty()) {
-        LockedStderr("[Phase 4b] FullCemSplit: no eligible source clusters "
+        LockedStderr("[Stage 2.11 split] FullCemSplit: no eligible source clusters "
                      "(minClusterSize=%d)\n", minClusterSize);
         return;
     }
@@ -1267,7 +1267,7 @@ void KK::FullCemSplitPerChunk(
                   return a.members.size() > b.members.size();
               });
 
-    LockedStderr("[Phase 4b] FullCemSplit: probing %d source cluster(s) "
+    LockedStderr("[Stage 2.11 split] FullCemSplit: probing %d source cluster(s) "
                  "(minClusterSize=%d, cap=%d)\n",
                  static_cast<int>(items.size()), minClusterSize,
                  FullCemSplitMaxSourcesPerCall);
@@ -1559,13 +1559,13 @@ void KK::FullCemSplitPerChunk(
         chunksAffected.insert(item.ck);
     }
 
-    LockedStderr("[Phase 4b] FullCemSplit%s: %d clusters split, +%d new "
+    LockedStderr("[Stage 2.11 split] FullCemSplit%s: %d clusters split, +%d new "
                  "sub-clusters, %d chunks affected\n",
                  reprobeDepth > 0 ? " (reprobe)" : "",
                  totalSplits, totalNewSubClusters,
                  static_cast<int>(chunksAffected.size()));
     if (FullCemSplitRefractoryGate != 0 && totalRefractoryVetoed > 0)
-        LockedStderr("[Phase 4b] FullCemSplit: refractory gate vetoed %d "
+        LockedStderr("[Stage 2.11 split] FullCemSplit: refractory gate vetoed %d "
                      "feature-space split(s) that did not resolve sub-"
                      "refractory contamination\n", totalRefractoryVetoed);
 
@@ -1672,7 +1672,7 @@ void KK::RefractorySplitPerChunk(
     const int        nThreads  = omp_get_max_threads();
     const int        progStep  = std::max(1, nCh / 20);
     std::atomic<int> chunksDone{0};
-    LockedStderr("[Phase 2]   refractory split: %d chunk%s across %d thread%s\n",
+    LockedStderr("[Stage 2.3]   refractory split: %d chunk%s across %d thread%s\n",
                  nCh, nCh == 1 ? "" : "s", nThreads, nThreads == 1 ? "" : "s");
 
     #pragma omp parallel for schedule(dynamic) \
@@ -1690,7 +1690,7 @@ void KK::RefractorySplitPerChunk(
         {
             const int done = chunksDone.fetch_add(1, std::memory_order_relaxed) + 1;
             if (done == nCh || done % progStep == 0)
-                LockedStderr("[Phase 2]   refractory split: %d/%d chunks (%d%%)\n",
+                LockedStderr("[Stage 2.3]   refractory split: %d/%d chunks (%d%%)\n",
                              done, nCh, (100 * done) / nCh);
         }
 
@@ -1952,7 +1952,7 @@ void KK::RefractorySplitPerChunk(
 
     // End-of-phase stderr summary — always visible regardless of Log setting.
     LockedStderr(
-            "[Phase 2] Per-chunk refractory split: %d split / %d attempted "
+            "[Stage 2.3] Per-chunk refractory split: %d split / %d attempted "
             "(visited %d, skipped: %d too-small <%d / %d low-contam <%.0f%%; "
             "rejected: %d no-split / %d worse-than-null)\n",
             totalSplit, nAttempted,
@@ -2020,7 +2020,7 @@ void KK::KnnSplitPerChunk(
     int spikesReassigned      = 0;
 
     LockedStderr(
-        "[Phase 2b.5] KnnSplitPerChunk: K=%d, minRefSize=%d, "
+        "[Stage 2.10] KnnSplitPerChunk: K=%d, minRefSize=%d, "
         "minSourceSize=%d, minNewClusterSize=%d\n",
         K, minRefSize, minSourceSize, minNewClusterSize);
 
@@ -2198,7 +2198,7 @@ void KK::KnnSplitPerChunk(
     }
 
     LockedStderr(
-        "[Phase 2b.5] KnnSplitPerChunk: chunks=%d (processed=%d, "
+        "[Stage 2.10] KnnSplitPerChunk: chunks=%d (processed=%d, "
         "skipped[no refs]=%d, skipped[no sources]=%d), "
         "ref clusters used=%d, source clusters visited=%d, "
         "split=%d, new clusters generated=%d, spikes reassigned=%d\n",
@@ -2245,7 +2245,7 @@ void KK::WaveKnnSplitPerChunk(
     const unsigned callSalt = m_phase4SplitCallCount++;
 
     LockedStderr(
-        "[Phase 2b.5] WaveKnnSplitPerChunk (klusters-faithful): "
+        "[Stage 2.10] WaveKnnSplitPerChunk (klusters-faithful): "
         "K=%d majThr=%.2f minRefSize=%d minSourceSize=%d minNewClusterSize=%d\n",
         KnnSplitK, WaveKnnMajorityThreshold,
         KnnSplitMinRefSize, KnnSplitMinSourceSize, KnnSplitMinNewClusterSize);
@@ -2557,10 +2557,10 @@ void KK::WaveKnnSplitPerChunk(
     }
 
     if (splitLimitHit.load())
-        LockedStderr("[Phase 2b.5] WaveKnnSplitPerChunk: time limit (%.0fs) reached — "
+        LockedStderr("[Stage 2.10] WaveKnnSplitPerChunk: time limit (%.0fs) reached — "
                      "some chunks/clusters left unsplit\n", Phase2SplitTimeLimitSec);
     LockedStderr(
-        "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (called=%d, with-splits=%d), "
+        "[Stage 2.10] WaveKnnSplitPerChunk: chunks=%d (called=%d, with-splits=%d), "
         "sources visited=%d, aniso-filtered=%d, split=%d, new clusters=%d "
         "(of which residual=%d), spikes reassigned=%d, "
         "spikes kept-in-source=%d\n",

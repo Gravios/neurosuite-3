@@ -6,12 +6,65 @@ It reads a `.fet.N` or `.fetD.N` feature file produced by `ndm_pca` or
 acceleration is available for the E-step distance computations via CUDA
 (NVIDIA), HIP (AMD ROCm), or SYCL (Intel Arc/oneAPI).
 
-The pipeline is a five-phase algorithm (Phase 0–2 plus two refinement
-phases 1.5 and 2.5) designed for multi-hour extracellular recordings with
-electrode drift. On shorter recordings, setting `-ChunkMinutes 0` reduces
-the pipeline to the original two-phase CEM.
+The pipeline runs as a sequence of **stages** (see *Pipeline stages* below),
+organised as a per-chunk block (Stage 2.x, independent per chunk) followed by
+a global block (Stage 3.x, from the cross-chunk merge onward), designed for
+multi-hour extracellular recordings with electrode drift. On shorter
+recordings, setting `-ChunkMinutes 0` reduces the pipeline to the original
+two-phase CEM.
+
 
 ---
+
+## Pipeline stages
+
+Stages are the labels printed in the run log (e.g. `[Stage 2.4] Per-cluster CEM`).
+The per-chunk block (Stage 2.x) is independent per chunk; the global block
+(Stage 3.x) begins at the cross-chunk merge.
+
+| Stage | Name | Purpose |
+|---|---|---|
+| **1** | Chunking | Split the session into overlapping time windows; optional global preseed. |
+| **2.1** | Initial chunk CEM | Per-chunk Classification-EM (`nRuns` runs; best per chunk kept). |
+| **2.2** | DipSplit | Per-chunk bimodality splitter on the initial clustering. |
+| **2.3** | Refractory split | Split clusters whose ISI shows refractory-period contamination. |
+| **2.4** | Per-cluster CEM | Re-cluster each cluster in its own (sub)space. |
+| **2.5** | DipSplit | Bimodality splitter (post per-cluster CEM). |
+| **2.6** | Hull split | HDBSCAN-style mutual-reachability k-NN splitter. |
+| **2.7** | Per-channel split | Amplitude/phase split per channel. |
+| **2.8** | Chunk re-CEM | Warm-start re-CEM of the chunk (`2.8 m3` = residual-PCA mode). |
+| **2.9** | DipSplit | Bimodality splitter (post re-CEM). |
+| **2.10** | k-NN split | Klusters-faithful WaveKnn splitter. |
+| **2.11** | Split↔merge loop | Alternating WaveKnn/FullCem split + within-chunk template merge (incl. mean-waveform `harvest`, `split`, `realign` sub-steps). |
+| **2.12** | Neighbourhood-remix split | Pool neighbouring clusters and re-split. |
+| **2.13** | Variance-targeted split | Split clusters with high residual/signal variance ratio. |
+| **3.1** | Cross-chunk merge | Stitch per-chunk clusters into global units (overlap-vote + edge-xcorr; `Pass2` = eigen-residual gate). |
+| **3.2** | Global warm-start EM | EM over the merged global solution (`GlobalMergeIter`). |
+| **3.3** | Post-merge realignment | Re-tighten clusters / energy-COM after the merge. |
+| **3.4** | Mean-subtraction merge | Residual-template merge of similar global clusters. |
+| **3.5** | Shift commit / re-extract | Commit per-spike shifts to disk (`commit`); optional `.fil` re-extract (`reextract`). |
+| **3.6** | Per-spike realignment | Klusters-faithful per-spike realignment. |
+| **3.7** | CCG refractory-dip merge | Merge over-splits whose cross-correlogram shows a shared refractory hole. |
+
+`[Align]` (un-numbered) marks the legacy per-spike time-shift alignment blocks
+(off by default; superseded by `ndm_alignspikes`).
+
+<details><summary>Old run-log label → new stage (banners renumbered)</summary>
+
+`[Phase 0]`→`[Stage 1]` · `[Phase 1]`→`[Stage 2.1]` · `[Phase 1a]`→`[Align]` ·
+`[Phase 1b]`→`[Stage 2.2]` · `[Phase 2]`→`[Stage 2.3]` · `[Phase 2a]`→`[Stage 2.4]` ·
+`[DipSplit]` (unchanged; runs at 2.2/2.5/2.9) · `[Phase 2b]`→`[Stage 2.8]` ·
+`[Phase 2b m3]`→`[Stage 2.8 m3]` · `[Phase 2b.5]`→`[Stage 2.10]` ·
+`[Phase 3]`→`[Stage 2.11 harvest]` · `[Phase 4]`→`[Stage 2.11]` ·
+`[Phase 4b]`→`[Stage 2.11 split]` · `[Phase 4 realign]`→`[Stage 2.11 realign]` ·
+`[Phase 4c]`→`[Stage 2.12]` · `[Phase 8]`→`[Stage 2.13]` ·
+`[Phase 4→5]`/`[Phase 5]`→`[Stage 3.1]` · `[Phase 6e]`→`[Stage 3.1 Pass2]` ·
+`[Phase 6]`→`[Stage 3.2]` · `[Phase 6a]`→`[Stage 3.3]` · `[Phase 6b]`→`[Stage 3.4]` ·
+`[Phase 6c]`→`[Stage 3.5 commit]` · `[Phase 6d]`→`[Stage 3.5 reextract]` ·
+`[Phase 7c]`→`[Stage 3.6]` · `[Phase 9 CCG]`→`[Stage 3.7 CCG]`
+
+</details>
+
 
 ## Dependencies
 
@@ -258,6 +311,10 @@ with similar PCA footprints but different waveform shapes).
 ---
 
 ## Pipeline phases in detail
+
+> **Note:** the `Phase N` numbers in this section are the original *coarse*
+> conceptual grouping and predate the stage renumbering above. For the labels
+> printed in the run log, see the **Pipeline stages** table.
 
 ### Phase 0 — preseed (chunked mode, optional)
 

@@ -20,7 +20,7 @@ KiloKlustaKwik is internally multi-threaded (OpenMP across chunks and
 runs); groups run sequentially to avoid CPU contention. Accepts
 either `.fet.N` or `.fetD.N` per group — the choice is made inside
 KiloKlustaKwik at `LoadData` via `pickInputPath`, and the picked variant
-is propagated through every subsequent session-file open (Phase 1.5
+is propagated through every subsequent session-file open (refeaturization
 checkpoint, template matching, realignment), so stderiv-sorted and
 raw-sorted groups can coexist in a single session without
 cross-contamination.
