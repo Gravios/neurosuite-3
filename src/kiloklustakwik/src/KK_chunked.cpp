@@ -875,7 +875,7 @@ int KK::MergeChunkModels(std::vector<ChunkModel>& models,
         }
 
         if (Phase6EigenResidualEnable)
-            Output("MergeChunkModels: Pass 2 [Phase 6e]: eigen-residual gate ON "
+            Output("MergeChunkModels: Pass 2 [Stage 3.1 Pass2]: eigen-residual gate ON "
                    "(thresh=%.3f, k=%d, c=%.1f, floorFrac=%.3f)\n",
                    Phase6EigenResidualThresh, Phase6EigenResidualK,
                    Phase6EigenResidualC, Phase6EigenResidualFloorFrac);
@@ -1384,7 +1384,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (normBounds[i] > 1.0f) normBounds[i] = 1.0f;
     }
 
-    LockedStderr( "[Phase 0] Chunking (%.0f min, %d drift-adaptive chunks; "
+    LockedStderr( "[Stage 1] Chunking (%.0f min, %d drift-adaptive chunks; "
                     "per-chunk random-init CEM)\n",
             sessionSamples / samplingRate / 60.0f, nChunks);
     Output("RunChunkedCEM(ext): session %.1f min, %d drift-adaptive chunks\n",
@@ -1494,7 +1494,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         flatResults[static_cast<size_t>(fi)].score = HugeScore;
     }
 
-    LockedStderr( "[Phase 1] Chunk CEM (%d threads, %d chunks × %d runs = %d units)\n",
+    LockedStderr( "[Stage 2.1] Chunk CEM (%d threads, %d chunks × %d runs = %d units)\n",
             nThreads, nActive, runsPerChunk, nFlatPhase1);
         #pragma omp parallel for schedule(dynamic) default(none) \
         num_threads(nThreads) \
@@ -1698,7 +1698,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (SamplingRate > 0.0f) {
             const float refractSamp    = 1.5f * SamplingRate / 1000.0f;
             const float sessLenSamp    = timeRawMax - timeRawMin;
-            LockedStderr( "[Phase 2] Per-chunk refractory split (refract=%.0f samp, "
+            LockedStderr( "[Stage 2.3] Per-chunk refractory split (refract=%.0f samp, "
                             "contam_thresh=1%%)\n", refractSamp);
             RefractorySplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels,
@@ -1830,7 +1830,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Phase 1b and a second pass at Phase 2.5 — operating per-chunk
     // avoids the drift-axis false positives a global pass produces on
     // session-spanning clusters.  Phases 3 (mean-waveform harvest, the
-    // [Phase 3] log tag below), 4, and 8 are intentionally non-major
+    // [Stage 2.11 harvest] log tag below), 4, and 8 are intentionally non-major
     // phase numbers in the current pipeline; the comment block above
     // RunChunkedCEM enumerates which numbers are alive.
 
@@ -1838,7 +1838,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
     if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
         && NbChannels > 0 && NbSamplesPerSpike > 0)
-        LockedStderr( "[Phase 3] Mean waveform harvest (channel-major xcorr format)\n");
+        LockedStderr( "[Stage 2.11 harvest] Mean waveform harvest (channel-major xcorr format)\n");
     // Populate ChunkModel::meanWav for template matching.
     // Done serially after the parallel chunk loop since all chunks share
     // the same .spk file handle and fseeko calls cannot be parallelised safely.
@@ -2070,7 +2070,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             } else if (AlternatingSplitMergeEnable != 0 &&
                        _tmIter == AlternatingSplitMergeMaxIters) {
                 LockedStderr(
-                    "[Phase 4b] AlternatingKnnSplit: iter cap reached "
+                    "[Stage 2.11 split] AlternatingKnnSplit: iter cap reached "
                     "(%d); continuing with template-match only\n",
                     AlternatingSplitMergeMaxIters);
             } else if (AlternatingSplitMergeEnable != 0 &&
@@ -2078,7 +2078,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                        _altNetGrowthStreak >= 2 &&
                        _tmIter < AlternatingSplitMergeMaxIters) {
                 LockedStderr(
-                    "[Phase 4b] AlternatingKnnSplit: aborted by "
+                    "[Stage 2.11 split] AlternatingKnnSplit: aborted by "
                     "net-growth streak; continuing with template-match "
                     "only\n");
                 _altNetGrowthStreak = 1000;  // suppress further logs
@@ -2186,7 +2186,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                     fclose(spkTM2);
                 }
             }
-            LockedStderr( "[Phase 4] Within-chunk xcorr template matching (iter %d)\n",
+            LockedStderr( "[Stage 2.11] Within-chunk xcorr template matching (iter %d)\n",
                     _tmIter + 1);
             int _nMerged = (MedianKnnTemplateMatchEnable != 0)
                 ? WithinChunkTemplateMatchMedianKnn(
@@ -2205,7 +2205,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 if (_kNewThisIter > _nMerged) ++_altNetGrowthStreak;
                 else                          _altNetGrowthStreak = 0;
                 LockedStderr(
-                    "[Phase 4b] AlternatingKnnSplit (iter %d): %d spike "
+                    "[Stage 2.11 split] AlternatingKnnSplit (iter %d): %d spike "
                     "labels changed; +%d new clusters vs %d merged (net "
                     "growth streak %d/2)\n",
                     _tmIter + 1, _nSpikesSplit, _kNewThisIter, _nMerged,
@@ -2248,7 +2248,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
         }
         // ── Phase 4 convergence digest ────────────────────────────────
-        LockedStderr("[Phase 4] convergence digest:\n");
+        LockedStderr("[Stage 2.11] convergence digest:\n");
         LockedStderr("    iter | merges | splits | +new | clusters | wall_ms\n");
         LockedStderr("    -----+--------+--------+------+----------+--------\n");
         for (const auto& _r : _phase4Digest) {
@@ -2304,9 +2304,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Aligns spikes against the merged means before cross-chunk matching.
     RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Phase 4a");
 
-    LockedStderr( "[Phase 5] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
+    LockedStderr( "[Stage 3.1] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
-    LockedStderr( "[Phase 5] Cross-chunk merge produced %d global clusters\n", nGlobal);
+    LockedStderr( "[Stage 3.1] Cross-chunk merge produced %d global clusters\n", nGlobal);
     LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 5");
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -2319,7 +2319,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // silent under Output() unless -Screen 1 was set).  Keep the
         // Output() call so logging still captures it.
         fprintf(stderr,
-                "[Phase 5] WARNING: MergeChunkModels produced %d global "
+                "[Stage 3.1] WARNING: MergeChunkModels produced %d global "
                 "clusters >= MaxPossibleClusters (%d) — falling back to "
                 "CEMTwoPhase.  Fix: re-run with -MaxPossibleClusters %d "
                 "or higher (rule of thumb: nChunks * MaxClusters).\n",
@@ -2369,7 +2369,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     if (globalMergeIter <= 0) {
         // GlobalMerge=0: skip Phase 7 entirely.  Emit one MStep/EStep so
         // LogP is valid for ComputeScore(), but do not reassign Class[].
-        LockedStderr( "[Phase 6] Global EM: skipped (GlobalMergeIter=0)\n");
+        LockedStderr( "[Stage 3.2] Global EM: skipped (GlobalMergeIter=0)\n");
         Output("Phase 7 skipped (GlobalMerge=0) — using Phase 6 assignment directly\n");
         // Force CPU path for Phase 7 post-merge scoring.
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
@@ -2402,7 +2402,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
-        LockedStderr( "[Phase 6] Global warm-start EM\n");
+        LockedStderr( "[Stage 3.2] Global warm-start EM\n");
         Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
@@ -2462,11 +2462,11 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // downstream consumer (final mean waveform, .clu file) sees clean
     // features.  No-op when m_timeShiftReady is false.
     if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
-        LockedStderr( "[Phase 6a] Post-merge cluster realignment\n");
+        LockedStderr( "[Stage 3.3] Post-merge cluster realignment\n");
         const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
         int nCOMShifted = 0;
         if (EnergyCOMRealign != 0) {
-            LockedStderr( "[Phase 6a] Energy-COM realignment\n");
+            LockedStderr( "[Stage 3.3] Energy-COM realignment\n");
             nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
         }
         if (nShifted > 0 || nCOMShifted > 0) {
@@ -2512,7 +2512,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // via -MeanSubtractionMergeMaxShift (default 3).  See
     // KK::FinalMeanSubtractionMerge for algorithm details.
     if (MeanSubtractionMergeEnable != 0) {
-        LockedStderr( "[Phase 6b] Mean-subtraction template merge "
+        LockedStderr( "[Stage 3.4] Mean-subtraction template merge "
                         "(threshold D < %.3f)\n",
                 static_cast<double>(MeanSubtractionMergeThresh));
         const int nMergedSub =
@@ -2554,7 +2554,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // AllClusters for algorithm details.  Opt-in via -KlustersRealignEnable 1.
     if (KlustersRealignEnable != 0) {
         LockedStderr(
-                "[Phase 7c] Klusters-faithful per-spike realignment "
+                "[Stage 3.6] Klusters-faithful per-spike realignment "
                 "(maxShift=%d samples, minSize=%d)\n",
                 KlustersRealignMaxShift, KlustersRealignMinSize);
         const int nChanged =
@@ -2582,7 +2582,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
 // ---------------------------------------------------------------------------
 // Chunked-CEM pipeline (RunChunkedCEM).  Phase numbering matches what is
-// printed as `[Phase X]` banners in the run log.
+// printed as `[Stage N.M]` banners in the run log.
 //
 //   Phase 0   Chunking — divide session into drift-adaptive chunks.
 //   Phase 1   Per-chunk CEM — independent CEMTwoPhase on each chunk.
@@ -2611,7 +2611,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 //     2b      chunk-level warm-start CEM (boundary reassignment + merging)
 //     2.5     SECOND per-chunk DipSplit (catches bimodality EXPOSED by 2a)
 //     2c      alignment after the chunk-level re-CEM
-//   Phase 3   mean-waveform harvest ([Phase 3] log tag — a setup step
+//   Phase 3   mean-waveform harvest ([Stage 2.11 harvest] log tag — a setup step
 //             for the cross-chunk template matching in Phases 5/6,
 //             not an independent clustering phase)
 //   Phase 5   within-Phase-6-iteration circular xcorr template matching
@@ -2698,7 +2698,7 @@ int KK::Phase9CCGMerge(float samplingRate)
         }
 
     if (nMerges == 0) {
-        Output("[Phase 9 CCG] refractory-dip merge: 0 merges "
+        Output("[Stage 3.7 CCG] refractory-dip merge: 0 merges "
                "(tested %d alive clusters; refr=%.1fms flank=%.1fms ratio<=%.2f cos>=%.2f)\n",
                M, Phase9CCGRefractoryMs, Phase9CCGFlankMs,
                Phase9CCGDepletionRatio, Phase9CCGGateCosine);
@@ -2726,7 +2726,7 @@ int KK::Phase9CCGMerge(float samplingRate)
     for (int c = 0; c < MaxPossibleClusters; c++)
         if (ClassAlive[c]) AliveIndex[nClustersAlive++] = c;
 
-    Output("[Phase 9 CCG] refractory-dip merge: %d pair-merge(s) -> %d alive clusters "
+    Output("[Stage 3.7 CCG] refractory-dip merge: %d pair-merge(s) -> %d alive clusters "
            "(refr=%.1fms flank=%.1fms ratio<=%.2f cos>=%.2f)\n",
            nMerges, nClustersAlive, Phase9CCGRefractoryMs, Phase9CCGFlankMs,
            Phase9CCGDepletionRatio, Phase9CCGGateCosine);
@@ -2763,7 +2763,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     const float chunkFrac    = chunkSamples / sessionSamples;
     const int   nChunks      = std::max(1, static_cast<int>(std::ceil(1.0f / chunkFrac)));
 
-    LockedStderr( "[Phase 0] Chunking (%.0f min, %d chunks, %.0f min/chunk; %s)\n",
+    LockedStderr( "[Stage 1] Chunking (%.0f min, %d chunks, %.0f min/chunk; %s)\n",
             sessionSamples / samplingRate / 60.0f, nChunks, chunkMinutes,
             (chunkPreseedFraction > 0.0f)
                 ? "global preseed enabled"
@@ -2977,7 +2977,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         flatResults[static_cast<size_t>(fi)].score = HugeScore;
     }
 
-    LockedStderr( "[Phase 1] Chunk CEM (%d threads, %d chunks × %d runs = %d units)\n",
+    LockedStderr( "[Stage 2.1] Chunk CEM (%d threads, %d chunks × %d runs = %d units)\n",
             nThreads, nActive, runsPerChunk, nFlatPhase1);
         #pragma omp parallel for schedule(dynamic) default(none) \
         num_threads(nThreads) \
@@ -3181,7 +3181,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         if (SamplingRate > 0.0f) {
             const float refractSamp    = 1.5f * SamplingRate / 1000.0f;
             const float sessLenSamp    = timeRawMax - timeRawMin;
-            LockedStderr( "[Phase 2] Per-chunk refractory split (refract=%.0f samp, "
+            LockedStderr( "[Stage 2.3] Per-chunk refractory split (refract=%.0f samp, "
                             "contam_thresh=1%%)\n", refractSamp);
             RefractorySplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels,
@@ -3293,7 +3293,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Phase 1b and a second pass at Phase 2.5 — operating per-chunk
     // avoids the drift-axis false positives a global pass produces on
     // session-spanning clusters.  Phases 3 (mean-waveform harvest, the
-    // [Phase 3] log tag below), 4, and 8 are intentionally non-major
+    // [Stage 2.11 harvest] log tag below), 4, and 8 are intentionally non-major
     // phase numbers in the current pipeline; the comment block above
     // RunChunkedCEM enumerates which numbers are alive.
 
@@ -3301,7 +3301,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Runs AFTER WritePhase15Checkpoint so templates use realigned waveforms.
     if ((TemplateMatchScore > 0.0f || CrossChunkTemplateScore > 0.0f)
         && NbChannels > 0 && NbSamplesPerSpike > 0)
-        LockedStderr( "[Phase 3] Mean waveform harvest (channel-major xcorr format)\n");
+        LockedStderr( "[Stage 2.11 harvest] Mean waveform harvest (channel-major xcorr format)\n");
     // Populate ChunkModel::meanWav for template matching.
     // Done serially after the parallel chunk loop since all chunks share
     // the same .spk file handle and fseeko calls cannot be parallelised safely.
@@ -3588,7 +3588,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             } else if (AlternatingSplitMergeEnable != 0 &&
                        _tmIter == AlternatingSplitMergeMaxIters) {
                 LockedStderr(
-                    "[Phase 4b] AlternatingKnnSplit: iter cap reached "
+                    "[Stage 2.11 split] AlternatingKnnSplit: iter cap reached "
                     "(%d); continuing with template-match only\n",
                     AlternatingSplitMergeMaxIters);
             } else if (AlternatingSplitMergeEnable != 0 &&
@@ -3596,7 +3596,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                        _altNetGrowthStreak >= 2 &&
                        _tmIter < AlternatingSplitMergeMaxIters) {
                 LockedStderr(
-                    "[Phase 4b] AlternatingKnnSplit: aborted by "
+                    "[Stage 2.11 split] AlternatingKnnSplit: aborted by "
                     "net-growth streak; continuing with template-match "
                     "only\n");
                 _altNetGrowthStreak = 1000;  // suppress further logs
@@ -3704,7 +3704,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     fclose(spkTM2);
                 }
             }
-            LockedStderr( "[Phase 4] Within-chunk xcorr template matching (iter %d)\n",
+            LockedStderr( "[Stage 2.11] Within-chunk xcorr template matching (iter %d)\n",
                     _tmIter + 1);
             int _nMerged = (MedianKnnTemplateMatchEnable != 0)
                 ? WithinChunkTemplateMatchMedianKnn(
@@ -3736,7 +3736,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     }
                 }
                 if (_nBounced > 0) {
-                    LockedStderr("[Phase 4b] oscillation guard: %d cluster(s) "
+                    LockedStderr("[Stage 2.11 split] oscillation guard: %d cluster(s) "
                                  "round-tripped (split->merge no-op); cooled "
                                  "down for %d iter(s)\n",
                                  _nBounced, AlternatingSplitCooldownIters);
@@ -3747,7 +3747,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 if (_kNewThisIter > _nMerged) ++_altNetGrowthStreak;
                 else                          _altNetGrowthStreak = 0;
                 LockedStderr(
-                    "[Phase 4b] AlternatingKnnSplit (iter %d): %d spike "
+                    "[Stage 2.11 split] AlternatingKnnSplit (iter %d): %d spike "
                     "labels changed; +%d new clusters vs %d merged (net "
                     "growth streak %d/2)\n",
                     _tmIter + 1, _nSpikesSplit, _kNewThisIter, _nMerged,
@@ -3790,7 +3790,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             if (_nMerged == 0 && _nSpikesSplit == 0) break;
         }
         // ── Phase 4 convergence digest ────────────────────────────────
-        LockedStderr("[Phase 4] convergence digest:\n");
+        LockedStderr("[Stage 2.11] convergence digest:\n");
         LockedStderr("    iter | merges | splits | +new | clusters | wall_ms\n");
         LockedStderr("    -----+--------+--------+------+----------+--------\n");
         for (const auto& _r : _phase4Digest) {
@@ -3872,7 +3872,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             }
             int totalVotes = 0;
             for (const auto& [key, cnt] : votes) totalVotes += cnt;
-            Output("  [Phase 4→5] Overlap pair orig%d/orig%d (active %d/%d): "
+            Output("  [Stage 3.1] Overlap pair orig%d/orig%d (active %d/%d): "
                    "%d shared spikes, %d (clsK,clsK1) pairs\n",
                    origK, origK + 1, k, k + 1, totalVotes,
                    static_cast<int>(votes.size()));
@@ -3884,9 +3884,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Aligns spikes against the merged means before cross-chunk matching.
     RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Phase 4a");
 
-    LockedStderr( "[Phase 5] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
+    LockedStderr( "[Stage 3.1] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
-    LockedStderr( "[Phase 5] Cross-chunk merge produced %d global clusters\n", nGlobal);
+    LockedStderr( "[Stage 3.1] Cross-chunk merge produced %d global clusters\n", nGlobal);
     LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 5");
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
@@ -3906,7 +3906,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // silent under Output() unless -Screen 1 was set).  Keep the
         // Output() call so logging still captures it.
         fprintf(stderr,
-                "[Phase 5] WARNING: MergeChunkModels produced %d global "
+                "[Stage 3.1] WARNING: MergeChunkModels produced %d global "
                 "clusters >= MaxPossibleClusters (%d) — falling back to "
                 "CEMTwoPhase.  Fix: re-run with -MaxPossibleClusters %d "
                 "or higher (rule of thumb: nChunks * MaxClusters).\n",
@@ -4001,7 +4001,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
     } else {
-        LockedStderr( "[Phase 6] Global warm-start EM\n");
+        LockedStderr( "[Stage 3.2] Global warm-start EM\n");
         Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
@@ -4049,11 +4049,11 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // units; spikes' Phase-1.5 alignments may no longer be optimal vs.
     // the new global means).
     if (TimeShiftAlignPostMerge != 0 && m_timeShiftReady) {
-        LockedStderr( "[Phase 6a] Post-merge cluster realignment\n");
+        LockedStderr( "[Stage 3.3] Post-merge cluster realignment\n");
         const int nShifted = TimeShiftAlignPhase(NbChannels, NbSamplesPerSpike);
         int nCOMShifted = 0;
         if (EnergyCOMRealign != 0) {
-            LockedStderr( "[Phase 6a] Energy-COM realignment\n");
+            LockedStderr( "[Stage 3.3] Energy-COM realignment\n");
             nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
         }
         if (nShifted > 0 || nCOMShifted > 0) {
@@ -4091,7 +4091,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // -MeanSubtractionMergeThresh (default 0.05) and cyclic-shift
     // radius -MeanSubtractionMergeMaxShift (default 3).
     if (MeanSubtractionMergeEnable != 0) {
-        LockedStderr( "[Phase 6b] Mean-subtraction template merge "
+        LockedStderr( "[Stage 3.4] Mean-subtraction template merge "
                         "(threshold D < %.3f)\n",
                 static_cast<double>(MeanSubtractionMergeThresh));
         const int nMergedSub =
@@ -4137,7 +4137,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // threshold.  See KK::KlustersStyleRealignAllClusters for details.
     if (KlustersRealignEnable != 0) {
         LockedStderr(
-                "[Phase 7c] Klusters-faithful per-spike realignment "
+                "[Stage 3.6] Klusters-faithful per-spike realignment "
                 "(maxShift=%d samples, minSize=%d)\n",
                 KlustersRealignMaxShift, KlustersRealignMinSize);
         const int nChanged =
@@ -4654,7 +4654,7 @@ void KK::PerClusterCEMPerChunk(
     }
 
     LockedStderr(
-            "[Phase 2a] Per-cluster CEM: probing %d items (min size %d, "
+            "[Stage 2.4] Per-cluster CEM: probing %d items (min size %d, "
             "max %zu, %d subdivided batches)\n",
             static_cast<int>(items.size()), minClusterSize,
             maxSize, nSubdivided);
@@ -4885,7 +4885,7 @@ void KK::PerClusterCEMPerChunk(
     }
 
     LockedStderr(
-            "[Phase 2a] Per-cluster CEM: %d clusters split, +%d new sub-clusters, "
+            "[Stage 2.4] Per-cluster CEM: %d clusters split, +%d new sub-clusters, "
             "%d chunks affected\n",
             totalSplits, totalNewSubClusters,
             static_cast<int>(chunksAffected.size()));
@@ -4936,11 +4936,11 @@ void KK::RunPhase8VarianceSplit(
     const int nSamp  = NbSamplesPerSpike;
     const int wElems = nChan * nSamp;
     if (nChan <= 0 || nSamp <= 0) {
-        LockedStderr("[Phase 8] skipped: missing spike geometry\n");
+        LockedStderr("[Stage 2.13] skipped: missing spike geometry\n");
         return;
     }
     if (!m_timeShiftReady) {
-        LockedStderr("[Phase 8] skipped: time-shift machinery not ready "
+        LockedStderr("[Stage 2.13] skipped: time-shift machinery not ready "
                      "(need MaxTimeShift > 0 for spike-read access)\n");
         return;
     }
@@ -4952,7 +4952,7 @@ void KK::RunPhase8VarianceSplit(
                           ? Phase8VarianceMinClusterSize
                           : std::max(nFullDims + 5, 25);
 
-    LockedStderr("[Phase 8] Variance-targeted knn-split: up to %d iters, "
+    LockedStderr("[Stage 2.13] Variance-targeted knn-split: up to %d iters, "
                  "ρ_thresh=%.3f, min size=%d (FullCEM skipped — diffuse "
                  "clusters have no modes)\n",
                  maxIters, thr, minSize);
@@ -5002,7 +5002,7 @@ void KK::RunPhase8VarianceSplit(
         }
 
         if (totalHighVar == 0) {
-            LockedStderr("[Phase 8] iter %d: no clusters above ρ_thresh; "
+            LockedStderr("[Stage 2.13] iter %d: no clusters above ρ_thresh; "
                          "converged\n", it + 1);
             break;
         }
@@ -5041,19 +5041,19 @@ void KK::RunPhase8VarianceSplit(
         grandRelabeled        += changedThisIter;
         grandSourcesProcessed += totalHighVar;
 
-        LockedStderr("[Phase 8] iter %d/%d: %d high-variance sources, "
+        LockedStderr("[Stage 2.13] iter %d/%d: %d high-variance sources, "
                      "%d spikes redistributed, %d merge(s)\n",
                      it + 1, maxIters, totalHighVar,
                      changedThisIter, merged);
 
         if (changedThisIter == 0 && merged == 0) {
-            LockedStderr("[Phase 8] iter %d: no further changes; converged\n",
+            LockedStderr("[Stage 2.13] iter %d: no further changes; converged\n",
                          it + 1);
             break;
         }
     }
 
-    LockedStderr("[Phase 8] done: %d source-iterations, %d spikes redistributed\n",
+    LockedStderr("[Stage 2.13] done: %d source-iterations, %d spikes redistributed\n",
                  grandSourcesProcessed, grandRelabeled);
 }
 
@@ -5099,7 +5099,7 @@ void KK::RunPhase4cRemix(
     const int nSamp     = NbSamplesPerSpike;
     const int wElems    = nChan * nSamp;
     if (nChan <= 0 || nSamp <= 0) {
-        LockedStderr("[Phase 4c] skipped: missing spike geometry\n");
+        LockedStderr("[Stage 2.12] skipped: missing spike geometry\n");
         return;
     }
     const int minSize = (Phase4cMinClusterSize > 0)
@@ -5110,7 +5110,7 @@ void KK::RunPhase4cRemix(
     const bool doMask = (Phase4cMaskTightClusters != 0) && m_timeShiftReady;
     const double tau  = std::max(0.0, static_cast<double>(Phase4cSignalChannelFraction));
 
-    LockedStderr("[Phase 4c] Neighborhood-remix split: up to %d iters, "
+    LockedStderr("[Stage 2.12] Neighborhood-remix split: up to %d iters, "
                  "sources knn=%d cem=%d, N=%d neighbours%s\n",
                  maxIters, Phase4cKnnSources, Phase4cFullCemSources, nNeigh,
                  doMask ? ", tight-cluster mask ON" : "");
@@ -5420,7 +5420,7 @@ void KK::RunPhase4cRemix(
         }
 
         if (knnAllow.empty() && cemAllow.empty()) {
-            LockedStderr("[Phase 4c] iter %d: no eligible pools; stopping\n", it + 1);
+            LockedStderr("[Stage 2.12] iter %d: no eligible pools; stopping\n", it + 1);
             break;
         }
 
@@ -5453,12 +5453,12 @@ void KK::RunPhase4cRemix(
         }
         grandChanged += changedThisIter;
 
-        LockedStderr("[Phase 4c] iter %d/%d: %d spikes relabeled, %d merge(s)\n",
+        LockedStderr("[Stage 2.12] iter %d/%d: %d spikes relabeled, %d merge(s)\n",
                      it + 1, maxIters, changedThisIter, merged);
         if (changedThisIter == 0 && merged == 0) break;   // converged
     }
 
-    LockedStderr("[Phase 4c] done: %d spikes relabeled across remix passes\n",
+    LockedStderr("[Stage 2.12] done: %d spikes relabeled across remix passes\n",
                  grandChanged);
 }
 
@@ -5546,7 +5546,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     // Entry banner.  Each per-chunk worker emits one of these — when the
     // chunk loop is parallel the lines interleave across threads, which is
     // why every line is self-contained with its chunk index.
-    Output("[Phase 2b m3] chunk %d START: %d spikes, %d sub-dims, K_init=%d, "
+    Output("[Stage 2.8 m3] chunk %d START: %d spikes, %d sub-dims, K_init=%d, "
            "maxIter=%d, K_resid=%d, K_sub=%d, domCh=%d, convTol=%.4f, "
            "maxShift=%d\n",
            chunkIdx, nPts, nSubDims, K_init, maxIter, nResidComp, subK,
@@ -5805,7 +5805,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         const double frac = static_cast<double>(nChanged) / nPts;
         const bool   converged = (frac < convTol);
 
-        Output("[Phase 2b m3] chunk %d iter %d/%d: alive %d -> VBGMM survivors %d, "
+        Output("[Stage 2.8 m3] chunk %d iter %d/%d: alive %d -> VBGMM survivors %d, "
                "examined %d (%d too small), %d splits -> %d new sub-clusters, "
                "%d spike realigns, %d/%d (%.2f%%) labels changed%s\n",
                chunkIdx, iter + 1, maxIter,
@@ -5944,7 +5944,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         const bool hasBasisP84 = m_timeShiftBasis.valid() &&
                                  !m_timeShiftBasis.meanShifted.empty();
         if (!hasBasisP84) {
-            Output("[Phase 2b m3] chunk %d patch84 mode 2: "
+            Output("[Stage 2.8 m3] chunk %d patch84 mode 2: "
                    "PCA basis not loaded — alignment skipped entirely.\n",
                    chunkIdx);
         } else {
@@ -6154,7 +6154,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
             alignItersRun = p84ItersRun;
             finalAligned  = p84TotalShifts;
 
-            Output("[Phase 2b m3] chunk %d patch84 PCA-centering (circular): "
+            Output("[Stage 2.8 m3] chunk %d patch84 PCA-centering (circular): "
                    "%d total shifts over %d iter(s); "
                    "m_cumShift NOT modified (mode 2)\n",
                    chunkIdx, p84TotalShifts, p84ItersRun);
@@ -6315,7 +6315,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                     : 0.0;
 
                 if (rmsRatio > 0.5) {
-                    Output("[Phase 2b m3] chunk %d patch72: RAW SOURCE "
+                    Output("[Stage 2.8 m3] chunk %d patch72: RAW SOURCE "
                            "MISMATCH — .fil content does not match .spk\n"
                            "  verify spike local idx %d (gp=%d, ts=%lld)\n"
                            "  RMS difference: %.1f%% of .spk content "
@@ -6334,14 +6334,14 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                            rmsRatio * 100.0);
                     rawSourceOk = false;
                 } else {
-                    Output("[Phase 2b m3] chunk %d patch72: raw source "
+                    Output("[Stage 2.8 m3] chunk %d patch72: raw source "
                            "verified (verify spike %d, RMS diff %.1f%%)\n",
                            chunkIdx, iV, rmsRatio * 100.0);
                 }
                 verifyDone = true;
             }
             if (!verifyDone) {
-                Output("[Phase 2b m3] chunk %d patch72: WARNING — could "
+                Output("[Stage 2.8 m3] chunk %d patch72: WARNING — could "
                        "not verify raw source (no spike's window fit "
                        "within .fil); proceeding without verification\n",
                        chunkIdx);
@@ -6428,7 +6428,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 ++prerefreshed;
             }
             if (prerefreshed > 0) {
-                Output("[Phase 2b m3] chunk %d patch73: pre-refreshed "
+                Output("[Stage 2.8 m3] chunk %d patch73: pre-refreshed "
                        "waveBuf for %d spikes with non-zero prior "
                        "m_cumShift before iter loop\n",
                        chunkIdx, prerefreshed);
@@ -6812,11 +6812,11 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 }
             }   // end cluster loop
 
-            Output("[Phase 2b m3] chunk %d patch83 PCA-centering: "
+            Output("[Stage 2.8 m3] chunk %d patch83 PCA-centering: "
                    "examined %d, refined %d, skipped %d (off-edge)\n",
                    chunkIdx, p83Examined, p83Refined, p83Skipped);
         } else if (AlignPcaCenter) {
-            Output("[Phase 2b m3] chunk %d patch83: AlignPcaCenter "
+            Output("[Stage 2.8 m3] chunk %d patch83: AlignPcaCenter "
                    "requested but %s%s%s — skipping.\n",
                    chunkIdx,
                    !filFpP71 ? ".fil unavailable" : "",
@@ -6886,7 +6886,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
                 }
             }
             if (crossings > 0) {
-                Output("[Phase 2b m3] chunk %d patch74: WARNING — "
+                Output("[Stage 2.8 m3] chunk %d patch74: WARNING — "
                        "%d adjacent-spike timestamp crossings detected "
                        "after alignment (max gap %lld samples, "
                        "first at gp %d → gp %d).  .res will be written "
@@ -6923,12 +6923,12 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
     //
     // Per-chunk final-alignment summary — bookend to the chunk-START
     // banner so each chunk has a paired START/ALIGN/END trio in the log.
-    Output("[Phase 2b m3] chunk %d ALIGN: %d spike realigns (xcorr >= %.2f); "
+    Output("[Stage 2.8 m3] chunk %d ALIGN: %d spike realigns (xcorr >= %.2f); "
            "skipped: %d low-score, %d out-of-bounds; ran %d align iters\n",
            chunkIdx, finalAligned,
            static_cast<double>(ResidualPCAMinScore),
            finalLowScore, finalOutOfBounds, alignItersRun);
-    Output("[Phase 2b m3] chunk %d END: %d total splits, %d total realigns, "
+    Output("[Stage 2.8 m3] chunk %d END: %d total splits, %d total realigns, "
            "ran %d/%d iters\n",
            chunkIdx, totalSplitsApplied, totalRealigned,
            actualItersRun, maxIter);
@@ -6951,7 +6951,7 @@ void KK::ChunkReCEMPerChunk(
         case 3:  p2bDesc = "residual-PCA split iterations + post-loop normalised-xcorr realign (Klusters)"; break;
         default: p2bDesc = "warm-start from Phase-2a labels (CEM)";  break;
     }
-    LockedStderr( "[Phase 2b] Chunk re-CEM (%s)\n", p2bDesc);
+    LockedStderr( "[Stage 2.8] Chunk re-CEM (%s)\n", p2bDesc);
 
     // ── LPT scheduling: sort chunks by descending expected work ─────────
     // Without this sort, with schedule(dynamic), heterogeneously-sized
@@ -6994,7 +6994,7 @@ void KK::ChunkReCEMPerChunk(
                 nMin = std::min(nMin, chunkPoints[static_cast<size_t>(ck)].size());
             }
             LockedStderr(
-                    "[Phase 2b] LPT order: nChunks=%d, K range %d-%d, "
+                    "[Stage 2.8] LPT order: nChunks=%d, K range %d-%d, "
                     "N range %zu-%zu (heaviest first)\n",
                     nCh, kMin, kMax, nMin, nMax);
         }
@@ -7406,6 +7406,6 @@ void KK::ChunkReCEMPerChunk(
     }
 
     LockedStderr(
-            "[Phase 2b] Chunk re-CEM: %d chunks processed, net cluster delta = %+d\n",
+            "[Stage 2.8] Chunk re-CEM: %d chunks processed, net cluster delta = %+d\n",
             totalChunksProcessed, totalDeltaClusters);
 }

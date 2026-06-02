@@ -1386,7 +1386,7 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
         totalShifted += passShifted;
 
         if (passShifted > 0) {
-            Output("[Phase 1a] pass %d/%d: %d spikes shifted across "
+            Output("[Align] pass %d/%d: %d spikes shifted across "
                    "%d clusters\n",
                    pass + 1, TimeShiftAlignIter, passShifted, nClustersProcessed);
             // Refresh Mean/Cov so the next pass aligns against post-shift
@@ -1400,7 +1400,7 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
                 if (Cholesky(Cov.m_Data + c * nDims2,
                              cholFlat.data() + c * nDims2, nDims)) {
                     if (Verbose >= 2)
-                        Output("[Phase 1a] class %d deleted: covariance "
+                        Output("[Align] class %d deleted: covariance "
                                "matrix is singular after shifts\n", c);
                     ClassAlive[c] = 0;
                 }
@@ -1410,13 +1410,13 @@ int KK::TimeShiftAlignPhase(int nChan, int nSamplesPerSpike)
             // Converged — no spikes changed shift; further passes can't
             // change anything either.
             if (pass > 0)
-                Output("[Phase 1a] converged after %d pass(es)\n", pass + 1);
+                Output("[Align] converged after %d pass(es)\n", pass + 1);
             break;
         }
     }
 
     if (totalShifted > 0)
-        Output("[Phase 1a] Cluster alignment: %d total spike-shifts\n",
+        Output("[Align] Cluster alignment: %d total spike-shifts\n",
                totalShifted);
     return totalShifted;
 }
@@ -1627,7 +1627,7 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
     }
     if (PeakSampleIndex < 0 || PeakSampleIndex >= nSamplesPerSpike) {
         LockedStderr(
-                "[Phase 7c] PeakSampleIndex=%d out of [0,%d) — skipping "
+                "[Stage 3.6] PeakSampleIndex=%d out of [0,%d) — skipping "
                 "klusters-style realignment.\n",
                 PeakSampleIndex, nSamplesPerSpike);
         return 0;
@@ -1795,7 +1795,7 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
         ++stats.nClustersProcessed;
     }
         if (Verbose >= 1 && maxRealignIters > 1)
-            LockedStderr("[Phase 7c] realign pass %d/%d: %d spikes shifted\n",
+            LockedStderr("[Stage 3.6] realign pass %d/%d: %d spikes shifted\n",
                          rIter + 1, maxRealignIters, changedThisIter);
         if (changedThisIter == 0) break;   // converged — no spike moved
     }  // end realign-iteration loop
@@ -1842,7 +1842,7 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
             if (rolled) ++nRolledBack;
         }
         m_cumShift = bestCumPerSpike;
-        LockedStderr("[Phase 7c] min-variance select: %d/%d clusters rolled "
+        LockedStderr("[Stage 3.6] min-variance select: %d/%d clusters rolled "
                      "back to an earlier (tighter) pass\n",
                      nRolledBack, nEligible);
     }
@@ -1916,7 +1916,7 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
             }
             ++nRecentered;
         }
-        LockedStderr("[Phase 7c] RMS recenter: %d cluster(s) recentred "
+        LockedStderr("[Stage 3.6] RMS recenter: %d cluster(s) recentred "
                      "(rmin=%.2f).\n", nRecentered,
                      static_cast<double>(rMin));
     }
@@ -1926,7 +1926,7 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
         : 0.0;
 
     LockedStderr(
-            "[Phase 7c] KlustersStyle realignment: "
+            "[Stage 3.6] KlustersStyle realignment: "
             "%d clusters processed (%d skipped), "
             "%d/%d spikes shifted, "
             "mean|Δ|=%.2f samples (max %d), "
@@ -2175,7 +2175,7 @@ int KK::KlustersStyleRealignPerChunkClusters(
     if (!m_timeShiftReady)                   return 0;
     if (PeakSampleIndex < 0 || PeakSampleIndex >= nSamplesPerSpike) {
         LockedStderr(
-                "[Phase 4 realign] PeakSampleIndex=%d out of [0,%d) — skipping.\n",
+                "[Stage 2.11 realign] PeakSampleIndex=%d out of [0,%d) — skipping.\n",
                 PeakSampleIndex, nSamplesPerSpike);
         return 0;
     }
@@ -2220,7 +2220,7 @@ int KK::KlustersStyleRealignPerChunkClusters(
     // out-param to KlustersStyleRealignOneCluster and accumulate here.
 
     LockedStderr(
-            "[Phase 4 realign] Per-chunk klusters-style: "
+            "[Stage 2.11 realign] Per-chunk klusters-style: "
             "%d clusters processed (%d skipped), "
             "%d/%d spikes shifted (max|Δ|=%d), "
             "%d read failures.\n",
@@ -2274,13 +2274,13 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     if (!m_timeShiftReady) {
         char spkPath[STRLEN + 16];
         if (pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo) < 0) {
-            LockedStderr( "[Phase 6b] No .spk/.spkD found for electrode %d; "
+            LockedStderr( "[Stage 3.4] No .spk/.spkD found for electrode %d; "
                             "skip mean-subtraction merge.\n", ElecNo);
             return 0;
         }
         spkFallback = fopen(spkPath, "rb");
         if (!spkFallback) {
-            LockedStderr( "[Phase 6b] Could not open %s; "
+            LockedStderr( "[Stage 3.4] Could not open %s; "
                             "skip mean-subtraction merge.\n", spkPath);
             return 0;
         }
@@ -2354,7 +2354,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     if (spkFallback) fclose(spkFallback);
 
     if (liveClusters.size() < 2) {
-        LockedStderr( "[Phase 6b] Mean-subtraction merge: only %zu eligible "
+        LockedStderr( "[Stage 3.4] Mean-subtraction merge: only %zu eligible "
                         "clusters (skipped %d small, %d bad-read); nothing to do.\n",
                 liveClusters.size(), nSkippedSmall, nSkippedBadRead);
         return 0;
@@ -2443,7 +2443,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     }
 
     if (candidates.empty()) {
-        LockedStderr( "[Phase 6b] Mean-subtraction merge: 0 pairs below "
+        LockedStderr( "[Stage 3.4] Mean-subtraction merge: 0 pairs below "
                         "D=%.3f (%zu eligible clusters compared with "
                         "cyclic-shift search ±%d); no merges.\n",
                 static_cast<double>(MeanSubtractionMergeThresh),
@@ -2473,7 +2473,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
         const int keep = std::min(ri, rj);
         const int drop = std::max(ri, rj);
         parent[drop] = keep;
-        LockedStderr( "[Phase 6b]   merge cluster %d <- %d  (D=%.4f at τ=%+d, "
+        LockedStderr( "[Stage 3.4]   merge cluster %d <- %d  (D=%.4f at τ=%+d, "
                         "n=%d+%d=%d)\n",
                 keep, drop, p.D, p.bestShift,
                 meanN[keep], meanN[drop],
@@ -2494,7 +2494,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
         if (kv.first != kv.second) ClassAlive[kv.first] = 0;
     }
 
-    LockedStderr( "[Phase 6b] Mean-subtraction merge: %d merges applied "
+    LockedStderr( "[Stage 3.4] Mean-subtraction merge: %d merges applied "
                     "(%zu candidates below D=%.3f under cyclic-shift ±%d, "
                     "%zu clusters evaluated; skipped %d small, %d bad-read).\n",
             nMerged, candidates.size(),
@@ -2618,7 +2618,7 @@ static void AutoReextractAfterFinalize(int nChan,
     // ── 1. env gating ────────────────────────────────────────────────────
     const char *disable = getenv("KKEXP_AUTO_REEXTRACT");
     if (disable && strcmp(disable, "0") == 0) {
-        Output("[Phase 6d] auto-reextract disabled by KKEXP_AUTO_REEXTRACT=0\n");
+        Output("[Stage 3.5 reextract] auto-reextract disabled by KKEXP_AUTO_REEXTRACT=0\n");
         return;
     }
 
@@ -2632,12 +2632,12 @@ static void AutoReextractAfterFinalize(int nChan,
 
     // ── 3. session-level inputs we need from the runtime ─────────────────
     if (NbTotalChannels <= 0 || GroupChannelIds.empty()) {
-        Output("[Phase 6d] auto-reextract: missing NbTotalChannels or "
+        Output("[Stage 3.5 reextract] auto-reextract: missing NbTotalChannels or "
                "GroupChannelIds — skipping\n");
         return;
     }
     if (nSamplesPerSpike <= 0 || peakSampleIdx <= 0) {
-        Output("[Phase 6d] auto-reextract: missing waveform geometry "
+        Output("[Stage 3.5 reextract] auto-reextract: missing waveform geometry "
                "(nSamplesPerSpike=%d peakSampleIdx=%d) — skipping\n",
                nSamplesPerSpike, peakSampleIdx);
         return;
@@ -2653,7 +2653,7 @@ static void AutoReextractAfterFinalize(int nChan,
     // ── 5. temp dir + symlinks ───────────────────────────────────────────
     char tmpDirTemplate[] = "/tmp/kkexp-rxn-XXXXXX";
     if (!mkdtemp(tmpDirTemplate)) {
-        Output("[Phase 6d] auto-reextract: mkdtemp failed (%s) — skipping\n",
+        Output("[Stage 3.5 reextract] auto-reextract: mkdtemp failed (%s) — skipping\n",
                strerror(errno));
         return;
     }
@@ -2681,14 +2681,14 @@ static void AutoReextractAfterFinalize(int nChan,
     // must free() the returned pointer.
     char* filAbs = realpath(filReal, nullptr);
     if (!filAbs) {
-        Output("[Phase 6d] auto-reextract: cannot resolve %s (%s) — skipping\n",
+        Output("[Stage 3.5 reextract] auto-reextract: cannot resolve %s (%s) — skipping\n",
                filReal, strerror(errno));
         rmdir(tmpDir.c_str());
         return;
     }
     char* resAbs = realpath(resReal, nullptr);
     if (!resAbs) {
-        Output("[Phase 6d] auto-reextract: cannot resolve %s (%s) — skipping\n",
+        Output("[Stage 3.5 reextract] auto-reextract: cannot resolve %s (%s) — skipping\n",
                resReal, strerror(errno));
         free(filAbs);
         rmdir(tmpDir.c_str());
@@ -2696,14 +2696,14 @@ static void AutoReextractAfterFinalize(int nChan,
     }
 
     if (symlink(filAbs, filLink.c_str()) != 0) {
-        Output("[Phase 6d] auto-reextract: symlink %s → %s failed (%s) — "
+        Output("[Stage 3.5 reextract] auto-reextract: symlink %s → %s failed (%s) — "
                "skipping\n", filLink.c_str(), filAbs, strerror(errno));
         free(filAbs); free(resAbs);
         rmdir(tmpDir.c_str());
         return;
     }
     if (symlink(resAbs, resLink.c_str()) != 0) {
-        Output("[Phase 6d] auto-reextract: symlink %s → %s failed (%s) — "
+        Output("[Stage 3.5 reextract] auto-reextract: symlink %s → %s failed (%s) — "
                "skipping\n", resLink.c_str(), resAbs, strerror(errno));
         free(filAbs); free(resAbs);
         unlink(filLink.c_str());
@@ -2733,12 +2733,12 @@ static void AutoReextractAfterFinalize(int nChan,
     cmd << " " << tmpStem;
     cmd << " 2>&1";  // fold stderr into stdout for popen capture
 
-    Output("[Phase 6d] auto-reextract: %s\n", cmd.str().c_str());
+    Output("[Stage 3.5 reextract] auto-reextract: %s\n", cmd.str().c_str());
 
     // ── 7. popen + stream output ─────────────────────────────────────────
     FILE *pipe = popen(cmd.str().c_str(), "r");
     if (!pipe) {
-        Output("[Phase 6d] auto-reextract: popen failed (%s) — skipping\n",
+        Output("[Stage 3.5 reextract] auto-reextract: popen failed (%s) — skipping\n",
                strerror(errno));
         free(filAbs); free(resAbs);
         unlink(filLink.c_str());
@@ -2748,7 +2748,7 @@ static void AutoReextractAfterFinalize(int nChan,
     }
     char buf[1024];
     while (fgets(buf, sizeof(buf), pipe)) {
-        Output("[Phase 6d]   %s", buf);  // tool output already has '\n'
+        Output("[Stage 3.5 reextract]   %s", buf);  // tool output already has '\n'
     }
     const int rc = pclose(pipe);
 
@@ -2756,16 +2756,16 @@ static void AutoReextractAfterFinalize(int nChan,
     const std::string spkOut = tmpStem + "." + spkExt + ".1";
     if (rc == 0) {
         if (rename(spkOut.c_str(), spkReal) == 0) {
-            Output("[Phase 6d] auto-reextract: refreshed %s from %s\n",
+            Output("[Stage 3.5 reextract] auto-reextract: refreshed %s from %s\n",
                    spkReal, filAbs);
         } else {
-            Output("[Phase 6d] auto-reextract: rename %s → %s failed (%s) — "
+            Output("[Stage 3.5 reextract] auto-reextract: rename %s → %s failed (%s) — "
                    "ORIGINAL .%s PRESERVED, tmp output discarded\n",
                    spkOut.c_str(), spkReal, strerror(errno), spkExt);
             unlink(spkOut.c_str());
         }
     } else {
-        Output("[Phase 6d] auto-reextract: tool exited with status %d — "
+        Output("[Stage 3.5 reextract] auto-reextract: tool exited with status %d — "
                "ORIGINAL .%s PRESERVED, tmp output discarded\n",
                rc, spkExt);
         unlink(spkOut.c_str());  // tool may have created a partial file
@@ -2790,9 +2790,9 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
 
     if (nShifted > 0) {
         LockedStderr(
-                "[Phase 6c] Shift commit: re-extract %d spikes from .fil "
+                "[Stage 3.5 commit] Shift commit: re-extract %d spikes from .fil "
                 "→ .spk/.fet\n", nShifted);
-        Output("[Phase 6c] Shift commit: %d probe calls, %d spikes with "
+        Output("[Stage 3.5 commit] Shift commit: %d probe calls, %d spikes with "
                "non-zero cumulative shift\n",
                m_timeShiftCallCount, nShifted);
         // RefeaturizeFromShifts expects shift=0 to mean "skip" — which matches
@@ -2813,7 +2813,7 @@ void KK::TimeShiftFinalize(int nChan, int nSamplesPerSpike)
                                    m_timeShiftBasis.isStderiv,
                                    PeakSampleIndex);
     } else {
-        Output("[Phase 6c] Shift commit: %d probe calls, 0 spikes shifted "
+        Output("[Stage 3.5 commit] Shift commit: %d probe calls, 0 spikes shifted "
                "— nothing to write back\n", m_timeShiftCallCount);
     }
     CloseTimeShift();
