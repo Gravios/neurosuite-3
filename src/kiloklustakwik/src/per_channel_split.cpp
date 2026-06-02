@@ -486,6 +486,7 @@ Result Run(
 
     const int nClusters = static_cast<int>(clusterSpikes.size());
     for (int c = 0; c < nClusters; ++c) {
+        if (cfg.shouldStop && cfg.shouldStop()) break;
         if (c == 0) continue;
         const auto& spikes = clusterSpikes[static_cast<size_t>(c)];
         if (spikes.empty()) continue;

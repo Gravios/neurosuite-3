@@ -45,6 +45,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace wave_knn_split {
@@ -53,6 +54,10 @@ namespace wave_knn_split {
 // Configuration.
 // -----------------------------------------------------------------------------
 struct Config {
+    // Optional stop predicate: return true to stop splitting further
+    // source clusters (enforces a wall-clock time limit).  Empty = no limit.
+    std::function<bool()> shouldStop;
+
     // Explicit reference cluster IDs.  If non-empty, these are the ONLY
     // clusters whose spikes populate the K-NN reference pool, regardless
     // of trace.  Mirrors klusters' GUI semantics: user picks one source
