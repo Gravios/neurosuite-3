@@ -1018,6 +1018,8 @@ float KK::ComputeScore() const {
 //   phaseLabel     — prefix for Verbose output (e.g. "P1", "iter")
 // Returns final score.
 // ---------------------------------------------------------------------------
+std::atomic<double> KK::s_cemCallTimeLimitSec{0.0};
+
 float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
                     int maxIter, const char *phaseLabel)
 {
@@ -1041,7 +1043,14 @@ float KK::RunEMLoop(bool enableSplits, bool enableDistDump,
     //   - never when suppressBestSave && Verbose < 1 (chunk sub-objects, fix #10)
     const bool needScore = (!suppressBestSave || Verbose >= 1);
 
+    // Per-CEM-call wall-clock cap (s_cemCallTimeLimitSec; 0 = off), checked
+    // once per iteration so a single CEM that grinds (degenerate covariance,
+    // runaway nested split) is cut regardless of the maxIter count.
+    const double _cemLimit = s_cemCallTimeLimitSec.load(std::memory_order_relaxed);
+    const double _cemT0    = (_cemLimit > 0.0) ? omp_get_wtime() : 0.0;
+
     do {
+        if (_cemLimit > 0.0 && omp_get_wtime() - _cemT0 > _cemLimit) break;
         MStep();
         EStep();
         if (enableDistDump && DistDump)

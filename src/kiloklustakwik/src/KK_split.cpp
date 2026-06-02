@@ -1621,6 +1621,22 @@ void KK::RefractorySplitPerChunk(
     float minContamRate,
     float sessionSamples)
 {
+    // Bound any single CEM call during this phase to Phase2SplitTimeLimitSec
+    // seconds (checked per iteration inside RunEMLoop).  RAII so every return
+    // path restores the previous value.  0 = unlimited (default).
+    struct CemLimitGuard {
+        double prev;
+        explicit CemLimitGuard(float v)
+            : prev(KK::s_cemCallTimeLimitSec.load(std::memory_order_relaxed)) {
+            if (v > 0.0f)
+                KK::s_cemCallTimeLimitSec.store(static_cast<double>(v),
+                                                std::memory_order_relaxed);
+        }
+        ~CemLimitGuard() {
+            KK::s_cemCallTimeLimitSec.store(prev, std::memory_order_relaxed);
+        }
+    } _cemLimitGuard(Phase2SplitTimeLimitSec);
+
     if (refractSamples <= 0.0f || sessionSamples <= 0.0f) return;
 
     const int nSpatial    = nFullDims - 1;   // dimensions excluding time
