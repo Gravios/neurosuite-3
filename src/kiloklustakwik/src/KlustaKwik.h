@@ -206,6 +206,13 @@ extern float Phase6EigenResidualThresh;
 extern int   Phase6EigenResidualK;
 extern float Phase6EigenResidualC;
 extern float Phase6EigenResidualFloorFrac;
+extern int   Phase9CCGMergeEnable;
+extern float Phase9CCGRefractoryMs;
+extern float Phase9CCGFlankMs;
+extern float Phase9CCGDepletionRatio;
+extern float Phase9CCGGateCosine;
+extern int   Phase9CCGMinSpikes;
+extern int   Phase9CCGMinFlankPairs;
 extern float CrossChunkVoteMinFraction;
 extern float CrossChunkVoteMinMargin;
 

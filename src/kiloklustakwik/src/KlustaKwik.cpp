@@ -226,6 +226,22 @@ int   Phase6EigenResidualK         = 6;     ///< nuisance eigenmodes allowed bou
 float Phase6EigenResidualC         = 3.0f;  ///< movement bound along each nuisance mode, in sigma
 float Phase6EigenResidualFloorFrac = 0.02f; ///< eigenvalue shrinkage floor as fraction of top eigenvalue
 
+// Phase9CCGMerge* (testing) — final global CCG refractory-dip merge pass.
+// After Phase 7, for shape-similar cluster pairs (Pearson of spatial-feature
+// means >= GateCosine), compute the cross-correlogram from the spike-time
+// feature; if the central +/-RefractoryMs bins are depleted relative to the
+// FlankMs baseline (centerRate/flankRate <= DepletionRatio), the two trains are
+// mutually refractory => same unit => merge.  Catches drift/amplitude over-
+// splits that every shape- and feature-based test misses (the CCG is the only
+// arbiter that looks at the spike trains).  Default off (Enable=0).
+int   Phase9CCGMergeEnable     = 0;
+float Phase9CCGRefractoryMs    = 2.0f;   ///< central (refractory) half-window, ms
+float Phase9CCGFlankMs         = 20.0f;  ///< flank/baseline half-window, ms (> Refractory)
+float Phase9CCGDepletionRatio  = 0.30f;  ///< merge if centerRate/flankRate <= this
+float Phase9CCGGateCosine      = 0.90f;  ///< only test pairs with spatial-mean Pearson >= this
+int   Phase9CCGMinSpikes       = 50;     ///< both clusters need >= this many spikes
+int   Phase9CCGMinFlankPairs   = 50;     ///< need >= this many flank pairs (statistical support)
+
 // Cross-chunk overlap-vote acceptance gates (patch 0059).  Both default 0
 // (off) to preserve prior behaviour; only the diagnostic ratio changes.
 //   MinFraction: require the best partner to hold >= this fraction of the
@@ -825,6 +841,13 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(Phase6EigenResidualK);
     FLOAT_PARAM(Phase6EigenResidualC);
     FLOAT_PARAM(Phase6EigenResidualFloorFrac);
+    INT_PARAM(Phase9CCGMergeEnable);
+    FLOAT_PARAM(Phase9CCGRefractoryMs);
+    FLOAT_PARAM(Phase9CCGFlankMs);
+    FLOAT_PARAM(Phase9CCGDepletionRatio);
+    FLOAT_PARAM(Phase9CCGGateCosine);
+    INT_PARAM(Phase9CCGMinSpikes);
+    INT_PARAM(Phase9CCGMinFlankPairs);
     FLOAT_PARAM(CrossChunkVoteMinFraction);
     FLOAT_PARAM(CrossChunkVoteMinMargin);
     INT_PARAM(CrossChunkMaxChunkDistance);

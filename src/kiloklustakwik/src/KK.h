@@ -86,6 +86,12 @@ public:
     // implementation in KK.cpp for metric definitions.  `phaseLabel` is a
     // short tag that appears in the log line, e.g. "Phase 1", "Phase 7".
     void  ReportClusterQuality(const char* phaseLabel) const;
+
+    // Phase 9 CCG refractory-dip merge (testing; -Phase9CCGMergeEnable 1).
+    // Merges shape-similar cluster pairs whose cross-correlogram shows a
+    // refractory hole at the centre (mutually-refractory spike trains = same
+    // unit).  Reassigns Class[] in place; returns the number of pair-merges.
+    int   Phase9CCGMerge(float samplingRate);
     void  MStep();
     void  EStep();
     int   CStep();   // returns number of points that changed class

@@ -137,6 +137,43 @@ double p6_eigenResidualFeature(
     return std::sqrt(score2 / dof);
 }
 
+
+// Count cross-cluster spike pairs within a flank window, split into the central
+// (|dt|<=refr) and flank (refr<|dt|<=flank) bins.  A,B are sorted spike times
+// (any consistent unit).  O(|A|+|B|+pairs-in-window).  Used by Phase9CCGMerge.
+void p9_ccgCounts(const std::vector<float>& A, const std::vector<float>& B,
+                  double refr, double flank, long& center, long& flankN) {
+    center = 0; flankN = 0;
+    size_t lo = 0, hi = 0;
+    for (size_t i = 0; i < A.size(); i++) {
+        const double t = static_cast<double>(A[i]);
+        while (lo < B.size() && static_cast<double>(B[lo]) <  t - flank) lo++;
+        while (hi < B.size() && static_cast<double>(B[hi]) <= t + flank) hi++;
+        for (size_t j = lo; j < hi; j++) {
+            const double dt = std::fabs(static_cast<double>(B[j]) - t);
+            if (dt <= refr)       center++;
+            else if (dt <= flank) flankN++;
+        }
+    }
+}
+
+// Pearson correlation of two equal-length vectors (shape gate, scale/offset
+// invariant so drift that scales/shifts the feature pattern still scores high).
+double p9_pearson(const std::vector<float>& a, const std::vector<float>& b) {
+    const int n = static_cast<int>(a.size());
+    if (n < 2 || static_cast<int>(b.size()) != n) return 0.0;
+    double ma = 0, mb = 0;
+    for (int i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+    ma /= n; mb /= n;
+    double sab = 0, saa = 0, sbb = 0;
+    for (int i = 0; i < n; i++) {
+        const double da = a[i] - ma, db = b[i] - mb;
+        sab += da * db; saa += da * da; sbb += db * db;
+    }
+    const double den = std::sqrt(saa * sbb);
+    return (den > 0) ? sab / den : 0.0;
+}
+
 }  // namespace
 
 #include <unordered_set>
@@ -2535,6 +2572,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Per-phase quality summary at end of pipeline (after DipSplit).  Catches
     // failures like "one cluster ate everything" before the user sees it in
     // the GUI.  See KK::ReportClusterQuality for metric definitions.
+    if (Phase9CCGMergeEnable) Phase9CCGMerge(samplingRate);
     ReportClusterQuality("final");
 
     Output("RunChunkedCEM(ext) done: %d clusters, score %.7g\n", nClustersAlive, score);
@@ -2592,6 +2630,110 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 // it without the drift-axis false positives that bisect single drifting
 // units across the session boundary.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Phase 9 CCG refractory-dip merge (testing).  See header + Phase9CCGMerge*
+// params.  Works in NORMALISED time units (Data[*,timeDim] is [0,1]); the
+// refractory/flank windows are converted from ms via samplingRate and the
+// recorded raw time span (timeRawMax - timeRawMin).
+int KK::Phase9CCGMerge(float samplingRate)
+{
+    if (!Phase9CCGMergeEnable) return 0;
+    const int timeDim      = nDims - 1;
+    const int nSpatialDims = (nDims > 1) ? nDims - 1 : nDims;
+    const double sessionSamples = static_cast<double>(timeRawMax) - timeRawMin;
+    if (sessionSamples <= 0.0 || samplingRate <= 0.0f || nSpatialDims < 2) return 0;
+
+    // refractory / flank windows in normalised-time units
+    const double refrNorm  = static_cast<double>(Phase9CCGRefractoryMs) * 1e-3
+                             * samplingRate / sessionSamples;
+    const double flankNorm = static_cast<double>(Phase9CCGFlankMs) * 1e-3
+                             * samplingRate / sessionSamples;
+    if (flankNorm <= refrNorm) return 0;
+
+    // gather per-cluster point indices (skip noise/artefact clusters 0,1)
+    std::vector<std::vector<int>> members(MaxPossibleClusters);
+    for (int pIdx = 0; pIdx < nPoints; pIdx++) members[Class[pIdx]].push_back(pIdx);
+
+    std::vector<int> alive;
+    for (int c = 2; c < MaxPossibleClusters; c++)
+        if (static_cast<int>(members[c].size()) >= Phase9CCGMinSpikes) alive.push_back(c);
+    const int M = static_cast<int>(alive.size());
+    if (M < 2) return 0;
+
+    // per-cluster sorted normalised times + spatial-feature mean
+    std::vector<std::vector<float>> times(M);
+    std::vector<std::vector<float>> smean(M, std::vector<float>(nSpatialDims, 0.0f));
+    for (int a = 0; a < M; a++) {
+        const std::vector<int>& mem = members[alive[a]];
+        times[a].reserve(mem.size());
+        for (int pIdx : mem) {
+            times[a].push_back(Data[static_cast<size_t>(pIdx) * nDims + timeDim]);
+            for (int d = 0; d < nSpatialDims; d++)
+                smean[a][d] += Data[static_cast<size_t>(pIdx) * nDims + d];
+        }
+        std::sort(times[a].begin(), times[a].end());
+        for (int d = 0; d < nSpatialDims; d++) smean[a][d] /= static_cast<float>(mem.size());
+    }
+
+    // union-find over alive index
+    std::vector<int> uf(M);
+    std::iota(uf.begin(), uf.end(), 0);
+    auto ufFind = [&uf](int x){ while (uf[x] != x) { uf[x] = uf[uf[x]]; x = uf[x]; } return x; };
+
+    int nMerges = 0;
+    for (int a = 0; a < M; a++)
+        for (int b = a + 1; b < M; b++) {
+            if (p9_pearson(smean[a], smean[b]) < static_cast<double>(Phase9CCGGateCosine))
+                continue;                                  // shapes too different
+            long center = 0, flankN = 0;
+            p9_ccgCounts(times[a], times[b], refrNorm, flankNorm, center, flankN);
+            if (flankN < Phase9CCGMinFlankPairs) continue; // underpowered CCG
+            const double centerRate = static_cast<double>(center) / (2.0 * refrNorm);
+            const double flankRate   = static_cast<double>(flankN) / (2.0 * (flankNorm - refrNorm));
+            if (flankRate <= 0.0) continue;
+            if (centerRate / flankRate <= static_cast<double>(Phase9CCGDepletionRatio)) {
+                uf[ufFind(a)] = ufFind(b);
+                ++nMerges;
+            }
+        }
+
+    if (nMerges == 0) {
+        Output("[Phase 9 CCG] refractory-dip merge: 0 merges "
+               "(tested %d alive clusters; refr=%.1fms flank=%.1fms ratio<=%.2f cos>=%.2f)\n",
+               M, Phase9CCGRefractoryMs, Phase9CCGFlankMs,
+               Phase9CCGDepletionRatio, Phase9CCGGateCosine);
+        return 0;
+    }
+
+    // destination = smallest cluster id in each connected component
+    std::vector<int> compMin(M);
+    for (int a = 0; a < M; a++) compMin[a] = alive[a];
+    for (int a = 0; a < M; a++) {
+        const int r = ufFind(a);
+        if (alive[a] < compMin[r]) compMin[r] = alive[a];
+    }
+    std::vector<int> dest(MaxPossibleClusters, -1);
+    for (int a = 0; a < M; a++) dest[alive[a]] = compMin[ufFind(a)];
+    for (int pIdx = 0; pIdx < nPoints; pIdx++) {
+        const int d = dest[Class[pIdx]];
+        if (d >= 0) Class[pIdx] = d;
+    }
+
+    // recount alive clusters from Class[] (same pattern as the EM driver)
+    for (int c = 0; c < MaxPossibleClusters; c++) ClassAlive[c] = 0;
+    for (int pIdx = 0; pIdx < nPoints; pIdx++) ClassAlive[Class[pIdx]] = 1;
+    nClustersAlive = 0;
+    for (int c = 0; c < MaxPossibleClusters; c++)
+        if (ClassAlive[c]) AliveIndex[nClustersAlive++] = c;
+
+    Output("[Phase 9 CCG] refractory-dip merge: %d pair-merge(s) -> %d alive clusters "
+           "(refr=%.1fms flank=%.1fms ratio<=%.2f cos>=%.2f)\n",
+           nMerges, nClustersAlive, Phase9CCGRefractoryMs, Phase9CCGFlankMs,
+           Phase9CCGDepletionRatio, Phase9CCGGateCosine);
+    return nMerges;
+}
+
+
 float KK::RunChunkedCEM(float chunkMinutes,
                          float samplingRate,
                          float mergeThresh,
@@ -4016,6 +4158,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     // Per-phase quality summary at end of pipeline (after DipSplit).
     // See KK::ReportClusterQuality for metric definitions.
+    if (Phase9CCGMergeEnable) Phase9CCGMerge(samplingRate);
     ReportClusterQuality("final");
 
     Output("RunChunkedCEM done: %d clusters, score %.7g\n", nClustersAlive, score);
