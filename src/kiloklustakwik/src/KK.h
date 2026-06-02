@@ -5,6 +5,7 @@
 //   - Three-phase chunked: RunChunkedCEM(...)  — parallel over chunks via OpenMP
 #pragma once
 #include <unordered_set>
+#include <atomic>
 #include "Array.h"
 #include "KlustaSave.h"
 extern KlustaSave kSv;  // global in KlustaKwik.cpp
@@ -578,6 +579,13 @@ public:
     // small stack array per thread (CPU) / per SIMT lane (GPU).  The
     // runtime value comes from the MaxTimeShift parameter.
     static constexpr int kTimeShiftNmax = 5;
+
+    // Optional per-CEM-call wall-clock cap (seconds), checked at the top of
+    // every RunEMLoop iteration.  0 = unlimited.  Set transiently by the
+    // Phase 2 refractory split so a single pathological cluster's CEM can't
+    // grind indefinitely (past RefractorySplitMaxIter via nested splits);
+    // shared across instances so nested split sub-CEMs honour it too.
+    static std::atomic<double> s_cemCallTimeLimitSec;
 
     // TimeShiftBasis — cached PCA eigenvectors + per-dim normalisation
     // parameters loaded once at startup.  Populated by InitTimeShift() and
