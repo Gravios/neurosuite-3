@@ -72,6 +72,10 @@ namespace per_channel_split {
 // Configuration.
 // -----------------------------------------------------------------------------
 struct Config {
+    // Optional stop predicate: return true to stop splitting further
+    // clusters (enforces a wall-clock time limit).  Empty = no limit.
+    std::function<bool()> shouldStop;
+
     // Minimum cluster size to consider.  Below this, per-channel feature
     // distributions are too noisy for KDE-based valley detection.
     int   minClusterSize     = 50;

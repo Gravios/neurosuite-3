@@ -328,6 +328,7 @@ Result Run(const float*                       features,
     int nMaskedTotal = 0;
 
     for (int sourceCid : sourceOrder) {
+        if (cfg.shouldStop && cfg.shouldStop()) break;
         // Collect this cluster's eligible source spike indices, filtered
         // against the running mask.
         std::vector<int> srcIdx;

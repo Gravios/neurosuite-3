@@ -884,9 +884,19 @@ void KK::PerChannelSplitPerChunk(
     const bool mapBacked = (m_timeShiftSpkMap != nullptr);
     const int  maxThreads = mapBacked ? omp_get_max_threads() : 1;
 
+    // Optional wall-clock cap: once exceeded, un-started chunks are skipped
+    // and the in-flight chunk stops between clusters (splits are optional, so
+    // the worst case is an under-split chunk — never inconsistent state).
+    const double splitDeadline =
+        (Phase2SplitTimeLimitSec > 0.0f) ? omp_get_wtime() + Phase2SplitTimeLimitSec : 0.0;
+    std::atomic<bool> splitLimitHit{false};
+
     #pragma omp parallel for schedule(dynamic) num_threads(maxThreads) \
         reduction(+:totalSplits,totalChunksWithSplit,totalNewClusters)
     for (int ck = 0; ck < nCh; ++ck) {
+        if (splitDeadline > 0.0 && omp_get_wtime() > splitDeadline) {
+            splitLimitHit.store(true, std::memory_order_relaxed); continue;
+        }
         const auto& pts  = chunkPoints[static_cast<size_t>(ck)];
         const int   nPts = static_cast<int>(pts.size());
         if (nPts < 2 * PerChannelSplitMinSubClusterSize) continue;
@@ -930,6 +940,14 @@ void KK::PerChannelSplitPerChunk(
         cfg.useTroughAmplitude   = (PerChannelSplitUseTroughAmp  != 0);
         cfg.useTroughTime        = (PerChannelSplitUseTroughTime != 0);
         cfg.firstNewClusterId    = maxLc + 1;
+        if (splitDeadline > 0.0)
+            cfg.shouldStop = [&splitLimitHit, splitDeadline]() {
+                if (omp_get_wtime() > splitDeadline) {
+                    splitLimitHit.store(true, std::memory_order_relaxed);
+                    return true;
+                }
+                return false;
+            };
 
         auto rr = per_channel_split::Run(
             clusterSpikes, readWave,
@@ -954,6 +972,10 @@ void KK::PerChannelSplitPerChunk(
             std::move(results[static_cast<size_t>(ck)].newClass);
     }
 
+    LockedStderr(
+    if (splitLimitHit.load())
+        LockedStderr("[%s] PerChannelSplit: time limit (%.0fs) reached — "
+                     "some chunks/clusters left unsplit\n", phaseLabel, Phase2SplitTimeLimitSec);
     LockedStderr(
             "[%s] PerChannelSplit per-chunk: %d clusters split, +%d new "
             "sub-clusters, %d chunks affected\n",
@@ -2231,6 +2253,10 @@ void KK::WaveKnnSplitPerChunk(
     // beyond a pure inline helper).  Data[] is read-only.  callSalt was
     // already advanced once before the loop, so per-chunk seeds (ck XOR
     // callSalt-mixed) are deterministic and stable under reordering.
+    const double splitDeadline =
+        (Phase2SplitTimeLimitSec > 0.0f) ? omp_get_wtime() + Phase2SplitTimeLimitSec : 0.0;
+    std::atomic<bool> splitLimitHit{false};
+
     #pragma omp parallel for schedule(dynamic) \
         reduction(+:chunksTotal,chunksCalled,chunksProcessed, \
                   totalSourcesConsidered,totalSourcesAnisoFiltered, \
@@ -2238,6 +2264,9 @@ void KK::WaveKnnSplitPerChunk(
                   totalResidualClusters,totalSpikesReassigned, \
                   totalSpikesResidual)
     for (int ck = 0; ck < nCh; ++ck) {
+        if (splitDeadline > 0.0 && omp_get_wtime() > splitDeadline) {
+            splitLimitHit.store(true, std::memory_order_relaxed); continue;
+        }
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];
         auto&       mdls = perChunkModels[ck];
@@ -2372,6 +2401,15 @@ void KK::WaveKnnSplitPerChunk(
             cfg.maxSourcesPerCall = 0;   // allowlist already IS the cap
         }
 
+        if (splitDeadline > 0.0)
+            cfg.shouldStop = [&splitLimitHit, splitDeadline]() {
+                if (omp_get_wtime() > splitDeadline) {
+                    splitLimitHit.store(true, std::memory_order_relaxed);
+                    return true;
+                }
+                return false;
+            };
+
         auto r = wave_knn_split::Run(chunkFeat.data(), nPts, nFullDims,
                                       chunkLabels, traces, traceIds,
                                       aniso, anisoIds, cfg);
@@ -2503,6 +2541,10 @@ void KK::WaveKnnSplitPerChunk(
         totalSpikesResidual    += r.nSpikesResidual;
     }
 
+    LockedStderr(
+    if (splitLimitHit.load())
+        LockedStderr("[Phase 2b.5] WaveKnnSplitPerChunk: time limit (%.0fs) reached — "
+                     "some chunks/clusters left unsplit\n", Phase2SplitTimeLimitSec);
     LockedStderr(
         "[Phase 2b.5] WaveKnnSplitPerChunk: chunks=%d (called=%d, with-splits=%d), "
         "sources visited=%d, aniso-filtered=%d, split=%d, new clusters=%d "
