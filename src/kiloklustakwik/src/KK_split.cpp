@@ -972,7 +972,6 @@ void KK::PerChannelSplitPerChunk(
             std::move(results[static_cast<size_t>(ck)].newClass);
     }
 
-    LockedStderr(
     if (splitLimitHit.load())
         LockedStderr("[%s] PerChannelSplit: time limit (%.0fs) reached — "
                      "some chunks/clusters left unsplit\n", phaseLabel, Phase2SplitTimeLimitSec);
@@ -2541,7 +2540,6 @@ void KK::WaveKnnSplitPerChunk(
         totalSpikesResidual    += r.nSpikesResidual;
     }
 
-    LockedStderr(
     if (splitLimitHit.load())
         LockedStderr("[Phase 2b.5] WaveKnnSplitPerChunk: time limit (%.0fs) reached — "
                      "some chunks/clusters left unsplit\n", Phase2SplitTimeLimitSec);
