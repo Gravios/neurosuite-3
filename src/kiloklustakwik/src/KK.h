@@ -273,7 +273,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
-        int nFullDims);
+        int nFullDims, int onlyChunk = -1);
 
     // Phase 4b: per-cluster full CEM splitter.  Same kernel as
     // PerClusterCEMPerChunk (scratch sub-KK, warm-start, RunEMLoop with
@@ -373,7 +373,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
-        int nFullDims);
+        int nFullDims, int onlyChunk = -1);
 
     // Per-chunk DipSplit: runs immediately after Phase 1 chunked CEM.
     // For each chunk, builds a sub-KK with the chunk's data and current
