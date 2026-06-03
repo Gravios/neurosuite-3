@@ -3178,6 +3178,44 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // 1-neuron-per-refractory-window constraint.  Absolute refractory =
         // 1.5 ms × sampling rate samples.  Trigger when ISI contamination
         // rate >= 1%.
+        // ── Fused per-chunk block (Stages 2.3-2.10) ────────────────────
+        //   -FusePerChunkStages 1: each chunk runs its whole refinement
+        //   pipeline on one thread (one barrier instead of ~8 sub-phase
+        //   barriers).  These stages are per-chunk independent; FullCem
+        //   (global source pool) stays separate below.  Per-stage cluster-
+        //   state digests collapse into one after the barrier.
+        if (FusePerChunkStages) {
+            const float refractSamp = 1.5f * SamplingRate / 1000.0f;
+            const float sessLenSamp = timeRawMax - timeRawMin;
+            const int   nChFuse     = static_cast<int>(chunkPoints.size());
+            #pragma omp parallel for schedule(dynamic)
+            for (int ck = 0; ck < nChFuse; ck++) {
+                if (SamplingRate > 0.0f)
+                    RefractorySplitPerChunk(chunkPoints, perChunkClass, perChunkModels,
+                        nFullDims, refractSamp, 0.01f, sessLenSamp, ck);
+                PerClusterCEMPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims, ck);
+                if (DipSplitEnable != 0 && DipSplitBeforePhase2b != 0)
+                    DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims, "Stage 2.5", ck);
+                if (HullSplitEnable != 0)
+                    HullSplitPerChunk(chunkPoints, perChunkClass, nFullDims, "Stage 2.6", ck);
+                if (PerChannelSplitEnable != 0)
+                    PerChannelSplitPerChunk(chunkPoints, perChunkClass,
+                        NbChannels, NbSamplesPerSpike, "Stage 2.7", ck);
+                ChunkReCEMPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims, ck);
+                DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims, "Stage 2.9", ck);
+                if (KnnSplitPerChunkEnable) {
+                    if (KnnSplitMode == 1)
+                        WaveKnnSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims, nullptr, ck);
+                    else
+                        KnnSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims, ck);
+                }
+            }
+            // The per-chunk Refractory guards race on the shared CEM-limit
+            // static; force it back to 0 so the cap can't leak into Stage 3.
+            s_cemCallTimeLimitSec.store(0.0, std::memory_order_relaxed);
+            LockedStderr("[Stage 2.x] per-chunk block fused: %d chunks, single barrier\n", nChFuse);
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.10");
+        } else {
         if (SamplingRate > 0.0f) {
             const float refractSamp    = 1.5f * SamplingRate / 1000.0f;
             const float sessLenSamp    = timeRawMax - timeRawMin;
@@ -3271,6 +3309,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                     chunkPoints, perChunkClass, perChunkModels, nFullDims);
             }
         }
+        }   // end else (staged per-chunk path)
         if (FullCemSplitEnable) {
             FullCemSplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels, nFullDims);
