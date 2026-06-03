@@ -504,6 +504,19 @@ public:
         int nFullDims,
         const std::map<int, std::vector<int>>* sourceAllowlist = nullptr, int onlyChunk = -1);
 
+    // ── Stage 2.12: fiber consolidation (validated; see fiber_stage.h) ──────
+    // Consumes the Stage 2.11 fragments as seeds, builds an energy-local
+    // trajectory per fragment, merges co-linear trajectories into fibers, and
+    // re-assigns by whiteness residual + calibrated posterior.  Gathers its
+    // own .fil/.res inputs (GroupChannelIds + <FileBase>.res.<ElecNo>).
+    // Activated by -FiberStageEnable 1.  Implementation in fiber_stage_kk.cpp.
+    void FiberStagePerChunk(
+        const std::vector<std::vector<int>>&        chunkPoints,
+        std::vector<std::vector<int>>&              perChunkClass,
+        std::vector<std::vector<ChunkModel>>&       perChunkModels,
+        int                                         nFullDims,
+        const char*                                 stageTag = "Stage 2.12");
+
   
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,

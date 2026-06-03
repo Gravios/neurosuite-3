@@ -359,6 +359,7 @@ float KlustersRealignRMin       = 0.40f; ///< RMS recenter: minimum mean-resulta
 // chunk's K best-isolated cluster means as a vocabulary; Phase 6
 // cross-chunk template matching handles consolidation.
 int   KnnSplitPerChunkEnable    = 0;
+int   FiberStageEnable          = 0;   ///< Stage 2.12 fiber consolidation; 1 = on (default off)
 int   KnnSplitK                 = 10;
 int   KnnSplitMinRefSize        = 50;
 int   KnnSplitMinSourceSize     = 20;
@@ -876,6 +877,7 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(KlustersRealignRMin);
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(KnnSplitPerChunkEnable);
+    INT_PARAM(FiberStageEnable);
     INT_PARAM(KnnSplitK);
     INT_PARAM(KnnSplitMinRefSize);
     INT_PARAM(KnnSplitMinSourceSize);

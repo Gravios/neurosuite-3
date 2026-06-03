@@ -1966,6 +1966,14 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             fclose(spkTM);
         }
     }
+    // ── Stage 2.12: fiber consolidation (validated; see fiber_stage.h) ────────
+    // Runs after the Stage 2.11 harvest, before cross-chunk Phase 5/6, so the
+    // matcher sees consolidated fibers (curves) instead of the over-split
+    // fragments the mean-template merge cannot close.  No-op unless
+    // -FiberStageEnable 1.
+    if (FiberStageEnable)
+        FiberStagePerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims);
+
     // ── Phase 6 preflight: MergeThresh sanity check ─────────────────────────
     // The cross-chunk matching body follows the Phase 5 xcorr-iteration
     // block below.  This block only emits a warning if MergeThresh is

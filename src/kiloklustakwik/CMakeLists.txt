@@ -214,6 +214,7 @@ set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_qual
     src/xcorr_match.cpp
     src/clust_quality.cpp
     src/adapt_model.cpp
+    src/fiber_stage_kk.cpp
     src/shiftprobe_disabled.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
@@ -224,6 +225,7 @@ set(_headers  src/KlustaKwik.h src/KK.h src/KK_internal.h src/KK_cuda.h src/KK_s
               src/dipsplit.h
               src/proxy_isi.h
               src/wave_knn_split.h
+              src/fiber_stage.h
               src/cluster_hull_split.h
               src/klusters_realign.h
               src/per_channel_split.h
