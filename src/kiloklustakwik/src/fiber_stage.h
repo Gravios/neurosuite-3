@@ -188,4 +188,37 @@ inline void dedupe_centers(const double* ds,const double* rs,int nseed,int p,
         if(isnew){ cr.push_back(rs[i]); for(int k=0;k<p;k++) cd.push_back(di[k]); }
     }
 }
+// ── cross-chunk registration primitives ────────────────────────────────────
+// top-L PCA basis of n×p rows (mean-centered).  basis = L*p (row m = eigenvector m,
+// descending eigenvalue); also returns the column mean.
+inline void pca_basis(const std::vector<double>&rows,int n,int p,int L,
+                      std::vector<double>&basis,std::vector<double>&mean){
+    mean.assign(p,0.0);
+    for(int i=0;i<n;i++)for(int j=0;j<p;j++) mean[j]+=rows[(size_t)i*p+j];
+    for(int j=0;j<p;j++) mean[j]/=n;
+    std::vector<double> C((size_t)p*p,0.0);
+    for(int i=0;i<n;i++){ const double* x=&rows[(size_t)i*p];
+        for(int a=0;a<p;a++){double xa=x[a]-mean[a]; double* Cr=&C[(size_t)a*p]; for(int b=a;b<p;b++) Cr[b]+=xa*(x[b]-mean[b]);}}
+    for(int a=0;a<p;a++)for(int b=a;b<p;b++){C[(size_t)a*p+b]/=n; C[(size_t)b*p+a]=C[(size_t)a*p+b];}
+    std::vector<double> ev,V; jacobi_eigh(C,p,ev,V);
+    std::vector<int> ord(p); for(int i=0;i<p;i++) ord[i]=i;
+    std::sort(ord.begin(),ord.end(),[&](int a,int b){return ev[a]>ev[b];});
+    basis.assign((size_t)L*p,0.0);
+    for(int m=0;m<L;m++){ int e=ord[m]; for(int k=0;k<p;k++) basis[(size_t)m*p+k]=V[(size_t)k*p+e]; }
+}
+// project a p-vector onto the L-basis (mean-centered) and unit-normalize -> out(L)
+inline void pca_project_unit(const double* x,const std::vector<double>&basis,const std::vector<double>&mean,int p,int L,double* out){
+    double nn=0; for(int m=0;m<L;m++){ double s=0; for(int k=0;k<p;k++) s+=basis[(size_t)m*p+k]*(x[k]-mean[k]); out[m]=s; nn+=s*s; }
+    nn=std::sqrt(nn)+1e-12; for(int m=0;m<L;m++) out[m]/=nn;
+}
+// orthogonal Procrustes: R (L*L) = polar factor of M (L*L) = M (M^T M)^{-1/2}.
+inline void procrustes_R(const std::vector<double>&M,int L,std::vector<double>&R){
+    std::vector<double> MtM((size_t)L*L,0.0);
+    for(int a=0;a<L;a++)for(int b=0;b<L;b++){double s=0;for(int k=0;k<L;k++) s+=M[(size_t)k*L+a]*M[(size_t)k*L+b];MtM[(size_t)a*L+b]=s;}
+    std::vector<double> ev,V; jacobi_eigh(MtM,L,ev,V);
+    std::vector<double> inv((size_t)L*L,0.0);
+    for(int a=0;a<L;a++)for(int b=0;b<L;b++){double s=0;for(int k=0;k<L;k++) s+=V[(size_t)a*L+k]*(1.0/std::sqrt(std::max(ev[k],1e-12)))*V[(size_t)b*L+k];inv[(size_t)a*L+b]=s;}
+    R.assign((size_t)L*L,0.0);
+    for(int a=0;a<L;a++)for(int b=0;b<L;b++){double s=0;for(int k=0;k<L;k++) s+=M[(size_t)a*L+k]*inv[(size_t)k*L+b];R[(size_t)a*L+b]=s;}
+}
 } // namespace fiberstage

@@ -366,6 +366,14 @@ float FiberMSDrFrac             = 0.15f;///< in-band radius window = frac*(p99-p
 float FiberMergeAngleDeg        = 20.0f;///< trajectory-coherence merge threshold (deg)
 int   FiberMSSeeds              = 800;  ///< # random seeds for ridge mean-shift
 int   FiberMinGroupSize         = 40;   ///< min spikes per provisional group / fiber
+int   FiberXChunkEnable         = 0;    ///< link fibers across chunks (drift tracking)
+int   FiberXChunkSubspaceDim    = 10;   ///< shared population subspace dim L
+int   FiberXChunkNKnots         = 10;   ///< energy knots for the warp field R(r)
+int   FiberXChunkMinAnchors     = 8;    ///< min overlap anchor pairs to fit R(r)
+float FiberXChunkGateRatio      = 0.6f; ///< accept link iff best < ratio*second
+float FiberXChunkSmooth         = 1.0f; ///< neighbour-knot pooling weight for R(r)
+int   FiberThreads              = 0;    ///< OpenMP threads for chunk loop (0=default)
+int   FiberGPUEnable            = 0;    ///< 1 = try GPU kernels; falls back to CPU
 int   KnnSplitK                 = 10;
 int   KnnSplitMinRefSize        = 50;
 int   KnnSplitMinSourceSize     = 20;
@@ -890,6 +898,14 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(FiberMergeAngleDeg);
     INT_PARAM(FiberMSSeeds);
     INT_PARAM(FiberMinGroupSize);
+    INT_PARAM(FiberXChunkEnable);
+    INT_PARAM(FiberXChunkSubspaceDim);
+    INT_PARAM(FiberXChunkNKnots);
+    INT_PARAM(FiberXChunkMinAnchors);
+    FLOAT_PARAM(FiberXChunkGateRatio);
+    FLOAT_PARAM(FiberXChunkSmooth);
+    INT_PARAM(FiberThreads);
+    INT_PARAM(FiberGPUEnable);
     INT_PARAM(KnnSplitK);
     INT_PARAM(KnnSplitMinRefSize);
     INT_PARAM(KnnSplitMinSourceSize);

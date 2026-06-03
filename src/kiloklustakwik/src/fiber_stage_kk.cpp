@@ -228,109 +228,220 @@ void KK::FiberStagePerChunk(
     std::fclose(resF);
 }
 
-// ── externs: standalone fiber-clustering configuration (KlustaKwik.cpp) ─────
-extern int   FiberStandaloneEnable;
-extern float FiberMSKappa;        // angular kernel concentration (von Mises-ish)
-extern float FiberMSDrFrac;       // in-band radius window = frac * (p99-p1 radius)
-extern float FiberMergeAngleDeg;  // trajectory-coherence merge threshold (deg)
-extern int   FiberMSSeeds;        // # random seeds for mean-shift
-extern int   FiberMinGroupSize;   // min spikes for a provisional group / fiber
-extern float ChunkMinutes;        // reused for uniform chunking when no ChunkFile
+// ── standalone fiber-clustering branch: config + parallel + cross-chunk ─────
+#include <unordered_map>
+#include <string>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
-// ── Standalone fiber clustering branch ──────────────────────────────────────
-// A self-contained alternative to the Phase 1-9 pipeline: per chunk it builds
-// the off-spike whitener, walks random seeds to fiber ridge centers via in-band
-// directional mean-shift, merges co-linear trajectories, and assigns by
-// whiteness residual + calibrated posterior.  Populates Class[] (1-based) so
-// main's SaveOutput() writes the .clu.  Cross-chunk drift tracking is a
-// separate stage (fibers get chunk-disjoint ids here).  Activated by
-// -FiberStandaloneEnable 1.
+extern int   FiberStandaloneEnable;
+extern float FiberMSKappa;            // mean-shift angular kernel concentration
+extern float FiberMSDrFrac;           // in-band radius window = frac*(p99-p1)
+extern float FiberMergeAngleDeg;      // trajectory-coherence merge threshold (deg)
+extern int   FiberMSSeeds;            // # random seeds for ridge mean-shift
+extern int   FiberMinGroupSize;       // min spikes per provisional group / fiber
+extern float ChunkMinutes;            // chunk size (min)
+extern float ChunkOverlapMinutes;     // overlap (min) -> cross-chunk anchors
+extern int   FiberXChunkEnable;       // link fibers across chunks (drift tracking)
+extern int   FiberXChunkSubspaceDim;  // L: shared population subspace dim
+extern int   FiberXChunkNKnots;       // energy knots for the warp field R(r)
+extern int   FiberXChunkMinAnchors;   // min overlap anchor pairs to fit R(r)
+extern float FiberXChunkGateRatio;    // accept link iff best < ratio*second
+extern float FiberXChunkSmooth;       // neighbour-knot pooling weight for R(r)
+extern int   FiberThreads;            // OpenMP threads for chunk loop (0 = default)
+extern int   FiberGPUEnable;          // 1 = try GPU kernels; falls back to CPU
+
+// per-chunk result; cross-chunk descriptors are in UNWHITENED masked space so
+// they are comparable across chunks (which have different per-chunk whiteners).
+struct ChunkFiberResult {
+    std::vector<int>                 extId;   // global spike ids in the extended set
+    std::vector<int>                 extLab;  // local fiber label per extended spike (-1=none)
+    int                              nFib = 0;
+    std::vector<std::vector<double>> knot;    // [nFib] -> NKnots*p unit dirs (unwhitened masked)
+    bool                             ok = false;
+};
+static int ufFind(std::vector<int>& uf, int x){ while(uf[x]!=x){ uf[x]=uf[uf[x]]; x=uf[x]; } return x; }
+
+// ── per-chunk fiber clustering (thread-safe: opens its own file handles) ─────
+// GPU offload targets: meanshift_inband (seed x support matmuls) and the
+// whiteness assignment inside consolidate(); a CUDA backend replaces those,
+// dispatched by FiberGPUEnable, per the realign_xcorr / groupingassistant pattern.
+static ChunkFiberResult clusterChunkFibers(
+        const std::vector<int>& extId, const std::vector<long>& absS,
+        const std::string& spkPath, const std::string& filPath,
+        int nTotalCh, const std::vector<int>& gch,
+        int nsamp, int nch, int masklo, int maskhi, int p, int nKnots)
+{
+    ChunkFiberResult R; R.extId = extId; const int N = (int)extId.size();
+    R.extLab.assign(N, -1);
+    if (N < FiberMinGroupSize * 2) return R;
+    const int wElems = nsamp * nch;
+    std::vector<double> waves((size_t)N * wElems);
+    { FILE* sp = std::fopen(spkPath.c_str(), "rb"); if(!sp) return R; std::vector<int16_t> row(wElems);
+      for(int i=0;i<N;i++){ fseeko(sp,(off_t)extId[i]*wElems*2,SEEK_SET);
+          if(std::fread(row.data(),2,wElems,sp)!=(size_t)wElems) for(int e=0;e<wElems;++e) row[e]=0;
+          for(int e=0;e<wElems;++e) waves[(size_t)i*wElems+e]=(double)row[e]; } std::fclose(sp); }
+    long s0=(1L<<62),s1=0; std::vector<long> a2(N);
+    for(int i=0;i<N;i++){ a2[i]=absS[extId[i]]; s0=std::min(s0,a2[i]); s1=std::max(s1,a2[i]); }
+    s0=std::max(0L,s0-nsamp); s1=s1+nsamp+1;
+    std::vector<double> W,nm; int pp=0;
+    if(!fiberChunkWhitener(filPath.c_str(),nTotalCh,gch,s0,s1,a2,nsamp,masklo,maskhi,W,nm,pp)) return R;
+    std::vector<double> wg(waves); fiberstage::realign(wg,N,nsamp,nch);
+    std::vector<double> X; fiberstage::mask_whiten(wg,N,nsamp,nch,masklo,maskhi,nm,W,p,X);
+    std::vector<double> Xu((size_t)N*p);   // unwhitened masked (frame-independent)
+    for(int i=0;i<N;i++){ const double* w=&wg[(size_t)i*wElems]; int j=0;
+        for(int t=masklo;t<maskhi;++t) for(int c=0;c<nch;++c) Xu[(size_t)i*p+(j++)]=w[t*nch+c]; }
+    std::vector<double> rad(N), dir((size_t)N*p);
+    for(int i=0;i<N;i++){ const double* Xi=&X[(size_t)i*p]; double nn=0; for(int j=0;j<p;j++) nn+=Xi[j]*Xi[j]; nn=std::sqrt(nn);
+        rad[i]=nn; for(int j=0;j<p;j++) dir[(size_t)i*p+j]=Xi[j]/(nn+1e-12); }
+    std::vector<double> rsort(rad); std::sort(rsort.begin(),rsort.end());
+    double dr=FiberMSDrFrac*(rsort[(int)(0.99*(N-1))]-rsort[(int)(0.01*(N-1))]);
+    int nsup=std::min(N,20000), S=std::min(N,(int)FiberMSSeeds);
+    std::vector<double> dsup((size_t)nsup*p),rsup(nsup),ds((size_t)S*p),rs(S);
+    for(int j=0;j<nsup;j++){ int idx=(int)((long)j*N/nsup); rsup[j]=rad[idx]; for(int k=0;k<p;k++) dsup[(size_t)j*p+k]=dir[(size_t)idx*p+k]; }
+    for(int s=0;s<S;s++){ int idx=(int)((long)s*N/S); rs[s]=rad[idx]; for(int k=0;k<p;k++) ds[(size_t)s*p+k]=dir[(size_t)idx*p+k]; }
+    // [GPU dispatch point] FiberGPUEnable -> CUDA mean-shift kernel; CPU path:
+    fiberstage::meanshift_inband(dsup.data(),rsup.data(),nsup,p,ds.data(),rs.data(),S,FiberMSKappa,dr,15);
+    std::vector<double> cd,cr; fiberstage::dedupe_centers(ds.data(),rs.data(),S,p,8.0,0.12,cd,cr);
+    const int M=(int)cr.size(); if(M<1) return R;
+    std::vector<int> lab(N);
+    for(int i=0;i<N;i++){ const double* di=&dir[(size_t)i*p]; double best=-2; int bk=0;
+        for(int k=0;k<M;k++){ const double* ck=&cd[(size_t)k*p]; double cs=0; for(int j=0;j<p;j++) cs+=di[j]*ck[j]; if(cs>best){best=cs;bk=k;} } lab[i]=bk; }
+    std::vector<fiberstage::Traj> trajs(M);
+    for(int k=0;k<M;k++){ std::vector<int> idx; for(int i=0;i<N;i++) if(lab[i]==k) idx.push_back(i);
+        if((int)idx.size()<FiberMinGroupSize){ trajs[k]=fiberstage::Traj(); continue; } trajs[k]=fiberstage::trajectory(X,idx,p); }
+    std::vector<int> fmap=trajectoryCoherenceMerge(trajs,FiberMergeAngleDeg);
+    int nFib=0; for(int v:fmap) nFib=std::max(nFib,v+1); if(nFib<1) return R;
+    std::vector<int> seed(N); for(int i=0;i<N;i++) seed[i]=fmap[lab[i]];
+    fiberstage::Result CR=fiberstage::consolidate(waves,N,nsamp,nch,masklo,maskhi,W,nm,p,seed,nFib);
+    R.nFib=nFib; for(int i=0;i<N;i++) R.extLab[i]=CR.hard[i];
+    R.knot.assign(nFib,std::vector<double>()); std::vector<double> pr(p);
+    for(int f=0;f<nFib;f++){
+        std::vector<int> idx; for(int i=0;i<N;i++) if(CR.hard[i]==f) idx.push_back(i);
+        R.knot[f].assign((size_t)nKnots*p,0.0);
+        if((int)idx.size()<FiberMinGroupSize) continue;
+        fiberstage::Traj tu=fiberstage::trajectory(Xu,idx,p);
+        std::vector<double> en; en.reserve(idx.size());
+        for(int i:idx){ const double* xu=&Xu[(size_t)i*p]; double nn=0; for(int j=0;j<p;j++) nn+=xu[j]*xu[j]; en.push_back(std::sqrt(nn)); }
+        std::sort(en.begin(),en.end()); double e0=en[(int)(0.10*(en.size()-1))], e1=en[(int)(0.90*(en.size()-1))];
+        for(int kn=0;kn<nKnots;kn++){ double e=e0+(e1-e0)*kn/std::max(1,nKnots-1); fiberstage::predict(tu,e,pr);
+            for(int j=0;j<p;j++) R.knot[f][(size_t)kn*p+j]=pr[j]; }
+    }
+    R.ok=true; return R;
+}
+
+// ── cross-chunk fiber linking ───────────────────────────────────────────────
+// Primary: one energy-dependent rotation field R(r) per adjacent pair, fit in a
+// shared population subspace and applied to ALL fibers (population geometry
+// generalises the warp).  Complementary: overlap spikes (same physical events in
+// both chunks) give ground-truth f<->g anchor pairs used to fit R(r).
+static void fiberXChunkLink(const std::vector<ChunkFiberResult>& C, int p, int nKnots,
+                            std::vector<std::vector<int>>& globalId, int& nGlobalOut)
+{
+    const int nC=(int)C.size();
+    std::vector<int> base(nC,0); int tot=0; for(int c=0;c<nC;c++){ base[c]=tot; tot+=C[c].nFib; }
+    std::vector<int> uf(std::max(1,tot)); for(int i=0;i<tot;i++) uf[i]=i;
+    const int L=std::max(2,std::min((int)FiberXChunkSubspaceDim,p));
+    std::vector<double> rows; int nrow=0;
+    for(const auto& cc:C) for(const auto& kv:cc.knot){ bool nz=false; for(double v:kv){ if(v!=0.0){nz=true;break;} } if(!nz) continue;
+        for(int kn=0;kn<nKnots;kn++){ for(int j=0;j<p;j++) rows.push_back(kv[(size_t)kn*p+j]); nrow++; } }
+    std::vector<double> basis,mean; if(nrow>=L) fiberstage::pca_basis(rows,nrow,p,L,basis,mean);
+    std::vector<std::vector<std::vector<double>>> P(nC);
+    for(int c=0;c<nC;c++){ P[c].resize(C[c].nFib);
+        for(int f=0;f<C[c].nFib;f++){ const auto& kv=C[c].knot[f]; std::vector<double>& o=P[c][f];
+            bool nz=false; for(double v:kv){ if(v!=0.0){nz=true;break;} }
+            if(basis.empty()||!nz){ o.clear(); continue; }
+            o.assign((size_t)nKnots*L,0.0); std::vector<double> t(L);
+            for(int kn=0;kn<nKnots;kn++){ fiberstage::pca_project_unit(&kv[(size_t)kn*p],basis,mean,p,L,t.data());
+                for(int m=0;m<L;m++) o[(size_t)kn*L+m]=t[m]; } } }
+    for(int c=0;c+1<nC;c++){
+        const int Ka=C[c].nFib, Kb=C[c+1].nFib; if(Ka<1||Kb<1) continue;
+        std::unordered_map<int,int> labB;
+        for(int i=0;i<(int)C[c+1].extId.size();i++) if(C[c+1].extLab[i]>=0) labB[C[c+1].extId[i]]=C[c+1].extLab[i];
+        std::vector<std::unordered_map<int,int>> co(Ka);
+        for(int i=0;i<(int)C[c].extId.size();i++){ int la=C[c].extLab[i]; if(la<0) continue;
+            auto it=labB.find(C[c].extId[i]); if(it!=labB.end()) co[la][it->second]++; }
+        std::vector<std::pair<int,int>> anchors;
+        for(int fa=0;fa<Ka;fa++){ int bb=-1,bn=0; for(const auto& kv:co[fa]){ if(kv.second>bn){ bn=kv.second; bb=kv.first; } }
+            if(bb>=0 && bn>=2) anchors.push_back(std::make_pair(fa,bb)); }
+        const bool haveR = (int)anchors.size()>=FiberXChunkMinAnchors && !basis.empty();
+        std::vector<std::vector<double>> Rk(nKnots);
+        if(haveR) for(int t=0;t<nKnots;t++){
+            std::vector<double> Mm((size_t)L*L,0.0);
+            for(int dt=-1;dt<=1;dt++){ int tt=t+dt; if(tt<0||tt>=nKnots) continue; double wgt=(dt==0)?1.0:(double)FiberXChunkSmooth;
+                for(const auto& an:anchors){ if(P[c][an.first].empty()||P[c+1][an.second].empty()) continue;
+                    const double* a=&P[c][an.first][(size_t)tt*L]; const double* b=&P[c+1][an.second][(size_t)tt*L];
+                    for(int x=0;x<L;x++) for(int y=0;y<L;y++) Mm[(size_t)x*L+y]+=wgt*b[x]*a[y]; } }
+            fiberstage::procrustes_R(Mm,L,Rk[t]); }
+        const double gate2=(double)FiberXChunkGateRatio*(double)FiberXChunkGateRatio;
+        for(int fa=0;fa<Ka;fa++){ if(P[c][fa].empty()) continue;
+            double best=1e300,second=1e300; int bb=-1;
+            for(int fb=0;fb<Kb;fb++){ if(P[c+1][fb].empty()) continue; double dsum=0;
+                for(int t=0;t<nKnots;t++){ const double* a=&P[c][fa][(size_t)t*L]; const double* b=&P[c+1][fb][(size_t)t*L];
+                    if(haveR){ const std::vector<double>& Rt=Rk[t];
+                        for(int x=0;x<L;x++){ double ax=0; for(int y=0;y<L;y++) ax+=Rt[(size_t)x*L+y]*a[y]; double d=ax-b[x]; dsum+=d*d; } }
+                    else for(int x=0;x<L;x++){ double d=a[x]-b[x]; dsum+=d*d; } }
+                if(dsum<best){ second=best; best=dsum; bb=fb; } else if(dsum<second) second=dsum; }
+            if(bb>=0 && best<gate2*second){ int ra=ufFind(uf,base[c]+fa), rb=ufFind(uf,base[c+1]+bb); if(ra!=rb) uf[rb]=ra; } }
+    }
+    std::unordered_map<int,int> gmap; int ng=0;
+    globalId.assign(nC,std::vector<int>()); for(int c=0;c<nC;c++) globalId[c].assign(C[c].nFib,-1);
+    for(int c=0;c<nC;c++) for(int f=0;f<C[c].nFib;f++){ int rt=ufFind(uf,base[c]+f);
+        auto it=gmap.find(rt); int id; if(it==gmap.end()){ id=ng++; gmap[rt]=id; } else id=it->second; globalId[c][f]=id; }
+    nGlobalOut=ng;
+}
+
 float KK::RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float samplingRate)
 {
-    const int nsamp = NbSamplesPerSpike, nch = NbChannels, wElems = nsamp * nch;
-    const int masklo = 11, maskhi = 26, p = (maskhi - masklo) * nch;
-    if (GroupChannelIds.empty() || NbTotalChannels <= 0 || nch <= 0 || nsamp <= 0) {
-        Output("[FiberStandalone] missing dims / .fil channel map — abort\n"); return 0.0f;
-    }
-    char spkPath[STRLEN + 16]; pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
-    char filPath[STRLEN + 16]; std::snprintf(filPath, sizeof(filPath), "%s.fil", FileBase);
-    char resPath[STRLEN + 16]; std::snprintf(resPath, sizeof(resPath), "%s.res.%d", FileBase, ElecNo);
-    FILE* resF = std::fopen(resPath, "rb");
-    if (!resF) { Output("[FiberStandalone] %s unavailable — abort\n", resPath); return 0.0f; }
+    const int nsamp=NbSamplesPerSpike, nch=NbChannels;
+    const int masklo=11, maskhi=26, p=(maskhi-masklo)*nch;
+    if(GroupChannelIds.empty()||NbTotalChannels<=0||nch<=0||nsamp<=0){ Output("[FiberStandalone] missing dims/channel map — abort\n"); return 0.0f; }
+    char spk[STRLEN+16]; pickInputPath(spk,sizeof(spk),FileBase,"spk",ElecNo);
+    char fil[STRLEN+16]; std::snprintf(fil,sizeof(fil),"%s.fil",FileBase);
+    char rp[STRLEN+16];  std::snprintf(rp,sizeof(rp),"%s.res.%d",FileBase,ElecNo);
+    std::string spkPath=spk, filPath=fil;
+    FILE* rf=std::fopen(rp,"rb"); if(!rf){ Output("[FiberStandalone] %s unavailable\n",rp); return 0.0f; }
     std::vector<long> absS(nPoints);
-    for (int i = 0; i < nPoints; ++i) { int64_t ts = 0; fseeko(resF, (off_t)i * 8, SEEK_SET);
-        if (std::fread(&ts, 8, 1, resF) != 1) ts = 0; absS[i] = (long)ts; }
-    std::fclose(resF);
-
-    // chunk assignment: provided bounds (sec) if any, else uniform by ChunkMinutes
-    const double sess = (double)timeRawMax - (double)timeRawMin;
-    std::vector<std::vector<int>> chunkPts;
-    if (chunkBoundsSec.size() >= 2) {
-        chunkPts.resize(chunkBoundsSec.size() - 1);
-        for (int i = 0; i < nPoints; ++i) { double tsec = ((double)absS[i] - (double)timeRawMin) / samplingRate;
-            int c = 0; while (c < (int)chunkPts.size() - 1 && tsec >= chunkBoundsSec[c + 1]) ++c; chunkPts[c].push_back(i); }
-    } else if (ChunkMinutes > 0 && sess > 0 && samplingRate > 0) {
-        double chunkSec = ChunkMinutes * 60.0; int nC = (int)std::ceil((sess / samplingRate) / chunkSec); if (nC < 1) nC = 1;
-        chunkPts.resize(nC);
-        for (int i = 0; i < nPoints; ++i) { double tsec = ((double)absS[i] - (double)timeRawMin) / samplingRate;
-            int c = (int)(tsec / chunkSec); if (c < 0) c = 0; if (c >= nC) c = nC - 1; chunkPts[c].push_back(i); }
-    } else { chunkPts.resize(1); for (int i = 0; i < nPoints; ++i) chunkPts[0].push_back(i); }
-
-    int fiberBase = 0;
-    for (size_t c = 0; c < chunkPts.size(); ++c) {
-        const auto& pts = chunkPts[c]; const int N = (int)pts.size();
-        if (N < FiberMinGroupSize * 2) { for (int i : pts) Class[i] = 1; continue; }
-
-        std::vector<double> waves((size_t)N * wElems);
-        { FILE* sp = std::fopen(spkPath, "rb"); if (!sp) { for (int i : pts) Class[i] = 1; continue; }
-          std::vector<int16_t> row(wElems);
-          for (int i = 0; i < N; ++i) { fseeko(sp, (off_t)pts[i] * wElems * 2, SEEK_SET);
-              if (std::fread(row.data(), 2, wElems, sp) != (size_t)wElems) for (int e=0;e<wElems;++e) row[e]=0;
-              for (int e = 0; e < wElems; ++e) waves[(size_t)i * wElems + e] = (double)row[e]; }
-          std::fclose(sp); }
-
-        long s0 = (1L << 62), s1 = 0; std::vector<long> a2(N);
-        for (int i = 0; i < N; ++i) { a2[i] = absS[pts[i]]; s0 = std::min(s0, a2[i]); s1 = std::max(s1, a2[i]); }
-        s0 = std::max(0L, s0 - nsamp); s1 = s1 + nsamp + 1;
-        std::vector<double> W, nm; int pp = 0;
-        if (!fiberChunkWhitener(filPath, NbTotalChannels, GroupChannelIds, s0, s1, a2, nsamp, masklo, maskhi, W, nm, pp)) {
-            for (int i : pts) Class[i] = 1; continue; }
-
-        std::vector<double> wg(waves); fiberstage::realign(wg, N, nsamp, nch);
-        std::vector<double> X; fiberstage::mask_whiten(wg, N, nsamp, nch, masklo, maskhi, nm, W, p, X);
-        std::vector<double> rad(N), dir((size_t)N * p);
-        for (int i = 0; i < N; ++i) { const double* Xi = &X[(size_t)i*p]; double nn=0; for (int j=0;j<p;j++) nn+=Xi[j]*Xi[j]; nn=std::sqrt(nn);
-            rad[i]=nn; for (int j=0;j<p;j++) dir[(size_t)i*p+j]=Xi[j]/(nn+1e-12); }
-        std::vector<double> rsort(rad); std::sort(rsort.begin(), rsort.end());
-        double dr = FiberMSDrFrac * (rsort[(int)(0.99*(N-1))] - rsort[(int)(0.01*(N-1))]);
-
-        // deterministic support + seed subsamples (RNG-free, reproducible)
-        int nsup = std::min(N, 20000), S = std::min(N, (int)FiberMSSeeds);
-        std::vector<double> dsup((size_t)nsup*p), rsup(nsup), ds((size_t)S*p), rs(S);
-        for (int j = 0; j < nsup; ++j) { int idx=(int)((long)j*N/nsup); rsup[j]=rad[idx]; for(int k=0;k<p;k++) dsup[(size_t)j*p+k]=dir[(size_t)idx*p+k]; }
-        for (int s = 0; s < S;    ++s) { int idx=(int)((long)s*N/S);    rs[s]=rad[idx];   for(int k=0;k<p;k++) ds[(size_t)s*p+k]=dir[(size_t)idx*p+k]; }
-        fiberstage::meanshift_inband(dsup.data(), rsup.data(), nsup, p, ds.data(), rs.data(), S, FiberMSKappa, dr, 15);
-        std::vector<double> cd, cr; fiberstage::dedupe_centers(ds.data(), rs.data(), S, p, 8.0, 0.12, cd, cr);
-        const int M = (int)cr.size(); if (M < 1) { for (int i : pts) Class[i] = 1; continue; }
-
-        std::vector<int> lab(N);
-        for (int i = 0; i < N; ++i) { const double* di=&dir[(size_t)i*p]; double best=-2; int bk=0;
-            for (int k=0;k<M;k++){ const double* ck=&cd[(size_t)k*p]; double cs=0; for(int j=0;j<p;j++) cs+=di[j]*ck[j]; if(cs>best){best=cs;bk=k;} } lab[i]=bk; }
-        std::vector<fiberstage::Traj> trajs(M);
-        for (int k = 0; k < M; ++k) { std::vector<int> idx; for (int i=0;i<N;i++) if (lab[i]==k) idx.push_back(i);
-            if ((int)idx.size() < FiberMinGroupSize) { trajs[k]=fiberstage::Traj(); continue; }
-            trajs[k]=fiberstage::trajectory(X, idx, p); }
-        std::vector<int> fmap = trajectoryCoherenceMerge(trajs, FiberMergeAngleDeg);
-        int nFib = 0; for (int v : fmap) nFib = std::max(nFib, v + 1); if (nFib < 1) { for (int i : pts) Class[i] = 1; continue; }
-        std::vector<int> seed(N); for (int i = 0; i < N; ++i) seed[i] = fmap[lab[i]];
-
-        fiberstage::Result R = fiberstage::consolidate(waves, N, nsamp, nch, masklo, maskhi, W, nm, p, seed, nFib);
-        for (int i = 0; i < N; ++i) Class[pts[i]] = fiberBase + R.hard[i] + 1;
-        fiberBase += nFib;
-        Output("[FiberStandalone] chunk %zu/%zu: %d spikes -> %d centers -> %d fibers\n",
-               c + 1, chunkPts.size(), N, M, nFib);
-    }
-    nClustersAlive = fiberBase; nStartingClusters = fiberBase;
-    Output("[FiberStandalone] done: %d fibers across %zu chunk(s)\n", fiberBase, chunkPts.size());
-    return (float)fiberBase;
+    for(int i=0;i<nPoints;i++){ int64_t ts=0; fseeko(rf,(off_t)i*8,SEEK_SET); if(std::fread(&ts,8,1,rf)!=1) ts=0; absS[i]=(long)ts; }
+    std::fclose(rf);
+    const double sess=(double)timeRawMax-(double)timeRawMin;
+    std::vector<float> bnd;
+    if(chunkBoundsSec.size()>=2) bnd=chunkBoundsSec;
+    else if(ChunkMinutes>0&&sess>0&&samplingRate>0){ double tot=sess/samplingRate; int nC=(int)std::ceil(tot/(ChunkMinutes*60.0)); if(nC<1)nC=1;
+        for(int c=0;c<=nC;c++) bnd.push_back((float)(c*ChunkMinutes*60.0)); }
+    else { bnd.push_back(0.0f); bnd.push_back((float)((sess>0?sess:1.0)/(samplingRate>0?samplingRate:1.0))); }
+    const int nChunks=(int)bnd.size()-1;
+    const double ovSec=(ChunkOverlapMinutes>0?(double)ChunkOverlapMinutes*60.0:0.0);
+    std::vector<int> coreChunk(nPoints,0);
+    std::vector<std::vector<int>> ext(nChunks);
+    for(int i=0;i<nPoints;i++){ double ts=((double)absS[i]-(double)timeRawMin)/(samplingRate>0?samplingRate:1.0);
+        int c=0; while(c<nChunks-1 && ts>=bnd[c+1]) ++c; coreChunk[i]=c; }
+    for(int c=0;c<nChunks;c++){ double lo=bnd[c]-ovSec, hi=bnd[c+1]+ovSec;
+        for(int i=0;i<nPoints;i++){ double ts=((double)absS[i]-(double)timeRawMin)/(samplingRate>0?samplingRate:1.0);
+            if(ts>=lo&&ts<hi) ext[c].push_back(i); } }
+    const int nKnots=std::max(3,(int)FiberXChunkNKnots);
+#ifdef _OPENMP
+    if(FiberThreads>0) omp_set_num_threads(FiberThreads);
+#endif
+    if(FiberGPUEnable) Output("[FiberStandalone] GPU backend not built in this binary — using CPU (OpenMP)\n");
+    std::vector<ChunkFiberResult> res(nChunks);
+    #pragma omp parallel for schedule(dynamic)
+    for(int c=0;c<nChunks;c++)
+        res[c]=clusterChunkFibers(ext[c],absS,spkPath,filPath,NbTotalChannels,GroupChannelIds,nsamp,nch,masklo,maskhi,p,nKnots);
+    for(int c=0;c<nChunks;c++) Output("[FiberStandalone] chunk %d/%d: %d spikes -> %d fibers%s\n",
+        c+1,nChunks,(int)ext[c].size(),res[c].nFib,res[c].ok?"":" (skipped)");
+    std::vector<int> coreLab(nPoints,-1);
+    for(int c=0;c<nChunks;c++) for(int i=0;i<(int)res[c].extId.size();i++){ int g=res[c].extId[i];
+        if(coreChunk[g]==c) coreLab[g]=res[c].extLab[i]; }
+    std::vector<std::vector<int>> globalId; int nGlobal=0;
+    if(FiberXChunkEnable && nChunks>1) fiberXChunkLink(res,p,nKnots,globalId,nGlobal);
+    else { globalId.assign(nChunks,std::vector<int>()); int t=0;
+        for(int c=0;c<nChunks;c++){ globalId[c].assign(res[c].nFib,0); for(int f=0;f<res[c].nFib;f++) globalId[c][f]=t++; } nGlobal=t; }
+    for(int i=0;i<nPoints;i++){ int c=coreChunk[i], l=coreLab[i];
+        Class[i]=(l>=0 && l<(int)globalId[c].size() && globalId[c][l]>=0) ? globalId[c][l]+2 : 1; }
+    nClustersAlive=nGlobal+1; nStartingClusters=nGlobal+1;
+    Output("[FiberStandalone] done: %d global fibers across %d chunk(s)%s\n",
+        nGlobal,nChunks,(FiberXChunkEnable&&nChunks>1)?" (cross-chunk linked)":"");
+    return (float)nGlobal;
 }
