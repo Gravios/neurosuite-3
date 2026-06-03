@@ -1604,7 +1604,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
 
-    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.1");
 
     // ── Provisional Class[] seeding for Phase 2 ─────────────────────────────
     // Phase 1 ran on local threadKc[] objects; K1.Class[] is all-zero here.
@@ -1662,7 +1662,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // block above ran MStep + Cholesky.  When SubspaceRecluster=0 no
     // clusters are alive yet and the call no-ops cleanly (the loop in
     // TimeShiftAlignPhase iterates ClassAlive and finds nothing).
-    RunAlignmentBlock(TimeShiftAlignAfterPhase1, "Phase 1a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1, "Align");
 
     // ── Phase 1b: per-chunk DipSplit ──────────────────────────────────────
     //
@@ -1672,9 +1672,9 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
-                     "Phase 1b");
-    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1b");
-    RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
+                     "Stage 2.2");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.2");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Align");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
     //
@@ -1703,7 +1703,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             RefractorySplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels,
                 nFullDims, refractSamp, 0.01f, sessLenSamp);
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.3");
         }
 
         // Phase 2a: per-cluster ordinary CEM in the full feature space.
@@ -1712,7 +1712,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // updates perChunkClass[] only.
         PerClusterCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.4");
 
         // Phase 2a.5: per-chunk DipSplit between Phase 2a and Phase 2b.
         //
@@ -1734,8 +1734,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (DipSplitEnable != 0 && DipSplitBeforePhase2b != 0) {
             DipSplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels, nFullDims,
-                "Phase 2a.5");
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.5");
+                "Stage 2.5");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.5");
         }
 
         // Phase 2a.6: per-chunk HullSplit (k-NN-graph connected components).
@@ -1744,8 +1744,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // DipSplit misses.  Default off (HullSplitEnable=0).
         if (HullSplitEnable != 0) {
             HullSplitPerChunk(
-                chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.6");
+                chunkPoints, perChunkClass, nFullDims, "Stage 2.6");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.6");
         }
 
         // Phase 2a.7: per-channel amplitude+phase bimodality split.  Reads
@@ -1758,8 +1758,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         if (PerChannelSplitEnable != 0) {
             PerChannelSplitPerChunk(
                 chunkPoints, perChunkClass,
-                NbChannels, NbSamplesPerSpike, "Phase 2a.7");
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.7");
+                NbChannels, NbSamplesPerSpike, "Stage 2.7");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.7");
         }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
@@ -1768,7 +1768,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // perChunkModels[] from the converged state.
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2b");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.8");
 
         // Phase 2b.5: K-template chunk split (optional, off by default).
         // For each chunk, picks K well-isolated reference cluster means
@@ -1811,8 +1811,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // bimodality from drift is suppressed.
         DipSplitPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims,
-            "Phase 2.5");
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2.5");
+            "Stage 2.9");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.9");
     }
 
 
@@ -1823,7 +1823,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // mergers across drift).
 
     // ── Post-Phase-2 alignment site ─────────────────────────────────────
-    RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Phase 2c");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Align");
 
     // Phase-ordering note: Phase 8 (global post-merge DipSplit) was
     // removed.  Its function is now served by per-chunk DipSplit at
@@ -2256,7 +2256,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                          _r.iter, _r.merges, _r.spikesSplit, _r.kNew,
                          _r.totalClusters, _r.wallMs);
         }
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.11");
     }
 
         // ── Phase 4c: neighborhood-remix split (patch 0062) ──────────────
@@ -2302,12 +2302,12 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // ── Post-Phase-5 alignment site ─────────────────────────────────────
     // Within-chunk template merges have consolidated per-chunk clusters.
     // Aligns spikes against the merged means before cross-chunk matching.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Phase 4a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Align");
 
     LockedStderr( "[Stage 3.1] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, noOverlapVotes);
     LockedStderr( "[Stage 3.1] Cross-chunk merge produced %d global clusters\n", nGlobal);
-    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 5");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 3.1");
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
         return CEMTwoPhase(timeMergeIter);
@@ -2348,7 +2348,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
     // mapped to global cluster IDs (above) but Class[] is still per-chunk.
     // Aligns spikes to per-chunk cluster means BEFORE the Phase 7 init
     // block remaps Class[] to global IDs.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Align");
 
     // ── Phase 7: global warm-start EM ───────────────────────────────────────
     nDims  = nFullDims;
@@ -2441,8 +2441,8 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
 
     // Per-phase quality summary after Phase 7 (Global EM) — gives a
     // checkpoint before DipSplit potentially mutates the cluster set.
-    LogGlobalClusterState("Phase 6 (Global EM)");
-    ReportClusterQuality("Phase 7");
+    LogGlobalClusterState("Stage 3.2 (Global EM)");
+    ReportClusterQuality("Stage 3.2");
 
     // ── Phase 6a (optional): post-merge cluster realignment ────────────────
     // Named "6a" because it refines Phase 6's cross-chunk merges, but
@@ -2497,7 +2497,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            LogGlobalClusterState("Phase 6a (post-merge realign)"); ReportClusterQuality("Phase 7a");
+            LogGlobalClusterState("Stage 3.3 (post-merge realign)"); ReportClusterQuality("Stage 3.3");
         }
     }
 
@@ -2545,7 +2545,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            LogGlobalClusterState("Phase 6b (mean-sub merge)"); ReportClusterQuality("Phase 7b");
+            LogGlobalClusterState("Stage 3.4 (mean-sub merge)"); ReportClusterQuality("Stage 3.4");
         }
     }
 
@@ -2560,7 +2560,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         const int nChanged =
             KlustersStyleRealignAllClusters(NbChannels, NbSamplesPerSpike);
         if (nChanged > 0) {
-            LogGlobalClusterState("Phase 7c (klusters realign)");
+            LogGlobalClusterState("Stage 3.6 (klusters realign)");
         }
     }
 
@@ -3087,7 +3087,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         for (int i = 0; i < nPts; i++) classArr[i] = Kc.Class[i];
     }
 
-    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.1");
 
     // ── Provisional Class[] seeding for Phase 2 ─────────────────────────────
     // Phase 1 ran on local threadKc[] objects; K1.Class[] is all-zero here.
@@ -3145,7 +3145,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // block above ran MStep + Cholesky.  When SubspaceRecluster=0 no
     // clusters are alive yet and the call no-ops cleanly (the loop in
     // TimeShiftAlignPhase iterates ClassAlive and finds nothing).
-    RunAlignmentBlock(TimeShiftAlignAfterPhase1, "Phase 1a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1, "Align");
 
     // ── Phase 1b: per-chunk DipSplit ──────────────────────────────────────
     //
@@ -3155,9 +3155,9 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // Phase 6 sees the correct cluster count.  Replaces the old
     // post-Phase-7 global Phase 8 DipSplit.  No-op when DipSplitEnable=0.
     DipSplitPerChunk(chunkPoints, perChunkClass, perChunkModels, nFullDims,
-                     "Phase 1b");
-    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 1b");
-    RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Phase 1c");
+                     "Stage 2.2");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.2");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase1b, "Align");
 
     // ── Phase 2: per-chunk refractory split + subspace reclustering ────────
     //
@@ -3224,7 +3224,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             RefractorySplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels,
                 nFullDims, refractSamp, 0.01f, sessLenSamp);
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.3");
         }
 
         // Phase 2a: per-cluster ordinary CEM in the full feature space.
@@ -3233,7 +3233,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // updates perChunkClass[] only.
         PerClusterCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.4");
 
         // Phase 2a.5: per-chunk DipSplit (see commentary at the matching
         // insertion in the first overload of RunChunkedCEM).  Gated by
@@ -3241,16 +3241,16 @@ float KK::RunChunkedCEM(float chunkMinutes,
         if (DipSplitEnable != 0 && DipSplitBeforePhase2b != 0) {
             DipSplitPerChunk(
                 chunkPoints, perChunkClass, perChunkModels, nFullDims,
-                "Phase 2a.5");
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.5");
+                "Stage 2.5");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.5");
         }
 
         // Phase 2a.6: per-chunk HullSplit, see commentary at the matching
         // insertion in the first overload of RunChunkedCEM.
         if (HullSplitEnable != 0) {
             HullSplitPerChunk(
-                chunkPoints, perChunkClass, nFullDims, "Phase 2a.6");
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.6");
+                chunkPoints, perChunkClass, nFullDims, "Stage 2.6");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.6");
         }
 
         // Phase 2a.7: per-channel amplitude+phase split, see commentary at
@@ -3258,8 +3258,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
         if (PerChannelSplitEnable != 0) {
             PerChannelSplitPerChunk(
                 chunkPoints, perChunkClass,
-                NbChannels, NbSamplesPerSpike, "Phase 2a.7");
-            LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2a.7");
+                NbChannels, NbSamplesPerSpike, "Stage 2.7");
+            LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.7");
         }
 
         // Phase 2b: chunk-level warm-start CEM.  Lets boundary spikes
@@ -3268,7 +3268,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // perChunkModels[] from the converged state.
         ChunkReCEMPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims);
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 2b");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.8");
 
         // Phase 2.5: second per-chunk DipSplit pass.
         //
@@ -3289,7 +3289,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // bimodality from drift is suppressed.
         DipSplitPerChunk(
             chunkPoints, perChunkClass, perChunkModels, nFullDims,
-            "Phase 2.5");
+            "Stage 2.9");
 
         // Phase 2b.5: K-template chunk split (optional, off by default).
         // For each chunk, picks K well-isolated reference cluster means
@@ -3325,7 +3325,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // mergers across drift).
 
     // ── Post-Phase-2 alignment site ─────────────────────────────────────
-    RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Phase 2c");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase2, "Align");
 
     // Phase-ordering note: Phase 8 (global post-merge DipSplit) was
     // removed.  Its function is now served by per-chunk DipSplit at
@@ -3837,7 +3837,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                          _r.iter, _r.merges, _r.spikesSplit, _r.kNew,
                          _r.totalClusters, _r.wallMs);
         }
-        LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 4");
+        LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 2.11");
     }
 
         // ── Phase 4c: neighborhood-remix split (patch 0062) ──────────────
@@ -3921,12 +3921,12 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // ── Post-Phase-5 alignment site ─────────────────────────────────────
     // Within-chunk template merges have consolidated per-chunk clusters.
     // Aligns spikes against the merged means before cross-chunk matching.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Phase 4a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase4, "Align");
 
     LockedStderr( "[Stage 3.1] Cross-chunk model matching (overlap-vote + edge-xcorr)\n");
     const int nGlobal = MergeChunkModels(allModels, nSpatialDims, mergeThresh, overlapVotes);
     LockedStderr( "[Stage 3.1] Cross-chunk merge produced %d global clusters\n", nGlobal);
-    LogPerChunkClusterState(chunkPoints, perChunkClass, "Phase 5");
+    LogPerChunkClusterState(chunkPoints, perChunkClass, "Stage 3.1");
     if (nGlobal < 1) {
         Output("Merge produced no real clusters — falling back to CEMTwoPhase.\n");
         return CEMTwoPhase(timeMergeIter);
@@ -3979,7 +3979,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
     // aligned to their per-chunk cluster means BEFORE the per-chunk → global
     // remap kicks in.  This catches alignment drift WITHIN per-chunk clusters
     // that Phase 5's template matching may have left behind.
-    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Phase 5a");
+    RunAlignmentBlock(TimeShiftAlignAfterPhase5, "Align");
 
     // -------------------------------------------------------------------
     // Phase 7: global warm-start EM (full dimensionality including time)
@@ -4079,8 +4079,8 @@ float KK::RunChunkedCEM(float chunkMinutes,
 
     // Per-phase quality summary after Phase 7 (Global EM) — gives a
     // checkpoint before DipSplit potentially mutates the cluster set.
-    LogGlobalClusterState("Phase 6 (Global EM)");
-    ReportClusterQuality("Phase 7");
+    LogGlobalClusterState("Stage 3.2 (Global EM)");
+    ReportClusterQuality("Stage 3.2");
 
     // ── Phase 6a (optional): post-merge cluster realignment ────────────────
     // Mirror of Driver A's Phase 7a.  See Driver A's body for rationale
@@ -4120,7 +4120,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            LogGlobalClusterState("Phase 6a (post-merge realign)"); ReportClusterQuality("Phase 7a");
+            LogGlobalClusterState("Stage 3.3 (post-merge realign)"); ReportClusterQuality("Stage 3.3");
         }
     }
 
@@ -4160,7 +4160,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 SaveBestMeans();
                 ksv().BestScoreSave = score;
             }
-            LogGlobalClusterState("Phase 6b (mean-sub merge)"); ReportClusterQuality("Phase 7b");
+            LogGlobalClusterState("Stage 3.4 (mean-sub merge)"); ReportClusterQuality("Stage 3.4");
         }
     }
 
@@ -4189,7 +4189,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             // which we don't have yet (would need RefeaturizeFromShifts
             // first, doubling the .fil-read cost).  Leave the score and
             // BestMeans as-is.
-            LogGlobalClusterState("Phase 7c (klusters realign)");
+            LogGlobalClusterState("Stage 3.6 (klusters realign)");
         }
     }
 
