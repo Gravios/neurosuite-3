@@ -271,6 +271,7 @@ extern float KlustersRealignRMin;         ///< RMS recenter: min mean-resultant-
 // chunk-local cluster.  Phase 6 cross-chunk template matching then
 // consolidates the new chunk-local clusters into global units.
 extern int   KnnSplitPerChunkEnable;
+extern int   FiberStageEnable;   // Stage 2.12 fiber consolidation gate (default 0)
 // KnnSplitK: number of reference templates (cluster means) per chunk.
 // Default 10.  Lower → coarser split; higher → finer.
 extern int   KnnSplitK;
