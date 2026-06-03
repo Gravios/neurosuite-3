@@ -921,7 +921,7 @@ def main():
         if args.probe and args.yaml_config and args.group:
             xy = load_group_geometry(args.probe, args.yaml_config, args.group)
             sys.stderr.write(f"  geometry: group {args.group}, {xy.shape[0]} sites, "
-                             f"y-span {xy[:,1].ptp():.0f}µm\n")
+                             f"y-span {np.ptp(xy[:, 1]):.0f}µm\n")
         targets = []
         if args.npz:
             targets += npz_split_targets(args.npz, args.n_min, args.kurt_thr)
