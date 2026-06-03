@@ -173,6 +173,7 @@ extern int   Phase2bEnableSplits;
 // Default 60.  0 falls back to global MaxIter.
 extern int   Phase2bMaxIter;
 extern float Phase2SplitTimeLimitSec;
+extern int   FusePerChunkStages;
 extern int   RefractorySplitMaxIter;
 extern int   VBGMMMaxIter;
 extern float VBGMMConvTol;

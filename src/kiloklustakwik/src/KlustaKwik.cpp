@@ -120,6 +120,7 @@ int   Phase2bEnableSplits    = 0;    ///< Phase 2b mode 0 only: enable TrySplits
                                      ///<   when the chunk's clusters are seen together (rare).
 int   Phase2bMaxIter         = 60;   ///< Max iterations of inner CEM per chunk in Phase 2b.  Lower
 float Phase2SplitTimeLimitSec = 0.0f; ///< wall-clock cap (s) per per-chunk split phase (PerChannel/WaveKnn); 0 = unlimited
+int   FusePerChunkStages    = 0;     ///< 1 = run per-chunk Stages 2.3-2.10 as one fused parallel_for (testing); 0 = staged (default)
                                      ///< values bound the per-chunk runtime; warm-start CEM converges
                                      ///< in 10-30 iter typically.  Set to 0 to use the global MaxIter.
 int   RefractorySplitMaxIter = 0;    ///< Max EM iterations for the Phase 2 refractory split's per-cluster
@@ -815,6 +816,7 @@ void SetupParams(int argc, char **argv) {
     INT_PARAM(Phase2bEnableSplits);
     INT_PARAM(Phase2bMaxIter);
     FLOAT_PARAM(Phase2SplitTimeLimitSec);
+    INT_PARAM(FusePerChunkStages);
     INT_PARAM(RefractorySplitMaxIter);
     INT_PARAM(VBGMMMaxIter);
     FLOAT_PARAM(VBGMMConvTol);
