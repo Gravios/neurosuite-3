@@ -517,6 +517,163 @@ def npz_split_targets(npz_path, n_min=100, kurt_thr=-0.7):
     return [int(c) for c in np.asarray(clu)[sel][order]]
 
 
+# ═══════════════════ probe geometry + energy-stitch test ═════════════════
+# Active-location + energy partitioning.  Within a shank, a spike's "location"
+# is the energy-weighted centroid of its per-site PTP over the octrode geometry.
+# Splitting a cluster into amplitude bands and asking whether the per-band
+# (amplitude-normalised) SHAPES stitch into one family distinguishes a single
+# bursting cell (smooth family: low band = adaptation tail, same shape/location)
+# from two co-located units (shape jumps at a band boundary).  The location
+# centroid per band is the guard: a break with a STABLE centroid is a genuine
+# co-located split; a break whose centroid DRIFTS across bands is one unit whose
+# amplitude tracks its position (migration) — vetoed, not split.
+
+def load_group_geometry(probe_path, yaml_path, group):
+    """Return (n_ch, 2) local site coords (µm, shank-relative) for a .clu group.
+
+    Maps clu group N -> yaml channelGroups[N-1] -> global channel ids -> probe
+    geometry site indices (identity channel map), then re-origins x,y to the
+    group so only intra-shank position remains.
+    """
+    import yaml
+    cfg = yaml.safe_load(open(yaml_path))
+    groups = cfg["anatomicalDescription"]["channelGroups"]
+    if not (1 <= group <= len(groups)):
+        raise ValueError(f"group {group} outside 1..{len(groups)}")
+    chans = [c["id"] for c in groups[group - 1]["channels"]]
+    geo = yaml.safe_load(open(probe_path))["probeFile"]["sites"]["geometry"]
+    xy = np.array([geo[c] for c in chans], float)
+    xy = xy - xy.mean(0)                                # shank-relative
+    return xy
+
+
+def _site_ptp(mean_wave, n_samp, n_ch):
+    """Per-site peak-to-peak of a (flattened sample-major) mean waveform."""
+    w = np.asarray(mean_wave).reshape(n_samp, n_ch)
+    return w.max(0) - w.min(0)                          # (n_ch,)
+
+
+def _centroid(ptp_sites, xy):
+    w = np.maximum(ptp_sites, 0.0)
+    s = w.sum()
+    if s <= 0:
+        return np.array([np.nan, np.nan])
+    return (w[:, None] * xy).sum(0) / s
+
+
+def energy_stitch_test(wX, xy, n_ch, n_samp, K=5, floor_frac=0.02,
+                       stitch_thresh=0.04, loc_thresh_um=15.0, min_per_band=30):
+    """Split a cluster into K energy bands; test whether shapes stitch.
+
+    wX : (m, D) spikes of one cluster (sample-major flatten, D = nSamp*nCh).
+    xy : (n_ch, 2) site coords for the migration guard.
+    Returns a compact dict: per-band energy/centroid, adjacent shape residuals
+    (amplitude removed via per-spike L2 normalisation), the centroid drift, and
+    a verdict (stitches / fine-structure split / migration).
+    """
+    m = wX.shape[0]
+    if m < K * min_per_band:
+        return dict(n=m, K=K, skipped=f"n<{K*min_per_band}")
+    # per-spike energy = PTP at the cluster's dominant site
+    mean0 = wX.mean(0)
+    dom = int(np.argmax(_site_ptp(mean0, n_samp, n_ch)))
+    w3 = wX.reshape(m, n_samp, n_ch)
+    e = w3[:, :, dom].max(1) - w3[:, :, dom].min(1)     # (m,)
+    order = np.argsort(e)
+    bands = np.array_split(order, K)                    # equal-count quantile bands
+
+    # per-band amplitude-normalised, rigid-aligned MEAN templates.  Band means
+    # are clean even when single spikes are noisy; cosine distance between
+    # adjacent normalised templates measures SHAPE change with amplitude removed.
+    band_info = []
+    templates = []
+    for b, idx in enumerate(bands):
+        mb = wX[idx].mean(0)
+        cen = _centroid(_site_ptp(mb, n_samp, n_ch), xy)
+        templates.append(mb)
+        band_info.append(dict(b=b, n=int(len(idx)),
+                              e_med=float(np.median(e[idx])),
+                              cx=round(float(cen[0]), 1), cy=round(float(cen[1]), 1)))
+    ref = templates[0].reshape(n_samp, n_ch)
+    normed = []
+    for mb in templates:
+        b2 = mb.reshape(n_samp, n_ch)
+        _, lag = _best_lag_xcorr(ref, b2, max_shift=4)     # align to band-0 frame
+        a = _shift_template(b2, lag).ravel()
+        normed.append(a / (np.linalg.norm(a) + 1e-9))
+    adj = [round(float(1.0 - normed[b] @ normed[b + 1]), 4) for b in range(K - 1)]
+    cys = np.array([bi["cy"] for bi in band_info])
+    cxs = np.array([bi["cx"] for bi in band_info])
+    drift_um = float(np.hypot(cys.max() - cys.min(), cxs.max() - cxs.min()))
+    max_adj = max(adj) if adj else 0.0
+    break_band = int(np.argmax(adj)) if adj else -1
+
+    if max_adj < stitch_thresh:
+        verdict = "stitches: single amplitude family"
+        split = False
+    elif drift_um > loc_thresh_um:
+        verdict = f"breaks at band {break_band}->{break_band+1} WITH location drift " \
+                  f"({drift_um:.0f}µm) -> migration, not split"
+        split = False
+    else:
+        verdict = f"breaks at band {break_band}->{break_band+1}, location stable " \
+                  f"({drift_um:.0f}µm) -> fine-structure split candidate"
+        split = True
+    return dict(n=m, K=K, dom_site=dom, bands=band_info, adj_resid=adj,
+                max_adj=round(max_adj, 3), break_band=break_band,
+                centroid_drift_um=round(drift_um, 1),
+                split_candidate=bool(split), verdict=verdict)
+
+
+def selftest_stitch():
+    rng = np.random.default_rng(11)
+    n_ch, n_samp = 8, 32
+    # octrode-like geometry: zigzag x=±11, y 0..140
+    xy = np.array([[((-11) if i % 2 else 11), 20 * i] for i in range(n_ch)], float)
+    xy -= xy.mean(0)
+    print("\n── energy-stitch test (synthetic ground truth) ──")
+
+    def stack(arr):
+        return arr.reshape(arr.shape[0], -1)
+
+    # (i) ONE bursting cell: amplitude varies 0.4x..1.3x, SAME shape & location.
+    n = 1500
+    amp = rng.uniform(0.4, 1.3, n)
+    one = np.empty((n, n_samp, n_ch), np.float32)
+    base = _make_template(n_ch, n_samp, 3.0, 2.2, 1.6)
+    for i in range(n):
+        one[i] = amp[i] * base + 10 * rng.standard_normal((n_samp, n_ch))
+    r = energy_stitch_test(stack(one), xy, n_ch, n_samp)
+    print(f"(i) bursting single cell : split={r['split_candidate']} max_adj={r['max_adj']} "
+          f"drift={r['centroid_drift_um']}µm -> {r['verdict']}")
+
+    # (ii) TWO co-located units, different amplitude AND shape (narrow vs wide),
+    #      SAME location -> bands segregate them, shape jumps, centroid stable.
+    loud = np.empty((800, n_samp, n_ch), np.float32)
+    quiet = np.empty((800, n_samp, n_ch), np.float32)
+    Tl = _make_template(n_ch, n_samp, 3.0, 1.2, 1.6)      # narrow, will be loud
+    Tq = _make_template(n_ch, n_samp, 3.0, 2.4, 1.6)      # wide, will be quiet
+    for i in range(800):
+        loud[i] = 1.25 * Tl + 10 * rng.standard_normal((n_samp, n_ch))
+        quiet[i] = 0.6 * Tq + 10 * rng.standard_normal((n_samp, n_ch))
+    r = energy_stitch_test(stack(np.vstack([loud, quiet])), xy, n_ch, n_samp)
+    print(f"(ii) two co-located units: split={r['split_candidate']} max_adj={r['max_adj']} "
+          f"break={r['break_band']} drift={r['centroid_drift_um']}µm -> {r['verdict']}")
+
+    # (iii) ONE unit, amplitude tracks LOCATION (loud when peak near ch6, quiet
+    #       near ch2) -> bands differ in shape AND centroid -> migration, veto.
+    n = 1200
+    mig = np.empty((n, n_samp, n_ch), np.float32)
+    pos = rng.uniform(2.0, 6.0, n)                        # peak-channel position
+    for i in range(n):
+        a = 0.5 + 0.2 * (pos[i] - 2.0)                    # amplitude grows with depth
+        mig[i] = a * _make_template(n_ch, n_samp, pos[i], 2.2, 1.6) \
+            + 10 * rng.standard_normal((n_samp, n_ch))
+    r = energy_stitch_test(stack(mig), xy, n_ch, n_samp)
+    print(f"(iii) amplitude~location : split={r['split_candidate']} max_adj={r['max_adj']} "
+          f"drift={r['centroid_drift_um']}µm -> {r['verdict']}")
+
+
 def selftest_split():
     rng = np.random.default_rng(7)
     n_ch, n_samp = 8, 32
@@ -614,6 +771,7 @@ def selftest():
           "direction).  The merged cluster stays low-variance.")
     selftest_family()
     selftest_split()
+    selftest_stitch()
 
 
 def selftest_family():
@@ -711,6 +869,15 @@ def main():
     ap.add_argument("--kurt-thr", type=float, default=-0.7,
                     help="min_kurt_dom threshold for npz target selection")
     ap.add_argument("--split-out", default="split_scan_out.json")
+    # geometry + energy-stitch + windowing
+    ap.add_argument("--probe", help="probe geometry file (.probe yaml) for location guard")
+    ap.add_argument("--yaml-config", help="session .yaml mapping clu groups to channels")
+    ap.add_argument("--group", type=int, help="clu group number (1-based) for geometry")
+    ap.add_argument("--minutes", help="restrict to a time window 'a,b' in minutes (needs --res)")
+    ap.add_argument("--time-window", help="restrict to 'lo,hi' in raw .res sample units")
+    ap.add_argument("--sr", type=float, default=32552.0, help="sampling rate for --minutes")
+    ap.add_argument("--stitch-bands", type=int, default=5, dest="stitch_bands",
+                    help="energy bands for the stitch test")
     args = ap.parse_args()
 
     if args.selftest:
@@ -728,10 +895,33 @@ def main():
                          f".clu — using the smaller count\n")
         n = min(spk.shape[0], clu.size); spk = spk[:n]; clu = clu[:n]
 
+    # ── optional time window (drift-removing chunk) ───────────────────────
+    mask = None
+    if args.minutes or args.time_window:
+        res_w = read_res(args.res) if args.res else None
+        if res_w is None or res_w.size != clu.size:
+            ap.error("--minutes/--time-window need --res matching .clu in length")
+        if args.minutes:
+            a, b = (float(x) for x in args.minutes.split(","))
+            lo, hi = a * 60.0 * args.sr, b * 60.0 * args.sr
+        else:
+            lo, hi = (float(x) for x in args.time_window.split(","))
+        mask = (res_w >= lo) & (res_w < hi)
+        sys.stderr.write(f"  window [{lo:.0f},{hi:.0f}) samples: {int(mask.sum())} of "
+                         f"{clu.size} spikes\n")
+        spk = spk[mask]; clu = clu[mask]
+
     # ── within-cluster split scan ─────────────────────────────────────────
     if args.split_scan:
         import json as _json
         res = read_res(args.res) if args.res else None
+        if res is not None and mask is not None:
+            res = res[mask]                              # keep res aligned to window
+        xy = None
+        if args.probe and args.yaml_config and args.group:
+            xy = load_group_geometry(args.probe, args.yaml_config, args.group)
+            sys.stderr.write(f"  geometry: group {args.group}, {xy.shape[0]} sites, "
+                             f"y-span {xy[:,1].ptp():.0f}µm\n")
         targets = []
         if args.npz:
             targets += npz_split_targets(args.npz, args.n_min, args.kurt_thr)
@@ -740,7 +930,8 @@ def main():
         seen = set(); targets = [c for c in targets if not (c in seen or seen.add(c))]
         if not targets:
             ap.error("--split-scan needs --npz and/or --split-targets")
-        out = dict(clu=os.path.basename(args.clu), n_targets=len(targets), splits=[])
+        out = dict(clu=os.path.basename(args.clu), n_targets=len(targets),
+                   window=(args.minutes or args.time_window or None), splits=[])
         spk_f = spk.reshape(spk.shape[0], -1)
         for cid in targets:
             idx = np.flatnonzero(clu == cid)
@@ -751,12 +942,21 @@ def main():
             times = res[idx].astype(float) if res is not None and res.size == clu.size else None
             r = within_cluster_split(spk_f[idx], args.nch, args.nsamp, times=times,
                                      floor_frac=args.floor_frac)
-            r["clu"] = cid; out["splits"].append(r)
+            r["clu"] = cid
+            if xy is not None:
+                r["stitch"] = energy_stitch_test(spk_f[idx], xy, args.nch, args.nsamp,
+                                                 K=args.stitch_bands, floor_frac=args.floor_frac)
             sa = r.get("split_axis", {})
-            sys.stderr.write(f"  SPLIT {cid}: bimodal={r.get('bimodal')} "
-                             f"rank={sa.get('rank')} var_frac={sa.get('var_frac')} "
-                             f"ashman={sa.get('ashman')} valley={sa.get('valley')} "
-                             f"time={r.get('time_verdict')}\n")
+            st = r.get("stitch", {})
+            # the thesis-critical case: a fine-structure split the whole-session
+            # gap test could NOT see (a non-dominant gapped mode, or a stitch break)
+            r["fine_structure_split"] = bool(
+                (r.get("bimodal") and sa.get("rank", 0) > 0) or st.get("split_candidate"))
+            out["splits"].append(r)
+            sys.stderr.write(
+                f"  SPLIT {cid}: gap_bimodal={r.get('bimodal')} rank={sa.get('rank')} "
+                f"| stitch_split={st.get('split_candidate')} max_adj={st.get('max_adj')} "
+                f"drift={st.get('centroid_drift_um')} | FINE={r['fine_structure_split']}\n")
         with open(args.split_out, "w") as fh:
             _json.dump(out, fh, indent=1)
         print(_json.dumps(out, indent=1))
