@@ -388,7 +388,7 @@ public:
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims,
-        const char* phaseLabel = "Phase 1b");
+        const char* phaseLabel = "Phase 1b", int onlyChunk = -1);
 
     // Phase 2a.6: k-NN-graph connected-components split.  Per-chunk,
     // per-cluster: build a k-NN graph in feature space, find connected
@@ -404,7 +404,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         int nFullDims,
-        const char* phaseLabel = "Phase 2a.6");
+        const char* phaseLabel = "Phase 2a.6", int onlyChunk = -1);
 
     // Phase 2a.7: per-channel amplitude+phase bimodality split.  Reads
     // full spike waveforms for each cluster, extracts 4 features per
@@ -422,7 +422,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         int nChan, int nSamplesPerSpike,
-        const char* phaseLabel = "Phase 2a.7");
+        const char* phaseLabel = "Phase 2a.7", int onlyChunk = -1);
 
     // Per-phase cluster-state diagnostic.  Walks perChunkClass[] and
     // reports total distinct non-noise local IDs (summed across chunks),
@@ -458,7 +458,7 @@ public:
         int nFullDims,
         float refractSamples,   // absolute refractory period in raw samples
         float minContamRate,    // minimum ISI contamination rate to trigger split (e.g. 0.01)
-        float sessionSamples);  // total recording length in raw samples (for normalisation)
+        float sessionSamples, int onlyChunk = -1);  // total recording length in raw samples (for normalisation)
 
     // Phase 2b.5: K-template chunk split.  After Phase 2b
     // (ChunkReCEMPerChunk) has converged each chunk's classification,
@@ -487,7 +487,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
-        int nFullDims);
+        int nFullDims, int onlyChunk = -1);
 
     // Klusters-faithful KNN majority-vote split.  Same parameters as
     // KnnSplitPerChunk above but uses per-spike K-NN against a pool of
@@ -502,7 +502,7 @@ public:
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims,
-        const std::map<int, std::vector<int>>* sourceAllowlist = nullptr);
+        const std::map<int, std::vector<int>>* sourceAllowlist = nullptr, int onlyChunk = -1);
 
   
     float RunChunkedCEM(float chunkMinutes,
