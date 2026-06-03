@@ -8,6 +8,9 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 namespace fiberstage {
 
 inline double pct(std::vector<double> v,double q){               // numpy 'linear' percentile
@@ -151,5 +154,38 @@ inline Result consolidate(const std::vector<double>&waves,int N,int nsamp,int nc
         R.conf[i]=(float)(mx/(Z+1e-12));
     }
     return R;
+}
+// ── in-band directional mean-shift ridge seeder (validated on g7) ───────────
+// Random seeds walk uphill on the in-band directional density to the fiber
+// ridge centers.  Support (dsup,rsup) is FIXED; each seed reads it but never
+// updates it, so the per-seed order is irrelevant.  ds/rs are in/out (init =
+// seed dirs/radii, returns converged centers).  p = masked feature dim.
+inline void meanshift_inband(const double* dsup,const double* rsup,int nsup,int p,
+                             double* ds,double* rs,int nseed,double kappa,double dr,int iters){
+    std::vector<double> acc(p);
+    for(int it=0;it<iters;it++)
+        for(int s=0;s<nseed;s++){
+            double* dss=ds+(size_t)s*p; double rss=rs[s];
+            std::fill(acc.begin(),acc.end(),0.0); double sw=0,sr=0;
+            for(int j=0;j<nsup;j++){ double rj=rsup[j]; if(std::fabs(rj-rss)>=dr) continue;
+                const double* dj=dsup+(size_t)j*p; double cs=0; for(int k=0;k<p;k++) cs+=dss[k]*dj[k];
+                double w=std::exp(kappa*(cs-1.0)); sw+=w; sr+=w*rj; for(int k=0;k<p;k++) acc[k]+=w*dj[k]; }
+            if(sw<1e-9) sw=1e-9; double nn=0; for(int k=0;k<p;k++) nn+=acc[k]*acc[k]; nn=std::sqrt(nn)+1e-12;
+            for(int k=0;k<p;k++) dss[k]=acc[k]/nn; rs[s]=sr/sw;
+        }
+}
+// dedupe converged seeds into distinct ridge centers (angle<degThr AND |Δr|/r<radFrac).
+// Inputs sorted by descending radius for determinism.  Returns center dirs (M*p) + radii.
+inline void dedupe_centers(const double* ds,const double* rs,int nseed,int p,
+                           double degThr,double radFrac,std::vector<double>&cd,std::vector<double>&cr){
+    std::vector<int> ord(nseed); for(int i=0;i<nseed;i++) ord[i]=i;
+    std::sort(ord.begin(),ord.end(),[&](int a,int b){return rs[a]>rs[b];});
+    double cosThr=std::cos(degThr*M_PI/180.0);
+    cd.clear(); cr.clear();
+    for(int oi=0;oi<nseed;oi++){ int i=ord[oi]; const double* di=ds+(size_t)i*p; bool isnew=true;
+        for(size_t m=0;m<cr.size()&&isnew;m++){ const double* cm=&cd[m*p]; double cs=0; for(int k=0;k<p;k++) cs+=di[k]*cm[k];
+            if(cs>cosThr && std::fabs(rs[i]-cr[m])/cr[m]<radFrac) isnew=false; }
+        if(isnew){ cr.push_back(rs[i]); for(int k=0;k<p;k++) cd.push_back(di[k]); }
+    }
 }
 } // namespace fiberstage

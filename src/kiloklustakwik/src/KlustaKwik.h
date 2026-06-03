@@ -272,6 +272,9 @@ extern float KlustersRealignRMin;         ///< RMS recenter: min mean-resultant-
 // consolidates the new chunk-local clusters into global units.
 extern int   KnnSplitPerChunkEnable;
 extern int   FiberStageEnable;   // Stage 2.12 fiber consolidation gate (default 0)
+extern int   FiberStandaloneEnable;  // standalone fiber-clustering branch (default 0)
+extern float FiberMSKappa, FiberMSDrFrac, FiberMergeAngleDeg;
+extern int   FiberMSSeeds, FiberMinGroupSize;
 // KnnSplitK: number of reference templates (cluster means) per chunk.
 // Default 10.  Lower → coarser split; higher → finer.
 extern int   KnnSplitK;
