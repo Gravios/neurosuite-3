@@ -434,7 +434,7 @@ void KK::DipSplitPerChunk(
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& perChunkModels,
     int nFullDims,
-    const char* phaseLabel)
+    const char* phaseLabel, int onlyChunk)
 {
     if (DipSplitEnable == 0) return;
     const int nCh = static_cast<int>(chunkPoints.size());
@@ -443,7 +443,7 @@ void KK::DipSplitPerChunk(
     int totalSplitsAcrossChunks = 0;
     int totalChunksWithSplits   = 0;
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[%s] Per-chunk DipSplit (bloat=%.2f, elong=%.2f, "
             "valley=%.2f, minSize=%d)\n",
             phaseLabel,
@@ -461,8 +461,10 @@ void KK::DipSplitPerChunk(
     };
     std::vector<ChunkResult> results(nCh);
 
-    #pragma omp parallel for schedule(dynamic) reduction(+:totalSplitsAcrossChunks,totalChunksWithSplits)
-    for (int ck = 0; ck < nCh; ck++) {
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) reduction(+:totalSplitsAcrossChunks,totalChunksWithSplits)
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         const auto& pts = chunkPoints[ck];
         const int   nPts = static_cast<int>(pts.size());
         if (nPts < DipSplitMinSize) continue;
@@ -609,13 +611,13 @@ void KK::DipSplitPerChunk(
     }
 
     // ── Serial application ───────────────────────────────────────────
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         if (!results[ck].changed) continue;
         perChunkClass [ck] = std::move(results[ck].newClass);
         perChunkModels[ck] = std::move(results[ck].newModels);
     }
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[Stage 2.2] DipSplit per-chunk: %d splits across %d chunks\n",
             totalSplitsAcrossChunks, totalChunksWithSplits);
 }
@@ -654,13 +656,13 @@ void KK::HullSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     int nFullDims,
-    const char* phaseLabel)
+    const char* phaseLabel, int onlyChunk)
 {
     if (HullSplitEnable == 0) return;
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[%s] HullSplit per-chunk (k=%d, minSize=%d, reachScale=%.2f, "
             "metric=%s)\n",
             phaseLabel, HullSplitK, HullSplitMinComponentSize,
@@ -679,9 +681,11 @@ void KK::HullSplitPerChunk(
     };
     std::vector<ChunkResult> results(static_cast<size_t>(nCh));
 
-    #pragma omp parallel for schedule(dynamic) \
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) \
         reduction(+:totalSplitsAcrossChunks,totalChunksWithSplits,totalNewSubClusters)
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         const auto& pts = chunkPoints[static_cast<size_t>(ck)];
         const int   nPts = static_cast<int>(pts.size());
         if (nPts < 2 * HullSplitMinComponentSize) continue;
@@ -797,13 +801,13 @@ void KK::HullSplitPerChunk(
     }
 
     // Serial application.
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         if (!results[static_cast<size_t>(ck)].changed) continue;
         perChunkClass[static_cast<size_t>(ck)] =
             std::move(results[static_cast<size_t>(ck)].newClass);
     }
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[%s] HullSplit per-chunk: %d clusters split, +%d new sub-clusters, "
             "%d chunks affected\n",
             phaseLabel, totalSplitsAcrossChunks, totalNewSubClusters,
@@ -840,11 +844,11 @@ void KK::PerChannelSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     int nChan, int nSamplesPerSpike,
-    const char* phaseLabel)
+    const char* phaseLabel, int onlyChunk)
 {
     if (PerChannelSplitEnable == 0) return;
     if (!m_timeShiftReady) {
-        LockedStderr(
+        if (onlyChunk < 0) LockedStderr(
                 "[%s] PerChannelSplit skipped: TimeShift backing store not "
                 "initialised (need .spk mmap/fp for waveform reads).\n",
                 phaseLabel);
@@ -891,9 +895,11 @@ void KK::PerChannelSplitPerChunk(
         (Phase2SplitTimeLimitSec > 0.0f) ? omp_get_wtime() + Phase2SplitTimeLimitSec : 0.0;
     std::atomic<bool> splitLimitHit{false};
 
-    #pragma omp parallel for schedule(dynamic) num_threads(maxThreads) \
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) num_threads(maxThreads) \
         reduction(+:totalSplits,totalChunksWithSplit,totalNewClusters)
-    for (int ck = 0; ck < nCh; ++ck) {
+    for (int ck = _ckLo; ck < _ckHi; ++ck) {
         if (splitDeadline > 0.0 && omp_get_wtime() > splitDeadline) {
             splitLimitHit.store(true, std::memory_order_relaxed); continue;
         }
@@ -966,7 +972,7 @@ void KK::PerChannelSplitPerChunk(
     }
 
     // Serial application.
-    for (int ck = 0; ck < nCh; ++ck) {
+    for (int ck = _ckLo; ck < _ckHi; ++ck) {
         if (!results[static_cast<size_t>(ck)].changed) continue;
         perChunkClass[static_cast<size_t>(ck)] =
             std::move(results[static_cast<size_t>(ck)].newClass);
@@ -975,7 +981,7 @@ void KK::PerChannelSplitPerChunk(
     if (splitLimitHit.load())
         LockedStderr("[%s] PerChannelSplit: time limit (%.0fs) reached — "
                      "some chunks/clusters left unsplit\n", phaseLabel, Phase2SplitTimeLimitSec);
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[%s] PerChannelSplit per-chunk: %d clusters split, +%d new "
             "sub-clusters, %d chunks affected\n",
             phaseLabel, totalSplits, totalNewClusters, totalChunksWithSplit);
@@ -1619,7 +1625,7 @@ void KK::RefractorySplitPerChunk(
     int   nFullDims,
     float refractSamples,
     float minContamRate,
-    float sessionSamples)
+    float sessionSamples, int onlyChunk)
 {
     // Bound any single CEM call during this phase to Phase2SplitTimeLimitSec
     // seconds (checked per iteration inside RunEMLoop).  RAII so every return
@@ -1672,13 +1678,15 @@ void KK::RefractorySplitPerChunk(
     const int        nThreads  = omp_get_max_threads();
     const int        progStep  = std::max(1, nCh / 20);
     std::atomic<int> chunksDone{0};
-    LockedStderr("[Stage 2.3]   refractory split: %d chunk%s across %d thread%s\n",
+    if (onlyChunk < 0) LockedStderr("[Stage 2.3]   refractory split: %d chunk%s across %d thread%s\n",
                  nCh, nCh == 1 ? "" : "s", nThreads, nThreads == 1 ? "" : "s");
 
-    #pragma omp parallel for schedule(dynamic) \
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) \
         reduction(+:totalSplit,nVisited,nSkipNoise,nSkipTooSmall, \
                     nSkipLowContam,nAttempted,nRejNoSplit,nRejWorseNull)
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         // Deterministic per-chunk RNG seed (KlustaKwik.h): the refractory split
         // trials below draw randomness, so key the stream to chunk identity --
         // reproducible and independent of thread count/schedule.
@@ -1951,7 +1959,7 @@ void KK::RefractorySplitPerChunk(
     }
 
     // End-of-phase stderr summary — always visible regardless of Log setting.
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[Stage 2.3] Per-chunk refractory split: %d split / %d attempted "
             "(visited %d, skipped: %d too-small <%d / %d low-contam <%.0f%%; "
             "rejected: %d no-split / %d worse-than-null)\n",
@@ -1994,7 +2002,7 @@ void KK::KnnSplitPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& perChunkModels,
-    int nFullDims)
+    int nFullDims, int onlyChunk)
 {
     if (KnnSplitK < 2) return;
 
@@ -2019,16 +2027,18 @@ void KK::KnnSplitPerChunk(
     int newClustersGenerated  = 0;
     int spikesReassigned      = 0;
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
         "[Stage 2.10] KnnSplitPerChunk: K=%d, minRefSize=%d, "
         "minSourceSize=%d, minNewClusterSize=%d\n",
         K, minRefSize, minSourceSize, minNewClusterSize);
 
-    #pragma omp parallel for schedule(dynamic) \
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) \
         reduction(+:chunksTotal,chunksProcessed,chunksSkippedNoRefs,chunksSkippedNoSrc, \
                     refClustersUsed,sourceClustersVisited,sourceClustersSplit, \
                     newClustersGenerated,spikesReassigned)
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         const auto& pts  = chunkPoints[ck];
         auto&       cls  = perChunkClass[ck];
         auto&       mdls = perChunkModels[ck];
@@ -2197,7 +2207,7 @@ void KK::KnnSplitPerChunk(
             mdls.end());
     }
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
         "[Stage 2.10] KnnSplitPerChunk: chunks=%d (processed=%d, "
         "skipped[no refs]=%d, skipped[no sources]=%d), "
         "ref clusters used=%d, source clusters visited=%d, "
@@ -2235,7 +2245,7 @@ void KK::WaveKnnSplitPerChunk(
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& perChunkModels,
     int nFullDims,
-    const std::map<int, std::vector<int>>* sourceAllowlist) {
+    const std::map<int, std::vector<int>>* sourceAllowlist, int onlyChunk) {
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
 
@@ -2244,7 +2254,7 @@ void KK::WaveKnnSplitPerChunk(
     // Phase 4b alternation iter (see m_phase4SplitCallCount doc).
     const unsigned callSalt = m_phase4SplitCallCount++;
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
         "[Stage 2.10] WaveKnnSplitPerChunk (klusters-faithful): "
         "K=%d majThr=%.2f minRefSize=%d minSourceSize=%d minNewClusterSize=%d\n",
         KnnSplitK, WaveKnnMajorityThreshold,
@@ -2272,13 +2282,15 @@ void KK::WaveKnnSplitPerChunk(
         (Phase2SplitTimeLimitSec > 0.0f) ? omp_get_wtime() + Phase2SplitTimeLimitSec : 0.0;
     std::atomic<bool> splitLimitHit{false};
 
-    #pragma omp parallel for schedule(dynamic) \
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) \
         reduction(+:chunksTotal,chunksCalled,chunksProcessed, \
                   totalSourcesConsidered,totalSourcesAnisoFiltered, \
                   totalSourcesSplit,totalNewClusters, \
                   totalResidualClusters,totalSpikesReassigned, \
                   totalSpikesResidual)
-    for (int ck = 0; ck < nCh; ++ck) {
+    for (int ck = _ckLo; ck < _ckHi; ++ck) {
         if (splitDeadline > 0.0 && omp_get_wtime() > splitDeadline) {
             splitLimitHit.store(true, std::memory_order_relaxed); continue;
         }
@@ -2559,7 +2571,7 @@ void KK::WaveKnnSplitPerChunk(
     if (splitLimitHit.load())
         LockedStderr("[Stage 2.10] WaveKnnSplitPerChunk: time limit (%.0fs) reached — "
                      "some chunks/clusters left unsplit\n", Phase2SplitTimeLimitSec);
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
         "[Stage 2.10] WaveKnnSplitPerChunk: chunks=%d (called=%d, with-splits=%d), "
         "sources visited=%d, aniso-filtered=%d, split=%d, new clusters=%d "
         "(of which residual=%d), spikes reassigned=%d, "
