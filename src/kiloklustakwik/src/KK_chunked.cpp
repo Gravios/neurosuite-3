@@ -4536,7 +4536,7 @@ void KK::PerClusterCEMPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& /*perChunkModels*/,
-    int nFullDims)
+    int nFullDims, int onlyChunk)
 {
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
@@ -4577,7 +4577,9 @@ void KK::PerClusterCEMPerChunk(
     };
     std::vector<WorkItem> items;
 
-    for (int ck = 0; ck < nCh; ck++) {
+    const int _ckLo = (onlyChunk >= 0) ? onlyChunk : 0;
+    const int _ckHi = (onlyChunk >= 0) ? onlyChunk + 1 : nCh;
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         const auto& cls = perChunkClass[ck];
         const auto& pts = chunkPoints[ck];
         if (pts.empty()) continue;
@@ -4653,7 +4655,7 @@ void KK::PerClusterCEMPerChunk(
         if (it.members.size() > maxSize) maxSize = it.members.size();
     }
 
-    LockedStderr(
+    if (onlyChunk < 0) LockedStderr(
             "[Stage 2.4] Per-cluster CEM: probing %d items (min size %d, "
             "max %zu, %d subdivided batches)\n",
             static_cast<int>(items.size()), minClusterSize,
@@ -4672,7 +4674,7 @@ void KK::PerClusterCEMPerChunk(
     int totalSplits        = 0;
     int totalNewSubClusters = 0;
 
-    #pragma omp parallel for schedule(dynamic) \
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) \
         reduction(+:totalSplits,totalNewSubClusters)
     for (int wi = 0; wi < static_cast<int>(items.size()); wi++) {
         const auto& item = items[static_cast<size_t>(wi)];
@@ -4843,7 +4845,7 @@ void KK::PerClusterCEMPerChunk(
 
     // ── Phase C: serial application — assign fresh local IDs ─────────
     std::vector<int> nextLc(nCh, 1);
-    for (int ck = 0; ck < nCh; ck++) {
+    for (int ck = _ckLo; ck < _ckHi; ck++) {
         int maxLc = 0;
         for (int c : perChunkClass[static_cast<size_t>(ck)])
             if (c > maxLc) maxLc = c;
@@ -6939,7 +6941,7 @@ void KK::ChunkReCEMPerChunk(
     const std::vector<std::vector<int>>& chunkPoints,
     std::vector<std::vector<int>>&        perChunkClass,
     std::vector<std::vector<ChunkModel>>& perChunkModels,
-    int nFullDims)
+    int nFullDims, int onlyChunk)
 {
     const int nCh = static_cast<int>(chunkPoints.size());
     if (nCh == 0) return;
@@ -6951,7 +6953,7 @@ void KK::ChunkReCEMPerChunk(
         case 3:  p2bDesc = "residual-PCA split iterations + post-loop normalised-xcorr realign (Klusters)"; break;
         default: p2bDesc = "warm-start from Phase-2a labels (CEM)";  break;
     }
-    LockedStderr( "[Stage 2.8] Chunk re-CEM (%s)\n", p2bDesc);
+    if (onlyChunk < 0) LockedStderr( "[Stage 2.8] Chunk re-CEM (%s)\n", p2bDesc);
 
     // ── LPT scheduling: sort chunks by descending expected work ─────────
     // Without this sort, with schedule(dynamic), heterogeneously-sized
@@ -6993,7 +6995,7 @@ void KK::ChunkReCEMPerChunk(
                 nMax = std::max(nMax, chunkPoints[static_cast<size_t>(ck)].size());
                 nMin = std::min(nMin, chunkPoints[static_cast<size_t>(ck)].size());
             }
-            LockedStderr(
+            if (onlyChunk < 0) LockedStderr(
                     "[Stage 2.8] LPT order: nChunks=%d, K range %d-%d, "
                     "N range %zu-%zu (heaviest first)\n",
                     nCh, kMin, kMax, nMin, nMax);
@@ -7011,10 +7013,11 @@ void KK::ChunkReCEMPerChunk(
     int totalChunksProcessed = 0;
     int totalDeltaClusters   = 0;
 
-    #pragma omp parallel for schedule(dynamic) \
+    #pragma omp parallel for if(onlyChunk < 0) schedule(dynamic) \
         reduction(+:totalChunksProcessed,totalDeltaClusters)
     for (int oi = 0; oi < nCh; oi++) {
         const int ck = chunkOrder[static_cast<size_t>(oi)];
+        if (onlyChunk >= 0 && ck != onlyChunk) continue;
         const auto& pts = chunkPoints[static_cast<size_t>(ck)];
         const int   nPts = static_cast<int>(pts.size());
         if (nPts == 0) continue;
