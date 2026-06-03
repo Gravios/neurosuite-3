@@ -227,3 +227,110 @@ void KK::FiberStagePerChunk(
     }
     std::fclose(resF);
 }
+
+// ── externs: standalone fiber-clustering configuration (KlustaKwik.cpp) ─────
+extern int   FiberStandaloneEnable;
+extern float FiberMSKappa;        // angular kernel concentration (von Mises-ish)
+extern float FiberMSDrFrac;       // in-band radius window = frac * (p99-p1 radius)
+extern float FiberMergeAngleDeg;  // trajectory-coherence merge threshold (deg)
+extern int   FiberMSSeeds;        // # random seeds for mean-shift
+extern int   FiberMinGroupSize;   // min spikes for a provisional group / fiber
+extern float ChunkMinutes;        // reused for uniform chunking when no ChunkFile
+
+// ── Standalone fiber clustering branch ──────────────────────────────────────
+// A self-contained alternative to the Phase 1-9 pipeline: per chunk it builds
+// the off-spike whitener, walks random seeds to fiber ridge centers via in-band
+// directional mean-shift, merges co-linear trajectories, and assigns by
+// whiteness residual + calibrated posterior.  Populates Class[] (1-based) so
+// main's SaveOutput() writes the .clu.  Cross-chunk drift tracking is a
+// separate stage (fibers get chunk-disjoint ids here).  Activated by
+// -FiberStandaloneEnable 1.
+float KK::RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float samplingRate)
+{
+    const int nsamp = NbSamplesPerSpike, nch = NbChannels, wElems = nsamp * nch;
+    const int masklo = 11, maskhi = 26, p = (maskhi - masklo) * nch;
+    if (GroupChannelIds.empty() || NbTotalChannels <= 0 || nch <= 0 || nsamp <= 0) {
+        Output("[FiberStandalone] missing dims / .fil channel map — abort\n"); return 0.0f;
+    }
+    char spkPath[STRLEN + 16]; pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
+    char filPath[STRLEN + 16]; std::snprintf(filPath, sizeof(filPath), "%s.fil", FileBase);
+    char resPath[STRLEN + 16]; std::snprintf(resPath, sizeof(resPath), "%s.res.%d", FileBase, ElecNo);
+    FILE* resF = std::fopen(resPath, "rb");
+    if (!resF) { Output("[FiberStandalone] %s unavailable — abort\n", resPath); return 0.0f; }
+    std::vector<long> absS(nPoints);
+    for (int i = 0; i < nPoints; ++i) { int64_t ts = 0; fseeko(resF, (off_t)i * 8, SEEK_SET);
+        if (std::fread(&ts, 8, 1, resF) != 1) ts = 0; absS[i] = (long)ts; }
+    std::fclose(resF);
+
+    // chunk assignment: provided bounds (sec) if any, else uniform by ChunkMinutes
+    const double sess = (double)timeRawMax - (double)timeRawMin;
+    std::vector<std::vector<int>> chunkPts;
+    if (chunkBoundsSec.size() >= 2) {
+        chunkPts.resize(chunkBoundsSec.size() - 1);
+        for (int i = 0; i < nPoints; ++i) { double tsec = ((double)absS[i] - (double)timeRawMin) / samplingRate;
+            int c = 0; while (c < (int)chunkPts.size() - 1 && tsec >= chunkBoundsSec[c + 1]) ++c; chunkPts[c].push_back(i); }
+    } else if (ChunkMinutes > 0 && sess > 0 && samplingRate > 0) {
+        double chunkSec = ChunkMinutes * 60.0; int nC = (int)std::ceil((sess / samplingRate) / chunkSec); if (nC < 1) nC = 1;
+        chunkPts.resize(nC);
+        for (int i = 0; i < nPoints; ++i) { double tsec = ((double)absS[i] - (double)timeRawMin) / samplingRate;
+            int c = (int)(tsec / chunkSec); if (c < 0) c = 0; if (c >= nC) c = nC - 1; chunkPts[c].push_back(i); }
+    } else { chunkPts.resize(1); for (int i = 0; i < nPoints; ++i) chunkPts[0].push_back(i); }
+
+    int fiberBase = 0;
+    for (size_t c = 0; c < chunkPts.size(); ++c) {
+        const auto& pts = chunkPts[c]; const int N = (int)pts.size();
+        if (N < FiberMinGroupSize * 2) { for (int i : pts) Class[i] = 1; continue; }
+
+        std::vector<double> waves((size_t)N * wElems);
+        { FILE* sp = std::fopen(spkPath, "rb"); if (!sp) { for (int i : pts) Class[i] = 1; continue; }
+          std::vector<int16_t> row(wElems);
+          for (int i = 0; i < N; ++i) { fseeko(sp, (off_t)pts[i] * wElems * 2, SEEK_SET);
+              if (std::fread(row.data(), 2, wElems, sp) != (size_t)wElems) for (int e=0;e<wElems;++e) row[e]=0;
+              for (int e = 0; e < wElems; ++e) waves[(size_t)i * wElems + e] = (double)row[e]; }
+          std::fclose(sp); }
+
+        long s0 = (1L << 62), s1 = 0; std::vector<long> a2(N);
+        for (int i = 0; i < N; ++i) { a2[i] = absS[pts[i]]; s0 = std::min(s0, a2[i]); s1 = std::max(s1, a2[i]); }
+        s0 = std::max(0L, s0 - nsamp); s1 = s1 + nsamp + 1;
+        std::vector<double> W, nm; int pp = 0;
+        if (!fiberChunkWhitener(filPath, NbTotalChannels, GroupChannelIds, s0, s1, a2, nsamp, masklo, maskhi, W, nm, pp)) {
+            for (int i : pts) Class[i] = 1; continue; }
+
+        std::vector<double> wg(waves); fiberstage::realign(wg, N, nsamp, nch);
+        std::vector<double> X; fiberstage::mask_whiten(wg, N, nsamp, nch, masklo, maskhi, nm, W, p, X);
+        std::vector<double> rad(N), dir((size_t)N * p);
+        for (int i = 0; i < N; ++i) { const double* Xi = &X[(size_t)i*p]; double nn=0; for (int j=0;j<p;j++) nn+=Xi[j]*Xi[j]; nn=std::sqrt(nn);
+            rad[i]=nn; for (int j=0;j<p;j++) dir[(size_t)i*p+j]=Xi[j]/(nn+1e-12); }
+        std::vector<double> rsort(rad); std::sort(rsort.begin(), rsort.end());
+        double dr = FiberMSDrFrac * (rsort[(int)(0.99*(N-1))] - rsort[(int)(0.01*(N-1))]);
+
+        // deterministic support + seed subsamples (RNG-free, reproducible)
+        int nsup = std::min(N, 20000), S = std::min(N, (int)FiberMSSeeds);
+        std::vector<double> dsup((size_t)nsup*p), rsup(nsup), ds((size_t)S*p), rs(S);
+        for (int j = 0; j < nsup; ++j) { int idx=(int)((long)j*N/nsup); rsup[j]=rad[idx]; for(int k=0;k<p;k++) dsup[(size_t)j*p+k]=dir[(size_t)idx*p+k]; }
+        for (int s = 0; s < S;    ++s) { int idx=(int)((long)s*N/S);    rs[s]=rad[idx];   for(int k=0;k<p;k++) ds[(size_t)s*p+k]=dir[(size_t)idx*p+k]; }
+        fiberstage::meanshift_inband(dsup.data(), rsup.data(), nsup, p, ds.data(), rs.data(), S, FiberMSKappa, dr, 15);
+        std::vector<double> cd, cr; fiberstage::dedupe_centers(ds.data(), rs.data(), S, p, 8.0, 0.12, cd, cr);
+        const int M = (int)cr.size(); if (M < 1) { for (int i : pts) Class[i] = 1; continue; }
+
+        std::vector<int> lab(N);
+        for (int i = 0; i < N; ++i) { const double* di=&dir[(size_t)i*p]; double best=-2; int bk=0;
+            for (int k=0;k<M;k++){ const double* ck=&cd[(size_t)k*p]; double cs=0; for(int j=0;j<p;j++) cs+=di[j]*ck[j]; if(cs>best){best=cs;bk=k;} } lab[i]=bk; }
+        std::vector<fiberstage::Traj> trajs(M);
+        for (int k = 0; k < M; ++k) { std::vector<int> idx; for (int i=0;i<N;i++) if (lab[i]==k) idx.push_back(i);
+            if ((int)idx.size() < FiberMinGroupSize) { trajs[k]=fiberstage::Traj(); continue; }
+            trajs[k]=fiberstage::trajectory(X, idx, p); }
+        std::vector<int> fmap = trajectoryCoherenceMerge(trajs, FiberMergeAngleDeg);
+        int nFib = 0; for (int v : fmap) nFib = std::max(nFib, v + 1); if (nFib < 1) { for (int i : pts) Class[i] = 1; continue; }
+        std::vector<int> seed(N); for (int i = 0; i < N; ++i) seed[i] = fmap[lab[i]];
+
+        fiberstage::Result R = fiberstage::consolidate(waves, N, nsamp, nch, masklo, maskhi, W, nm, p, seed, nFib);
+        for (int i = 0; i < N; ++i) Class[pts[i]] = fiberBase + R.hard[i] + 1;
+        fiberBase += nFib;
+        Output("[FiberStandalone] chunk %zu/%zu: %d spikes -> %d centers -> %d fibers\n",
+               c + 1, chunkPts.size(), N, M, nFib);
+    }
+    nClustersAlive = fiberBase; nStartingClusters = fiberBase;
+    Output("[FiberStandalone] done: %d fibers across %zu chunk(s)\n", fiberBase, chunkPts.size());
+    return (float)fiberBase;
+}

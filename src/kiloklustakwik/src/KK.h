@@ -517,6 +517,11 @@ public:
         int                                         nFullDims,
         const char*                                 stageTag = "Stage 2.12");
 
+    // Standalone fiber-clustering branch (bypasses Phase 1-9): per-chunk
+    // mean-shift ridge seeding + fiber consolidation; fills Class[].
+    // Activated by -FiberStandaloneEnable 1.  Impl in fiber_stage_kk.cpp.
+    float RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float samplingRate);
+
   
     float RunChunkedCEM(float chunkMinutes,
                         float samplingRate,

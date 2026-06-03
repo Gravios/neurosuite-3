@@ -360,6 +360,12 @@ float KlustersRealignRMin       = 0.40f; ///< RMS recenter: minimum mean-resulta
 // cross-chunk template matching handles consolidation.
 int   KnnSplitPerChunkEnable    = 0;
 int   FiberStageEnable          = 0;   ///< Stage 2.12 fiber consolidation; 1 = on (default off)
+int   FiberStandaloneEnable     = 0;   ///< standalone fiber-clustering branch (bypasses Phase 1-9)
+float FiberMSKappa              = 20.0f;///< mean-shift angular kernel concentration
+float FiberMSDrFrac             = 0.15f;///< in-band radius window = frac*(p99-p1 radius)
+float FiberMergeAngleDeg        = 20.0f;///< trajectory-coherence merge threshold (deg)
+int   FiberMSSeeds              = 800;  ///< # random seeds for ridge mean-shift
+int   FiberMinGroupSize         = 40;   ///< min spikes per provisional group / fiber
 int   KnnSplitK                 = 10;
 int   KnnSplitMinRefSize        = 50;
 int   KnnSplitMinSourceSize     = 20;
@@ -878,6 +884,12 @@ void SetupParams(int argc, char **argv) {
     FLOAT_PARAM(TimeShiftAlignScoreThresh);
     INT_PARAM(KnnSplitPerChunkEnable);
     INT_PARAM(FiberStageEnable);
+    INT_PARAM(FiberStandaloneEnable);
+    FLOAT_PARAM(FiberMSKappa);
+    FLOAT_PARAM(FiberMSDrFrac);
+    FLOAT_PARAM(FiberMergeAngleDeg);
+    INT_PARAM(FiberMSSeeds);
+    INT_PARAM(FiberMinGroupSize);
     INT_PARAM(KnnSplitK);
     INT_PARAM(KnnSplitMinRefSize);
     INT_PARAM(KnnSplitMinSourceSize);
@@ -2049,7 +2061,11 @@ int main(int argc, char **argv) {
                 kk_seed_rng(kk_mix_seed(static_cast<uint64_t>(RandomSeed), static_cast<uint64_t>(i)));
 
                     float score;
-                    if (useExtChunks)
+                    if (FiberStandaloneEnable)
+                        score = K1.RunFiberStandalone(
+                                    useExtChunks ? extChunkBoundsSec : std::vector<float>(),
+                                    SamplingRate);
+                    else if (useExtChunks)
                         score = K1.RunChunkedCEM(extChunkBoundsSec, SamplingRate,
                                                   MergeThresh, GlobalMergeIter,
                                                   TimeMergeIter);
