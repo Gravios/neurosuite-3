@@ -85,7 +85,7 @@ public:
     float ComputeScore() const;
     // Per-phase quality summary printed to stderr.  See ReportClusterQuality
     // implementation in KK.cpp for metric definitions.  `phaseLabel` is a
-    // short tag that appears in the log line, e.g. "Phase 1", "Phase 7".
+    // short tag that appears in the log line, e.g. "Stage 2.1", "Stage 3.2".
     void  ReportClusterQuality(const char* phaseLabel) const;
 
     // Phase 9 CCG refractory-dip merge (testing; -Phase9CCGMergeEnable 1).
@@ -388,7 +388,7 @@ public:
         std::vector<std::vector<int>>&        perChunkClass,
         std::vector<std::vector<ChunkModel>>& perChunkModels,
         int nFullDims,
-        const char* phaseLabel = "Phase 1b", int onlyChunk = -1);
+        const char* phaseLabel = "Stage 2.2", int onlyChunk = -1);
 
     // Phase 2a.6: k-NN-graph connected-components split.  Per-chunk,
     // per-cluster: build a k-NN graph in feature space, find connected
@@ -404,7 +404,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         int nFullDims,
-        const char* phaseLabel = "Phase 2a.6", int onlyChunk = -1);
+        const char* phaseLabel = "Stage 2.6", int onlyChunk = -1);
 
     // Phase 2a.7: per-channel amplitude+phase bimodality split.  Reads
     // full spike waveforms for each cluster, extracts 4 features per
@@ -422,7 +422,7 @@ public:
         const std::vector<std::vector<int>>& chunkPoints,
         std::vector<std::vector<int>>&        perChunkClass,
         int nChan, int nSamplesPerSpike,
-        const char* phaseLabel = "Phase 2a.7", int onlyChunk = -1);
+        const char* phaseLabel = "Stage 2.7", int onlyChunk = -1);
 
     // Per-phase cluster-state diagnostic.  Walks perChunkClass[] and
     // reports total distinct non-noise local IDs (summed across chunks),
