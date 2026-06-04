@@ -264,6 +264,16 @@ struct ChunkFiberResult {
 };
 static int ufFind(std::vector<int>& uf, int x){ while(uf[x]!=x){ uf[x]=uf[uf[x]]; x=uf[x]; } return x; }
 
+#ifdef USE_CUDA
+// GPU whiteness-assignment callback for consolidate(); gated, returns non-zero
+// to trigger the CPU fallback inside consolidate().
+static int fiberAssignGPU(const double* X,int N,int p,const double* grids,const int* gridLen,const int* gridOff,
+                          const double* Ds,const int* DOff,int nfib,double* res,int* hard){
+    if(!(FiberGPUEnable && p<=FIBER_GPU_MAXP && N>=256 && fiber_gpu_available())) return -1;
+    return fiber_gpu_assign(X,N,p,grids,gridLen,gridOff,Ds,DOff,nfib,res,hard);
+}
+#endif
+
 // ── per-chunk fiber clustering (thread-safe: opens its own file handles) ─────
 // GPU offload targets: meanshift_inband (seed x support matmuls) and the
 // whiteness assignment inside consolidate(); a CUDA backend replaces those,
@@ -320,7 +330,11 @@ static ChunkFiberResult clusterChunkFibers(
     std::vector<int> fmap=trajectoryCoherenceMerge(trajs,FiberMergeAngleDeg);
     int nFib=0; for(int v:fmap) nFib=std::max(nFib,v+1); if(nFib<1) return R;
     std::vector<int> seed(N); for(int i=0;i<N;i++) seed[i]=fmap[lab[i]];
-    fiberstage::Result CR=fiberstage::consolidate(waves,N,nsamp,nch,masklo,maskhi,W,nm,p,seed,nFib);
+    fiberstage::Result CR=fiberstage::consolidate(waves,N,nsamp,nch,masklo,maskhi,W,nm,p,seed,nFib,3
+#ifdef USE_CUDA
+        ,&fiberAssignGPU
+#endif
+        );
     R.nFib=nFib; for(int i=0;i<N;i++) R.extLab[i]=CR.hard[i];
     R.knot.assign(nFib,std::vector<double>()); std::vector<double> pr(p);
     for(int f=0;f<nFib;f++){

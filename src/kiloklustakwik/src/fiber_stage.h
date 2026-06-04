@@ -116,9 +116,16 @@ inline void predict(const Traj&T,double r,std::vector<double>&out){
 // Validated entry: per-fiber realign + whiteness assignment + per-energy temperature calibration.
 // `seed`[N] = provisional fiber id 0..nfib-1.  Returns hard labels + posterior confidence + cal_T.
 struct Result{ std::vector<int> hard; std::vector<float> conf; std::vector<double> calT, edges; };
+// Optional whiteness-assignment backend (GPU).  Receives Xall + the per-fiber
+// trajectories flattened into contiguous (grids,Ds) with per-fiber length/offset
+// tables; fills res[N*nfib] and hard[N].  Returns 0 on success, non-zero -> CPU.
+typedef int (*AssignFn)(const double* X,int N,int p,
+                        const double* grids,const int* gridLen,const int* gridOff,
+                        const double* Ds,const int* DOff,int nfib,
+                        double* res,int* hard);
 inline Result consolidate(const std::vector<double>&waves,int N,int nsamp,int nch,int masklo,int maskhi,
                           const std::vector<double>&W,const std::vector<double>&nmean,int p,
-                          const std::vector<int>&seed,int nfib,int nbands=3){
+                          const std::vector<int>&seed,int nfib,int nbands=3,AssignFn assignFn=nullptr){
     std::vector<Traj> trajs(nfib); std::vector<std::vector<int>> groups(nfib);
     std::vector<double> Xall((size_t)N*p,0.0);
     for(int i=0;i<N;i++) groups[seed[i]].push_back(i);
@@ -130,7 +137,18 @@ inline Result consolidate(const std::vector<double>&waves,int N,int nsamp,int nc
         std::vector<int> id(n);for(int i=0;i<n;i++)id[i]=i; trajs[g]=trajectory(Xg,id,p);
     }
     Result R; R.hard.resize(N); R.conf.resize(N); std::vector<double> res((size_t)N*nfib),rad(N),pr(p);
-    for(int i=0;i<N;i++){const double* Xi=&Xall[(size_t)i*p];double rr=0;for(int j=0;j<p;j++)rr+=Xi[j]*Xi[j];rr=std::sqrt(rr);rad[i]=rr;
+    for(int i=0;i<N;i++){const double* Xi=&Xall[(size_t)i*p];double rr=0;for(int j=0;j<p;j++)rr+=Xi[j]*Xi[j];rad[i]=std::sqrt(rr);}
+    bool assigned=false;
+    if(assignFn){   // GPU whiteness assignment: flatten trajectories, fill res + hard
+        std::vector<double> grids,Ds; std::vector<int> gLen(nfib),gOff(nfib),dOff(nfib);
+        for(int k=0;k<nfib;k++){ gOff[k]=(int)grids.size(); dOff[k]=(int)Ds.size(); gLen[k]=trajs[k].ng;
+            grids.insert(grids.end(),trajs[k].grid.begin(),trajs[k].grid.end());
+            Ds.insert(Ds.end(),trajs[k].D.begin(),trajs[k].D.end()); }
+        assigned=(assignFn(Xall.data(),N,p,grids.data(),gLen.data(),gOff.data(),Ds.data(),dOff.data(),nfib,
+                           res.data(),R.hard.data())==0);
+    }
+    if(!assigned)   // CPU fallback (unchanged numerics)
+    for(int i=0;i<N;i++){const double* Xi=&Xall[(size_t)i*p];double rr=rad[i];
         double best=1e300;int bk=0;
         for(int k=0;k<nfib;k++){predict(trajs[k],rr,pr);double s=0;for(int j=0;j<p;j++){double dd=Xi[j]-rr*pr[j];s+=dd*dd;}s=std::sqrt(s);res[(size_t)i*nfib+k]=s;if(s<best){best=s;bk=k;}}
         R.hard[i]=bk;
