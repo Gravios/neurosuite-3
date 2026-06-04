@@ -278,7 +278,7 @@ if(_CUDA_ACTIVE)
 
     # src/shiftprobe_cuda.cu is no longer compiled — see src/shiftprobe_disabled.cpp
     # for the rationale.
-    add_executable(KiloKlustaKwik ${_cpu_srcs} src/KK_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
+    add_executable(KiloKlustaKwik ${_cpu_srcs} src/KK_cuda.cu src/fiber_gpu_cuda.cu ${_xcorr_dir}/realign_xcorr_cuda.cu ${_headers})
     target_include_directories(KiloKlustaKwik PRIVATE "${_xcorr_dir}")
     target_compile_options(KiloKlustaKwik PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:

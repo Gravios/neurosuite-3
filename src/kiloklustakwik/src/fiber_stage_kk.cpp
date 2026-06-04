@@ -231,6 +231,7 @@ void KK::FiberStagePerChunk(
 // ── standalone fiber-clustering branch: config + parallel + cross-chunk ─────
 #include <unordered_map>
 #include <string>
+#include "fiber_gpu.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -301,8 +302,13 @@ static ChunkFiberResult clusterChunkFibers(
     std::vector<double> dsup((size_t)nsup*p),rsup(nsup),ds((size_t)S*p),rs(S);
     for(int j=0;j<nsup;j++){ int idx=(int)((long)j*N/nsup); rsup[j]=rad[idx]; for(int k=0;k<p;k++) dsup[(size_t)j*p+k]=dir[(size_t)idx*p+k]; }
     for(int s=0;s<S;s++){ int idx=(int)((long)s*N/S); rs[s]=rad[idx]; for(int k=0;k<p;k++) ds[(size_t)s*p+k]=dir[(size_t)idx*p+k]; }
-    // [GPU dispatch point] FiberGPUEnable -> CUDA mean-shift kernel; CPU path:
-    fiberstage::meanshift_inband(dsup.data(),rsup.data(),nsup,p,ds.data(),rs.data(),S,FiberMSKappa,dr,15);
+    bool gpuDone=false;
+#ifdef USE_CUDA
+    if(FiberGPUEnable && p<=FIBER_GPU_MAXP && S>=256 && fiber_gpu_available())
+        gpuDone = (fiber_gpu_meanshift(dsup.data(),rsup.data(),nsup,p,ds.data(),rs.data(),S,FiberMSKappa,dr,15)==0);
+#endif
+    if(!gpuDone)
+        fiberstage::meanshift_inband(dsup.data(),rsup.data(),nsup,p,ds.data(),rs.data(),S,FiberMSKappa,dr,15);
     std::vector<double> cd,cr; fiberstage::dedupe_centers(ds.data(),rs.data(),S,p,8.0,0.12,cd,cr);
     const int M=(int)cr.size(); if(M<1) return R;
     std::vector<int> lab(N);
@@ -424,7 +430,14 @@ float KK::RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float sam
 #ifdef _OPENMP
     if(FiberThreads>0) omp_set_num_threads(FiberThreads);
 #endif
-    if(FiberGPUEnable) Output("[FiberStandalone] GPU backend not built in this binary — using CPU (OpenMP)\n");
+    if(FiberGPUEnable){
+#ifdef USE_CUDA
+        Output(fiber_gpu_available()? "[FiberStandalone] CUDA mean-shift backend active\n"
+                                    : "[FiberStandalone] GPU requested but no CUDA device — CPU\n");
+#else
+        Output("[FiberStandalone] GPU requested but USE_CUDA not built — CPU (OpenMP)\n");
+#endif
+    }
     std::vector<ChunkFiberResult> res(nChunks);
     #pragma omp parallel for schedule(dynamic)
     for(int c=0;c<nChunks;c++)
