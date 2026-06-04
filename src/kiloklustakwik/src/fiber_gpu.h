@@ -33,6 +33,18 @@ int fiber_gpu_meanshift(const double* dsup, const double* rsup, int nsup, int p,
                         double* ds, double* rs, int S,
                         double kappa, double dr, int iters);
 
+// Whiteness-residual assignment; matches the CPU loop in fiberstage::consolidate.
+//   X[N*p]                              : whitened features (all spikes)
+//   grids[*], Ds[*]                     : per-fiber trajectories, flattened
+//   gridLen[nfib], gridOff[nfib]        : length / start of fiber k's grid in grids[]
+//   DOff[nfib]                          : start of fiber k's directions in Ds[]
+//   res[N*nfib] (out), hard[N] (out)    : residual matrix + argmin label
+// Returns 0 on success, non-zero on failure (caller falls back to CPU).
+int fiber_gpu_assign(const double* X, int N, int p,
+                     const double* grids, const int* gridLen, const int* gridOff,
+                     const double* Ds, const int* DOff, int nfib,
+                     double* res, int* hard);
+
 #ifdef __cplusplus
 }
 #endif
