@@ -46,7 +46,8 @@ ARGS=(
 
   # ===== PARALLELISM / GPU =====
   -FiberThreads                         0      # OpenMP threads for chunk loop (0 = all cores)
-  -FiberGPUEnable                       0      # 1 = try GPU kernels; not built yet -> logs + CPU fallback
+  -FiberGPUEnable                       0      # 1 = CUDA mean-shift kernel (built when USE_CUDA+nvcc);
+                                               #   probes device, falls back to CPU on absence/failure
 
   # ===== OUTPUT =====
   -Screen                               1
@@ -64,5 +65,7 @@ ARGS=(
 #
 # Status: cross-chunk warp validated in a synthetic-drift prototype only (not yet
 # on real adjacent chunks); the s(r) amplitude-rescale term is not in yet (knots
-# matched by index); GPU kernels are scaffold-only.  All tunable at runtime.
+# matched by index).  GPU: the mean-shift CUDA kernel is in (arithmetic audited
+# bit-exact vs CPU; needs a hardware smoke-test as nvcc was unavailable at dev
+# time); the whiteness-assignment kernel is the next offload.  All tunable at runtime.
 # -----------------------------------------------------------------------------
