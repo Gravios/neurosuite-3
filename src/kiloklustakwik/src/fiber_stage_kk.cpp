@@ -377,48 +377,29 @@ static void fiberXChunkLink(const std::vector<ChunkFiberResult>& C, int p, int n
     const int nC=(int)C.size();
     std::vector<int> base(nC,0); int tot=0; for(int c=0;c<nC;c++){ base[c]=tot; tot+=C[c].nFib; }
     std::vector<int> uf(std::max(1,tot)); for(int i=0;i<tot;i++) uf[i]=i;
-    const int L=std::max(2,std::min((int)FiberXChunkSubspaceDim,p));
-    std::vector<double> rows; int nrow=0;
-    for(const auto& cc:C) for(const auto& kv:cc.knot){ bool nz=false; for(double v:kv){ if(v!=0.0){nz=true;break;} } if(!nz) continue;
-        for(int kn=0;kn<nKnots;kn++){ for(int j=0;j<p;j++) rows.push_back(kv[(size_t)kn*p+j]); nrow++; } }
-    std::vector<double> basis,mean; if(nrow>=L) fiberstage::pca_basis(rows,nrow,p,L,basis,mean);
-    std::vector<std::vector<std::vector<double>>> P(nC);
-    for(int c=0;c<nC;c++){ P[c].resize(C[c].nFib);
-        for(int f=0;f<C[c].nFib;f++){ const auto& kv=C[c].knot[f]; std::vector<double>& o=P[c][f];
-            bool nz=false; for(double v:kv){ if(v!=0.0){nz=true;break;} }
-            if(basis.empty()||!nz){ o.clear(); continue; }
-            o.assign((size_t)nKnots*L,0.0); std::vector<double> t(L);
-            for(int kn=0;kn<nKnots;kn++){ fiberstage::pca_project_unit(&kv[(size_t)kn*p],basis,mean,p,L,t.data());
-                for(int m=0;m<L;m++) o[(size_t)kn*L+m]=t[m]; } } }
+    // ── overlap-anchor linking (drift-free) ─────────────────────────────────
+    // A spike in chunk c's right-overlap is the SAME physical spike in chunk
+    // c+1's left-overlap, so two fibers that claim the same overlap spikes are
+    // the same unit -- no warp needed.  Link fa<->fb iff they are each other's
+    // MAJORITY label over the shared overlap spikes with >= MinAnchors support
+    // (mutual-best: cannot mis-merge distinct units, cannot leave a persisting
+    // unit fragmented).  The PCA-knot warp machinery is intentionally unused.
+    (void)p; (void)nKnots;
+    const int minAnchor=std::max(1,(int)FiberXChunkMinAnchors); const double frac=0.5;
     for(int c=0;c+1<nC;c++){
         const int Ka=C[c].nFib, Kb=C[c+1].nFib; if(Ka<1||Kb<1) continue;
         std::unordered_map<int,int> labB;
         for(int i=0;i<(int)C[c+1].extId.size();i++) if(C[c+1].extLab[i]>=0) labB[C[c+1].extId[i]]=C[c+1].extLab[i];
-        std::vector<std::unordered_map<int,int>> co(Ka);
+        std::vector<std::unordered_map<int,int>> co(Ka), coB(Kb);
         for(int i=0;i<(int)C[c].extId.size();i++){ int la=C[c].extLab[i]; if(la<0) continue;
-            auto it=labB.find(C[c].extId[i]); if(it!=labB.end()) co[la][it->second]++; }
-        std::vector<std::pair<int,int>> anchors;
-        for(int fa=0;fa<Ka;fa++){ int bb=-1,bn=0; for(const auto& kv:co[fa]){ if(kv.second>bn){ bn=kv.second; bb=kv.first; } }
-            if(bb>=0 && bn>=2) anchors.push_back(std::make_pair(fa,bb)); }
-        const bool haveR = (int)anchors.size()>=FiberXChunkMinAnchors && !basis.empty();
-        std::vector<std::vector<double>> Rk(nKnots);
-        if(haveR) for(int t=0;t<nKnots;t++){
-            std::vector<double> Mm((size_t)L*L,0.0);
-            for(int dt=-1;dt<=1;dt++){ int tt=t+dt; if(tt<0||tt>=nKnots) continue; double wgt=(dt==0)?1.0:(double)FiberXChunkSmooth;
-                for(const auto& an:anchors){ if(P[c][an.first].empty()||P[c+1][an.second].empty()) continue;
-                    const double* a=&P[c][an.first][(size_t)tt*L]; const double* b=&P[c+1][an.second][(size_t)tt*L];
-                    for(int x=0;x<L;x++) for(int y=0;y<L;y++) Mm[(size_t)x*L+y]+=wgt*b[x]*a[y]; } }
-            fiberstage::procrustes_R(Mm,L,Rk[t]); }
-        const double gate2=(double)FiberXChunkGateRatio*(double)FiberXChunkGateRatio;
-        for(int fa=0;fa<Ka;fa++){ if(P[c][fa].empty()) continue;
-            double best=1e300,second=1e300; int bb=-1;
-            for(int fb=0;fb<Kb;fb++){ if(P[c+1][fb].empty()) continue; double dsum=0;
-                for(int t=0;t<nKnots;t++){ const double* a=&P[c][fa][(size_t)t*L]; const double* b=&P[c+1][fb][(size_t)t*L];
-                    if(haveR){ const std::vector<double>& Rt=Rk[t];
-                        for(int x=0;x<L;x++){ double ax=0; for(int y=0;y<L;y++) ax+=Rt[(size_t)x*L+y]*a[y]; double d=ax-b[x]; dsum+=d*d; } }
-                    else for(int x=0;x<L;x++){ double d=a[x]-b[x]; dsum+=d*d; } }
-                if(dsum<best){ second=best; best=dsum; bb=fb; } else if(dsum<second) second=dsum; }
-            if(bb>=0 && best<gate2*second){ int ra=ufFind(uf,base[c]+fa), rb=ufFind(uf,base[c+1]+bb); if(ra!=rb) uf[rb]=ra; } }
+            auto it=labB.find(C[c].extId[i]); if(it!=labB.end()){ int lb=it->second; co[la][lb]++; coB[lb][la]++; } }
+        for(int fa=0;fa<Ka;fa++){
+            int bb=-1,bn=0,totA=0; for(const auto& kv:co[fa]){ totA+=kv.second; if(kv.second>bn){ bn=kv.second; bb=kv.first; } }
+            if(bb<0 || bn<minAnchor || (double)bn<frac*totA) continue;          // fa's majority is bb
+            int fb2=-1,bn2=0,totB=0; for(const auto& kv:coB[bb]){ totB+=kv.second; if(kv.second>bn2){ bn2=kv.second; fb2=kv.first; } }
+            if(fb2!=fa || (double)bn2<frac*totB) continue;                       // mutual: bb's majority is fa
+            int ra=ufFind(uf,base[c]+fa), rb=ufFind(uf,base[c+1]+bb); if(ra!=rb) uf[rb]=ra;
+        }
     }
     std::unordered_map<int,int> gmap; int ng=0;
     globalId.assign(nC,std::vector<int>()); for(int c=0;c<nC;c++) globalId[c].assign(C[c].nFib,-1);
