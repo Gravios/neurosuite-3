@@ -250,6 +250,7 @@ extern int   FiberXChunkNKnots;       // energy knots for the warp field R(r)
 extern int   FiberXChunkMinAnchors;   // min overlap anchor pairs to fit R(r)
 extern float FiberXChunkGateRatio;    // accept link iff best < ratio*second
 extern float FiberXChunkSmooth;       // neighbour-knot pooling weight for R(r)
+extern int   MaxPossibleClusters;     // hard cap on cluster-id space (SaveOutput)
 extern int   FiberThreads;            // OpenMP threads for chunk loop (0 = default)
 extern int   FiberGPUEnable;          // 1 = try GPU kernels; falls back to CPU
 
@@ -465,8 +466,17 @@ float KK::RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float sam
     if(FiberXChunkEnable && nChunks>1) fiberXChunkLink(res,p,nKnots,globalId,nGlobal);
     else { globalId.assign(nChunks,std::vector<int>()); int t=0;
         for(int c=0;c<nChunks;c++){ globalId[c].assign(res[c].nFib,0); for(int f=0;f<res[c].nFib;f++) globalId[c][f]=t++; } nGlobal=t; }
+    // Cluster-id space: noise -> 0 (SaveOutput's noise bucket), fibers -> globalId+1.
+    // SaveOutput hard-caps ids at MaxPossibleClusters and routes anything >= it to
+    // noise, so a long session with many fibers must raise the cap or it silently
+    // dumps every high-id fiber.  RunFiberStandalone owns its output, so size it here.
+    if(nGlobal+1 > MaxPossibleClusters){
+        Output("[FiberStandalone] %d fibers exceed MaxPossibleClusters=%d; raising cap to %d\n",
+               nGlobal, MaxPossibleClusters, nGlobal+1);
+        MaxPossibleClusters = nGlobal+1;
+    }
     for(int i=0;i<nPoints;i++){ int c=coreChunk[i], l=coreLab[i];
-        Class[i]=(l>=0 && l<(int)globalId[c].size() && globalId[c][l]>=0) ? globalId[c][l]+2 : 1; }
+        Class[i]=(l>=0 && l<(int)globalId[c].size() && globalId[c][l]>=0) ? globalId[c][l]+1 : 0; }
     nClustersAlive=nGlobal+1; nStartingClusters=nGlobal+1;
     Output("[FiberStandalone] done: %d global fibers across %d chunk(s)%s\n",
         nGlobal,nChunks,(FiberXChunkEnable&&nChunks>1)?" (cross-chunk linked)":"");
