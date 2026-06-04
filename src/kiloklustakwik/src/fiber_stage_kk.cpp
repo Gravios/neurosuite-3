@@ -325,12 +325,26 @@ static ChunkFiberResult clusterChunkFibers(
     std::vector<int> lab(N);
     for(int i=0;i<N;i++){ const double* di=&dir[(size_t)i*p]; double best=-2; int bk=0;
         for(int k=0;k<M;k++){ const double* ck=&cd[(size_t)k*p]; double cs=0; for(int j=0;j<p;j++) cs+=di[j]*ck[j]; if(cs>best){best=cs;bk=k;} } lab[i]=bk; }
-    std::vector<fiberstage::Traj> trajs(M);
-    for(int k=0;k<M;k++){ std::vector<int> idx; for(int i=0;i<N;i++) if(lab[i]==k) idx.push_back(i);
+    // Keep only SUBSTANTIAL centers (>= FiberMinGroupSize spikes).  The mean-shift
+    // drops many seeds along each fiber's energy curve and on noise, so most dedup
+    // centers are tiny fragments (median ~12 spikes); emitting them is the
+    // over-segmentation that produced ~700 "fibers"/chunk.  Reassign every spike to
+    // its nearest substantial center, then consolidate over those.
+    std::vector<int> csize(M,0); for(int i=0;i<N;i++) csize[lab[i]]++;
+    std::vector<int> keep; for(int k=0;k<M;k++) if(csize[k]>=FiberMinGroupSize) keep.push_back(k);
+    if(keep.empty()) return R;
+    const int Msub=(int)keep.size();
+    std::vector<double> scd((size_t)Msub*p);
+    for(int m=0;m<Msub;m++) for(int j=0;j<p;j++) scd[(size_t)m*p+j]=cd[(size_t)keep[m]*p+j];
+    std::vector<int> lab2(N);
+    for(int i=0;i<N;i++){ const double* di=&dir[(size_t)i*p]; double best=-2; int bk=0;
+        for(int m=0;m<Msub;m++){ const double* ck=&scd[(size_t)m*p]; double cs=0; for(int j=0;j<p;j++) cs+=di[j]*ck[j]; if(cs>best){best=cs;bk=m;} } lab2[i]=bk; }
+    std::vector<fiberstage::Traj> trajs(Msub);
+    for(int k=0;k<Msub;k++){ std::vector<int> idx; for(int i=0;i<N;i++) if(lab2[i]==k) idx.push_back(i);
         if((int)idx.size()<FiberMinGroupSize){ trajs[k]=fiberstage::Traj(); continue; } trajs[k]=fiberstage::trajectory(X,idx,p); }
     std::vector<int> fmap=trajectoryCoherenceMerge(trajs,FiberMergeAngleDeg);
     int nFib=0; for(int v:fmap) nFib=std::max(nFib,v+1); if(nFib<1) return R;
-    std::vector<int> seed(N); for(int i=0;i<N;i++) seed[i]=fmap[lab[i]];
+    std::vector<int> seed(N); for(int i=0;i<N;i++) seed[i]=fmap[lab2[i]];
     fiberstage::Result CR=fiberstage::consolidate(waves,N,nsamp,nch,masklo,maskhi,W,nm,p,seed,nFib,3
 #ifdef USE_CUDA
         ,&fiberAssignGPU
