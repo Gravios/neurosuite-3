@@ -166,36 +166,50 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
             // geometry.  We avoid all column-count arithmetic because the
             // palette reflows freely when the window is resized, making any
             // cached count wrong.
-            //
-            // Strategy: among all items whose vertical centre is strictly
-            // above (goUp) or below (goDown) the centre of the current item,
-            // pick the one whose horizontal centre is closest to ours.  When
-            // there are ties on the closest-x axis (two items equally near our
-            // column), prefer the one whose top/bottom edge is nearest — i.e.
-            // the item in the immediately adjacent row.
             const QRect cur = visualRect(indexFromItem(c));
             const int   cx  = cur.center().x();
             const int   cy  = cur.center().y();
 
-            int bestRow  = -1;
-            int bestDx   = INT_MAX;   // horizontal distance to our column
-            int bestDy   = INT_MAX;   // vertical distance to adjacent row
+            // ROW-FIRST navigation.  The previous implementation chose the
+            // qualifying item with the smallest horizontal distance to our
+            // column, breaking ties by vertical distance.  Palette items are
+            // cluster-number labels of differing widths ("7" vs "1024") laid
+            // out on a fixed grid, so their visual-rect centres do NOT line up
+            // into tidy columns: an item several rows away can have a centre-x
+            // closer to ours than the item in the immediately adjacent row.
+            // Column-first selection therefore skipped over whole rows of
+            // clusters — the "jumps over many units" symptom.
+            //
+            // Fix: pick the *adjacent row* first (minimum vertical distance in
+            // the requested direction), then, within that row only, pick the
+            // item whose centre-x is nearest ours.  Up/Down now always moves
+            // exactly one row regardless of label-width-induced misalignment.
 
+            // Pass 1 — vertical distance to the nearest qualifying row.
+            int nearestDy = INT_MAX;
             for (int k = 0; k < count(); ++k) {
-                const QRect r = visualRect(model()->index(k, 0));
-                const int   ky = r.center().y();
-                const bool  qualifies = goDown ? (ky > cy) : (ky < cy);
-                if (!qualifies) continue;
+                const int ky = visualRect(model()->index(k, 0)).center().y();
+                if (goDown ? (ky <= cy) : (ky >= cy)) continue;
+                nearestDy = qMin(nearestDy, qAbs(ky - cy));
+            }
 
-                const int dx = qAbs(r.center().x() - cx);
-                const int dy = qAbs(ky - cy);
+            int bestRow = -1;
+            if (nearestDy != INT_MAX) {
+                // Items within half an item height of that nearest distance are
+                // "the next row".  Half the current item height sits well below
+                // the row pitch, so items two or more rows away are excluded
+                // even when row centres jitter slightly.
+                const int rowTol = qMax(cur.height() / 2, 4);
 
-                // Prefer smaller dx (same column); break ties by smaller dy
-                // (immediately adjacent row rather than two rows away).
-                if (dx < bestDx || (dx == bestDx && dy < bestDy)) {
-                    bestDx  = dx;
-                    bestDy  = dy;
-                    bestRow = k;
+                // Pass 2 — among the adjacent-row items, the nearest column.
+                int bestDx = INT_MAX;
+                for (int k = 0; k < count(); ++k) {
+                    const QRect r  = visualRect(model()->index(k, 0));
+                    const int   ky = r.center().y();
+                    if (goDown ? (ky <= cy) : (ky >= cy)) continue;
+                    if (qAbs(ky - cy) - nearestDy > rowTol) continue;
+                    const int dx = qAbs(r.center().x() - cx);
+                    if (dx < bestDx) { bestDx = dx; bestRow = k; }
                 }
             }
 
