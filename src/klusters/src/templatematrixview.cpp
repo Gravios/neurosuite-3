@@ -456,15 +456,26 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
                 p.drawRect(px+1, py+1, w-3, w-3);
                 p.setPen(Qt::NoPen);
             }
-
-            // Asymmetric selection: only the exact clicked cell (row=source, col=target)
-            if (clusterList[row] == selectedB && clusterList[col] == selectedA) {
-                QPen yp(Qt::yellow); yp.setWidth(3);
-                p.setPen(yp);
-                p.drawRect(px, py, w-1, w-1);
-                p.setPen(Qt::NoPen);
-            }
         }
+    }
+
+    // Edge-highlight every selected pair (multi-select via Ctrl-click), not
+    // just the most-recent one.  Each pair is stored as (rowSourceId,
+    // colTargetId); map back to grid indices and outline the cell.  Pairs
+    // whose cluster no longer exists are skipped.
+    if (!selectedPairs.isEmpty()) {
+        QPen yp(Qt::yellow); yp.setWidth(3);
+        p.setPen(yp);
+        p.setBrush(Qt::NoBrush);
+        for (const Pair& sp : selectedPairs) {
+            const int prow = clusterList.indexOf(sp.first);
+            const int pcol = clusterList.indexOf(sp.second);
+            if (prow < 0 || pcol < 0) continue;
+            const int hx = static_cast<int>(std::round(oriF.x() + pcol * eff));
+            const int hy = static_cast<int>(std::round(oriF.y() + prow * eff));
+            p.drawRect(hx, hy, w-1, w-1);
+        }
+        p.setPen(Qt::NoPen);
     }
 }
 
@@ -604,20 +615,41 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     const int cB = clusterList[row];  // source (row)
     if (cA == cB) return;
 
-    selectedA = cA;
-    selectedB = cB;
+    // Multi-select for the G-group workflow.  Ctrl-click toggles a pair in or
+    // out of selectedPairs (and the shown-cluster set the user then groups
+    // with G); a plain click replaces the selection with this one pair.
+    // selectedA/selectedB continue to track the most-recent pair for the
+    // threshold slider / Apply single-pair tool.
+    const Pair pair(cB, cA);  // (rowSourceId, colTargetId)
+    const QList<dataType> existing = doc.data().clusterIds();
+    const bool ctrl = (e->modifiers() & Qt::ControlModifier);
 
     QList<int> toShow;
-    const QList<dataType> existing = doc.data().clusterIds();
-    if (existing.contains(static_cast<dataType>(cA))) toShow.append(cA);
-    if (existing.contains(static_cast<dataType>(cB))) toShow.append(cB);
-    if (e->modifiers() & Qt::ControlModifier)
-        doc.addClustersToActiveView(toShow);
-    else
+    if (ctrl && selectedPairs.contains(pair)) {
+        // Toggle this pair off and rebuild the shown set from what remains.
+        selectedPairs.removeAll(pair);
+        for (const Pair& sp : selectedPairs) {
+            if (existing.contains(static_cast<dataType>(sp.first)))  toShow.append(sp.first);
+            if (existing.contains(static_cast<dataType>(sp.second))) toShow.append(sp.second);
+        }
         doc.shownClustersUpdate(toShow);
-
-    // Launch per-spike xcorr for this pair (uses cache if already computed)
-    launchPairXcorr(selectedB, selectedA);
+        selectedA = selectedB = -1;
+        applyButton->setEnabled(false);
+        countLabel->setText("");
+    } else {
+        if (!ctrl)
+            selectedPairs.clear();
+        if (!selectedPairs.contains(pair))
+            selectedPairs.append(pair);
+        if (existing.contains(static_cast<dataType>(cA))) toShow.append(cA);
+        if (existing.contains(static_cast<dataType>(cB))) toShow.append(cB);
+        if (ctrl) doc.addClustersToActiveView(toShow);
+        else      doc.shownClustersUpdate(toShow);
+        selectedA = cA;
+        selectedB = cB;
+        // Launch per-spike xcorr for this pair (uses cache if already computed)
+        launchPairXcorr(selectedB, selectedA);
+    }
 
     setFocus();
     update();
