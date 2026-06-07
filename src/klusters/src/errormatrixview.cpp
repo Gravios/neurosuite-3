@@ -360,6 +360,31 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         x = abscissaMin + widthBorder;
         y += cellWidth;
     }
+
+    // Edge-highlight every selected pair (not just the most recent one).  The
+    // cell layout mirrors the loop above: column = pair.first cluster (advances
+    // x), row = pair.second cluster (advances y), both 0-based offsets from the
+    // matrix origin.  A cosmetic pen keeps the outline a constant 2 px at any
+    // zoom level.  Pairs whose cluster no longer exists (id -1, or removed) are
+    // skipped.
+    if(!selectedPairs.isEmpty()){
+        const int baseX = abscissaMin + widthBorder;
+        const int baseY = ordinateMin + heightBorder;
+        QPen selPen(Qt::yellow);
+        selPen.setWidth(2);
+        selPen.setCosmetic(true);
+        painter.setPen(selPen);
+        painter.setBrush(Qt::NoBrush);
+        for(const Pair& selectedPair : selectedPairs){
+            const int col = clusterList.indexOf(selectedPair.first);
+            const int row = clusterList.indexOf(selectedPair.second);
+            if(col < 0 || row < 0)
+                continue;
+            painter.drawRect(baseX + col * cellWidth, baseY + row * cellWidth,
+                             cellWidth + 1, cellWidth + 1);
+        }
+        painter.setPen(Qt::black);
+    }
 }
 
 
