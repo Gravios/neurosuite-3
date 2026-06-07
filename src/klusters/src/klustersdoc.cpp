@@ -3554,21 +3554,29 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Load PCA eigenvectors (per-channel basis)
     // -----------------------------------------------------------------------
-    struct PcaBasis {
-        int  nCh=0, data2use=0, nComp=0, recShift=0;
-        bool centered = false;
-        std::vector<std::vector<double>> means;  // [ch][data2use]
-        std::vector<std::vector<double>> evec;   // [ch][data2use * nComp] col-major
-        bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
-    } pca;
+    PcaBasis pca;   // type defined in klustersdoc.h (member-cached below)
 
-    log << "PCA file: " << pcaPath
-        << (QFileInfo::exists(pcaPath) ? " [found]" : " [NOT FOUND]") << "\n";
+    const QFileInfo _pcaFi(pcaPath);
+    const bool      _pcaExists = _pcaFi.exists();
+    const qint64    _pcaMtime  = _pcaExists
+        ? _pcaFi.lastModified().toMSecsSinceEpoch() : -1;
+
     if (isStderivRealign && !QFileInfo::exists(pcaDPath_ra))
         log << "WARNING: stderiv PCA basis (.pca.stderiv/.pcaD) for group "
             << grpId << " not found — run ndm_pca_stderiv to generate it.\n";
-    emitFlush();
-    if (QFileInfo::exists(pcaPath)) {
+
+    if (_pcaExists && m_realignPcaCache.valid()
+        && m_realignPcaCachePath == pcaPath
+        && m_realignPcaCacheMtime == _pcaMtime) {
+        // Cache hit — reuse the basis loaded for an earlier cluster in the batch.
+        pca = m_realignPcaCache;
+        log << "PCA file: " << pcaPath << " [cached]\n";
+        emitFlush();
+    } else {
+        log << "PCA file: " << pcaPath
+            << (_pcaExists ? " [found]" : " [NOT FOUND]") << "\n";
+        emitFlush();
+        if (_pcaExists) {
         FILE* fp = fopen(pcaPath.toLocal8Bit().constData(), "rb");
         if (fp) {
             int32_t hdr[5] = {};
@@ -3620,6 +3628,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             }
             if (!ok) pca = PcaBasis{};
             fclose(fp);
+        }
+        }
+        if (pca.valid()) {
+            // Loaded fresh from disk — cache for the rest of the batch so the
+            // next cluster reuses it instead of re-reading the basis file.
+            m_realignPcaCache      = pca;
+            m_realignPcaCachePath  = pcaPath;
+            m_realignPcaCacheMtime = _pcaMtime;
         }
     }
 

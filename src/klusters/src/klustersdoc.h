@@ -1071,6 +1071,21 @@ private:
     
     /**The modified flag of the current document. */
     bool modified;
+
+    /** Cached PCA basis for realignSpikes.  A PCA-Center Align All batch shares
+     *  one group's basis, so it is read from .pca/.pcaD once and reused for every
+     *  cluster instead of re-read per call.  Keyed by path + mtime so it
+     *  self-invalidates if the basis file is regenerated. */
+    struct PcaBasis {
+        int  nCh=0, data2use=0, nComp=0, recShift=0;
+        bool centered = false;
+        std::vector<std::vector<double>> means;  // [ch][data2use]
+        std::vector<std::vector<double>> evec;   // [ch][data2use * nComp] col-major
+        bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
+    };
+    PcaBasis m_realignPcaCache;
+    QString  m_realignPcaCachePath;
+    qint64   m_realignPcaCacheMtime = -1;
     
     /**The url of the document.*/
     QString docUrl;
