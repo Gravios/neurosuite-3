@@ -64,6 +64,24 @@ if(NS_ZEN_OPT)
     target_compile_options(ns_fast_math INTERFACE
         $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-ffast-math>)
 endif()
+
+# ── Opt-in host-ISA target ────────────────────────────────────────────────────
+# -march=native (full host ISA: AVX2/FMA, AVX-512 on Zen 5).  Like ns_fast_math
+# it is NOT applied globally: it produces NON-PORTABLE binaries (they fault with
+# SIGILL on an older CPU), so only CPU-bound numeric tools with hand-written hot
+# loops opt in.  Linking it to a GUI/IO target buys nothing and forfeits
+# portability.  NOTE: -march=native unlocks FMA, so results are not bit-identical
+# to the SSE2 baseline (FMA contraction; usually MORE accurate).  For
+# bit-stability vs baseline add -ffp-contract=off at a small speed cost.  It does
+# NOT help tools whose math is in a precompiled library (GSL, libsamplerate,
+# cblas, fftw) — those must be rebuilt with the flag instead.
+if(NOT TARGET ns_native_arch)
+    add_library(ns_native_arch INTERFACE)
+endif()
+if(NS_ZEN_OPT)
+    target_compile_options(ns_native_arch INTERFACE
+        $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>)
+endif()
 # NaN/Inf-safe variant: if a kernel must keep NaN/Inf usable as sentinels while
 # still getting reassociation/vectorisation, link a target that adds
 # "-ffast-math -fno-finite-math-only" instead — -ffinite-math-only is the part
