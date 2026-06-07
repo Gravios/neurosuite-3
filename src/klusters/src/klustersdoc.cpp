@@ -5085,6 +5085,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             << " writeback=" << (_tot - _rtComputeMs) << "ms"
             << " total=" << _tot << "ms";
         emitFlush();
+        // Mirror to stderr so the line lands in the launching terminal too —
+        // far easier to redirect/capture than the in-app realign output panel
+        // (which is where the live log above goes).
+        fprintf(stderr,
+                "[timing] cluster %d: nspk=%lld setup=%lldms compute=%lldms "
+                "writeback=%lldms total=%lldms\n",
+                clusterId, (long long)N, (long long)_rtSetupMs,
+                (long long)(_rtComputeMs - _rtSetupMs),
+                (long long)(_tot - _rtComputeMs), (long long)_tot);
+        fflush(stderr);
     }
 
     return true;
