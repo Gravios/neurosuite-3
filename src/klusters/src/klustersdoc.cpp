@@ -11,6 +11,7 @@
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
 #endif
+#include <QElapsedTimer>    // opt-in per-phase realign timing
 /***************************************************************************
                           klustersdoc.cpp  -  description
                              -------------------
@@ -3398,6 +3399,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         }
     };
 
+    // Per-phase wall-clock timing, opt-in via NS3_REALIGN_TIMING=1.  Emits one
+    // line per cluster (setup / compute / writeback / total) so a batch can be
+    // checked for which phase grows with cluster index.  No-op (one cheap
+    // elapsed() pair) when the env var is unset.
+    const bool _timing = qEnvironmentVariableIsSet("NS3_REALIGN_TIMING");
+    QElapsedTimer _rtmr; _rtmr.start();
+    qint64 _rtSetupMs = 0, _rtComputeMs = 0;
+
     const Data& d         = data();
     const int   nChan     = d.nbOfChannels();
     const int   nSamp     = d.nbSamplesPerWaveform();
@@ -4013,6 +4022,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             //
             // Returns true when the GPU path completed; otherwise we fall
             // through to the CPU loop unchanged.
+            _rtSetupMs = _rtmr.elapsed();
             bool gpuPathRan = false;
             do {
                 if (!PcaRefineGpu::hasGpu()) break;
@@ -4370,6 +4380,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 }
             }  // if (!gpuPathRan)
             fclose(filFp82);
+            _rtComputeMs = _rtmr.elapsed();
 
             log << "  PCA-refine: " << nRefined
                 << " spike(s) refined";
@@ -5048,6 +5059,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
     // Log the cluster after realignment — features and timestamps have been updated
     logAfter(QList<int>{ clusterId });
+
+    if (_timing) {
+        const qint64 _tot = _rtmr.elapsed();
+        log << "[timing] cluster " << clusterId
+            << ": setup=" << _rtSetupMs << "ms"
+            << " compute=" << (_rtComputeMs - _rtSetupMs) << "ms"
+            << " writeback=" << (_tot - _rtComputeMs) << "ms"
+            << " total=" << _tot << "ms";
+        emitFlush();
+    }
 
     return true;
 }
