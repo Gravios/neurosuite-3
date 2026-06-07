@@ -74,9 +74,19 @@ O(spikes moved) edits and delta-based O(moved) undo/redo, plus a standalone test
 (randomised equivalence vs an independent reference, invariant checks,
 undo-depth trimming, and an O(moved)-vs-O(N) perf demonstration: ~50× at 5M
 spikes vs a conservative full-copy baseline).  Built alongside the existing
-model; integration into `Data` (replacing the table, a 2D selection grid, and
-the reader-thread concurrency rework the in-place model requires) is deferred to
-the real build, where it must be validated for bit-identical `.clu` output.
+model; integration into `Data` (replacing the table and the reader-thread
+concurrency rework the in-place model requires) is deferred to the real build,
+where it must be validated for bit-identical `.clu` output.
+
+A companion `SelectionGrid2D` (also header-only, Qt-free, with a standalone
+test) addresses the *other* half of reassignment latency — the O(spikes-in-
+edited-clusters) region-test scan that identifies which spikes a lasso selects.
+It is a uniform grid over the displayed 2D projection (rebuilt only when the
+dimension pair changes) that tests only points in cells overlapping the polygon
+bounding box; the test validates it returns exactly the brute-force result over
+300 random polygons and shows a ~77× query speedup for a small lasso over 2M
+points.  Predicate parity with `QRegion::contains` is a wiring-time concern,
+documented in-header.
 
 ---
 
