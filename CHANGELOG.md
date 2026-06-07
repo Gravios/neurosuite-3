@@ -171,6 +171,19 @@ CUDA/SYCL/ExternalProject flag lists, so they stay native even under
 `NS_NATIVE_ARCH=OFF` — redundant now that native is global, to be cleaned up for
 full portable-build consistency.
 
+**Build — GPU-backend detection deduplicated.**  The CUDA architecture list, the
+oneAPI/icpx search hints, the nvcc location search, and the pre-`project()` icpx
+compiler auto-selection were duplicated between the monorepo top-level and the
+kiloklustakwik subproject.  Factored into a new `cmake/GpuBackends.cmake` module
+(`ns_gpu_find_cuda_compiler`, `ns_gpu_select_cuda_arch`,
+`ns_gpu_select_sycl_compiler` + `NS_GPU_CUDA_ARCH_FALLBACK`, `NS_GPU_SYCL_HINTS`);
+the two consumers shed ~110 net lines, with the logic extracted verbatim so
+behaviour is unchanged.  klusters intentionally keeps its inline detection so it
+remains buildable standalone against an installed libklustersshared rather than
+taking a repo-layout dependency.  The GPU-enabled probe branches (nvcc found,
+native-arch, icpx compiler switch) are not exercised in a toolkit-less sandbox
+and should be verified on a GPU toolchain.
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
