@@ -29,6 +29,7 @@
 #include "data.h"
 #include "sortabletable.h"
 #include "configuration.h"
+#include "templatematrixthread.h"   // tmReadSpikeFloat
 
 #include <QApplication>
 #include <QCheckBox>
@@ -165,8 +166,6 @@ QList<MergeGroup> computeProposals(
                           ? settings.maxShift
                           : std::max(1, nSamp / 4);
     const bool   pearson  = configuration().getTemplateXcorrPearson();
-    const bool   twoBytes = data.isRecordingTwoBytes();
-    const int    sBytes   = twoBytes ? 2 : 4;
     const QString spkPath = data.getSpkFileName();
     if (spkPath.isEmpty() || nPts <= 0) return result;
 
@@ -233,65 +232,34 @@ QList<MergeGroup> computeProposals(
         // Median mode keeps every spike's wave; mean mode keeps only a
         // running sum.  Channel-major output ([ch*nSamp+sm]) matches the
         // KKE meanWav layout so the same xcorr formula works.
-        // int32 (not int16) so 32-bit recordings (isTwoBytesRecording==false)
-        // are not truncated; covers the int16 case exactly too.  Mean mode uses
-        // a double accumulator, so this keeps median and mean modes consistent.
-        std::vector<std::vector<int32_t>> spikeWavs;
-        std::vector<double>               sumAcc(static_cast<size_t>(nPts), 0.0);
-        std::vector<uint8_t>              okRow;  // median mode only
+        // Per-spike waveforms (median mode) are stored as float, matching the
+        // shared reader; mean mode accumulates into a double.  The .spk is int16
+        // on disk so float is exact, and median/mean stay consistent.
+        std::vector<std::vector<float>> spikeWavs;
+        std::vector<double>             sumAcc(static_cast<size_t>(nPts), 0.0);
+        std::vector<uint8_t>            okRow;  // median mode only
         if (useMedian) {
             spikeWavs.assign(static_cast<size_t>(M),
-                             std::vector<int32_t>(static_cast<size_t>(nPts), 0));
+                             std::vector<float>(static_cast<size_t>(nPts), 0.0f));
             okRow.assign(static_cast<size_t>(M), 0);
         }
 
-        std::vector<int16_t> buf16(static_cast<size_t>(nPts));
-        std::vector<int32_t> buf32(static_cast<size_t>(nPts));
+        std::vector<int16_t> raw;
+        std::vector<float>   sp;
         long valid = 0;
         for (int i = 0; i < M; ++i) {
             const int s = readSpikes[static_cast<size_t>(i)];
-            const off_t off = static_cast<off_t>(fidx[static_cast<size_t>(s)])
-                            * static_cast<off_t>(nPts)
-                            * static_cast<off_t>(sBytes);
-            if (fseeko(spk, off, SEEK_SET) != 0) continue;
-            bool ok = false;
-            if (twoBytes) {
-                ok = (std::fread(buf16.data(), 2,
-                                 static_cast<size_t>(nPts), spk)
-                      == static_cast<size_t>(nPts));
-                if (ok) {
-                    for (int ch = 0; ch < nChan; ++ch)
-                        for (int sm = 0; sm < nSamp; ++sm) {
-                            const int p = ch*nSamp + sm;
-                            const int16_t v =
-                                buf16[static_cast<size_t>(sm*nChan + ch)];
-                            if (useMedian)
-                                spikeWavs[static_cast<size_t>(i)][static_cast<size_t>(p)] = v;
-                            else
-                                sumAcc[static_cast<size_t>(p)] += v;
-                        }
-                }
+            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
+                                  nChan, nSamp, raw, sp))
+                continue;
+            if (useMedian) {
+                spikeWavs[static_cast<size_t>(i)] = sp;
+                okRow[static_cast<size_t>(i)] = 1;
             } else {
-                ok = (std::fread(buf32.data(), 4,
-                                 static_cast<size_t>(nPts), spk)
-                      == static_cast<size_t>(nPts));
-                if (ok) {
-                    for (int ch = 0; ch < nChan; ++ch)
-                        for (int sm = 0; sm < nSamp; ++sm) {
-                            const int p = ch*nSamp + sm;
-                            const int32_t v =
-                                buf32[static_cast<size_t>(sm*nChan + ch)];
-                            if (useMedian)
-                                spikeWavs[static_cast<size_t>(i)][static_cast<size_t>(p)] = v;
-                            else
-                                sumAcc[static_cast<size_t>(p)] += v;
-                        }
-                }
+                for (int p = 0; p < nPts; ++p)
+                    sumAcc[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
             }
-            if (ok) {
-                ++valid;
-                if (useMedian) okRow[static_cast<size_t>(i)] = 1;
-            }
+            ++valid;
         }
         std::fclose(spk);
         if (valid < 1) continue;
@@ -299,7 +267,7 @@ QList<MergeGroup> computeProposals(
         std::vector<float> tmpl(static_cast<size_t>(nPts), 0.0f);
         if (useMedian) {
             // Per-element median across the rows that read successfully.
-            std::vector<int32_t> col(static_cast<size_t>(valid));
+            std::vector<float> col(static_cast<size_t>(valid));
             for (int p = 0; p < nPts; ++p) {
                 size_t j = 0;
                 for (int i = 0; i < M; ++i)
@@ -309,8 +277,7 @@ QList<MergeGroup> computeProposals(
                 std::nth_element(col.begin(),
                                  col.begin() + valid/2,
                                  col.begin() + valid);
-                tmpl[static_cast<size_t>(p)] =
-                    static_cast<float>(col[static_cast<size_t>(valid/2)]);
+                tmpl[static_cast<size_t>(p)] = col[static_cast<size_t>(valid/2)];
             }
         } else {
             for (int p = 0; p < nPts; ++p)
