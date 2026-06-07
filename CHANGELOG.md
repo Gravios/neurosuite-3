@@ -290,6 +290,22 @@ mode (which sums into a `double`).  The buffer is now int32 — exact for both t
 int16 and int32 read paths — with the median collection vector widened to match;
 median-mode memory for the subsampled spikes doubles, bounded by `medianK·nPts`.
 
+**Klusters — shared `.spk` reader; analysis path committed to int16 (Design A).**
+The three template/xcorr consumers (TemplateMatrixThread, PairXcorrThread,
+auto-merge) each had their own copy of the spike read: `fseeko` + `fread` + a
+2-vs-4-byte branch on `isRecordingTwoBytes()` + sample-major→channel-major
+de-interleave.  The whole ndmanager-plugins extractor family writes `.spk`/`.spkD`
+as int16 regardless of acquisition `nBits` (and the `.fil`/`.dat` inputs are
+int16 too), so the 4-byte branch was dead for any data the toolchain produces —
+and for a nominally-32-bit session it would have misread the int16 `.spk`.
+Replaced the three copies with one `tmReadSpikeFloat()` that reads int16 and
+returns a channel-major float buffer; the de-interleave indexing is verbatim, so
+for real (int16) data the result is byte-identical.  The median-mode buffer that
+the truncation fix had widened to int32 is now float (exact for int16, consistent
+with mean mode).  This is the analysis-side of "cast at the I/O boundary"; the
+core load path (`Data::loadClusters` sizing, `WaveformData<long>`) still branches
+on `nBits` and is a separate, higher-blast-radius change.
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
