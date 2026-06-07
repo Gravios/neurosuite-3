@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPainter>
+#include <QImage>
 #include <QEvent>
 #include <QFont>
 #include <QKeyEvent>
@@ -435,28 +436,50 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
         p.setPen(Qt::NoPen);
     }
 
-    for (int row = 0; row < n; ++row) {
-        for (int col = 0; col < n; ++col) {
-            const int px = static_cast<int>(std::round(oriF.x() + col * eff));
-            const int py = static_cast<int>(std::round(oriF.y() + row * eff));
+    if (n > 0) {
+        // One indexed image (pixel per cell) blitted once, instead of n*n
+        // fillRect() calls (~9M at 3000 clusters) every paint — same change as
+        // ErrorMatrixView.  Colour computation is unchanged.
+        QImage img(n, n, QImage::Format_Indexed8);
+        QList<QRgb> table;
+        table.reserve(NB_COLORS + 1);
+        for (int i = 0; i < NB_COLORS; ++i) table.append(colorMap[i].rgb());
+        const int blackIdx = NB_COLORS;                 // diagonal
+        table.append(qRgb(0, 0, 0));
+        img.setColorTable(table);
 
-            if (row == col) {
-                p.fillRect(px, py, w, w, Qt::black);
-                continue;
-            }
-
-            const double sc = (*scores)(row+1, col+1);
-            int idx = static_cast<int>(sc * (NB_COLORS-1) + 0.5);
-            idx = std::max(0, std::min(NB_COLORS-1, idx));
-            p.fillRect(px, py, w, w, colorMap[idx]);
-
-            if (sc >= currentThreshold) {
-                QPen wp(Qt::white); wp.setWidth(2);
-                p.setPen(wp);
-                p.drawRect(px+1, py+1, w-3, w-3);
-                p.setPen(Qt::NoPen);
+        for (int row = 0; row < n; ++row) {
+            uchar* line = img.scanLine(row);
+            for (int col = 0; col < n; ++col) {
+                if (row == col) { line[col] = static_cast<uchar>(blackIdx); continue; }
+                const double sc = (*scores)(row+1, col+1);
+                int idx = static_cast<int>(sc * (NB_COLORS-1) + 0.5);
+                idx = std::max(0, std::min(NB_COLORS-1, idx));
+                line[col] = static_cast<uchar>(idx);
             }
         }
+
+        const bool prevSmooth = p.testRenderHint(QPainter::SmoothPixmapTransform);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, false);   // crisp cells
+        p.drawImage(QRectF(oriF.x(), oriF.y(), n * eff, n * eff), img);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
+
+        // Threshold outlines drawn over the image — the n*n scan is cheap (score
+        // read + compare); only cells at/above threshold issue a drawRect.
+        QPen wp(Qt::white); wp.setWidth(2);
+        p.setPen(wp);
+        p.setBrush(Qt::NoBrush);
+        for (int row = 0; row < n; ++row) {
+            for (int col = 0; col < n; ++col) {
+                if (row == col) continue;
+                if ((*scores)(row+1, col+1) >= currentThreshold) {
+                    const int px = static_cast<int>(std::round(oriF.x() + col * eff));
+                    const int py = static_cast<int>(std::round(oriF.y() + row * eff));
+                    p.drawRect(px+1, py+1, w-3, w-3);
+                }
+            }
+        }
+        p.setPen(Qt::NoPen);
     }
 
     // Edge-highlight every selected pair (multi-select via Ctrl-click), not
