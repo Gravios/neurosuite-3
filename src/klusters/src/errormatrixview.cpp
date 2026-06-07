@@ -553,9 +553,21 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
     const float factor = (delta > 0) ? m_wheelZoomStep : (1.0f / m_wheelZoomStep);
+    // World point under the cursor.  We want it to stay under the cursor after
+    // the zoom (zoom-around-cursor), not jump to the view centre.  ZoomWindow::
+    // zoom(factor, c) re-centres the window on c and scales its size by 1/factor,
+    // so the centre that keeps the pivot fixed is
+    //     cNew = pivot - (1/factor) * (pivot - cOld).
+    // (Passing pivot directly as the centre — the old behaviour — recentred the
+    // view on the cursor, making the content jump on every notch.)
     const QPoint pivot = viewportToWorld(e->position().toPoint().x() - 15,
                                          e->position().toPoint().y());
-    if(window.zoom(factor, pivot)){
+    const QPoint cOld  = static_cast<QRect>(window).center();
+    const float  zf    = 1.0f / factor;
+    const QPoint cNew(
+        qRound(static_cast<float>(pivot.x()) - zf * (pivot.x() - cOld.x())),
+        qRound(static_cast<float>(pivot.y()) - zf * (pivot.y() - cOld.y())));
+    if(window.zoom(factor, cNew)){
         drawContentsMode = REDRAW;
         update();
     }
