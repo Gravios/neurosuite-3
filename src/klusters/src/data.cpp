@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <QThread>
 /***************************************************************************
                           data.cpp  -  description
@@ -1093,17 +1094,31 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
     if(undoRedoInProcess || clusterZeroJustModified) return;
 
     //The mutex protects spikesByCluster and clusterInfoMap so that only one thread can
-    //access them at the time.
+    //access them at the time.  Both the spike table AND the cluster map are
+    //snapshotted here, under the lock, and the long scan below reads ONLY the
+    //snapshots.  This matters because the GUI thread can replace the live
+    //spikesByCluster / clusterInfoMap pointers (prepareUndo on a cluster
+    //reassignment, or undo / redo) while this scan is running.  The previous
+    //code snapshotted the spike table into a block-scoped local that was
+    //destroyed immediately, then read the live (*spikesByCluster) in the inner
+    //loop using offsets taken from the clusterInfoMap snapshot — so after a
+    //concurrent pointer swap the offsets and the data came from different
+    //tables, giving a stale result or an out-of-bounds read (the swapped-in
+    //table generally has a different size/layout).  The undoRedoInProcess /
+    //clusterZeroJustModified early-returns only narrow that window; they are
+    //never checked inside the per-spike loop, which is long for a high-rate
+    //cluster.  Reading a private copy closes the race regardless of timing.
     ClusterInfoMap clusterInfoMapTemp;
     ClusterInfoMap::Iterator iterator;
+    std::unique_ptr<SortableTable> spikesSnapshot;
     {
         QMutexLocker lk(&mutex);
-    SortableTable spikesByClusterTemp(*spikesByCluster);
-
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
-        clusterInfoMapTemp.insert(iterator.key(),iterator.value());
+        spikesSnapshot = std::make_unique<SortableTable>(*spikesByCluster);
+        for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
+            clusterInfoMapTemp.insert(iterator.key(),iterator.value());
+        }
     }
-    }
+    const SortableTable& spikesByClusterTemp = *spikesSnapshot;
 
     Array<dataType> dimensionMaximaTemp(nbDimensions,1);
     Array<dataType> dimensionMinimaTemp(nbDimensions,1);
@@ -1147,7 +1162,7 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
             dataType lastPosition =  firstSpikePosition + nbSpikesOfCluster;
 
             for(dataType i = firstSpikePosition; i < (lastPosition);++i){
-                dataType spikePosition = (*spikesByCluster)(1,i);
+                dataType spikePosition = spikesByClusterTemp(1,i);
                 dataType currentSpike = features(spikePosition,dimension);
 
                 if(currentSpike < min){
