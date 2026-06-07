@@ -5,7 +5,13 @@
 #   macOS/Homebrew: brew install hdf5
 #   Windows/vcpkg: vcpkg install hdf5
 
-find_package(HDF5 REQUIRED COMPONENTS C)
+find_package(HDF5 QUIET COMPONENTS C)
+if(NOT HDF5_FOUND)
+    message(STATUS "process_aomconvert: HDF5 (C API) not found — skipping this plugin. "
+                   "Install libhdf5-dev (apt) / hdf5 (brew) / hdf5 (vcpkg) to enable "
+                   "AlphaOmega .mat → .dat/.yaml conversion.")
+    return()
+endif()
 
 add_executable(process_aomconvert process_aomconvert.cpp)
 
