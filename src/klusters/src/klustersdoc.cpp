@@ -5079,7 +5079,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     if (_timing) {
         const qint64 _tot = _rtmr.elapsed();
         log << "[timing] cluster " << clusterId
-            << ": setup=" << _rtSetupMs << "ms"
+            << ": nspk=" << N
+            << " setup=" << _rtSetupMs << "ms"
             << " compute=" << (_rtComputeMs - _rtSetupMs) << "ms"
             << " writeback=" << (_tot - _rtComputeMs) << "ms"
             << " total=" << _tot << "ms";
