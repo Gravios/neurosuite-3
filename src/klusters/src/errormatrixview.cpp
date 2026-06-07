@@ -351,22 +351,48 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         if(idx >= 0 && idx <= nbClusters + 1)
             ignored[static_cast<size_t>(idx)] = 1;
 
-    for(int clusterIndex = 1; clusterIndex <= nbClusters; ++clusterIndex){
-        for(int clusterIndex2 = 1; clusterIndex2 <= nbClusters; ++clusterIndex2){
-            if((clusterIndex == clusterIndex2) || ignored[static_cast<size_t>(clusterIndex)] || ignored[static_cast<size_t>(clusterIndex2)]){
-                painter.setBrush(Qt::black);
-            } else {
-                double probability = (*probabilities)(clusterIndex,clusterIndex2);
-                int probColorIndex = static_cast<int>(probability * nbColors / cutoffProbability);
-                if(probColorIndex >= nbColors)
-                    probColorIndex = nbColors - 1;
-                painter.setBrush(colorMap[probColorIndex]);
+    // Render the matrix as a single indexed image — one pixel per cell — then
+    // blit it scaled to the matrix's world rect.  The previous per-cell
+    // painter.drawRect() issued nbClusters^2 calls (≈9M at 3000 clusters) on
+    // every REDRAW, i.e. on every pan move and zoom notch; filling an 8-bit
+    // image by scanline and drawing it once replaces millions of QPainter calls
+    // with plain buffer writes.  Colour computation is unchanged (same colorMap
+    // index, same diagonal/ignored -> black).
+    if(nbClusters > 0){
+        QImage matrixImg(nbClusters, nbClusters, QImage::Format_Indexed8);
+        QList<QRgb> table;
+        table.reserve(nbColors + 1);
+        for(int i = 0; i < nbColors; ++i) table.append(colorMap[i].rgb());
+        const int blackIdx = nbColors;                 // diagonal / ignored
+        table.append(qRgb(0, 0, 0));
+        matrixImg.setColorTable(table);
+
+        for(int r = 0; r < nbClusters; ++r){            // row = clusterIndex
+            const int ci = r + 1;
+            const bool ciIgnored = ignored[static_cast<size_t>(ci)];
+            uchar* line = matrixImg.scanLine(r);
+            for(int c = 0; c < nbClusters; ++c){        // col = clusterIndex2
+                const int ci2 = c + 1;
+                if(ci == ci2 || ciIgnored || ignored[static_cast<size_t>(ci2)]){
+                    line[c] = static_cast<uchar>(blackIdx);
+                } else {
+                    int probColorIndex = static_cast<int>(
+                        (*probabilities)(ci, ci2) * nbColors / cutoffProbability);
+                    if(probColorIndex >= nbColors) probColorIndex = nbColors - 1;
+                    line[c] = static_cast<uchar>(probColorIndex);
+                }
             }
-            painter.drawRect(x,y,cellWidth + 1,cellWidth + 1);
-            x += cellWidth;
         }
-        x = abscissaMin + widthBorder;
-        y += cellWidth;
+
+        const bool prevSmooth =
+            painter.testRenderHint(QPainter::SmoothPixmapTransform);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, false); // crisp cells
+        painter.drawImage(QRect(abscissaMin + widthBorder,
+                                ordinateMin + heightBorder,
+                                nbClusters * cellWidth,
+                                nbClusters * cellWidth),
+                          matrixImg);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
     }
 
     // Edge-highlight every selected pair (not just the most recent one).  The
