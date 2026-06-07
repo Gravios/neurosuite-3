@@ -1,6 +1,7 @@
 #include "pairxcorrthread.h"
 #include "templatematrixview.h"
 #include "templatematrixthread.h"   // for tmNormXcorr
+#include "configuration.h"
 
 #include <QApplication>
 #include <cmath>
@@ -14,6 +15,7 @@ void PairXcorrThread::run()
     const int nPts   = m_nChan * m_nSamp;
     const int sBytes = m_twoBytes ? 2 : 4;
     const int maxShift = std::max(1, m_nSamp / 4);
+    const bool pearson = configuration().getTemplateXcorrPearson();
     const long nSpk  = static_cast<long>(m_sourceFileIdx.size());
 
     scores.reserve(static_cast<size_t>(nSpk));
@@ -57,7 +59,7 @@ void PairXcorrThread::run()
             }
         }
 
-        float sc = ok ? tmNormXcorr(sp, m_targetMean, maxShift) : 0.0f;
+        float sc = ok ? tmNormXcorr(sp, m_targetMean, maxShift, pearson) : 0.0f;
         scores.emplace_back(fileIdx0, sc);
     }
 

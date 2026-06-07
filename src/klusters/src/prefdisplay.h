@@ -33,6 +33,9 @@ public:
     double getTemplateThresholdMin() const;
     void   setTemplateThresholdMax(double v);
     double getTemplateThresholdMax() const;
+
+    void setTemplateXcorrPearson(bool b);
+    bool getTemplateXcorrPearson() const;
 };
 
 #endif

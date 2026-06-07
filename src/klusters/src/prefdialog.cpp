@@ -131,6 +131,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefDisplay->autoShowMatricesOnOpenCheckBox,&QAbstractButton::clicked,     this, &PrefDialog::enableApply);
     connect(prefDisplay->templateThresholdMinSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
     connect(prefDisplay->templateThresholdMaxSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
+    connect(prefDisplay->templateXcorrPearsonCheckBox, &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
 
     // Auto-Merge (patch 0068)
     connect(prefAutoMerge->algoMeanRadio,             &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
@@ -200,6 +201,7 @@ void PrefDialog::updateDialog()
     prefDisplay->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpen());
     prefDisplay->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
     prefDisplay->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
+    prefDisplay->setTemplateXcorrPearson(configuration().getTemplateXcorrPearson());
 
     // Auto-Merge (patch 0068)
     prefAutoMerge->setAlgorithm(configuration().getAutoMergeAlgorithm());
@@ -255,6 +257,7 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoShowMatricesOnOpen(prefDisplay->getAutoShowMatricesOnOpen());
     configuration().setTemplateThresholdMin(prefDisplay->getTemplateThresholdMin());
     configuration().setTemplateThresholdMax(prefDisplay->getTemplateThresholdMax());
+    configuration().setTemplateXcorrPearson(prefDisplay->getTemplateXcorrPearson());
 
     // Auto-Merge (patch 0068)
     configuration().setAutoMergeAlgorithm(prefAutoMerge->getAlgorithm());

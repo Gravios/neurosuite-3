@@ -16,10 +16,13 @@ class TemplateMatrixView;
 // Shared xcorr helper used by both thread classes.
 // Peak normalised cross-correlation over lags [-maxShift, +maxShift],
 // linear (zero-padded) indexing.  Both vectors channel-major, length nPts.
+// meanSubtract=true switches the per-lag normalisation from cosine similarity
+// to Pearson correlation (overlap-window mean removed from each waveform).
 // ---------------------------------------------------------------------------
 float tmNormXcorr(const std::vector<float>& a,
                   const std::vector<float>& b,
-                  int maxShift);
+                  int maxShift,
+                  bool meanSubtract = false);
 
 // ---------------------------------------------------------------------------
 // Main background thread: reads all cluster waveforms, computes means, and
