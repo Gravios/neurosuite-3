@@ -53,30 +53,28 @@ namespace {
 
 // Normalised xcorr with bounded shift.  Matches templatematrixthread.cpp
 // :tmNormXcorr verbatim — pull-extract to a shared helper is a future
-// cleanup.  Returns the maximum |xcorr| / sqrt(|a|^2 * |b|^2) across
-// lags in [-maxShift, +maxShift]; sign-insensitive on purpose so
-// inverted-polarity duplicates also match.
+// cleanup.  Returns the maximum |xcorr| / sqrt(|a|^2 * |b|^2) over the
+// overlapping window across lags in [-maxShift, +maxShift]; sign-insensitive
+// on purpose so inverted-polarity duplicates also match.
 float normXcorr(const std::vector<float>& a,
                 const std::vector<float>& b,
                 int maxShift)
 {
     const int N = static_cast<int>(a.size());
     if (N == 0) return 0.0f;
-    double normA = 0.0, normB = 0.0;
-    for (int i = 0; i < N; ++i) {
-        normA += static_cast<double>(a[i]) * a[i];
-        normB += static_cast<double>(b[i]) * b[i];
-    }
-    const double denom = std::sqrt(normA * normB);
-    if (denom < 1e-12) return 0.0f;
     float best = 0.0f;
     for (int lag = -maxShift; lag <= maxShift; ++lag) {
-        double xc = 0.0;
+        // dot product and both squared norms over the same overlap window
+        double xc = 0.0, normA = 0.0, normB = 0.0;
         for (int i = 0; i < N; ++i) {
             int j = i + lag;
             if (j < 0 || j >= N) continue;
-            xc += static_cast<double>(a[i]) * b[j];
+            xc    += static_cast<double>(a[i]) * b[j];
+            normA += static_cast<double>(a[i]) * a[i];
+            normB += static_cast<double>(b[j]) * b[j];
         }
+        const double denom = std::sqrt(normA * normB);
+        if (denom < 1e-12) continue;
         float val = static_cast<float>(std::abs(xc) / denom);
         if (val > best) best = val;
     }

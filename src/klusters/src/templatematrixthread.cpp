@@ -20,22 +20,23 @@ float tmNormXcorr(const std::vector<float>& a,
     const int N = static_cast<int>(a.size());
     if (N == 0) return 0.0f;
 
-    double normA = 0.0, normB = 0.0;
-    for (int i = 0; i < N; ++i) {
-        normA += static_cast<double>(a[i]) * a[i];
-        normB += static_cast<double>(b[i]) * b[i];
-    }
-    const double denom = std::sqrt(normA * normB);
-    if (denom < 1e-12) return 0.0f;
-
     float best = 0.0f;
     for (int lag = -maxShift; lag <= maxShift; ++lag) {
-        double xcorr = 0.0;
+        // Accumulate the dot product AND both squared norms over the SAME
+        // overlapping window, so each lag is a true cosine over the samples
+        // that actually overlap.  Using the full-length norms here (the old
+        // behaviour) penalised off-centre lags, where the numerator sums over
+        // fewer terms than the denominator assumes.
+        double xcorr = 0.0, normA = 0.0, normB = 0.0;
         for (int i = 0; i < N; ++i) {
             int j = i + lag;
             if (j < 0 || j >= N) continue;
             xcorr += static_cast<double>(a[i]) * b[j];
+            normA += static_cast<double>(a[i]) * a[i];
+            normB += static_cast<double>(b[j]) * b[j];
         }
+        const double denom = std::sqrt(normA * normB);
+        if (denom < 1e-12) continue;
         float val = static_cast<float>(std::abs(xcorr) / denom);
         if (val > best) best = val;
     }
