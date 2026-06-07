@@ -11,8 +11,10 @@
 # Features enabled
 # ────────────────
 #   -march=native        Full ISA of the build host (AVX-512 + BF16 + VNNI on
-#                        Zen 5; AVX2 + BMI2 on older hosts).  Binaries are not
-#                        portable but that is acceptable for a workstation build.
+#                        Zen 5; AVX2 + BMI2 on older hosts).  Applied GLOBALLY
+#                        and ON BY DEFAULT (opt-out via -DNS_NATIVE_ARCH=OFF):
+#                        the project ships no binaries, so building for the host
+#                        CPU is the right default and non-portability is moot.
 #   -ffast-math          IEEE754 relaxations (reassociation, no signed-zero,
 #                        no NaN/Inf checking).  NOT global — exposed as the
 #                        opt-in INTERFACE target ns_fast_math so only numeric
@@ -37,6 +39,16 @@
 # =============================================================================
 
 option(NS_ZEN_OPT "Apply Zen-optimized compiler flags globally" ON)
+
+# -march=native is applied GLOBALLY and ON BY DEFAULT (opt-out).  Rationale:
+# neurosuite-3 ships no binaries — every user compiles it on their own machine —
+# so building for the host CPU's full ISA is the right default and the
+# non-portability of the result is irrelevant.  Set -DNS_NATIVE_ARCH=OFF for a
+# portable or cross-compiled build (e.g. building on one machine to run on
+# another, or for a reproducible/redistributable artefact).
+option(NS_NATIVE_ARCH
+    "Compile for the build host's native ISA (-march=native). ON by default; OFF for portable/cross builds."
+    ON)
 
 # ── Opt-in fast-math bundle ───────────────────────────────────────────────────
 # -ffast-math is intentionally NOT applied globally.  It is value-unsafe (reassociation,
@@ -65,22 +77,16 @@ if(NS_ZEN_OPT)
         $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-ffast-math>)
 endif()
 
-# ── Opt-in host-ISA target ────────────────────────────────────────────────────
-# -march=native (full host ISA: AVX2/FMA, AVX-512 on Zen 5).  Like ns_fast_math
-# it is NOT applied globally: it produces NON-PORTABLE binaries (they fault with
-# SIGILL on an older CPU), so only CPU-bound numeric tools with hand-written hot
-# loops opt in.  Linking it to a GUI/IO target buys nothing and forfeits
-# portability.  NOTE: -march=native unlocks FMA, so results are not bit-identical
-# to the SSE2 baseline (FMA contraction; usually MORE accurate).  For
-# bit-stability vs baseline add -ffp-contract=off at a small speed cost.  It does
-# NOT help tools whose math is in a precompiled library (GSL, libsamplerate,
-# cblas, fftw) — those must be rebuilt with the flag instead.
+# ── ns_native_arch — retained for source compatibility ───────────────────────
+# -march=native is now applied GLOBALLY by default (NS_NATIVE_ARCH, opt-out)
+# further down, so this per-target opt-in is no longer the mechanism.  The target
+# is kept as an empty INTERFACE library so the existing
+# `target_link_libraries(<t> PRIVATE ns_native_arch)` lines in the plugins keep
+# resolving without churn; it now contributes no flags.  To force native on a
+# single target inside an otherwise-portable (NS_NATIVE_ARCH=OFF) build, add
+# -march=native to that target directly.
 if(NOT TARGET ns_native_arch)
     add_library(ns_native_arch INTERFACE)
-endif()
-if(NS_ZEN_OPT)
-    target_compile_options(ns_native_arch INTERFACE
-        $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>)
 endif()
 # NaN/Inf-safe variant: if a kernel must keep NaN/Inf usable as sentinels while
 # still getting reassociation/vectorisation, link a target that adds
@@ -91,25 +97,38 @@ if(NOT NS_ZEN_OPT)
     return()
 endif()
 
-# ── C / C++ flags ─────────────────────────────────────────────────────────────
+# ── Global compile options (Release / RelWithDebInfo, GNU/Clang-family) ───────
+# Applied via add_compile_options() so they actually reach every target in every
+# subdirectory.  The previous set(CMAKE_<LANG>_FLAGS_<CFG> ... CACHE STRING ...
+# FORCE) loop was a verified no-op — a normal-variable shadow kept the default,
+# so none of the flags ever reached a compile line (confirmed by inspecting the
+# generated flags.make).  add_compile_options is the correct directory-scoped
+# mechanism and, included here before any add_subdirectory(), applies tree-wide.
+#
+#   -funroll-loops   portable; always applied under NS_ZEN_OPT.
+#   -march=native    host-specific (non-portable binaries) but ON BY DEFAULT
+#                    via NS_NATIVE_ARCH — see the option() above.  Pass
+#                    -DNS_NATIVE_ARCH=OFF for a portable/cross build.
+#   -O3              not injected here: it is already in the Release/
+#                    RelWithDebInfo default flags.
+#
+# COMPILE_LANGUAGE is restricted to C and CXX so nvcc / HIP device passes never
+# receive these host-only flags (device code handles its own optimisation).
+set(_ns_rel "$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>")
 
-set(_zen_cxx_flags "")
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    list(APPEND _zen_cxx_flags
-        -O3
-        -march=native
-        -funroll-loops
-    )
+add_compile_options(
+    "$<$<AND:$<COMPILE_LANGUAGE:CXX>,${_ns_rel},$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-funroll-loops>"
+    "$<$<AND:$<COMPILE_LANGUAGE:C>,${_ns_rel},$<C_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-funroll-loops>")
+
+if(NS_NATIVE_ARCH)
+    add_compile_options(
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,${_ns_rel},$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-march=native>"
+        "$<$<AND:$<COMPILE_LANGUAGE:C>,${_ns_rel},$<C_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-march=native>")
+    message(STATUS "ZenOptimizations: -march=native applied globally "
+                   "(NS_NATIVE_ARCH=ON — pass -DNS_NATIVE_ARCH=OFF for a portable build)")
+else()
+    message(STATUS "ZenOptimizations: portable build (NS_NATIVE_ARCH=OFF) — no -march=native")
 endif()
-
-# Append to Release and RelWithDebInfo only; leave Debug untouched.
-foreach(_cfg Release RelWithDebInfo)
-    foreach(_lang C CXX)
-        set(CMAKE_${_lang}_FLAGS_${_cfg}
-            "${CMAKE_${_lang}_FLAGS_${_cfg}} ${_zen_cxx_flags}"
-            CACHE STRING "${_lang} flags for ${_cfg}" FORCE)
-    endforeach()
-endforeach()
 
 # ── IPO / LTO ─────────────────────────────────────────────────────────────────
 # Link-time optimisation; check that the toolchain supports it before enabling.
@@ -197,5 +216,6 @@ if(CMAKE_CUDA_COMPILER)
     message(STATUS "ZenOptimizations: CUDA --threads 0 -Xptxas -dlcm=ca enabled")
 endif()
 
-message(STATUS "ZenOptimizations: -O3 -march=native -funroll-loops applied to Release builds "
-               "(-ffast-math is opt-in per target via ns_fast_math)")
+message(STATUS "ZenOptimizations: -funroll-loops applied to Release builds; "
+               "-march=native ${NS_NATIVE_ARCH} (global, opt-out); "
+               "-ffast-math is opt-in per target via ns_fast_math")
