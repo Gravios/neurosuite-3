@@ -108,10 +108,20 @@ view and `G` (a window-level shortcut) groups them, so no Apply step is needed
 for grouping.  `selectedA`/`selectedB` still track the most-recent pair, so the
 threshold slider / Apply single-pair refinement tool is unchanged.
 
-Both matrix-view changes are syntax-checked against Qt headers but not yet
-visually verified — this environment has no Qt6 build or display.  A follow-up
-will add pan/zoom to the error matrix (driving the inherited `BaseFrame`
-`ZoomWindow` under Ctrl+wheel / Ctrl+drag while keeping plain-click selection).
+All three matrix-view changes are syntax-checked against Qt headers but not yet
+visually verified — this environment has no Qt6 build or display.
+
+**Klusters — error matrix pan/zoom.** The error matrix descends from
+`BaseFrame` (world-coordinate `ZoomWindow`) but had overridden the press handler
+to repurpose clicks for pair selection, which also disabled the inherited
+rubber-band zoom — leaving no way to magnify a dense matrix to see and pick
+pairs.  Pan/zoom now drives the existing `ZoomWindow` without taking the
+selection click, mirroring the template matrix's gestures: Ctrl + Left-drag pans
+(armed on press, engaged only past a 3 px threshold so a quick Ctrl-click still
+reaches the Ctrl-add selection path; the world delta is the difference of two
+`viewportToWorld` conversions so the grabbed point tracks the cursor), Ctrl +
+wheel zooms around the cursor, and double-click resets to the full matrix
+(restoring `BaseFrame`'s standard gesture).  Plain click is unchanged.
 
 ---
 
