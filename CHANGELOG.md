@@ -306,6 +306,37 @@ with mean mode).  This is the analysis-side of "cast at the I/O boundary"; the
 core load path (`Data::loadClusters` sizing, `WaveformData<long>`) still branches
 on `nBits` and is a separate, higher-blast-radius change.
 
+**Klusters — error-matrix wheel zoom anchors the cursor.**  `ErrorMatrixView::
+wheelEvent` passed the world point under the cursor straight to `ZoomWindow::
+zoom(factor, centre)`, whose second argument is the new window *centre* — so each
+Ctrl+wheel notch recentred the view on the cursor, jumping whatever was under the
+pointer to the middle of the view.  Compute the centre that keeps the pivot fixed
+(`cNew = pivot − (1/factor)·(pivot − cOld)`) so the point under the cursor stays
+put; `correctWindow()` still clamps to the matrix bounds.  Panning was already
+correct.  (The sister TemplateMatrixView already did cursor-anchored zoom.)
+
+**Klusters — O(1) exact cluster lookup in the palette (perf + correctness).**
+`ClusterPalette::selectItems`, which runs on every selection sync, resolved each
+requested cluster with `findItems(QString::number(id), MatchStartsWith)`: O(n)
+per cluster (O(k·n) overall, sluggish at thousands of clusters) and matched by
+label *prefix*, so selecting id 10 could land on "100 - noise".  It now builds a
+cluster-id → item `QHash` once and resolves each id exactly in O(1).
+
+**Klusters — O(1) ignore lookup in the error-matrix paint.**  The nbClusters²
+cell loop called `ignoreClusterIndex.contains()` (linear over a `QList`) twice per
+cell — millions of linear scans per repaint at high cluster counts.  Precompute a
+flag vector indexed by cluster index and test it in O(1).
+
+**Klusters — render the error matrix as one image, not per-cell drawRect.**
+`drawContents` issued one `painter.drawRect()` per cell (≈9M calls at 3000
+clusters) on every REDRAW, i.e. on every pan move and zoom notch — the dominant
+cost behind the matrix feeling slow at high cluster counts.  Fill an 8-bit
+indexed `QImage` (one pixel per cell, `colorMap` as the colour table,
+diagonal/ignored → black) by scanline and blit it once with `drawImage` scaled to
+the matrix world rect (`SmoothPixmapTransform` off for crisp cells).  Colour
+computation is unchanged, so the matrix is visually identical; the red
+out-of-date border and yellow selected-pair outlines are still drawn over it.
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
