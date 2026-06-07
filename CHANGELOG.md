@@ -165,11 +165,9 @@ several fixes:
   `ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE` keywords in the `NS_INSTALL_DEPS`
   `execute_process` calls replaced with `COMMAND_ECHO STDOUT`.
 
-Remaining (noted, not yet changed): four targets (aomconvert, decomposecollisions,
-resample, kiloklustakwik) hardcode `-march=native` directly in their own
-CUDA/SYCL/ExternalProject flag lists, so they stay native even under
-`NS_NATIVE_ARCH=OFF` — redundant now that native is global, to be cleaned up for
-full portable-build consistency.
+Follow-up (now resolved, see below): four targets hardcoded `-march=native`
+directly in their own flag lists, so they stayed native even under
+`NS_NATIVE_ARCH=OFF`.
 
 **Build — GPU-backend detection deduplicated.**  The CUDA architecture list, the
 oneAPI/icpx search hints, the nvcc location search, and the pre-`project()` icpx
@@ -178,11 +176,27 @@ kiloklustakwik subproject.  Factored into a new `cmake/GpuBackends.cmake` module
 (`ns_gpu_find_cuda_compiler`, `ns_gpu_select_cuda_arch`,
 `ns_gpu_select_sycl_compiler` + `NS_GPU_CUDA_ARCH_FALLBACK`, `NS_GPU_SYCL_HINTS`);
 the two consumers shed ~110 net lines, with the logic extracted verbatim so
-behaviour is unchanged.  klusters intentionally keeps its inline detection so it
-remains buildable standalone against an installed libklustersshared rather than
-taking a repo-layout dependency.  The GPU-enabled probe branches (nvcc found,
-native-arch, icpx compiler switch) are not exercised in a toolkit-less sandbox
-and should be verified on a GPU toolchain.
+behaviour is unchanged.  (klusters was subsequently folded in too — see below.)
+The GPU-enabled probe branches (nvcc found, native-arch, icpx compiler switch)
+are not exercised in a toolkit-less sandbox and should be verified on a GPU
+toolchain.
+
+**Build — klusters folded into the GPU-backend module.**  Since klusters is only
+ever built within the repo, it now includes `cmake/GpuBackends.cmake` and its
+SYCL probe uses `NS_GPU_SYCL_HINTS`, removing the last duplicated copy of the
+oneAPI/icpx hint list.  klusters keeps its own SYCL control flow; only the hint
+data is shared.
+
+**Build — removed redundant hardcoded `-march=native`.**  With `-march=native`
+now applied globally (gated on `NS_NATIVE_ARCH`), the per-target hardcoded copies
+were redundant and defeated portable builds.  Removed them from the CXX/HIP/SYCL
+`target_compile_options` of process_aomconvert, process_decomposecollisions,
+process_resample, process_extractemg and kiloklustakwik (six sites) — all
+CXX-language compiles the global already covers.  The vendored libsamplerate
+ExternalProject (its own autotools `./configure`, not reached by the global) now
+gates `-march=native` on `NS_NATIVE_ARCH` explicitly.  A portable build
+(`-DNS_NATIVE_ARCH=OFF`) now has zero `-march=native` in any flags.make (was 4);
+the default build still applies it to all 39 C/CXX targets via the global.
 
 ---
 
