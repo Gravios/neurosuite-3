@@ -11,10 +11,9 @@
 # flow and calls the helpers it needs; the behaviour of each helper is identical
 # to the inlined code it replaces.
 #
-# klusters intentionally does NOT use this module: unlike the top-level and
-# kiloklustakwik (which already reference repo-relative sibling paths), klusters
-# is buildable standalone against an *installed* libklustersshared, so it keeps
-# its own inline GPU detection rather than taking a repo-layout dependency.
+# All three GPU-aware build entry points use this module: the monorepo top-level
+# and the kiloklustakwik and klusters subprojects.  Each is built within the
+# repo, so the repo-relative include path the subprojects use is always valid.
 # =============================================================================
 include_guard(GLOBAL)
 

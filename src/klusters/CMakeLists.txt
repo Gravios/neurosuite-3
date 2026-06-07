@@ -14,6 +14,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# Shared GPU-backend helpers (CUDA arch list, oneAPI/icpx hints, etc.).  klusters
+# is only ever built within the repo, so the repo-relative path is always valid.
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/GpuBackends.cmake")
+
 # ---------------------------------------------------------------------------
 # OpenMP — always attempted, silently skipped if unavailable.
 # ---------------------------------------------------------------------------
@@ -79,12 +83,7 @@ if(USE_SYCL)
     # ── Step 1: find icpx on PATH or in canonical oneAPI install locations ──
     find_program(ICPX_EXECUTABLE
         NAMES icpx
-        HINTS
-            "$ENV{CMPLR_ROOT}/bin"
-            "$ENV{ONEAPI_ROOT}/compiler/latest/bin"
-            "$ENV{ONEAPI_ROOT}/compiler/latest/linux/bin"
-            "/opt/intel/oneapi/compiler/latest/bin"
-            "/opt/intel/oneapi/compiler/latest/linux/bin"
+        HINTS ${NS_GPU_SYCL_HINTS}
         DOC "Intel oneAPI DPC++ compiler (icpx)"
     )
 
