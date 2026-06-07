@@ -123,6 +123,21 @@ reaches the Ctrl-add selection path; the world delta is the difference of two
 wheel zooms around the cursor, and double-click resets to the full matrix
 (restoring `BaseFrame`'s standard gesture).  Plain click is unchanged.
 
+**Build — Qt6 audit + dead Qt5 shim removal.**  Verified the whole C++ tree is
+on Qt6: every `find_package` is Qt6, every link target is `Qt6::`, resources use
+`qt_add_resources`, and there are no qmake `.pro`/`.pri` files.  A scan of all
+585 source files found no Qt6-removed APIs in use — `QRegExp` appears only in a
+comment, `setResizeMode(QListWidget::Adjust)` and `QLabel::setMargin` are the
+still-valid `QListView`/`QLabel` members (checked against the Qt6 headers), every
+`SkipEmptyParts` is `Qt::`-qualified, and no bare `endl` sits on a `QTextStream`.
+The only Qt5 *code* artefacts were four orphaned `ECMQt4To5Porting.cmake` KDE
+porting shims (klusters, libklustersshared, ndmanager, neuroscope); a whole-repo
+grep confirmed nothing `include()`s them or calls their `qt5_*` macros, so they
+were removed.  The remaining "Qt5" strings in the tree are provenance comments
+only.  Syntax-validation for this fork now runs against real Qt6 headers (the
+edited and patched Qt files — clusterPalette, data, errormatrixview,
+templatematrixview — all pass a full Qt6 `-fsyntax-only` compile).
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
