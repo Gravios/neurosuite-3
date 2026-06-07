@@ -415,11 +415,12 @@ void KlustersApp::createMenus()
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
 
-    mPcaAlignAllClusters = actionMenu->addAction(tr("&PCA-Center Align All Clusters (top 2 ch)"));
+    mPcaAlignAllClusters = actionMenu->addAction(tr("&PCA-Center Align All Clusters (top-N ch)"));
     mPcaAlignAllClusters->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
     mPcaAlignAllClusters->setToolTip(tr(
         "Run PCA-centered spike alignment across every cluster (skipping "
-        "noise=0 and artifact=1) using the top 2 channels per cluster. "
+        "noise=0 and artifact=1) using the channel count from the Top-Channels "
+        "spin box (0 = all channels). "
         "Each cluster's result is auto-accepted as a pending change; the "
         "batch can be aborted via \"Abort Realignment\"."));
     connect(mPcaAlignAllClusters, &QAction::triggered,
@@ -5631,7 +5632,8 @@ void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
 // slotPcaAlignAllClusters
 //
 // Iterates every cluster ID > 1 (skipping noise=0 and artifact=1) and runs
-// PCA-centered spike realignment with --topchannels 2 on each, sequentially.
+// PCA-centered spike realignment on each, sequentially, using the channel count
+// from the Top-Channels spin box (--topchannels N; 0 = all channels).
 // Workers are launched one at a time from slotRealignFinished's batch branch;
 // here we only set up state and kick off the first cluster.
 // ---------------------------------------------------------------------------
@@ -5666,16 +5668,24 @@ void KlustersApp::slotPcaAlignAllClusters()
         return;
     }
 
+    // Channel count comes from the Top-Channels spin box (shared with the
+    // single-cluster realign).  0 = use all channels.
+    const int topCh = realignTopChanSpinBox ? realignTopChanSpinBox->value() : 2;
+    const QString chanDesc = (topCh > 0)
+        ? tr("the top %1 channel(s)").arg(topCh)
+        : tr("all channels");
+
     // Confirm — this commits a pending change to every cluster.  No per-cluster
     // review dialog is shown during the batch, so we want the user to opt in
     // up front rather than discover the commit mid-flight.
     const QString question = tr(
-        "Run PCA-centered spike alignment on %1 cluster(s) using the top 2 "
-        "channels per cluster?\n\n"
+        "Run PCA-centered spike alignment on %1 cluster(s) using %2 "
+        "per cluster?\n\n"
         "Each cluster's result is auto-accepted as a pending change. "
         "Save the document to commit or close without saving to discard "
         "the batch.  Use \"Abort Realignment\" to stop mid-batch.")
-        .arg(clusters.size());
+        .arg(clusters.size())
+        .arg(chanDesc);
     if (QMessageBox::question(this, tr("PCA-Center Align All Clusters"),
                               question,
                               QMessageBox::Yes | QMessageBox::No,
@@ -5685,10 +5695,11 @@ void KlustersApp::slotPcaAlignAllClusters()
 
     // Build the args string for every worker invocation in this batch.  Start
     // from realignArgs (carries the user's threshold / iterations / maxshift
-    // preferences) and normalise --topchannels and --pca-refine to fixed
-    // values: 2 channels, refine on.  Stripping any pre-existing instance
-    // before appending avoids duplicate tokens that the parser would silently
-    // last-write-wins.
+    // preferences) and normalise --topchannels and --pca-refine: the channel
+    // count comes from the Top-Channels spin box (topCh, 0 = all channels) and
+    // refine is forced on (this action is defined as PCA-centred).  Stripping
+    // any pre-existing instance before appending avoids duplicate tokens that
+    // the parser would silently last-write-wins.
     {
         const QStringList toks =
             realignArgs.split(QLatin1Char(' '), Qt::SkipEmptyParts);
@@ -5706,7 +5717,8 @@ void KlustersApp::slotPcaAlignAllClusters()
         }
         m_realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
         if (!m_realignBatchArgs.isEmpty()) m_realignBatchArgs += QLatin1Char(' ');
-        m_realignBatchArgs += QStringLiteral("--topchannels 2 --pca-refine");
+        m_realignBatchArgs +=
+            QStringLiteral("--topchannels %1 --pca-refine").arg(topCh);
     }
 
     // Recycle the output tab the same way slotRealignSpikes does.
@@ -5725,8 +5737,9 @@ void KlustersApp::slotPcaAlignAllClusters()
     displayCount++;
     tabsParent->setCurrentWidget(realignOutputWidget);
     realignOutputWidget->insertStdoutLine(
-        tr("=== PCA-Center alignment batch — %1 cluster(s), top 2 channels ===")
-        .arg(clusters.size()));
+        tr("=== PCA-Center alignment batch — %1 cluster(s), %2 ===")
+        .arg(clusters.size())
+        .arg(chanDesc));
     realignOutputWidget->insertStdoutLine(tr("    args: %1").arg(m_realignBatchArgs));
     realignOutputWidget->scrollToBottom();
 
