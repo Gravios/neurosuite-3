@@ -69,7 +69,7 @@ Data::Data()
 
 Data::~Data(){
     //If the minMaxThread has not finish, wait until it is done
-    while(!minMaxThread->wait()){};
+    minMaxThread->wait();
     delete minMaxThread;
 
     //delete the pointers to the tables and maps
@@ -1343,7 +1343,7 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
         //will wait until it finishes before starting the thread again.
         if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
-            while(!minMaxThread->wait()){};
+            minMaxThread->wait();
             //Reset the flag to false so the minMaxThread can do the computation
             clusterZeroJustModified = false;
             minMaxThread->setModifiedClusters(fromClusters);
@@ -1565,7 +1565,7 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
         //will wait until it finishes before starting the thread again.
         if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
-            while(!minMaxThread->wait()){};
+            minMaxThread->wait();
             //Reset the flag to false so the minMaxThread can do the computation
             clusterZeroJustModified = false;
             // setModifiedClusters MUST be called before start() so the thread
@@ -1766,7 +1766,7 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
     prepareUndo(spikesByClusterTemp, clusterInfoMapTemp, dimChanged);
 
     if (dimChanged) {
-        while (!minMaxThread->wait()) {}
+        minMaxThread->wait();
         clusterZeroJustModified = false;
         minMaxThread->start();
     }
@@ -2359,7 +2359,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
         //will wait until it finishes before starting the thread again.
         if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
-            while(!minMaxThread->wait()){};
+            minMaxThread->wait();
             //Reset the flag to false so the minMaxThread can do the computation
             clusterZeroJustModified = false;
             minMaxThread->setModifiedClusters(fromClusters);
@@ -2475,7 +2475,7 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
 
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
-    while(!minMaxThread->wait()){};
+    minMaxThread->wait();
     //Reset the flag to false so the minMaxThread can do the computation
     clusterZeroJustModified = false;
     minMaxThread->setModifiedClusters(clustersToDelete);
@@ -2638,7 +2638,7 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
     if(dimChanged){
-        while(!minMaxThread->wait()){};
+        minMaxThread->wait();
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         QList<int> modifiedClusters;
@@ -2818,7 +2818,7 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     // dimensions have to be recalculated.
     if(dimChanged){
         //If the minMaxThread has not finish, wait until it is done
-        while(!minMaxThread->wait()){};
+        minMaxThread->wait();
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         minMaxThread->setModifiedClusters(clustersToGroup);
@@ -3392,7 +3392,7 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
 
 
             //If the minMaxThread has not finish, wait until it is done
-            while(!minMaxThread->wait()){};
+            minMaxThread->wait();
 
             //Reset the flag to false so the minMaxThread can do the computation
             undoRedoInProcess = false;
@@ -3559,7 +3559,7 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
         bool dimChanged = !dimensionChangedRedo.isEmpty() && dimensionChangedRedo.takeFirst();
         if(dimChanged){
             //If the minMaxThread has not finish, wait until it is done
-            while(!minMaxThread->wait()){};
+            minMaxThread->wait();
 
             //Reset the flag to false so the minMaxThread can do the computation
             undoRedoInProcess = false;
@@ -5493,7 +5493,7 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     //will wait until it finishes before starting the thread again.
     if(dimChanged){
         //If the minMaxThread has not finish, wait until it is done
-        while(!minMaxThread->wait()){};
+        minMaxThread->wait();
         //Reset the flag to false so the minMaxThread can do the computation
         clusterZeroJustModified = false;
         minMaxThread->setModifiedClusters(clustersToRecluster);
