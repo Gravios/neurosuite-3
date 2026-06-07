@@ -233,12 +233,15 @@ QList<MergeGroup> computeProposals(
         // Median mode keeps every spike's wave; mean mode keeps only a
         // running sum.  Channel-major output ([ch*nSamp+sm]) matches the
         // KKE meanWav layout so the same xcorr formula works.
-        std::vector<std::vector<int16_t>> spikeWavs;
+        // int32 (not int16) so 32-bit recordings (isTwoBytesRecording==false)
+        // are not truncated; covers the int16 case exactly too.  Mean mode uses
+        // a double accumulator, so this keeps median and mean modes consistent.
+        std::vector<std::vector<int32_t>> spikeWavs;
         std::vector<double>               sumAcc(static_cast<size_t>(nPts), 0.0);
         std::vector<uint8_t>              okRow;  // median mode only
         if (useMedian) {
             spikeWavs.assign(static_cast<size_t>(M),
-                             std::vector<int16_t>(static_cast<size_t>(nPts), 0));
+                             std::vector<int32_t>(static_cast<size_t>(nPts), 0));
             okRow.assign(static_cast<size_t>(M), 0);
         }
 
@@ -279,8 +282,7 @@ QList<MergeGroup> computeProposals(
                             const int32_t v =
                                 buf32[static_cast<size_t>(sm*nChan + ch)];
                             if (useMedian)
-                                spikeWavs[static_cast<size_t>(i)][static_cast<size_t>(p)] =
-                                    static_cast<int16_t>(v);
+                                spikeWavs[static_cast<size_t>(i)][static_cast<size_t>(p)] = v;
                             else
                                 sumAcc[static_cast<size_t>(p)] += v;
                         }
@@ -297,7 +299,7 @@ QList<MergeGroup> computeProposals(
         std::vector<float> tmpl(static_cast<size_t>(nPts), 0.0f);
         if (useMedian) {
             // Per-element median across the rows that read successfully.
-            std::vector<int16_t> col(static_cast<size_t>(valid));
+            std::vector<int32_t> col(static_cast<size_t>(valid));
             for (int p = 0; p < nPts; ++p) {
                 size_t j = 0;
                 for (int i = 0; i < M; ++i)
