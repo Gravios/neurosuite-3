@@ -1,47 +1,21 @@
 cmake_minimum_required(VERSION 3.22...3.31)
 
 # =============================================================================
-# SYCL compiler auto-selection  (must happen BEFORE project())
+# Shared GPU-backend helpers + SYCL compiler auto-selection.
 #
-# CMake locks the compiler once project() is called and cannot change it
-# afterwards.  We therefore probe for icpx here — before project() — and
-# set CMAKE_CXX_COMPILER only when:
-#   • USE_SYCL is not explicitly OFF, AND
-#   • the caller has not already specified a compiler (via -DCMAKE_CXX_COMPILER
-#     or the CXX environment variable), AND
-#   • icpx is found in the standard oneAPI install locations AND identifies
-#     itself as Intel's compiler.
+# ns_gpu_select_sycl_compiler() must run BEFORE project() — CMake locks the
+# compiler at project() time.  (In the monorepo the top-level project() has
+# already run by the time this subdirectory is added, so the selection is a
+# no-op there and SYCL needs -DCMAKE_CXX_COMPILER=icpx at the top level; this
+# call is effective for standalone kiloklustakwik builds.)
 #
-# Behaviour summary:
-#   cmake ..                           → auto-selects icpx when found
-#   cmake .. -DUSE_SYCL=OFF            → always uses the default system compiler
-#   cmake .. -DCMAKE_CXX_COMPILER=g++  → respects the explicit choice
+# The module path is relative to this file and resolves in both the monorepo and
+# a standalone in-repo build — kiloklustakwik already source-includes sibling
+# repo directories (../libklustersshared, ../libneurosuite-core), so it depends
+# on the repo layout regardless.
 # =============================================================================
-if(NOT DEFINED USE_SYCL OR NOT USE_SYCL STREQUAL "OFF")
-    if(NOT DEFINED CMAKE_CXX_COMPILER AND NOT DEFINED ENV{CXX})
-        find_program(_ICPX_EARLY icpx
-            HINTS
-                $ENV{ONEAPI_ROOT}/compiler/latest/bin
-                /opt/intel/oneapi/compiler/latest/bin
-            NO_DEFAULT_PATH)
-        if(_ICPX_EARLY)
-            execute_process(
-                COMMAND "${_ICPX_EARLY}" --version
-                OUTPUT_VARIABLE _ICPX_VER
-                ERROR_VARIABLE  _ICPX_VER
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
-            if(_ICPX_VER MATCHES "Intel")
-                get_filename_component(_ICPX_DIR "${_ICPX_EARLY}" DIRECTORY)
-                set(CMAKE_CXX_COMPILER "${_ICPX_EARLY}" CACHE FILEPATH
-                    "C++ compiler — auto-selected icpx for SYCL" FORCE)
-                set(CMAKE_C_COMPILER "${_ICPX_DIR}/icx" CACHE FILEPATH
-                    "C compiler — auto-selected icx for SYCL" FORCE)
-                message(STATUS
-                    "KiloKlustaKwik: auto-selected icpx (override: -DCMAKE_CXX_COMPILER=)")
-            endif()
-        endif()
-    endif()
-endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/GpuBackends.cmake")
+ns_gpu_select_sycl_compiler()
 
 project(KiloKlustaKwik VERSION 2.0.0 LANGUAGES C CXX)
 
@@ -105,7 +79,7 @@ if(USE_CUDA)
         # default here when building kiloklustakwik standalone, and match the
         # top-level explicit list so the two build modes agree.
         if(NOT CMAKE_CUDA_ARCHITECTURES)
-            set(CMAKE_CUDA_ARCHITECTURES     "75;86;89;100;120"
+            set(CMAKE_CUDA_ARCHITECTURES     "${NS_GPU_CUDA_ARCH_FALLBACK}"
                 CACHE STRING "CUDA architectures to target")
         endif()
         set(_CUDA_ACTIVE TRUE)
@@ -144,9 +118,7 @@ endif()
 set(_SYCL_ACTIVE FALSE)
 if(USE_SYCL AND NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE)
     find_program(_ICPX icpx
-        HINTS
-            $ENV{ONEAPI_ROOT}/compiler/latest/bin
-            /opt/intel/oneapi/compiler/latest/bin
+        HINTS ${NS_GPU_SYCL_HINTS}
         NO_DEFAULT_PATH)
     if(_ICPX)
         execute_process(
