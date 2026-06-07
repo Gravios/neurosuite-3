@@ -7,6 +7,79 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-06-07 — Klusters interactive fixes, optimisation scoping, data-model foundation
+
+A maintenance + investigation session spanning Klusters interaction bugs, a
+threading race, build-system optimisation hygiene, and the first piece of the
+cluster data-model rework.
+
+**Klusters — cluster palette Up/Down skipped rows.** Up/Down navigation chose
+the geometrically nearest item by *column* first, breaking ties by row.  Because
+palette items are cluster-number labels of differing widths on a free-flow grid,
+their visual-rect centres do not align into columns, so a single keystroke could
+jump several rows.  Reworked to pick the adjacent *row* first, then the nearest
+column within it — movement is now provably one row.  Left/Right (list order)
+and the wrap-around path are unchanged.
+
+**Klusters — data race in min/max recomputation.** `Data::minMaxDimensionCalculation`
+(run on `minMaxThread`) snapshotted the spike table into a block-scoped local
+that was destroyed immediately, then read the *live* `spikesByCluster` in its
+inner loop using offsets from the cluster-map snapshot.  A concurrent pointer
+swap from a reassignment (`prepareUndo`) or undo/redo could make offsets and
+data come from different tables — a stale result or an out-of-bounds read.  Now
+the spike-table snapshot is held for the whole scan and read in place; the
+worker runs entirely on private copies.  No other worker thread reads these
+tables directly (they use the mutex-guarded dict + status-flag protocol).
+
+**Klusters — redundant `minMaxThread` wait-loops.** The eleven
+`while(!minMaxThread->wait()){}` join sites in `data.cpp` were dead loops around
+a blocking `QThread::wait()` (Forever deadline never returns false); replaced
+with a plain `wait()`.  Behaviour-preserving.
+
+**Build system — `-ffast-math` / `-march=native` made explicit per-target
+opt-ins.** Investigation found the global flag block in
+`cmake/ZenOptimizations.cmake` applies flags via
+`set(CMAKE_<lang>_FLAGS_<cfg> … CACHE STRING … FORCE)`, which is a no-op (a
+normal-variable shadow keeps the default), so the intended global
+`-march=native` / `-funroll-loops` / `-ffast-math` were **never reaching the
+compiler** — only per-target flags (KiloKlustaKwik, a couple of plugins, CUDA)
+took effect; LTO (set via `CMAKE_INTERPROCEDURAL_OPTIMIZATION`) was verified to
+be genuinely active.  Rather than silently flip everything global (non-portable
+binaries), `-ffast-math` and `-march=native` are now opt-in `INTERFACE` targets
+(`ns_fast_math`, `ns_native_arch`): CXX-only, Release/RelWithDebInfo only, gated
+on `NS_ZEN_OPT`, always defined.  `ns_fast_math` is wired into the KlustaKwik
+numeric core; `ns_native_arch` into the self-contained CPU signal-processing
+plugins (extractspikes/reextract/refeaturize variants, denoiseuniform,
+medianfilter, drifttracker).  `process_pca*` is deliberately excluded (its math
+is in GSL — recompiling the plugin does nothing — and it is reproducibility-
+sensitive).  Measurement on real kernels: `-march=native` alone is a modest,
+loop-shape-dependent win (~5% on the denoise kernel, ~2.5× on long FP reduction
+chains); the large speedups need `-ffast-math` (reassociation), which is left
+opt-in for the numerically-insensitive kernels only.  The broken global
+mechanism is documented in `ROADMAP.md` and left unfixed pending a portability
+decision.
+
+**Roadmap — performance and data-model debt recorded.**  Added a
+performance/optimisation section (profiling-first plan, memory-bandwidth
+reduction via `float`-where-safe and pass fusion, V-cache blocking for
+reuse-heavy drift/PCA math, GPU feed path, OpenMP scaling, PGO) and a Klusters
+data-model debt entry.
+
+**Klusters — `SpikeAssignment` sparse-set store (prototype, not yet wired).**
+Cluster reassignment is currently O(total spikes): every edit rebuilds the whole
+`spikesByCluster` table and pushes a full table copy onto the undo stack.  Added
+a header-only, Qt-free `SpikeAssignment` (`clusterOf[]` label array == the `.clu`
+column, packed per-cluster `members` sparse set, `slotOf[]` back-index) giving
+O(spikes moved) edits and delta-based O(moved) undo/redo, plus a standalone test
+(randomised equivalence vs an independent reference, invariant checks,
+undo-depth trimming, and an O(moved)-vs-O(N) perf demonstration: ~50× at 5M
+spikes vs a conservative full-copy baseline).  Built alongside the existing
+model; integration into `Data` (replacing the table, a 2D selection grid, and
+the reader-thread concurrency rework the in-place model requires) is deferred to
+the real build, where it must be validated for bit-identical `.clu` output.
+
+---
+
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
 
 Consolidates patches 64, 69–87, spanning several weeks of work on
