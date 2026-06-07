@@ -266,7 +266,69 @@ These don't fit the time-horizon structure but are worth tracking.
 
 All listed under Soon as "KiloKlustaKwik 5-phase audit" + "experimental sweeps."
 
+### Performance / optimization
+
+Profiling comes first — none of the items below should be actioned before the
+measurement that identifies the actual bottleneck.
+
+- **Decisive profiling pass (do first):** time a single full read-pass of the
+  131 GB session vs a single processing-pass, and run Nsight Systems on one
+  clustering run, to classify the pipeline as IO- / bandwidth- / compute- /
+  GPU-bound before writing any code. Storage is ext4 on fast NVMe and the
+  plugins already do large-block / mmap reads, so IO is not expected to be the
+  bottleneck; bandwidth and the GPU feed path are the suspects.
+- **Memory-bandwidth reduction (streaming kernels):** compute in `float`
+  instead of `double` where precision allows (halves traffic, doubles SIMD
+  width) — NOT for PCA/drift; and fuse pipeline stages so each data chunk is
+  streamed once (filter → detect → featurize) instead of one full pass per
+  stage. Bandwidth, not ALU, is why `-march=native` measured ~5% on the
+  streaming kernels.
+- **V-cache blocking (reuse-heavy kernels):** cache-block the covariance /
+  pairwise-distance math in `process_drifttracker` and PCA so working sets fit
+  the 9800X3D's 96 MB L3 — the one place the X3D premium is actually earned.
+  Pure sequential filters won't benefit.
+- **GPU feed path:** pinned host memory + H2D/D2H overlap via streams; move the
+  KKE stderiv path off CPU (see KiloKlustaKwik items). Likely a bigger win than
+  device-kernel tuning if the GPU is starved rather than saturated.
+- **OpenMP scaling:** verify the threaded plugins actually scale past ~4
+  threads (plateau ⇒ bandwidth-bound, confirming the above). `process_refeaturize_stderiv`
+  is still single-threaded — parallelise if it is hot.
+- **PGO:** the one untapped compile-time lever (~10–20% on branchy CPU compute:
+  KK CPU path, detection plugins), using the reference sessions as the training
+  workload. Cost: two-phase build + profile refresh.
+- **Build system:** `ns_fast_math` / `ns_native_arch` per-target opt-ins landed.
+  NOTE: the global flag block in `cmake/ZenOptimizations.cmake` applies flags via
+  `set(CMAKE_<lang>_FLAGS_<cfg> ... CACHE STRING ... FORCE)`, which is a no-op
+  (a normal-variable shadow keeps the default) — so global `-march=native` /
+  `-funroll-loops` were never actually applied; only per-target flags took
+  effect. Fix is `string(APPEND CMAKE_<lang>_FLAGS_<cfg> ...)` on the normal
+  variable. Deferred pending a decision: fixing it makes `-march=native` truly
+  global ⇒ non-portable binaries across the whole tree. (LTO, set via
+  `CMAKE_INTERPROCEDURAL_OPTIMIZATION`, was verified to be genuinely active.)
+
+### Algorithmic debt (Klusters data model)
+
+- **Cluster reassignment is O(total spikes), not O(moved spikes).** Each edit
+  (`createNewCluster` / `deleteSpikesFromClusters` / `groupClusters` /
+  `moveSpikeSubset`) rebuilds the entire `spikesByCluster` table (`moveClusters`
+  memcpys every cluster) and pushes a full table copy onto the undo stack. With
+  high spike counts this dominates interactive latency. Two independent costs:
+  (1) the region-test scan that identifies movers — O(spikes in the edited
+  clusters); (2) the commit + undo snapshot — O(total spikes).
+- **Proposed direction (large refactor, validate before adopting):** replace the
+  contiguous cluster-grouped table with a label model — `clusterOf[spike]`
+  (file-order, maps directly to `.clu`) plus a per-cluster *sparse set*
+  (packed `members` vector + `posInCluster` index) for O(1) add/remove and
+  cache-friendly per-cluster iteration. Makes the commit O(moved). Pair with
+  **delta-based undo** (store changed `(spike, from, to)` triples, O(moved)
+  memory) instead of full snapshots. Optionally add a **uniform 2D grid** over
+  the currently displayed projection (rebuilt O(N) on dim-pair change) to cut
+  the selection scan to points near the polygon. Touches every data-model
+  consumer (views, all worker threads, save, undo) — must be validated against
+  the current rebuild path for bit-identical `.clu` output on a reference
+  session. See design notes from the session this item was added.
+
 ---
 
-*Last updated: 2026-04-30.  Update this date whenever items shift between
+*Last updated: 2026-06-07.  Update this date whenever items shift between
 sections, complete, or are added.*
