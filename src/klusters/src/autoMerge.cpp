@@ -173,7 +173,7 @@ QList<MergeGroup> computeProposals(
     QProgressDialog progress(
         QObject::tr("Auto-Merge: reading waveforms..."),
         QObject::tr("Cancel"),
-        0, nClusters + 2, parent);
+        0, 2 * nClusters + 2, parent);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(100);
     progress.setValue(0);
@@ -330,6 +330,12 @@ QList<MergeGroup> computeProposals(
     std::vector<std::tuple<int,int,float>> highPairs;
     const float thr = static_cast<float>(settings.scoreThreshold);
     for (int i = 0; i < nClusters; ++i) {
+        // Step 4 is O(nClusters^2); on big all-active runs it can dominate, so
+        // keep the dialog responsive and cancellable between rows (the inner
+        // j-loop is the unit of cancel granularity).
+        if (progress.wasCanceled()) return result;
+        progress.setValue(nClusters + i);
+        QApplication::processEvents();
         if (templates[static_cast<size_t>(i)].empty()) continue;
         for (int j = i + 1; j < nClusters; ++j) {
             if (templates[static_cast<size_t>(j)].empty()) continue;
@@ -364,7 +370,7 @@ QList<MergeGroup> computeProposals(
         result.append(g);
     }
 
-    progress.setValue(nClusters + 2);
+    progress.setValue(2 * nClusters + 2);
     return result;
 }
 
