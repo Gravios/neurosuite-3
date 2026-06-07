@@ -77,17 +77,6 @@ if(NS_ZEN_OPT)
         $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-ffast-math>)
 endif()
 
-# ── ns_native_arch — retained for source compatibility ───────────────────────
-# -march=native is now applied GLOBALLY by default (NS_NATIVE_ARCH, opt-out)
-# further down, so this per-target opt-in is no longer the mechanism.  The target
-# is kept as an empty INTERFACE library so the existing
-# `target_link_libraries(<t> PRIVATE ns_native_arch)` lines in the plugins keep
-# resolving without churn; it now contributes no flags.  To force native on a
-# single target inside an otherwise-portable (NS_NATIVE_ARCH=OFF) build, add
-# -march=native to that target directly.
-if(NOT TARGET ns_native_arch)
-    add_library(ns_native_arch INTERFACE)
-endif()
 # NaN/Inf-safe variant: if a kernel must keep NaN/Inf usable as sentinels while
 # still getting reassociation/vectorisation, link a target that adds
 # "-ffast-math -fno-finite-math-only" instead — -ffinite-math-only is the part

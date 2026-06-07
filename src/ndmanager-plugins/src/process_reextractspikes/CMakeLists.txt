@@ -13,11 +13,3 @@ endif()
 
 install(TARGETS process_reextractspikes DESTINATION "${CMAKE_INSTALL_BINDIR}")
 add_manpage(process_reextractspikes)
-
-# Opt into host-ISA vectorisation (-march=native) for this CPU-bound, hand-written
-# numeric kernel.  ns_native_arch (cmake/ZenOptimizations.cmake) is CXX-only and
-# gated on NS_ZEN_OPT, so device TUs are untouched and NS_ZEN_OPT=OFF stays
-# portable.  Guarded so the plugin still builds if the module is absent.
-if(TARGET ns_native_arch)
-    target_link_libraries(process_reextractspikes PRIVATE ns_native_arch)
-endif()
