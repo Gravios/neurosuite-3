@@ -206,6 +206,20 @@ ns_native_arch)` links, and their now-inaccurate comments were all dead weight
 and have been removed (`ns_fast_math` is unchanged).  No references to
 `ns_native_arch` remain.
 
+**Test — opt-in regression suite (ctest).**  Wired the previously-unbuilt unit
+tests into CTest and added a build-system invariants check, gated behind
+`NS_BUILD_TESTS` (default OFF; addresses the audit's missing-test-wiring
+finding).  Covers the kiloklustakwik algorithm modules (adapt_model,
+cluster_hull_split, proxy_isi, wave_knn_split, xcorr_match, refine_logic,
+klusters_realign) and the Qt-free klusters data structures (SelectionGrid2D,
+SpikeAssignment), plus `build_invariants` — a static `cmake -P` check asserting
+the CMake-audit invariants (NS_NATIVE_ARCH global opt-out, `ns_native_arch`
+removed, `GpuBackends.cmake` present, graceful optional-dep skips, standardized
+`cmake_minimum_required`, nphys-data `LANGUAGES NONE`, no hardcoded
+`-march=native`).  10/10 run tests pass; `kk_test_per_channel_split` is
+quarantined (`DISABLED`) for a pre-existing 1/30 assertion failure surfaced by
+wiring it up.  See `tests/README.md`.
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
