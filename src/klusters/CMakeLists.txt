@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.22...3.31)
 
 # ---------------------------------------------------------------------------
 # SYCL needs to be declared as a project language before project() if using

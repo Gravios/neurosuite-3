@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.22...3.31)
 project(libneurosuite-core VERSION 2.1.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
