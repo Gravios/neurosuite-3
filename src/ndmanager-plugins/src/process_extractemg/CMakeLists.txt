@@ -171,7 +171,7 @@ if(_emg_hip_active)
     set_property(TARGET extractemg_hip_kernels PROPERTY CXX_COMPILER "${_HIPCC}")
     set_target_properties(extractemg_hip_kernels PROPERTIES CXX_COMPILER_LAUNCHER "")
     target_compile_options(extractemg_hip_kernels PRIVATE
-        -O3 -march=native
+        -O3
         --offload-arch=${_hip_archs_comma}
         -fgpu-rdc -Wall -Wextra)
     target_compile_definitions(extractemg_hip_kernels PRIVATE USE_HIP)

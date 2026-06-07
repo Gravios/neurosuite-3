@@ -19,7 +19,7 @@ target_compile_features(process_aomconvert PRIVATE cxx_std_20)
 
 target_compile_options(process_aomconvert PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
-        -O3 -march=native -ffast-math>)
+        -O3 -ffast-math>)
 
 target_include_directories(process_aomconvert PRIVATE
     ${HDF5_INCLUDE_DIRS})

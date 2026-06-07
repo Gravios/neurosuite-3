@@ -17,7 +17,7 @@ set(_hdr  process_decomposecollisions.h)
 add_library(_pdc_flags INTERFACE)
 target_compile_features(_pdc_flags INTERFACE cxx_std_20)
 target_compile_options(_pdc_flags INTERFACE
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>)
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -Wall -Wextra>)
 
 find_package(OpenMP)
 
@@ -54,7 +54,7 @@ if(_CUDA_ACTIVE)
     target_compile_features(process_decomposecollisions PRIVATE cxx_std_20)
     target_compile_options(process_decomposecollisions PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
-            $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>>
+            $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -Wall -Wextra>>
         $<$<COMPILE_LANGUAGE:CUDA>:
             -O3 --use_fast_math -Xptxas -v>)
     set_property(TARGET process_decomposecollisions

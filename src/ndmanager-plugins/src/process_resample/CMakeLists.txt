@@ -34,12 +34,22 @@ else()
         COMMENT "Unpacking vendored libsamplerate"
         VERBATIM)
 
+    # The vendored libsamplerate is built by its own autotools ./configure, which
+    # the top-level add_compile_options() (where NS_NATIVE_ARCH lives) does not
+    # reach — so honour the opt-out here explicitly.  Default to native when the
+    # option is undefined (e.g. a standalone plugin configure).
+    if(DEFINED NS_NATIVE_ARCH AND NOT NS_NATIVE_ARCH)
+        set(_lsr_march "")            # portable build requested
+    else()
+        set(_lsr_march "-march=native ")
+    endif()
+
     add_custom_command(
         OUTPUT  "${_lsr_lib}"
         DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lsr_unpacked"
         COMMAND cd "${CMAKE_CURRENT_BINARY_DIR}/lsr" &&
                 ./configure
-                "CFLAGS=-O3 -march=native -ffast-math -funroll-loops -Wno-implicit-fallthrough -Wno-absolute-value -Wno-shift-negative-value"
+                "CFLAGS=-O3 ${_lsr_march}-ffast-math -funroll-loops -Wno-implicit-fallthrough -Wno-absolute-value -Wno-shift-negative-value"
                 && make -j
         COMMENT "Building vendored libsamplerate (optimized)"
         VERBATIM)
@@ -60,7 +70,7 @@ add_executable(process_resample process_resample.cpp)
 target_compile_features(process_resample PRIVATE cxx_std_17)
 target_compile_options(process_resample PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
-        -O3 -march=native -ffast-math -funroll-loops>)
+        -O3 -ffast-math -funroll-loops>)
 # V-Cache-aware chunk size for AMD Ryzen 9800X3D (96 MB 3D V-Cache).
 # At 64 channels each float32 chunk = chunk_frames × 64 × 4 bytes.
 # 131072 frames × 64 ch × 4 bytes = 32 MB  (fits two chunks + state in 96 MB).
