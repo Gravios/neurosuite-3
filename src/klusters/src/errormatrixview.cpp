@@ -397,7 +397,45 @@ void ErrorMatrixView::initializeColorMap(){
     }
 }
 
+void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
+    // Ctrl + Left arms a pan.  We don't engage until the cursor moves past the
+    // drag threshold, so a quick Ctrl-click still reaches the Ctrl-add
+    // selection path in mouseReleaseEvent.  A plain press does nothing here;
+    // selection happens on release (as it did with the previous empty press).
+    if((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        m_panArmed       = true;
+        m_panning        = false;
+        m_panAnchorPx    = e->position().toPoint();
+        m_panCenterStart = static_cast<QRect>(window).center();
+        setCursor(Qt::ClosedHandCursor);
+        e->accept();
+    }
+}
+
 void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
+    // Pan path: Ctrl + Left-drag translates the ZoomWindow.  The world delta is
+    // taken as the difference of two viewportToWorld conversions, so it is
+    // independent of the window's current offset and of axis orientation; the
+    // window size is unchanged (zoom factor 1.0) so the world-per-pixel scale
+    // is constant through the drag.  New centre = centre-at-start − world delta
+    // makes the grabbed point track the cursor.
+    if(m_panArmed && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        const QPoint d = e->position().toPoint() - m_panAnchorPx;
+        if(!m_panning && (qAbs(d.x()) + qAbs(d.y()) >= m_panDragThreshold))
+            m_panning = true;
+        if(m_panning){
+            const QPoint wa = viewportToWorld(m_panAnchorPx.x() - 15, m_panAnchorPx.y());
+            const QPoint wc = viewportToWorld(e->position().toPoint().x() - 15, e->position().toPoint().y());
+            const QPoint newCenter(m_panCenterStart.x() - (wc.x() - wa.x()),
+                                   m_panCenterStart.y() - (wc.y() - wa.y()));
+            window.zoom(1.0f, newCenter);
+            drawContentsMode = REDRAW;
+            update();
+        }
+        e->accept();
+        return;
+    }
+
     //Write the current probability in the statusbar.
     QPoint current = viewportToWorld(e->position().toPoint().x() - 15,e->position().toPoint().y());
 
@@ -417,6 +455,20 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
+    // If a Ctrl-drag pan was in progress, finish it and swallow the click so it
+    // doesn't register as a selection.  A Ctrl-press that never crossed the
+    // drag threshold (m_panArmed but !m_panning) falls through to the normal
+    // selection logic below — there the Ctrl modifier means "add pair".
+    if(m_panArmed){
+        m_panArmed = false;
+        unsetCursor();
+        if(m_panning){
+            m_panning = false;
+            e->accept();
+            return;
+        }
+    }
+
     // Notify KlustersApp's last-interacted tracker before any early return:
     // even an empty-matrix click should still mark THIS view as the user's
     // current focus for the Shift+S reorder selection.
@@ -487,6 +539,36 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
             doc.shownClustersUpdate(clustersToShow);
         }
     }
+}
+
+void ErrorMatrixView::wheelEvent(QWheelEvent* e){
+    // Ctrl + wheel zooms around the cursor.  Without Ctrl, defer to the base so
+    // any future scroll-area behaviour still works.  In ZoomWindow::zoom a
+    // factor > 1 enlarges the drawing (zoom in); correctWindow() clamps the
+    // result to the full-matrix bounds, so zoom/pan can't escape the data.
+    if(!(e->modifiers() & Qt::ControlModifier)){
+        ViewWidget::wheelEvent(e);
+        return;
+    }
+    const int delta = e->angleDelta().y();
+    if(delta == 0){ e->accept(); return; }
+    const float factor = (delta > 0) ? m_wheelZoomStep : (1.0f / m_wheelZoomStep);
+    const QPoint pivot = viewportToWorld(e->position().toPoint().x() - 15,
+                                         e->position().toPoint().y());
+    if(window.zoom(factor, pivot)){
+        drawContentsMode = REDRAW;
+        update();
+    }
+    e->accept();
+}
+
+void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
+    // Restore the standard "double-click to reset zoom" gesture for this view
+    // (BaseFrame's default, which the previous empty override had disabled).
+    window.reset();
+    drawContentsMode = REDRAW;
+    update();
+    e->accept();
 }
 
 
