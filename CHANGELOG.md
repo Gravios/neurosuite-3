@@ -7,7 +7,7 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
-## 2026-06-07 — Klusters interactive fixes, matrix-view selection, optimisation scoping, data-model foundation
+## 2026-06-07 — Klusters interactive fixes, matrix-view selection, optimisation scoping, data-model foundation, realign/nudge correctness, template xcorr + auto-merge fixes
 
 A maintenance + investigation session spanning Klusters interaction bugs, a
 threading race, build-system optimisation hygiene, and the first piece of the
@@ -219,6 +219,76 @@ removed, `GpuBackends.cmake` present, graceful optional-dep skips, standardized
 `-march=native`).  10/10 run tests pass; `kk_test_per_channel_split` is
 quarantined (`DISABLED`) for a pre-existing 1/30 assertion failure surfaced by
 wiring it up.  See `tests/README.md`.
+
+**Klusters — nudge jumped after alignment (stale `.res`).**  After any alignment
+step, nudging a cluster moved its timestamps by more than one sample.
+`KlustersDoc::realignSpikes` re-extracted each spike's `.spk` waveform at the
+realigned window `extTs = oldTs + cumShift`, set the `.fet` timestamp column and
+the in-memory timestamp to `extTs`, but wrote the *original* pre-shift timestamp
+to `.res.pending` — so the on-disk `.res` was `cumShift` out of step with
+`.spk`/`.fet`/memory.  `nudgeClusterTimestamps` then read that stale base and
+added ±1, producing a jump of `(delta − cumShift)`.  The write loop now stores
+`extTs` to `.res`, matching the nudge invariant's own self-check.  Trade-off:
+`.res` event times now shift by `cumShift` (≤ maxShift) as intended; preserving
+original detection times for correlograms would instead require a window-aware
+nudge.
+
+**Klusters — "PCA-Center Align All" honours the Top-Channels spin box.**  The
+whole-document batch hardcoded `--topchannels 2`, ignoring the
+`realignTopChanSpinBox` value the single-cluster realign already uses (via
+`buildRealignArgs`).  It now reads the spin box (0 = all channels); `--pca-refine`
+stays forced since the action is defined as PCA-centred.  Menu label, tooltip,
+confirmation dialog and batch log header reflect the dynamic count.
+
+**Klusters — parallelised the CPU realign fallback.**  The PCA-refine CPU path
+(taken with no GPU, below the GPU spike-count threshold, or above the working-
+buffer cap) ran the per-spike best-shift search single-threaded.  Each spike is
+independent — it reads `.fil` and writes only its own `cumShift[i]`/`wavBuf[i]`
+slot — so the body is now a `refineSpike` lambda dispatched under OpenMP with one
+`.fil` handle and one scratch pair per thread (no shared file position or buffer
+contention), `reduction(+:nRefined,nClamped)`, `schedule(dynamic,16)`, gated on
+`N≥64` and >1 thread.  A serial fallback (identical results) runs when OpenMP is
+absent or per-thread handles can't open.  `OpenMP::OpenMP_CXX` was already linked
+to the klusters target; no CMake change.
+
+**Klusters — overlap-aware denominator in template / auto-merge xcorr.**  The
+normalised template xcorr (`tmNormXcorr`, and its verbatim duplicate `normXcorr`
+in `autoMerge.cpp`) divided every lag by the full-length norms
+`√(Σa²·Σb²)` computed once.  At nonzero lags the edge samples are dropped from
+the numerator, so the dot product summed over fewer terms than the denominator
+assumed — systematically under-counting off-centre alignments.  Both copies now
+accumulate the dot product and both squared norms over the same overlapping
+window inside the lag loop, so each lag is a true cosine over the overlap.  Lag 0
+and identical waveforms still give 1.0.  Note: this shifts matrix values at
+off-centre peaks, so auto-merge thresholds calibrated on the old metric may need
+re-checking.
+
+**Klusters — optional Pearson (mean-subtracted) template xcorr.**  An opt-in
+Display-prefs checkbox (`templateXcorrPearson`, default off, persisted) switches
+the normalised xcorr from cosine similarity to Pearson correlation: each
+waveform's overlap-window mean is removed before normalising (single pass via the
+centring identity), so a shared DC offset no longer inflates the score.
+`meanSubtract=false` is byte-identical to the cosine path.  All three consumers
+(template matrix, pair-xcorr, auto-merge) read the flag once and pass it through,
+so the matrix, pairwise xcorr and auto-merge stay consistent.
+
+**Klusters — auto-merge pair scoring is cancellable + shows progress.**  The
+O(nClusters²) pairwise xcorr in `computeProposals` ran with no `wasCanceled()`
+check and no `processEvents()`, freezing the modal dialog with an unresponsive
+Cancel for the whole scoring phase on large all-active runs (~1000 clusters).
+The progress range is extended to `2·nClusters+2` and the outer scoring row loop
+now polls cancel / advances the bar / pumps events once per row (the inner loop
+stays the cancel granularity).  Interim fix; an async-thread migration remains
+the longer-term option noted in the file header.
+
+**Klusters — auto-merge median mode no longer truncates 32-bit samples.**  In the
+median path, per-spike waveforms were stored in an int16 buffer and 32-bit
+samples narrowed with `static_cast<int16_t>` before the per-element median, so on
+a 32-bit recording (`isRecordingTwoBytes()==false` ⇔ `nbBits==32`, int32 `.spk`)
+any sample beyond ±32767 was corrupted and median templates disagreed with mean
+mode (which sums into a `double`).  The buffer is now int32 — exact for both the
+int16 and int32 read paths — with the median collection vector widened to match;
+median-mode memory for the subsampled spikes doubles, bounded by `medianK·nPts`.
 
 ---
 
