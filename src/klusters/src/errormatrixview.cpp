@@ -343,9 +343,17 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         painter.setPen(Qt::black);
     }
 
+    // O(1) ignore lookup instead of QList::contains() (linear) twice per cell
+    // inside the nbClusters^2 loop below — at thousands of clusters the loop is
+    // millions of cells, so the linear scans dominated.
+    std::vector<char> ignored(static_cast<size_t>(nbClusters) + 2, 0);
+    for(int idx : ignoreClusterIndex)
+        if(idx >= 0 && idx <= nbClusters + 1)
+            ignored[static_cast<size_t>(idx)] = 1;
+
     for(int clusterIndex = 1; clusterIndex <= nbClusters; ++clusterIndex){
         for(int clusterIndex2 = 1; clusterIndex2 <= nbClusters; ++clusterIndex2){
-            if((clusterIndex == clusterIndex2) || ignoreClusterIndex.contains(clusterIndex) || ignoreClusterIndex.contains(clusterIndex2)){
+            if((clusterIndex == clusterIndex2) || ignored[static_cast<size_t>(clusterIndex)] || ignored[static_cast<size_t>(clusterIndex2)]){
                 painter.setBrush(Qt::black);
             } else {
                 double probability = (*probabilities)(clusterIndex,clusterIndex2);
