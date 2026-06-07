@@ -138,6 +138,39 @@ only.  Syntax-validation for this fork now runs against real Qt6 headers (the
 edited and patched Qt files — clusterPalette, data, errormatrixview,
 templatematrixview — all pass a full Qt6 `-fsyntax-only` compile).
 
+**Build — CMake pipeline audit fixes.**  A full audit of the CMake pipeline
+(top-level + all subproject roots, configured end-to-end against real Qt6) drove
+several fixes:
+
+- **-march=native is now a global opt-out** (`NS_NATIVE_ARCH`, default ON)
+  instead of an opt-in `ns_native_arch` target.  The project ships no binaries —
+  every user builds from source — so compiling for the host ISA is the right
+  default; pass `-DNS_NATIVE_ARCH=OFF` for a portable/cross build.  This also
+  retired the dead `set(CMAKE_<LANG>_FLAGS_<CFG> … CACHE … FORCE)` block (a
+  verified no-op) in favour of a working `add_compile_options()` (C/CXX,
+  Release/RelWithDebInfo, GNU/Clang-family).  `-ffast-math` stays opt-in via
+  `ns_fast_math` (it perturbs results, not just portability).
+- **Optional converter plugins degrade gracefully.**  `process_extractleds`
+  (FFmpeg) and `process_aomconvert` (HDF5) used hard `REQUIRED` dependency checks
+  while being added unconditionally, so a single missing optional dependency
+  aborted the whole monorepo configure.  They now probe quietly and skip with an
+  informative message (mirroring `process_resample`).
+- **nphys-data** (data-only) is declared `LANGUAGES NONE` so it no longer forces
+  a compiler, and its `CPack` include is guarded to standalone builds.
+- **kiloklustakwik** defers `CMAKE_CUDA_ARCHITECTURES` to the top-level value
+  (incl. native auto-detect) when set, instead of overriding it with a different
+  list.
+- **Standardisation:** `cmake_minimum_required` unified to `3.22...3.31` across
+  the top-level and every subproject root; the inert
+  `ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE` keywords in the `NS_INSTALL_DEPS`
+  `execute_process` calls replaced with `COMMAND_ECHO STDOUT`.
+
+Remaining (noted, not yet changed): four targets (aomconvert, decomposecollisions,
+resample, kiloklustakwik) hardcode `-march=native` directly in their own
+CUDA/SYCL/ExternalProject flag lists, so they stay native even under
+`NS_NATIVE_ARCH=OFF` — redundant now that native is global, to be cleaned up for
+full portable-build consistency.
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
