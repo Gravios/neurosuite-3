@@ -3407,6 +3407,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const bool _timing = qEnvironmentVariableIsSet("NS3_REALIGN_TIMING");
     QElapsedTimer _rtmr; _rtmr.start();
     qint64 _rtSetupMs = 0, _rtComputeMs = 0;
+    // Writeback sub-phase markers (elapsed ms): boundary after sort-prep, after
+    // file-open+verify, and after the write loop+close.  Pinpoints which part of
+    // the (flat ~130ms) writeback is the fixed per-cluster cost.
+    qint64 _rtWprepMs = 0, _rtWopenMs = 0, _rtWwriteMs = 0;
     // Gap since the previous cluster's realign finished — captures the
     // inter-cluster overhead (worker teardown + slotRealignFinished +
     // next-worker spin-up) that is invisible to the in-function timers.
@@ -4758,6 +4762,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         else
             filPath = noExt + QStringLiteral(".dat");
     }
+    _rtWprepMs = _rtmr.elapsed();
     FILE* filF = fopen(filPath.toLocal8Bit().constData(), "rb");
     if (!filF)
         log << "WARNING: cannot open raw file " << filPath
@@ -4918,6 +4923,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         }
     }
 
+    _rtWopenMs = _rtmr.elapsed();
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
         const int64_t dest  = targetPos[static_cast<size_t>(j)];
@@ -5063,6 +5069,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     fclose(resW);
     fclose(fetW);
     if (filF) fclose(filF);
+    _rtWwriteMs = _rtmr.elapsed();
 
     // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
@@ -5092,7 +5099,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             << " gap=" << _gapMs << "ms"
             << " setup=" << _rtSetupMs << "ms"
             << " compute=" << (_rtComputeMs - _rtSetupMs) << "ms"
-            << " writeback=" << (_tot - _rtComputeMs) << "ms"
+            << " wsort=" << (_rtWprepMs - _rtComputeMs) << "ms"
+            << " wopen=" << (_rtWopenMs - _rtWprepMs) << "ms"
+            << " wwrite=" << (_rtWwriteMs - _rtWopenMs) << "ms"
+            << " wlog=" << (_tot - _rtWwriteMs) << "ms"
             << " total=" << _tot << "ms";
         emitFlush();
         // Mirror to stderr so the line lands in the launching terminal too —
@@ -5100,10 +5110,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         // (which is where the live log above goes).
         fprintf(stderr,
                 "[timing] cluster %d: nspk=%lld gap=%lldms setup=%lldms "
-                "compute=%lldms writeback=%lldms total=%lldms\n",
+                "compute=%lldms wsort=%lldms wopen=%lldms wwrite=%lldms "
+                "wlog=%lldms total=%lldms\n",
                 clusterId, (long long)N, _gapMs, (long long)_rtSetupMs,
                 (long long)(_rtComputeMs - _rtSetupMs),
-                (long long)(_tot - _rtComputeMs), (long long)_tot);
+                (long long)(_rtWprepMs - _rtComputeMs),
+                (long long)(_rtWopenMs - _rtWprepMs),
+                (long long)(_rtWwriteMs - _rtWopenMs),
+                (long long)(_tot - _rtWwriteMs), (long long)_tot);
         fflush(stderr);
     }
     // Record this call's end so the next cluster can report its gap.  Updated
