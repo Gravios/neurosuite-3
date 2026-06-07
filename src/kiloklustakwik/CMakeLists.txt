@@ -218,7 +218,7 @@ find_package(yaml-cpp REQUIRED)
 # so they don't accidentally bleed onto CUDA or SYCL compilation units.
 add_library(_kk_exp_cxx_flags INTERFACE)
 target_compile_options(_kk_exp_cxx_flags INTERFACE
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>)
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -Wall -Wextra>)
 target_compile_definitions(_kk_exp_cxx_flags INTERFACE
     $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 # Shared xcorr header propagates to CPU, HIP, SYCL targets that link _kk_exp_cxx_flags.
@@ -267,7 +267,7 @@ if(_CUDA_ACTIVE)
     target_include_directories(KiloKlustaKwik PRIVATE "${_xcorr_dir}")
     target_compile_options(KiloKlustaKwik PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
-            $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -march=native -Wall -Wextra>>
+            $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -Wall -Wextra>>
         $<$<COMPILE_LANGUAGE:CUDA>:
             -O3 --use_fast_math -Xptxas -v --extended-lambda>)
     target_compile_definitions(KiloKlustaKwik PRIVATE
@@ -308,7 +308,7 @@ if(_HIP_ACTIVE)
     set_property(TARGET kk_exp_hip_kernels PROPERTY CXX_COMPILER "${_HIPCC}")
     set_target_properties(kk_exp_hip_kernels PROPERTIES CXX_COMPILER_LAUNCHER "")
     target_compile_options(kk_exp_hip_kernels PRIVATE
-        -O3 -march=native
+        -O3
         --offload-arch=${_hip_archs_comma}
         -fgpu-rdc
         -Wall -Wextra)
@@ -325,7 +325,7 @@ if(_HIP_ACTIVE)
     set_property(TARGET xcorr_hip_kernels_exp PROPERTY CXX_COMPILER "${_HIPCC}")
     set_target_properties(xcorr_hip_kernels_exp PROPERTIES CXX_COMPILER_LAUNCHER "")
     target_compile_options(xcorr_hip_kernels_exp PRIVATE
-        -O3 -march=native
+        -O3
         --offload-arch=${_hip_archs_comma}
         -fgpu-rdc
         -Wall -Wextra)
@@ -444,14 +444,14 @@ if(_SYCL_ACTIVE)
     # it generates when passed at compile time too.
     if(_OCLOC)
         target_compile_options(KiloKlustaKwik_sycl PRIVATE
-            -O3 -march=native -fsycl ${_sycl_target_flag}
+            -O3 -fsycl ${_sycl_target_flag}
             -Wno-unused-command-line-argument -Wall -Wextra)
         target_link_options(KiloKlustaKwik_sycl PRIVATE
             -fsycl ${_sycl_target_flag}
             "SHELL:${_sycl_device_flag}")
     else()
         target_compile_options(KiloKlustaKwik_sycl PRIVATE
-            -O3 -march=native -fsycl ${_sycl_target_flag}
+            -O3 -fsycl ${_sycl_target_flag}
             -Wall -Wextra)
         target_link_options(KiloKlustaKwik_sycl PRIVATE
             -fsycl ${_sycl_target_flag})
