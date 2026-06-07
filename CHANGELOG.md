@@ -7,7 +7,62 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
-## 2026-06-07 — Klusters interactive fixes, matrix-view selection, optimisation scoping, data-model foundation, realign/nudge correctness, template xcorr + auto-merge fixes
+## 2026-06-08 — Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design
+
+A performance session focused on sessions with thousands of clusters: the
+remaining per-cell matrix render hotspot, palette rebuild cost, and an
+investigation into why "PCA-Center Align All" runs sequentially and slows as it
+progresses.
+
+**Klusters — template matrix rendered as one image.** `TemplateMatrixView::drawMatrix`
+filled every cell with its own `fillRect` (≈9 M calls at 3000 clusters) on every
+paint — the same hotspot already fixed in the error matrix.  It now builds an
+8-bit indexed `QImage` (one pixel per cell, `NB_COLORS` colour table, diagonal →
+black) by scanline and blits it once with `drawImage` scaled to the matrix rect
+(smoothing off).  The white at/above-threshold outlines are kept as a separate
+cheap scan pass (per-cell score compare, `drawRect` only for cells above
+threshold) and the yellow selected-pair outlines are unchanged; colour maths is
+identical.  Rendering change — worth a visual confirm on a real session.
+
+**Klusters — palette colour swatches cached.** The palette rebuild created a
+fresh `QPixmap` + `QPainter` per cluster just to produce a solid colour swatch
+(filling with `backgroundColor` then overpainting the whole 12×12 with the
+cluster colour).  Cluster colours cycle a small fixed palette, so the swatch is
+now cached in a `QHash<QRgb,QPixmap>` and reused — a rebuild creates only as many
+pixmaps as there are distinct colours.  `QPixmap` is implicitly shared, so reuse
+is free; visually identical.
+
+**Klusters — PCA-Center Align All: opt-in per-phase timing.** Investigation
+confirmed the batch is sequential (one `RealignWorker` per cluster, the next
+launched only after the prior finishes) and that the accept path is cheap
+(`forceClusterRefresh` early-returns for clusters not currently shown).  To find
+which phase actually costs, `realignSpikes` now emits one line per cluster —
+`setup / compute / writeback / total` ms — when `NS3_REALIGN_TIMING=1` is set.
+No-op (one cheap `QElapsedTimer` pair) otherwise.
+
+**Klusters — PCA-Center Align All: PCA basis cached across the batch.**
+`realignSpikes` re-read the PCA basis (`.pca`/`.pcaD`: header + per-channel means
+and eigenvectors) from disk on every call.  A batch runs over one group whose
+basis never changes, so this was N redundant reads.  The loaded basis is now
+cached on the document, keyed by path + file mtime so it self-invalidates if the
+basis is regenerated.  Scope note: the basis is the *only* batch-invariant part
+of setup — each cluster's waveforms/timestamps are fetched by direct `fseeko` to
+that cluster's own spike offsets, not a full-file scan, so they cannot be
+hoisted; the win is bounded by basis-read time (small for compact bases, larger
+for full-waveform multi-channel ones).
+
+**Klusters — cross-cluster GPU-batch realign: design.** Documented why "push the
+whole Align-All onto the GPU" is bounded: even the existing GPU path is
+CPU-read → GPU-compute → CPU-read/apply, and only the (spike × candidate)
+PCA-energy evaluation runs on the device — the `.fil` window reads and the
+re-read/apply are disk I/O that stays on the CPU.  The design specifies a batched
+dispatcher API (`refineBatch` + `RefineBatchDesc`), a one-block-per-spike kernel
+over all clusters concatenated, host-side chunking/double-buffering, a CPU-batched
+fallback (validatable without a GPU), and a `G==1` correctness oracle.  Whether it
+is worth building depends on the `NS3_REALIGN_TIMING` breakdown: it accelerates
+the *compute* phase only, not disk I/O or the writeback/sort path.  See
+`doc/design/realign-gpu-batch.md`.
+
 
 A maintenance + investigation session spanning Klusters interaction bugs, a
 threading race, build-system optimisation hygiene, and the first piece of the
