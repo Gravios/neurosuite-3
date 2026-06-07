@@ -8,6 +8,9 @@
 #include <cstring>         // patch63 — strerror
 #include <vector>
 #include <stdint.h>
+#ifdef _OPENMP
+#include <omp.h>            // CPU-fallback realign parallelisation
+#endif
 /***************************************************************************
                           klustersdoc.cpp  -  description
                              -------------------
@@ -4169,8 +4172,20 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 gpuPathRan = true;
             } while (false);
 
-            if (!gpuPathRan)
-            for (int64_t i = 0; i < N; ++i) {
+            // ── CPU per-spike refine (GPU path not taken) ────────────────────
+            // Each spike's best-shift search is independent: it reads from
+            // .fil and writes only its own cumShift[i] and wavBuf[i] slot.  The
+            // only shared mutable state is the .fil handle (its file position)
+            // and the rawFrame/candCM scratch buffers, so we parallelise across
+            // spikes — each thread gets its own handle + buffers.  Falls back to
+            // a serial loop when OpenMP is unavailable or per-thread handles
+            // cannot be opened, giving identical results either way.
+            if (!gpuPathRan) {
+                enum class RefineResult { None, Refined, Clamped };
+                auto refineSpike =
+                    [&](int64_t i, FILE* filFp82,
+                        std::vector<int16_t>& rawFrame,
+                        std::vector<int16_t>& candCM) -> RefineResult {
                 const int   curr = cumShift[static_cast<size_t>(i)];
                 const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
                 int bestS = 0;
@@ -4255,13 +4270,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 if (validCandidates == 0) {
                     // Every candidate ran off the .fil edge — nothing we
                     // can do, leave cumShift unchanged.
-                    ++nClamped;
-                    continue;
+                    return RefineResult::Clamped;
                 }
-                if (bestS == 0) continue;   // already optimal
+                if (bestS == 0) return RefineResult::None;   // already optimal
 
                 cumShift[static_cast<size_t>(i)] = curr + bestS;
-                ++nRefined;
 
                 // Refresh wavBuf[i] from the .fil at the chosen position
                 // so the downstream score-stats block uses post-refine
@@ -4310,7 +4323,52 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                         }
                     }
                 }
-            }
+                return RefineResult::Refined;
+                };  // refineSpike
+
+                // Dispatch: parallel across spikes when OpenMP is available and
+                // the cluster is large enough to amortise thread setup; each
+                // thread opens its own .fil handle and owns its scratch buffers.
+                bool ranParallel = false;
+#ifdef _OPENMP
+                const int nThr = omp_get_max_threads();
+                if (nThr > 1 && N >= 64) {
+                    std::vector<FILE*> fh(static_cast<size_t>(nThr), nullptr);
+                    bool allOpen = true;
+                    for (int t = 0; t < nThr; ++t) {
+                        fh[static_cast<size_t>(t)] =
+                            fopen(filPathP82.toLocal8Bit().constData(), "rb");
+                        if (!fh[static_cast<size_t>(t)]) { allOpen = false; break; }
+                    }
+                    if (allOpen) {
+                        #pragma omp parallel reduction(+:nRefined, nClamped)
+                        {
+                            const int tid = omp_get_thread_num();
+                            FILE* filT = fh[static_cast<size_t>(tid)];
+                            std::vector<int16_t> rawT(rawFrame.size());
+                            std::vector<int16_t> candT(candCM.size());
+                            #pragma omp for schedule(dynamic, 16)
+                            for (int64_t i = 0; i < N; ++i) {
+                                const RefineResult r =
+                                    refineSpike(i, filT, rawT, candT);
+                                if (r == RefineResult::Refined)      ++nRefined;
+                                else if (r == RefineResult::Clamped) ++nClamped;
+                            }
+                        }
+                        ranParallel = true;
+                    }
+                    for (FILE* h : fh) if (h) fclose(h);
+                }
+#endif
+                if (!ranParallel) {
+                    for (int64_t i = 0; i < N; ++i) {
+                        const RefineResult r =
+                            refineSpike(i, filFp82, rawFrame, candCM);
+                        if (r == RefineResult::Refined)      ++nRefined;
+                        else if (r == RefineResult::Clamped) ++nClamped;
+                    }
+                }
+            }  // if (!gpuPathRan)
             fclose(filFp82);
 
             log << "  PCA-refine: " << nRefined
