@@ -110,6 +110,14 @@ endif()
 
 project(neurosuite-3 VERSION 3.0.0 LANGUAGES CXX C ${_cuda_lang})
 
+# Regression test suite (opt-in; run with ctest).  OFF by default so normal
+# builds are unaffected.  When ON it builds the C++ unit tests under each
+# subproject's test/ dir plus the build-system invariant checks under tests/.
+option(NS_BUILD_TESTS "Build the regression test suite (run with ctest)" OFF)
+if(NS_BUILD_TESTS)
+    enable_testing()
+endif()
+
 # ---------------------------------------------------------------------------
 # Global language standards
 # ---------------------------------------------------------------------------
@@ -423,6 +431,14 @@ if(NOT NS_SKIP_LIBKLUSTERSSHARED)
                 "link, but this redundant safety edge is now absent.")
         endif()
     endforeach()
+endif()
+
+# ---------------------------------------------------------------------------
+# Regression test suite (NS_BUILD_TESTS=ON).  Subproject C++ tests are added by
+# their own CMakeLists; the build-system invariant checks live here.
+# ---------------------------------------------------------------------------
+if(NS_BUILD_TESTS)
+    add_subdirectory(tests)
 endif()
 
 # ---------------------------------------------------------------------------
