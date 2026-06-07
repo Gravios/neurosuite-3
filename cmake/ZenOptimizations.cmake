@@ -14,8 +14,10 @@
 #                        Zen 5; AVX2 + BMI2 on older hosts).  Binaries are not
 #                        portable but that is acceptable for a workstation build.
 #   -ffast-math          IEEE754 relaxations (reassociation, no signed-zero,
-#                        no NaN/Inf checking).  Acceptable for the numerical
-#                        kernels in KlustaKwik and process_resample.
+#                        no NaN/Inf checking).  NOT global — exposed as the
+#                        opt-in INTERFACE target ns_fast_math so only numeric
+#                        kernels (e.g. KlustaKwik's CEM core, process_resample)
+#                        take it; the GUI and guard-heavy code stay strict.
 #   -funroll-loops       Unroll small loops; pairs well with AVX-512 vectoriser.
 #   IPO/LTO              Inter-procedural / link-time optimisation in Release
 #                        mode.  Catches cross-TU inlining opportunities that
@@ -35,6 +37,38 @@
 # =============================================================================
 
 option(NS_ZEN_OPT "Apply Zen-optimized compiler flags globally" ON)
+
+# ── Opt-in fast-math bundle ───────────────────────────────────────────────────
+# -ffast-math is intentionally NOT applied globally.  It is value-unsafe (reassociation,
+# no-NaN/Inf assumption via -ffinite-math-only, no signed zero) and, when it
+# reaches a link line, pulls in crtfastmath.o which sets FTZ/DAZ process-wide.
+# Applied to every TU it can silently delete NaN/Inf guards and perturb results
+# in the GUI and the numerically sensitive non-kernel code.
+#
+# Instead it is exposed as an INTERFACE target that numeric kernels opt into:
+#       target_link_libraries(<kernel-target> PRIVATE ns_fast_math)
+#
+# Defined UNCONDITIONALLY (before the NS_ZEN_OPT early-return below) so that
+# consumers can always link it; when NS_ZEN_OPT=OFF or the build type is Debug
+# the generator expression collapses to nothing and it is a harmless no-op.
+# The COMPILE_LANGUAGE:CXX guard keeps the flag off CUDA/SYCL device TUs (nvcc
+# would need -Xcompiler; device code uses --use_fast_math separately).
+if(NOT TARGET ns_fast_math)
+    add_library(ns_fast_math INTERFACE)
+endif()
+# Options gated on NS_ZEN_OPT so that NS_ZEN_OPT=OFF yields a fully strict,
+# portable build everywhere (also the one-flag way to A/B whether fast-math is
+# perturbing drift/PCA results).  The target stays defined either way, so
+# consumers can link it unconditionally.
+if(NS_ZEN_OPT)
+    target_compile_options(ns_fast_math INTERFACE
+        $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-ffast-math>)
+endif()
+# NaN/Inf-safe variant: if a kernel must keep NaN/Inf usable as sentinels while
+# still getting reassociation/vectorisation, link a target that adds
+# "-ffast-math -fno-finite-math-only" instead — -ffinite-math-only is the part
+# that deletes guards.
+
 if(NOT NS_ZEN_OPT)
     return()
 endif()
@@ -46,7 +80,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     list(APPEND _zen_cxx_flags
         -O3
         -march=native
-        -ffast-math
         -funroll-loops
     )
 endif()
@@ -146,4 +179,5 @@ if(CMAKE_CUDA_COMPILER)
     message(STATUS "ZenOptimizations: CUDA --threads 0 -Xptxas -dlcm=ca enabled")
 endif()
 
-message(STATUS "ZenOptimizations: -O3 -march=native -ffast-math applied to Release builds")
+message(STATUS "ZenOptimizations: -O3 -march=native -funroll-loops applied to Release builds "
+               "(-ffast-math is opt-in per target via ns_fast_math)")

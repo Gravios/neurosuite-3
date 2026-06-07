@@ -246,6 +246,13 @@ target_compile_definitions(_kk_exp_cxx_flags INTERFACE
 # Shared xcorr header propagates to CPU, HIP, SYCL targets that link _kk_exp_cxx_flags.
 # The CUDA target is wired manually and gets an explicit include_directories below.
 target_include_directories(_kk_exp_cxx_flags INTERFACE "${_xcorr_dir}")
+# Opt the numeric core into -ffast-math (defined by cmake/ZenOptimizations.cmake).
+# Scoped here rather than globally: param.c (param_obj_exp) and
+# KlustaKwikYaml.cpp (yaml_obj_exp) do NOT link _kk_exp_cxx_flags, so they stay
+# strict.  Guarded so KK still builds if the optimization module is absent.
+if(TARGET ns_fast_math)
+    target_link_libraries(_kk_exp_cxx_flags INTERFACE ns_fast_math)
+endif()
 
 # =============================================================================
 # Helper: configure one KiloKlustaKwik executable (avoids repetition)
@@ -288,6 +295,13 @@ if(_CUDA_ACTIVE)
     target_compile_definitions(KiloKlustaKwik PRIVATE
         USE_CUDA $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
     target_link_libraries(KiloKlustaKwik PRIVATE CUDA::cudart m yaml-cpp)
+    # Host (CXX) TUs of the CUDA exe set their flags inline above rather than
+    # via _kk_exp_cxx_flags, so opt them into -ffast-math here.  The
+    # COMPILE_LANGUAGE:CXX guard inside ns_fast_math keeps it off the .cu TUs,
+    # which use --use_fast_math separately.
+    if(TARGET ns_fast_math)
+        target_link_libraries(KiloKlustaKwik PRIVATE ns_fast_math)
+    endif()
     if(OpenMP_CXX_FOUND)
         target_link_libraries(KiloKlustaKwik PRIVATE OpenMP::OpenMP_CXX)
     endif()
