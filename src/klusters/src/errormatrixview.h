@@ -27,6 +27,7 @@
 #include <QResizeEvent>
 
 #include <QMouseEvent>
+#include <QWheelEvent>
 
 
 
@@ -255,10 +256,11 @@ protected:
         }
     }
 
-    inline void mousePressEvent(QMouseEvent* event) override {}
+    void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
-    inline void mouseDoubleClickEvent(QMouseEvent* event)override {}
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
     /**Color map use to represent the probabilities of the error matrix.*/
@@ -297,6 +299,18 @@ private:
 
     /**The width of a cell of the error matrix.*/
     int cellWidth;
+
+    // ── pan / zoom interaction (drives the inherited BaseFrame ZoomWindow) ──
+    // Ctrl + Left-drag pans; Ctrl + wheel zooms around the cursor; double-click
+    // resets to the full matrix.  Plain click stays pair-selection, and a quick
+    // Ctrl-click that never crosses the drag threshold falls through to the
+    // Ctrl-add selection path (so multi-select still works).
+    bool   m_panArmed{false};      // Ctrl+press seen; awaiting drag threshold
+    bool   m_panning{false};       // drag threshold crossed → actively panning
+    QPoint m_panAnchorPx;          // pixel position where the Ctrl-drag began
+    QPoint m_panCenterStart;       // window centre (world coords) at drag start
+    static constexpr int   m_panDragThreshold{3};   // px before a press → pan
+    static constexpr float m_wheelZoomStep{1.25f};  // zoom multiplier per tick
 
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
     QList<ErrorMatrixThread*> threadsToBeKill;
