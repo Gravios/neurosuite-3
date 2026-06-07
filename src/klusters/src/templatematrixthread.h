@@ -6,11 +6,28 @@
 #include <QList>
 #include <atomic>
 #include <vector>
+#include <cstdio>
+#include <cstdint>
 
 #include "array.h"
 #include "data.h"
 
 class TemplateMatrixView;
+
+// ---------------------------------------------------------------------------
+// Shared .spk reader used by all template/xcorr consumers.
+// Reads one spike's waveform from an already-open .spk handle into a
+// channel-major float buffer (out, length nChan*nSamp), de-interleaving the
+// on-disk sample-major layout [sm*nChan+ch] -> [ch*nSamp+sm].  Spike files are
+// int16 throughout the toolchain (the extractor writes int16 regardless of
+// acquisition nBits), so the sample width is fixed here — no 2-vs-4-byte branch.
+// rawScratch is a caller-owned reusable int16 buffer (resized as needed) to
+// avoid per-call allocation in hot loops.  Returns false on seek/read failure,
+// leaving out untouched.
+// ---------------------------------------------------------------------------
+bool tmReadSpikeFloat(FILE* spk, long fileIdx0, int nChan, int nSamp,
+                      std::vector<int16_t>& rawScratch,
+                      std::vector<float>& out);
 
 // ---------------------------------------------------------------------------
 // Shared xcorr helper used by both thread classes.

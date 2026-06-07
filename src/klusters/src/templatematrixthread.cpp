@@ -12,6 +12,34 @@
 #endif
 
 // ---------------------------------------------------------------------------
+// Shared .spk reader — see templatematrixthread.h.  int16 on disk, channel-major
+// float out.  No 2-vs-4-byte branch: the toolchain's extractor writes int16.
+// ---------------------------------------------------------------------------
+bool tmReadSpikeFloat(FILE* spk, long fileIdx0, int nChan, int nSamp,
+                      std::vector<int16_t>& rawScratch,
+                      std::vector<float>& out)
+{
+    const size_t nPts = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    if (nPts == 0) return false;
+    if (rawScratch.size() < nPts) rawScratch.resize(nPts);
+    if (out.size() < nPts) out.resize(nPts);
+
+    const off_t off = static_cast<off_t>(fileIdx0)
+                    * static_cast<off_t>(nPts)
+                    * static_cast<off_t>(sizeof(int16_t));
+    if (fseeko(spk, off, SEEK_SET) != 0) return false;
+    if (std::fread(rawScratch.data(), sizeof(int16_t), nPts, spk) != nPts)
+        return false;
+
+    for (int ch = 0; ch < nChan; ++ch)
+        for (int sm = 0; sm < nSamp; ++sm)
+            out[static_cast<size_t>(ch * nSamp + sm)] =
+                static_cast<float>(
+                    rawScratch[static_cast<size_t>(sm * nChan + ch)]);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Shared xcorr implementation (also used by PairXcorrThread).
 // ---------------------------------------------------------------------------
 float tmNormXcorr(const std::vector<float>& a,
@@ -84,8 +112,6 @@ void TemplateMatrixThread::run()
     const int    nSamp    = data.nbSamplesPerWaveform();
     const int    nPts     = nChan * nSamp;
     const int    maxShift = std::max(1, nSamp / 4);
-    const bool   twoBytes = data.isRecordingTwoBytes();
-    const int    sBytes   = twoBytes ? 2 : 4;
     const QString spkPath = data.getSpkFileName();
 
     if (spkPath.isEmpty() || nPts <= 0) { post(); return; }
@@ -116,7 +142,7 @@ void TemplateMatrixThread::run()
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
     shared(meanWav, allFileIdx) \
-    firstprivate(nClusters, nPts, nChan, nSamp, sBytes, twoBytes, spkCStr)
+    firstprivate(nClusters, nPts, nChan, nSamp, spkCStr)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
 
@@ -128,36 +154,18 @@ void TemplateMatrixThread::run()
         if (!spk) continue;
 
         std::vector<double>  acc(static_cast<size_t>(nPts), 0.0);
-        std::vector<int16_t> buf16(static_cast<size_t>(nPts));
-        std::vector<int32_t> buf32(static_cast<size_t>(nPts));
+        std::vector<int16_t> raw;
+        std::vector<float>   sp;
         long valid = 0;
 
         for (long s = 0; s < nSpk; ++s) {
             if (haveToStopProcessing.load(std::memory_order_relaxed)) break;
-            off_t offset = static_cast<off_t>(fidx[static_cast<size_t>(s)])
-                         * static_cast<off_t>(nPts)
-                         * static_cast<off_t>(sBytes);
-            if (fseeko(spk, offset, SEEK_SET) != 0) continue;
-
-            bool ok = false;
-            if (twoBytes) {
-                ok = (fread(buf16.data(), 2, static_cast<size_t>(nPts), spk)
-                      == static_cast<size_t>(nPts));
-                if (ok)
-                    for (int ch = 0; ch < nChan; ++ch)
-                        for (int sm = 0; sm < nSamp; ++sm)
-                            acc[static_cast<size_t>(ch*nSamp+sm)] +=
-                                buf16[static_cast<size_t>(sm*nChan+ch)];
-            } else {
-                ok = (fread(buf32.data(), 4, static_cast<size_t>(nPts), spk)
-                      == static_cast<size_t>(nPts));
-                if (ok)
-                    for (int ch = 0; ch < nChan; ++ch)
-                        for (int sm = 0; sm < nSamp; ++sm)
-                            acc[static_cast<size_t>(ch*nSamp+sm)] +=
-                                buf32[static_cast<size_t>(sm*nChan+ch)];
-            }
-            if (ok) ++valid;
+            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
+                                  nChan, nSamp, raw, sp))
+                continue;
+            for (int p = 0; p < nPts; ++p)
+                acc[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
+            ++valid;
         }
         fclose(spk);
 
