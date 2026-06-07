@@ -38,6 +38,7 @@
 #include <QColor>
 #include <QFrame>
 #include <QList>
+#include <QHash>
 #include <QStatusBar>
 #include <QDebug>
 
@@ -795,19 +796,29 @@ void ClusterPalette::selectItems(const QList<int>& selectedClusters){
     //unselect all the items first
     iconView->clearSelection();
 
-    //Loop on the clusters to be selected
-    QListWidgetItem *item = 0;
-    QList<int>::const_iterator clusterIterator;
-    QList<int>::const_iterator clusterIteratorEnd(selectedClusters.constEnd());
-    for(clusterIterator = selectedClusters.constBegin(); clusterIterator != clusterIteratorEnd; ++clusterIterator){
-        QList<QListWidgetItem *> lst = iconView->findItems(QString::number(*clusterIterator),Qt::MatchStartsWith);
-        if(!lst.isEmpty()) {
-            item = lst.at(0);
-            item->setSelected(true);
+    // Build cluster-id -> item map once (O(n)), then resolve each requested
+    // cluster in O(1).  This replaces findItems(QString::number(id),
+    // MatchStartsWith), which was O(n) per selected cluster (O(k*n) overall,
+    // noticeable at thousands of clusters) and matched by label *prefix* — so
+    // selecting id 10 could land on "100 - noise" / "1000 …".  We match the
+    // exact CLUSTER_ID data role instead.
+    QHash<int, QListWidgetItem*> itemById;
+    itemById.reserve(iconView->count());
+    for(int k = 0; k < iconView->count(); ++k){
+        QListWidgetItem* it = iconView->item(k);
+        itemById.insert(it->data(ClusterPalette::CLUSTER_ID).toInt(), it);
+    }
+
+    QListWidgetItem *item = nullptr;
+    for(int clusterId : selectedClusters){
+        const auto found = itemById.constFind(clusterId);
+        if(found != itemById.constEnd()){
+            (*found)->setSelected(true);
+            item = *found;
         }
     }
     //Last item in selection gets focus if it exists
-    if(!selectedClusters.isEmpty())
+    if(item)
         iconView->setCurrentItem(item);
 
     //reset isInSelectItems to false to enable again the the emission of signals due to selectionChange
