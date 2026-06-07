@@ -7,7 +7,7 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
-## 2026-06-07 — Klusters interactive fixes, optimisation scoping, data-model foundation
+## 2026-06-07 — Klusters interactive fixes, matrix-view selection, optimisation scoping, data-model foundation
 
 A maintenance + investigation session spanning Klusters interaction bugs, a
 threading race, build-system optimisation hygiene, and the first piece of the
@@ -87,6 +87,31 @@ bounding box; the test validates it returns exactly the brute-force result over
 300 random polygons and shows a ~77× query speedup for a small lasso over 2M
 points.  Predicate parity with `QRegion::contains` is a wiring-time concern,
 documented in-header.
+
+**Klusters — error matrix now highlights selected pairs.** `ErrorMatrixView`
+already supported multi-pair selection (Ctrl-click to add/remove), but
+`drawMatrix` drew no highlight, so the selected cells were invisible against the
+probability colours — making it hard to see and curate pairs on a dense matrix.
+Added a yellow cosmetic-pen outline for every pair in `selectedPairs`, placed by
+the same world-coordinate cell layout the matrix uses (column = `pair.first`,
+row = `pair.second`); a cosmetic pen keeps the outline a constant 2 px at any
+zoom, and pairs whose cluster no longer exists are skipped.
+
+**Klusters — template matrix multi-select + per-pair highlight.** The template
+matrix was single-pair: a click set one `selectedA`/`selectedB` and only that
+one cell was outlined.  It now accumulates a selection the same way the error
+matrix does — Ctrl-click toggles a pair in/out (rebuilding the shown-cluster set
+from what remains on toggle-off), a plain click replaces it with one pair — and
+`drawMatrix` outlines every selected pair, not just the most recent.  This backs
+the group-by-`G` workflow: the selected pairs' clusters are added to the active
+view and `G` (a window-level shortcut) groups them, so no Apply step is needed
+for grouping.  `selectedA`/`selectedB` still track the most-recent pair, so the
+threshold slider / Apply single-pair refinement tool is unchanged.
+
+Both matrix-view changes are syntax-checked against Qt headers but not yet
+visually verified — this environment has no Qt6 build or display.  A follow-up
+will add pan/zoom to the error matrix (driving the inherited `BaseFrame`
+`ZoomWindow` under Ctrl+wheel / Ctrl+drag while keeping plain-click selection).
 
 ---
 
