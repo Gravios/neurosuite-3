@@ -489,3 +489,16 @@ endif()
 # drift-chunk file; forwards remaining flags to the binary.
 install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/KlustaKwikRefine"
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+# ---------------------------------------------------------------------------
+# Regression unit tests (opt-in; built only when NS_BUILD_TESTS=ON).
+# ---------------------------------------------------------------------------
+if(NOT DEFINED NS_BUILD_TESTS)
+    option(NS_BUILD_TESTS "Build the regression test suite (run with ctest)" OFF)
+endif()
+if(NS_BUILD_TESTS)
+    if(PROJECT_IS_TOP_LEVEL)
+        enable_testing()
+    endif()
+    add_subdirectory(test)
+endif()
