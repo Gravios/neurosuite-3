@@ -4534,27 +4534,33 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Compute new timestamps and sort cluster spikes by new timestamp
     // -----------------------------------------------------------------------
-    // Two timestamp values are needed per spike:
+    // Two timestamp values are computed per spike:
     //
-    //   resTs   — written to the .res file.  This is the ORIGINAL detection
-    //             sample (the peak in the raw signal), unchanged by realignment.
-    //             The spike fired at the same physical moment regardless of how
-    //             we roll its display waveform.
+    //   extTs   — the realigned window position: extTs = oldTs + cumShift.
+    //             The .spk waveform is re-extracted from .fil/.dat at this
+    //             position (window [extTs - peakSamp0 ...]), which captures the
+    //             content that lands at peakSamp0 after the shift and avoids the
+    //             wrap-around artifact a circular shift produces at the edges.
+    //             extTs is ALSO what gets written to .res, to the .fet timestamp
+    //             column, and to the in-memory timestamp — so all four stay in
+    //             lock-step and the pipeline-wide invariant
+    //                 .spk[i] peak  ≡  .fil at .res[i]
+    //             holds.  nudge (and any other tool that re-reads .fil at the
+    //             .res offset) depends on this.  Writing the pre-shift detection
+    //             sample to .res instead — as an earlier revision did — left
+    //             .res pointing cumShift samples away from where the .spk window
+    //             actually sits, so the next nudge jumped by cumShift rather
+    //             than by the requested single sample.
     //
-    //   extTs   — used to re-extract from the .fil/.dat file.  Rolling a spike
-    //             waveform by cumShift samples means we want a window centred
-    //             cumShift samples later (for cumShift > 0) in the raw signal:
-    //               extTs = oldTs + cumShift
-    //             so that the new window [extTs - peakSamp0 ... ] captures the
-    //             content that would appear at peakSamp0 after the shift.
-    //             Re-extracting at extTs and writing to .spk avoids the
-    //             wrap-around artifact that circular-shift produces at the
-    //             window edges.
+    //   resTs   — the spike's CURRENT .res value (i.e. where its .spk window
+    //             sits going into this pass).  Used only to seed extTs and for
+    //             the raw-source .spk-match verification below; it is NOT a
+    //             separate value persisted to .res.
     //
-    // Sorting is also done by extTs so spikes stay in temporal order after
-    // any shift of their effective window position.
+    // Sorting is done by extTs so spikes stay in temporal order after any shift
+    // of their window position.
     std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (for sort + re-extract)
-    std::vector<int64_t> resTs(static_cast<size_t>(N));   // = original ts (for .res write)
+    std::vector<int64_t> resTs(static_cast<size_t>(N));   // current .res value (seeds extTs + verification)
     for (int64_t i = 0; i < N; ++i) {
         resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
         newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
@@ -4821,8 +4827,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
         const int64_t dest  = targetPos[static_cast<size_t>(j)];
-        const int64_t ts         = newTs[static_cast<size_t>(csIdx)]; // extTs: for .fil re-extraction
-        const int64_t ts_for_res = resTs[static_cast<size_t>(csIdx)]; // original: for .res write
+        const int64_t ts = newTs[static_cast<size_t>(csIdx)]; // extTs: re-extraction window AND .res/.fet/in-memory timestamp (kept consistent)
 
         int16_t* w = wavBuf.data()
             + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
@@ -4830,7 +4835,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         // Capture original in-memory values before any update (needed for reject)
         PendingSpkRecord rec;
         rec.destPos = dest;
-        rec.ts      = ts_for_res;
+        rec.ts      = ts;
         rec.origTs  = static_cast<int64_t>(
             clusteringData->featureValue(
                 static_cast<dataType>(dest + 1),
@@ -4934,7 +4939,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         fwrite(spkRow.data(), sizeof(int16_t), static_cast<size_t>(spkElems), spkW);
 
         fseeko(resW, static_cast<off_t>(dest) * static_cast<off_t>(sizeof(int64_t)), SEEK_SET);
-        fwrite(&ts_for_res, sizeof(int64_t), 1, resW);  // original timestamp unchanged
+        fwrite(&ts, sizeof(int64_t), 1, resW);  // extTs — keep .res in lock-step with the re-extracted .spk window so .spk[i] peak == .fil at .res[i] (the invariant nudge depends on)
 
         const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
             + static_cast<off_t>(dest) * static_cast<off_t>(timeDim)
