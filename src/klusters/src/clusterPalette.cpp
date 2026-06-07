@@ -390,15 +390,26 @@ void ClusterPalette::updateClusterList(){
     ItemColors& clusterColors = doc->clusterColors();
     int nbClusters = clusterColors.numberOfItems();
 
-    //Construct one icon for each cluster
-    QPainter painter;
+    //Construct one icon for each cluster.  The icon is a solid 12x12 colour
+    //swatch; cache it per colour so a session with thousands of clusters (which
+    //cycle a small fixed colour palette) builds a handful of pixmaps instead of
+    //a QPixmap + QPainter per cluster.  (The old code filled with backgroundColor
+    //then immediately overpainted the whole 12x12 with the cluster colour, so the
+    //swatch was always a solid cluster colour.)
+    QHash<QRgb, QPixmap> swatchCache;
 
     for(int i = 0; i<nbClusters; ++i){
-        QPixmap pix(12,12);
-        pix.fill(backgroundColor);
-        painter.begin(&pix);
-        painter.fillRect(0,0,12,12,clusterColors.color(i,ItemColors::BY_INDEX));
-        painter.end();
+        const QColor swatchColor = clusterColors.color(i,ItemColors::BY_INDEX);
+        const QRgb   swatchKey   = swatchColor.rgb();
+        QPixmap pix;
+        const auto cached = swatchCache.constFind(swatchKey);
+        if(cached != swatchCache.constEnd()){
+            pix = *cached;
+        } else {
+            pix = QPixmap(12,12);
+            pix.fill(swatchColor);
+            swatchCache.insert(swatchKey, pix);
+        }
         const int curId = clusterColors.itemId(i);
         QString clusterText = QString::fromLatin1("%1").arg(curId);
 
