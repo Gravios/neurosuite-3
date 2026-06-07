@@ -86,6 +86,7 @@ void Configuration::read() {
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
     templateThresholdMin = settings.value("templateThresholdMin", 0.5).toDouble();
     templateThresholdMax = settings.value("templateThresholdMax", 1.0).toDouble();
+    templateXcorrPearson = settings.value("templateXcorrPearson", false).toBool();
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
@@ -148,6 +149,7 @@ void Configuration::write() const {
     settings.setValue("selectionLineWidth", selectionLineWidth);
     settings.setValue("templateThresholdMin", templateThresholdMin);
     settings.setValue("templateThresholdMax", templateThresholdMax);
+    settings.setValue("templateXcorrPearson", templateXcorrPearson);
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.setValue("autoSelectFeatures", autoSelectFeatures);
     settings.setValue("autoSelectNFeatures", autoSelectNFeatures);

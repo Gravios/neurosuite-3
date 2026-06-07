@@ -207,6 +207,16 @@
         </property>
        </widget>
       </item>
+      <item row="4" column="0">
+       <widget class="QCheckBox" name="templateXcorrPearsonCheckBox">
+        <property name="text">
+         <string>Mean-subtract waveforms before template &amp;xcorr (Pearson)</string>
+        </property>
+        <property name="toolTip">
+         <string>When checked, each cluster mean waveform has its overlap-window mean removed before the normalised cross-correlation, so the Template Matrix (and auto-merge) measure shape correlation (Pearson) instead of cosine similarity.  Removes sensitivity to a shared DC offset between templates.  Off by default (plain cosine).</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

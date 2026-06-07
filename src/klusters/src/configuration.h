@@ -123,6 +123,7 @@ public:
 
     void setTemplateThresholdMin(double v) {templateThresholdMin = qBound(0.0, v, 1.0);}
     void setTemplateThresholdMax(double v) {templateThresholdMax = qBound(0.0, v, 1.0);}
+    void setTemplateXcorrPearson(bool v)   {templateXcorrPearson = v;}
     
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
@@ -213,6 +214,7 @@ public:
 
     double getTemplateThresholdMin() const {return templateThresholdMin;}
     double getTemplateThresholdMax() const {return templateThresholdMax;}
+    bool   getTemplateXcorrPearson() const {return templateXcorrPearson;}
 
     /**Returns the default value for the crash and recovery mechanism.
     * True if a crash and recovery autosave is performed, false othewise.*/
@@ -389,6 +391,7 @@ private:
     int selectionLineWidth;
     double templateThresholdMin;
     double templateThresholdMax;
+    bool templateXcorrPearson;
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;

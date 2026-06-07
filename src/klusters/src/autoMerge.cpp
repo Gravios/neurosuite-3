@@ -28,6 +28,7 @@
 #include "klustersdoc.h"
 #include "data.h"
 #include "sortabletable.h"
+#include "configuration.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -55,23 +56,34 @@ namespace {
 // :tmNormXcorr verbatim — pull-extract to a shared helper is a future
 // cleanup.  Returns the maximum |xcorr| / sqrt(|a|^2 * |b|^2) over the
 // overlapping window across lags in [-maxShift, +maxShift]; sign-insensitive
-// on purpose so inverted-polarity duplicates also match.
+// on purpose so inverted-polarity duplicates also match.  meanSubtract=true
+// switches from cosine to Pearson (overlap-window mean removed per waveform).
 float normXcorr(const std::vector<float>& a,
                 const std::vector<float>& b,
-                int maxShift)
+                int maxShift,
+                bool meanSubtract = false)
 {
     const int N = static_cast<int>(a.size());
     if (N == 0) return 0.0f;
     float best = 0.0f;
     for (int lag = -maxShift; lag <= maxShift; ++lag) {
-        // dot product and both squared norms over the same overlap window
-        double xc = 0.0, normA = 0.0, normB = 0.0;
+        // dot product, both squared norms, and both plain sums over the same
+        // overlap window (sums only needed for the Pearson centring identity)
+        double sab = 0.0, saa = 0.0, sbb = 0.0, sa = 0.0, sb = 0.0;
+        int cnt = 0;
         for (int i = 0; i < N; ++i) {
             int j = i + lag;
             if (j < 0 || j >= N) continue;
-            xc    += static_cast<double>(a[i]) * b[j];
-            normA += static_cast<double>(a[i]) * a[i];
-            normB += static_cast<double>(b[j]) * b[j];
+            const double ai = a[i], bj = b[j];
+            sab += ai * bj; saa += ai * ai; sbb += bj * bj;
+            sa  += ai;      sb  += bj;      ++cnt;
+        }
+        if (cnt == 0) continue;
+        double xc = sab, normA = saa, normB = sbb;
+        if (meanSubtract) {
+            xc    = sab - sa * sb / cnt;
+            normA = saa - sa * sa / cnt;
+            normB = sbb - sb * sb / cnt;
         }
         const double denom = std::sqrt(normA * normB);
         if (denom < 1e-12) continue;
@@ -152,6 +164,7 @@ QList<MergeGroup> computeProposals(
     const int    maxShift = (settings.maxShift > 0)
                           ? settings.maxShift
                           : std::max(1, nSamp / 4);
+    const bool   pearson  = configuration().getTemplateXcorrPearson();
     const bool   twoBytes = data.isRecordingTwoBytes();
     const int    sBytes   = twoBytes ? 2 : 4;
     const QString spkPath = data.getSpkFileName();
@@ -322,7 +335,7 @@ QList<MergeGroup> computeProposals(
             if (templates[static_cast<size_t>(j)].empty()) continue;
             const float s = normXcorr(templates[static_cast<size_t>(i)],
                                       templates[static_cast<size_t>(j)],
-                                      maxShift);
+                                      maxShift, pearson);
             if (s >= thr) highPairs.emplace_back(i, j, s);
         }
     }

@@ -1,6 +1,7 @@
 #include "templatematrixthread.h"
 #include "templatematrixview.h"
 #include "sortabletable.h"
+#include "configuration.h"
 
 #include <QApplication>
 #include <cmath>
@@ -15,25 +16,37 @@
 // ---------------------------------------------------------------------------
 float tmNormXcorr(const std::vector<float>& a,
                   const std::vector<float>& b,
-                  int maxShift)
+                  int maxShift,
+                  bool meanSubtract)
 {
     const int N = static_cast<int>(a.size());
     if (N == 0) return 0.0f;
 
     float best = 0.0f;
     for (int lag = -maxShift; lag <= maxShift; ++lag) {
-        // Accumulate the dot product AND both squared norms over the SAME
-        // overlapping window, so each lag is a true cosine over the samples
-        // that actually overlap.  Using the full-length norms here (the old
-        // behaviour) penalised off-centre lags, where the numerator sums over
-        // fewer terms than the denominator assumes.
-        double xcorr = 0.0, normA = 0.0, normB = 0.0;
+        // One pass over the overlapping window: dot product, both squared
+        // norms, and (for Pearson) both plain sums so the per-window means can
+        // be removed via the centring identity without a second pass.  Using
+        // the full-length norms here (the old behaviour) penalised off-centre
+        // lags, where the numerator sums over fewer terms.
+        double sab = 0.0, saa = 0.0, sbb = 0.0, sa = 0.0, sb = 0.0;
+        int cnt = 0;
         for (int i = 0; i < N; ++i) {
             int j = i + lag;
             if (j < 0 || j >= N) continue;
-            xcorr += static_cast<double>(a[i]) * b[j];
-            normA += static_cast<double>(a[i]) * a[i];
-            normB += static_cast<double>(b[j]) * b[j];
+            const double ai = a[i], bj = b[j];
+            sab += ai * bj; saa += ai * ai; sbb += bj * bj;
+            sa  += ai;      sb  += bj;      ++cnt;
+        }
+        if (cnt == 0) continue;
+
+        double xcorr = sab, normA = saa, normB = sbb;
+        if (meanSubtract) {
+            // Pearson: remove the overlap-window mean of each waveform via
+            //   Σxy − (Σx)(Σy)/n,  Σx² − (Σx)²/n,  Σy² − (Σy)²/n.
+            xcorr = sab - sa * sb / cnt;
+            normA = saa - sa * sa / cnt;
+            normB = sbb - sb * sb / cnt;
         }
         const double denom = std::sqrt(normA * normB);
         if (denom < 1e-12) continue;
@@ -169,15 +182,17 @@ void TemplateMatrixThread::run()
         for (int cj = ci+1; cj < nClusters; ++cj)
             pairs.emplace_back(ci, cj);
     const int nPairs = static_cast<int>(pairs.size());
+    const bool pearson = configuration().getTemplateXcorrPearson();
 
 #pragma omp parallel for schedule(dynamic,4) default(none) \
-    shared(meanWav, pairs, scores) firstprivate(nPairs, maxShift)
+    shared(meanWav, pairs, scores) firstprivate(nPairs, maxShift, pearson)
     for (int pi = 0; pi < nPairs; ++pi) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
         const int ci = pairs[static_cast<size_t>(pi)].first;
         const int cj = pairs[static_cast<size_t>(pi)].second;
         const float s = tmNormXcorr(meanWav[static_cast<size_t>(ci)],
-                                     meanWav[static_cast<size_t>(cj)], maxShift);
+                                     meanWav[static_cast<size_t>(cj)], maxShift,
+                                     pearson);
         (*scores)(ci+1, cj+1) = s;
         (*scores)(cj+1, ci+1) = s;
     }
