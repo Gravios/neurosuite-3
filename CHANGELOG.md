@@ -198,6 +198,14 @@ gates `-march=native` on `NS_NATIVE_ARCH` explicitly.  A portable build
 (`-DNS_NATIVE_ARCH=OFF`) now has zero `-march=native` in any flags.make (was 4);
 the default build still applies it to all 39 C/CXX targets via the global.
 
+**Build — removed the vestigial `ns_native_arch` shim.**  Once `-march=native`
+went global, `ns_native_arch` survived only as an empty INTERFACE target so the
+plugins' opt-in links kept resolving.  With native now sourced entirely from the
+global mechanism, the shim, the ten guarded no-op `target_link_libraries(…
+ns_native_arch)` links, and their now-inaccurate comments were all dead weight
+and have been removed (`ns_fast_math` is unchanged).  No references to
+`ns_native_arch` remain.
+
 ---
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
