@@ -55,7 +55,7 @@
 #   affected by this constraint.
 # =============================================================================
 
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.22...3.31)
 
 # ---------------------------------------------------------------------------
 # CUDA optional language declaration
@@ -181,7 +181,7 @@ if(_cuda_lang AND NOT CMAKE_CUDA_ARCHITECTURES)
         endif()
     else()
         # No GPU at configure time (headless/CI) — compile for the range of
-        # Maxwell through Blackwell that the codebase targets.
+        # Turing through Blackwell (sm_75..sm_120) that the codebase targets.
         set(CMAKE_CUDA_ARCHITECTURES "75;86;89;100;120"
             CACHE STRING "CUDA architectures (explicit list — no GPU detected)" FORCE)
         message(STATUS "neurosuite-3: CUDA architectures = 75;86;89;100;120 (no GPU at configure time)")
@@ -257,7 +257,7 @@ if(NS_INSTALL_DEPS)
             execute_process(
                 COMMAND sudo apt-get install -y ${_apt_packages}
                 RESULT_VARIABLE _apt_result
-                ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
+                COMMAND_ECHO STDOUT
             )
             if(NOT _apt_result EQUAL 0)
                 message(FATAL_ERROR
@@ -275,7 +275,7 @@ if(NS_INSTALL_DEPS)
                 COMMAND /bin/bash -c
                     "\"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
                 RESULT_VARIABLE _brew_bootstrap
-                ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
+                COMMAND_ECHO STDOUT
             )
             if(NOT _brew_bootstrap EQUAL 0)
                 message(FATAL_ERROR
@@ -292,7 +292,7 @@ if(NS_INSTALL_DEPS)
         execute_process(
             COMMAND ${_brew} install ${_brew_packages}
             RESULT_VARIABLE _brew_result
-            ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE
+            COMMAND_ECHO STDOUT
         )
         if(NOT _brew_result EQUAL 0)
             message(FATAL_ERROR
@@ -331,13 +331,13 @@ if(NS_INSTALL_DEPS)
             endif()
             execute_process(
                 COMMAND ${_git} clone https://github.com/microsoft/vcpkg.git "${NS_VCPKG_ROOT}"
-                RESULT_VARIABLE _r ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE)
+                RESULT_VARIABLE _r COMMAND_ECHO STDOUT)
             if(NOT _r EQUAL 0)
                 message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg clone failed.")
             endif()
             execute_process(
                 COMMAND "${NS_VCPKG_ROOT}/bootstrap-vcpkg.bat" -disableMetrics
-                RESULT_VARIABLE _r ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE)
+                RESULT_VARIABLE _r COMMAND_ECHO STDOUT)
             if(NOT _r EQUAL 0)
                 message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg bootstrap failed.")
             endif()
@@ -347,7 +347,7 @@ if(NS_INSTALL_DEPS)
             COMMAND "${_vcpkg_exe}" install
                     yaml-cpp libxml2 gsl libsamplerate ffmpeg
                     --triplet ${_vcpkg_triplet}
-            RESULT_VARIABLE _r ECHO_OUTPUT_VARIABLE ECHO_ERROR_VARIABLE)
+            RESULT_VARIABLE _r COMMAND_ECHO STDOUT)
         if(NOT _r EQUAL 0)
             message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg install failed (exit ${_r}).")
         endif()

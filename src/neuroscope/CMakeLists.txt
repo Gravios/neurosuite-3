@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21...3.31)
+cmake_minimum_required(VERSION 3.22...3.31)
 project(neuroscope VERSION 2.0.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
