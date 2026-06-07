@@ -1086,6 +1086,11 @@ private:
     PcaBasis m_realignPcaCache;
     QString  m_realignPcaCachePath;
     qint64   m_realignPcaCacheMtime = -1;
+
+    /** Steady-clock ms at the end of the previous realignSpikes call, used by
+     *  NS3_REALIGN_TIMING to report the inter-cluster gap (worker teardown +
+     *  slotRealignFinished + next-worker spin-up).  -1 = no previous call. */
+    long long m_realignPrevEndMs = -1;
     
     /**The url of the document.*/
     QString docUrl;

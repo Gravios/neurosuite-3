@@ -12,6 +12,7 @@
 #include <omp.h>            // CPU-fallback realign parallelisation
 #endif
 #include <QElapsedTimer>    // opt-in per-phase realign timing
+#include <chrono>           // inter-cluster gap timestamp (steady_clock)
 /***************************************************************************
                           klustersdoc.cpp  -  description
                              -------------------
@@ -3406,6 +3407,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const bool _timing = qEnvironmentVariableIsSet("NS3_REALIGN_TIMING");
     QElapsedTimer _rtmr; _rtmr.start();
     qint64 _rtSetupMs = 0, _rtComputeMs = 0;
+    // Gap since the previous cluster's realign finished — captures the
+    // inter-cluster overhead (worker teardown + slotRealignFinished +
+    // next-worker spin-up) that is invisible to the in-function timers.
+    const long long _nowStartMs = (long long)
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    const long long _gapMs =
+        (m_realignPrevEndMs >= 0) ? (_nowStartMs - m_realignPrevEndMs) : -1;
 
     const Data& d         = data();
     const int   nChan     = d.nbOfChannels();
@@ -5080,6 +5089,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         const qint64 _tot = _rtmr.elapsed();
         log << "[timing] cluster " << clusterId
             << ": nspk=" << N
+            << " gap=" << _gapMs << "ms"
             << " setup=" << _rtSetupMs << "ms"
             << " compute=" << (_rtComputeMs - _rtSetupMs) << "ms"
             << " writeback=" << (_tot - _rtComputeMs) << "ms"
@@ -5089,13 +5099,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         // far easier to redirect/capture than the in-app realign output panel
         // (which is where the live log above goes).
         fprintf(stderr,
-                "[timing] cluster %d: nspk=%lld setup=%lldms compute=%lldms "
-                "writeback=%lldms total=%lldms\n",
-                clusterId, (long long)N, (long long)_rtSetupMs,
+                "[timing] cluster %d: nspk=%lld gap=%lldms setup=%lldms "
+                "compute=%lldms writeback=%lldms total=%lldms\n",
+                clusterId, (long long)N, _gapMs, (long long)_rtSetupMs,
                 (long long)(_rtComputeMs - _rtSetupMs),
                 (long long)(_tot - _rtComputeMs), (long long)_tot);
         fflush(stderr);
     }
+    // Record this call's end so the next cluster can report its gap.  Updated
+    // unconditionally (cheap) so it is correct regardless of the timing flag.
+    m_realignPrevEndMs = (long long)
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
 
     return true;
 }
