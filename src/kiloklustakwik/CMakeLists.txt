@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.22...3.31)
 
 # =============================================================================
 # SYCL compiler auto-selection  (must happen BEFORE project())
@@ -100,8 +100,14 @@ if(USE_CUDA)
         enable_language(CUDA)
         set(CMAKE_CUDA_STANDARD          17)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-        set(CMAKE_CUDA_ARCHITECTURES     "86;89;100;120"
-            CACHE STRING "CUDA architectures to target")
+        # In the monorepo the top-level already set CMAKE_CUDA_ARCHITECTURES
+        # (native when a GPU is present, else an explicit list).  Only choose a
+        # default here when building kiloklustakwik standalone, and match the
+        # top-level explicit list so the two build modes agree.
+        if(NOT CMAKE_CUDA_ARCHITECTURES)
+            set(CMAKE_CUDA_ARCHITECTURES     "75;86;89;100;120"
+                CACHE STRING "CUDA architectures to target")
+        endif()
         set(_CUDA_ACTIVE TRUE)
         message(STATUS "KiloKlustaKwik: CUDA available — ${CMAKE_CUDA_COMPILER}")
     else()
