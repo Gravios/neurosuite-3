@@ -1081,6 +1081,14 @@ private:
     int m_realignBatchFailed;
     /**Sum of nShifted across all clusters processed in this batch.*/
     int m_realignBatchShiftedTotal;
+    /**Cluster IDs accepted during the current batch whose view refresh
+     * (cache invalidation + forceClusterRefresh) has been deferred to batch
+     * end.  Per-cluster refresh emits spikesAddedToCluster, which puts every
+     * shown sub-view into REDRAW mode and launches waveform/correlogram
+     * threads against the (131 GB) .spk.pending — doing that once per cluster
+     * dominated the inter-cluster gap, so it is batched and flushed once when
+     * the run finishes (or aborts) via flushRealignBatchRefresh().*/
+    QList<int> m_realignBatchTouched;
     /**Fixed args string used for every worker invocation in the current
      * batch (built from realignArgs with --topchannels and --pca-refine
      * normalised).*/
@@ -1097,6 +1105,12 @@ private:
      * both slotRealignSpikes and the batch driver need.  Caller is
      * responsible for the output widget and UI lock state.*/
     void startRealignWorker(int clusterId, const QString& launchArgs);
+
+    /**Flush the deferred view refresh accumulated in m_realignBatchTouched:
+     * invalidate the waveform/correlogram caches for every touched cluster,
+     * then force one refresh pass.  Called once when a PCA-Center Align All
+     * batch finishes or is aborted, instead of per cluster.*/
+    void flushRealignBatchRefresh();
 
     /**True if a Error Martix exists, false otherwise.*/
     bool errorMatrixExists;
