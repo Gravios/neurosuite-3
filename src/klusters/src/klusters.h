@@ -458,6 +458,20 @@ private Q_SLOTS:
                              QVector<float> meanBefore, QVector<float> meanAfter,
                              QString backupBase, int nChan, int nSamp);
 
+    /**Per-cluster progress callback for a single batch worker running
+     * PCA-Center Align All (see startRealignBatchWorker / RealignWorker batch
+     * mode).  Updates the progress bar and batch counters and records the
+     * cluster for the deferred view refresh.*/
+    void slotRealignClusterDone(int pos, int total, int clusterId,
+                                bool ok, int nShifted);
+
+    /**Called when the single batch worker finishes the whole cluster list.
+     * Does the one-time batch finalise (centroid-cache teardown, deferred
+     * refresh flush, summary, UI unlock).*/
+    void slotRealignBatchFinished(bool ok, int nShifted, int nSwapped,
+                                  QVector<float> meanBefore, QVector<float> meanAfter,
+                                  QString backupBase, int nChan, int nSamp);
+
     /**Run ndm_estimatedrift on the current electrode group to produce
      * SESSION.drift.  Only the current group is used as the source;
      * the result can then be propagated to siblings via slotApplyDriftSiblings.*/
@@ -1105,6 +1119,14 @@ private:
      * both slotRealignSpikes and the batch driver need.  Caller is
      * responsible for the output widget and UI lock state.*/
     void startRealignWorker(int clusterId, const QString& launchArgs);
+
+    /**Start ONE worker that processes the whole @p clusterIds list back-to-back
+     * in a single thread (RealignWorker batch mode), wired to
+     * slotRealignClusterDone (progress) and slotRealignBatchFinished (finalise).
+     * Replaces the per-cluster startRealignWorker loop for PCA-Center Align All
+     * so the ~450ms/cluster orchestration round-trip is paid once.*/
+    void startRealignBatchWorker(const QList<int>& clusterIds,
+                                 const QString& launchArgs);
 
     /**Flush the deferred view refresh accumulated in m_realignBatchTouched:
      * invalidate the waveform/correlogram caches for every touched cluster,
