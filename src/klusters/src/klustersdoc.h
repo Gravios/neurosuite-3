@@ -745,17 +745,26 @@ public:
     }
 
     /** Convenience: snapshot each cluster in @p clusterIds.
-     *  Computes all cluster centroids once and reuses them across the set. */
+     *  Computes all cluster centroids once and reuses them across the set.
+     *  During a PCA-Center Align All batch the centroids come from the
+     *  batch-scoped cache (computed once for the whole run) instead of a fresh
+     *  full-dataset pass per call — see beginRealignBatchLog(). */
     QList<ClusterSnapshot> snapshotClusters(const QList<int>& clusterIds,
                                              double isiThreshMs = 3.0) const {
         QList<ClusterSnapshot> snaps;
         if (clusterIds.isEmpty())
             return snaps;
+        snaps.reserve(clusterIds.size());
+        if (m_centroidCacheEnabled) {
+            const QMap<int,QVector<double>>& centroids = cachedCentroids();
+            for (int id : clusterIds)
+                snaps.append(clusteringData->computeSnapshot(id, isiThreshMs, &centroids));
+            return snaps;
+        }
         // Compute all centroids once — amortises the O(N×D) pass across
         // the entire call.  Each cluster then only does an O(K×D) linear
         // scan to find its nearest neighbour.
         const auto centroids = clusteringData->computeAllCentroids();
-        snaps.reserve(clusterIds.size());
         for (int id : clusterIds)
             snaps.append(clusteringData->computeSnapshot(id, isiThreshMs, &centroids));
         return snaps;
@@ -1247,23 +1256,39 @@ private:
     /// to record which preceding action index is being reverted or replayed.
     int lastLoggedActionIdx = -1;
 
-    /// When true, realignSpikes() skips its own per-cluster logBefore/logAfter.
-    /// Set during a PCA-Center Align All batch so the whole batch is logged as a
-    /// single curation action (one snapshotClusters/computeAllCentroids pair)
-    /// instead of one per cluster — see beginRealignBatchLog/endRealignBatchLog.
-    bool m_suppressRealignAutoLog = false;
-    QList<int> m_realignBatchLogClusters;   // ids covered by the batch log block
+    /// Batch-scoped cache of all cluster centroids.  While enabled (during a
+    /// PCA-Center Align All), snapshotClusters() computes the full-dataset
+    /// computeAllCentroids() pass once and reuses it, instead of twice per
+    /// cluster.  Per-cluster realign logging stays on, so the log still streams
+    /// cluster-by-cluster and undo stays per-cluster.  The cached centroids
+    /// reflect batch-start geometry; during the batch the snapshots' nearest-
+    /// cluster audit metric is therefore relative to that fixed reference (the
+    /// realign only shifts spikes within a cluster, so this is a close
+    /// approximation and the field is informational only).
+    bool                              m_centroidCacheEnabled = false;
+    mutable bool                      m_centroidCacheValid   = false;
+    mutable QMap<int,QVector<double>> m_centroidCache;
+
+    /// Return all-cluster centroids, populating the batch cache on first use.
+    const QMap<int,QVector<double>>& cachedCentroids() const {
+        if (!m_centroidCacheValid) {
+            m_centroidCache      = clusteringData->computeAllCentroids();
+            m_centroidCacheValid = true;
+        }
+        return m_centroidCache;
+    }
 
 public:
-    /** Open one curation "before" block covering all @p clusterIds and suppress
-     *  realignSpikes()'s per-cluster logging for the duration of the batch.
-     *  Pairs with endRealignBatchLog().  Used by PCA-Center Align All so the
-     *  expensive computeAllCentroids() snapshot runs once for the whole batch
-     *  instead of twice per cluster. */
+    /** Enable the batch-scoped centroid cache for a PCA-Center Align All run so
+     *  every cluster's per-cluster logBefore/logAfter reuses a single
+     *  computeAllCentroids() pass.  Per-cluster logging is left ON (the log
+     *  streams per cluster and undo stays per-cluster).  Pairs with
+     *  endRealignBatchLog().  @p clusterIds is unused (kept for call-site
+     *  compatibility). */
     void beginRealignBatchLog(const QList<int>& clusterIds);
 
-    /** Commit the "after" snapshot for the batch block opened by
-     *  beginRealignBatchLog() and re-enable per-cluster realign logging. */
+    /** Disable and clear the batch-scoped centroid cache opened by
+     *  beginRealignBatchLog(). */
     void endRealignBatchLog();
 
 public:
