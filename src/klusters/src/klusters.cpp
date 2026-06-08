@@ -5789,34 +5789,14 @@ void KlustersApp::slotPcaAlignAllClusters()
     m_realignBatchFailed       = 0;
     m_realignBatchShiftedTotal = 0;
 
-    // Log the whole Align-All as ONE curation action: snapshot all clusters
-    // once here and once at completion, and suppress realignSpikes' per-cluster
-    // logging.  Without this each cluster ran a full-dataset computeAllCentroids()
-    // twice (~130ms each) — the dominant cost of the batch.
-    //
-    // This one snapshot runs synchronously on the GUI thread before the first
-    // per-cluster line, so tell the user what's happening and force a repaint —
-    // otherwise the UI sits on one core with an empty log until it finishes.
-    if (realignOutputWidget) {
-        realignOutputWidget->insertStdoutLine(
-            tr("Snapshotting %1 clusters for the undo log (one-time)…")
-            .arg(clusters.size()));
-        realignOutputWidget->scrollToBottom();
-    }
-    slotStatusMsg(tr("PCA-Center align: snapshotting %1 clusters…")
-                  .arg(clusters.size()));
-    fprintf(stderr, "[batch] snapshotting %d clusters for undo log…\n",
-            int(clusters.size()));
-    fflush(stderr);
-    QApplication::processEvents();   // paint the message before the blocking call
+    // Enable the batch-scoped centroid cache for the run: each cluster's
+    // per-cluster realign logBefore/logAfter then reuses one computeAllCentroids()
+    // pass instead of recomputing the full-dataset centroids twice per cluster
+    // (~130ms each — formerly the dominant cost of the batch).  This call is
+    // instant; the one centroid pass is populated lazily in the realign worker
+    // on the first cluster, so the GUI does not freeze and the log streams
+    // cluster-by-cluster as before.
     doc->beginRealignBatchLog(clusters);
-    fprintf(stderr, "[batch] snapshot done — aligning %d clusters\n",
-            int(clusters.size()));
-    fflush(stderr);
-    if (realignOutputWidget) {
-        realignOutputWidget->insertStdoutLine(tr("Snapshot done — aligning…"));
-        realignOutputWidget->scrollToBottom();
-    }
 
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
