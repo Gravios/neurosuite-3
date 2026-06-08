@@ -65,6 +65,7 @@ void Configuration::read() {
     realignIterations = settings.value("realignIterations",  2).toInt();
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     realignMode       = settings.value("realignMode",        0).toInt();
+    curationLogging   = settings.value("curationLogging",    true).toBool();
     dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
     dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
     dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();
@@ -128,6 +129,7 @@ void Configuration::write() const {
     settings.setValue("realignIterations", realignIterations);
     settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("realignMode",       realignMode);
+    settings.setValue("curationLogging",   curationLogging);
     settings.setValue("dipSplitMinSize",      dipSplitMinSize);
     settings.setValue("dipSplitBloatFactor",  dipSplitBloatFactor);
     settings.setValue("dipSplitValleyThresh", dipSplitValleyThresh);

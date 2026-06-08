@@ -21,6 +21,10 @@ public:
     void   setRealignMode(int m);
     int    getRealignMode()       const;
 
+    // Curation logging (per-action audit snapshots)
+    void   setCurationLogging(bool b);
+    bool   getCurationLogging()   const;
+
     // DipSplit
     void   setDipSplitMinSize(int n);
     void   setDipSplitBloatFactor(double v);

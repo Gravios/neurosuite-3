@@ -208,6 +208,19 @@
           </item>
          </layout>
         </item>
+        <item row="3" column="0">
+         <widget class="QCheckBox" name="curationLoggingCheckBox">
+          <property name="text">
+           <string>Enable curation logging</string>
+          </property>
+          <property name="toolTip">
+           <string>Record per-action curation snapshots to the .curation_log file. Each realign/nudge/group/split takes a full-dataset audit snapshot (computeAllCentroids); disabling this skips that work, removing its overhead during performance testing. The on-disk curation audit trail is not written while disabled. Undo/redo are unaffected. Default: on.</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
    </item>
