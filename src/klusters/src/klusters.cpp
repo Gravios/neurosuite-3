@@ -5629,6 +5629,30 @@ void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
 }
 
 // ---------------------------------------------------------------------------
+// flushRealignBatchRefresh
+//
+// One-shot view refresh for all clusters accepted during a PCA-Center Align
+// All batch.  During the batch each cluster's refresh is deferred (only its id
+// is recorded) because forceClusterRefresh emits spikesAddedToCluster, which
+// puts every shown sub-view into REDRAW and launches waveform/correlogram
+// threads against the .spk.pending — doing that per cluster across ~1000
+// clusters was the dominant inter-cluster cost.  Invalidate all caches first,
+// then fire one refresh pass so the views re-read the committed data once.
+// ---------------------------------------------------------------------------
+void KlustersApp::flushRealignBatchRefresh()
+{
+    if (m_realignBatchTouched.isEmpty())
+        return;
+    for (int id : m_realignBatchTouched) {
+        doc->invalidateWaveformCache(id);
+        doc->invalidateCorrelogramCache(id);
+    }
+    for (int id : m_realignBatchTouched)
+        doc->forceClusterRefresh(id);
+    m_realignBatchTouched.clear();
+}
+
+// ---------------------------------------------------------------------------
 // slotPcaAlignAllClusters
 //
 // Iterates every cluster ID > 1 (skipping noise=0 and artifact=1) and runs
@@ -5788,6 +5812,7 @@ void KlustersApp::slotPcaAlignAllClusters()
     m_realignBatchAccepted     = 0;
     m_realignBatchFailed       = 0;
     m_realignBatchShiftedTotal = 0;
+    m_realignBatchTouched.clear();
 
     // Enable the batch-scoped centroid cache for the run: each cluster's
     // per-cluster realign logBefore/logAfter then reuses one computeAllCentroids()
@@ -5836,6 +5861,8 @@ void KlustersApp::slotAbortRealign()
         m_realignBatchQueue.clear();
         m_realignBatchActive = false;
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
+        // Refresh whatever was already accepted before the abort.
+        flushRealignBatchRefresh();
         if (realignOutputWidget) {
             realignOutputWidget->insertStderrLine(
                 tr("--- Batch aborted: %1 cluster(s) skipped, %2 already accepted ---")
@@ -5884,14 +5911,14 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
         (void)meanBefore; (void)meanAfter; (void)backupBase; (void)nChan; (void)nSamp;
         (void)nSwapped;
         if (ok && realignClusterId >= 0) {
-            // Auto-accept: same bookkeeping the single-cluster path does when
-            // the user clicks Accept in the review dialog, minus the focus /
-            // tab-switch UX (which would be disruptive on every iteration of
-            // a long batch).
+            // Auto-accept.  Defer the view refresh (cache invalidation +
+            // forceClusterRefresh) to batch end — doing it per cluster put
+            // every shown sub-view into REDRAW and launched waveform/
+            // correlogram threads against the .spk.pending on every iteration,
+            // which dominated the inter-cluster gap.  setModified is cheap and
+            // kept here so the dirty state is correct even on abort.
             doc->setModified(true);
-            doc->invalidateWaveformCache(realignClusterId);
-            doc->invalidateCorrelogramCache(realignClusterId);
-            doc->forceClusterRefresh(realignClusterId);
+            m_realignBatchTouched.append(realignClusterId);
             m_realignBatchAccepted++;
             m_realignBatchShiftedTotal += nShifted;
         } else {
@@ -5929,6 +5956,8 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
         // Batch complete.
         m_realignBatchActive = false;
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
+        // Now do the one deferred view refresh for every accepted cluster.
+        flushRealignBatchRefresh();
         if (realignOutputWidget) {
             realignOutputWidget->insertStdoutLine(
                 tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
