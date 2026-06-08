@@ -5793,7 +5793,30 @@ void KlustersApp::slotPcaAlignAllClusters()
     // once here and once at completion, and suppress realignSpikes' per-cluster
     // logging.  Without this each cluster ran a full-dataset computeAllCentroids()
     // twice (~130ms each) — the dominant cost of the batch.
+    //
+    // This one snapshot runs synchronously on the GUI thread before the first
+    // per-cluster line, so tell the user what's happening and force a repaint —
+    // otherwise the UI sits on one core with an empty log until it finishes.
+    if (realignOutputWidget) {
+        realignOutputWidget->insertStdoutLine(
+            tr("Snapshotting %1 clusters for the undo log (one-time)…")
+            .arg(clusters.size()));
+        realignOutputWidget->scrollToBottom();
+    }
+    slotStatusMsg(tr("PCA-Center align: snapshotting %1 clusters…")
+                  .arg(clusters.size()));
+    fprintf(stderr, "[batch] snapshotting %d clusters for undo log…\n",
+            int(clusters.size()));
+    fflush(stderr);
+    QApplication::processEvents();   // paint the message before the blocking call
     doc->beginRealignBatchLog(clusters);
+    fprintf(stderr, "[batch] snapshot done — aligning %d clusters\n",
+            int(clusters.size()));
+    fflush(stderr);
+    if (realignOutputWidget) {
+        realignOutputWidget->insertStdoutLine(tr("Snapshot done — aligning…"));
+        realignOutputWidget->scrollToBottom();
+    }
 
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
