@@ -7,6 +7,7 @@
 
 #include <QThread>
 #include <stdexcept>
+#include <cstdio>
 
 RealignWorker::RealignWorker(KlustersDoc* doc, int clusterId,
                              const QString& args, QObject* parent)
@@ -39,8 +40,19 @@ void RealignWorker::run()
     // (~450ms/cluster, independent of spike count) collapses to one round-trip
     // for the entire batch.  Per-cluster feedback is emitted via clusterDone.
     if (!m_clusterIds.isEmpty()) {
+        // During a batch, realignSpikes' per-spike stream (e.g. the per-spike
+        // --pca-refine detail) is written to stderr only.  Forwarding it to the
+        // GUI log panel posts one queued event per spike, which on a full-group
+        // Align All (hundreds of thousands of lines) floods the GUI event loop:
+        // each line did an O(items) scrollToBottom, so per-line cost grew as the
+        // panel filled and the queued clusterDone progress updates piled up
+        // behind the backlog — the worker finished the whole list while the
+        // progress counter still lagged hundreds of clusters behind.  The GUI
+        // panel now gets one header line per cluster (below) plus the final
+        // batch summary; error lines are still surfaced to the GUI.
         auto liveLog = [this](const QString& line, bool isError) {
-            emit logLine(line, isError);
+            if (isError) { emit logLine(line, true); return; }
+            std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
         };
         const int total = m_clusterIds.size();
         int accepted = 0, failed = 0, shiftedTotal = 0;
@@ -68,12 +80,16 @@ void RealignWorker::run()
             }
             // realignSpikes streams its own lines via liveLog; logOut is only
             // populated when no callback is given, so it is normally empty here.
+            // Route it the same way (errors to GUI, the rest to stderr).
             if (!logOut.isEmpty()) {
                 const QStringList lines =
                     logOut.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-                for (const QString& line : lines)
-                    emit logLine(line, line.startsWith(QLatin1String("ERROR"))
-                                    || line.startsWith(QLatin1String("WARNING")));
+                for (const QString& line : lines) {
+                    const bool isErr = line.startsWith(QLatin1String("ERROR"))
+                                    || line.startsWith(QLatin1String("WARNING"));
+                    if (isErr) emit logLine(line, true);
+                    else std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
+                }
             }
 
             if (ok) { ++accepted; shiftedTotal += nsh; }
