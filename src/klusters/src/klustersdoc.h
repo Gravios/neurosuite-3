@@ -1247,6 +1247,25 @@ private:
     /// to record which preceding action index is being reverted or replayed.
     int lastLoggedActionIdx = -1;
 
+    /// When true, realignSpikes() skips its own per-cluster logBefore/logAfter.
+    /// Set during a PCA-Center Align All batch so the whole batch is logged as a
+    /// single curation action (one snapshotClusters/computeAllCentroids pair)
+    /// instead of one per cluster — see beginRealignBatchLog/endRealignBatchLog.
+    bool m_suppressRealignAutoLog = false;
+    QList<int> m_realignBatchLogClusters;   // ids covered by the batch log block
+
+public:
+    /** Open one curation "before" block covering all @p clusterIds and suppress
+     *  realignSpikes()'s per-cluster logging for the duration of the batch.
+     *  Pairs with endRealignBatchLog().  Used by PCA-Center Align All so the
+     *  expensive computeAllCentroids() snapshot runs once for the whole batch
+     *  instead of twice per cluster. */
+    void beginRealignBatchLog(const QList<int>& clusterIds);
+
+    /** Commit the "after" snapshot for the batch block opened by
+     *  beginRealignBatchLog() and re-enable per-cluster realign logging. */
+    void endRealignBatchLog();
+
 public:
     // (logAnnotation was removed when the J/K/X manual annotation
     //  shortcuts were retired.  Curation status is now inferred

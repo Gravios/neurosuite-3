@@ -3370,8 +3370,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     nSwapped = 0;
     logOut.clear();
 
-    // Snapshot the cluster before any waveform data is modified
-    logBefore(CurationLogger::ActionType::REALIGN, QList<int>{ clusterId });
+    // Snapshot the cluster before any waveform data is modified.  Suppressed
+    // during an Align-All batch — the batch logs one before/after pair instead
+    // (each snapshot runs a full-dataset computeAllCentroids()).
+    if (!m_suppressRealignAutoLog)
+        logBefore(CurationLogger::ActionType::REALIGN, QList<int>{ clusterId });
 
     // Helper: emit live if callback provided, otherwise buffer in logOut for later.
     auto emitLine = [&](const QString& line, bool isError = false) {
@@ -5089,8 +5092,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         }
     }
 
-    // Log the cluster after realignment — features and timestamps have been updated
-    logAfter(QList<int>{ clusterId });
+    // Log the cluster after realignment — features and timestamps have been
+    // updated.  Suppressed during an Align-All batch (see logBefore above).
+    if (!m_suppressRealignAutoLog)
+        logAfter(QList<int>{ clusterId });
 
     if (_timing) {
         const qint64 _tot = _rtmr.elapsed();
@@ -6442,6 +6447,27 @@ void KlustersDoc::logAfter(const QList<int>& clusterIds)
         s.actionHistoryDepth = clusterActionCount.value(s.clusterId, 0);
 
     curationLogger->commitAction(snaps);
+}
+
+void KlustersDoc::beginRealignBatchLog(const QList<int>& clusterIds)
+{
+    // One "before" snapshot for the whole batch, then suppress realignSpikes'
+    // per-cluster logging.  snapshotClusters() runs computeAllCentroids() (a
+    // full O(allSpikes×D) pass) once here instead of twice per cluster.
+    m_realignBatchLogClusters = clusterIds;
+    logBefore(CurationLogger::ActionType::REALIGN, clusterIds);
+    m_suppressRealignAutoLog = true;
+}
+
+void KlustersDoc::endRealignBatchLog()
+{
+    // Re-enable per-cluster logging first so logAfter's snapshot is a normal
+    // (single) call, then commit the one "after" snapshot for the batch.
+    m_suppressRealignAutoLog = false;
+    if (!m_realignBatchLogClusters.isEmpty()) {
+        logAfter(m_realignBatchLogClusters);
+        m_realignBatchLogClusters.clear();
+    }
 }
 
 // ---------------------------------------------------------------------------

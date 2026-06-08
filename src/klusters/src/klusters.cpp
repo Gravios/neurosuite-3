@@ -5789,6 +5789,12 @@ void KlustersApp::slotPcaAlignAllClusters()
     m_realignBatchFailed       = 0;
     m_realignBatchShiftedTotal = 0;
 
+    // Log the whole Align-All as ONE curation action: snapshot all clusters
+    // once here and once at completion, and suppress realignSpikes' per-cluster
+    // logging.  Without this each cluster ran a full-dataset computeAllCentroids()
+    // twice (~130ms each) — the dominant cost of the batch.
+    doc->beginRealignBatchLog(clusters);
+
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
 
@@ -5826,6 +5832,7 @@ void KlustersApp::slotAbortRealign()
         const int remaining = m_realignBatchQueue.size();
         m_realignBatchQueue.clear();
         m_realignBatchActive = false;
+        doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         if (realignOutputWidget) {
             realignOutputWidget->insertStderrLine(
                 tr("--- Batch aborted: %1 cluster(s) skipped, %2 already accepted ---")
@@ -5918,6 +5925,7 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
 
         // Batch complete.
         m_realignBatchActive = false;
+        doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         if (realignOutputWidget) {
             realignOutputWidget->insertStdoutLine(
                 tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
