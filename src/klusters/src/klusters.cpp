@@ -5628,6 +5628,121 @@ void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
     thread->start();
 }
 
+void KlustersApp::startRealignBatchWorker(const QList<int>& clusterIds,
+                                          const QString& launchArgs)
+{
+    // One worker, batch mode: it loops realignSpikes over the whole list in
+    // this single thread (see RealignWorker::setBatch / run).  The clusterId
+    // ctor arg is unused in batch mode.
+    auto* worker = new RealignWorker(doc, /*clusterId*/-1, launchArgs);
+    worker->setBatch(clusterIds);
+    auto* thread = new QThread(this);
+    worker->moveToThread(thread);
+
+    // Same log streaming as the single-cluster path.
+    connect(worker, &RealignWorker::logLine,
+            this, [this](const QString& line, bool isError) {
+                if (!realignOutputWidget) return;
+                if (isError)
+                    realignOutputWidget->insertStderrLine(line);
+                else
+                    realignOutputWidget->insertStdoutLine(line);
+                realignOutputWidget->scrollToBottom();
+            }, Qt::QueuedConnection);
+
+    // Per-cluster progress (progress bar + counters) and the one-time finalise.
+    connect(worker, &RealignWorker::clusterDone,
+            this, &KlustersApp::slotRealignClusterDone,
+            Qt::QueuedConnection);
+    connect(worker, &RealignWorker::finished,
+            this, &KlustersApp::slotRealignBatchFinished,
+            Qt::QueuedConnection);
+
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::started, worker, &RealignWorker::run);
+
+    realignWorker    = worker;
+    realignThread    = thread;
+    realignClusterId = -1;
+    thread->start();
+}
+
+// Per-cluster progress for the single batch worker.  The realignSpikes call
+// already streamed this cluster's log lines via logLine; here we only update
+// the counters / progress bar and record the cluster for the deferred refresh.
+void KlustersApp::slotRealignClusterDone(int pos, int /*total*/, int clusterId,
+                                         bool ok, int nShifted)
+{
+    if (ok) {
+        doc->setModified(true);
+        m_realignBatchTouched.append(clusterId);   // refresh deferred to batch end
+        m_realignBatchAccepted++;
+        m_realignBatchShiftedTotal += nShifted;
+    } else {
+        m_realignBatchFailed++;
+    }
+    if (m_realignProgressBar)
+        m_realignProgressBar->setValue(pos);
+    slotStatusMsg(tr("PCA-Center align: %1 / %2 clusters …")
+                  .arg(pos).arg(m_realignBatchTotal));
+}
+
+// One-time finalise when the single batch worker has processed the whole list.
+void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
+                                           int /*nSwapped*/,
+                                           QVector<float> /*meanBefore*/,
+                                           QVector<float> /*meanAfter*/,
+                                           QString /*backupBase*/,
+                                           int /*nChan*/, int /*nSamp*/)
+{
+    realignRunning = false;
+
+    if (realignThread) {
+        realignThread->quit();
+        realignThread->wait(2000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    realignWorker = nullptr;   // already deleteLater'd
+
+    // If the batch was already finalised by slotAbortRealign, do nothing more.
+    if (!m_realignBatchActive)
+        return;
+    m_realignBatchActive = false;
+
+    doc->endRealignBatchLog();    // commit the single batch "after" snapshot
+    flushRealignBatchRefresh();   // one deferred view refresh for all clusters
+
+    if (realignOutputWidget) {
+        realignOutputWidget->insertStdoutLine(
+            tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
+               "shifted total — Save to commit or discard via File > Close ===")
+            .arg(m_realignBatchAccepted)
+            .arg(m_realignBatchFailed)
+            .arg(m_realignBatchShiftedTotal));
+        realignOutputWidget->scrollToBottom();
+    }
+    if (m_realignProgressBar) m_realignProgressBar->hide();
+    slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
+                     "%3 spike(s) shifted total.")
+                  .arg(m_realignBatchAccepted)
+                  .arg(m_realignBatchFailed)
+                  .arg(m_realignBatchShiftedTotal));
+    slotStateChanged(QStringLiteral("noRealignState"));
+    // Switch back to the Overview Display so the user can immediately
+    // arrow-key through clusters and see updated waveforms.
+    if (tabsParent) {
+        for (int i = 0; i < tabsParent->count(); ++i) {
+            if (tabsParent->tabText(i).contains(tr("Overview"),
+                                                Qt::CaseInsensitive)) {
+                tabsParent->setCurrentIndex(i);
+                break;
+            }
+        }
+    }
+    updateUndoRedoDisplay();
+}
+
 // ---------------------------------------------------------------------------
 // flushRealignBatchRefresh
 //
@@ -5803,11 +5918,12 @@ void KlustersApp::slotPcaAlignAllClusters()
         realignWorker = nullptr;
     }
 
-    // Initialise batch state and launch the first cluster.  Subsequent
-    // clusters fire from slotRealignFinished's batch branch as each worker
-    // completes.
+    // Initialise batch state and launch ONE worker for the whole list.  The
+    // worker loops realignSpikes internally (RealignWorker batch mode) and
+    // reports per-cluster progress via slotRealignClusterDone, so the
+    // per-cluster thread-spawn + GUI round-trip is paid once for the batch.
     m_realignBatchActive       = true;
-    m_realignBatchQueue        = clusters;
+    m_realignBatchQueue.clear();          // unused in single-worker batch mode
     m_realignBatchTotal        = clusters.size();
     m_realignBatchAccepted     = 0;
     m_realignBatchFailed       = 0;
@@ -5816,23 +5932,13 @@ void KlustersApp::slotPcaAlignAllClusters()
 
     // Enable the batch-scoped centroid cache for the run: each cluster's
     // per-cluster realign logBefore/logAfter then reuses one computeAllCentroids()
-    // pass instead of recomputing the full-dataset centroids twice per cluster
-    // (~130ms each — formerly the dominant cost of the batch).  This call is
-    // instant; the one centroid pass is populated lazily in the realign worker
-    // on the first cluster, so the GUI does not freeze and the log streams
-    // cluster-by-cluster as before.
+    // pass instead of recomputing the full-dataset centroids twice per cluster.
     doc->beginRealignBatchLog(clusters);
 
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
-
-    const int firstCluster = m_realignBatchQueue.takeFirst();
-    realignOutputWidget->insertStdoutLine(
-        tr("--- cluster %1 (1/%2) ---").arg(firstCluster).arg(m_realignBatchTotal));
-    realignOutputWidget->scrollToBottom();
-    slotStatusMsg(tr("PCA-Center align: cluster %1 (1/%2) …")
-                  .arg(firstCluster).arg(m_realignBatchTotal));
-    startRealignWorker(firstCluster, m_realignBatchArgs);
+    slotStatusMsg(tr("PCA-Center align: 0 / %1 clusters …").arg(clusters.size()));
+    startRealignBatchWorker(clusters, m_realignBatchArgs);
 }
 
 void KlustersApp::slotAbortRealign()
