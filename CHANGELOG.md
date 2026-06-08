@@ -51,7 +51,25 @@ that cluster's own spike offsets, not a full-file scan, so they cannot be
 hoisted; the win is bounded by basis-read time (small for compact bases, larger
 for full-waveform multi-channel ones).
 
-**Klusters — cross-cluster GPU-batch realign: design.** Documented why "push the
+**Klusters — PCA-Center Align All: the slowdown was the curation log, not I/O.**
+`NS3_REALIGN_TIMING` (with the per-phase + inter-cluster-gap breakdown added this
+session) showed the realign itself is ~2 ms/cluster; the flat ~130 ms per cluster
+and the steadily growing inter-cluster gap were both the curation snapshot.
+`snapshotClusters()` — invoked by `logBefore` *and* `logAfter`, so twice per
+cluster — runs `computeAllCentroids()`, a full O(all-spikes × dims) pass over the
+entire session, only to populate the snapshot's nearest-neighbour field.  Over
+~1000 clusters that is ~2000 whole-dataset scans.  Fixed by logging the whole
+Align-All as a single curation action: `beginRealignBatchLog(clusters)` takes one
+"before" snapshot, the complete/abort paths take one "after" snapshot, and
+`realignSpikes` skips its per-cluster `logBefore`/`logAfter` while the batch
+suppress flag is set (set before any worker starts, cleared after the last, so the
+sequential workers never race).  `computeAllCentroids()` now runs twice per batch
+instead of twice per cluster; undo treats the Align-All as one action.  Diagnosis
+also added opt-in per-phase realign timing (setup/compute/writeback, then a
+writeback sub-split and an inter-cluster gap, all via `NS3_REALIGN_TIMING`) and a
+per-batch PCA-basis cache.
+
+ Documented why "push the
 whole Align-All onto the GPU" is bounded: even the existing GPU path is
 CPU-read → GPU-compute → CPU-read/apply, and only the (spike × candidate)
 PCA-energy evaluation runs on the device — the `.fil` window reads and the
