@@ -25,6 +25,9 @@ int    PrefRefinement::getRealignMode() const {
     return 0;
 }
 
+void   PrefRefinement::setCurationLogging(bool b) { curationLoggingCheckBox->setChecked(b); }
+bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckBox->isChecked(); }
+
 void   PrefRefinement::setDipSplitMinSize(int n)         { dipSplitMinSizeSpinBox->setValue(n); }
 void   PrefRefinement::setDipSplitBloatFactor(double v)  { dipSplitBloatFactorSpinBox->setValue(v); }
 void   PrefRefinement::setDipSplitValleyThresh(double v) { dipSplitValleyThreshSpinBox->setValue(v); }

@@ -54,6 +54,7 @@
 #include "processwidget.h"
 #include "klusters.h"
 #include "klustersdoc.h"
+#include "configuration.h"
 #include "klustersview.h"
 #include "watershed2d.h"
 #include "clusterview.h"
@@ -615,23 +616,34 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     // ── Curation logger ─────────────────────────────────────────────────
     {
-        const QString logPath = urlFileInfo.absolutePath() + QDir::separator()
-                                + baseName + ".curation_log." + electrodeGroupID + ".jl";
-        curationLogger = std::make_unique<CurationLogger>();
-        curationLogger->open(
-            logPath,
-            baseName + ".clu." + electrodeGroupID,
-            electrodeGroupID,
-            clusteringData->getSamplingRate(),
-            clusteringData->nbOfchannels(),
-            clusteringData->totalNbOfPCAs()
-        );
-        // Pair the in-memory ring buffer with the user's max-undo
-        // preference so every still-undoable action retains a tentative
-        // log entry whose status flips on undo/redo.
-        curationLogger->setMaxBufferEntries(nbUndo);
         clusterActionCount.clear();
         lastLoggedActionIdx = -1;
+        // Opening the logger is gated by the "Enable curation logging"
+        // preference.  When off we leave curationLogger null: every call site
+        // is guarded by `if (curationLogger && curationLogger->isOpen())` and
+        // logBefore/logAfter early-return, so no per-action audit snapshot
+        // (snapshotClusters -> computeAllCentroids) is taken.  This is the
+        // low-overhead path for performance testing; undo/redo are unaffected
+        // (rollback is driven by clusteringData->undo, not the logger).
+        if (configuration().getCurationLogging()) {
+            const QString logPath = urlFileInfo.absolutePath() + QDir::separator()
+                                    + baseName + ".curation_log." + electrodeGroupID + ".jl";
+            curationLogger = std::make_unique<CurationLogger>();
+            curationLogger->open(
+                logPath,
+                baseName + ".clu." + electrodeGroupID,
+                electrodeGroupID,
+                clusteringData->getSamplingRate(),
+                clusteringData->nbOfchannels(),
+                clusteringData->totalNbOfPCAs()
+            );
+            // Pair the in-memory ring buffer with the user's max-undo
+            // preference so every still-undoable action retains a tentative
+            // log entry whose status flips on undo/redo.
+            curationLogger->setMaxBufferEntries(nbUndo);
+        } else {
+            curationLogger.reset();
+        }
     }
 
     return OK;

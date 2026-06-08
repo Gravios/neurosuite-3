@@ -112,6 +112,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->realignIterationsSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->realignMaxShiftSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefRefinement->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
@@ -184,6 +185,7 @@ void PrefDialog::updateDialog()
     prefRefinement->setRealignIterations(configuration().getRealignIterations());
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShift());
     prefRefinement->setRealignMode(configuration().getRealignMode());
+    prefRefinement->setCurationLogging(configuration().getCurationLogging());
     prefRefinement->setDipSplitMinSize(configuration().getDipSplitMinSize());
     prefRefinement->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
     prefRefinement->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
@@ -240,6 +242,7 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignIterations(prefRefinement->getRealignIterations());
     configuration().setRealignMaxShift(prefRefinement->getRealignMaxShift());
     configuration().setRealignMode(prefRefinement->getRealignMode());
+    configuration().setCurationLogging(prefRefinement->getCurationLogging());
     configuration().setDipSplitMinSize(prefRefinement->getDipSplitMinSize());
     configuration().setDipSplitBloatFactor(prefRefinement->getDipSplitBloatFactor());
     configuration().setDipSplitValleyThresh(prefRefinement->getDipSplitValleyThresh());
@@ -300,6 +303,7 @@ void PrefDialog::slotDefault()
     prefRefinement->setRealignIterations(configuration().getRealignIterationsDefault());
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
     prefRefinement->setRealignMode(configuration().getRealignModeDefault());
+    prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
     prefRefinement->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
     prefRefinement->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
     prefRefinement->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());
