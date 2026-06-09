@@ -391,7 +391,7 @@ void KlustersApp::createMenus()
 
     mReclusterMedian = actionMenu->addAction(tr("Recluster (&median-waveform residual)"));
     mReclusterMedian->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_M));
-    mReclusterMedian->setToolTip(tr("Recluster the selected single cluster on the residuals of its median waveform"));
+    mReclusterMedian->setToolTip(tr("Recluster the selected cluster(s) on the residuals of their pooled median waveform"));
     connect(mReclusterMedian,&QAction::triggered, this,&KlustersApp::slotReclusterMedianResidual);
 
     mReclusterChannelVar = actionMenu->addAction(tr("Recluster (&channel-variance features)"));
@@ -4496,20 +4496,23 @@ void KlustersApp::slotRecluster(){
     bool usedSubdim = false;
 
     // Median-waveform residual path (raw .spk, per-(channel,sample) median).
-    // Same single-non-noise-cluster gate as the mean-subtracted subdim path,
-    // and takes precedence over it when both are enabled.  Writes a small
-    // K-component residual-PCA .fet and overrides %features to match.
+    // Pools the spikes of all selected non-noise clusters, takes one median
+    // waveform over the pool, and clusters the residuals — so it works on a
+    // single cluster or on several pooled together (re-merge then re-split on
+    // residual structure).  Takes precedence over the mean-subtracted subdim
+    // path when both are enabled.  Writes a small K-component residual-PCA .fet
+    // and overrides %features to match.  (clustersToRecluster is sorted, so
+    // first() > 1 means the selection contains no noise/artefact pseudo-cluster.)
     if ((reclusterOnceMode==ReclusterOnce::MedianResidual ||
          (reclusterOnceMode==ReclusterOnce::None &&
           configuration().getReclusterMedianWaveformResidual())) &&
-        clustersToRecluster.size() == 1 &&
+        !clustersToRecluster.isEmpty() &&
         clustersToRecluster.first() > 1) {
-        const int singleCid = clustersToRecluster.first();
         const int K = qBound(1, autoSelectNFeatures, doc->nbDimensions() - 1);
         QVector<double> eigvals;
         int dimsWritten = 0;
         const int rc = doc->createMedianWaveformResidualFeatureFile(
-            singleCid, K, reclusteringFetFileName, &dimsWritten, &eigvals);
+            clustersToRecluster, K, reclusteringFetFileName, &dimsWritten, &eigvals);
         if (rc == KlustersDoc::OPEN_ERROR) {
             QMessageBox::critical(this,tr("Error !"),
                 tr("The reclustering feature file cannot be created (median-"
@@ -4525,9 +4528,11 @@ void KlustersApp::slotRecluster(){
                 fMed.append(QLatin1Char('1'));
             fMed.append(QLatin1Char('0'));      // timestamp column off
             features = fMed;
+            QStringList cidStrs;
+            for (int cid : clustersToRecluster) cidStrs << QString::number(cid);
             QString evMsg = QString("[recluster] median-waveform residual: "
-                "cluster %1, K=%2 residual-PCA components; eigenvalues:")
-                .arg(singleCid).arg(dimsWritten - 1);
+                "cluster(s) %1, K=%2 residual-PCA components; eigenvalues:")
+                .arg(cidStrs.join(QLatin1Char(','))).arg(dimsWritten - 1);
             for (double e : eigvals)
                 evMsg.append(QString(" %1").arg(e, 0, 'g', 4));
             qDebug() << evMsg;

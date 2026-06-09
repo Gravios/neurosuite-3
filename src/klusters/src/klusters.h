@@ -431,8 +431,8 @@ private Q_SLOTS:
     /**Launchs a separate process to recluster the selected clusters.*/
     void slotRecluster();
 
-    /** Recluster the selected single cluster forcing the raw-waveform
-     *  median-residual feature path for this run only (Shift+M). */
+    /** Recluster the selected cluster(s) forcing the raw-waveform
+     *  median-residual feature path (pooled median) for this run only (Shift+M). */
     void slotReclusterMedianResidual();
     /** Recluster the selection forcing channel-level high-variance feature
      *  selection for this run only (Shift+C). */

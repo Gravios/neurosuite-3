@@ -5355,15 +5355,19 @@ int Data::createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
 // residual scratch is allocated; no nSp x Dp residual matrix), and the
 // projection streams the same way.
 template <class T>
-int Data::medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
-                                     QVector<double>* eigvalsOut)
+int Data::medianWaveformResidualImpl(const QList<int>& clusterIds, int K,
+                                     QFile& fetFile, QVector<double>* eigvalsOut)
 {
     if (!clusterInfoMap || !spikesByCluster) return 0;
-    const dataType cid = static_cast<dataType>(clusterId);
-    if (!clusterInfoMap->contains(cid)) return 0;
-    const ClusterInfo info = (*clusterInfoMap)[cid];
-    const dataType firstPos = info.firstSpikePosition();
-    const dataType nSp      = info.nbSpikes();
+    if (clusterIds.isEmpty()) return 0;
+
+    // Total spike count across the pooled clusters; validate each exists.
+    dataType nSp = 0;
+    for (int c : clusterIds) {
+        const dataType cc = static_cast<dataType>(c);
+        if (!clusterInfoMap->contains(cc)) return 0;
+        nSp += (*clusterInfoMap)[cc].nbSpikes();
+    }
     if (nSp < 3) return 0;
     if (nbDimensions < 2) return 0;
 
@@ -5371,17 +5375,28 @@ int Data::medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
     if (Dp < 2) return 0;
     K = std::max(1, std::min(K, Dp));
 
-    // Mirror createFeatureFile / subdim: row 1 = global spike indices, row 2 =
-    // (later overwritten) labels.  Required or integration aborts.
+    // Pool the clusters into reclusteringSpikesByCluster, mirroring
+    // createFeatureFile: row 1 = global spike indices into the feature table,
+    // row 2 = the (later overwritten) labels.  Required or integration aborts.
     reclusteringSpikesByCluster.setSize(nSp);
-    memcpy(&(reclusteringSpikesByCluster)(1, 1),
-           &(*spikesByCluster)(1, firstPos), nSp * sizeof(dataType));
-    memcpy(&(reclusteringSpikesByCluster)(2, 1),
-           &(*spikesByCluster)(2, firstPos), nSp * sizeof(dataType));
+    {
+        dataType ins = 1;
+        for (int c : clusterIds) {
+            const ClusterInfo info = (*clusterInfoMap)[static_cast<dataType>(c)];
+            const dataType fp = info.firstSpikePosition();
+            const dataType n  = info.nbSpikes();
+            memcpy(&(reclusteringSpikesByCluster)(1, ins),
+                   &(*spikesByCluster)(1, fp), n * sizeof(dataType));
+            memcpy(&(reclusteringSpikesByCluster)(2, ins),
+                   &(*spikesByCluster)(2, fp), n * sizeof(dataType));
+            ins += n;
+        }
+    }
 
-    // ---- (1) Read the cluster's raw waveforms into a native-width store. ----
+    // ---- (1) Read the pooled raw waveforms into a native-width store. ----
     // .spk is sample-major; each spike is Dp samples at offset
     // (globalIdx-1)*Dp.  T matches the acquisition width (sizeof(T)==sampleSize).
+    // Global spike indices come from the pooled reclusteringSpikesByCluster.
     FILE* spk = fopen(qPrintable(spkFileName), "rb");
     if (!spk) {
         qCritical() << "createMedianWaveformResidualFeatureFile: cannot open"
@@ -5398,7 +5413,7 @@ int Data::medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
         return 0;
     }
     for (dataType s = 0; s < nSp; ++s) {
-        const dataType gid = (*spikesByCluster)(1, firstPos + s);   // 1-based
+        const dataType gid = reclusteringSpikesByCluster(1, s + 1);   // 1-based
         const long long off = static_cast<long long>(gid - 1) * Dp
                             * static_cast<long long>(sizeof(T));
         T* wrow = &W[static_cast<size_t>(s) * Dp];
@@ -5561,7 +5576,7 @@ int Data::medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
     const int32_t nDim32 = static_cast<int32_t>(K + 1);
     fwrite(&nDim32, sizeof(int32_t), 1, ff);
     for (dataType s = 0; s < nSp; ++s) {
-        const dataType row = (*spikesByCluster)(1, firstPos + s);
+        const dataType row = reclusteringSpikesByCluster(1, s + 1);
         for (int k = 0; k < K; ++k) {
             const int64_t iv = static_cast<int64_t>(
                 proj[static_cast<size_t>(s) * K + k] * scale[static_cast<size_t>(k)]);
@@ -5574,15 +5589,15 @@ int Data::medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
     return K + 1;
 }
 
-int Data::createMedianWaveformResidualFeatureFile(int clusterId, int K,
-                                                  QFile& fetFile,
+int Data::createMedianWaveformResidualFeatureFile(const QList<int>& clusterIds,
+                                                  int K, QFile& fetFile,
                                                   QVector<double>* eigvalsOut)
 {
     // Dispatch on acquisition width so the in-memory waveform store uses the
     // native sample type (int16 for two-byte recordings, int32 otherwise).
     if (isTwoBytesRecording)
-        return medianWaveformResidualImpl<int16_t>(clusterId, K, fetFile, eigvalsOut);
-    return medianWaveformResidualImpl<int32_t>(clusterId, K, fetFile, eigvalsOut);
+        return medianWaveformResidualImpl<int16_t>(clusterIds, K, fetFile, eigvalsOut);
+    return medianWaveformResidualImpl<int32_t>(clusterIds, K, fetFile, eigvalsOut);
 }
 
 void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){

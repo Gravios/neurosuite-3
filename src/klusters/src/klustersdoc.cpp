@@ -3038,9 +3038,10 @@ int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
 }
 
 // Wrapper for the raw-waveform median-residual path.  Same enum/out-parameter
-// contract as createMeanSubtractedSubdimFeatureFile.
+// contract as createMeanSubtractedSubdimFeatureFile.  Pools the spikes of all
+// @p clusterIds before taking the median waveform.
 int KlustersDoc::createMedianWaveformResidualFeatureFile(
-        int clusterId, int K,
+        const QList<int>& clusterIds, int K,
         const QString& reclusteringFetFileName,
         int* nDimWritten,
         QVector<double>* eigvalsOut)
@@ -3049,7 +3050,7 @@ int KlustersDoc::createMedianWaveformResidualFeatureFile(
     QFile fetFile(reclusteringFetFileName);
     if (!fetFile.open(QIODevice::WriteOnly)) return OPEN_ERROR;
     const int nDim = clusteringData->createMedianWaveformResidualFeatureFile(
-        clusterId, K, fetFile, eigvalsOut);
+        clusterIds, K, fetFile, eigvalsOut);
     if (nDim <= 0) return CREATION_ERROR;
     if (nDimWritten) *nDimWritten = nDim;
     return OK;
