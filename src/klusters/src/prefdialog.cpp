@@ -108,6 +108,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
             &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefReclustering->reclusterChannelVarianceCheckBox,
             &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    connect(prefReclustering->reclusterMedianWaveformResidualCheckBox,
+            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
 
     // Refinement (realign + dipsplit + knn)
     connect(prefRefinement->realignThresholdSpinBox,    &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -182,6 +184,7 @@ void PrefDialog::updateDialog()
     prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
     prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());
     prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVariance());
+    prefReclustering->setReclusterMedianWaveformResidual(configuration().getReclusterMedianWaveformResidual());
 
     // Refinement
     prefRefinement->setRealignThreshold(configuration().getRealignThreshold());
@@ -240,6 +243,7 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoSelectNFeatures(prefReclustering->getAutoSelectNFeatures());
     configuration().setReclusterMeanSubtractedSubdim(prefReclustering->getReclusterMeanSubtractedSubdim());
     configuration().setReclusterChannelVariance(prefReclustering->getReclusterChannelVariance());
+    configuration().setReclusterMedianWaveformResidual(prefReclustering->getReclusterMedianWaveformResidual());
 
     // Refinement
     configuration().setRealignThreshold(prefRefinement->getRealignThreshold());
@@ -303,6 +307,7 @@ void PrefDialog::slotDefault()
     prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
     prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());
     prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVarianceDefault());
+    prefReclustering->setReclusterMedianWaveformResidual(configuration().getReclusterMedianWaveformResidualDefault());
 
     prefRefinement->setRealignThreshold(configuration().getRealignThresholdDefault());
     prefRefinement->setRealignIterations(configuration().getRealignIterationsDefault());

@@ -202,6 +202,36 @@
             </item>
            </layout>
           </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QCheckBox" name="reclusterMedianWaveformResidualCheckBox">
+              <property name="text">
+               <string>Median-waveform residual (single cluster)</string>
+              </property>
+              <property name="toolTip">
+               <string>When checked and exactly one cluster is being reclustered, klusters reads the cluster's spikes from the .spk file, subtracts the per-(channel,sample) MEDIAN waveform (robust to drift and outliers), PCA-projects the residual waveforms, and feeds the top N components to KlustaKwik. Operates in raw waveform space rather than feature space. N is taken from the N-features spin-box above. Takes precedence over the mean-subtracted feature-space variant when both are checked. No effect when more than one cluster is reclustered.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer_medwav">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
          </layout>
         </item>
        </layout>

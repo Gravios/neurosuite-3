@@ -16,6 +16,7 @@ public:
     void setAutoSelectNFeatures(int n);
     void setReclusterMeanSubtractedSubdim(bool checked);
     void setReclusterChannelVariance(bool checked);
+    void setReclusterMedianWaveformResidual(bool checked);
 
     QString getReclusteringExecutable() const;
     QString getReclusteringArguments() const;
@@ -23,6 +24,7 @@ public:
     int     getAutoSelectNFeatures() const;
     bool    getReclusterMeanSubtractedSubdim() const;
     bool    getReclusterChannelVariance() const;
+    bool    getReclusterMedianWaveformResidual() const;
 
 private slots:
     void updateReclusteringExecutable();

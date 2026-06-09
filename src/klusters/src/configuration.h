@@ -320,6 +320,14 @@ public:
     void setReclusterChannelVariance(bool b)
         { reclusterChannelVariance = b; }
 
+    // Raw-waveform median-residual reclustering (single cluster).
+    bool getReclusterMedianWaveformResidual() const
+        { return reclusterMedianWaveformResidual; }
+    bool getReclusterMedianWaveformResidualDefault() const
+        { return reclusterMedianWaveformResidualDefault; }
+    void setReclusterMedianWaveformResidual(bool b)
+        { reclusterMedianWaveformResidual = b; }
+
     // patch79 — auto-show the error & template matrices when a document
     // is opened.  Saves the user from manually triggering a new Grouping
     // Assistant Display + Error Matrix dock + Template Matrix dock +
@@ -420,6 +428,8 @@ private:
     static const bool reclusterMeanSubtractedSubdimDefault;
     bool reclusterChannelVariance;
     static const bool reclusterChannelVarianceDefault;
+    bool reclusterMedianWaveformResidual;
+    static const bool reclusterMedianWaveformResidualDefault;
 
     // patch79 — auto-show error & template matrices on document open
     bool autoShowMatricesOnOpen;
