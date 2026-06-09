@@ -23,6 +23,7 @@
 #include <QMap>
 #include <QColor>
 #include <QList>
+#include <QSize>
 
 #include <QResizeEvent>
 
@@ -311,6 +312,14 @@ private:
     QPoint m_panCenterStart;       // window centre (world coords) at drag start
     static constexpr int   m_panDragThreshold{3};   // px before a press → pan
     static constexpr float m_wheelZoomStep{1.25f};  // zoom multiplier per tick
+
+    // Layout cache: the world geometry + ZoomWindow are rebuilt (zoom/pan reset
+    // to the full matrix) only when these inputs change — a widget resize or a
+    // cluster-count change.  Rebuilding on every REDRAW discarded the user's
+    // wheel-zoom/pan, since each zoom notch requests a REDRAW.  -1 / empty force
+    // a rebuild on the first paint.
+    QSize  layoutViewportSize;
+    int    layoutClusterCount{-1};
 
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
     QList<ErrorMatrixThread*> threadsToBeKill;

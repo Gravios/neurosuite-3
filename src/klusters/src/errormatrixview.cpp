@@ -232,10 +232,22 @@ void ErrorMatrixView::paintEvent ( QPaintEvent*){
         QRect contentsRec = contentsRect();
         viewport = QRect(contentsRec.left() + 15,contentsRec.top(),contentsRec.width() - 15,contentsRec.height() - 15);
 
-        // Recompute cell size from the current viewport every paint so the
-        // matrix fills the widget correctly after resize or cluster count change.
-        if (!clusterList.isEmpty())
-            updateWindow();
+        // Recompute cell size + world bounds and reset the ZoomWindow ONLY when
+        // the layout inputs change (widget resized or cluster count changed).
+        // updateWindow() rebuilds `window` to the full matrix extent, so calling
+        // it on every REDRAW threw away the user's wheel-zoom/pan (each zoom
+        // notch requests a REDRAW).  On a plain zoom/pan repaint the viewport
+        // size and cluster count are unchanged, so `window` — carrying the
+        // current zoom — is preserved.
+        if (!clusterList.isEmpty()) {
+            const QSize vpSize = viewport.size();
+            if (vpSize != layoutViewportSize ||
+                clusterList.size() != layoutClusterCount) {
+                updateWindow();
+                layoutViewportSize = vpSize;
+                layoutClusterCount = clusterList.size();
+            }
+        }
 
         //Resize the double buffer with the width and the height of the widget(QFrame)
 
