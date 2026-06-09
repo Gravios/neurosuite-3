@@ -82,28 +82,33 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     applyButton->setEnabled(false);
     applyButton->setToolTip("Move above-threshold source spikes into target cluster");
 
-    // Metric selector: Cosine similarity vs Pearson correlation.  Shares the
-    // same configuration().templateXcorrPearson value as the Display
-    // preference page, so the two stay in sync; toggling it here recomputes
-    // the matrix immediately with the new metric.
+    // Metric selector: Cosine similarity vs Pearson correlation vs Raw (non-
+    // normalised) cross-correlation.  Shares configuration().templateXcorrMetric
+    // with the Display preference page, so the two stay in sync; switching it
+    // here recomputes the matrix immediately with the new metric.
     QLabel* metricLabel = new QLabel("Metric:", controlBar);
     metricCosRadio     = new QRadioButton("Cosine",  controlBar);
     metricPearsonRadio = new QRadioButton("Pearson", controlBar);
+    metricRawRadio     = new QRadioButton("Raw",     controlBar);
     metricCosRadio->setToolTip("Peak normalised cross-correlation (cosine similarity) between cluster mean waveforms.");
     metricPearsonRadio->setToolTip("Pearson correlation: removes the overlap-window mean of each waveform before normalising.");
+    metricRawRadio->setToolTip("Raw (non-normalised) peak cross-correlation, amplitude-weighted; the matrix is globally normalised so the strongest pair reads 1.0.");
     QButtonGroup* metricGroup = new QButtonGroup(this);
     metricGroup->setExclusive(true);
     metricGroup->addButton(metricCosRadio);
     metricGroup->addButton(metricPearsonRadio);
+    metricGroup->addButton(metricRawRadio);
     {
-        const bool pearson = configuration().getTemplateXcorrPearson();
-        metricPearsonRadio->setChecked(pearson);
-        metricCosRadio->setChecked(!pearson);
+        const int metric = configuration().getTemplateXcorrMetric();
+        metricCosRadio->setChecked(metric == 0);
+        metricPearsonRadio->setChecked(metric == 1);
+        metricRawRadio->setChecked(metric == 2);
     }
 
     bar->addWidget(metricLabel);
     bar->addWidget(metricCosRadio);
     bar->addWidget(metricPearsonRadio);
+    bar->addWidget(metricRawRadio);
     bar->addWidget(thresholdLabel);
     bar->addWidget(thresholdSlider, 1);
     bar->addWidget(countLabel);
@@ -115,9 +120,13 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
             this, &TemplateMatrixView::onThresholdChanged);
     connect(applyButton, &QPushButton::clicked,
             this, &TemplateMatrixView::onApplyClicked);
-    // toggled() fires for both radios on any change; the slot reads Pearson's
-    // state, so connecting one button is sufficient.
+    // toggled() fires on every membership change in the exclusive group; the
+    // slot reads which radio is checked, so connecting all three is simplest.
+    connect(metricCosRadio,     &QAbstractButton::toggled,
+            this, &TemplateMatrixView::onMetricChanged);
     connect(metricPearsonRadio, &QAbstractButton::toggled,
+            this, &TemplateMatrixView::onMetricChanged);
+    connect(metricRawRadio,     &QAbstractButton::toggled,
             this, &TemplateMatrixView::onMetricChanged);
 
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
@@ -265,11 +274,13 @@ void TemplateMatrixView::updateMatrixContents()
     // preference page since this view was built).  Block signals so this
     // refresh doesn't re-enter onMetricChanged → updateMatrixContents.
     {
-        const bool pearson = configuration().getTemplateXcorrPearson();
+        const int metric = configuration().getTemplateXcorrMetric();
         const QSignalBlocker bCos(metricCosRadio);
         const QSignalBlocker bPear(metricPearsonRadio);
-        metricPearsonRadio->setChecked(pearson);
-        metricCosRadio->setChecked(!pearson);
+        const QSignalBlocker bRaw(metricRawRadio);
+        metricCosRadio->setChecked(metric == 0);
+        metricPearsonRadio->setChecked(metric == 1);
+        metricRawRadio->setChecked(metric == 2);
     }
 
     for (TemplateMatrixThread* t : threadsToBeKill)
@@ -652,9 +663,10 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
         statusBar->showMessage(
             QString("Clusters (row=%1 \u2192 col=%2): %3 = %4")
                 .arg(cB).arg(cA)
-                .arg(configuration().getTemplateXcorrPearson()
-                         ? QStringLiteral("Pearson")
-                         : QStringLiteral("cosine"))
+                .arg([]{ switch (configuration().getTemplateXcorrMetric()) {
+                             case 1:  return QStringLiteral("Pearson");
+                             case 2:  return QStringLiteral("raw");
+                             default: return QStringLiteral("cosine"); } }())
                 .arg((*scores)(row+1, col+1), 0, 'f', 5));
 }
 
@@ -780,14 +792,16 @@ void TemplateMatrixView::wheelEvent(QWheelEvent* event)
 
 void TemplateMatrixView::onMetricChanged()
 {
-    // Single source of truth: configuration().templateXcorrPearson, shared with
+    // Single source of truth: configuration().templateXcorrMetric, shared with
     // the Display preference page.  Persist immediately so the choice survives
     // restart and the preference dialog reflects it, then recompute — the
-    // compute thread reads the flag at run time (TemplateMatrixThread::run).
-    const bool pearson = metricPearsonRadio->isChecked();
-    if (pearson == configuration().getTemplateXcorrPearson())
+    // compute thread reads the value at run time (TemplateMatrixThread::run).
+    const int metric = metricRawRadio->isChecked()     ? 2
+                     : metricPearsonRadio->isChecked() ? 1
+                     :                                   0;
+    if (metric == configuration().getTemplateXcorrMetric())
         return;                       // no-op toggle (e.g. programmatic refresh)
-    configuration().setTemplateXcorrPearson(pearson);
+    configuration().setTemplateXcorrMetric(metric);
     configuration().write();
     updateMatrixContents();
 }

@@ -124,7 +124,7 @@ public:
 
     void setTemplateThresholdMin(double v) {templateThresholdMin = qBound(0.0, v, 1.0);}
     void setTemplateThresholdMax(double v) {templateThresholdMax = qBound(0.0, v, 1.0);}
-    void setTemplateXcorrPearson(bool v)   {templateXcorrPearson = v;}
+    void setTemplateXcorrMetric(int v)     {templateXcorrMetric = qBound(0, v, 2);}
     
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
@@ -216,7 +216,13 @@ public:
 
     double getTemplateThresholdMin() const {return templateThresholdMin;}
     double getTemplateThresholdMax() const {return templateThresholdMax;}
-    bool   getTemplateXcorrPearson() const {return templateXcorrPearson;}
+    /// Template-matrix cell metric: 0 = cosine, 1 = Pearson, 2 = raw (non-
+    /// normalised) cross-correlation.
+    int    getTemplateXcorrMetric() const  {return templateXcorrMetric;}
+    /// Convenience: true when the metric is Pearson.  Consumers that need a
+    /// bounded [0,1] score (per-spike pair xcorr, autoMerge) read this and so
+    /// fall back to cosine when the raw metric is selected.
+    bool   getTemplateXcorrPearson() const {return templateXcorrMetric == 1;}
 
     /**Returns the default value for the crash and recovery mechanism.
     * True if a crash and recovery autosave is performed, false othewise.*/
@@ -415,7 +421,7 @@ private:
     int selectionLineWidth;
     double templateThresholdMin;
     double templateThresholdMax;
-    bool templateXcorrPearson;
+    int templateXcorrMetric = 0;   // 0=cosine 1=pearson 2=raw
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;
