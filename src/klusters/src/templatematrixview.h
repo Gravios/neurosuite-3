@@ -14,6 +14,8 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QLabel>
+#include <QRadioButton>
+#include <QButtonGroup>
 #include <vector>
 #include <utility>
 
@@ -141,6 +143,10 @@ protected:
 private Q_SLOTS:
     void onThresholdChanged(int sliderValue);
     void onApplyClicked();
+    /// Live metric selector (Cosine vs Pearson) next to the threshold slider.
+    /// Writes configuration().templateXcorrPearson (shared with the Display
+    /// preference page) and recomputes the matrix with the new metric.
+    void onMetricChanged();
 
 private:
     // ── doc / view ──────────────────────────────────────────────────────────
@@ -228,6 +234,9 @@ private:
     QLabel*      thresholdLabel;
     QLabel*      countLabel;
     QPushButton* applyButton;
+    // ── metric selector (Cosine vs Pearson), shares configuration().templateXcorrPearson
+    QRadioButton* metricCosRadio;
+    QRadioButton* metricPearsonRadio;
     double       currentThreshold;
     double       sliderMin;
     double       sliderMax;
