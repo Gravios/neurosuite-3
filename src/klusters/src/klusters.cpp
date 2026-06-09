@@ -389,6 +389,18 @@ void KlustersApp::createMenus()
     connect(mReorderClustersBySimilarity,&QAction::triggered,
             this,&KlustersApp::slotReorderClustersBySimilarity);
 
+    // Sort by spike count: renumber clusters so IDs run by descending spike
+    // count (largest cluster becomes 2).  Needs no matrix, just the cluster
+    // sizes, so it follows the document/cluster-op enabled state (mirrors
+    // mAutoMerge) rather than the matrix-availability gate above.  Undoable.
+    mSortClustersBySpikeCount = actionMenu->addAction(tr("Sort Clusters by Spike &Count"));
+    mSortClustersBySpikeCount->setToolTip(
+        tr("Renumber clusters so their IDs run from largest to smallest by spike\n"
+           "count (the biggest cluster becomes 2).  Clusters 0 (artefact) and 1\n"
+           "(noise) are preserved at the start.  Undoable with Ctrl+Z."));
+    connect(mSortClustersBySpikeCount,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersBySpikeCount);
+
     actionMenu->addSeparator();
 
     mReCluster = actionMenu->addAction(tr("Re&cluster"));
@@ -3367,6 +3379,48 @@ void KlustersApp::slotPurgeSmallClusters()
         tr("Purging %1 small cluster(s) into noise...").arg(small.size()));
 }
 
+// ---------------------------------------------------------------------------
+// slotSortClustersBySpikeCount
+//
+// Renumber the non-special clusters so their IDs run by DESCENDING spike count
+// (largest cluster becomes 2, next 3, ...).  Clusters 0 (artefact) and 1
+// (noise) keep their IDs.  Equal-size clusters keep their current relative
+// order (stable sort).  All undo / curation-log / palette / view bookkeeping is
+// handled inside reorderClustersByPermutation (same path as the Shift+S
+// similarity reorder), so this is a single undoable step.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortClustersBySpikeCount()
+{
+    if (!mSortClustersBySpikeCount->isEnabled()) return;
+    if (!doc || !activeView()) return;
+
+    auto& d = doc->data();
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by spike count: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+
+    // Snapshot the counts once (avoids re-locking Data in the comparator).
+    QHash<int, qint64> spikeCount;
+    spikeCount.reserve(clusters.size());
+    for (int c : clusters)
+        spikeCount.insert(c, static_cast<qint64>(d.nbOfSpikes(c)));
+
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&spikeCount](int a, int b){ return spikeCount.value(a) > spikeCount.value(b); });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by spike count: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by spike count (largest first).").arg(nRenamed));
+}
+
 
 void KlustersApp::slotImmediateSelection(){
     //Disable the update action (see the klustersui.rc file)
@@ -5117,6 +5171,8 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         mAutoMerge->setEnabled(false);
 
+        mSortClustersBySpikeCount->setEnabled(false);
+
         mPurgeSmallClusters->setEnabled(false);
         mUpdateDisplay->setEnabled(false);
         mZoomAction->setEnabled(false);
@@ -5184,6 +5240,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mSortClustersBySpikeCount->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
@@ -5269,6 +5326,8 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         mAutoMerge->setEnabled(true);
 
+        mSortClustersBySpikeCount->setEnabled(true);
+
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noClusterViewState")) {
         mZoomAction->setEnabled(false);
@@ -5290,6 +5349,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mSortClustersBySpikeCount->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noCorrelationViewState")) {
         scaleByMax->setEnabled(false);
@@ -5310,6 +5370,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mSortClustersBySpikeCount->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noErrorMatrixViewState")) {
         mUpdateErrorMatrix->setEnabled(false);
@@ -5322,6 +5383,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mSortClustersBySpikeCount->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
 
     } else if(state == QLatin1String("groupingAssistantDisplayExists")) {
@@ -5354,6 +5416,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mSortClustersBySpikeCount->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
@@ -5371,6 +5434,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mSortClustersBySpikeCount->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
@@ -5407,6 +5471,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mSortClustersBySpikeCount->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
@@ -5445,6 +5510,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mSortClustersBySpikeCount->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
@@ -5489,6 +5555,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mSortClustersBySpikeCount->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
