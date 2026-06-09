@@ -431,6 +431,13 @@ private Q_SLOTS:
     /**Launchs a separate process to recluster the selected clusters.*/
     void slotRecluster();
 
+    /** Recluster the selected single cluster forcing the raw-waveform
+     *  median-residual feature path for this run only (Shift+M). */
+    void slotReclusterMedianResidual();
+    /** Recluster the selection forcing channel-level high-variance feature
+     *  selection for this run only (Shift+C). */
+    void slotReclusterChannelVariance();
+
     /** Splits the currently selected single cluster into N new clusters
      *  using a K-nearest-neighbour majority vote against a reference
      *  pool of existing well-isolated clusters (those with at least
@@ -735,6 +742,15 @@ private:
     QAction *mUpdateDisplay;
     QAction *mRenumberClusters;
     QAction *mReCluster;
+    QAction *mReclusterMedian;
+    QAction *mReclusterChannelVar;
+
+    /** One-shot recluster mode requested via a keyboard shortcut (Shift+M /
+     *  Shift+C); consumed by the next slotRecluster() that proceeds past the
+     *  busy-retry guard, so a retry preserves the request. */
+    enum class ReclusterOnce { None, MedianResidual, ChannelVariance };
+    ReclusterOnce reclusterOnce = ReclusterOnce::None;
+
     QAction *mSplitByKnn;
     QAction *mAbortReclustering;
     QAction *mAbortRealign;

@@ -389,6 +389,16 @@ void KlustersApp::createMenus()
     mReCluster->setShortcut(QKeySequence(Qt::SHIFT  | Qt::Key_R));
     connect(mReCluster,&QAction::triggered, this,&KlustersApp::slotRecluster);
 
+    mReclusterMedian = actionMenu->addAction(tr("Recluster (&median-waveform residual)"));
+    mReclusterMedian->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_M));
+    mReclusterMedian->setToolTip(tr("Recluster the selected single cluster on the residuals of its median waveform"));
+    connect(mReclusterMedian,&QAction::triggered, this,&KlustersApp::slotReclusterMedianResidual);
+
+    mReclusterChannelVar = actionMenu->addAction(tr("Recluster (&channel-variance features)"));
+    mReclusterChannelVar->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_C));
+    mReclusterChannelVar->setToolTip(tr("Recluster using the highest-variance channels' features"));
+    connect(mReclusterChannelVar,&QAction::triggered, this,&KlustersApp::slotReclusterChannelVariance);
+
     mSplitByKnn = actionMenu->addAction(tr("Split by &KNN voting…"));
     mSplitByKnn->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_K));
     mSplitByKnn->setToolTip(
@@ -550,7 +560,8 @@ void KlustersApp::createMenus()
 
     QActionGroup *grp = new QActionGroup(this);
     grp->addAction(scaleByMax);
-    scaleByMax->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_M));
+    // Shift+M is now the median-residual recluster shortcut; Scale-by-Maximum
+    // stays available from the Correlations menu (no accelerator).
     scaleByMax->setCheckable(true);
     connect(scaleByMax,&QAction::triggered, this,&KlustersApp::slotScaleByMax);
 
@@ -4103,6 +4114,20 @@ void KlustersApp::slotSelectAllWO01(){
     }
 }
 
+void KlustersApp::slotReclusterMedianResidual(){
+    // Mirror recluster availability (no document / job in flight); the guard
+    // also protects slotRecluster's activeView() access when invoked by key.
+    if(!mReCluster->isEnabled()) return;
+    reclusterOnce = ReclusterOnce::MedianResidual;
+    slotRecluster();
+}
+
+void KlustersApp::slotReclusterChannelVariance(){
+    if(!mReCluster->isEnabled()) return;
+    reclusterOnce = ReclusterOnce::ChannelVariance;
+    slotRecluster();
+}
+
 void KlustersApp::slotRecluster(){
     // If a recluster job is still in flight, schedule a retry and return.
     // We use a single stoppable QTimer rather than repeated QTimer::singleShot,
@@ -4126,6 +4151,13 @@ void KlustersApp::slotRecluster(){
         delete reclusterRetryTimer;
         reclusterRetryTimer = nullptr;
     }
+
+    // Consume any one-shot mode requested by Shift+M / Shift+C.  We are now
+    // past the busy-retry guard, so a retry preserved the request; clear it
+    // here so it applies to exactly this run and a later manual recluster is
+    // unaffected.
+    const ReclusterOnce reclusterOnceMode = reclusterOnce;
+    reclusterOnce = ReclusterOnce::None;
 
     // Clean up the previous recluster output tab if it still exists.
     if(processWidget != 0L){
@@ -4248,7 +4280,7 @@ void KlustersApp::slotRecluster(){
         int nFeatureCols    = nbDimensions - 1; // all cols except timestamp
 
         bool usedAutoSelect = false;
-        if(autoSelectFeatures){
+        if(autoSelectFeatures || reclusterOnceMode==ReclusterOnce::ChannelVariance){
             // Gather the currently-selected clusters from the active view.
             // Works for any number of selected clusters (>= 1).
             QList<int> sel;
@@ -4291,7 +4323,8 @@ void KlustersApp::slotRecluster(){
                     // are never split across the kept/dropped boundary.
                     // autoSelectNFeatures (the N-features spin box) sets the
                     // number of channels kept.
-                    if(configuration().getReclusterChannelVariance()){
+                    if(configuration().getReclusterChannelVariance()
+                       || reclusterOnceMode==ReclusterOnce::ChannelVariance){
                         const int nCh    = doc->nbOfchannels();
                         const int totPca = doc->totalNbOfPCAs();
                         const int featPerCh = (nCh > 0) ? totPca / nCh : 0;
@@ -4466,7 +4499,9 @@ void KlustersApp::slotRecluster(){
     // Same single-non-noise-cluster gate as the mean-subtracted subdim path,
     // and takes precedence over it when both are enabled.  Writes a small
     // K-component residual-PCA .fet and overrides %features to match.
-    if (configuration().getReclusterMedianWaveformResidual() &&
+    if ((reclusterOnceMode==ReclusterOnce::MedianResidual ||
+         (reclusterOnceMode==ReclusterOnce::None &&
+          configuration().getReclusterMedianWaveformResidual())) &&
         clustersToRecluster.size() == 1 &&
         clustersToRecluster.first() > 1) {
         const int singleCid = clustersToRecluster.first();
@@ -4500,7 +4535,8 @@ void KlustersApp::slotRecluster(){
         }
     }
 
-    if (configuration().getReclusterMeanSubtractedSubdim() && !usedSubdim &&
+    if (reclusterOnceMode==ReclusterOnce::None &&
+        configuration().getReclusterMeanSubtractedSubdim() && !usedSubdim &&
         clustersToRecluster.size() == 1 &&
         clustersToRecluster.first() > 1) {
         const int singleCid = clustersToRecluster.first();
@@ -5027,6 +5063,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mReclusterMedian->setEnabled(false);
+        mReclusterChannelVar->setEnabled(false);
         mSplitByKnn->setEnabled(false);	
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
@@ -5087,6 +5125,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         newGroupingAssistantDisplay->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
+        mReclusterMedian->setEnabled(true);
+        mReclusterChannelVar->setEnabled(true);
         mSplitByKnn->setEnabled(true);	
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);
@@ -5228,6 +5268,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mReclusterMedian->setEnabled(false);
+        mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
@@ -5261,6 +5303,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mReclusterMedian->setEnabled(false);
+        mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
@@ -5272,6 +5316,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDecreaseAmplitudeCorrelation->setEnabled(false);
     } else if(state == QLatin1String("noReclusterState")) {
         mReCluster->setEnabled(true);
+        mReclusterMedian->setEnabled(true);
+        mReclusterChannelVar->setEnabled(true);
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
@@ -5292,6 +5338,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mReclusterMedian->setEnabled(false);
+        mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
@@ -5327,6 +5375,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
+        mReclusterMedian->setEnabled(true);
+        mReclusterChannelVar->setEnabled(true);
         mRenumberClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mDeleteNoisySpikes->setEnabled(true);
@@ -5350,6 +5400,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
+        mReclusterMedian->setEnabled(false);
+        mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
