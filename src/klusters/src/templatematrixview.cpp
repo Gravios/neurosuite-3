@@ -45,6 +45,15 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     pal.setColor(QPalette::Window, backgroundColor);
     setPalette(pal);
     setAutoFillBackground(true);
+
+    // Pick a painted-text colour that contrasts with the background: white on a
+    // dark background, black on a light one (Rec. 601 luma, 0.5 threshold).
+    {
+        const double lum = 0.299 * backgroundColor.redF()
+                         + 0.587 * backgroundColor.greenF()
+                         + 0.114 * backgroundColor.blueF();
+        textColor = (lum > 0.5) ? QColor(Qt::black) : QColor(Qt::white);
+    }
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
@@ -448,7 +457,7 @@ void TemplateMatrixView::paintEvent(QPaintEvent*)
         drawMatrix(buf);
         drawClusterIds(buf);
     } else {
-        buf.setPen(palette().color(QPalette::WindowText));
+        buf.setPen(textColor);
         buf.drawText(matRect, Qt::AlignCenter, "Computing template matrix\u2026");
     }
     buf.end();
@@ -559,7 +568,7 @@ void TemplateMatrixView::drawClusterIds(QPainter& p)
                             static_cast<int>(std::round(eff / 5.0))));
     QFont f("Helvetica", fontSize);
     p.setFont(f);
-    p.setPen(palette().color(QPalette::WindowText));
+    p.setPen(textColor);
 
     for (int col = 0; col < n; ++col) {
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
