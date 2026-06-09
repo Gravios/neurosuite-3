@@ -209,17 +209,50 @@ void ErrorMatrixView::recomputeCellWidth()
 }
 
 void ErrorMatrixView::updateWindow(){
+    // Capture the current view as fractions of the OLD full world, so the same
+    // relative zoom/pan can be re-applied after the world is re-fit below.  This
+    // keeps the zoom stable across matrix updates, cluster-count changes and
+    // resizes — the same behaviour as the template matrix view, where zoom is a
+    // persistent multiplier applied on top of the fit rather than an absolute
+    // window that is rebuilt (and thus reset) every time the layout is touched.
+    double fx = 0.0, fy = 0.0, fw = 1.0, fh = 1.0;
+    if(windowInitialized){
+        const double W0 = static_cast<double>(abscissaMax - abscissaMin);
+        const double H0 = static_cast<double>(ordinateMax - ordinateMin);
+        const QRect cur = static_cast<QRect>(window);
+        if(W0 > 0.0 && H0 > 0.0){
+            fx = (cur.left() - abscissaMin) / W0;
+            fy = (cur.top()  - ordinateMin) / H0;
+            fw =  cur.width()  / W0;
+            fh =  cur.height() / H0;
+        }
+    }
+
     recomputeCellWidth();
     int nbOfClusters = clusterList.size();
 
     widthBorder = (cellWidth * nbOfClusters) / 30;
     heightBorder = (cellWidth * nbOfClusters) / 30;
 
-    abscissaMax = 2 * widthBorder + (cellWidth * nbOfClusters);
+    abscissaMax =  2 * widthBorder + (cellWidth * nbOfClusters);
     ordinateMin = -(2 * heightBorder + (cellWidth * nbOfClusters));
 
-    //Set the window
+    // Rebuild the window at the new full extent (this also sets the initial
+    // bounds used by reset(), so double-click still restores the full matrix),
+    // then re-apply the captured relative view via the zoom-to-rect overload
+    // (which clamps to the full extent).  Skip the re-apply when the view was
+    // essentially full, so an un-zoomed matrix stays exactly full.
     window = ZoomWindow(QRect(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax)));
+    if(windowInitialized && (fw < 0.999 || fh < 0.999 || fx > 0.001 || fy > 0.001)){
+        const double W1 = static_cast<double>(abscissaMax - abscissaMin);
+        const double H1 = static_cast<double>(ordinateMax - ordinateMin);
+        const int zl = static_cast<int>(abscissaMin + qRound(fx * W1));
+        const int zt = static_cast<int>(ordinateMin + qRound(fy * H1));
+        const int zr = zl + qRound(fw * W1);
+        const int zb = zt + qRound(fh * H1);
+        window.zoom(zl, zt, zr, zb);
+    }
+    windowInitialized = true;
 
     //update the drawing mode if needed (if UPDATE, no change is need it).
     if(drawContentsMode == REFRESH)drawContentsMode = REDRAW ;
