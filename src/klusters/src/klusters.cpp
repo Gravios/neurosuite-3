@@ -351,6 +351,12 @@ void KlustersApp::createMenus()
     mAutoMerge->setShortcut(Qt::SHIFT | Qt::Key_G);
     connect(mAutoMerge, &QAction::triggered, this, &KlustersApp::slotAutoMerge);
 
+    // Purge: move every cluster smaller than a user-entered spike count into the
+    // noise cluster (1).  Bulk analogue of "Delete Noisy Cluster(s)"; asks for N
+    // then a Yes/No confirmation (default Yes) before moving.
+    mPurgeSmallClusters = actionMenu->addAction(tr("&Purge Small Clusters…"));
+    connect(mPurgeSmallClusters, &QAction::triggered, this, &KlustersApp::slotPurgeSmallClusters);
+
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
@@ -3310,6 +3316,57 @@ void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters)
                                       tr("Delete &artifact cluster(s)..."));
 }
 
+// ---------------------------------------------------------------------------
+// slotPurgeSmallClusters
+//
+// Move every cluster whose spike count is strictly below a user-entered
+// threshold N into the noise cluster (reserved id 1).  The reserved clusters
+// 0 (artefact) and 1 (noise) are never purged.  Asks for N (pre-filled with
+// the last value used this session), then a Yes/No confirmation that defaults
+// to Yes, before performing the move through the same path as "Delete Noisy
+// Cluster(s)" (so curation logging and a single undo step come for free).
+// ---------------------------------------------------------------------------
+void KlustersApp::slotPurgeSmallClusters()
+{
+    if (!mPurgeSmallClusters->isEnabled()) return;   // mirror cluster-op guard
+    if (!doc || !activeView()) return;
+
+    bool ok = false;
+    const int n = QInputDialog::getInt(
+        this, tr("Purge Small Clusters"),
+        tr("Move every cluster with fewer than this many spikes\n"
+           "into the noise cluster (1):"),
+        purgeSmallClusterThreshold, 1, 1000000000, 1, &ok);
+    if (!ok) return;                                 // user cancelled
+    purgeSmallClusterThreshold = n;
+
+    // Collect clusters below N, skipping the reserved artefact(0)/noise(1).
+    auto& d = doc->data();
+    QList<int> small;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids) {
+        if (id <= 1) continue;
+        if (d.nbOfSpikes(id) < n)
+            small.append(static_cast<int>(id));
+    }
+
+    if (small.isEmpty()) {
+        slotStatusMsg(tr("Purge: no clusters smaller than %1 spikes.").arg(n));
+        return;
+    }
+    std::sort(small.begin(), small.end());
+
+    QMessageBox box(QMessageBox::Question, tr("Purge Small Clusters"),
+        tr("Move %1 cluster(s) with fewer than %2 spikes into the noise cluster?")
+            .arg(small.size()).arg(n),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setDefaultButton(QMessageBox::Yes);          // Enter / focus = Yes
+    if (box.exec() != QMessageBox::Yes) return;
+
+    moveSelectedClustersToReservedId(small, /*noise=*/1,
+        tr("Purging %1 small cluster(s) into noise...").arg(small.size()));
+}
+
 
 void KlustersApp::slotImmediateSelection(){
     //Disable the update action (see the klustersui.rc file)
@@ -5059,6 +5116,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mGroupeClusters->setEnabled(false);
 
         mAutoMerge->setEnabled(false);
+
+        mPurgeSmallClusters->setEnabled(false);
         mUpdateDisplay->setEnabled(false);
         mZoomAction->setEnabled(false);
         mUpdateErrorMatrix->setEnabled(false);
@@ -5125,6 +5184,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mPurgeSmallClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
         newGroupingAssistantDisplay->setEnabled(true);
@@ -5208,6 +5268,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mGroupeClusters->setEnabled(true);
 
         mAutoMerge->setEnabled(true);
+
+        mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noClusterViewState")) {
         mZoomAction->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
@@ -5228,6 +5290,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noCorrelationViewState")) {
         scaleByMax->setEnabled(false);
         scaleByShouler->setEnabled(false);
@@ -5247,6 +5310,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noErrorMatrixViewState")) {
         mUpdateErrorMatrix->setEnabled(false);
     } else if(state == QLatin1String("errorMatrixViewState")) {
@@ -5258,6 +5322,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mPurgeSmallClusters->setEnabled(true);
 
     } else if(state == QLatin1String("groupingAssistantDisplayExists")) {
         newGroupingAssistantDisplay->setEnabled(false);
@@ -5289,6 +5354,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mPurgeSmallClusters->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
         mDecreaseAmplitude->setEnabled(false);
@@ -5305,6 +5371,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
@@ -5340,6 +5407,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
@@ -5377,6 +5445,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mPurgeSmallClusters->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
@@ -5420,6 +5489,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mPurgeSmallClusters->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
         mDecreaseAmplitude->setEnabled(false);

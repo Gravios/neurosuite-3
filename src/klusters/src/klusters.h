@@ -287,6 +287,9 @@ private Q_SLOTS:
     * @param selectedClusters list of clusters which have been selected to be moved
     */
     void slotMoveClustersToNoise(QList<int> selectedClusters);
+    /** Move every cluster with fewer than N spikes into the noise cluster (1),
+     *  after asking for N and a Yes/No confirmation (default Yes). */
+    void slotPurgeSmallClusters();
     /**Calls the document to move the clusters contain in @p selectedClusters list
     * to the cluster of artefact (cluster 0) and trigger the update of the displays.
     * @param selectedClusters list of clusters which have been selected to be moved
@@ -739,6 +742,10 @@ private:
     QAction *mDeleteNoisy;
     QAction *mGroupeClusters;
     QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
+    QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
+    /** Last spike-count threshold used by slotPurgeSmallClusters (remembered
+     *  for the session; the purge dialog is pre-filled with it). */
+    int purgeSmallClusterThreshold{10};
     QAction *mUpdateDisplay;
     QAction *mRenumberClusters;
     QAction *mReCluster;
