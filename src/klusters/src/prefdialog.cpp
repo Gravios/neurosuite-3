@@ -106,6 +106,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefReclustering->autoSelectNFeaturesSpinBox,      &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefReclustering->reclusterMeanSubtractedSubdimCheckBox,
             &QAbstractButton::clicked, this, &PrefDialog::enableApply);
+    connect(prefReclustering->reclusterChannelVarianceCheckBox,
+            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
 
     // Refinement (realign + dipsplit + knn)
     connect(prefRefinement->realignThresholdSpinBox,    &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -179,6 +181,7 @@ void PrefDialog::updateDialog()
     prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
     prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
     prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());
+    prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVariance());
 
     // Refinement
     prefRefinement->setRealignThreshold(configuration().getRealignThreshold());
@@ -236,6 +239,7 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoSelectFeatures(prefReclustering->getAutoSelectFeatures());
     configuration().setAutoSelectNFeatures(prefReclustering->getAutoSelectNFeatures());
     configuration().setReclusterMeanSubtractedSubdim(prefReclustering->getReclusterMeanSubtractedSubdim());
+    configuration().setReclusterChannelVariance(prefReclustering->getReclusterChannelVariance());
 
     // Refinement
     configuration().setRealignThreshold(prefRefinement->getRealignThreshold());
@@ -298,6 +302,7 @@ void PrefDialog::slotDefault()
     prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
     prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
     prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());
+    prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVarianceDefault());
 
     prefRefinement->setRealignThreshold(configuration().getRealignThresholdDefault());
     prefRefinement->setRealignIterations(configuration().getRealignIterationsDefault());

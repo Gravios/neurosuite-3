@@ -308,6 +308,18 @@ public:
     void setReclusterMeanSubtractedSubdim(bool b)
         { reclusterMeanSubtractedSubdim = b; }
 
+    // Channel-level high-variance feature selection.  When on (with
+    // autoSelectFeatures), recluster ranks *channels* by aggregate feature
+    // variance and turns on all PCA columns of the top channels, rather than
+    // ranking individual feature columns.  Reuses autoSelectNFeatures as the
+    // number of channels to keep.
+    bool getReclusterChannelVariance() const
+        { return reclusterChannelVariance; }
+    bool getReclusterChannelVarianceDefault() const
+        { return reclusterChannelVarianceDefault; }
+    void setReclusterChannelVariance(bool b)
+        { reclusterChannelVariance = b; }
+
     // patch79 — auto-show the error & template matrices when a document
     // is opened.  Saves the user from manually triggering a new Grouping
     // Assistant Display + Error Matrix dock + Template Matrix dock +
@@ -406,6 +418,8 @@ private:
     // patch76 — mean-subtracted sub-dimensional reclustering for one cluster
     bool reclusterMeanSubtractedSubdim;
     static const bool reclusterMeanSubtractedSubdimDefault;
+    bool reclusterChannelVariance;
+    static const bool reclusterChannelVarianceDefault;
 
     // patch79 — auto-show error & template matrices on document open
     bool autoShowMatricesOnOpen;

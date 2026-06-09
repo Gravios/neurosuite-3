@@ -29,6 +29,7 @@ const bool Configuration::autoSelectFeaturesDefault = false;
 const int  Configuration::autoSelectNFeaturesDefault = 7;
 // patch76 — opt-in: off by default to preserve existing recluster behaviour
 const bool Configuration::reclusterMeanSubtractedSubdimDefault = false;
+const bool Configuration::reclusterChannelVarianceDefault = false;
 // patch79 — opt-in: off by default
 const bool Configuration::autoShowMatricesOnOpenDefault = false;
 const double Configuration::autoscaleMarginPercentDefault = 5.0;
@@ -95,6 +96,9 @@ void Configuration::read() {
     reclusterMeanSubtractedSubdim = settings.value(
         "reclusterMeanSubtractedSubdim",
         reclusterMeanSubtractedSubdimDefault).toBool();
+    reclusterChannelVariance = settings.value(
+        "reclusterChannelVariance",
+        reclusterChannelVarianceDefault).toBool();
     // patch79 — auto-show error & template matrices on document open
     autoShowMatricesOnOpen = settings.value(
         "autoShowMatricesOnOpen",
@@ -158,6 +162,8 @@ void Configuration::write() const {
     // patch76
     settings.setValue("reclusterMeanSubtractedSubdim",
                       reclusterMeanSubtractedSubdim);
+    settings.setValue("reclusterChannelVariance",
+                      reclusterChannelVariance);
     // patch79
     settings.setValue("autoShowMatricesOnOpen",
                       autoShowMatricesOnOpen);

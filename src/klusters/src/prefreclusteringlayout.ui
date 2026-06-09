@@ -172,6 +172,36 @@
             </item>
            </layout>
           </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QCheckBox" name="reclusterChannelVarianceCheckBox">
+              <property name="text">
+               <string>Channel-level variance selection</string>
+              </property>
+              <property name="toolTip">
+               <string>When checked (with auto-select features on), recluster ranks the electrode's channels by their aggregate feature variance and turns on every PCA column of the highest-variance channels, instead of ranking individual feature columns. Keeps whole channels together so a high-variance channel's components are never split. The number of channels kept is taken from the N-features spin-box above. No effect when auto-select is off.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer_chanvar">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
          </layout>
         </item>
        </layout>
