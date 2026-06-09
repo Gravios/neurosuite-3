@@ -27,5 +27,5 @@ void   PrefDisplay::setTemplateThresholdMin(double v)   { templateThresholdMinSp
 double PrefDisplay::getTemplateThresholdMin() const     { return templateThresholdMinSpinBox->value(); }
 void   PrefDisplay::setTemplateThresholdMax(double v)   { templateThresholdMaxSpinBox->setValue(v); }
 double PrefDisplay::getTemplateThresholdMax() const     { return templateThresholdMaxSpinBox->value(); }
-void PrefDisplay::setTemplateXcorrPearson(bool b)       { templateXcorrPearsonCheckBox->setChecked(b); }
-bool PrefDisplay::getTemplateXcorrPearson() const       { return templateXcorrPearsonCheckBox->isChecked(); }
+void PrefDisplay::setTemplateXcorrMetric(int i)        { templateXcorrMetricComboBox->setCurrentIndex(i); }
+int  PrefDisplay::getTemplateXcorrMetric() const       { return templateXcorrMetricComboBox->currentIndex(); }

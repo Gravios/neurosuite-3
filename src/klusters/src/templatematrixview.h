@@ -143,9 +143,9 @@ protected:
 private Q_SLOTS:
     void onThresholdChanged(int sliderValue);
     void onApplyClicked();
-    /// Live metric selector (Cosine vs Pearson) next to the threshold slider.
-    /// Writes configuration().templateXcorrPearson (shared with the Display
-    /// preference page) and recomputes the matrix with the new metric.
+    /// Live metric selector (Cosine / Pearson / Raw) next to the threshold
+    /// slider.  Writes configuration().templateXcorrMetric (shared with the
+    /// Display preference page) and recomputes the matrix with the new metric.
     void onMetricChanged();
 
 private:
@@ -237,9 +237,10 @@ private:
     QLabel*      thresholdLabel;
     QLabel*      countLabel;
     QPushButton* applyButton;
-    // ── metric selector (Cosine vs Pearson), shares configuration().templateXcorrPearson
+    // ── metric selector (Cosine / Pearson / Raw), shares configuration().templateXcorrMetric
     QRadioButton* metricCosRadio;
     QRadioButton* metricPearsonRadio;
+    QRadioButton* metricRawRadio;
     double       currentThreshold;
     double       sliderMin;
     double       sliderMax;

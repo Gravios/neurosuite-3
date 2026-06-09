@@ -85,6 +85,34 @@ float tmNormXcorr(const std::vector<float>& a,
 }
 
 // ---------------------------------------------------------------------------
+// Raw (non-normalised) peak cross-correlation: max over lags of |Σ a_i b_j|.
+// No norm division — the value scales with waveform energy/amplitude, so two
+// clusters with the same shape but different amplitude score differently
+// (unlike cosine/Pearson, which are amplitude-invariant).  Unbounded; the
+// matrix thread maps the resulting values onto [0,1] for display.
+// ---------------------------------------------------------------------------
+float tmRawXcorr(const std::vector<float>& a,
+                 const std::vector<float>& b,
+                 int maxShift)
+{
+    const int N = static_cast<int>(a.size());
+    if (N == 0) return 0.0f;
+
+    float best = 0.0f;
+    for (int lag = -maxShift; lag <= maxShift; ++lag) {
+        double sab = 0.0;
+        for (int i = 0; i < N; ++i) {
+            const int j = i + lag;
+            if (j < 0 || j >= N) continue;
+            sab += static_cast<double>(a[i]) * static_cast<double>(b[j]);
+        }
+        const float val = static_cast<float>(std::abs(sab));
+        if (val > best) best = val;
+    }
+    return best;
+}
+
+// ---------------------------------------------------------------------------
 void TemplateMatrixThread::run()
 {
     auto post = [this]() {
@@ -190,19 +218,47 @@ void TemplateMatrixThread::run()
         for (int cj = ci+1; cj < nClusters; ++cj)
             pairs.emplace_back(ci, cj);
     const int nPairs = static_cast<int>(pairs.size());
-    const bool pearson = configuration().getTemplateXcorrPearson();
+    const int metric  = configuration().getTemplateXcorrMetric(); // 0=cos 1=pearson 2=raw
+    const bool pearson = (metric == 1);
+    const bool raw     = (metric == 2);
 
 #pragma omp parallel for schedule(dynamic,4) default(none) \
-    shared(meanWav, pairs, scores) firstprivate(nPairs, maxShift, pearson)
+    shared(meanWav, pairs, scores) firstprivate(nPairs, maxShift, pearson, raw)
     for (int pi = 0; pi < nPairs; ++pi) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
         const int ci = pairs[static_cast<size_t>(pi)].first;
         const int cj = pairs[static_cast<size_t>(pi)].second;
-        const float s = tmNormXcorr(meanWav[static_cast<size_t>(ci)],
-                                     meanWav[static_cast<size_t>(cj)], maxShift,
-                                     pearson);
+        const float s = raw
+            ? tmRawXcorr(meanWav[static_cast<size_t>(ci)],
+                         meanWav[static_cast<size_t>(cj)], maxShift)
+            : tmNormXcorr(meanWav[static_cast<size_t>(ci)],
+                          meanWav[static_cast<size_t>(cj)], maxShift, pearson);
         (*scores)(ci+1, cj+1) = s;
         (*scores)(cj+1, ci+1) = s;
+    }
+
+    // Raw xcorr is unbounded (scales with waveform energy) while the colour map
+    // and threshold slider assume [0,1].  Map onto that scale by dividing every
+    // off-diagonal cell by the largest off-diagonal value: the most similar
+    // pair reads 1.0 and the amplitude-weighted ordering is preserved.  The
+    // diagonal stays 1.0.  Serial pass — the parallel fill is already done.
+    if (raw && !haveToStopProcessing.load(std::memory_order_relaxed)) {
+        double gmax = 0.0;
+        for (int pi = 0; pi < nPairs; ++pi) {
+            const int ci = pairs[static_cast<size_t>(pi)].first;
+            const int cj = pairs[static_cast<size_t>(pi)].second;
+            gmax = std::max(gmax, (*scores)(ci+1, cj+1));
+        }
+        if (gmax > 0.0) {
+            const double inv = 1.0 / gmax;
+            for (int pi = 0; pi < nPairs; ++pi) {
+                const int ci = pairs[static_cast<size_t>(pi)].first;
+                const int cj = pairs[static_cast<size_t>(pi)].second;
+                const double v = (*scores)(ci+1, cj+1) * inv;
+                (*scores)(ci+1, cj+1) = v;
+                (*scores)(cj+1, ci+1) = v;
+            }
+        }
     }
 
     post();

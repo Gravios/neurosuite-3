@@ -208,14 +208,53 @@
        </widget>
       </item>
       <item row="4" column="0">
-       <widget class="QCheckBox" name="templateXcorrPearsonCheckBox">
-        <property name="text">
-         <string>Mean-subtract waveforms before template &amp;xcorr (Pearson)</string>
-        </property>
-        <property name="toolTip">
-         <string>When checked, each cluster mean waveform has its overlap-window mean removed before the normalised cross-correlation, so the Template Matrix (and auto-merge) measure shape correlation (Pearson) instead of cosine similarity.  Removes sensitivity to a shared DC offset between templates.  Off by default (plain cosine).</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="templateXcorrMetricLayout">
+        <item>
+         <widget class="QLabel" name="templateXcorrMetricLabel">
+          <property name="text">
+           <string>Template matrix &amp;metric:</string>
+          </property>
+          <property name="buddy">
+           <cstring>templateXcorrMetricComboBox</cstring>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="templateXcorrMetricComboBox">
+          <property name="toolTip">
+           <string>Similarity metric for the Template Matrix cells.  Cosine: peak normalised cross-correlation between cluster mean waveforms.  Pearson: removes each waveform's overlap-window mean first (shape correlation, insensitive to a shared DC offset).  Raw: non-normalised cross-correlation, amplitude-weighted, globally scaled so the strongest pair reads 1.0.  The per-spike pair xcorr and auto-merge always use cosine/Pearson (never raw), since their thresholds need a bounded [0,1] score.</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>Cosine similarity</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Pearson correlation</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Raw (non-normalised)</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <spacer name="templateXcorrMetricSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>

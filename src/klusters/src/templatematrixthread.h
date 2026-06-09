@@ -41,6 +41,13 @@ float tmNormXcorr(const std::vector<float>& a,
                   int maxShift,
                   bool meanSubtract = false);
 
+// Raw (non-normalised) peak cross-correlation: max over lags of |Σ a_i b_j|.
+// NOT divided by the waveform norms, so it scales with waveform energy; the
+// caller is responsible for mapping the (unbounded) result onto a display scale.
+float tmRawXcorr(const std::vector<float>& a,
+                 const std::vector<float>& b,
+                 int maxShift);
+
 // ---------------------------------------------------------------------------
 // Main background thread: reads all cluster waveforms, computes means, and
 // builds the pairwise mean-vs-mean xcorr matrix.
