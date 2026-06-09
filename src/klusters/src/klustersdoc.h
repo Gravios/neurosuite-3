@@ -528,10 +528,11 @@ public:
         QVector<double>* eigvalsOut = nullptr);
 
     /** Raw-waveform, median-centred variant of the sub-dimensional path.
+     *  Pools the spikes of all @p clusterIds before taking the median.
      *  Same return/out-parameter contract as
      *  createMeanSubtractedSubdimFeatureFile. */
     int createMedianWaveformResidualFeatureFile(
-        int clusterId, int K,
+        const QList<int>& clusterIds, int K,
         const QString& reclusteringFetFileName,
         int* nDimWritten = nullptr,
         QVector<double>* eigvalsOut = nullptr);

@@ -789,18 +789,18 @@ public:
                                               QVector<double>* eigvals = nullptr);
 
     /** Like createMeanSubtractedSubdimFeatureFile, but operates in raw
-     *  waveform space and centres on the cluster's per-point MEDIAN.
-     *  Reads each spike's waveform from the .spk file, subtracts the
-     *  per-(channel,sample) median template (robust to drift/outliers),
-     *  PCA-projects the residual waveforms, and writes the top-K residual
-     *  components as the recluster .fet.  Returns K+1 (dims written) or 0.
-     *  @param clusterId  single cluster to recluster.
+     *  waveform space and centres on the per-point MEDIAN of the spikes
+     *  pooled across all @p clusterIds.  Reads each spike's waveform from the
+     *  .spk file, subtracts the per-(channel,sample) median template (robust
+     *  to drift/outliers), PCA-projects the residual waveforms, and writes the
+     *  top-K residual components as the recluster .fet.  Returns K+1 or 0.
+     *  @param clusterIds one or more clusters whose spikes are pooled.
      *  @param K          desired number of residual-PCA components.
      *  @param fetFile    output .fet file (will be re-opened in binary).
      *  @param eigvals    optional out: top-K eigenvalues in descending order.
      */
-    int createMedianWaveformResidualFeatureFile(int clusterId, int K,
-                                                QFile& fetFile,
+    int createMedianWaveformResidualFeatureFile(const QList<int>& clusterIds,
+                                                int K, QFile& fetFile,
                                                 QVector<double>* eigvals = nullptr);
 
     /**Integrates the clusters obtained by automatic reclustering.
@@ -847,8 +847,8 @@ private:
      *  int32 otherwise); the in-memory waveform store uses T so an exact
      *  per-point median costs half the memory of a double store. */
     template <class T>
-    int medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
-                                   QVector<double>* eigvalsOut);
+    int medianWaveformResidualImpl(const QList<int>& clusterIds, int K,
+                                   QFile& fetFile, QVector<double>* eigvalsOut);
 
     /**
   * String indicating what is the status of the processing of the waveform information.
