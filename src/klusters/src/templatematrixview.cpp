@@ -650,9 +650,12 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
         statusBar->showMessage(QString("Cluster %1").arg(cA));
     else
         statusBar->showMessage(
-            QString("Clusters (row=%1 \u2192 col=%2): mean xcorr = %3")
+            QString("Clusters (row=%1 \u2192 col=%2): %3 = %4")
                 .arg(cB).arg(cA)
-                .arg((*scores)(row+1, col+1), 0, 'f', 3));
+                .arg(configuration().getTemplateXcorrPearson()
+                         ? QStringLiteral("Pearson")
+                         : QStringLiteral("cosine"))
+                .arg((*scores)(row+1, col+1), 0, 'f', 5));
 }
 
 void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
