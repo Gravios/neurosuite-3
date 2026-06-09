@@ -4284,14 +4284,60 @@ void KlustersApp::slotRecluster(){
                     double minVar   = topVar * 0.05;
 
                     QSet<int> selected;
-                    for(int k = 0; k < nSelect && k < iv.size(); ++k){
-                        if(topVar > 0.0 && iv[k].second < minVar)
-                            break;   // remaining features are at noise level
-                        selected.insert(iv[k].first);
+
+                    // Channel-level selection (patch): rank whole channels by
+                    // aggregate feature variance and keep every PCA column of
+                    // the top channels, so a high-variance channel's components
+                    // are never split across the kept/dropped boundary.
+                    // autoSelectNFeatures (the N-features spin box) sets the
+                    // number of channels kept.
+                    if(configuration().getReclusterChannelVariance()){
+                        const int nCh    = doc->nbOfchannels();
+                        const int totPca = doc->totalNbOfPCAs();
+                        const int featPerCh = (nCh > 0) ? totPca / nCh : 0;
+                        if(featPerCh > 0){
+                            // Aggregate the per-column variance into per-channel
+                            // totals over the PCA columns only (col j → channel
+                            // j / featPerCh; channel-major .fet layout).
+                            QVector<double> chVar(nCh, 0.0);
+                            for(int j = 0; j < variances.size() && j < totPca; ++j)
+                                chVar[j / featPerCh] += variances[j];
+
+                            QVector<QPair<int,double>> cv;
+                            cv.reserve(nCh);
+                            for(int c = 0; c < nCh; ++c)
+                                cv.append(qMakePair(c, chVar[c]));
+                            std::sort(cv.begin(), cv.end(),
+                                [](const QPair<int,double>& a, const QPair<int,double>& b){
+                                    return a.second > b.second;
+                                });
+
+                            // The N-features spin box (autoSelectNFeatures)
+                            // sets the number of channels selected directly:
+                            // take exactly the top nChSel channels by variance,
+                            // with no noise-floor trim, so the spin box value is
+                            // authoritative.
+                            const int nChSel = qBound(1, autoSelectNFeatures, nCh);
+                            for(int c = 0; c < cv.size() && c < nChSel; ++c){
+                                const int ch = cv[c].first;
+                                for(int p = 0; p < featPerCh; ++p)
+                                    selected.insert(ch * featPerCh + p);
+                            }
+                        }
                     }
-                    // Always keep at least the single most-informative feature.
-                    if(selected.isEmpty() && !iv.isEmpty())
-                        selected.insert(iv[0].first);
+
+                    // Per-feature-column selection (default / fallback when the
+                    // channel-level path produced nothing).
+                    if(selected.isEmpty()){
+                        for(int k = 0; k < nSelect && k < iv.size(); ++k){
+                            if(topVar > 0.0 && iv[k].second < minVar)
+                                break;   // remaining features are at noise level
+                            selected.insert(iv[k].first);
+                        }
+                        // Always keep at least the single most-informative feature.
+                        if(selected.isEmpty() && !iv.isEmpty())
+                            selected.insert(iv[0].first);
+                    }
 
                     // patch75 — Build bit-string; timestamp column is set
                     // OFF when auto-selecting features.  Including the
