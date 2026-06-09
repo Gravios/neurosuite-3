@@ -209,25 +209,6 @@ void ErrorMatrixView::recomputeCellWidth()
 }
 
 void ErrorMatrixView::updateWindow(){
-    // Capture the current view as fractions of the OLD full world, so the same
-    // relative zoom/pan can be re-applied after the world is re-fit below.  This
-    // keeps the zoom stable across matrix updates, cluster-count changes and
-    // resizes — the same behaviour as the template matrix view, where zoom is a
-    // persistent multiplier applied on top of the fit rather than an absolute
-    // window that is rebuilt (and thus reset) every time the layout is touched.
-    double fx = 0.0, fy = 0.0, fw = 1.0, fh = 1.0;
-    if(windowInitialized){
-        const double W0 = static_cast<double>(abscissaMax - abscissaMin);
-        const double H0 = static_cast<double>(ordinateMax - ordinateMin);
-        const QRect cur = static_cast<QRect>(window);
-        if(W0 > 0.0 && H0 > 0.0){
-            fx = (cur.left() - abscissaMin) / W0;
-            fy = (cur.top()  - ordinateMin) / H0;
-            fw =  cur.width()  / W0;
-            fh =  cur.height() / H0;
-        }
-    }
-
     recomputeCellWidth();
     int nbOfClusters = clusterList.size();
 
@@ -237,25 +218,41 @@ void ErrorMatrixView::updateWindow(){
     abscissaMax =  2 * widthBorder + (cellWidth * nbOfClusters);
     ordinateMin = -(2 * heightBorder + (cellWidth * nbOfClusters));
 
-    // Rebuild the window at the new full extent (this also sets the initial
-    // bounds used by reset(), so double-click still restores the full matrix),
-    // then re-apply the captured relative view via the zoom-to-rect overload
-    // (which clamps to the full extent).  Skip the re-apply when the view was
-    // essentially full, so an un-zoomed matrix stays exactly full.
-    window = ZoomWindow(QRect(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax)));
-    if(windowInitialized && (fw < 0.999 || fh < 0.999 || fx > 0.001 || fy > 0.001)){
-        const double W1 = static_cast<double>(abscissaMax - abscissaMin);
-        const double H1 = static_cast<double>(ordinateMax - ordinateMin);
-        const int zl = static_cast<int>(abscissaMin + qRound(fx * W1));
-        const int zt = static_cast<int>(ordinateMin + qRound(fy * H1));
-        const int zr = zl + qRound(fw * W1);
-        const int zb = zt + qRound(fh * H1);
-        window.zoom(zl, zt, zr, zb);
-    }
-    windowInitialized = true;
+    // Derive the ZoomWindow from the persistent zoom/pan state.  The zoom is a
+    // multiplier re-applied on top of the always-recomputed fit (never read back
+    // from the window), so it stays stable across matrix updates, cluster-count
+    // changes and resizes — the same model as the template matrix view.
+    applyViewToWindow();
 
     //update the drawing mode if needed (if UPDATE, no change is need it).
     if(drawContentsMode == REFRESH)drawContentsMode = REDRAW ;
+}
+
+// ---------------------------------------------------------------------------
+// applyViewToWindow — rebuild `window` from (userZoom, userCenterFx/Fy).
+// userZoom == 1 gives the full matrix (and so reset()/double-click restores it);
+// userZoom > 1 gives a sub-rect of size fullExtent/userZoom centred on the
+// stored centre fraction, clamped to stay inside the full extent.
+// ---------------------------------------------------------------------------
+void ErrorMatrixView::applyViewToWindow(){
+    const QRect full(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax));
+    window = ZoomWindow(full);
+
+    const double fullW = static_cast<double>(abscissaMax - abscissaMin);
+    const double fullH = static_cast<double>(ordinateMax - ordinateMin);
+    if(userZoom <= 1.0001 || fullW <= 0.0 || fullH <= 0.0)
+        return;                                       // full view
+
+    const double w = fullW / userZoom;
+    const double h = fullH / userZoom;
+    double cx = abscissaMin + userCenterFx * fullW;
+    double cy = ordinateMin + userCenterFy * fullH;
+    cx = qBound(abscissaMin + w / 2.0, cx, abscissaMax - w / 2.0);
+    cy = qBound(ordinateMin + h / 2.0, cy, ordinateMax - h / 2.0);
+
+    const int zl = qRound(cx - w / 2.0), zr = qRound(cx + w / 2.0);
+    const int zt = qRound(cy - h / 2.0), zb = qRound(cy + h / 2.0);
+    window.zoom(zl, zt, zr, zb);                      // zoom-to-rect, clamped to full
 }
 
 
@@ -485,7 +482,8 @@ void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
         m_panArmed       = true;
         m_panning        = false;
         m_panAnchorPx    = e->position().toPoint();
-        m_panCenterStart = static_cast<QRect>(window).center();
+        m_panCenterStartFx = userCenterFx;
+        m_panCenterStartFy = userCenterFy;
         setCursor(Qt::ClosedHandCursor);
         e->accept();
     }
@@ -505,9 +503,16 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
         if(m_panning){
             const QPoint wa = viewportToWorld(m_panAnchorPx.x() - 15, m_panAnchorPx.y());
             const QPoint wc = viewportToWorld(e->position().toPoint().x() - 15, e->position().toPoint().y());
-            const QPoint newCenter(m_panCenterStart.x() - (wc.x() - wa.x()),
-                                   m_panCenterStart.y() - (wc.y() - wa.y()));
-            window.zoom(1.0f, newCenter);
+            const double fullW = static_cast<double>(abscissaMax - abscissaMin);
+            const double fullH = static_cast<double>(ordinateMax - ordinateMin);
+            if(fullW > 0.0 && fullH > 0.0){
+                userCenterFx = m_panCenterStartFx - static_cast<double>(wc.x() - wa.x()) / fullW;
+                userCenterFy = m_panCenterStartFy - static_cast<double>(wc.y() - wa.y()) / fullH;
+                const double hf = 0.5 / userZoom;
+                userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
+                userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
+            }
+            updateWindow();
             drawContentsMode = REDRAW;
             update();
         }
@@ -621,42 +626,52 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::wheelEvent(QWheelEvent* e){
-    // Ctrl + wheel zooms around the cursor.  Without Ctrl, defer to the base so
-    // any future scroll-area behaviour still works.  In ZoomWindow::zoom a
-    // factor > 1 enlarges the drawing (zoom in); correctWindow() clamps the
-    // result to the full-matrix bounds, so zoom/pan can't escape the data.
+    // Ctrl + wheel zooms around the cursor.  Without Ctrl, defer to the base.
+    // Zoom is stored as a persistent multiplier (userZoom) + centre fraction so
+    // it survives matrix updates / cluster-count changes / resizes; updateWindow()
+    // re-derives the ZoomWindow from that state.
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
         return;
     }
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
-    const float factor = (delta > 0) ? m_wheelZoomStep : (1.0f / m_wheelZoomStep);
-    // World point under the cursor.  We want it to stay under the cursor after
-    // the zoom (zoom-around-cursor), not jump to the view centre.  ZoomWindow::
-    // zoom(factor, c) re-centres the window on c and scales its size by 1/factor,
-    // so the centre that keeps the pivot fixed is
-    //     cNew = pivot - (1/factor) * (pivot - cOld).
-    // (Passing pivot directly as the centre — the old behaviour — recentred the
-    // view on the cursor, making the content jump on every notch.)
-    const QPoint pivot = viewportToWorld(e->position().toPoint().x() - 15,
-                                         e->position().toPoint().y());
-    const QPoint cOld  = static_cast<QRect>(window).center();
-    const float  zf    = 1.0f / factor;
-    const QPoint cNew(
-        qRound(static_cast<float>(pivot.x()) - zf * (pivot.x() - cOld.x())),
-        qRound(static_cast<float>(pivot.y()) - zf * (pivot.y() - cOld.y())));
-    if(window.zoom(factor, cNew)){
-        drawContentsMode = REDRAW;
-        update();
+    const double factor  = (delta > 0) ? m_wheelZoomStep : (1.0 / m_wheelZoomStep);
+    const double newZoom = qBound(1.0, userZoom * factor, m_userZoomMax);
+    if(newZoom == userZoom){ e->accept(); return; }
+
+    const double fullW = static_cast<double>(abscissaMax - abscissaMin);
+    const double fullH = static_cast<double>(ordinateMax - ordinateMin);
+    if(fullW > 0.0 && fullH > 0.0){
+        // Keep the world point under the cursor fixed.  As the window half-size
+        // scales by userZoom/newZoom, the centre that pins the pivot is
+        //   cNew = pivot + (userZoom/newZoom) * (cOld - pivot).
+        const QPoint pivot = viewportToWorld(e->position().toPoint().x() - 15,
+                                             e->position().toPoint().y());
+        const double cOldX = abscissaMin + userCenterFx * fullW;
+        const double cOldY = ordinateMin + userCenterFy * fullH;
+        const double k = userZoom / newZoom;
+        const double cNewX = pivot.x() + k * (cOldX - pivot.x());
+        const double cNewY = pivot.y() + k * (cOldY - pivot.y());
+        userCenterFx = (cNewX - abscissaMin) / fullW;
+        userCenterFy = (cNewY - ordinateMin) / fullH;
+        const double hf = 0.5 / newZoom;
+        userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
+        userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
     }
+    userZoom = newZoom;
+    updateWindow();
+    drawContentsMode = REDRAW;
+    update();
     e->accept();
 }
 
 void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
-    // Restore the standard "double-click to reset zoom" gesture for this view
-    // (BaseFrame's default, which the previous empty override had disabled).
-    window.reset();
+    // Double-click resets pan & zoom to the full matrix.
+    userZoom     = 1.0;
+    userCenterFx = 0.5;
+    userCenterFy = 0.5;
+    updateWindow();
     drawContentsMode = REDRAW;
     update();
     e->accept();

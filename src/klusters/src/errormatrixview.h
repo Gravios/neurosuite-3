@@ -309,22 +309,29 @@ private:
     bool   m_panArmed{false};      // Ctrl+press seen; awaiting drag threshold
     bool   m_panning{false};       // drag threshold crossed → actively panning
     QPoint m_panAnchorPx;          // pixel position where the Ctrl-drag began
-    QPoint m_panCenterStart;       // window centre (world coords) at drag start
-    static constexpr int   m_panDragThreshold{3};   // px before a press → pan
-    static constexpr float m_wheelZoomStep{1.25f};  // zoom multiplier per tick
+    double m_panCenterStartFx{0.5};// userCenterFx at drag start
+    double m_panCenterStartFy{0.5};// userCenterFy at drag start
+    static constexpr int    m_panDragThreshold{3};  // px before a press → pan
+    static constexpr double m_wheelZoomStep{1.25};  // zoom multiplier per tick
+    static constexpr double m_userZoomMax{20.0};    // max zoom-in factor
 
-    // Layout cache: the world geometry + ZoomWindow are rebuilt (zoom/pan reset
-    // to the full matrix) only when these inputs change — a widget resize or a
-    // cluster-count change.  Rebuilding on every REDRAW discarded the user's
-    // wheel-zoom/pan, since each zoom notch requests a REDRAW.  -1 / empty force
-    // a rebuild on the first paint.
+    // Layout cache: the world geometry + ZoomWindow are rebuilt only when these
+    // inputs change — a widget resize or a cluster-count change.  Rebuilding on
+    // every REDRAW is wasted work; -1 / empty force a rebuild on the first paint.
     QSize  layoutViewportSize;
     int    layoutClusterCount{-1};
-    // Set once updateWindow() has built the ZoomWindow.  While false, the first
-    // updateWindow() just fits to the full matrix; afterwards updateWindow()
-    // re-applies the current relative zoom/pan on top of the re-fit, so the zoom
-    // stays put across updates / cluster-count changes / resizes.
-    bool   windowInitialized{false};
+
+    // Persistent zoom / pan state — the authoritative view, exactly like the
+    // template matrix view.  userZoom is a multiplier (1 = full matrix, >1 =
+    // zoomed in); userCenterFx/Fy are the view centre as fractions of the full
+    // world.  updateWindow() derives the ZoomWindow from these every layout, so
+    // the zoom is re-applied on top of the recomputed fit and never lost to a
+    // matrix update, cluster-count change or resize.
+    double userZoom{1.0};
+    double userCenterFx{0.5};
+    double userCenterFy{0.5};
+    /// Rebuild `window` from (userZoom, userCenterFx, userCenterFy).
+    void   applyViewToWindow();
 
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
     QList<ErrorMatrixThread*> threadsToBeKill;
