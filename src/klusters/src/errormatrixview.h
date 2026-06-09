@@ -320,6 +320,11 @@ private:
     // a rebuild on the first paint.
     QSize  layoutViewportSize;
     int    layoutClusterCount{-1};
+    // Set once updateWindow() has built the ZoomWindow.  While false, the first
+    // updateWindow() just fits to the full matrix; afterwards updateWindow()
+    // re-applies the current relative zoom/pan on top of the re-fit, so the zoom
+    // stays put across updates / cluster-count changes / resizes.
+    bool   windowInitialized{false};
 
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
     QList<ErrorMatrixThread*> threadsToBeKill;
