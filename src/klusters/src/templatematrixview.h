@@ -223,6 +223,9 @@ private:
     static constexpr int NB_COLORS = 100;
     QMap<int, QColor> colorMap;
     void initializeColorMap();
+    // Painted-text colour (cluster ids, overlay messages): black or white,
+    // chosen from the background luminance so it stays legible on either.
+    QColor textColor;
 
     // ── drawing ──────────────────────────────────────────────────────────────
     QPixmap doublebuffer;
