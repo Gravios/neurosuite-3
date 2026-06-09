@@ -6,6 +6,7 @@
 #include "configuration.h"
 
 #include <QApplication>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPainter>
@@ -72,6 +73,28 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     applyButton->setEnabled(false);
     applyButton->setToolTip("Move above-threshold source spikes into target cluster");
 
+    // Metric selector: Cosine similarity vs Pearson correlation.  Shares the
+    // same configuration().templateXcorrPearson value as the Display
+    // preference page, so the two stay in sync; toggling it here recomputes
+    // the matrix immediately with the new metric.
+    QLabel* metricLabel = new QLabel("Metric:", controlBar);
+    metricCosRadio     = new QRadioButton("Cosine",  controlBar);
+    metricPearsonRadio = new QRadioButton("Pearson", controlBar);
+    metricCosRadio->setToolTip("Peak normalised cross-correlation (cosine similarity) between cluster mean waveforms.");
+    metricPearsonRadio->setToolTip("Pearson correlation: removes the overlap-window mean of each waveform before normalising.");
+    QButtonGroup* metricGroup = new QButtonGroup(this);
+    metricGroup->setExclusive(true);
+    metricGroup->addButton(metricCosRadio);
+    metricGroup->addButton(metricPearsonRadio);
+    {
+        const bool pearson = configuration().getTemplateXcorrPearson();
+        metricPearsonRadio->setChecked(pearson);
+        metricCosRadio->setChecked(!pearson);
+    }
+
+    bar->addWidget(metricLabel);
+    bar->addWidget(metricCosRadio);
+    bar->addWidget(metricPearsonRadio);
     bar->addWidget(thresholdLabel);
     bar->addWidget(thresholdSlider, 1);
     bar->addWidget(countLabel);
@@ -83,6 +106,10 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
             this, &TemplateMatrixView::onThresholdChanged);
     connect(applyButton, &QPushButton::clicked,
             this, &TemplateMatrixView::onApplyClicked);
+    // toggled() fires for both radios on any change; the slot reads Pearson's
+    // state, so connecting one button is sufficient.
+    connect(metricPearsonRadio, &QAbstractButton::toggled,
+            this, &TemplateMatrixView::onMetricChanged);
 
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
     thresholdSlider->setValue(thresholdToSlider(currentThreshold));
@@ -224,6 +251,17 @@ void TemplateMatrixView::updateMatrixContents()
     ++m_generation;
     stopPairThread();
     m_pairCache.clear();
+
+    // Reflect the current metric (it may have been changed via the Display
+    // preference page since this view was built).  Block signals so this
+    // refresh doesn't re-enter onMetricChanged → updateMatrixContents.
+    {
+        const bool pearson = configuration().getTemplateXcorrPearson();
+        const QSignalBlocker bCos(metricCosRadio);
+        const QSignalBlocker bPear(metricPearsonRadio);
+        metricPearsonRadio->setChecked(pearson);
+        metricCosRadio->setChecked(!pearson);
+    }
 
     for (TemplateMatrixThread* t : threadsToBeKill)
         t->stopProcessing();
@@ -727,6 +765,20 @@ void TemplateMatrixView::wheelEvent(QWheelEvent* event)
 }
 
 // ── slider / apply ────────────────────────────────────────────────────────────
+
+void TemplateMatrixView::onMetricChanged()
+{
+    // Single source of truth: configuration().templateXcorrPearson, shared with
+    // the Display preference page.  Persist immediately so the choice survives
+    // restart and the preference dialog reflects it, then recompute — the
+    // compute thread reads the flag at run time (TemplateMatrixThread::run).
+    const bool pearson = metricPearsonRadio->isChecked();
+    if (pearson == configuration().getTemplateXcorrPearson())
+        return;                       // no-op toggle (e.g. programmatic refresh)
+    configuration().setTemplateXcorrPearson(pearson);
+    configuration().write();
+    updateMatrixContents();
+}
 
 void TemplateMatrixView::onThresholdChanged(int sliderValue)
 {
