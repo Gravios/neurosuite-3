@@ -2407,6 +2407,19 @@ void KlustersDoc::undo(){
     //of the clusterColorListRedoList and the first element of the clusterColorListUndoList become the current clusterColorList
     //do the same for the addedClusters and modifiedClusters Lists.
     if(clusterColorListUndoList.count()>0){
+        // Quiesce every view's worker threads BEFORE the data layer swaps
+        // spikesByCluster/clusterInfoMap.  A WaveformThread (or CorrelationThread)
+        // in flight here would otherwise read across the swap, or finish and post
+        // a stale per-cluster result that the view applies afterwards — leaving
+        // the async waveform/correlation views showing pre-undo data while the
+        // synchronous feature scatter and cluster list already show the new
+        // state (the reported desync).  Stopping clears each view's
+        // threadsToBeKill, so any already-posted stale result is dropped by the
+        // event guards; the post-swap view->undo()/refresh below recomputes from
+        // the new data, so all views end up consistent.
+        for (int i = 0; i < viewList->count(); ++i)
+            viewList->at(i)->stopAllViewThreads();
+
         // Must be called after the guard: if the undo list is empty there is nothing
         // to revert at the data layer either, and calling it unconditionally can leave
         // addedClusters/modifiedClusters in an inconsistent state (null after takeAt on
@@ -2565,6 +2578,13 @@ void KlustersDoc::redo(){
         deletedClustersUndoList.prepend(deletedClusters);
         QList<int>* deletedClustersTemp = deletedClustersRedoList.takeAt(0);
         deletedClusters =  deletedClustersTemp;
+
+        // Stop in-flight view worker threads before the data swap (see the
+        // matching comment in undo()): prevents a stale waveform/correlation
+        // result from landing after the swap and desyncing the async views from
+        // the synchronous feature scatter / cluster list.
+        for (int i = 0; i < viewList->count(); ++i)
+            viewList->at(i)->stopAllViewThreads();
 
         clusteringData->redo(*addedClusters,*modifiedClusters,*deletedClusters);
 
