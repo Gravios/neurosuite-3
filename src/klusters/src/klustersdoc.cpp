@@ -3037,6 +3037,24 @@ int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
     return OK;
 }
 
+// Wrapper for the raw-waveform median-residual path.  Same enum/out-parameter
+// contract as createMeanSubtractedSubdimFeatureFile.
+int KlustersDoc::createMedianWaveformResidualFeatureFile(
+        int clusterId, int K,
+        const QString& reclusteringFetFileName,
+        int* nDimWritten,
+        QVector<double>* eigvalsOut)
+{
+    if (nDimWritten) *nDimWritten = 0;
+    QFile fetFile(reclusteringFetFileName);
+    if (!fetFile.open(QIODevice::WriteOnly)) return OPEN_ERROR;
+    const int nDim = clusteringData->createMedianWaveformResidualFeatureFile(
+        clusterId, K, fetFile, eigvalsOut);
+    if (nDim <= 0) return CREATION_ERROR;
+    if (nDimWritten) *nDimWritten = nDim;
+    return OK;
+}
+
 // patch81 — Remove the staged YAML (and .yml fallback) that
 // KlustersApp::slotRecluster copied next to the temp .fet so that
 // KlustaKwikYaml.cpp's tryPath("<fileBase>", ".yaml") would find it.

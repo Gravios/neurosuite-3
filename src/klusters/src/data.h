@@ -788,6 +788,21 @@ public:
                                               QFile& fetFile,
                                               QVector<double>* eigvals = nullptr);
 
+    /** Like createMeanSubtractedSubdimFeatureFile, but operates in raw
+     *  waveform space and centres on the cluster's per-point MEDIAN.
+     *  Reads each spike's waveform from the .spk file, subtracts the
+     *  per-(channel,sample) median template (robust to drift/outliers),
+     *  PCA-projects the residual waveforms, and writes the top-K residual
+     *  components as the recluster .fet.  Returns K+1 (dims written) or 0.
+     *  @param clusterId  single cluster to recluster.
+     *  @param K          desired number of residual-PCA components.
+     *  @param fetFile    output .fet file (will be re-opened in binary).
+     *  @param eigvals    optional out: top-K eigenvalues in descending order.
+     */
+    int createMedianWaveformResidualFeatureFile(int clusterId, int K,
+                                                QFile& fetFile,
+                                                QVector<double>* eigvals = nullptr);
+
     /**Integrates the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.
   * @param clustersToRecluster list of clusters reclustered.
@@ -826,6 +841,14 @@ public:
     QList<int>& getCurrentChannels(){return currentChannels;}
 
 private:
+
+    /** Native-width implementation of createMedianWaveformResidualFeatureFile.
+     *  T is the acquisition sample type (int16 for two-byte recordings,
+     *  int32 otherwise); the in-memory waveform store uses T so an exact
+     *  per-point median costs half the memory of a double store. */
+    template <class T>
+    int medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
+                                   QVector<double>* eigvalsOut);
 
     /**
   * String indicating what is the status of the processing of the waveform information.

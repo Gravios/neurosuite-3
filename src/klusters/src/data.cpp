@@ -5340,6 +5340,251 @@ int Data::createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
     return K + 1;
 }
 
+// Raw-waveform median-residual variant of the sub-dimensional path.
+// Centres each spike on the cluster's per-(channel,sample) MEDIAN waveform
+// (robust to drift and outliers), then PCA-projects the residual waveforms and
+// writes the top-K components as the recluster .fet.  Mirrors the .fet format
+// and reclusteringSpikesByCluster setup of createMeanSubtractedSubdimFeatureFile,
+// but D' = nbPtsBySpike (raw waveform points) and the samples come from .spk.
+//
+// Memory: an exact per-point median needs one in-memory copy of the cluster's
+// spikes; that copy is held in the native acquisition width (T = int16 for
+// two-byte recordings, int32 otherwise) rather than as double, roughly halving
+// the footprint of the earlier float store.  The residual covariance is then
+// accumulated in a single streaming pass over that store (only a Dp-length
+// residual scratch is allocated; no nSp x Dp residual matrix), and the
+// projection streams the same way.
+template <class T>
+int Data::medianWaveformResidualImpl(int clusterId, int K, QFile& fetFile,
+                                     QVector<double>* eigvalsOut)
+{
+    if (!clusterInfoMap || !spikesByCluster) return 0;
+    const dataType cid = static_cast<dataType>(clusterId);
+    if (!clusterInfoMap->contains(cid)) return 0;
+    const ClusterInfo info = (*clusterInfoMap)[cid];
+    const dataType firstPos = info.firstSpikePosition();
+    const dataType nSp      = info.nbSpikes();
+    if (nSp < 3) return 0;
+    if (nbDimensions < 2) return 0;
+
+    const int Dp = nbChannels * nbSamplesInWaveform;   // raw waveform points
+    if (Dp < 2) return 0;
+    K = std::max(1, std::min(K, Dp));
+
+    // Mirror createFeatureFile / subdim: row 1 = global spike indices, row 2 =
+    // (later overwritten) labels.  Required or integration aborts.
+    reclusteringSpikesByCluster.setSize(nSp);
+    memcpy(&(reclusteringSpikesByCluster)(1, 1),
+           &(*spikesByCluster)(1, firstPos), nSp * sizeof(dataType));
+    memcpy(&(reclusteringSpikesByCluster)(2, 1),
+           &(*spikesByCluster)(2, firstPos), nSp * sizeof(dataType));
+
+    // ---- (1) Read the cluster's raw waveforms into a native-width store. ----
+    // .spk is sample-major; each spike is Dp samples at offset
+    // (globalIdx-1)*Dp.  T matches the acquisition width (sizeof(T)==sampleSize).
+    FILE* spk = fopen(qPrintable(spkFileName), "rb");
+    if (!spk) {
+        qCritical() << "createMedianWaveformResidualFeatureFile: cannot open"
+                    << spkFileName;
+        return 0;
+    }
+    std::vector<T> W;
+    try {
+        W.resize(static_cast<size_t>(nSp) * Dp);
+    } catch (const std::bad_alloc&) {
+        qCritical() << "createMedianWaveformResidualFeatureFile: out of memory for"
+                    << static_cast<long long>(nSp) << "spikes x" << Dp << "points";
+        fclose(spk);
+        return 0;
+    }
+    for (dataType s = 0; s < nSp; ++s) {
+        const dataType gid = (*spikesByCluster)(1, firstPos + s);   // 1-based
+        const long long off = static_cast<long long>(gid - 1) * Dp
+                            * static_cast<long long>(sizeof(T));
+        T* wrow = &W[static_cast<size_t>(s) * Dp];
+        if (fseeko64(spk, off, SEEK_SET) != 0 ||
+            fread(wrow, sizeof(T), Dp, spk) != static_cast<size_t>(Dp)) {
+            qCritical() << "createMedianWaveformResidualFeatureFile: short read"
+                           " at spike" << static_cast<long long>(gid);
+            fclose(spk);
+            return 0;
+        }
+    }
+    fclose(spk);
+
+    // ---- (2) Per-point median template. ----
+    std::vector<double> med(static_cast<size_t>(Dp), 0.0);
+    {
+        std::vector<T> col(static_cast<size_t>(nSp));
+        const size_t half = static_cast<size_t>(nSp) / 2;
+        for (int j = 0; j < Dp; ++j) {
+            for (dataType s = 0; s < nSp; ++s)
+                col[static_cast<size_t>(s)] = W[static_cast<size_t>(s) * Dp + j];
+            std::nth_element(col.begin(), col.begin() + half, col.end());
+            double m = static_cast<double>(col[half]);
+            if ((nSp & 1) == 0) {    // even: average the two central order stats
+                T lo = std::numeric_limits<T>::min();
+                for (size_t i = 0; i < half; ++i) if (col[i] > lo) lo = col[i];
+                m = 0.5 * (static_cast<double>(lo) + static_cast<double>(col[half]));
+            }
+            med[static_cast<size_t>(j)] = m;
+        }
+    }
+
+    // ---- (3) Streaming residual covariance C = R^T R / nSp. ----
+    const double invN = 1.0 / static_cast<double>(nSp);
+    std::vector<double> C(static_cast<size_t>(Dp) * Dp, 0.0);
+    std::vector<double> resid(static_cast<size_t>(Dp));
+    for (dataType s = 0; s < nSp; ++s) {
+        const T* wrow = &W[static_cast<size_t>(s) * Dp];
+        for (int j = 0; j < Dp; ++j)
+            resid[static_cast<size_t>(j)] =
+                static_cast<double>(wrow[j]) - med[static_cast<size_t>(j)];
+        for (int j = 0; j < Dp; ++j) {
+            const double rj = resid[static_cast<size_t>(j)];
+            if (rj == 0.0) continue;
+            double* Crow = &C[static_cast<size_t>(j) * Dp];
+            for (int k = j; k < Dp; ++k)
+                Crow[k] += rj * resid[static_cast<size_t>(k)];
+        }
+    }
+    for (int j = 0; j < Dp; ++j)
+        for (int k = j; k < Dp; ++k) {
+            C[static_cast<size_t>(j) * Dp + k] *= invN;
+            C[static_cast<size_t>(k) * Dp + j] = C[static_cast<size_t>(j) * Dp + k];
+        }
+
+    // ---- (4) Cyclic Jacobi eigendecomposition. ----
+    std::vector<double> V(static_cast<size_t>(Dp) * Dp, 0.0);
+    for (int j = 0; j < Dp; ++j) V[static_cast<size_t>(j) * Dp + j] = 1.0;
+    const int    maxSweeps = 100;
+    const double tol       = 1e-12;
+    for (int sweep = 0; sweep < maxSweeps; ++sweep) {
+        double offSum = 0.0;
+        for (int p = 0; p < Dp - 1; ++p)
+            for (int q = p + 1; q < Dp; ++q) {
+                const double cpq = C[static_cast<size_t>(p) * Dp + q];
+                offSum += cpq * cpq;
+            }
+        if (offSum < tol) break;
+        for (int p = 0; p < Dp - 1; ++p)
+            for (int q = p + 1; q < Dp; ++q) {
+                const double apq = C[static_cast<size_t>(p) * Dp + q];
+                if (std::abs(apq) < 1e-18) continue;
+                const double app = C[static_cast<size_t>(p) * Dp + p];
+                const double aqq = C[static_cast<size_t>(q) * Dp + q];
+                const double theta = (aqq - app) / (2.0 * apq);
+                const double t = (theta >= 0.0)
+                    ?  1.0 / (theta + std::sqrt(1.0 + theta * theta))
+                    :  1.0 / (theta - std::sqrt(1.0 + theta * theta));
+                const double c = 1.0 / std::sqrt(1.0 + t * t);
+                const double sn = t * c;
+                C[static_cast<size_t>(p) * Dp + p] = app - t * apq;
+                C[static_cast<size_t>(q) * Dp + q] = aqq + t * apq;
+                C[static_cast<size_t>(p) * Dp + q] = 0.0;
+                C[static_cast<size_t>(q) * Dp + p] = 0.0;
+                for (int r = 0; r < Dp; ++r) {
+                    if (r != p && r != q) {
+                        const double arp = C[static_cast<size_t>(r) * Dp + p];
+                        const double arq = C[static_cast<size_t>(r) * Dp + q];
+                        C[static_cast<size_t>(r) * Dp + p] = c * arp - sn * arq;
+                        C[static_cast<size_t>(p) * Dp + r] =
+                            C[static_cast<size_t>(r) * Dp + p];
+                        C[static_cast<size_t>(r) * Dp + q] = sn * arp + c * arq;
+                        C[static_cast<size_t>(q) * Dp + r] =
+                            C[static_cast<size_t>(r) * Dp + q];
+                    }
+                    const double vrp = V[static_cast<size_t>(r) * Dp + p];
+                    const double vrq = V[static_cast<size_t>(r) * Dp + q];
+                    V[static_cast<size_t>(r) * Dp + p] = c * vrp - sn * vrq;
+                    V[static_cast<size_t>(r) * Dp + q] = sn * vrp + c * vrq;
+                }
+            }
+    }
+
+    // ---- (5) Top-K eigenpairs by descending eigenvalue. ----
+    std::vector<std::pair<double, int>> sortedEv(Dp);
+    for (int j = 0; j < Dp; ++j)
+        sortedEv[static_cast<size_t>(j)] =
+            std::make_pair(C[static_cast<size_t>(j) * Dp + j], j);
+    std::sort(sortedEv.begin(), sortedEv.end(),
+        [](const std::pair<double,int>& a, const std::pair<double,int>& b) {
+            return a.first > b.first;
+        });
+    if (eigvalsOut) {
+        eigvalsOut->clear();
+        eigvalsOut->reserve(K);
+        for (int k = 0; k < K; ++k)
+            eigvalsOut->append(sortedEv[static_cast<size_t>(k)].first);
+    }
+    std::vector<double> evK(static_cast<size_t>(Dp) * K, 0.0);
+    for (int k = 0; k < K; ++k) {
+        const int origCol = sortedEv[static_cast<size_t>(k)].second;
+        for (int r = 0; r < Dp; ++r)
+            evK[static_cast<size_t>(r) * K + k] =
+                V[static_cast<size_t>(r) * Dp + origCol];
+    }
+
+    // ---- (6) Streaming projection onto the top-K eigenvectors; tally range. ----
+    std::vector<double> proj(static_cast<size_t>(nSp) * K, 0.0);
+    std::vector<double> minVal(static_cast<size_t>(K),
+                               std::numeric_limits<double>::infinity());
+    std::vector<double> maxVal(static_cast<size_t>(K),
+                               -std::numeric_limits<double>::infinity());
+    for (dataType s = 0; s < nSp; ++s) {
+        const T* wrow = &W[static_cast<size_t>(s) * Dp];
+        for (int j = 0; j < Dp; ++j)
+            resid[static_cast<size_t>(j)] =
+                static_cast<double>(wrow[j]) - med[static_cast<size_t>(j)];
+        for (int k = 0; k < K; ++k) {
+            double val = 0.0;
+            for (int j = 0; j < Dp; ++j)
+                val += resid[static_cast<size_t>(j)]
+                     * evK[static_cast<size_t>(j) * K + k];
+            proj[static_cast<size_t>(s) * K + k] = val;
+            if (val < minVal[static_cast<size_t>(k)]) minVal[static_cast<size_t>(k)] = val;
+            if (val > maxVal[static_cast<size_t>(k)]) maxVal[static_cast<size_t>(k)] = val;
+        }
+    }
+    const double targetMax = static_cast<double>(1 << 28);
+    std::vector<double> scale(static_cast<size_t>(K), 1.0);
+    for (int k = 0; k < K; ++k) {
+        const double span = std::max(std::abs(minVal[static_cast<size_t>(k)]),
+                                     std::abs(maxVal[static_cast<size_t>(k)]));
+        scale[static_cast<size_t>(k)] = (span > 1e-12) ? targetMax / span : 1.0;
+    }
+
+    // ---- (7) Write .fet: int32 nDim header, per-spike int64 (K + timestamp). ----
+    fetFile.close();
+    FILE* ff = fopen(fetFile.fileName().toLocal8Bit().constData(), "wb");
+    if (!ff) return 0;
+    const int32_t nDim32 = static_cast<int32_t>(K + 1);
+    fwrite(&nDim32, sizeof(int32_t), 1, ff);
+    for (dataType s = 0; s < nSp; ++s) {
+        const dataType row = (*spikesByCluster)(1, firstPos + s);
+        for (int k = 0; k < K; ++k) {
+            const int64_t iv = static_cast<int64_t>(
+                proj[static_cast<size_t>(s) * K + k] * scale[static_cast<size_t>(k)]);
+            fwrite(&iv, sizeof(int64_t), 1, ff);
+        }
+        const int64_t ts = static_cast<int64_t>(features(row, nbDimensions));
+        fwrite(&ts, sizeof(int64_t), 1, ff);
+    }
+    fclose(ff);
+    return K + 1;
+}
+
+int Data::createMedianWaveformResidualFeatureFile(int clusterId, int K,
+                                                  QFile& fetFile,
+                                                  QVector<double>* eigvalsOut)
+{
+    // Dispatch on acquisition width so the in-memory waveform store uses the
+    // native sample type (int16 for two-byte recordings, int32 otherwise).
+    if (isTwoBytesRecording)
+        return medianWaveformResidualImpl<int16_t>(clusterId, K, fetFile, eigvalsOut);
+    return medianWaveformResidualImpl<int32_t>(clusterId, K, fetFile, eigvalsOut);
+}
+
 void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     // Desync guard: KlustersApp::slotRecluster also pre-validates this
     // via Data::clusterHasMembers before reaching us, so a desync

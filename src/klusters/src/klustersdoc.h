@@ -527,6 +527,15 @@ public:
         int* nDimWritten = nullptr,
         QVector<double>* eigvalsOut = nullptr);
 
+    /** Raw-waveform, median-centred variant of the sub-dimensional path.
+     *  Same return/out-parameter contract as
+     *  createMeanSubtractedSubdimFeatureFile. */
+    int createMedianWaveformResidualFeatureFile(
+        int clusterId, int K,
+        const QString& reclusteringFetFileName,
+        int* nDimWritten = nullptr,
+        QVector<double>* eigvalsOut = nullptr);
+
     /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).
      *  Updates .res and .fet (time feature column). Marks doc modified. */
     bool nudgeClusterTimestamps(int clusterId, int deltaSamples);

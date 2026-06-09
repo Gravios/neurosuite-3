@@ -4461,7 +4461,46 @@ void KlustersApp::slotRecluster(){
     // (e.g. K=7 → 8 == CREATION_ERROR, falsely tripping the IO Error
     // dialog even though the file had been written successfully).
     bool usedSubdim = false;
-    if (configuration().getReclusterMeanSubtractedSubdim() &&
+
+    // Median-waveform residual path (raw .spk, per-(channel,sample) median).
+    // Same single-non-noise-cluster gate as the mean-subtracted subdim path,
+    // and takes precedence over it when both are enabled.  Writes a small
+    // K-component residual-PCA .fet and overrides %features to match.
+    if (configuration().getReclusterMedianWaveformResidual() &&
+        clustersToRecluster.size() == 1 &&
+        clustersToRecluster.first() > 1) {
+        const int singleCid = clustersToRecluster.first();
+        const int K = qBound(1, autoSelectNFeatures, doc->nbDimensions() - 1);
+        QVector<double> eigvals;
+        int dimsWritten = 0;
+        const int rc = doc->createMedianWaveformResidualFeatureFile(
+            singleCid, K, reclusteringFetFileName, &dimsWritten, &eigvals);
+        if (rc == KlustersDoc::OPEN_ERROR) {
+            QMessageBox::critical(this,tr("Error !"),
+                tr("The reclustering feature file cannot be created (median-"
+                   "waveform residual path). Falling back to standard "
+                   "feature file."));
+        } else if (rc != KlustersDoc::OK || dimsWritten <= 0) {
+            QMessageBox::critical(this,tr("IO Error !"),
+                tr("Median-waveform residual feature-file creation failed. "
+                   "Falling back to standard feature file."));
+        } else {
+            QString fMed;
+            for (int j = 0; j < dimsWritten - 1; ++j)
+                fMed.append(QLatin1Char('1'));
+            fMed.append(QLatin1Char('0'));      // timestamp column off
+            features = fMed;
+            QString evMsg = QString("[recluster] median-waveform residual: "
+                "cluster %1, K=%2 residual-PCA components; eigenvalues:")
+                .arg(singleCid).arg(dimsWritten - 1);
+            for (double e : eigvals)
+                evMsg.append(QString(" %1").arg(e, 0, 'g', 4));
+            qDebug() << evMsg;
+            usedSubdim = true;
+        }
+    }
+
+    if (configuration().getReclusterMeanSubtractedSubdim() && !usedSubdim &&
         clustersToRecluster.size() == 1 &&
         clustersToRecluster.first() > 1) {
         const int singleCid = clustersToRecluster.first();
