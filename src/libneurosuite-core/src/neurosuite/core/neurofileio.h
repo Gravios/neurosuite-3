@@ -152,4 +152,38 @@ NEUROSUITE_CORE_EXPORT ResolvedInput resolveInput(
 NEUROSUITE_CORE_EXPORT std::vector<std::string> preferDerived();    ///< {"stderiv","D",""}
 NEUROSUITE_CORE_EXPORT std::vector<std::string> preferCanonical();  ///< {"","stderiv","D"}
 
+// ── Mandatory-method resolution (chain-of-custody naming) ───────────────────
+//
+// Under the chain-of-custody scheme every per-group artifact carries its
+// extraction method as an explicit token:
+//
+//     <base>.<type>.<method>.<group>
+//
+// for type in {res, spk, clu, fet, pca} and method in
+// {standard, stderiv, sdiff, ...} (the method set is open — any token is
+// valid). There is no untagged, canonical, or legacy-glued form: the method
+// is always known (read off the .clu anchor, or supplied by the caller) and
+// the path is composed directly. Resolution is therefore deterministic — the
+// file exists or it is an error — so these supersede resolveInput()/
+// preferDerived()/preferCanonical(), which remain only until every caller is
+// converted.
+
+// Compose <base>.<type>.<method>.<group>.
+NEUROSUITE_CORE_EXPORT std::string methodPath(
+    const std::string& base, const std::string& type,
+    const std::string& method, int group);
+
+// Resolve a method-pinned input. `found` reflects existence; `path` is always
+// the composed method path, so callers can emit a precise missing-input error.
+NEUROSUITE_CORE_EXPORT ResolvedInput resolveInputForMethod(
+    const std::string& base, const std::string& type, int group,
+    const std::string& method);
+
+// Parse the method token out of a per-group filename
+// <base>.<type>.<method>.<group>. The base may itself contain dots, so the
+// name is parsed from the right: the last field must be an all-digit group,
+// and the method is the second-to-last field. Returns "" if the name does not
+// match the tagged per-group shape.
+NEUROSUITE_CORE_EXPORT std::string methodFromPath(const std::string& path);
+
 }  // namespace neurofileio

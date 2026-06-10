@@ -85,6 +85,7 @@ install(PROGRAMS
     kk_resolve_prior.py
     adaptmodel.py
     adapt_format.py
+    ndm_resolve_io.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 foreach(_page IN ITEMS
