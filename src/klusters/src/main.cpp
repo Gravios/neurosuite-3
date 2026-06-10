@@ -20,6 +20,7 @@
 #include <QString>
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QLocale>
 
 #include "klusters.h"
 #include "timer.h"
@@ -35,6 +36,19 @@ int main(int argc, char* argv[])
     QApplication::setApplicationVersion(KLUSTERS_VERSION);
 
     QApplication app(argc, argv);
+
+    // Pin the C locale for all numeric input and formatting.  Without this the
+    // spin boxes and the QIntValidator / QDoubleValidator input fields inherit
+    // QLocale::system(); in locales whose decimal separator is not '.' (German,
+    // for instance, uses ',') typing '.' in a double field is rejected, and '.'
+    // is interpreted as a thousands separator in integer fields — so the user
+    // "cannot type certain numbers".  The C locale (decimal '.', no group
+    // separator) makes numeric entry consistent across every field and matches
+    // the '.'-decimal / ungrouped Neurosuite data files.  Set after the
+    // QApplication is constructed (so it isn't overwritten by platform locale
+    // initialisation) and before the main window — and therefore every widget —
+    // is created, so the new default is inherited everywhere.
+    QLocale::setDefault(QLocale::c());
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Klusters - cluster cutting application");
