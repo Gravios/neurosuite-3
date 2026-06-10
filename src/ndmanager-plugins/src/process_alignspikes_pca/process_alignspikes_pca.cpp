@@ -364,7 +364,8 @@ struct Args {
     int maxShiftGlobal = 4;
     int iterations = 2;
     float minScore = 0.70f;
-    bool stderivMode = false;
+    bool stderivMode = false;       // derived from method below
+    std::string method = "standard";  // chain-of-custody method tag
     bool skipPca = false;
     bool dryRun = false;
     bool verbose = false;
@@ -406,7 +407,8 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "-M") a.maxShiftGlobal = std::atoi(next("-M"));
         else if (s == "-i") a.iterations = std::atoi(next("-i"));
         else if (s == "-t") a.minScore = static_cast<float>(std::atof(next("-t")));
-        else if (s == "--stderiv") a.stderivMode = true;
+        else if (s == "--method") a.method = next("--method");
+        else if (s == "--stderiv") a.method = "stderiv";  // deprecated alias
         else if (s == "--skip-pca") a.skipPca = true;
         else if (s == "--dry-run") a.dryRun = true;
         else if (s == "--log")  a.logPath = next("--log");
@@ -422,6 +424,7 @@ static Args parseArgs(int argc, char** argv) {
     if (a.groupChannels.empty())         die("-c channelList required");
     if (a.peakSamp < 1 || a.peakSamp > a.nSamp)
         die("peakSampleIndex out of range");
+    a.stderivMode = (a.method == "stderiv");
     return a;
 }
 
@@ -431,16 +434,13 @@ int main(int argc, char** argv) {
     const int nChan     = static_cast<int>(a.groupChannels.size());
     const int spkElems  = nChan * a.nSamp;
 
-    // File paths
+    // File paths (chain-of-custody: <base>.<type>.<method>.<grp>).
     const std::string grpStr = std::to_string(a.groupId);
-    const std::string spkExt = a.stderivMode ? "spkD" : "spk";
-    const std::string pcaExt = a.stderivMode ? "pcaD" : "pca";
-    const std::string fetExt = a.stderivMode ? "fetD" : "fet";
-    const std::string spkPath = a.basename + "." + spkExt + "." + grpStr;
-    const std::string resPath = a.basename + ".res." + grpStr;
-    const std::string cluPath = a.basename + ".clu." + grpStr;
-    const std::string pcaPath = a.basename + "." + pcaExt + "." + grpStr;
-    const std::string fetPath = a.basename + "." + fetExt + "." + grpStr;
+    const std::string spkPath = a.basename + ".spk." + a.method + "." + grpStr;
+    const std::string resPath = a.basename + ".res." + a.method + "." + grpStr;
+    const std::string cluPath = a.basename + ".clu." + a.method + "." + grpStr;
+    const std::string pcaPath = a.basename + ".pca." + a.method + "." + grpStr;
+    const std::string fetPath = a.basename + ".fet." + a.method + "." + grpStr;
     const std::string filPath_dat = a.basename + ".dat";
     const std::string filPath_fil = a.basename + ".fil";
     const std::string filPath = (std::ifstream(filPath_fil).good()

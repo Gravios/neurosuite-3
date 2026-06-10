@@ -76,9 +76,12 @@ program=$(basename $0)
 # ── Parse positionals + extra args (--separator handled, matches ndm_pca) ─
 positionals=()
 extra_args=()
+methodOverride=
 collect_positional=true
 while [ $# -gt 0 ]; do
     case "$1" in
+        --method)   methodOverride="$2";     shift 2 ;;
+        --method=*) methodOverride="${1#*=}"; shift ;;
         --)
             collect_positional=false
             shift
@@ -107,6 +110,7 @@ ndm_resolve_session "${positionals[@]}"
 [ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
 param_ext=$(param_file_ext "$session")
 electrodeGroup=${positionals[1]:-}
+method=${methodOverride:-$(read_script_parameter $session method)}; method=${method:-standard}
 
 print_header "$session - Per-cluster spike alignment (xcorr + PCA-projection refine)"
 
@@ -165,36 +169,28 @@ once()
     shift
     local groupExtra=("$@")
 
-    # Required for this group
-    if [ ! -f "$session.clu.$group" ]; then
-        echo_warning "  group $group: $session.clu.$group missing — skip "\
-"(run ndm_klustakwik first)"
+    # Required for this group (chain-of-custody: method-tagged artifacts).
+    local cluFile=$(ndm_method_path "$session" clu "$group" "$method")
+    local resFile=$(ndm_method_path "$session" res "$group" "$method")
+    local spkFile=$(ndm_method_path "$session" spk "$group" "$method")
+    if [ ! -f "$cluFile" ]; then
+        echo_warning "  group $group: $cluFile missing — skip (run ndm_klustakwik first)"
         return $INPUTS_MISSING
     fi
-    if [ ! -f "$session.res.$group" ]; then
-        echo_warning "  group $group: $session.res.$group missing — skipping"
+    if [ ! -f "$resFile" ]; then
+        echo_warning "  group $group: $resFile missing — skipping"
         return $INPUTS_MISSING
     fi
-
-    # Pipeline detection — prefer .spk (raw), fall back to .spkD (stderiv)
-    local stderivFlag=""
-    local spkFile="$session.spk.$group"
     if [ ! -f "$spkFile" ]; then
-        spkFile="$session.spkD.$group"
-        if [ ! -f "$spkFile" ]; then
-            echo_warning "  group $group: no .spk.$group or .spkD.$group — skipping"
-            return $INPUTS_MISSING
-        fi
-        stderivFlag="--stderiv"
-        echo_info "  group $group: using stderiv pipeline (.spkD/.pcaD/.fetD)"
+        echo_warning "  group $group: $spkFile missing — skipping"
+        return $INPUTS_MISSING
     fi
 
-    # Stage 2 needs .pca/.pcaD — warn if missing (won't crash; binary falls
-    # back to Stage-1-only when skipPcaFlag is set or basis is unloadable).
-    local pcaExt="pca"
-    [ -n "$stderivFlag" ] && pcaExt="pcaD"
-    if [ -z "$skipPcaFlag" ] && [ ! -f "$session.$pcaExt.$group" ]; then
-        echo_warning "  group $group: $session.$pcaExt.$group missing — "\
+    # Stage 2 needs the .pca.<method>.N basis — warn if missing (won't crash;
+    # binary falls back to Stage-1-only when --skip-pca or basis is unloadable).
+    local pcaFile=$(ndm_method_path "$session" pca "$group" "$method")
+    if [ -z "$skipPcaFlag" ] && [ ! -f "$pcaFile" ]; then
+        echo_warning "  group $group: $pcaFile missing — "\
 "Stage 2 will be skipped for this group (run ndm_pca first)"
     fi
 
@@ -223,7 +219,7 @@ once()
         -M "$maxShiftGlobal" \
         -i "$iterations" \
         -t "$minScore" \
-        $stderivFlag \
+        --method "$method" \
         $skipPcaFlag \
         "${groupExtra[@]}" \
         "$session" "$group"
@@ -235,12 +231,10 @@ once()
     fi
 
     # Invalidate downstream artifacts that depend on the now-shifted .spk:
-    #   .fet/.fetD — features (PC scores at the OLD waveform position)
-    # We leave .pca/.pcaD in place because the user may want to inspect
-    # what basis was used; the next ndm_pca run will overwrite it.
-    local fetExt="fet"
-    [ -n "$stderivFlag" ] && fetExt="fetD"
-    local fetFile="$session.$fetExt.$group"
+    #   .fet.<method>.N — features (PC scores at the OLD waveform position).
+    # We leave .pca.<method>.N in place for inspection; the next ndm_pca run
+    # will overwrite it.
+    local fetFile=$(ndm_method_path "$session" fet "$group" "$method")
     if [ -f "$fetFile" ]; then
         mv "$fetFile" "${fetFile}.preAlignPca"
         echo_info "  group $group: moved $fetFile → ${fetFile}.preAlignPca "\
@@ -290,7 +284,7 @@ else
     echo_info "Done — $nProcessed group(s) realigned ($nSkipped skipped)"
     if [ $nProcessed -gt 0 ]; then
         echo_info ""
-        echo_info "IMPORTANT: .fet/.fetD files for processed groups are now "\
+        echo_info "IMPORTANT: .fet.<method> files for processed groups are now "\
 "stale.  Re-run ndm_pca (or ndm_pca_stderiv) to regenerate features from "\
 "the realigned waveforms:"
         echo_info "  ndm_pca $session"
