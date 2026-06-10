@@ -2,10 +2,11 @@
 
 #////////////////////////////////////////////////////////////////////////////
 #//
-#//   Compute principal component analysis (PCA)
+#//   Compute principal component analysis (PCA) — unified, method-dispatching
 #//
 #//   copyright       (C) 2004 by Lynn Hazan,
 #//                   (C) 2007-2011 by Michaël Zugaro
+#//                   (C) 2025-2026 Gravios / NeuroSuite-3 contributors
 #//   email           lynn.hazan@myrealbox.com
 #//                   michael.zugaro@college-de-france.fr
 #//
@@ -15,6 +16,32 @@
 #//   (at your option) any later version.
 #//
 #////////////////////////////////////////////////////////////////////////////
+#
+#  Computes PCA features for spike sorting.  The detection `method` selects the
+#  input waveform domain and the basis treatment, and is stamped onto the
+#  outputs (chain-of-custody):
+#
+#    standard  PCA on raw .spk.standard.N        -> .fet.standard.N / .pca.standard.N
+#    sdiff     PCA on raw .spk.sdiff.N           -> .fet.sdiff.N    / .pca.sdiff.N
+#    stderiv   PCA on stderiv-domain .spk.stderiv.N (channel-reduced for
+#              methodOrder 1/3) -> .fet.stderiv.N / .pca.stderiv.N
+#
+#  For stderiv the .spk already holds the transformed waveform (written by the
+#  extractor), so process_pca_stderiv only performs the channel reduction
+#  (drops the linearly-dependent channel for orders 1 and 3) before PCA.
+#
+#  PARAMETERS (YAML, under program node ndm_pca)
+#    method       standard | sdiff | stderiv   (default standard)
+#    methodOrder  spatial derivative order, 0-3 (default 3; stderiv only).
+#                 Accepts the deprecated alias `sdiffOrder`.
+#  plus the usual nFeatures / peakSampleIndex / before / after / extra /
+#  excludeClusters / threadsPerGroup.
+#
+#  CLI: ndm_pca [parameter-file] [electrodeGroup] [--method M] [--methodOrder N]
+#               [-- process_pca flags ...]
+#       CLI --method/--methodOrder override YAML.
+#
+#////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions
 source ndm_functions
@@ -22,16 +49,22 @@ source ndm_functions
 # Parse command-line
 program=$(basename $0)
 
-# patch56 — accept process_pca flags after positional args.  See
-# ndm_pca_stderiv for the full rationale.  Pattern:
+# patch56 — accept process_pca flags after positional args.  Pattern:
 #   ndm_pca session 8 --varimax
 #   ndm_pca session 8 --varimax --varimax-max-iter 50
 #   ndm_pca session 8 -- --varimax        # explicit separator
+# --method / --methodOrder are intercepted here (not forwarded to process_pca).
 positionals=()
 extra_args=()
+methodOverride=
+methodOrderOverride=
 collect_positional=true
 while [ $# -gt 0 ]; do
 	case "$1" in
+		--method)         methodOverride="$2";          shift 2 ;;
+		--method=*)       methodOverride="${1#*=}";      shift ;;
+		--methodOrder)    methodOrderOverride="$2";      shift 2 ;;
+		--methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
 		--)
 			collect_positional=false
 			shift
@@ -52,7 +85,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 if [ ${#positionals[@]} -gt 2 ]; then
-	echo_error "usage: $program [parameter-file] [electrodeGroup] [-- process_pca flags ...]"
+	echo_error "usage: $program [parameter-file] [electrodeGroup] [--method M] [--methodOrder N] [-- process_pca flags ...]"
 	exit $GENERAL_ERROR
 fi
 ndm_resolve_session "${positionals[@]}"
@@ -60,21 +93,39 @@ ndm_resolve_session "${positionals[@]}"
 param_ext=$(param_file_ext "$session")
 electrodeGroup=${positionals[1]:-}
 
+# ── Resolve method + methodOrder (CLI override > YAML > default) ──────────────
+method=$methodOverride
+[ -z "$method" ] && method=$(read_script_parameter $session method)
+method=${method:-standard}
+case "$method" in
+	standard|sdiff|stderiv) : ;;
+	*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
+esac
+methodOrder=$methodOrderOverride
+[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
+methodOrder=${methodOrder:-3}
+
 # Print a header to indicate current processing step
-print_header "$session - Computing PCA for spike sorting"
+print_header "$session - Computing PCA for spike sorting [method=$method]"
 
 # Check required programs
 check_commands_installed xpathReader process_pca process_mergefeatures
+[ "$method" = stderiv ] && check_commands_installed process_pca_stderiv
 
 once()
 {
 	local electrodeGroup=$1
 
-	# Check input files
-	inputs_missing "$session.$param_ext" $session.spk.$electrodeGroup && exit $INPUTS_MISSING
+	# Method-tagged artifact paths (chain-of-custody).
+	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$method")
+	local resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$method")
+	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
 
-	# Check output file
-	outputs_exist $session.fet.$electrodeGroup && exit $OUTPUTS_EXIST
+	# Check input files
+	inputs_missing "$session.$param_ext" "$spkfile" && exit $INPUTS_MISSING
+
+	# Check output file (process_pca derives .pca.<method>.N from this name)
+	outputs_exist "$fetout" && exit $OUTPUTS_EXIST
 
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Read Parameters
@@ -99,6 +150,8 @@ once()
 	check_mandatory_variable $waveformLength "missing number of samples per waveform"
 	check_mandatory_variable $nFeatures "missing number of features"
 
+	local options=""
+
 	# PCA on partial waveform?
 	peak=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
 	check_optional_variable $peak && options="$options -p $peak"
@@ -116,28 +169,17 @@ once()
 
 	# ── Subset PCA: drop high-rate clusters from the fit ────────────────────
 	#
-	# When the operator has run an initial clustering pass and identified
-	# fast-spiking interneurons (or any other cluster whose row count would
-	# bias the PCA basis), pass their cluster ids here to fit eigenvectors on
-	# the remaining spikes only.  All spikes are still projected through the
-	# resulting basis, so the .fet has one row per spike — only the basis
-	# direction changes.  Set in the session config like:
-	#
-	#   <program><n>ndm_pca</n><parameters>
-	#     <parameter><n>excludeClusters</n><value>5,12</value>
-	#                 <status>Optional</status></parameter>
-	#   </parameters></program>
-	#
-	# or in YAML form, e.g. excludeClusters: "5,12".
-	#
-	# Auto-resolves the .clu path from the session basename + group number;
-	# expects $session.clu.$electrodeGroup to exist.  Without an existing
-	# .clu (i.e. on the first PCA pass before any clustering has happened),
-	# leave excludeClusters empty.
+	# When an initial clustering pass has identified fast-spiking interneurons
+	# (or any cluster whose row count would bias the PCA basis), pass their
+	# cluster ids here to fit eigenvectors on the remaining spikes only.  All
+	# spikes are still projected through the resulting basis, so the .fet has
+	# one row per spike — only the basis direction changes.  Set in the
+	# session config, e.g. YAML excludeClusters: "5,12".  The .clu is the
+	# method-tagged file for this group.
 	excludeClusters=$(read_script_parameter $session excludeClusters)
 	if check_optional_variable $excludeClusters
 	then
-		cluFile=$session.clu.$electrodeGroup
+		cluFile=$(ndm_method_path "$session" clu "$electrodeGroup" "$method")
 		if [ ! -f "$cluFile" ]
 		then
 			echo_error "excludeClusters=$excludeClusters but $cluFile is missing — run an initial PCA + clustering pass first, then re-run with excludeClusters set."
@@ -149,16 +191,37 @@ once()
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
+	#
+	# standard / sdiff : PCA directly on the raw-amplitude .spk.<method>.N.
+	# stderiv          : the .spk already holds the stderiv-transformed waveform,
+	#                    so process_pca_stderiv (-d 4 = SDIFF_PASS) performs only
+	#                    the channel reduction — for methodOrder 1 (last channel
+	#                    = -penultimate) and 3 (channels sum to zero) one channel
+	#                    is linearly dependent and dropped, so PCA sees
+	#                    nElectrodes-1 channels.
+	#
+	# -g N labels the progress bar [PCA-N] for parallel-group runs.
+	local pcaInput=$spkfile
+	local nPca=$nElectrodes
+	local tmpspk=
+	if [ "$method" = stderiv ]; then
+		if [ "$methodOrder" = "1" ] || [ "$methodOrder" = "3" ]; then
+			nPca=$(( nElectrodes - 1 ))
+		fi
+		tmpspk=$(mktemp /tmp/spk_stderiv_${session##*/}_${electrodeGroup}_XXXXXX)
+		process_pca_stderiv -n $nElectrodes -w $waveformLength -d 4 "$spkfile" > $tmpspk
+		check_command_status process_pca_stderiv
+		pcaInput=$tmpspk
+	fi
 
-	# Perform PCA.  -g N labels the bar [PCA-N] so parallel-group
-	# runs are distinguishable in the terminal output.
-	process_pca -g $electrodeGroup -f $session.fet.$electrodeGroup.tmp -n $nElectrodes -w $waveformLength -d $nFeatures $options ${@:2} $session.spk.$electrodeGroup
+	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures $options ${@:2} $pcaInput
 	check_command_status process_pca
+	[ -n "$tmpspk" ] && rm -f "$tmpspk"
 
 	# Merge binary PCA features with binary .res timestamps into final binary .fet
-	process_mergefeatures $session.fet.$electrodeGroup.tmp $session.res.$electrodeGroup $session.fet.$electrodeGroup
+	process_mergefeatures $fetout.tmp $resfile $fetout
 	check_command_status process_mergefeatures
-	rm $session.fet.$electrodeGroup.tmp
+	rm $fetout.tmp
 }
 
 if [ -z "$electrodeGroup" ]
@@ -170,17 +233,13 @@ then
 		exit $GENERAL_ERROR
 	fi
 
-	# Run all electrode groups in parallel — each reads a different .spk.N file
-	# and writes a different .fet.N file, so there is no shared state.
+	# Run all electrode groups in parallel — each reads a different
+	# .spk.<method>.N and writes a different .fet.<method>.N, so no shared state.
 	#
 	# Thread budget: process_pca uses OpenMP internally. Cap its thread count so
 	# that nGroups * threadsPerGroup <= nAvailableCores, keeping total load sane.
-	#
-	# threadsPerGroup can be set explicitly in the session XML:
-	#   <program><n>ndm_pca</n><parameters>
-	#     <parameter><n>threadsPerGroup</n><value>2</value><status>Optional</status></parameter>
-	#   </parameters></program>
-	# If absent, defaults to floor(nCores / nGroups), minimum 1.
+	# threadsPerGroup can be set in the session config; if absent, defaults to
+	# floor(nCores / nGroups), minimum 1.
 	threadsPerGroup=$(yaml_read $session "//program/n[.='ndm_pca']/../parameters/parameter/n[.='threadsPerGroup']/../value")
 	if [ -z "$threadsPerGroup" ]
 	then
@@ -190,33 +249,24 @@ then
 	fi
 
 	# Inject thread count into the options picked up by process_pca inside once().
-	# process_pca respects -t nThreads to call omp_set_num_threads().
 	PCA_THREAD_OPT="-t $threadsPerGroup"
 
-	# Launch all groups in background, capturing each group's log separately
-	# so output is not interleaved on the terminal.
 	pids=()
 	for ((i=1;i<=$nGroups;i++))
 	do
-		(once $i $PCA_THREAD_OPT "${extra_args[@]}") > /tmp/ndm_pca_${session}_$i.log 2>&1 &
+		(once $i $PCA_THREAD_OPT "${extra_args[@]}") > /tmp/ndm_pca_${session##*/}_$i.log 2>&1 &
 		pids+=($!)
 	done
 
-	# Wait for all groups and collect exit codes
 	overallStatus=$NO_ERROR
 	for ((i=0;i<${#pids[@]};i++))
 	do
 		wait ${pids[$i]}
 		groupStatus=$?
-		# Print the log for this group in order
-		cat /tmp/ndm_pca_${session}_$((i+1)).log
-		rm -f /tmp/ndm_pca_${session}_$((i+1)).log
+		cat /tmp/ndm_pca_${session##*/}_$((i+1)).log
+		rm -f /tmp/ndm_pca_${session##*/}_$((i+1)).log
 		if [ $groupStatus -ne 0 ] && [ $groupStatus -ne $OUTPUTS_EXIST ] && [ $groupStatus -ne $INPUTS_MISSING ]
 		then
-			# Emit a red ✗ marker bar so the user can see at a glance
-			# which group(s) failed amidst the green ✓ markers.  Mirrors
-			# ProgressBar's failure marker style for consistency with
-			# the live bars.
 			print_group_failed PCA $((i+1))
 			overallStatus=$groupStatus
 		fi
@@ -227,4 +277,3 @@ else
 	once $electrodeGroup "${extra_args[@]}"
 	exit $NO_ERROR
 fi
-
