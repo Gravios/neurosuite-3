@@ -4274,7 +4274,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
     // Read exact int64 timestamps directly from .res (avoids float precision loss:
     // a timestamp of ~1e8 samples stored as float has ±13 samples round-trip error).
     char resPathWPC[STRLEN + 16];
-    snprintf(resPathWPC, sizeof(resPathWPC), "%s.res.%d", FileBase, ElecNo);
+    methodPathC(resPathWPC, sizeof(resPathWPC), FileBase, "res", ElecNo);
     FILE* resWPC = fopen(resPathWPC, "rb");
     if (!resWPC)
         Output("WritePhase15Checkpoint: cannot open .res — falling back to float timestamps\n");
@@ -4481,7 +4481,7 @@ void KK::WritePhase15Checkpoint(const std::vector<int>& spikeShifts,
     if (resWPC) {
         char resOrigP85[STRLEN + 16];
         char resTmpP85 [STRLEN + 32];
-        snprintf(resOrigP85, sizeof(resOrigP85), "%s.res.%d", FileBase, ElecNo);
+        methodPathC(resOrigP85, sizeof(resOrigP85), FileBase, "res", ElecNo);
         snprintf(resTmpP85,  sizeof(resTmpP85),  "%s.pending", resOrigP85);
 
         FILE* resWriteP85 = fopen(resTmpP85, "wb");
@@ -6255,8 +6255,7 @@ void KK::RunPhase2bMode3Chunk(KK& Ks, const std::vector<int>& pts,
         std::vector<int64_t> rawTsByLocal(static_cast<size_t>(nPts), 0);
         {
             char resPathP71[STRLEN + 16] = {0};
-            snprintf(resPathP71, sizeof(resPathP71),
-                     "%s.res.%d", FileBase, ElecNo);
+            methodPathC(resPathP71, sizeof(resPathP71), FileBase, "res", ElecNo);
             FILE* resFpP71 = fopen(resPathP71, "rb");
             if (resFpP71) {
                 for (int i = 0; i < nPts; ++i) {

@@ -523,7 +523,7 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
 
     // Open .res for exact int64 timestamps
     char resPathRFS[STRLEN + 16];
-    snprintf(resPathRFS, sizeof(resPathRFS), "%s.res.%d", FileBase, ElecNo);
+    methodPathC(resPathRFS, sizeof(resPathRFS), FileBase, "res", ElecNo);
     FILE* resRFS = fopen(resPathRFS, "rb");
 
     char filPath[STRLEN + 8], spkPath[STRLEN + 16];
@@ -838,7 +838,7 @@ void KK::RefeaturizeChangedSpikes(
 
     // ── Read int64 timestamps once (for affected spikes). ──
     char resPath[STRLEN + 8];
-    snprintf(resPath, sizeof(resPath), "%s.res.%d", FileBase, ElecNo);
+    methodPathC(resPath, sizeof(resPath), FileBase, "res", ElecNo);
     FILE* resFp = fopen(resPath, "rb");
 
     const int   waveSamples = nChan * nSamplesPerSpike;

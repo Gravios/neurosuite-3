@@ -18,15 +18,32 @@ source ndm_functions
 
 # Parse command-line
 program=$(basename $0)
+# Intercept --method (chain-of-custody) before positional handling.
+methodOverride=
+positionals=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--method)    methodOverride="$2";     shift 2 ;;
+		--method=*)  methodOverride="${1#*=}"; shift ;;
+		*)           positionals+=("$1");      shift ;;
+	esac
+done
+set -- "${positionals[@]}"
 if [ $# -gt 2 ]
 then
-	echo_error "usage: $program [parameter-file] [electrodeGroup]"
+	echo_error "usage: $program [parameter-file] [electrodeGroup] [--method M]"
 	exit $GENERAL_ERROR
 fi
 ndm_resolve_session "$@"
 [ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
 param_ext=$(param_file_ext "$session")
 electrodeGroup=$2
+
+# Resolve method (CLI override > YAML > default standard).  KiloKlustaKwik reads
+# .fet.<method>.N and writes .clu.<method>.N; the wrapper checks the same paths.
+method=$methodOverride
+[ -z "$method" ] && method=$(read_script_parameter $session method)
+method=${method:-standard}
 
 # Print a header to indicate current processing step
 print_header "$session - Running KiloKlustaKwik spike sorting"
@@ -44,20 +61,14 @@ once()
 {
 	local electrodeGroup=$1
 
-	# Check input files.
-	#
-	# The feature file may live under either extension depending on which
-	# PCA pipeline produced it:
-	#   .fet.N   — canonical (ndm_pca, raw-ADC PCA)
-	#   .fetD.N  — stderiv pipeline (ndm_pca_stderiv or ndm_extractspikes_stderiv
-	#              followed by ndm_pca reading the already-transformed .spk).
-	# KiloKlustaKwik itself resolves either via pickInputPath and prefers canonical
-	# when both exist.  Here we only need to confirm that at least one of the
-	# two is present, plus the parameter file.
+	# Check input files.  The feature file is the method-tagged
+	# .fet.<method>.N produced by ndm_pca; KiloKlustaKwik resolves the same
+	# path via its Method parameter.
+	local fetfile=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
 	inputs_missing "$session.$param_ext" && return $INPUTS_MISSING
-	if [ ! -f "$session.fet.$electrodeGroup" ] && [ ! -f "$session.fetD.$electrodeGroup" ]
+	if [ ! -f "$fetfile" ]
 	then
-		echo_warning "input file '$session.fet.$electrodeGroup' (or .fetD variant) not found, skipping this step."
+		echo_warning "input file '$fetfile' not found, skipping this step."
 		return $INPUTS_MISSING
 	fi
 
@@ -68,12 +79,13 @@ once()
 	#   built-in default: 0
 	# Set overwrite: 1 to force re-sorting a group whose .clu already exists.
 	overwrite=$(read_kk_param $electrodeGroup overwrite 0)
-	if outputs_exist $session.clu.$electrodeGroup
+	local clufile=$(ndm_method_path "$session" clu "$electrodeGroup" "$method")
+	if outputs_exist "$clufile"
 	then
 		if [ "$overwrite" = "1" ]
 		then
-			echo_warning "overwrite=1: removing existing output '$session.clu.$electrodeGroup' and re-running."
-			rm -f $session.clu.$electrodeGroup
+			echo_warning "overwrite=1: removing existing output '$clufile' and re-running."
+			rm -f "$clufile"
 		else
 			return $OUTPUTS_EXIST
 		fi
@@ -175,6 +187,7 @@ once()
 	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features incl. timestamp)"
 
 	KiloKlustaKwik $session $electrodeGroup \
+		-Method                  $method                  \
 		-MinClusters             $minClusters             \
 		-MaxClusters             $maxClusters             \
 		-MaxPossibleClusters     $maxPossibleClusters     \

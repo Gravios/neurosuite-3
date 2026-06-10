@@ -61,6 +61,13 @@ FILE *fopen_safe(const char *fname, const char *mode);
 // .fet / .pca in place.
 int pickInputPath(char *out, size_t outSize,
                   const char *base, const char *ext, int elec);
+
+// Compose the chain-of-custody method-tagged path <base>.<ext>.<Method>.<elec>
+// into `out`.  Used for outputs and for the per-group artifacts that were
+// historically built with a hardcoded snprintf("%s.<ext>.%d", ...).  The
+// active method comes from the global `Method` parameter.
+void methodPathC(char *out, size_t outSize,
+                 const char *base, const char *ext, int elec);
 void MatPrint(FILE *fp, const float *Mat, int nRows, int nCols);
 int  Cholesky(const float *m_In, float *m_Out, int D);
 void TriSolve(const float *M, const float *x, float *Out, int D);
@@ -69,6 +76,7 @@ void SaveOutput(const Array<int> &OutputClass);
 
 // ---- Parameters (defined in KlustaKwik.cpp) --------------------------------
 extern char  FileBase[];
+extern char  Method[];        // chain-of-custody method tag (standard|sdiff|stderiv)
 extern int   ElecNo;
 extern int   MinClusters;
 extern int   MaxClusters;

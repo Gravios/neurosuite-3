@@ -124,7 +124,7 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
     const bool isStderiv = (nc == nChan - 1);
     if (nc != nChan && !isStderiv) {
         Output("InitTimeShift: PCA has %d channels, spike group has %d "
-               "(expected %d for canonical .pca or %d for stderiv .pcaD) "
+               "(expected %d for full .pca or %d for reduced stderiv .pca) "
                "— probe disabled\n",
                nc, nChan, nChan, nChan - 1);
         fclose(pf); return false;
@@ -236,12 +236,11 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
     //   reads across the whole session without per-spike fseeko/fread.
     //   Fallback: fopen — used when mmap fails (e.g. exotic filesystems,
     //   NFS with wonky MAP_PRIVATE support).
+    // The .spk file holds waveforms in the method's domain (stderiv-transformed
+    // for method=stderiv, raw otherwise); pickInputPath resolves the
+    // method-tagged .spk.<Method>.N.
     char spkPath[STRLEN + 16];
-    if (isStderiv) {
-        std::snprintf(spkPath, sizeof(spkPath), "%s.spkD.%d", FileBase, ElecNo);
-    } else {
-        pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
-    }
+    pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo);
 
     const int spkFd = open(spkPath, O_RDONLY);
     if (spkFd < 0) {
@@ -2274,7 +2273,7 @@ int KK::FinalMeanSubtractionMerge(int nChan, int nSamplesPerSpike)
     if (!m_timeShiftReady) {
         char spkPath[STRLEN + 16];
         if (pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo) < 0) {
-            LockedStderr( "[Stage 3.4] No .spk/.spkD found for electrode %d; "
+            LockedStderr( "[Stage 3.4] No .spk found for electrode %d; "
                             "skip mean-subtraction merge.\n", ElecNo);
             return 0;
         }
@@ -2623,11 +2622,15 @@ static void AutoReextractAfterFinalize(int nChan,
     }
 
     // ── 2. pick the tool ─────────────────────────────────────────────────
+    // The engine binaries write UNtagged temp records (.spk.1) — the wrapper
+    // normally applies the method tag, but here we rename the temp output to
+    // the method-tagged destination ourselves.
     const char *tool = getenv("KKEXP_REEXTRACT_TOOL");
-    const char *spkExt = isStderiv ? "spkD" : "spk";
+    const char *spkExt = "spk";
     if (!tool || !*tool) {
-        tool = isStderiv ? "process_extractspikes_stderiv"
-                         : "process_extractspikes";
+        tool = (std::strcmp(Method, "stderiv") == 0) ? "process_extractspikes_stderiv"
+             : (std::strcmp(Method, "sdiff")   == 0) ? "process_extractspikes_sdiff"
+             :                                          "process_extractspikes";
     }
 
     // ── 3. session-level inputs we need from the runtime ─────────────────
@@ -2664,9 +2667,8 @@ static void AutoReextractAfterFinalize(int nChan,
 
     char filReal[1024], resReal[1024], spkReal[1024];
     snprintf(filReal, sizeof(filReal), "%s.fil",            FileBase);
-    snprintf(resReal, sizeof(resReal), "%s.res.%d",         FileBase, ElecNo);
-    snprintf(spkReal, sizeof(spkReal), "%s.%s.%d",          FileBase, spkExt,
-             ElecNo);
+    methodPathC(resReal, sizeof(resReal), FileBase, "res", ElecNo);
+    methodPathC(spkReal, sizeof(spkReal), FileBase, "spk", ElecNo);
 
     // Resolve to absolute paths for the symlinks (in case FileBase is
     // relative — symlinks resolve relative to the symlink's *directory*,
