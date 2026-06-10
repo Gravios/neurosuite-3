@@ -81,45 +81,37 @@
 extern int nbUndo;
 
 namespace {
-// ── stderiv / dotted-variant helpers ────────────────────────────────────────
+// ── chain-of-custody method helpers ─────────────────────────────────────────
 //
-// A per-group feature/spike/pca file can exist as the canonical form
-// (.fet.N), the legacy glued stderiv form (.fetD.N), or the new dotted
-// variant form (.fet.stderiv.N / .fet.D.N).  These helpers centralise the
-// "is this a derived representation?" test and the path resolution so the
-// many sites that previously hard-coded ".fetD."/".spkD."/".pcaD." stay
-// consistent.  They are deliberately ADDITIVE: for the legacy glued and
-// canonical forms they reproduce the prior behaviour exactly, and they
-// additionally recognise/resolve the dotted forms.
+// Every per-group artifact is <base>.<type>.<method>.<group> for method in
+// {standard,sdiff,stderiv,...}.  The method is read off the .clu anchor at open
+// time and pins resolution of all sibling files; there is no preference-guessing
+// and no fetIsStderiv/spkIsTransformed inference — method == "stderiv" is the
+// single signal for transformed waveforms / stderiv-space features.
 
-// True if `path` is a derived (stderiv) representation for file type
-// "fet"/"spk"/"pca" — glued (.fetD.) or dotted (.fet.stderiv. / .fet.D.).
-bool isDerivedVariant(const QString& path, const QString& type) {
-    return path.contains("." + type + "D.")
-        || path.contains("." + type + ".stderiv.")
-        || path.contains("." + type + ".D.");
+// Extract the method token from a per-group path <base>.<type>.<method>.<group>;
+// returns "standard" for an untagged legacy name (or anything unparseable).
+QString featureMethod(const QString& path) {
+    const std::string m = neurofileio::methodFromPath(path.toStdString());
+    return m.empty() ? QStringLiteral("standard") : QString::fromStdString(m);
 }
 
-// Resolve <fullBase>.<type>[.<variant>].<group> across canonical / dotted /
-// legacy-glued forms, honouring a preference order (defaults to derived-first,
-// matching Klusters' historical "prefer .fetD/.spkD/.pcaD" behaviour).
+// Resolve the method-pinned path <fullBase>.<type>.<method>.<group>.
 QString resolveFeature(const QString& fullBase, const QString& type,
-                       const QString& group,
-                       const std::vector<std::string>& prefer
-                           = neurofileio::preferDerived()) {
+                       const QString& group, const QString& method) {
     const neurofileio::ResolvedInput r =
-        neurofileio::resolveInput(fullBase.toStdString(), type.toStdString(),
-                                  group.toInt(), prefer);
+        neurofileio::resolveInputForMethod(fullBase.toStdString(),
+            type.toStdString(), group.toInt(), method.toStdString());
     return QString::fromStdString(r.path);
 }
 
-// <base>.<type>[.<variant>].<group>  ->  <base>  (handles all three forms).
+// <base>.<type>.<method>.<group>  ->  <base>  (also handles legacy untagged).
 QString stripFeatureSuffix(const QString& path, const QString& type) {
     QString b = path.left(path.lastIndexOf(QLatin1Char('.')));   // strip .<group>
     const int lastDot = b.lastIndexOf(QLatin1Char('.'));
     if (lastDot >= 0) {
         const QString seg = b.mid(lastDot + 1);
-        if (seg != type && seg != (type + "D"))                  // a variant token
+        if (seg != type && seg != (type + "D"))                  // a method token
             b = b.left(lastDot);
     }
     return b.left(b.lastIndexOf(QLatin1Char('.')));              // strip .<type>
@@ -333,16 +325,12 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     if(fileParts.count() < 3)
         return INCORRECT_FILE;
 
-    // Detect optional trailing variant suffix on .clu files (e.g. .clu.8.drift
-    // from process_drifttracker, .clu.8.bak, .clu.8.merged).  The canonical
-    // form is <base>.clu.<grp> with <grp> a positive integer; if the last
-    // token doesn't parse as an integer AND the second-to-last token does,
-    // treat the last token as a variant tag and the second-to-last as the
-    // electrode group ID.  baseName runs through everything before that.
-    //
-    // Variant files share .spk / .spkD / .fet / .fetD with the canonical
-    // electrode group — only the .clu file gets the variant suffix.
-    QString cluVariant;
+    // Parse the opened .clu anchor.  Chain-of-custody form is
+    // <base>.clu.<method>.<grp>; an optional non-integer suffix after the group
+    // (e.g. .clu.<method>.<grp>.drift / .bak / .merged) shifts the group index.
+    // Legacy untagged <base>.clu.<grp> is read as method=standard.  The method
+    // pins resolution of every sibling (.spk/.fet/.pca/.res).
+    QString sessionMethod = QStringLiteral("standard");
     qsizetype groupIdx = fileParts.count() - 1;
     {
         bool lastIsInt = false;
@@ -350,40 +338,45 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         if (!lastIsInt && fileParts.count() >= 4) {
             bool prevIsInt = false;
             (void)fileParts[fileParts.count() - 2].toInt(&prevIsInt);
-            if (prevIsInt) {
-                cluVariant = fileParts.last();
-                groupIdx   = fileParts.count() - 2;
-            }
+            if (prevIsInt)
+                groupIdx = fileParts.count() - 2;   // last token is a post-group suffix
         }
+        // Method token sits immediately before the group, unless that slot is
+        // the type token "clu" itself (legacy untagged name).
+        if (groupIdx >= 2 && fileParts[groupIdx - 1] != QLatin1String("clu"))
+            sessionMethod = fileParts[groupIdx - 1];
     }
 
-    baseName = fileParts[0];
-    for(qsizetype i = 1; i < groupIdx - 1; ++i)
-        baseName += "." + fileParts[i];
+    // baseName = everything up to the "clu" type token.  With a method tag the
+    // type token is at groupIdx-2; without it (legacy) at groupIdx-1.
+    {
+        const bool tagged = (sessionMethod != QLatin1String("standard"))
+                         || (groupIdx >= 2 && fileParts[groupIdx - 2] == QLatin1String("clu"));
+        const qsizetype typeIdx = tagged ? (groupIdx - 2) : (groupIdx - 1);
+        baseName = fileParts[0];
+        for (qsizetype i = 1; i < typeIdx; ++i)
+            baseName += "." + fileParts[i];
+    }
 
     electrodeGroupID = fileParts[groupIdx];
 
     //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.yaml)
 
-    // Prefer a derived representation (.spk.stderiv.N / legacy .spkD.N) over
-    // canonical .spk.N if present — resolved across canonical/dotted/glued.
+    // All siblings are resolved at the anchor's method (chain-of-custody).
     QString spkFileUrl = resolveFeature(
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
-        "spk", electrodeGroupID);
+        "spk", electrodeGroupID, sessionMethod);
 
-    QString cluFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName +".clu."+ electrodeGroupID;
-    if (!cluVariant.isEmpty())
-        cluFileUrl += "." + cluVariant;
+    // docUrl is the .clu file actually opened.
+    QString cluFileUrl = urlFileInfo.absoluteFilePath();
     docUrl = cluFileUrl;
 
     cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + urlFileInfo.fileName() + ".autosave";
 
 
-    // Prefer a derived representation (.fet.stderiv.N / legacy .fetD.N) over
-    // canonical .fet.N if present.
     QString fetFileUrl = resolveFeature(
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
-        "fet", electrodeGroupID);
+        "fet", electrodeGroupID, sessionMethod);
     //Parameter files
     // Parameter file: YAML only
     const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
@@ -606,8 +599,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     // touched during a session.  spkFileName and tmpCluFile are redirected
     // to the pending paths; they stay there for the whole document lifetime.
     origSpkPath = spkFileUrl;
-    origResPath = urlFileInfo.absolutePath() + QDir::separator()
-                    + baseName + ".res." + electrodeGroupID;
+    origResPath = resolveFeature(
+        urlFileInfo.absolutePath() + QDir::separator() + baseName,
+        "res", electrodeGroupID, sessionMethod);
     origFetPath = fetFileUrl;
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
     if (!initPendingFiles()) {
@@ -631,7 +625,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
             curationLogger = std::make_unique<CurationLogger>();
             curationLogger->open(
                 logPath,
-                baseName + ".clu." + electrodeGroupID,
+                baseName + ".clu." + sessionMethod + "." + electrodeGroupID,
                 electrodeGroupID,
                 clusteringData->getSamplingRate(),
                 clusteringData->nbOfchannels(),
@@ -765,6 +759,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     fclose(cluFile);
 
     QString cluFileSuffix_;
+    QString saMethod = QStringLiteral("standard");   // method parsed from a SaveAs target
     // For SaveAs: update doc URL and derived paths before committing.
     if(isSaveAs){
         docUrl = saveUrl;
@@ -772,18 +767,17 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         QString fileName = docUrlFileInfo.fileName();
         const QStringList fileParts = fileName.split(".", Qt::SkipEmptyParts);
 
-        // Use the same suffix-aware scan-from-end parser as openDocument so
-        // a SaveAs to a tagged path (e.g. `foo.clu.8.stack`) correctly
-        // updates baseName/electrodeGroupID/cluFileSuffix_ — without this,
-        // baseName ends up as "foo.clu" and electrodeGroupID as "stack",
-        // which corrupts every subsequent .spk/.fet/.par path.
+        // Same scan-from-end parser as openDocument.  Chain-of-custody form is
+        // <base>.<type>.<method>.<grp>[.suffix]; the method token sits between
+        // the type token and the integer group.  A SaveAs to a tagged path
+        // (e.g. foo.clu.stderiv.8 or foo.clu.standard.8.stack) must update
+        // baseName / electrodeGroupID / saMethod / cluFileSuffix_ correctly.
         static const QStringList kTypeTokens = {
             QStringLiteral("clu"), QStringLiteral("fet"),
             QStringLiteral("spk"), QStringLiteral("par"),
-            QStringLiteral("fetD"), QStringLiteral("spkD"),
         };
         qsizetype typeIdx = -1;
-        for (qsizetype probe = 2; probe <= 4 && probe <= fileParts.count(); ++probe) {
+        for (qsizetype probe = 2; probe <= 5 && probe <= fileParts.count(); ++probe) {
             const qsizetype idx = fileParts.count() - probe;
             if (idx < 1) break;
             if (kTypeTokens.contains(fileParts[idx])) { typeIdx = idx; break; }
@@ -792,9 +786,17 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             baseName = fileParts.first();
             for (qsizetype i = 1; i < typeIdx; ++i)
                 baseName += "." + fileParts.at(i);
-            electrodeGroupID = fileParts.at(typeIdx + 1);
+            // After the type token: [.<method>].<grp>[.<suffix>].
+            qsizetype grpIdx = typeIdx + 1;
+            bool nextIsInt = false;
+            (void)fileParts.at(typeIdx + 1).toInt(&nextIsInt);
+            if (!nextIsInt && typeIdx + 2 < fileParts.count()) {
+                saMethod = fileParts.at(typeIdx + 1);     // method token
+                grpIdx   = typeIdx + 2;
+            }
+            electrodeGroupID = fileParts.at(grpIdx);
             cluFileSuffix_.clear();
-            for (qsizetype i = typeIdx + 2; i < fileParts.count(); ++i)
+            for (qsizetype i = grpIdx + 1; i < fileParts.count(); ++i)
                 cluFileSuffix_ += QLatin1Char('.') + fileParts.at(i);
         } else {
             // Legacy fallback (unrecognised filename) — preserves old behaviour
@@ -881,13 +883,12 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // copies to the correct new location.
     if (isSaveAs) {
         QFileInfo newInfo(docUrl);
-        // Re-resolve at the new location so whatever derived form exists
-        // (.spkD/.fetD or dotted .spk.stderiv/.fet.stderiv) is preserved.
+        // Re-resolve at the new location, pinned to the method parsed from the
+        // SaveAs target (chain-of-custody).
         const QString newBase = newInfo.absolutePath() + QDir::separator() + baseName;
-        origSpkPath = resolveFeature(newBase, "spk", electrodeGroupID);
-        origResPath = newInfo.absolutePath() + QDir::separator()
-                        + baseName + ".res." + electrodeGroupID;
-        origFetPath = resolveFeature(newBase, "fet", electrodeGroupID);
+        origSpkPath = resolveFeature(newBase, "spk", electrodeGroupID, saMethod);
+        origResPath = resolveFeature(newBase, "res", electrodeGroupID, saMethod);
+        origFetPath = resolveFeature(newBase, "fet", electrodeGroupID, saMethod);
     }
     // patch63 — commitAndRenewPending now reports failure.  When the
     // pending → original copy fails (typical: NTFS/fuseblk permission
@@ -3547,7 +3548,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const QString spkPath = pendingOrOrig(origSpkPath, pendingSpkPath);
     const QString resPath = pendingOrOrig(origResPath, pendingResPath);
     const QString fetPath = pendingOrOrig(origFetPath, pendingFetPath);
-    const QString cluPath = dir + "/" + base + ".clu." + grpId;
+    const QString cluPath = resolveFeature(dir + "/" + base, "clu", grpId,
+                                           featureMethod(origFetPath));
     // Pipeline detection — decouple .spk storage format from .fet feature
     // space.  These are orthogonal signals in Pipeline C (raw .spk + stderiv
     // .fetD/.pcaD) and only coincide in Pipeline A (both raw) and Pipeline D
@@ -3561,20 +3563,21 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //                      space.  For raw .spk (Pipeline A, C) write the
     //                      untransformed waveform.
     //   fetIsStderiv    — .fet features are in stderiv space, built on the
-    //                      .pcaD basis.  Select .pcaD.N, and apply the
-    //                      stderiv transform to the raw waveform before
+    //                      stderiv .pca basis.  Select .pca.stderiv.N and apply
+    //                      the stderiv transform to the raw waveform before
     //                      projecting onto eigenvectors.
-    const bool spkIsTransformed = isDerivedVariant(origSpkPath, "spk");
-    const bool fetIsStderiv     = isDerivedVariant(origFetPath, "fet");
+    // Chain-of-custody: the method is read off the artifact name; method ==
+    // "stderiv" is the single signal for both flags (a stderiv session has
+    // transformed .spk and stderiv-space .fet alike).
+    const QString realignMethod = featureMethod(origFetPath);
+    const bool spkIsTransformed = (realignMethod == QLatin1String("stderiv"));
+    const bool fetIsStderiv     = (realignMethod == QLatin1String("stderiv"));
     // Kept as alias for existing legacy-named uses in this function that
     // really want the feature-space flag, not the .spk storage flag.
     const bool isStderivRealign = fetIsStderiv;
-    // Basis follows the feature space: a derived (.pcaD / .pca.stderiv) basis
-    // when fet is stderiv, else the canonical .pca.N.
+    // Basis follows the session method (.pca.<method>.N).
     const QString pcaPath = resolveFeature(
-        dir + "/" + base, "pca", grpId,
-        fetIsStderiv ? neurofileio::preferDerived()
-                     : neurofileio::preferCanonical());
+        dir + "/" + base, "pca", grpId, realignMethod);
     const QString pcaDPath_ra = pcaPath;  // retained name for logging below
 
     for (const QString& p : {spkPath, resPath, fetPath}) {
@@ -5411,24 +5414,23 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //                      applying the transform to already-raw waveforms
     //                      would double-transform them.
     //   fetIsStderiv    — .fet features are stderiv-space, built on the
-    //                      .pcaD basis.  Select .pcaD.N and apply the
-    //                      stderiv transform before projecting the raw
+    //                      stderiv .pca basis.  Select .pca.stderiv.N and apply
+    //                      the stderiv transform before projecting the raw
     //                      waveform onto the eigenvectors.
-    const bool spkIsTransformed = isDerivedVariant(origSpkPath, "spk");
-    const bool fetIsStderiv     = isDerivedVariant(origFetPath, "fet");
+    // Chain-of-custody: method == "stderiv" is the single signal for both.
+    const QString nudgeMethod = featureMethod(origFetPath);
+    const bool spkIsTransformed = (nudgeMethod == QLatin1String("stderiv"));
+    const bool fetIsStderiv     = (nudgeMethod == QLatin1String("stderiv"));
     // Legacy name retained for any downstream use that really means the
     // feature-space flag; nothing in nudge uses this directly after the
     // refactor below, but keep it for grep compatibility during review.
     const bool isStderivSession = fetIsStderiv;
     (void)isStderivSession;
 
-    // PCA basis selection is driven by the FEATURE space: .pcaD.N stores
-    // eigenvectors computed on the (nChan-1) stderiv-space channels, so it
-    // must pair with .fetD.N regardless of whether .spk is raw or stderiv.
+    // PCA basis follows the session method: .pca.stderiv.N stores eigenvectors
+    // on the (nChan-1) stderiv-space channels, paired with .fet.stderiv.N.
     const QString chosenPca = resolveFeature(
-        sessionBase, "pca", electrodeGroupID,
-        fetIsStderiv ? neurofileio::preferDerived()
-                     : neurofileio::preferCanonical());
+        sessionBase, "pca", electrodeGroupID, nudgeMethod);
 
     if (QFileInfo::exists(chosenPca)) {
         FILE* fp = fopen(chosenPca.toLocal8Bit().constData(), "rb");
