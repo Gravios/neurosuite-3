@@ -45,14 +45,11 @@ extern "C" {
 // ---------------------------------------------------------------------------
 void KK::LoadData() {
     char fname[STRLEN + 16];
-    // Prefer canonical .fet.N; fall back to stderiv .fetD.N if the
-    // canonical is absent.  The ndm_reextractspikes_stderiv pipeline
-    // produces .fetD; without this fallback, KlustaKwik would need
-    // the caller to symlink .fetD → .fet before every invocation.
+    // Resolve the method-tagged feature file <base>.fet.<Method>.N.
     const int fetVariant = pickInputPath(fname, sizeof(fname),
                                          FileBase, "fet", ElecNo);
     if (fetVariant == 1) {
-        Output("LoadData: using .fetD variant (%s)\n", fname);
+        Output("LoadData: using non-standard method feature file (%s)\n", fname);
     }
     FILE *fp = fopen_safe(fname, "rb");
 

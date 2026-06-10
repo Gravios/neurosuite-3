@@ -37,6 +37,7 @@ char HelpString[] =
 
 // ---- Global parameter storage ---------------------------------------------
 char  FileBase[STRLEN]       = "tetrode";
+char  Method[STRLEN]         = "standard";  // chain-of-custody: artifacts are <base>.<type>.<Method>.<elec>
 int   ElecNo                 = 1;
 int   MinClusters            = 2;
 int   MaxClusters            = 200;       // canonical jg05/eb05 sweep value
@@ -793,6 +794,7 @@ void SetupParams(int argc, char **argv) {
     init_params(argc, argv);
 
     STRING_PARAM(FileBase);
+    STRING_PARAM(Method);
     INT_PARAM(ElecNo);
     INT_PARAM(MinClusters);
     INT_PARAM(MaxClusters);
@@ -1329,21 +1331,44 @@ FILE *fopen_safe(const char *fname, const char *mode) {
 // -----------------------------------------------------------------------------
 int pickInputPath(char *out, size_t outSize,
                   const char *base, const char *ext, int elec) {
-    // Single canonical resolver in libneurosuite-core (source-included).
-    // Preference: canonical first, then a derived representation — the new
-    // dotted form (<base>.<ext>.stderiv.N / .<ext>.D.N) and the legacy glued
-    // form (<base>.<ext>D.N) are both discovered.  This preserves the prior
-    // "prefer .fet, fall back to .fetD" behaviour while generalising it.
-    neurofileio::ResolvedInput r =
-        neurofileio::resolveInput(base, ext, elec, {"", "stderiv", "D"});
+    // Chain-of-custody resolution: every per-group artifact is
+    // <base>.<ext>.<Method>.<elec>, with Method known from the global
+    // parameter (passed by ndm_klustakwik / the session).  There is no
+    // canonical/glued fallback — the file exists at the method path or it
+    // does not.  .fil is the one session-wide exception (method-agnostic,
+    // not per-group): it is <base>.fil.
+    std::string path;
+    bool found;
+    if (std::strcmp(ext, "fil") == 0) {
+        path = std::string(base) + ".fil";
+        FILE *f = std::fopen(path.c_str(), "rb");
+        found = (f != nullptr);
+        if (f) std::fclose(f);
+    } else {
+        neurofileio::ResolvedInput r =
+            neurofileio::resolveInputForMethod(base, ext, elec, Method);
+        path  = r.path;
+        found = r.found;
+    }
 
     if (outSize > 0) {
-        std::strncpy(out, r.path.c_str(), outSize);
+        std::strncpy(out, path.c_str(), outSize);
         out[outSize - 1] = '\0';
     }
-    if (!r.found)
-        return -1;                       // neither: out = canonical path
-    return r.variant.empty() ? 0 : 1;    // 0 = canonical, 1 = derived variant
+    if (!found)
+        return -1;                                  // out = expected method path
+    // 0 = standard method, 1 = a non-standard (derived) method.  Kept for the
+    // diagnostic banners that distinguish the two.
+    return (std::strcmp(Method, "standard") == 0) ? 0 : 1;
+}
+
+void methodPathC(char *out, size_t outSize,
+                 const char *base, const char *ext, int elec) {
+    const std::string p = neurofileio::methodPath(base, ext, Method, elec);
+    if (outSize > 0) {
+        std::strncpy(out, p.c_str(), outSize);
+        out[outSize - 1] = '\0';
+    }
 }
 
 void MatPrint(FILE *fp, const float *Mat, int nRows, int nCols) {
@@ -1463,7 +1488,7 @@ void SaveOutput(const Array<int> &OutputClass) {
         if (cClustMembs[c] > 0) NewLabel[c] = ++maxClass;
 
     char fname[STRLEN + 16];
-    snprintf(fname, sizeof(fname), "%s.clu.%d", FileBase, ElecNo);
+    methodPathC(fname, sizeof(fname), FileBase, "clu", ElecNo);
     FILE *fp = fopen_safe(fname, "wb");
     int32_t hdr = (int32_t)maxClass;
     fwrite(&hdr, sizeof(int32_t), 1, fp);
@@ -1883,14 +1908,13 @@ int main(int argc, char **argv) {
         // -------------------------------------------------------------------
         {
             {
-                // Print the actual .fet path we loaded.  pickInputPath gives
-                // us the canonical name if it exists, else the .fetD variant;
-                // matching what LoadData() already resolved in K1.
+                // Print the actual .fet path we loaded — the method-tagged
+                // file resolved by LoadData() in K1.
                 char fetBanner[STRLEN + 16];
                 const int _fetVar = pickInputPath(fetBanner, sizeof(fetBanner),
                                                   FileBase, "fet", ElecNo);
                 fprintf(stderr, "KiloKlustaKwik  %s%s  [build 2026-04-22 shift-probe]\n",
-                        fetBanner, (_fetVar == 1) ? "  (stderiv variant)" : "");
+                        fetBanner, (_fetVar == 1) ? "  (non-standard method)" : "");
             }
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",
                     K1.nPoints, K1.nDims, MinClusters, MaxClusters);

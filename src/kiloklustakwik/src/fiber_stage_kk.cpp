@@ -141,7 +141,7 @@ void KK::FiberStagePerChunk(
 
     char spkPath[STRLEN + 16]; pickInputPath(spkPath, sizeof(spkPath), FileBase, "spk", ElecNo); // → .spkD
     char filPath[STRLEN + 16]; std::snprintf(filPath, sizeof(filPath), "%s.fil", FileBase);
-    char resPath[STRLEN + 16]; std::snprintf(resPath, sizeof(resPath), "%s.res.%d", FileBase, ElecNo);
+    char resPath[STRLEN + 16]; methodPathC(resPath, sizeof(resPath), FileBase, "res", ElecNo);
     FILE* resF = std::fopen(resPath, "rb");
     if (!resF) { Output("[%s] FiberStage: %s unavailable — skipping\n", stageTag, resPath); return; }
 
@@ -415,7 +415,7 @@ float KK::RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float sam
     if(GroupChannelIds.empty()||NbTotalChannels<=0||nch<=0||nsamp<=0){ Output("[FiberStandalone] missing dims/channel map — abort\n"); return 0.0f; }
     char spk[STRLEN+16]; pickInputPath(spk,sizeof(spk),FileBase,"spk",ElecNo);
     char fil[STRLEN+16]; std::snprintf(fil,sizeof(fil),"%s.fil",FileBase);
-    char rp[STRLEN+16];  std::snprintf(rp,sizeof(rp),"%s.res.%d",FileBase,ElecNo);
+    char rp[STRLEN+16];  methodPathC(rp, sizeof(rp), FileBase, "res", ElecNo);
     std::string spkPath=spk, filPath=fil;
     FILE* rf=std::fopen(rp,"rb"); if(!rf){ Output("[FiberStandalone] %s unavailable\n",rp); return 0.0f; }
     std::vector<long> absS(nPoints);
