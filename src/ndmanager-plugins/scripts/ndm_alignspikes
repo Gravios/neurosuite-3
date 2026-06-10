@@ -62,13 +62,15 @@
 source ndm_functions
 
 program=$(basename $0)
+ndm_parse_method "$@"; set -- "${NDM_ARGS[@]}"
 if [ $# -gt 1 ]; then
-    echo_error "usage: $program [parameter-file]"
+    echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv]"
     exit $GENERAL_ERROR
 fi
 ndm_resolve_session "$@"
 [ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
 param_ext=$(param_file_ext "$session")
+method=${NDM_METHOD:-$(read_script_parameter $session method)}; method=${method:-standard}
 
 print_header "$session - Spike waveform alignment (pre-PCA)"
 
@@ -123,23 +125,18 @@ for group in $(seq 1 $nElectrodeGroups); do
     # Convert space-separated electrode list to comma-separated for -c
     chanList=$(echo $electrodes | sed 's/ /,/g')
 
-    # Detect pipeline variant: prefer .spk.N (raw), fall back to .spkD.N (stderiv)
-    stderivFlag=""
-    spkFile="$session.spk.$group"
+    # Resolve the method-tagged waveform file (chain-of-custody).
+    spkFile=$(ndm_method_path "$session" spk "$group" "$method")
     if [ ! -f "$spkFile" ]; then
-        spkFile="$session.spkD.$group"
-        if [ ! -f "$spkFile" ]; then
-            echo_warning "  group $group: no .spk.$group or .spkD.$group — skipping"
-            nSkipped=$((nSkipped + 1))
-            continue
-        fi
-        stderivFlag="--stderiv"
-        echo_info "  group $group: using stderiv pipeline (.spkD.$group)"
+        echo_warning "  group $group: $spkFile missing — skipping"
+        nSkipped=$((nSkipped + 1))
+        continue
     fi
 
-    # Require .res.N
-    if [ ! -f "$session.res.$group" ]; then
-        echo_warning "  group $group: $session.res.$group missing — skipping"
+    # Require the method-tagged .res.N
+    resFile=$(ndm_method_path "$session" res "$group" "$method")
+    if [ ! -f "$resFile" ]; then
+        echo_warning "  group $group: $resFile missing — skipping"
         nSkipped=$((nSkipped + 1))
         continue
     fi
@@ -156,7 +153,7 @@ for group in $(seq 1 $nElectrodeGroups); do
         --min-score "$minScore" \
         --top-channels "$topChannels" \
         --align-sigma "$alignSigma" \
-        $stderivFlag \
+        --method "$method" \
         -v \
         "$session" "$group"
 
@@ -166,18 +163,10 @@ for group in $(seq 1 $nElectrodeGroups); do
         exit $GENERAL_ERROR
     fi
 
-    # Delete stale feature and PCA basis files so ndm_pca re-computes from scratch.
-    # The extension matches whichever pipeline was used (.fet/.pca or .fetD/.pcaD).
-    if [ -z "$stderivFlag" ]; then
-        fetExt="fet"
-        pcaExt="pca"
-    else
-        fetExt="fetD"
-        pcaExt="pcaD"
-    fi
-
-    for ext in "$fetExt" "$pcaExt"; do
-        f="$session.$ext.$group"
+    # Archive stale feature and PCA basis files so ndm_pca re-computes from
+    # scratch (chain-of-custody: .fet.<method>.N / .pca.<method>.N).
+    for ext in fet pca; do
+        f=$(ndm_method_path "$session" "$ext" "$group" "$method")
         if [ -f "$f" ]; then
             mv "$f" "${f}.prealign"
             echo_info "  group $group: moved $f → ${f}.prealign (re-run ndm_pca)"

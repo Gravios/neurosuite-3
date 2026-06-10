@@ -1461,6 +1461,25 @@ ndm_resolve_input()
     return 1
 }
 
+# Extract a --method / --method=M flag from an argument list (chain-of-custody).
+# Sets NDM_METHOD to the flag value (empty if absent) and NDM_ARGS to the
+# remaining positional args.  Typical use in a consumer:
+#     ndm_parse_method "$@"; set -- "${NDM_ARGS[@]}"
+#     ndm_resolve_session "$@"
+#     method=${NDM_METHOD:-$(read_script_parameter $session method)}; method=${method:-standard}
+ndm_parse_method()
+{
+    NDM_METHOD=""
+    NDM_ARGS=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --method)    NDM_METHOD="$2";     shift 2 ;;
+            --method=*)  NDM_METHOD="${1#*=}"; shift ;;
+            *)           NDM_ARGS+=("$1");     shift ;;
+        esac
+    done
+}
+
 # ── Mandatory-method resolution (chain-of-custody naming) ───────────────────
 # Every per-group artifact is <base>.<type>.<method>.<group>, for type in
 # {res,spk,clu,fet,pca} and method in {standard,stderiv,sdiff,...}.  The method

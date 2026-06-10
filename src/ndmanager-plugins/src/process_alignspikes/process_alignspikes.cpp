@@ -425,7 +425,7 @@ int main(int argc, char* argv[])
     int         nSamples       = 0;
     int         peakSampleIdx  = -1;  // 0-based after conversion
     int         maxShift       = 3;
-    bool        stderiv        = false;
+    std::string method         = "standard";  // chain-of-custody method tag
     double      minScore       = 0.0;
     int         nTopChan       = 0;   // 0 = use all channels (legacy behaviour)
     double      alignSigma     = 0.0; // ≤ 0 = legacy bounded-argmax; > 0 = circular xcorr
@@ -446,8 +446,10 @@ int main(int argc, char* argv[])
             peakSampleIdx = atoi(argv[++i]) - 1; // convert 1-based to 0-based
         else if (strcmp(a, "-m") == 0 && i+1 < argc)
             maxShift = atoi(argv[++i]);
+        else if (strcmp(a, "--method") == 0 && i+1 < argc)
+            method = argv[++i];
         else if (strcmp(a, "--stderiv") == 0)
-            stderiv = true;
+            method = "stderiv";          // deprecated alias for --method stderiv
         else if (strcmp(a, "--min-score") == 0 && i+1 < argc)
             minScore = atof(argv[++i]);
         else if (strcmp(a, "--top-channels") == 0 && i+1 < argc)
@@ -481,11 +483,12 @@ int main(int argc, char* argv[])
     if (maxShift <= 0) die("-m maxShift must be > 0");
     if (maxShift >= nSamples) die("-m maxShift >= nSamples; waveform too short");
 
-    // File paths
+    // File paths (chain-of-custody: <base>.<type>.<method>.<grp>).
+    // `stderiv` gates the SDIFF_ALLPAIRS re-extraction on transformed waveforms.
+    const bool stderiv          = (method == "stderiv");
     const std::string grpStr    = std::to_string(electrodeGroup);
-    const std::string spkExt    = stderiv ? ".spkD." : ".spk.";
-    const std::string resPath   = basename + ".res."  + grpStr;
-    const std::string spkPath   = basename + spkExt   + grpStr;
+    const std::string resPath   = basename + ".res." + method + "." + grpStr;
+    const std::string spkPath   = basename + ".spk." + method + "." + grpStr;
     const std::string filPath   = basename + ".fil";
 
     if (verbose) {
