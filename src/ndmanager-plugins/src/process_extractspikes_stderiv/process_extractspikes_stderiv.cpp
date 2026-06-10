@@ -788,7 +788,7 @@ bool checkInputs(const arguments &a, int buf_sz, const FILE *fp)
 //      behaviour with g_prev_sdiff carrying the prior chunk's last sample)
 //   3. compute SDIFF on all spikeLength+1 samples
 //   4. temporal first-diff: out[s, c] = sd[s, c] - sd[s-1, c]
-//   5. write to .spkD.<grp+1>
+//   5. write to .spk.stderiv.<grp+1>
 //
 // Returns 0 on success, non-zero on I/O error.
 static int runFromRes(const arguments &args,
@@ -1987,7 +1987,7 @@ int main(int argc, char *argv[])
                           wbuf.data() + (size_t)idx[i] * wavLen + wavLen,
                           wSorted.data() + (size_t)i * wavLen);
             wbuf = std::move(wSorted);
-            // Write sorted waveforms back to the output .spkD file
+            // Write sorted waveforms back to the output .spk.stderiv file
             FILE *sf = fopen(spkFileNames[static_cast<size_t>(grp)].c_str(), "wb");
             if(sf) {
                 fwrite(wbuf.data(), sizeof(short), (size_t)n * wavLen, sf);

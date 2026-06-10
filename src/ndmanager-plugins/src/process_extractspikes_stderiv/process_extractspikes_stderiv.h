@@ -21,7 +21,13 @@
 #define GROUP_SEPARATOR     ":"
 #define CHANNEL_SEPARATOR   ","
 #define SPIKE_TIME_OUT_EXT  "res"
-#define SPIKE_REC_OUT_EXT   "spkD"
+// Dotted-variant naming convention (mirrors ndm_resolve_input /
+// ndm_pca_stderiv): waveforms are written as <base>.spk.stderiv.<grp>,
+// not the legacy glued <base>.spkD.<grp>.  The path builders below emit
+// <base>.<SPIKE_REC_OUT_EXT>.<grp>, so the variant token is folded into
+// the extension here.  Downstream consumers resolve both forms and
+// prefer the dotted one.
+#define SPIKE_REC_OUT_EXT   "spk.stderiv"
 
 #include <cstdint>
 #include <cstdio>

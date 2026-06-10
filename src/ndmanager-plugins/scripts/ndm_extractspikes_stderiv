@@ -25,9 +25,10 @@
 #  The temporal first-difference sharpens spike onsets, further suppresses
 #  slow drift, and adds an extra stage of common-mode rejection.  All four
 #  spatial derivative orders (0-3) are supported identically to
-#  ndm_extractspikes_sdiff.  Waveform extraction (Pass 2) always writes the
-#  original raw ADC amplitudes to .spk files so downstream processing sees
-#  unmodified waveforms.
+#  ndm_extractspikes_sdiff.  Waveform extraction (Pass 2) writes the
+#  stderiv-transformed waveform (detection-domain), consistent with what
+#  ndm_pca_stderiv expects.  Output uses the dotted-variant naming
+#  convention: .spk.stderiv.N (not the legacy glued .spkD.N).
 #
 #  PARAMETERS — identical to ndm_extractspikes_sdiff
 #  ----------
@@ -71,8 +72,11 @@ nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 
 for group in $(seq 1 $nElectrodeGroups)
 do
-    output=$session.spkD.$group
-    if ! outputs_exist $output
+    # New dotted convention: the primary waveform output is
+    # $session.spk.stderiv.$group.  Treat the group as already done if
+    # either the dotted output or a legacy-glued .spkD.$group from an
+    # earlier run is present, so re-runs stay idempotent across both.
+    if ! outputs_exist "$session.spk.stderiv.$group" "$session.spkD.$group"
     then
         electrodeGroups="$electrodeGroups $group"
     fi
@@ -155,7 +159,7 @@ ln -s $session.fil $session-stderiv-tmp.fil
 
 # Re-extract mode: if every group already has a binary .res, skip detection and
 # extract at those timestamps (-R).  process_extractspikes_stderiv recompacts
-# .res/.spkD (drops flat/cutout spikes), so the .res is copied into the temp
+# .res/.spk.stderiv (drops flat/cutout spikes), so the .res is copied into the temp
 # slot and the rename below writes the recompacted .res back — the original is
 # untouched until the run succeeds.
 reExtract=1
@@ -196,6 +200,6 @@ declare -i i=0
 for group in $electrodeGroups
 do
     i=$i+1
-    mv $session-stderiv-tmp.res.$i  $session.res.$group
-    mv $session-stderiv-tmp.spkD.$i $session.spkD.$group
+    mv $session-stderiv-tmp.res.$i          $session.res.$group
+    mv $session-stderiv-tmp.spk.stderiv.$i  $session.spk.stderiv.$group
 done
