@@ -330,4 +330,49 @@ std::vector<std::string> preferCanonical()
     return {"", "stderiv", "D"};
 }
 
+// ── Mandatory-method resolution (chain-of-custody naming) ───────────────────
+
+std::string methodPath(const std::string& base, const std::string& type,
+                       const std::string& method, int group)
+{
+    return base + "." + type + "." + method + "." + std::to_string(group);
+}
+
+ResolvedInput resolveInputForMethod(const std::string& base, const std::string& type,
+                                    int group, const std::string& method)
+{
+    ResolvedInput r;
+    r.path    = methodPath(base, type, method, group);
+    r.variant = method;
+    r.dotted  = true;
+    r.found   = fileExists(r.path);
+    return r;
+}
+
+std::string methodFromPath(const std::string& path)
+{
+    // Strip any directory component.
+    const std::string::size_type slash = path.find_last_of("/\\");
+    const std::string name =
+        (slash == std::string::npos) ? path : path.substr(slash + 1);
+
+    // Split on '.'. A tagged per-group name is <base>.<type>.<method>.<group>
+    // with the base possibly spanning several dot-separated fields, so we need
+    // at least four fields and parse from the right.
+    std::vector<std::string> parts;
+    std::string::size_type start = 0, dot;
+    while ((dot = name.find('.', start)) != std::string::npos) {
+        parts.push_back(name.substr(start, dot - start));
+        start = dot + 1;
+    }
+    parts.push_back(name.substr(start));
+    if (parts.size() < 4) return "";
+
+    const std::string& group = parts.back();
+    if (group.empty() ||
+        group.find_first_not_of("0123456789") != std::string::npos) return "";
+
+    return parts[parts.size() - 2];   // the method token
+}
+
 }  // namespace neurofileio
