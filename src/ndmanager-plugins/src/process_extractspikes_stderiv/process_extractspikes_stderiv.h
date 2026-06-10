@@ -21,13 +21,11 @@
 #define GROUP_SEPARATOR     ":"
 #define CHANNEL_SEPARATOR   ","
 #define SPIKE_TIME_OUT_EXT  "res"
-// Dotted-variant naming convention (mirrors ndm_resolve_input /
-// ndm_pca_stderiv): waveforms are written as <base>.spk.stderiv.<grp>,
-// not the legacy glued <base>.spkD.<grp>.  The path builders below emit
-// <base>.<SPIKE_REC_OUT_EXT>.<grp>, so the variant token is folded into
-// the extension here.  Downstream consumers resolve both forms and
-// prefer the dotted one.
-#define SPIKE_REC_OUT_EXT   "spk.stderiv"
+// The engine writes UNtagged temp records (<base>.spk.<grp>); the
+// ndm_extractspikes wrapper applies the chain-of-custody method tag to the
+// final names (<session>.spk.stderiv.<grp>).  Keeping the binary method-
+// agnostic lets one dispatcher own naming for all extraction methods.
+#define SPIKE_REC_OUT_EXT   "spk"
 
 #include <cstdint>
 #include <cstdio>

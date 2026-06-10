@@ -2,9 +2,10 @@
 
 #////////////////////////////////////////////////////////////////////////////
 #//
-#//   Detect and extract spikes
+#//   Detect and extract spikes (unified, method-dispatching)
 #//
 #//   copyright       (C) 2007-2010 by Michaël Zugaro
+#//                   (C) 2025-2026 Gravios / NeuroSuite-3 contributors
 #//   email           michael.zugaro@college-de-france.fr
 #//
 #//   This program is free software; you can redistribute it and/or modify
@@ -13,26 +14,100 @@
 #//   (at your option) any later version.
 #//
 #////////////////////////////////////////////////////////////////////////////
+#
+#  DESCRIPTION
+#  -----------
+#  Single entry point for spike detection + waveform extraction.  The detection
+#  method is selected by the `method` field and dispatched to the appropriate
+#  engine binary:
+#
+#    standard  process_extractspikes          raw threshold detection,
+#                                              raw-amplitude waveforms
+#    sdiff     process_extractspikes_sdiff     spatial-derivative detection,
+#                                              raw-amplitude waveforms
+#    stderiv   process_extractspikes_stderiv   spatial+temporal derivative
+#                                              detection, stderiv-domain waveforms
+#
+#  Chain-of-custody naming: the method is stamped onto every artifact this tool
+#  writes, so outputs are <session>.res.<method>.<group> and
+#  <session>.spk.<method>.<group> (e.g. .res.stderiv.5 / .spk.stderiv.5).  The
+#  engine binaries write untagged temp files; this wrapper owns the final
+#  tagging via ndm_method_path.
+#
+#  PARAMETERS  (YAML, under program node ndm_extractspikes)
+#  ----------
+#    method       standard | sdiff | stderiv          (default standard)
+#    methodOrder  spatial derivative order, 0-3        (default 3; sdiff/stderiv
+#                 only — ignored for standard).  Accepts the deprecated alias
+#                 `sdiffOrder`.
+#  plus the usual thresholdFactor / refractoryPeriod / peakSearchLength /
+#  start / duration / memCapGB.
+#
+#  CLI OVERRIDES
+#  -------------
+#    ndm_extractspikes [parameter-file] [--method M] [--methodOrder N]
+#  CLI flags take precedence over the YAML fields.
+#
+#////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions
 source ndm_functions
 
-# Parse command-line
 program=$(basename $0)
-if [ $# -gt 1 ]
-then
-	echo_error "usage: $program [parameter-file]"
+
+# ── Parse command-line: <=1 positional (parameter file) + override flags ─────
+methodOverride=
+methodOrderOverride=
+positionals=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--method)         methodOverride="$2";       shift 2 ;;
+		--method=*)       methodOverride="${1#*=}";   shift ;;
+		--methodOrder)    methodOrderOverride="$2";   shift 2 ;;
+		--methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
+		--)               shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
+		-*)               echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
+		*)                positionals+=("$1");        shift ;;
+	esac
+done
+if [ ${#positionals[@]} -gt 1 ]; then
+	echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv] [--methodOrder 0-3]"
 	exit $GENERAL_ERROR
 fi
-ndm_resolve_session "$@"
-[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+ndm_resolve_session "${positionals[@]}"
+[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
 param_ext=$(param_file_ext "$session")
 
+# ── Resolve method + methodOrder ─────────────────────────────────────────────
+# Precedence: CLI override > YAML methodOrder/method > deprecated sdiffOrder
+# alias (current node) > legacy per-method program node > built-in default.
+method=$methodOverride
+[ -z "$method" ] && method=$(read_script_parameter $session method)
+method=${method:-standard}
+case "$method" in
+	standard|sdiff|stderiv) : ;;
+	*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
+esac
+
+methodOrder=$methodOrderOverride
+[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
+if [ -z "$methodOrder" ] && [ "$method" != standard ]; then
+	# Back-compat: order historically lived under the per-method program node.
+	methodOrder=$(read_script_parameter -s ndm_extractspikes_$method $session sdiffOrder)
+fi
+methodOrder=${methodOrder:-3}
+
+case "$method" in
+	standard) binary=process_extractspikes ;;
+	sdiff)    binary=process_extractspikes_sdiff ;;
+	stderiv)  binary=process_extractspikes_stderiv ;;
+esac
+
 # Print a header to indicate current processing step
-print_header "$session - Detecting/extracting spikes"
+print_header "$session - Detecting/extracting spikes [method=$method]"
 
 # Check required programs
-check_commands_installed xpathReader process_medianthreshold process_extractspikes
+check_commands_installed xpathReader process_medianthreshold $binary
 
 # Check required files
 inputs_missing "$session.$param_ext" $session.fil && exit $INPUTS_MISSING
@@ -51,16 +126,6 @@ resolution=$(yaml_read $session "//acquisitionSystem/nBits")
 samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 
-# Check output files (process only new ones)
-for group in $(seq 1 $nElectrodeGroups)
-do
-	output=$session.spk.$group
-	if ! outputs_exist $output
-	then
-		electrodeGroups="$electrodeGroups $group"
-	fi
-done
-
 check_mandatory_variable $nChannels "missing number of channels"
 check_mandatory_variable $resolution "missing resolution (in bits)"
 check_mandatory_variable $samplingRate "missing sampling rate"
@@ -70,22 +135,44 @@ then
   exit $GENERAL_ERROR
 fi
 
+# Check output files (process only new ones).  Outputs are method-tagged.
+for group in $(seq 1 $nElectrodeGroups)
+do
+	output=$(ndm_method_path "$session" spk "$group" "$method")
+	if ! outputs_exist "$output"
+	then
+		electrodeGroups="$electrodeGroups $group"
+	fi
+done
+
 # If all output files already exist there is nothing to do
 if [ -z "$electrodeGroups" ]
 then
 	echo_info "All output files already exist, nothing to do."
 	exit $NO_ERROR
 fi
+
+# Build per-group waveform parameters.  All engines use a single -w/-p for every
+# group; capture the first group's values and warn if a later group differs.
 for electrodeGroup in $electrodeGroups
 do
 	electrodes=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
-	check_mandatory_variable $electrodes "missing electrode list"
+	check_mandatory_variable $electrodes "missing electrode list for group $electrodeGroup"
 	electrodes=$(echo $electrodes | sed 's/ /,/g') # replace spaces with commas
 	electrodeList="$electrodeList:$electrodes"
-	samplesInWaveform=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-	peakSample=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
-	check_mandatory_variable $samplesInWaveform "missing number of samples in waveform for electrode group $electrodeGroup"
-	check_mandatory_variable $peakSample "missing peak sample for electrode group $electrodeGroup"
+
+	_ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	_ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
+	check_mandatory_variable $_ns "missing number of samples in waveform for electrode group $electrodeGroup"
+	check_mandatory_variable $_ps "missing peak sample for electrode group $electrodeGroup"
+	if [ -z "$samplesInWaveform" ]; then
+		samplesInWaveform=$_ns
+		peakSample=$_ps
+	elif [ "$_ns" != "$samplesInWaveform" ] || [ "$_ps" != "$peakSample" ]; then
+		echo_warning "Group $electrodeGroup has nSamples=$_ns peakSampleIndex=$_ps"
+		echo_warning "  which differs from first group ($samplesInWaveform/$peakSample)."
+		echo_warning "  $binary uses uniform params; using first group values."
+	fi
 done
 n=$((${#electrodeList}-1))
 electrodeList=${electrodeList:1:$n} # remove leading ':'
@@ -107,39 +194,30 @@ startInBytes=$(secondsToBytes $start)
 durationInBytes=$(secondsToBytes $duration)
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Detect spikes (create .res.# file)
+# // Detect spikes (create .res.<method>.# file) and extract waveforms (.spk.<method>.#)
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
 echo_info "Processing channels $electrodeList"
-echo_info " 1. Computing thresholds"
-echo_info "    starting at $start s (= $startInBytes bytes)"
-echo_info "    duration is $duration s (= $durationInBytes bytes)"
+[ "$method" != standard ] && echo_info " Spatial derivative order : $methodOrder"
+echo_info " Threshold factor         : $thresholdFactor"
+echo_info " Noise window             : ${start}s – $((start + duration))s"
+echo_info "   (= byte offset $startInBytes, length $durationInBytes)"
 
-# Compute detection threshold
-baseline=$(tail -c +$(($startInBytes+1)) $session.fil | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
-check_command_status process_medianthreshold
-baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
-echo_info "    threshold $baseline"
-
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Extract waveforms (create .spk.# file)
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-
-echo_info -e "2. Extracting spike waveforms (creating .res and .spk files)"
-# Use temporary file name to avoid overwriting existing files
-ln -s $session.fil $session-tmp.fil
-# Set waveform memory cap for process_extractspikes (default 2 GB if not in XML)
+# Use a temporary symlink so output files from incomplete runs cannot
+# accidentally overwrite good existing files.
+tmp=$session-extract-tmp
+ln -s $session.fil $tmp.fil
+# Set waveform memory cap (default 2 GB if not in parameter file).
 export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
-# Re-extract mode: if every group already has a binary .res (size a multiple of
-# 8 = int64 timestamps), skip detection and extract waveforms at those exact
-# timestamps (process_extractspikes -R).  Lets pre-existing detections — e.g.
-# legacy .res converted to binary — drive extraction.  The .res is copied into
-# the temp slot (never the live file), so a failed run leaves the original
-# intact and the normal rename below writes back the (possibly recompacted) .res.
+# Re-extract mode: if every group already has a method-tagged binary .res (size
+# a multiple of 8 = int64 timestamps), skip detection and extract waveforms at
+# those exact timestamps (-R).  The .res is copied into the temp slot (never the
+# live file), so a failed run leaves the original intact and the normal rename
+# below writes back the (possibly recompacted) .res.
 reExtract=1
 for group in $electrodeGroups; do
-	r=$session.res.$group
+	r=$(ndm_method_path "$session" res "$group" "$method")
 	if [ ! -f "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
 done
 reExtractFlag=
@@ -149,19 +227,47 @@ if [ "$reExtract" -eq 1 ]; then
 	declare -i i=0
 	for group in $electrodeGroups; do
 		i=$i+1
-		cp $session.res.$group $session-tmp.res.$i
+		cp "$(ndm_method_path "$session" res "$group" "$method")" $tmp.res.$i
 	done
 fi
 
-# Process
-process_extractspikes -n $nChannels -c $electrodeList -w $samplesInWaveform -p $peakSample -t $baseline -l $peakSearchLength -r $refractoryPeriod $reExtractFlag $session-tmp
-check_command_status process_extractspikes
-# Rename files
-rm $session-tmp.fil
+# Dispatch to the method's engine.  standard computes the detection threshold
+# externally (process_medianthreshold -> -t baseline); sdiff/stderiv compute it
+# internally from the noise window (-f/-B/-Z) and take the derivative order -d.
+case "$method" in
+	standard)
+		echo_info " 1. Computing thresholds (process_medianthreshold)"
+		baseline=$(tail -c +$(($startInBytes+1)) $session.fil | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
+		check_command_status process_medianthreshold
+		baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
+		echo_info "    threshold $baseline"
+		echo_info " 2. Extracting spike waveforms"
+		process_extractspikes \
+			-n $nChannels -c $electrodeList \
+			-w $samplesInWaveform -p $peakSample \
+			-t $baseline \
+			-l $peakSearchLength -r $refractoryPeriod \
+			$reExtractFlag $tmp
+		;;
+	sdiff|stderiv)
+		echo_info " Detecting + extracting spike waveforms"
+		$binary \
+			-n $nChannels -c $electrodeList \
+			-w $samplesInWaveform -p $peakSample \
+			-r $refractoryPeriod -l $peakSearchLength \
+			-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
+			-d $methodOrder \
+			$reExtractFlag $tmp
+		;;
+esac
+check_command_status $binary
+
+# Rename temporary (untagged) output files to final method-tagged names.
+rm $tmp.fil
 declare -i i=0
 for group in $electrodeGroups
 do
 	i=$i+1
-	mv $session-tmp.res.$i $session.res.$group
-	mv $session-tmp.spk.$i $session.spk.$group
+	mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
+	mv $tmp.spk.$i "$(ndm_method_path "$session" spk "$group" "$method")"
 done
