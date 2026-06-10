@@ -1979,20 +1979,18 @@ void KlustersApp::openDocumentFile(const QString& url)
         QFileInfo urlFileInfo(url);
         QStringList fileParts = urlFileInfo.fileName().split(".", Qt::SkipEmptyParts);
 
-        // Use the same suffix-aware parser as KlustersDoc::openDocument so
-        // tagged .clu filenames (e.g. `foo.clu.8.stack`) resolve to the
-        // canonical `baseName-group` document name and the "already-open"
-        // check succeeds.  Without this, a tagged-file open produces
-        // `name = ".../foo.clu-stack"` which never matches the document's
-        // suffix-aware `baseName-group` form (`".../foo-8"`).
-        // Scan the LAST 3 positions for one of the known type tokens.
+        // Same scan-from-end parser as KlustersDoc::openDocument so tagged
+        // .clu filenames (chain-of-custody <base>.clu.<method>.<grp>[.suffix])
+        // resolve to the canonical `baseName-group` document name and the
+        // "already-open" check succeeds.  The method token (between the type
+        // token and the integer group) and any post-group suffix are skipped
+        // for the document-name comparison.
         static const QStringList kTypeTokens = {
             QStringLiteral("clu"), QStringLiteral("fet"),
             QStringLiteral("spk"), QStringLiteral("par"),
-            QStringLiteral("fetD"), QStringLiteral("spkD"),
         };
         qsizetype typeIdx = -1;
-        for (qsizetype probe = 2; probe <= 4 && probe <= fileParts.count(); ++probe) {
+        for (qsizetype probe = 2; probe <= 5 && probe <= fileParts.count(); ++probe) {
             const qsizetype idx = fileParts.count() - probe;
             if (idx < 1) break;  // baseName needs at least parts[0]
             if (kTypeTokens.contains(fileParts[idx])) { typeIdx = idx; break; }
@@ -2011,14 +2009,17 @@ void KlustersApp::openDocumentFile(const QString& url)
             for (qsizetype i = 1; i < fileParts.count()-2; ++i)
                 baseName += "." + fileParts[i];
         } else {
-            electrodNb = fileParts[typeIdx + 1];
-            baseName   = fileParts[0];
+            baseName = fileParts[0];
             for (qsizetype i = 1; i < typeIdx; ++i)
                 baseName += "." + fileParts[i];
-            // Anything after fileParts[typeIdx + 1] is the optional tag
-            // (e.g. ".stack") — deliberately discarded here: the
-            // already-open check compares against the canonical document
-            // name `baseName-group` which has no suffix.
+            // After the type token: [.<method>].<grp>[.<suffix>].  Skip the
+            // method token (non-integer) to reach the integer group.
+            qsizetype grpIdx = typeIdx + 1;
+            bool nextIsInt = false;
+            (void)fileParts[typeIdx + 1].toInt(&nextIsInt);
+            if (!nextIsInt && typeIdx + 2 < fileParts.count())
+                grpIdx = typeIdx + 2;
+            electrodNb = fileParts[grpIdx];
         }
         QString name = urlFileInfo.absolutePath() + QDir::separator() + baseName + "-" + electrodNb;
 
