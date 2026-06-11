@@ -2,7 +2,7 @@ install(PROGRAMS
     cnt duration
     ndm_clean ndm_concatenate ndm_extractchannels ndm_extractemg ndm_extractleds
     ndm_extractspikes ndm_extractspikes_sdiff
-    ndm_extractspikes_stderiv ndm_functions ndm_hipass ndm_lfp ndm_mergedat
+    ndm_extractspikes_stderiv ndm_functions ndm_custody ndm_hipass ndm_lfp ndm_mergedat
     ndm_aom2dat ndm_ncs2dat ndm_nev2evt ndm_nvt2spots ndm_pca ndm_pca_stderiv ndm_pca_multichannel ndm_recolorchannels
     ndm_reorderchannels ndm_resample ndm_smi2sts ndm_smr2dat ndm_smr2evt
     ndm_denoiseuniform ndm_klustakwik ndm_spikegrouper

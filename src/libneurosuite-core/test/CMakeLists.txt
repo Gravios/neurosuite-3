@@ -20,3 +20,13 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE}
                      "${CMAKE_SOURCE_DIR}/src/ndmanager-plugins/test/test_custody_conformance.py")
 endif()
+
+# Run the bash mirror (ndm_custody) against the SAME vectors, completing the
+# three-language lock-step (C++ / Python / bash) enforced by `ctest`.
+find_program(BASH_PROGRAM bash)
+if(BASH_PROGRAM)
+    add_test(NAME custody_conformance_bash
+             COMMAND ${BASH_PROGRAM}
+                     "${CMAKE_SOURCE_DIR}/src/ndmanager-plugins/test/test_custody_conformance.sh"
+                     "${CMAKE_CURRENT_SOURCE_DIR}/custody_vectors.tsv")
+endif()
