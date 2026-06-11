@@ -89,13 +89,13 @@ done
     exit $INPUTS_MISSING; }
 echo_message "Found $clu_count/$nSpikeGroups curated spike groups"
 
-# Check at least one waveform file exists (chain-of-custody: .spk.<method>.N).
+# Check at least one waveform file exists (shared raw .spk, with fallback).
 spk_count=0
 for (( g=1; g<=nSpikeGroups; g++ )); do
-    [ -f "$(ndm_method_path "$session" spk "$g" "$method")" ] && (( spk_count++ ))
+    [ -f "$(ndm_resolve_shared "$session" spk "$g" "$method")" ] && (( spk_count++ ))
 done
 [ "$spk_count" -eq 0 ] && {
-    echo_error "No .spk.$method files found. Waveform data is required for collision decomposition."
+    echo_error "No .spk waveform files found. Waveform data is required for collision decomposition."
     exit $INPUTS_MISSING; }
 
 # Check outputs (per-group .col.<method>.N).  A group is eligible for
@@ -105,7 +105,7 @@ if [ "$overwrite" != "true" ]; then
     all_exist=true
     for (( g=1; g<=nSpikeGroups; g++ )); do
         [ -f "$(ndm_method_path "$session" clu "$g" "$method")" ] && \
-        [ -f "$(ndm_method_path "$session" spk "$g" "$method")" ] && \
+        [ -f "$(ndm_resolve_shared "$session" spk "$g" "$method")" ] && \
         [ ! -f "$(ndm_method_path "$session" col "$g" "$method")" ] && all_exist=false
     done
     if $all_exist; then

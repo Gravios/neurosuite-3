@@ -1504,6 +1504,26 @@ ndm_resolve_method()
     [ -f "$p" ]
 }
 
+# Resolve a SHARED per-group input (.res, raw .spk): one physical copy is shared
+# across methods.  Prefer the method-tagged path, then .<type>.standard.<group>,
+# then untagged .<type>.<group>.  Echoes the first that exists (or the method
+# path if none, for error messages); returns 0 if a file was found.
+# args: base type group method
+ndm_resolve_shared()
+{
+    local base="$1" type="$2" group="$3" method="$4" p
+    for variant in "$method" standard ""; do
+        if [ -n "$variant" ]; then
+            p="${base}.${type}.${variant}.${group}"
+        else
+            p="${base}.${type}.${group}"
+        fi
+        if [ -f "$p" ]; then echo "$p"; return 0; fi
+    done
+    ndm_method_path "$base" "$type" "$group" "$method"   # none found; method path
+    return 1
+}
+
 # Parse the method token from a per-group filename
 # <base>.<type>.<method>.<group> (base may contain dots).  Echoes the method,
 # or empty string (rc 1) if the name is not a tagged per-group file.

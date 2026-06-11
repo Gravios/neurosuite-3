@@ -144,6 +144,24 @@ static GroupParams read_group_params(const std::string &yaml_path, int group_idx
 }
 
 // ── File I/O ──────────────────────────────────────────────────────────────
+
+// Resolve a SHARED per-group input (.res, raw .spk): one copy across methods.
+// Prefer <base>.<type>.<method>.<grp>, then .standard, then untagged.
+static std::string resolve_shared(const std::string& base, const std::string& type,
+                                  const std::string& method, int g)
+{
+    const std::string gs = std::to_string(g);
+    const std::string tagged = base + "." + type + "." + method + "." + gs;
+    if (std::ifstream(tagged).good()) return tagged;
+    if (method != "standard") {
+        const std::string s = base + "." + type + ".standard." + gs;
+        if (std::ifstream(s).good()) return s;
+    }
+    const std::string bare = base + "." + type + "." + gs;
+    if (std::ifstream(bare).good()) return bare;
+    return tagged;
+}
+
 static std::vector<int64_t> read_res(const std::string &path)
 {
     FILE *f = fopen(path.c_str(), "rb");
@@ -983,16 +1001,19 @@ int main(int argc, char **argv)
     int n_written = 0;
 
     for (int g = 1; g <= args.n_groups; ++g) {
-        const std::string mtag = "." + args.method + ".";
-        std::string res_path = args.session + ".res" + mtag + std::to_string(g);
-        std::string clu_path = args.session + ".clu" + mtag + std::to_string(g);
-        std::string spk_path = args.session + ".spk" + mtag + std::to_string(g);
-        std::string out_path = args.session + ".col" + mtag + std::to_string(g);
+        const std::string gs = std::to_string(g);
+        // .clu is method-specific (strict); .col is method-tagged output.
+        std::string clu_path = args.session + ".clu." + args.method + "." + gs;
+        std::string out_path = args.session + ".col." + args.method + "." + gs;
+        // .res and raw .spk are shared across methods (fall back to the
+        // existing copy).
+        std::string res_path = resolve_shared(args.session, "res", args.method, g);
+        std::string spk_path = resolve_shared(args.session, "spk", args.method, g);
 
-        // Chain-of-custody: the method fixes the waveform domain.  is_stderiv
-        // (transformed waveforms) is true exactly for method=stderiv.
-        bool is_stderiv = (args.method == "stderiv");
+        // is_stderiv (transformed waveforms) reflects the .spk ACTUALLY resolved:
+        // true only if a .spk.stderiv was found, false for a shared raw .spk.
         std::string active_spk = spk_path;
+        bool is_stderiv = (active_spk.find(".stderiv.") != std::string::npos);
 
         if (!args.overwrite && std::ifstream(out_path).good()) {
             fprintf(stderr, "  group %d: %s exists, skipping\n", g, out_path.c_str());

@@ -120,10 +120,23 @@ def load_col(path: str) -> Optional[dict]:
 # Data loaders (.res, .clu, .spk/.spkD, .fet)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _resolve_shared(session: str, type_: str, g: int, method: str) -> Optional[str]:
+    """Shared per-group input (.res, raw .spk): prefer .<type>.<method>.N, then
+    .standard, then untagged.  Returns the first existing path or None."""
+    cands = [f"{session}.{type_}.{method}.{g}"]
+    if method != "standard":
+        cands.append(f"{session}.{type_}.standard.{g}")
+    cands.append(f"{session}.{type_}.{g}")
+    for p in cands:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def load_res(session: str, g: int, method: str = "standard") -> Optional[np.ndarray]:
-    """Read .res.<method>.N — binary little-endian int64, no header."""
-    p = f"{session}.res.{method}.{g}"
-    if not os.path.isfile(p):
+    """Read the shared .res — binary little-endian int64, no header."""
+    p = _resolve_shared(session, "res", g, method)
+    if p is None:
         return None
     return np.fromfile(p, dtype="<i8")
 
@@ -143,18 +156,19 @@ def load_spk(session: str, g: int, n_sites: int, n_samp: int,
              method: str = "standard") -> tuple[Optional[np.ndarray], bool]:
     """Returns (waveforms float32 [n_spk, n_samp, n_sites], is_stderiv).
 
-    Chain-of-custody: the method fixes the waveform domain; is_stderiv
-    (transformed waveforms) is true exactly for method=stderiv.
+    The raw .spk is shared across methods; is_stderiv reflects the file actually
+    resolved (true only when a .spk.stderiv was found).
     """
-    p = f"{session}.spk.{method}.{g}"
-    stderiv = (method == "stderiv")
-    if os.path.isfile(p):
-        raw    = np.fromfile(p, dtype="<i2")
-        stride = n_samp * n_sites
-        n_spk  = raw.size // stride
-        if n_spk > 0:
-            wf = raw[:n_spk * stride].reshape(n_spk, n_samp, n_sites).astype(np.float32)
-            return wf, stderiv
+    p = _resolve_shared(session, "spk", g, method)
+    if p is None:
+        return None, False
+    stderiv = ".stderiv." in p
+    raw    = np.fromfile(p, dtype="<i2")
+    stride = n_samp * n_sites
+    n_spk  = raw.size // stride
+    if n_spk > 0:
+        wf = raw[:n_spk * stride].reshape(n_spk, n_samp, n_sites).astype(np.float32)
+        return wf, stderiv
     return None, False
 
 
@@ -269,8 +283,8 @@ class SessionData:
         # by the stderiv transform.  Only .fetD has nChan-1 features.
         if n_sites == 0:
             # Infer directly from .spk/.spkD file size — most reliable fallback
-            spk_p = f"{self.session}.spk.{self.method}.{g}"
-            if os.path.isfile(spk_p) and gp["n_samples"] > 0:
+            spk_p = _resolve_shared(self.session, "spk", g, self.method)
+            if spk_p and gp["n_samples"] > 0:
                 raw_sz = os.path.getsize(spk_p) // 2   # int16 samples
                 n_spk  = col["n_spikes"]
                 if n_spk > 0:
