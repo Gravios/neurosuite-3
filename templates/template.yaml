@@ -205,6 +205,15 @@ programs:
 # Klusters refeaturize for Pipelines C/D:
 #   process_refeaturize_stderiv -p session.pca.N -n nEffChan -w wLen spk
 #   (nEffChan = nChannels-1 for orders 1 or 3, else nChannels)
+#
+# Chain-of-custody method parameter:
+#   ndm_extractspikes / ndm_pca / ndm_alignspikes / ndm_klustakwik /
+#   ndm_decomposecollisions take a `method` parameter (standard | sdiff |
+#   stderiv).  It stamps every per-group artifact as
+#   <session>.<type>.<method>.<group> and must agree across the stages of one
+#   pipeline (the unified ndm_extractspikes/ndm_pca with method: stderiv replace
+#   the standalone _stderiv variants).  ndm_extractspikes/ndm_pca also take
+#   `methodOrder` (0-3; the modern name for sdiffOrder).
 # ─────────────────────────────────────────────────────────────────────────────
 
 # == Master orchestrator ======================================================
@@ -774,6 +783,12 @@ programs:
   - {name: peakSearchLength, value: 50,  status: Mandatory}
   - {name: start,            value: 0,   status: Mandatory}
   - {name: duration,         value: 60,  status: Mandatory}
+  # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
+  # <session>.<type>.<method>.<group> and selects the detection/feature space.
+  - {name: method,      value: standard, status: Optional}
+  # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
+  # name for the deprecated sdiffOrder alias.
+  - {name: methodOrder, value: 3,        status: Optional}
   # - {name: memCapGB, value: 2, status: Optional}
   help: |-
     Extract spikes from high-pass filtered .fil file (creates .res and .spk files).
@@ -945,6 +960,9 @@ programs:
   parameters:
   - {name: maxShift, value: 3,   status: Optional}
   - {name: minScore, value: 0.0, status: Optional}
+  # Chain-of-custody method (must match the detection/PCA pipeline that produced
+  # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
+  - {name: method, value: standard, status: Optional}
   help: |-
     Align spike waveform snippets to their true energy peak before PCA.
 
@@ -1685,6 +1703,12 @@ programs:
   - {name: after,           value: 12,      status: Mandatory}
   - {name: extra,           value: 'false', status: Mandatory}
   - {name: excludeClusters, value: '',      status: Optional}
+  # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
+  # <session>.<type>.<method>.<group> and selects the detection/feature space.
+  - {name: method,      value: standard, status: Optional}
+  # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
+  # name for the deprecated sdiffOrder alias.
+  - {name: methodOrder, value: 3,        status: Optional}
   # threadsPerGroup: number of OMP threads per group when running all groups in
   # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
   # - {name: threadsPerGroup, value: 2,     status: Optional}
@@ -1766,6 +1790,9 @@ programs:
   - {name: crossChunkTemplateScore, value: 0.0,   status: Optional}
   - {name: initMethod,           value: farthest, status: Optional}
   - {name: penaltyMix,           value: 0,       status: Optional}
+  # Chain-of-custody method (must match the detection/PCA pipeline that produced
+  # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
+  - {name: method, value: standard, status: Optional}
   # ── Chunked CEM ────────────────────────────────────────────────────────────
   - {name: chunkMinutes,         value: 10,      status: Optional}
   - {name: chunkOverlapMinutes,  value: 2,       status: Optional}
@@ -2237,6 +2264,9 @@ programs:
   - {name: overwrite,         value: 'false', status: Optional}
   - {name: nWorkers,          value: 0,       status: Optional}
   - {name: useGpu,            value: 'false', status: Optional}
+  # Chain-of-custody method (must match the detection/PCA pipeline that produced
+  # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
+  - {name: method, value: standard, status: Optional}
   help: |-
     Detect and decompose spike collision waveforms into single-unit components.
 
