@@ -101,23 +101,7 @@
 
 // ─── Small helpers ─────────────────────────────────────────────────────────
 
-#include <unistd.h>     // access(F_OK)
-
-// Resolve a SHARED per-group input (.res, raw .spk): one copy across methods.
-// Prefer <base>.<type>.<method>.<grp>, then .standard, then untagged.
-static std::string resolve_shared(const std::string& base, const std::string& type,
-                                  const std::string& method, const std::string& grp)
-{
-    const std::string tagged = base + "." + type + "." + method + "." + grp;
-    if (access(tagged.c_str(), F_OK) == 0) return tagged;
-    if (method != "standard") {
-        const std::string s = base + "." + type + ".standard." + grp;
-        if (access(s.c_str(), F_OK) == 0) return s;
-    }
-    const std::string bare = base + "." + type + "." + grp;
-    if (access(bare.c_str(), F_OK) == 0) return bare;
-    return tagged;
-}
+#include <neurosuite/core/custody.hpp>   // shared chain-of-custody resolver
 
 static void die(const std::string& msg) {
     std::fprintf(stderr, "process_alignspikes_pca: ERROR: %s\n", msg.c_str());
@@ -454,11 +438,11 @@ int main(int argc, char** argv) {
 
     // File paths (chain-of-custody: <base>.<type>.<method>.<grp>).
     const std::string grpStr = std::to_string(a.groupId);
-    const std::string spkPath = resolve_shared(a.basename, "spk", a.method, grpStr);
-    const std::string resPath = resolve_shared(a.basename, "res", a.method, grpStr);
-    const std::string cluPath = a.basename + ".clu." + a.method + "." + grpStr;
-    const std::string pcaPath = a.basename + ".pca." + a.method + "." + grpStr;
-    const std::string fetPath = a.basename + ".fet." + a.method + "." + grpStr;
+    const std::string spkPath = neurosuite::custody::resolve(a.basename, "spk", a.groupId, a.method).path;
+    const std::string resPath = neurosuite::custody::resolve(a.basename, "res", a.groupId, a.method).path;
+    const std::string cluPath = neurosuite::custody::methodPath(a.basename, "clu", a.method, a.groupId);
+    const std::string pcaPath = neurosuite::custody::methodPath(a.basename, "pca", a.method, a.groupId);
+    const std::string fetPath = neurosuite::custody::methodPath(a.basename, "fet", a.method, a.groupId);
     const std::string filPath_dat = a.basename + ".dat";
     const std::string filPath_fil = a.basename + ".fil";
     const std::string filPath = (std::ifstream(filPath_fil).good()

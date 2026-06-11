@@ -145,22 +145,7 @@ static GroupParams read_group_params(const std::string &yaml_path, int group_idx
 
 // ── File I/O ──────────────────────────────────────────────────────────────
 
-// Resolve a SHARED per-group input (.res, raw .spk): one copy across methods.
-// Prefer <base>.<type>.<method>.<grp>, then .standard, then untagged.
-static std::string resolve_shared(const std::string& base, const std::string& type,
-                                  const std::string& method, int g)
-{
-    const std::string gs = std::to_string(g);
-    const std::string tagged = base + "." + type + "." + method + "." + gs;
-    if (std::ifstream(tagged).good()) return tagged;
-    if (method != "standard") {
-        const std::string s = base + "." + type + ".standard." + gs;
-        if (std::ifstream(s).good()) return s;
-    }
-    const std::string bare = base + "." + type + "." + gs;
-    if (std::ifstream(bare).good()) return bare;
-    return tagged;
-}
+#include <neurosuite/core/custody.hpp>   // shared chain-of-custody resolver
 
 static std::vector<int64_t> read_res(const std::string &path)
 {
@@ -1001,19 +986,21 @@ int main(int argc, char **argv)
     int n_written = 0;
 
     for (int g = 1; g <= args.n_groups; ++g) {
-        const std::string gs = std::to_string(g);
+        namespace cst = neurosuite::custody;
         // .clu is method-specific (strict); .col is method-tagged output.
-        std::string clu_path = args.session + ".clu." + args.method + "." + gs;
-        std::string out_path = args.session + ".col." + args.method + "." + gs;
+        std::string clu_path = cst::methodPath(args.session, "clu", args.method, g);
+        std::string out_path = cst::methodPath(args.session, "col", args.method, g);
         // .res and raw .spk are shared across methods (fall back to the
         // existing copy).
-        std::string res_path = resolve_shared(args.session, "res", args.method, g);
-        std::string spk_path = resolve_shared(args.session, "spk", args.method, g);
+        cst::Resolved res_r = cst::resolve(args.session, "res", g, args.method);
+        cst::Resolved spk_r = cst::resolve(args.session, "spk", g, args.method);
+        std::string res_path = res_r.path;
+        std::string spk_path = spk_r.path;
 
         // is_stderiv (transformed waveforms) reflects the .spk ACTUALLY resolved:
         // true only if a .spk.stderiv was found, false for a shared raw .spk.
         std::string active_spk = spk_path;
-        bool is_stderiv = (active_spk.find(".stderiv.") != std::string::npos);
+        bool is_stderiv = cst::resolvedIsStderiv(spk_r);
 
         if (!args.overwrite && std::ifstream(out_path).good()) {
             fprintf(stderr, "  group %d: %s exists, skipping\n", g, out_path.c_str());

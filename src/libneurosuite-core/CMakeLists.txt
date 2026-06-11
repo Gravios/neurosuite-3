@@ -47,6 +47,13 @@ write_basic_package_version_file(
 add_subdirectory(src)
 
 # ---------------------------------------------------------------------------
+# Regression tests (custody policy conformance) — built only with NS_BUILD_TESTS.
+# ---------------------------------------------------------------------------
+if(NS_BUILD_TESTS)
+    add_subdirectory(test)
+endif()
+
+# ---------------------------------------------------------------------------
 # Install cmake package files
 # ---------------------------------------------------------------------------
 install(EXPORT LibNeurosuiteCoreTargets

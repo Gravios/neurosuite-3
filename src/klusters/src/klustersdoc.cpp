@@ -77,6 +77,7 @@
 #include "timer.h"
 
 #include <neurosuite/core/neurofileio.h>  // variant-aware input resolution
+#include <neurosuite/core/custody.hpp>     // shared chain-of-custody policy
 
 extern int nbUndo;
 
@@ -92,29 +93,19 @@ namespace {
 // Extract the method token from a per-group path <base>.<type>.<method>.<group>;
 // returns "standard" for an untagged legacy name (or anything unparseable).
 QString featureMethod(const QString& path) {
-    const std::string m = neurofileio::methodFromPath(path.toStdString());
+    const std::string m = neurosuite::custody::methodOf(path.toStdString());
     return m.empty() ? QStringLiteral("standard") : QString::fromStdString(m);
 }
 
-// Resolve the method-pinned path <fullBase>.<type>.<method>.<group>.
-// Resolve the path for a per-group artifact, preferring the method-tagged form
-// but falling back to the shared copy.  Several artifacts have one physical copy
-// across methods — .res (spike times are method-independent) and, in the common
-// layout, the raw .spk (the stderiv transform is applied downstream at PCA time
-// rather than stored as a separate .spk).  So a stderiv .clu must still resolve
-// the existing .sp/.res: try <type>.<method>.<grp>, then .<type>.standard.<grp>,
-// then untagged .<type>.<grp>, returning the first that exists (or the
-// method-tagged path if none, for error reporting).
+// Resolve a per-group artifact through the shared custody policy: method-specific
+// types (.clu/.fet/.pca) resolve strictly to <base>.<type>.<method>.<group>;
+// shared types (.res, raw .spk) fall back method -> standard -> untagged; the
+// single source of truth lives in custody.hpp.
 QString resolveFeature(const QString& fullBase, const QString& type,
                        const QString& group, const QString& method) {
-    std::vector<std::string> prefer;
-    prefer.push_back(method.toStdString());
-    if (method != QLatin1String("standard"))
-        prefer.emplace_back("standard");
-    prefer.emplace_back("");                       // untagged shared copy
-    const neurofileio::ResolvedInput r =
-        neurofileio::resolveInput(fullBase.toStdString(), type.toStdString(),
-                                  group.toInt(), prefer);
+    const neurosuite::custody::Resolved r =
+        neurosuite::custody::resolve(fullBase.toStdString(), type.toStdString(),
+                                     group.toInt(), method.toStdString());
     return QString::fromStdString(r.path);
 }
 
