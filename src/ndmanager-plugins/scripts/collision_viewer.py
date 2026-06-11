@@ -38,6 +38,8 @@ from typing import Optional
 
 import numpy as np
 
+import ndm_resolve_io  # shared chain-of-custody policy (mirror of custody.hpp)
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QLabel, QComboBox, QCheckBox, QPushButton,
@@ -121,16 +123,11 @@ def load_col(path: str) -> Optional[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _resolve_shared(session: str, type_: str, g: int, method: str) -> Optional[str]:
-    """Shared per-group input (.res, raw .spk): prefer .<type>.<method>.N, then
-    .standard, then untagged.  Returns the first existing path or None."""
-    cands = [f"{session}.{type_}.{method}.{g}"]
-    if method != "standard":
-        cands.append(f"{session}.{type_}.standard.{g}")
-    cands.append(f"{session}.{type_}.{g}")
-    for p in cands:
-        if os.path.isfile(p):
-            return p
-    return None
+    """Shared per-group input (.res, raw .spk).  Delegates to the single
+    chain-of-custody policy in ndm_resolve_io (the Python mirror of custody.hpp);
+    returns the resolved path if it exists, else None."""
+    r = ndm_resolve_io.resolve(session, type_, g, method)
+    return r.path if r.found else None
 
 
 def load_res(session: str, g: int, method: str = "standard") -> Optional[np.ndarray]:
