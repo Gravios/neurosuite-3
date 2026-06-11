@@ -125,18 +125,18 @@ for group in $(seq 1 $nElectrodeGroups); do
     # Convert space-separated electrode list to comma-separated for -c
     chanList=$(echo $electrodes | sed 's/ /,/g')
 
-    # Resolve the method-tagged waveform file (chain-of-custody).
-    spkFile=$(ndm_method_path "$session" spk "$group" "$method")
+    # Resolve the shared waveform / timestamp files (fall back to the existing
+    # copy when no method-tagged one exists).
+    spkFile=$(ndm_resolve_shared "$session" spk "$group" "$method")
     if [ ! -f "$spkFile" ]; then
-        echo_warning "  group $group: $spkFile missing — skipping"
+        echo_warning "  group $group: no .spk for group $group (method $method) — skipping"
         nSkipped=$((nSkipped + 1))
         continue
     fi
 
-    # Require the method-tagged .res.N
-    resFile=$(ndm_method_path "$session" res "$group" "$method")
+    resFile=$(ndm_resolve_shared "$session" res "$group" "$method")
     if [ ! -f "$resFile" ]; then
-        echo_warning "  group $group: $resFile missing — skipping"
+        echo_warning "  group $group: no .res for group $group (method $method) — skipping"
         nSkipped=$((nSkipped + 1))
         continue
     fi

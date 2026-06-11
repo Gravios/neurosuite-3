@@ -100,6 +100,23 @@
 #include <stdexcept>
 #include <unistd.h>     // access(F_OK) for prealign archive
 
+// Resolve a SHARED per-group input (.res, raw .spk): one copy is shared across
+// methods.  Prefer <base>.<type>.<method>.<grp>, then .standard, then untagged.
+// Returns the first that exists, else the method-tagged path (for diagnostics).
+static std::string resolve_shared(const std::string& base, const std::string& type,
+                                  const std::string& method, const std::string& grp)
+{
+    const std::string tagged = base + "." + type + "." + method + "." + grp;
+    if (access(tagged.c_str(), F_OK) == 0) return tagged;
+    if (method != "standard") {
+        const std::string std_ = base + "." + type + ".standard." + grp;
+        if (access(std_.c_str(), F_OK) == 0) return std_;
+    }
+    const std::string bare = base + "." + type + "." + grp;
+    if (access(bare.c_str(), F_OK) == 0) return bare;
+    return tagged;
+}
+
 // ── SDIFF_ALLPAIRS kernel (same as process_extractspikes_stderiv) ─────────
 
 static double sdiff_allpairs(const short* frame,
@@ -487,8 +504,8 @@ int main(int argc, char* argv[])
     // `stderiv` gates the SDIFF_ALLPAIRS re-extraction on transformed waveforms.
     const bool stderiv          = (method == "stderiv");
     const std::string grpStr    = std::to_string(electrodeGroup);
-    const std::string resPath   = basename + ".res." + method + "." + grpStr;
-    const std::string spkPath   = basename + ".spk." + method + "." + grpStr;
+    const std::string resPath   = resolve_shared(basename, "res", method, grpStr);
+    const std::string spkPath   = resolve_shared(basename, "spk", method, grpStr);
     const std::string filPath   = basename + ".fil";
 
     if (verbose) {
