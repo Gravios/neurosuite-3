@@ -118,11 +118,17 @@ once()
 
 	# Method-tagged artifact paths (chain-of-custody).
 	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$method")
-	local resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$method")
+	# .res holds method-independent spike times — a Shared artifact owned by the
+	# first extraction run.  Resolve it across all methods (e.g. a standard PCA
+	# run reuses the .res written by an earlier stderiv extraction) instead of
+	# demanding .res.<method>.<group>, which need not exist.  Fall back to the
+	# strict path name only so a missing input reports a meaningful name.
+	local resfile=$(ndm_resolve_any "$session" res "$electrodeGroup" "$method")
+	[ -z "$resfile" ] && resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$method")
 	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
 
 	# Check input files
-	inputs_missing "$session.$param_ext" "$spkfile" && exit $INPUTS_MISSING
+	inputs_missing "$session.$param_ext" "$spkfile" "$resfile" && exit $INPUTS_MISSING
 
 	# Check output file (process_pca derives .pca.<method>.N from this name)
 	outputs_exist "$fetout" && exit $OUTPUTS_EXIST
