@@ -134,7 +134,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         { "ndm_estimatedrift", "Estimate Drift", "Compute probe drift from sorted units", "analysis", "",
           {{ "windowSec","60","Optional" }, { "minUnits","3","Optional" }, { "minSpikes","20","Optional" }} },
         { "ndm_applydrift", "Apply Drift", "Generate drift-adaptive chunk files", "analysis", "",
-          {{ "threshUm","5.0","Optional" }, { "runKlustaKwik","false","Optional" }} },
+          {{ "threshUm","5.0","Optional" }, { "runKlustaKwik","false","Optional" }, { "method","standard","Optional" }} },
         { "ndm_decomposecollisions", "Decompose Collisions", "Separate collision waveforms", "analysis", "",
           {{ "maxShiftSamp","10","Optional" }, { "corrThreshold","0.85","Optional" },
            { "residualThreshold","0.25","Optional" }, { "minSnrRms","4.0","Optional" }, { "method","standard","Optional" }} },

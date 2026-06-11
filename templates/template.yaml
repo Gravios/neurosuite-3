@@ -2200,6 +2200,10 @@ programs:
   - {name: threshUm,        value: 5.0,     status: Optional}
   - {name: minChunkSec,     value: 30.0,    status: Optional}
   - {name: runKlustaKwik,   value: 'false', status: Optional}
+  # Chain-of-custody method (must match how the session was sorted): the
+  # drift-adaptive re-clustering reads .fet.<method>.N and runs KlustaKwik
+  # -Method <method>.  standard | sdiff | stderiv.
+  - {name: method,          value: standard, status: Optional}
   - {name: minClusters,     value: 2,       status: Optional}
   - {name: maxClusters,     value: 100,     status: Optional}
   - {name: mergeThresh,     value: 35,      status: Optional}

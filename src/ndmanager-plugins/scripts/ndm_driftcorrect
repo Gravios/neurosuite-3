@@ -82,13 +82,15 @@ nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
     echo_error "No spikeDetection groups in $yamlfile"
     exit $GENERAL_ERROR; }
 
-# At least one .spk or .spkD must exist
+# At least one .spk must exist.  .spk is a shared type; resolving at method
+# stderiv prefers the stderiv variant and falls back to the standard/untagged
+# shared copy (matching process_driftcorrect.py's resolve_spk_path).
 spk_count=0
 for (( g=1; g<=nSpikeGroups; g++ )); do
-    { [ -f "$session.spk.$g" ] || [ -f "$session.spkD.$g" ]; } && (( spk_count++ ))
+    ndm_resolve "$session" spk "$g" stderiv >/dev/null && (( spk_count++ ))
 done
 [ "$spk_count" -eq 0 ] && {
-    echo_error "No .spk or .spkD files found. Run ndm_extractspikes(_stderiv) first."
+    echo_error "No .spk files found. Run ndm_extractspikes(_stderiv) first."
     exit $INPUTS_MISSING; }
 
 # At least one .dat.drift.P must exist (any probe).  ndm_estimatedrift

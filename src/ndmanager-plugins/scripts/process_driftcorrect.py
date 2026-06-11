@@ -4,11 +4,12 @@ process_driftcorrect.py
 ========================
 Geometric refeaturization of spike waveforms to a reference probe position.
 
-For each spikeDetection group, reads the per-spike waveform file
-(``.spkD.N`` preferred, ``.spk.N`` fallback), looks up the per-spike
-probe drift from the per-probe binary signal ``SESSION.dat.drift.P``
-(produced by ``ndm_estimatedrift``), and writes a corrected waveform
-file (``.spkCD.N`` or ``.spkC.N`` depending on input).
+For each spikeDetection group, reads the per-spike waveform file (resolved
+through the chain-of-custody policy: the stderiv ``.spk.stderiv.N`` variant is
+preferred, falling back to the standard/untagged shared ``.spk`` copy), looks
+up the per-spike probe drift from the per-probe binary signal
+``SESSION.dat.drift.P`` (produced by ``ndm_estimatedrift``), and writes a
+corrected waveform file (``.spkCD.N`` or ``.spkC.N`` depending on input).
 
 The correction
 --------------
@@ -85,6 +86,11 @@ import yaml
 import numpy as np
 from pathlib import Path
 from typing import Optional
+
+# Shared chain-of-custody policy (Python mirror of custody.hpp).  Importable
+# because this helper lives alongside ndm_resolve_io in the scripts dir.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ndm_resolve_io
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,14 +269,19 @@ def read_res(path: str) -> np.ndarray:
 
 
 def resolve_spk_path(session: str, group_idx: int) -> Optional[tuple[str, bool]]:
-    """Return (path, is_stderiv) or None when neither variant exists."""
-    spkD = f"{session}.spkD.{group_idx}"
-    spk  = f"{session}.spk.{group_idx}"
-    if os.path.isfile(spkD):
-        return spkD, True
-    if os.path.isfile(spk):
-        return spk, False
-    return None
+    """Return (path, is_stderiv) or None when no .spk exists.
+
+    Resolves the raw/stderiv .spk through the shared chain-of-custody policy.
+    .spk is a Shared type, so resolving at method 'stderiv' means "prefer the
+    stderiv variant, then fall back to the standard/untagged shared copy" —
+    which both modernises the old hardcoded .spkD/.spk lookup and, crucially,
+    finds a .spk.stderiv.N that the legacy glued .spkD.N name would have missed.
+    is_stderiv reflects the file actually resolved.
+    """
+    r = ndm_resolve_io.resolve(session, "spk", group_idx, "stderiv")
+    if not r.found:
+        return None
+    return r.path, ndm_resolve_io.resolved_is_stderiv(r)
 
 
 def output_spk_path(session: str, group_idx: int, is_stderiv: bool) -> str:
@@ -405,7 +416,7 @@ def process_group(session:               str,
     """Refeaturize one spike group.  Returns 0 on success / skip, 1 on error."""
     spk_resolved = resolve_spk_path(session, group_idx)
     if spk_resolved is None:
-        print(f"  group {group_idx}: no .spk or .spkD — skipping",
+        print(f"  group {group_idx}: no .spk found — skipping",
               file=sys.stderr)
         return 0
     spk_path, is_stderiv = spk_resolved
