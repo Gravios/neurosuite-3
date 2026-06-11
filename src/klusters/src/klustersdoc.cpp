@@ -353,10 +353,13 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     // baseName = everything up to the "clu" type token.  With a method tag the
     // type token is at groupIdx-2; without it (legacy) at groupIdx-1.
+    QString anchorType;
     {
         const bool tagged = (sessionMethod != QLatin1String("standard"))
                          || (groupIdx >= 2 && fileParts[groupIdx - 2] == QLatin1String("clu"));
         const qsizetype typeIdx = tagged ? (groupIdx - 2) : (groupIdx - 1);
+        if (typeIdx >= 0 && typeIdx < fileParts.count())
+            anchorType = fileParts[typeIdx];          // "clu", "fet", ...
         baseName = fileParts[0];
         for (qsizetype i = 1; i < typeIdx; ++i)
             baseName += "." + fileParts[i];
@@ -371,11 +374,21 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "spk", electrodeGroupID, sessionMethod);
 
-    // docUrl is the .clu file actually opened.
-    QString cluFileUrl = urlFileInfo.absoluteFilePath();
+    // cluFileUrl: if the .clu itself was opened, use it verbatim (this preserves
+    // a post-group suffix such as .merged).  Otherwise the user opened a sibling
+    // (e.g. the .fet, to bootstrap clustering before KlustaKwik), so resolve the
+    // .clu sibling — a missing .clu then falls through to the all-cluster-1
+    // default, instead of the opened file being mis-read as a cluster file
+    // (which scatters every spike into its own cluster).
+    QString cluFileUrl =
+        (anchorType == QLatin1String("clu"))
+            ? urlFileInfo.absoluteFilePath()
+            : resolveFeature(urlFileInfo.absolutePath() + QDir::separator() + baseName,
+                             "clu", electrodeGroupID, sessionMethod);
     docUrl = cluFileUrl;
 
-    cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + urlFileInfo.fileName() + ".autosave";
+    const QString cluFileName = QFileInfo(cluFileUrl).fileName();
+    cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + cluFileName + ".autosave";
 
 
     QString fetFileUrl = resolveFeature(
