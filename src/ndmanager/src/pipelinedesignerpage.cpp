@@ -92,19 +92,21 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         // ── Detection ─────────────────────────────────────────────────────
         { "ndm_extractspikes", "Extract Spikes", ".fil → .spk (raw threshold)", "detection", "spikes",
           {{ "thresholdFactor","1.5","Mandatory" }, { "refractoryPeriod","25","Mandatory" },
-           { "peakSearchLength","50","Mandatory" }, { "start","0","Mandatory" }, { "duration","60","Mandatory" }} },
+           { "peakSearchLength","50","Mandatory" }, { "start","0","Mandatory" }, { "duration","60","Mandatory" },
+           { "method","standard","Optional" }, { "methodOrder","3","Optional" }} },
         { "ndm_extractspikes_sdiff", "Extract Spikes (SDiff)", ".fil → .spk (spatial diff detection)", "detection", "spikes",
           {{ "thresholdFactor","1.5","Mandatory" }, { "refractoryPeriod","16","Mandatory" },
            { "sdiffOrder","2","Optional" }, { "start","0","Mandatory" }, { "duration","60","Mandatory" }} },
-        { "ndm_extractspikes_stderiv", "Extract Spikes (StDeriv)", ".fil → .spkD (spatial+temporal deriv)", "detection", "spikes",
+        { "ndm_extractspikes_stderiv", "Extract Spikes (StDeriv)", ".fil → .spk.stderiv (spatial+temporal deriv)", "detection", "spikes",
           {{ "thresholdFactor","1.5","Mandatory" }, { "refractoryPeriod","16","Mandatory" },
            { "sdiffOrder","3","Optional" }, { "start","0","Mandatory" }, { "duration","60","Mandatory" }} },
         // ── Alignment (NEW) ───────────────────────────────────────────────
         { "ndm_alignspikes", "Align Spikes ★", "Peak-align snippets before PCA", "alignment", "spikes",
-          {{ "maxShift","3","Optional" }, { "minScore","0.0","Optional" }} },
+          {{ "maxShift","3","Optional" }, { "minScore","0.0","Optional" }, { "method","standard","Optional" }} },
         // ── Features ──────────────────────────────────────────────────────
         { "ndm_pca", "PCA", ".spk → .fet", "features", "spikes",
-          {{ "before","12","Mandatory" }, { "after","12","Mandatory" }, { "extra","false","Mandatory" }} },
+          {{ "before","12","Mandatory" }, { "after","12","Mandatory" }, { "extra","false","Mandatory" },
+           { "method","standard","Optional" }, { "methodOrder","3","Optional" }} },
         { "ndm_pca_stderiv", "PCA (StDeriv)", ".spk + stderiv transform → .fet", "features", "spikes",
           {{ "before","12","Mandatory" }, { "after","12","Mandatory" },
            { "extra","false","Optional" }, { "sdiffOrder","3","Optional" }} },
@@ -116,7 +118,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
            { "chunkPreseedFraction","0.1","Optional" }, { "mergeThresh","42.0","Optional" },
            { "timeMergeIter","100","Optional" }, { "maxIter","500","Optional" },
            { "templateMatchScore","0.88","Optional" }, { "crossChunkTemplateScore","0.80","Optional" },
-           { "penaltyMix","0","Optional" }} },
+           { "penaltyMix","0","Optional" }, { "method","standard","Optional" }} },
         // ── Post-sort ─────────────────────────────────────────────────────
         { "ndm_reextractspikes", "Reextract Spikes", "2nd-pass detection + shadow clustering", "postprocess", "spikes",
           {{ "reextractThresholdFactor","0.75","Optional" }, { "reextractMinClusterSize","50","Optional" },
@@ -135,7 +137,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
           {{ "threshUm","5.0","Optional" }, { "runKlustaKwik","false","Optional" }} },
         { "ndm_decomposecollisions", "Decompose Collisions", "Separate collision waveforms", "analysis", "",
           {{ "maxShiftSamp","10","Optional" }, { "corrThreshold","0.85","Optional" },
-           { "residualThreshold","0.25","Optional" }, { "minSnrRms","4.0","Optional" }} },
+           { "residualThreshold","0.25","Optional" }, { "minSnrRms","4.0","Optional" }, { "method","standard","Optional" }} },
         // ── LFP ───────────────────────────────────────────────────────────
         { "ndm_lfp", "LFP", ".dat → .lfp (downsampled)", "lfp", "lfp",
           {{ "samplingRate","1250","Mandatory" }, { "subtractSpikes","auto","Optional" }} },
