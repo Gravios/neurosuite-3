@@ -81,6 +81,11 @@ check_optional_variable $minChunkSec || minChunkSec=30.0
 runKlustaKwik=$(read_script_parameter "$session" ndm_applydrift runKlustaKwik)
 check_optional_variable $runKlustaKwik || runKlustaKwik=false
 
+# Chain-of-custody method: the drift-adaptive re-clustering must read the same
+# feature space the session was sorted in.  Default standard.
+method=$(read_script_parameter "$session" ndm_applydrift method)
+check_optional_variable $method || method=standard
+
 samplingRate=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
 nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
 
@@ -145,8 +150,8 @@ if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
             echo_error "Chunks file $chunksFile missing — skipping group $g"
             continue
         fi
-        inputs_missing "$session.fet.$g" && {
-            echo_message "  Group $g: .fet file missing — skipping"
+        inputs_missing "$(ndm_method_path "$session" fet "$g" "$method")" && {
+            echo_message "  Group $g: .fet.$method.$g file missing — skipping"
             continue
         }
 
@@ -159,6 +164,7 @@ if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
         echo_message "  ChunkFile: $chunksFile"
 
         KlustaKwik "$session" "$g" \
+            -Method          "$method" \
             -MinClusters     "$minClusters" \
             -MaxClusters     "$maxClusters" \
             -UseFeatures     "$useFeatures" \
