@@ -23,7 +23,7 @@ Usage
   python3 collision_viewer.py /path/to/jg05-20120316 [7]
 
 The viewer locates all SESSION.col.N files automatically.
-It reads SESSION.res.N, SESSION.clu.N, SESSION.spk.N (or .spkD.N),
+It reads SESSION.res.<method>.N, SESSION.clu.<method>.N, SESSION.spk.<method>.N,
 SESSION.fet.N for feature-space diagnostics.
 """
 
@@ -120,17 +120,17 @@ def load_col(path: str) -> Optional[dict]:
 # Data loaders (.res, .clu, .spk/.spkD, .fet)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_res(session: str, g: int) -> Optional[np.ndarray]:
-    """Read .res.N — binary little-endian int64, no header."""
-    p = f"{session}.res.{g}"
+def load_res(session: str, g: int, method: str = "standard") -> Optional[np.ndarray]:
+    """Read .res.<method>.N — binary little-endian int64, no header."""
+    p = f"{session}.res.{method}.{g}"
     if not os.path.isfile(p):
         return None
     return np.fromfile(p, dtype="<i8")
 
 
-def load_clu(session: str, g: int) -> Optional[np.ndarray]:
-    """Read .clu.N — binary: int32 nClusters header + int32[] ids."""
-    p = f"{session}.clu.{g}"
+def load_clu(session: str, g: int, method: str = "standard") -> Optional[np.ndarray]:
+    """Read .clu.<method>.N — binary: int32 nClusters header + int32[] ids."""
+    p = f"{session}.clu.{method}.{g}"
     if not os.path.isfile(p):
         return None
     raw = np.fromfile(p, dtype="<i4")
@@ -139,30 +139,35 @@ def load_clu(session: str, g: int) -> Optional[np.ndarray]:
     return raw[1:]  # raw[0] = nClusters header
 
 
-def load_spk(session: str, g: int, n_sites: int, n_samp: int) -> tuple[Optional[np.ndarray], bool]:
-    """Returns (waveforms float32 [n_spk, n_samp, n_sites], is_stderiv)."""
-    for ext, stderiv in [(f".spkD.{g}", True), (f".spk.{g}", False)]:
-        p = session + ext
-        if os.path.isfile(p):
-            raw    = np.fromfile(p, dtype="<i2")
-            stride = n_samp * n_sites
-            n_spk  = raw.size // stride
-            if n_spk > 0:
-                wf = raw[:n_spk * stride].reshape(n_spk, n_samp, n_sites).astype(np.float32)
-                return wf, stderiv
+def load_spk(session: str, g: int, n_sites: int, n_samp: int,
+             method: str = "standard") -> tuple[Optional[np.ndarray], bool]:
+    """Returns (waveforms float32 [n_spk, n_samp, n_sites], is_stderiv).
+
+    Chain-of-custody: the method fixes the waveform domain; is_stderiv
+    (transformed waveforms) is true exactly for method=stderiv.
+    """
+    p = f"{session}.spk.{method}.{g}"
+    stderiv = (method == "stderiv")
+    if os.path.isfile(p):
+        raw    = np.fromfile(p, dtype="<i2")
+        stride = n_samp * n_sites
+        n_spk  = raw.size // stride
+        if n_spk > 0:
+            wf = raw[:n_spk * stride].reshape(n_spk, n_samp, n_sites).astype(np.float32)
+            return wf, stderiv
     return None, False
 
 
-def load_fet(session: str, g: int) -> Optional[np.ndarray]:
-    """Load .fetD.N or .fet.N  →  (n_spikes, n_dims) float64."""
-    for ext in (f".fetD.{g}", f".fet.{g}"):
-        p = session + ext
-        if os.path.isfile(p):
-            with open(p, "rb") as f:
-                ndim = struct.unpack("<i", f.read(4))[0]
-            raw = np.fromfile(p, dtype="<i8", offset=4)
-            n   = raw.size // ndim
-            return raw[:n * ndim].reshape(n, ndim).astype(np.float64)
+def load_fet(session: str, g: int, method: str = "standard") -> Optional[np.ndarray]:
+    """Load .fet.<method>.N  →  (n_spikes, n_dims) float64."""
+    p = f"{session}.fet.{method}.{g}"
+    if os.path.isfile(p):
+        with open(p, "rb") as f:
+            ndim = struct.unpack("<i", f.read(4))[0]
+        raw = np.fromfile(p, dtype="<i8", offset=4)
+        n   = raw.size // ndim
+        return raw[:n * ndim].reshape(n, ndim).astype(np.float64)
+    return None
     return None
 
 
@@ -238,8 +243,9 @@ def compute_residual(
 class SessionData:
     """Holds all loaded data for one session."""
 
-    def __init__(self, session_path: str):
+    def __init__(self, session_path: str, method: str = "standard"):
         self.session = session_path
+        self.method  = method
         self.yaml    = session_path + ".yaml"
         self.groups: dict[int, dict] = {}   # group_idx → data dict
         self._col_data:  dict[int, dict]          = {}
@@ -250,7 +256,7 @@ class SessionData:
         self._tmpl_cache: dict[tuple, np.ndarray] = {}   # (g, uid) → mean wf
 
     def load_group(self, g: int) -> bool:
-        col_path = f"{self.session}.col.{g}"
+        col_path = f"{self.session}.col.{self.method}.{g}"
         col = load_col(col_path)
         if col is None:
             return False
@@ -263,8 +269,7 @@ class SessionData:
         # by the stderiv transform.  Only .fetD has nChan-1 features.
         if n_sites == 0:
             # Infer directly from .spk/.spkD file size — most reliable fallback
-            spk_p = f"{self.session}.spkD.{g}" if col.get("is_stderiv") \
-                    else f"{self.session}.spk.{g}"
+            spk_p = f"{self.session}.spk.{self.method}.{g}"
             if os.path.isfile(spk_p) and gp["n_samples"] > 0:
                 raw_sz = os.path.getsize(spk_p) // 2   # int16 samples
                 n_spk  = col["n_spikes"]
@@ -274,10 +279,10 @@ class SessionData:
         self._col_data[g] = col
 
         # Load supporting files
-        res = load_res(self.session, g)
-        clu = load_clu(self.session, g)
-        wf, _ = load_spk(self.session, g, col["n_sites"], col["n_samp"])
-        fet = load_fet(self.session, g)
+        res = load_res(self.session, g, self.method)
+        clu = load_clu(self.session, g, self.method)
+        wf, _ = load_spk(self.session, g, col["n_sites"], col["n_samp"], self.method)
+        fet = load_fet(self.session, g, self.method)
 
         self._res_cache[g] = res
         self._clu_cache[g] = clu
@@ -323,12 +328,13 @@ class SessionData:
         return sorted(self.groups.keys())
 
     @classmethod
-    def discover(cls, session_path: str) -> "SessionData":
-        sd = cls(session_path)
+    def discover(cls, session_path: str, method: str = "standard") -> "SessionData":
+        sd = cls(session_path, method)
         d  = os.path.dirname(session_path) or "."
         bn = os.path.basename(session_path)
+        prefix = bn + ".col." + method + "."
         for fname in sorted(os.listdir(d)):
-            if fname.startswith(bn + ".col."):
+            if fname.startswith(prefix):
                 try:
                     g = int(fname.rsplit(".", 1)[1])
                     sd.load_group(g)
@@ -803,7 +809,7 @@ class CollisionTable(QTableWidget):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CollisionViewer(QMainWindow):
-    def __init__(self, session_path: str):
+    def __init__(self, session_path: str, method: str = "standard"):
         super().__init__()
         self.setWindowTitle(f"Collision Viewer — {os.path.basename(session_path)}")
         self.resize(1600, 900)
@@ -818,7 +824,7 @@ class CollisionViewer(QMainWindow):
                            "QDoubleSpinBox, QSpinBox { background:#1a1a1a; color:#ccc; "
                            "  border:1px solid #444; }")
 
-        self.session = SessionData.discover(session_path)
+        self.session = SessionData.discover(session_path, method)
         if not self.session.group_ids():
             self._no_data()
             return
@@ -1265,6 +1271,8 @@ def main():
     ap.add_argument("session", help="Session base path (e.g. /data/jg05-20120316)")
     ap.add_argument("group", nargs="?", type=int, default=0,
                     help="Pre-select a spike group (optional)")
+    ap.add_argument("--method", default="standard",
+                    help="Chain-of-custody method tag (standard|sdiff|stderiv)")
     args = ap.parse_args()
 
     session_path = args.session
@@ -1275,7 +1283,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    win = CollisionViewer(session_path)
+    win = CollisionViewer(session_path, args.method)
     win.show()
 
     if args.group and hasattr(win, "_grp_combo"):

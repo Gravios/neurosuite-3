@@ -123,6 +123,7 @@ struct GroupParams {
 struct Args {
     std::string session;
     std::string param_file;
+    std::string method      = "standard";  // chain-of-custody method tag
     int    n_groups         = 1;
     int    n_channels       = 4;
     int    max_shift        = 10;

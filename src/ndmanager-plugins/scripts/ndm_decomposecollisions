@@ -18,13 +18,15 @@
 source ndm_functions
 
 program=$(basename $0)
+ndm_parse_method "$@"; set -- "${NDM_ARGS[@]}"
 if [ $# -gt 1 ]; then
-    echo_error "usage: $program [parameter-file]"
+    echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv]"
     exit $GENERAL_ERROR
 fi
 
 ndm_resolve_session "$@"
 [ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+method=${NDM_METHOD:-$(read_script_parameter $session method)}; method=${method:-standard}
 
 print_header "$session - Decomposing spike collisions"
 
@@ -77,41 +79,34 @@ nSpikeGroups=$(yaml_count "$session" "//spikeDetection/channelGroups/group")
 [ -z "$nSpikeGroups" ] || [ "$nSpikeGroups" -eq 0 ] && {
     echo_error "No spikeDetection groups found in $yamlfile"; exit $GENERAL_ERROR; }
 
-# Count curated groups
+# Count curated groups (chain-of-custody: .clu.<method>.N)
 clu_count=0
 for (( g=1; g<=nSpikeGroups; g++ )); do
-    [ -f "$session.clu.$g" ] && (( clu_count++ ))
+    [ -f "$(ndm_method_path "$session" clu "$g" "$method")" ] && (( clu_count++ ))
 done
 [ "$clu_count" -eq 0 ] && {
     echo_error "No .clu files found. Run spike sorting and curation first."
     exit $INPUTS_MISSING; }
 echo_message "Found $clu_count/$nSpikeGroups curated spike groups"
 
-# Check at least one waveform file (.spk or .spkD) exists.  The C++
-# process_decomposecollisions auto-detects per group, preferring
-# .spkD when present — see process_decomposecollisions.cpp around the
-# per-group loop.  Mirror that policy here so stderiv-only sessions
-# (which have .spkD.N but no .spk.N) are not rejected at this gate.
-# No sdiffOrder handling is needed: .spkD stores the raw channel
-# count (the sdiff transform is in-place same-dimensionality), so the
-# C++ reads it with the group's raw channel count just like .spk.
+# Check at least one waveform file exists (chain-of-custody: .spk.<method>.N).
 spk_count=0
 for (( g=1; g<=nSpikeGroups; g++ )); do
-    { [ -f "$session.spk.$g" ] || [ -f "$session.spkD.$g" ]; } && (( spk_count++ ))
+    [ -f "$(ndm_method_path "$session" spk "$g" "$method")" ] && (( spk_count++ ))
 done
 [ "$spk_count" -eq 0 ] && {
-    echo_error "No .spk or .spkD files found. Waveform data is required for collision decomposition."
+    echo_error "No .spk.$method files found. Waveform data is required for collision decomposition."
     exit $INPUTS_MISSING; }
 
-# Check outputs (per-group .col files).  A group is eligible for
-# processing if it has .clu.N AND at least one of .spk.N / .spkD.N,
-# and does NOT yet have a .col.N output.
+# Check outputs (per-group .col.<method>.N).  A group is eligible for
+# processing if it has .clu.<method>.N AND .spk.<method>.N, and does NOT
+# yet have a .col.<method>.N output.
 if [ "$overwrite" != "true" ]; then
     all_exist=true
     for (( g=1; g<=nSpikeGroups; g++ )); do
-        [ -f "$session.clu.$g" ] && \
-        { [ -f "$session.spk.$g" ] || [ -f "$session.spkD.$g" ]; } && \
-        [ ! -f "$session.col.$g" ] && all_exist=false
+        [ -f "$(ndm_method_path "$session" clu "$g" "$method")" ] && \
+        [ -f "$(ndm_method_path "$session" spk "$g" "$method")" ] && \
+        [ ! -f "$(ndm_method_path "$session" col "$g" "$method")" ] && all_exist=false
     done
     if $all_exist; then
         echo_message "All .col files already exist; set overwrite=true to rerun"
@@ -121,6 +116,7 @@ fi
 
 process_decomposecollisions \
     --session              "$session"         \
+    --method               "$method"          \
     --param-file           "$yamlfile"        \
     --n-channels           "$nChannels"       \
     --n-groups             "$nSpikeGroups"    \

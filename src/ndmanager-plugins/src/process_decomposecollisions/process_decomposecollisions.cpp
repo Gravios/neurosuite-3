@@ -4,7 +4,7 @@
  * Template-matching collision decomposition for spike-sorted data.
  *
  * For each spikeDetection group, reads the curated .clu.N / .res.N /
- * .spk.N (or .spkD.N) files, builds per-unit mean waveform templates,
+ * .spk.<method>.N files, builds per-unit mean waveform templates,
  * screens for collision candidates (spikes not well explained by any
  * single template), and fits two-component matching-pursuit decompositions.
  *
@@ -922,6 +922,7 @@ static Args parse_args(int argc, char **argv)
         if (i+1 >= argc) break;
         const char *v = argv[++i];
         if      (k=="--session")            a.session      = v;
+        else if (k=="--method")             a.method       = v;
         else if (k=="--param-file")         a.param_file   = v;
         else if (k=="--n-groups")           a.n_groups     = std::atoi(v);
         else if (k=="--n-channels")         a.n_channels   = std::atoi(v);
@@ -982,16 +983,16 @@ int main(int argc, char **argv)
     int n_written = 0;
 
     for (int g = 1; g <= args.n_groups; ++g) {
-        std::string res_path = args.session + ".res." + std::to_string(g);
-        std::string clu_path = args.session + ".clu." + std::to_string(g);
-        std::string spkD_path= args.session + ".spkD."+ std::to_string(g);
-        std::string spk_path = args.session + ".spk." + std::to_string(g);
-        std::string out_path = args.session + ".col." + std::to_string(g);
+        const std::string mtag = "." + args.method + ".";
+        std::string res_path = args.session + ".res" + mtag + std::to_string(g);
+        std::string clu_path = args.session + ".clu" + mtag + std::to_string(g);
+        std::string spk_path = args.session + ".spk" + mtag + std::to_string(g);
+        std::string out_path = args.session + ".col" + mtag + std::to_string(g);
 
-        // Prefer .spkD
-        bool is_stderiv = false;
+        // Chain-of-custody: the method fixes the waveform domain.  is_stderiv
+        // (transformed waveforms) is true exactly for method=stderiv.
+        bool is_stderiv = (args.method == "stderiv");
         std::string active_spk = spk_path;
-        if (std::ifstream(spkD_path).good()) { active_spk = spkD_path; is_stderiv = true; }
 
         if (!args.overwrite && std::ifstream(out_path).good()) {
             fprintf(stderr, "  group %d: %s exists, skipping\n", g, out_path.c_str());
@@ -1010,7 +1011,7 @@ int main(int argc, char **argv)
         if (n_sites == 0) n_sites = args.n_channels;
 
         fprintf(stderr, "  group %d: %s  n_samp=%d n_sites=%d peak=%d\n",
-                g, is_stderiv ? ".spkD" : ".spk", n_samp, n_sites, gp.peak_sample);
+                g, active_spk.c_str(), n_samp, n_sites, gp.peak_sample);
 
         auto res_ts = read_res(res_path);
         auto clu_ids= read_clu(clu_path);
