@@ -97,11 +97,24 @@ QString featureMethod(const QString& path) {
 }
 
 // Resolve the method-pinned path <fullBase>.<type>.<method>.<group>.
+// Resolve the path for a per-group artifact, preferring the method-tagged form
+// but falling back to the shared copy.  Several artifacts have one physical copy
+// across methods — .res (spike times are method-independent) and, in the common
+// layout, the raw .spk (the stderiv transform is applied downstream at PCA time
+// rather than stored as a separate .spk).  So a stderiv .clu must still resolve
+// the existing .sp/.res: try <type>.<method>.<grp>, then .<type>.standard.<grp>,
+// then untagged .<type>.<grp>, returning the first that exists (or the
+// method-tagged path if none, for error reporting).
 QString resolveFeature(const QString& fullBase, const QString& type,
                        const QString& group, const QString& method) {
+    std::vector<std::string> prefer;
+    prefer.push_back(method.toStdString());
+    if (method != QLatin1String("standard"))
+        prefer.emplace_back("standard");
+    prefer.emplace_back("");                       // untagged shared copy
     const neurofileio::ResolvedInput r =
-        neurofileio::resolveInputForMethod(fullBase.toStdString(),
-            type.toStdString(), group.toInt(), method.toStdString());
+        neurofileio::resolveInput(fullBase.toStdString(), type.toStdString(),
+                                  group.toInt(), prefer);
     return QString::fromStdString(r.path);
 }
 
@@ -3566,18 +3579,22 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //                      stderiv .pca basis.  Select .pca.stderiv.N and apply
     //                      the stderiv transform to the raw waveform before
     //                      projecting onto eigenvectors.
-    // Chain-of-custody: the method is read off the artifact name; method ==
-    // "stderiv" is the single signal for both flags (a stderiv session has
-    // transformed .spk and stderiv-space .fet alike).
-    const QString realignMethod = featureMethod(origFetPath);
-    const bool spkIsTransformed = (realignMethod == QLatin1String("stderiv"));
-    const bool fetIsStderiv     = (realignMethod == QLatin1String("stderiv"));
+    // Chain-of-custody, but the two flags are INDEPENDENT (Pipeline-C): they are
+    // read off the artifacts actually resolved, not from one shared method.
+    //   spkIsTransformed — true only if the resolved .spk is itself a stderiv
+    //     file; with a shared raw .spk it is false even for a stderiv sort.
+    //   fetIsStderiv     — true if the resolved .fet is stderiv-space (the
+    //     feature space the sort was done in), which selects the stderiv .pca
+    //     basis and transforms the raw waveform before projecting.
+    const QString fetMethod = featureMethod(origFetPath);
+    const bool spkIsTransformed = (featureMethod(origSpkPath) == QLatin1String("stderiv"));
+    const bool fetIsStderiv     = (fetMethod == QLatin1String("stderiv"));
     // Kept as alias for existing legacy-named uses in this function that
     // really want the feature-space flag, not the .spk storage flag.
     const bool isStderivRealign = fetIsStderiv;
-    // Basis follows the session method (.pca.<method>.N).
+    // Basis follows the feature space (.pca at fetMethod, with shared fallback).
     const QString pcaPath = resolveFeature(
-        dir + "/" + base, "pca", grpId, realignMethod);
+        dir + "/" + base, "pca", grpId, fetMethod);
     const QString pcaDPath_ra = pcaPath;  // retained name for logging below
 
     for (const QString& p : {spkPath, resPath, fetPath}) {
@@ -5417,9 +5434,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //                      stderiv .pca basis.  Select .pca.stderiv.N and apply
     //                      the stderiv transform before projecting the raw
     //                      waveform onto the eigenvectors.
-    // Chain-of-custody: method == "stderiv" is the single signal for both.
+    // Independent flags (Pipeline-C), read off the resolved artifacts:
     const QString nudgeMethod = featureMethod(origFetPath);
-    const bool spkIsTransformed = (nudgeMethod == QLatin1String("stderiv"));
+    const bool spkIsTransformed = (featureMethod(origSpkPath) == QLatin1String("stderiv"));
     const bool fetIsStderiv     = (nudgeMethod == QLatin1String("stderiv"));
     // Legacy name retained for any downstream use that really means the
     // feature-space flag; nothing in nudge uses this directly after the
