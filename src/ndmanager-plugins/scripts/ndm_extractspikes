@@ -34,6 +34,12 @@
 #  engine binaries write untagged temp files; this wrapper owns the final
 #  tagging via ndm_method_path.
 #
+#  Shared .res: spike times are method-independent, so the first extraction run
+#  in a session owns the .res.  A later run with a different method (e.g.
+#  stderiv -> standard) reuses that existing .res to re-extract waveforms in the
+#  new domain (writing only .spk.<method>.<group>); it does not re-detect or
+#  create a second .res.  Detection runs only when no .res exists yet.
+#
 #  PARAMETERS  (YAML, under program node ndm_extractspikes)
 #  ----------
 #    method       standard | sdiff | stderiv          (default standard)
@@ -210,24 +216,40 @@ ln -s $session.fil $tmp.fil
 # Set waveform memory cap (default 2 GB if not in parameter file).
 export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
-# Re-extract mode: if every group already has a method-tagged binary .res (size
-# a multiple of 8 = int64 timestamps), skip detection and extract waveforms at
-# those exact timestamps (-R).  The .res is copied into the temp slot (never the
-# live file), so a failed run leaves the original intact and the normal rename
-# below writes back the (possibly recompacted) .res.
+# Re-extract mode: spike times are method-independent, so .res is a SHARED
+# artifact — the first extraction run in a session owns it and later runs (e.g.
+# switching method=stderiv -> standard) reuse it to extract waveforms in the new
+# domain rather than re-detecting.  find_existing_res locates that shared .res for
+# a group: the current method first (idempotent re-run), then any other method,
+# then untagged.  If every group has one, skip detection and extract at those
+# exact int64 timestamps (-R).  The .res is copied into the temp slot (never the
+# live file) and is left untouched on write-back; only the .spk.<method>.N is
+# produced.  If no .res exists yet, detection runs and creates it.
+find_existing_res() {
+	local s="$1" g="$2" m="$3" cand mm
+	cand="$s.res.$m.$g"; [ -f "$cand" ] && { printf '%s' "$cand"; return; }
+	for mm in standard stderiv sdiff; do
+		cand="$s.res.$mm.$g"; [ -f "$cand" ] && { printf '%s' "$cand"; return; }
+	done
+	cand="$s.res.$g"; [ -f "$cand" ] && { printf '%s' "$cand"; return; }   # untagged
+	printf ''
+}
+
 reExtract=1
+declare -A srcRes=()
 for group in $electrodeGroups; do
-	r=$(ndm_method_path "$session" res "$group" "$method")
-	if [ ! -f "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
+	r=$(find_existing_res "$session" "$group" "$method")
+	if [ -z "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
+	srcRes[$group]="$r"
 done
 reExtractFlag=
 if [ "$reExtract" -eq 1 ]; then
-	echo_info "    existing .res for all groups — re-extracting at those timestamps (-R; no detection)"
+	echo_info "    existing shared .res for all groups — re-extracting at those timestamps (-R; no detection, .res reused)"
 	reExtractFlag=-R
 	declare -i i=0
 	for group in $electrodeGroups; do
 		i=$i+1
-		cp "$(ndm_method_path "$session" res "$group" "$method")" $tmp.res.$i
+		cp "${srcRes[$group]}" $tmp.res.$i
 	done
 fi
 
@@ -268,6 +290,13 @@ declare -i i=0
 for group in $electrodeGroups
 do
 	i=$i+1
-	mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
+	if [ "$reExtract" -eq 1 ]; then
+		# Reused an existing shared .res — it is unchanged on disk; discard the
+		# temp copy and do NOT fork a method-tagged .res for this run.
+		rm -f $tmp.res.$i
+	else
+		# Detection ran: this .res becomes the session's shared spike times.
+		mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
+	fi
 	mv $tmp.spk.$i "$(ndm_method_path "$session" spk "$group" "$method")"
 done
