@@ -119,6 +119,29 @@ ndm_resolve()
 
 ndm_resolved_is_stderiv() { [ "$NDM_R_METHOD" = stderiv ]; }
 
+# Resolve an existing SHARED artifact across ALL methods — the single physical
+# copy that exists regardless of which method created it.  Unlike ndm_resolve
+# (method -> standard -> untagged), this also finds another non-standard method's
+# copy, e.g. a .res written by an stderiv run when resolving for a standard run.
+# Spike times (.res) and the raw .spk are shared, so the first extraction owns
+# them; later runs reuse the existing copy.
+# Priority: preferred method (if given) -> standard -> stderiv -> sdiff ->
+# untagged.  Echoes the path (empty if none); sets NDM_R_FOUND/NDM_R_METHOD;
+# returns 0 iff a file was found.
+#   args: base type group [preferred_method]
+ndm_resolve_any() {
+    local base="$1" type="$2" group="$3" pref="${4:-}" cand mm
+    NDM_R_FOUND=0; NDM_R_METHOD=""
+    for mm in "$pref" standard stderiv sdiff; do
+        [ -z "$mm" ] && continue
+        cand="$(ndm_method_path "$base" "$type" "$group" "$mm")"
+        if [ -f "$cand" ]; then echo "$cand"; NDM_R_FOUND=1; NDM_R_METHOD="$mm"; return 0; fi
+    done
+    cand="$(ndm_untagged_path "$base" "$type" "$group")"
+    if [ -f "$cand" ]; then echo "$cand"; NDM_R_FOUND=1; NDM_R_METHOD=""; return 0; fi
+    return 1
+}
+
 # ── backward-compatible names ───────────────────────────────────────────────
 # Strict method-pinned resolve (composes <base>.<type>.<method>.<group>, no
 # fallback); echoes path, rc 0 if it exists.

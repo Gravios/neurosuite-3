@@ -219,26 +219,16 @@ export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 # Re-extract mode: spike times are method-independent, so .res is a SHARED
 # artifact — the first extraction run in a session owns it and later runs (e.g.
 # switching method=stderiv -> standard) reuse it to extract waveforms in the new
-# domain rather than re-detecting.  find_existing_res locates that shared .res for
-# a group: the current method first (idempotent re-run), then any other method,
-# then untagged.  If every group has one, skip detection and extract at those
-# exact int64 timestamps (-R).  The .res is copied into the temp slot (never the
-# live file) and is left untouched on write-back; only the .spk.<method>.N is
-# produced.  If no .res exists yet, detection runs and creates it.
-find_existing_res() {
-	local s="$1" g="$2" m="$3" cand mm
-	cand="$s.res.$m.$g"; [ -f "$cand" ] && { printf '%s' "$cand"; return; }
-	for mm in standard stderiv sdiff; do
-		cand="$s.res.$mm.$g"; [ -f "$cand" ] && { printf '%s' "$cand"; return; }
-	done
-	cand="$s.res.$g"; [ -f "$cand" ] && { printf '%s' "$cand"; return; }   # untagged
-	printf ''
-}
-
+# domain rather than re-detecting.  ndm_resolve_any (ndm_custody) locates that
+# shared .res for a group: the current method first (idempotent re-run), then any
+# other method, then untagged.  If every group has one, skip detection and extract
+# at those exact int64 timestamps (-R).  The .res is copied into the temp slot
+# (never the live file) and is left untouched on write-back; only the
+# .spk.<method>.N is produced.  If no .res exists yet, detection runs and creates it.
 reExtract=1
 declare -A srcRes=()
 for group in $electrodeGroups; do
-	r=$(find_existing_res "$session" "$group" "$method")
+	r=$(ndm_resolve_any "$session" res "$group" "$method")
 	if [ -z "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
 	srcRes[$group]="$r"
 done
@@ -258,16 +248,20 @@ fi
 # internally from the noise window (-f/-B/-Z) and take the derivative order -d.
 case "$method" in
 	standard)
-		echo_info " 1. Computing thresholds (process_medianthreshold)"
-		baseline=$(tail -c +$(($startInBytes+1)) $session.fil | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
-		check_command_status process_medianthreshold
-		baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
-		echo_info "    threshold $baseline"
+		thresholdArg=
+		if [ "$reExtract" -ne 1 ]; then
+			echo_info " 1. Computing thresholds (process_medianthreshold)"
+			baseline=$(tail -c +$(($startInBytes+1)) $session.fil | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
+			check_command_status process_medianthreshold
+			baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
+			echo_info "    threshold $baseline"
+			thresholdArg="-t $baseline"
+		fi
 		echo_info " 2. Extracting spike waveforms"
 		process_extractspikes \
 			-n $nChannels -c $electrodeList \
 			-w $samplesInWaveform -p $peakSample \
-			-t $baseline \
+			$thresholdArg \
 			-l $peakSearchLength -r $refractoryPeriod \
 			$reExtractFlag $tmp
 		;;
