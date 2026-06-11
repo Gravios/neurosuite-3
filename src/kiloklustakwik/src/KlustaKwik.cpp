@@ -10,6 +10,7 @@
 #include "KK_prior.h"         // empirical prior loader
 
 #include <neurosuite/core/neurofileio.h>  // canonical variant-aware input resolution
+#include <neurosuite/core/custody.hpp>     // chain-of-custody resolver (policy owner)
 
 #include <cstdio>
 #include <cstdlib>
@@ -1305,60 +1306,35 @@ FILE *fopen_safe(const char *fname, const char *mode) {
 }
 
 // -----------------------------------------------------------------------------
-// pickInputPath — prefer canonical (.fet / .spk / .pca), fall back to stderiv
-// D variant (.fetD / .spkD / .pcaD) when canonical is absent.
+// pickInputPath — resolve a per-group input through the shared chain-of-custody
+// policy (custody.hpp), the single source of truth used by Klusters and the
+// ndmanager plugins too:
 //
-// Rationale: reextract pipelines produce D-suffixed variants for stderiv
-// sorting.  Rather than requiring callers (ndm_subcluster_unmatched,
-// ndm_reextractspikes{,_stderiv}, etc.) to symlink or rename before every
-// invocation, KlustaKwik itself now walks the two candidates and picks
-// whichever exists.
+//   .fet / .pca / .clu  (method-specific) -> strict <base>.<type>.<Method>.<elec>
+//   .res / raw .spk      (shared)          -> prefer <Method>, then standard,
+//                                             then untagged; first that exists
+//   .fil                 (session-wide)    -> <base>.fil
 //
-// If both exist simultaneously — typically because a script has symlinked
-// the D variant to the canonical name to satisfy legacy tools —  the
-// canonical path wins.  That matches the pre-existing reextract-script
-// convention.
+// The shared-.spk fallback matters for KK specifically: a stderiv run whose
+// session keeps one raw/standard .spk (Pipeline C, or a not-yet-renamed file)
+// must still find it, rather than failing on a missing .spk.stderiv.  Reads of
+// genuinely method-specific inputs (.fet/.pca) stay strict.
 //
-// If neither exists, the canonical path is returned.  The caller will then
-// invoke fopen_safe() (or open the file directly) and fail with the normal
-// "Could not open file" diagnostic, naming the canonical path that the user
-// was expecting.  Emitting a D-variant name in the error message when the
-// user's session never had a D variant would be confusing.
-//
-// Stat via fopen with mode "rb" rather than stat(2) so symlinked targets
-// are followed transparently and permission errors on the D variant fall
-// through to canonical (matching what would happen in a manual workflow).
+// Returns 0 for the standard method, 1 for a derived method (kept for the
+// diagnostic banners), or -1 when nothing was found (out = the resolved/expected
+// path, for the "Could not open file" message).
 // -----------------------------------------------------------------------------
 int pickInputPath(char *out, size_t outSize,
                   const char *base, const char *ext, int elec) {
-    // Chain-of-custody resolution: every per-group artifact is
-    // <base>.<ext>.<Method>.<elec>, with Method known from the global
-    // parameter (passed by ndm_klustakwik / the session).  There is no
-    // canonical/glued fallback — the file exists at the method path or it
-    // does not.  .fil is the one session-wide exception (method-agnostic,
-    // not per-group): it is <base>.fil.
-    std::string path;
-    bool found;
-    if (std::strcmp(ext, "fil") == 0) {
-        path = std::string(base) + ".fil";
-        FILE *f = std::fopen(path.c_str(), "rb");
-        found = (f != nullptr);
-        if (f) std::fclose(f);
-    } else {
-        neurofileio::ResolvedInput r =
-            neurofileio::resolveInputForMethod(base, ext, elec, Method);
-        path  = r.path;
-        found = r.found;
-    }
+    const neurosuite::custody::Resolved r =
+        neurosuite::custody::resolve(base, ext, elec, Method);
 
     if (outSize > 0) {
-        std::strncpy(out, path.c_str(), outSize);
+        std::strncpy(out, r.path.c_str(), outSize);
         out[outSize - 1] = '\0';
     }
-    if (!found)
-        return -1;                                  // out = expected method path
-    // 0 = standard method, 1 = a non-standard (derived) method.  Kept for the
-    // diagnostic banners that distinguish the two.
+    if (!r.found)
+        return -1;                                  // out = expected path
     return (std::strcmp(Method, "standard") == 0) ? 0 : 1;
 }
 
