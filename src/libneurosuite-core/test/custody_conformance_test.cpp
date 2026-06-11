@@ -1,67 +1,115 @@
-// custody_conformance_test.cpp — locks the chain-of-custody policy in
-// custody.hpp (classification, method parsing, anchor parse, class-based
-// resolution).  Self-contained (own main, assert-style); built when
-// NS_BUILD_TESTS=ON, run via ctest.  The bash (ndm_custody) and Python
-// (ndm_resolve_io) mirrors must satisfy the same vectors.
+// custody_conformance_test.cpp — runs the shared chain-of-custody vectors
+// (custody_vectors.tsv) against custody.hpp.  ONE table, three runners (this,
+// the Python test, and a future bash mirror) so the implementations cannot
+// drift.  Self-contained; built when NS_BUILD_TESTS=ON, run via ctest.
+//
+// Usage: custody_conformance_test <path-to-custody_vectors.tsv>
+// (CMake passes ${CMAKE_CURRENT_SOURCE_DIR}/custody_vectors.tsv).
+
 #include "neurosuite/core/custody.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <string>
+#include <vector>
+
 using namespace neurosuite::custody;
-static int fails=0;
-#define CK(cond,msg) do{ if(!(cond)){printf("FAIL: %s\n",msg);++fails;} }while(0)
 
-int main(){
-    // classify
-    CK(classify("clu")==Klass::MethodSpecific,"clu method-specific");
-    CK(classify("fet")==Klass::MethodSpecific,"fet method-specific");
-    CK(classify("col")==Klass::MethodSpecific,"col method-specific");
-    CK(classify("res")==Klass::Shared,"res shared");
-    CK(classify("spk")==Klass::Shared,"spk shared");
-    CK(classify("fil")==Klass::SessionWide,"fil session-wide");
+static int g_fail = 0;
+static int g_ran  = 0;
 
-    // methodOf
-    CK(methodOf("sess.clu.stderiv.5")=="stderiv","methodOf tagged stderiv");
-    CK(methodOf("sess.spk.standard.5")=="standard","methodOf tagged standard");
-    CK(methodOf("sess.spk.5")=="","methodOf untagged");
-    CK(methodOf("a.b.spk.5")=="","methodOf untagged dotted-base (robust)");
-    CK(methodOf("/path/to/sirotaA-jg-000005-20120312.clu.stderiv.5")=="stderiv","methodOf with dir + real name");
-    CK(methodOf("sess.fil")=="","methodOf session-wide");
+static void check(bool ok, const std::string& what) {
+    ++g_ran;
+    if (!ok) { std::printf("FAIL: %s\n", what.c_str()); ++g_fail; }
+}
 
-    // parseAnchor
-    Anchor a=parseAnchor("sess.clu.stderiv.5");
-    CK(a.ok&&a.base=="sess"&&a.type=="clu"&&a.method=="stderiv"&&a.group==5&&a.suffix=="","parseAnchor tagged");
-    Anchor b=parseAnchor("sess.clu.5");
-    CK(b.ok&&b.base=="sess"&&b.method==""&&b.group==5,"parseAnchor untagged");
-    Anchor c=parseAnchor("sess.clu.stderiv.5.drift");
-    CK(c.ok&&c.method=="stderiv"&&c.group==5&&c.suffix=="drift","parseAnchor suffix");
-    Anchor d=parseAnchor("exp.v2.clu.sdiff.8");
-    CK(d.ok&&d.base=="exp.v2"&&d.method=="sdiff"&&d.group==8,"parseAnchor dotted base");
+// Split on '\t' preserving trailing/empty fields.
+static std::vector<std::string> tabs(const std::string& line) {
+    std::vector<std::string> out;
+    std::string::size_type start = 0, tab;
+    while ((tab = line.find('\t', start)) != std::string::npos) {
+        out.push_back(line.substr(start, tab - start));
+        start = tab + 1;
+    }
+    out.push_back(line.substr(start));
+    return out;
+}
 
-    // resolve: create a shared-raw-spk stderiv layout in a temp dir
-    char tmpl[]="/tmp/custodyXXXXXX"; char* dir=mkdtemp(tmpl);
-    std::string B=std::string(dir)+"/sess";
-    auto touch=[](const std::string&p){ std::ofstream(p).put('x'); };
-    touch(B+".clu.stderiv.5"); touch(B+".fet.stderiv.5"); touch(B+".pca.stderiv.5");
-    touch(B+".spk.5"); touch(B+".res.standard.5"); touch(B+".fil");
+static std::string klassName(Klass k) {
+    switch (k) {
+        case Klass::MethodSpecific: return "MethodSpecific";
+        case Klass::Shared:         return "Shared";
+        case Klass::SessionWide:    return "SessionWide";
+    }
+    return "?";
+}
 
-    Resolved rs=resolve(B,"spk",5,"stderiv");
-    CK(rs.found&&rs.path==B+".spk.5"&&!resolvedIsStderiv(rs),"resolve spk -> shared raw, not stderiv");
-    Resolved rr=resolve(B,"res",5,"stderiv");
-    CK(rr.found&&rr.path==B+".res.standard.5","resolve res -> .standard fallback");
-    Resolved rf=resolve(B,"fet",5,"stderiv");
-    CK(rf.found&&rf.path==B+".fet.stderiv.5"&&resolvedIsStderiv(rf),"resolve fet -> strict stderiv");
-    Resolved rp=resolve(B,"pca",5,"stderiv");
-    CK(rp.found&&rp.path==B+".pca.stderiv.5","resolve pca -> strict stderiv");
-    Resolved rw=resolve(B,"fil",5,"stderiv");
-    CK(rw.found&&rw.path==B+".fil","resolve fil -> session-wide");
-    Resolved rmiss=resolve(B,"clu",9,"stderiv");
-    CK(!rmiss.found&&rmiss.path==B+".clu.stderiv.9","resolve missing method-specific -> composed path, not found");
+static std::vector<std::string> csv(const std::string& s) {
+    std::vector<std::string> out;
+    if (s.empty()) return out;
+    std::string::size_type start = 0, c;
+    while ((c = s.find(',', start)) != std::string::npos) {
+        out.push_back(s.substr(start, c - start));
+        start = c + 1;
+    }
+    out.push_back(s.substr(start));
+    return out;
+}
 
-    // tagged spk present -> picks it and is stderiv
-    touch(B+".spk.stderiv.7");
-    Resolved rt=resolve(B,"spk",7,"stderiv");
-    CK(rt.found&&rt.path==B+".spk.stderiv.7"&&resolvedIsStderiv(rt),"resolve spk -> tagged when present (stderiv)");
+static std::string baseNameOf(const std::string& p) {
+    const std::string::size_type slash = p.find_last_of("/\\");
+    return (slash == std::string::npos) ? p : p.substr(slash + 1);
+}
 
-    if(fails==0) printf("ALL CUSTODY CONFORMANCE TESTS PASS\n");
-    return fails;
+int main(int argc, char** argv) {
+    const std::string vpath = (argc > 1) ? argv[1] : "custody_vectors.tsv";
+    std::ifstream in(vpath);
+    if (!in) { std::printf("FAIL: cannot open vectors %s\n", vpath.c_str()); return 2; }
+
+    char tmpl[] = "/tmp/custodyvecXXXXXX";
+    const char* dir = mkdtemp(tmpl);
+    if (!dir) { std::printf("FAIL: mkdtemp\n"); return 2; }
+    const std::string base = std::string(dir) + "/sess";
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        const std::vector<std::string> f = tabs(line);
+        const std::string& kind = f[0];
+
+        if (kind == "classify") {
+            check(klassName(classify(f[1])) == f[2],
+                  "classify " + f[1] + " -> " + f[2]);
+        } else if (kind == "method_of") {
+            check(methodOf(f[1]) == f[2],
+                  "method_of " + f[1] + " -> '" + f[2] + "'");
+        } else if (kind == "parse_anchor") {
+            const Anchor a = parseAnchor(f[1]);
+            const bool wantOk = (f[7] == "1");
+            bool ok = (a.ok == wantOk);
+            if (wantOk) {
+                ok = ok && a.base == f[2] && a.type == f[3] && a.method == f[4]
+                        && std::to_string(a.group) == f[5] && a.suffix == f[6];
+            }
+            check(ok, "parse_anchor " + f[1]);
+        } else if (kind == "resolve") {
+            for (const std::string& suf : csv(f[1]))
+                std::ofstream(base + "." + suf).put('x');
+            const int group = std::atoi(f[3].c_str());
+            const Resolved r = resolve(base, f[2], group, f[4]);
+            const bool wantFound = (f[6] == "1");
+            check(baseNameOf(r.path) == f[5] && r.found == wantFound,
+                  "resolve " + f[2] + "/" + f[3] + "/" + f[4]
+                      + " -> " + f[5] + " (found=" + f[6] + ")");
+            for (const std::string& suf : csv(f[1]))
+                std::remove((base + "." + suf).c_str());
+        } else {
+            std::printf("FAIL: unknown vector kind '%s'\n", kind.c_str());
+            ++g_fail;
+        }
+    }
+
+    std::printf("custody conformance: %d checks, %d failed\n", g_ran, g_fail);
+    if (g_fail == 0) std::printf("ALL CUSTODY CONFORMANCE TESTS PASS\n");
+    return g_fail == 0 ? 0 : 1;
 }
