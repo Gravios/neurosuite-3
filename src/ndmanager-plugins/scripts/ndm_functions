@@ -1481,64 +1481,9 @@ ndm_parse_method()
 }
 
 # ── Mandatory-method resolution (chain-of-custody naming) ───────────────────
-# Every per-group artifact is <base>.<type>.<method>.<group>, for type in
-# {res,spk,clu,fet,pca} and method in {standard,stderiv,sdiff,...}.  The method
-# is always known (from the .clu anchor or the caller), so resolution composes
-# the path directly — no variant guessing, no legacy/canonical fallback.  These
-# supersede ndm_resolve_input(), which stays only until every caller is moved.
-# Mirrors neurofileio::{methodPath,resolveInputForMethod,methodFromPath} (C++).
-
-# Echo <base>.<type>.<method>.<group>.   args: base type group method
-ndm_method_path()
-{
-    echo "${1}.${2}.${4}.${3}"
-}
-
-# Resolve a method-pinned input.  Echoes the composed path; returns 0 if it
-# exists, 1 if missing (path still echoed, for error messages).
-# args: base type group method
-ndm_resolve_method()
-{
-    local p; p="$(ndm_method_path "$1" "$2" "$3" "$4")"
-    echo "$p"
-    [ -f "$p" ]
-}
-
-# Resolve a SHARED per-group input (.res, raw .spk): one physical copy is shared
-# across methods.  Prefer the method-tagged path, then .<type>.standard.<group>,
-# then untagged .<type>.<group>.  Echoes the first that exists (or the method
-# path if none, for error messages); returns 0 if a file was found.
-# args: base type group method
-ndm_resolve_shared()
-{
-    local base="$1" type="$2" group="$3" method="$4" p
-    for variant in "$method" standard ""; do
-        if [ -n "$variant" ]; then
-            p="${base}.${type}.${variant}.${group}"
-        else
-            p="${base}.${type}.${group}"
-        fi
-        if [ -f "$p" ]; then echo "$p"; return 0; fi
-    done
-    ndm_method_path "$base" "$type" "$group" "$method"   # none found; method path
-    return 1
-}
-
-# Parse the method token from a per-group filename
-# <base>.<type>.<method>.<group> (base may contain dots).  Echoes the method,
-# or empty string (rc 1) if the name is not a tagged per-group file.
-# args: path
-ndm_method_from_path()
-{
-    local name="${1##*/}"
-    local grp="${name##*.}"
-    case "$grp" in (''|*[!0-9]*) echo ""; return 1 ;; esac
-    local rest="${name%.*}"        # drop .group  -> base.type.method
-    # A tagged name is base.type.method.group; with .group dropped, rest must
-    # still hold base.type.method (>=3 fields, i.e. >=2 dots).  Anything less
-    # (e.g. legacy base.type.group) is not a tagged per-group file.
-    case "$rest" in
-        (*.*.*) echo "${rest##*.}"; return 0 ;;   # method = last field of rest
-        (*)     echo ""; return 1 ;;
-    esac
-}
+# ── Chain-of-custody file relationships ─────────────────────────────────────
+# The policy (classify / method_path / method_of / parse_anchor / resolve and
+# the ndm_resolve_method / ndm_resolve_shared / ndm_method_from_path shims) lives
+# in ndm_custody — the single bash home, mirroring custody.hpp (C++) and
+# ndm_resolve_io.py (Python), kept honest by custody_vectors.tsv.
+source ndm_custody
