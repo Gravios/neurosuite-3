@@ -342,6 +342,24 @@ void KlustersApp::createMenus()
     mGroupeClusters->setShortcut(Qt::Key_G);
     connect(mGroupeClusters, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::groupClusters));
 
+    //Time-chunk curation: step through the session one chunk at a time, with
+    //only the chunk's clusters active (masking) so merge decisions are local.
+    actionMenu->addSeparator();
+    mChunkMode = actionMenu->addAction(tr("Time-&Chunk Mode"));
+    mChunkMode->setCheckable(true);
+    connect(mChunkMode, &QAction::toggled, this, &KlustersApp::slotChunkModeToggled);
+
+    mPrevChunk = actionMenu->addAction(tr("Previous Chunk"));
+    mPrevChunk->setShortcut(Qt::Key_PageUp);
+    connect(mPrevChunk, &QAction::triggered, this, &KlustersApp::slotPrevChunk);
+
+    mNextChunk = actionMenu->addAction(tr("Next Chunk"));
+    mNextChunk->setShortcut(Qt::Key_PageDown);
+    connect(mNextChunk, &QAction::triggered, this, &KlustersApp::slotNextChunk);
+
+    mPrevChunk->setEnabled(false);
+    mNextChunk->setEnabled(false);
+
     // Patch 0069 — Auto-Merge action.
     // Uses the same template-cross-correlation mechanism as KKE; settings
     // come from the Auto-Merge preferences tab (patch 0068).  Shortcut Shift+G
@@ -3187,6 +3205,61 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         KlustersView* view = activeView();
         doc->shownClustersUpdate(selectedClusters,*view);
     }
+}
+
+void KlustersApp::slotChunkModeToggled(bool on){
+    if(!doc){
+        mChunkMode->setChecked(false);
+        return;
+    }
+    if(on){
+        bool ok = false;
+        const double minutes = QInputDialog::getDouble(
+            this, tr("Time-Chunk Mode"), tr("Chunk length (minutes):"),
+            12.0, 0.1, 100000.0, 1, &ok);
+        if(!ok){
+            mChunkMode->setChecked(false);
+            return;
+        }
+        doc->enterChunkMode(minutes);
+    } else {
+        doc->exitChunkMode();
+    }
+    updateChunkStatus();
+}
+
+void KlustersApp::slotNextChunk(){
+    if(!doc || !doc->inChunkMode())
+        return;
+    doc->nextChunk();
+    updateChunkStatus();
+}
+
+void KlustersApp::slotPrevChunk(){
+    if(!doc || !doc->inChunkMode())
+        return;
+    doc->prevChunk();
+    updateChunkStatus();
+}
+
+void KlustersApp::updateChunkStatus(){
+    if(!doc || !doc->inChunkMode()){
+        mPrevChunk->setEnabled(false);
+        mNextChunk->setEnabled(false);
+        return;
+    }
+    const int c = doc->currentChunk();
+    const int n = doc->chunkCount();
+    long t0 = 0, t1 = 0;
+    doc->chunkTimeWindow(c, t0, t1);
+    const double fs = doc->data().getSamplingRate();
+    const double t0min = (fs > 0.0) ? (static_cast<double>(t0) / fs / 60.0) : 0.0;
+    const double t1min = (fs > 0.0) ? (static_cast<double>(t1) / fs / 60.0) : 0.0;
+    mPrevChunk->setEnabled(c > 0);
+    mNextChunk->setEnabled(c + 1 < n);
+    statusBar()->showMessage(tr("Chunk %1/%2  [%3 - %4 min]")
+                                 .arg(c + 1).arg(n)
+                                 .arg(t0min, 0, 'f', 1).arg(t1min, 0, 'f', 1));
 }
 
 void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
