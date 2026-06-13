@@ -1121,6 +1121,74 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);
 }
 
+// ── cluster masking ─────────────────────────────────────────────────────────
+void KlustersDoc::maskClusters(const QList<int>& clustersToMask){
+    for(int id : clustersToMask)
+        maskedClusters.insert(id);
+    applyMask();
+}
+
+void KlustersDoc::unmaskClusters(const QList<int>& clustersToUnmask){
+    for(int id : clustersToUnmask)
+        maskedClusters.remove(id);
+    applyMask();
+}
+
+void KlustersDoc::setMaskKeeping(const QList<int>& clustersToKeep){
+    const QSet<int> keep(clustersToKeep.constBegin(),clustersToKeep.constEnd());
+    maskedClusters.clear();
+    const QList<dataType> all = clusteringData->clusterIds();
+    for(dataType id : all){
+        const int cid = static_cast<int>(id);
+        if(!keep.contains(cid))
+            maskedClusters.insert(cid);
+    }
+    applyMask();
+}
+
+void KlustersDoc::clearMask(){
+    if(maskedClusters.isEmpty())
+        return;
+    maskedClusters.clear();
+    applyMask();
+}
+
+QList<int> KlustersDoc::maskedClusterIds() const{
+    return maskedClusters.values();
+}
+
+QList<int> KlustersDoc::unmaskedClusterIds() const{
+    QList<int> out;
+    const QList<dataType> all = clusteringData->clusterIds();
+    out.reserve(all.size());
+    for(dataType id : all){
+        const int cid = static_cast<int>(id);
+        if(!maskedClusters.contains(cid))
+            out.append(cid);
+    }
+    return out;
+}
+
+void KlustersDoc::applyMask(){
+    //Palette: rebuild so the active list omits masked clusters.
+    clusterPalette.updateClusterList();
+
+    //Views: drop any masked cluster that is currently shown (foreground only
+    //unmasked clusters).  We do NOT force-show the rest — focusing the view on
+    //a subset (e.g. a time chunk) is the caller's decision via shownClustersUpdate.
+    KlustersView* activeView = app() ? app()->activeView() : nullptr;
+    if(activeView){
+        const QList<int> shown = activeView->clusters();
+        QList<int> kept;
+        kept.reserve(shown.size());
+        for(int id : shown)
+            if(!maskedClusters.contains(id))
+                kept.append(id);
+        if(kept.size() != shown.size())
+            shownClustersUpdate(kept);
+    }
+}
+
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,const QList<int>& previousSelectedClusterPairs){
     //Get the clusters currently selected
     QList<int> currentShownClusters = clusterPalette.selectedClusters();
