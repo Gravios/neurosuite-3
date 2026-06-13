@@ -1216,6 +1216,23 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
 }
 
 
+QList<int> Data::clustersInTimeWindow(long t0, long t1, int minSpikes) const {
+    QMutexLocker lk(&mutex);
+    QMap<int,int> count;                              // cluster id -> #spikes in [t0,t1]
+    const int td = nbDimensions;                      // timestamp = last feature dimension
+    const long nSpk = static_cast<long>(nbSpikes);
+    for (long s = 1; s <= nSpk; ++s) {
+        const long t = static_cast<long>(features(static_cast<int>((*spikesByCluster)(1, s)), td));
+        if (t >= t0 && t <= t1)
+            count[static_cast<int>((*spikesByCluster)(2, s))] += 1;
+    }
+    QList<int> out;
+    for (QMap<int,int>::const_iterator it = count.constBegin(); it != count.constEnd(); ++it)
+        if (it.value() >= minSpikes)
+            out.append(it.key());
+    return out;
+}
+
 dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
     //Set the new cluster number to the biggest existing number plus one
     dataType newClusterId = nextFreeClusterId();

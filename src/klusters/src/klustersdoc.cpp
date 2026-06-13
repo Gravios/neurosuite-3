@@ -1189,6 +1189,75 @@ void KlustersDoc::applyMask(){
     }
 }
 
+// ── time-chunk curation ─────────────────────────────────────────────────────
+void KlustersDoc::enterChunkMode(double chunkMinutes, double overlapMinutes, int minSpikes){
+    const double fs = clusteringData->getSamplingRate();   // Hz (samples per second)
+    if(chunkMinutes <= 0.0 || fs <= 0.0)
+        return;
+    const double samplesPerMinute = 60.0 * fs;
+    chunkLenSamples     = static_cast<long>(chunkMinutes   * samplesPerMinute);
+    chunkOverlapSamples = static_cast<long>(overlapMinutes * samplesPerMinute);
+    chunkMinSpikes      = (minSpikes < 1) ? 1 : minSpikes;
+    sessionMaxSamples   = clusteringData->maxTimeInRecordingUnits();
+    nbChunks = (chunkLenSamples > 0)
+               ? static_cast<int>((sessionMaxSamples + chunkLenSamples - 1) / chunkLenSamples)
+               : 0;
+    if(nbChunks < 1)
+        nbChunks = 1;
+    chunkMode = true;
+    currentChunkIndex = 0;
+    applyChunkWindow();
+}
+
+void KlustersDoc::exitChunkMode(){
+    if(!chunkMode)
+        return;
+    chunkMode = false;
+    clearMask();
+}
+
+bool KlustersDoc::nextChunk(){
+    if(!chunkMode || currentChunkIndex + 1 >= nbChunks)
+        return false;
+    ++currentChunkIndex;
+    applyChunkWindow();
+    return true;
+}
+
+bool KlustersDoc::prevChunk(){
+    if(!chunkMode || currentChunkIndex <= 0)
+        return false;
+    --currentChunkIndex;
+    applyChunkWindow();
+    return true;
+}
+
+void KlustersDoc::gotoChunk(int index){
+    if(!chunkMode)
+        return;
+    if(index < 0)
+        index = 0;
+    if(index > nbChunks - 1)
+        index = nbChunks - 1;
+    currentChunkIndex = index;
+    applyChunkWindow();
+}
+
+void KlustersDoc::chunkTimeWindow(int index, long& t0, long& t1) const{
+    t0 = static_cast<long>(index) * chunkLenSamples - chunkOverlapSamples;
+    t1 = static_cast<long>(index + 1) * chunkLenSamples + chunkOverlapSamples;
+    if(t0 < 0)
+        t0 = 0;
+}
+
+void KlustersDoc::applyChunkWindow(){
+    long t0, t1;
+    chunkTimeWindow(currentChunkIndex, t0, t1);
+    const QList<int> present = clusteringData->clustersInTimeWindow(t0, t1, chunkMinSpikes);
+    setMaskKeeping(present);        // mask everything not in this chunk (rebuilds palette, drops masked from view)
+    shownClustersUpdate(present);   // foreground the chunk's clusters
+}
+
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,const QList<int>& previousSelectedClusterPairs){
     //Get the clusters currently selected
     QList<int> currentShownClusters = clusterPalette.selectedClusters();

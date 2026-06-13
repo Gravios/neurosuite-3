@@ -230,6 +230,30 @@ public:
     QList<int> maskedClusterIds() const;
     /**Currently unmasked (active) cluster ids.*/
     QList<int> unmaskedClusterIds() const;
+
+    // ── time-chunk curation ──────────────────────────────────────────────
+    //  Splits the session into uniform chunkMinutes windows (matching
+    //  fiber-session) and, for each chunk, masks every cluster except those
+    //  present in the chunk and foregrounds the chunk's clusters — so curation
+    //  decisions are made on one chunk's clusters at a time.
+    /**Enter chunk mode with uniform @p chunkMinutes windows.  @p overlapMinutes
+     * extends each window on both sides; a cluster counts as present in a chunk
+     * if it has >= @p minSpikes spikes inside the window.*/
+    void enterChunkMode(double chunkMinutes, double overlapMinutes = 0.0, int minSpikes = 1);
+    /**Leave chunk mode and clear the mask (all clusters active again).*/
+    void exitChunkMode();
+    /**True iff chunk mode is active.*/
+    bool inChunkMode() const {return chunkMode;}
+    /**Current chunk index (0-based) and the total number of chunks.*/
+    int currentChunk() const {return currentChunkIndex;}
+    int chunkCount() const {return nbChunks;}
+    /**Step to the next / previous chunk; returns false at the ends.*/
+    bool nextChunk();
+    bool prevChunk();
+    /**Jump to chunk @p index (clamped to [0, chunkCount()-1]).*/
+    void gotoChunk(int index);
+    /**[t0,t1] of chunk @p index in recording units (samples).*/
+    void chunkTimeWindow(int index, long& t0, long& t1) const;
     
     /**Manages the grouping of clusters.
     * @param clustersToGroup list of clusters to be grouped.
@@ -926,6 +950,18 @@ private:
     /** Re-apply the current mask: rebuild the palette list (which omits masked
      *  clusters) and drop any masked cluster from the active view's shown set. */
     void applyMask();
+
+    // time-chunk curation state (see enterChunkMode)
+    bool chunkMode = false;
+    long chunkLenSamples = 0;        // chunk length in recording units (samples)
+    long chunkOverlapSamples = 0;    // per-side window extension
+    long sessionMaxSamples = 0;      // largest spike timestamp
+    int  currentChunkIndex = 0;
+    int  nbChunks = 0;
+    int  chunkMinSpikes = 1;         // min spikes for a cluster to count as present
+    /** Apply the current chunk window: mask every cluster not present in it and
+     *  foreground the chunk's clusters. */
+    void applyChunkWindow();
 
     /** Common UI-update tail for any operation that produces ONE new cluster
      *  derived from existing ones (createNewCluster, dipSplitApply, …).
