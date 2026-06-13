@@ -639,6 +639,14 @@ public:
         return static_cast<long>(floor(0.5 + maxTimeInS));
     }
 
+    /** Cluster ids with at least @p minSpikes spikes whose timestamp (the last
+     *  feature dimension, in recording units / samples) falls within [t0,t1].
+     *  Backs time-chunk curation: the set of clusters present in one chunk. */
+    QList<int> clustersInTimeWindow(long t0, long t1, int minSpikes = 1) const;
+
+    /** Largest spike timestamp in recording units (samples). */
+    long maxTimeInRecordingUnits() const {return static_cast<long>(maxDimension(nbDimensions));}
+
 
     /**Gives information on how the data were recorded. True if the data where recording using a 12 or 16 bits recording system which
   * gives data coded on 2 bytes, false otherwise, (the recording is then assume to be 32 bits
