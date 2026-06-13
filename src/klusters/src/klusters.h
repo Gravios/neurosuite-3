@@ -158,6 +158,13 @@ public Q_SLOTS:
     /**Shows or hide the parameters boxes base on the user settings.*/
     void slotUpdateParameterBar();
 
+    /**Toggles time-chunk curation mode (prompts for chunk length on enable).*/
+    void slotChunkModeToggled(bool on);
+    /**Step to the next time chunk.*/
+    void slotNextChunk();
+    /**Step to the previous time chunk.*/
+    void slotPrevChunk();
+
     /** Executes the preferences dialog.*/
     void executePreferencesDlg();
 
@@ -725,6 +732,11 @@ private:
     QAction* newCrosscorrelationDisplay;
     QAction* newOverViewDisplay;
     QAction* newGroupingAssistantDisplay;
+    //time-chunk curation actions (see slotChunkModeToggled)
+    QAction* mChunkMode;
+    QAction* mNextChunk;
+    QAction* mPrevChunk;
+    void updateChunkStatus();
     QAction* viewActionBar;
     QAction* viewToolBar;
     QAction* viewParameterBar;
