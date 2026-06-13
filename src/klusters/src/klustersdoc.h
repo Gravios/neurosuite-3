@@ -39,6 +39,7 @@
 
 
 #include <QList>
+#include <QSet>
 #include <QFile>
 #include <QEvent>
 #include <QDebug>
@@ -203,6 +204,32 @@ public:
     * @param clustersToHide list of clusters to not show.
     */
     void showAllClustersExcept(const QList<int>& clustersToHide);
+
+    // ── cluster masking ──────────────────────────────────────────────────
+    //  Masking focuses curation on a SUBSET of clusters.  Masked clusters are
+    //  removed from the active cluster list (and dropped from the view
+    //  foreground) but stay in the data model: their spikes and — crucially —
+    //  their ids remain in clusterInfoMap, so global id allocation
+    //  (nextFreeClusterId / highestClusterId) still skips them and merges /
+    //  splits keep producing globally-unique ids that never collide with a
+    //  masked cluster.  Time-chunk curation is just
+    //  setMaskKeeping(clustersInTimeWindow(chunk)).
+    /**Masks @p clustersToMask (removes them from the active list/view fg).*/
+    void maskClusters(const QList<int>& clustersToMask);
+    /**Unmasks @p clustersToUnmask (returns them to the active set).*/
+    void unmaskClusters(const QList<int>& clustersToUnmask);
+    /**Masks every cluster EXCEPT those in @p clustersToKeep (the focus set).*/
+    void setMaskKeeping(const QList<int>& clustersToKeep);
+    /**Clears the mask: all clusters become active again.*/
+    void clearMask();
+    /**True iff @p clusterId is currently masked.*/
+    bool isMasked(int clusterId) const {return maskedClusters.contains(clusterId);}
+    /**True iff any cluster is currently masked.*/
+    bool hasMask() const {return !maskedClusters.isEmpty();}
+    /**Currently masked cluster ids.*/
+    QList<int> maskedClusterIds() const;
+    /**Currently unmasked (active) cluster ids.*/
+    QList<int> unmaskedClusterIds() const;
     
     /**Manages the grouping of clusters.
     * @param clustersToGroup list of clusters to be grouped.
@@ -891,6 +918,14 @@ public Q_SLOTS:
     void launchAutoSave();
 
 private:
+
+    /** Cluster ids currently masked (hidden from the active list and the view
+     *  foreground).  Stored here, not in Data, so the data model and global id
+     *  allocation stay untouched — masking is a pure curation/view concern. */
+    QSet<int> maskedClusters;
+    /** Re-apply the current mask: rebuild the palette list (which omits masked
+     *  clusters) and drop any masked cluster from the active view's shown set. */
+    void applyMask();
 
     /** Common UI-update tail for any operation that produces ONE new cluster
      *  derived from existing ones (createNewCluster, dipSplitApply, …).
