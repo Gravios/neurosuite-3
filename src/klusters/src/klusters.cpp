@@ -431,6 +431,23 @@ void KlustersApp::createMenus()
     connect(mSortClustersBySpikeCount,&QAction::triggered,
             this,&KlustersApp::slotSortClustersBySpikeCount);
 
+    // Sort by residual, gated by spike count.  Partitions clusters into a
+    // high-count block (>= a prompted threshold) and a low-count block, places
+    // the high block first (upper-left of the matrix / low ids) and the low
+    // block last (lower-right), and seriates each block by residual-matrix
+    // similarity.  Needs a computed residual matrix, so it follows the matrix-
+    // availability gate (enabled when a ResidualMatrixView is created).  Undoable.
+    mSortByResidualGated = actionMenu->addAction(tr("Sort by Residual (&Gated by Count)"));
+    mSortByResidualGated->setToolTip(
+        tr("Renumber clusters using the residual matrix, gated by spike count.\n"
+           "Clusters with >= the prompted threshold go to the upper-left (low\n"
+           "ids), the rest to the lower-right; each block is seriated by\n"
+           "residual similarity.  Requires a computed residual matrix.\n"
+           "Clusters 0/1 are preserved at the start.  Undoable with Ctrl+Z."));
+    mSortByResidualGated->setEnabled(false);
+    connect(mSortByResidualGated,&QAction::triggered,
+            this,&KlustersApp::slotSortByResidualGated);
+
     actionMenu->addSeparator();
 
     mReCluster = actionMenu->addAction(tr("Re&cluster"));
@@ -3508,6 +3525,173 @@ void KlustersApp::slotSortClustersBySpikeCount()
 }
 
 
+// ---------------------------------------------------------------------------
+// slotSortByResidualGated
+//
+// Reorder the non-special clusters using the residual matrix, gated by spike
+// count.  Clusters with >= a prompted threshold form the "high" block placed
+// first (upper-left of the matrix / low ids); the rest form the "low" block
+// placed last (lower-right).  Each block is seriated by residual SIMILARITY so
+// alike clusters sit adjacent.  The matrix cell is a DISTANCE (low = similar)
+// and asymmetric, so the seriation uses the symmetrised distance
+//   d(i,j) = (M(i,j)+M(j,i))/2,  similarity s = dmax - d,
+// then single-linkage agglomeration (same as the Shift+S reorder) gives the
+// leaf order.  All undo / log / palette / view bookkeeping is handled inside
+// reorderClustersByPermutation, so this is one undoable step.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortByResidualGated()
+{
+    if (!mSortByResidualGated->isEnabled()) return;
+    KlustersView* view = activeView();
+    if (!doc || !view) return;
+
+    ResidualMatrixView* rmv = view->findChild<ResidualMatrixView*>();
+    if (!rmv || !rmv->hasComputedData()) {
+        QMessageBox::information(this, tr("Sort by Residual (gated)"),
+            tr("No computed residual matrix in the active display.\n"
+               "Add one via Actions \u2192 New Residual Matrix Display, then\n"
+               "press U to compute it, and try again."));
+        return;
+    }
+
+    // If the matrix is stale, recompute then re-invoke once it is fresh — the
+    // same one-shot pattern as the Shift+S reorder.  QPointer guards against
+    // the view being destroyed while we wait; the connection self-disconnects.
+    if (rmv->isOutOfDate()) {
+        statusBar()->showMessage(
+            tr("Sort by Residual: matrix out of date; recomputing then sorting\u2026"), 3000);
+        QPointer<ResidualMatrixView> guarded(rmv);
+        auto* conn = new QMetaObject::Connection;
+        *conn = connect(rmv, &ResidualMatrixView::matrixUpdated, this,
+            [this, conn, guarded]() {
+                QObject::disconnect(*conn); delete conn;
+                if (guarded) slotSortByResidualGated();
+            });
+        view->updateResidualMatrix();
+        return;
+    }
+
+    const Array<double>* M = rmv->matrixData();
+    const QList<int>     cids = rmv->matrixClusterList();
+    const int N = cids.size();
+    if (!M || N < 2) {
+        slotStatusMsg(tr("Sort by Residual: matrix too small to sort."));
+        return;
+    }
+
+    // Snapshot spike counts for the matrix clusters; default threshold = median.
+    QHash<int, qint64> spikeCount;
+    spikeCount.reserve(N);
+    QList<qint64> counts;
+    for (int cid : cids) {
+        const qint64 c = static_cast<qint64>(doc->data().nbOfSpikes(cid));
+        spikeCount.insert(cid, c);
+        if (cid >= 2) counts.append(c);
+    }
+    if (counts.size() < 2) {
+        slotStatusMsg(tr("Sort by Residual: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+    std::sort(counts.begin(), counts.end());
+    const int defThr = static_cast<int>(std::min<qint64>(
+        counts[counts.size()/2], static_cast<qint64>(std::numeric_limits<int>::max())));
+
+    bool ok = false;
+    const int thr = QInputDialog::getInt(
+        this, tr("Sort by Residual (gated by count)"),
+        tr("Spike-count threshold.\n\nClusters with \u2265 this many spikes go to the\n"
+           "upper-left (low ids); the rest to the lower-right.  Each block is\n"
+           "seriated by residual similarity."),
+        defThr, 0, std::numeric_limits<int>::max(), 1, &ok);
+    if (!ok) return;
+
+    // Partition matrix indices (0-based) by spike count, skipping specials 0/1
+    // (reorderClustersByPermutation preserves them at the front).
+    QVector<int> hi, lo;
+    for (int i = 0; i < N; ++i) {
+        const int cid = cids[i];
+        if (cid < 2) continue;
+        if (spikeCount.value(cid) >= thr) hi.append(i); else lo.append(i);
+    }
+    if (hi.size() + lo.size() < 2) {
+        slotStatusMsg(tr("Sort by Residual: nothing to reorder."));
+        return;
+    }
+
+    // Seriate one block of matrix indices by single-linkage on residual
+    // similarity; returns the block's cluster ids in leaf order.
+    auto seriate = [&](const QVector<int>& blk) -> QList<int> {
+        const int n = blk.size();
+        QList<int> order;
+        if (n <= 0) return order;
+        if (n <= 2) { for (int x : blk) order.append(cids[x]); return order; }
+
+        std::vector<double> D(static_cast<size_t>(n) * n, 0.0);
+        double dmax = 0.0;
+        for (int a = 0; a < n; ++a)
+            for (int b = a + 1; b < n; ++b) {
+                const double d = 0.5 * ((*M)(blk[a]+1, blk[b]+1) + (*M)(blk[b]+1, blk[a]+1));
+                D[static_cast<size_t>(a)*n + b] = d;
+                D[static_cast<size_t>(b)*n + a] = d;
+                dmax = std::max(dmax, d);
+            }
+        // similarity (higher = closer); diagonal 0
+        std::vector<double> S(static_cast<size_t>(n) * n, 0.0);
+        for (int a = 0; a < n; ++a)
+            for (int b = 0; b < n; ++b)
+                S[static_cast<size_t>(a)*n + b] = (a == b) ? 0.0 : (dmax - D[static_cast<size_t>(a)*n + b]);
+
+        // Single-linkage agglomeration -> leaf order (CPU loop; block sizes
+        // are modest after the count gate).  Mirrors the Shift+S CPU path.
+        std::vector<bool> alive(n, true);
+        std::vector<std::vector<int>> leaves(n);
+        for (int i = 0; i < n; ++i) leaves[i].push_back(i);
+        for (int step = 0; step < n - 1; ++step) {
+            double best = -std::numeric_limits<double>::infinity();
+            int bi = -1, bj = -1;
+            for (int i = 0; i < n; ++i) {
+                if (!alive[i]) continue;
+                for (int j = i + 1; j < n; ++j) {
+                    if (!alive[j]) continue;
+                    const double s = S[static_cast<size_t>(i)*n + j];
+                    if (s > best) { best = s; bi = i; bj = j; }
+                }
+            }
+            if (bi < 0 || bj < 0) break;
+            leaves[bi].insert(leaves[bi].end(), leaves[bj].begin(), leaves[bj].end());
+            alive[bj] = false;
+            for (int k = 0; k < n; ++k) {
+                if (!alive[k] || k == bi) continue;
+                const double m = std::max(S[static_cast<size_t>(bi)*n + k],
+                                          S[static_cast<size_t>(bj)*n + k]);
+                S[static_cast<size_t>(bi)*n + k] = m;
+                S[static_cast<size_t>(k)*n + bi] = m;
+            }
+        }
+        std::vector<int> leafIdx;
+        leafIdx.reserve(n);
+        for (int i = 0; i < n; ++i)
+            if (alive[i]) for (int leaf : leaves[i]) leafIdx.push_back(leaf);
+        if (static_cast<int>(leafIdx.size()) != n) {     // belt and braces
+            leafIdx.clear();
+            for (int i = 0; i < n; ++i) leafIdx.push_back(i);
+        }
+        for (int leaf : leafIdx) order.append(cids[blk[leaf]]);
+        return order;
+    };
+
+    QList<int> targetOrder = seriate(hi);
+    targetOrder += seriate(lo);
+
+    const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by Residual: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by residual (%2 high / %3 low, threshold %4 spikes).")
+            .arg(nRenamed).arg(hi.size()).arg(lo.size()).arg(thr));
+}
+
+
 void KlustersApp::slotImmediateSelection(){
     //Disable the update action (see the klustersui.rc file)
     slotStateChanged("immediateSelectionState");
@@ -5092,6 +5276,8 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             m_lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
             if (mReorderClustersBySimilarity)
                 mReorderClustersBySimilarity->setEnabled(true);
+            if (mSortByResidualGated)
+                mSortByResidualGated->setEnabled(true);
             if (auto* rmv = qobject_cast<ResidualMatrixView*>(view)) {
                 connect(rmv, &ResidualMatrixView::viewInteracted,
                         this, &KlustersApp::slotResidualMatrixInteracted,
