@@ -30,6 +30,8 @@ set(klusters_SRCS
     errormatrixview.cpp
     templatematrixthread.cpp
     templatematrixview.cpp
+    residualmatrixthread.cpp
+    residualmatrixview.cpp
     pairxcorrthread.cpp
     eventsprovider.cpp
     groupingassistant.cpp
