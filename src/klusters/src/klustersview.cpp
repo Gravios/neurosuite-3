@@ -41,6 +41,7 @@
 #include "waveformview.h"
 #include "errormatrixview.h"
 #include "templatematrixview.h"
+#include "residualmatrixview.h"
 #include "tracewidget.h"
 #include "correlationview.h"
 #include "viewwidget.h"
@@ -55,7 +56,8 @@ const QString KlustersView::DisplayTypeNames[]={QObject::tr("Cluster Display"),
                                                 QObject::tr("Grouping Assistant Display"),
                                                 QObject::tr("Error Matrix Display"),
                                                 QObject::tr("Trace Display"),
-                                                QObject::tr("Template Matrix Display")};
+                                                QObject::tr("Template Matrix Display"),
+                                                QObject::tr("Residual Matrix Display")};
 
 
 KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColor& backgroundColor,int initialDimensionX,int initialDimensionY,
@@ -512,6 +514,14 @@ void KlustersView::stopAllViewThreads()
         findChildren<TemplateMatrixView*>();
     for (TemplateMatrixView* tmv : tmvs)
         tmv->stopRunningThreadsSync();
+
+    // ResidualMatrixView is likewise a plain QWidget dock child (not a
+    // ViewWidget), and its ResidualMatrixThread fopen/freads .spk directly,
+    // so it needs the same synchronous quiesce before .spk.pending writes.
+    const QList<ResidualMatrixView*> rmvs =
+        findChildren<ResidualMatrixView*>();
+    for (ResidualMatrixView* rmv : rmvs)
+        rmv->stopRunningThreadsSync();
 }
 
 void KlustersView::invalidateClusterDisplay(int clusterId)
@@ -691,6 +701,10 @@ void KlustersView::errorMatrixDockClosed(QObject* errorMatrixView){
 
 void KlustersView::templateMatrixDockClosed(QObject*){
     isThereTemplateMatrixView = false;
+}
+
+void KlustersView::residualMatrixDockClosed(QObject*){
+    isThereResidualMatrixView = false;
 }
 
 void KlustersView::updateTemplateMatrixSliderRange(){
@@ -899,6 +913,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
     QDockWidget* correlations;
     QDockWidget* errorMatrix;
     QDockWidget* templateMatrix;
+    QDockWidget* residualMatrix;
     ViewWidget* clusterView;
     ViewWidget* waveformView;
     ViewWidget* correlationView;
@@ -1049,6 +1064,27 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
             m_overviewErrorMatrixDock->raise();
         }
         setConnections(TEMPLATE_MATRIX,qobject_cast<TemplateMatrixView*>(templateMatrix->widget()),templateMatrix);
+        break;
+    case RESIDUAL_MATRIX:
+        newViewType = true;
+        isThereResidualMatrixView = true;
+        residualMatrix = new QDockWidget(tr("Residual Matrix"));
+        residualMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
+        residualMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
+        residualMatrix->setWidget(new ResidualMatrixView(doc,*this,backgroundColor,statusBar,residualMatrix));
+        residualMatrix->installEventFilter(this);
+        addDockWidget(Qt::RightDockWidgetArea,residualMatrix);
+        m_overviewResidualMatrixDock = residualMatrix;
+        // Tabify with whichever matrix dock already exists so the three share
+        // one pane on the right; keep Error (or Template) as the front tab.
+        if (m_overviewErrorMatrixDock) {
+            tabifyDockWidget(m_overviewErrorMatrixDock, residualMatrix);
+            m_overviewErrorMatrixDock->raise();
+        } else if (m_overviewTemplateMatrixDock) {
+            tabifyDockWidget(m_overviewTemplateMatrixDock, residualMatrix);
+            m_overviewTemplateMatrixDock->raise();
+        }
+        setConnections(RESIDUAL_MATRIX,qobject_cast<ResidualMatrixView*>(residualMatrix->widget()),residualMatrix);
         break;
     case TRACES:
         if(!isThereTraceView){
@@ -1795,6 +1831,22 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
                 tmv,  static_cast<void(TemplateMatrixView::*)(QList<int>&)>(&TemplateMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 tmv, &TemplateMatrixView::renumber);
+        connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
+            QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
+            view->setPalette(pal); view->update(); });
+    } else if(displayType == RESIDUAL_MATRIX){
+        ResidualMatrixView* rmv = qobject_cast<ResidualMatrixView*>(view);
+        connect(this, &KlustersView::computeResidualMatrix, rmv, &ResidualMatrixView::updateMatrixContents);
+        connect(view, &QObject::destroyed, this, &KlustersView::residualMatrixDockClosed);
+        connect(&doc, &KlustersDoc::clustersGrouped,          rmv, &ResidualMatrixView::clustersGrouped);
+        connect(&doc, &KlustersDoc::clustersDeleted,          rmv, &ResidualMatrixView::clustersDeleted);
+        connect(&doc, &KlustersDoc::removeSpikesFromClusters, rmv, &ResidualMatrixView::removeSpikesFromClusters);
+        connect(&doc, &KlustersDoc::newClusterAdded,          rmv, &ResidualMatrixView::newClusterAdded);
+        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
+                rmv,  static_cast<void(ResidualMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ResidualMatrixView::newClustersAdded));
+        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
+                rmv,  static_cast<void(ResidualMatrixView::*)(QList<int>&)>(&ResidualMatrixView::newClustersAdded));
+        connect(&doc, &KlustersDoc::renumber,                 rmv, &ResidualMatrixView::renumber);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });

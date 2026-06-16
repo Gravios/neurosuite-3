@@ -37,6 +37,7 @@
 // added to these view classes.
 #include "errormatrixview.h"
 #include "templatematrixview.h"
+#include "residualmatrixview.h"
 #include "array.h"
 
 
@@ -391,6 +392,17 @@ void KlustersApp::createMenus()
     mUpdateErrorMatrix->setIcon(QIcon(":/icons/grouping_assistant_update"));
     mUpdateErrorMatrix->setShortcut(Qt::Key_U);
     connect(mUpdateErrorMatrix,&QAction::triggered, this,&KlustersApp::slotUpdateErrorMatrix);
+
+    // Open a mean-waveform residual matrix on the active display.  Diagnostic
+    // display (asymmetric: cell(row A,col B) = variance of A's spikes about
+    // B's template); also the source matrix for the spike-count-gated sort.
+    mNewResidualMatrix = actionMenu->addAction(tr("New &Residual Matrix Display"));
+    mNewResidualMatrix->setToolTip(
+        tr("Add a residual-matrix display to the active view.  Cell (row A,\n"
+           "col B) is the variance of cluster A's spikes taken about cluster\n"
+           "B's mean waveform; the diagonal is A's within-cluster variance.\n"
+           "Press U to (re)compute it along with the error/template matrices."));
+    connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
 
     mReorderClustersBySimilarity = actionMenu->addAction(tr("Re&order Clusters by Similarity"));
     mReorderClustersBySimilarity->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_S));
@@ -3948,6 +3960,9 @@ void KlustersApp::slotUpdateErrorMatrix(){
     // errorMatrixDockClosed) that don't actually destroy the template
     // dock, leaving a visible template view orphaned from the U key.
     view->updateTemplateMatrix();
+    // Same rationale for the residual matrix: emit unconditionally, Qt makes
+    // it a no-op when no ResidualMatrixView is open.
+    view->updateResidualMatrix();
 }
 
 // ---------------------------------------------------------------------------
@@ -3969,6 +3984,28 @@ void KlustersApp::slotErrorMatrixInteracted()
 void KlustersApp::slotTemplateMatrixInteracted()
 {
     m_lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
+}
+
+void KlustersApp::slotResidualMatrixInteracted()
+{
+    m_lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
+}
+
+// ---------------------------------------------------------------------------
+// slotNewResidualMatrix — add a ResidualMatrixView dock to the active display.
+// Mirrors the auto-show path for the error/template matrices but is user-
+// initiated from the Actions menu, so a residual matrix can be opened on
+// demand (it is not part of the default auto-show layout).
+// ---------------------------------------------------------------------------
+void KlustersApp::slotNewResidualMatrix()
+{
+    if (!doc || !activeView()) return;
+    if (activeView()->containsResidualMatrixView()) {
+        slotStatusMsg(tr("This display already contains a residual matrix."));
+        return;
+    }
+    widgetAddToDisplay(KlustersView::RESIDUAL_MATRIX);
+    activeView()->updateResidualMatrix();
 }
 
 // ---------------------------------------------------------------------------
@@ -5046,6 +5083,18 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             if (auto* tmv = qobject_cast<TemplateMatrixView*>(view)) {
                 connect(tmv, &TemplateMatrixView::viewInteracted,
                         this, &KlustersApp::slotTemplateMatrixInteracted,
+                        Qt::UniqueConnection);
+            }
+            break;
+        case KlustersView::RESIDUAL_MATRIX:
+            // Track most-recently-created matrix for the residual-gated sort
+            // and the Shift+S reorder's both-matrices tie-break.
+            m_lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
+            if (mReorderClustersBySimilarity)
+                mReorderClustersBySimilarity->setEnabled(true);
+            if (auto* rmv = qobject_cast<ResidualMatrixView*>(view)) {
+                connect(rmv, &ResidualMatrixView::viewInteracted,
+                        this, &KlustersApp::slotResidualMatrixInteracted,
                         Qt::UniqueConnection);
             }
             break;

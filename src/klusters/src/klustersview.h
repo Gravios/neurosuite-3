@@ -64,7 +64,7 @@ public:
     /**
     * Enum indicating wich type of view the user wants.
     */
-    enum DisplayType {CLUSTERS=0,WAVEFORMS=1,CORRELATIONS=2,OVERVIEW=3,GROUPING_ASSISTANT_VIEW=4,ERROR_MATRIX=5,TRACES=6,TEMPLATE_MATRIX=7};
+    enum DisplayType {CLUSTERS=0,WAVEFORMS=1,CORRELATIONS=2,OVERVIEW=3,GROUPING_ASSISTANT_VIEW=4,ERROR_MATRIX=5,TRACES=6,TEMPLATE_MATRIX=7,RESIDUAL_MATRIX=8};
 
     /** Constructs a view.
       * @param mainWindow a reference on the main window of the application.
@@ -597,6 +597,8 @@ public:
     void updateErrorMatrix(){emit computeProbabilities();}
     /**Recomputes the template match matrix.*/
     void updateTemplateMatrix(){emit computeTemplateMatrix();}
+    /**Recomputes the mean-waveform residual matrix.*/
+    void updateResidualMatrix(){emit computeResidualMatrix();}
 
     /** Gives keyboard focus to the first ClusterView in this display. */
     void focusClusterView();
@@ -623,6 +625,7 @@ public:
   * @return true if the view contains a Grouping Assistant View, false otherwise.*/
     bool containsErrorMatrixView() const {return isThereErrorMatrixView;}
     bool containsTemplateMatrixView() const {return isThereTemplateMatrixView;}
+    bool containsResidualMatrixView() const {return isThereResidualMatrixView;}
 
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
@@ -713,6 +716,7 @@ public Q_SLOTS:
   */
     void errorMatrixDockClosed(QObject* errorMatrixView);
     void templateMatrixDockClosed(QObject* templateMatrixView);
+    void residualMatrixDockClosed(QObject* residualMatrixView);
 
     /**Takes care of the closing of a TraceView.
   * @param traceWidget the traceView to be closed.*/
@@ -765,6 +769,7 @@ Q_SIGNALS:
     void changeChannelPositions(QList<int>& positions);
     void computeProbabilities();
     void computeTemplateMatrix();
+    void computeResidualMatrix();
     void changeBackgroundColor(const QColor& color);
     void clustersRenumbered(bool active);
     void updateClusters(QString name,QList<int>& clustersToShow,ItemColors* clustersColors,bool active);
@@ -836,6 +841,10 @@ private:
     bool isThereErrorMatrixView;
     /**True if the view contains a TemplateMatrix view, false otherwise.*/
     bool isThereTemplateMatrixView;
+    /**True if the view contains a ResidualMatrix view, false otherwise.
+     *  NSDMI-initialised so the constructor's per-display-type resets need
+     *  not be touched — it is only ever set true when such a dock is added.*/
+    bool isThereResidualMatrixView = false;
     
     /**True if the view contains a Trace view, false otherwise.*/
     bool isThereTraceView;
@@ -925,6 +934,7 @@ private:
     QPointer<QDockWidget> m_overviewCorrelationDock;
     QPointer<QDockWidget> m_overviewErrorMatrixDock;
     QPointer<QDockWidget> m_overviewTemplateMatrixDock;
+    QPointer<QDockWidget> m_overviewResidualMatrixDock;
 
     //methods
     

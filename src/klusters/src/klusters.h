@@ -433,6 +433,9 @@ private Q_SLOTS:
      *  mouseReleaseEvent emits its signal). */
     void slotErrorMatrixInteracted();
     void slotTemplateMatrixInteracted();
+    void slotResidualMatrixInteracted();
+    /** Add a ResidualMatrixView dock to the active display (Actions menu). */
+    void slotNewResidualMatrix();
 
     /**Select all the clusters.*/
     void slotSelectAll();
@@ -821,6 +824,7 @@ private:
     QAction *mRedo;
     QAction *mRenumberAndSave;
     QAction *mUpdateErrorMatrix;
+    QAction *mNewResidualMatrix;
     QAction *mReorderClustersBySimilarity;
     QAction *mPreferenceAction;
 
@@ -1183,7 +1187,7 @@ private:
      *  Updated by ERROR_MATRIX/TEMPLATE_MATRIX cases in setConnections,
      *  plus slotErrorMatrixInteracted / slotTemplateMatrixInteracted
      *  (which receive viewInteracted signals on every matrix click). */
-    enum class MatrixKind { NONE, ERROR_MATRIX_KIND, TEMPLATE_MATRIX_KIND };
+    enum class MatrixKind { NONE, ERROR_MATRIX_KIND, TEMPLATE_MATRIX_KIND, RESIDUAL_MATRIX_KIND };
     MatrixKind m_lastMatrixUsed = MatrixKind::NONE;
 
     /**The path of the currently open document.*/
