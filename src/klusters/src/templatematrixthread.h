@@ -48,6 +48,29 @@ float tmRawXcorr(const std::vector<float>& a,
                  const std::vector<float>& b,
                  int maxShift);
 
+// Noise-disattenuated cosine: like tmNormXcorr (cosine) but the two energy
+// terms have the noise energy of each MEAN waveform subtracted before the
+// square root, Σa² − noiseA over the overlap window (likewise b).  noiseA/noiseB
+// carry the per-point variance of the sample MEAN (within-cluster sample
+// variance / N), so the denominator approximates the signal-only energy and a
+// same-neuron pair reads ~1 regardless of spike count / energy.  Each corrected
+// norm is floored at 10% of its raw value (caps the boost for near-noise means)
+// and the result is capped at 1.0 for the [0,1] colour map.
+float tmDisattenXcorr(const std::vector<float>& a,
+                      const std::vector<float>& b,
+                      const std::vector<float>& noiseA,
+                      const std::vector<float>& noiseB,
+                      int maxShift);
+
+// Fast-AP-windowed cosine: tmNormXcorr restricted, per channel, to the
+// [peak-8, peak+8) sample window (the spike proper), dropping the energy-scaling
+// post-peak after-potential that depresses high-energy same-neuron cosines.
+// `a`/`b` are channel-major [nChan*nSamp]; peak is the 0-based detection sample.
+float tmFastWinXcorr(const std::vector<float>& a,
+                     const std::vector<float>& b,
+                     int nChan, int nSamp, int peak,
+                     int maxShift);
+
 // ---------------------------------------------------------------------------
 // Main background thread: reads all cluster waveforms, computes means, and
 // builds the pairwise mean-vs-mean xcorr matrix.

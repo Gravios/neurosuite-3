@@ -113,6 +113,67 @@ float tmRawXcorr(const std::vector<float>& a,
 }
 
 // ---------------------------------------------------------------------------
+float tmDisattenXcorr(const std::vector<float>& a,
+                      const std::vector<float>& b,
+                      const std::vector<float>& noiseA,
+                      const std::vector<float>& noiseB,
+                      int maxShift)
+{
+    const int N = static_cast<int>(a.size());
+    if (N == 0) return 0.0f;
+
+    float best = 0.0f;
+    for (int lag = -maxShift; lag <= maxShift; ++lag) {
+        double sab = 0.0, saa = 0.0, sbb = 0.0, na = 0.0, nb = 0.0;
+        int cnt = 0;
+        for (int i = 0; i < N; ++i) {
+            const int j = i + lag;
+            if (j < 0 || j >= N) continue;
+            const double ai = a[i], bj = b[j];
+            sab += ai * bj; saa += ai * ai; sbb += bj * bj;
+            na  += noiseA[i]; nb += noiseB[j];        // noise energy of each mean
+            ++cnt;
+        }
+        if (cnt == 0) continue;
+        // Subtract the noise energy of the mean from each norm, but never below
+        // 10% of the raw energy (a near-noise mean would otherwise blow up the
+        // ratio); the final value is capped at 1.0 below for the colour map.
+        const double normA = std::max(saa - na, 0.10 * saa);
+        const double normB = std::max(sbb - nb, 0.10 * sbb);
+        const double denom = std::sqrt(normA * normB);
+        if (denom < 1e-12) continue;
+        const float val = static_cast<float>(std::min(1.0, std::abs(sab) / denom));
+        if (val > best) best = val;
+    }
+    return best;
+}
+
+// ---------------------------------------------------------------------------
+float tmFastWinXcorr(const std::vector<float>& a,
+                     const std::vector<float>& b,
+                     int nChan, int nSamp, int peak,
+                     int maxShift)
+{
+    if (nChan <= 0 || nSamp <= 0) return 0.0f;
+    const int lo = std::max(0, peak - 8);
+    const int hi = std::min(nSamp, peak + 8);
+    const int win = hi - lo;
+    if (win <= 1) return tmNormXcorr(a, b, maxShift, false);   // window degenerate: fall back
+
+    // Extract the per-channel AP window into reduced channel-major vectors,
+    // then reuse the cosine kernel (its global lag now spans only the windowed
+    // concatenation, consistent with the full-template lag convention).
+    std::vector<float> aw, bw;
+    aw.reserve(static_cast<size_t>(nChan * win));
+    bw.reserve(static_cast<size_t>(nChan * win));
+    for (int ch = 0; ch < nChan; ++ch) {
+        const int base = ch * nSamp;
+        for (int s = lo; s < hi; ++s) { aw.push_back(a[base + s]); bw.push_back(b[base + s]); }
+    }
+    return tmNormXcorr(aw, bw, std::max(1, std::min(maxShift, win / 4)), false);
+}
+
+// ---------------------------------------------------------------------------
 void TemplateMatrixThread::run()
 {
     auto post = [this]() {
@@ -140,6 +201,9 @@ void TemplateMatrixThread::run()
     const int    nSamp    = data.nbSamplesPerWaveform();
     const int    nPts     = nChan * nSamp;
     const int    maxShift = std::max(1, nSamp / 4);
+    const int    metric    = configuration().getTemplateXcorrMetric(); // 0=cos 1=pear 2=raw 3=disatten 4=fastAP
+    const bool   needNoise = (metric == 3);                            // disattenuation needs a variance pass
+    const int    peak       = data.peakSampleIndex();                  // 0-based AP-window centre (fast-AP metric)
     const QString spkPath = data.getSpkFileName();
 
     if (spkPath.isEmpty() || nPts <= 0) { post(); return; }
@@ -164,13 +228,19 @@ void TemplateMatrixThread::run()
     // they are re-read on demand by PairXcorrThread when the user selects a cell.
     meanWav.assign(static_cast<size_t>(nClusters),
                    std::vector<float>(static_cast<size_t>(nPts), 0.0f));
+    // Per-point noise energy of each MEAN (within-cluster sample variance / N),
+    // filled only when the disattenuated metric needs it.
+    std::vector<std::vector<float>> noiseWav;
+    if (needNoise)
+        noiseWav.assign(static_cast<size_t>(nClusters),
+                        std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
     const QByteArray spkBytes = spkPath.toLocal8Bit();
     const char*      spkCStr  = spkBytes.constData();
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
-    shared(meanWav, allFileIdx) \
-    firstprivate(nClusters, nPts, nChan, nSamp, spkCStr)
+    shared(meanWav, noiseWav, allFileIdx) \
+    firstprivate(nClusters, nPts, nChan, nSamp, spkCStr, needNoise)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
 
@@ -182,6 +252,8 @@ void TemplateMatrixThread::run()
         if (!spk) continue;
 
         std::vector<double>  acc(static_cast<size_t>(nPts), 0.0);
+        std::vector<double>  accsq;
+        if (needNoise) accsq.assign(static_cast<size_t>(nPts), 0.0);
         std::vector<int16_t> raw;
         std::vector<float>   sp;
         long valid = 0;
@@ -191,16 +263,27 @@ void TemplateMatrixThread::run()
             if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
-            for (int p = 0; p < nPts; ++p)
-                acc[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
+            for (int p = 0; p < nPts; ++p) {
+                const double v = sp[static_cast<size_t>(p)];
+                acc[static_cast<size_t>(p)] += v;
+                if (needNoise) accsq[static_cast<size_t>(p)] += v * v;
+            }
             ++valid;
         }
         fclose(spk);
 
         if (valid > 0)
-            for (int p = 0; p < nPts; ++p)
+            for (int p = 0; p < nPts; ++p) {
+                const double mean = acc[static_cast<size_t>(p)] / valid;
                 meanWav[static_cast<size_t>(ci)][static_cast<size_t>(p)] =
-                    static_cast<float>(acc[static_cast<size_t>(p)] / valid);
+                    static_cast<float>(mean);
+                if (needNoise) {
+                    const double var = accsq[static_cast<size_t>(p)] / valid - mean * mean;
+                    // noise energy of the sample MEAN = sample variance / N
+                    noiseWav[static_cast<size_t>(ci)][static_cast<size_t>(p)] =
+                        static_cast<float>(std::max(0.0, var) / valid);
+                }
+            }
     }
 
     if (haveToStopProcessing) { post(); return; }
@@ -218,21 +301,34 @@ void TemplateMatrixThread::run()
         for (int cj = ci+1; cj < nClusters; ++cj)
             pairs.emplace_back(ci, cj);
     const int nPairs = static_cast<int>(pairs.size());
-    const int metric  = configuration().getTemplateXcorrMetric(); // 0=cos 1=pearson 2=raw
-    const bool pearson = (metric == 1);
-    const bool raw     = (metric == 2);
+    const bool pearson  = (metric == 1);
+    const bool raw      = (metric == 2);
+    const bool disatten = (metric == 3);
+    const bool fastap   = (metric == 4);
 
 #pragma omp parallel for schedule(dynamic,4) default(none) \
-    shared(meanWav, pairs, scores) firstprivate(nPairs, maxShift, pearson, raw)
+    shared(meanWav, noiseWav, pairs, scores) \
+    firstprivate(nPairs, maxShift, pearson, raw, disatten, fastap, nChan, nSamp, peak)
     for (int pi = 0; pi < nPairs; ++pi) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
         const int ci = pairs[static_cast<size_t>(pi)].first;
         const int cj = pairs[static_cast<size_t>(pi)].second;
-        const float s = raw
-            ? tmRawXcorr(meanWav[static_cast<size_t>(ci)],
-                         meanWav[static_cast<size_t>(cj)], maxShift)
-            : tmNormXcorr(meanWav[static_cast<size_t>(ci)],
-                          meanWav[static_cast<size_t>(cj)], maxShift, pearson);
+        float s;
+        if (raw)
+            s = tmRawXcorr(meanWav[static_cast<size_t>(ci)],
+                           meanWav[static_cast<size_t>(cj)], maxShift);
+        else if (disatten)
+            s = tmDisattenXcorr(meanWav[static_cast<size_t>(ci)],
+                                meanWav[static_cast<size_t>(cj)],
+                                noiseWav[static_cast<size_t>(ci)],
+                                noiseWav[static_cast<size_t>(cj)], maxShift);
+        else if (fastap)
+            s = tmFastWinXcorr(meanWav[static_cast<size_t>(ci)],
+                               meanWav[static_cast<size_t>(cj)],
+                               nChan, nSamp, peak, maxShift);
+        else
+            s = tmNormXcorr(meanWav[static_cast<size_t>(ci)],
+                            meanWav[static_cast<size_t>(cj)], maxShift, pearson);
         (*scores)(ci+1, cj+1) = s;
         (*scores)(cj+1, ci+1) = s;
     }

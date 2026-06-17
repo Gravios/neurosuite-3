@@ -90,25 +90,35 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     metricCosRadio     = new QRadioButton("Cosine",  controlBar);
     metricPearsonRadio = new QRadioButton("Pearson", controlBar);
     metricRawRadio     = new QRadioButton("Raw",     controlBar);
+    metricDisattenRadio = new QRadioButton("Disatten.", controlBar);
+    metricFastRadio     = new QRadioButton("Fast-AP",   controlBar);
     metricCosRadio->setToolTip("Peak normalised cross-correlation (cosine similarity) between cluster mean waveforms.");
     metricPearsonRadio->setToolTip("Pearson correlation: removes the overlap-window mean of each waveform before normalising.");
     metricRawRadio->setToolTip("Raw (non-normalised) peak cross-correlation, amplitude-weighted; the matrix is globally normalised so the strongest pair reads 1.0.");
+    metricDisattenRadio->setToolTip("Energy-corrected cosine: subtracts each mean waveform's noise energy (within-cluster sample variance / N) from the norms, so a same-neuron pair reads ~1.0 regardless of spike count or amplitude. Capped at 1.0.");
+    metricFastRadio->setToolTip("Energy-corrected (fast-AP) cosine: correlates only the peak +/- 8 sample window, dropping the energy-scaling post-peak after-potential that depresses high-amplitude same-neuron pairs.");
     QButtonGroup* metricGroup = new QButtonGroup(this);
     metricGroup->setExclusive(true);
     metricGroup->addButton(metricCosRadio);
     metricGroup->addButton(metricPearsonRadio);
     metricGroup->addButton(metricRawRadio);
+    metricGroup->addButton(metricDisattenRadio);
+    metricGroup->addButton(metricFastRadio);
     {
         const int metric = configuration().getTemplateXcorrMetric();
         metricCosRadio->setChecked(metric == 0);
         metricPearsonRadio->setChecked(metric == 1);
         metricRawRadio->setChecked(metric == 2);
+        metricDisattenRadio->setChecked(metric == 3);
+        metricFastRadio->setChecked(metric == 4);
     }
 
     bar->addWidget(metricLabel);
     bar->addWidget(metricCosRadio);
     bar->addWidget(metricPearsonRadio);
     bar->addWidget(metricRawRadio);
+    bar->addWidget(metricDisattenRadio);
+    bar->addWidget(metricFastRadio);
     bar->addWidget(thresholdLabel);
     bar->addWidget(thresholdSlider, 1);
     bar->addWidget(countLabel);
@@ -127,6 +137,10 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     connect(metricPearsonRadio, &QAbstractButton::toggled,
             this, &TemplateMatrixView::onMetricChanged);
     connect(metricRawRadio,     &QAbstractButton::toggled,
+            this, &TemplateMatrixView::onMetricChanged);
+    connect(metricDisattenRadio, &QAbstractButton::toggled,
+            this, &TemplateMatrixView::onMetricChanged);
+    connect(metricFastRadio,     &QAbstractButton::toggled,
             this, &TemplateMatrixView::onMetricChanged);
 
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
@@ -278,9 +292,13 @@ void TemplateMatrixView::updateMatrixContents()
         const QSignalBlocker bCos(metricCosRadio);
         const QSignalBlocker bPear(metricPearsonRadio);
         const QSignalBlocker bRaw(metricRawRadio);
+        const QSignalBlocker bDis(metricDisattenRadio);
+        const QSignalBlocker bFast(metricFastRadio);
         metricCosRadio->setChecked(metric == 0);
         metricPearsonRadio->setChecked(metric == 1);
         metricRawRadio->setChecked(metric == 2);
+        metricDisattenRadio->setChecked(metric == 3);
+        metricFastRadio->setChecked(metric == 4);
     }
 
     for (TemplateMatrixThread* t : threadsToBeKill)
@@ -796,9 +814,11 @@ void TemplateMatrixView::onMetricChanged()
     // the Display preference page.  Persist immediately so the choice survives
     // restart and the preference dialog reflects it, then recompute — the
     // compute thread reads the value at run time (TemplateMatrixThread::run).
-    const int metric = metricRawRadio->isChecked()     ? 2
-                     : metricPearsonRadio->isChecked() ? 1
-                     :                                   0;
+    const int metric = metricRawRadio->isChecked()      ? 2
+                     : metricPearsonRadio->isChecked()  ? 1
+                     : metricDisattenRadio->isChecked() ? 3
+                     : metricFastRadio->isChecked()     ? 4
+                     :                                    0;
     if (metric == configuration().getTemplateXcorrMetric())
         return;                       // no-op toggle (e.g. programmatic refresh)
     configuration().setTemplateXcorrMetric(metric);

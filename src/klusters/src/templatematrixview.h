@@ -241,6 +241,8 @@ private:
     QRadioButton* metricCosRadio;
     QRadioButton* metricPearsonRadio;
     QRadioButton* metricRawRadio;
+    QRadioButton* metricDisattenRadio;
+    QRadioButton* metricFastRadio;
     double       currentThreshold;
     double       sliderMin;
     double       sliderMax;
