@@ -239,6 +239,16 @@
             <string>Raw (non-normalised)</string>
            </property>
           </item>
+          <item>
+           <property name="text">
+            <string>Disattenuated (energy-corrected)</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Fast-AP window (energy-corrected)</string>
+           </property>
+          </item>
          </widget>
         </item>
         <item>

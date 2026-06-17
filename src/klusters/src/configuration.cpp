@@ -93,7 +93,7 @@ void Configuration::read() {
         templateXcorrMetric = settings.value("templateXcorrMetric", 0).toInt();
     else  // migrate the pre-3.x boolean key (Pearson on/off)
         templateXcorrMetric = settings.value("templateXcorrPearson", false).toBool() ? 1 : 0;
-    templateXcorrMetric = qBound(0, templateXcorrMetric, 2);
+    templateXcorrMetric = qBound(0, templateXcorrMetric, 4);
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
