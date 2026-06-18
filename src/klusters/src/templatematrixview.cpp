@@ -113,6 +113,35 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
         metricFastRadio->setChecked(metric == 4);
     }
 
+    // The control bar sits on the painted backgroundColor (which can be pure
+    // black), but the labels and radio buttons would otherwise render with the
+    // application palette's default text colour — black-on-black is invisible in
+    // a light theme over a dark plot background.  Tint every text widget on the
+    // bar with the same luminance-derived contrast colour used for painted text
+    // (textColor: white on a dark background, black on a light one), so the
+    // labels track the background regardless of the active light/dark theme.
+    // QRadioButton/QLabel text is drawn from WindowText; Text/ButtonText are set
+    // too so the result is style-independent.  applyButton is left untouched —
+    // it is a themed QPushButton whose text already contrasts with its own
+    // button background.
+    {
+        const auto tintText = [this](QWidget* w){
+            QPalette wp = w->palette();
+            wp.setColor(QPalette::WindowText, textColor);
+            wp.setColor(QPalette::Text,       textColor);
+            wp.setColor(QPalette::ButtonText, textColor);
+            w->setPalette(wp);
+        };
+        tintText(metricLabel);
+        tintText(metricCosRadio);
+        tintText(metricPearsonRadio);
+        tintText(metricRawRadio);
+        tintText(metricDisattenRadio);
+        tintText(metricFastRadio);
+        tintText(thresholdLabel);
+        tintText(countLabel);
+    }
+
     bar->addWidget(metricLabel);
     bar->addWidget(metricCosRadio);
     bar->addWidget(metricPearsonRadio);
