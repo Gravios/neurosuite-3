@@ -148,7 +148,18 @@ KlustersApp::KlustersApp()
       m_realignBatchShiftedTotal(0),
       m_realignProgressBar(nullptr),
       errorMatrixExists(false),
-      templateMatrixExists(false)
+      templateMatrixExists(false),
+      // Null-initialized here because initializePreferences() -> buildRealignArgs()
+      // runs in this constructor (below) BEFORE initSelectionBoxes() creates these
+      // widgets.  buildRealignArgs() guards with `realignTopChanSpinBox ? ... : 0`,
+      // which is only correct if the pointer is genuinely null; an indeterminate
+      // (garbage) value passes the test and is then dereferenced, calling
+      // SpinBox::value() -> QVariant::toInt() on junk -> SIGSEGV.  The crash is
+      // memory-state dependent (garbage==0 survives, !=0 crashes), so it surfaced
+      // on some machines and not others.  Mirrors dimensionX/dimensionY above,
+      // which are sibling SpinBoxes created in the same initSelectionBoxes().
+      realignTopChanSpinBox(nullptr),
+      realignTopChanSpinBoxAction(nullptr)
 {
     setObjectName("Klusters");
 
