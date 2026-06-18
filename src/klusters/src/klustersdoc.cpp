@@ -1324,7 +1324,7 @@ void KlustersDoc::addClustersToActiveView(const QList<int>& clustersToShow){
     activeView->updateTraceView(electrodeGroupID,clusterColorList,true);
 }
 
-void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeView){
+int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeView){
     //Call data to group the clusters
     logBefore(CurationLogger::ActionType::GROUP, clustersToGroup);
     float newClusterId = clusteringData->groupClusters(clustersToGroup);
@@ -1369,6 +1369,7 @@ void KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeV
     clustersToShow.append(newClusterIdint);
     clusterPalette.selectItems(clustersToShow);
     logAfter(clustersToShow);
+    return newClusterIdint;
 }
 
 

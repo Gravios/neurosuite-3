@@ -25,6 +25,10 @@ public:
     void   setCurationLogging(bool b);
     bool   getCurationLogging()   const;
 
+    // Auto-run spike alignment after each interactive merge
+    void   setAutoRealignAfterMerge(bool b);
+    bool   getAutoRealignAfterMerge() const;
+
     // DipSplit
     void   setDipSplitMinSize(int n);
     void   setDipSplitBloatFactor(double v);

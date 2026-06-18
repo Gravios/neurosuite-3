@@ -91,6 +91,7 @@ public:
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
     void setCurationLogging(bool b)       {curationLogging = b;}
+    void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
 
     void setDipSplitMinSize(int n)       {dipSplitMinSize     = qMax(2, n);}
     void setDipSplitBloatFactor(double v){dipSplitBloatFactor = qBound(0.0, v, 10.0);}
@@ -188,6 +189,7 @@ public:
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     int    getRealignMode()       const {return realignMode;}
     bool   getCurationLogging()   const {return curationLogging;}
+    bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
 
     int    getDipSplitMinSize()     const {return dipSplitMinSize;}
     double getDipSplitBloatFactor() const {return dipSplitBloatFactor;}
@@ -263,6 +265,7 @@ public:
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     bool   getCurationLoggingDefault()   const {return true;}
+    bool   getAutoRealignAfterMergeDefault() const {return false;}
 
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
@@ -394,6 +397,7 @@ private:
     int     realignMaxShift;
     int     realignMode;
     bool    curationLogging;   // record per-action curation audit snapshots
+    bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
 
     int     dipSplitMinSize;       ///< minimum cluster size to consider for DipSplit
     double  dipSplitBloatFactor;   ///< Mahalanobis bloat threshold (× χ²(d, 0.9))

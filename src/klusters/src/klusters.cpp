@@ -29,7 +29,6 @@
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
-#include "spikerealigndialog.h"
 #include "realignreviewdialog.h"
 #include "realignworker.h"
 #include "qhelpviewer.h"
@@ -3306,13 +3305,21 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     slotStatusMsg(tr("Grouping clusters..."));
     KlustersView* view = activeView();
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    doc->groupClusters(selectedClusters,*view);
+    const int mergedClusterId = doc->groupClusters(selectedClusters,*view);
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
     // Group is a keyboard-driven palette operation (G key from the palette
     // context); keep focus on the palette so the user can keep
     // arrow-navigating without having to Tab back.
     if (clusterPalette) clusterPalette->setFocusToList();
+
+    // Optionally realign the just-merged cluster (preference, default off).
+    // Skipped if a realignment is already running so we never stack jobs;
+    // mergedClusterId > 1 excludes the artefact/noise specials.
+    if (configuration().getAutoRealignAfterMerge()
+            && mergedClusterId > 1 && !realignRunning) {
+        startRealignForCluster(mergedClusterId);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -6111,13 +6118,24 @@ void KlustersApp::slotRealignSpikes()
         return;
     }
 
-    // ── Pre-flight dialog ────────────────────────────────────────────────────
-    // Shows cluster info, PCA file status, parameters summary.
-    // Does NOT run any computation — user just confirms and clicks Start.
-    realignArgs = buildRealignArgs();   // pick up saved mode + top-ch gate
-    SpikeRealignDialog dlg(*doc, clusterId, realignArgs, this);
-    if (dlg.exec() != QDialog::Accepted)
-        return;
+    // Run directly with the current saved settings — no pre-flight dialog.
+    startRealignForCluster(clusterId);
+}
+
+// ---------------------------------------------------------------------------
+// startRealignForCluster
+//
+// Sets up the realign output tab, locks the UI, and launches the background
+// realignment worker for one cluster, using the current saved settings
+// (buildRealignArgs() — post-alignment mode incl. --pca-refine and the top-ch
+// gate are all encoded there).  No dialog is shown; this is invoked directly
+// by slotRealignSpikes and by the auto-align-after-merge path in
+// slotGroupClusters.  Callers must ensure doc != nullptr and
+// realignRunning == false.
+// ---------------------------------------------------------------------------
+void KlustersApp::startRealignForCluster(int clusterId)
+{
+    realignArgs = buildRealignArgs();   // saved mode + top-ch gate
 
     // ── Create (or recycle) the output tab ───────────────────────────────────
     // Remove any leftover tab from a previous realignment run.
@@ -6167,13 +6185,7 @@ void KlustersApp::slotRealignSpikes()
         realignWorker = nullptr;
     }
 
-    // patch82 — read finalArgs() so the dialog's new --pca-refine
-    // checkbox state is reflected in the args passed to the worker.
-    // Also persist back to realignArgs so the choice survives across
-    // subsequent realignment invocations in the same session.
-    const QString launchArgs = dlg.finalArgs();
-    realignArgs = launchArgs;
-    startRealignWorker(clusterId, launchArgs);
+    startRealignWorker(clusterId, realignArgs);
 }
 
 // ---------------------------------------------------------------------------
