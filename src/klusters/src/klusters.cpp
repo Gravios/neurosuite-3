@@ -29,7 +29,6 @@
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
-#include "realignreviewdialog.h"
 #include "realignworker.h"
 #include "qhelpviewer.h"
 // For the Shift+S reorder action: needs the public accessors + signals
@@ -6726,74 +6725,39 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
     slotStateChanged(QStringLiteral("noRealignState"));
 
     if (ok) {
-        // Show accept/reject review dialog with before/after mean waveforms.
-        // backupBase is now always empty (deferred writes — no backup files).
-        RealignReviewDialog reviewDlg(realignClusterId, nShifted, nSwapped,
-                                      nChan, nSamp,
-                                      meanBefore, meanAfter,
-                                      QString(), this);
-        reviewDlg.exec();
+        // Auto-accept the realignment.  The accept/reject review popup has
+        // been removed: the pending .spk/.res files are kept and flushed on
+        // the next Save (deferred writes).  To discard a realignment, use
+        // Undo, or File > Close without saving.
+        doc->setModified(true);
 
-        if (reviewDlg.accepted()) {
-            // User accepted: pending files exist, will be flushed on next save.
-            // Mark document modified so the save action is enabled.
-            doc->setModified(true);
+        // Invalidate both caches so views re-read from the pending .spk
+        // and recompute correlograms from the updated in-memory timestamps.
+        if (realignClusterId >= 0) {
+            doc->invalidateWaveformCache(realignClusterId);
+            doc->invalidateCorrelogramCache(realignClusterId);
+            doc->forceClusterRefresh(realignClusterId);
+        }
 
-            // Invalidate both caches so views re-read from the pending .spk
-            // and recompute correlograms from the updated in-memory timestamps.
-            if (realignClusterId >= 0) {
-                doc->invalidateWaveformCache(realignClusterId);
-                doc->invalidateCorrelogramCache(realignClusterId);
-                doc->forceClusterRefresh(realignClusterId);
-            }
-
-            // Switch to the Overview tab so the user immediately sees the
-            // updated waveforms and auto-correlogram.
-            if (tabsParent) {
-                for (int i = 0; i < tabsParent->count(); ++i) {
-                    if (tabsParent->tabText(i).contains(tr("Overview"),
-                                                        Qt::CaseInsensitive)) {
-                        tabsParent->setCurrentIndex(i);
-                        break;
-                    }
+        // Switch to the Overview tab so the user immediately sees the
+        // updated waveforms and auto-correlogram.
+        if (tabsParent) {
+            for (int i = 0; i < tabsParent->count(); ++i) {
+                if (tabsParent->tabText(i).contains(tr("Overview"),
+                                                    Qt::CaseInsensitive)) {
+                    tabsParent->setCurrentIndex(i);
+                    break;
                 }
             }
+        }
 
-            // Select the realigned cluster in the palette and put focus there
-            // so the user can immediately use arrow keys for further work.
-            //
-            // Do NOT follow this with activeView()->focusClusterView(): that
-            // call would steal focus to the 2D scatter widget the instant
-            // after we granted it to the palette, so arrow-key navigation
-            // would silently require a Tab press to recover.  The scatter
-            // view doesn't need explicit focus here — its repaint was
-            // already triggered by forceClusterRefresh() above.
-            if (clusterPalette && realignClusterId >= 0) {
-                clusterPalette->selectItems(QList<int>{realignClusterId});
-                clusterPalette->setFocusToList();
-            }
-
-        } else {
-            // User rejected: delete pending files, restore original spkFileName,
-            // revert in-memory Data.
-            doc->rejectLastRealign();
-
-            // Invalidate caches and repaint (back to original state).
-            if (realignClusterId >= 0) {
-                doc->invalidateWaveformCache(realignClusterId);
-                doc->invalidateCorrelogramCache(realignClusterId);
-                doc->forceClusterRefresh(realignClusterId);
-            }
-
-            // Restore focus to the palette on the rejected cluster so the
-            // user can continue arrow-key navigation.  Without this, focus
-            // stays on whichever widget had it before the modal review
-            // dialog opened (often the 2D scatter, sometimes nothing
-            // reliable after a tab switch), silently breaking arrow keys.
-            if (clusterPalette && realignClusterId >= 0) {
-                clusterPalette->selectItems(QList<int>{realignClusterId});
-                clusterPalette->setFocusToList();
-            }
+        // Select the realigned cluster in the palette and put focus there
+        // so the user can immediately use arrow keys for further work.
+        // (No activeView()->focusClusterView() — that would steal focus
+        // from the palette and silently break arrow-key navigation.)
+        if (clusterPalette && realignClusterId >= 0) {
+            clusterPalette->selectItems(QList<int>{realignClusterId});
+            clusterPalette->setFocusToList();
         }
 
         realignClusterId = -1;
