@@ -275,6 +275,37 @@ extern "C" int cuda_pca_refine(
     // Padding for alignment (round up to 16 bytes).
     const size_t shmem_aligned = (shmem_bytes + 15) & ~size_t(15);
 
+    // Dynamic shared memory above the 48 KB default opt-out ceiling must be
+    // explicitly opted into per kernel, otherwise the launch is rejected with
+    // cudaErrorInvalidValue.  Newer GPUs allow far more (e.g. Blackwell's
+    // ~100+ KB), but only after raising this attribute.  Query the device's
+    // hard opt-in maximum first: if the request exceeds even that, fall back to
+    // the CPU path rather than attempting a launch that cannot succeed.
+    {
+        int dev = 0;
+        if (cudaGetDevice(&dev) != cudaSuccess) { cudaGetLastError(); cleanup(); return -5; }
+        int maxOptin = 0;
+        cudaDeviceGetAttribute(&maxOptin,
+                               cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+        if (maxOptin > 0 && shmem_aligned > static_cast<size_t>(maxOptin)) {
+            cleanup();
+            return -2;   // window too large for this GPU — caller uses CPU
+        }
+        if (shmem_aligned > (48u * 1024u)) {
+            cudaError_t a = cudaFuncSetAttribute(
+                pca_refine_kernel,
+                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                static_cast<int>(shmem_aligned));
+            if (a != cudaSuccess) {
+                fprintf(stderr, "[klusters] pca_refine_cuda: cannot opt into %zu B "
+                                "shared mem: %s\n",
+                        shmem_aligned, cudaGetErrorString(a));
+                cleanup();
+                return -5;
+            }
+        }
+    }
+
     pca_refine_kernel<<<K, BLOCK_SIZE, shmem_aligned>>>(
         d_raw, d_evec, centered ? d_means : nullptr, d_best,
         K, M, wideLen, nSamp, nChan, chForPca,

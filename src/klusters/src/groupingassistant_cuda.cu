@@ -20,11 +20,17 @@
 // Device helpers
 // ---------------------------------------------------------------------------
 
+// Per-thread device stack arrays (forwardSubstituteSq::x[] and the kernel's
+// b[]) are fixed at this width.  nbDim greater than this would index past the
+// arrays — undefined behaviour on the device.  The host entry point rejects
+// anything larger so the caller falls back to the (unbounded) CPU path.
+#define CUDA_MAHAL_MAX_DIM 64
+
 __device__ static double
 forwardSubstituteSq(const double* __restrict__ L,
                     const double* __restrict__ b, int dim)
 {
-    double x[64];
+    double x[CUDA_MAHAL_MAX_DIM];
     double sq = 0.0;
     for (int i = 0; i < dim; ++i) {
         double s = b[i];
@@ -60,7 +66,7 @@ __global__ void cuda_mahalanobis_kernel(
     const double* mu = means       + cluster * nbDim;
     const double* x  = features    + spike   * nbDim;
 
-    double b[64];
+    double b[CUDA_MAHAL_MAX_DIM];
     for (int d = 0; d < nbDim; ++d) b[d] = x[d] - mu[d];
 
     double mahal = forwardSubstituteSq(L, b, nbDim);
@@ -101,6 +107,18 @@ int cuda_compute_probabilities(
     const double* logTerms, double* probOut, const int* ignoreFlags,
     int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
 {
+    // The Mahalanobis kernel uses fixed-width per-thread stack arrays
+    // (CUDA_MAHAL_MAX_DIM).  Refuse anything wider rather than overrun them on
+    // the device; the dispatcher then falls back to the CPU path, which has no
+    // such bound.  (Typical feature counts are well under this — e.g. 24 for
+    // the stderiv PCA space — so this never triggers in practice.)
+    if (nbDim <= 0 || nbDim > CUDA_MAHAL_MAX_DIM) {
+        fprintf(stderr,
+                "[klusters] grouping CUDA: nbDim=%d unsupported (max %d) — using CPU\n",
+                nbDim, CUDA_MAHAL_MAX_DIM);
+        return -1;
+    }
+
     double *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr;
     double *d_log=nullptr, *d_prob=nullptr;
     int    *d_ign=nullptr;

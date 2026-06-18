@@ -205,7 +205,7 @@ int xcorr_cuda_compute(
     }
 
     if (cudaGetLastError() != cudaSuccess) goto cleanup;
-    cudaDeviceSynchronize();
+    if (cudaDeviceSynchronize() != cudaSuccess) goto cleanup;
 
     cudaMemcpy(shifts_out, d_shifts, shiftBytes, cudaMemcpyDeviceToHost);
     cudaMemcpy(scores_out, d_scores, scoreBytes, cudaMemcpyDeviceToHost);
