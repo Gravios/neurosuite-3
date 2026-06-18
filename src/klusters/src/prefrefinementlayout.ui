@@ -221,6 +221,19 @@
           </property>
          </widget>
         </item>
+        <item row="4" column="0">
+         <widget class="QCheckBox" name="autoRealignAfterMergeCheckBox">
+          <property name="text">
+           <string>Auto-align spikes after each merge</string>
+          </property>
+          <property name="toolTip">
+           <string>After a Group Clusters (merge) operation, automatically run spike realignment on the resulting merged cluster using the current realignment settings above — no dialog. Skipped while a realignment job is already running. Applies to interactive merges only, not the batch Auto-Merge. Default: off.</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
    </item>

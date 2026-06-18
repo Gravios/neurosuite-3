@@ -1167,6 +1167,13 @@ private:
      * responsible for the output widget and UI lock state.*/
     void startRealignWorker(int clusterId, const QString& launchArgs);
 
+    /**Set up the realign output tab, lock the UI, and launch the realignment
+     * worker for a single @p clusterId using the current saved settings
+     * (buildRealignArgs()).  No dialog is shown.  Used by slotRealignSpikes
+     * and by the auto-align-after-merge path.  Caller must ensure doc is
+     * open and no realignment is already running.*/
+    void startRealignForCluster(int clusterId);
+
     /**Start ONE worker that processes the whole @p clusterIds list back-to-back
      * in a single thread (RealignWorker batch mode), wired to
      * slotRealignClusterDone (progress) and slotRealignBatchFinished (finalise).

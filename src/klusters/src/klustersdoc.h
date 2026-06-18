@@ -259,7 +259,9 @@ public:
     * @param clustersToGroup list of clusters to be grouped.
     * @param activeView the view in which the change has to be immediate.
     */
-    void groupClusters(QList<int> clustersToGroup,KlustersView& activeView);
+    /** Groups the given clusters; returns the id of the resulting merged
+     *  cluster (>1), or -1 if nothing was merged. */
+    int groupClusters(QList<int> clustersToGroup,KlustersView& activeView);
 
     /** Moves spikes from @p fromCluster whose 0-based .spk indices are in
      * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */

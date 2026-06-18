@@ -28,6 +28,9 @@ int    PrefRefinement::getRealignMode() const {
 void   PrefRefinement::setCurationLogging(bool b) { curationLoggingCheckBox->setChecked(b); }
 bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckBox->isChecked(); }
 
+void   PrefRefinement::setAutoRealignAfterMerge(bool b) { autoRealignAfterMergeCheckBox->setChecked(b); }
+bool   PrefRefinement::getAutoRealignAfterMerge() const { return autoRealignAfterMergeCheckBox->isChecked(); }
+
 void   PrefRefinement::setDipSplitMinSize(int n)         { dipSplitMinSizeSpinBox->setValue(n); }
 void   PrefRefinement::setDipSplitBloatFactor(double v)  { dipSplitBloatFactorSpinBox->setValue(v); }
 void   PrefRefinement::setDipSplitValleyThresh(double v) { dipSplitValleyThreshSpinBox->setValue(v); }
