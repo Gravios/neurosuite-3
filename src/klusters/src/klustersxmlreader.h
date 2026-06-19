@@ -122,7 +122,7 @@ public:
 
 
 private:
-    fileType type;
+    fileType type = PARAMETER;
     QString readVersion;
     QDomNode documentNode;
 

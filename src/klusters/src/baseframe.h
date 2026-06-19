@@ -260,7 +260,7 @@ protected:
     /**
   * Rectangle identifying the selected area
   */
-    QRect* rubber;
+    QRect* rubber = nullptr;
 
     /**Mode giving the way of drawing the contents of the view*/
     DrawContentsMode drawContentsMode;
@@ -268,7 +268,7 @@ protected:
     /**
    * Draw mode (selected by the user via a menu, a button or a shortcut).
    */
-    Mode mode;
+    Mode mode = ZOOM;
 
     /**A cursor to represent the zoom state.*/
     QCursor zoomCursor;

@@ -1142,7 +1142,7 @@ private:
         dataType timeEnd;
         dataType nbSampleSpikes;
         dataType nbTimeFrameSpikes;
-        WaveformMode mode;
+        WaveformMode mode = SAMPLE;
         int nbPtsBySpike;
         dataType nbSpikesAsked;
     } ;
@@ -1330,7 +1330,7 @@ private:
     private:
         Data& data;
         std::vector<uint> values;
-        Status status;
+        Status status = NOT_AVAILABLE;
         int binSize;
         int timeFrame;
         uint max;
