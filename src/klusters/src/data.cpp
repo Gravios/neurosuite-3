@@ -4835,10 +4835,6 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
     dataType cluster2NbSpikes = spikesOfCluster2.nbOfColumns();
     dataType cluster2NbSpikesPlusOne = cluster2NbSpikes + 1;
     dataType spikeOfCluster2 = 1;
-    double timeOfCluster1;
-    double lowerBound;
-    double upperBound;
-
     int totalNbBins = (2 * halfBins) + 1;
     setNbBins(totalNbBins);
     //Initialize the array which will contain the correlogram data.
@@ -4849,10 +4845,10 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
     //Cluster 1 will be the cluster of reference.
     for(dataType spikeOfCluster1 = 1; spikeOfCluster1 < cluster1NbSpikesPlusOne; ++spikeOfCluster1){
 
-        timeOfCluster1 = data.spikeTime(spikesOfCluster1,spikeOfCluster1);
+        double timeOfCluster1 = data.spikeTime(spikesOfCluster1,spikeOfCluster1);
 
-        lowerBound = timeOfCluster1 - timeWindowInRU/2;
-        upperBound = timeOfCluster1 + timeWindowInRU/2;
+        double lowerBound = timeOfCluster1 - timeWindowInRU/2;
+        double upperBound = timeOfCluster1 + timeWindowInRU/2;
 
         //If the last spike of cluster2 is before the lower limit the computation is over.
         if(data.spikeTime(spikesOfCluster2,cluster2NbSpikes) < lowerBound) break;

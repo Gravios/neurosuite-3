@@ -860,11 +860,10 @@ void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
     doc->data().getClusterUserInformation(electrodeGroupId,clusterUserInformationMap);
 
     ItemColors& clusterColors = doc->clusterColors();
-    int clusterId;
     ClusterUserInformation currentClusterInformation;
 
     for(int i =0; i< iconView->count() ; ++i) {
-        clusterId = clusterColors.itemId(i);
+        int clusterId = clusterColors.itemId(i);
 
         QString clusterText = iconView->item(i)->text();
 
@@ -935,10 +934,9 @@ void ClusterPalette::hideUserClusterInformation(){
     //iconView->arrangeItemsInGrid();
 
     ItemColors& clusterColors = doc->clusterColors();
-    int clusterId;
 
     for(int i = 0; i < iconView->count(); ++i) {
-        clusterId = clusterColors.itemId(i);
+        int clusterId = clusterColors.itemId(i);
         iconView->item(i)->setText(QString::number(clusterId));
     }
 
