@@ -410,7 +410,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     //Download the spike and fet files in temp files if necessary
     if(!QFile(spkFileUrl).exists())
         return SPK_DOWNLOAD_ERROR;
-    QString tmpSpikeFile = spkFileUrl;
+    QString spikeFilePath = spkFileUrl;
 
 
     QFile fetFile(fetFileUrl);
@@ -424,7 +424,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     }
 
     //The length of the spike file is used to determine the number of spikes.
-    QFile spikeFile(tmpSpikeFile);
+    QFile spikeFile(spikeFilePath);
 
     if(!spikeFile.open(QIODevice::ReadOnly)){
         fetFile.close();
@@ -534,7 +534,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
         //Initialize the data
         if(isYamlParExist){
-            if(!clusteringData->initialize(fetFile,cluFile,spkFileLength,tmpSpikeFile,yamlParFile,electrodeGroupID.toInt(),errorInformation)){
+            if(!clusteringData->initialize(fetFile,cluFile,spkFileLength,spikeFilePath,yamlParFile,electrodeGroupID.toInt(),errorInformation)){
                 //close the files
                 yamlParFile.close();
                 fetFile.close();
@@ -546,7 +546,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
             cluFile.close();
         }
         else{
-            if(!clusteringData->initialize(fetFile,cluFile,spkFileLength,tmpSpikeFile,parXFile,parFile,errorInformation)){
+            if(!clusteringData->initialize(fetFile,cluFile,spkFileLength,spikeFilePath,parXFile,parFile,errorInformation)){
                 //close the files
                 parXFile.close();
                 parFile.close();
@@ -566,7 +566,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
         //Initialize the data
         if(isYamlParExist){
-            if(!clusteringData->initialize(fetFile,spkFileLength,tmpSpikeFile,yamlParFile,electrodeGroupID.toInt(),errorInformation)){
+            if(!clusteringData->initialize(fetFile,spkFileLength,spikeFilePath,yamlParFile,electrodeGroupID.toInt(),errorInformation)){
                 //close the files
                 yamlParFile.close();
                 fetFile.close();
@@ -576,7 +576,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
             fetFile.close();
         }
         else{
-            if(!clusteringData->initialize(fetFile,spkFileLength,tmpSpikeFile,parXFile,parFile,errorInformation)){
+            if(!clusteringData->initialize(fetFile,spkFileLength,spikeFilePath,parXFile,parFile,errorInformation)){
                 //close the files
                 parXFile.close();
                 parFile.close();
@@ -3263,14 +3263,14 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     cluFileName.replace(".fet.",".clu.");
 
     QString cluFileUrl(cluFileName);
-    QString tmpCluFile = cluFileUrl;
+    QString cluFilePath = cluFileUrl;
     if(!QFile::exists(cluFileUrl)) {
         QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         return DOWNLOAD_ERROR;
     }
 
-    NS3_DIAG()<<" tmpCluFile"<<tmpCluFile;
-    QFile cluFile(tmpCluFile);
+    NS3_DIAG()<<" cluFilePath"<<cluFilePath;
+    QFile cluFile(cluFilePath);
 
     if(!cluFile.open(QIODevice::ReadOnly)){
         if(!QFile::remove(reclusteringFetFileName))
