@@ -139,7 +139,6 @@ KlustersApp::KlustersApp()
       realignWorker(nullptr),
       realignThread(nullptr),
       realignQueue(nullptr),
-      realignOutputWidget(nullptr),
       realignRunning(false),
       realignClusterId(-1),
       realignBatchActive(false),
@@ -229,7 +228,6 @@ KlustersApp::~KlustersApp()
         realignThread = nullptr;
     }
     // realignWorker is owned by the thread and deleted via deleteLater.
-    // realignOutputWidget is parented to this and will be deleted automatically.
 }
 
 void KlustersApp::initView()
@@ -2177,8 +2175,7 @@ void KlustersApp::importDocumentFile(const QString& url)
 
 bool KlustersApp::doesActiveDisplayContainProcessWidget(){
     QWidget *widget = tabsParent->currentWidget();
-    // Returns true for both the recluster output tab (processWidget) and the
-    // realign output tab (realignOutputWidget) — both are ProcessWidget instances.
+    // Returns true for the recluster output tab (processWidget), a ProcessWidget.
     return qobject_cast<ProcessWidget*>(widget);
 }
 
@@ -3985,7 +3982,7 @@ void KlustersApp::slotTabChange(int index){
                 slotStateChanged("reclusterState");
             }
         }
-    } else {// a ProcessWidget (recluster or realign output tab)
+    } else {// a ProcessWidget (the recluster output tab)
         // Do NOT hide toolbar fields — leave Features, Waveforms, Bin size, Duration
         // in whatever state they were when the user last viewed a real display tab.
         // Only update menu state and cluster palette selection.
@@ -3993,25 +3990,14 @@ void KlustersApp::slotTabChange(int index){
         overlayPresentation->setChecked(false);
         meanPresentation->setChecked(false);
 
-        // Determine which tab type is active so we highlight the right clusters.
-        bool isRealignTab = (widget == realignOutputWidget);
-        bool isReclusterTab = !isRealignTab; // (could also be processWidget)
-
-        if (isReclusterTab) {
-            //Update the palette of clusters
-            if(!processFinished) {
-                clusterPalette->selectItems(clustersToRecluster);
-            } else {
-                QList<int> emptyList;
-                clusterPalette->selectItems(emptyList);
-            }
-            slotStateChanged(QStringLiteral("reclusterViewState"));
+        //Update the palette of clusters
+        if(!processFinished) {
+            clusterPalette->selectItems(clustersToRecluster);
         } else {
-            // Realign output tab: clear cluster palette selection.
             QList<int> emptyList;
             clusterPalette->selectItems(emptyList);
-            slotStateChanged(QStringLiteral("realignViewState"));
         }
+        slotStateChanged(QStringLiteral("reclusterViewState"));
     }
 }
 
@@ -5955,42 +5941,6 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("stoppedRealignState")) {
         mAbortRealign->setEnabled(false);
 
-    } else if(state == QLatin1String("realignViewState")) {
-        // Applied by slotTabChange when the realign output tab is the active tab.
-        // Mirrors reclusterViewState.
-        mZoomAction->setEnabled(false);
-        mUpdateErrorMatrix->setEnabled(false);
-        mNewCluster->setEnabled(false);
-        mSplitClusters->setEnabled(false);
-        mDeleteNoisy->setEnabled(false);
-        mDeleteNoisySpikes->setEnabled(false);
-        mDeleteArtifact->setEnabled(false);
-        mDeleteArtifactSpikes->setEnabled(false);
-        mReCluster->setEnabled(false);
-        mReclusterMedian->setEnabled(false);
-        mReclusterChannelVar->setEnabled(false);
-        mRealignSpikes->setEnabled(false);
-        mPcaAlignAllClusters->setEnabled(false);
-        nudgeMinusAction->setEnabled(false);
-        nudgePlusAction->setEnabled(false);
-        scaleByShouler->setEnabled(false);
-        timeFrameMode->setEnabled(false);
-        noScale->setEnabled(false);
-        meanPresentation->setEnabled(false);
-        overlayPresentation->setEnabled(false);
-        mRenumberClusters->setEnabled(false);
-        scaleByMax->setEnabled(false);
-        mGroupeClusters->setEnabled(false);
-        mAutoMerge->setEnabled(false);
-        mSortClustersBySpikeCount->setEnabled(false);
-        mPurgeSmallClusters->setEnabled(false);
-        shoulderLine->setEnabled(false);
-        mIncreaseAmplitude->setEnabled(false);
-        mDecreaseAmplitude->setEnabled(false);
-        mNextSpike->setEnabled(false);
-        mPreviousSpike->setEnabled(false);
-        mUndo->setEnabled(false);
-        mRedo->setEnabled(false);
     } else if(state == QLatin1String("traceViewState")) {
         mIncreaseChannelAmplitudes->setEnabled(true);
         mDecreaseChannelAmplitudes->setEnabled(true);
@@ -6225,8 +6175,8 @@ void KlustersApp::slotRealignSpikes()
 // ---------------------------------------------------------------------------
 // startRealignForCluster
 //
-// Sets up the realign output tab, locks the UI, and launches the background
-// realignment worker for one cluster, using the current saved settings
+// Locks the UI and launches the background realignment worker for one cluster,
+// using the current saved settings
 // (buildRealignArgs() — post-alignment mode incl. --pca-refine and the top-ch
 // gate are all encoded there).  No dialog is shown; this is invoked directly
 // by slotRealignSpikes and by the auto-align-after-merge path in
@@ -6236,37 +6186,6 @@ void KlustersApp::slotRealignSpikes()
 void KlustersApp::startRealignForCluster(int clusterId)
 {
     realignArgs = buildRealignArgs();   // saved mode + top-ch gate
-
-    // ── Create (or recycle) the output tab ───────────────────────────────────
-    // Remove any leftover tab from a previous realignment run.
-    if (realignOutputWidget) {
-        int tabIndex = tabsParent->indexOf(realignOutputWidget);
-        if (tabIndex != -1) {
-            tabsParent->removeTab(tabIndex);
-            displayCount--;
-        }
-        delete realignOutputWidget;
-        realignOutputWidget = nullptr;
-    }
-
-    realignOutputWidget = new ProcessWidget(this);
-    realignOutputWidget->setFocusPolicy(Qt::NoFocus);
-    // ProcessWidget inherits QListWidget and displays coloured log lines.
-    // We do NOT call startJob() — output is fed directly via insertStdoutLine /
-    // insertStderrLine from the worker's logLine signal.
-    tabsParent->addTab(realignOutputWidget, tr("Realign output"));
-    displayCount++;
-    tabsParent->setCurrentWidget(realignOutputWidget);
-
-    // Add a header line matching the reclustering tab style.
-    realignOutputWidget->insertStdoutLine(
-        tr("=== Spike realignment — cluster %1 ===").arg(clusterId));
-
-    // Connect tab-change signal so slotTabChange handles the realign tab correctly.
-    // (It is already connected from the recluster setup; connecting again is harmless
-    // but we guard anyway.)
-    connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange,
-            Qt::UniqueConnection);
 
     // ── Lock UI exactly as reclustering does ─────────────────────────────────
     realignRunning = true;
@@ -6339,16 +6258,6 @@ void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
             realignRunning = false;
             applyRealignResult(ok, nShifted, nSwapped, meanBefore, meanAfter,
                                backupBase, nChan, nSamp);
-        },
-        // onLog: same streaming the direct path's logLine connection does.
-        [this](const QString& line, bool isError) {
-            if (!realignOutputWidget)
-                return;
-            if (isError)
-                realignOutputWidget->insertStderrLine(line);
-            else
-                realignOutputWidget->insertStdoutLine(line);
-            realignOutputWidget->scrollToBottom();
         });
 
     realignQueue->enqueue(job);
@@ -6369,22 +6278,6 @@ void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
     auto* worker = new RealignWorker(doc, clusterId, launchArgs);
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
-
-    // Stream log lines to the output tab (queued — crosses thread boundary).
-    // After each insert we scroll to the bottom: ProcessWidget extends
-    // QListWidget but doesn't auto-track new items, so without scrollToBottom
-    // the visible viewport stays anchored to the top and the user sees only
-    // the opening header lines while later progress disappears below the
-    // fold.  Cheap on QListWidget — just a viewport invalidate.
-    connect(worker, &RealignWorker::logLine,
-            this, [this](const QString& line, bool isError) {
-                if (!realignOutputWidget) return;
-                if (isError)
-                    realignOutputWidget->insertStderrLine(line);
-                else
-                    realignOutputWidget->insertStdoutLine(line);
-                realignOutputWidget->scrollToBottom();
-            }, Qt::QueuedConnection);
 
     // When the worker signals finished, call our slot on the GUI thread.
     connect(worker, &RealignWorker::finished,
@@ -6413,17 +6306,6 @@ void KlustersApp::startRealignBatchWorker(const QList<int>& clusterIds,
     worker->setBatch(clusterIds);
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
-
-    // Same log streaming as the single-cluster path.
-    connect(worker, &RealignWorker::logLine,
-            this, [this](const QString& line, bool isError) {
-                if (!realignOutputWidget) return;
-                if (isError)
-                    realignOutputWidget->insertStderrLine(line);
-                else
-                    realignOutputWidget->insertStdoutLine(line);
-                realignOutputWidget->scrollToBottom();
-            }, Qt::QueuedConnection);
 
     // Per-cluster progress (progress bar + counters) and the one-time finalise.
     connect(worker, &RealignWorker::clusterDone,
@@ -6488,15 +6370,6 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     doc->endRealignBatchLog();    // commit the single batch "after" snapshot
     flushRealignBatchRefresh();   // one deferred view refresh for all clusters
 
-    if (realignOutputWidget) {
-        realignOutputWidget->insertStdoutLine(
-            tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
-               "shifted total — Save to commit or discard via File > Close ===")
-            .arg(realignBatchAccepted)
-            .arg(realignBatchFailed)
-            .arg(realignBatchShiftedTotal));
-        realignOutputWidget->scrollToBottom();
-    }
     if (realignProgressBar) realignProgressBar->hide();
     slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
                      "%3 spike(s) shifted total.")
@@ -6635,38 +6508,10 @@ void KlustersApp::slotPcaAlignAllClusters()
             QStringLiteral("--topchannels %1 --pca-refine").arg(topCh);
     }
 
-    // Recycle the output tab the same way slotRealignSpikes does.
-    if (realignOutputWidget) {
-        const int tabIndex = tabsParent->indexOf(realignOutputWidget);
-        if (tabIndex != -1) {
-            tabsParent->removeTab(tabIndex);
-            displayCount--;
-        }
-        delete realignOutputWidget;
-        realignOutputWidget = nullptr;
-    }
-    realignOutputWidget = new ProcessWidget(this);
-    realignOutputWidget->setFocusPolicy(Qt::NoFocus);
-    tabsParent->addTab(realignOutputWidget, tr("Realign output"));
-    displayCount++;
-    tabsParent->setCurrentWidget(realignOutputWidget);
-    realignOutputWidget->insertStdoutLine(
-        tr("=== PCA-Center alignment batch — %1 cluster(s), %2 ===")
-        .arg(clusters.size())
-        .arg(chanDesc));
-    realignOutputWidget->insertStdoutLine(tr("    args: %1").arg(realignBatchArgs));
-    realignOutputWidget->scrollToBottom();
-
-    // Tab-change wiring (idempotent — UniqueConnection guards re-adding).
-    connect(tabsParent, &QTabWidget::currentChanged,
-            this, &KlustersApp::slotTabChange,
-            Qt::UniqueConnection);
-
     // ── Status-bar progress widget ───────────────────────────────────────────
-    // Always-visible feedback so the user can see batch progress even when
-    // they switch away from the Realign output tab (which is the more common
-    // case — they switch to Overview to watch waveforms updating in place
-    // as each cluster completes its forceClusterRefresh).
+    // Always-visible feedback so the user can see batch progress while on the
+    // Overview display, watching waveforms update in place as each cluster
+    // completes its forceClusterRefresh.
     if (!realignProgressBar) {
         realignProgressBar = new QProgressBar(this);
         realignProgressBar->setObjectName(QStringLiteral("realignProgress"));
@@ -6744,20 +6589,10 @@ void KlustersApp::slotAbortRealign()
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         // Refresh whatever was already accepted before the abort.
         flushRealignBatchRefresh();
-        if (realignOutputWidget) {
-            realignOutputWidget->insertStderrLine(
-                tr("--- Batch aborted: %1 cluster(s) skipped, %2 already accepted ---")
-                .arg(remaining).arg(realignBatchAccepted));
-            realignOutputWidget->scrollToBottom();
-        }
         if (realignProgressBar) realignProgressBar->hide();
         slotStatusMsg(tr("PCA-Center align aborted: %1 accepted, %2 skipped.")
                       .arg(realignBatchAccepted).arg(remaining));
     }
-
-    if (realignOutputWidget)
-        realignOutputWidget->insertStderrLine(
-            tr("--- Realignment aborted by user ---"));
 
     slotStateChanged(QStringLiteral("stoppedRealignState"));
     // Restore full UI state for whichever tab is currently active.
@@ -6840,12 +6675,6 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
             // back on for the next worker.
             const int next = realignBatchQueue.takeFirst();
             const int pos  = realignBatchTotal - realignBatchQueue.size();
-            if (realignOutputWidget) {
-                realignOutputWidget->insertStdoutLine(
-                    tr("--- cluster %1 (%2/%3) ---")
-                    .arg(next).arg(pos).arg(realignBatchTotal));
-                realignOutputWidget->scrollToBottom();
-            }
             slotStatusMsg(tr("PCA-Center align: cluster %1 (%2/%3) …")
                           .arg(next).arg(pos).arg(realignBatchTotal));
             realignRunning = true;
@@ -6858,15 +6687,6 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         // Now do the one deferred view refresh for every accepted cluster.
         flushRealignBatchRefresh();
-        if (realignOutputWidget) {
-            realignOutputWidget->insertStdoutLine(
-                tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
-                   "shifted total — Save to commit or discard via File > Close ===")
-                .arg(realignBatchAccepted)
-                .arg(realignBatchFailed)
-                .arg(realignBatchShiftedTotal));
-            realignOutputWidget->scrollToBottom();
-        }
         // Hide and reset the status-bar progress bar; keep the widget around
         // so a subsequent batch can reuse it without re-adding to the bar.
         if (realignProgressBar) realignProgressBar->hide();
@@ -6876,10 +6696,8 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
                       .arg(realignBatchFailed)
                       .arg(realignBatchShiftedTotal));
         slotStateChanged(QStringLiteral("noRealignState"));
-        // Switch back to the Overview Display so the user can immediately
-        // arrow-key through clusters and see updated waveforms — staying on
-        // the Realign output tab would leave them stranded on the log with
-        // no obvious next step.
+        // Land on the Overview Display so the user can immediately arrow-key
+        // through clusters and see the updated waveforms.
         if (tabsParent) {
             for (int i = 0; i < tabsParent->count(); ++i) {
                 if (tabsParent->tabText(i).contains(tr("Overview"),
@@ -6891,18 +6709,6 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
         }
         updateUndoRedoDisplay();
         return;
-    }
-
-    // Summary line in the output tab.
-    if (realignOutputWidget) {
-        if (ok) {
-            realignOutputWidget->insertStdoutLine(
-                tr("=== Done: %1 spike(s) shifted, %2 sort-order correction(s). ===")
-                .arg(nShifted).arg(nSwapped));
-        } else {
-            realignOutputWidget->insertStderrLine(
-                tr("=== Realignment failed — see log above. ==="));
-        }
     }
 
     // Unlock the UI.
