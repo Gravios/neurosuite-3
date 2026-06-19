@@ -508,14 +508,29 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
 }
 
 void ParameterView::discoverPlugins() {
-    // ndm plugin protocol v1: any executable named `ndm_<name>` on $PATH self-describes via
-    // `--ndm-describe`, emitting the YAML `program:` mapping DescriptionYamlReader already parses.
-    // Run each, hand its stdout to the same reader/loadProgram path used for installed descriptions,
-    // and add any whose program name is not already loaded (silent re-discovery).
+    // ndm plugin protocol v1: an executable named `ndm_<name>` on $PATH is a plugin iff it answers the
+    // handshake `--ndm-version` with a line "ndm-plugin-protocol <N>".  We gate on that first (so we do
+    // not run `--ndm-describe` on arbitrary ndm_* binaries), skip any plugin declaring a protocol newer
+    // than this build understands, then hand `--ndm-describe`'s YAML to the same DescriptionYamlReader /
+    // loadProgram path used for installed descriptions, adding any not already loaded.
+    const int kNdmProtocol = 1;          // highest ndm-plugin protocol this build understands
+
+    auto runPluginCmd = [](const QString &exePath, const QString &arg, QByteArray *out) -> bool {
+        QProcess proc;
+        proc.start(exePath, QStringList() << arg);
+        if (!proc.waitForFinished(5000) || proc.exitStatus() != QProcess::NormalExit
+                || proc.exitCode() != 0)
+            return false;
+        if (out)
+            *out = proc.readAllStandardOutput();
+        return true;
+    };
+
     const QStringList dirs = QString::fromLocal8Bit(qgetenv("PATH"))
                                  .split(QDir::listSeparator(), Qt::SkipEmptyParts);
     QSet<QString> tried;
     int added = 0;
+    int skipped = 0;
     for (const QString &dirPath : dirs) {
         const QFileInfoList entries = QDir(dirPath).entryInfoList(
             QStringList() << QStringLiteral("ndm_*"), QDir::Files | QDir::Executable);
@@ -525,13 +540,27 @@ void ParameterView::discoverPlugins() {
                 continue;
             tried.insert(exe);
 
-            QProcess proc;
-            proc.start(fi.absoluteFilePath(), QStringList() << QStringLiteral("--ndm-describe"));
-            if (!proc.waitForFinished(5000) || proc.exitStatus() != QProcess::NormalExit
-                    || proc.exitCode() != 0)
+            // Handshake: parse "ndm-plugin-protocol <N>" from --ndm-version's first line.
+            QByteArray vout;
+            if (!runPluginCmd(fi.absoluteFilePath(), QStringLiteral("--ndm-version"), &vout))
+                continue;                                          // not a plugin
+            const QString vline =
+                QString::fromUtf8(vout).section(QLatin1Char('\n'), 0, 0).trimmed();
+            const QString tag = QStringLiteral("ndm-plugin-protocol");
+            if (!vline.startsWith(tag))
+                continue;                                          // not a plugin
+            bool ok = false;
+            const int proto = vline.mid(tag.size()).trimmed().toInt(&ok);
+            if (!ok)
                 continue;
-            const QByteArray out = proc.readAllStandardOutput();
-            if (out.trimmed().isEmpty())
+            if (proto > kNdmProtocol) {
+                ++skipped;                                         // newer than we understand
+                continue;
+            }
+
+            QByteArray out;
+            if (!runPluginCmd(fi.absoluteFilePath(), QStringLiteral("--ndm-describe"), &out)
+                    || out.trimmed().isEmpty())
                 continue;
 
             QTemporaryFile tmp(QDir::tempPath() + QStringLiteral("/ndmdesc_XXXXXX.yaml"));
@@ -555,9 +584,12 @@ void ParameterView::discoverPlugins() {
         }
     }
     if (QMainWindow *mw = qobject_cast<QMainWindow *>(window()))
-        if (mw->statusBar())
-            mw->statusBar()->showMessage(
-                tr("Discovered %1 ndm_* plugin(s) on $PATH").arg(added), 4000);
+        if (mw->statusBar()) {
+            QString msg = tr("Discovered %1 ndm_* plugin(s) on $PATH").arg(added);
+            if (skipped > 0)
+                msg += tr("; skipped %1 with a newer protocol").arg(skipped);
+            mw->statusBar()->showMessage(msg, 4000);
+        }
 }
 
 void ParameterView::loadProgram(const QString &programUrl) {
