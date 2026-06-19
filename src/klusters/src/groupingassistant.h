@@ -73,14 +73,14 @@ private:
   * the row index of the spike in features array.
   * the id of the cluster.
   */
-    SortableTable* spikesByCluster;
+    SortableTable* spikesByCluster = nullptr;
 
     /**Copy of the @ref Data::clusterInfoMap, contains ClusterInfo(s)
   * key: cluster number
   * value: a ClusterInfo (which gives:
   * the index of the first spike in spikesByCluster and the number of spikes for a given cluster).
   */
-    Data::ClusterInfoMap* clusterInfoMap;
+    Data::ClusterInfoMap* clusterInfoMap = nullptr;
 
     /**True if cluster 1 (noise/unsorted) is present in the clusterInfoMap being computed.
      * When false, a synthetic all-zero column is prepended to the probabilities array
