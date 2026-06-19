@@ -870,9 +870,7 @@ private:
         Array<dataType> data;
         bool ready;
 
-        ClusterData(Array<dataType> d,bool status){
-            data = d;
-            ready = status;
+        ClusterData(Array<dataType> d,bool status):data(d),ready(status){
         }
         ClusterData(){
             ready = false;
@@ -933,10 +931,7 @@ private:
         Array<int> ids;
         bool ready;
 
-        EventData(Array<int> d,Array<dataType> t,bool status){
-            times = t;
-            ids = d;
-            ready = status;
+        EventData(Array<int> d,Array<dataType> t,bool status):times(t),ids(d),ready(status){
         }
         EventData(){
             ready = false;
