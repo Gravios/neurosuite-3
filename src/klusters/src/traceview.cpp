@@ -3116,14 +3116,14 @@ void TraceView::drawCalibrationScale(QPainter& painter){
     painter.drawText(pTextVoltage,QString::fromLatin1("%1 mV (x%2)").arg(screenGain,0,'f',1).arg(gain,0,'f',2));
 
     //draw the time calibration bar (a 20iest of the timeframe)
-    long timeFrameWidth = endTime - startTime;
-    long barLengthInMs = static_cast<long>(floor(0.5 + static_cast<float>(static_cast<float>(timeFrameWidth) / static_cast<float>(20))));
+    long frameWidth = endTime - startTime;
+    long barLengthInMs = static_cast<long>(floor(0.5 + static_cast<float>(static_cast<float>(frameWidth) / static_cast<float>(20))));
 
     float width;
     if(!multiColumns) width = static_cast<float>(viewport.width());
     else width = static_cast<float>(worldToViewportWidth(Xshift) - worldToViewportWidth(XGroupSpace));
 
-    long barLengthInpx = static_cast<long>(floor(0.5 + (width / static_cast<float>(timeFrameWidth)) * static_cast<float>(barLengthInMs)));
+    long barLengthInpx = static_cast<long>(floor(0.5 + (width / static_cast<float>(frameWidth)) * static_cast<float>(barLengthInMs)));
 
     QPoint p3(viewport.right() - labelSize,viewport.bottom() - 30);
     QPoint p4(viewport.right() - labelSize - barLengthInpx,viewport.bottom() - 30);
@@ -3731,7 +3731,7 @@ void TraceView::showNextEvent(){
 
         if(!selectedEvents.isEmpty() && idsToBrowse.count() != 0){
             setCursor(Qt::WaitCursor);
-            long timeFrameWidth = endTime - startTime;
+            long frameWidth = endTime - startTime;
             nextEventProvider.first.clear();
             nextEventProvider.second = 0;
             QHashIterator<QString, EventData*> iterator(eventsData);
@@ -3739,7 +3739,7 @@ void TraceView::showNextEvent(){
                 iterator.next();
                 QList<int> ids = idsToBrowse[iterator.key()];
                 if(!static_cast<EventData*>(iterator.value())->status() && ids.size() != 0)
-                    static_cast<EventsProvider*>(eventProviders[iterator.key()])->requestNextEventData(startTime,timeFrameWidth,ids,this);
+                    static_cast<EventsProvider*>(eventProviders[iterator.key()])->requestNextEventData(startTime,frameWidth,ids,this);
             }
         }
     }
@@ -3779,7 +3779,7 @@ void TraceView::showPreviousEvent(){
 
         if(!selectedEvents.isEmpty() && idsToBrowse.count() != 0){
             setCursor(Qt::WaitCursor);
-            long timeFrameWidth = endTime - startTime;
+            long frameWidth = endTime - startTime;
             previousEventProvider.first.clear();
             previousEventProvider.second = 0;
             QHashIterator<QString, EventData*> iterator(eventsData);
@@ -3787,7 +3787,7 @@ void TraceView::showPreviousEvent(){
                 iterator.next();
                 QList<int> ids = idsToBrowse[iterator.key()];
                 if(!static_cast<EventData*>(iterator.value())->status() && ids.size() != 0)
-                    static_cast<EventsProvider*>(eventProviders[iterator.key()])->requestPreviousEventData(startTime,timeFrameWidth,ids,this);
+                    static_cast<EventsProvider*>(eventProviders[iterator.key()])->requestPreviousEventData(startTime,frameWidth,ids,this);
             }
         }
     }
@@ -4092,7 +4092,7 @@ void TraceView::showNextCluster(){
 
         if(!selectedClusters.isEmpty() && idsToBrowse.count() != 0){
             setCursor(Qt::WaitCursor);
-            long timeFrameWidth = endTime - startTime;
+            long frameWidth = endTime - startTime;
             nextClusterProvider.first.clear();
             nextClusterProvider.second = 0;
             previousStartTimeInRecordingUnits = startTimeInRecordingUnits;
@@ -4101,7 +4101,7 @@ void TraceView::showNextCluster(){
                 iterator.next();
                 QList<int> ids = idsToBrowse[iterator.key().toInt()];
                 if(!static_cast<ClusterData*>(iterator.value())->status() && ids.size() != 0)
-                    static_cast<ClustersProvider*>(clusterProviders[iterator.key()])->requestNextClusterData(startTime,timeFrameWidth,ids,this,startTimeInRecordingUnits);
+                    static_cast<ClustersProvider*>(clusterProviders[iterator.key()])->requestNextClusterData(startTime,frameWidth,ids,this,startTimeInRecordingUnits);
             }
         }
     }
@@ -4141,7 +4141,7 @@ void TraceView::showPreviousCluster(){
 
         if(!selectedClusters.isEmpty() && idsToBrowse.count() != 0){
             setCursor(Qt::WaitCursor);
-            long timeFrameWidth = endTime - startTime;
+            long frameWidth = endTime - startTime;
             previousClusterProvider.first.clear();
             previousClusterProvider.second = 0;
             previousStartTimeInRecordingUnits = startTimeInRecordingUnits;
@@ -4150,7 +4150,7 @@ void TraceView::showPreviousCluster(){
                 iterator.next();
                 QList<int> ids = idsToBrowse[iterator.key().toInt()];
                 if(!static_cast<ClusterData*>(iterator.value())->status() && ids.size() != 0)
-                    static_cast<ClustersProvider*>(clusterProviders[iterator.key()])->requestPreviousClusterData(startTime,timeFrameWidth,ids,this,startTimeInRecordingUnits);
+                    static_cast<ClustersProvider*>(clusterProviders[iterator.key()])->requestPreviousClusterData(startTime,frameWidth,ids,this,startTimeInRecordingUnits);
             }
         }
     }
