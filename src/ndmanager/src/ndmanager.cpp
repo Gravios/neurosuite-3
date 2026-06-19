@@ -190,6 +190,11 @@ void ndManager::setupActions()
 #endif
     connect(mQueryAction, &QAction::triggered, this, &ndManager::slotQuery);
 
+    mDiscoverPluginsAction = actionMenu->addAction(tr("Discover &Plugins"));
+    mDiscoverPluginsAction->setStatusTip(
+        tr("Scan $NDM_PLUGIN_PATH and $PATH for ndm_* plugins and add any that self-describe"));
+    connect(mDiscoverPluginsAction, &QAction::triggered, this, &ndManager::slotDiscoverPlugins);
+
     //mProcessingManager = actionMenu->addAction(tr("Show Processing Manager"));
 
     QMenu *settingsMenu = menuBar()->addMenu(tr("&Settings"));
@@ -862,6 +867,7 @@ void ndManager::slotStateChanged(const QString& state)
         mLoadPipelineAction->setEnabled(false);
         //mProcessingManager->setEnabled(false);
         mExpertMode->setEnabled(false);
+        mDiscoverPluginsAction->setEnabled(false);
         mOpenAction->setEnabled(true);
         mNewAction->setEnabled(true);
         mFileOpenRecent->setEnabled(true);
@@ -878,6 +884,7 @@ void ndManager::slotStateChanged(const QString& state)
         mLoadPipelineAction->setEnabled(true);
         //mProcessingManager->setEnabled(true);
         mExpertMode->setEnabled(true);
+        mDiscoverPluginsAction->setEnabled(true);
     } else if(state == QLatin1String("showManager")) {
         //mProcessingManager->setEnabled(false);
     } else if(state == QLatin1String("hideManger")) {
@@ -886,6 +893,12 @@ void ndManager::slotStateChanged(const QString& state)
         qDebug()<<" state unknown"<<state;
     }
 
+}
+
+void ndManager::slotDiscoverPlugins()
+{
+    if (parameterView)
+        parameterView->discoverPlugins();
 }
 
 void ndManager::slotAbout()

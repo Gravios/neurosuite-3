@@ -198,6 +198,9 @@ private slots:
     /**Process query.*/
     void slotQuery();
 
+    /** Discover external ndm_* plugins on the current parameter view. */
+    void slotDiscoverPlugins();
+
     void slotHanbook();
 
     void slotSaveRecentFiles();
@@ -249,6 +252,7 @@ private:
     QAction* mSaveAsDefaultAction;
     QAction* mNewAction;
     QAction* mQueryAction;
+    QAction* mDiscoverPluginsAction;
     /** Save current pipeline graph to <session>.ndm.default.pipeline.
      *  Bound to File → Save Pipeline (Ctrl+Alt+P).  Requires an open
      *  document and pipelineDesigner to be live; checks both. */
