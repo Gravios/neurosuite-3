@@ -1209,7 +1209,7 @@ private:
     QList<KlustersView*>* viewList;
 
     /** Class containing all the data for the clusters cuting.*/
-    Data* clusteringData;
+    Data* clusteringData = nullptr;
 
     /**Pointer on the parent widget (main window).*/
     QWidget* parent;

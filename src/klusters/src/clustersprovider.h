@@ -133,7 +133,7 @@ private:
     double samplingRate;
 
     /**List of the cluster ids to be used when looking up for the data.*/
-    QList<int>* clusterIds;
+    QList<int>* clusterIds = nullptr;
 
     /**The maximum time of the file in recording units.*/
     dataType fileMaxTime;
