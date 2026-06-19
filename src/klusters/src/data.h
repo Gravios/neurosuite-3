@@ -865,33 +865,33 @@ private:
 
     MinMaxThread* minMaxThread;
 
-    int nbChannels;
-    int nbSamplesInWaveform;
-    int peakPositionInWaveform;
+    int nbChannels = 0;
+    int nbSamplesInWaveform = 0;
+    int peakPositionInWaveform = 0;
     QList<int> channelIds;
-    int nbRefactorySample;
-    int RMSIntWindowLength;
-    float firingRate;
-    int nbSampleBeforePeak;
-    int nbSampleAfterPeak;
-    int windowLengthToRealign;
-    int peakPositionToRealign;
-    int nbFeaturesbyChannel;
-    int nbSamplesByPCA;
-    float HighPassFilterFreq;
-    int nbDimensions;
+    int nbRefactorySample = 0;
+    int RMSIntWindowLength = 0;
+    float firingRate = 0.0f;
+    int nbSampleBeforePeak = 0;
+    int nbSampleAfterPeak = 0;
+    int windowLengthToRealign = 0;
+    int peakPositionToRealign = 0;
+    int nbFeaturesbyChannel = 0;
+    int nbSamplesByPCA = 0;
+    float HighPassFilterFreq = 0.0f;
+    int nbDimensions = 0;
     long nbSpikes;
-    int lowPassFilterFreq;
+    int lowPassFilterFreq = 0;
     /**Sampling rate (time between two samples) in micro seconds.*/
-    double samplingInterval;
-    double samplingRate;
-    int nbTotalElectrodes;
-    int nbBits;
+    double samplingInterval = 0.0;
+    double samplingRate = 0.0;
+    int nbTotalElectrodes = 0;
+    int nbBits = 0;
     QString spkFileName;
-    int voltageRange;
-    int amplification;
-    int initialOffset;
-    int totalNbChannels;
+    int voltageRange = 0;
+    int amplification = 0;
+    int initialOffset = 0;
+    int totalNbChannels = 0;
     bool traceViewVariablesAvailable;
     QList<int> currentChannels;
 
@@ -1025,7 +1025,7 @@ private:
     /**True is the data where recording using a 12 or 16 bits recording system which
   * gives data coded on 2 bytes, false otherwise (the recording is then assume to be 32 bits
   * and then the data are coded on 4 bytes.*/
-    bool isTwoBytesRecording;
+    bool isTwoBytesRecording = false;
 
     /**
   * String indicating in which presentation mode the user is (sample, time frame).

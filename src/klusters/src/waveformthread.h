@@ -140,9 +140,9 @@ private:
     }
 
     WaveformView& waveformView;
-    int clusterId;
+    int clusterId = 0;
     QList<int> clusterIds;
-    bool treatSingleCluster;
+    bool treatSingleCluster = false;
     bool meanRequested;
     Data& data;
     WaveformView::PresentationMode mode;

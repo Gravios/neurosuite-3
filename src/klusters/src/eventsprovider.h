@@ -259,16 +259,16 @@ private:
     pArray<EventDescription> eventsRedo;
 
     /**The start time for the previously requested data.*/
-    long previousStartTime;
+    long previousStartTime = 0;
 
     /**The end time for the previously requested data.*/
-    long previousEndTime;
+    long previousEndTime = 0;
 
     /**The start index for the previously requested data.*/
-    long previousStartIndex;
+    long previousStartIndex = 0;
 
     /**The end index for the previously requested data.*/
-    long previousEndIndex;
+    long previousEndIndex = 0;
 
     /**Number of events in the event file the provider provides the data for.*/
     long nbEvents;
@@ -280,10 +280,10 @@ private:
     QMap<int,EventDescription> idsDescriptions;
 
     /**The value to use as the length for the event descriptions in the event palette.*/
-    int descriptionLength;
+    int descriptionLength = 0;
 
     /**The maximum time, in miliseconds, contained in the file.*/
-    long fileMaxTime;
+    long fileMaxTime = 0;
 
     /**Represents the percentage from the begining of the window where the events are display when browsing.*/
     float eventPosition;

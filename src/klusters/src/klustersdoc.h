@@ -1293,10 +1293,10 @@ private:
     ChannelColors* channelColorList;
 
     /**Gain which takes the screen gain into account.*/
-    int gain;
+    int gain = 0;
 
     /**Acquisition system gain.*/
-    int acquisitionGain;
+    int acquisitionGain = 0;
 
     /**Map given the correspondance between the channel ids and the display group ids.*/
     QMap<int,int> displayChannelsGroups;
