@@ -1181,26 +1181,26 @@ private:
         }
         /**Specifies the number of spikes which can be store.*/
         void setSize(dataType size,WaveformMode waveformMode = SAMPLE);
-        dataType getSample(dataType index) const {
+        dataType getSample(dataType index) const override {
             return static_cast<dataType>(sampleSpikesTable[index]);
         }
-        dataType getTimeFrame(dataType index) const {
+        dataType getTimeFrame(dataType index) const override {
             return static_cast<dataType>(timeFrameSpikesTable[index]);
         }
-        dataType getSampleMean(dataType index) const {
+        dataType getSampleMean(dataType index) const override {
             return static_cast<dataType>(sampleMeanTable[index]);
         }
-        dataType getTimeFrameMean(dataType index) const {
+        dataType getTimeFrameMean(dataType index) const override {
             return static_cast<dataType>(timeFrameMeanTable[index]);
         }
-        dataType getSampleStDeviation(dataType index) const {
+        dataType getSampleStDeviation(dataType index) const override {
             return static_cast<dataType>(sampleStDeviationTable[index]);
         }
-        dataType getTimeFrameStDeviation(dataType index) const {
+        dataType getTimeFrameStDeviation(dataType index) const override {
             return static_cast<dataType>(timeFrameStDeviationTable[index]);
         }
-        void read(SortableTable& positionOfSpikes,dataType currentSpikeIndex,FILE* spikeFile,dataType nbSpkToDisplay);
-        void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end);
+        void read(SortableTable& positionOfSpikes,dataType currentSpikeIndex,FILE* spikeFile,dataType nbSpkToDisplay) override;
+        void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end) override;
         void calculateMean(WaveformMode waveformMode = SAMPLE);
     private:
         std::vector<T> sampleSpikesTable;
@@ -1602,19 +1602,19 @@ public:
 
     public:
         ~SampleWaveformIterator(){}
-        dataType nextSpike(){
+        dataType nextSpike() override {
             ++spikesIndex;
             return - static_cast<dataType>(waveforms->getSample(spikesIndex));
         }
-        dataType nextMeanValue(){
+        dataType nextMeanValue() override {
             ++meanIndex;
             return - static_cast<dataType>(waveforms->getSampleMean(meanIndex));
         }
-        dataType nextStDeviationValue(){
+        dataType nextStDeviationValue() override {
             ++stDeviationIndex;
             return - static_cast<dataType>(waveforms->getSampleStDeviation(stDeviationIndex));
         }
-        dataType nbOfSpikes() const{
+        dataType nbOfSpikes() const override {
             return waveforms->nbOfSpikes(SAMPLE);
         }
     private:
@@ -1679,19 +1679,19 @@ public:
 
     public:
         ~TimeFrameWaveformIterator(){}
-        dataType nextSpike(){
+        dataType nextSpike() override {
             ++spikesIndex;
             return - static_cast<dataType>(waveforms->getTimeFrame(spikesIndex));
         }
-        dataType nextMeanValue(){
+        dataType nextMeanValue() override {
             ++meanIndex;
             return - static_cast<dataType>(waveforms->getTimeFrameMean(meanIndex));
         }
-        dataType nextStDeviationValue(){
+        dataType nextStDeviationValue() override {
             ++stDeviationIndex;
             return - static_cast<dataType>(waveforms->getTimeFrameStDeviation(stDeviationIndex));
         }
-        dataType nbOfSpikes() const{
+        dataType nbOfSpikes() const override {
             return waveforms->nbOfSpikes(TIME_FRAME);
         }
 
