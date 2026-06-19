@@ -474,7 +474,7 @@ private:
         QPolygon polygon(){return selectionPolygon;}
 
     private:
-        ComputeEvent(QPolygon polygon):QEvent(QEvent::Type(QEvent::User + 700)),selectionPolygon(polygon){}
+        explicit ComputeEvent(QPolygon polygon):QEvent(QEvent::Type(QEvent::User + 700)),selectionPolygon(polygon){}
 
         QPolygon selectionPolygon;
     };

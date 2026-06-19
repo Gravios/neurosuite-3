@@ -76,7 +76,7 @@ public:
         ~CorrelationsEvent(){}
 
     private:
-        CorrelationsEvent(CorrelationThread& thread)
+        explicit CorrelationsEvent(CorrelationThread& thread)
             :QEvent(QEvent::Type(QEvent::User + 300)),correlationThread(thread){}
 
         CorrelationThread& correlationThread;

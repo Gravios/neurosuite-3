@@ -75,7 +75,7 @@ class SpinBox : public QSpinBox
     Q_OBJECT
 
 public:
-    SpinBox(QWidget* parent = nullptr) : QSpinBox(parent) {}
+    explicit SpinBox(QWidget* parent = nullptr) : QSpinBox(parent) {}
 
 public Q_SLOTS:
     /** Clear any text selection on the inner QLineEdit.

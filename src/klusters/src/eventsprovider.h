@@ -41,6 +41,10 @@
 class EventDescription : public QString{
 public:
     EventDescription():QString(){}
+    // EventDescription is a QString subtype used for case-insensitive comparison;
+    // implicit conversion from QString is intentional (e.g. assigning a QString
+    // result straight to an EventDescription), so this ctor stays non-explicit.
+    // cppcheck-suppress noExplicitConstructor
     EventDescription(const QString& s):QString(s){}
 };
 

@@ -60,7 +60,7 @@ class ProcessWidget : public QListWidget
     Q_OBJECT
 
 public:
-    ProcessWidget(QWidget *parent, const char *name=nullptr);
+    explicit ProcessWidget(QWidget *parent, const char *name=nullptr);
     ~ProcessWidget();
 
     /**

@@ -90,7 +90,7 @@ public:
         ~GetWaveformsEvent(){}
 
     private:
-        GetWaveformsEvent(WaveformThread& thread):QEvent(QEvent::Type(QEvent::User + 200)),waveformThread(thread){}
+        explicit GetWaveformsEvent(WaveformThread& thread):QEvent(QEvent::Type(QEvent::User + 200)),waveformThread(thread){}
 
         WaveformThread& waveformThread;
     };
@@ -117,7 +117,7 @@ public:
         ~NoWaveformDataEvent(){}
 
     private:
-        NoWaveformDataEvent(WaveformThread& thread):QEvent(QEvent::Type(QEvent::User + 250)),waveformThread(thread){}
+        explicit NoWaveformDataEvent(WaveformThread& thread):QEvent(QEvent::Type(QEvent::User + 250)),waveformThread(thread){}
 
         WaveformThread& waveformThread;
     };

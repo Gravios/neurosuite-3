@@ -86,7 +86,7 @@ public:
         ~ErrorMatrixEvent(){}
 
     private:
-        ErrorMatrixEvent(ErrorMatrixThread& thread):QEvent(QEvent::Type(QEvent::User + 600)),errorMatrixThread(thread){}
+        explicit ErrorMatrixEvent(ErrorMatrixThread& thread):QEvent(QEvent::Type(QEvent::User + 600)),errorMatrixThread(thread){}
 
         ErrorMatrixThread& errorMatrixThread;
     };

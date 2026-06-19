@@ -42,7 +42,7 @@ class ProcessLineMaker : public QObject
 
 public:
     ProcessLineMaker();
-    ProcessLineMaker(QProcess*);
+    explicit ProcessLineMaker(QProcess*);
     void processKilled(){isProcessKilled = true;}
     void reset(){
         counterOut = 0;

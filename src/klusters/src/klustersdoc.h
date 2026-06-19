@@ -483,7 +483,7 @@ public:
         QString methodOfOrigin(){return origin;}
         ~CloseDocumentEvent(){}
 
-        CloseDocumentEvent(const QString &origin):QEvent(QEvent::Type(QEvent::User + 400)),origin(origin){}
+        explicit CloseDocumentEvent(const QString &origin):QEvent(QEvent::Type(QEvent::User + 400)),origin(origin){}
 
         QString origin;
     };
