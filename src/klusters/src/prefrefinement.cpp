@@ -30,6 +30,10 @@ bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckB
 
 void   PrefRefinement::setAutoRealignAfterMerge(bool b) { autoRealignAfterMergeCheckBox->setChecked(b); }
 bool   PrefRefinement::getAutoRealignAfterMerge() const { return autoRealignAfterMergeCheckBox->isChecked(); }
+void   PrefRefinement::setAutoRenumberAfterMerge(bool b) { autoRenumberAfterMergeCheckBox->setChecked(b); }
+bool   PrefRefinement::getAutoRenumberAfterMerge() const { return autoRenumberAfterMergeCheckBox->isChecked(); }
+void   PrefRefinement::setAutoUpdateMatricesAfterMerge(bool b) { autoUpdateMatricesAfterMergeCheckBox->setChecked(b); }
+bool   PrefRefinement::getAutoUpdateMatricesAfterMerge() const { return autoUpdateMatricesAfterMergeCheckBox->isChecked(); }
 
 void   PrefRefinement::setDipSplitMinSize(int n)         { dipSplitMinSizeSpinBox->setValue(n); }
 void   PrefRefinement::setDipSplitBloatFactor(double v)  { dipSplitBloatFactorSpinBox->setValue(v); }

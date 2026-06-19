@@ -118,6 +118,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->autoRealignAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
+    connect(prefRefinement->autoRenumberAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
+    connect(prefRefinement->autoUpdateMatricesAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
@@ -194,6 +196,8 @@ void PrefDialog::updateDialog()
     prefRefinement->setRealignMode(configuration().getRealignMode());
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
+    prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
+    prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMerge());
     prefRefinement->setDipSplitMinSize(configuration().getDipSplitMinSize());
     prefRefinement->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
     prefRefinement->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
@@ -254,6 +258,8 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignMode(prefRefinement->getRealignMode());
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
     configuration().setAutoRealignAfterMerge(prefRefinement->getAutoRealignAfterMerge());
+    configuration().setAutoRenumberAfterMerge(prefRefinement->getAutoRenumberAfterMerge());
+    configuration().setAutoUpdateMatricesAfterMerge(prefRefinement->getAutoUpdateMatricesAfterMerge());
     configuration().setDipSplitMinSize(prefRefinement->getDipSplitMinSize());
     configuration().setDipSplitBloatFactor(prefRefinement->getDipSplitBloatFactor());
     configuration().setDipSplitValleyThresh(prefRefinement->getDipSplitValleyThresh());
@@ -318,6 +324,8 @@ void PrefDialog::slotDefault()
     prefRefinement->setRealignMode(configuration().getRealignModeDefault());
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
+    prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());
+    prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMergeDefault());
     prefRefinement->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
     prefRefinement->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
     prefRefinement->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());

@@ -28,6 +28,10 @@ public:
     // Auto-run spike alignment after each interactive merge
     void   setAutoRealignAfterMerge(bool b);
     bool   getAutoRealignAfterMerge() const;
+    void   setAutoRenumberAfterMerge(bool b);
+    bool   getAutoRenumberAfterMerge() const;
+    void   setAutoUpdateMatricesAfterMerge(bool b);
+    bool   getAutoUpdateMatricesAfterMerge() const;
 
     // DipSplit
     void   setDipSplitMinSize(int n);

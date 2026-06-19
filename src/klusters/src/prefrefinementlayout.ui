@@ -234,6 +234,32 @@
           </property>
          </widget>
         </item>
+        <item row="5" column="0">
+         <widget class="QCheckBox" name="autoRenumberAfterMergeCheckBox">
+          <property name="text">
+           <string>Auto-renumber clusters after each merge</string>
+          </property>
+          <property name="toolTip">
+           <string>After any merge (interactive Group Clusters or batch Auto-Merge), automatically renumber the clusters (same as the Renumber Clusters action, R) so IDs stay contiguous. Default: off.</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="6" column="0">
+         <widget class="QCheckBox" name="autoUpdateMatricesAfterMergeCheckBox">
+          <property name="text">
+           <string>Auto-update matrices after each merge</string>
+          </property>
+          <property name="toolTip">
+           <string>After any merge (interactive Group Clusters or batch Auto-Merge), automatically recompute the error / template / residual matrices (same as the Update Error Matrix action, U). No effect when no matrix view is open. Default: off.</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
    </item>
