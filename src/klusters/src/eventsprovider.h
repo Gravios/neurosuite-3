@@ -79,7 +79,7 @@ public:
   * @param selectedIds list of event ids to look up for.
   * @param initiator instance requesting the data.
   */
-    void requestNextEventData(long startTime,long timeFrame,QList<int> selectedIds,QObject* initiator);
+    void requestNextEventData(long startTime,long timeFrame,const QList<int>& selectedIds,QObject* initiator);
 
 
     /**Looks up for the first of the events included in the list @p selectedIds existing before the time @p endTime.
@@ -90,7 +90,7 @@ public:
   * @param selectedIds list of event ids to look up for.
   * @param initiator instance requesting the data.
   */
-    void requestPreviousEventData(long endTime,long timeFrame,QList<int> selectedIds,QObject* initiator);
+    void requestPreviousEventData(long endTime,long timeFrame,const QList<int>& selectedIds,QObject* initiator);
 
     /**Loads the event ids and the corresponding spike time.
   * @return an loadReturnMessage enum giving the load status
@@ -142,7 +142,7 @@ public:
   * @param eventDescriptionToAdd description of the added event.
   * @param time time of the added event.
   */
-    void addEvent(QString eventDescriptionToAdd,double time);
+    void addEvent(const QString& eventDescriptionToAdd,double time);
 
     /** Reverts the last user action.*/
     void undo();
@@ -186,7 +186,7 @@ public:
   * @param newEventDescription new name for the event to rename.
   * @param time time of the event to rename.
   */
-    void renameEvent(int selectedEventId,QString newEventDescription,double time);
+    void renameEvent(int selectedEventId,const QString& newEventDescription,double time);
 
 Q_SIGNALS:
     /**Signals that the data have been retrieved.

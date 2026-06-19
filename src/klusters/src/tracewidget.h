@@ -173,7 +173,7 @@ public Q_SLOTS:
   * @param name name use to identified the cluster provider containing the clusters to show.
   * @param clustersToShow new list of clusters to be shown.
   */
-    void showClusters(QString name,QList<int>& clustersToShow){
+    void showClusters(const QString& name,QList<int>& clustersToShow){
         view.showClusters(name,clustersToShow);
     }
 
@@ -183,7 +183,7 @@ public Q_SLOTS:
   * @param name name use to identified the event provider containing the events to show.
   * @param eventsToShow new list of events to be shown.
   */
-    void showEvents(QString name,QList<int>& eventsToShow){
+    void showEvents(const QString& name,QList<int>& eventsToShow){
         view.showEvents(name,eventsToShow);
     }
 
@@ -198,14 +198,14 @@ public Q_SLOTS:
   * @param clusterId id of the cluster to redraw.
   * @param active true if the view is the active one, false otherwise.
   */
-    void  clusterColorUpdate(QString name,int clusterId,bool active){view.clusterColorUpdate(name,clusterId,active);}
+    void  clusterColorUpdate(const QString& name,int clusterId,bool active){view.clusterColorUpdate(name,clusterId,active);}
 
     /**Changes the color of a event.
   * @param name name use to identified the event provider containing the updated event.
   * @param eventId id of the event to redraw.
   * @param active true if the view is the active one, false otherwise.
   */
-    void  eventColorUpdate(QString name,int eventId,bool active){view.eventColorUpdate(name,eventId,active);}
+    void  eventColorUpdate(const QString& name,int eventId,bool active){view.eventColorUpdate(name,eventId,active);}
 
     /**Changes the color of a group of channels.
   * @param groupId id of the group for which the color have been changed.
@@ -307,7 +307,7 @@ public Q_SLOTS:
   * @param nbSamplesAfter number of samples after the sample of the peak are contained in the waveform of a spike.
   * @param clustersToSkip list of clusters to not use while browsing.
   */
-    void addClusterProvider(ClustersProvider* clustersProvider,QString name,ItemColors* clusterColors,bool active,
+    void addClusterProvider(ClustersProvider* clustersProvider,const QString& name,ItemColors* clusterColors,bool active,
                                    QList<int>& clustersToShow,QMap<int, QList<int> >* displayGroupsClusterFile,
                                    QMap<int,int>* channelsSpikeGroups,int nbSamplesBefore,int nbSamplesAfter,const QList<int>& clustersToSkip){
         view.addClusterProvider(clustersProvider,name,clusterColors,active,clustersToShow,displayGroupsClusterFile,
@@ -330,7 +330,7 @@ public Q_SLOTS:
   * @param eventsToShow list of clusters to be shown.
   * @param eventsToNotBrowse list of events to not use while browsing.
   */
-    void addEventProvider(EventsProvider* eventsProvider,QString name,ItemColors* eventColors,bool active,
+    void addEventProvider(EventsProvider* eventsProvider,const QString& name,ItemColors* eventColors,bool active,
                                  QList<int>& eventsToShow,const QList<int>& eventsToNotBrowse){
         view.addEventProvider(eventsProvider,name,eventColors,active,eventsToShow,eventsToNotBrowse);
     }
@@ -385,7 +385,7 @@ public Q_SLOTS:
   * @param time initial time of the modified event.
   * @param newTime new time of the modified event.
   */
-    void slotEventModified(QString providerName,int selectedEventId,double time,double newTime){
+    void slotEventModified(const QString& providerName,int selectedEventId,double time,double newTime){
         emit eventModified(providerName,selectedEventId,time,newTime);
     }
 
@@ -394,7 +394,7 @@ public Q_SLOTS:
   * @param selectedEventId id of the removed event.
   * @param time initial time of the removed event.
   */
-    void slotEventRemoved(QString providerName,int selectedEventId,double time){
+    void slotEventRemoved(const QString& providerName,int selectedEventId,double time){
         emit eventRemoved(providerName,selectedEventId,time);
     }
 
@@ -404,7 +404,7 @@ public Q_SLOTS:
   * @param newTime new time of the modified event.
   * @param active true if the view is the active one, false otherwise.
   */
-    void updateEvents(bool active,QString providerName,double time,double newTime){
+    void updateEvents(bool active,const QString& providerName,double time,double newTime){
         long eventTime = static_cast<long>(floor(0.5 + time));
         long newEventTime = static_cast<long>(floor(0.5 + newTime));
         if((eventTime >= startTime  && eventTime <= (startTime + timeWindow)) ||
@@ -420,7 +420,7 @@ public Q_SLOTS:
   * @param time initial time of the removed event.
   * @param active true if the view is the active one, false otherwise.
   */
-    void updateEvents(bool active,QString providerName,double time){
+    void updateEvents(bool active,const QString& providerName,double time){
         long eventTime = static_cast<long>(floor(0.5 + time));
         if((eventTime >= startTime  && eventTime <= (startTime + timeWindow))) view.updateEvents(providerName,active);
     }
@@ -429,7 +429,7 @@ public Q_SLOTS:
   * @param providerName name use to identified the event provider which will contain the added event.
   * @param eventDescription description of the next event to be created.
   */
-    void eventToAddProperties(QString providerName,QString eventDescription){
+    void eventToAddProperties(const QString& providerName,const QString& eventDescription){
         view.eventToAddProperties(providerName,eventDescription);
     }
 
@@ -438,7 +438,7 @@ public Q_SLOTS:
   * @param addedEventDescription description of the added event.
   * @param time time of the added event.
   */
-    void slotEventAdded(QString providerName,QString addedEventDescription,double time){
+    void slotEventAdded(const QString& providerName,const QString& addedEventDescription,double time){
         emit eventAdded(providerName,addedEventDescription,time);
     }
 
@@ -447,7 +447,7 @@ public Q_SLOTS:
   * @param eventsToShow new list of events to be shown.
   * @param active true if the view is the active one, false otherwise.
   */
-    void updateEvents(QString providerName,QList<int>& eventsToShow,bool active){
+    void updateEvents(const QString& providerName,QList<int>& eventsToShow,bool active){
         view.updateEvents(providerName,eventsToShow,active);
     }
 
@@ -512,21 +512,21 @@ Q_SIGNALS:
   * @param time initial time of the modified event.
   * @param newTime new time of the modified event.
   */
-    void eventModified(QString providerName,int selectedEventId,double time,double newTime);
+    void eventModified(const QString& providerName,int selectedEventId,double time,double newTime);
 
     /**Informs that an event has been removed.
   * @param providerName name use to identified the event provider containing the removed event.
   * @param selectedEventId id of the removed event.
   * @param time initial time of the removed event.
   */
-    void eventRemoved(QString providerName,int selectedEventId,double time);
+    void eventRemoved(const QString& providerName,int selectedEventId,double time);
 
     /**Informs that an event has been added.
   * @param providerName name use to identified the event provider containing the added event.
   * @param addedEventDescription description of the added event.
   * @param time time of the added event.
   */
-    void eventAdded(QString providerName,QString addedEventDescription,double time);
+    void eventAdded(const QString& providerName,const QString& addedEventDescription,double time);
 
 protected:
 

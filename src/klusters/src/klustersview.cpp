@@ -62,7 +62,7 @@ const QString KlustersView::DisplayTypeNames[]={QObject::tr("Cluster Display"),
 
 KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColor& backgroundColor,int initialDimensionX,int initialDimensionY,
                            QList<int>* initialClusterList, DisplayType type, QWidget *parent, const char* name,QStatusBar * statusBar,int timeInterval,int maxAmplitude,
-                           QList<int> positions,bool isTimeFrameMode,long start,long timeFrameWidth,long nbSpkToDisplay,bool overLay,bool mean,
+                           const QList<int>& positions,bool isTimeFrameMode,long start,long timeFrameWidth,long nbSpkToDisplay,bool overLay,bool mean,
                            int binSize, int correlationTimeFrame,Data::ScaleMode scale,bool shoulderLine,long startingTime,long duration,bool labelsDisplay,
                            QList< QList<int>* > undoList, QList< QList<int>* > redoList)
     : DockArea(parent),
@@ -275,7 +275,7 @@ KlustersView::~KlustersView()
     delete removedClusters;
 }
 
-void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,QList<int> positions){
+void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,const QList<int>& positions){
     /*OVERVIEW type is the combination of 3 base types:
   CLUSTERS on the left side, WAVEFORMS at the right top and CORRELATIONS in the bottom right
  */
@@ -330,7 +330,7 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     setConnections(CORRELATIONS,correlationView,correlations);
 }
 
-void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,QList<int> positions){
+void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,const QList<int>& positions){
     //First create the overview
     createOverview(backgroundColor,statusBar,timeInterval,maxAmplitude,positions);
 
@@ -904,7 +904,7 @@ void KlustersView::closeEvent(QCloseEvent* e){
 
 }
 
-bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColor, QStatusBar* statusBar, int timeInterval, int maxAmplitude, QList<int> positions){
+bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColor, QStatusBar* statusBar, int timeInterval, int maxAmplitude, const QList<int>& positions){
 
     //Enable docking abilities
     QDockWidget* clusters;
@@ -1878,7 +1878,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
     }
 }
 
-void KlustersView::updateTraceView(QString name,ItemColors* clusterColors,bool active){     
+void KlustersView::updateTraceView(const QString& name,ItemColors* clusterColors,bool active){     
     //Set the list of the current clusters as the list of clusters to look up in the ClusterProvider.
     if(doc.getClustersProvider()  )
         doc.getClustersProvider()->setClusterIdList(shownClusters);
