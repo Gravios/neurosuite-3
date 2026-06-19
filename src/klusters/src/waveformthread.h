@@ -145,7 +145,7 @@ private:
     bool treatSingleCluster = false;
     bool meanRequested;
     Data& data;
-    WaveformView::PresentationMode mode;
+    WaveformView::PresentationMode mode = WaveformView::SAMPLE;
     /**True if the thread has to stop processing, false otherwise.*/
     std::atomic_bool haveToStopProcessing;
 
