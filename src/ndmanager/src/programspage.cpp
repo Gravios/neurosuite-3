@@ -70,14 +70,23 @@ ProgramsPage::ProgramsPage(bool expertMode,QWidget *parent)
         loadButton->setMaximumSize(QSize(104,32767));
         gridLayout->addWidget(loadButton,0,3);
 
+        discoverButton = new QPushButton(tr("Discover"),buttons);
+        discoverButton->setMinimumSize(QSize(104,0));
+        discoverButton->setMaximumSize(QSize(104,32767));
+        discoverButton->setToolTip(tr("Scan $PATH for ndm_* plugins and add any that self-describe via --ndm-describe"));
+        gridLayout->addWidget(discoverButton,0,5);
+
         QSpacerItem* space1 = new QSpacerItem(112,16,QSizePolicy::Expanding,QSizePolicy::Minimum);
         gridLayout->addItem(space1,0,0);
         QSpacerItem* space2 = new QSpacerItem(112,16,QSizePolicy::Expanding,QSizePolicy::Minimum);
-        gridLayout->addItem(space2,0,4);
+        gridLayout->addItem(space2,0,6);
         QSpacerItem* space3 = new QSpacerItem(29,16,QSizePolicy::Fixed,QSizePolicy::Minimum);
         gridLayout->addItem(space3,0,2);
+        QSpacerItem* space4 = new QSpacerItem(29,16,QSizePolicy::Fixed,QSizePolicy::Minimum);
+        gridLayout->addItem(space4,0,4);
 
         connect(addButton, &QAbstractButton::clicked, this, &ProgramsPage::addProgram);
+        connect(discoverButton, &QAbstractButton::clicked, this, &ProgramsPage::discover);
     } else {
         loadButton = new QPushButton(tr("Load..."),buttons);
         //loadButton->setSizePolicy(QSizePolicy((QSizePolicy::Policy)0,(QSizePolicy::Policy)0,0,0,loadButton->sizePolicy().hasHeightForWidth()));

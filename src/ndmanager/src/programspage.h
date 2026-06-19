@@ -48,13 +48,16 @@ public:
 signals:
     void addNewProgram();
     void programToLoad(const QString& programUrl);
+    void discoverPlugins();
 
 public slots:
     void addProgram(){emit addNewProgram();}
+    void discover(){emit discoverPlugins();}
     void loadProgram();
     
 private:
     QPushButton* addButton;
+    QPushButton* discoverButton;
     QPushButton* loadButton;
     QFrame* descriptionFrame;
 

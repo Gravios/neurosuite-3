@@ -259,6 +259,11 @@ public slots:
   */
     void loadProgram(const QString& programUrl);
 
+  /**Discovers external ndmanager plugins: scans $PATH for `ndm_*` executables, queries each via
+  `--ndm-describe` (ndm plugin protocol v1), and loads any not already present.
+  */
+    void discoverPlugins();
+
     /**Removes a program from the subtree under the node Program.
   * @param programPage the ProgramPage to remove.
   */

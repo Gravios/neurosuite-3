@@ -49,6 +49,10 @@
 #include <QMainWindow>
 #include <QRegularExpression>
 #include <QStatusBar>
+#include <QProcess>
+#include <QTemporaryFile>
+#include <QDir>
+#include <QSet>
 
 //include files for the application
 #include "parameterview.h"
@@ -203,6 +207,7 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
     connect(acquisitionSystem, &AcquisitionSystemPage::nbChannelsModified, this, &ParameterView::nbChannelsModified);
     connect(programs, &ProgramsPage::addNewProgram, this, &ParameterView::addNewProgram);
     connect(programs, &ProgramsPage::programToLoad, this, &ParameterView::loadProgram);
+    connect(programs, &ProgramsPage::discoverPlugins, this, &ParameterView::discoverPlugins);
     connect(spike, &SpikePage::nbGroupsModified, this, &ParameterView::nbSpikeGroupsModified);
     connect(files, &FilesPage::fileModification, this, &ParameterView::fileModification);
 
@@ -500,6 +505,59 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
             }
         }
     }
+}
+
+void ParameterView::discoverPlugins() {
+    // ndm plugin protocol v1: any executable named `ndm_<name>` on $PATH self-describes via
+    // `--ndm-describe`, emitting the YAML `program:` mapping DescriptionYamlReader already parses.
+    // Run each, hand its stdout to the same reader/loadProgram path used for installed descriptions,
+    // and add any whose program name is not already loaded (silent re-discovery).
+    const QStringList dirs = QString::fromLocal8Bit(qgetenv("PATH"))
+                                 .split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    QSet<QString> tried;
+    int added = 0;
+    for (const QString &dirPath : dirs) {
+        const QFileInfoList entries = QDir(dirPath).entryInfoList(
+            QStringList() << QStringLiteral("ndm_*"), QDir::Files | QDir::Executable);
+        for (const QFileInfo &fi : entries) {
+            const QString exe = fi.fileName();
+            if (tried.contains(exe))
+                continue;
+            tried.insert(exe);
+
+            QProcess proc;
+            proc.start(fi.absoluteFilePath(), QStringList() << QStringLiteral("--ndm-describe"));
+            if (!proc.waitForFinished(5000) || proc.exitStatus() != QProcess::NormalExit
+                    || proc.exitCode() != 0)
+                continue;
+            const QByteArray out = proc.readAllStandardOutput();
+            if (out.trimmed().isEmpty())
+                continue;
+
+            QTemporaryFile tmp(QDir::tempPath() + QStringLiteral("/ndmdesc_XXXXXX.yaml"));
+            if (!tmp.open())
+                continue;
+            tmp.write(out);
+            tmp.flush();
+
+            // Peek the program name so already-loaded plugins are skipped without a reload prompt.
+            DescriptionYamlReader reader;
+            if (!reader.parseFile(tmp.fileName()))
+                continue;
+            ProgramInformation info;
+            reader.getProgramInformation(info);
+            const QString name = info.getProgramName();
+            if (name.isEmpty() || programDict.contains(name))
+                continue;
+
+            loadProgram(tmp.fileName());
+            ++added;
+        }
+    }
+    if (QMainWindow *mw = qobject_cast<QMainWindow *>(window()))
+        if (mw->statusBar())
+            mw->statusBar()->showMessage(
+                tr("Discovered %1 ndm_* plugin(s) on $PATH").arg(added), 4000);
 }
 
 void ParameterView::loadProgram(const QString &programUrl) {
