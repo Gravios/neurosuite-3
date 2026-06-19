@@ -282,7 +282,7 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
 
 ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QStatusBar * statusBar, const char* name )
     : QWidget( parent ),
-      doc(0L),
+      doc(nullptr),
       mode(IMMEDIATE),
       isInSelectItems(false),
       isUpToDate(true),
@@ -764,7 +764,7 @@ void ClusterPalette::changeColor(QListWidgetItem* item) {
     //Get the clusterColor associated with the item
     QColor color = clusterColors.color(index,ItemColors::BY_INDEX);
 
-    QColor result = QColorDialog::getColor(color, 0);
+    QColor result = QColorDialog::getColor(color, nullptr);
     if (result.isValid()) {
         //Update the clusterColor
         clusterColors.setColor(index,result,ItemColors::BY_INDEX);
@@ -843,7 +843,7 @@ void ClusterPalette::selectItems(const QList<int>& selectedClusters){
 
 void ClusterPalette::reset(){
     iconView->clear();
-    doc = 0L;
+    doc = nullptr;
     mode = IMMEDIATE;
     isInSelectItems = false;
     isUpToDate = true;

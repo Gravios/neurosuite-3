@@ -115,11 +115,11 @@ public:
     /** Opens the document by filename and format.
     * @return an OpenSaveCreateReturnMessage enum giving the open status.
     */
-    int openDocument(const QString &url,QString& errorInformation, const char* format=0);
+    int openDocument(const QString &url,QString& errorInformation, const char* format=nullptr);
     /**Opens a document using different format, than the one defined for the application, by filename and format.
     * Not Yet implemented.
     */
-    bool importDocument(const QString &url, const char* format=0);
+    bool importDocument(const QString &url, const char* format=nullptr);
 
     /** Closes the actual document.*/
     void closeDocument();
@@ -135,7 +135,7 @@ public:
     /** Saves the document under the file name containes in @p url.
     * @return an OpenRetunMessage enum giving the open status
     */
-    int saveDocument(const QString &url, const char* format=0);
+    int saveDocument(const QString &url, const char* format=nullptr);
     /**Returns the QString of the document. */
     const QString& url() const{return docUrl;}
     /**Sets the URL of the document. */

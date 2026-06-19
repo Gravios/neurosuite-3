@@ -4701,7 +4701,7 @@ Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double 
         {
             QMutexLocker lk(&mutex);
         dict = correlationDict[pairKey(pair)];
-        if(dict == 0){
+        if(dict == nullptr){
             dict = new QHash<QString, Correlation*>();
             correlation = new Correlation(*this,binSize,timeWindow);
             correlation->setStatus(IN_PROCESS);
@@ -5024,12 +5024,12 @@ void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
             int val2 = oldClusterIds.at(j);
             if(val2 <= val){
                 QHash<QString, Correlation*>* dict = correlationDict.take(pairKey(val2,val));
-                if(dict != 0)
+                if(dict != nullptr)
                     correlationDict.insert(pairKey(clusterIdsOldNew[val2],clusterIdsOldNew[val]),dict);
             }
             else{
                 QHash<QString, Correlation*>* dict = correlationDict.take(pairKey(val,val2));
-                if(dict != 0)
+                if(dict != nullptr)
                     correlationDict.insert(pairKey(clusterIdsOldNew[val],clusterIdsOldNew[val2]),dict);
             }
 

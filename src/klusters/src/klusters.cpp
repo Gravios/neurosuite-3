@@ -110,14 +110,14 @@ const QString KlustersApp::DEFAULT_BIN_SIZE = "1";
 
 
 KlustersApp::KlustersApp()
-    : QMainWindow(0),
+    : QMainWindow(nullptr),
       displayCount(0),
-      mainDock(0),
-      clusterPanel(0),
-      clusterPalette(0),
-      tabsParent(0),
-      dimensionX(0L),
-      dimensionY(0L),
+      mainDock(nullptr),
+      clusterPanel(nullptr),
+      clusterPalette(nullptr),
+      tabsParent(nullptr),
+      dimensionX(nullptr),
+      dimensionY(nullptr),
       isInit(true),
       currentNbUndo(0),
       currentNbRedo(0),
@@ -128,8 +128,8 @@ KlustersApp::KlustersApp()
       binSize(DEFAULT_BIN_SIZE.toInt()),
       binSizeValidator(this),
       correlogramsHalfTimeFrameValidator(this),
-      prefDialog(0L),
-      processWidget(0L),
+      prefDialog(nullptr),
+      processWidget(nullptr),
       processFinished(true),
       processOutputsFinished(true),
       processKilled(false),
@@ -214,7 +214,7 @@ KlustersApp::~KlustersApp()
     delete doc;
     delete saveThread;
     delete processWidget;
-    processWidget = 0L;
+    processWidget = nullptr;
 
     // Realign worker cleanup — stop the thread if still running.
     if (realignThread) {
@@ -1133,7 +1133,7 @@ void KlustersApp::initSelectionBoxes(){
 }
 
 void KlustersApp::executePreferencesDlg(){
-    if(prefDialog == 0L){
+    if(prefDialog == nullptr){
         if(mainDock)
             prefDialog = new PrefDialog(this,doc->nbOfchannels());  // create dialog on demand
         else
@@ -1636,7 +1636,7 @@ bool KlustersApp::focusIsInTextInput() const
 void KlustersApp::initClusterPanel()
 {
     //Creation of the left panel containing the clusters
-    clusterPanel = new QDockWidget(tr("The cluster list"),0L);
+    clusterPanel = new QDockWidget(tr("The cluster list"),nullptr);
     clusterPanel->setWindowIcon(QIcon("classnew"));
     //Initialisation of the cluster palette containing the cluster list
     clusterPalette = new ClusterPalette(backgroundColor,clusterPanel,statusBar(),"ClusterPalette");
@@ -1682,7 +1682,7 @@ void KlustersApp::initDisplay(){
 
 
     //If the setting dialog exists (has already be open once), enable the settings for the channels.
-    if(prefDialog != 0L)
+    if(prefDialog != nullptr)
         prefDialog->enableChannelSettings(true);
 
     // Pre-select the last real cluster (skip noise=0 and artefact=1)
@@ -1707,7 +1707,7 @@ void KlustersApp::initDisplay(){
     if(configuration().getNbChannels() != 0 && configuration().getNbChannels() != doc->nbOfchannels())
         channelPositions.clear();
 
-    KlustersView* view = new KlustersView(*this,*doc,backgroundColor,1,2,clusterList,KlustersView::OVERVIEW,mainDock,0,statusBar(),
+    KlustersView* view = new KlustersView(*this,*doc,backgroundColor,1,2,clusterList,KlustersView::OVERVIEW,mainDock,nullptr,statusBar(),
                                           displayTimeInterval,waveformsGain,channelPositions,false,0,timeWindow,DEFAULT_NB_SPIKES_DISPLAYED,
                                           false,false,DEFAULT_BIN_SIZE.toInt(),INITIAL_CORRELOGRAMS_HALF_TIME_FRAME.toInt() * 2 + 1,Data::MAX);
 
@@ -1882,12 +1882,12 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
         KlustersView* view;
 
         if(!isProcessWidget)
-            view = new KlustersView(*this,*doc,backgroundColor,XDimension,YDimension,clusterList,type,this,0,statusBar(),
+            view = new KlustersView(*this,*doc,backgroundColor,XDimension,YDimension,clusterList,type,this,nullptr,statusBar(),
                                     displayTimeInterval,waveformsGain,channelPositions,inTimeFrameMode,startingTime,timeFrameWidth,
                                     nbSpkToDisplay,overLay,mean,sizeOfBin,correlogramTimeWindow,scaleMode,line,activeView()->getStartingTime(),activeView()->getDuration(),showHideLabels->isChecked(),activeView()->getUndoList(),activeView()->getRedoList());
 
         else
-            view = new KlustersView(*this,*doc,backgroundColor,XDimension,YDimension,clusterList,type,this,0,statusBar(),
+            view = new KlustersView(*this,*doc,backgroundColor,XDimension,YDimension,clusterList,type,this,nullptr,statusBar(),
                                     displayTimeInterval,waveformsGain,channelPositions,inTimeFrameMode,startingTime,timeFrameWidth,
                                     nbSpkToDisplay,overLay,mean,sizeOfBin,correlogramTimeWindow,scaleMode,line,activeView()->getStartingTime(),activeView()->getDuration(),showHideLabels->isChecked());
 
@@ -1906,7 +1906,7 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
         //unconditionally in the constructor and never cleared, so it is always
         //valid here; the following connect() relies on that too.  (disconnect()
         //on an object with no matching connections is a harmless no-op.)
-        disconnect(tabsParent,0,0,0);
+        disconnect(tabsParent,nullptr,nullptr,nullptr);
 
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display change.
@@ -2190,14 +2190,14 @@ bool KlustersApp::queryClose()
 {  
     //call when the kDockMainWindow will be close
     //implement to ask the user to save if necessary before closing
-    if(doc == 0) return true;
+    if(doc == nullptr) return true;
     else{
         if(doc->canCloseView()){
             //Set a waiting cursor in case there is some delay to the ending of the running threads.
             QApplication::restoreOverrideCursor();
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             if(doc->canCloseDocument(this,"queryClose")){
-                if(processWidget != 0L && processWidget->isRunning()){
+                if(processWidget != nullptr && processWidget->isRunning()){
                     processWidget->killJob();
                     processKilled = true;
                 }
@@ -2205,9 +2205,9 @@ bool KlustersApp::queryClose()
                     QTimer::singleShot(2000, this, &KlustersApp::close);
                     return false;
                 }
-                else if(processWidget != 0L){
+                else if(processWidget != nullptr){
                     delete processWidget;
-                    processWidget = 0L ;
+                    processWidget = nullptr ;
                 }
                 doc->closeDocument();
                 QApplication::restoreOverrideCursor();
@@ -2299,7 +2299,7 @@ void KlustersApp::slotFileOpen()
 }
 
 void KlustersApp::slotFileClose(){
-    if(doc != 0){
+    if(doc != nullptr){
         while(!saveThread->wait())
         {
         };
@@ -2315,7 +2315,7 @@ void KlustersApp::slotFileClose(){
                         processKilled = true;
                     }
                     if(processFinished && processOutputsFinished){
-                        processWidget = 0L;
+                        processWidget = nullptr;
                     } else{
                         QTimer::singleShot(2000, this, &KlustersApp::slotFileClose);
                         return;
@@ -2332,7 +2332,7 @@ void KlustersApp::slotFileClose(){
                 //reset the cluster palette and hide the cluster panel
                 clusterPalette->reset();
                 clusterPanel->hide();
-                mainDock = 0L;
+                mainDock = nullptr;
                 doc->closeDocument();
                 resetState();
                 QApplication::restoreOverrideCursor();
@@ -2423,7 +2423,7 @@ void KlustersApp::slotDisplayClose()
         } else {
             if(processFinished && processOutputsFinished){
                 delete current;
-                processWidget = 0L;
+                processWidget = nullptr;
             } else {
                 processWidget->hideWidget();
             }
@@ -2447,7 +2447,7 @@ void KlustersApp::slotDisplayClose()
                 //Delete the view
                 if(qobject_cast<KlustersView*>(tabsParent->currentWidget())){
                     delete processWidget;
-                    processWidget = 0L;
+                    processWidget = nullptr;
                     delete tabsParent->currentWidget();
                 } else {
                     if(processWidget->isRunning()){
@@ -2456,7 +2456,7 @@ void KlustersApp::slotDisplayClose()
                     }
                     if(processFinished && processOutputsFinished){
                         delete tabsParent->currentWidget();
-                        processWidget = 0L;
+                        processWidget = nullptr;
                     } else {
                         mainDock->hide();
                         processWidget->hideWidget();
@@ -2464,7 +2464,7 @@ void KlustersApp::slotDisplayClose()
                         return;
                     }
                 }
-                mainDock = 0L;
+                mainDock = nullptr;
                 QApplication::restoreOverrideCursor();
             }
         }
@@ -2481,7 +2481,7 @@ void KlustersApp::slotDisplayClose()
                 //Delete the view
                 if(qobject_cast<KlustersView*>(tabsParent->currentWidget())){
                     delete processWidget;
-                    processWidget = 0L;
+                    processWidget = nullptr;
                     delete tabsParent->currentWidget();
                 }
                 else{
@@ -2492,7 +2492,7 @@ void KlustersApp::slotDisplayClose()
                         }
                         if(processFinished && processOutputsFinished){
                             delete tabsParent->currentWidget();
-                            processWidget = 0L;
+                            processWidget = nullptr;
                         } else {
                             mainDock->hide();
                             processWidget->hideWidget();
@@ -2503,7 +2503,7 @@ void KlustersApp::slotDisplayClose()
                 }
                 tabsParent->removeTab(0);
                 tabsParent->hide();
-                mainDock = 0L;
+                mainDock = nullptr;
                 QApplication::restoreOverrideCursor();
             }
             resetState();
@@ -4166,7 +4166,7 @@ void KlustersApp::resetState(){
     setWindowTitle(QString());
 
     //If the a setting dialog exists (has already be open once), disable the settings for the channels.
-    if(prefDialog != 0L)
+    if(prefDialog != nullptr)
         prefDialog->enableChannelSettings(false);
 }
 
@@ -4214,7 +4214,7 @@ void KlustersApp::slotUpdateParameterBar(){
     binSizeBoxAction->setVisible(false);
     binSizeLabelAction->setVisible(false);
 
-    if(mainDock != 0L){
+    if(mainDock != nullptr){
         KlustersView* currentView = activeView();
 
         if(currentView->containsClusterView()){
@@ -4681,14 +4681,14 @@ void KlustersApp::slotRecluster(){
     reclusterOnce = ReclusterOnce::None;
 
     // Clean up the previous recluster output tab if it still exists.
-    if(processWidget != 0L){
+    if(processWidget != nullptr){
         int tabIndex = tabsParent->indexOf(processWidget);
         if(tabIndex != -1){
             tabsParent->removeTab(tabIndex);
             displayCount--;
         }
         delete processWidget;
-        processWidget = 0L;
+        processWidget = nullptr;
     }
     processKilled = false;
 
@@ -5133,7 +5133,7 @@ void KlustersApp::slotRecluster(){
         return;
     }
 
-    if(processWidget == 0L){
+    if(processWidget == nullptr){
 
         processWidget = new ProcessWidget(this);
         processWidget->setFocusPolicy(Qt::NoFocus);
@@ -5185,7 +5185,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
                                                          "Check the output log for more information."));
 
         if(!QFile::remove(reclusteringFetFileName))
-            QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
+            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
         // patch81 — also clean up the staged YAML
         {
             const int dotFet = reclusteringFetFileName.lastIndexOf(

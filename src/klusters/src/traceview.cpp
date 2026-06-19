@@ -477,7 +477,7 @@ void TraceView::paintEvent ( QPaintEvent*){
         EventData* eventData;
         for(providerIterator = eventProvidersToUpdate.begin(); providerIterator != eventProvidersToUpdate.end(); ++providerIterator){
             eventData = eventsData[*providerIterator];
-            if(eventData == 0){
+            if(eventData == nullptr){
                 eventData = new EventData();
                 eventsData.insert(*providerIterator,eventData);
             }
@@ -3459,7 +3459,7 @@ void TraceView::showClusters(const QString &name,QList<int>& clustersToShow){
             clusters.append(*shownClustersIterator);
         }
         selectedClusters.insert(name.toInt(),clusters);
-        if(clusterData == 0){
+        if(clusterData == nullptr){
             clusterData = new ClusterData();
             clustersData.insert(name,clusterData);
             ClustersProvider* provider = clusterProviders[name];
@@ -3642,7 +3642,7 @@ void TraceView::showEvents(QString name,QList<int>& eventsToShow){
             events.append(*shownEventsIterator);
         }
         selectedEvents.insert(name,events);
-        if(eventData == 0){
+        if(eventData == nullptr){
             eventData = new EventData();
             eventsData.insert(name,eventData);
             EventsProvider* provider = eventProviders[name];
@@ -3672,7 +3672,7 @@ void  TraceView::updateEvents(QString providerName,QList<int>& eventsToShow,bool
         events.append(*shownEventsIterator);
     }
     selectedEvents.insert(providerName,events);
-    if(eventData == 0){
+    if(eventData == nullptr){
         eventData = new EventData();
         eventsData.insert(providerName,eventData);
     }

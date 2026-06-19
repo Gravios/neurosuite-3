@@ -9,7 +9,7 @@ class PrefClusterViewLayout : public QWidget, public Ui_PrefClusterViewLayout
     Q_OBJECT
 
 public:
-    explicit PrefClusterViewLayout( QWidget* parent = 0 );
+    explicit PrefClusterViewLayout( QWidget* parent = nullptr );
 
 };
 

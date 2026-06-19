@@ -17,7 +17,7 @@
 #include <QProcess>
 
 ProcessLineMaker::ProcessLineMaker()
-    : mProc(0),
+    : mProc(nullptr),
       counterOut(0),
       counterErr(0),
       isProcessKilled(false),

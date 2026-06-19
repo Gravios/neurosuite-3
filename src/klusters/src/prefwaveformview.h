@@ -39,7 +39,7 @@
 class PrefWaveformView : public PrefWaveformViewLayout  {
     Q_OBJECT
 public: 
-    explicit PrefWaveformView(QWidget* parent=0,int nbChannels = 0,const char *name=0);
+    explicit PrefWaveformView(QWidget* parent=nullptr,int nbChannels = 0,const char *name=nullptr);
     ~PrefWaveformView();
 
     /**Sets the gain used to display the waveforms.*/

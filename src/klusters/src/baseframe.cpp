@@ -45,7 +45,7 @@ BaseFrame::BaseFrame(int Xborder,int Yborder,QWidget* parent,const QString &name
     Yborder(Yborder),
     isRubberBandToBeDrawn(false),
     wholeHeightRectangle(false),
-    mRubberBand(0)
+    mRubberBand(nullptr)
 {
     setObjectName(name);
     setAutoFillBackground(true);

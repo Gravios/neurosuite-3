@@ -39,7 +39,7 @@ class SaveThread : public QThread{
 
 public: 
 
-    explicit SaveThread(KlustersApp* parent):doc(0L),parent(parent),isSaveAs(false){}
+    explicit SaveThread(KlustersApp* parent):doc(nullptr),parent(parent),isSaveAs(false){}
 
 
     virtual void run() override;
