@@ -70,6 +70,16 @@ public:
     Data();
     ~Data();
 
+    // Data owns raw resources (spikesByCluster, clusterInfoMap, the worker
+    // threads) and is the single document-model instance — held by pointer
+    // (KlustersDoc::clusteringData) and never copied.  Delete the copy
+    // operations so an accidental by-value copy is a compile error rather than
+    // the implicit shallow copy, which would alias those owned pointers and
+    // double-free them.  (Declaring ~Data() already suppresses implicit move
+    // generation, so Data is also non-movable, which is what we want.)
+    Data(const Data&)            = delete;
+    Data& operator=(const Data&) = delete;
+
     /**
   * Loads the features in data.
   * @param featureFile the .fet file
