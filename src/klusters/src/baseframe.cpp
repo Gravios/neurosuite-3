@@ -120,9 +120,8 @@ void BaseFrame::mousePressEvent(QMouseEvent* e){
 void BaseFrame::mouseReleaseEvent(QMouseEvent* e){
     //We do not consider the other button events but we consider key press
     if(e->button() & Qt::LeftButton){
-        bool isZoomed = false;
-
         if(mode == ZOOM){
+            bool isZoomed = false;
             //if double click, only update isDoubleClick, action has been taken in mouseDoubleClickEvent
             if(isDoubleClick){
                 isDoubleClick = false;

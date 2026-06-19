@@ -180,8 +180,6 @@ bool ParameterXmlModifier::setClusterUserInformation (int pGroup,QMap<int,Cluste
     }
 
     QMap<int,ClusterUserInformation>::Iterator iterator;
-    int clusterId = 0;
-    int group = 0;
     QString structure;
     QString type;
     QString ID;
@@ -191,9 +189,9 @@ bool ParameterXmlModifier::setClusterUserInformation (int pGroup,QMap<int,Cluste
 
     for (iterator = clusterUserInformationMap.begin(); iterator != clusterUserInformationMap.end(); ++iterator) {
         //Get the cluster user information (structure, type,isolation distance, quality, notes)
-        clusterId = iterator.key();
+        int clusterId = iterator.key();
         currentClusterUserInformation = iterator.value();
-        group = currentClusterUserInformation.getGroup();
+        int group = currentClusterUserInformation.getGroup();
         structure = currentClusterUserInformation.getStructure();
         type = currentClusterUserInformation.getType();
         ID = currentClusterUserInformation.getId();
