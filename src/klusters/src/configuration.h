@@ -92,6 +92,8 @@ public:
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
     void setCurationLogging(bool b)       {curationLogging = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
+    void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
+    void setAutoUpdateMatricesAfterMerge(bool b) {autoUpdateMatricesAfterMerge = b;}
 
     void setDipSplitMinSize(int n)       {dipSplitMinSize     = qMax(2, n);}
     void setDipSplitBloatFactor(double v){dipSplitBloatFactor = qBound(0.0, v, 10.0);}
@@ -190,6 +192,8 @@ public:
     int    getRealignMode()       const {return realignMode;}
     bool   getCurationLogging()   const {return curationLogging;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
+    bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
+    bool   getAutoUpdateMatricesAfterMerge() const {return autoUpdateMatricesAfterMerge;}
 
     int    getDipSplitMinSize()     const {return dipSplitMinSize;}
     double getDipSplitBloatFactor() const {return dipSplitBloatFactor;}
@@ -266,6 +270,8 @@ public:
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     bool   getCurationLoggingDefault()   const {return true;}
     bool   getAutoRealignAfterMergeDefault() const {return false;}
+    bool   getAutoRenumberAfterMergeDefault() const {return false;}
+    bool   getAutoUpdateMatricesAfterMergeDefault() const {return false;}
 
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
@@ -398,6 +404,8 @@ private:
     int     realignMode;
     bool    curationLogging;   // record per-action curation audit snapshots
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
+    bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
+    bool    autoUpdateMatricesAfterMerge;  // recompute error/template/residual matrices after each merge
 
     int     dipSplitMinSize;       ///< minimum cluster size to consider for DipSplit
     double  dipSplitBloatFactor;   ///< Mahalanobis bloat threshold (× χ²(d, 0.9))

@@ -69,6 +69,8 @@ void Configuration::read() {
     realignMode       = settings.value("realignMode",        0).toInt();
     curationLogging   = settings.value("curationLogging",    true).toBool();
     autoRealignAfterMerge = settings.value("autoRealignAfterMerge", false).toBool();
+    autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", false).toBool();
+    autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", false).toBool();
     dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
     dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
     dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();
@@ -144,6 +146,8 @@ void Configuration::write() const {
     settings.setValue("realignMode",       realignMode);
     settings.setValue("curationLogging",   curationLogging);
     settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);
+    settings.setValue("autoRenumberAfterMerge", autoRenumberAfterMerge);
+    settings.setValue("autoUpdateMatricesAfterMerge", autoUpdateMatricesAfterMerge);
     settings.setValue("dipSplitMinSize",      dipSplitMinSize);
     settings.setValue("dipSplitBloatFactor",  dipSplitBloatFactor);
     settings.setValue("dipSplitValleyThresh", dipSplitValleyThresh);

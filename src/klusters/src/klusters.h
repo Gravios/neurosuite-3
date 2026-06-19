@@ -1173,6 +1173,10 @@ private:
      * and by the auto-align-after-merge path.  Caller must ensure doc is
      * open and no realignment is already running.*/
     void startRealignForCluster(int clusterId);
+    /// Run the configured post-merge automation (renumber clusters and/or
+    /// recompute matrices) once a merge operation has completed.  No-op unless
+    /// the corresponding Preferences > Refinement options are enabled.
+    void autoPostMerge();
 
     /**Start ONE worker that processes the whole @p clusterIds list back-to-back
      * in a single thread (RealignWorker batch mode), wired to

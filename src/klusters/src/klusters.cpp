@@ -3319,6 +3319,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
             && mergedClusterId > 1 && !realignRunning) {
         startRealignForCluster(mergedClusterId);
     }
+    autoPostMerge();
 }
 
 // ---------------------------------------------------------------------------
@@ -3397,7 +3398,26 @@ void KlustersApp::slotAutoMerge()
     QApplication::restoreOverrideCursor();
 
     slotStatusMsg(tr("Auto-merge: %1 group(s) applied.").arg(applied));
+    if (applied > 0) autoPostMerge();
     if (clusterPalette) clusterPalette->setFocusToList();
+}
+
+// ---------------------------------------------------------------------------
+// autoPostMerge — run the configured post-merge automation once a merge
+// operation (interactive Group Clusters or batch Auto-Merge) has completed.
+// Renumbering and matrix recomputation are each opt-in (Preferences >
+// Refinement, default off), so this is a no-op unless the user enabled them.
+// Order matters: renumber first so the matrices recompute against the final
+// cluster IDs.  slotUpdateErrorMatrix refreshes the error / template / residual
+// matrices and is internally a no-op when no matrix view is open.
+// ---------------------------------------------------------------------------
+void KlustersApp::autoPostMerge()
+{
+    if (!doc) return;
+    if (configuration().getAutoRenumberAfterMerge())
+        doc->renumberClusters();
+    if (configuration().getAutoUpdateMatricesAfterMerge())
+        slotUpdateErrorMatrix();
 }
 
 // ---------------------------------------------------------------------------
