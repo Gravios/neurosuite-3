@@ -484,6 +484,15 @@ private Q_SLOTS:
                              QVector<float> meanBefore, QVector<float> meanAfter,
                              QString backupBase, int nChan, int nSamp);
 
+    /**Apply (and, for a single cluster, review) a completed realignment result:
+     * everything slotRealignFinished does except the worker/thread teardown.
+     * Split out with no behaviour change so the same body can be handed to
+     * RealignJob as its finished callback once the realign path runs on the
+     * SerialJobQueue (the teardown then moving into the job).*/
+    void applyRealignResult(bool ok, int nShifted, int nSwapped,
+                            QVector<float> meanBefore, QVector<float> meanAfter,
+                            QString backupBase, int nChan, int nSamp);
+
     /**Per-cluster progress callback for a single batch worker running
      * PCA-Center Align All (see startRealignBatchWorker / RealignWorker batch
      * mode).  Updates the progress bar and batch counters and records the

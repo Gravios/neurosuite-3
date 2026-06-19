@@ -6723,6 +6723,16 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
     }
     realignWorker = nullptr;   // already deleteLater'd
 
+    applyRealignResult(ok, nShifted, nSwapped, meanBefore, meanAfter,
+                       backupBase, nChan, nSamp);
+}
+
+void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
+                                     QVector<float> meanBefore,
+                                     QVector<float> meanAfter,
+                                     QString backupBase,
+                                     int nChan, int nSamp)
+{
     // ── Batch path ───────────────────────────────────────────────────────────
     // PCA-Center Align All Clusters runs the same worker per cluster but
     // skips the per-cluster review dialog and auto-accepts each result.
