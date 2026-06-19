@@ -740,8 +740,8 @@ public:
   * @param quality quality of the cluster.
   * @param notes notes of any type on the cluster.
   */
-    void setUserClusterInformation(int clusterId, QString structure,
-                                          QString	type,QString ID, QString	quality, QString notes){
+    void setUserClusterInformation(int clusterId, const QString& structure,
+                                          const QString&	type,const QString& ID, const QString&	quality, const QString& notes){
         if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
             ClusterInfo currentClusterInfo = (*clusterInfoMap)[static_cast<dataType>(clusterId)];
 
@@ -961,7 +961,7 @@ private:
     public:
         ClusterInfo(const QString& pStructure = QString(), const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
             :structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
-        ClusterInfo(dataType position, dataType nb,QString pStructure = QString(),QString pType = QString(),QString pID = QString(),QString pQuality = QString(),QString pNotes =QString())
+        ClusterInfo(dataType position, dataType nb,const QString& pStructure = QString(),const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
             :position(position),spikeNb(nb),structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
         ~ClusterInfo(){}
          dataType firstSpikePosition() const {return position;}

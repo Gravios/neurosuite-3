@@ -101,7 +101,7 @@ public:
      */
     KlustersView(KlustersApp& mainWindow, KlustersDoc& doc, const QColor& backgroundColor, int initialDimensionX, int initialDdimensionY,
                  QList<int>* initialClusterList, DisplayType type, QWidget* parent, const char *name, QStatusBar * statusBar, int timeInterval, int maxAmplitude,
-                 QList<int> positions, bool isTimeFrameMode = false, long start = 0, long timeFrameWidth = 0, long nbSpkToDisplay = 0, bool overLay = false,
+                 const QList<int>& positions, bool isTimeFrameMode = false, long start = 0, long timeFrameWidth = 0, long nbSpkToDisplay = 0, bool overLay = false,
                  bool mean = false, int binSize = 0, int correlationTimeFrame = 0, Data::ScaleMode scale = Data::MAX, bool shoulderLine = true,
                  long startingTime = 0, long duration = 100, bool labelsDisplay = false, QList< QList<int>* > undoList = QList< QList<int>* >(), QList< QList<int>* > redoList = QList< QList<int>* >());
 
@@ -142,7 +142,7 @@ public:
     * @param positions positions of the channels to use in the view set by the user in the settings dialog.
     * @return false if there was already a view of @displayType in the view, true otherwise.
     */
-    bool addView(DisplayType displayType,const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,QList<int> positions);
+    bool addView(DisplayType displayType,const QColor& backgroundColor,QStatusBar* statusBar,int timeInterval,int maxAmplitude,const QList<int>& positions);
 
     /** Arranges the tracked OVERVIEW docks into the canonical layout:
      *  Cluster Features / Waveforms / Auto-correlogram stacked vertically
@@ -646,7 +646,7 @@ public:
   * @param clusterColors list of colors for the clusters.
   * @param active true if the view is the active one, false otherwise.
   */
-    void updateTraceView(QString name,ItemColors* clusterColors,bool active);
+    void updateTraceView(const QString& name,ItemColors* clusterColors,bool active);
 
 
     /**
@@ -946,7 +946,7 @@ private:
     * @param maxAmplitude initial gain use to draw the waveforms in the waveform view.
     * @param positions initial position of the channels in the waveform view.
     */
-    void createOverview(const QColor& backgroundColor,QStatusBar * statusBar,int timeInterval,int maxAmplitude,QList<int> positions);
+    void createOverview(const QColor& backgroundColor,QStatusBar * statusBar,int timeInterval,int maxAmplitude,const QList<int>& positions);
 
     /** Creates the Grouping Assistant view:
     * an Overview (composition of the 3 basic views) to which have been added
@@ -958,7 +958,7 @@ private:
     * @param maxAmplitude initial gain use to draw the waveforms in the waveform view.
     * @param positions initial position of the channels in the waveform view.
     */
-    void createGroupingAssistantView(const QColor& backgroundColor,QStatusBar * statusBar,int timeInterval,int maxAmplitude,QList<int> positions);
+    void createGroupingAssistantView(const QColor& backgroundColor,QStatusBar * statusBar,int timeInterval,int maxAmplitude,const QList<int>& positions);
 
     /**
     * Adds a cluster to the view. The @p clusterId is added to both the shownClusters list

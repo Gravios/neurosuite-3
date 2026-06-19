@@ -331,7 +331,7 @@ void EventsProvider::retrieveData(long startTime,long endTime,QObject* initiator
     emit dataReady(finalTimes,finalIds,initiator,name);
 }
 
-void EventsProvider::requestNextEventData(long startTime,long timeFrame,QList<int> selectedIds,QObject* initiator){
+void EventsProvider::requestNextEventData(long startTime,long timeFrame,const QList<int>& selectedIds,QObject* initiator){
     long initialStartTime = startTime;
     //Compute the start time for the event look up
     startTime = initialStartTime + static_cast<long>(timeFrame * eventPosition);
@@ -542,7 +542,7 @@ void EventsProvider::requestNextEventData(long startTime,long timeFrame,QList<in
     emit nextEventDataReady(finalTimes,finalIds,initiator,name,startingTime);
 }
 
-void EventsProvider::requestPreviousEventData(long startTime,long timeFrame,QList<int> selectedIds,QObject* initiator){
+void EventsProvider::requestPreviousEventData(long startTime,long timeFrame,const QList<int>& selectedIds,QObject* initiator){
     long initialStartTime = startTime;
     //Compute the start time for the event look up
     startTime = initialStartTime + static_cast<long>(timeFrame * eventPosition);
@@ -1125,7 +1125,7 @@ void EventsProvider::removeEvent(int selectedEventId,double time){
     }
 }
 
-void EventsProvider::addEvent(QString eventDescriptionToAdd,double time){
+void EventsProvider::addEvent(const QString& eventDescriptionToAdd,double time){
     modified = true;
 
     //Clear the redo variables
@@ -1298,7 +1298,7 @@ void EventsProvider::removeEventDescription(const QString &eventDescriptionToRem
     emit eventDescriptionRemoved(name,oldNewEventIds,newOldEventIds,removedEventId,eventDescriptionToRemove);
 }
 
-void EventsProvider::renameEvent(int selectedEventId,QString newEventDescription,double time){
+void EventsProvider::renameEvent(int selectedEventId,const QString& newEventDescription,double time){
     modified = true;
 
     //Clear the redo variables
