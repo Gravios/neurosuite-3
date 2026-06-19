@@ -55,7 +55,7 @@ class ClusterView : public ViewWidget  {
     Q_OBJECT
 
 public:
-    ClusterView(KlustersDoc& doc, KlustersView& view, const QColor &backgroundColor, int timeInterval, QStatusBar* statusBar, QWidget* parent=0, const char* name=0,
+    ClusterView(KlustersDoc& doc, KlustersView& view, const QColor &backgroundColor, int timeInterval, QStatusBar* statusBar, QWidget* parent=nullptr, const char* name=nullptr,
                 int minSize = 50, int maxSize = 4000,
                 int windowTopLeft = -500, int windowBottomRight = 1001, int border = 0);
     ~ClusterView();

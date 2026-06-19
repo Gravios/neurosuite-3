@@ -86,7 +86,7 @@ public:
     TraceView(TracesProvider& tracesProvider, bool greyScale, bool multiColumns, bool verticalLines,
               bool raster, bool waveforms, bool labelsDisplay, QList<int>& channelsToDisplay, int unitGain, int acquisitionGain, long start, long timeFrameWidth,
               ChannelColors* channelColors, QMap<int, QList<int> >* groupsChannels, QMap<int,int>* channelsGroups,
-              QList<int>& channelOffsets, QList<int>& gains, const QList<int>& skippedChannels, QWidget* parent=0, const char* name=0, const QColor &backgroundColor = Qt::black, QStatusBar* statusBar = 0L,
+              QList<int>& channelOffsets, QList<int>& gains, const QList<int>& skippedChannels, QWidget* parent=nullptr, const char* name=nullptr, const QColor &backgroundColor = Qt::black, QStatusBar* statusBar = nullptr,
               int minSize = 500, int maxSize = 4000, int windowTopLeft = -500, int windowBottomRight = 1001, int border = 0);
 
 

@@ -32,7 +32,7 @@ class ClusterInformationDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit ClusterInformationDialog(QWidget *parent = 0,const QString& caption = tr("Cluster information"));
+    explicit ClusterInformationDialog(QWidget *parent = nullptr,const QString& caption = tr("Cluster information"));
     ~ClusterInformationDialog();
 
      const QString getStructure() const { return structure->text(); }

@@ -9,7 +9,7 @@ class PrefWaveformViewLayout : public QWidget, public Ui_PrefWaveformViewLayout
     Q_OBJECT
 
 public:
-    explicit PrefWaveformViewLayout( QWidget* parent = 0 );
+    explicit PrefWaveformViewLayout( QWidget* parent = nullptr );
 
 };
 

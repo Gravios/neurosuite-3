@@ -1774,10 +1774,10 @@ public:
             index = 0;
             lastIndex = -1;
             QHash<QString, Correlation*>* dict = data.correlationDict[pairKey(pair)];
-            if(dict == 0) dataAvailable = false;
+            if(dict == nullptr) dataAvailable = false;
             else{
                 correlation = (*dict)[pairKey(binSize, timeframe)];
-                if(correlation == 0) dataAvailable = false;
+                if(correlation == nullptr) dataAvailable = false;
                 else{
                     if(correlation->getStatus(binSize,timeframe) == READY){
                         dataAvailable = true;

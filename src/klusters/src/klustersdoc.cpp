@@ -448,7 +448,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         QFileInfo parFileInfo(parFileUrl);
         if(parFileInfo.exists()){
             QApplication::restoreOverrideCursor();
-            QMessageBox::information(0, tr("Warning!"), tr("Two parameter files were found, %1 and %2. The parameter file %3 will be used.").arg(yamlParFileUrl).arg(parFileUrl).arg(yamlParFileUrl));
+            QMessageBox::information(nullptr, tr("Warning!"), tr("Two parameter files were found, %1 and %2. The parameter file %3 will be used.").arg(yamlParFileUrl).arg(parFileUrl).arg(yamlParFileUrl));
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         }
         yamlParFile.setFileName(tmpYamlParFile);
@@ -490,7 +490,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         if((cluFileInfo.exists() && crashFileInfo.lastModified() > cluFileInfo.lastModified()) ||
                 !cluFileInfo.exists()){
             QApplication::restoreOverrideCursor();
-            switch(QMessageBox::question(0, tr("More recent cluster file found"), tr("A more recent copy of the cluster file (a rescue file) was found on the disk. This indicates that Klusters crashed while editing these data during a previous session.\n"
+            switch(QMessageBox::question(nullptr, tr("More recent cluster file found"), tr("A more recent copy of the cluster file (a rescue file) was found on the disk. This indicates that Klusters crashed while editing these data during a previous session.\n"
                                                    "Do you wish to use the newer copy (The old copy will be saved under another name)?"),QMessageBox::Yes|QMessageBox::No))
             {
             case QMessageBox::Yes: {
@@ -503,7 +503,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
                 }
                 renameStatus = dir.rename(crashFileInfo.fileName(),cluName);
                 if(!renameStatus)
-                    QMessageBox::critical(0, tr("I/O Error !"),tr(
+                    QMessageBox::critical(nullptr, tr("I/O Error !"),tr(
                                               "It appears that the rescue file cannot be renamed (possibly because of insufficient file access permissions).\n"
                                               "The rescue file will thus not be used."));
                 break;
@@ -708,7 +708,7 @@ void KlustersDoc::customEvent(QEvent *event){
         }
         else{
             if(((AutoSaveThread::AutoSaveEvent*)event)->isIOerror())
-                QMessageBox::critical(0,tr("I/O Error !"),tr(
+                QMessageBox::critical(nullptr,tr("I/O Error !"),tr(
                                           "In order to protect your work in case of a crash, Klusters periodically saves a hidden copy of the cluster file"
                                           " in the directory where your files are located (this temporary rescue file is removed when you quit the application).\n"
                                           "However, it now appears that this rescue file cannot be created (possibly because of insufficient file access permissions).\n"
@@ -928,7 +928,7 @@ bool KlustersDoc::canCloseView(){
     bool returnValue = false;
     if(isModified()){
         QString saveURL;
-        switch(QMessageBox::question(0, url(),tr("The current file has been modified.\n"
+        switch(QMessageBox::question(nullptr, url(),tr("The current file has been modified.\n"
                                                  "Do you want to save it?"),QMessageBox::Yes|QMessageBox::No|QMessageBox::Cancel))
         {
         case QMessageBox::Yes:
@@ -938,7 +938,7 @@ bool KlustersDoc::canCloseView(){
             saveStatus = saveDocument(saveURL);
             QApplication::restoreOverrideCursor();
             if(saveStatus != OK){
-                switch(QMessageBox::question(0, tr("I/O Error !"),tr("Could not save the current document !\n"
+                switch(QMessageBox::question(nullptr, tr("I/O Error !"),tr("Could not save the current document !\n"
                                                                      "Close anyway ?"),QMessageBox::No|QMessageBox::Yes))
                 {
                 case QMessageBox::Yes:
@@ -3265,7 +3265,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     QString cluFileUrl(cluFileName);
     QString tmpCluFile = cluFileUrl;
     if(!QFile::exists(cluFileUrl)) {
-        QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+        QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         return DOWNLOAD_ERROR;
     }
 
@@ -3274,9 +3274,9 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
 
     if(!cluFile.open(QIODevice::ReadOnly)){
         if(!QFile::remove(reclusteringFetFileName))
-            QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
+            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
         if(!QFile::remove(cluFileName))
-            QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
         return OPEN_ERROR;
     }
@@ -3285,9 +3285,9 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     if(!clusteringData->integrateReclusteredClusters(clustersToRecluster,reclusteredClusterList,cluFile)){
         cluFile.close();
         if(!QFile::remove(reclusteringFetFileName))
-            QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
+            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
         if(!QFile::remove(cluFileName))
-            QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
         return INCORRECT_CONTENT;
     }
@@ -3295,9 +3295,9 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
 
     //Suppress the fet and clu files.
     if(!QFile::remove(reclusteringFetFileName))
-        QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
+        QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
     if(!QFile::remove(cluFileName))
-        QMessageBox::critical(0,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+        QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
     patch81_cleanupTempYaml(reclusteringFetFileName);
 
     // Log the newly created clusters — reclusteredClusterList is populated by
