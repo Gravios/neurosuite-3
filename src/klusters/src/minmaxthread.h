@@ -44,7 +44,7 @@ public:
 
 private:
     Data& data;
-    MinMaxThread(Data& d):data(d){}
+    explicit MinMaxThread(Data& d):data(d){}
     QList<int> modifiedClusters;
 };
 

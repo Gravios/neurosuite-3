@@ -889,7 +889,7 @@ private:
     class Validator: public QIntValidator{
 
     public:
-        Validator(QObject* parent):QIntValidator(parent){
+        explicit Validator(QObject* parent):QIntValidator(parent){
             klusters = dynamic_cast<KlustersApp*>(parent);
         }
         Validator(int minimum,int maximum,QObject* parent):
@@ -965,7 +965,7 @@ private:
     class BinSizeValidator: public QIntValidator{
 
     public:
-        BinSizeValidator(QObject* parent):QIntValidator(parent){
+        explicit BinSizeValidator(QObject* parent):QIntValidator(parent){
             klusters = dynamic_cast<KlustersApp*>(parent);
         }
         BinSizeValidator(int minimum,int maximum,QObject* parent):
@@ -1018,7 +1018,7 @@ private:
     class CorrelogramsHalfTimeFrameValidator: public QIntValidator{
 
     public:
-        CorrelogramsHalfTimeFrameValidator(QObject* parent):QIntValidator(parent){
+        explicit CorrelogramsHalfTimeFrameValidator(QObject* parent):QIntValidator(parent){
             klusters = dynamic_cast<KlustersApp*>(parent);
         }
         CorrelogramsHalfTimeFrameValidator(int minimum,int maximum,QObject* parent):

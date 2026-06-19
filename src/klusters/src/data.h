@@ -959,7 +959,7 @@ private:
     class ClusterInfo {
 
     public:
-        ClusterInfo(const QString& pStructure = QString(), const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
+        explicit ClusterInfo(const QString& pStructure = QString(), const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
             :structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
         ClusterInfo(dataType position, dataType nb,const QString& pStructure = QString(),const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
             :position(position),spikeNb(nb),structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
@@ -1052,7 +1052,7 @@ private:
      */
     class WaveformStatus{
     public:
-        WaveformStatus(Status sample = NOT_AVAILABLE,Status timeFrame = NOT_AVAILABLE,Status sampleMean = NOT_AVAILABLE,Status timeFrameMean = NOT_AVAILABLE )
+        explicit WaveformStatus(Status sample = NOT_AVAILABLE,Status timeFrame = NOT_AVAILABLE,Status sampleMean = NOT_AVAILABLE,Status timeFrameMean = NOT_AVAILABLE )
             :sample(sample),timeFrame(timeFrame),sampleMean(sampleMean),timeFrameMean(timeFrameMean){
             clusterModified = false;
         }
@@ -1172,7 +1172,7 @@ private:
     class WaveformData : public Waveforms {
 
     public:
-        WaveformData(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0):
+        explicit WaveformData(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0):
             Waveforms(d,nbSampleSpikes,nbTimeFrameSpikes,index,startTime,endTime){
             // std::vector members are default-constructed empty
         }
@@ -1280,7 +1280,7 @@ private:
     class Correlation{
 
     public:
-        Correlation(Data& d):data(d){
+        explicit Correlation(Data& d):data(d){
             reset();
         }
         Correlation(Data& d,int size,int timeWindow):data(d),binSize(size),timeFrame(timeWindow),status(IN_PROCESS){
@@ -1529,7 +1529,7 @@ public:
         WaveformIterator(){init();}
 
     protected:
-        WaveformIterator(Waveforms* waveformsData){
+        explicit WaveformIterator(Waveforms* waveformsData){
             init();
             waveforms = waveformsData;
         }
@@ -1619,7 +1619,7 @@ public:
         }
     private:
         SampleWaveformIterator(): WaveformIterator(){}
-        SampleWaveformIterator(Waveforms* waveformsData): WaveformIterator(waveformsData){}
+        explicit SampleWaveformIterator(Waveforms* waveformsData): WaveformIterator(waveformsData){}
         void updateStatus(dataType nbSampleSpikes){
             if(waveforms->nbOfSpikesAsked() != nbSampleSpikes){
                 setSpikesAvailable(false);
@@ -1697,7 +1697,7 @@ public:
 
     private:
         TimeFrameWaveformIterator(): WaveformIterator(){}
-        TimeFrameWaveformIterator(Waveforms* waveformsData): WaveformIterator(waveformsData){}
+        explicit TimeFrameWaveformIterator(Waveforms* waveformsData): WaveformIterator(waveformsData){}
         void updateStatus(dataType start,dataType end){
             if(waveforms->startTime() != start || waveforms->endTime() != end){
                 setSpikesAvailable(false);
