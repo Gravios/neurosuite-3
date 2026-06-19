@@ -114,7 +114,10 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
 
 CorrelationView::~CorrelationView(){
     //Ask the threads to stop as soon as possible.
-    willBeKilled();
+    //Qualified (non-virtual) call: in its own destructor the object is already
+    //this dynamic type, so this is the intended teardown; the explicit scope
+    //documents that and silences the virtual-call-in-destructor warning.
+    CorrelationView::willBeKilled();
 
     //Wait until all the threads have finish before quiting otherwise
     // it may endup in a crash of the application.

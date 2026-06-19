@@ -68,7 +68,11 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     setTimeStepInSecond(timeInterval);
 
     //Update the dimension of the window and the values of dimensionX and dimensionY
-    updatedDimensions(view.abscissaDimension(),view.ordinateDimension());
+    //Qualified (non-virtual) call: ClusterView is the most-derived type in its
+    //own constructor, so dispatch can't reach a further override anyway — making
+    //the static binding explicit documents that and silences the virtual-call-
+    //in-constructor warning.
+    ClusterView::updatedDimensions(view.abscissaDimension(),view.ordinateDimension());
 
     newClusterCursor = QCursor(QPixmap(":/cursors/new_cluster_cursor.png"),0,0);
     newClustersCursor = QCursor(QPixmap(":/cursors/new_clusters_cursor.png"),0,0);
