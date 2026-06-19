@@ -1125,6 +1125,13 @@ private:
     /**The cluster ID currently being realigned (valid while realignRunning).*/
     int realignClusterId;
 
+    /**Set when an interactive merge with auto-align enabled starts the realign:
+     * the post-merge renumber + matrix update (autoPostMerge) is held until the
+     * realignment finishes, so the three operations run strictly in order
+     * (align → renumber → matrix) instead of racing on Data.  Serviced in
+     * slotRealignFinished.*/
+    bool m_autoPostMergePending = false;
+
     // ── PCA-center batch state ───────────────────────────────────────────────
     /**True while slotPcaAlignAllClusters is iterating the cluster list.
      * Makes slotRealignFinished skip the per-cluster review dialog and

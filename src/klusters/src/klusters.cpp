@@ -3312,14 +3312,33 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // arrow-navigating without having to Tab back.
     if (clusterPalette) clusterPalette->setFocusToList();
 
-    // Optionally realign the just-merged cluster (preference, default off).
-    // Skipped if a realignment is already running so we never stack jobs;
-    // mergedClusterId > 1 excludes the artefact/noise specials.
+    // Post-merge automation, fully serialised (no concurrent Data access).
+    //
+    // A merge can drive up to three opt-in operations: auto-align (realign the
+    // merged cluster), auto-renumber, and auto-update-matrices.  The realign
+    // worker mutates Data on a background thread, while renumber and the matrix
+    // recompute touch Data on the main thread / their own threads — running
+    // them together races and crashes.
+    //
+    // Ordering uses the realignment UI lock: while a realignment runs, all
+    // curation (including renumber / matrix update) is disabled, so the worker
+    // has Data to itself.  So if auto-align is enabled, run it FIRST on the
+    // just-merged cluster, and defer autoPostMerge() (renumber → matrix) until
+    // the realignment finishes (slotRealignFinished services m_autoPostMergePending).
+    // Renumber then runs on the realigned cluster — its id is still valid since
+    // nothing renamed it yet — and the matrices recompute against the final,
+    // realigned, renumbered state.  If auto-align is off (or can't run), do the
+    // renumber + matrix update immediately.
+    bool deferredForRealign = false;
     if (configuration().getAutoRealignAfterMerge()
-            && mergedClusterId > 1 && !realignRunning) {
+            && mergedClusterId > 1 && !realignRunning && !m_realignBatchActive
+            && doc->clusterHasMembers(mergedClusterId)) {
+        m_autoPostMergePending = true;
         startRealignForCluster(mergedClusterId);
+        deferredForRealign = true;
     }
-    autoPostMerge();
+    if (!deferredForRealign)
+        autoPostMerge();
 }
 
 // ---------------------------------------------------------------------------
@@ -6617,6 +6636,15 @@ void KlustersApp::slotAbortRealign()
     slotStateChanged(QStringLiteral("stoppedRealignState"));
     // Restore full UI state for whichever tab is currently active.
     slotTabChange(tabsParent->currentIndex());
+
+    // If the aborted realignment was the auto-align step of an interactive
+    // merge, still run the deferred renumber + matrix update — the merge
+    // itself happened, and the worker thread has been joined above so Data is
+    // no longer being mutated off-thread.
+    if (m_autoPostMergePending) {
+        m_autoPostMergePending = false;
+        autoPostMerge();
+    }
 }
 
 void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
@@ -6781,6 +6809,15 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
         }
 
         realignClusterId = -1;
+    }
+
+    // If this realignment was the auto-align step of an interactive merge,
+    // now run the deferred renumber + matrix update — serialised strictly
+    // after the realignment (which held the UI lock).  Runs whether or not
+    // the realignment itself succeeded: the merge happened regardless.
+    if (m_autoPostMergePending) {
+        m_autoPostMergePending = false;
+        autoPostMerge();
     }
 
     // Restore undo/redo state correctly.
