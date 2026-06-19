@@ -156,11 +156,11 @@ private:
 
     // ── patch80: pan + zoom state ───────────────────────────────────────────
     // The matrix is rendered at an effective top-left of
-    //   matrixTopLeft() + (m_panX, m_panY)
+    //   matrixTopLeft() + (panX, panY)
     // with each cell drawn at effective size
-    //   cellWidth * m_zoom
+    //   cellWidth * zoom
     // Pan is in widget pixels; zoom is a unitless multiplier clamped to
-    // [m_zoomMin, m_zoomMax].  Hit-testing (cellAtX/Y) and drawing
+    // [zoomMin, zoomMax].  Hit-testing (cellAtX/Y) and drawing
     // (drawMatrix, drawClusterIds) consult these via effCellSize() and
     // effMatrixTopLeft() so the same transform applies to both.
     //
@@ -169,22 +169,22 @@ private:
     //   Ctrl + Mouse Wheel    → zoom around the cursor position
     //   +/=  /  -             → zoom in / zoom out (around the centre)
     //   0                     → reset pan & zoom
-    double  m_panX{0.0};
-    double  m_panY{0.0};
-    double  m_zoom{1.0};
-    bool    m_panning{false};
-    QPoint  m_panAnchorPx;        // mouse position where Ctrl-drag started
-    double  m_panAnchorX{0.0};    // m_panX at drag start
-    double  m_panAnchorY{0.0};    // m_panY at drag start
-    static constexpr double m_zoomMin{0.5};
-    static constexpr double m_zoomMax{20.0};
-    static constexpr double m_zoomStep{1.15};  // wheel/key zoom multiplier per tick
-    static constexpr int    m_panDragThreshold{3};  // px before press → pan
+    double  panX{0.0};
+    double  panY{0.0};
+    double  zoom{1.0};
+    bool    panning{false};
+    QPoint  panAnchorPx;        // mouse position where Ctrl-drag started
+    double  panAnchorX{0.0};    // panX at drag start
+    double  panAnchorY{0.0};    // panY at drag start
+    static constexpr double zoomMin{0.5};
+    static constexpr double zoomMax{20.0};
+    static constexpr double zoomStep{1.15};  // wheel/key zoom multiplier per tick
+    static constexpr int    panDragThreshold{3};  // px before press → pan
 
-    inline double effCellSize() const { return cellWidth * m_zoom; }
+    inline double effCellSize() const { return cellWidth * zoom; }
     inline QPointF effMatrixTopLeft() const {
         const QPoint b = matrixTopLeft();
-        return QPointF(b.x() + m_panX, b.y() + m_panY);
+        return QPointF(b.x() + panX, b.y() + panY);
     }
     void  zoomAroundPoint(double newZoom, const QPointF& pivot);
     void  resetPanZoom();
@@ -195,21 +195,21 @@ private:
     bool           dataReady;
     bool           goingToDie;
     bool           isStale;
-    int            m_generation;
+    int            generation;
 
     // Stored for PairXcorrThread construction
-    std::vector<std::vector<float>> m_meanWav;    // [clusterIdx] channel-major mean
-    std::vector<std::vector<int>>   m_allFileIdx; // [clusterIdx] 0-based .spk indices
+    std::vector<std::vector<float>> meanWav;    // [clusterIdx] channel-major mean
+    std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] 0-based .spk indices
 
     QList<TemplateMatrixThread*> threadsToBeKill;
 
     // ── per-pair xcorr (on-demand) ───────────────────────────────────────────
-    PairXcorrThread* m_pairThread;      // currently running pair thread (or null)
-    int              m_pairGeneration;  // incremented on each new pair request
+    PairXcorrThread* pairThread;      // currently running pair thread (or null)
+    int              pairGeneration;  // incremented on each new pair request
 
     // Cache: (sourceClusterId, targetClusterId) → per-spike scores
     // Cleared when the matrix is recomputed (updateMatrixContents).
-    QMap<QPair<int,int>, std::vector<std::pair<int,float>>> m_pairCache;
+    QMap<QPair<int,int>, std::vector<std::pair<int,float>>> pairCache;
 
     // ── selected pair ────────────────────────────────────────────────────────
     int selectedA;   // column (target)  cluster id, -1 = none

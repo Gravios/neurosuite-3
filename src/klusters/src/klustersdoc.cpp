@@ -3628,7 +3628,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
     const long long _gapMs =
-        (m_realignPrevEndMs >= 0) ? (_nowStartMs - m_realignPrevEndMs) : -1;
+        (realignPrevEndMs >= 0) ? (_nowStartMs - realignPrevEndMs) : -1;
 
     const Data& d         = data();
     const int   nChan     = d.nbOfChannels();
@@ -3794,11 +3794,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         log << "WARNING: stderiv PCA basis (.pca.stderiv/.pcaD) for group "
             << grpId << " not found — run ndm_pca_stderiv to generate it.\n";
 
-    if (_pcaExists && m_realignPcaCache.valid()
-        && m_realignPcaCachePath == pcaPath
-        && m_realignPcaCacheMtime == _pcaMtime) {
+    if (_pcaExists && realignPcaCache.valid()
+        && realignPcaCachePath == pcaPath
+        && realignPcaCacheMtime == _pcaMtime) {
         // Cache hit — reuse the basis loaded for an earlier cluster in the batch.
-        pca = m_realignPcaCache;
+        pca = realignPcaCache;
         log << "PCA file: " << pcaPath << " [cached]\n";
         emitFlush();
     } else {
@@ -3862,9 +3862,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         if (pca.valid()) {
             // Loaded fresh from disk — cache for the rest of the batch so the
             // next cluster reuses it instead of re-reading the basis file.
-            m_realignPcaCache      = pca;
-            m_realignPcaCachePath  = pcaPath;
-            m_realignPcaCacheMtime = _pcaMtime;
+            realignPcaCache      = pca;
+            realignPcaCachePath  = pcaPath;
+            realignPcaCacheMtime = _pcaMtime;
         }
     }
 
@@ -5339,7 +5339,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     }
     // Record this call's end so the next cluster can report its gap.  Updated
     // unconditionally (cheap) so it is correct regardless of the timing flag.
-    m_realignPrevEndMs = (long long)
+    realignPrevEndMs = (long long)
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -6666,17 +6666,17 @@ void KlustersDoc::beginRealignBatchLog(const QList<int>& /*clusterIds*/)
     // ON; each cluster's logBefore/logAfter reuses one computeAllCentroids()
     // pass (populated lazily on the first snapshot, inside the realign worker)
     // instead of recomputing the full-dataset centroids twice per cluster.
-    m_centroidCache.clear();
-    m_centroidCacheValid   = false;
-    m_centroidCacheEnabled = true;
+    centroidCache.clear();
+    centroidCacheValid   = false;
+    centroidCacheEnabled = true;
 }
 
 void KlustersDoc::endRealignBatchLog()
 {
     // Tear down the batch cache so subsequent snapshots are exact again.
-    m_centroidCacheEnabled = false;
-    m_centroidCacheValid   = false;
-    m_centroidCache.clear();
+    centroidCacheEnabled = false;
+    centroidCacheValid   = false;
+    centroidCache.clear();
 }
 
 // ---------------------------------------------------------------------------

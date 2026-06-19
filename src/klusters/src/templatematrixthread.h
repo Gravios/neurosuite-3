@@ -86,7 +86,7 @@ public:
     void stopProcessing() {
         haveToStopProcessing.store(true, std::memory_order_release);
     }
-    int generation() const { return m_generation; }
+    int getGeneration() const { return generation; }
 
     // Results exposed to TemplateMatrixView after thread finishes
     Array<double>*                      getScores()      const { return scores; }
@@ -110,12 +110,12 @@ protected:
 
 private:
     TemplateMatrixThread(TemplateMatrixView& v, Data& d, int gen)
-        : view(v), data(d), m_generation(gen),
+        : view(v), data(d), generation(gen),
           haveToStopProcessing(false), scores(nullptr) { start(); }
 
     TemplateMatrixView&          view;
     Data&                        data;
-    int                          m_generation;
+    int                          generation;
     std::atomic_bool             haveToStopProcessing;
 
     Array<double>*               scores;

@@ -22,10 +22,10 @@ void WaveformCompareWidget::setData(const QVector<qint16>& before, int nBefore,
                                     const QVector<qint16>& after,  int nAfter,
                                     int nChan, int nSamp, int peakSamp)
 {
-    m_before   = before;   m_nBefore = nBefore;
-    m_after    = after;    m_nAfter  = nAfter;
-    m_nChan    = nChan;    m_nSamp   = nSamp;
-    m_peakSamp = peakSamp;
+    this->before   = before;   this->nBefore = nBefore;
+    this->after    = after;    this->nAfter  = nAfter;
+    this->nChan    = nChan;    this->nSamp   = nSamp;
+    this->peakSamp = peakSamp;
     update();
 }
 
@@ -43,7 +43,7 @@ void WaveformCompareWidget::paintEvent(QPaintEvent*)
     const QRect r = rect();
     p.fillRect(r, QColor(30, 30, 30));
 
-    if (m_nChan == 0 || m_nSamp == 0) {
+    if (nChan == 0 || nSamp == 0) {
         p.setPen(Qt::white);
         p.drawText(r, Qt::AlignCenter, tr("No waveform data"));
         return;
@@ -60,8 +60,8 @@ void WaveformCompareWidget::paintEvent(QPaintEvent*)
     p.setPen(QColor(80, 80, 80));
     p.drawLine(pad * 2 + half - 1, pad, pad * 2 + half - 1, r.height() - pad);
 
-    drawPanel(p, leftRect,  m_before, m_nBefore, tr("Before"));
-    drawPanel(p, rightRect, m_after,  m_nAfter,  tr("After"));
+    drawPanel(p, leftRect,  before, nBefore, tr("Before"));
+    drawPanel(p, rightRect, after,  nAfter,  tr("After"));
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
                                       const QVector<qint16>& waveforms,
                                       int nSpikes, const QString& label)
 {
-    if (m_nChan == 0 || m_nSamp == 0) return;
+    if (nChan == 0 || nSamp == 0) return;
 
     // Label
     p.setPen(QColor(200, 200, 200));
@@ -80,7 +80,7 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
 
     const double plotTop    = rect.top() + 22;
     const double plotH      = rect.height() - 22;
-    const double chanH      = plotH / m_nChan;   // height allocated per channel row
+    const double chanH      = plotH / nChan;   // height allocated per channel row
 
     // Find global amplitude range across all spikes and channels
     double globalMax = 1.0;
@@ -88,20 +88,20 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
         globalMax = std::max(globalMax, std::abs((double)v));
 
     // Compute mean waveform — layout [s * nChan + ch]
-    QVector<double> mean(m_nChan * m_nSamp, 0.0);
+    QVector<double> mean(nChan * nSamp, 0.0);
     if (nSpikes > 0) {
         for (int si = 0; si < nSpikes; ++si) {
-            const qint16* w = waveforms.constData() + si * m_nChan * m_nSamp;
-            for (int s = 0; s < m_nSamp; ++s)
-                for (int ch = 0; ch < m_nChan; ++ch)
-                    mean[s * m_nChan + ch] += w[s * m_nChan + ch];
+            const qint16* w = waveforms.constData() + si * nChan * nSamp;
+            for (int s = 0; s < nSamp; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    mean[s * nChan + ch] += w[s * nChan + ch];
         }
         for (double& v : mean) v /= nSpikes;
     }
 
     // X scale: map sample index to pixel x within the panel
     auto xPix = [&](int s) -> double {
-        return rect.left() + (s + 0.5) * rect.width() / m_nSamp;
+        return rect.left() + (s + 0.5) * rect.width() / nSamp;
     };
     // Y scale: map amplitude to pixel y within a channel row
     auto yPix = [&](int ch, double amp) -> double {
@@ -111,8 +111,8 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
 
     // Draw peak-sample marker (thin vertical line per channel row)
     p.setPen(QPen(QColor(80, 80, 50), 1, Qt::DotLine));
-    for (int ch = 0; ch < m_nChan; ++ch) {
-        double x = xPix(m_peakSamp);
+    for (int ch = 0; ch < nChan; ++ch) {
+        double x = xPix(peakSamp);
         double y0 = plotTop + ch * chanH + 2;
         double y1 = plotTop + (ch + 1) * chanH - 2;
         p.drawLine(QPointF(x, y0), QPointF(x, y1));
@@ -120,7 +120,7 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
 
     // Draw channel separator lines
     p.setPen(QColor(55, 55, 55));
-    for (int ch = 1; ch < m_nChan; ++ch) {
+    for (int ch = 1; ch < nChan; ++ch) {
         double y = plotTop + ch * chanH;
         p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y));
     }
@@ -130,11 +130,11 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
         QColor spikeCol(100, 160, 255, 40);
         p.setPen(QPen(spikeCol, 1));
         for (int si = 0; si < nSpikes; ++si) {
-            const qint16* w = waveforms.constData() + si * m_nChan * m_nSamp;
-            for (int ch = 0; ch < m_nChan; ++ch) {
-                QPolygonF poly(m_nSamp);
-                for (int s = 0; s < m_nSamp; ++s)
-                    poly[s] = QPointF(xPix(s), yPix(ch, w[s * m_nChan + ch]));
+            const qint16* w = waveforms.constData() + si * nChan * nSamp;
+            for (int ch = 0; ch < nChan; ++ch) {
+                QPolygonF poly(nSamp);
+                for (int s = 0; s < nSamp; ++s)
+                    poly[s] = QPointF(xPix(s), yPix(ch, w[s * nChan + ch]));
                 p.drawPolyline(poly);
             }
         }
@@ -144,10 +144,10 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
     if (nSpikes > 0) {
         QColor meanCol(255, 220, 60);
         p.setPen(QPen(meanCol, 2));
-        for (int ch = 0; ch < m_nChan; ++ch) {
-            QPolygonF poly(m_nSamp);
-            for (int s = 0; s < m_nSamp; ++s)
-                poly[s] = QPointF(xPix(s), yPix(ch, mean[s * m_nChan + ch]));
+        for (int ch = 0; ch < nChan; ++ch) {
+            QPolygonF poly(nSamp);
+            for (int s = 0; s < nSamp; ++s)
+                poly[s] = QPointF(xPix(s), yPix(ch, mean[s * nChan + ch]));
             p.drawPolyline(poly);
         }
     }

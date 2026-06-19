@@ -29,9 +29,9 @@ public:
         haveToStopProcessing.store(true, std::memory_order_release);
     }
 
-    int sourceCluster() const { return m_sourceCluster; }
-    int targetCluster() const { return m_targetCluster; }
-    int generation()    const { return m_generation; }
+    int getSourceCluster() const { return sourceCluster; }
+    int getTargetCluster() const { return targetCluster; }
+    int getGeneration()    const { return generation; }
 
     // Result: one entry per spike in source cluster — (0-based .spk fileIdx, xcorr score)
     const std::vector<std::pair<int,float>>& getScores() const { return scores; }
@@ -59,22 +59,22 @@ private:
                     int nChan, int nSamp, bool twoBytes,
                     int generation)
         : view(v),
-          m_sourceCluster(sourceCluster), m_targetCluster(targetCluster),
-          m_generation(generation),
-          m_sourceFileIdx(sourceFileIdx), m_targetMean(targetMean),
-          m_spkPath(spkPath), m_nChan(nChan), m_nSamp(nSamp),
-          m_twoBytes(twoBytes), haveToStopProcessing(false)
+          sourceCluster(sourceCluster), targetCluster(targetCluster),
+          generation(generation),
+          sourceFileIdx(sourceFileIdx), targetMean(targetMean),
+          spkPath(spkPath), nChan(nChan), nSamp(nSamp),
+          twoBytes(twoBytes), haveToStopProcessing(false)
     { start(); }
 
     TemplateMatrixView&       view;
-    int                       m_sourceCluster;
-    int                       m_targetCluster;
-    int                       m_generation;
-    std::vector<int>          m_sourceFileIdx;
-    std::vector<float>        m_targetMean;
-    QString                   m_spkPath;
-    int                       m_nChan, m_nSamp;
-    bool                      m_twoBytes;
+    int                       sourceCluster;
+    int                       targetCluster;
+    int                       generation;
+    std::vector<int>          sourceFileIdx;
+    std::vector<float>        targetMean;
+    QString                   spkPath;
+    int                       nChan, nSamp;
+    bool                      twoBytes;
     std::atomic_bool          haveToStopProcessing;
 
     std::vector<std::pair<int,float>> scores;

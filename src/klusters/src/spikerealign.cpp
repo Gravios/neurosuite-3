@@ -29,11 +29,11 @@ SpikeRealign::SpikeRealign(Data* data, int clusterId,
                             const QString& basePath, int groupId,
                             int maxShift, QObject* parent)
     : QObject(parent)
-    , m_data(data)
-    , m_clusterId(clusterId)
-    , m_basePath(basePath)
-    , m_groupId(groupId)
-    , m_maxShift(maxShift)
+    , data(data)
+    , clusterId(clusterId)
+    , basePath(basePath)
+    , groupId(groupId)
+    , maxShift(maxShift)
 {}
 
 // ---------------------------------------------------------------------------
@@ -41,19 +41,19 @@ SpikeRealign::SpikeRealign(Data* data, int clusterId,
 // ---------------------------------------------------------------------------
 
 QString SpikeRealign::resPath()  const
-{ return QString("%1.res.%2").arg(m_basePath).arg(m_groupId); }
+{ return QString("%1.res.%2").arg(basePath).arg(groupId); }
 
 QString SpikeRealign::spkPath()  const
-{ return QString("%1.spk.%2").arg(m_basePath).arg(m_groupId); }
+{ return QString("%1.spk.%2").arg(basePath).arg(groupId); }
 
 QString SpikeRealign::fetPath()  const
-{ return QString("%1.fet.%2").arg(m_basePath).arg(m_groupId); }
+{ return QString("%1.fet.%2").arg(basePath).arg(groupId); }
 
 QString SpikeRealign::cluPath()  const
-{ return QString("%1.clu.%2").arg(m_basePath).arg(m_groupId); }
+{ return QString("%1.clu.%2").arg(basePath).arg(groupId); }
 
 QString SpikeRealign::evecPath() const
-{ return QString("%1.spk.%2.evec").arg(m_basePath).arg(m_groupId); }
+{ return QString("%1.spk.%2.evec").arg(basePath).arg(groupId); }
 
 QString SpikeRealign::filPath()  const
 {
@@ -64,9 +64,9 @@ QString SpikeRealign::filPath()  const
     // otherwise re-extracted waveforms will have completely different
     // frequency content (DC offset, slow drift, full bandwidth) and will
     // look "corrupted" compared to the rest of the cluster.
-    QString fil = m_basePath + ".fil";
+    QString fil = basePath + ".fil";
     if (QFile::exists(fil)) return fil;
-    return m_basePath + ".dat";
+    return basePath + ".dat";
 }
 
 // patch62 — sanity-check that the file we're about to re-extract from
@@ -84,10 +84,10 @@ bool SpikeRealign::verifyRawSource(const QVector<long long>& globalIndices,
 {
     if (globalIndices.isEmpty() || waveforms.isEmpty()) return true;
 
-    const int nChan    = m_data->nbOfchannels();
-    const int nSamples = m_data->nbOfSampleInWaveform();
-    const int totalNbChan = m_data->getTotalNbChannels();
-    const QList<int> channelIds = m_data->getChannelIds();
+    const int nChan    = data->nbOfchannels();
+    const int nSamples = data->nbOfSampleInWaveform();
+    const int totalNbChan = data->getTotalNbChannels();
+    const QList<int> channelIds = data->getChannelIds();
 
     // Read the first cluster spike's original timestamp.
     QVector<long long> allRes;
@@ -283,8 +283,8 @@ bool SpikeRealign::writeAllClu(const QVector<int>& clusterIds, int nClustersHead
 bool SpikeRealign::readSpkWaveforms(const QVector<long long>& spikeGlobalIndices,
                                      QVector<QVector<short>>&  waveforms)
 {
-    const int nChan    = m_data->nbOfchannels();
-    const int nSamples = m_data->nbOfSampleInWaveform();
+    const int nChan    = data->nbOfchannels();
+    const int nSamples = data->nbOfSampleInWaveform();
     const int nPts     = nChan * nSamples;
 
     FILE* f = fopen(spkPath().toLocal8Bit().constData(), "rb");
@@ -311,7 +311,7 @@ bool SpikeRealign::readSpkWaveforms(const QVector<long long>& spikeGlobalIndices
 bool SpikeRealign::rewriteSpkSlot(long long globalIdx1based,
                                    const QVector<short>& newWaveform)
 {
-    const int nPts   = m_data->nbOfchannels() * m_data->nbOfSampleInWaveform();
+    const int nPts   = data->nbOfchannels() * data->nbOfSampleInWaveform();
     FILE* f = fopen(spkPath().toLocal8Bit().constData(), "r+b");
     if (!f) return false;
     off_t offset = (off_t)(globalIdx1based - 1) * nPts * sizeof(short);
@@ -331,8 +331,8 @@ bool SpikeRealign::projectWaveform(const QVector<short>& waveform,
 {
     if (!pca.valid()) return false;
 
-    const int nChan       = m_data->nbOfchannels();
-    const int nSamples    = m_data->nbOfSampleInWaveform();
+    const int nChan       = data->nbOfchannels();
+    const int nSamples    = data->nbOfSampleInWaveform();
     const int nComp       = pca.nComponents;
     const int data2use    = pca.data2use;
     const int recShift    = pca.recShift;  // first sample index used by PCA
@@ -386,7 +386,7 @@ bool SpikeRealign::swapSpikes(long long idxA, long long idxB,
     std::swap(allClu[posA], allClu[posB]);
 
     // Swap spk slots in the file
-    const int nPts = m_data->nbOfchannels() * m_data->nbOfSampleInWaveform();
+    const int nPts = data->nbOfchannels() * data->nbOfSampleInWaveform();
     FILE* spkf = fopen(spkPath().toLocal8Bit().constData(), "r+b");
     if (!spkf) return false;
 
@@ -438,10 +438,10 @@ RealignResult SpikeRealign::run()
 {
     RealignResult result;
 
-    const int nChan    = m_data->nbOfchannels();
-    const int nSamples = m_data->nbOfSampleInWaveform();
+    const int nChan    = data->nbOfchannels();
+    const int nSamples = data->nbOfSampleInWaveform();
     const int nPts     = nChan * nSamples;
-    const int peakPos  = m_data->positionOfPeakInWaveform();  // 0-based
+    const int peakPos  = data->positionOfPeakInWaveform();  // 0-based
 
     // ------------------------------------------------------------------
     // 1. Load eigenvectors
@@ -458,7 +458,7 @@ RealignResult SpikeRealign::run()
     //    using spikePositions() (thread-safe, mutex-protected in Data)
     // ------------------------------------------------------------------
     SortableTable positions;
-    if (!m_data->spikePositions(m_clusterId, positions)) {
+    if (!data->spikePositions(clusterId, positions)) {
         result.success = false;
         result.errorMessage = "Failed to get spike positions (cluster not found or modified).";
         return result;
@@ -562,7 +562,7 @@ RealignResult SpikeRealign::run()
     XcorrDispatch::compute(
         waveBuf.data(), tmplBuf.data(),
         nSpikesInCluster, nChan, nSamples,
-        m_maxShift, /*minScore=*/0.0f,
+        maxShift, /*minScore=*/0.0f,
         shifts.data(), xcorrScores.data());
 
     emit progress(20);
@@ -604,11 +604,11 @@ RealignResult SpikeRealign::run()
     // fetLines[0] = nDimensions header
     // fetLines[k] = spike k-1 (1-based spike k) features
 
-    const int nbDimensions = m_data->totalNbOfPCAs() + 1;  // PCAs + timestamp
-    const int nComp        = m_data->nbFeaturesbyChannel();
+    const int nbDimensions = data->totalNbOfPCAs() + 1;  // PCAs + timestamp
+    const int nComp        = data->nbFeaturesbyChannel();
 
     // Open the raw signal file for re-extraction
-    const int totalNbChan = m_data->getTotalNbChannels();
+    const int totalNbChan = data->getTotalNbChannels();
     FILE* rawFile = fopen(filPath().toLocal8Bit().constData(), "rb");
     if (!rawFile) {
         result.success = false;
@@ -652,7 +652,7 @@ RealignResult SpikeRealign::run()
     // We need the global channel IDs to re-extract from .fil.
     // Obtained via Data::getChannelIds(), which exposes the private
     // `channelList` field set during initialization.
-    QList<int> channelIds = m_data->getChannelIds();
+    QList<int> channelIds = data->getChannelIds();
 
     int processedSinceLastProgress = 0;
 
@@ -724,7 +724,7 @@ RealignResult SpikeRealign::run()
                 // -- e. Update in-memory features (timestamp column only via
                 //       the public features() accessor — which is const.
                 //       We use Data::updateFeatureTimestamp() — added below) --
-                m_data->updateFeatureTimestamp(gidx, newTs);
+                data->updateFeatureTimestamp(gidx, newTs);
 
                 // -- f. Update allRes --
                 allRes[vecIdx] = newTs;
@@ -756,7 +756,7 @@ RealignResult SpikeRealign::run()
                         swapSpikes(curGidx, idxB, allRes, allClu, nClustersHeader);
                         if (curVec - 1 >= 0 && curVec < fetLines.size())
                             fetLines.swapItemsAt(curVec, curVec + 1 - 1);
-                        m_data->swapSpikesByClusterRows(curGidx, idxB);
+                        data->swapSpikesByClusterRows(curGidx, idxB);
                         result.nSwapped++;
                         // OUR spike now lives at curVec-1.  Track it there.
                         curVec  -= 1;
@@ -770,7 +770,7 @@ RealignResult SpikeRealign::run()
                         swapSpikes(curGidx, idxB, allRes, allClu, nClustersHeader);
                         if (curVec + 2 < fetLines.size())
                             fetLines.swapItemsAt(curVec + 1, curVec + 2);
-                        m_data->swapSpikesByClusterRows(curGidx, idxB);
+                        data->swapSpikesByClusterRows(curGidx, idxB);
                         result.nSwapped++;
                         // OUR spike now lives at curVec+1.  Track it there.
                         curVec  += 1;

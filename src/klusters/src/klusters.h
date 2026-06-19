@@ -427,7 +427,7 @@ private Q_SLOTS:
 
     /** Reorders and renumbers clusters by similarity, using whichever of
      *  the error matrix or template matrix is currently relevant (see
-     *  m_lastMatrixUsed below).  Triggered by Shift+S. */
+     *  lastMatrixUsed below).  Triggered by Shift+S. */
     void slotReorderClustersBySimilarity();
 
     /** Track which matrix view the user most recently interacted with.
@@ -1130,25 +1130,25 @@ private:
      * realignment finishes, so the three operations run strictly in order
      * (align → renumber → matrix) instead of racing on Data.  Serviced in
      * slotRealignFinished.*/
-    bool m_autoPostMergePending = false;
+    bool autoPostMergePending = false;
 
     // ── PCA-center batch state ───────────────────────────────────────────────
     /**True while slotPcaAlignAllClusters is iterating the cluster list.
      * Makes slotRealignFinished skip the per-cluster review dialog and
      * auto-accept the result instead.*/
-    bool m_realignBatchActive;
+    bool realignBatchActive;
     /**Remaining cluster IDs to process in the current batch (FIFO).*/
-    QList<int> m_realignBatchQueue;
+    QList<int> realignBatchQueue;
     /**Total number of clusters scheduled at batch start — used to render
      * the "(i/N)" progress prefix in the output tab.*/
-    int m_realignBatchTotal;
+    int realignBatchTotal;
     /**Number of clusters whose realignment has completed successfully
      * and been auto-accepted so far in this batch.*/
-    int m_realignBatchAccepted;
+    int realignBatchAccepted;
     /**Number of clusters whose worker returned ok=false this batch.*/
-    int m_realignBatchFailed;
+    int realignBatchFailed;
     /**Sum of nShifted across all clusters processed in this batch.*/
-    int m_realignBatchShiftedTotal;
+    int realignBatchShiftedTotal;
     /**Cluster IDs accepted during the current batch whose view refresh
      * (cache invalidation + forceClusterRefresh) has been deferred to batch
      * end.  Per-cluster refresh emits spikesAddedToCluster, which puts every
@@ -1156,17 +1156,17 @@ private:
      * threads against the (131 GB) .spk.pending — doing that once per cluster
      * dominated the inter-cluster gap, so it is batched and flushed once when
      * the run finishes (or aborts) via flushRealignBatchRefresh().*/
-    QList<int> m_realignBatchTouched;
+    QList<int> realignBatchTouched;
     /**Fixed args string used for every worker invocation in the current
      * batch (built from realignArgs with --topchannels and --pca-refine
      * normalised).*/
-    QString m_realignBatchArgs;
+    QString realignBatchArgs;
     /**Status-bar progress bar shown for the duration of a batch.  Lazily
      * created on first batch start (added as a permanent widget so it
      * stays visible regardless of which tab is active) and hidden on
      * batch completion or abort.  Kept across batches to avoid widget
      * churn — only the visibility and range/value are toggled.*/
-    QProgressBar* m_realignProgressBar;
+    QProgressBar* realignProgressBar;
 
     /**Launch a single RealignWorker for @p clusterId with @p launchArgs.
      * Encapsulates the worker / thread / signal-wiring boilerplate that
@@ -1201,8 +1201,8 @@ private:
     /// single run.  @p clusterSetChanged is OR-accumulated across the coalesced
     /// signals.
     void scheduleAutoPostClusterEdit(bool clusterSetChanged);
-    bool m_autoPostEditPending    = false;
-    bool m_autoPostEditSetChanged = false;
+    bool autoPostEditPending    = false;
+    bool autoPostEditSetChanged = false;
 
     /**Start ONE worker that processes the whole @p clusterIds list back-to-back
      * in a single thread (RealignWorker batch mode), wired to
@@ -1212,7 +1212,7 @@ private:
     void startRealignBatchWorker(const QList<int>& clusterIds,
                                  const QString& launchArgs);
 
-    /**Flush the deferred view refresh accumulated in m_realignBatchTouched:
+    /**Flush the deferred view refresh accumulated in realignBatchTouched:
      * invalidate the waveform/correlogram caches for every touched cluster,
      * then force one refresh pass.  Called once when a PCA-Center Align All
      * batch finishes or is aborted, instead of per cluster.*/
@@ -1229,7 +1229,7 @@ private:
      *  plus slotErrorMatrixInteracted / slotTemplateMatrixInteracted
      *  (which receive viewInteracted signals on every matrix click). */
     enum class MatrixKind { NONE, ERROR_MATRIX_KIND, TEMPLATE_MATRIX_KIND, RESIDUAL_MATRIX_KIND };
-    MatrixKind m_lastMatrixUsed = MatrixKind::NONE;
+    MatrixKind lastMatrixUsed = MatrixKind::NONE;
 
     /**The path of the currently open document.*/
     QString filePath;

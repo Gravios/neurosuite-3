@@ -38,7 +38,7 @@ public:
     ~SpikeRealignDialog() override;
 
     /** Cluster ID selected for realignment. */
-    int clusterId() const { return m_clusterId; }
+    int getClusterId() const { return clusterId; }
 
     /** patch82 — args string with --pca-refine appended/removed based on
      *  the new checkbox state.  Callers should use this instead of the
@@ -50,13 +50,13 @@ public:
 private:
     void buildUi();
 
-    KlustersDoc& m_doc;
-    int          m_clusterId;
-    QString      m_args;
+    KlustersDoc& doc;
+    int          clusterId;
+    QString      args;
 
-    QLabel*      m_spikeCountLabel;
-    QLabel*      m_pcaFileLabel;
-    QLabel*      m_backendLabel;
-    QPushButton* m_startBtn;
-    class QCheckBox* m_pcaRefineCheck{nullptr};  // patch82
+    QLabel*      spikeCountLabel;
+    QLabel*      pcaFileLabel;
+    QLabel*      backendLabel;
+    QPushButton* startBtn;
+    class QCheckBox* pcaRefineCheck{nullptr};  // patch82
 };

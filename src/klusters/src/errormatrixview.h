@@ -306,14 +306,14 @@ private:
     // resets to the full matrix.  Plain click stays pair-selection, and a quick
     // Ctrl-click that never crosses the drag threshold falls through to the
     // Ctrl-add selection path (so multi-select still works).
-    bool   m_panArmed{false};      // Ctrl+press seen; awaiting drag threshold
-    bool   m_panning{false};       // drag threshold crossed → actively panning
-    QPoint m_panAnchorPx;          // pixel position where the Ctrl-drag began
-    double m_panCenterStartFx{0.5};// userCenterFx at drag start
-    double m_panCenterStartFy{0.5};// userCenterFy at drag start
-    static constexpr int    m_panDragThreshold{3};  // px before a press → pan
-    static constexpr double m_wheelZoomStep{1.25};  // zoom multiplier per tick
-    static constexpr double m_userZoomMax{20.0};    // max zoom-in factor
+    bool   panArmed{false};      // Ctrl+press seen; awaiting drag threshold
+    bool   panning{false};       // drag threshold crossed → actively panning
+    QPoint panAnchorPx;          // pixel position where the Ctrl-drag began
+    double panCenterStartFx{0.5};// userCenterFx at drag start
+    double panCenterStartFy{0.5};// userCenterFy at drag start
+    static constexpr int    panDragThreshold{3};  // px before a press → pan
+    static constexpr double wheelZoomStep{1.25};  // zoom multiplier per tick
+    static constexpr double userZoomMax{20.0};    // max zoom-in factor
 
     // Layout cache: the world geometry + ZoomWindow are rebuilt only when these
     // inputs change — a widget resize or a cluster-count change.  Rebuilding on
@@ -374,9 +374,9 @@ private:
 
     /**Monotonically increasing counter, bumped each time updateMatrixContents() is called.
      * Each ErrorMatrixThread stores the generation at the time it was created.
-     * customEvent() discards results whose generation != m_generation, preventing
+     * customEvent() discards results whose generation != generation, preventing
      * a superseded (pre-renumber) thread from overwriting a more recent result.*/
-    int m_generation;
+    int generation;
 
     /**List of the selected pairs.*/
     QList<Pair> selectedPairs;

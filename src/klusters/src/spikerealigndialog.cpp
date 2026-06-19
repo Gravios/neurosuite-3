@@ -30,9 +30,9 @@ namespace XcorrDispatch {
 SpikeRealignDialog::SpikeRealignDialog(KlustersDoc& doc, int clusterId,
                                        const QString& args, QWidget* parent)
     : QDialog(parent)
-    , m_doc(doc)
-    , m_clusterId(clusterId)
-    , m_args(args)
+    , doc(doc)
+    , clusterId(clusterId)
+    , args(args)
 {
     setWindowTitle(tr("Realign Spikes — Cluster %1").arg(clusterId));
     setMinimumWidth(500);
@@ -59,32 +59,32 @@ void SpikeRealignDialog::buildUi()
     int row = 0;
 
     grid->addWidget(new QLabel(tr("Cluster:")), row, 0);
-    grid->addWidget(new QLabel(QString::number(m_clusterId)), row++, 1);
+    grid->addWidget(new QLabel(QString::number(clusterId)), row++, 1);
 
     // Spike count
     grid->addWidget(new QLabel(tr("Spikes in cluster:")), row, 0);
-    m_spikeCountLabel = new QLabel(tr("—"));
-    grid->addWidget(m_spikeCountLabel, row++, 1);
+    spikeCountLabel = new QLabel(tr("—"));
+    grid->addWidget(spikeCountLabel, row++, 1);
 
     // PCA file
     grid->addWidget(new QLabel(tr("PCA eigenvector file:")), row, 0);
-    m_pcaFileLabel = new QLabel(tr("—"));
-    m_pcaFileLabel->setWordWrap(true);
-    grid->addWidget(m_pcaFileLabel, row++, 1);
+    pcaFileLabel = new QLabel(tr("—"));
+    pcaFileLabel->setWordWrap(true);
+    grid->addWidget(pcaFileLabel, row++, 1);
 
     // Compute backend
     grid->addWidget(new QLabel(tr("Compute backend:")), row, 0);
-    m_backendLabel = new QLabel(QString::fromLatin1(XcorrDispatch::backendName()));
-    grid->addWidget(m_backendLabel, row++, 1);
+    backendLabel = new QLabel(QString::fromLatin1(XcorrDispatch::backendName()));
+    grid->addWidget(backendLabel, row++, 1);
 
     // Parameters summary — parse from args (same logic as realignSpikes)
-    Data& d = m_doc.data();
+    Data& d = doc.data();
     int peakSamp = d.peakSampleIndex();
     int maxShift = std::max(1, peakSamp / 2);
     float minScore = 0.70f;
     int nIter = 2;
     {
-        const QStringList tokens = m_args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         for (int ti = 0; ti < tokens.size(); ++ti) {
             const QString& tok = tokens[ti];
             if ((tok == QStringLiteral("--threshold") || tok == QStringLiteral("-t"))
@@ -143,7 +143,7 @@ void SpikeRealignDialog::buildUi()
     // maxShift=2 and 5000 spikes it adds < 1 second on a warm cache.
     bool pcaRefineInitial = false;
     {
-        const QStringList tokens = m_args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         for (const QString& tok : tokens) {
             if (tok == QStringLiteral("--pca-refine") || tok == QStringLiteral("-p")) {
                 pcaRefineInitial = true;
@@ -151,10 +151,10 @@ void SpikeRealignDialog::buildUi()
             }
         }
     }
-    m_pcaRefineCheck = new QCheckBox(
+    pcaRefineCheck = new QCheckBox(
         tr("Refine with PCA-projection maximization (after mean alignment)"));
-    m_pcaRefineCheck->setChecked(pcaRefineInitial);
-    m_pcaRefineCheck->setToolTip(
+    pcaRefineCheck->setChecked(pcaRefineInitial);
+    pcaRefineCheck->setToolTip(
         tr("When checked, runs a second alignment pass after the mean-"
            "template xcorr converges.  For each spike, sweeps candidate "
            "shifts in [-maxShift, +maxShift] and picks the shift that "
@@ -164,7 +164,7 @@ void SpikeRealignDialog::buildUi()
            "alignment offsets that the global mean template can't.  Adds "
            "one extra .fil read per candidate shift per spike — usually "
            "under a second total."));
-    vlay->addWidget(m_pcaRefineCheck);
+    vlay->addWidget(pcaRefineCheck);
 
     // ── Description ──────────────────────────────────────────────────────────
     auto* desc = new QLabel(
@@ -185,31 +185,31 @@ void SpikeRealignDialog::buildUi()
 
     // ── Buttons ──────────────────────────────────────────────────────────────
     auto* btnLay = new QHBoxLayout;
-    m_startBtn       = new QPushButton(tr("Start Realignment"));
+    startBtn       = new QPushButton(tr("Start Realignment"));
     auto* cancelBtn  = new QPushButton(tr("Cancel"));
     btnLay->addStretch();
-    btnLay->addWidget(m_startBtn);
+    btnLay->addWidget(startBtn);
     btnLay->addWidget(cancelBtn);
     vlay->addLayout(btnLay);
 
-    connect(m_startBtn, &QPushButton::clicked, this, &QDialog::accept);
+    connect(startBtn, &QPushButton::clicked, this, &QDialog::accept);
     connect(cancelBtn,  &QPushButton::clicked, this, &QDialog::reject);
 
     // ── Populate dynamic fields ───────────────────────────────────────────────
     SortableTable st;
     int nbSpikes = 0;
-    if (m_doc.data().spikePositions(m_clusterId, st))
+    if (doc.data().spikePositions(clusterId, st))
         nbSpikes = static_cast<int>(st.nbOfRows());
-    m_spikeCountLabel->setText(QString::number(nbSpikes));
+    spikeCountLabel->setText(QString::number(nbSpikes));
 
     // Resolve the PCA eigenvector basis across canonical / dotted-stderiv /
     // legacy-glued forms (.pca.N / .pca.stderiv.N / .pcaD.N), preferring the
     // derived basis for stderiv sessions — matches klustersdoc.cpp::realignSpikes.
     // (ndm_pca_stderiv now writes .pca.stderiv.N, not the legacy .pcaD.N.)
-    const QString grpId  = m_doc.currentElectrodeGroupID();
-    const bool isStderiv = m_doc.isStderivSession();
+    const QString grpId  = doc.currentElectrodeGroupID();
+    const bool isStderiv = doc.isStderivSession();
     const std::string fullBase =
-        (m_doc.documentDirectory() + QStringLiteral("/") + m_doc.documentBaseName())
+        (doc.documentDirectory() + QStringLiteral("/") + doc.documentBaseName())
             .toStdString();
     const neurofileio::ResolvedInput pcaRes = neurofileio::resolveInput(
         fullBase, "pca", grpId.toInt(),
@@ -223,12 +223,12 @@ void SpikeRealignDialog::buildUi()
 
     bool pcaOk = QFileInfo::exists(pcaPath);
     if (pcaOk)
-        m_pcaFileLabel->setText(pcaPath);
+        pcaFileLabel->setText(pcaPath);
     else
-        m_pcaFileLabel->setText(
+        pcaFileLabel->setText(
             tr("<font color='red'>NOT FOUND: %1</font>").arg(pcaPath));
 
-    m_startBtn->setEnabled(pcaOk && nbSpikes > 0);
+    startBtn->setEnabled(pcaOk && nbSpikes > 0);
     if (!pcaOk) {
         const QString ext = isStderiv ? QStringLiteral(".pca.stderiv.") : QStringLiteral(".pca.");
         const QString tool = isStderiv ? QStringLiteral("ndm_pca_stderiv")
@@ -247,11 +247,11 @@ void SpikeRealignDialog::buildUi()
 // instead of the original args.
 QString SpikeRealignDialog::finalArgs() const
 {
-    const bool wantRefine = m_pcaRefineCheck && m_pcaRefineCheck->isChecked();
+    const bool wantRefine = pcaRefineCheck && pcaRefineCheck->isChecked();
 
     // Strip any existing --pca-refine / -p flag, then append iff wanted.
     // Tokens are space-separated; the flag takes no value.
-    QStringList tokens = m_args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
     QStringList out;
     out.reserve(tokens.size() + 1);
     for (const QString& tok : tokens) {

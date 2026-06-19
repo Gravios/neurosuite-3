@@ -97,22 +97,22 @@ private:
     QStatusBar*   statusBar;
 
     // ── pan + zoom (same transform as TemplateMatrixView) ────────────────
-    double  m_panX{0.0};
-    double  m_panY{0.0};
-    double  m_zoom{1.0};
-    bool    m_panning{false};
-    QPoint  m_panAnchorPx;
-    double  m_panAnchorX{0.0};
-    double  m_panAnchorY{0.0};
-    static constexpr double m_zoomMin{0.5};
-    static constexpr double m_zoomMax{20.0};
-    static constexpr double m_zoomStep{1.15};
-    static constexpr int    m_panDragThreshold{3};
+    double  panX{0.0};
+    double  panY{0.0};
+    double  zoom{1.0};
+    bool    panning{false};
+    QPoint  panAnchorPx;
+    double  panAnchorX{0.0};
+    double  panAnchorY{0.0};
+    static constexpr double zoomMin{0.5};
+    static constexpr double zoomMax{20.0};
+    static constexpr double zoomStep{1.15};
+    static constexpr int    panDragThreshold{3};
 
-    inline double effCellSize() const { return cellWidth * m_zoom; }
+    inline double effCellSize() const { return cellWidth * zoom; }
     inline QPointF effMatrixTopLeft() const {
         const QPoint b = matrixTopLeft();
-        return QPointF(b.x() + m_panX, b.y() + m_panY);
+        return QPointF(b.x() + panX, b.y() + panY);
     }
     void  zoomAroundPoint(double newZoom, const QPointF& pivot);
     void  resetPanZoom();
@@ -123,8 +123,8 @@ private:
     bool           dataReady;
     bool           goingToDie;
     bool           isStale;
-    int            m_generation;
-    double         m_displayMax;  // cached off-diagonal max for colour scaling
+    int            generation;
+    double         displayMax;  // cached off-diagonal max for colour scaling
 
     QList<ResidualMatrixThread*> threadsToBeKill;
 

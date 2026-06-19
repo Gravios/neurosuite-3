@@ -33,8 +33,8 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     : QWidget(parent),
       doc(doc_), view(view_), statusBar(statusBar_),
       scores(nullptr),
-      dataReady(false), goingToDie(false), isStale(false), m_generation(0),
-      m_pairThread(nullptr), m_pairGeneration(0),
+      dataReady(false), goingToDie(false), isStale(false), generation(0),
+      pairThread(nullptr), pairGeneration(0),
       selectedA(-1), selectedB(-1),
       cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0),
       currentThreshold(0.90),
@@ -205,16 +205,16 @@ void TemplateMatrixView::willBeKilled()
 
 bool TemplateMatrixView::isThreadsRunning() const
 {
-    return !threadsToBeKill.isEmpty() || (m_pairThread != nullptr);
+    return !threadsToBeKill.isEmpty() || (pairThread != nullptr);
 }
 
 void TemplateMatrixView::stopPairThread()
 {
-    if (m_pairThread) {
-        m_pairThread->stopProcessing();
+    if (pairThread) {
+        pairThread->stopProcessing();
         // Don't wait here — the thread will post its event and we'll clean up
         // in customEvent (generation mismatch will discard the result).
-        m_pairThread = nullptr;  // ownership stays with the thread until it posts
+        pairThread = nullptr;  // ownership stays with the thread until it posts
     }
 }
 
@@ -249,16 +249,16 @@ void TemplateMatrixView::stopRunningThreadsSync()
     //    NOT use the existing stopPairThread() here because that orphans
     //    the pointer (deferred cleanup in customEvent).  We need synchronous
     //    completion so the file handle is closed before we return.
-    if (m_pairThread) {
-        m_pairThread->stopProcessing();
-        while (!m_pairThread->wait()) {}
+    if (pairThread) {
+        pairThread->stopProcessing();
+        while (!pairThread->wait()) {}
         // Thread has finished run() and posted its event; the customEvent
         // handler that consumes the post takes ownership.  Clear our
         // pointer so subsequent calls don't try to wait again.  The
         // event will arrive and be discarded by the generation check —
         // see TemplateMatrixView::customEvent's sourceCluster mismatch
         // branch.
-        m_pairThread = nullptr;
+        pairThread = nullptr;
     }
 
     // 2. Matrix threads: same pattern as WaveformView::stopAndClearThreads.
@@ -309,9 +309,9 @@ void TemplateMatrixView::updateSliderRange()
 void TemplateMatrixView::updateMatrixContents()
 {
     if (goingToDie) return;
-    ++m_generation;
+    ++generation;
     stopPairThread();
-    m_pairCache.clear();
+    pairCache.clear();
 
     // Reflect the current metric (it may have been changed via the Display
     // preference page since this view was built).  Block signals so this
@@ -346,7 +346,7 @@ void TemplateMatrixView::updateMatrixContents()
 
 TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
 {
-    return new TemplateMatrixThread(*this, doc.data(), m_generation);
+    return new TemplateMatrixThread(*this, doc.data(), generation);
 }
 
 void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
@@ -355,7 +355,7 @@ void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
 
     // Check cache first
     const QPair<int,int> key(sourceCluster, targetCluster);
-    if (m_pairCache.contains(key)) {
+    if (pairCache.contains(key)) {
         updateSliderPreview();
         return;
     }
@@ -364,26 +364,26 @@ void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
     const int ciSrc = clusterList.indexOf(sourceCluster);
     const int ciTgt = clusterList.indexOf(targetCluster);
     if (ciSrc < 0 || ciTgt < 0 ||
-        ciSrc >= static_cast<int>(m_allFileIdx.size()) ||
-        ciTgt >= static_cast<int>(m_meanWav.size()))
+        ciSrc >= static_cast<int>(allFileIdx.size()) ||
+        ciTgt >= static_cast<int>(meanWav.size()))
         return;
 
     stopPairThread();
-    ++m_pairGeneration;
+    ++pairGeneration;
     countLabel->setText("Computing scores…");
     applyButton->setEnabled(false);
 
-    m_pairThread = new PairXcorrThread(
+    pairThread = new PairXcorrThread(
         *this,
         sourceCluster, targetCluster,
-        m_allFileIdx[static_cast<size_t>(ciSrc)],
-        m_meanWav[static_cast<size_t>(ciTgt)],
+        allFileIdx[static_cast<size_t>(ciSrc)],
+        meanWav[static_cast<size_t>(ciTgt)],
         doc.data().getSpkFileName(),
         doc.data().nbOfChannels(),
         doc.data().nbSamplesPerWaveform(),
         doc.data().isRecordingTwoBytes(),
-        m_pairGeneration);
-    // m_pairThread starts itself; ownership transfers to the thread
+        pairGeneration);
+    // pairThread starts itself; ownership transfers to the thread
     // — we keep the pointer only to call stopProcessing() if needed.
 }
 
@@ -398,14 +398,14 @@ void TemplateMatrixView::customEvent(QEvent* event)
 
         Array<double>* newScores = thread->getScores();
         const bool accepted = (newScores != nullptr
-                               && thread->generation() == m_generation);
+                               && thread->getGeneration() == generation);
 
         if (accepted) {
             delete scores;
             scores      = newScores;
             clusterList = thread->getClusterList();
-            m_meanWav   = thread->getMeanWav();
-            m_allFileIdx= thread->getAllFileIdx();
+            meanWav   = thread->getMeanWav();
+            allFileIdx= thread->getAllFileIdx();
         } else {
             delete newScores;
         }
@@ -438,15 +438,15 @@ void TemplateMatrixView::customEvent(QEvent* event)
         auto* ev     = static_cast<PairXcorrThread::PairXcorrEvent*>(event);
         auto* thread = ev->parentThread();
 
-        const bool accepted = (thread->generation() == m_pairGeneration);
+        const bool accepted = (thread->getGeneration() == pairGeneration);
 
         if (accepted) {
-            const QPair<int,int> key(thread->sourceCluster(), thread->targetCluster());
-            m_pairCache.insert(key, thread->getScores());
+            const QPair<int,int> key(thread->getSourceCluster(), thread->getTargetCluster());
+            pairCache.insert(key, thread->getScores());
         }
 
         while (!thread->wait()) {}
-        if (m_pairThread == thread) m_pairThread = nullptr;
+        if (pairThread == thread) pairThread = nullptr;
         delete thread;
 
         if (!goingToDie && accepted)
@@ -650,11 +650,11 @@ void TemplateMatrixView::drawClusterIds(QPainter& p)
 //
 //   press      : if Ctrl held, record anchor pos and current pan offsets.
 //                We do NOT start panning yet — only after the cursor moves
-//                m_panDragThreshold pixels, so a quick Ctrl-click still
+//                panDragThreshold pixels, so a quick Ctrl-click still
 //                hits the click path (which adds clusters to the active
 //                view; see mouseReleaseEvent line ~510 in the original).
 //   move       : if anchor recorded AND mouse moved past threshold, set
-//                m_panning = true and update m_panX/Y from the delta.
+//                panning = true and update panX/Y from the delta.
 //                If not panning, keep the original status-bar hover
 //                feedback.
 //   release    : if we ended up panning, swallow the click (the user was
@@ -665,10 +665,10 @@ void TemplateMatrixView::mousePressEvent(QMouseEvent* e)
 {
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        m_panAnchorPx = e->position().toPoint();
-        m_panAnchorX  = m_panX;
-        m_panAnchorY  = m_panY;
-        // Do NOT set m_panning yet — wait for move past threshold.
+        panAnchorPx = e->position().toPoint();
+        panAnchorX  = panX;
+        panAnchorY  = panY;
+        // Do NOT set panning yet — wait for move past threshold.
         // This keeps Ctrl + quick-click → add-clusters working.
         setCursor(Qt::ClosedHandCursor);
         e->accept();
@@ -684,14 +684,14 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
     // with Ctrl and we've passed the drag threshold.
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        const QPoint d = e->position().toPoint() - m_panAnchorPx;
-        if (!m_panning &&
-            (std::abs(d.x()) + std::abs(d.y()) >= m_panDragThreshold)) {
-            m_panning = true;
+        const QPoint d = e->position().toPoint() - panAnchorPx;
+        if (!panning &&
+            (std::abs(d.x()) + std::abs(d.y()) >= panDragThreshold)) {
+            panning = true;
         }
-        if (m_panning) {
-            m_panX = m_panAnchorX + d.x();
-            m_panY = m_panAnchorY + d.y();
+        if (panning) {
+            panX = panAnchorX + d.x();
+            panY = panAnchorY + d.y();
             update();
             e->accept();
             return;
@@ -721,9 +721,9 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
     // patch80 — if the user just finished a pan drag, swallow the click
     // and reset cursor.  The original click logic (cluster selection /
-    // add-clusters) is only reachable when m_panning was never set.
-    if (m_panning) {
-        m_panning = false;
+    // add-clusters) is only reachable when panning was never set.
+    if (panning) {
+        panning = false;
         unsetCursor();
         e->accept();
         return;
@@ -801,22 +801,22 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 
 void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 {
-    newZoom = std::clamp(newZoom, m_zoomMin, m_zoomMax);
-    if (m_zoom <= 0.0) return;
-    const double ratio = newZoom / m_zoom;
+    newZoom = std::clamp(newZoom, zoomMin, zoomMax);
+    if (zoom <= 0.0) return;
+    const double ratio = newZoom / zoom;
     const QPoint  base = matrixTopLeft();
-    const double dx = (pivot.x() - base.x() - m_panX) * (1.0 - ratio);
-    const double dy = (pivot.y() - base.y() - m_panY) * (1.0 - ratio);
-    m_panX += dx;
-    m_panY += dy;
-    m_zoom = newZoom;
+    const double dx = (pivot.x() - base.x() - panX) * (1.0 - ratio);
+    const double dy = (pivot.y() - base.y() - panY) * (1.0 - ratio);
+    panX += dx;
+    panY += dy;
+    zoom = newZoom;
     update();
 }
 
 void TemplateMatrixView::resetPanZoom()
 {
-    m_panX = m_panY = 0.0;
-    m_zoom = 1.0;
+    panX = panY = 0.0;
+    zoom = 1.0;
     update();
 }
 
@@ -830,8 +830,8 @@ void TemplateMatrixView::wheelEvent(QWheelEvent* event)
     }
     const int delta = event->angleDelta().y();
     if (delta == 0) { event->accept(); return; }
-    const double factor = (delta > 0) ? m_zoomStep : 1.0 / m_zoomStep;
-    zoomAroundPoint(m_zoom * factor, event->position());
+    const double factor = (delta > 0) ? zoomStep : 1.0 / zoomStep;
+    zoomAroundPoint(zoom * factor, event->position());
     event->accept();
 }
 
@@ -873,12 +873,12 @@ void TemplateMatrixView::updateSliderPreview()
     }
 
     const QPair<int,int> key(selectedB, selectedA);
-    if (!m_pairCache.contains(key)) {
+    if (!pairCache.contains(key)) {
         // Still computing — message already set by launchPairXcorr
         return;
     }
 
-    const auto& spScores = m_pairCache[key];
+    const auto& spScores = pairCache[key];
     int count = 0;
     for (const auto& sp : spScores)
         if (sp.second >= static_cast<float>(currentThreshold))
@@ -894,9 +894,9 @@ void TemplateMatrixView::onApplyClicked()
 {
     if (selectedA < 0 || selectedB < 0) return;
     const QPair<int,int> key(selectedB, selectedA);
-    if (!m_pairCache.contains(key)) return;
+    if (!pairCache.contains(key)) return;
 
-    const auto& spScores = m_pairCache[key];
+    const auto& spScores = pairCache[key];
     QVector<int> toMove;
     for (const auto& sp : spScores)
         if (sp.second >= static_cast<float>(currentThreshold))
@@ -933,13 +933,13 @@ void TemplateMatrixView::keyPressEvent(QKeyEvent* event)
     if (key == Qt::Key_Plus || key == Qt::Key_Equal) {
         const QPointF c(width() * 0.5,
                         (height() - CONTROLS_H) * 0.5);
-        zoomAroundPoint(m_zoom * m_zoomStep, c);
+        zoomAroundPoint(zoom * zoomStep, c);
         event->accept(); return;
     }
     if (key == Qt::Key_Minus || key == Qt::Key_Underscore) {
         const QPointF c(width() * 0.5,
                         (height() - CONTROLS_H) * 0.5);
-        zoomAroundPoint(m_zoom / m_zoomStep, c);
+        zoomAroundPoint(zoom / zoomStep, c);
         event->accept(); return;
     }
     if (key == Qt::Key_0) {

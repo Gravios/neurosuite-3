@@ -49,7 +49,7 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     nbPreviousUndo(0),
     nbPreviousRedo(0),
     goingToDie(false),
-    m_generation(0),
+    generation(0),
     probabilities(nullptr)
 {
 
@@ -109,7 +109,7 @@ void ErrorMatrixView::customEvent(QEvent* event){
         // Without the generation check a slow pre-renumber thread arriving after a
         // fast post-renumber thread would silently overwrite the correct result.
         const bool accepted = (newProb != nullptr
-                               && errorMatrixThread->generation() == m_generation);
+                               && errorMatrixThread->getGeneration() == generation);
         if(accepted){
             delete probabilities;  // release the previous result before overwriting
             probabilities = newProb;
@@ -160,7 +160,7 @@ void ErrorMatrixView::updateMatrixContents(){
         //Bump the generation so that customEvent() can identify — and discard — results
         //from any threads that were launched before this call.  This prevents a slow
         //pre-renumber thread from overwriting the result of a faster post-renumber thread.
-        ++m_generation;
+        ++generation;
 
         //Ask any already-running threads to stop early; they will still post their
         //event but customEvent() will discard the stale result via the generation check.
@@ -190,7 +190,7 @@ void ErrorMatrixView::updateMatrixContents(){
 
 ErrorMatrixThread* ErrorMatrixView::computeMatrix(){  
     //The creation of a thread automatically start it.
-    return new ErrorMatrixThread(*this,doc.data(),m_generation);
+    return new ErrorMatrixThread(*this,doc.data(),generation);
 }
 
 // ---------------------------------------------------------------------------
@@ -482,11 +482,11 @@ void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
     // selection path in mouseReleaseEvent.  A plain press does nothing here;
     // selection happens on release (as it did with the previous empty press).
     if((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        m_panArmed       = true;
-        m_panning        = false;
-        m_panAnchorPx    = e->position().toPoint();
-        m_panCenterStartFx = userCenterFx;
-        m_panCenterStartFy = userCenterFy;
+        panArmed       = true;
+        panning        = false;
+        panAnchorPx    = e->position().toPoint();
+        panCenterStartFx = userCenterFx;
+        panCenterStartFy = userCenterFy;
         setCursor(Qt::ClosedHandCursor);
         e->accept();
     }
@@ -499,18 +499,18 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
     // window size is unchanged (zoom factor 1.0) so the world-per-pixel scale
     // is constant through the drag.  New centre = centre-at-start − world delta
     // makes the grabbed point track the cursor.
-    if(m_panArmed && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        const QPoint d = e->position().toPoint() - m_panAnchorPx;
-        if(!m_panning && (qAbs(d.x()) + qAbs(d.y()) >= m_panDragThreshold))
-            m_panning = true;
-        if(m_panning){
-            const QPoint wa = viewportToWorld(m_panAnchorPx.x() - 15, m_panAnchorPx.y());
+    if(panArmed && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        const QPoint d = e->position().toPoint() - panAnchorPx;
+        if(!panning && (qAbs(d.x()) + qAbs(d.y()) >= panDragThreshold))
+            panning = true;
+        if(panning){
+            const QPoint wa = viewportToWorld(panAnchorPx.x() - 15, panAnchorPx.y());
             const QPoint wc = viewportToWorld(e->position().toPoint().x() - 15, e->position().toPoint().y());
             const double fullW = static_cast<double>(abscissaMax - abscissaMin);
             const double fullH = static_cast<double>(ordinateMax - ordinateMin);
             if(fullW > 0.0 && fullH > 0.0){
-                userCenterFx = m_panCenterStartFx - static_cast<double>(wc.x() - wa.x()) / fullW;
-                userCenterFy = m_panCenterStartFy - static_cast<double>(wc.y() - wa.y()) / fullH;
+                userCenterFx = panCenterStartFx - static_cast<double>(wc.x() - wa.x()) / fullW;
+                userCenterFy = panCenterStartFy - static_cast<double>(wc.y() - wa.y()) / fullH;
                 const double hf = 0.5 / userZoom;
                 userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
                 userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
@@ -544,13 +544,13 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
 void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     // If a Ctrl-drag pan was in progress, finish it and swallow the click so it
     // doesn't register as a selection.  A Ctrl-press that never crossed the
-    // drag threshold (m_panArmed but !m_panning) falls through to the normal
+    // drag threshold (panArmed but !panning) falls through to the normal
     // selection logic below — there the Ctrl modifier means "add pair".
-    if(m_panArmed){
-        m_panArmed = false;
+    if(panArmed){
+        panArmed = false;
         unsetCursor();
-        if(m_panning){
-            m_panning = false;
+        if(panning){
+            panning = false;
             e->accept();
             return;
         }
@@ -639,8 +639,8 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     }
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
-    const double factor  = (delta > 0) ? m_wheelZoomStep : (1.0 / m_wheelZoomStep);
-    const double newZoom = qBound(1.0, userZoom * factor, m_userZoomMax);
+    const double factor  = (delta > 0) ? wheelZoomStep : (1.0 / wheelZoomStep);
+    const double newZoom = qBound(1.0, userZoom * factor, userZoomMax);
     if(newZoom == userZoom){ e->accept(); return; }
 
     const double fullW = static_cast<double>(abscissaMax - abscissaMin);
