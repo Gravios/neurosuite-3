@@ -148,11 +148,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
     // Per-cluster serial precomputation: Cholesky + logTerm + packed L.
     // ------------------------------------------------------------------
     struct ClusterData {
-        int      clusterId;
-        dataType nbSpikes;
-        bool     ignore;
-        std::vector<double> L;   // col-major lower-tri, 0-based
-        double   logTerm;
+        int      clusterId = 0;
+        dataType nbSpikes  = 0;
+        bool     ignore    = false;
+        std::vector<double> L;   // col-major lower-tri, 0-based (default-empty)
+        double   logTerm   = 0.0;
     };
 
     std::vector<ClusterData> cdata;
