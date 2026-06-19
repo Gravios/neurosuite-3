@@ -50,7 +50,7 @@ private:
                    const QVector<qint16>& waveforms, int nSpikes,
                    const QString& label);
 
-    QVector<qint16> m_before, m_after;
-    int m_nBefore = 0, m_nAfter = 0;
-    int m_nChan = 0, m_nSamp = 0, m_peakSamp = 0;
+    QVector<qint16> before, after;
+    int nBefore = 0, nAfter = 0;
+    int nChan = 0, nSamp = 0, peakSamp = 0;
 };

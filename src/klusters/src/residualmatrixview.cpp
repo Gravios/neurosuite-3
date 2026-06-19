@@ -29,8 +29,8 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
     : QWidget(parent),
       doc(doc_), view(view_), statusBar(statusBar_),
       scores(nullptr),
-      dataReady(false), goingToDie(false), isStale(false), m_generation(0),
-      m_displayMax(1.0),
+      dataReady(false), goingToDie(false), isStale(false), generation(0),
+      displayMax(1.0),
       cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0)
 {
     QPalette pal = palette();
@@ -115,7 +115,7 @@ void ResidualMatrixView::initializeColorMap()
 void ResidualMatrixView::updateMatrixContents()
 {
     if (goingToDie) return;
-    ++m_generation;
+    ++generation;
 
     for (ResidualMatrixThread* t : threadsToBeKill)
         t->stopProcessing();
@@ -129,19 +129,19 @@ void ResidualMatrixView::updateMatrixContents()
 
 ResidualMatrixThread* ResidualMatrixView::launchComputeThread()
 {
-    return new ResidualMatrixThread(*this, doc.data(), m_generation);
+    return new ResidualMatrixThread(*this, doc.data(), generation);
 }
 
 void ResidualMatrixView::recomputeDisplayMax()
 {
-    m_displayMax = 1.0;
+    displayMax = 1.0;
     if (!scores) return;
     const int n = clusterList.size();
     double gmax = 0.0;
     for (int i = 1; i <= n; ++i)
         for (int j = 1; j <= n; ++j)
             if (i != j) gmax = std::max(gmax, (*scores)(i, j));
-    if (gmax > 0.0) m_displayMax = gmax;
+    if (gmax > 0.0) displayMax = gmax;
 }
 
 // ── customEvent (User+603) ───────────────────────────────────────────────────
@@ -155,7 +155,7 @@ void ResidualMatrixView::customEvent(QEvent* event)
 
     Array<double>* newScores = thread->getScores();
     const bool accepted = (newScores != nullptr
-                           && thread->generation() == m_generation);
+                           && thread->getGeneration() == generation);
 
     if (accepted) {
         delete scores;
@@ -262,7 +262,7 @@ void ResidualMatrixView::drawMatrix(QPainter& p)
     }
 
     if (n > 0 && scores) {
-        const double inv = (m_displayMax > 0.0) ? 1.0 / m_displayMax : 1.0;
+        const double inv = (displayMax > 0.0) ? 1.0 / displayMax : 1.0;
         QImage img(n, n, QImage::Format_Indexed8);
         QList<QRgb> table;
         table.reserve(NB_COLORS + 1);
@@ -326,9 +326,9 @@ void ResidualMatrixView::mousePressEvent(QMouseEvent* e)
     emit viewInteracted();
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        m_panAnchorPx = e->position().toPoint();
-        m_panAnchorX  = m_panX;
-        m_panAnchorY  = m_panY;
+        panAnchorPx = e->position().toPoint();
+        panAnchorX  = panX;
+        panAnchorY  = panY;
         setCursor(Qt::ClosedHandCursor);
         e->accept();
         return;
@@ -339,12 +339,12 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
 {
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        const QPoint d = e->position().toPoint() - m_panAnchorPx;
-        if (m_panning ||
-            d.manhattanLength() >= m_panDragThreshold) {
-            m_panning = true;
-            m_panX = m_panAnchorX + d.x();
-            m_panY = m_panAnchorY + d.y();
+        const QPoint d = e->position().toPoint() - panAnchorPx;
+        if (panning ||
+            d.manhattanLength() >= panDragThreshold) {
+            panning = true;
+            panX = panAnchorX + d.x();
+            panY = panAnchorY + d.y();
             update();
         }
         e->accept();
@@ -371,8 +371,8 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
 
 void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (m_panning) {
-        m_panning = false;
+    if (panning) {
+        panning = false;
         setCursor(Qt::ArrowCursor);
         e->accept();
         return;
@@ -382,25 +382,25 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
 
 void ResidualMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 {
-    newZoom = std::max(m_zoomMin, std::min(m_zoomMax, newZoom));
+    newZoom = std::max(zoomMin, std::min(zoomMax, newZoom));
     const QPointF base = QPointF(matrixTopLeft());
     // Keep the matrix-space point under the pivot fixed across the zoom.
-    const double oldEff = cellWidth * m_zoom;
+    const double oldEff = cellWidth * zoom;
     const double newEff = cellWidth * newZoom;
     if (oldEff > 0.0) {
-        const double mx = (pivot.x() - base.x() - m_panX) / oldEff;
-        const double my = (pivot.y() - base.y() - m_panY) / oldEff;
-        m_panX = pivot.x() - base.x() - mx * newEff;
-        m_panY = pivot.y() - base.y() - my * newEff;
+        const double mx = (pivot.x() - base.x() - panX) / oldEff;
+        const double my = (pivot.y() - base.y() - panY) / oldEff;
+        panX = pivot.x() - base.x() - mx * newEff;
+        panY = pivot.y() - base.y() - my * newEff;
     }
-    m_zoom = newZoom;
+    zoom = newZoom;
     update();
 }
 
 void ResidualMatrixView::resetPanZoom()
 {
-    m_panX = m_panY = 0.0;
-    m_zoom = 1.0;
+    panX = panY = 0.0;
+    zoom = 1.0;
     update();
 }
 
@@ -412,7 +412,7 @@ void ResidualMatrixView::wheelEvent(QWheelEvent* event)
     }
     const double steps = event->angleDelta().y() / 120.0;
     if (steps == 0.0) { event->accept(); return; }
-    zoomAroundPoint(m_zoom * std::pow(m_zoomStep, steps), event->position());
+    zoomAroundPoint(zoom * std::pow(zoomStep, steps), event->position());
     event->accept();
 }
 
@@ -421,12 +421,12 @@ void ResidualMatrixView::keyPressEvent(QKeyEvent* event)
     switch (event->key()) {
     case Qt::Key_Plus:
     case Qt::Key_Equal:
-        zoomAroundPoint(m_zoom * m_zoomStep,
+        zoomAroundPoint(zoom * zoomStep,
                         QPointF(width()/2.0, (height()-INFO_H)/2.0));
         event->accept();
         return;
     case Qt::Key_Minus:
-        zoomAroundPoint(m_zoom / m_zoomStep,
+        zoomAroundPoint(zoom / zoomStep,
                         QPointF(width()/2.0, (height()-INFO_H)/2.0));
         event->accept();
         return;

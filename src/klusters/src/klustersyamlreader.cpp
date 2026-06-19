@@ -10,17 +10,17 @@
 
 bool KlustersYamlReader::parseFile(const QFile& file, fileType /*type*/)
 {
-    return m_reader.parseFile(file.fileName());
+    return reader.parseFile(file.fileName());
 }
 
 bool KlustersYamlReader::parseFile(const QString& path, fileType /*type*/)
 {
-    return m_reader.parseFile(path);
+    return reader.parseFile(path);
 }
 
 void KlustersYamlReader::closeFile()
 {
-    m_reader.closeFile();
+    reader.closeFile();
 }
 
 void KlustersYamlReader::getClusterUserInformation(
@@ -31,7 +31,7 @@ void KlustersYamlReader::getClusterUserInformation(
     // getUnits() keys entries by sequential document-order index so there is
     // no collision between groups that share the same cluster ids.
     QMap<int,QStringList> unitsMap;
-    m_reader.getUnits(unitsMap);
+    reader.getUnits(unitsMap);
 
     // value layout: [0]=group [1]=cluster [2]=structure [3]=type
     //               [4]=isolationDistance [5]=quality [6]=notes

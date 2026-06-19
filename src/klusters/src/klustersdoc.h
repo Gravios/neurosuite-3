@@ -818,7 +818,7 @@ public:
         if (clusterIds.isEmpty())
             return snaps;
         snaps.reserve(clusterIds.size());
-        if (m_centroidCacheEnabled) {
+        if (centroidCacheEnabled) {
             const QMap<int,QVector<double>>& centroids = cachedCentroids();
             for (int id : clusterIds)
                 snaps.append(clusteringData->computeSnapshot(id, isiThreshMs, &centroids));
@@ -1175,14 +1175,14 @@ private:
         std::vector<std::vector<double>> evec;   // [ch][data2use * nComp] col-major
         bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
     };
-    PcaBasis m_realignPcaCache;
-    QString  m_realignPcaCachePath;
-    qint64   m_realignPcaCacheMtime = -1;
+    PcaBasis realignPcaCache;
+    QString  realignPcaCachePath;
+    qint64   realignPcaCacheMtime = -1;
 
     /** Steady-clock ms at the end of the previous realignSpikes call, used by
      *  NS3_REALIGN_TIMING to report the inter-cluster gap (worker teardown +
      *  slotRealignFinished + next-worker spin-up).  -1 = no previous call. */
-    long long m_realignPrevEndMs = -1;
+    long long realignPrevEndMs = -1;
     
     /**The url of the document.*/
     QString docUrl;
@@ -1348,17 +1348,17 @@ private:
     /// cluster audit metric is therefore relative to that fixed reference (the
     /// realign only shifts spikes within a cluster, so this is a close
     /// approximation and the field is informational only).
-    bool                              m_centroidCacheEnabled = false;
-    mutable bool                      m_centroidCacheValid   = false;
-    mutable QMap<int,QVector<double>> m_centroidCache;
+    bool                              centroidCacheEnabled = false;
+    mutable bool                      centroidCacheValid   = false;
+    mutable QMap<int,QVector<double>> centroidCache;
 
     /// Return all-cluster centroids, populating the batch cache on first use.
     const QMap<int,QVector<double>>& cachedCentroids() const {
-        if (!m_centroidCacheValid) {
-            m_centroidCache      = clusteringData->computeAllCentroids();
-            m_centroidCacheValid = true;
+        if (!centroidCacheValid) {
+            centroidCache      = clusteringData->computeAllCentroids();
+            centroidCacheValid = true;
         }
-        return m_centroidCache;
+        return centroidCache;
     }
 
 public:

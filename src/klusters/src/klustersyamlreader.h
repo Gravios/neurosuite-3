@@ -45,30 +45,30 @@ public:
     void closeFile();
 
     // ---- Acquisition system ----
-    int    getResolution()   const { return m_reader.getResolution(); }
-    int    getNbChannels()   const { return m_reader.getNbChannels(); }
-    double getSamplingRate() const { return m_reader.getSamplingRate(); }
-    int    getVoltageRange() const { return m_reader.getVoltageRange(); }
-    int    getAmplification() const { return m_reader.getAmplification(); }
-    int    getOffset()       const { return m_reader.getOffset(); }
+    int    getResolution()   const { return reader.getResolution(); }
+    int    getNbChannels()   const { return reader.getNbChannels(); }
+    double getSamplingRate() const { return reader.getSamplingRate(); }
+    int    getVoltageRange() const { return reader.getVoltageRange(); }
+    int    getAmplification() const { return reader.getAmplification(); }
+    int    getOffset()       const { return reader.getOffset(); }
 
     // ---- Spike detection ----
     QList<int> getNbChannelsByGroup(int electrodeGroupID) const
-        { return m_reader.getChannelsByGroup(electrodeGroupID); }
+        { return reader.getChannelsByGroup(electrodeGroupID); }
 
     int getNbSamples(int electrodeGroupID) const
-        { return m_reader.getNbSamples(electrodeGroupID); }
+        { return reader.getNbSamples(electrodeGroupID); }
 
     int getPeakSampleIndex(int electrodeGroupID) const
-        { return m_reader.getPeakSampleIndex(electrodeGroupID); }
+        { return reader.getPeakSampleIndex(electrodeGroupID); }
 
     int getNbFeatures(int electrodeGroupID) const
-        { return m_reader.getNbFeatures(electrodeGroupID); }
+        { return reader.getNbFeatures(electrodeGroupID); }
 
     // ---- Units ----
     void getClusterUserInformation(int pGroup,
                                    QMap<int,ClusterUserInformation>& map) const;
 
 private:
-    ParameterYamlReader m_reader;
+    ParameterYamlReader reader;
 };

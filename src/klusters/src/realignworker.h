@@ -27,7 +27,7 @@ public:
      *  and finished once at the end), instead of doing a single cluster.  This
      *  collapses the per-cluster QThread-spawn + GUI-signal round-trip that
      *  otherwise dominates a PCA-Center Align All. */
-    void setBatch(const QList<int>& ids) { m_clusterIds = ids; }
+    void setBatch(const QList<int>& ids) { clusterIds = ids; }
 
 public slots:
     void run();
@@ -61,9 +61,9 @@ signals:
                   QString backupBase, int nChan, int nSamp);
 
 private:
-    KlustersDoc* m_doc;
-    int          m_clusterId;
-    QString      m_args;
-    bool         m_cancel;
-    QList<int>   m_clusterIds;   // non-empty → batch mode (see setBatch)
+    KlustersDoc* doc;
+    int          clusterId;
+    QString      args;
+    bool         cancelRequested;
+    QList<int>   clusterIds;   // non-empty → batch mode (see setBatch)
 };

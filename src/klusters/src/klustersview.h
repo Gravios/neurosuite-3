@@ -930,11 +930,11 @@ private:
      *  error/template matrices on the right.  QPointer because the user
      *  can close any of these docks via the dock-widget's X.
      */
-    QPointer<QDockWidget> m_overviewWaveformDock;
-    QPointer<QDockWidget> m_overviewCorrelationDock;
-    QPointer<QDockWidget> m_overviewErrorMatrixDock;
-    QPointer<QDockWidget> m_overviewTemplateMatrixDock;
-    QPointer<QDockWidget> m_overviewResidualMatrixDock;
+    QPointer<QDockWidget> overviewWaveformDock;
+    QPointer<QDockWidget> overviewCorrelationDock;
+    QPointer<QDockWidget> overviewErrorMatrixDock;
+    QPointer<QDockWidget> overviewTemplateMatrixDock;
+    QPointer<QDockWidget> overviewResidualMatrixDock;
 
     //methods
     

@@ -111,11 +111,11 @@ signals:
     void progress(int percent);
 
 private:
-    Data*   m_data;
-    int     m_clusterId;
-    QString m_basePath;
-    int     m_groupId;
-    int     m_maxShift;
+    Data*   data;
+    int     clusterId;
+    QString basePath;
+    int     groupId;
+    int     maxShift;
 
     // Derived paths
     QString resPath()  const;

@@ -309,7 +309,7 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     waveforms->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,waveforms);
     viewCounter.insert("WaveformView",1);
-    m_overviewWaveformDock = waveforms;
+    overviewWaveformDock = waveforms;
 
     setConnections(WAVEFORMS,waveformView,waveforms);
 
@@ -325,7 +325,7 @@ void KlustersView::createOverview(const QColor& backgroundColor,QStatusBar* stat
     correlations->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,correlations);
     viewCounter.insert("CorrelationView",1);
-    m_overviewCorrelationDock = correlations;
+    overviewCorrelationDock = correlations;
 
     setConnections(CORRELATIONS,correlationView,correlations);
 }
@@ -347,7 +347,7 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     errorMatrixView->installEventFilter(this);//To enable right click popup menu
     errorMatrix->installEventFilter(this);
     addDockWidget(Qt::BottomDockWidgetArea,errorMatrix);
-    m_overviewErrorMatrixDock = errorMatrix;
+    overviewErrorMatrixDock = errorMatrix;
     setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
 
     //Create and add the templateMatrixView
@@ -358,7 +358,7 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     TemplateMatrixView* tmView = qobject_cast<TemplateMatrixView*>(templateMatrix->widget());
     isThereTemplateMatrixView = true;
     addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
-    m_overviewTemplateMatrixDock = templateMatrix;
+    overviewTemplateMatrixDock = templateMatrix;
     setConnections(TEMPLATE_MATRIX,tmView,templateMatrix);
 }
 
@@ -391,46 +391,46 @@ void KlustersView::applyOverviewLayout(){
 
     // Step 1 — reset.
     addDockWidget(Qt::TopDockWidgetArea, mainDock);
-    if (m_overviewWaveformDock)
-        addDockWidget(Qt::TopDockWidgetArea, m_overviewWaveformDock);
-    if (m_overviewCorrelationDock)
-        addDockWidget(Qt::TopDockWidgetArea, m_overviewCorrelationDock);
-    if (m_overviewErrorMatrixDock)
-        addDockWidget(Qt::TopDockWidgetArea, m_overviewErrorMatrixDock);
-    if (m_overviewTemplateMatrixDock)
-        addDockWidget(Qt::TopDockWidgetArea, m_overviewTemplateMatrixDock);
+    if (overviewWaveformDock)
+        addDockWidget(Qt::TopDockWidgetArea, overviewWaveformDock);
+    if (overviewCorrelationDock)
+        addDockWidget(Qt::TopDockWidgetArea, overviewCorrelationDock);
+    if (overviewErrorMatrixDock)
+        addDockWidget(Qt::TopDockWidgetArea, overviewErrorMatrixDock);
+    if (overviewTemplateMatrixDock)
+        addDockWidget(Qt::TopDockWidgetArea, overviewTemplateMatrixDock);
 
     // Step 2 — carve the right pane (full window height) BEFORE any
     // vertical splits.  Pick whichever matrix dock exists as the anchor.
     QDockWidget* rightAnchor = nullptr;
-    if (m_overviewErrorMatrixDock)
-        rightAnchor = m_overviewErrorMatrixDock.data();
-    else if (m_overviewTemplateMatrixDock)
-        rightAnchor = m_overviewTemplateMatrixDock.data();
+    if (overviewErrorMatrixDock)
+        rightAnchor = overviewErrorMatrixDock.data();
+    else if (overviewTemplateMatrixDock)
+        rightAnchor = overviewTemplateMatrixDock.data();
     if (rightAnchor) {
         splitDockWidget(mainDock, rightAnchor, Qt::Horizontal);
     }
 
     // Step 3 — tabify the second matrix on top of the first so they
     // share a single frame with tabs at the bottom.
-    if (m_overviewErrorMatrixDock && m_overviewTemplateMatrixDock) {
-        tabifyDockWidget(m_overviewErrorMatrixDock,
-                         m_overviewTemplateMatrixDock);
+    if (overviewErrorMatrixDock && overviewTemplateMatrixDock) {
+        tabifyDockWidget(overviewErrorMatrixDock,
+                         overviewTemplateMatrixDock);
         // Front-tab is the Error Matrix — the cluster-quality review
         // workflow reads errors first, then flips to templates.
-        m_overviewErrorMatrixDock->raise();
+        overviewErrorMatrixDock->raise();
     }
 
     // Step 4 — stack the left column vertically.  Each call splits the
     // anchor dock's space, so the order builds a top-to-bottom chain:
     //   mainDock  →  waveforms below mainDock
     //   waveforms →  correlations below waveforms
-    if (m_overviewWaveformDock) {
-        splitDockWidget(mainDock, m_overviewWaveformDock, Qt::Vertical);
+    if (overviewWaveformDock) {
+        splitDockWidget(mainDock, overviewWaveformDock, Qt::Vertical);
     }
-    if (m_overviewWaveformDock && m_overviewCorrelationDock) {
-        splitDockWidget(m_overviewWaveformDock,
-                        m_overviewCorrelationDock,
+    if (overviewWaveformDock && overviewCorrelationDock) {
+        splitDockWidget(overviewWaveformDock,
+                        overviewCorrelationDock,
                         Qt::Vertical);
     }
 
@@ -449,10 +449,10 @@ void KlustersView::applyOverviewLayout(){
         // fallback for the un-allocated space lands on the intended
         // ratio even when child min-sizes consume some of the budget.
         QDockWidget* rDock = nullptr;
-        if (m_overviewErrorMatrixDock)
-            rDock = m_overviewErrorMatrixDock.data();
-        else if (m_overviewTemplateMatrixDock)
-            rDock = m_overviewTemplateMatrixDock.data();
+        if (overviewErrorMatrixDock)
+            rDock = overviewErrorMatrixDock.data();
+        else if (overviewTemplateMatrixDock)
+            rDock = overviewTemplateMatrixDock.data();
         if (rDock) {
             resizeDocks({mainDock, rDock}, {450, 550}, Qt::Horizontal);
         }
@@ -460,10 +460,10 @@ void KlustersView::applyOverviewLayout(){
         // Equal vertical thirds for the left column.
         QList<QDockWidget*> column;
         column << mainDock;
-        if (m_overviewWaveformDock)
-            column << m_overviewWaveformDock.data();
-        if (m_overviewCorrelationDock)
-            column << m_overviewCorrelationDock.data();
+        if (overviewWaveformDock)
+            column << overviewWaveformDock.data();
+        if (overviewCorrelationDock)
+            column << overviewCorrelationDock.data();
         if (column.size() >= 2) {
             QList<int> sizes;
             for (int i = 0; i < column.size(); ++i) sizes << 300;
@@ -1039,9 +1039,9 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         // If a TemplateMatrix dock is already present, tabify with it so
         // the two share one tabbed pane on the right.
         addDockWidget(Qt::RightDockWidgetArea,errorMatrix);
-        m_overviewErrorMatrixDock = errorMatrix;
-        if (m_overviewTemplateMatrixDock) {
-            tabifyDockWidget(m_overviewTemplateMatrixDock, errorMatrix);
+        overviewErrorMatrixDock = errorMatrix;
+        if (overviewTemplateMatrixDock) {
+            tabifyDockWidget(overviewTemplateMatrixDock, errorMatrix);
         }
         setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
         break;
@@ -1054,13 +1054,13 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
         templateMatrix->installEventFilter(this);
         addDockWidget(Qt::RightDockWidgetArea,templateMatrix);
-        m_overviewTemplateMatrixDock = templateMatrix;
-        if (m_overviewErrorMatrixDock) {
-            tabifyDockWidget(m_overviewErrorMatrixDock, templateMatrix);
+        overviewTemplateMatrixDock = templateMatrix;
+        if (overviewErrorMatrixDock) {
+            tabifyDockWidget(overviewErrorMatrixDock, templateMatrix);
             // Keep the Error Matrix as the front tab — it's the one most
             // workflows start from (the U-shortcut updates both, but the
             // user reads from Error first then flips to Template).
-            m_overviewErrorMatrixDock->raise();
+            overviewErrorMatrixDock->raise();
         }
         setConnections(TEMPLATE_MATRIX,qobject_cast<TemplateMatrixView*>(templateMatrix->widget()),templateMatrix);
         break;
@@ -1073,15 +1073,15 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         residualMatrix->setWidget(new ResidualMatrixView(doc,*this,backgroundColor,statusBar,residualMatrix));
         residualMatrix->installEventFilter(this);
         addDockWidget(Qt::RightDockWidgetArea,residualMatrix);
-        m_overviewResidualMatrixDock = residualMatrix;
+        overviewResidualMatrixDock = residualMatrix;
         // Tabify with whichever matrix dock already exists so the three share
         // one pane on the right; keep Error (or Template) as the front tab.
-        if (m_overviewErrorMatrixDock) {
-            tabifyDockWidget(m_overviewErrorMatrixDock, residualMatrix);
-            m_overviewErrorMatrixDock->raise();
-        } else if (m_overviewTemplateMatrixDock) {
-            tabifyDockWidget(m_overviewTemplateMatrixDock, residualMatrix);
-            m_overviewTemplateMatrixDock->raise();
+        if (overviewErrorMatrixDock) {
+            tabifyDockWidget(overviewErrorMatrixDock, residualMatrix);
+            overviewErrorMatrixDock->raise();
+        } else if (overviewTemplateMatrixDock) {
+            tabifyDockWidget(overviewTemplateMatrixDock, residualMatrix);
+            overviewTemplateMatrixDock->raise();
         }
         setConnections(RESIDUAL_MATRIX,qobject_cast<ResidualMatrixView*>(residualMatrix->widget()),residualMatrix);
         break;

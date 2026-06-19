@@ -27,7 +27,7 @@ public:
                                  const QString& backupBase,   // unused, API compat
                                  QWidget* parent = nullptr);
 
-    bool accepted() const { return m_accepted; }
+    bool isAccepted() const { return accepted; }
 
 protected:
     /** Left/Right arrows move focus between Accept and Reject buttons. */
@@ -38,8 +38,8 @@ private slots:
     void slotReject();
 
 private:
-    bool         m_accepted  = false;
-    QPushButton* m_acceptBtn = nullptr;
-    QPushButton* m_rejectBtn = nullptr;
+    bool         accepted  = false;
+    QPushButton* acceptBtn = nullptr;
+    QPushButton* rejectBtn = nullptr;
 };
 

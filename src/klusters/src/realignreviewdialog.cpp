@@ -33,11 +33,11 @@ public:
                                 const QVector<float>& after,
                                 QWidget* parent = nullptr)
         : QWidget(parent)
-        , m_nChan(nChan > 0 ? nChan : 1)
-        , m_nSamp(nSamp > 0 ? nSamp : 1)
-        , m_peakSamp0(peakSamp0)
-        , m_before(before)
-        , m_after(after)
+        , nChan(nChan > 0 ? nChan : 1)
+        , nSamp(nSamp > 0 ? nSamp : 1)
+        , peakSamp0(peakSamp0)
+        , before(before)
+        , after(after)
     {
         setMinimumSize(400, std::max(120, nChan * 80));
         // Never let the plot steal keyboard focus — Tab should cycle only the buttons.
@@ -45,7 +45,7 @@ public:
     }
 
     QSize sizeHint() const override {
-        return QSize(600, std::max(160, m_nChan * 90));
+        return QSize(600, std::max(160, nChan * 90));
     }
 
 protected:
@@ -55,7 +55,7 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.fillRect(rect(), QColor(30, 30, 30));
 
-        if (m_before.isEmpty() && m_after.isEmpty()) {
+        if (before.isEmpty() && after.isEmpty()) {
             p.setPen(Qt::white);
             p.drawText(rect(), Qt::AlignCenter, QStringLiteral("No waveform data"));
             return;
@@ -64,18 +64,18 @@ protected:
         const int   W      = width();
         const int   H      = height();
         const int   margin = 6;
-        const float rowH   = static_cast<float>(H - 2 * margin) / m_nChan;
+        const float rowH   = static_cast<float>(H - 2 * margin) / nChan;
 
         float gMin =  std::numeric_limits<float>::max();
         float gMax = -std::numeric_limits<float>::max();
-        for (float v : m_before) { gMin = std::min(gMin, v); gMax = std::max(gMax, v); }
-        for (float v : m_after)  { gMin = std::min(gMin, v); gMax = std::max(gMax, v); }
+        for (float v : before) { gMin = std::min(gMin, v); gMax = std::max(gMax, v); }
+        for (float v : after)  { gMin = std::min(gMin, v); gMax = std::max(gMax, v); }
         if (gMax == gMin) gMax = gMin + 1.0f;
         const float ampRange = gMax - gMin;
 
         p.setFont(QFont(QStringLiteral("Monospace"), 7));
 
-        for (int ch = 0; ch < m_nChan; ++ch) {
+        for (int ch = 0; ch < nChan; ++ch) {
             const float yTop    = margin + ch * rowH;
             const float yBottom = yTop + rowH;
 
@@ -88,9 +88,9 @@ protected:
             p.drawLine(QPointF(margin, zeroY), QPointF(W - margin, zeroY));
 
             // Peak marker
-            if (m_peakSamp0 >= 0 && m_peakSamp0 < m_nSamp) {
+            if (peakSamp0 >= 0 && peakSamp0 < nSamp) {
                 const float px = margin
-                    + static_cast<float>(m_peakSamp0) / (m_nSamp - 1)
+                    + static_cast<float>(peakSamp0) / (nSamp - 1)
                     * (W - 2 * margin);
                 p.setPen(QPen(QColor(200, 200, 0, 100), 1.0f, Qt::DashLine));
                 p.drawLine(QPointF(px, yTop + 1), QPointF(px, yBottom - 1));
@@ -98,15 +98,15 @@ protected:
 
             // Draw one waveform trace (channel-major layout: wv[ch * nSamp + t])
             auto drawTrace = [&](const QVector<float>& wv, QColor col, Qt::PenStyle sty) {
-                if (wv.size() < m_nChan * m_nSamp) return;
+                if (wv.size() < nChan * nSamp) return;
                 p.setPen(QPen(col, 1.3f, sty));
                 QPointF prev;
                 bool first = true;
-                for (int t = 0; t < m_nSamp; ++t) {
+                for (int t = 0; t < nSamp; ++t) {
                     const float x = margin
-                        + static_cast<float>(t) / (m_nSamp - 1) * (W - 2 * margin);
+                        + static_cast<float>(t) / (nSamp - 1) * (W - 2 * margin);
                     const float y = yBottom
-                        - (wv[ch * m_nSamp + t] - gMin) / ampRange * (rowH - 2);
+                        - (wv[ch * nSamp + t] - gMin) / ampRange * (rowH - 2);
                     QPointF pt(x, y);
                     if (!first) p.drawLine(prev, pt);
                     prev = pt;
@@ -114,8 +114,8 @@ protected:
                 }
             };
 
-            drawTrace(m_before, QColor(150, 150, 150), Qt::DashLine);
-            drawTrace(m_after,  QColor(80, 180, 255),  Qt::SolidLine);
+            drawTrace(before, QColor(150, 150, 150), Qt::DashLine);
+            drawTrace(after,  QColor(80, 180, 255),  Qt::SolidLine);
 
             // Channel label
             p.setPen(QColor(180, 180, 180));
@@ -137,8 +137,8 @@ protected:
     }
 
 private:
-    int            m_nChan, m_nSamp, m_peakSamp0;
-    QVector<float> m_before, m_after;
+    int            nChan, nSamp, peakSamp0;
+    QVector<float> before, after;
 };
 
 // ---------------------------------------------------------------------------
@@ -196,27 +196,27 @@ RealignReviewDialog::RealignReviewDialog(
 
     auto* btnLayout = new QHBoxLayout;
     btnLayout->addStretch();
-    m_rejectBtn = new QPushButton(tr("Reject"), this);
-    m_acceptBtn = new QPushButton(tr("Accept"), this);
-    m_acceptBtn->setDefault(true);
+    rejectBtn = new QPushButton(tr("Reject"), this);
+    acceptBtn = new QPushButton(tr("Accept"), this);
+    acceptBtn->setDefault(true);
 
     // Ensure both buttons are Tab-focusable.
-    m_rejectBtn->setFocusPolicy(Qt::StrongFocus);
-    m_acceptBtn->setFocusPolicy(Qt::StrongFocus);
+    rejectBtn->setFocusPolicy(Qt::StrongFocus);
+    acceptBtn->setFocusPolicy(Qt::StrongFocus);
 
-    btnLayout->addWidget(m_rejectBtn);
-    btnLayout->addWidget(m_acceptBtn);
+    btnLayout->addWidget(rejectBtn);
+    btnLayout->addWidget(acceptBtn);
     mainLayout->addLayout(btnLayout);
 
     // Explicit Tab order: Reject → Accept → (wrap).
-    QWidget::setTabOrder(m_rejectBtn, m_acceptBtn);
-    QWidget::setTabOrder(m_acceptBtn, m_rejectBtn);
+    QWidget::setTabOrder(rejectBtn, acceptBtn);
+    QWidget::setTabOrder(acceptBtn, rejectBtn);
 
-    connect(m_acceptBtn, &QPushButton::clicked, this, &RealignReviewDialog::slotAccept);
-    connect(m_rejectBtn, &QPushButton::clicked, this, &RealignReviewDialog::slotReject);
+    connect(acceptBtn, &QPushButton::clicked, this, &RealignReviewDialog::slotAccept);
+    connect(rejectBtn, &QPushButton::clicked, this, &RealignReviewDialog::slotReject);
 
     // Start with Accept focused so Enter immediately accepts.
-    m_acceptBtn->setFocus();
+    acceptBtn->setFocus();
 }
 
 void RealignReviewDialog::keyPressEvent(QKeyEvent* e)
@@ -224,10 +224,10 @@ void RealignReviewDialog::keyPressEvent(QKeyEvent* e)
     // Left/Right arrows move focus between the two buttons.
     if (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) {
         QPushButton* current = qobject_cast<QPushButton*>(focusWidget());
-        if (current == m_acceptBtn)
-            m_rejectBtn->setFocus();
+        if (current == acceptBtn)
+            rejectBtn->setFocus();
         else
-            m_acceptBtn->setFocus();
+            acceptBtn->setFocus();
         e->accept();
         return;
     }
@@ -236,13 +236,13 @@ void RealignReviewDialog::keyPressEvent(QKeyEvent* e)
 
 void RealignReviewDialog::slotAccept()
 {
-    m_accepted = true;
+    accepted = true;
     accept();
 }
 
 void RealignReviewDialog::slotReject()
 {
-    m_accepted = false;
+    accepted = false;
     reject();
 }
 

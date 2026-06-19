@@ -12,26 +12,26 @@
 RealignWorker::RealignWorker(KlustersDoc* doc, int clusterId,
                              const QString& args, QObject* parent)
     : QObject(parent)
-    , m_doc(doc)
-    , m_clusterId(clusterId)
-    , m_args(args)
-    , m_cancel(false)
+    , doc(doc)
+    , clusterId(clusterId)
+    , args(args)
+    , cancelRequested(false)
 {}
 
 void RealignWorker::cancel()
 {
-    m_cancel = true;
+    cancelRequested = true;
 }
 
 void RealignWorker::run()
 {
-    if (m_cancel) {
+    if (cancelRequested) {
         emit finished(false, 0, 0, {}, {}, {}, 0, 0);
         return;
     }
 
-    const int nChan = m_doc->data().nbOfChannels();
-    const int nSamp = m_doc->data().nbSamplesPerWaveform();
+    const int nChan = doc->data().nbOfChannels();
+    const int nSamp = doc->data().nbSamplesPerWaveform();
 
     // ── Batch mode ─────────────────────────────────────────────────────────
     // Loop realignSpikes over the whole cluster list in this single thread.
@@ -39,7 +39,7 @@ void RealignWorker::run()
     // teardown + queued finished() to the GUI thread + next-worker spawn
     // (~450ms/cluster, independent of spike count) collapses to one round-trip
     // for the entire batch.  Per-cluster feedback is emitted via clusterDone.
-    if (!m_clusterIds.isEmpty()) {
+    if (!clusterIds.isEmpty()) {
         // During a batch, realignSpikes' per-spike stream (e.g. the per-spike
         // --pca-refine detail) is written to stderr only.  Forwarding it to the
         // GUI log panel posts one queued event per spike, which on a full-group
@@ -54,11 +54,11 @@ void RealignWorker::run()
             if (isError) { emit logLine(line, true); return; }
             std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
         };
-        const int total = m_clusterIds.size();
+        const int total = clusterIds.size();
         int accepted = 0, failed = 0, shiftedTotal = 0;
         for (int k = 0; k < total; ++k) {
-            if (m_cancel) break;
-            const int id = m_clusterIds[k];
+            if (cancelRequested) break;
+            const int id = clusterIds[k];
             emit logLine(QStringLiteral("--- cluster %1 (%2/%3) ---")
                          .arg(id).arg(k + 1).arg(total), false);
 
@@ -66,7 +66,7 @@ void RealignWorker::run()
             int nsh = 0, nsw = 0;
             bool ok = false;
             try {
-                ok = m_doc->realignSpikes(id, logOut, nsh, nsw, liveLog, m_args,
+                ok = doc->realignSpikes(id, logOut, nsh, nsw, liveLog, args,
                                           nullptr, nullptr, nullptr);
             } catch (const std::bad_alloc& e) {
                 emit logLine(QStringLiteral("ERROR: out of memory — %1")
@@ -99,13 +99,13 @@ void RealignWorker::run()
         // finished payload in batch mode: ok=true unless cancelled before any
         // work; nShifted carries the batch total, nSwapped carries the accepted
         // count.  The GUI finaliser uses its own accumulated counters.
-        emit finished(!m_cancel || accepted > 0, shiftedTotal, accepted,
+        emit finished(!cancelRequested || accepted > 0, shiftedTotal, accepted,
                       {}, {}, QString(), nChan, nSamp);
         return;
     }
 
     // ── Single-cluster mode (unchanged) ──────────────────────────────────────
-    emit logLine(QStringLiteral("Starting realignment — cluster %1").arg(m_clusterId),
+    emit logLine(QStringLiteral("Starting realignment — cluster %1").arg(clusterId),
                  false);
 
     QString logOut;
@@ -116,11 +116,11 @@ void RealignWorker::run()
     QString backupBase;
 
     try {
-        ok = m_doc->realignSpikes(m_clusterId, logOut, nShifted, nSwapped,
+        ok = doc->realignSpikes(clusterId, logOut, nShifted, nSwapped,
             [this](const QString& line, bool isError) {
                 emit logLine(line, isError);
             },
-            m_args,
+            args,
             &meanBefore, &meanAfter, &backupBase);
     } catch (const std::bad_alloc& e) {
         logOut += QStringLiteral("\nERROR: out of memory — %1\n").arg(

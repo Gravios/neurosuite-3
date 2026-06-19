@@ -139,12 +139,12 @@ KlustersApp::KlustersApp()
       realignOutputWidget(nullptr),
       realignRunning(false),
       realignClusterId(-1),
-      m_realignBatchActive(false),
-      m_realignBatchTotal(0),
-      m_realignBatchAccepted(0),
-      m_realignBatchFailed(0),
-      m_realignBatchShiftedTotal(0),
-      m_realignProgressBar(nullptr),
+      realignBatchActive(false),
+      realignBatchTotal(0),
+      realignBatchAccepted(0),
+      realignBatchFailed(0),
+      realignBatchShiftedTotal(0),
+      realignProgressBar(nullptr),
       errorMatrixExists(false),
       templateMatrixExists(false),
       // Null-initialized here because initializePreferences() -> buildRealignArgs()
@@ -3354,16 +3354,16 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // curation (including renumber / matrix update) is disabled, so the worker
     // has Data to itself.  So if auto-align is enabled, run it FIRST on the
     // just-merged cluster, and defer autoPostMerge() (renumber → matrix) until
-    // the realignment finishes (slotRealignFinished services m_autoPostMergePending).
+    // the realignment finishes (slotRealignFinished services autoPostMergePending).
     // Renumber then runs on the realigned cluster — its id is still valid since
     // nothing renamed it yet — and the matrices recompute against the final,
     // realigned, renumbered state.  If auto-align is off (or can't run), do the
     // renumber + matrix update immediately.
     bool deferredForRealign = false;
     if (configuration().getAutoRealignAfterMerge()
-            && mergedClusterId > 1 && !realignRunning && !m_realignBatchActive
+            && mergedClusterId > 1 && !realignRunning && !realignBatchActive
             && doc->clusterHasMembers(mergedClusterId)) {
-        m_autoPostMergePending = true;
+        autoPostMergePending = true;
         startRealignForCluster(mergedClusterId);
         deferredForRealign = true;
     }
@@ -3481,9 +3481,9 @@ void KlustersApp::scheduleAutoPostClusterEdit(bool clusterSetChanged)
 {
     // OR-accumulate the "set changed" flag across every signal that fires for
     // this operation, then schedule a single deferred run.
-    m_autoPostEditSetChanged = m_autoPostEditSetChanged || clusterSetChanged;
-    if (m_autoPostEditPending) return;          // already scheduled this turn
-    m_autoPostEditPending = true;
+    autoPostEditSetChanged = autoPostEditSetChanged || clusterSetChanged;
+    if (autoPostEditPending) return;          // already scheduled this turn
+    autoPostEditPending = true;
 
     // Defer past the current event-loop turn: the triggering mutation
     // (createNewClusters / deleteClusters / …) emits its signal mid-operation,
@@ -3491,9 +3491,9 @@ void KlustersApp::scheduleAutoPostClusterEdit(bool clusterSetChanged)
     // this fires the mutation has completed.  renumberClusters() emits only
     // renumber() — which is deliberately NOT hooked here — so it cannot recurse.
     QTimer::singleShot(0, this, [this]() {
-        m_autoPostEditPending = false;
-        const bool setChanged = m_autoPostEditSetChanged;
-        m_autoPostEditSetChanged = false;
+        autoPostEditPending = false;
+        const bool setChanged = autoPostEditSetChanged;
+        autoPostEditSetChanged = false;
         autoPostClusterEdit(setChanged);
     });
 }
@@ -4271,23 +4271,23 @@ void KlustersApp::slotUpdateErrorMatrix(){
 // viewInteracted() from its mouseReleaseEvent.  We connect those signals
 // at dock-creation time (in the ERROR_MATRIX / TEMPLATE_MATRIX cases of
 // setConnections) so subsequent clicks land here, updating
-// m_lastMatrixUsed.  Combined with the same field being set at dock
+// lastMatrixUsed.  Combined with the same field being set at dock
 // creation, this implements the "last created or last clicked" semantics
 // the Shift+S reorder uses to disambiguate when both matrices exist.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotErrorMatrixInteracted()
 {
-    m_lastMatrixUsed = MatrixKind::ERROR_MATRIX_KIND;
+    lastMatrixUsed = MatrixKind::ERROR_MATRIX_KIND;
 }
 
 void KlustersApp::slotTemplateMatrixInteracted()
 {
-    m_lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
+    lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
 }
 
 void KlustersApp::slotResidualMatrixInteracted()
 {
-    m_lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
+    lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
 }
 
 // ---------------------------------------------------------------------------
@@ -4319,7 +4319,7 @@ void KlustersApp::slotNewResidualMatrix()
 // Matrix selection
 // ----------------
 //   - If only one of {error, template} matrix view exists, use it.
-//   - If both exist, use m_lastMatrixUsed (set on creation and on click).
+//   - If both exist, use lastMatrixUsed (set on creation and on click).
 //   - If neither exists, the action is disabled (mReorderClustersBySimilarity
 //     ->setEnabled(false) at construction; enabled when the first matrix
 //     dock is created in setConnections).  Guard here anyway.
@@ -4372,7 +4372,7 @@ void KlustersApp::slotReorderClustersBySimilarity()
         matrixLabel        = "template";
     } else if (emvReady && tmvReady) {
         // Both ready — defer to last-created-or-clicked.
-        if (m_lastMatrixUsed == MatrixKind::TEMPLATE_MATRIX_KIND) {
+        if (lastMatrixUsed == MatrixKind::TEMPLATE_MATRIX_KIND) {
             clusterIdsInMatrix = tmv->matrixClusterList();
             simMatrix          = tmv->matrixData();
             matrixLabel        = "template (last interacted)";
@@ -4419,7 +4419,7 @@ void KlustersApp::slotReorderClustersBySimilarity()
         chosenMatrixView = tmv;
         chosenIsStale    = tmv->isOutOfDate();
     } else if (emvReady && tmvReady) {
-        if (m_lastMatrixUsed == MatrixKind::TEMPLATE_MATRIX_KIND) {
+        if (lastMatrixUsed == MatrixKind::TEMPLATE_MATRIX_KIND) {
             chosenMatrixView = tmv;
             chosenIsStale    = tmv->isOutOfDate();
         } else {
@@ -5360,7 +5360,7 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             slotStateChanged("groupingAssistantDisplayExists");
             errorMatrixExists = true;
             // Track most-recently-created matrix for Shift+S reorder.
-            m_lastMatrixUsed = MatrixKind::ERROR_MATRIX_KIND;
+            lastMatrixUsed = MatrixKind::ERROR_MATRIX_KIND;
             // Enable Shift+S reorder now that at least one matrix exists.
             if (mReorderClustersBySimilarity)
                 mReorderClustersBySimilarity->setEnabled(true);
@@ -5375,7 +5375,7 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
         case KlustersView::TEMPLATE_MATRIX:
             templateMatrixExists = true;
             // Track most-recently-created matrix for Shift+S reorder.
-            m_lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
+            lastMatrixUsed = MatrixKind::TEMPLATE_MATRIX_KIND;
             // Enable Shift+S reorder now that at least one matrix exists.
             if (mReorderClustersBySimilarity)
                 mReorderClustersBySimilarity->setEnabled(true);
@@ -5388,7 +5388,7 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
         case KlustersView::RESIDUAL_MATRIX:
             // Track most-recently-created matrix for the residual-gated sort
             // and the Shift+S reorder's both-matrices tie-break.
-            m_lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
+            lastMatrixUsed = MatrixKind::RESIDUAL_MATRIX_KIND;
             if (mReorderClustersBySimilarity)
                 mReorderClustersBySimilarity->setEnabled(true);
             if (mSortByResidualGated)
@@ -6383,16 +6383,16 @@ void KlustersApp::slotRealignClusterDone(int pos, int /*total*/, int clusterId,
 {
     if (ok) {
         doc->setModified(true);
-        m_realignBatchTouched.append(clusterId);   // refresh deferred to batch end
-        m_realignBatchAccepted++;
-        m_realignBatchShiftedTotal += nShifted;
+        realignBatchTouched.append(clusterId);   // refresh deferred to batch end
+        realignBatchAccepted++;
+        realignBatchShiftedTotal += nShifted;
     } else {
-        m_realignBatchFailed++;
+        realignBatchFailed++;
     }
-    if (m_realignProgressBar)
-        m_realignProgressBar->setValue(pos);
+    if (realignProgressBar)
+        realignProgressBar->setValue(pos);
     slotStatusMsg(tr("PCA-Center align: %1 / %2 clusters …")
-                  .arg(pos).arg(m_realignBatchTotal));
+                  .arg(pos).arg(realignBatchTotal));
 }
 
 // One-time finalise when the single batch worker has processed the whole list.
@@ -6414,9 +6414,9 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     realignWorker = nullptr;   // already deleteLater'd
 
     // If the batch was already finalised by slotAbortRealign, do nothing more.
-    if (!m_realignBatchActive)
+    if (!realignBatchActive)
         return;
-    m_realignBatchActive = false;
+    realignBatchActive = false;
 
     doc->endRealignBatchLog();    // commit the single batch "after" snapshot
     flushRealignBatchRefresh();   // one deferred view refresh for all clusters
@@ -6425,17 +6425,17 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
         realignOutputWidget->insertStdoutLine(
             tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
                "shifted total — Save to commit or discard via File > Close ===")
-            .arg(m_realignBatchAccepted)
-            .arg(m_realignBatchFailed)
-            .arg(m_realignBatchShiftedTotal));
+            .arg(realignBatchAccepted)
+            .arg(realignBatchFailed)
+            .arg(realignBatchShiftedTotal));
         realignOutputWidget->scrollToBottom();
     }
-    if (m_realignProgressBar) m_realignProgressBar->hide();
+    if (realignProgressBar) realignProgressBar->hide();
     slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
                      "%3 spike(s) shifted total.")
-                  .arg(m_realignBatchAccepted)
-                  .arg(m_realignBatchFailed)
-                  .arg(m_realignBatchShiftedTotal));
+                  .arg(realignBatchAccepted)
+                  .arg(realignBatchFailed)
+                  .arg(realignBatchShiftedTotal));
     slotStateChanged(QStringLiteral("noRealignState"));
     // Switch back to the Overview Display so the user can immediately
     // arrow-key through clusters and see updated waveforms.
@@ -6464,15 +6464,15 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
 // ---------------------------------------------------------------------------
 void KlustersApp::flushRealignBatchRefresh()
 {
-    if (m_realignBatchTouched.isEmpty())
+    if (realignBatchTouched.isEmpty())
         return;
-    for (int id : m_realignBatchTouched) {
+    for (int id : realignBatchTouched) {
         doc->invalidateWaveformCache(id);
         doc->invalidateCorrelogramCache(id);
     }
-    for (int id : m_realignBatchTouched)
+    for (int id : realignBatchTouched)
         doc->forceClusterRefresh(id);
-    m_realignBatchTouched.clear();
+    realignBatchTouched.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -6562,9 +6562,9 @@ void KlustersApp::slotPcaAlignAllClusters()
             }
             kept << tok;
         }
-        m_realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
-        if (!m_realignBatchArgs.isEmpty()) m_realignBatchArgs += QLatin1Char(' ');
-        m_realignBatchArgs +=
+        realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
+        if (!realignBatchArgs.isEmpty()) realignBatchArgs += QLatin1Char(' ');
+        realignBatchArgs +=
             QStringLiteral("--topchannels %1 --pca-refine").arg(topCh);
     }
 
@@ -6587,7 +6587,7 @@ void KlustersApp::slotPcaAlignAllClusters()
         tr("=== PCA-Center alignment batch — %1 cluster(s), %2 ===")
         .arg(clusters.size())
         .arg(chanDesc));
-    realignOutputWidget->insertStdoutLine(tr("    args: %1").arg(m_realignBatchArgs));
+    realignOutputWidget->insertStdoutLine(tr("    args: %1").arg(realignBatchArgs));
     realignOutputWidget->scrollToBottom();
 
     // Tab-change wiring (idempotent — UniqueConnection guards re-adding).
@@ -6600,19 +6600,19 @@ void KlustersApp::slotPcaAlignAllClusters()
     // they switch away from the Realign output tab (which is the more common
     // case — they switch to Overview to watch waveforms updating in place
     // as each cluster completes its forceClusterRefresh).
-    if (!m_realignProgressBar) {
-        m_realignProgressBar = new QProgressBar(this);
-        m_realignProgressBar->setObjectName(QStringLiteral("realignProgress"));
-        m_realignProgressBar->setTextVisible(true);
-        m_realignProgressBar->setMaximumWidth(280);
+    if (!realignProgressBar) {
+        realignProgressBar = new QProgressBar(this);
+        realignProgressBar->setObjectName(QStringLiteral("realignProgress"));
+        realignProgressBar->setTextVisible(true);
+        realignProgressBar->setMaximumWidth(280);
         // Permanent widget on the right of the status bar so it isn't
         // displaced by transient slotStatusMsg() updates.
-        statusBar()->addPermanentWidget(m_realignProgressBar);
+        statusBar()->addPermanentWidget(realignProgressBar);
     }
-    m_realignProgressBar->setRange(0, clusters.size());
-    m_realignProgressBar->setValue(0);
-    m_realignProgressBar->setFormat(tr("PCA align: %v / %m clusters"));
-    m_realignProgressBar->show();
+    realignProgressBar->setRange(0, clusters.size());
+    realignProgressBar->setValue(0);
+    realignProgressBar->setFormat(tr("PCA align: %v / %m clusters"));
+    realignProgressBar->show();
 
     // Clean up any leftover thread / worker from a prior single-cluster run.
     if (realignThread) {
@@ -6630,13 +6630,13 @@ void KlustersApp::slotPcaAlignAllClusters()
     // worker loops realignSpikes internally (RealignWorker batch mode) and
     // reports per-cluster progress via slotRealignClusterDone, so the
     // per-cluster thread-spawn + GUI round-trip is paid once for the batch.
-    m_realignBatchActive       = true;
-    m_realignBatchQueue.clear();          // unused in single-worker batch mode
-    m_realignBatchTotal        = clusters.size();
-    m_realignBatchAccepted     = 0;
-    m_realignBatchFailed       = 0;
-    m_realignBatchShiftedTotal = 0;
-    m_realignBatchTouched.clear();
+    realignBatchActive       = true;
+    realignBatchQueue.clear();          // unused in single-worker batch mode
+    realignBatchTotal        = clusters.size();
+    realignBatchAccepted     = 0;
+    realignBatchFailed       = 0;
+    realignBatchShiftedTotal = 0;
+    realignBatchTouched.clear();
 
     // Enable the batch-scoped centroid cache for the run: each cluster's
     // per-cluster realign logBefore/logAfter then reuses one computeAllCentroids()
@@ -6646,7 +6646,7 @@ void KlustersApp::slotPcaAlignAllClusters()
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
     slotStatusMsg(tr("PCA-Center align: 0 / %1 clusters …").arg(clusters.size()));
-    startRealignBatchWorker(clusters, m_realignBatchArgs);
+    startRealignBatchWorker(clusters, realignBatchArgs);
 }
 
 void KlustersApp::slotAbortRealign()
@@ -6670,22 +6670,22 @@ void KlustersApp::slotAbortRealign()
     // If a batch was running, drop the remaining queue and log how many were
     // skipped — finished clusters keep their pending changes (the user can
     // still Save to commit the partial batch).
-    if (m_realignBatchActive) {
-        const int remaining = m_realignBatchQueue.size();
-        m_realignBatchQueue.clear();
-        m_realignBatchActive = false;
+    if (realignBatchActive) {
+        const int remaining = realignBatchQueue.size();
+        realignBatchQueue.clear();
+        realignBatchActive = false;
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         // Refresh whatever was already accepted before the abort.
         flushRealignBatchRefresh();
         if (realignOutputWidget) {
             realignOutputWidget->insertStderrLine(
                 tr("--- Batch aborted: %1 cluster(s) skipped, %2 already accepted ---")
-                .arg(remaining).arg(m_realignBatchAccepted));
+                .arg(remaining).arg(realignBatchAccepted));
             realignOutputWidget->scrollToBottom();
         }
-        if (m_realignProgressBar) m_realignProgressBar->hide();
+        if (realignProgressBar) realignProgressBar->hide();
         slotStatusMsg(tr("PCA-Center align aborted: %1 accepted, %2 skipped.")
-                      .arg(m_realignBatchAccepted).arg(remaining));
+                      .arg(realignBatchAccepted).arg(remaining));
     }
 
     if (realignOutputWidget)
@@ -6700,8 +6700,8 @@ void KlustersApp::slotAbortRealign()
     // merge, still run the deferred renumber + matrix update — the merge
     // itself happened, and the worker thread has been joined above so Data is
     // no longer being mutated off-thread.
-    if (m_autoPostMergePending) {
-        m_autoPostMergePending = false;
+    if (autoPostMergePending) {
+        autoPostMergePending = false;
         autoPostMerge();
     }
 }
@@ -6730,7 +6730,7 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
     // single-cluster review-dialog interface; in batch mode we only need ok
     // and nShifted.  When the queue empties, we finalise the batch summary
     // and unlock the UI; otherwise we launch the next cluster.
-    if (m_realignBatchActive) {
+    if (realignBatchActive) {
         (void)meanBefore; (void)meanAfter; (void)backupBase; (void)nChan; (void)nSamp;
         (void)nSwapped;
         if (ok && realignClusterId >= 0) {
@@ -6741,43 +6741,43 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
             // which dominated the inter-cluster gap.  setModified is cheap and
             // kept here so the dirty state is correct even on abort.
             doc->setModified(true);
-            m_realignBatchTouched.append(realignClusterId);
-            m_realignBatchAccepted++;
-            m_realignBatchShiftedTotal += nShifted;
+            realignBatchTouched.append(realignClusterId);
+            realignBatchAccepted++;
+            realignBatchShiftedTotal += nShifted;
         } else {
-            m_realignBatchFailed++;
+            realignBatchFailed++;
         }
         realignClusterId = -1;
 
         // Bump the status-bar progress bar by one — counts clusters whose
         // worker has returned, regardless of ok/fail.  Done before the queue
         // check so the bar reads N/N when the batch finalises.
-        if (m_realignProgressBar) {
-            m_realignProgressBar->setValue(
-                m_realignBatchAccepted + m_realignBatchFailed);
+        if (realignProgressBar) {
+            realignProgressBar->setValue(
+                realignBatchAccepted + realignBatchFailed);
         }
 
-        if (!m_realignBatchQueue.isEmpty()) {
+        if (!realignBatchQueue.isEmpty()) {
             // Advance: launch the next cluster.  The realignState lock stays
             // applied across the whole batch — we just flip realignRunning
             // back on for the next worker.
-            const int next = m_realignBatchQueue.takeFirst();
-            const int pos  = m_realignBatchTotal - m_realignBatchQueue.size();
+            const int next = realignBatchQueue.takeFirst();
+            const int pos  = realignBatchTotal - realignBatchQueue.size();
             if (realignOutputWidget) {
                 realignOutputWidget->insertStdoutLine(
                     tr("--- cluster %1 (%2/%3) ---")
-                    .arg(next).arg(pos).arg(m_realignBatchTotal));
+                    .arg(next).arg(pos).arg(realignBatchTotal));
                 realignOutputWidget->scrollToBottom();
             }
             slotStatusMsg(tr("PCA-Center align: cluster %1 (%2/%3) …")
-                          .arg(next).arg(pos).arg(m_realignBatchTotal));
+                          .arg(next).arg(pos).arg(realignBatchTotal));
             realignRunning = true;
-            startRealignWorker(next, m_realignBatchArgs);
+            startRealignWorker(next, realignBatchArgs);
             return;
         }
 
         // Batch complete.
-        m_realignBatchActive = false;
+        realignBatchActive = false;
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         // Now do the one deferred view refresh for every accepted cluster.
         flushRealignBatchRefresh();
@@ -6785,19 +6785,19 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
             realignOutputWidget->insertStdoutLine(
                 tr("=== Batch complete: %1 accepted, %2 failed, %3 spike(s) "
                    "shifted total — Save to commit or discard via File > Close ===")
-                .arg(m_realignBatchAccepted)
-                .arg(m_realignBatchFailed)
-                .arg(m_realignBatchShiftedTotal));
+                .arg(realignBatchAccepted)
+                .arg(realignBatchFailed)
+                .arg(realignBatchShiftedTotal));
             realignOutputWidget->scrollToBottom();
         }
         // Hide and reset the status-bar progress bar; keep the widget around
         // so a subsequent batch can reuse it without re-adding to the bar.
-        if (m_realignProgressBar) m_realignProgressBar->hide();
+        if (realignProgressBar) realignProgressBar->hide();
         slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
                          "%3 spike(s) shifted total.")
-                      .arg(m_realignBatchAccepted)
-                      .arg(m_realignBatchFailed)
-                      .arg(m_realignBatchShiftedTotal));
+                      .arg(realignBatchAccepted)
+                      .arg(realignBatchFailed)
+                      .arg(realignBatchShiftedTotal));
         slotStateChanged(QStringLiteral("noRealignState"));
         // Switch back to the Overview Display so the user can immediately
         // arrow-key through clusters and see updated waveforms — staying on
@@ -6874,8 +6874,8 @@ void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
     // now run the deferred renumber + matrix update — serialised strictly
     // after the realignment (which held the UI lock).  Runs whether or not
     // the realignment itself succeeded: the merge happened regardless.
-    if (m_autoPostMergePending) {
-        m_autoPostMergePending = false;
+    if (autoPostMergePending) {
+        autoPostMergePending = false;
         autoPostMerge();
     }
 
