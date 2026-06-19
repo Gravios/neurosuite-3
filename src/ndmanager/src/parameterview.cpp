@@ -526,8 +526,13 @@ void ParameterView::discoverPlugins() {
         return true;
     };
 
-    const QStringList dirs = QString::fromLocal8Bit(qgetenv("PATH"))
-                                 .split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    // Search $NDM_PLUGIN_PATH (explicit plugin dirs, listSeparator-separated) first so a plugin there
+    // shadows a same-named one on $PATH, then $PATH itself.
+    QStringList dirs;
+    const QString pluginPath = QString::fromLocal8Bit(qgetenv("NDM_PLUGIN_PATH"));
+    if (!pluginPath.isEmpty())
+        dirs += pluginPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    dirs += QString::fromLocal8Bit(qgetenv("PATH")).split(QDir::listSeparator(), Qt::SkipEmptyParts);
     QSet<QString> tried;
     int added = 0;
     int skipped = 0;
