@@ -1902,9 +1902,11 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
         doc->setMarkerSize(markerSize);
         doc->setSelectionLineWidth(selectionLineWidth);
 
-        //Disconnect the previous connection
-        if(tabsParent != nullptr)
-            disconnect(tabsParent,0,0,0);
+        //Disconnect the previous connection.  tabsParent is created
+        //unconditionally in the constructor and never cleared, so it is always
+        //valid here; the following connect() relies on that too.  (disconnect()
+        //on an object with no matching connections is a harmless no-op.)
+        disconnect(tabsParent,0,0,0);
 
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
         //the active display change.
@@ -2610,7 +2612,7 @@ void KlustersApp::runUndoOrRedo(void (KlustersDoc::*op)(),
 
     // Update the browsing possibility of the traceView
     KlustersView* view = activeView();
-    if (view->containsTraceView() && !view->clusters().isEmpty()) {
+    if (view && view->containsTraceView() && !view->clusters().isEmpty()) {
         slotStateChanged("traceViewBrowsingState");
     } else {
         slotStateChanged("noTraceViewBrowsingState");
@@ -5545,7 +5547,7 @@ void KlustersApp::slotShowPreviousCluster(){
 void KlustersApp::slotSpikesDeleted(){
     //Update the browsing possibility of the traceView
     KlustersView* view = activeView();
-    if(view->containsTraceView() && !view->clusters().isEmpty()) {
+    if(view && view->containsTraceView() && !view->clusters().isEmpty()) {
         slotStateChanged("traceViewBrowsingState");
     }
     else{
