@@ -181,7 +181,7 @@ public:
     }
 
     /**Update the information presented in the view.*/
-    void updateDrawing(){
+    void updateDrawing() override {
         if(retrieveClusterData)  {
             updateClusterData(true);
         } else{
@@ -536,13 +536,13 @@ protected:
   * The time is display in the status bar.
   * @param event mouse move event.
   */
-    void mouseMoveEvent(QMouseEvent* event);
+    void mouseMoveEvent(QMouseEvent* event) override;
 
     /**The view responds to a resize event.
   * The window is recomputed.
   * @param event resize event.
   */
-    void resizeEvent(QResizeEvent* event){
+    void resizeEvent(QResizeEvent* event) override {
         drawContentsMode = REDRAW;
         resized = true;
     }
@@ -550,17 +550,17 @@ protected:
     /**The view responds to a mouse click.
   * @param event mouse release event.
   */
-    void mousePressEvent(QMouseEvent* event);
+    void mousePressEvent(QMouseEvent* event) override;
 
     /**The view responds to a mouse release.
   * @param event mouse event.
   */
-    void mouseReleaseEvent(QMouseEvent* event);
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
     /**The view responds to a double click.
   * @param event mouse event.
   */
-    void mouseDoubleClickEvent(QMouseEvent* event);
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
     void updateCursor();
