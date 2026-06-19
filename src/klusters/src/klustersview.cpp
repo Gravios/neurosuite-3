@@ -714,11 +714,10 @@ void KlustersView::updateTemplateMatrixSliderRange(){
     }
 }
 
-void KlustersView::traceDockClosed(QObject *traceWidget){
+void KlustersView::traceDockClosed(QObject* /*traceWidget*/){
     if(viewCounter["TraceView"] == 1){
         viewCounter.remove("TraceView");
         mainWindow.widgetRemovedFromDisplay(TRACES);
-        traceWidget = nullptr;
         isThereTraceView = false;
     }
     else viewCounter["TraceView"]--;
