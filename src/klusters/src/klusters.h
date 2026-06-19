@@ -1183,7 +1183,26 @@ private:
     /// Run the configured post-merge automation (renumber clusters and/or
     /// recompute matrices) once a merge operation has completed.  No-op unless
     /// the corresponding Preferences > Refinement options are enabled.
+    /// Thin wrapper over autoPostClusterEdit(true) — a merge always changes the
+    /// cluster set.
     void autoPostMerge();
+
+    /// Generalised post-edit automation, shared by merge and the other
+    /// cluster-editing operations.  Renumber runs only when @p clusterSetChanged
+    /// (a cluster was added or removed) AND auto-renumber is enabled; the matrix
+    /// recompute runs whenever auto-update-matrices is enabled.  Order is
+    /// renumber → matrix so the matrices recompute against the final ids.
+    void autoPostClusterEdit(bool clusterSetChanged);
+
+    /// Coalesced, deferred entry point for autoPostClusterEdit, connected to the
+    /// document's forward cluster-mutation signals.  Defers to the next
+    /// event-loop turn (so the triggering mutation completes first — never
+    /// re-entrant) and collapses multiple signals from one operation into a
+    /// single run.  @p clusterSetChanged is OR-accumulated across the coalesced
+    /// signals.
+    void scheduleAutoPostClusterEdit(bool clusterSetChanged);
+    bool m_autoPostEditPending    = false;
+    bool m_autoPostEditSetChanged = false;
 
     /**Start ONE worker that processes the whole @p clusterIds list back-to-back
      * in a single thread (RealignWorker batch mode), wired to

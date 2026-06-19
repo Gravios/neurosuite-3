@@ -864,6 +864,34 @@ void KlustersApp::createMenus()
         [this](QMap<int,int>&, QList<int>&) {
             if (clusterPalette) clusterPalette->setFocusToList();
         });
+
+    // Extend the post-merge auto-renumber / auto-update-matrices automation
+    // (Preferences > Refinement) to the other cluster-editing operations.
+    // These hooks are deferred + coalesced (scheduleAutoPostClusterEdit) so they
+    // run once, after the triggering mutation completes, never re-entrantly.
+    //   set-changing (delete / split / new-cluster / recluster) → renumber + matrix
+    //   membership-only (spikesDeleted)                          → matrix only
+    // Merge is intentionally NOT hooked here: clustersGrouped drives the
+    // dedicated autoPostMerge() path, which must serialise behind auto-align.
+    // renumber() is also not hooked, so the renumber these trigger can't recurse.
+    connect(doc, &KlustersDoc::clustersDeleted, this,
+        [this](QList<int>&, int) { scheduleAutoPostClusterEdit(true); });
+    connect(doc, &KlustersDoc::removeSpikesFromClusters, this,
+        [this](QList<int>&, int, QList<int>&) { scheduleAutoPostClusterEdit(true); });
+    connect(doc, &KlustersDoc::newClusterAdded, this,
+        [this](QList<int>&, int, QList<int>&) { scheduleAutoPostClusterEdit(true); });
+    connect(doc,
+        static_cast<void (KlustersDoc::*)(QMap<int,int>&, QList<int>&)>(
+            &KlustersDoc::newClustersAdded),
+        this,
+        [this](QMap<int,int>&, QList<int>&) { scheduleAutoPostClusterEdit(true); });
+    connect(doc,
+        static_cast<void (KlustersDoc::*)(QList<int>&)>(
+            &KlustersDoc::newClustersAdded),
+        this,
+        [this](QList<int>&) { scheduleAutoPostClusterEdit(true); });
+    connect(doc, &KlustersDoc::spikesDeleted, this,
+        [this]() { scheduleAutoPostClusterEdit(false); });
 }
 
 
@@ -3432,11 +3460,40 @@ void KlustersApp::slotAutoMerge()
 // ---------------------------------------------------------------------------
 void KlustersApp::autoPostMerge()
 {
+    // A merge always reduces the cluster set, so renumber is appropriate.
+    autoPostClusterEdit(true);
+}
+
+void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
+{
     if (!doc) return;
-    if (configuration().getAutoRenumberAfterMerge())
+    // Renumber first (only when the set actually changed and the option is on),
+    // then recompute matrices against the final ids.
+    if (clusterSetChanged && configuration().getAutoRenumberAfterMerge())
         doc->renumberClusters();
     if (configuration().getAutoUpdateMatricesAfterMerge())
         slotUpdateErrorMatrix();
+}
+
+void KlustersApp::scheduleAutoPostClusterEdit(bool clusterSetChanged)
+{
+    // OR-accumulate the "set changed" flag across every signal that fires for
+    // this operation, then schedule a single deferred run.
+    m_autoPostEditSetChanged = m_autoPostEditSetChanged || clusterSetChanged;
+    if (m_autoPostEditPending) return;          // already scheduled this turn
+    m_autoPostEditPending = true;
+
+    // Defer past the current event-loop turn: the triggering mutation
+    // (createNewClusters / deleteClusters / …) emits its signal mid-operation,
+    // so running renumber/matrix inline would re-enter the doc.  By the time
+    // this fires the mutation has completed.  renumberClusters() emits only
+    // renumber() — which is deliberately NOT hooked here — so it cannot recurse.
+    QTimer::singleShot(0, this, [this]() {
+        m_autoPostEditPending = false;
+        const bool setChanged = m_autoPostEditSetChanged;
+        m_autoPostEditSetChanged = false;
+        autoPostClusterEdit(setChanged);
+    });
 }
 
 // ---------------------------------------------------------------------------
