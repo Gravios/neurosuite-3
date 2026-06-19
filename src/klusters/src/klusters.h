@@ -67,6 +67,7 @@ class ProcessWidget;
 class QProgressBar;
 class QRecentFileAction;
 class QExtendTabWidget;
+class SerialJobQueue;   // experimental realign-via-queue lane (opt-in)
 
 /**
   * The Klusters main window and central class. It sets up the main
@@ -1127,6 +1128,19 @@ private:
                                // including realignworker.h in this header.
     /**The thread on which realignWorker runs.*/
     QThread*  realignThread;
+
+    // ── Experimental: realign via SerialJobQueue (opt-in, A/B) ───────────────
+    /**Serialised lane for the single-cluster realign path.  Created lazily on
+     * first use.  Opt-in via the KLUSTERS_REALIGN_JOBQUEUE environment variable
+     * so the queue-driven path can be A/B-compared against the direct path on
+     * real data before the legacy busy-flag guards are retired.*/
+    SerialJobQueue* realignQueue;
+    /**True iff KLUSTERS_REALIGN_JOBQUEUE is set in the environment.*/
+    bool useRealignJobQueue() const;
+    /**Run the single-cluster realignment as a RealignJob on realignQueue, with
+     * applyRealignResult as the finished callback.  Mirrors startRealignWorker
+     * but the job owns the worker/thread lifecycle (incl. teardown).*/
+    void enqueueRealignJob(int clusterId, const QString& args);
     /**ProcessWidget tab showing realignment diagnostics.*/
     ProcessWidget* realignOutputWidget;
     /**True while a realignment job is running.*/

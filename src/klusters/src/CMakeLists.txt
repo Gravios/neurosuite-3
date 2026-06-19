@@ -42,6 +42,7 @@ set(klusters_SRCS
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
     ${_xcorr_dir}/realign_center.cpp
     realignworker.cpp
+    serialjobqueue.h   # header-only QObject — listed so AUTOMOC generates its moc
     realignreviewdialog.cpp
     spikerealigndialog.cpp
     klusters.cpp

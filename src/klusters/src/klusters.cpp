@@ -30,6 +30,8 @@
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
 #include "realignworker.h"
+#include "serialjobqueue.h"
+#include "realignjob.h"
 #include "qhelpviewer.h"
 // For the Shift+S reorder action: needs the public accessors + signals
 // added to these view classes.
@@ -136,6 +138,7 @@ KlustersApp::KlustersApp()
       reclusterRetryTimer(nullptr),
       realignWorker(nullptr),
       realignThread(nullptr),
+      realignQueue(nullptr),
       realignOutputWidget(nullptr),
       realignRunning(false),
       realignClusterId(-1),
@@ -6282,12 +6285,76 @@ void KlustersApp::startRealignForCluster(int clusterId)
         realignWorker = nullptr;
     }
 
-    startRealignWorker(clusterId, realignArgs);
+    if (useRealignJobQueue())
+        enqueueRealignJob(clusterId, realignArgs);
+    else
+        startRealignWorker(clusterId, realignArgs);
 }
 
 // ---------------------------------------------------------------------------
-// startRealignWorker
+// useRealignJobQueue / enqueueRealignJob  (experimental, opt-in)
 //
+// Routes the single-cluster realign through a SerialJobQueue as a RealignJob,
+// instead of the direct startRealignWorker spin-up.  Opt-in via the
+// KLUSTERS_REALIGN_JOBQUEUE environment variable so the queue path can be
+// A/B-compared against the direct path on real data.
+//
+// The RealignJob owns the worker/thread lifecycle (including the teardown that
+// slotRealignFinished does on the direct path); the finished callback here is
+// applyRealignResult (the result-handling body extracted for exactly this), with
+// realignRunning cleared first to mirror slotRealignFinished's teardown head.
+//
+// SCOPE / KNOWN LIMITATIONS (prototype):
+//   * Single-cluster path only.  The batch path (Align All) still uses the
+//     direct startRealignWorker spin-up via slotRealignFinished's advance.
+//   * Abort (slotAbortRealign) operates on realignThread/realignWorker, which
+//     the job does NOT populate — abort is not wired in queue mode yet.
+//   * All legacy guards (realignRunning, m_autoPostMergePending,
+//     processWidget->isRunning()) are intentionally KEPT; they are retired only
+//     once this path is validated on hardware.
+// ---------------------------------------------------------------------------
+bool KlustersApp::useRealignJobQueue() const
+{
+    static const bool on =
+        !qEnvironmentVariableIsEmpty("KLUSTERS_REALIGN_JOBQUEUE");
+    return on;
+}
+
+void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
+{
+    if (!realignQueue)
+        realignQueue = new SerialJobQueue(this);
+
+    // applyRealignResult reads realignClusterId for the view refresh, exactly as
+    // the direct path sets it in startRealignWorker.
+    realignClusterId = clusterId;
+
+    auto* job = new RealignJob(
+        this, doc, clusterId, args,
+        // onFinished: clear the UI-lock flag (the teardown head of
+        // slotRealignFinished), then run the unchanged result-handling body.
+        [this](bool ok, int nShifted, int nSwapped,
+               QVector<float> meanBefore, QVector<float> meanAfter,
+               QString backupBase, int nChan, int nSamp) {
+            realignRunning = false;
+            applyRealignResult(ok, nShifted, nSwapped, meanBefore, meanAfter,
+                               backupBase, nChan, nSamp);
+        },
+        // onLog: same streaming the direct path's logLine connection does.
+        [this](const QString& line, bool isError) {
+            if (!realignOutputWidget)
+                return;
+            if (isError)
+                realignOutputWidget->insertStderrLine(line);
+            else
+                realignOutputWidget->insertStdoutLine(line);
+            realignOutputWidget->scrollToBottom();
+        });
+
+    realignQueue->enqueue(job);
+}
+
+
 // Encapsulates the QThread / RealignWorker / signal-wiring boilerplate.
 // Called by slotRealignSpikes for the single-cluster path and by
 // slotPcaAlignAllClusters (via slotRealignFinished's batch advance) for the
