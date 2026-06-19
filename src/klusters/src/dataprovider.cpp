@@ -17,9 +17,8 @@
 //include files for the application
 #include "dataprovider.h"
 
-DataProvider::DataProvider(const QString& fileUrl):QObject(){
+DataProvider::DataProvider(const QString& fileUrl):QObject(),fileName(fileUrl){
     //Download the file if need it
-    fileName = fileUrl;
 }
 DataProvider::~DataProvider(){
 }

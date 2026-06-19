@@ -1137,12 +1137,13 @@ private:
         virtual void calculateMean(WaveformMode waveformMode) = 0;
 
     protected:
-        Waveforms(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0):data(d){
-            timeEndIndex = index;
-            timeStart = startTime;
-            timeEnd = endTime;
-            nbPtsBySpike = data.nbChannels * data.nbSamplesInWaveform;
-            nbSpikesAsked = 0;
+        Waveforms(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0)
+            :data(d),
+             timeEndIndex(index),
+             timeStart(startTime),
+             timeEnd(endTime),
+             nbPtsBySpike(data.nbChannels * data.nbSamplesInWaveform),
+             nbSpikesAsked(0){
         }
 
     protected:
