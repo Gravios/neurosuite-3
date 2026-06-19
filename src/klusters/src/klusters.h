@@ -1141,8 +1141,6 @@ private:
      * applyRealignResult as the finished callback.  Mirrors startRealignWorker
      * but the job owns the worker/thread lifecycle (incl. teardown).*/
     void enqueueRealignJob(int clusterId, const QString& args);
-    /**ProcessWidget tab showing realignment diagnostics.*/
-    ProcessWidget* realignOutputWidget;
     /**True while a realignment job is running.*/
     bool realignRunning;
     /**The cluster ID currently being realigned (valid while realignRunning).*/
