@@ -53,47 +53,6 @@ namespace AutoMerge {
 
 namespace {
 
-// Normalised xcorr with bounded shift.  Matches templatematrixthread.cpp
-// :tmNormXcorr verbatim — pull-extract to a shared helper is a future
-// cleanup.  Returns the maximum |xcorr| / sqrt(|a|^2 * |b|^2) over the
-// overlapping window across lags in [-maxShift, +maxShift]; sign-insensitive
-// on purpose so inverted-polarity duplicates also match.  meanSubtract=true
-// switches from cosine to Pearson (overlap-window mean removed per waveform).
-float normXcorr(const std::vector<float>& a,
-                const std::vector<float>& b,
-                int maxShift,
-                bool meanSubtract = false)
-{
-    const int N = static_cast<int>(a.size());
-    if (N == 0) return 0.0f;
-    float best = 0.0f;
-    for (int lag = -maxShift; lag <= maxShift; ++lag) {
-        // dot product, both squared norms, and both plain sums over the same
-        // overlap window (sums only needed for the Pearson centring identity)
-        double sab = 0.0, saa = 0.0, sbb = 0.0, sa = 0.0, sb = 0.0;
-        int cnt = 0;
-        for (int i = 0; i < N; ++i) {
-            int j = i + lag;
-            if (j < 0 || j >= N) continue;
-            const double ai = a[i], bj = b[j];
-            sab += ai * bj; saa += ai * ai; sbb += bj * bj;
-            sa  += ai;      sb  += bj;      ++cnt;
-        }
-        if (cnt == 0) continue;
-        double xc = sab, normA = saa, normB = sbb;
-        if (meanSubtract) {
-            xc    = sab - sa * sb / cnt;
-            normA = saa - sa * sa / cnt;
-            normB = sbb - sb * sb / cnt;
-        }
-        const double denom = std::sqrt(normA * normB);
-        if (denom < 1e-12) continue;
-        float val = static_cast<float>(std::abs(xc) / denom);
-        if (val > best) best = val;
-    }
-    return best;
-}
-
 // Hann taper applied per sample, broadcast across channels.  taperLen is
 // the number of samples on each end that are tapered; clamped to nSamp/2.
 void applyHannTaper(std::vector<float>& tmpl, int nChan, int nSamp, int taperLen)
@@ -165,7 +124,14 @@ QList<MergeGroup> computeProposals(
     const int    maxShift = (settings.maxShift > 0)
                           ? settings.maxShift
                           : std::max(1, nSamp / 4);
-    const bool   pearson  = configuration().getTemplateXcorrPearson();
+    // Match the template-matrix metric EXACTLY so the auto-merge thresholds the
+    // same scores the user sees in the matrix (0=cosine 1=Pearson 2=raw
+    // 3=noise-disattenuated 4=fast-AP).  Reading only the Pearson bool here made
+    // metrics 2/3/4 silently fall back to cosine -> auto-merge scored pairs
+    // differently from the displayed matrix.
+    const int    metric    = configuration().getTemplateXcorrMetric();
+    const bool   needNoise = (metric == 3);                  // disatten needs a per-point noise template
+    const int    peak      = data.peakSampleIndex();         // 0-based AP centre (fast-AP metric)
     const QString spkPath = data.getSpkFileName();
     if (spkPath.isEmpty() || nPts <= 0) return result;
 
@@ -195,6 +161,11 @@ QList<MergeGroup> computeProposals(
     const bool useMedian = (settings.algorithm == 1);
     const int  K         = std::max(1, settings.medianK);
     std::vector<std::vector<float>> templates(static_cast<size_t>(nClusters));
+    // Per-point noise energy of each template (sample variance / N), only built
+    // for the disatten metric; tmDisattenXcorr subtracts it from each norm.
+    std::vector<std::vector<float>> noiseWav;
+    if (needNoise)
+        noiseWav.assign(static_cast<size_t>(nClusters), std::vector<float>());
 
     const QByteArray spkBytes = spkPath.toLocal8Bit();
     const char*      spkCStr  = spkBytes.constData();
@@ -237,6 +208,8 @@ QList<MergeGroup> computeProposals(
         // on disk so float is exact, and median/mean stay consistent.
         std::vector<std::vector<float>> spikeWavs;
         std::vector<double>             sumAcc(static_cast<size_t>(nPts), 0.0);
+        std::vector<double>             sqAcc;   // sum of squares, disatten metric only
+        if (needNoise) sqAcc.assign(static_cast<size_t>(nPts), 0.0);
         std::vector<uint8_t>            okRow;  // median mode only
         if (useMedian) {
             spikeWavs.assign(static_cast<size_t>(M),
@@ -258,6 +231,14 @@ QList<MergeGroup> computeProposals(
             } else {
                 for (int p = 0; p < nPts; ++p)
                     sumAcc[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
+            }
+            if (needNoise) {                                 // mean+var needed for the noise template
+                if (useMedian)
+                    for (int p = 0; p < nPts; ++p)
+                        sumAcc[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
+                for (int p = 0; p < nPts; ++p)
+                    sqAcc[static_cast<size_t>(p)] +=
+                        static_cast<double>(sp[static_cast<size_t>(p)]) * sp[static_cast<size_t>(p)];
             }
             ++valid;
         }
@@ -286,6 +267,15 @@ QList<MergeGroup> computeProposals(
         }
         if (settings.taperSamples > 0)
             applyHannTaper(tmpl, nChan, nSamp, settings.taperSamples);
+        if (needNoise) {                                     // per-point noise energy of the mean = var / N
+            std::vector<float> nz(static_cast<size_t>(nPts), 0.0f);
+            for (int p = 0; p < nPts; ++p) {
+                const double m   = sumAcc[static_cast<size_t>(p)] / valid;
+                const double var = sqAcc[static_cast<size_t>(p)] / valid - m * m;
+                nz[static_cast<size_t>(p)] = static_cast<float>(std::max(0.0, var) / valid);
+            }
+            noiseWav[static_cast<size_t>(ci)] = std::move(nz);
+        }
         templates[static_cast<size_t>(ci)] = std::move(tmpl);
     }
 
@@ -298,6 +288,7 @@ QList<MergeGroup> computeProposals(
 
     std::vector<std::tuple<int,int,float>> highPairs;
     const float thr = static_cast<float>(settings.scoreThreshold);
+    std::vector<std::tuple<int,int,float>> allPairs;   // every scored pair (raw needs a global-max pass)
     for (int i = 0; i < nClusters; ++i) {
         // Step 4 is O(nClusters^2); on big all-active runs it can dominate, so
         // keep the dialog responsive and cancellable between rows (the inner
@@ -308,12 +299,35 @@ QList<MergeGroup> computeProposals(
         if (templates[static_cast<size_t>(i)].empty()) continue;
         for (int j = i + 1; j < nClusters; ++j) {
             if (templates[static_cast<size_t>(j)].empty()) continue;
-            const float s = normXcorr(templates[static_cast<size_t>(i)],
-                                      templates[static_cast<size_t>(j)],
-                                      maxShift, pearson);
-            if (s >= thr) highPairs.emplace_back(i, j, s);
+            float s;
+            if (metric == 2)
+                s = tmRawXcorr(templates[static_cast<size_t>(i)],
+                               templates[static_cast<size_t>(j)], maxShift);
+            else if (metric == 3)
+                s = tmDisattenXcorr(templates[static_cast<size_t>(i)],
+                                    templates[static_cast<size_t>(j)],
+                                    noiseWav[static_cast<size_t>(i)],
+                                    noiseWav[static_cast<size_t>(j)], maxShift);
+            else if (metric == 4)
+                s = tmFastWinXcorr(templates[static_cast<size_t>(i)],
+                                   templates[static_cast<size_t>(j)],
+                                   nChan, nSamp, peak, maxShift);
+            else
+                s = tmNormXcorr(templates[static_cast<size_t>(i)],
+                                templates[static_cast<size_t>(j)], maxShift, metric == 1);
+            allPairs.emplace_back(i, j, s);
         }
     }
+    // Raw xcorr is unbounded; the template matrix maps it to [0,1] by dividing
+    // every off-diagonal cell by the largest, so the same threshold applies.
+    if (metric == 2) {
+        float gmax = 0.0f;
+        for (const auto& p : allPairs) gmax = std::max(gmax, std::get<2>(p));
+        if (gmax > 0.0f)
+            for (auto& p : allPairs) std::get<2>(p) /= gmax;
+    }
+    for (const auto& p : allPairs)
+        if (std::get<2>(p) >= thr) highPairs.push_back(p);
 
     // ── 5. Union-find on the score-graph; emit groups of size >= 2.
     UnionFind uf(nClusters);
