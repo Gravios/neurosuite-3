@@ -560,6 +560,9 @@ void ParameterView::discoverPlugins() {
                 continue;
             if (proto > kNdmProtocol) {
                 ++skipped;                                         // newer than we understand
+                qWarning().noquote() << QStringLiteral(
+                    "ndm discovery: %1 declares ndm-plugin-protocol %2 (this build supports %3) -- skipped")
+                    .arg(exe).arg(proto).arg(kNdmProtocol);
                 continue;
             }
 
