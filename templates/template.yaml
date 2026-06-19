@@ -2491,3 +2491,23 @@ programs:
     # pos
 
     Delete single-session pos files (default = false).
+
+# == fiber-kit pipeline (external ndmanager plugin; ndm plugin protocol v1) ==================
+# Discovered at runtime via `ndm_fiber-kit --ndm-describe`.  Knobs flatten as <stage>.<knob>;
+# values are the recommended tuned baseline.  Edit here or in the Programs tab.
+- name: ndm_fiber-kit
+  parameters:
+  - {name: intrachunk.gate, value: cfiber, status: Optional}
+  - {name: intrachunk.cos_thr, value: 0.85, status: Optional}
+  - {name: intrachunk.off_thr, value: 1.0, status: Optional}
+  - {name: intrachunk.depth_gate, value: 35.0, status: Optional}
+  - {name: intrachunk.amp_gate, value: 1.1, status: Optional}
+  - {name: intrachunk.refrac_ceiling, value: 1.0, status: Optional}
+  - {name: intrachunk.pre_merge_cos, value: 0.97, status: Optional}
+  - {name: intrachunk.linkage, value: complete, status: Optional}
+  - {name: intrachunk.align_lag, value: 6, status: Optional}
+  - {name: intrachunk.align_upsample, value: 1, status: Optional}
+  - {name: intrachunk.cfiber_q, value: 0.9, status: Optional}
+  - {name: intrachunk.cfiber_null, value: order, status: Optional}
+  - {name: intrachunk.cfiber_thr_floor, value: 0.0, status: Optional}
+  - {name: intrachunk.sig_cap, value: 8000, status: Optional}
