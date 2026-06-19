@@ -237,10 +237,10 @@
         <item row="5" column="0">
          <widget class="QCheckBox" name="autoRenumberAfterMergeCheckBox">
           <property name="text">
-           <string>Auto-renumber clusters after each merge</string>
+           <string>Auto-renumber clusters after cluster edits</string>
           </property>
           <property name="toolTip">
-           <string>After any merge (interactive Group Clusters or batch Auto-Merge), automatically renumber the clusters (same as the Renumber Clusters action, R) so IDs stay contiguous. Default: off.</string>
+           <string>After a cluster-set-changing edit — merge (Group Clusters or batch Auto-Merge), split, new cluster, delete-to-noise/artifact, or recluster — automatically renumber the clusters (same as the Renumber Clusters action, R) so IDs stay contiguous. Not applied to membership-only changes. Default: off.</string>
           </property>
           <property name="checked">
            <bool>false</bool>
@@ -250,10 +250,10 @@
         <item row="6" column="0">
          <widget class="QCheckBox" name="autoUpdateMatricesAfterMergeCheckBox">
           <property name="text">
-           <string>Auto-update matrices after each merge</string>
+           <string>Auto-update matrices after cluster edits</string>
           </property>
           <property name="toolTip">
-           <string>After any merge (interactive Group Clusters or batch Auto-Merge), automatically recompute the error / template / residual matrices (same as the Update Error Matrix action, U). No effect when no matrix view is open. Default: off.</string>
+           <string>After any cluster edit — merge, split, new cluster, delete-to-noise/artifact, recluster, or a membership change — automatically recompute the error / template / residual matrices (same as the Update Error Matrix action, U). No effect when no matrix view is open. Default: off.</string>
           </property>
           <property name="checked">
            <bool>false</bool>
