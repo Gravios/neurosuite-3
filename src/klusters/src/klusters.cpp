@@ -7345,6 +7345,16 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
     doc->renumberClustersToEnd(sel);
     clusterPalette->setFocusToList();
 
+    // Treat "move to end" as a set-changing cluster edit, like delete/split/new:
+    // run the configured post-edit automation (Preferences > Refinement) —
+    // auto-renumber to close the id gap the move leaves (a contiguous renumber
+    // preserves the new tail order, so the cluster stays at the end) and/or
+    // auto-update the matrices.  renumberClustersToEnd emits no hooked signal of
+    // its own, so this is wired explicitly.  Deferred + coalesced like the other
+    // hooks; the renumber it may trigger emits only renumber() (not hooked), so
+    // it cannot recurse.
+    scheduleAutoPostClusterEdit(true);
+
     if (sel.size() == 1) {
         statusBar()->showMessage(
             tr("Cluster %1 renumbered to end.").arg(sel.first()), 2500);
