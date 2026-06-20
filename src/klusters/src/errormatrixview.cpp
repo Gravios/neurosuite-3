@@ -59,6 +59,15 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     ordinateMax = 0;
     cellWidth = 50;
 
+    // Make the view a first-class interaction target so its wheelEvent /
+    // mousePressEvent overrides receive Ctrl+wheel (zoom) and Ctrl+drag (pan).
+    // Without this the view is embedded inside a QDockWidget → inner QMainWindow
+    // → QScrollArea (DockArea) and, left at the default NoFocus, the wheel/press
+    // never reach the overrides.  Matches TemplateMatrixView, whose identical
+    // zoom/pan interaction works because it sets these in its constructor.
+    setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
+
     initializeColorMap();
 
     //Compute the error matrix.
