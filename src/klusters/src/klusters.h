@@ -1158,8 +1158,6 @@ private:
      * Makes slotRealignFinished skip the per-cluster review dialog and
      * auto-accept the result instead.*/
     bool realignBatchActive;
-    /**Remaining cluster IDs to process in the current batch (FIFO).*/
-    QList<int> realignBatchQueue;
     /**Total number of clusters scheduled at batch start — used to render
      * the "(i/N)" progress prefix in the output tab.*/
     int realignBatchTotal;

@@ -6546,7 +6546,6 @@ void KlustersApp::slotPcaAlignAllClusters()
     // reports per-cluster progress via slotRealignClusterDone, so the
     // per-cluster thread-spawn + GUI round-trip is paid once for the batch.
     realignBatchActive       = true;
-    realignBatchQueue.clear();          // unused in single-worker batch mode
     realignBatchTotal        = clusters.size();
     realignBatchAccepted     = 0;
     realignBatchFailed       = 0;
@@ -6586,15 +6585,19 @@ void KlustersApp::slotAbortRealign()
     // skipped — finished clusters keep their pending changes (the user can
     // still Save to commit the partial batch).
     if (realignBatchActive) {
-        const int remaining = realignBatchQueue.size();
-        realignBatchQueue.clear();
+        // Clusters not yet processed when the abort lands.  (The single batch
+        // worker is asked to stop; clusters already finished keep their pending
+        // changes.)  Computed from the running counters since there is no
+        // pending-queue in single-worker batch mode.
+        const int skipped = qMax(0, realignBatchTotal
+                                    - realignBatchAccepted - realignBatchFailed);
         realignBatchActive = false;
         doc->endRealignBatchLog();   // commit the single batch "after" snapshot
         // Refresh whatever was already accepted before the abort.
         flushRealignBatchRefresh();
         if (realignProgressBar) realignProgressBar->hide();
         slotStatusMsg(tr("PCA-Center align aborted: %1 accepted, %2 skipped.")
-                      .arg(realignBatchAccepted).arg(remaining));
+                      .arg(realignBatchAccepted).arg(skipped));
     }
 
     slotStateChanged(QStringLiteral("stoppedRealignState"));
@@ -6638,81 +6641,9 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
                                      QString backupBase,
                                      int nChan, int nSamp)
 {
-    // ── Batch path ───────────────────────────────────────────────────────────
-    // PCA-Center Align All Clusters runs the same worker per cluster but
-    // skips the per-cluster review dialog and auto-accepts each result.
-    // Unused meanBefore/meanAfter/nChan/nSamp/backupBase reflect the
-    // single-cluster review-dialog interface; in batch mode we only need ok
-    // and nShifted.  When the queue empties, we finalise the batch summary
-    // and unlock the UI; otherwise we launch the next cluster.
-    if (realignBatchActive) {
-        (void)meanBefore; (void)meanAfter; (void)backupBase; (void)nChan; (void)nSamp;
-        (void)nSwapped;
-        if (ok && realignClusterId >= 0) {
-            // Auto-accept.  Defer the view refresh (cache invalidation +
-            // forceClusterRefresh) to batch end — doing it per cluster put
-            // every shown sub-view into REDRAW and launched waveform/
-            // correlogram threads against the .spk.pending on every iteration,
-            // which dominated the inter-cluster gap.  setModified is cheap and
-            // kept here so the dirty state is correct even on abort.
-            doc->setModified(true);
-            realignBatchTouched.append(realignClusterId);
-            realignBatchAccepted++;
-            realignBatchShiftedTotal += nShifted;
-        } else {
-            realignBatchFailed++;
-        }
-        realignClusterId = -1;
-
-        // Bump the status-bar progress bar by one — counts clusters whose
-        // worker has returned, regardless of ok/fail.  Done before the queue
-        // check so the bar reads N/N when the batch finalises.
-        if (realignProgressBar) {
-            realignProgressBar->setValue(
-                realignBatchAccepted + realignBatchFailed);
-        }
-
-        if (!realignBatchQueue.isEmpty()) {
-            // Advance: launch the next cluster.  The realignState lock stays
-            // applied across the whole batch — we just flip realignRunning
-            // back on for the next worker.
-            const int next = realignBatchQueue.takeFirst();
-            const int pos  = realignBatchTotal - realignBatchQueue.size();
-            slotStatusMsg(tr("PCA-Center align: cluster %1 (%2/%3) …")
-                          .arg(next).arg(pos).arg(realignBatchTotal));
-            realignRunning = true;
-            startRealignWorker(next, realignBatchArgs);
-            return;
-        }
-
-        // Batch complete.
-        realignBatchActive = false;
-        doc->endRealignBatchLog();   // commit the single batch "after" snapshot
-        // Now do the one deferred view refresh for every accepted cluster.
-        flushRealignBatchRefresh();
-        // Hide and reset the status-bar progress bar; keep the widget around
-        // so a subsequent batch can reuse it without re-adding to the bar.
-        if (realignProgressBar) realignProgressBar->hide();
-        slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
-                         "%3 spike(s) shifted total.")
-                      .arg(realignBatchAccepted)
-                      .arg(realignBatchFailed)
-                      .arg(realignBatchShiftedTotal));
-        slotStateChanged(QStringLiteral("noRealignState"));
-        // Land on the Overview Display so the user can immediately arrow-key
-        // through clusters and see the updated waveforms.
-        if (tabsParent) {
-            for (int i = 0; i < tabsParent->count(); ++i) {
-                if (tabsParent->tabText(i).contains(tr("Overview"),
-                                                    Qt::CaseInsensitive)) {
-                    tabsParent->setCurrentIndex(i);
-                    break;
-                }
-            }
-        }
-        updateUndoRedoDisplay();
-        return;
-    }
+    // (Batch / PCA-Center Align All completes via slotRealignClusterDone +
+    // slotRealignBatchFinished, not through here; applyRealignResult is the
+    // single-cluster result handler.)
 
     // Unlock the UI.
     slotStateChanged(QStringLiteral("noRealignState"));
