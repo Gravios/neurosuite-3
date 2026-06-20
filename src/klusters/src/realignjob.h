@@ -65,6 +65,9 @@ public:
      *  (one thread, clusterDone per cluster, finished once), mirroring setBatch. */
     void setBatch(const QList<int>& ids) { batchIds = ids; }
 
+    /** Mirror RealignWorker::setVerbose — stream per-spike detail to stderr. */
+    void setVerbose(bool v) { verbose = v; }
+
     QString name() const override
     {
         return batchIds.isEmpty()
@@ -75,6 +78,7 @@ public:
     void run(std::function<void()> done) override
     {
         auto* worker = new RealignWorker(doc, clusterId, args);
+        worker->setVerbose(verbose);
         if (!batchIds.isEmpty())
             worker->setBatch(batchIds);
 
@@ -127,6 +131,7 @@ private:
     LogFn        logFn;
     ClusterFn    clusterFn;
     QList<int>   batchIds;   // non-empty => batch mode
+    bool         verbose{false};
 };
 
 #endif // REALIGNJOB_H

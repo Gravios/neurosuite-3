@@ -91,6 +91,7 @@ public:
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
     void setCurationLogging(bool b)       {curationLogging = b;}
+    void setRealignVerbose(bool b)        {realignVerbose = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setAutoUpdateMatricesAfterMerge(bool b) {autoUpdateMatricesAfterMerge = b;}
@@ -191,6 +192,7 @@ public:
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     int    getRealignMode()       const {return realignMode;}
     bool   getCurationLogging()   const {return curationLogging;}
+    bool   getRealignVerbose()    const {return realignVerbose;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     bool   getAutoUpdateMatricesAfterMerge() const {return autoUpdateMatricesAfterMerge;}
@@ -269,6 +271,7 @@ public:
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     bool   getCurationLoggingDefault()   const {return true;}
+    bool   getRealignVerboseDefault()    const {return false;}
     bool   getAutoRealignAfterMergeDefault() const {return false;}
     bool   getAutoRenumberAfterMergeDefault() const {return false;}
     bool   getAutoUpdateMatricesAfterMergeDefault() const {return false;}
@@ -403,6 +406,7 @@ private:
     int     realignMaxShift;
     int     realignMode;
     bool    curationLogging;   // record per-action curation audit snapshots
+    bool    realignVerbose;    // stream per-spike realignment detail to stderr
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     bool    autoUpdateMatricesAfterMerge;  // recompute error/template/residual matrices after each merge

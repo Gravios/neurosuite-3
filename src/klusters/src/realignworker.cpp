@@ -51,16 +51,19 @@ void RealignWorker::run()
         // panel now gets one header line per cluster (below) plus the final
         // batch summary; error lines are still surfaced to the GUI.
         auto liveLog = [this](const QString& line, bool isError) {
-            if (isError) { emit logLine(line, true); return; }
-            std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
+            // Errors always surface to stderr; the per-spike detail only when
+            // the Verbose alignment logging preference is on.
+            if (isError || verbose)
+                std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
         };
         const int total = clusterIds.size();
         int accepted = 0, failed = 0, shiftedTotal = 0;
         for (int k = 0; k < total; ++k) {
             if (cancelRequested) break;
             const int id = clusterIds[k];
-            emit logLine(QStringLiteral("--- cluster %1 (%2/%3) ---")
-                         .arg(id).arg(k + 1).arg(total), false);
+            if (verbose)
+                std::fprintf(stderr, "--- cluster %d (%d/%d) ---\n",
+                             id, k + 1, total);
 
             QString logOut;
             int nsh = 0, nsw = 0;
@@ -69,14 +72,14 @@ void RealignWorker::run()
                 ok = doc->realignSpikes(id, logOut, nsh, nsw, liveLog, args,
                                           nullptr, nullptr, nullptr);
             } catch (const std::bad_alloc& e) {
-                emit logLine(QStringLiteral("ERROR: out of memory — %1")
-                             .arg(QString::fromLatin1(e.what())), true);
+                std::fprintf(stderr, "ERROR: out of memory — %s\n",
+                             e.what());
             } catch (const std::exception& e) {
-                emit logLine(QStringLiteral("ERROR: exception — %1")
-                             .arg(QString::fromLatin1(e.what())), true);
+                std::fprintf(stderr, "ERROR: exception — %s\n",
+                             e.what());
             } catch (...) {
-                emit logLine(QStringLiteral("ERROR: unknown exception in realignSpikes"),
-                             true);
+                std::fprintf(stderr,
+                             "ERROR: unknown exception in realignSpikes\n");
             }
             // realignSpikes streams its own lines via liveLog; logOut is only
             // populated when no callback is given, so it is normally empty here.
@@ -87,8 +90,8 @@ void RealignWorker::run()
                 for (const QString& line : lines) {
                     const bool isErr = line.startsWith(QLatin1String("ERROR"))
                                     || line.startsWith(QLatin1String("WARNING"));
-                    if (isErr) emit logLine(line, true);
-                    else std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
+                    if (isErr || verbose)
+                        std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
                 }
             }
 
@@ -104,9 +107,9 @@ void RealignWorker::run()
         return;
     }
 
-    // ── Single-cluster mode (unchanged) ──────────────────────────────────────
-    emit logLine(QStringLiteral("Starting realignment — cluster %1").arg(clusterId),
-                 false);
+    // ── Single-cluster mode ──────────────────────────────────────────────────
+    if (verbose)
+        std::fprintf(stderr, "Starting realignment — cluster %d\n", clusterId);
 
     QString logOut;
     int nShifted = 0;
@@ -118,7 +121,9 @@ void RealignWorker::run()
     try {
         ok = doc->realignSpikes(clusterId, logOut, nShifted, nSwapped,
             [this](const QString& line, bool isError) {
-                emit logLine(line, isError);
+                // Errors always surface to stderr; detail only when verbose.
+                if (isError || verbose)
+                    std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
             },
             args,
             &meanBefore, &meanAfter, &backupBase);
@@ -135,9 +140,10 @@ void RealignWorker::run()
     if (!logOut.isEmpty()) {
         const QStringList lines = logOut.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         for (const QString& line : lines) {
-            bool isError = line.startsWith(QLatin1String("ERROR"))
-                        || line.startsWith(QLatin1String("WARNING"));
-            emit logLine(line, isError);
+            const bool isError = line.startsWith(QLatin1String("ERROR"))
+                              || line.startsWith(QLatin1String("WARNING"));
+            if (isError || verbose)
+                std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
         }
     }
 

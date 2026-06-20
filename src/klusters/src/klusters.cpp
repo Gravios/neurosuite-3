@@ -6259,6 +6259,7 @@ void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
             applyRealignResult(ok, nShifted, nSwapped, meanBefore, meanAfter,
                                backupBase, nChan, nSamp);
         });
+    job->setVerbose(configuration().getRealignVerbose());
 
     realignQueue->enqueue(job);
 }
@@ -6276,6 +6277,7 @@ void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
 void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
 {
     auto* worker = new RealignWorker(doc, clusterId, launchArgs);
+    worker->setVerbose(configuration().getRealignVerbose());
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
 
@@ -6303,6 +6305,7 @@ void KlustersApp::startRealignBatchWorker(const QList<int>& clusterIds,
     // this single thread (see RealignWorker::setBatch / run).  The clusterId
     // ctor arg is unused in batch mode.
     auto* worker = new RealignWorker(doc, /*clusterId*/-1, launchArgs);
+    worker->setVerbose(configuration().getRealignVerbose());
     worker->setBatch(clusterIds);
     auto* thread = new QThread(this);
     worker->moveToThread(thread);

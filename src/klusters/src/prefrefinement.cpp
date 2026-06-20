@@ -27,6 +27,8 @@ int    PrefRefinement::getRealignMode() const {
 
 void   PrefRefinement::setCurationLogging(bool b) { curationLoggingCheckBox->setChecked(b); }
 bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckBox->isChecked(); }
+void   PrefRefinement::setRealignVerbose(bool b) { realignVerboseCheckBox->setChecked(b); }
+bool   PrefRefinement::getRealignVerbose() const { return realignVerboseCheckBox->isChecked(); }
 
 void   PrefRefinement::setAutoRealignAfterMerge(bool b) { autoRealignAfterMergeCheckBox->setChecked(b); }
 bool   PrefRefinement::getAutoRealignAfterMerge() const { return autoRealignAfterMergeCheckBox->isChecked(); }
