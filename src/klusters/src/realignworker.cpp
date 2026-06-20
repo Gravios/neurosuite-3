@@ -18,6 +18,9 @@ RealignWorker::RealignWorker(KlustersDoc* doc, int clusterId,
     , cancelRequested(false)
 {}
 
+// Used by ~KlustersApp to stop a still-running worker during shutdown: sets the
+// flag the batch loop checks between clusters so the thread can return and be
+// joined cleanly.  (There is no user-facing realign abort.)
 void RealignWorker::cancel()
 {
     cancelRequested = true;
@@ -100,8 +103,8 @@ void RealignWorker::run()
             emit clusterDone(k + 1, total, id, ok, nsh);
         }
         // finished payload in batch mode: ok=true unless cancelled before any
-        // work; nShifted carries the batch total, nSwapped carries the accepted
-        // count.  The GUI finaliser uses its own accumulated counters.
+        // work (shutdown); nShifted carries the batch total, nSwapped carries the
+        // accepted count.  The GUI finaliser uses its own accumulated counters.
         emit finished(!cancelRequested || accepted > 0, shiftedTotal, accepted,
                       {}, {}, QString(), nChan, nSamp);
         return;
