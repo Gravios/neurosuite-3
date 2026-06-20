@@ -6211,32 +6211,37 @@ void KlustersApp::startRealignForCluster(int clusterId)
 }
 
 // ---------------------------------------------------------------------------
-// useRealignJobQueue / enqueueRealignJob  (experimental, opt-in)
+// useRealignJobQueue / enqueueRealignJob
 //
 // Routes the single-cluster realign through a SerialJobQueue as a RealignJob,
-// instead of the direct startRealignWorker spin-up.  Opt-in via the
-// KLUSTERS_REALIGN_JOBQUEUE environment variable so the queue path can be
-// A/B-compared against the direct path on real data.
+// instead of the direct startRealignWorker spin-up.  This is now the DEFAULT
+// path; set KLUSTERS_REALIGN_DIRECT (any non-empty value) to fall back to the
+// legacy direct worker spin-up if a regression is suspected.
 //
 // The RealignJob owns the worker/thread lifecycle (including the teardown that
 // slotRealignFinished does on the direct path); the finished callback here is
 // applyRealignResult (the result-handling body extracted for exactly this), with
 // realignRunning cleared first to mirror slotRealignFinished's teardown head.
 //
-// SCOPE / KNOWN LIMITATIONS (prototype):
-//   * Single-cluster path only.  The batch path (Align All) still uses the
-//     direct startRealignWorker spin-up via slotRealignFinished's advance.
+// SCOPE / KNOWN LIMITATIONS:
+//   * Single-cluster path only.  The batch path (Align All) uses its own
+//     single-worker spin-up (startRealignBatchWorker / slotRealignBatchFinished).
 //   * Abort (slotAbortRealign) operates on realignThread/realignWorker, which
-//     the job does NOT populate — abort is not wired in queue mode yet.
-//   * All legacy guards (realignRunning, m_autoPostMergePending,
-//     processWidget->isRunning()) are intentionally KEPT; they are retired only
-//     once this path is validated on hardware.
+//     the job does NOT populate — abort is not wired in queue mode yet, so the
+//     direct fallback remains available for that case.
+//   * The legacy guards (realignRunning, autoPostMerge hand-off,
+//     processWidget->isRunning()) are still KEPT: the queue path sets/clears
+//     realignRunning exactly as the direct path did, so both paths remain valid.
+//     Retiring the guards is a separate step once queue-as-default is confirmed
+//     on hardware across a full session.
 // ---------------------------------------------------------------------------
 bool KlustersApp::useRealignJobQueue() const
 {
-    static const bool on =
-        !qEnvironmentVariableIsEmpty("KLUSTERS_REALIGN_JOBQUEUE");
-    return on;
+    // Queue is the default; KLUSTERS_REALIGN_DIRECT opts back into the legacy
+    // direct worker spin-up.
+    static const bool direct =
+        !qEnvironmentVariableIsEmpty("KLUSTERS_REALIGN_DIRECT");
+    return !direct;
 }
 
 void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
