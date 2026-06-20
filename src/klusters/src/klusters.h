@@ -473,12 +473,8 @@ private Q_SLOTS:
      * noise=0 and artifact=1) using the top 2 channels per cluster.
      * Reuses the same RealignWorker as slotRealignSpikes() but iterates
      * through the cluster list sequentially, suppresses the per-cluster
-     * review dialog, and auto-accepts each result as a pending change.
-     * Aborts cleanly via slotAbortRealign() if the user cancels.*/
+     * review dialog, and auto-accepts each result as a pending change.*/
     void slotPcaAlignAllClusters();
-
-    /**Abort a running realignment job.*/
-    void slotAbortRealign();
 
     /**Called when the realignment worker thread finishes.*/
     void slotRealignFinished(bool ok, int nShifted, int nSwapped,
@@ -793,7 +789,6 @@ private:
 
     QAction *mSplitByKnn;
     QAction *mAbortReclustering;
-    QAction *mAbortRealign;
     QAction *mRealignSpikes;
     /** PCA-centered batch realignment across every cluster (skipping
      *  noise=0 and artifact=1), using the top 2 channels per cluster.

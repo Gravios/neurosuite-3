@@ -488,10 +488,6 @@ void KlustersApp::createMenus()
     mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
     connect(mAbortReclustering, &QAction::triggered, this, &KlustersApp::slotStopRecluster);
 
-    mAbortRealign = actionMenu->addAction(tr("Abort &Realignment"));
-    mAbortRealign->setEnabled(false);
-    connect(mAbortRealign, &QAction::triggered, this, &KlustersApp::slotAbortRealign);
-
     actionMenu->addSeparator();
 
     mRealignSpikes = actionMenu->addAction(tr("R&ealign Spikes…"));
@@ -5899,7 +5895,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(false);
         mDeleteNoisySpikes->setEnabled(false);
         mAbortReclustering->setEnabled(false);
-        mAbortRealign->setEnabled(true);
         mIncreaseAmplitudeCorrelation->setEnabled(false);
         mDecreaseAmplitudeCorrelation->setEnabled(false);
         mSaveAction->setEnabled(false);
@@ -5912,7 +5907,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
-        mAbortRealign->setEnabled(false);
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);
         mRenumberAndSave->setEnabled(true);
@@ -5937,9 +5931,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDecreaseAmplitudeCorrelation->setEnabled(true);
         // Re-sync with tab state so any tab-specific disabling is reapplied.
         slotTabChange(tabsParent->currentIndex());
-
-    } else if(state == QLatin1String("stoppedRealignState")) {
-        mAbortRealign->setEnabled(false);
 
     } else if(state == QLatin1String("traceViewState")) {
         mIncreaseChannelAmplitudes->setEnabled(true);
@@ -6226,12 +6217,12 @@ void KlustersApp::startRealignForCluster(int clusterId)
 // SCOPE / KNOWN LIMITATIONS:
 //   * Single-cluster path only.  The batch path (Align All) uses its own
 //     single-worker spin-up (startRealignBatchWorker / slotRealignBatchFinished).
-//   * Abort (slotAbortRealign) operates on realignThread/realignWorker, which
-//     the job does NOT populate — abort is not wired in queue mode yet, so the
-//     direct fallback remains available for that case.
 //   * The legacy guards (realignRunning, autoPostMerge hand-off,
 //     processWidget->isRunning()) are still KEPT: the queue path sets/clears
 //     realignRunning exactly as the direct path did, so both paths remain valid.
+//     The KLUSTERS_REALIGN_DIRECT fallback is retained purely to rule out a
+//     regression without a rebuild; it is no longer needed for any feature
+//     (realignment has no abort).
 //     Retiring the guards is a separate step once queue-as-default is confirmed
 //     on hardware across a full session.
 // ---------------------------------------------------------------------------
@@ -6370,7 +6361,7 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     }
     realignWorker = nullptr;   // already deleteLater'd
 
-    // If the batch was already finalised by slotAbortRealign, do nothing more.
+    // Defensive: only finalise once (the worker emits finished exactly once).
     if (!realignBatchActive)
         return;
     realignBatchActive = false;
@@ -6566,57 +6557,6 @@ void KlustersApp::slotPcaAlignAllClusters()
     slotStateChanged(QStringLiteral("realignState"));
     slotStatusMsg(tr("PCA-Center align: 0 / %1 clusters …").arg(clusters.size()));
     startRealignBatchWorker(clusters, realignBatchArgs);
-}
-
-void KlustersApp::slotAbortRealign()
-{
-    if (!realignRunning) return;
-
-    if (realignWorker)
-        // Signal the worker to stop (non-blocking — the current realignSpikes()
-        // call will still complete; cancel() prevents re-use in batch mode).
-        qobject_cast<RealignWorker*>(realignWorker)->cancel();
-
-    if (realignThread) {
-        realignThread->quit();
-        realignThread->wait(5000);
-        delete realignThread;
-        realignThread = nullptr;
-    }
-    realignWorker  = nullptr;   // already scheduled for deleteLater
-    realignRunning = false;
-
-    // If a batch was running, drop the remaining queue and log how many were
-    // skipped — finished clusters keep their pending changes (the user can
-    // still Save to commit the partial batch).
-    if (realignBatchActive) {
-        // Clusters not yet processed when the abort lands.  (The single batch
-        // worker is asked to stop; clusters already finished keep their pending
-        // changes.)  Computed from the running counters since there is no
-        // pending-queue in single-worker batch mode.
-        const int skipped = qMax(0, realignBatchTotal
-                                    - realignBatchAccepted - realignBatchFailed);
-        realignBatchActive = false;
-        doc->endRealignBatchLog();   // commit the single batch "after" snapshot
-        // Refresh whatever was already accepted before the abort.
-        flushRealignBatchRefresh();
-        if (realignProgressBar) realignProgressBar->hide();
-        slotStatusMsg(tr("PCA-Center align aborted: %1 accepted, %2 skipped.")
-                      .arg(realignBatchAccepted).arg(skipped));
-    }
-
-    slotStateChanged(QStringLiteral("stoppedRealignState"));
-    // Restore full UI state for whichever tab is currently active.
-    slotTabChange(tabsParent->currentIndex());
-
-    // If the aborted realignment was the auto-align step of an interactive
-    // merge, still run the deferred renumber + matrix update — the merge
-    // itself happened, and the worker thread has been joined above so Data is
-    // no longer being mutated off-thread.
-    if (autoPostMergePending) {
-        autoPostMergePending = false;
-        autoPostMerge();
-    }
 }
 
 void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
