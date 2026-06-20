@@ -13,12 +13,6 @@
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-       <property name="maximumSize">
-        <size>
-         <width>32767</width>
-         <height>150</height>
-        </size>
-       </property>
        <property name="title">
         <string>Realignment (built-in xcorr)</string>
        </property>
