@@ -6,6 +6,7 @@
 #include "configuration.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -87,43 +88,33 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     // with the Display preference page, so the two stay in sync; switching it
     // here recomputes the matrix immediately with the new metric.
     QLabel* metricLabel = new QLabel("Metric:", controlBar);
-    metricCosRadio     = new QRadioButton("Cosine",  controlBar);
-    metricPearsonRadio = new QRadioButton("Pearson", controlBar);
-    metricRawRadio     = new QRadioButton("Raw",     controlBar);
-    metricDisattenRadio = new QRadioButton("Disatten.", controlBar);
-    metricFastRadio     = new QRadioButton("Fast-AP",   controlBar);
-    metricCosRadio->setToolTip("Peak normalised cross-correlation (cosine similarity) between cluster mean waveforms.");
-    metricPearsonRadio->setToolTip("Pearson correlation: removes the overlap-window mean of each waveform before normalising.");
-    metricRawRadio->setToolTip("Raw (non-normalised) peak cross-correlation, amplitude-weighted; the matrix is globally normalised so the strongest pair reads 1.0.");
-    metricDisattenRadio->setToolTip("Energy-corrected cosine: subtracts each mean waveform's noise energy (within-cluster sample variance / N) from the norms, so a same-neuron pair reads ~1.0 regardless of spike count or amplitude. Capped at 1.0.");
-    metricFastRadio->setToolTip("Energy-corrected (fast-AP) cosine: correlates only the peak +/- 8 sample window, dropping the energy-scaling post-peak after-potential that depresses high-amplitude same-neuron pairs.");
-    QButtonGroup* metricGroup = new QButtonGroup(this);
-    metricGroup->setExclusive(true);
-    metricGroup->addButton(metricCosRadio);
-    metricGroup->addButton(metricPearsonRadio);
-    metricGroup->addButton(metricRawRadio);
-    metricGroup->addButton(metricDisattenRadio);
-    metricGroup->addButton(metricFastRadio);
+    metricCombo = new QComboBox(controlBar);
+    metricCombo->addItem("Cosine");      // index 0
+    metricCombo->addItem("Pearson");     // index 1
+    metricCombo->addItem("Raw");         // index 2
+    metricCombo->addItem("Disatten.");   // index 3
+    metricCombo->addItem("Fast-AP");     // index 4
+    metricCombo->setItemData(0, "Peak normalised cross-correlation (cosine similarity) between cluster mean waveforms.", Qt::ToolTipRole);
+    metricCombo->setItemData(1, "Pearson correlation: removes the overlap-window mean of each waveform before normalising.", Qt::ToolTipRole);
+    metricCombo->setItemData(2, "Raw (non-normalised) peak cross-correlation, amplitude-weighted; the matrix is globally normalised so the strongest pair reads 1.0.", Qt::ToolTipRole);
+    metricCombo->setItemData(3, "Energy-corrected cosine: subtracts each mean waveform's noise energy (within-cluster sample variance / N) from the norms, so a same-neuron pair reads ~1.0 regardless of spike count or amplitude. Capped at 1.0.", Qt::ToolTipRole);
+    metricCombo->setItemData(4, "Energy-corrected (fast-AP) cosine: correlates only the peak +/- 8 sample window, dropping the energy-scaling post-peak after-potential that depresses high-amplitude same-neuron pairs.", Qt::ToolTipRole);
     {
         const int metric = configuration().getTemplateXcorrMetric();
-        metricCosRadio->setChecked(metric == 0);
-        metricPearsonRadio->setChecked(metric == 1);
-        metricRawRadio->setChecked(metric == 2);
-        metricDisattenRadio->setChecked(metric == 3);
-        metricFastRadio->setChecked(metric == 4);
+        metricCombo->setCurrentIndex((metric >= 0 && metric <= 4) ? metric : 0);
     }
 
     // The control bar sits on the painted backgroundColor (which can be pure
-    // black), but the labels and radio buttons would otherwise render with the
-    // application palette's default text colour — black-on-black is invisible in
-    // a light theme over a dark plot background.  Tint every text widget on the
-    // bar with the same luminance-derived contrast colour used for painted text
-    // (textColor: white on a dark background, black on a light one), so the
+    // black), but the transparent QLabels (Metric:, Threshold:, count) would
+    // otherwise render with the application palette's default text colour —
+    // black-on-black is invisible in a light theme over a dark plot background.
+    // Tint them with the same luminance-derived contrast colour used for painted
+    // text (textColor: white on a dark background, black on a light one), so the
     // labels track the background regardless of the active light/dark theme.
-    // QRadioButton/QLabel text is drawn from WindowText; Text/ButtonText are set
-    // too so the result is style-independent.  applyButton is left untouched —
-    // it is a themed QPushButton whose text already contrasts with its own
-    // button background.
+    // QLabel text is drawn from WindowText; Text/ButtonText are set too so the
+    // result is style-independent.  The metric QComboBox and the applyButton are
+    // left untouched — each draws its text against its own opaque widget
+    // background, so it already contrasts regardless of the plot colour.
     {
         const auto tintText = [this](QWidget* w){
             QPalette wp = w->palette();
@@ -133,21 +124,12 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
             w->setPalette(wp);
         };
         tintText(metricLabel);
-        tintText(metricCosRadio);
-        tintText(metricPearsonRadio);
-        tintText(metricRawRadio);
-        tintText(metricDisattenRadio);
-        tintText(metricFastRadio);
         tintText(thresholdLabel);
         tintText(countLabel);
     }
 
     bar->addWidget(metricLabel);
-    bar->addWidget(metricCosRadio);
-    bar->addWidget(metricPearsonRadio);
-    bar->addWidget(metricRawRadio);
-    bar->addWidget(metricDisattenRadio);
-    bar->addWidget(metricFastRadio);
+    bar->addWidget(metricCombo);
     bar->addWidget(thresholdLabel);
     bar->addWidget(thresholdSlider, 1);
     bar->addWidget(countLabel);
@@ -159,17 +141,9 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
             this, &TemplateMatrixView::onThresholdChanged);
     connect(applyButton, &QPushButton::clicked,
             this, &TemplateMatrixView::onApplyClicked);
-    // toggled() fires on every membership change in the exclusive group; the
-    // slot reads which radio is checked, so connecting all three is simplest.
-    connect(metricCosRadio,     &QAbstractButton::toggled,
-            this, &TemplateMatrixView::onMetricChanged);
-    connect(metricPearsonRadio, &QAbstractButton::toggled,
-            this, &TemplateMatrixView::onMetricChanged);
-    connect(metricRawRadio,     &QAbstractButton::toggled,
-            this, &TemplateMatrixView::onMetricChanged);
-    connect(metricDisattenRadio, &QAbstractButton::toggled,
-            this, &TemplateMatrixView::onMetricChanged);
-    connect(metricFastRadio,     &QAbstractButton::toggled,
+    // currentIndexChanged carries the new index; the slot reads
+    // metricCombo->currentIndex() itself, so the int arg is simply dropped.
+    connect(metricCombo, &QComboBox::currentIndexChanged,
             this, &TemplateMatrixView::onMetricChanged);
 
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
@@ -318,16 +292,8 @@ void TemplateMatrixView::updateMatrixContents()
     // refresh doesn't re-enter onMetricChanged → updateMatrixContents.
     {
         const int metric = configuration().getTemplateXcorrMetric();
-        const QSignalBlocker bCos(metricCosRadio);
-        const QSignalBlocker bPear(metricPearsonRadio);
-        const QSignalBlocker bRaw(metricRawRadio);
-        const QSignalBlocker bDis(metricDisattenRadio);
-        const QSignalBlocker bFast(metricFastRadio);
-        metricCosRadio->setChecked(metric == 0);
-        metricPearsonRadio->setChecked(metric == 1);
-        metricRawRadio->setChecked(metric == 2);
-        metricDisattenRadio->setChecked(metric == 3);
-        metricFastRadio->setChecked(metric == 4);
+        const QSignalBlocker block(metricCombo);
+        metricCombo->setCurrentIndex((metric >= 0 && metric <= 4) ? metric : 0);
     }
 
     for (TemplateMatrixThread* t : threadsToBeKill)
@@ -843,11 +809,7 @@ void TemplateMatrixView::onMetricChanged()
     // the Display preference page.  Persist immediately so the choice survives
     // restart and the preference dialog reflects it, then recompute — the
     // compute thread reads the value at run time (TemplateMatrixThread::run).
-    const int metric = metricRawRadio->isChecked()      ? 2
-                     : metricPearsonRadio->isChecked()  ? 1
-                     : metricDisattenRadio->isChecked() ? 3
-                     : metricFastRadio->isChecked()     ? 4
-                     :                                    0;
+    const int metric = metricCombo->currentIndex();   // index == metric int
     if (metric == configuration().getTemplateXcorrMetric())
         return;                       // no-op toggle (e.g. programmatic refresh)
     configuration().setTemplateXcorrMetric(metric);
