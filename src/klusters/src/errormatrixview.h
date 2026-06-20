@@ -263,6 +263,10 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
+    /**DIAGNOSTIC (opt-in via KLUSTERS_EVENT_DEBUG): logs the receiver of every
+     * Wheel / MouseButtonPress to locate where error-matrix gestures go.*/
+    bool eventFilter(QObject* obj, QEvent* ev) override;
+
 private:
     /**Color map use to represent the probabilities of the error matrix.*/
     QMap<int,QColor> colorMap;
