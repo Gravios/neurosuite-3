@@ -64,8 +64,8 @@ private:
  * started only after the current one signals completion.  This turns "only one
  * job touches Data at a time" into a structural invariant of the type, instead
  * of an invariant every curation path must re-establish by hand with ad-hoc
- * busy flags (realignRunning, autoPostMergePending, autoPostEditPending,
- * processWidget->isRunning(), ...).
+ * busy flags (realignRunning, autoPostEditPending, processWidget->isRunning(),
+ * ...).
  *
  * Threading: the queue lives on and is driven from the GUI thread, so run() and
  * the done callback are always invoked there.  Because only one job is ever
@@ -86,8 +86,9 @@ private:
  *     queue.enqueue(new LambdaJob([=]{ slotUpdateErrorMatrix(); }, "matrix"));
  *
  * The realign job (slow, background) completes before renumber starts, so the
- * race that motivated the m_autoPostMergePending dance cannot occur by
- * construction.
+ * race that motivated the old autoPostMergePending hand-off cannot occur by
+ * construction.  The post-merge step now runs exactly this way (a LambdaJob
+ * enqueued behind the RealignJob), and the hand-off flag has been retired.
  */
 class SerialJobQueue : public QObject
 {

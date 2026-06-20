@@ -3622,8 +3622,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // the (flat ~130ms) writeback is the fixed per-cluster cost.
     qint64 _rtWprepMs = 0, _rtWopenMs = 0, _rtWwriteMs = 0;
     // Gap since the previous cluster's realign finished — captures the
-    // inter-cluster overhead (worker teardown + slotRealignFinished +
-    // next-worker spin-up) that is invisible to the in-function timers.
+    // inter-cluster overhead (the batch worker's per-iteration bookkeeping and
+    // clusterDone emit) that is invisible to the in-function timers.
     const long long _nowStartMs = (long long)
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();

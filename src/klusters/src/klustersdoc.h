@@ -1180,8 +1180,8 @@ private:
     qint64   realignPcaCacheMtime = -1;
 
     /** Steady-clock ms at the end of the previous realignSpikes call, used by
-     *  NS3_REALIGN_TIMING to report the inter-cluster gap (worker teardown +
-     *  slotRealignFinished + next-worker spin-up).  -1 = no previous call. */
+     *  NS3_REALIGN_TIMING to report the inter-cluster gap (the batch worker's
+     *  per-iteration bookkeeping + clusterDone emit).  -1 = no previous call. */
     long long realignPrevEndMs = -1;
     
     /**The url of the document.*/
