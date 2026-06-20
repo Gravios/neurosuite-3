@@ -66,6 +66,15 @@ public:
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled() override;
 
+    /**Synchronously stop and clear in-flight CorrelationThreads.  Called by
+     * KlustersView::stopAllViewThreads() before cluster-mutating / .spk.pending
+     * writes so an in-flight correlogram read can't race the mutation and a
+     * thread can't post a completion event after its data is gone.  Unlike
+     * willBeKilled(), does NOT set goingToDie, so the view relaunches normally
+     * afterwards.  (CorrelationView is a ViewWidget, so without this override
+     * stopAllViewThreads's ViewWidget loop hit only the empty base virtual.)*/
+    void stopRunningThreads() override;
+
     /** Returns the size of the bins to use in the correlograms, given in miliseconds.
   *@return size of the bins.
   */

@@ -789,6 +789,21 @@ void CorrelationView::willBeKilled(){
     }
 }
 
+void CorrelationView::stopRunningThreads(){
+    // Same synchronous quiesce as WaveformView::stopAndClearThreads /
+    // TemplateMatrixView::stopRunningThreadsSync: signal each thread, wait for
+    // run() to return, delete, and drop any completion events they posted so
+    // customEvent() can't later fire with a dangling thread pointer.  Does NOT
+    // set goingToDie, so fresh correlograms can be launched afterwards.
+    for(CorrelationThread* correlationThread : threadsToBeKill)
+        correlationThread->stopProcessing();
+    for(CorrelationThread* correlationThread : threadsToBeKill)
+        while(!correlationThread->wait()){}
+    qDeleteAll(threadsToBeKill);
+    threadsToBeKill.clear();
+    QApplication::removePostedEvents(this);
+}
+
 void CorrelationView::mouseMoveEvent(QMouseEvent* event){
     //Write the current coordinates in the statusbar.
     QRect r((QRect)window);
