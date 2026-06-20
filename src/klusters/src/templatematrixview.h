@@ -14,8 +14,7 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QLabel>
-#include <QRadioButton>
-#include <QButtonGroup>
+#include <QComboBox>
 #include <vector>
 #include <utility>
 
@@ -237,12 +236,9 @@ private:
     QLabel*      thresholdLabel;
     QLabel*      countLabel;
     QPushButton* applyButton;
-    // ── metric selector (Cosine / Pearson / Raw), shares configuration().templateXcorrMetric
-    QRadioButton* metricCosRadio;
-    QRadioButton* metricPearsonRadio;
-    QRadioButton* metricRawRadio;
-    QRadioButton* metricDisattenRadio;
-    QRadioButton* metricFastRadio;
+    // ── metric selector (Cosine / Pearson / Raw / Disatten. / Fast-AP),
+    //    shares configuration().templateXcorrMetric; index == metric int.
+    QComboBox* metricCombo;
     double       currentThreshold;
     double       sliderMin;
     double       sliderMax;
