@@ -195,6 +195,7 @@ void PrefDialog::updateDialog()
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShift());
     prefRefinement->setRealignMode(configuration().getRealignMode());
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
+    prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
     prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMerge());
@@ -257,6 +258,7 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignMaxShift(prefRefinement->getRealignMaxShift());
     configuration().setRealignMode(prefRefinement->getRealignMode());
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
+    configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
     configuration().setAutoRealignAfterMerge(prefRefinement->getAutoRealignAfterMerge());
     configuration().setAutoRenumberAfterMerge(prefRefinement->getAutoRenumberAfterMerge());
     configuration().setAutoUpdateMatricesAfterMerge(prefRefinement->getAutoUpdateMatricesAfterMerge());
@@ -323,6 +325,7 @@ void PrefDialog::slotDefault()
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
     prefRefinement->setRealignMode(configuration().getRealignModeDefault());
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
+    prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());
     prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMergeDefault());

@@ -254,6 +254,19 @@
           </property>
          </widget>
         </item>
+        <item row="7" column="0">
+         <widget class="QCheckBox" name="realignVerboseCheckBox">
+          <property name="text">
+           <string>Verbose alignment logging</string>
+          </property>
+          <property name="toolTip">
+           <string>Stream the per-spike realignment detail to stderr during a realign / PCA-Center Align All run. When off, only errors and warnings are surfaced (quieter, and avoids the per-line work of forwarding the detail). The dedicated Realign output tab has been removed, so this detail now goes to the terminal. Default: off.</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
    </item>

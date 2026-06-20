@@ -29,6 +29,11 @@ public:
      *  otherwise dominates a PCA-Center Align All. */
     void setBatch(const QList<int>& ids) { clusterIds = ids; }
 
+    /** When true, the per-spike realignment detail is streamed to stderr.  When
+     *  false (default) only errors/warnings are surfaced.  Mirrors the
+     *  "Verbose alignment logging" preference. */
+    void setVerbose(bool v) { verbose = v; }
+
 public slots:
     void run();
     void cancel();
@@ -65,5 +70,6 @@ private:
     int          clusterId;
     QString      args;
     bool         cancelRequested;
+    bool         verbose{false};   // stream per-spike detail to stderr
     QList<int>   clusterIds;   // non-empty → batch mode (see setBatch)
 };

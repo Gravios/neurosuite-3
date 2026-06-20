@@ -24,6 +24,8 @@ public:
     // Curation logging (per-action audit snapshots)
     void   setCurationLogging(bool b);
     bool   getCurationLogging()   const;
+    void   setRealignVerbose(bool b);
+    bool   getRealignVerbose()    const;
 
     // Auto-run spike alignment after each interactive merge
     void   setAutoRealignAfterMerge(bool b);

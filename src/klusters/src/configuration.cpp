@@ -68,6 +68,7 @@ void Configuration::read() {
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     realignMode       = settings.value("realignMode",        0).toInt();
     curationLogging   = settings.value("curationLogging",    true).toBool();
+    realignVerbose    = settings.value("realignVerbose",     false).toBool();
     autoRealignAfterMerge = settings.value("autoRealignAfterMerge", false).toBool();
     autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", false).toBool();
     autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", false).toBool();
@@ -145,6 +146,7 @@ void Configuration::write() const {
     settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("realignMode",       realignMode);
     settings.setValue("curationLogging",   curationLogging);
+    settings.setValue("realignVerbose",    realignVerbose);
     settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);
     settings.setValue("autoRenumberAfterMerge", autoRenumberAfterMerge);
     settings.setValue("autoUpdateMatricesAfterMerge", autoUpdateMatricesAfterMerge);
