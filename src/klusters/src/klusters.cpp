@@ -3346,21 +3346,23 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // recompute touch Data on the main thread / their own threads — running
     // them together races and crashes.
     //
-    // Ordering uses the realignment UI lock: while a realignment runs, all
-    // curation (including renumber / matrix update) is disabled, so the worker
-    // has Data to itself.  So if auto-align is enabled, run it FIRST on the
-    // just-merged cluster, and defer autoPostMerge() (renumber → matrix) until
-    // the realignment finishes (applyRealignResult services autoPostMergePending).
-    // Renumber then runs on the realigned cluster — its id is still valid since
-    // nothing renamed it yet — and the matrices recompute against the final,
-    // realigned, renumbered state.  If auto-align is off (or can't run), do the
-    // renumber + matrix update immediately.
+    // If auto-align is enabled, run it FIRST on the just-merged cluster, then
+    // run autoPostMerge() (renumber → matrix) strictly after.  Ordering is by
+    // the realign job queue: the realign runs as a RealignJob and the post-merge
+    // step is enqueued right behind it as a LambdaJob, so it cannot start — and
+    // cannot touch Data — until the realignment has fully settled.  Renumber
+    // then runs on the realigned cluster (its id is still valid since nothing
+    // renamed it yet) and the matrices recompute against the final, realigned,
+    // renumbered state.  If auto-align is off (or can't run), do the renumber +
+    // matrix update immediately.
     bool deferredForRealign = false;
     if (configuration().getAutoRealignAfterMerge()
             && mergedClusterId > 1 && !realignRunning && !realignBatchActive
             && doc->clusterHasMembers(mergedClusterId)) {
-        autoPostMergePending = true;
-        startRealignForCluster(mergedClusterId);
+        startRealignForCluster(mergedClusterId);   // RealignJob on realignQueue
+        realignQueue->enqueue(new LambdaJob(       // post-merge, strictly after it
+            [this]() { autoPostMerge(); },
+            QStringLiteral("post-merge renumber+matrix")));
         deferredForRealign = true;
     }
     if (!deferredForRealign)
@@ -6556,15 +6558,6 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
         }
 
         realignClusterId = -1;
-    }
-
-    // If this realignment was the auto-align step of an interactive merge,
-    // now run the deferred renumber + matrix update — serialised strictly
-    // after the realignment (which held the UI lock).  Runs whether or not
-    // the realignment itself succeeded: the merge happened regardless.
-    if (autoPostMergePending) {
-        autoPostMergePending = false;
-        autoPostMerge();
     }
 
     // Restore undo/redo state correctly.
