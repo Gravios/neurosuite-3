@@ -476,16 +476,10 @@ private Q_SLOTS:
      * review dialog, and auto-accepts each result as a pending change.*/
     void slotPcaAlignAllClusters();
 
-    /**Called when the realignment worker thread finishes.*/
-    void slotRealignFinished(bool ok, int nShifted, int nSwapped,
-                             QVector<float> meanBefore, QVector<float> meanAfter,
-                             QString backupBase, int nChan, int nSamp);
-
-    /**Apply (and, for a single cluster, review) a completed realignment result:
-     * everything slotRealignFinished does except the worker/thread teardown.
-     * Split out with no behaviour change so the same body can be handed to
-     * RealignJob as its finished callback once the realign path runs on the
-     * SerialJobQueue (the teardown then moving into the job).*/
+    /**Apply a completed single-cluster realignment result (auto-accept, cache
+     * invalidation, view refresh, and the deferred post-merge step).  Handed to
+     * RealignJob as its finished callback; the job owns the worker/thread
+     * teardown.*/
     void applyRealignResult(bool ok, int nShifted, int nSwapped,
                             QVector<float> meanBefore, QVector<float> meanAfter,
                             QString backupBase, int nChan, int nSamp);
@@ -1124,17 +1118,16 @@ private:
     /**The thread on which realignWorker runs.*/
     QThread*  realignThread;
 
-    // ── Experimental: realign via SerialJobQueue (opt-in, A/B) ───────────────
-    /**Serialised lane for the single-cluster realign path.  Created lazily on
-     * first use.  Opt-in via the KLUSTERS_REALIGN_JOBQUEUE environment variable
-     * so the queue-driven path can be A/B-compared against the direct path on
-     * real data before the legacy busy-flag guards are retired.*/
+    // ── Realign via SerialJobQueue ───────────────────────────────────────────
+    /**Serialised lane for the single-cluster realign path (the only path now;
+     * the legacy direct worker spin-up has been removed).  Created lazily on
+     * first use.  Holding the lane for the whole realign serialises any
+     * follow-on renumber/matrix work after it, which is what the merge race
+     * needed.*/
     SerialJobQueue* realignQueue;
-    /**True iff KLUSTERS_REALIGN_JOBQUEUE is set in the environment.*/
-    bool useRealignJobQueue() const;
     /**Run the single-cluster realignment as a RealignJob on realignQueue, with
-     * applyRealignResult as the finished callback.  Mirrors startRealignWorker
-     * but the job owns the worker/thread lifecycle (incl. teardown).*/
+     * applyRealignResult as the finished callback; the job owns the worker/
+     * thread lifecycle (incl. teardown).*/
     void enqueueRealignJob(int clusterId, const QString& args);
     /**True while a realignment job is running.*/
     bool realignRunning;
@@ -1145,13 +1138,14 @@ private:
      * the post-merge renumber + matrix update (autoPostMerge) is held until the
      * realignment finishes, so the three operations run strictly in order
      * (align → renumber → matrix) instead of racing on Data.  Serviced in
-     * slotRealignFinished.*/
+     * applyRealignResult.*/
     bool autoPostMergePending = false;
 
     // ── PCA-center batch state ───────────────────────────────────────────────
     /**True while slotPcaAlignAllClusters is iterating the cluster list.
-     * Makes slotRealignFinished skip the per-cluster review dialog and
-     * auto-accept the result instead.*/
+     * The batch worker auto-accepts each result; per-cluster progress is
+     * reported via slotRealignClusterDone and finalised in
+     * slotRealignBatchFinished.*/
     bool realignBatchActive;
     /**Total number of clusters scheduled at batch start — used to render
      * the "(i/N)" progress prefix in the output tab.*/
@@ -1181,12 +1175,6 @@ private:
      * batch completion or abort.  Kept across batches to avoid widget
      * churn — only the visibility and range/value are toggled.*/
     QProgressBar* realignProgressBar;
-
-    /**Launch a single RealignWorker for @p clusterId with @p launchArgs.
-     * Encapsulates the worker / thread / signal-wiring boilerplate that
-     * both slotRealignSpikes and the batch driver need.  Caller is
-     * responsible for the output widget and UI lock state.*/
-    void startRealignWorker(int clusterId, const QString& launchArgs);
 
     /**Set up the realign output tab, lock the UI, and launch the realignment
      * worker for a single @p clusterId using the current saved settings

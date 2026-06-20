@@ -17,28 +17,25 @@ class KlustersDoc;
  * RealignJob -- adapts the asynchronous RealignWorker (and its QThread) to the
  * Job interface, so a realignment runs as one item on a SerialJobQueue.
  *
- * It owns the worker/thread lifecycle that startRealignWorker() and the cleanup
- * head of slotRealignFinished() currently hand-manage: create the worker, move
- * it to a fresh thread, stream logLine / clusterDone to the supplied callbacks
- * (delivered on the GUI thread via @p guiContext), and -- when the worker emits
- * finished -- invoke the finished callback (where the app applies / reviews the
+ * It owns the worker/thread lifecycle for the single-cluster realign: create the
+ * worker, move it to a fresh thread, stream logLine / clusterDone to the supplied
+ * callbacks (delivered on the GUI thread via @p guiContext), and -- when the
+ * worker emits finished -- invoke the finished callback (where the app applies the
  * result), tear the thread down, and only THEN call the queue's done().
  *
  * Because done() is the LAST thing to fire, the curation lane stays occupied for
- * the entire realign-and-review.  That is precisely the serialisation the merge
- * race needed: a renumber/matrix job queued after this one cannot start -- and
- * therefore cannot touch Data -- until the realignment has fully settled.  No
- * realignRunning flag, no m_autoPostMergePending hand-off.
+ * the entire realign.  That is precisely the serialisation the merge race needed:
+ * a renumber/matrix job queued after this one cannot start -- and therefore cannot
+ * touch Data -- until the realignment has fully settled.
  *
  * Threading note: the worker emits its signals on the worker thread; every
  * callback here is connected with @p guiContext as the receiver, so Qt delivers
- * them on the GUI thread (queued), exactly as the current `this`-receiver
- * connections do.  The adapter therefore touches Data only from the GUI thread.
+ * them on the GUI thread (queued).  The adapter therefore touches Data only from
+ * the GUI thread.
  *
  * Decoupling note: the adapter deliberately knows nothing about KlustersApp.
- * The finished callback is the app's existing slotRealignFinished body (minus
- * the thread teardown, which moves here); single-cluster review-dialog vs batch
- * auto-accept stays entirely on the app side.
+ * The finished callback is the app's applyRealignResult body; single-cluster vs
+ * batch auto-accept stays entirely on the app side.
  */
 class RealignJob : public Job
 {
@@ -116,7 +113,7 @@ public:
                 done();
             });
 
-        // Standard worker/thread idiom (matches startRealignWorker):
+        // Standard worker/thread idiom:
         QObject::connect(thread, &QThread::finished, worker, &QObject::deleteLater);
         QObject::connect(thread, &QThread::started,  worker, &RealignWorker::run);
         thread->start();

@@ -3350,7 +3350,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // curation (including renumber / matrix update) is disabled, so the worker
     // has Data to itself.  So if auto-align is enabled, run it FIRST on the
     // just-merged cluster, and defer autoPostMerge() (renumber → matrix) until
-    // the realignment finishes (slotRealignFinished services autoPostMergePending).
+    // the realignment finishes (applyRealignResult services autoPostMergePending).
     // Renumber then runs on the realigned cluster — its id is still valid since
     // nothing renamed it yet — and the matrices recompute against the final,
     // realigned, renumbered state.  If auto-align is off (or can't run), do the
@@ -6195,59 +6195,40 @@ void KlustersApp::startRealignForCluster(int clusterId)
         realignWorker = nullptr;
     }
 
-    if (useRealignJobQueue())
-        enqueueRealignJob(clusterId, realignArgs);
-    else
-        startRealignWorker(clusterId, realignArgs);
+    enqueueRealignJob(clusterId, realignArgs);
 }
 
 // ---------------------------------------------------------------------------
-// useRealignJobQueue / enqueueRealignJob
+// enqueueRealignJob
 //
-// Routes the single-cluster realign through a SerialJobQueue as a RealignJob,
-// instead of the direct startRealignWorker spin-up.  This is now the DEFAULT
-// path; set KLUSTERS_REALIGN_DIRECT (any non-empty value) to fall back to the
-// legacy direct worker spin-up if a regression is suspected.
+// The single-cluster realign runs through a SerialJobQueue as a RealignJob —
+// the one and only single-cluster path (the legacy direct startRealignWorker
+// spin-up has been removed).
 //
-// The RealignJob owns the worker/thread lifecycle (including the teardown that
-// slotRealignFinished does on the direct path); the finished callback here is
-// applyRealignResult (the result-handling body extracted for exactly this), with
-// realignRunning cleared first to mirror slotRealignFinished's teardown head.
+// The RealignJob owns the worker/thread lifecycle; the finished callback here
+// clears the UI-lock flag and then runs applyRealignResult (the result-handling
+// body).  Because the job holds the queue's lane for the whole realign, a
+// renumber/matrix step queued after it cannot touch Data until the realignment
+// has settled — the serialisation the merge race needed.
 //
-// SCOPE / KNOWN LIMITATIONS:
-//   * Single-cluster path only.  The batch path (Align All) uses its own
-//     single-worker spin-up (startRealignBatchWorker / slotRealignBatchFinished).
-//   * The legacy guards (realignRunning, autoPostMerge hand-off,
-//     processWidget->isRunning()) are still KEPT: the queue path sets/clears
-//     realignRunning exactly as the direct path did, so both paths remain valid.
-//     The KLUSTERS_REALIGN_DIRECT fallback is retained purely to rule out a
-//     regression without a rebuild; it is no longer needed for any feature
-//     (realignment has no abort).
-//     Retiring the guards is a separate step once queue-as-default is confirmed
-//     on hardware across a full session.
+// The batch path (Align All) is separate: startRealignBatchWorker /
+// slotRealignBatchFinished, which still use realignThread/realignWorker.
+//
+// The legacy guards (realignRunning, autoPostMerge hand-off,
+// processWidget->isRunning()) are still in place; retiring them is a separate
+// step (the post-merge renumber/matrix work has to move onto the queue first).
 // ---------------------------------------------------------------------------
-bool KlustersApp::useRealignJobQueue() const
-{
-    // Queue is the default; KLUSTERS_REALIGN_DIRECT opts back into the legacy
-    // direct worker spin-up.
-    static const bool direct =
-        !qEnvironmentVariableIsEmpty("KLUSTERS_REALIGN_DIRECT");
-    return !direct;
-}
-
 void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
 {
     if (!realignQueue)
         realignQueue = new SerialJobQueue(this);
 
-    // applyRealignResult reads realignClusterId for the view refresh, exactly as
-    // the direct path sets it in startRealignWorker.
+    // applyRealignResult reads realignClusterId for the view refresh.
     realignClusterId = clusterId;
 
     auto* job = new RealignJob(
         this, doc, clusterId, args,
-        // onFinished: clear the UI-lock flag (the teardown head of
-        // slotRealignFinished), then run the unchanged result-handling body.
+        // onFinished: clear the UI-lock flag, then run the result-handling body.
         [this](bool ok, int nShifted, int nSwapped,
                QVector<float> meanBefore, QVector<float> meanAfter,
                QString backupBase, int nChan, int nSamp) {
@@ -6258,40 +6239,6 @@ void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
     job->setVerbose(configuration().getRealignVerbose());
 
     realignQueue->enqueue(job);
-}
-
-
-// Encapsulates the QThread / RealignWorker / signal-wiring boilerplate.
-// Called by slotRealignSpikes for the single-cluster path and by
-// slotPcaAlignAllClusters (via slotRealignFinished's batch advance) for the
-// batch path.  The caller owns:
-//   * output widget setup / log header lines,
-//   * UI lock state (realignRunning + slotStateChanged("realignState")),
-//   * realignArgs persistence.
-// This helper only handles the per-cluster worker spin-up.
-// ---------------------------------------------------------------------------
-void KlustersApp::startRealignWorker(int clusterId, const QString& launchArgs)
-{
-    auto* worker = new RealignWorker(doc, clusterId, launchArgs);
-    worker->setVerbose(configuration().getRealignVerbose());
-    auto* thread = new QThread(this);
-    worker->moveToThread(thread);
-
-    // When the worker signals finished, call our slot on the GUI thread.
-    connect(worker, &RealignWorker::finished,
-            this, &KlustersApp::slotRealignFinished,
-            Qt::QueuedConnection);
-
-    // Auto-cleanup: delete the worker object after the thread exits.
-    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
-
-    // Start() triggers RealignWorker::run() via QThread::started.
-    connect(thread, &QThread::started, worker, &RealignWorker::run);
-
-    realignWorker    = worker;
-    realignThread    = thread;
-    realignClusterId = clusterId;
-    thread->start();
 }
 
 void KlustersApp::startRealignBatchWorker(const QList<int>& clusterIds,
@@ -6420,8 +6367,8 @@ void KlustersApp::flushRealignBatchRefresh()
 // Iterates every cluster ID > 1 (skipping noise=0 and artifact=1) and runs
 // PCA-centered spike realignment on each, sequentially, using the channel count
 // from the Top-Channels spin box (--topchannels N; 0 = all channels).
-// Workers are launched one at a time from slotRealignFinished's batch branch;
-// here we only set up state and kick off the first cluster.
+// A single batch worker loops over the list (startRealignBatchWorker); here we
+// only set up state and launch it.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotPcaAlignAllClusters()
 {
@@ -6557,27 +6504,6 @@ void KlustersApp::slotPcaAlignAllClusters()
     slotStateChanged(QStringLiteral("realignState"));
     slotStatusMsg(tr("PCA-Center align: 0 / %1 clusters …").arg(clusters.size()));
     startRealignBatchWorker(clusters, realignBatchArgs);
-}
-
-void KlustersApp::slotRealignFinished(bool ok, int nShifted, int nSwapped,
-                                       QVector<float> meanBefore,
-                                       QVector<float> meanAfter,
-                                       QString backupBase,
-                                       int nChan, int nSamp)
-{
-    realignRunning = false;
-
-    // Clean up thread.
-    if (realignThread) {
-        realignThread->quit();
-        realignThread->wait(2000);
-        delete realignThread;
-        realignThread = nullptr;
-    }
-    realignWorker = nullptr;   // already deleteLater'd
-
-    applyRealignResult(ok, nShifted, nSwapped, meanBefore, meanAfter,
-                       backupBase, nChan, nSamp);
 }
 
 void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
