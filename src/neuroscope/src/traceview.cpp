@@ -1201,7 +1201,10 @@ void TraceView::updateWindow(){
         if (raster && nbClusters != 0){
             int rasterTotalHeight = YTracesRasterSeparator + nbClusters * rasterHeight + (nbClusters - 1) * YRasterSpace;
 
-            ordinateMin = -(borderY + borderY/2 + (nbGps - 1) * YGroupSpace + nbShownchannels * traceVspace + nbYspaces * Yspace
+            ordinateMin = -(static_cast<long>(borderY) + borderY/2
+                            + static_cast<long>(nbGps - 1) * YGroupSpace
+                            + static_cast<long>(nbShownchannels) * traceVspace
+                            + static_cast<long>(nbYspaces) * Yspace
                             + rasterTotalHeight);
 
             Y0 = borderY/2 + (nbGps - 1) * YGroupSpace + nbShownchannels * traceVspace + nbYspaces * Yspace - (traceVspace/2)
@@ -1210,7 +1213,10 @@ void TraceView::updateWindow(){
             Y0Raster = borderY/2 + rasterTotalHeight - YTracesRasterSeparator;
         }
         else{
-            ordinateMin = -(2 * borderY + (nbGps - 1) * YGroupSpace + nbShownchannels * traceVspace + nbYspaces * Yspace);
+            ordinateMin = -(2L * borderY
+                            + static_cast<long>(nbGps - 1) * YGroupSpace
+                            + static_cast<long>(nbShownchannels) * traceVspace
+                            + static_cast<long>(nbYspaces) * Yspace);
             Y0 = borderY + (nbGps - 1) * YGroupSpace + nbShownchannels * traceVspace + nbYspaces * Yspace - (traceVspace/2);
         }
     }
@@ -1276,7 +1282,9 @@ void TraceView::updateWindow(){
 
             int rasterTotalHeight = YTracesRasterSeparator + maxNbClusters * rasterHeight + (maxNbClusters - 1) * YRasterSpace;
 
-            ordinateMin = -(borderY + borderY/2 + maxNbChannels * traceVspace + (maxNbChannels - 1) * Yspace
+            ordinateMin = -(static_cast<long>(borderY) + borderY/2
+                            + static_cast<long>(maxNbChannels) * traceVspace
+                            + static_cast<long>(maxNbChannels - 1) * Yspace
                             + rasterTotalHeight);
             Y0 = borderY/2 + maxNbChannels * traceVspace + (maxNbChannels - 1) * Yspace - (traceVspace/2)
                     + rasterTotalHeight;
@@ -1284,7 +1292,9 @@ void TraceView::updateWindow(){
             Y0Raster = borderY/2 + rasterTotalHeight - YTracesRasterSeparator;
         }
         else{
-            ordinateMin = -(2 * borderY + maxNbChannels * traceVspace + (maxNbChannels - 1) * Yspace);
+            ordinateMin = -(2L * borderY
+                            + static_cast<long>(maxNbChannels) * traceVspace
+                            + static_cast<long>(maxNbChannels - 1) * Yspace);
             Y0 = borderY + maxNbChannels * traceVspace + (maxNbChannels - 1) * Yspace - (traceVspace/2);
         }
     }
