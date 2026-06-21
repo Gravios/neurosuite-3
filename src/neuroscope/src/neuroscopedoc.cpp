@@ -25,6 +25,7 @@
 
 #include <QList>
 #include <algorithm>
+#include <memory>
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QApplication>
@@ -1327,39 +1328,34 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadClusterFile(const 
         return INCORRECT_FILE;
 
     ClustersProvider* clustersProvider = new ClustersProvider(clusterUrl,datSamplingRate,samplingRate,tracesProvider->getTotalNbSamples(),clusterPosition);
+    std::unique_ptr<ClustersProvider> clustersProviderGuard(clustersProvider);
     QString name = clustersProvider->getName();
 
     //The name should only contains digits
     if(name.contains(QRegularExpression("[^\\d]")) != 0){
-        delete clustersProvider;
         return INCORRECT_FILE;
     }
 
     if(providers.contains(name) && qobject_cast<ClustersProvider*>(providers[name])){
-        delete clustersProvider;
         return ALREADY_OPENED;
     }
 
     int returnStatus = clustersProvider->loadData();
     if(returnStatus == ClustersProvider::OPEN_ERROR){
-        delete clustersProvider;
         return OPEN_ERROR;
     }
     else if(returnStatus == ClustersProvider::MISSING_FILE){
-        delete clustersProvider;
         return MISSING_FILE;
     }
     else if(returnStatus == ClustersProvider::COUNT_ERROR){
-        delete clustersProvider;
         return CREATION_ERROR;
     }
     else if(returnStatus == ClustersProvider::INCORRECT_CONTENT){
-        delete clustersProvider;
         return INCORRECT_CONTENT;
     }
 
     lastLoadedProvider = name;
-    providers.insert(name,clustersProvider);
+    providers.insert(name,clustersProviderGuard.release());
     providerUrls.insert(name,clusterUrl);
 
     ItemColors* clusterColors = new ItemColors();
@@ -1423,11 +1419,11 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadClusterFile(const 
     if(fileInfo.lastModified() != lastModified) modified = true;
 
     ClustersProvider* clustersProvider = new ClustersProvider(clusterUrl,datSamplingRate,samplingRate,tracesProvider->getTotalNbSamples(),clusterPosition);
+    std::unique_ptr<ClustersProvider> clustersProviderGuard(clustersProvider);
     QString name = clustersProvider->getName();
 
     //The name should only contains digits
     if(name.contains(QRegularExpression("[^\\d]")) != 0){
-        delete clustersProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical(0, tr("Error!"),tr("The requested cluster file %1 has an incorrect name, it has to be of the form baseName.n.clu or baseName.clu.n, with n a number identifier. Therefore will not be loaded.").arg(clusterUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
@@ -1436,28 +1432,24 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadClusterFile(const 
 
     int returnStatus = clustersProvider->loadData();
     if(returnStatus == ClustersProvider::OPEN_ERROR){
-        delete clustersProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("Could not load the file %1").arg(clusterUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         return OPEN_ERROR;
     }
     else if(returnStatus == ClustersProvider::MISSING_FILE){
-        delete clustersProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("There is no time file (.res) corresponding to the requested file %1"
                                                   ", therefore this file will not be loaded.").arg(clusterUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         return MISSING_FILE;
     } else if(returnStatus == ClustersProvider::COUNT_ERROR) {
-        delete clustersProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("The number of spikes of the requested file %1 could not be determined."
                                                   " Therefore this file will not be loaded.").arg(clusterUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         return CREATION_ERROR;
     } else if(returnStatus == ClustersProvider::INCORRECT_CONTENT) {
-        delete clustersProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("The number of spikes read in the requested file %1 or the corresponding time file (.res) does not correspond to number of spikes computed."
                                                   " Therefore this file will not be loaded.").arg(clusterUrl));
@@ -1465,7 +1457,7 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadClusterFile(const 
         return INCORRECT_CONTENT;
     }
 
-    providers.insert(name,clustersProvider);
+    providers.insert(name,clustersProviderGuard.release());
     providerUrls.insert(name,clusterUrl);
     lastLoadedProvider = name;
 
@@ -1553,36 +1545,32 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
         return INCORRECT_FILE;
 
     EventsProvider* eventsProvider = new EventsProvider(eventUrl,samplingRate,eventPosition);
+    std::unique_ptr<EventsProvider> eventsProviderGuard(eventsProvider);
     QString name = eventsProvider->getName();
 
     //The name should contains 3 characters with at least one none digit character.
     if(name.length() != 3 || name.contains(QRegularExpression("\\d{3}"))){
-        delete eventsProvider;
         return INCORRECT_FILE;
     }
 
     if(providers.contains(name) && qobject_cast<EventsProvider*>(providers[name])){
-        delete eventsProvider;
         return ALREADY_OPENED;
     }
 
     int returnStatus = eventsProvider->loadData();
     if(returnStatus == EventsProvider::OPEN_ERROR){
-        delete eventsProvider;
         return OPEN_ERROR;
     }
     else if(returnStatus == EventsProvider::COUNT_ERROR){
-        delete eventsProvider;
         return CREATION_ERROR;
     }
     else if(returnStatus == EventsProvider::INCORRECT_CONTENT){
-        delete eventsProvider;
         return INCORRECT_CONTENT;
     }
 
     lastLoadedProvider = name;
     lastEventProviderGridX = eventsProvider->getDescriptionLength();
-    providers.insert(name,eventsProvider);
+    providers.insert(name,eventsProviderGuard.release());
     providerUrls.insert(name,eventUrl);
 
     ItemColors* eventColors = new ItemColors();
@@ -1641,11 +1629,11 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
     if(fileInfo.lastModified() != lastModified) modified = true;
 
     EventsProvider* eventsProvider = new EventsProvider(eventUrl,samplingRate,eventPosition);
+    std::unique_ptr<EventsProvider> eventsProviderGuard(eventsProvider);
     QString name = eventsProvider->getName();
 
     //The name should be of 3 characters length with at least one none digit character.
     if(name.length() != 3 || name.contains(QRegularExpression("\\d{3}"))){
-        delete eventsProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("The requested event file %1 has an incorrect name, it has to be of the form baseName.id.evt or baseName.evt.id (with id a 3 character identifier). Therefore it will not be loaded.").arg(eventUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
@@ -1655,28 +1643,25 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
     int returnStatus = eventsProvider->loadData();
 
     if(returnStatus == EventsProvider::OPEN_ERROR){
-        delete eventsProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("Could not load the file %1").arg(eventUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         return OPEN_ERROR;
     }
     else if(returnStatus == EventsProvider::COUNT_ERROR){
-        delete eventsProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("The number of events of the requested file %1 could not be determined. Therefore this file will not be loaded.").arg(eventUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         return CREATION_ERROR;
     }
     else if(returnStatus == EventsProvider::INCORRECT_CONTENT){
-        delete eventsProvider;
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (0, tr("Error!"),tr("The content of the requested file %1 is incorrect. Therefore this file will not be loaded.").arg(eventUrl));
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         return INCORRECT_CONTENT;
     }
 
-    providers.insert(name,eventsProvider);
+    providers.insert(name,eventsProviderGuard.release());
     providerUrls.insert(name,eventUrl);
     lastLoadedProvider = name;
     lastEventProviderGridX = eventsProvider->getDescriptionLength();
@@ -2034,23 +2019,22 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::createEventFile(const 
         return INCORRECT_FILE;
 
     EventsProvider* eventsProvider = new EventsProvider(eventUrl,samplingRate,eventPosition);
+    std::unique_ptr<EventsProvider> eventsProviderGuard(eventsProvider);
     const QString name = eventsProvider->getName();
 
     //The name should be of 3 characters length with at least one none digit character.
     if(name.length() != 3 || name.contains(QRegularExpression("\\d{3}"))){
-        delete eventsProvider;
         return INCORRECT_FILE;
     }
 
     if(providers.contains(name)){
-        delete eventsProvider;
         return ALREADY_OPENED;
     }
 
     lastLoadedProvider = name;
     eventsProvider->initializeEmptyProvider();
     lastEventProviderGridX = eventsProvider->getDescriptionLength();
-    providers.insert(name,eventsProvider);
+    providers.insert(name,eventsProviderGuard.release());
     providerUrls.insert(name,eventUrl);
 
     ItemColors* eventColors = new ItemColors();
@@ -2087,20 +2071,19 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadPositionFile(const
     else extensionSamplingRates.insert(positionFileExtension,videoSamplingRate);
 
     PositionsProvider* positionsProvider = new PositionsProvider(url,videoSamplingRate,videoWidth,videoHeight,rotation,flip);
+    std::unique_ptr<PositionsProvider> positionsProviderGuard(positionsProvider);
     QString name = positionsProvider->getName();
     if(providers.contains(name)){
-        delete positionsProvider;
         return ALREADY_OPENED;
     }
 
     int returnStatus = positionsProvider->loadData();
     if(returnStatus == PositionsProvider::OPEN_ERROR){
-        delete positionsProvider;
         return OPEN_ERROR;
     }
 
     lastLoadedProvider = name;
-    providers.insert(name,positionsProvider);
+    providers.insert(name,positionsProviderGuard.release());
     providerUrls.insert(name,url);
     positionFileOpenOnce = true;
 
@@ -2144,16 +2127,16 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadPositionFile(const
     else extensionSamplingRates.insert(positionFileExtension,videoSamplingRate);
 
     PositionsProvider* positionsProvider = new PositionsProvider(fileUrl,videoSamplingRate,videoWidth,videoHeight,rotation,flip);
+    std::unique_ptr<PositionsProvider> positionsProviderGuard(positionsProvider);
     QString name = positionsProvider->getName();
 
     int returnStatus = positionsProvider->loadData();
     if(returnStatus == PositionsProvider::OPEN_ERROR){
-        delete positionsProvider;
         return OPEN_ERROR;
     }
 
     lastLoadedProvider = name;
-    providers.insert(name,positionsProvider);
+    providers.insert(name,positionsProviderGuard.release());
     providerUrls.insert(name,fileUrl);
     positionFileOpenOnce = true;
 
