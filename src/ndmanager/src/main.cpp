@@ -26,6 +26,7 @@
 #include <QString>
 
 #include <QApplication>
+#include <QLocale>
 #include <QDebug>
 //Application specific include files
 #include "ndmanager.h"
@@ -39,6 +40,20 @@ int main(int argc, char **argv)
     QApplication::setApplicationName("ndmanager");
 
     QApplication app(argc, argv);
+
+    // Pin the C locale for all numeric input and formatting.  ndmanager's
+    // parameter pages (acquisition system, LFP, clusters, video, probe, ...)
+    // edit sampling rates, gains, voltage ranges and offsets through
+    // QIntValidator / QDoubleValidator line edits and spin boxes, which
+    // otherwise inherit QLocale::system(); under a locale whose decimal
+    // separator is not '.' (German uses ','), typing '.' in a double field is
+    // rejected and '.' is read as a thousands separator in integer fields, so
+    // the user cannot type the values the '.'-decimal, ungrouped Neurosuite
+    // parameter files require.  Set after the QApplication is constructed so
+    // platform locale initialisation does not overwrite it, and before any
+    // page widget is created.  Mirrors the same pin in klusters and neuroscope.
+    QLocale::setDefault(QLocale::c());
+
     QStringList args = QApplication::arguments();
     QStringList argsList;
     for (int i = 1, n = args.size(); i < n; ++i) {
