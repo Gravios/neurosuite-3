@@ -155,12 +155,15 @@ inline Result consolidate(const std::vector<double>&waves,int N,int nsamp,int nc
     }
     // per-energy temperature calibration (NLL fit per radius band)
     std::vector<double> rv(rad.begin(),rad.end()); R.edges.resize(nbands+1);
-    for(int b=0;b<=nbands;b++) R.edges[b]=pct(rv,100.0*b/nbands); R.edges[0]-=1e-6; R.edges[nbands]+=1e-6;
+    for(int b=0;b<=nbands;b++) R.edges[b]=pct(rv,100.0*b/nbands);
+    R.edges[0]-=1e-6;
+    R.edges[nbands]+=1e-6;
     int K=nfib; double hi=std::log10((double)std::max(K,2*K)); std::vector<double> Tgrid(50);
     for(int t=0;t<50;t++) Tgrid[t]=std::pow(10.0,hi*t/49.0);
     R.calT.assign(nbands,(double)nfib);
     for(int b=0;b<nbands;b++){std::vector<int> mid;for(int i=0;i<N;i++)if(rad[i]>=R.edges[b]&&rad[i]<R.edges[b+1])mid.push_back(i);
-        if((int)mid.size()<20)continue; double bN=1e18,bT=(double)nfib;
+        if((int)mid.size()<20)continue;
+        double bN=1e18,bT=(double)nfib;
         for(double T:Tgrid){double nll=0;for(int ii:mid){const double* ri=&res[(size_t)ii*nfib];double mn=1e300;for(int k=0;k<nfib;k++)mn=std::min(mn,ri[k]*ri[k]);
             double Z=0,num=0;for(int k=0;k<nfib;k++){double e=std::exp(-(ri[k]*ri[k]-mn)/(2*T));Z+=e;if(k==seed[ii])num=e;}nll+=-std::log(num/(Z+1e-12)+1e-12);}
             nll/=mid.size();if(nll<bN){bN=nll;bT=T;}}
@@ -188,8 +191,12 @@ inline void meanshift_inband(const double* dsup,const double* rsup,int nsup,int 
             for(int j=0;j<nsup;j++){ double rj=rsup[j]; if(std::fabs(rj-rss)>=dr) continue;
                 const double* dj=dsup+(size_t)j*p; double cs=0; for(int k=0;k<p;k++) cs+=dss[k]*dj[k];
                 double w=std::exp(kappa*(cs-1.0)); sw+=w; sr+=w*rj; for(int k=0;k<p;k++) acc[k]+=w*dj[k]; }
-            if(sw<1e-9) sw=1e-9; double nn=0; for(int k=0;k<p;k++) nn+=acc[k]*acc[k]; nn=std::sqrt(nn)+1e-12;
-            for(int k=0;k<p;k++) dss[k]=acc[k]/nn; rs[s]=sr/sw;
+            if(sw<1e-9) sw=1e-9;
+            double nn=0;
+            for(int k=0;k<p;k++) nn+=acc[k]*acc[k];
+            nn=std::sqrt(nn)+1e-12;
+            for(int k=0;k<p;k++) dss[k]=acc[k]/nn;
+            rs[s]=sr/sw;
         }
 }
 // dedupe converged seeds into distinct ridge centers (angle<degThr AND |Δr|/r<radFrac).
