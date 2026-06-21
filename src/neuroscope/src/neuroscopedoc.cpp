@@ -71,7 +71,7 @@ NeuroscopeDoc::NeuroscopeDoc(QWidget* parent, ChannelPalette& displayChannelPale
       amplificationDefault(amplificationDefault),
       isCommandLineProperties(false),
       channelColorList(0L),
-      tracesProvider(0L),
+      tracesProvider(nullptr),
       parent(parent),
       nbSamplesDefault(nbSamples),
       peakSampleIndexDefault(peakSampleIndex),
@@ -129,8 +129,8 @@ NeuroscopeDoc::~NeuroscopeDoc(){
     delete viewList;
     if(channelColorList){
         delete channelColorList;
-        delete tracesProvider;
     }
+    // tracesProvider (unique_ptr) is freed automatically on member destruction.
     // Overlay TracesProviders are document-owned (see addOverlayDat).
     // clear() drops the last shared_ptr to each overlay provider, freeing
     // them here — while the views still exist — so any signals they emit on
@@ -244,8 +244,7 @@ void NeuroscopeDoc::closeDocument()
     if(channelColorList){
         delete channelColorList;
         channelColorList = 0L;
-        delete tracesProvider;
-        tracesProvider = 0L;
+        tracesProvider.reset();
     }
 
     // Drop overlays so a subsequent openDocument starts clean; clear()
@@ -414,7 +413,7 @@ int NeuroscopeDoc::openDocument(const QString& url)
         }
 
         //Create the tracesProvider with the information gather before.
-        tracesProvider = new TracesProvider(docUrl,channelNb,resolution,samplingRate,initialOffset);
+        tracesProvider = std::make_unique<TracesProvider>(docUrl,channelNb,resolution,samplingRate,initialOffset);
 
         // Session file was parsed above; loadSession deferred until tracesProvider exists.
         if (sessionFileExist) {
@@ -450,7 +449,7 @@ int NeuroscopeDoc::openDocument(const QString& url)
                 extensionSamplingRates.insert(extension,samplingRate);
 
             //Create the tracesProvider with the information gather before.
-            tracesProvider = new TracesProvider(docUrl,channelNb,resolution,samplingRate,initialOffset);
+            tracesProvider = std::make_unique<TracesProvider>(docUrl,channelNb,resolution,samplingRate,initialOffset);
 
             //No group of channels exist, put all the channels in the same group (1 for the display palette and
             //-1 (the trash group) for the spike palette) and assign them the same blue color.
