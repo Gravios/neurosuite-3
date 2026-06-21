@@ -28,6 +28,8 @@
 
 #include <QEvent>
 
+#include <memory>
+
 
 
 
@@ -402,7 +404,7 @@ public:
     /// Per-overlay state held by the document.  The provider is owned
     /// by the doc; views hold non-owning pointers into the same list.
     struct OverlayTrace {
-        TracesProvider *provider = nullptr;
+        std::shared_ptr<TracesProvider> provider;
         QString         path;          // canonical filesystem path
         QString         label;         // basename used for the menu / palette
         QColor          color;         // palette colour cycled per overlay
