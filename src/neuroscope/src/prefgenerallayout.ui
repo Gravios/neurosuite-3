@@ -13,7 +13,7 @@
   <property name="windowTitle">
    <string>General</string>
   </property>
-  <layout class="QGridLayout">
+  <layout class="QGridLayout" name="mainGridLayout">
    <item row="1" column="0">
     <spacer name="spacer3">
      <property name="orientation">
