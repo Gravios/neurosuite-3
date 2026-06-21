@@ -13,7 +13,7 @@
   <property name="windowTitle">
    <string>Channel Properties</string>
   </property>
-  <layout class="QGridLayout">
+  <layout class="QGridLayout" name="mainGridLayout">
    <item row="1" column="0">
     <widget class="QGroupBox" name="groupBox1_2">
      <property name="sizePolicy">
