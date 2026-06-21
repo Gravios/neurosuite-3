@@ -1025,7 +1025,7 @@ private:
     QMap<int,int> channelDefaultOffsets;
     
     /**Provider of the channels data.*/
-    TracesProvider* tracesProvider;
+    std::unique_ptr<TracesProvider> tracesProvider;
 
     /**Overlay TracesProviders loaded after the base recording (see
      * addOverlayDat / removeOverlay).  Owned: providers are deleted in
