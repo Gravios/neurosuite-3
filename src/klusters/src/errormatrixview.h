@@ -312,6 +312,7 @@ private:
     double panCenterStartFx{0.5};// userCenterFx at drag start
     double panCenterStartFy{0.5};// userCenterFy at drag start
     static constexpr int    panDragThreshold{3};  // px before a press → pan
+    static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release
     static constexpr double wheelZoomStep{1.25};  // zoom multiplier per tick
     static constexpr double userZoomMax{20.0};    // max zoom-in factor
 
