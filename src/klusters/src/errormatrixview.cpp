@@ -32,7 +32,6 @@
 #include <QList>
 
 #include <QMouseEvent>
-#include <QWheelEvent>
 #include <QEvent>
 #include <QDebug>
 
@@ -68,14 +67,6 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     // zoom/pan interaction works because it sets these in its constructor.
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
-
-    // DIAGNOSTIC (opt-in): set KLUSTERS_EVENT_DEBUG=1 to log, for every Wheel and
-    // MouseButtonPress the application sees, the receiving widget's class and
-    // whether Ctrl is held.  Hover the error matrix and Ctrl+wheel / Ctrl+drag:
-    // if the receiver is "ErrorMatrixView" the events arrive (handler issue); if
-    // it is something else, that names the widget intercepting them.
-    if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG"))
-        qApp->installEventFilter(this);
 
     initializeColorMap();
 
@@ -521,9 +512,6 @@ void ErrorMatrixView::initializeColorMap(){
 }
 
 void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
-    if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG"))
-        qWarning("[EMV] mousePressEvent ENTERED buttons=0x%x modifiers=0x%x",
-                 (unsigned)e->buttons(), (unsigned)e->modifiers());
     // Ctrl + Left arms a pan.  We don't engage until the cursor moves past the
     // drag threshold, so a quick Ctrl-click still reaches the Ctrl-add
     // selection path in mouseReleaseEvent.  A plain press does nothing here;
@@ -675,29 +663,7 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     }
 }
 
-// DIAGNOSTIC event filter (installed only when KLUSTERS_EVENT_DEBUG is set).
-// Logs the receiving widget's class for every Wheel / MouseButtonPress so we can
-// see exactly where the error-matrix gestures are being delivered.
-bool ErrorMatrixView::eventFilter(QObject* obj, QEvent* ev){
-    const QEvent::Type t = ev->type();
-    if(t == QEvent::Wheel || t == QEvent::MouseButtonPress){
-        const Qt::KeyboardModifiers m =
-            (t == QEvent::Wheel)
-                ? static_cast<QWheelEvent*>(ev)->modifiers()
-                : static_cast<QMouseEvent*>(ev)->modifiers();
-        qWarning("[EVENT] %s receiver=%s name='%s' ctrl=%d",
-                 t == QEvent::Wheel ? "Wheel" : "Press",
-                 obj->metaObject()->className(),
-                 obj->objectName().toLocal8Bit().constData(),
-                 (m & Qt::ControlModifier) ? 1 : 0);
-    }
-    return ViewWidget::eventFilter(obj, ev);   // never consume — just observe
-}
-
 void ErrorMatrixView::wheelEvent(QWheelEvent* e){
-    if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG"))
-        qWarning("[EMV] wheelEvent ENTERED modifiers=0x%x deltaY=%d",
-                 (unsigned)e->modifiers(), e->angleDelta().y());
     // Ctrl + wheel zooms around the cursor.  Without Ctrl, defer to the base.
     // Zoom is stored as a persistent multiplier (userZoom) + centre fraction so
     // it survives matrix updates / cluster-count changes / resizes; updateWindow()
