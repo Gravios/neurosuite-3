@@ -77,7 +77,7 @@ void extract_per_channel_features(
 // range_normalise — rescale a column to [0, 1] preserving bimodality.
 // Constant columns become 0.5 (degenerate but harmless).
 // ---------------------------------------------------------------------------
-static void range_normalise(double* x, int n)
+[[maybe_unused]] static void range_normalise(double* x, int n)
 {
     if (n <= 0) return;
     double lo = x[0], hi = x[0];
