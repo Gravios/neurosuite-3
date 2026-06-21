@@ -374,7 +374,7 @@ public:
     /**Returns a pointer on the list of ItemColor objects used to represent the channel colors.
    * @return ChannelColors containing the information on the channels and their associated color.
    */
-    ChannelColors* channelColors() const {return channelColorList;}
+    ChannelColors* channelColors() const {return channelColorList.get();}
 
     /**Returns a reference on the DataProvider containing the information on the traces (TracesProvider).
    * @return TracesProvider object.
@@ -1019,7 +1019,7 @@ private:
     bool isCommandLineProperties;
 
     /**Represents the list of channels with their associated color and status.*/
-    ChannelColors* channelColorList;
+    std::unique_ptr<ChannelColors> channelColorList;
 
     /*Map given the of channels default offsets.*/
     QMap<int,int> channelDefaultOffsets;

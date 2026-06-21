@@ -70,7 +70,7 @@ NeuroscopeDoc::NeuroscopeDoc(QWidget* parent, ChannelPalette& displayChannelPale
       voltageRangeDefault(voltageRangeDefault),
       amplificationDefault(amplificationDefault),
       isCommandLineProperties(false),
-      channelColorList(0L),
+      channelColorList(nullptr),
       tracesProvider(nullptr),
       parent(parent),
       nbSamplesDefault(nbSamples),
@@ -127,10 +127,8 @@ NeuroscopeDoc::NeuroscopeDoc(QWidget* parent, ChannelPalette& displayChannelPale
 
 NeuroscopeDoc::~NeuroscopeDoc(){
     delete viewList;
-    if(channelColorList){
-        delete channelColorList;
-    }
-    // tracesProvider (unique_ptr) is freed automatically on member destruction.
+    // channelColorList and tracesProvider (unique_ptr) are freed automatically
+    // on member destruction.
     // Overlay TracesProviders are document-owned (see addOverlayDat).
     // clear() drops the last shared_ptr to each overlay provider, freeing
     // them here — while the views still exist — so any signals they emit on
@@ -242,8 +240,7 @@ void NeuroscopeDoc::closeDocument()
     displayGroupsClusterFile.clear();
 
     if(channelColorList){
-        delete channelColorList;
-        channelColorList = 0L;
+        channelColorList.reset();
         tracesProvider.reset();
     }
 
@@ -255,13 +252,13 @@ void NeuroscopeDoc::closeDocument()
 }
 
 bool NeuroscopeDoc::isADocumentToClose(){
-    return (channelColorList != 0L);
+    return (channelColorList != nullptr);
 }
 
 
 int NeuroscopeDoc::openDocument(const QString& url)
 {
-    channelColorList = new ChannelColors();
+    channelColorList = std::make_unique<ChannelColors>();
     docUrl = url;
 
     //We look for the general information:
@@ -536,7 +533,7 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::saveSession(){
         yamlMod.setNeuroscopeVideoInformation(rotation, flip, backgroundImage,
                                                drawPositionsOnBackground);
         yamlMod.setMiscellaneousInformation(screenGain, traceBackgroundImage);
-        if (!yamlMod.setChannelDisplayInformation(channelColorList,
+        if (!yamlMod.setChannelDisplayInformation(channelColorList.get(),
                                                    displayChannelsGroups,
                                                    channelDefaultOffsets))
             return PARSE_ERROR;
@@ -964,9 +961,9 @@ void NeuroscopeDoc::setChannelNb(int nb){
 
 
         //Update and show the channel Palettes.
-        displayChannelPalette.createChannelLists(channelColorList,&displayGroupsChannels,&displayChannelsGroups);
+        displayChannelPalette.createChannelLists(channelColorList.get(),&displayGroupsChannels,&displayChannelsGroups);
         displayChannelPalette.updateShowHideStatus(groupOne,false);
-        spikeChannelPalette.createChannelLists(channelColorList,&spikeGroupsChannels,&channelsSpikeGroups);
+        spikeChannelPalette.createChannelLists(channelColorList.get(),&spikeGroupsChannels,&channelsSpikeGroups);
         spikeChannelPalette.updateShowHideStatus(groupOne,false);
 
         //Resize the panel
