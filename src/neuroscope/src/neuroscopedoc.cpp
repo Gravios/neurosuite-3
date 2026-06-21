@@ -132,9 +132,9 @@ NeuroscopeDoc::~NeuroscopeDoc(){
         delete tracesProvider;
     }
     // Overlay TracesProviders are document-owned (see addOverlayDat).
-    // Free them before clearing the list so any signals they emit on
+    // clear() drops the last shared_ptr to each overlay provider, freeing
+    // them here — while the views still exist — so any signals they emit on
     // teardown are seen by their connected slots, not deleted views.
-    for(const OverlayTrace &ov : mOverlayTraces) delete ov.provider;
     mOverlayTraces.clear();
     qDeleteAll(providers);
     providers.clear();
@@ -248,8 +248,8 @@ void NeuroscopeDoc::closeDocument()
         tracesProvider = 0L;
     }
 
-    // Drop overlays so a subsequent openDocument starts clean.
-    for(const OverlayTrace &ov : mOverlayTraces) delete ov.provider;
+    // Drop overlays so a subsequent openDocument starts clean; clear()
+    // releases the shared_ptr-owned providers.
     mOverlayTraces.clear();
 
     channelDefaultOffsets.clear();
@@ -1055,7 +1055,7 @@ void NeuroscopeDoc::setProviders(NeuroscopeView* activeView){
     // registered into the `providers` hash above (they are tracked
     // separately in mOverlayTraces), so they need an explicit pass.
     for (const OverlayTrace &ov : mOverlayTraces)
-        newView->addOverlayProvider(ov.provider, ov.label, ov.color);
+        newView->addOverlayProvider(ov.provider.get(), ov.label, ov.color);
 }
 
 void NeuroscopeDoc::setWaveformInformation(int nb,int index,NeuroscopeView* activeView){
@@ -2776,7 +2776,8 @@ bool NeuroscopeDoc::addOverlayDat(const QString &path, QString *errorOut)
             "Cannot overlay a .dat file on an .%1 — sampling rates differ.")
             .arg(baseExt));
 
-    TracesProvider *prov = new TracesProvider(canonical, channelNb,
+    std::shared_ptr<TracesProvider> prov = std::make_shared<TracesProvider>(
+                                              canonical, channelNb,
                                               resolution, samplingRate,
                                               initialOffset);
 
@@ -2809,7 +2810,7 @@ bool NeuroscopeDoc::addOverlayDat(const QString &path, QString *errorOut)
     // ----- Notify every existing view ------------------------------------
     if (viewList) {
         for (NeuroscopeView *v : *viewList) {
-            if (v) v->addOverlayProvider(prov, overlay.label, overlay.color);
+            if (v) v->addOverlayProvider(prov.get(), overlay.label, overlay.color);
         }
     }
 
@@ -2830,10 +2831,11 @@ void NeuroscopeDoc::removeOverlay(const QString &path)
         // hit a freed slot target.
         if (viewList) {
             for (NeuroscopeView *v : *viewList) {
-                if (v) v->removeOverlayProvider(mOverlayTraces[i].provider);
+                if (v) v->removeOverlayProvider(mOverlayTraces[i].provider.get());
             }
         }
-        delete mOverlayTraces[i].provider;
+        // removeAt destroys the OverlayTrace, dropping the last shared_ptr to
+        // the provider and freeing it — after the views have disconnected.
         mOverlayTraces.removeAt(i);
         return;
     }
