@@ -65,7 +65,7 @@ bool SessionYamlReader::parseFile(const QString& path)
     YAML::Node sess = root["neuroscope_session"];
     if (!sess) return false;
 
-    m_version = QString::fromStdString(safeGet<std::string>(sess,"version",""));
+    version = QString::fromStdString(safeGet<std::string>(sess,"version",""));
 
     // ── files ─────────────────────────────────────────────────────────────
     YAML::Node filesNode = sess["files"];
