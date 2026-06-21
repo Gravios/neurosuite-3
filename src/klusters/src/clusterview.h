@@ -276,6 +276,9 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
+    /**Ctrl+wheel zooms toward the cursor (Ctrl+drag pans).  Without Ctrl the
+     * event defers to the base ViewWidget/BaseFrame handling.*/
+    void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     virtual  void mouseDoubleClickEvent(QMouseEvent* event) override {
         //Trigger parent event
@@ -307,6 +310,17 @@ private:
   * set manually (via zoom or updatedDimensions).
   */
     bool autoscaleEnabled = false;
+
+    // ── Ctrl+wheel zoom / Ctrl+drag pan (drives the inherited BaseFrame
+    //    ZoomWindow directly, like the rubber-band zoom).  Ctrl distinguishes
+    //    navigation from the selection / click-zoom modes. ──
+    bool   ctrlPanArmed{false};     // Ctrl+Left seen; awaiting drag threshold
+    bool   ctrlPanning{false};      // threshold crossed → actively panning
+    QPoint ctrlPanAnchorPx;         // viewport pixel where the Ctrl-drag began
+    long   ctrlPanPressWorldX{0};   // world point under the cursor at press
+    long   ctrlPanPressWorldY{0};   // (kept fixed so the grab point tracks the cursor)
+    static constexpr int   ctrlPanDragThreshold{3};   // px before a press becomes a pan
+    static constexpr float ctrlWheelZoomStep{1.25f};  // zoom factor per wheel notch
 
 Q_SIGNALS:
     void moveToTime(long startTime);

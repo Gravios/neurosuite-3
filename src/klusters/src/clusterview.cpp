@@ -26,6 +26,7 @@
 #include "timer.h"
 #include <QDebug>
 #include <QKeyEvent>
+#include <QWheelEvent>
 
 //General C++ include files
 #include <math.h>
@@ -468,6 +469,21 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
 
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
+    // Ctrl+Left arms a pan and takes precedence over every selection / zoom mode
+    // (it is a navigation gesture).  Don't forward to the base, so no rubber-band
+    // is started.
+    if((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        ctrlPanArmed       = true;
+        ctrlPanning        = false;
+        ctrlPanAnchorPx    = e->position().toPoint();
+        const QPoint w     = viewportToWorld(ctrlPanAnchorPx.x(), ctrlPanAnchorPx.y());
+        ctrlPanPressWorldX = w.x();
+        ctrlPanPressWorldY = w.y();
+        setCursor(Qt::ClosedHandCursor);
+        e->accept();
+        return;
+    }
+
     //Defining a time window t oupdate the Traceview
     if(mode == SELECT_TIME){
         QPoint current = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
@@ -535,9 +551,39 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
 }
 
 void ClusterView::mouseReleaseEvent(QMouseEvent* event){
+    // End a Ctrl+drag pan.  Ctrl+Left is fully owned by the pan gesture (its
+    // press was intercepted, so the base never started a rubber-band / click-zoom)
+    // — consume the release whether or not a drag actually occurred.
+    if(ctrlPanArmed){
+        ctrlPanArmed = false;
+        ctrlPanning  = false;
+        unsetCursor();
+        event->accept();
+        return;
+    }
     //Trigger parent event
     ViewWidget::mouseReleaseEvent(event);
     statusBar->clearMessage();
+}
+
+// Ctrl + wheel zooms toward the cursor (factor>1 enlarges, i.e. shrinks the
+// ZoomWindow toward the cursor; factor<1 zooms out).  Without Ctrl the event is
+// handed to the base so existing wheel behaviour is unchanged.
+void ClusterView::wheelEvent(QWheelEvent* e){
+    if(!(e->modifiers() & Qt::ControlModifier)){
+        ViewWidget::wheelEvent(e);
+        return;
+    }
+    const int delta = e->angleDelta().y();
+    if(delta == 0){ e->accept(); return; }
+    const float factor = (delta > 0) ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
+    const QPoint w = viewportToWorld(e->position().toPoint().x(),
+                                     e->position().toPoint().y());
+    if(window.zoom(factor, static_cast<float>(w.x()), static_cast<float>(w.y()))){
+        drawContentsMode = REDRAW;
+        update();
+    }
+    e->accept();
 }
 
 void ClusterView::keyPressEvent(QKeyEvent* e){
@@ -643,6 +689,31 @@ void ClusterView::autoscaleToVisibleClusters()
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
+    // Ctrl+drag pan: keep the world point grabbed at press under the cursor.
+    // Re-centre the window each move (size unchanged) — zoom(1.0, c) recentres
+    // and clamps to the full extent.  Computed against the current window so it
+    // does not drift as the view moves.
+    if(ctrlPanArmed && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        const QPoint dpx = e->position().toPoint() - ctrlPanAnchorPx;
+        if(!ctrlPanning && (qAbs(dpx.x()) + qAbs(dpx.y()) >= ctrlPanDragThreshold))
+            ctrlPanning = true;
+        if(ctrlPanning){
+            const QPoint cw = viewportToWorld(e->position().toPoint().x(),
+                                              e->position().toPoint().y());
+            const QRect  wr = (QRect)window;
+            const double curCx = wr.left() + wr.width()  / 2.0;
+            const double curCy = wr.top()  + wr.height() / 2.0;
+            const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
+            const double newCy = curCy - static_cast<double>(cw.y() - ctrlPanPressWorldY);
+            if(window.zoom(1.0f, static_cast<float>(newCx), static_cast<float>(newCy))){
+                drawContentsMode = REDRAW;
+                update();
+            }
+        }
+        e->accept();
+        return;
+    }
+
     //Write the current coordinates in the statusbar.
     QPoint current = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
 
