@@ -33,36 +33,36 @@ public:
 
     bool parseFile(const QString& path, fileType type = PARAMETER)
     {
-        m_type = type;
-        bool ok = m_reader.parseFile(path);
+        this->type = type;
+        bool ok = reader.parseFile(path);
         if (ok) {
             // Pre-load video info so all getters below are O(1).
-            m_reader.getNeuroscopeVideoInfo(m_videoInfo);
+            reader.getNeuroscopeVideoInfo(videoInfo);
         }
         return ok;
     }
-    void closeFile() { m_reader.closeFile(); }
+    void closeFile() { reader.closeFile(); }
 
-    QString  getVersion() const { return m_reader.getVersion(); }
-    fileType getType()    const { return m_type; }
+    QString  getVersion() const { return reader.getVersion(); }
+    fileType getType()    const { return type; }
 
     // ---- Acquisition system ----
-    int    getResolution()     const { return m_reader.getResolution(); }
-    int    getNbChannels()     const { return m_reader.getNbChannels(); }
-    double getSamplingRate()   const { return m_reader.getSamplingRate(); }
+    int    getResolution()     const { return reader.getResolution(); }
+    int    getNbChannels()     const { return reader.getNbChannels(); }
+    double getSamplingRate()   const { return reader.getSamplingRate(); }
     double getUpsamplingRate() const { return 0.0; }
-    int    getVoltageRange()   const { return m_reader.getVoltageRange(); }
-    int    getAmplification()  const { return m_reader.getAmplification(); }
-    int    getOffset()         const { return m_reader.getOffset(); }
+    int    getVoltageRange()   const { return reader.getVoltageRange(); }
+    int    getAmplification()  const { return reader.getAmplification(); }
+    int    getOffset()         const { return reader.getOffset(); }
 
     // ---- Field potentials ----
-    double getLfpInformation() const { return m_reader.getLfpSamplingRate(); }
+    double getLfpInformation() const { return reader.getLfpSamplingRate(); }
 
     // ---- NeuroScope display ----
-    float   getScreenGain()           const { return m_reader.getScreenGain(); }
-    int     getNbSamples()            const { return m_reader.getNbSamplesSpikes(); }
-    int     getPeakSampleIndex()      const { return m_reader.getPeakSampleIndexSpikes(); }
-    QString getTraceBackgroundImage() const { return m_reader.getTraceBackgroundImage(); }
+    float   getScreenGain()           const { return reader.getScreenGain(); }
+    int     getNbSamples()            const { return reader.getNbSamplesSpikes(); }
+    int     getPeakSampleIndex()      const { return reader.getPeakSampleIndexSpikes(); }
+    QString getTraceBackgroundImage() const { return reader.getTraceBackgroundImage(); }
 
     float getWaveformLength()   const { return 0.0f; }
     float getPeakSampleLength() const { return 0.0f; }
@@ -73,25 +73,25 @@ public:
     QList<ChannelDescription> getChannelDescription() const
     {
         QList<ChannelDescription> result;
-        m_reader.getChannelColors(result);
+        reader.getChannelColors(result);
         return result;
     }
 
     void getChannelDefaultOffset(QMap<int,int>& offsets)
-    { m_reader.getChannelDefaultOffset(offsets); }
+    { reader.getChannelDefaultOffset(offsets); }
 
     // ---- Anatomical / spike description ----
     void getAnatomicalDescription(int nbChannels,
                                   QMap<int,int>&         displayChannelsGroups,
                                   QMap<int,QList<int>>&  displayGroupsChannels,
                                   QMap<int,bool>&        skipStatus)
-    { m_reader.getAnatomicalDescription(nbChannels, displayChannelsGroups,
+    { reader.getAnatomicalDescription(nbChannels, displayChannelsGroups,
                                         displayGroupsChannels, skipStatus); }
 
     void getSpikeDescription(int nbChannels,
                              QMap<int,int>&         spikeChannelsGroups,
                              QMap<int,QList<int>>&  spikeGroupsChannels)
-    { m_reader.getSpikeDescription(nbChannels, spikeChannelsGroups,
+    { reader.getSpikeDescription(nbChannels, spikeChannelsGroups,
                                    spikeGroupsChannels); }
 
     // ---- Session fields (not in YAML parameter files) ----
@@ -100,7 +100,7 @@ public:
     QMap<QString,double>      getSampleRateByExtension()
     {
         QMap<QString,double> result;
-        m_reader.getSampleRateByExtension(result);
+        reader.getSampleRateByExtension(result);
         return result;
     }
 
@@ -108,16 +108,16 @@ public:
     // YAML parameter files store video dimensions in the top-level "video"
     // section (written by ndmanager).  Neuroscope-specific fields (rotation,
     // flip, trajectory, background image) live in neuroscope/video and are
-    // pre-loaded by parseFile into m_videoInfo.
+    // pre-loaded by parseFile into videoInfo.
     int     getVideoWidth()      const { return 0; }   // top-level video not read by neuroscope
     int     getVideoHeight()     const { return 0; }
-    int     getRotation()        const { return m_videoInfo.getRotation(); }
-    int     getFlip()            const { return m_videoInfo.getFlip(); }
-    int     getTrajectory()      const { return m_videoInfo.getTrajectory(); }
-    QString getBackgroundImage() const { return m_videoInfo.getBackgroundImage(); }
+    int     getRotation()        const { return videoInfo.getRotation(); }
+    int     getFlip()            const { return videoInfo.getFlip(); }
+    int     getTrajectory()      const { return videoInfo.getTrajectory(); }
+    QString getBackgroundImage() const { return videoInfo.getBackgroundImage(); }
 
 private:
-    ParameterYamlReader m_reader;
-    NeuroscopeVideoInfo m_videoInfo;
-    fileType            m_type = PARAMETER;
+    ParameterYamlReader reader;
+    NeuroscopeVideoInfo videoInfo;
+    fileType            type = PARAMETER;
 };

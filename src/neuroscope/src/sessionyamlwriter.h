@@ -62,6 +62,6 @@ public:
     bool writeTofile(const QString& url);
 
 private:
-    QList<SessionFile>        m_files;
-    QList<DisplayInformation> m_displays;
+    QList<SessionFile>        files;
+    QList<DisplayInformation> displays;
 };

@@ -52,8 +52,8 @@ static QMap<QString,QList<int>> fileUrlMap(const YAML::Node& seq,
 // ─────────────────────────────────────────────────────────────────────────
 bool SessionYamlReader::parseFile(const QString& path)
 {
-    m_files.clear();
-    m_displays.clear();
+    files.clear();
+    displays.clear();
 
     YAML::Node root;
     try {
@@ -68,9 +68,9 @@ bool SessionYamlReader::parseFile(const QString& path)
     m_version = QString::fromStdString(safeGet<std::string>(sess,"version",""));
 
     // ── files ─────────────────────────────────────────────────────────────
-    YAML::Node files = sess["files"];
-    if (files && files.IsSequence()) {
-        for (const auto& f : files) {
+    YAML::Node filesNode = sess["files"];
+    if (filesNode && filesNode.IsSequence()) {
+        for (const auto& f : filesNode) {
             SessionFile sf;
             sf.setType(static_cast<SessionFile::type>(safeGet<int>(f,"type",0)));
             sf.setUrl(QUrl(QString::fromStdString(safeGet<std::string>(f,"url",""))));
@@ -88,7 +88,7 @@ bool SessionYamlReader::parseFile(const QString& path)
                         sf.setItemColor(id, color);
                 }
             }
-            m_files << sf;
+            files << sf;
         }
     }
 
@@ -152,7 +152,7 @@ bool SessionYamlReader::parseFile(const QString& path)
             di.setSelectedChannelIds(intList(d["channelsSelected"]));
             di.setChannelIds(intList(d["channelsShown"]));
 
-            m_displays << di;
+            displays << di;
         }
     }
 

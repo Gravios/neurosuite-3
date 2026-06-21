@@ -43,12 +43,12 @@ static void writeFileUrlMap(QTextStream& o,
 // ── public API ────────────────────────────────────────────────────────────
 void SessionYamlWriter::setLoadedFilesInformation(const QList<SessionFile>& fileList)
 {
-    m_files = fileList;
+    files = fileList;
 }
 
 void SessionYamlWriter::setDisplayInformation(const QList<DisplayInformation>& displayList)
 {
-    m_displays = displayList;
+    displays = displayList;
 }
 
 bool SessionYamlWriter::writeTofile(const QString& url)
@@ -63,11 +63,11 @@ bool SessionYamlWriter::writeTofile(const QString& url)
     o << "  version: \"3.0.0\"\n";
 
     // ── files ─────────────────────────────────────────────────────────────
-    if (m_files.isEmpty()) {
+    if (files.isEmpty()) {
         o << "  files: []\n";
     } else {
         o << "  files:\n";
-        for (const SessionFile& sf : m_files) {
+        for (const SessionFile& sf : files) {
             o << "    - type: "  << static_cast<int>(sf.getType()) << '\n';
             o << "      url: "   << escape(sf.getUrl().toString())  << '\n';
             o << "      date: "  << escape(sf.getModification().toString(Qt::ISODate)) << '\n';
@@ -86,11 +86,11 @@ bool SessionYamlWriter::writeTofile(const QString& url)
     }
 
     // ── displays ──────────────────────────────────────────────────────────
-    if (m_displays.isEmpty()) {
+    if (displays.isEmpty()) {
         o << "  displays: []\n";
     } else {
         o << "  displays:\n";
-        for (const DisplayInformation& di : m_displays) {
+        for (const DisplayInformation& di : displays) {
             o << "    - tabLabel: "           << escape(di.getTabLabel()) << '\n';
             o << "      showLabels: "         << di.getLabelStatus()      << '\n';
             o << "      startTime: "          << di.getStartTime()        << '\n';

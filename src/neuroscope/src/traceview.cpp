@@ -825,7 +825,7 @@ void TraceView::paintEvent ( QPaintEvent*){
         drawTimeLine(&p);
     }
 
-    if (mode == SELECT_EVENT && !selectedEvent.first.isEmpty() && !m_selectPoint.isNull()) {
+    if (mode == SELECT_EVENT && !selectedEvent.first.isEmpty() && !selectPoint.isNull()) {
         //set the window (part of the world I want to show)
         QRect r((QRect)window);
         p.setViewport(viewport);
@@ -839,7 +839,7 @@ void TraceView::paintEvent ( QPaintEvent*){
         p.setBrush(Qt::NoBrush);
         int top = r.top();
         int bottom = r.bottom();
-        p.drawLine(m_selectPoint.x(),top,m_selectPoint.x(),bottom);
+        p.drawLine(selectPoint.x(),top,selectPoint.x(),bottom);
     }
 
     if (mMoveSelectChannel) {
@@ -864,7 +864,7 @@ void TraceView::paintEvent ( QPaintEvent*){
 				int initialBasePosition = channelsStartingOrdinate[*channelIterator] +  static_cast<long>(data(1,*channelIterator + 1) * channelFactors[*channelIterator]);
             //draw the new trace
             int X = channelsStartingAbscissa[*channelIterator];
-            int delta = m_currentPoint.y() - lastClickOrdinate;
+            int delta = currentPoint.y() - lastClickOrdinate;
 
             int basePosition = initialBasePosition + delta;
             if (downSampling != 1){
@@ -2762,7 +2762,7 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
     //Paint the channels selected while dragging
     if (mode == SELECT && !mSelectedChannels.isEmpty() && (event->buttons() == Qt::LeftButton)){
         mMoveSelectChannel = true;
-        m_currentPoint = current;
+        currentPoint = current;
         update();
         previousDragOrdinate = current.y();
     }
@@ -2837,8 +2837,8 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
             //draw the new line
             previousDragAbscissa = x;
         }
-        m_selectPoint = QPoint(currentAbscissa, 0);
-        m_currentPoint = QPoint(currentAbscissa, 0);
+        selectPoint = QPoint(currentAbscissa, 0);
+        currentPoint = QPoint(currentAbscissa, 0);
         update();
 
 
@@ -3393,7 +3393,7 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
             selectedEvent.second = 0;
             startEventDragging = true;
             drawContentsMode = REDRAW;
-            m_selectPoint = QPoint();
+            selectPoint = QPoint();
             //Redraw
             update();
         }
