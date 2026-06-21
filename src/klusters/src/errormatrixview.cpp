@@ -237,7 +237,16 @@ void ErrorMatrixView::updateWindow(){
     heightBorder = (cellWidth * nbOfClusters) / 30;
 
     abscissaMax =  2 * widthBorder + (cellWidth * nbOfClusters);
-    ordinateMin = -(2 * heightBorder + (cellWidth * nbOfClusters));
+    // widthBorder/heightBorder are unsigned, so the bare unary minus below would
+    // evaluate in unsigned arithmetic and wrap (e.g. -6390 -> 2^32-6390), landing
+    // a huge positive value in the signed `ordinateMin`.  The paint path hid this
+    // because QPoint truncates back to 32 bits, but applyViewToWindow computes
+    // fullH = ordinateMax - ordinateMin as a double from the untruncated long,
+    // gets a large negative fullH, and short-circuits to "full view" on every
+    // call — silently discarding all wheel-zoom and Ctrl-drag-pan.  Force signed
+    // arithmetic so ordinateMin is a proper negative.
+    ordinateMin = -(2L * static_cast<long>(heightBorder)
+                    + static_cast<long>(cellWidth) * nbOfClusters);
 
     // Derive the ZoomWindow from the persistent zoom/pan state.  The zoom is a
     // multiplier re-applied on top of the always-recomputed fit (never read back
