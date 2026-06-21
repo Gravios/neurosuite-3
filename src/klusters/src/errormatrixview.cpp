@@ -560,15 +560,17 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
-    // If a Ctrl-drag pan was in progress, finish it and swallow the click so it
-    // doesn't register as a selection.  A Ctrl-press that never crossed the
-    // drag threshold (panArmed but !panning) falls through to the normal
-    // selection logic below — there the Ctrl modifier means "add pair".
+    // If the Ctrl+Left gesture moved at all it is navigation (zoom/pan), not a
+    // selection: swallow the release so it doesn't toggle a cell.  Only a
+    // stationary Ctrl-click (no movement) falls through to the Ctrl-add multi-
+    // select path below.  (Wheel-zoom never reaches this handler, so it never
+    // changes the selection either.)
     if(panArmed){
+        const int moved = (e->position().toPoint() - panAnchorPx).manhattanLength();
         panArmed = false;
+        panning  = false;
         unsetCursor();
-        if(panning){
-            panning = false;
+        if(moved >= selectionSuppressMove){
             e->accept();
             return;
         }
