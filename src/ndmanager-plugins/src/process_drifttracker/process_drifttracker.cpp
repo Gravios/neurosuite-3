@@ -404,7 +404,7 @@ void usage(const char* prog) {
         "                          the shared population drift (outliers).\n"
         "                          2–3 iterations typically converge.\n"
         "  --shared-drift-huber-k K  Huber breakpoint in MAD-multiples\n"
-        "                          (default 1.345 — Huber's 95% efficiency).\n"
+        "                          (default 1.345 — Huber's 95%% efficiency).\n"
         "                          Smaller = more aggressive outlier\n"
         "                          rejection; larger = closer to L2 mean.\n"
         "  --shared-drift-tol T    Early-exit tolerance: stop iterating\n"
