@@ -564,7 +564,7 @@ public:
     /**Returns the item color list for the given provider.
     * @param fileName name of the file containing the data of the provider.
     */
-    ItemColors* providerColorList(const QString &fileName){return providerItemColors[fileName];}
+    ItemColors* providerColorList(const QString &fileName){return providerItemColors[fileName].get();}
 
     /**Loads the cluster file identified by @p clusterUrl.
     * @param clusterUrl url of the cluster file to load.
@@ -1073,7 +1073,7 @@ private:
     float indexLengthDefault;
 
     /** Dictionary between the provider names and the provider except the TracesProvider.*/
-    QHash<QString,DataProvider*> providers;
+    QHash<QString,std::shared_ptr<DataProvider>> providers;
 
     /**Map between the provider's name display at the top of the palette and the paths to the provider's file.*/
     QMap<QString,QString> providerUrls;
@@ -1082,7 +1082,7 @@ private:
     QString lastLoadedProvider;
 
     /**Dictionary between the provider names and the item color lists except for the TracesProvider.*/
-    QHash<QString,ItemColors*> providerItemColors;
+    QHash<QString,std::shared_ptr<ItemColors>> providerItemColors;
 
     /**A base file name can be used for different kind of files corresponding to the same data and having
     * different sampling rates. Each file is identified by its extension. This map contains the correspondance
