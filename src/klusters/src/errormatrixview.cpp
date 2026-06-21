@@ -261,8 +261,16 @@ void ErrorMatrixView::applyViewToWindow(){
 
     const double fullW = static_cast<double>(abscissaMax - abscissaMin);
     const double fullH = static_cast<double>(ordinateMax - ordinateMin);
-    if(userZoom <= 1.0001 || fullW <= 0.0 || fullH <= 0.0)
+    if(userZoom <= 1.0001 || fullW <= 0.0 || fullH <= 0.0){
+        if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG")){
+            const QRect wr = (QRect)window;
+            qWarning("[EMV] applyViewToWindow FULL-VIEW userZoom=%.4f fullW=%.1f fullH=%.1f "
+                     "absc=[%ld,%ld] ord=[%ld,%ld] window=[x=%d y=%d w=%d h=%d]",
+                     userZoom, fullW, fullH, abscissaMin, abscissaMax, ordinateMin, ordinateMax,
+                     wr.x(), wr.y(), wr.width(), wr.height());
+        }
         return;                                       // full view
+    }
 
     const double w = fullW / userZoom;
     const double h = fullH / userZoom;
@@ -274,6 +282,12 @@ void ErrorMatrixView::applyViewToWindow(){
     const int zl = qRound(cx - w / 2.0), zr = qRound(cx + w / 2.0);
     const int zt = qRound(cy - h / 2.0), zb = qRound(cy + h / 2.0);
     window.zoom(zl, zt, zr, zb);                      // zoom-to-rect, clamped to full
+    if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG")){
+        const QRect wr = (QRect)window;
+        qWarning("[EMV] applyViewToWindow ZOOMED userZoom=%.4f zrect=[%d,%d,%d,%d] "
+                 "window=[x=%d y=%d w=%d h=%d]",
+                 userZoom, zl, zt, zr, zb, wr.x(), wr.y(), wr.width(), wr.height());
+    }
 }
 
 
@@ -315,6 +329,9 @@ void ErrorMatrixView::paintEvent ( QPaintEvent*){
 
         //Set the window (part of the world I want to show)
         QRect r((QRect)window);
+        if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG"))
+            qWarning("[EMV] paintEvent REDRAW setWindow=[x=%d y=%d w=%d h=%d] vp=[w=%d h=%d]",
+                     r.x(), r.y(), r.width(), r.height(), viewport.width(), viewport.height());
         painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
 
         //Set the viewport (part of the device I want to write on).
@@ -684,6 +701,10 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     if(delta == 0){ e->accept(); return; }
     const double factor  = (delta > 0) ? wheelZoomStep : (1.0 / wheelZoomStep);
     const double newZoom = qBound(1.0, userZoom * factor, userZoomMax);
+    if(!qEnvironmentVariableIsEmpty("KLUSTERS_EVENT_DEBUG"))
+        qWarning("[EMV] wheel calc: userZoom=%.4f factor=%.4f newZoom=%.4f maxZoom=%.4f%s",
+                 userZoom, factor, newZoom, userZoomMax,
+                 (newZoom == userZoom) ? "  -> EARLY RETURN (no change)" : "");
     if(newZoom == userZoom){ e->accept(); return; }
 
     const double fullW = static_cast<double>(abscissaMax - abscissaMin);
