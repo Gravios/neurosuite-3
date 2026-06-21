@@ -921,7 +921,7 @@ Q_SIGNALS:
 
 private:
     /** The list of the views currently connected to the document */
-    QList<NeuroscopeView*>* viewList;
+    QList<NeuroscopeView*> viewList;
 
 
 

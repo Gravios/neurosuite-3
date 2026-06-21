@@ -87,7 +87,6 @@ NeuroscopeDoc::NeuroscopeDoc(QWidget* parent, ChannelPalette& displayChannelPale
       drawPositionsOnBackgroundDefault(positionsBackground),
       positionFileOpenOnce(false)
 {
-    viewList = new QList<NeuroscopeView*>();
 
     //Set the properties to the default values
     channelNb = channelNbDefault;
@@ -126,8 +125,7 @@ NeuroscopeDoc::NeuroscopeDoc(QWidget* parent, ChannelPalette& displayChannelPale
 }
 
 NeuroscopeDoc::~NeuroscopeDoc(){
-    delete viewList;
-    // channelColorList and tracesProvider (unique_ptr) are freed automatically
+    // viewList, channelColorList and tracesProvider are freed automatically
     // on member destruction.
     // Overlay TracesProviders are document-owned (see addOverlayDat).
     // clear() drops the last shared_ptr to each overlay provider, freeing
@@ -169,12 +167,12 @@ bool NeuroscopeDoc::canCloseDocument(NeuroscopeApp* mainWindow, const QString &c
 
 void NeuroscopeDoc::addView(NeuroscopeView* view)
 {
-    viewList->append(view);
+    viewList.append(view);
 }
 
 void NeuroscopeDoc::removeView(NeuroscopeView* view)
 {
-    viewList->removeAll(view);
+    viewList.removeAll(view);
     delete view;
 }
 
@@ -191,7 +189,7 @@ QString NeuroscopeDoc::sessionPath() const
 void NeuroscopeDoc::closeDocument()
 {
     //If a document has been open reset the members
-    viewList->clear();
+    viewList.clear();
     docUrl.clear();
     sessionUrl.clear();
     baseName.clear();
@@ -585,8 +583,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::saveSession(){
     //Create the list of display information
     QList<DisplayInformation> displayList;
 
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         DisplayInformation displayInformation;
         //the default value is SINGLE
         if(view->getMultiColumns()) displayInformation.setMode(DisplayInformation::MULTIPLE);
@@ -664,8 +662,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::saveSession(){
 
 void NeuroscopeDoc::singleChannelColorUpdate(int channelId,NeuroscopeView* activeView){
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView)
             view->singleChannelColorUpdate(channelId,false);
         else
@@ -678,8 +676,8 @@ void NeuroscopeDoc::singleChannelColorUpdate(int channelId,NeuroscopeView* activ
 
 void NeuroscopeDoc::channelGroupColorUpdate(int groupId,NeuroscopeView* activeView){
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView)
             view->channelGroupColorUpdate(groupId,false);
         else
@@ -695,8 +693,8 @@ void NeuroscopeDoc::channelGroupColorUpdate(int groupId,NeuroscopeView* activeVi
 
 void NeuroscopeDoc::showCalibration(bool show,NeuroscopeView* activeView){
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView)
             view->showCalibration(show,false);
         else
@@ -713,8 +711,8 @@ void NeuroscopeDoc::groupsModified(NeuroscopeView* activeView){
         computeClusterFilesMapping();
 
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView) view->groupsModified(false);
         else view->groupsModified(true);
     }
@@ -734,8 +732,8 @@ void NeuroscopeDoc::setBackgroundColor(const QColor& backgroundColor){
         //Get the active view.
         NeuroscopeView* activeView = dynamic_cast<NeuroscopeApp*>(parent)->activeView();
         if(rotation != 90 && rotation != 270){
-            for(int i = 0; i<viewList->count(); ++i) {
-                view = viewList->at(i);
+            for(int i = 0; i<viewList.count(); ++i) {
+                view = viewList.at(i);
                 if(view != activeView)
                     view->updatePositionInformation(videoWidth,videoHeight,transformedBackground,false,false);
                 else
@@ -744,8 +742,8 @@ void NeuroscopeDoc::setBackgroundColor(const QColor& backgroundColor){
         }
         //If there is a rotation of 90 or 270 degree, the with and height have to be inverted.
         else{
-            for(int i = 0; i<viewList->count(); ++i) {
-                view = viewList->at(i);
+            for(int i = 0; i<viewList.count(); ++i) {
+                view = viewList.at(i);
                 if(view != activeView)
                     view->updatePositionInformation(videoHeight,videoWidth,transformedBackground,false,false);
                 else
@@ -755,8 +753,8 @@ void NeuroscopeDoc::setBackgroundColor(const QColor& backgroundColor){
     }
 
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         view->updateBackgroundColor(backgroundColor);
     }
 
@@ -778,8 +776,8 @@ void NeuroscopeDoc::setTraceBackgroundImage(const QString& traceBackgroundImageP
         NeuroscopeView* activeView = dynamic_cast<NeuroscopeApp*>(parent)->activeView();
 
         //Notify all the views of the modification
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
 
             if(view != activeView)
                 view->updateTraceBackgroundImage(traceBackgroundImage,false);
@@ -802,8 +800,8 @@ void NeuroscopeDoc::setInitialOffset(int offset){
         activeView->documentFeaturesModified();
 
         //Notify all the views of the modification
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView) view->documentFeaturesModified();
         }
 
@@ -830,8 +828,8 @@ void NeuroscopeDoc::setGains(int voltageRange,int amplification,float screenGain
         activeView->setGains(gain,acquisitionGain);
 
         //Notify all the views of the modification
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
 
             if(view != activeView) view->setGains(gain,acquisitionGain);
         }
@@ -853,8 +851,8 @@ void NeuroscopeDoc::setResolution(int resolution){
 
         //Notify all the views of the modification
 
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView) view->documentFeaturesModified();
         }
 
@@ -891,8 +889,8 @@ void NeuroscopeDoc::setSamplingRate(double rate){
         activeView->samplingRateModified(length);
 
         //Notify all the views of the modification
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView)
                 view->samplingRateModified(length);
         }
@@ -919,8 +917,8 @@ void NeuroscopeDoc::setAcquisitionSystemSamplingRate(double rate){
         NeuroscopeView* activeView = dynamic_cast<NeuroscopeApp*>(parent)->activeView();
 
         //Notify all the views of the modification
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView)
                 view->updateClusterData(false);
             else
@@ -977,8 +975,8 @@ void NeuroscopeDoc::setChannelNb(int nb){
         activeView->setChannelNb(nb);
 
         //Notify all the views of the modification
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
 
             if(view != activeView)
                 view->setChannelNb(nb);
@@ -1017,7 +1015,7 @@ void NeuroscopeDoc::computeClusterFilesMapping(){
 
 void NeuroscopeDoc::setProviders(NeuroscopeView* activeView){  
     //the new view is the last one in the list of view (viewList)
-    NeuroscopeView* newView = viewList->last();
+    NeuroscopeView* newView = viewList.last();
     QHashIterator<QString, DataProvider*> i(providers);
     while (i.hasNext()) {
         i.next();
@@ -1058,9 +1056,9 @@ void NeuroscopeDoc::setWaveformInformation(int nb,int index,NeuroscopeView* acti
     nbSamples = nb;
     peakSampleIndex = index;
 
-    const int nbView = viewList->count();
+    const int nbView = viewList.count();
     for(int i = 0; i<nbView; ++i) {
-        NeuroscopeView* view = viewList->at(i);
+        NeuroscopeView* view = viewList.at(i);
 
         if(view != activeView)
             view->updateWaveformInformation(peakSampleIndex - 1,nbSamples - peakSampleIndex,false);
@@ -1104,16 +1102,16 @@ void NeuroscopeDoc::setPositionInformation(double newVideoSamplingRate, int newW
 
     //Update the views
     if(rotation != 90 && rotation != 270){
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView) view->updatePositionInformation(videoWidth,videoHeight,transformedBackground,newOrientation,false);
             else view->updatePositionInformation(videoWidth,videoHeight,transformedBackground,newOrientation,true);
         }
     }
     //If there is a rotation of 90 or 270 degree, the with and height have to be inverted.
     else{
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
 
             if(view != activeView) view->updatePositionInformation(videoHeight,videoWidth,transformedBackground,newOrientation,false);
             else view->updatePositionInformation(videoHeight,videoWidth,transformedBackground,newOrientation,true);
@@ -1303,8 +1301,8 @@ qlonglong NeuroscopeDoc::recordingLength() const{
 void NeuroscopeDoc::setNoneEditMode(NeuroscopeView* activeView){
     //Notify all the views of the modification
     //In none edit mode, the shown channels becom the selected ones.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView){
             view->setMode(TraceView::ZOOM,false);
             //view->setSelectedChannels(view->channels());
@@ -1377,8 +1375,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadClusterFile(const 
 
     //Informs the views than there is a new cluster provider.
     QList<int> clustersToShow;
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView) view->setClusterProvider(clustersProvider,name,clusterColors,false,clustersToShow,&displayGroupsClusterFile,&channelsSpikeGroups,peakSampleIndex - 1,nbSamples - peakSampleIndex,clustersToSkip);
         else view->setClusterProvider(clustersProvider,name,clusterColors,true,clustersToShow,&displayGroupsClusterFile,&channelsSpikeGroups,peakSampleIndex - 1,nbSamples - peakSampleIndex,clustersToSkip);
     }
@@ -1497,8 +1495,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadClusterFile(const 
 
 void NeuroscopeDoc::removeClusterFile(QString providerName,NeuroscopeView* activeView){  
     //Informs the views than the cluster provider will be removed.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView)
             view->removeClusterProvider(providerName,false);
         else
@@ -1512,8 +1510,8 @@ void NeuroscopeDoc::removeClusterFile(QString providerName,NeuroscopeView* activ
 
 void NeuroscopeDoc::clusterColorUpdate(const QString &providerName,int clusterId,NeuroscopeView* activeView, const QColor &color){
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView)
             view->clusterColorUpdate(color, providerName,clusterId,false);
         else
@@ -1590,8 +1588,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
 
     //Informs the views than there is a new event provider.
     QList<int> eventsToShow;
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
 
         if(view != activeView) view->setEventProvider(eventsProvider,name,eventColors,false,eventsToShow,eventsToSkip);
         else view->setEventProvider(eventsProvider,name,eventColors,true,eventsToShow,eventsToSkip);
@@ -1702,8 +1700,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadEventFile(const QS
 
 void NeuroscopeDoc::removeEventFile(const QString& providerName,NeuroscopeView* activeView,bool lastFile){
     //Informs the views than the event provider will be removed.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
 
         if(view != activeView)
             view->removeEventProvider(providerName,false,lastFile);
@@ -1718,8 +1716,8 @@ void NeuroscopeDoc::removeEventFile(const QString& providerName,NeuroscopeView* 
 
 void NeuroscopeDoc::eventColorUpdate(const QColor &color, const QString& providerName,int eventId,NeuroscopeView* activeView){
     //Notify all the views of the modification
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
 
         if(view != activeView)
             view->eventColorUpdate(color, providerName,eventId,false);
@@ -1752,8 +1750,8 @@ void NeuroscopeDoc::eventModified(const QString& providerName,int selectedEventI
     }
 
     //Informs the views than an event has been modified.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
 
         if(view != activeView)
             view->updateEvents(providerName,selectedEventId,time,newTime,false);
@@ -1779,8 +1777,8 @@ void NeuroscopeDoc::eventRemoved(const QString& providerName,int selectedEventId
     }
 
     //Informs the views than an event has been removed.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView) view->updateEventsAfterRemoval(providerName,selectedEventId,time,false);
         else view->updateEventsAfterRemoval(providerName,selectedEventId,time,true);
     }
@@ -1813,8 +1811,8 @@ void NeuroscopeDoc::eventAdded(const QString &providerName,const QString &addEve
     //Informs the views than an event has been added only if the added event in not of a new type.
     //In that case the views have already be informed by a call to updateSelectedEventsIds (via slotNewEventDescriptionCreated)
     if(!newEventDescriptionCreated){
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
 
             if(view != activeView)
                 view->updateEventsAfterAddition(providerName,addedEventId,time,false);
@@ -1848,8 +1846,8 @@ void NeuroscopeDoc::undo(NeuroscopeView* activeView){
     newEventDescriptionCreated = false;
     if(undoRedoEventTime != -1){
         //Informs the views than an event has been modified.
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
 
             if(view != activeView) view->updateEvents(undoRedoProviderName,undoRedoEventId,undoRedoEventTime,modifiedEventTime,false);
             else view->updateEvents(undoRedoProviderName,undoRedoEventId,undoRedoEventTime,modifiedEventTime,true);
@@ -1857,8 +1855,8 @@ void NeuroscopeDoc::undo(NeuroscopeView* activeView){
     }
     else{
         //Informs the views than an event has been added back (event previously removed) or added (event previously removed).
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView)
                 view->updateEvents(undoRedoProviderName,undoRedoEventId,modifiedEventTime,false);
             else
@@ -1876,16 +1874,16 @@ void NeuroscopeDoc::redo(NeuroscopeView* activeView){
     newEventDescriptionCreated = false;
     if(modifiedEventTime != -1){
         //Informs the views than an event has been modified.
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView) view->updateEvents(undoRedoProviderName,undoRedoEventId,undoRedoEventTime,modifiedEventTime,false);
             else view->updateEvents(undoRedoProviderName,undoRedoEventId,undoRedoEventTime,modifiedEventTime,true);
         }
     }
     else{
         //Informs the views than an event has been added back (event previously removed) or removed (event previously added).
-        for(int i = 0; i<viewList->count(); ++i) {
-            NeuroscopeView* view = viewList->at(i);
+        for(int i = 0; i<viewList.count(); ++i) {
+            NeuroscopeView* view = viewList.at(i);
             if(view != activeView) view->updateEvents(undoRedoProviderName,undoRedoEventId,undoRedoEventTime,false);
             else view->updateEvents(undoRedoProviderName,undoRedoEventId,undoRedoEventTime,true);
         }
@@ -1950,8 +1948,8 @@ void NeuroscopeDoc::slotNewEventDescriptionCreated(const QString &providerName,Q
 
     //Informs the views than the event ids have changed.
     NeuroscopeView* activeView = dynamic_cast<NeuroscopeApp*>(parent)->activeView();
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView)
             view->updateSelectedEventsIds(providerName,oldNewEventIds,addedEventId,false,true);
         else
@@ -1997,8 +1995,8 @@ void NeuroscopeDoc::slotEventDescriptionRemoved(const QString &providerName,QMap
 
     //Informs the views than the event ids have changed.
     NeuroscopeView* activeView = dynamic_cast<NeuroscopeApp*>(parent)->activeView();
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView) view->updateSelectedEventsIds(providerName,oldNewEventIds,eventIdToRemove,false,false);
         else view->updateSelectedEventsIds(providerName,oldNewEventIds,eventIdToRemove,true,false);
     }
@@ -2043,8 +2041,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::createEventFile(const 
     //Informs the views than there is a new event provider.
     QList<int> eventsToShow;
     QList<int> eventsToSkip;
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
 
         if(view != activeView)
             view->setEventProvider(eventsProvider,name,eventColors,false,eventsToShow,eventsToSkip);
@@ -2087,8 +2085,8 @@ NeuroscopeDoc::OpenSaveCreateReturnMessage NeuroscopeDoc::loadPositionFile(const
         transformedBackground = transformBackgroundImage();
 
     //Informs the views than there is a new position provider.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view == activeView){
             if(rotation != 90 && rotation != 270)
                 view->addPositionView(positionsProvider,transformedBackground,dynamic_cast<NeuroscopeApp*>(parent)->getBackgroundColor(),videoWidth,videoHeight);
@@ -2168,8 +2166,8 @@ void NeuroscopeDoc::removePositionFile(NeuroscopeView* activeView){
     }
 
     //Informs the views than the position provider will be removed.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         if(view != activeView) view->removePositionProvider(name,false);
         else view->removePositionProvider(name,true);
     }
@@ -2228,8 +2226,8 @@ void NeuroscopeDoc::updateSkipStatus(){
     }
 
     //Informs the views than the Skip Status has changed.
-    for(int i = 0; i<viewList->count(); ++i) {
-        NeuroscopeView* view = viewList->at(i);
+    for(int i = 0; i<viewList.count(); ++i) {
+        NeuroscopeView* view = viewList.at(i);
         view->updateSkipStatus(skippedChannels);
     }
 }
@@ -2609,7 +2607,7 @@ void NeuroscopeDoc::loadSession(SessionReader reader){
 
 
         //the new view is the last one in the list of view (viewList)
-        NeuroscopeView* view = viewList->last();
+        NeuroscopeView* view = viewList.last();
 
         //If the data file is not a dat file, do not display the waveforms but keep the information
         if(extension != "dat")
@@ -2804,10 +2802,8 @@ bool NeuroscopeDoc::addOverlayDat(const QString &path, QString *errorOut)
     mOverlayTraces.append(overlay);
 
     // ----- Notify every existing view ------------------------------------
-    if (viewList) {
-        for (NeuroscopeView *v : *viewList) {
-            if (v) v->addOverlayProvider(prov.get(), overlay.label, overlay.color);
-        }
+    for (NeuroscopeView *v : viewList) {
+        if (v) v->addOverlayProvider(prov.get(), overlay.label, overlay.color);
     }
 
     return true;
@@ -2825,10 +2821,8 @@ void NeuroscopeDoc::removeOverlay(const QString &path)
         // Tell views first so they disconnect from the provider before
         // it goes away — otherwise an in-flight dataReady emission could
         // hit a freed slot target.
-        if (viewList) {
-            for (NeuroscopeView *v : *viewList) {
-                if (v) v->removeOverlayProvider(mOverlayTraces[i].provider.get());
-            }
+        for (NeuroscopeView *v : viewList) {
+            if (v) v->removeOverlayProvider(mOverlayTraces[i].provider.get());
         }
         // removeAt destroys the OverlayTrace, dropping the last shared_ptr to
         // the provider and freeing it — after the views have disconnected.
