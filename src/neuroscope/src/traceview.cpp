@@ -994,7 +994,7 @@ void TraceView::showChannels(const QList<int>& channelsToShow){
 }
 
 void TraceView::updateShownGroupsChannels(const QList<int>& channelsToShow){
-    uint nbGpsShown = shownGroupsChannels.count();
+    int nbGpsShown = shownGroupsChannels.count();
     shownGroupsChannels.clear();
 
     int nbGps = groupsChannels->count();
@@ -3189,7 +3189,7 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                     int startingGroupIndex = 0;
                     //look up for the first channel which is not skipped.
                     if (skippedChannels.contains(channelId)){
-                        for(uint j = 0; j<groupIds.size();++j){
+                        for(int j = 0; j<groupIds.size();++j){
                             QList<int> channelIds = shownGroupsChannels[groupIds[j]];
                             int currentNbChannels = channelIds.size();
                             for(int i = 0; i < currentNbChannels; ++i){
