@@ -23,21 +23,19 @@ public:
     bool parseFile(const QString& path);
     void closeFile() {}
 
-    QString version() const { return m_version; }
-
     QList<SessionFile>        getFilesToLoad()        const { return files;    }
     QList<DisplayInformation> getDisplayInformation() const { return displays; }
 
     // Stubs satisfying the loadSession<Reader> interface.
     // Rotation/flip are loaded from the parameter file, not the session file.
     // The 1.2.2 legacy background-image path never applies to YAML sessions.
-    QString getVersion()        const { return m_version; }
+    QString getVersion()        const { return version; }
     QString getBackgroundImage() const { return QString(); }
     int     getRotation()        const { return 0; }
     int     getFlip()            const { return 0; }
 
 private:
-    QString                   m_version;
+    QString                   version;
     QList<SessionFile>        files;
     QList<DisplayInformation> displays;
 };
