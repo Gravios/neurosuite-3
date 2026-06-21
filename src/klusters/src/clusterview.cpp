@@ -566,9 +566,12 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
     statusBar->clearMessage();
 }
 
-// Ctrl + wheel zooms toward the cursor (factor>1 enlarges, i.e. shrinks the
-// ZoomWindow toward the cursor; factor<1 zooms out).  Without Ctrl the event is
-// handed to the base so existing wheel behaviour is unchanged.
+// Ctrl + wheel zooms toward the cursor, keeping the world point under the
+// pointer fixed (factor>1 enlarges, factor<1 zooms out).  ZoomWindow::zoom
+// re-centres on the point it is given, so pass an adjusted centre that leaves the
+// cursor's world point at the same screen fraction instead of jumping it to the
+// middle.  Without Ctrl the event is handed to the base so existing wheel
+// behaviour is unchanged.
 void ClusterView::wheelEvent(QWheelEvent* e){
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
@@ -576,12 +579,24 @@ void ClusterView::wheelEvent(QWheelEvent* e){
     }
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
-    const float factor = (delta > 0) ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
-    const QPoint w = viewportToWorld(e->position().toPoint().x(),
-                                     e->position().toPoint().y());
-    if(window.zoom(factor, static_cast<float>(w.x()), static_cast<float>(w.y()))){
-        drawContentsMode = REDRAW;
-        update();
+    const float  factor = (delta > 0) ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
+    const QPoint p  = viewportToWorld(e->position().toPoint().x(),
+                                      e->position().toPoint().y());
+    const QRect  wr = (QRect)window;
+    const double W = wr.width(), H = wr.height();
+    if(W > 0.0 && H > 0.0){
+        // Cursor's fraction within the current window == its screen fraction.
+        const double fx = (static_cast<double>(p.x()) - wr.left()) / W;
+        const double fy = (static_cast<double>(p.y()) - wr.top())  / H;
+        // New window size; centre that keeps the cursor point at the same fraction.
+        const double Wn = W / static_cast<double>(factor);
+        const double Hn = H / static_cast<double>(factor);
+        const double cx = static_cast<double>(p.x()) + Wn * (0.5 - fx);
+        const double cy = static_cast<double>(p.y()) + Hn * (0.5 - fy);
+        if(window.zoom(factor, static_cast<float>(cx), static_cast<float>(cy))){
+            drawContentsMode = REDRAW;
+            update();
+        }
     }
     e->accept();
 }
