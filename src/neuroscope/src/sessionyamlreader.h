@@ -25,8 +25,8 @@ public:
 
     QString version() const { return m_version; }
 
-    QList<SessionFile>        getFilesToLoad()        const { return m_files;    }
-    QList<DisplayInformation> getDisplayInformation() const { return m_displays; }
+    QList<SessionFile>        getFilesToLoad()        const { return files;    }
+    QList<DisplayInformation> getDisplayInformation() const { return displays; }
 
     // Stubs satisfying the loadSession<Reader> interface.
     // Rotation/flip are loaded from the parameter file, not the session file.
@@ -38,6 +38,6 @@ public:
 
 private:
     QString                   m_version;
-    QList<SessionFile>        m_files;
-    QList<DisplayInformation> m_displays;
+    QList<SessionFile>        files;
+    QList<DisplayInformation> displays;
 };

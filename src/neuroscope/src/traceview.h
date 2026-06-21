@@ -1187,8 +1187,8 @@ private:
 
     void changeCursor();
 
-    QPoint m_currentPoint;
-    QPoint m_selectPoint;
+    QPoint currentPoint;
+    QPoint selectPoint;
     bool mMoveSelectChannel;
 };
 
