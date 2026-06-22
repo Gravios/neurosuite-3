@@ -7,6 +7,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
+#include <QFrame>
 
 using neuroscope::spectral::SpectralMode;
 using neuroscope::spectral::Colormap;
@@ -18,6 +19,13 @@ void addLabeled(QHBoxLayout* lay, const QString& text, QWidget* w)
     QLabel* l = new QLabel(text);
     lay->addWidget(l);
     lay->addWidget(w);
+}
+void addSeparator(QHBoxLayout* lay)
+{
+    QFrame* line = new QFrame;
+    line->setFrameShape(QFrame::VLine);
+    line->setFrameShadow(QFrame::Sunken);
+    lay->addWidget(line);
 }
 }
 
@@ -71,6 +79,16 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     freqHighSpin->setValue(p.freqHigh);
     freqHighSpin->setToolTip(tr("band high (Hz); 0 = Nyquist"));
 
+    lockCheck = new QCheckBox(tr("lock"));
+    lockCheck->setChecked(true);
+    lockCheck->setToolTip(tr("use the trace window; uncheck to set an independent span"));
+
+    spanSpin = new QSpinBox;
+    spanSpin->setRange(1, 600000); spanSpin->setSingleStep(100); spanSpin->setSuffix(tr(" ms"));
+    spanSpin->setValue(1000);
+    spanSpin->setEnabled(false); // enabled when unlocked
+    spanSpin->setToolTip(tr("spectral window width, centred on the trace centre"));
+
     whitenCheck = new QCheckBox(tr("whiten"));
     whitenCheck->setChecked(p.whiten);
 
@@ -92,16 +110,24 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
 
     addLabeled(lay, tr("mode"), modeCombo);
     addLabeled(lay, tr("ch"), channelSpin);
-    addLabeled(lay, tr("NW"), nwSpin);
-    addLabeled(lay, tr("K"), taperSpin);
+    addSeparator(lay);
     addLabeled(lay, tr("win"), windowSpin);
     addLabeled(lay, tr("nfft"), nfftSpin);
     addLabeled(lay, tr("step"), stepSpin);
+    addSeparator(lay);
+    addLabeled(lay, tr("NW"), nwSpin);
+    addLabeled(lay, tr("K"), taperSpin);
+    addSeparator(lay);
     addLabeled(lay, tr("f.lo"), freqLowSpin);
     addLabeled(lay, tr("f.hi"), freqHighSpin);
+    addSeparator(lay);
+    lay->addWidget(lockCheck);
+    addLabeled(lay, tr("span"), spanSpin);
+    addSeparator(lay);
     lay->addWidget(whitenCheck);
     addLabeled(lay, tr("cmap"), colormapCombo);
     addLabeled(lay, tr("dB"), dynRangeSpin);
+    addSeparator(lay);
     addLabeled(lay, tr("backend"), backendCombo);
     lay->addStretch(1);
 
@@ -136,6 +162,13 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int i){ this->view->setBackend(i == 1 ? SpectralBackend::Cuda
                                                          : SpectralBackend::Cpu); });
+
+    connect(lockCheck, &QCheckBox::toggled, this, [this](bool on){
+        spanSpin->setEnabled(!on);
+        this->view->setLockToTrace(on);
+    });
+    connect(spanSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int ms){ this->view->setSpan(static_cast<long>(ms)); });
 }
 
 void SpectralInspector::setChannelCount(int n)
