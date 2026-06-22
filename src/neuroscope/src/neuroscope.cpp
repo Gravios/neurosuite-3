@@ -444,6 +444,7 @@ void NeuroscopeApp::initActions()
     greyScale->setChecked(false);
     mSpectralView = traceMenu->addAction(tr("&Spectral View"));
     mSpectralView->setCheckable(true);
+    mSpectralView->setShortcut(Qt::Key_S);
     connect(mSpectralView, &QAction::triggered, this, &NeuroscopeApp::slotSpectralView);
     mSpectralView->setChecked(false);
 
