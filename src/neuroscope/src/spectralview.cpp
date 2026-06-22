@@ -40,7 +40,10 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
     connect(&tracesProvider, &TracesProvider::dataReady, this,
             static_cast<void (SpectralView::*)(Array<dataType>&, QObject*)>(&SpectralView::dataAvailable));
 
-    requestCurrentWindow();
+    traceStart = startTime;
+    traceWidth = timeFrameWidth;
+    recordingLength = tracesProvider.recordingLength();
+    applyWindow();
 }
 
 SpectralView::~SpectralView() = default;
@@ -53,9 +56,21 @@ void SpectralView::requestCurrentWindow()
 
 void SpectralView::displayTimeFrame(long start, long width)
 {
-    startTime = start;
-    endTime = start + width;
-    timeFrameWidth = width;
+    traceStart = start;
+    traceWidth = width;
+    applyWindow();
+}
+
+void SpectralView::applyWindow()
+{
+    // The spectral view stays centred on the trace window's centre, using the
+    // trace width when locked or its own span otherwise.
+    const neuroscope::spectral::TimeWindow w =
+        neuroscope::spectral::spectralWindow(traceStart, traceWidth,
+                                             lockToTrace, span, recordingLength);
+    startTime = w.start;
+    timeFrameWidth = w.width;
+    endTime = w.start + w.width;
     requestCurrentWindow();
 }
 
@@ -266,4 +281,17 @@ void SpectralView::setBackend(SpectralBackend backend)
     engine.invalidate();
     if (dataReady) recompute();
     update();
+}
+
+void SpectralView::setLockToTrace(bool on)
+{
+    lockToTrace = on;
+    applyWindow();   // re-derive the window (requests data, repaints on arrival)
+}
+
+void SpectralView::setSpan(long ms)
+{
+    span = ms;
+    if (!lockToTrace)
+        applyWindow();
 }

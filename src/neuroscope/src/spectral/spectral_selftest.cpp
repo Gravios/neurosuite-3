@@ -13,6 +13,7 @@
 #include "spectralengine.h"
 #include "colormap.h"
 #include "spectralgpu_kernels.h"
+#include "spectralwindow.h"
 
 #include <cmath>
 #include <cstdio>
@@ -365,6 +366,32 @@ int main()
             }
         }
         check(tile, "chunkRange tiles windows exactly", 0, 0);
+    }
+
+    // ---- Spectral window centring (trace -> spectral) --------------------
+    {
+        // Locked: returns the trace window unchanged.
+        TimeWindow a = spectralWindow(1000, 400, /*lock*/true, /*span*/2000, /*rec*/100000);
+        check(a.start == 1000 && a.width == 400, "window locked = trace window", a.width, 400);
+
+        // Unlocked wider span: same centre, wider width.
+        // trace [1000,1400) centre 1200; span 800 -> [800,1600), centre 1200.
+        TimeWindow b = spectralWindow(1000, 400, false, 800, 100000);
+        check(b.width == 800 && (b.start + b.width / 2) == 1200,
+              "window unlocked keeps centre", b.start + b.width / 2, 1200);
+
+        // Clamp at the start: centre near 0 can't go negative.
+        TimeWindow c = spectralWindow(100, 200, false, 2000, 100000);
+        check(c.start == 0 && c.width == 2000, "window clamps at start", c.start, 0);
+
+        // Clamp at the end: window pushed back to fit the recording.
+        TimeWindow d = spectralWindow(99000, 400, false, 4000, 100000);
+        check(d.start + d.width <= 100000 && d.width == 4000, "window clamps at end",
+              d.start + d.width, 100000);
+
+        // span <= 0 follows the trace width even when unlocked.
+        TimeWindow e = spectralWindow(1000, 400, false, 0, 100000);
+        check(e.width == 400, "window span<=0 follows trace", e.width, 400);
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS",
