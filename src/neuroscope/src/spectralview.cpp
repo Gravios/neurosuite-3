@@ -2,6 +2,7 @@
 
 #include <QPainter>
 #include <QPaintEvent>
+#include <QTimer>
 
 #include <cstdint>
 #include <vector>
@@ -40,6 +41,10 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
     connect(&tracesProvider, &TracesProvider::dataReady, this,
             static_cast<void (SpectralView::*)(Array<dataType>&, QObject*)>(&SpectralView::dataAvailable));
 
+    recomputeTimer = new QTimer(this);
+    recomputeTimer->setSingleShot(true);
+    connect(recomputeTimer, &QTimer::timeout, this, &SpectralView::flushPending);
+
     traceStart = startTime;
     traceWidth = timeFrameWidth;
     recordingLength = tracesProvider.recordingLength();
@@ -74,12 +79,43 @@ void SpectralView::applyWindow()
     requestCurrentWindow();
 }
 
+void SpectralView::scheduleParamUpdate()
+{
+    engine.invalidate();
+    paramsDirty = true;
+    if (recomputeDelayMs <= 0) flushPending();
+    else recomputeTimer->start(recomputeDelayMs);
+}
+
+void SpectralView::scheduleWindowUpdate()
+{
+    windowDirty = true;
+    if (recomputeDelayMs <= 0) flushPending();
+    else recomputeTimer->start(recomputeDelayMs);
+}
+
+void SpectralView::flushPending()
+{
+    recomputeTimer->stop();
+    if (windowDirty) {
+        windowDirty = false;
+        paramsDirty = false;
+        applyWindow();              // re-derives the window; recompute on dataReady
+    } else if (paramsDirty) {
+        paramsDirty = false;
+        if (dataReady) { recompute(); update(); }
+    }
+}
+
+void SpectralView::commitNow()
+{
+    flushPending();
+}
+
 void SpectralView::setChannels(const QList<int>& chans)
 {
     channels = chans;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::dataAvailable(Array<dataType>& incoming, QObject* initiator)
@@ -91,6 +127,12 @@ void SpectralView::dataAvailable(Array<dataType>& incoming, QObject* initiator)
     dataReady = true;
     recompute();
     update();
+
+    // The fresh render already used the current parameters, so cancel any
+    // pending debounced recompute.
+    paramsDirty = false;
+    windowDirty = false;
+    if (recomputeTimer) recomputeTimer->stop();
 }
 
 void SpectralView::recompute()
@@ -186,9 +228,7 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
 void SpectralView::setSpectralMode(SpectralMode mode)
 {
     params.mode = mode;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setWindowSamples(int n)
@@ -196,69 +236,53 @@ void SpectralView::setWindowSamples(int n)
     if (n < 2) n = 2;
     params.windowSamples = n;
     if (params.nfft < n) params.nfft = n;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setNfft(int n)
 {
     if (n < params.windowSamples) n = params.windowSamples;
     params.nfft = n;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setStep(int s)
 {
     if (s < 1) s = 1;
     params.stepSamples = s;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setTimeBandwidth(double nw)
 {
     params.nw = nw;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setNumTapers(int k)
 {
     if (k < 1) k = 1;
     params.nTapers = k;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setFrequencyRange(double lowHz, double highHz)
 {
     params.freqLow = lowHz;
     params.freqHigh = highHz;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setSingleChannelRow(int row)
 {
     params.singleChannel = row < 0 ? 0 : row;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setWhitening(bool on)
 {
     params.whiten = on;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setColormap(Colormap cm)
@@ -278,20 +302,18 @@ void SpectralView::setDynamicRangeDb(double db)
 void SpectralView::setBackend(SpectralBackend backend)
 {
     params.backend = backend;
-    engine.invalidate();
-    if (dataReady) recompute();
-    update();
+    scheduleParamUpdate();
 }
 
 void SpectralView::setLockToTrace(bool on)
 {
     lockToTrace = on;
-    applyWindow();   // re-derive the window (requests data, repaints on arrival)
+    scheduleWindowUpdate();   // re-derive the window after the debounce / on "u"
 }
 
 void SpectralView::setSpan(long ms)
 {
     span = ms;
     if (!lockToTrace)
-        applyWindow();
+        scheduleWindowUpdate();
 }
