@@ -312,7 +312,7 @@ private slots:
 private:
     // Tracks the current total channel count so that applyProbeLayout can
     // rebuild the skip-attribute map and set anatomy->setNbChannels correctly.
-    int m_nbChannels = 0;
+    int nbChannels = 0;
 
     /** Returns "/path/to/session" — the doc URL with its parameter-file
      *  extension stripped.  Used to build pipeline-file paths
