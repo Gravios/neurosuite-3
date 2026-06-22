@@ -393,8 +393,8 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
 
 
     //Initialize the anatomical groups page
-    m_nbChannels = static_cast<int>(acquisitionSystemInfo[NB_CHANNELS]);
-    probe->setNbChannels(m_nbChannels);
+    nbChannels = static_cast<int>(acquisitionSystemInfo[NB_CHANNELS]);
+    probe->setNbChannels(nbChannels);
     anatomy->setNbChannels(static_cast<int>(acquisitionSystemInfo[NB_CHANNELS]));
     anatomy->setGroups(anatomicalGroups);
     anatomy->setAttributes(attributes);
@@ -673,7 +673,7 @@ void ParameterView::loadProgram(const QString &programUrl) {
 
 void ParameterView::nbChannelsModified(int nbChannels){
     //All the parameters which use the number of channels are reset
-    m_nbChannels = nbChannels;
+    this->nbChannels = nbChannels;
 
     // ── Probe page: clear all probe entries and update channel count ─────
     // A channel-count change invalidates all probe-to-channel assignments.
@@ -955,13 +955,13 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
     //   - one group per shank, containing probe channels
     //   - an optional final group for any leftover channels
     // We set this as the complete anatomical description.
-    anatomy->setNbChannels(m_nbChannels);
+    anatomy->setNbChannels(nbChannels);
     anatomy->setGroups(newAnatomy);
 
     // Rebuild skip attributes for all channels in the new groups
     QMap<QString, QMap<int,QString>> attributes;
     QMap<int,QString> skip;
-    for (int i = 0; i < m_nbChannels; ++i)
+    for (int i = 0; i < nbChannels; ++i)
         skip.insert(i, QStringLiteral("0"));
     attributes.insert(QStringLiteral("Skip"), skip);
     anatomy->setAttributes(attributes);
