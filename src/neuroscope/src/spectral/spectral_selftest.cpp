@@ -11,6 +11,7 @@
 #include "dpss.h"
 #include "multitaper.h"
 #include "spectralengine.h"
+#include "colormap.h"
 
 #include <cmath>
 #include <cstdio>
@@ -248,6 +249,33 @@ int main()
         bool finite = W.valid();
         for (float v : W.data) if (!std::isfinite(v)) finite = false;
         check(finite, "engine whitening path finite", 0, 0);
+    }
+
+    // ---- Colormaps -------------------------------------------------------
+    {
+        std::uint8_t r, g, b;
+        colormapRgb(0.0, Colormap::Grayscale, r, g, b);
+        check(r == 0 && g == 0 && b == 0, "grayscale t=0 is black", r, 0);
+        colormapRgb(1.0, Colormap::Grayscale, r, g, b);
+        check(r == 255 && g == 255 && b == 255, "grayscale t=1 is white", r, 255);
+        // clamping out-of-range
+        std::uint8_t r2, g2, b2;
+        colormapRgb(-1.0, Colormap::Viridis, r, g, b);
+        colormapRgb(0.0,  Colormap::Viridis, r2, g2, b2);
+        check(r == r2 && g == g2 && b == b2, "colormap clamps below 0", r, r2);
+        // grayscale monotone luminance
+        bool mono = true; int prev = -1;
+        for (int i = 0; i <= 10; ++i) {
+            colormapRgb(i / 10.0, Colormap::Grayscale, r, g, b);
+            if (r < prev) mono = false; prev = r;
+        }
+        check(mono, "grayscale monotone in t", 0, 0);
+        // viridis endpoints distinct (dark -> bright)
+        std::uint8_t r0, g0, b0, r1, g1, b1;
+        colormapRgb(0.0, Colormap::Viridis, r0, g0, b0);
+        colormapRgb(1.0, Colormap::Viridis, r1, g1, b1);
+        check((r1 + g1 + b1) > (r0 + g0 + b0), "viridis brightens with t",
+              r1 + g1 + b1, r0 + g0 + b0);
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS",
