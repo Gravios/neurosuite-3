@@ -249,6 +249,18 @@ int main()
         bool finite = W.valid();
         for (float v : W.data) if (!std::isfinite(v)) finite = false;
         check(finite, "engine whitening path finite", 0, 0);
+
+        // GPU backend requested with no device falls back to an identical CPU
+        // result (copies, since the engine cache holds only the last image).
+        SpectralParams pcpu = pb; pcpu.backend = SpectralBackend::Cpu;
+        SpectralImage cpu = engine.compute(data.data(), nS, nCh, channels, pcpu, 10);
+        SpectralParams pgpu = pb; pgpu.backend = SpectralBackend::Cuda;
+        SpectralImage gpu = engine.compute(data.data(), nS, nCh, channels, pgpu, 11);
+        bool same = cpu.rows == gpu.rows && cpu.cols == gpu.cols
+                    && cpu.data.size() == gpu.data.size();
+        for (std::size_t i = 0; i < gpu.data.size() && same; ++i)
+            if (gpu.data[i] != cpu.data[i]) same = false;
+        check(same, "GPU backend falls back to identical CPU result", 0, 0);
     }
 
     // ---- Colormaps -------------------------------------------------------

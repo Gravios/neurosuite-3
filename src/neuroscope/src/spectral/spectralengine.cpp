@@ -1,5 +1,6 @@
 #include "spectralengine.h"
 #include "spectralfft.h"
+#include "spectralgpu.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,22 @@
 
 namespace neuroscope {
 namespace spectral {
+
+namespace {
+// Route the spectrogram to the GPU when that backend is selected and usable;
+// otherwise (and on any GPU decline) compute on the CPU.
+void dispatchSpectrogram(const double* sig, int n, const DpssTapers& tapers,
+                         double fs, int nfft, int step, TaperWeighting w,
+                         SpectralBackend backend,
+                         std::vector<std::vector<double>>& out)
+{
+    if (backend == SpectralBackend::Cuda && gpu::available()) {
+        if (gpu::multitaperSpectrogram(sig, n, tapers, fs, nfft, step, w, out))
+            return;
+    }
+    multitaperSpectrogram(sig, n, tapers, fs, nfft, step, w, out);
+}
+} // namespace
 
 bool SpectralParams::sameAs(const SpectralParams& o) const
 {
@@ -109,8 +126,8 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         const double* sig = block.data() + static_cast<std::size_t>(ch) * nSamples;
 
         std::vector<std::vector<double>> sg;
-        multitaperSpectrogram(sig, nSamples, tapers, fs, effNfft,
-                              params.stepSamples, params.weighting, sg);
+        dispatchSpectrogram(sig, nSamples, tapers, fs, effNfft,
+                            params.stepSamples, params.weighting, params.backend, sg);
 
         int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, fs, lo, hi);
         const int rows = hi - lo + 1;
@@ -135,17 +152,18 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         img.data.assign(static_cast<std::size_t>(nch) * nCols, 0.0f);
         img.rowChannels = channels;
 
-        // One row (channel) per task; windows handled inside multitaperSpectrogram.
+        // One row (channel) per task; windows handled inside the spectrogram.
         std::vector<double> rowMin(nch,  std::numeric_limits<double>::infinity());
         std::vector<double> rowMax(nch, -std::numeric_limits<double>::infinity());
+        const bool useGpu = (params.backend == SpectralBackend::Cuda) && gpu::available();
 #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic)
+        #pragma omp parallel for schedule(dynamic) if(!useGpu)
 #endif
         for (int r = 0; r < nch; ++r) {
             const double* sig = block.data() + static_cast<std::size_t>(r) * nSamples;
             std::vector<std::vector<double>> sg;
-            multitaperSpectrogram(sig, nSamples, tapers, fs, effNfft,
-                                  params.stepSamples, params.weighting, sg);
+            dispatchSpectrogram(sig, nSamples, tapers, fs, effNfft,
+                                params.stepSamples, params.weighting, params.backend, sg);
             for (int c = 0; c < static_cast<int>(sg.size()) && c < nCols; ++c) {
                 double bp = 0.0;
                 for (int b = lo; b <= hi; ++b) bp += sg[c][b] * df; // integrate band
