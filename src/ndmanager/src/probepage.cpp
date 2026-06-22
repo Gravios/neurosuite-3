@@ -51,7 +51,7 @@ ProbePage::ProbePage(QWidget* parent)
     const QStringList dataDirs = QStandardPaths::standardLocations(
         QStandardPaths::GenericDataLocation);
     if (!dataDirs.isEmpty())
-        m_libraryPath = dataDirs.first() + QStringLiteral("/neurosuite/probes");
+        libraryPath = dataDirs.first() + QStringLiteral("/neurosuite/probes");
 
     buildUi();
     refreshInspector();   // disables fields when no selection
@@ -76,10 +76,10 @@ void ProbePage::buildUi()
     // in.  The outer splitter lets the user resize the left vs right
     // proportion; an inner vertical splitter on the left lets them
     // resize list vs inspector.
-    m_split = new QSplitter(Qt::Horizontal, this);
-    m_split->setHandleWidth(2);
-    m_split->setChildrenCollapsible(false);
-    outer->addWidget(m_split, /*stretch=*/1);
+    split = new QSplitter(Qt::Horizontal, this);
+    split->setHandleWidth(2);
+    split->setChildrenCollapsible(false);
+    outer->addWidget(split, /*stretch=*/1);
 
     // ── Left column: list (top) above inspector (bottom) ────────────────
     auto* leftSplit = new QSplitter(Qt::Vertical);
@@ -97,10 +97,10 @@ void ProbePage::buildUi()
         "color:#4a5568;font-size:10px;font-weight:bold;letter-spacing:2px;");
     listVbox->addWidget(listHdr);
 
-    m_list = new QListWidget;
-    m_list->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_list->setAlternatingRowColors(true);
-    listVbox->addWidget(m_list, /*stretch=*/1);
+    list = new QListWidget;
+    list->setSelectionMode(QAbstractItemView::SingleSelection);
+    list->setAlternatingRowColors(true);
+    listVbox->addWidget(list, /*stretch=*/1);
 
     auto* btnRow = new QHBoxLayout;
     btnRow->setSpacing(4);
@@ -118,13 +118,13 @@ void ProbePage::buildUi()
         "drop-down arrow for library/file imports."));
     addToolBtn->setMaximumWidth(56);
 
-    m_removeBtn = new QPushButton(QStringLiteral("−"));
-    m_browseBtn = new QPushButton(tr("Replace…"));
-    m_removeBtn->setToolTip(tr("Remove the selected probe"));
-    m_browseBtn->setToolTip(tr(
+    removeBtn = new QPushButton(QStringLiteral("−"));
+    browseBtn = new QPushButton(tr("Replace…"));
+    removeBtn->setToolTip(tr("Remove the selected probe"));
+    browseBtn->setToolTip(tr(
         "Replace the current probe's geometry with a .probe file you choose.  "
         "Asks for confirmation if you've edited the existing geometry."));
-    m_removeBtn->setMaximumWidth(32);
+    removeBtn->setMaximumWidth(32);
 
     auto* addMenu = new QMenu(addToolBtn);
     QAction* addEmptyAct   = addMenu->addAction(tr("New (empty template)"));
@@ -133,8 +133,8 @@ void ProbePage::buildUi()
     addToolBtn->setMenu(addMenu);
 
     btnRow->addWidget(addToolBtn);
-    btnRow->addWidget(m_removeBtn);
-    btnRow->addWidget(m_browseBtn);
+    btnRow->addWidget(removeBtn);
+    btnRow->addWidget(browseBtn);
     btnRow->addStretch();
     listVbox->addLayout(btnRow);
 
@@ -156,41 +156,41 @@ void ProbePage::buildUi()
     inspForm->setFormAlignment(Qt::AlignTop);
     inspForm->setSpacing(6);
 
-    m_inspLabel  = new QLineEdit;
-    m_inspFile   = new QLineEdit;
-    m_inspFile->setReadOnly(true);
-    m_inspFile->setToolTip(tr(
+    inspLabel  = new QLineEdit;
+    inspFile   = new QLineEdit;
+    inspFile->setReadOnly(true);
+    inspFile->setToolTip(tr(
         "Set automatically by Add / Replace….  "
         "Cannot be edited directly — change the path via those actions."));
-    m_inspFile->setStyleSheet(
+    inspFile->setStyleSheet(
         "QLineEdit:read-only{color:#9ca3af;background:#0d1117;}");
-    m_inspOffset = new QSpinBox;
-    m_inspOffset->setRange(0, 100000);
-    m_inspOffset->setToolTip(tr(
+    inspOffset = new QSpinBox;
+    inspOffset->setRange(0, 100000);
+    inspOffset->setToolTip(tr(
         "First ADC channel from this probe.  "
         "Auto-recomputed by Recalculate; manual edits override the "
         "stack-from-zero default."));
 
-    inspForm->addRow(tr("Label:"),          m_inspLabel);
-    inspForm->addRow(tr("Probe file:"),     m_inspFile);
-    inspForm->addRow(tr("Channel offset:"), m_inspOffset);
+    inspForm->addRow(tr("Label:"),          inspLabel);
+    inspForm->addRow(tr("Probe file:"),     inspFile);
+    inspForm->addRow(tr("Channel offset:"), inspOffset);
 
-    m_inspAnatomy = new QLabel;
-    m_inspSpike   = new QLabel;
-    m_inspAnatomy->setTextFormat(Qt::PlainText);
-    m_inspSpike  ->setTextFormat(Qt::PlainText);
-    inspForm->addRow(tr("Anatomical groups:"), m_inspAnatomy);
-    inspForm->addRow(tr("Spike groups:"),      m_inspSpike);
+    inspAnatomy = new QLabel;
+    inspSpike   = new QLabel;
+    inspAnatomy->setTextFormat(Qt::PlainText);
+    inspSpike  ->setTextFormat(Qt::PlainText);
+    inspForm->addRow(tr("Anatomical groups:"), inspAnatomy);
+    inspForm->addRow(tr("Spike groups:"),      inspSpike);
 
     inspVbox->addLayout(inspForm);
     inspVbox->addStretch(1);
 
     // Status line — transient feedback from Browse / Add / Save.
-    m_status = new QLabel;
-    m_status->setStyleSheet("color:#9ca3af;font-size:11px;");
-    m_status->setWordWrap(true);
-    m_status->setMinimumHeight(28);
-    inspVbox->addWidget(m_status);
+    status = new QLabel;
+    status->setStyleSheet("color:#9ca3af;font-size:11px;");
+    status->setWordWrap(true);
+    status->setMinimumHeight(28);
+    inspVbox->addWidget(status);
 
     leftSplit->addWidget(inspPane);
 
@@ -201,19 +201,19 @@ void ProbePage::buildUi()
     leftSplit->setStretchFactor(1, 2);
     leftSplit->setSizes({280, 200});
 
-    m_split->addWidget(leftSplit);
+    split->addWidget(leftSplit);
 
     // ── Right column: embedded ProbeMakerPage ───────────────────────────
-    m_maker = new ProbeMakerPage;
-    m_split->addWidget(m_maker);
+    maker = new ProbeMakerPage;
+    split->addWidget(maker);
 
     // Outer split: narrow left column (~25%), wide geometry editor (~75%).
-    m_split->setStretchFactor(0, 1);
-    m_split->setStretchFactor(1, 3);
-    m_split->setSizes({280, 900});
+    split->setStretchFactor(0, 1);
+    split->setStretchFactor(1, 3);
+    split->setSizes({280, 900});
 
     // ── Signals ────────────────────────────────────────────────────────
-    connect(m_list,     &QListWidget::currentRowChanged,
+    connect(list,     &QListWidget::currentRowChanged,
             this,       [this](int){ onListSelectionChanged(); });
 
     // QToolButton::clicked fires only when the icon-area is clicked
@@ -228,16 +228,16 @@ void ProbePage::buildUi()
             this, &ProbePage::onAddFromLibraryClicked);
     connect(addFileAct,    &QAction::triggered,
             this, &ProbePage::onAddFromFileClicked);
-    connect(m_removeBtn,&QPushButton::clicked, this, &ProbePage::onRemoveClicked);
-    connect(m_browseBtn,&QPushButton::clicked, this, &ProbePage::onBrowseLibraryClicked);
+    connect(removeBtn,&QPushButton::clicked, this, &ProbePage::onRemoveClicked);
+    connect(browseBtn,&QPushButton::clicked, this, &ProbePage::onBrowseLibraryClicked);
 
-    connect(m_inspLabel,  &QLineEdit::editingFinished,
+    connect(inspLabel,  &QLineEdit::editingFinished,
             this, &ProbePage::onLabelEdited);
-    // m_inspFile is read-only — no editingFinished connection.
-    connect(m_inspOffset, QOverload<int>::of(&QSpinBox::valueChanged),
+    // inspFile is read-only — no editingFinished connection.
+    connect(inspOffset, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int){ onOffsetEdited(); });
 
-    connect(m_maker, &ProbeMakerPage::modified,
+    connect(maker, &ProbeMakerPage::modified,
             this, &ProbePage::onMakerModified);
 }
 
@@ -247,30 +247,30 @@ void ProbePage::buildUi()
 
 void ProbePage::setProbes(const QList<ProbeEntry>& probes)
 {
-    m_probes = probes;
+    this->probes = probes;
     rebuildList();
-    if (!m_probes.isEmpty()) {
-        m_list->setCurrentRow(0);
+    if (!probes.isEmpty()) {
+        list->setCurrentRow(0);
     } else {
-        m_currentIndex = -1;
+        currentIndex = -1;
         refreshInspector();
     }
-    m_modified = false;
+    modified = false;
 }
 
 void ProbePage::getProbes(QList<ProbeEntry>& probes) const
 {
-    probes = m_probes;
+    probes = this->probes;
 }
 
 void ProbePage::setLibraryPath(const QString& path)
 {
-    if (!path.isEmpty()) m_libraryPath = path;
+    if (!path.isEmpty()) libraryPath = path;
 }
 
 QString ProbePage::getLibraryPath() const
 {
-    return m_libraryPath;
+    return libraryPath;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -279,27 +279,27 @@ QString ProbePage::getLibraryPath() const
 
 void ProbePage::rebuildList()
 {
-    QSignalBlocker blocker(m_list);
-    m_list->clear();
-    for (const ProbeEntry& e : m_probes) {
+    QSignalBlocker blocker(list);
+    list->clear();
+    for (const ProbeEntry& e : probes) {
         const QString label = e.label.isEmpty()
             ? tr("Probe %1").arg(e.id)
             : tr("Probe %1 — %2").arg(e.id).arg(e.label);
-        auto* item = new QListWidgetItem(label, m_list);
+        auto* item = new QListWidgetItem(label, list);
         item->setData(Qt::UserRole, e.id);
     }
 }
 
 void ProbePage::onListSelectionChanged()
 {
-    const int row = m_list->currentRow();
-    if (row < 0 || row >= m_probes.size()) {
-        m_currentIndex = -1;
+    const int row = list->currentRow();
+    if (row < 0 || row >= probes.size()) {
+        currentIndex = -1;
         refreshInspector();
-        m_maker->clearToConnector();
+        maker->clearToConnector();
         return;
     }
-    m_currentIndex = row;
+    currentIndex = row;
     refreshInspector();
     loadProbeIntoMaker(row);
 }
@@ -370,7 +370,7 @@ void ProbePage::onAddFromFileClicked()
 int ProbePage::appendProbe(const QString& sourcePath)
 {
     int newId = 0;
-    for (const ProbeEntry& e : m_probes) newId = qMax(newId, e.id + 1);
+    for (const ProbeEntry& e : probes) newId = qMax(newId, e.id + 1);
 
     const QString fname = sessionProbeFilename(newId);
     const QString fpath = QDir::current().absoluteFilePath(fname);
@@ -436,19 +436,19 @@ int ProbePage::appendProbe(const QString& sourcePath)
     e.probeFile     = fname;
     e.label         = QString();
     e.channelOffset = 0;
-    m_probes.append(e);
+    probes.append(e);
 
     rebuildList();
-    m_list->setCurrentRow(m_probes.size() - 1);
-    m_modified = true;
+    list->setCurrentRow(probes.size() - 1);
+    modified = true;
     recalculateAll();
     return newId;
 }
 
 void ProbePage::onRemoveClicked()
 {
-    if (m_currentIndex < 0 || m_currentIndex >= m_probes.size()) return;
-    const ProbeEntry victim = m_probes[m_currentIndex];
+    if (currentIndex < 0 || currentIndex >= probes.size()) return;
+    const ProbeEntry victim = probes[currentIndex];
 
     const auto reply = QMessageBox::question(
         this, tr("Remove Probe"),
@@ -469,18 +469,18 @@ void ProbePage::onRemoveClicked()
             QFile::remove(fpath);
     }
 
-    m_probes.removeAt(m_currentIndex);
-    if (m_probes.isEmpty()) {
-        m_currentIndex = -1;
+    probes.removeAt(currentIndex);
+    if (probes.isEmpty()) {
+        currentIndex = -1;
     } else {
-        m_currentIndex = qMin(m_currentIndex, m_probes.size() - 1);
+        currentIndex = qMin(currentIndex, probes.size() - 1);
     }
     rebuildList();
-    if (m_currentIndex >= 0)
-        m_list->setCurrentRow(m_currentIndex);
+    if (currentIndex >= 0)
+        list->setCurrentRow(currentIndex);
     else
         refreshInspector();
-    m_modified = true;
+    modified = true;
     recalculateAll();
     setStatus(tr("Removed probe %1.").arg(victim.id));
 }
@@ -494,12 +494,12 @@ void ProbePage::onRemoveClicked()
 // can't wipe out hand-edited probe layouts.
 void ProbePage::onBrowseLibraryClicked()
 {
-    if (m_currentIndex < 0) {
+    if (currentIndex < 0) {
         setStatus(tr("Select a probe first, or use + to add one."), /*err=*/true);
         return;
     }
 
-    ProbeEntry& e = m_probes[m_currentIndex];
+    ProbeEntry& e = probes[currentIndex];
 
     // Confirm if the current probe is non-empty.  We use a content
     // heuristic rather than a "saved-to-file" flag so the check
@@ -536,10 +536,10 @@ void ProbePage::onBrowseLibraryClicked()
 
     e.probeFile = localName;
     rebuildList();
-    m_list->setCurrentRow(m_currentIndex);
-    m_modified = true;
+    list->setCurrentRow(currentIndex);
+    modified = true;
     recalculateAll();
-    loadProbeIntoMaker(m_currentIndex);
+    loadProbeIntoMaker(currentIndex);
 
     setStatus(tr("Imported %1 → probe %2 (%3).")
                 .arg(QFileInfo(path).fileName())
@@ -594,64 +594,64 @@ bool ProbePage::probeIsUntouched(const QString& path) const
 
 void ProbePage::refreshInspector()
 {
-    const bool hasSel = (m_currentIndex >= 0 && m_currentIndex < m_probes.size());
+    const bool hasSel = (currentIndex >= 0 && currentIndex < probes.size());
 
-    m_inspLabel ->setEnabled(hasSel);
-    m_inspFile  ->setEnabled(hasSel);
-    m_inspOffset->setEnabled(hasSel);
-    m_browseBtn ->setEnabled(hasSel);
-    m_removeBtn ->setEnabled(hasSel);
+    inspLabel ->setEnabled(hasSel);
+    inspFile  ->setEnabled(hasSel);
+    inspOffset->setEnabled(hasSel);
+    browseBtn ->setEnabled(hasSel);
+    removeBtn ->setEnabled(hasSel);
 
-    QSignalBlocker bL(m_inspLabel);
-    QSignalBlocker bF(m_inspFile);
-    QSignalBlocker bO(m_inspOffset);
+    QSignalBlocker bL(inspLabel);
+    QSignalBlocker bF(inspFile);
+    QSignalBlocker bO(inspOffset);
 
     if (!hasSel) {
-        m_inspLabel ->clear();
-        m_inspFile  ->clear();
-        m_inspOffset->setValue(0);
-        m_inspAnatomy->setText(QStringLiteral("—"));
-        m_inspSpike  ->setText(QStringLiteral("—"));
+        inspLabel ->clear();
+        inspFile  ->clear();
+        inspOffset->setValue(0);
+        inspAnatomy->setText(QStringLiteral("—"));
+        inspSpike  ->setText(QStringLiteral("—"));
         return;
     }
 
-    const ProbeEntry& e = m_probes[m_currentIndex];
-    m_inspLabel ->setText(e.label);
-    m_inspFile  ->setText(e.probeFile);
-    m_inspOffset->setValue(e.channelOffset);
+    const ProbeEntry& e = probes[currentIndex];
+    inspLabel ->setText(e.label);
+    inspFile  ->setText(e.probeFile);
+    inspOffset->setValue(e.channelOffset);
     updateGroupsLabels();
 }
 
 void ProbePage::updateGroupsLabels()
 {
-    if (m_currentIndex < 0 || m_currentIndex >= m_probes.size()) {
-        m_inspAnatomy->setText(QStringLiteral("—"));
-        m_inspSpike  ->setText(QStringLiteral("—"));
+    if (currentIndex < 0 || currentIndex >= probes.size()) {
+        inspAnatomy->setText(QStringLiteral("—"));
+        inspSpike  ->setText(QStringLiteral("—"));
         return;
     }
-    const ProbeEntry& e = m_probes[m_currentIndex];
+    const ProbeEntry& e = probes[currentIndex];
     QStringList anatStrs;  for (int g : e.anatomicalGroups) anatStrs.append(QString::number(g));
     QStringList spikeStrs; for (int g : e.spikeGroups)      spikeStrs.append(QString::number(g));
-    m_inspAnatomy->setText(anatStrs.isEmpty()  ? tr("—") : anatStrs.join(QStringLiteral(", ")));
-    m_inspSpike  ->setText(spikeStrs.isEmpty() ? tr("(same as anatomical)")
+    inspAnatomy->setText(anatStrs.isEmpty()  ? tr("—") : anatStrs.join(QStringLiteral(", ")));
+    inspSpike  ->setText(spikeStrs.isEmpty() ? tr("(same as anatomical)")
                                                : spikeStrs.join(QStringLiteral(", ")));
 }
 
 void ProbePage::onLabelEdited()
 {
-    if (m_currentIndex < 0) return;
-    m_probes[m_currentIndex].label = m_inspLabel->text();
+    if (currentIndex < 0) return;
+    probes[currentIndex].label = inspLabel->text();
     rebuildList();
-    m_list->setCurrentRow(m_currentIndex);
-    m_modified = true;
+    list->setCurrentRow(currentIndex);
+    modified = true;
     emit probesModified();
 }
 
 void ProbePage::onOffsetEdited()
 {
-    if (m_currentIndex < 0) return;
-    m_probes[m_currentIndex].channelOffset = m_inspOffset->value();
-    m_modified = true;
+    if (currentIndex < 0) return;
+    probes[currentIndex].channelOffset = inspOffset->value();
+    modified = true;
     recalculateAll();
 }
 
@@ -661,43 +661,43 @@ void ProbePage::onOffsetEdited()
 
 void ProbePage::loadProbeIntoMaker(int probeIndex)
 {
-    if (!m_maker || probeIndex < 0 || probeIndex >= m_probes.size()) return;
+    if (!maker || probeIndex < 0 || probeIndex >= probes.size()) return;
 
-    const ProbeEntry& e = m_probes[probeIndex];
+    const ProbeEntry& e = probes[probeIndex];
     const QString resolved = resolveProbePath(e.probeFile);
     if (resolved.isEmpty()) {
-        m_maker->clearToConnector();
+        maker->clearToConnector();
         return;
     }
 
-    m_loadingMaker = true;
+    loadingMaker = true;
     QString err;
-    const bool ok = m_maker->loadFromFile(resolved, &err);
-    m_loadingMaker = false;
+    const bool ok = maker->loadFromFile(resolved, &err);
+    loadingMaker = false;
 
     if (!ok) {
         qWarning() << "ProbePage: maker failed to load" << resolved << ":" << err;
-        m_maker->clearToConnector();
+        maker->clearToConnector();
     }
 }
 
 void ProbePage::onMakerModified()
 {
-    if (m_loadingMaker) return;
-    if (m_currentIndex < 0 || m_currentIndex >= m_probes.size()) return;
+    if (loadingMaker) return;
+    if (currentIndex < 0 || currentIndex >= probes.size()) return;
     saveCurrentProbeFile();
 }
 
 void ProbePage::saveCurrentProbeFile()
 {
-    if (m_currentIndex < 0 || m_currentIndex >= m_probes.size()) return;
-    ProbeEntry& e = m_probes[m_currentIndex];
+    if (currentIndex < 0 || currentIndex >= probes.size()) return;
+    ProbeEntry& e = probes[currentIndex];
     if (e.id < 0) return;
 
     const QString fname = sessionProbeFilename(e.id);
     const QString fpath = QDir::current().absoluteFilePath(fname);
     QString err;
-    if (!m_maker->saveToFile(fpath, &err)) {
+    if (!maker->saveToFile(fpath, &err)) {
         qWarning() << "ProbePage: maker save failed for" << fpath << ":" << err;
         setStatus(tr("Save failed for %1: %2").arg(fname, err), /*err=*/true);
         return;
@@ -705,10 +705,10 @@ void ProbePage::saveCurrentProbeFile()
 
     if (e.probeFile != fname) {
         e.probeFile = fname;
-        QSignalBlocker blocker(m_inspFile);
-        m_inspFile->setText(fname);
+        QSignalBlocker blocker(inspFile);
+        inspFile->setText(fname);
     }
-    m_modified = true;
+    modified = true;
     recalculateAll();   // geometry changed → recompute group memberships
     setStatus(tr("Saved geometry → %1").arg(fname));
 }
@@ -720,9 +720,9 @@ void ProbePage::saveCurrentProbeFile()
 // neutral messages get the default grey.  Pass an empty string to clear.
 void ProbePage::setStatus(const QString& msg, bool isError)
 {
-    if (!m_status) return;
-    m_status->setText(msg);
-    m_status->setStyleSheet(isError
+    if (!status) return;
+    status->setText(msg);
+    status->setStyleSheet(isError
         ? QStringLiteral("color:#f87171;font-size:11px;")
         : QStringLiteral("color:#9ca3af;font-size:11px;"));
 }
@@ -805,7 +805,7 @@ QString ProbePage::copyProbeIntoSession(const QString& srcPath, int probeId)
 //
 // Walk the probe list top-to-bottom assigning channel offsets cumulatively
 // and parsing each probe's geometry to derive anatomical / spike groups.
-// Mirrors the original algorithm but works against the m_probes vector
+// Mirrors the original algorithm but works against the probes vector
 // instead of a QTableWidget.
 
 void ProbePage::recalculateAll()
@@ -816,7 +816,7 @@ void ProbePage::recalculateAll()
     int nextGroupId = 1;
     int cumOffset   = 0;
 
-    for (ProbeEntry& e : m_probes) {
+    for (ProbeEntry& e : probes) {
         e.channelOffset = cumOffset;
         e.anatomicalGroups.clear();
         e.spikeGroups.clear();
@@ -842,9 +842,9 @@ void ProbePage::recalculateAll()
     }
 
     // Leftover anatomical group: any acquisition channel not claimed by a probe.
-    if (m_nbChannels > 0) {
+    if (nbChannels > 0) {
         QList<int> leftover;
-        for (int ch = 0; ch < m_nbChannels; ++ch)
+        for (int ch = 0; ch < nbChannels; ++ch)
             if (!claimedChannels.contains(ch))
                 leftover.append(ch);
         if (!leftover.isEmpty())
@@ -857,7 +857,7 @@ void ProbePage::recalculateAll()
 
     emit probesModified();
     if (!outAnatomy.isEmpty())
-        emit probeLayoutImported(m_probes, outAnatomy, outSpike, 1);
+        emit probeLayoutImported(probes, outAnatomy, outSpike, 1);
 }
 
 bool ProbePage::importProbeYaml(const QString&        path,
