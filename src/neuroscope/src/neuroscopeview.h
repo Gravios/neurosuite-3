@@ -195,8 +195,12 @@ public:
     * @param on true to show the spectral view, false to show the traces.
     */
     void setSpectralMode(bool on){
+        spectralModeState = on;
         emit spectralModeToSet(on);
     }
+
+    /**Returns true if the active display is showing the spectral view.*/
+    bool isSpectralMode() const { return spectralModeState; }
 
     /**Displays or hides vertical lines to show the clusters.
     * @param lines true if the vertical lines are drawn for each cluster, false otherwise.
@@ -817,6 +821,7 @@ private:
 
     /**True if the traces are displayed on multiple columns, false otherwise.*/
     bool multiColumns;
+    bool spectralModeState = false;
 
     /**True if vertical lines are displayed to show the clusters, false otherwise.*/
     bool verticalLines;

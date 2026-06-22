@@ -1957,6 +1957,7 @@ void NeuroscopeApp::resetState(){
     clusterVerticalLines->setChecked(false);
     greyScale->setChecked(false);
     displayMode->setChecked(false);
+    mSpectralView->setChecked(false);
     editMode->setChecked(true);
     showHideLabels->setChecked(false);
     positionViewToggle->setChecked(false);
@@ -2017,6 +2018,7 @@ void NeuroscopeApp::slotSetUp(QList<int>* channelsToDisplay, bool verticalLines,
     clusterWaveforms->setChecked(waveforms);
     greyScale->setChecked(greyMode);
     displayMode->setChecked(multipleColumns);
+    mSpectralView->setChecked(false);
     this->autocenterChannels->setChecked(autocenterChannels);
     showHideLabels->setChecked(showLabels);
     positionViewToggle->setChecked(positionView);
@@ -2298,6 +2300,7 @@ void NeuroscopeApp::slotTabChange(int index){
     spikeChannelPalette->setGreyScale(greyMode);
 
     displayMode->setChecked(activeView->getMultiColumns());
+    mSpectralView->setChecked(activeView->isSpectralMode());
     select = activeView->isSelectionTool();
     const QList<int> selectedChannels = activeView->getSelectedChannels();
 
