@@ -98,8 +98,8 @@ struct PipelineEdge {
  *
  *  Coordinate systems
  *  ──────────────────
- *    World:  m_nodes[i].pos is in world coords.
- *    Screen: screen = world + m_pan.
+ *    World:  nodes[i].pos is in world coords.
+ *    Screen: screen = world + pan.
  *
  *  Interactions
  *  ────────────
@@ -128,8 +128,8 @@ public:
     void clearAll();
     void deleteSelected();
 
-    QString selectedNodeId()  const { return m_selNodeId; }
-    QString selectedEdgeKey() const { return m_selEdgeKey; }
+    QString selectedNodeId()  const { return selNodeId; }
+    QString selectedEdgeKey() const { return selEdgeKey; }
 
 signals:
     void nodeSelected(const QString& id);
@@ -155,42 +155,42 @@ public:
     static constexpr float HBAR  = 4.f;   // header stripe height
 
     /** Allocate the next unique node id (e.g. "n42"). */
-    QString allocateId() { return QStringLiteral("n%1").arg(++m_idSeq); }
+    QString allocateId() { return QStringLiteral("n%1").arg(++idSeq); }
 
     /** Programmatically select a node by id and update the display. */
     void selectNode(const QString& id) {
-        m_selNodeId  = id;
-        m_selEdgeKey.clear();
+        selNodeId  = id;
+        selEdgeKey.clear();
         update();
         emit nodeSelected(id);
     }
 
 private:
 
-    QList<PipelineNode>* m_nodes = nullptr;
-    QList<PipelineEdge>* m_edges = nullptr;
+    QList<PipelineNode>* nodes = nullptr;
+    QList<PipelineEdge>* edges = nullptr;
 
-    QString m_selNodeId;
-    QString m_selEdgeKey;   // "fromId→toId"
+    QString selNodeId;
+    QString selEdgeKey;   // "fromId→toId"
 
     // drag state
-    QString  m_dragId;
-    QPointF  m_dragOffset;
-    bool     m_panActive = false;
-    QPointF  m_panStart;
-    QPointF  m_pan = {40, 40};
+    QString  dragId;
+    QPointF  dragOffset;
+    bool     panActive = false;
+    QPointF  panStart;
+    QPointF  pan = {40, 40};
 
     // connection state
-    bool    m_connecting = false;
-    QString m_connectFrom;
-    QPointF m_connectCursor;
+    bool    connecting = false;
+    QString connectFrom;
+    QPointF connectCursor;
 
-    int m_idSeq = 0;
-    QString newId() { return QStringLiteral("n%1").arg(++m_idSeq); }
+    int idSeq = 0;
+    QString newId() { return QStringLiteral("n%1").arg(++idSeq); }
 
     // coord helpers
-    QPointF w2s(const QPointF& w) const { return w + m_pan; }
-    QPointF s2w(const QPointF& s) const { return s - m_pan; }
+    QPointF w2s(const QPointF& w) const { return w + pan; }
+    QPointF s2w(const QPointF& s) const { return s - pan; }
 
     QRectF  nodeRect(const PipelineNode& n) const;
     QPointF outPort(const PipelineNode& n)  const;
@@ -247,7 +247,7 @@ public:
      *  Emits nothing — purely a data accessor. */
     QList<ProgramInformation> getPrograms() const;
 
-    bool isModified() const { return m_modified; }
+    bool isModified() const { return modified; }
 
 signals:
     /** Emitted when "Apply Pipeline" is clicked.
@@ -286,29 +286,29 @@ private:
     void refreshApplyState();
 
     // data
-    QList<PipelineNode> m_nodes;
-    QList<PipelineEdge> m_edges;
-    bool                m_modified = false;
+    QList<PipelineNode> nodes;
+    QList<PipelineEdge> edges;
+    bool                modified = false;
 
     // canvas
-    PipelineCanvas* m_canvas;
+    PipelineCanvas* canvas;
 
     // palette
-    QListWidget* m_palette;
+    QListWidget* palette;
 
     // inspector widgets
-    QScrollArea* m_inspScroll;
-    QWidget*     m_inspWidget;
-    QLabel*      m_inspTitle;
-    QCheckBox*   m_inspEnabled;
-    QWidget*     m_inspParamArea;
-    QFormLayout* m_inspForm;
+    QScrollArea* inspScroll;
+    QWidget*     inspWidget;
+    QLabel*      inspTitle;
+    QCheckBox*   inspEnabled;
+    QWidget*     inspParamArea;
+    QFormLayout* inspForm;
     /** Parallel to the selected node's params: one QLineEdit per row. */
-    QVector<QLineEdit*> m_paramEdits;
+    QVector<QLineEdit*> paramEdits;
 
     // toolbar
-    QComboBox*   m_presetCombo;
-    QPushButton* m_applyBtn;
+    QComboBox*   presetCombo;
+    QPushButton* applyBtn;
 
-    QString m_inspectedId;
+    QString inspectedId;
 };
