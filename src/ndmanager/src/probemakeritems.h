@@ -17,7 +17,7 @@
  * micron coords (with channels parented to their owning shank for
  * cheap drag-the-shank-and-channels-follow behaviour); items in the
  * logical view are positioned in arbitrary scene coords with their
- * positions persisted across rebuilds via the page's m_logicalState
+ * positions persisted across rebuilds via the page's logicalState
  * cache (see probemakerpage.h).
  *
  * Copyright (C) 2026 neurosuite-3 contributors
@@ -102,8 +102,8 @@ protected:
                QWidget* widget) override;
 
 private:
-    ProbeConnector* m_model;   ///< non-owning, lifetime managed by the page
-    qreal           m_width;
+    ProbeConnector* model;   ///< non-owning, lifetime managed by the page
+    qreal           width;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ private:
      *  sits at y = 0. */
     void rebuildPolygon();
 
-    ProbeShank* m_model;        ///< non-owning
+    ProbeShank* model;        ///< non-owning
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ protected:
                         const QVariant& value) override;
 
 private:
-    ProbeChannel* m_model;      ///< non-owning
+    ProbeChannel* model;      ///< non-owning
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,8 +251,8 @@ public:
      *  outgoing edges to children. */
     QPointF bottomAnchor() const;
 
-    Kind  kind()     const { return m_kind; }
-    void* modelPtr() const { return m_modelPtr; }
+    Kind  getKind()  const { return kind; }
+    void* getModelPtr() const { return modelPtr; }
 
     int type() const override;
     QRectF boundingRect() const override;
@@ -265,11 +265,11 @@ protected:
                         const QVariant& value) override;
 
 private:
-    Kind     m_kind;
-    void*    m_modelPtr;       ///< back-reference; not owning
-    QString  m_label;
-    QSizeF   m_size;
-    QSet<LogicalEdgeItem*> m_edges;
+    Kind     kind;
+    void*    modelPtr;       ///< back-reference; not owning
+    QString  label;
+    QSizeF   size;
+    QSet<LogicalEdgeItem*> edges;
 };
 
 /** Polyline between two LogicalNodeItem endpoints.  Endpoints are
@@ -306,10 +306,10 @@ public:
                  QWidget* widget) override;
 
 private:
-    LogicalNodeItem* m_src;
-    LogicalNodeItem* m_dst;
-    QPolygonF        m_path;       ///< 4 points, scene coords
-    QRectF           m_bounding;   ///< cached bounding rect for boundingRect()
+    LogicalNodeItem* src;
+    LogicalNodeItem* dst;
+    QPolygonF        path;       ///< 4 points, scene coords
+    QRectF           bounding;   ///< cached bounding rect for boundingRect()
 };
 
 }  // namespace probemaker

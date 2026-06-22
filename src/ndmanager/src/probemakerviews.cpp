@@ -55,8 +55,8 @@ void ProbeLogicalView::wheelEvent(QWheelEvent* e)
 void ProbeLogicalView::mousePressEvent(QMouseEvent* e)
 {
     if (e->button() == Qt::MiddleButton) {
-        m_panning = true;
-        m_lastPan = e->pos();
+        panning = true;
+        lastPan = e->pos();
         QApplication::setOverrideCursor(Qt::ClosedHandCursor);
         e->accept();
         return;
@@ -66,9 +66,9 @@ void ProbeLogicalView::mousePressEvent(QMouseEvent* e)
 
 void ProbeLogicalView::mouseMoveEvent(QMouseEvent* e)
 {
-    if (m_panning) {
-        const QPoint d = e->pos() - m_lastPan;
-        m_lastPan = e->pos();
+    if (panning) {
+        const QPoint d = e->pos() - lastPan;
+        lastPan = e->pos();
         horizontalScrollBar()->setValue(horizontalScrollBar()->value() - d.x());
         verticalScrollBar()->setValue(verticalScrollBar()->value() - d.y());
         e->accept();
@@ -79,8 +79,8 @@ void ProbeLogicalView::mouseMoveEvent(QMouseEvent* e)
 
 void ProbeLogicalView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (e->button() == Qt::MiddleButton && m_panning) {
-        m_panning = false;
+    if (e->button() == Qt::MiddleButton && panning) {
+        panning = false;
         QApplication::restoreOverrideCursor();
         e->accept();
         return;
@@ -133,8 +133,8 @@ void ProbePhysicalView::wheelEvent(QWheelEvent* e)
 void ProbePhysicalView::mousePressEvent(QMouseEvent* e)
 {
     if (e->button() == Qt::MiddleButton) {
-        m_panning = true;
-        m_lastPan = e->pos();
+        panning = true;
+        lastPan = e->pos();
         QApplication::setOverrideCursor(Qt::ClosedHandCursor);
         emit userInteracted();
         e->accept();
@@ -145,9 +145,9 @@ void ProbePhysicalView::mousePressEvent(QMouseEvent* e)
 
 void ProbePhysicalView::mouseMoveEvent(QMouseEvent* e)
 {
-    if (m_panning) {
-        const QPoint d = e->pos() - m_lastPan;
-        m_lastPan = e->pos();
+    if (panning) {
+        const QPoint d = e->pos() - lastPan;
+        lastPan = e->pos();
         horizontalScrollBar()->setValue(horizontalScrollBar()->value() - d.x());
         verticalScrollBar()->setValue(verticalScrollBar()->value() - d.y());
         e->accept();
@@ -158,8 +158,8 @@ void ProbePhysicalView::mouseMoveEvent(QMouseEvent* e)
 
 void ProbePhysicalView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (e->button() == Qt::MiddleButton && m_panning) {
-        m_panning = false;
+    if (e->button() == Qt::MiddleButton && panning) {
+        panning = false;
         QApplication::restoreOverrideCursor();
         e->accept();
         return;
