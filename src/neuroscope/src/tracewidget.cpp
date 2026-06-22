@@ -18,6 +18,8 @@
 #include "tracewidget.h"
 #include "spectralview.h"
 #include "spectralinspector.h"
+
+#include <QShortcut>
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
 #include "itemcolors.h"
 #include <QScrollBar>
@@ -60,6 +62,15 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     setLayout(lay);
     mainLayout = lay;
     currentChannels = channelsToDisplay;
+
+    // "u" applies any pending (debounced) spectral parameter change immediately.
+    // Scoped to this widget and its children, so it fires while the spectral
+    // inspector or view has focus, and only acts in spectral mode.
+    QShortcut* commitShortcut = new QShortcut(QKeySequence(Qt::Key_U), this);
+    commitShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(commitShortcut, &QShortcut::activated, this, [this]() {
+        if (spectralView && spectralMode) spectralView->commitNow();
+    });
     recordingLength = tracesProvider.recordingLength();
 
     selectionWidgets = new QWidget(this);

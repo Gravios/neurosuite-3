@@ -17,6 +17,8 @@
 #include <QImage>
 #include <QList>
 
+class QTimer;
+
 class SpectralView : public BaseFrame {
     Q_OBJECT
 
@@ -57,6 +59,13 @@ public:
     * the trace window. The view re-centres on the current trace centre.*/
     void setSpan(long ms);
 
+    /**Applies any pending parameter/window change immediately, bypassing the
+    * debounce delay (bound to the "u" key).*/
+    void commitNow();
+
+    /**Debounce delay (ms) before a parameter change is applied; 0 = immediate.*/
+    void setUpdateDelay(int ms) { recomputeDelayMs = ms < 0 ? 0 : ms; }
+
     const neuroscope::spectral::SpectralParams& spectralParams() const { return params; }
 
 public Q_SLOTS:
@@ -71,6 +80,13 @@ private:
     void recompute();          // run the engine on the current window, rebuild image
     void rebuildImage();       // SpectralImage -> QImage
     void drawAxes(QPainter& painter, const QRect& plot);
+
+    // Debounced application of inspector changes: setters mark what is dirty and
+    // (re)start a short timer; flushPending() applies once when it fires or when
+    // the user presses "u" (commitNow). Avoids recomputing on every keystroke.
+    void scheduleParamUpdate();
+    void scheduleWindowUpdate();
+    void flushPending();
 
     TracesProvider& tracesProvider;
     QList<int> channels;
@@ -97,6 +113,11 @@ private:
     double dynamicRangeDb = 60.0;
 
     QImage image;
+
+    QTimer* recomputeTimer = nullptr;
+    bool paramsDirty = false;  // a parameter change awaits recompute
+    bool windowDirty = false;  // a span/lock change awaits a window re-derive
+    int  recomputeDelayMs = 300;
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H
