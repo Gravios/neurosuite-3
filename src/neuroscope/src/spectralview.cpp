@@ -3,7 +3,10 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QTimer>
+#include <QRect>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -12,6 +15,23 @@ using neuroscope::spectral::SpectralParams;
 using neuroscope::spectral::SpectralImage;
 using neuroscope::spectral::Colormap;
 using neuroscope::spectral::SpectralBackend;
+
+namespace {
+// A "nice" axis step (1/2/5 x 10^k) giving roughly targetTicks divisions.
+double niceStep(double range, int targetTicks)
+{
+    if (range <= 0.0 || targetTicks < 1) return 1.0;
+    const double raw = range / targetTicks;
+    const double mag = std::pow(10.0, std::floor(std::log10(raw)));
+    const double norm = raw / mag;
+    double nice;
+    if (norm < 1.5) nice = 1.0;
+    else if (norm < 3.0) nice = 2.0;
+    else if (norm < 7.0) nice = 5.0;
+    else nice = 10.0;
+    return nice * mag;
+}
+} // namespace
 
 SpectralView::SpectralView(TracesProvider& tracesProvider,
                            const QList<int>& channelsToDisplay,
@@ -211,17 +231,37 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
                      QString::number(startTime + timeFrameWidth / 2));
     painter.drawText(plot.right() - 30, plot.bottom() + 16, QString::number(endTime));
 
-    // Y axis: frequency (mode B) or channel id (mode A); low at bottom / top.
-    if (modeB && !lastImage.freqs.empty()) {
+    // Y axis ticks + labels on the left edge: frequency (mode B) or channel
+    // id (mode A). Low frequency at the bottom, channel 0 at the top.
+    if (modeB && lastImage.freqs.size() >= 2) {
         const double fLo = lastImage.freqs.front();
         const double fHi = lastImage.freqs.back();
-        painter.drawText(4, plot.top() + 8, QString::number(fHi, 'f', 0));     // top = high
-        painter.drawText(4, plot.bottom(), QString::number(fLo, 'f', 0));      // bottom = low
-        painter.drawText(2, plot.center().y(), tr("Hz"));
+        if (fHi > fLo) {
+            const double step = niceStep(fHi - fLo, 6);
+            const int decimals = step < 1.0 ? 1 : 0;
+            const double first = std::ceil(fLo / step) * step;
+            for (double f = first; f <= fHi + step * 1e-6; f += step) {
+                const int y = plot.top()
+                    + static_cast<int>((fHi - f) / (fHi - fLo) * plot.height());
+                painter.drawLine(plot.left() - 4, y, plot.left(), y);
+                painter.drawText(QRect(0, y - 7, plot.left() - 6, 14),
+                                 Qt::AlignRight | Qt::AlignVCenter,
+                                 QString::number(f, 'f', decimals));
+            }
+        }
+        painter.drawText(2, plot.top() - 5, tr("Hz"));
     } else if (!modeB && !lastImage.rowChannels.empty()) {
-        painter.drawText(4, plot.top() + 8, QString::number(lastImage.rowChannels.front()));
-        painter.drawText(4, plot.bottom(), QString::number(lastImage.rowChannels.back()));
-        painter.drawText(2, plot.center().y(), tr("ch"));
+        const int nch = static_cast<int>(lastImage.rowChannels.size());
+        const int stride = std::max(1, nch / 16);   // cap label count
+        for (int r = 0; r < nch; r += stride) {
+            const int y = plot.top()
+                + static_cast<int>((r + 0.5) / nch * plot.height());
+            painter.drawLine(plot.left() - 4, y, plot.left(), y);
+            painter.drawText(QRect(0, y - 7, plot.left() - 6, 14),
+                             Qt::AlignRight | Qt::AlignVCenter,
+                             QString::number(lastImage.rowChannels[r]));
+        }
+        painter.drawText(2, plot.top() - 5, tr("ch"));
     }
 }
 

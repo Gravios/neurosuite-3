@@ -58,11 +58,11 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     taperSpin->setToolTip(tr("number of tapers K"));
 
     windowSpin = new QSpinBox;
-    windowSpin->setRange(16, 8192); windowSpin->setValue(p.windowSamples);
+    windowSpin->setRange(16, 100000); windowSpin->setValue(p.windowSamples);
     windowSpin->setToolTip(tr("window length (samples)"));
 
     nfftSpin = new QSpinBox;
-    nfftSpin->setRange(16, 16384); nfftSpin->setValue(p.nfft);
+    nfftSpin->setRange(16, 100000); nfftSpin->setValue(p.nfft);
     nfftSpin->setToolTip(tr("FFT length"));
 
     stepSpin = new QSpinBox;
