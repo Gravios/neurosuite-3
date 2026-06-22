@@ -14,13 +14,34 @@ add_library(neuroscope-spectral STATIC
     dpss.cpp
     multitaper.cpp
     spectralfft.cpp
-    spectralengine.cpp
-    spectralgpu_cpu.cpp)
+    spectralengine.cpp)
 
 target_compile_features(neuroscope-spectral PUBLIC cxx_std_20)
 set_target_properties(neuroscope-spectral PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(neuroscope-spectral
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# GPU backend source: the cuFFT translation unit when CUDA is enabled and the
+# toolkit is present, otherwise a CPU stub that always declines so the engine
+# uses its CPU path. CUDA is gated on the project having found nvcc (the root
+# enables the CUDA language in project() only then).
+set(_ns_gpu_cuda FALSE)
+if(USE_CUDA AND CMAKE_CUDA_COMPILER)
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+        set(_ns_gpu_cuda TRUE)
+    endif()
+endif()
+if(_ns_gpu_cuda)
+    target_sources(neuroscope-spectral PRIVATE spectralgpu.cu)
+    set_source_files_properties(spectralgpu.cu PROPERTIES LANGUAGE CUDA)
+    target_link_libraries(neuroscope-spectral PUBLIC CUDA::cufft CUDA::cudart)
+    target_compile_definitions(neuroscope-spectral PUBLIC HAVE_CUDA)
+    message(STATUS "neuroscope-spectral: CUDA (cuFFT) GPU backend enabled")
+else()
+    target_sources(neuroscope-spectral PRIVATE spectralgpu_cpu.cpp)
+    message(STATUS "neuroscope-spectral: GPU backend = CPU fallback (no CUDA)")
+endif()
 
 # Optional FFTW backend (the MIT "Fastest Fourier Transform in the West").
 # When present it provides SIMD real-to-complex transforms at arbitrary sizes;
