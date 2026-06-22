@@ -54,7 +54,7 @@ class ChannelItem;
  *
  *  The page is the single source of truth for the probe data; both
  *  views and the inspector observe it.  Edits in any of the three
- *  surfaces flow back to `m_data`, which is then re-rendered by
+ *  surfaces flow back to `data`, which is then re-rendered by
  *  refreshing whichever items changed.
  */
 class ProbeMakerPage : public QWidget
@@ -137,12 +137,12 @@ private:
     void buildPhysicalPane(QSplitter* inner);
     void buildInspector(QSplitter* inner);
 
-    /** Repopulate the logical-view scene from m_data.  Called after
+    /** Repopulate the logical-view scene from data.  Called after
      *  any structural edit (add/remove shank or channel).  Geometry-
      *  only edits are handled by item refreshFromModel(). */
     void rebuildLogicalScene();
 
-    /** Repopulate the physical-view scene from m_data.  Same trigger
+    /** Repopulate the physical-view scene from data.  Same trigger
      *  as rebuildLogicalScene; the two are always called together. */
     void rebuildPhysicalScene();
 
@@ -160,66 +160,66 @@ private:
     void setModified(bool b);
 
     // ── Data ─────────────────────────────────────────────────────────────
-    ProbeConnector m_data;
+    ProbeConnector data;
     bool           m_modified = false;
 
     // ── Views ────────────────────────────────────────────────────────────
-    probemaker::ProbeLogicalView*  m_logicalView  = nullptr;
-    probemaker::ProbePhysicalView* m_physicalView = nullptr;
+    probemaker::ProbeLogicalView*  logicalView  = nullptr;
+    probemaker::ProbePhysicalView* physicalView = nullptr;
 
     // ── Inspector ────────────────────────────────────────────────────────
-    QScrollArea* m_inspScroll = nullptr;
-    QWidget*     m_inspWidget = nullptr;
+    QScrollArea* inspScroll = nullptr;
+    QWidget*     inspWidget = nullptr;
 
     // Connector field group
-    QWidget*    m_connGroup        = nullptr;
-    QLineEdit*  m_connVendor       = nullptr;
-    QLineEdit*  m_connModel        = nullptr;
-    QSpinBox*   m_connTotalChan    = nullptr;
-    QLineEdit*  m_connNotes        = nullptr;
+    QWidget*    connGroup        = nullptr;
+    QLineEdit*  connVendor       = nullptr;
+    QLineEdit*  connModel        = nullptr;
+    QSpinBox*   connTotalChan    = nullptr;
+    QLineEdit*  connNotes        = nullptr;
 
     // Shank field group
-    QWidget*       m_shankGroup    = nullptr;
-    QLineEdit*     m_shankLabel    = nullptr;
-    QDoubleSpinBox*m_shankLength   = nullptr;
-    QDoubleSpinBox*m_shankWidth    = nullptr;
-    QDoubleSpinBox*m_shankTipAngle = nullptr;
-    QDoubleSpinBox*m_shankOriginX  = nullptr;
-    QDoubleSpinBox*m_shankOriginY  = nullptr;
-    QLineEdit*     m_shankLayout   = nullptr;
+    QWidget*       shankGroup    = nullptr;
+    QLineEdit*     shankLabel    = nullptr;
+    QDoubleSpinBox*shankLength   = nullptr;
+    QDoubleSpinBox*shankWidth    = nullptr;
+    QDoubleSpinBox*shankTipAngle = nullptr;
+    QDoubleSpinBox*shankOriginX  = nullptr;
+    QDoubleSpinBox*shankOriginY  = nullptr;
+    QLineEdit*     shankLayout   = nullptr;
 
     // Channel field group
-    QWidget*       m_chanGroup     = nullptr;
-    QSpinBox*      m_chanHwId      = nullptr;
-    QDoubleSpinBox*m_chanX         = nullptr;
-    QDoubleSpinBox*m_chanY         = nullptr;
-    QSpinBox*      m_chanSiteIdx   = nullptr;
-    QDoubleSpinBox*m_chanArea      = nullptr;
+    QWidget*       chanGroup     = nullptr;
+    QSpinBox*      chanHwId      = nullptr;
+    QDoubleSpinBox*chanX         = nullptr;
+    QDoubleSpinBox*chanY         = nullptr;
+    QSpinBox*      chanSiteIdx   = nullptr;
+    QDoubleSpinBox*chanArea      = nullptr;
 
     // Toolbar buttons
-    QPushButton* m_saveBtn       = nullptr;
-    QPushButton* m_saveAsBtn     = nullptr;
-    QPushButton* m_addShankBtn   = nullptr;
-    QPushButton* m_addChannelBtn = nullptr;
-    QPushButton* m_addArrayBtn   = nullptr;
-    QPushButton* m_deleteBtn     = nullptr;
-    QPushButton* m_undoBtn       = nullptr;
-    QPushButton* m_redoBtn       = nullptr;
+    QPushButton* saveBtn       = nullptr;
+    QPushButton* saveAsBtn     = nullptr;
+    QPushButton* addShankBtn   = nullptr;
+    QPushButton* addChannelBtn = nullptr;
+    QPushButton* addArrayBtn   = nullptr;
+    QPushButton* deleteBtn     = nullptr;
+    QPushButton* undoBtn       = nullptr;
+    QPushButton* redoBtn       = nullptr;
 
     /** Selection state.  Each field is non-null only when an item of
      *  that kind is currently selected (the three are mutually
      *  exclusive — multi-selection across kinds isn't supported in v1
      *  because the inspector wouldn't know what to show). */
-    ProbeShank*    m_selectedShank   = nullptr;
-    ProbeChannel*  m_selectedChannel = nullptr;
-    bool           m_connectorSelected = false;
+    ProbeShank*    selectedShank   = nullptr;
+    ProbeChannel*  selectedChannel = nullptr;
+    bool           connectorSelected = false;
 
     /** Set true the first time the user zooms or pans the physical
      *  view; suppresses fitAll() on subsequent scene rebuilds so a
      *  drag/edit doesn't snap their view back to the default.  Cleared
      *  by loadFromFile (fresh content gets a fresh fit) and by the
      *  Fit toolbar button (explicit re-fit). */
-    bool           m_userZoomedOrPanned = false;
+    bool           userZoomedOrPanned = false;
 
     /** Per-item logical-view positions, used by the logical-graph
      *  editor to remember where the user dragged each node across
@@ -237,14 +237,14 @@ private:
      *
      *  Cleared wholesale on clearToConnector / setConnector; pruned
      *  of dead keys at the top of every rebuildLogicalScene. */
-    QHash<QString, QPointF> m_logicalState;
+    QHash<QString, QPointF> logicalState;
 
     // ── Undo / redo ────────────────────────────────────────────────────
     //
     // Snapshot-based undo: every discrete operation (toolbar action,
     // inspector field commit, drag-to-reposition) calls
-    // pushUndoSnapshot() *before* mutating m_data or m_logicalState.
-    // Undo pops the most recent snapshot and replaces m_data plus the
+    // pushUndoSnapshot() *before* mutating data or logicalState.
+    // Undo pops the most recent snapshot and replaces data plus the
     // logical-view position cache with the snapshot's; redo replays
     // the inverse.  The model is small enough (a ProbeConnector with
     // a QList<ProbeShank>) to copy in full on every op without
@@ -254,11 +254,11 @@ private:
     // widgets snapshots on MouseButtonPress over a movable item and
     // pops the just-pushed snapshot on MouseButtonRelease if the
     // tracked item didn't actually move (no-op click-selects).  See
-    // eventFilter() and m_dragSnapshotPushed below.
+    // eventFilter() and dragSnapshotPushed below.
     //
     // Selection isn't saved in the snapshot.  After undo or redo, no
     // item is selected — the model has new shank/channel addresses
-    // post-assignment, so the old m_selectedShank / m_selectedChannel
+    // post-assignment, so the old selectedShank / selectedChannel
     // pointers would be dangling.  The slots null them out and the
     // user re-selects to pick up where they were.
     struct UndoSnapshot {
@@ -266,8 +266,8 @@ private:
         QHash<QString, QPointF> logicalState;  ///< logical-view positions
         QString                 description;   ///< human-readable, for tooltips
     };
-    QList<UndoSnapshot> m_undoStack;
-    QList<UndoSnapshot> m_redoStack;
+    QList<UndoSnapshot> undoStack;
+    QList<UndoSnapshot> redoStack;
     static constexpr int kMaxUndoDepth = 200;
 
     /** Set true while onUndoClicked / onRedoClicked are restoring a
@@ -275,18 +275,18 @@ private:
      *  the restore itself doesn't land on the stack — without this,
      *  the rebuilds called during restore could re-enter mutating
      *  code paths that push, blowing up history. */
-    bool m_undoInProgress = false;
+    bool undoInProgress = false;
 
     /** Set true while a higher-level mutation (onAddArrayClicked,
      *  onAddChannelClicked when there's no shank yet) is recursively
      *  invoking another mutator (onAddShankClicked) for a sub-step.
      *  pushUndoSnapshot returns early in that mode so the user's
      *  single conceptual action becomes one undo entry rather than
-     *  one entry per nested call.  Distinct from m_undoInProgress
+     *  one entry per nested call.  Distinct from undoInProgress
      *  because the semantics differ — restore is "model is being
      *  reverted, don't touch history"; nested-mutation is "model is
      *  being mutated normally, but already snapshotted." */
-    bool m_inNestedMutation = false;
+    bool inNestedMutation = false;
 
     /** Edit identity for coalescing consecutive same-field edits into
      *  a single undo step.  When the user drags a spinbox arrow from
@@ -294,22 +294,22 @@ private:
      *  coalescing each tick would land on the undo stack as a separate
      *  step.  We instead push only the FIRST tick (capturing the
      *  pre-edit state) and let subsequent same-field ticks update
-     *  m_data without pushing.
+     *  data without pushing.
      *
      *  identityKind names the conceptual field (e.g. "shank.length",
      *  "channel.posX"); identityModelPtr disambiguates which item.
      *  Any non-edit op (add / delete / undo / redo / load) calls
      *  resetEditIdentity() so the next edit, even on the same field,
      *  is a fresh undo step. */
-    QString m_lastEditKind;
-    void*   m_lastEditModelPtr = nullptr;
+    QString lastEditKind;
+    void*   lastEditModelPtr = nullptr;
     void resetEditIdentity()
     {
-        m_lastEditKind.clear();
-        m_lastEditModelPtr = nullptr;
+        lastEditKind.clear();
+        lastEditModelPtr = nullptr;
     }
 
-    /** Push the current m_data state on the undo stack with the given
+    /** Push the current data state on the undo stack with the given
      *  description, and clear the redo stack (a new edit invalidates
      *  any prior redo history).  Caps undo depth at kMaxUndoDepth by
      *  dropping the oldest entry. */
@@ -331,7 +331,7 @@ private:
     // ── Drag tracking via event filter ─────────────────────────────────
     //
     // The page installs itself as event filter on both viewports'
-    // viewport widgets (m_logicalView->viewport(), m_physicalView->
+    // viewport widgets (logicalView->viewport(), physicalView->
     // viewport()).  On MouseButtonPress over a movable item, it
     // pushes a snapshot and remembers the item's pre-drag pos.  On
     // MouseButtonRelease, it compares the current pos to the
@@ -343,13 +343,13 @@ private:
     /** True iff a drag-press handler pushed an undo snapshot that's
      *  still pending a corresponding release.  Used by the release
      *  handler to decide whether to keep or pop the snapshot. */
-    bool             m_dragSnapshotPushed = false;
+    bool             dragSnapshotPushed = false;
 
     /** The item whose press triggered the snapshot, and the position
      *  it had at that moment.  Compared at release to determine if
      *  the drag was a no-op. */
-    QGraphicsItem*   m_dragItem = nullptr;
-    QPointF          m_dragStartPos;
+    QGraphicsItem*   dragItem = nullptr;
+    QPointF          dragStartPos;
 
 protected:
     /** Implements drag-press / drag-release detection on both
