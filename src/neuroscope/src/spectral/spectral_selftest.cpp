@@ -12,6 +12,7 @@
 #include "multitaper.h"
 #include "spectralengine.h"
 #include "colormap.h"
+#include "spectralgpu_kernels.h"
 
 #include <cmath>
 #include <cstdio>
@@ -294,6 +295,61 @@ int main()
         colormapRgb(1.0, Colormap::Viridis, r1, g1, b1);
         check((r1 + g1 + b1) > (r0 + g0 + b0), "viridis brightens with t",
               r1 + g1 + b1, r0 + g0 + b0);
+    }
+
+    // ---- GPU kernel math (host/device shared; validated on the CPU) ------
+    // The CUDA kernels are thin wrappers over these functions, so checking them
+    // here covers the index decomposition, tapering and reduction arithmetic
+    // that runs on the device.
+    {
+        using namespace neuroscope::spectral::gpu::kern;
+
+        // Index round-trips: decode then re-encode must reproduce the thread id.
+        const int K = 5, nfft = 256, nbins = nfft / 2 + 1;
+        bool segOk = true, psdOk = true;
+        long segIds[] = {0, 1, nfft - 1, (long)nfft, (long)nfft * K + 7, 123456};
+        for (long gid : segIds) {
+            int c, k, i; decodeSeg(gid, nfft, K, c, k, i);
+            if (((long)(c * K + k) * nfft + i) != gid) segOk = false;
+        }
+        check(segOk, "decodeSeg round-trips", 0, 0);
+        long psdIds[] = {0, 1, nbins - 1, (long)nbins, (long)nbins * 3 + 5, 99999};
+        for (long gid : psdIds) {
+            int c, b; decodePsd(gid, nbins, c, b);
+            if (((long)c * nbins + b) != gid) psdOk = false;
+        }
+        check(psdOk, "decodePsd round-trips", 0, 0);
+
+        // Tapered sample: in-window product, zero-pad, and out-of-range guard.
+        const int N = 4, step = 2;
+        std::vector<double> sig = {1, 2, 3, 4, 5, 6, 7, 8};
+        std::vector<double> tf = {1, 1, 1, 1,  0.5, 0.5, 0.5, 0.5}; // K2 x N4
+        check(taperedSample(sig.data(), sig.size(), tf.data(), N, step, /*c*/1, /*k*/0, /*i*/2) == 5.0,
+              "taperedSample window+taper", taperedSample(sig.data(), sig.size(), tf.data(), N, step, 1, 0, 2), 5.0);
+        check(taperedSample(sig.data(), sig.size(), tf.data(), N, step, 0, 1, 1) == 1.0,
+              "taperedSample applies taper k", taperedSample(sig.data(), sig.size(), tf.data(), N, step, 0, 1, 1), 1.0);
+        check(taperedSample(sig.data(), sig.size(), tf.data(), N, step, 0, 0, /*i>=N*/N) == 0.0,
+              "taperedSample zero-pads", 0, 0);
+        check(taperedSample(sig.data(), sig.size(), tf.data(), N, step, /*c far*/9, 0, 0) == 0.0,
+              "taperedSample guards out-of-range", 0, 0);
+
+        // psdValue: weighted magnitude sum, divide by wsum*fs, interior x2.
+        const int Kp = 2, nb = 5, halfp = 4;
+        std::vector<double> wts = {2.0, 1.0};
+        const double wsum = 3.0, fs = 100.0;
+        // spectra interleaved re,im for (c=0): two tapers x nb bins.
+        std::vector<double> spec(2 * (size_t)Kp * nb, 0.0);
+        // bin b=2 (interior): taper0 (3,4)->25, taper1 (1,0)->1
+        spec[2 * (0 * nb + 2) + 0] = 3; spec[2 * (0 * nb + 2) + 1] = 4;
+        spec[2 * (1 * nb + 2) + 0] = 1; spec[2 * (1 * nb + 2) + 1] = 0;
+        double got = psdValue(spec.data(), wts.data(), wsum, fs, nb, halfp, Kp, 0, 2);
+        double expect = ((2.0 * 25.0 + 1.0 * 1.0) / (wsum * fs)) * 2.0; // interior doubled
+        check(std::abs(got - expect) < 1e-12, "psdValue weighting+norm+interior", got, expect);
+        // bin 0 (not doubled)
+        spec[2 * (0 * nb + 0) + 0] = 2; // taper0 re=2 -> 4
+        double got0 = psdValue(spec.data(), wts.data(), wsum, fs, nb, halfp, Kp, 0, 0);
+        double expect0 = (2.0 * 4.0) / (wsum * fs); // only taper0 nonzero, not doubled
+        check(std::abs(got0 - expect0) < 1e-12, "psdValue DC bin not doubled", got0, expect0);
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS",
