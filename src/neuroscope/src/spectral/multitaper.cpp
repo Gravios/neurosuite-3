@@ -23,11 +23,12 @@ std::vector<double> psdFrequencies(int nfft, double fs)
 
 std::vector<double> multitaperPsd(const double* x, int len,
                                   const DpssTapers& tapers,
-                                  double fs, int nfft,
+                                  double fs, const RealFftPlan& plan,
                                   TaperWeighting weighting)
 {
     const int N = tapers.N;
     const int K = tapers.K;
+    const int nfft = plan.nfft();
     const int half = nfft / 2;
     std::vector<double> psd(half + 1, 0.0);
     if (!tapers.valid() || nfft < N || fs <= 0.0) return psd;
@@ -47,7 +48,7 @@ std::vector<double> multitaperPsd(const double* x, int len,
         const std::vector<double>& h = tapers.taper[k];
         std::fill(seg.begin(), seg.end(), 0.0);
         for (int i = 0; i < useLen; ++i) seg[i] = x[i] * h[i];
-        rfftPowerOneSided(seg, pk);
+        plan.power(seg.data(), pk);
         for (int b = 0; b <= half; ++b) psd[b] += wk * pk[b];
     }
 
@@ -60,6 +61,15 @@ std::vector<double> multitaperPsd(const double* x, int len,
         psd[b] = v;
     }
     return psd;
+}
+
+std::vector<double> multitaperPsd(const double* x, int len,
+                                  const DpssTapers& tapers,
+                                  double fs, int nfft,
+                                  TaperWeighting weighting)
+{
+    RealFftPlan plan(nfft);
+    return multitaperPsd(x, len, tapers, fs, plan, weighting);
 }
 
 void multitaperSpectrogram(const double* signal, int n,
@@ -75,12 +85,15 @@ void multitaperSpectrogram(const double* signal, int n,
     const int nCols = 1 + (n - N) / step;
     out.assign(nCols, {});
 
+    // One plan shared across all windows; power() is thread-safe.
+    RealFftPlan plan(nfft);
+
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static)
 #endif
     for (int c = 0; c < nCols; ++c) {
         const int start = c * step;
-        out[c] = multitaperPsd(signal + start, N, tapers, fs, nfft, weighting);
+        out[c] = multitaperPsd(signal + start, N, tapers, fs, plan, weighting);
     }
 }
 

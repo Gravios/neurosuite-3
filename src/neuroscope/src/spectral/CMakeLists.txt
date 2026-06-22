@@ -12,12 +12,41 @@
 # =============================================================================
 add_library(neuroscope-spectral STATIC
     dpss.cpp
-    multitaper.cpp)
+    multitaper.cpp
+    spectralfft.cpp)
 
 target_compile_features(neuroscope-spectral PUBLIC cxx_std_20)
 set_target_properties(neuroscope-spectral PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(neuroscope-spectral
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Optional FFTW backend (the MIT "Fastest Fourier Transform in the West").
+# When present it provides SIMD real-to-complex transforms at arbitrary sizes;
+# otherwise the in-tree radix-2 fallback is used (power-of-two sizes only).
+# FFTW is GPL, compatible with neuroscope's GPL licence. Discovered via
+# pkg-config (FFTW ships fftw3.pc) with the CMake package config as a fallback.
+find_package(PkgConfig QUIET)
+set(_ns_have_fftw FALSE)
+if(PkgConfig_FOUND)
+    pkg_check_modules(FFTW QUIET IMPORTED_TARGET fftw3)
+    if(FFTW_FOUND)
+        target_link_libraries(neuroscope-spectral PUBLIC PkgConfig::FFTW)
+        set(_ns_have_fftw TRUE)
+    endif()
+endif()
+if(NOT _ns_have_fftw)
+    find_package(FFTW3 QUIET CONFIG)
+    if(FFTW3_FOUND)
+        target_link_libraries(neuroscope-spectral PUBLIC FFTW3::fftw3)
+        set(_ns_have_fftw TRUE)
+    endif()
+endif()
+if(_ns_have_fftw)
+    target_compile_definitions(neuroscope-spectral PUBLIC HAVE_FFTW)
+    message(STATUS "neuroscope-spectral: FFTW backend enabled")
+else()
+    message(STATUS "neuroscope-spectral: FFTW not found — using in-tree radix-2 FFT")
+endif()
 
 find_package(OpenMP QUIET COMPONENTS CXX)
 if(OpenMP_CXX_FOUND)
