@@ -10,6 +10,7 @@
 #include "realfft.h"
 #include "dpss.h"
 #include "multitaper.h"
+#include "spectralengine.h"
 
 #include <cmath>
 #include <cstdio>
@@ -188,6 +189,65 @@ int main()
             const double var = amp * amp / 2.0;
             check(std::abs(integral - var) / var < 0.02, "non-pow2 mtm Parseval", integral, var);
         }
+    }
+
+    // ---- Compute engine: modes A/B, whitening, caching -------------------
+    {
+        const double fs = 1000.0;
+        const int nCh = 4, nS = 4096;
+        const double f0 = 125.0;                 // tone frequency
+        std::mt19937 rng(21);
+        std::normal_distribution<double> g(0.0, 0.05);
+        // sample-major buffer: data[s*nCh + c]. Channel 2 carries the tone.
+        std::vector<double> data((size_t)nS * nCh);
+        for (int s = 0; s < nS; ++s)
+            for (int c = 0; c < nCh; ++c) {
+                double v = g(rng);
+                if (c == 2) v += std::sin(2.0 * M_PI * f0 * s / fs);
+                data[(size_t)s * nCh + c] = v;
+            }
+        std::vector<int> channels{0, 1, 2, 3};
+
+        SpectralEngine engine;
+
+        // Mode B: spectrogram of channel 2 -> dominant frequency near f0.
+        SpectralParams pb;
+        pb.mode = SpectralMode::TimeFrequencySingleChannel;
+        pb.samplingRate = fs; pb.windowSamples = 256; pb.nfft = 256;
+        pb.stepSamples = 128; pb.nw = 3.0; pb.nTapers = 5;
+        pb.singleChannel = 2; pb.freqLow = 0.0; pb.freqHigh = 0.0;
+        const SpectralImage& B = engine.compute(data.data(), nS, nCh, channels, pb, 1);
+        check(B.valid() && B.mode == SpectralMode::TimeFrequencySingleChannel,
+              "engine mode B image", B.rows, 1);
+        // row with the largest time-averaged power.
+        int bestRow = 0; double bestAvg = -1;
+        for (int r = 0; r < B.rows; ++r) {
+            double a = 0; for (int c = 0; c < B.cols; ++c) a += B.at(r, c); a /= B.cols;
+            if (a > bestAvg) { bestAvg = a; bestRow = r; }
+        }
+        check(std::abs(B.freqs[bestRow] - f0) <= 2.0 * fs / pb.nfft,
+              "engine mode B localises tone", B.freqs[bestRow], f0);
+
+        // Cache: identical window + params returns the same cached object.
+        const SpectralImage& B2 = engine.compute(data.data(), nS, nCh, channels, pb, 1);
+        check(&B2 == &B, "engine caches unchanged window/params", 0, 0);
+
+        // Mode A: band power across channels; channel 2 (in-band tone) >> others.
+        SpectralParams pa = pb;
+        pa.mode = SpectralMode::FrequencyAcrossChannels;
+        pa.freqLow = 100.0; pa.freqHigh = 150.0;
+        const SpectralImage& A = engine.compute(data.data(), nS, nCh, channels, pa, 1);
+        check(A.valid() && A.rows == nCh, "engine mode A image", A.rows, nCh);
+        double pTone = 0, pOther = 0;
+        for (int c = 0; c < A.cols; ++c) { pTone += A.at(2, c); pOther += A.at(0, c); }
+        check(pTone > 5.0 * pOther, "engine mode A separates in-band channel", pTone, pOther);
+
+        // Whitening path runs and yields a finite image.
+        SpectralParams pw = pa; pw.whiten = true;
+        const SpectralImage& W = engine.compute(data.data(), nS, nCh, channels, pw, 2);
+        bool finite = W.valid();
+        for (float v : W.data) if (!std::isfinite(v)) finite = false;
+        check(finite, "engine whitening path finite", 0, 0);
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS",
