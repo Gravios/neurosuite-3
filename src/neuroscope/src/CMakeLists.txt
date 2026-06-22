@@ -38,6 +38,7 @@ set(_srcs
     timer.cpp           # ODR-safe definition of tv0 (shared by all timer.h includers)
     tracesprovider.cpp
     traceview.cpp
+    spectralview.cpp
     tracewidget.cpp
     imagecreator.cpp
     globaleventsprovider.cpp
@@ -64,6 +65,7 @@ target_include_directories(neuroscope PRIVATE
 target_link_libraries(neuroscope PRIVATE
     KlustersShared::klustersshared
     neuroscope-spectral
+    neuroscope-spectral-render
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
