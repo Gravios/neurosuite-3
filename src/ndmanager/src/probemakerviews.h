@@ -22,7 +22,7 @@ namespace probemaker {
  * @brief Logical-view canvas — DAG editor for the probe's
  *        connector → shanks → channels.  Auto-laid-out the first time
  *        each item appears; user drags persist across rebuilds via
- *        the page's m_logicalState cache.
+ *        the page's logicalState cache.
  *
  *        Mouse: bare wheel zooms (Ctrl+wheel also works for muscle-
  *        memory parity with Pipeline Designer); middle-drag pans;
@@ -42,8 +42,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
 
 private:
-    bool   m_panning = false;
-    QPoint m_lastPan;
+    bool   panning = false;
+    QPoint lastPan;
 };
 
 /**
@@ -82,8 +82,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
 
 private:
-    bool   m_panning   = false;
-    QPoint m_lastPan;
+    bool   panning   = false;
+    QPoint lastPan;
 };
 
 }  // namespace probemaker
