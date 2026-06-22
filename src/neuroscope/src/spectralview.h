@@ -12,6 +12,7 @@
 #include "spectral/spectralengine.h"
 #include "spectral/spectralrender.h"
 #include "spectral/colormap.h"
+#include "spectral/spectralwindow.h"
 
 #include <QImage>
 #include <QList>
@@ -48,6 +49,14 @@ public:
     void setDynamicRangeDb(double db);
     void setBackend(neuroscope::spectral::SpectralBackend backend);
 
+    /**If true, the spectral view uses the trace window unchanged. If false, it
+    * uses its own span (setSpan) but stays centred on the trace window centre.*/
+    void setLockToTrace(bool on);
+
+    /**Sets the spectral view's own window width (ms), used when not locked to
+    * the trace window. The view re-centres on the current trace centre.*/
+    void setSpan(long ms);
+
     const neuroscope::spectral::SpectralParams& spectralParams() const { return params; }
 
 public Q_SLOTS:
@@ -58,6 +67,7 @@ protected:
 
 private:
     void requestCurrentWindow();
+    void applyWindow();        // derive the spectral window from the trace window
     void recompute();          // run the engine on the current window, rebuild image
     void rebuildImage();       // SpectralImage -> QImage
     void drawAxes(QPainter& painter, const QRect& plot);
@@ -69,6 +79,13 @@ private:
     long endTime = 0;
     long timeFrameWidth = 0;
     long startTimeInRecordingUnits = 0;
+
+    // Trace window last received, and the view's own centring options.
+    long traceStart = 0;
+    long traceWidth = 0;
+    bool lockToTrace = true;
+    long span = 0;             // own width (ms) when unlocked; <=0 follows trace
+    long recordingLength = 0;
 
     Array<dataType> data;
     bool dataReady = false;
