@@ -51,6 +51,9 @@ set(_srcs
 
 qt_add_resources(_srcs neuroscope-icons.qrc)
 
+# Spectral DSP core (Qt-free static library; used by the spectral view).
+add_subdirectory(spectral)
+
 # WIN32 suppresses the console window on Windows; no-op on Linux/macOS
 add_executable(neuroscope $<$<PLATFORM_ID:Windows>:WIN32> ${_srcs})
 
@@ -60,6 +63,7 @@ target_include_directories(neuroscope PRIVATE
 
 target_link_libraries(neuroscope PRIVATE
     KlustersShared::klustersshared
+    neuroscope-spectral
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
