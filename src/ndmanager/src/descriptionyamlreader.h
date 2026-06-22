@@ -23,6 +23,6 @@ public:
     void getProgramInformation(ProgramInformation& info) const;
 
 private:
-    ProgramInformation m_info;
-    bool               m_parsed = false;
+    ProgramInformation info;
+    bool               parsed = false;
 };

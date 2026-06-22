@@ -17,8 +17,8 @@ static T safeGet(const YAML::Node& n, const char* key, T def = T{})
 
 bool DescriptionYamlReader::parseFile(const QString& path)
 {
-    m_parsed = false;
-    m_info   = ProgramInformation();
+    parsed = false;
+    info   = ProgramInformation();
 
     YAML::Node root;
     try {
@@ -30,9 +30,9 @@ bool DescriptionYamlReader::parseFile(const QString& path)
     YAML::Node prog = root["program"];
     if (!prog) return false;
 
-    m_info.setProgramName(
+    info.setProgramName(
         QString::fromStdString(safeGet<std::string>(prog,"name","")));
-    m_info.setHelp(
+    info.setHelp(
         QString::fromStdString(safeGet<std::string>(prog,"help","")));
 
     YAML::Node params = prog["parameters"];
@@ -50,12 +50,12 @@ bool DescriptionYamlReader::parseFile(const QString& path)
             paramMap.insert(idx++, row);
         }
     }
-    m_info.setParameterInformation(paramMap);
-    m_parsed = true;
+    info.setParameterInformation(paramMap);
+    parsed = true;
     return true;
 }
 
 void DescriptionYamlReader::getProgramInformation(ProgramInformation& info) const
 {
-    info = m_info;
+    info = this->info;
 }
