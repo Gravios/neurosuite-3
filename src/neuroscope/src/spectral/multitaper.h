@@ -10,6 +10,7 @@
 // bins carry the usual factor of two for the folded negative frequencies.
 
 #include "dpss.h"
+#include "spectralfft.h"
 
 #include <vector>
 
@@ -20,6 +21,16 @@ enum class TaperWeighting {
     Uniform,      // simple average over tapers
     Eigenvalue    // weight taper k by its concentration ratio lambda_k
 };
+
+// One-sided multitaper PSD of a single real segment, reusing a prebuilt FFT
+// plan (so the caller can amortise plan creation across many segments and
+// share one plan across the OpenMP spectrogram loop). The PSD length is
+// plan.nbins() and corresponds to plan.nfft(), which may exceed the
+// requested nfft when the radix-2 fallback rounds up to a power of two.
+std::vector<double> multitaperPsd(const double* x, int len,
+                                  const DpssTapers& tapers,
+                                  double fs, const RealFftPlan& plan,
+                                  TaperWeighting weighting = TaperWeighting::Eigenvalue);
 
 // One-sided multitaper PSD of a single real segment.
 //

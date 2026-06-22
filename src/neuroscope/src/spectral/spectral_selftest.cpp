@@ -160,6 +160,36 @@ int main()
         check(maxOff < 0.05, "whitening decorrelates channels", maxOff, 0);
     }
 
+    // ---- Arbitrary (non-power-of-two) nfft via FFTW ----------------------
+    // Exercised only when the FFTW backend is compiled in; the radix-2
+    // fallback rounds nfft to a power of two and is covered above.
+    {
+        std::printf("  ....  FFT backend: %s\n", fftwAvailable() ? "FFTW" : "radix-2 fallback");
+        if (fftwAvailable()) {
+            const double fs = 1000.0;
+            const int N = 1000;        // non-power-of-two window
+            const int nfft = 1000;     // exact, no zero-padding
+            const double f0 = 150.0;   // 150/1000*1000 = bin 150 exactly
+            const double amp = 1.5;
+            std::vector<double> x(N);
+            for (int t = 0; t < N; ++t) x[t] = amp * std::sin(2.0 * M_PI * f0 * t / fs);
+
+            RealFftPlan plan(nfft);
+            check(plan.nfft() == nfft, "fftw honours non-power-of-two nfft", plan.nfft(), nfft);
+
+            DpssTapers d = computeDpss(N, 4.0, 7);
+            std::vector<double> psd = multitaperPsd(x.data(), N, d, fs, plan, TaperWeighting::Uniform);
+            std::vector<double> f = psdFrequencies(plan.nfft(), fs);
+            int peak = 0; double pv = -1;
+            for (size_t k = 0; k < psd.size(); ++k) if (psd[k] > pv) { pv = psd[k]; peak = (int)k; }
+            check(std::abs(f[peak] - f0) <= fs / nfft + 1e-9, "non-pow2 mtm peak at tone", f[peak], f0);
+            const double df = fs / nfft;
+            double integral = 0; for (double v : psd) integral += v * df;
+            const double var = amp * amp / 2.0;
+            check(std::abs(integral - var) / var < 0.02, "non-pow2 mtm Parseval", integral, var);
+        }
+    }
+
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS",
                 failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
