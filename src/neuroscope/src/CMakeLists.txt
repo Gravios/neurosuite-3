@@ -39,6 +39,7 @@ set(_srcs
     tracesprovider.cpp
     traceview.cpp
     spectralview.cpp
+    spectralinspector.cpp
     tracewidget.cpp
     imagecreator.cpp
     globaleventsprovider.cpp
