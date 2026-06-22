@@ -39,60 +39,60 @@ public:
     NdManagerYamlReader()  = default;
     ~NdManagerYamlReader() = default;
 
-    bool parseFile(const QString& path) { return m_reader.parseFile(path); }
-    void closeFile()                    { m_reader.closeFile(); }
+    bool parseFile(const QString& path) { return reader.parseFile(path); }
+    void closeFile()                    { reader.closeFile(); }
 
     // ---- Acquisition system ----
     void getAcquisitionSystemInfo(QMap<QString,double>& info) const;
 
     // ---- General information ----
     void getGeneralInformation(GeneralInformation& gi) const
-    { m_reader.getGeneralInformation(gi); }
+    { reader.getGeneralInformation(gi); }
 
     // ---- Field potentials ----
-    double getLfpInformation() const { return m_reader.getLfpSamplingRate(); }
+    double getLfpInformation() const { return reader.getLfpSamplingRate(); }
 
     // ---- Files ----
     void getFilesInformation(QList<FileInformation>& files) const
-    { m_reader.getFilesInformation(files); }
+    { reader.getFilesInformation(files); }
 
     // ---- Anatomical description ----
     void getAnatomicalDescription(int nbChannels,
                                   QMap<int,QList<int>>& anatomicalGroups,
                                   QMap<QString,QMap<int,QString>>& attributes)
-    { m_reader.getAnatomicalDescription(nbChannels, anatomicalGroups, attributes); }
+    { reader.getAnatomicalDescription(nbChannels, anatomicalGroups, attributes); }
 
     // ---- Spike description ----
     void getSpikeDescription(int nbChannels,
                              QMap<int,QList<int>>& spikeGroups,
                              QMap<int,QMap<QString,QString>>& information)
-    { m_reader.getSpikeDescription(nbChannels, spikeGroups, information); }
+    { reader.getSpikeDescription(nbChannels, spikeGroups, information); }
 
     // ---- Units ----
-    void getUnits(QMap<int,QStringList>& units) const { m_reader.getUnits(units); }
+    void getUnits(QMap<int,QStringList>& units) const { reader.getUnits(units); }
 
     // ---- NeuroScope display ----
-    float   getScreenGain()           const { return m_reader.getScreenGain(); }
-    QString getTraceBackgroundImage() const { return m_reader.getTraceBackgroundImage(); }
-    int     getNbSamples()            const { return m_reader.getNbSamplesSpikes(); }
-    int     getPeakSampleIndex()      const { return m_reader.getPeakSampleIndexSpikes(); }
+    float   getScreenGain()           const { return reader.getScreenGain(); }
+    QString getTraceBackgroundImage() const { return reader.getTraceBackgroundImage(); }
+    int     getNbSamples()            const { return reader.getNbSamplesSpikes(); }
+    int     getPeakSampleIndex()      const { return reader.getPeakSampleIndexSpikes(); }
 
     void getChannelColors(QList<ChannelColors>& list) const;
 
     void getChannelDefaultOffset(QMap<int,int>& offsets) const
-    { m_reader.getChannelDefaultOffset(offsets); }
+    { reader.getChannelDefaultOffset(offsets); }
 
     // ---- Video ----
     // Reads width, height, samplingRate from the top-level "video" section,
     // using the same map keys as XmlReader::getVideoInfo().
     void getVideoInfo(QMap<QString,double>& videoInformation) const
-    { m_reader.getTopLevelVideoInfo(videoInformation); }
+    { reader.getTopLevelVideoInfo(videoInformation); }
     void getNeuroscopeVideoInfo(NeuroscopeVideoInfo& videoInfo) const
-    { m_reader.getNeuroscopeVideoInfo(videoInfo); }
+    { reader.getNeuroscopeVideoInfo(videoInfo); }
 
     // ---- Programs ----
     void getProgramsInformation(QList<ProgramInformation>& programs) const
-    { m_reader.getProgramsInformation(programs); }
+    { reader.getProgramsInformation(programs); }
 
     void getProgramInformation(ProgramInformation& pi) const;
 
@@ -111,9 +111,9 @@ public:
     void getProbesInformation(QList<ProbeEntry>& probes,
                               QString& libraryPath) const
     {
-        readProbesSection(m_reader.getRawRoot(), probes, libraryPath);
+        readProbesSection(reader.getRawRoot(), probes, libraryPath);
     }
 
 private:
-    ParameterYamlReader m_reader;
+    ParameterYamlReader reader;
 };

@@ -17,7 +17,7 @@ static QString esc(const QString& s)
 
 void DescriptionYamlWriter::setProgramInformation(const ProgramInformation& info)
 {
-    m_info = info;
+    this->info = info;
 }
 
 bool DescriptionYamlWriter::writeTofile(const QString& url)
@@ -28,10 +28,10 @@ bool DescriptionYamlWriter::writeTofile(const QString& url)
 
     QTextStream o(&f);
     o << "program:\n";
-    o << "  name: " << esc(m_info.getProgramName()) << '\n';
-    o << "  help: " << esc(m_info.getHelp()) << '\n';
+    o << "  name: " << esc(info.getProgramName()) << '\n';
+    o << "  help: " << esc(info.getHelp()) << '\n';
 
-    const auto params = m_info.getParameterInformation();
+    const auto params = info.getParameterInformation();
     if (params.isEmpty()) {
         o << "  parameters: []\n";
     } else {

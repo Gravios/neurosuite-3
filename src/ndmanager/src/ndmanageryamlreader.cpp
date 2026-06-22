@@ -8,12 +8,12 @@
 
 void NdManagerYamlReader::getAcquisitionSystemInfo(QMap<QString,double>& info) const
 {
-    info[QStringLiteral("nBits")]        = m_reader.getResolution();
-    info[QStringLiteral("nChannels")]    = m_reader.getNbChannels();
-    info[QStringLiteral("samplingRate")] = m_reader.getSamplingRate();
-    info[QStringLiteral("voltageRange")] = m_reader.getVoltageRange();
-    info[QStringLiteral("amplification")]= m_reader.getAmplification();
-    info[QStringLiteral("offset")]       = m_reader.getOffset();
+    info[QStringLiteral("nBits")]        = reader.getResolution();
+    info[QStringLiteral("nChannels")]    = reader.getNbChannels();
+    info[QStringLiteral("samplingRate")] = reader.getSamplingRate();
+    info[QStringLiteral("voltageRange")] = reader.getVoltageRange();
+    info[QStringLiteral("amplification")]= reader.getAmplification();
+    info[QStringLiteral("offset")]       = reader.getOffset();
 }
 
 // getChannelColors: maps ChannelColorEntry (libklustersshared) → ndmanager's
@@ -21,14 +21,14 @@ void NdManagerYamlReader::getAcquisitionSystemInfo(QMap<QString,double>& info) c
 // the list is directly assigned.
 void NdManagerYamlReader::getChannelColors(QList<ChannelColors>& list) const
 {
-    m_reader.getChannelColors(list);
+    reader.getChannelColors(list);
 }
 
 void NdManagerYamlReader::getProgramInformation(ProgramInformation& pi) const
 {
     const QString target = pi.getProgramName();
     QList<ProgramInformation> all;
-    m_reader.getProgramsInformation(all);
+    reader.getProgramsInformation(all);
     for (const auto& entry : all) {
         if (entry.getProgramName() == target) {
             pi = entry;

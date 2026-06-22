@@ -34,5 +34,5 @@ public:
     bool writeTofile(const QString& url);
 
 private:
-    ProgramInformation m_info;
+    ProgramInformation info;
 };
