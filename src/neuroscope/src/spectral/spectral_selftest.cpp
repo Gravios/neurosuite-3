@@ -350,6 +350,21 @@ int main()
         double got0 = psdValue(spec.data(), wts.data(), wsum, fs, nb, halfp, Kp, 0, 0);
         double expect0 = (2.0 * 4.0) / (wsum * fs); // only taper0 nonzero, not doubled
         check(std::abs(got0 - expect0) < 1e-12, "psdValue DC bin not doubled", got0, expect0);
+
+        // chunkRange must tile [0,nCols) exactly for the streamed pipeline.
+        bool tile = true;
+        for (int nc : {1, 2, 3, 4, 5, 8}) {
+            for (int total : {0, 1, 2, 3, 7, 16, 17, 100}) {
+                int next = 0; long sum = 0;
+                for (int s = 0; s < nc; ++s) {
+                    int st, cnt; chunkRange(nc, total, s, st, cnt);
+                    if (cnt < 0 || st != next) tile = false;
+                    next += cnt; sum += cnt;
+                }
+                if (next != total || sum != total) tile = false;
+            }
+        }
+        check(tile, "chunkRange tiles windows exactly", 0, 0);
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS",

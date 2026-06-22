@@ -20,6 +20,20 @@ namespace spectral {
 namespace gpu {
 namespace kern {
 
+// Partition the nCols windows into nChunks contiguous ranges for the streamed
+// pipeline (one chunk per CUDA stream). The first (nCols % nChunks) chunks get
+// one extra column so the ranges tile [0, nCols) exactly with no gaps/overlap.
+// Host-only (no device need) but kept here so the self-test validates the
+// bookkeeping that the streamed kernels rely on.
+inline void chunkRange(int nChunks, int nCols, int s, int& start, int& count)
+{
+    if (nChunks < 1) nChunks = 1;
+    const int base = nCols / nChunks;
+    const int rem  = nCols % nChunks;
+    if (s < rem) { start = s * (base + 1);            count = base + 1; }
+    else         { start = rem * (base + 1) + (s - rem) * base; count = base; }
+}
+
 // Decompose a tapering thread id into (window c, taper k, sample i).
 // Segment layout is (c*K + k) consecutive blocks of nfft samples.
 NS_SPECTRAL_HD inline void decodeSeg(long gid, int nfft, int K,
