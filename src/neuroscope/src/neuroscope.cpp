@@ -442,6 +442,13 @@ void NeuroscopeApp::initActions()
     traceMenu->addSeparator();
 
     greyScale->setChecked(false);
+    mSpectralView = traceMenu->addAction(tr("&Spectral View"));
+    mSpectralView->setCheckable(true);
+    connect(mSpectralView, &QAction::triggered, this, &NeuroscopeApp::slotSpectralView);
+    mSpectralView->setChecked(false);
+
+    traceMenu->addSeparator();
+
     mIncreaseAllChannelAmplitudes = traceMenu->addAction(tr("&Increase All Channel Amplitudes"));
     mIncreaseAllChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
     connect(mIncreaseAllChannelAmplitudes, &QAction::triggered, this, &NeuroscopeApp::slotIncreaseAllChannelsAmplitude);
@@ -2026,6 +2033,12 @@ void NeuroscopeApp::slotSetGreyScale(){
     view->setGreyScale(greyScale->isChecked());
     displayChannelPalette->setGreyScale(greyScale->isChecked());
     spikeChannelPalette->setGreyScale(greyScale->isChecked());
+}
+
+void NeuroscopeApp::slotSpectralView(){
+    NeuroscopeView* view = activeView();
+    if(view)
+        view->setSpectralMode(mSpectralView->isChecked());
 }
 
 

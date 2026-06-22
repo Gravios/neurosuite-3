@@ -84,6 +84,7 @@ NeuroscopeView::NeuroscopeView(NeuroscopeApp& mainWindow, const QString &label, 
     connect(this,&NeuroscopeView::updateContents,traceWidget,&TraceWidget::updateContents);
     connect(this,&NeuroscopeView::changeBackgroundColor,traceWidget, &TraceWidget::changeBackgroundColor);
     connect(this,&NeuroscopeView::greyScale,traceWidget, &TraceWidget::setGreyScale);
+    connect(this,&NeuroscopeView::spectralModeToSet,traceWidget, &TraceWidget::setSpectralMode);
     connect(traceWidget,&TraceWidget::channelsSelected,this, &NeuroscopeView::slotChannelsSelected);
     connect(this,&NeuroscopeView::modeToSet,traceWidget,&TraceWidget::setMode);
     connect(this,&NeuroscopeView::multiColumnsDisplay,traceWidget,&TraceWidget::setMultiColumns);

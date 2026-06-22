@@ -460,6 +460,8 @@ private Q_SLOTS:
 
     /**All the channels of the current display are display either in a gradation of grey or in color.*/
     void slotSetGreyScale();
+    /**Toggles the spectral view in the active display.*/
+    void slotSpectralView();
 
     /**Creates of an empty group of channels.*/
     void slotCreateGroup();
@@ -690,6 +692,7 @@ private:
     QAction* viewMainToolBar;
     QAction* viewToolBar;
     QAction* greyScale;
+    QAction* mSpectralView;
     QAction* displayMode;
     QAction* clusterVerticalLines;
     QAction* clusterRaster;
