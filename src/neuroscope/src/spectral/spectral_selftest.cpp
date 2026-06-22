@@ -271,6 +271,65 @@ int main()
               maxRel, 0.0);
     }
 
+    // ---- Mode transitions and frequency-range updates --------------------
+    {
+        const double fs = 1000.0;
+        const int nCh = 3, nS = 4096;
+        std::mt19937 rng(99);
+        std::normal_distribution<double> g(0.0, 0.1);
+        std::vector<double> data((size_t)nS * nCh);
+        for (int s = 0; s < nS; ++s)
+            for (int c = 0; c < nCh; ++c)
+                data[(size_t)s * nCh + c] = g(rng) + std::sin(2.0 * M_PI * 120.0 * s / fs);
+        std::vector<int> channels{0, 1, 2};
+        SpectralEngine engine;
+
+        SpectralParams pb;
+        pb.mode = SpectralMode::TimeFrequencySingleChannel;
+        pb.samplingRate = fs; pb.windowSamples = 256; pb.nfft = 256; pb.stepSamples = 128;
+        pb.nw = 3.0; pb.nTapers = 5; pb.singleChannel = 1; pb.freqLow = 0.0; pb.freqHigh = 0.0;
+
+        // Mode B: freqs populated, rowChannels empty, rows == freq bins.
+        SpectralImage B = engine.compute(data.data(), nS, nCh, channels, pb, 1);
+        check(B.mode == SpectralMode::TimeFrequencySingleChannel && !B.freqs.empty()
+              && B.rowChannels.empty() && (int)B.freqs.size() == B.rows,
+              "mode B image fields", (int)B.freqs.size(), B.rows);
+
+        // Switch to mode A on the same engine/window: distinct recompute, mode A
+        // fields (rowChannels set, freqs empty, rows == channels).
+        SpectralParams pa = pb;
+        pa.mode = SpectralMode::FrequencyAcrossChannels;
+        pa.freqLow = 100.0; pa.freqHigh = 150.0;
+        SpectralImage A = engine.compute(data.data(), nS, nCh, channels, pa, 1);
+        check(A.mode == SpectralMode::FrequencyAcrossChannels && A.freqs.empty()
+              && (int)A.rowChannels.size() == nCh && A.rows == nCh,
+              "mode A image fields after switch", A.rows, nCh);
+
+        // Switch back to mode B: cache keyed on mode, so a mode B image returns.
+        SpectralImage B2 = engine.compute(data.data(), nS, nCh, channels, pb, 1);
+        check(B2.mode == SpectralMode::TimeFrequencySingleChannel && !B2.freqs.empty()
+              && B2.rows == B.rows, "mode B restored after A", B2.rows, B.rows);
+
+        // Frequency range crops the mode B rows to the requested band.
+        SpectralParams pn = pb; pn.freqLow = 100.0; pn.freqHigh = 200.0;
+        SpectralImage Bn = engine.compute(data.data(), nS, nCh, channels, pn, 1);
+        const double binHz = fs / pn.nfft;
+        check(!Bn.freqs.empty() && Bn.freqs.front() >= 100.0 - binHz
+              && Bn.freqs.back() <= 200.0 + binHz && Bn.rows < B.rows,
+              "freq range crops mode B band", Bn.rows, B.rows);
+
+        // Mode A band power tracks the integration band: the 120 Hz tone lands
+        // inside [100,150] but not inside [10,40].
+        SpectralParams pIn = pa;  pIn.freqLow = 100.0; pIn.freqHigh = 150.0;
+        SpectralParams pOut = pa; pOut.freqLow = 10.0;  pOut.freqHigh = 40.0;
+        SpectralImage Ain  = engine.compute(data.data(), nS, nCh, channels, pIn, 1);
+        SpectralImage Aout = engine.compute(data.data(), nS, nCh, channels, pOut, 1);
+        double pin = 0, pout = 0;
+        for (int c = 0; c < Ain.cols; ++c)  pin  += Ain.at(0, c);
+        for (int c = 0; c < Aout.cols; ++c) pout += Aout.at(0, c);
+        check(pin > 5.0 * pout, "mode A band power follows freq range", pin, pout);
+    }
+
     // ---- Colormaps -------------------------------------------------------
     {
         std::uint8_t r, g, b;

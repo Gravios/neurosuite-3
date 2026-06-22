@@ -196,8 +196,10 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
     f.setPointSizeF(8.0);
     painter.setFont(f);
 
-    // Title: mode and key parameters.
-    const bool modeB = params.mode == SpectralMode::TimeFrequencySingleChannel;
+    // Title/axis type follow the image actually displayed (lastImage), not the
+    // pending params, so a debounced or external repaint mid-change stays
+    // consistent with the heatmap on screen.
+    const bool modeB = lastImage.mode == SpectralMode::TimeFrequencySingleChannel;
     QString title = modeB ? tr("time \xC3\x97 frequency") : tr("band power \xC3\x97 channel");
     title += QString(" \xE2\x80\x94 NW=%1 K=%2 win=%3")
                  .arg(params.nw).arg(params.nTapers).arg(params.windowSamples);
