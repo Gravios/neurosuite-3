@@ -44,6 +44,7 @@ class TracesProvider;
 class BaseFrame;
 class ChannelColors;
 class SpectralView;
+class SpectralInspector;
 class QVBoxLayout;
 
 /**
@@ -677,6 +678,9 @@ private:
 
     /**Spectral (multitaper) view, created on first toggle; null until then.*/
     SpectralView* spectralView = nullptr;
+
+    /**Parameter strip for the spectral view, shown below it; null until then.*/
+    SpectralInspector* spectralInspector = nullptr;
 
     /**True while the spectral view is shown in place of the waveforms.*/
     bool spectralMode = false;
