@@ -34,6 +34,8 @@ private:
     QSpinBox*        stepSpin = nullptr;
     QDoubleSpinBox*  freqLowSpin = nullptr;
     QDoubleSpinBox*  freqHighSpin = nullptr;
+    QCheckBox*       lockCheck = nullptr;
+    QSpinBox*        spanSpin = nullptr;
     QCheckBox*       whitenCheck = nullptr;
     QComboBox*       colormapCombo = nullptr;
     QDoubleSpinBox*  dynRangeSpin = nullptr;
