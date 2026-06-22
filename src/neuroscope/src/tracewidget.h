@@ -43,6 +43,8 @@
 class TracesProvider;
 class BaseFrame;
 class ChannelColors;
+class SpectralView;
+class QVBoxLayout;
 
 /**
   * Class containing the TraceView and all the widgets used to select the position in the file.
@@ -183,7 +185,19 @@ public Q_SLOTS:
   */
     void showChannels(const QList<int>& channelsToShow){
         view.showChannels(channelsToShow);
+        currentChannels = channelsToShow;
+        updateSpectralChannels();
     }
+
+    /**Switches between the waveform (TraceView) and the spectral (SpectralView)
+  * display of the current time window. The spectral view is created lazily and
+  * shares the recording's provider and the current channels and window.
+  * @param on true to show the spectral view, false to show the waveforms.
+  */
+    void setSpectralMode(bool on);
+
+    /**Returns true if the spectral view is currently shown.*/
+    bool isSpectralMode() const { return spectralMode; }
 
     /**
   * Updates the list of clusters shown with @p clustersToShow for the cluster provider identified
@@ -654,6 +668,27 @@ private:
 
     /**TraceView used to actually display the traces.*/
     TraceView view;
+
+    /**Provider shared with the TraceView; reused to build the spectral view.*/
+    TracesProvider& mTracesProvider;
+
+    /**Channels currently shown, kept in sync with the TraceView.*/
+    QList<int> currentChannels;
+
+    /**Spectral (multitaper) view, created on first toggle; null until then.*/
+    SpectralView* spectralView = nullptr;
+
+    /**True while the spectral view is shown in place of the waveforms.*/
+    bool spectralMode = false;
+
+    /**Top-level layout, kept to insert the spectral view alongside the traces.*/
+    QVBoxLayout* mainLayout = nullptr;
+
+    /**Forwards the current time window to whichever view is active.*/
+    void informViewsTimeFrame();
+
+    /**Pushes the current channel list to the spectral view if it exists.*/
+    void updateSpectralChannels();
 
     /**Starting time when looking for the traces.
   * This amount is in miliseconds and the default is 0.
