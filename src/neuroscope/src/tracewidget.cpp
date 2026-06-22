@@ -16,6 +16,7 @@
  ***************************************************************************/
 //include files for the application
 #include "tracewidget.h"
+#include "spectralview.h"
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
 #include "itemcolors.h"
 #include <QScrollBar>
@@ -46,6 +47,7 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     view(tracesProvider,greyScale,multiColumns,verticalLines,raster,waveforms,labelsDisplay,channelsToDisplay,gain,acquisitionGain,
          startTime,timeWindow,channelColors,groupsChannels,channelsGroups,autocenterChannels,channelOffsets,gains,skippedChannels,rasterHeight,backgroundImage,this,name,
          backgroundColor,statusBar,minSize,maxSize,windowTopLeft,windowBottomRight,border),
+    mTracesProvider(tracesProvider),
     startTime(startTime),
     validator(this),
     isInit(true),
@@ -55,6 +57,8 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
 
     QVBoxLayout *lay = new QVBoxLayout;
     setLayout(lay);
+    mainLayout = lay;
+    currentChannels = channelsToDisplay;
     recordingLength = tracesProvider.recordingLength();
 
     selectionWidgets = new QWidget(this);
@@ -159,7 +163,7 @@ void TraceWidget::advance()
     correctStartTime();
     updateView = true;
     //Inform the traceView
-    view.displayTimeFrame(startTime,timeWindow);
+    informViewsTimeFrame();
 	 
     //Inform listener of the modification
     emit updateStartAndDuration(startTime,timeWindow);
@@ -357,7 +361,7 @@ void TraceWidget::slotDurationUpdated()
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform the listeners of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -444,7 +448,7 @@ void TraceWidget::slotStartMinuteTimeUpdated(/*int start*/){
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform listern of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -491,7 +495,7 @@ void TraceWidget::slotStartSecondTimeUpdated(){
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform listern of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -551,7 +555,7 @@ void TraceWidget::slotStartMilisecondTimeUpdated(){
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform listener of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -600,7 +604,7 @@ void TraceWidget::slotScrollBarUpdated(){
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform listener of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -639,7 +643,7 @@ void TraceWidget::moveToTime(long time){
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform listern of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -699,7 +703,7 @@ void TraceWidget::slotSetStartAndDuration(long time,long duration){
         updateView = true;
 
         //Inform the traceView
-        view.displayTimeFrame(startTime,timeWindow);
+        informViewsTimeFrame();
         //Inform listern of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
@@ -742,4 +746,51 @@ void TraceWidget::updateEvents(bool active,const QString& providerName,double ti
     long eventTime = static_cast<long>(floor(0.5 + time));
     if((eventTime >= startTime  && eventTime <= (startTime + timeWindow)))
         view.updateEvents(providerName,active);
+}
+
+// =============================================================================
+//  Spectral view toggle
+// =============================================================================
+
+void TraceWidget::informViewsTimeFrame()
+{
+    // Forward the current window to whichever view is active, so the hidden
+    // one does not issue redundant data requests.
+    if (spectralMode && spectralView)
+        spectralView->displayTimeFrame(startTime, timeWindow);
+    else
+        view.displayTimeFrame(startTime, timeWindow);
+}
+
+void TraceWidget::updateSpectralChannels()
+{
+    if (spectralView)
+        spectralView->setChannels(currentChannels);
+}
+
+void TraceWidget::setSpectralMode(bool on)
+{
+    if (on == spectralMode)
+        return;
+
+    if (on) {
+        if (!spectralView) {
+            spectralView = new SpectralView(mTracesProvider, currentChannels,
+                                            startTime, timeWindow, this);
+            // Same layout slot as the traces, above the time-selection controls.
+            mainLayout->insertWidget(0, spectralView);
+            mainLayout->setStretchFactor(spectralView, 200);
+        }
+        view.hide();
+        spectralView->show();
+        spectralMode = true;
+        spectralView->setChannels(currentChannels);
+        spectralView->displayTimeFrame(startTime, timeWindow);
+    } else {
+        if (spectralView)
+            spectralView->hide();
+        view.show();
+        spectralMode = false;
+        view.displayTimeFrame(startTime, timeWindow);
+    }
 }
