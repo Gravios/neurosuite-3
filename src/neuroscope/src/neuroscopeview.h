@@ -191,6 +191,13 @@ public:
     */
     void setMultiColumns(bool multiple);
 
+    /**Toggles the spectral (multitaper) display in place of the waveforms.
+    * @param on true to show the spectral view, false to show the traces.
+    */
+    void setSpectralMode(bool on){
+        emit spectralModeToSet(on);
+    }
+
     /**Displays or hides vertical lines to show the clusters.
     * @param lines true if the vertical lines are drawn for each cluster, false otherwise.
     */
@@ -722,6 +729,7 @@ Q_SIGNALS:
     void changeBackgroundColor(const QColor& color);
     void updateContents();
     void greyScale(bool geyScale);
+    void spectralModeToSet(bool on);
     void clusterWaveformsDisplay(bool waveforms);
     void clusterRasterDisplay(bool raster);
     void clusterVerticalLinesDisplay(bool lines);
