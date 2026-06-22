@@ -23,10 +23,10 @@ class SafeTableWidget : public QTableWidget
     Q_OBJECT
 public:
     explicit SafeTableWidget(QWidget *parent = nullptr)
-        : QTableWidget(parent), m_editingInProgress(false) {}
+        : QTableWidget(parent), editingInProgress(false) {}
 
     explicit SafeTableWidget(int rows, int columns, QWidget *parent = nullptr)
-        : QTableWidget(rows, columns, parent), m_editingInProgress(false) {}
+        : QTableWidget(rows, columns, parent), editingInProgress(false) {}
 
 protected:
     void inputMethodEvent(QInputMethodEvent *event) override
@@ -35,17 +35,17 @@ protected:
         // on the new editor, which caused Wayland to send another InputMethod event
         // back to us), drop the event. Without this guard, the call stack grows by
         // ~4 frames per event until a stack overflow segfault occurs.
-        if (m_editingInProgress) {
+        if (editingInProgress) {
             event->accept();
             return;
         }
-        m_editingInProgress = true;
+        editingInProgress = true;
         QTableWidget::inputMethodEvent(event);
-        m_editingInProgress = false;
+        editingInProgress = false;
     }
 
 private:
-    bool m_editingInProgress;
+    bool editingInProgress;
 };
 
 #endif // SAFETABLEWIDGET_H
