@@ -250,17 +250,23 @@ int main()
         for (float v : W.data) if (!std::isfinite(v)) finite = false;
         check(finite, "engine whitening path finite", 0, 0);
 
-        // GPU backend requested with no device falls back to an identical CPU
-        // result (copies, since the engine cache holds only the last image).
+        // GPU backend agrees with the CPU path. With no device it falls back
+        // and the match is exact; on real hardware cuFFT vs FFTW differ only by
+        // double-precision rounding, so compare with a relative tolerance.
         SpectralParams pcpu = pb; pcpu.backend = SpectralBackend::Cpu;
         SpectralImage cpu = engine.compute(data.data(), nS, nCh, channels, pcpu, 10);
         SpectralParams pgpu = pb; pgpu.backend = SpectralBackend::Cuda;
         SpectralImage gpu = engine.compute(data.data(), nS, nCh, channels, pgpu, 11);
-        bool same = cpu.rows == gpu.rows && cpu.cols == gpu.cols
-                    && cpu.data.size() == gpu.data.size();
-        for (std::size_t i = 0; i < gpu.data.size() && same; ++i)
-            if (gpu.data[i] != cpu.data[i]) same = false;
-        check(same, "GPU backend falls back to identical CPU result", 0, 0);
+        bool agree = cpu.rows == gpu.rows && cpu.cols == gpu.cols
+                     && cpu.data.size() == gpu.data.size();
+        double maxRel = 0.0;
+        for (std::size_t i = 0; i < gpu.data.size() && agree; ++i) {
+            const double a = cpu.data[i], b = gpu.data[i];
+            const double denom = std::max(1e-12, std::fabs(a));
+            maxRel = std::max(maxRel, std::fabs(a - b) / denom);
+        }
+        check(agree && maxRel < 1e-3, "GPU backend agrees with CPU (or falls back)",
+              maxRel, 0.0);
     }
 
     // ---- Colormaps -------------------------------------------------------
