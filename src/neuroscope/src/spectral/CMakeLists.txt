@@ -13,7 +13,8 @@
 add_library(neuroscope-spectral STATIC
     dpss.cpp
     multitaper.cpp
-    spectralfft.cpp)
+    spectralfft.cpp
+    spectralengine.cpp)
 
 target_compile_features(neuroscope-spectral PUBLIC cxx_std_20)
 set_target_properties(neuroscope-spectral PROPERTIES POSITION_INDEPENDENT_CODE ON)
