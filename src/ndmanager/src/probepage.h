@@ -76,10 +76,10 @@ public:
     void setLibraryPath(const QString& path);
     QString getLibraryPath() const;
 
-    bool isModified() const { return m_modified; }
-    void setModified(bool b) { m_modified = b; }
+    bool isModified() const { return modified; }
+    void setModified(bool b) { modified = b; }
     /** Total recording channels — used to compute the leftover group on import. */
-    void setNbChannels(int n) { m_nbChannels = n; }
+    void setNbChannels(int n) { nbChannels = n; }
 
 signals:
     /** Emitted whenever any inspector field is edited or a probe is
@@ -104,7 +104,7 @@ signals:
                              int                           firstNewGroupId);
 
 public slots:
-    void resetModificationStatus() { m_modified = false; }
+    void resetModificationStatus() { modified = false; }
 
     /**
      * Recompute anatomical/spike group memberships for every probe from
@@ -127,7 +127,7 @@ private slots:
 
 private:
     void buildUi();
-    void rebuildList();           ///< redraw the probe list from m_probes
+    void rebuildList();           ///< redraw the probe list from probes
     void loadProbeIntoMaker(int probeIndex);
     void refreshInspector();      ///< populate inspector fields from the current selection
     void updateGroupsLabels();    ///< populate the anat/spike read-only labels
@@ -184,34 +184,34 @@ private:
     static int probeChannelCount(const QString& probePath);
 
     // ── Data ─────────────────────────────────────────────────────────────
-    QList<ProbeEntry> m_probes;
-    int               m_currentIndex = -1;     ///< -1 = no selection
-    bool              m_modified     = false;
-    QString           m_libraryPath;
-    int               m_nbChannels   = 0;
-    bool              m_loadingMaker = false;  ///< suppress save during programmatic load
+    QList<ProbeEntry> probes;
+    int               currentIndex = -1;     ///< -1 = no selection
+    bool              modified     = false;
+    QString           libraryPath;
+    int               nbChannels   = 0;
+    bool              loadingMaker = false;  ///< suppress save during programmatic load
 
     // ── UI ───────────────────────────────────────────────────────────────
-    QSplitter*       m_split          = nullptr;
-    QListWidget*     m_list           = nullptr;
-    QPushButton*     m_removeBtn      = nullptr;
-    QPushButton*     m_browseBtn      = nullptr;
+    QSplitter*       split          = nullptr;
+    QListWidget*     list           = nullptr;
+    QPushButton*     removeBtn      = nullptr;
+    QPushButton*     browseBtn      = nullptr;
 
     // Inspector
-    QLineEdit*       m_inspLabel      = nullptr;
-    QLineEdit*       m_inspFile       = nullptr;
-    QSpinBox*        m_inspOffset     = nullptr;
-    QLabel*          m_inspAnatomy    = nullptr;   ///< read-only display
-    QLabel*          m_inspSpike      = nullptr;   ///< read-only display
+    QLineEdit*       inspLabel      = nullptr;
+    QLineEdit*       inspFile       = nullptr;
+    QSpinBox*        inspOffset     = nullptr;
+    QLabel*          inspAnatomy    = nullptr;   ///< read-only display
+    QLabel*          inspSpike      = nullptr;   ///< read-only display
 
     /** Transient status line at the bottom of the inspector pane.
      *  Populated by setStatus() with feedback from Browse/Add/Save
      *  actions; cleared (or overwritten) on the next action.  Two
      *  flavours: neutral (#9ca3af) and error (#f87171). */
-    QLabel*          m_status         = nullptr;
+    QLabel*          status         = nullptr;
 
     // Geometry editor
-    ProbeMakerPage*  m_maker          = nullptr;
+    ProbeMakerPage*  maker          = nullptr;
 };
 
 #endif // PROBEPAGE_H
