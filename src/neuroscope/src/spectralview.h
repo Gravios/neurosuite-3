@@ -16,6 +16,8 @@
 
 #include <QImage>
 #include <QList>
+#include <list>
+#include <utility>
 
 class QTimer;
 template <typename T> class QFutureWatcher;
@@ -130,6 +132,12 @@ private:
     // Applies a background full-multitaper result if it is still current.
     void onSettleComputed();
 
+    // Small LRU of recently settled full estimates, keyed by window id, so that
+    // scrolling back to a visited window renders the full image at once instead
+    // of preview-then-settle. Cleared when the estimator parameters change.
+    bool recentGet(std::uint64_t windowId, neuroscope::spectral::SpectralImage& out);
+    void recentPut(std::uint64_t windowId, const neuroscope::spectral::SpectralImage& img);
+
     TracesProvider& tracesProvider;
     QList<int> channels;
 
@@ -176,6 +184,10 @@ private:
     unsigned long settleGen = 0;        // bumped on each move; discards stale results
     unsigned long pendingSettleGen = 0; // generation of the in-flight background pass
     std::uint64_t pendingWindowId = 0;
+
+    // Most-recent-first list of (windowId, full estimate); front is newest.
+    std::list<std::pair<std::uint64_t, neuroscope::spectral::SpectralImage>> recent_;
+    std::size_t recentCap = 16;
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H
