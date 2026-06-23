@@ -64,11 +64,14 @@ public:
     * the trace window. The view re-centres on the current trace centre.*/
     void setSpan(long ms);
 
-    /**Applies any pending parameter/window change immediately, bypassing the
-    * debounce delay (bound to the "u" key).*/
+    /**Applies any pending parameter/window change now (bound to the "u" key).
+    * With the default manual update mode this is the only thing that triggers a
+    * recompute after an inspector change; with a debounce delay set it also
+    * flushes early.*/
     void commitNow();
 
-    /**Debounce delay (ms) before a parameter change is applied; 0 = immediate.*/
+    /**Debounce delay (ms) before a parameter change is applied. 0 (the default)
+    * means manual: changes are held until the user presses "u" (commitNow).*/
     void setUpdateDelay(int ms) { recomputeDelayMs = ms < 0 ? 0 : ms; }
 
     const neuroscope::spectral::SpectralParams& spectralParams() const { return params; }
@@ -123,7 +126,7 @@ private:
     QTimer* recomputeTimer = nullptr;
     bool paramsDirty = false;  // a parameter change awaits recompute
     bool windowDirty = false;  // a span/lock change awaits a window re-derive
-    int  recomputeDelayMs = 300;
+    int  recomputeDelayMs = 0;   // 0 = manual: changes apply only on "u"
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H

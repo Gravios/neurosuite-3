@@ -63,7 +63,7 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     mainLayout = lay;
     currentChannels = channelsToDisplay;
 
-    // "u" applies any pending (debounced) spectral parameter change immediately.
+    // "u" applies any pending spectral parameter change (manual update mode).
     // Scoped to this widget and its children, so it fires while the spectral
     // inspector or view has focus, and only acts in spectral mode.
     QShortcut* commitShortcut = new QShortcut(QKeySequence(Qt::Key_U), this);
