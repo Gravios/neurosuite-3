@@ -38,6 +38,7 @@ private:
     QSpinBox*        spanSpin = nullptr;
     QCheckBox*       whitenCheck = nullptr;
     QComboBox*       colormapCombo = nullptr;
+    QCheckBox*       autoScaleCheck = nullptr;
     QDoubleSpinBox*  dynRangeSpin = nullptr;
     QComboBox*       backendCombo = nullptr;
 };

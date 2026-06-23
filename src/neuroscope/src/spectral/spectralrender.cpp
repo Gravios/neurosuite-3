@@ -7,15 +7,25 @@ namespace spectral {
 
 QImage spectralImageToQImage(const SpectralImage& img,
                              double dynamicRangeDb,
-                             Colormap cm)
+                             Colormap cm,
+                             bool autoScale)
 {
     if (!img.valid()) return QImage();
 
     const double maxP = img.valueMax > 0.0 ? img.valueMax : 1.0;
     const double maxDb = 10.0 * std::log10(maxP);
-    const double rangeDb = dynamicRangeDb > 0.0 ? dynamicRangeDb : 60.0;
-    const double floorDb = maxDb - rangeDb;
-    const double span = maxDb - floorDb; // == rangeDb > 0
+    double floorDb;
+    if (autoScale) {
+        // Span the full observed range: floor at the image minimum (guarded
+        // against a zero/degenerate minimum).
+        const double minP = img.valueMin > 0.0 ? img.valueMin : maxP * 1e-8;
+        floorDb = 10.0 * std::log10(minP);
+        if (maxDb - floorDb < 1.0) floorDb = maxDb - 1.0;
+    } else {
+        const double rangeDb = dynamicRangeDb > 0.0 ? dynamicRangeDb : 60.0;
+        floorDb = maxDb - rangeDb;
+    }
+    const double span = maxDb - floorDb; // > 0
 
     const bool freqUp = (img.mode == SpectralMode::TimeFrequencySingleChannel);
 

@@ -355,6 +355,15 @@ int main()
         colormapRgb(1.0, Colormap::Viridis, r1, g1, b1);
         check((r1 + g1 + b1) > (r0 + g0 + b0), "viridis brightens with t",
               r1 + g1 + b1, r0 + g0 + b0);
+
+        // jet: blue at the low end, red at the high end, bright green mid.
+        std::uint8_t jr0, jg0, jb0, jr1, jg1, jb1, jrm, jgm, jbm;
+        colormapRgb(0.0, Colormap::Jet, jr0, jg0, jb0);
+        colormapRgb(1.0, Colormap::Jet, jr1, jg1, jb1);
+        colormapRgb(0.5, Colormap::Jet, jrm, jgm, jbm);
+        check(jb0 > jr0, "jet low end is blue", jb0, jr0);
+        check(jr1 > jb1, "jet high end is red", jr1, jb1);
+        check(jgm > jg0 && jgm > jg1, "jet mid is bright green", jgm, jg0);
     }
 
     // ---- GPU kernel math (host/device shared; validated on the CPU) ------

@@ -44,6 +44,15 @@ int main()
     // Brightness tracks power (after dB scaling): brighter than dim row.
     check(qGray(out.pixel(0, 0)) > qGray(out.pixel(0, 1)), "brighter cell maps brighter");
 
+    // Auto scale spans the full [min,max] range, so the middle-power row is
+    // mid-gray rather than clipped, even with a narrow dB argument.
+    QImage autoImg = spectralImageToQImage(img, 10.0, Colormap::Grayscale, /*autoScale*/true);
+    const int autoMid = qGray(autoImg.pixel(0, 1)); // row 1 (power 100) -> scanline 1
+    check(autoMid > 40 && autoMid < 215, "auto scale spans full range");
+    // The same image under a fixed narrow 10 dB range clips that row darker.
+    QImage manImg = spectralImageToQImage(img, 10.0, Colormap::Grayscale, /*autoScale*/false);
+    check(qGray(manImg.pixel(0, 1)) < autoMid, "fixed narrow range clips below auto");
+
     // Mode A keeps row 0 at the top.
     SpectralImage a = img;
     a.mode = SpectralMode::FrequencyAcrossChannels;
