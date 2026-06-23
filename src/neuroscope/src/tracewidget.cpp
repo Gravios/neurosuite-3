@@ -72,6 +72,17 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     connect(commitShortcut, &QShortcut::activated, this, [this]() {
         if (spectralView && spectralMode) spectralView->commitNow();
     });
+
+    // Left / Right arrows scroll the time window by a quarter of its width.
+    // Scoped to this widget and its children; text fields keep the keys for
+    // cursor movement (they accept the shortcut override), so only the data
+    // views and scroll bar are affected.
+    QShortcut* scrollLeft  = new QShortcut(QKeySequence(Qt::Key_Left),  this);
+    QShortcut* scrollRight = new QShortcut(QKeySequence(Qt::Key_Right), this);
+    scrollLeft->setContext(Qt::WidgetWithChildrenShortcut);
+    scrollRight->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(scrollLeft,  &QShortcut::activated, this, [this]() { scrollByQuarterWindow(-1); });
+    connect(scrollRight, &QShortcut::activated, this, [this]() { scrollByQuarterWindow(+1); });
     recordingLength = tracesProvider.recordingLength();
 
     selectionWidgets = new QWidget(this);
@@ -621,6 +632,20 @@ void TraceWidget::slotScrollBarUpdated(){
         //Inform listener of the modification
         emit updateStartAndDuration(startTime,timeWindow);
     }
+}
+
+void TraceWidget::scrollByQuarterWindow(int direction)
+{
+    if (timeWindow <= 0)
+        return;
+    const long step = (timeWindow / 4 > 0) ? timeWindow / 4 : 1;
+    long newStart = startTime + static_cast<long>(direction) * step;
+    long maxStart = recordingLength - timeWindow;
+    if (maxStart < 0) maxStart = 0;
+    if (newStart < 0) newStart = 0;
+    if (newStart > maxStart) newStart = maxStart;
+    if (newStart != startTime)
+        moveToTime(newStart);
 }
 
 void TraceWidget::moveToTime(long time){
