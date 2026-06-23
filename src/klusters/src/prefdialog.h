@@ -29,6 +29,7 @@ class PrefRefinement;
 class PrefAutoMerge;
 class PrefWaveformView;
 class PrefClusterView;
+class QComboBox;
 
 class PrefDialog : public QPageDialog {
     Q_OBJECT
@@ -64,6 +65,7 @@ class PrefDialog : public QPageDialog {
 
     PrefWaveformView* prefWaveformView;
     PrefClusterView*  prefclusterView;
+    QComboBox*        themeCombo;
     bool applyEnable;
 };
 

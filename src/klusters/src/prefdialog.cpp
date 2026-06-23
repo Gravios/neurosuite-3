@@ -10,7 +10,10 @@
  ***************************************************************************/
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLayout>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
 
@@ -27,6 +30,8 @@
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
+
+#include <klustersshared/theme.h>
 
 PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
  : QPageDialog(parent)
@@ -93,6 +98,33 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     item->setIcon(QIcon(":/icons/waveformview"));
     addPage(item);
 
+    // ── Appearance (suite-wide light/dark/system theme) ────────────
+    QWidget* appearance = new QWidget(this);
+    QVBoxLayout* appearanceLayout = new QVBoxLayout(appearance);
+    QHBoxLayout* themeRow = new QHBoxLayout;
+    QLabel* themeLabel = new QLabel(tr("Theme:"), appearance);
+    themeCombo = new QComboBox(appearance);
+    themeCombo->addItem(neurosuite::themeDisplayName(neurosuite::Theme::System),
+                        static_cast<int>(neurosuite::Theme::System));
+    themeCombo->addItem(neurosuite::themeDisplayName(neurosuite::Theme::Light),
+                        static_cast<int>(neurosuite::Theme::Light));
+    themeCombo->addItem(neurosuite::themeDisplayName(neurosuite::Theme::Dark),
+                        static_cast<int>(neurosuite::Theme::Dark));
+    themeRow->addWidget(themeLabel);
+    themeRow->addWidget(themeCombo);
+    themeRow->addStretch(1);
+    QLabel* themeHint = new QLabel(
+        tr("Applies to all NeuroSuite programs. Takes effect when you click Apply or OK."),
+        appearance);
+    themeHint->setWordWrap(true);
+    appearanceLayout->addLayout(themeRow);
+    appearanceLayout->addWidget(themeHint);
+    appearanceLayout->addStretch(1);
+    item = new QPageWidgetItem(appearance, tr("Appearance"));
+    item->setHeader(tr("Appearance"));
+    item->setIcon(QIcon(":/shared-icons/folder-open"));
+    addPage(item);
+
     // ── Wire enableApply on every interactive widget ───────────────
     // Session
     connect(prefSession->crashRecoveryCheckBox,  &QAbstractButton::clicked, this, &PrefDialog::enableApply);
@@ -157,6 +189,10 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
+
+    // Appearance: activated fires only on user choice (not the programmatic
+    // populate in updateDialog), so it lights Apply like the other controls.
+    connect(themeCombo, &QComboBox::activated, this, &PrefDialog::enableApply);
 
     connect(this, &QExtendDialog::applyClicked,   this, &PrefDialog::slotApply);
     connect(this, &QExtendDialog::defaultClicked, this, &PrefDialog::slotDefault);
@@ -232,6 +268,13 @@ void PrefDialog::updateDialog()
     prefclusterView->setTimeInterval(configuration().getTimeInterval());
     prefWaveformView->setGain(configuration().getGain());
 
+    // Appearance: reflect the current suite-wide theme preference.
+    {
+        const int idx = themeCombo->findData(
+            static_cast<int>(neurosuite::loadThemePreference()));
+        themeCombo->setCurrentIndex(idx < 0 ? 0 : idx);
+    }
+
     enableButtonApply(false);
     applyEnable = false;
 }
@@ -296,6 +339,14 @@ void PrefDialog::updateConfiguration()
     configuration().setGain(prefWaveformView->getGain());
     configuration().setNbChannels(prefWaveformView->getNbChannels());
     configuration().setChannelPositions(prefWaveformView->getChannelPositions());
+
+    // Appearance: persist the suite-wide theme and apply it immediately.
+    {
+        const neurosuite::Theme t =
+            static_cast<neurosuite::Theme>(themeCombo->currentData().toInt());
+        neurosuite::saveThemePreference(t);
+        neurosuite::applyTheme(t);
+    }
 
     enableButtonApply(false);
     applyEnable = false;
