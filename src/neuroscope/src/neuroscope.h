@@ -40,6 +40,7 @@ class NeuroscopeDoc;
 class PrefDialog;
 class PropertiesDialog;
 class ChannelPalette;
+class SpectralInspector;
 class ItemPalette;
 class QRecentFileAction;
 class QExtendTabWidget;
@@ -463,6 +464,10 @@ private Q_SLOTS:
     /**Toggles the spectral view in the active display.*/
     void slotSpectralView();
 
+    /**Bind the shared spectral inspector to the active display's SpectralView
+     * (or disable it when the active display is not in spectral mode).*/
+    void updateSpectralInspectorTarget();
+
     /**Creates of an empty group of channels.*/
     void slotCreateGroup();
 
@@ -803,6 +808,10 @@ private:
     * It enables to get the active palette.
     */
     QTabWidget* paletteTabsParent;
+
+    /**Shared spectral parameter panel, shown as a tab alongside the channel
+     * palettes. Retargeted to the active display's SpectralView.*/
+    SpectralInspector* spectralInspector;
 
     /**Panel container (contains a KDockArea) for all the palettes of the application (ClusterPalette,EventPalette,channelsPalette).
     * The main Palette is the channel palette

@@ -3,85 +3,60 @@
 
 #include <algorithm>
 
-#include <QHBoxLayout>
-#include <QLabel>
+#include <QVBoxLayout>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
-#include <QFrame>
+#include <QSignalBlocker>
 
 using neuroscope::spectral::SpectralMode;
 using neuroscope::spectral::Colormap;
 using neuroscope::spectral::SpectralBackend;
 
-namespace {
-void addLabeled(QHBoxLayout* lay, const QString& text, QWidget* w)
+SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
+    : QWidget(parent), view(nullptr)
 {
-    QLabel* l = new QLabel(text);
-    lay->addWidget(l);
-    lay->addWidget(w);
-}
-void addSeparator(QHBoxLayout* lay)
-{
-    QFrame* line = new QFrame;
-    line->setFrameShape(QFrame::VLine);
-    line->setFrameShadow(QFrame::Sunken);
-    lay->addWidget(line);
-}
-}
-
-SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
-    : QWidget(parent), view(view)
-{
-    QHBoxLayout* lay = new QHBoxLayout(this);
-    lay->setContentsMargins(4, 2, 4, 2);
-    lay->setSpacing(6);
-
-    const neuroscope::spectral::SpectralParams& p = view->spectralParams();
-
+    // ── controls (default values; reloadFromView() fills them from a view) ──
     modeCombo = new QComboBox;
     modeCombo->addItem(tr("time-freq"));   // index 0: single channel
     modeCombo->addItem(tr("band-chan"));   // index 1: across channels
-    modeCombo->setCurrentIndex(p.mode == SpectralMode::FrequencyAcrossChannels ? 1 : 0);
 
     channelSpin = new QSpinBox;
     channelSpin->setRange(0, 10000);
-    channelSpin->setValue(p.singleChannel);
     channelSpin->setToolTip(tr("channel row (time-freq mode)"));
 
     nwSpin = new QDoubleSpinBox;
     nwSpin->setRange(1.0, 1000.0); nwSpin->setSingleStep(0.5); nwSpin->setDecimals(1);
-    nwSpin->setValue(p.nw);
     nwSpin->setToolTip(tr("time-bandwidth NW"));
 
     taperSpin = new QSpinBox;
-    taperSpin->setRange(1, 1000); taperSpin->setValue(p.nTapers);
+    taperSpin->setRange(1, 1000);
     taperSpin->setToolTip(tr("number of tapers K"));
 
     windowSpin = new QSpinBox;
-    windowSpin->setRange(16, 100000); windowSpin->setValue(p.windowSamples);
+    windowSpin->setRange(16, 100000);
     windowSpin->setToolTip(tr("window length (samples)"));
 
     nfftSpin = new QSpinBox;
-    nfftSpin->setRange(16, 100000); nfftSpin->setValue(p.nfft);
+    nfftSpin->setRange(16, 100000);
     nfftSpin->setToolTip(tr("FFT length"));
 
     stepSpin = new QSpinBox;
-    stepSpin->setRange(1, 100000); stepSpin->setValue(p.stepSamples);
+    stepSpin->setRange(1, 100000);
     stepSpin->setToolTip(tr("hop (samples)"));
 
     freqLowSpin = new QDoubleSpinBox;
     freqLowSpin->setRange(0.0, 100000.0); freqLowSpin->setDecimals(0);
-    freqLowSpin->setValue(p.freqLow);
     freqLowSpin->setToolTip(tr("band low (Hz)"));
 
     freqHighSpin = new QDoubleSpinBox;
     freqHighSpin->setRange(0.0, 100000.0); freqHighSpin->setDecimals(0);
-    freqHighSpin->setValue(p.freqHigh);
     freqHighSpin->setToolTip(tr("band high (Hz); 0 = Nyquist"));
 
-    lockCheck = new QCheckBox(tr("lock"));
+    lockCheck = new QCheckBox(tr("lock to trace window"));
     lockCheck->setChecked(true);
     lockCheck->setToolTip(tr("use the trace window; uncheck to set an independent span"));
 
@@ -92,10 +67,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     spanSpin->setToolTip(tr("spectral window width, centred on the trace centre"));
 
     whitenCheck = new QCheckBox(tr("whiten"));
-    whitenCheck->setChecked(p.whiten);
-
-    decimCheck = new QCheckBox(tr("decim"));
-    decimCheck->setChecked(p.decimate);
+    decimCheck = new QCheckBox(tr("decimate"));
     decimCheck->setToolTip(tr("anti-alias + downsample to the high-frequency edge "
                               "before the transform (faster for narrow low bands)"));
 
@@ -106,7 +78,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     colormapCombo->addItem(tr("jet"));
     colormapCombo->setCurrentIndex(1);
 
-    autoScaleCheck = new QCheckBox(tr("auto"));
+    autoScaleCheck = new QCheckBox(tr("auto colour scale"));
     autoScaleCheck->setChecked(true);
     autoScaleCheck->setToolTip(tr("auto colour scale (full range); uncheck for a fixed dB range"));
 
@@ -121,75 +93,144 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     backendCombo->addItem(tr("GPU"));
     backendCombo->setCurrentIndex(0);
 
-    addLabeled(lay, tr("mode"), modeCombo);
-    addLabeled(lay, tr("ch"), channelSpin);
-    addSeparator(lay);
-    addLabeled(lay, tr("win"), windowSpin);
-    addLabeled(lay, tr("nfft"), nfftSpin);
-    addLabeled(lay, tr("step"), stepSpin);
-    addSeparator(lay);
-    addLabeled(lay, tr("NW"), nwSpin);
-    addLabeled(lay, tr("K"), taperSpin);
-    addSeparator(lay);
-    addLabeled(lay, tr("f.lo"), freqLowSpin);
-    addLabeled(lay, tr("f.hi"), freqHighSpin);
-    addSeparator(lay);
-    lay->addWidget(lockCheck);
-    addLabeled(lay, tr("span"), spanSpin);
-    addSeparator(lay);
-    lay->addWidget(whitenCheck);
-    lay->addWidget(decimCheck);
-    addLabeled(lay, tr("cmap"), colormapCombo);
-    lay->addWidget(autoScaleCheck);
-    addLabeled(lay, tr("dB"), dynRangeSpin);
-    addSeparator(lay);
-    addLabeled(lay, tr("backend"), backendCombo);
-    lay->addStretch(1);
+    // ── grouped vertical layout (tab-friendly) ──────────────────────────────
+    QVBoxLayout* root = new QVBoxLayout(this);
+    root->setContentsMargins(6, 6, 6, 6);
+    root->setSpacing(8);
 
-    // Wire controls to the view (after initial values are set above).
+    QGroupBox* estBox = new QGroupBox(tr("Estimator"));
+    QFormLayout* est = new QFormLayout(estBox);
+    est->addRow(tr("Mode"), modeCombo);
+    est->addRow(tr("Channel row"), channelSpin);
+    est->addRow(tr("NW"), nwSpin);
+    est->addRow(tr("Tapers (K)"), taperSpin);
+    est->addRow(tr("Window"), windowSpin);
+    est->addRow(tr("FFT length"), nfftSpin);
+    est->addRow(tr("Step"), stepSpin);
+    root->addWidget(estBox);
+
+    QGroupBox* bandBox = new QGroupBox(tr("Band (Hz)"));
+    QFormLayout* band = new QFormLayout(bandBox);
+    band->addRow(tr("Low"), freqLowSpin);
+    band->addRow(tr("High"), freqHighSpin);
+    root->addWidget(bandBox);
+
+    QGroupBox* winBox = new QGroupBox(tr("Time window"));
+    QFormLayout* win = new QFormLayout(winBox);
+    win->addRow(lockCheck);
+    win->addRow(tr("Span"), spanSpin);
+    root->addWidget(winBox);
+
+    QGroupBox* dispBox = new QGroupBox(tr("Display"));
+    QFormLayout* disp = new QFormLayout(dispBox);
+    disp->addRow(whitenCheck);
+    disp->addRow(decimCheck);
+    disp->addRow(tr("Colormap"), colormapCombo);
+    disp->addRow(autoScaleCheck);
+    disp->addRow(tr("Range (dB)"), dynRangeSpin);
+    disp->addRow(tr("Backend"), backendCombo);
+    root->addWidget(dispBox);
+
+    root->addStretch(1);
+
+    // ── wire controls to the bound view (guarded so a null target is safe and
+    //    so the connections survive retargeting via setView()) ───────────────
     connect(modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this](int i){ this->view->setSpectralMode(i == 1 ? SpectralMode::FrequencyAcrossChannels
-                                                              : SpectralMode::TimeFrequencySingleChannel); });
-    connect(channelSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            view, &SpectralView::setSingleChannelRow);
-    connect(nwSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            view, &SpectralView::setTimeBandwidth);
-    connect(taperSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            view, &SpectralView::setNumTapers);
-    connect(windowSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            view, &SpectralView::setWindowSamples);
-    connect(nfftSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            view, &SpectralView::setNfft);
-    connect(stepSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            view, &SpectralView::setStep);
-    connect(whitenCheck, &QCheckBox::toggled, view, &SpectralView::setWhitening);
-    connect(decimCheck, &QCheckBox::toggled, view, &SpectralView::setDecimate);
-    connect(dynRangeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            view, &SpectralView::setDynamicRangeDb);
+            [this](int i){ if(view) view->setSpectralMode(i == 1 ? SpectralMode::FrequencyAcrossChannels
+                                                                 : SpectralMode::TimeFrequencySingleChannel); });
+    connect(channelSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int v){ if(view) view->setSingleChannelRow(v); });
+    connect(nwSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [this](double v){ if(view) view->setTimeBandwidth(v); });
+    connect(taperSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int v){ if(view) view->setNumTapers(v); });
+    connect(windowSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int v){ if(view) view->setWindowSamples(v); });
+    connect(nfftSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int v){ if(view) view->setNfft(v); });
+    connect(stepSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int v){ if(view) view->setStep(v); });
+    connect(whitenCheck, &QCheckBox::toggled, this,
+            [this](bool on){ if(view) view->setWhitening(on); });
+    connect(decimCheck, &QCheckBox::toggled, this,
+            [this](bool on){ if(view) view->setDecimate(on); });
+    connect(dynRangeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [this](double v){ if(view) view->setDynamicRangeDb(v); });
 
-    auto applyFreq = [this]{ this->view->setFrequencyRange(freqLowSpin->value(), freqHighSpin->value()); };
+    auto applyFreq = [this]{ if(view) view->setFrequencyRange(freqLowSpin->value(), freqHighSpin->value()); };
     connect(freqLowSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [applyFreq](double){ applyFreq(); });
     connect(freqHighSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [applyFreq](double){ applyFreq(); });
 
     connect(colormapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this](int i){ this->view->setColormap(static_cast<Colormap>(i)); });
+            [this](int i){ if(view) view->setColormap(static_cast<Colormap>(i)); });
     connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this](int i){ this->view->setBackend(i == 1 ? SpectralBackend::Cuda
-                                                         : SpectralBackend::Cpu); });
+            [this](int i){ if(view) view->setBackend(i == 1 ? SpectralBackend::Cuda
+                                                            : SpectralBackend::Cpu); });
 
     connect(lockCheck, &QCheckBox::toggled, this, [this](bool on){
         spanSpin->setEnabled(!on);
-        this->view->setLockToTrace(on);
+        if(view) view->setLockToTrace(on);
     });
     connect(spanSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            [this](int ms){ this->view->setSpan(static_cast<long>(ms)); });
+            [this](int ms){ if(view) view->setSpan(static_cast<long>(ms)); });
 
     connect(autoScaleCheck, &QCheckBox::toggled, this, [this](bool on){
         dynRangeSpin->setEnabled(!on);
-        this->view->setAutoScale(on);
+        if(view) view->setAutoScale(on);
     });
+
+    // Bind (or disable when null).
+    setView(initialView);
+}
+
+void SpectralInspector::reloadFromView()
+{
+    if (!view) return;
+    const neuroscope::spectral::SpectralParams& p = view->spectralParams();
+
+    // Block every control while we mirror the view's state so the setters
+    // above are not re-invoked during the reload.
+    const QSignalBlocker b0(modeCombo),  b1(channelSpin), b2(nwSpin),
+                         b3(taperSpin),  b4(windowSpin),  b5(nfftSpin),
+                         b6(stepSpin),   b7(freqLowSpin), b8(freqHighSpin),
+                         b9(lockCheck),  b10(spanSpin),   b11(whitenCheck),
+                         b12(decimCheck),b13(colormapCombo), b14(autoScaleCheck),
+                         b15(dynRangeSpin), b16(backendCombo);
+
+    modeCombo->setCurrentIndex(p.mode == SpectralMode::FrequencyAcrossChannels ? 1 : 0);
+    channelSpin->setValue(p.singleChannel);
+    nwSpin->setValue(p.nw);
+    taperSpin->setValue(p.nTapers);
+    windowSpin->setValue(p.windowSamples);
+    nfftSpin->setValue(p.nfft);
+    stepSpin->setValue(p.stepSamples);
+    freqLowSpin->setValue(p.freqLow);
+    freqHighSpin->setValue(p.freqHigh);
+    whitenCheck->setChecked(p.whiten);
+    decimCheck->setChecked(p.decimate);
+    backendCombo->setCurrentIndex(p.backend == SpectralBackend::Cuda ? 1 : 0);
+
+    colormapCombo->setCurrentIndex(static_cast<int>(view->colormapValue()));
+    const bool autoOn = view->isAutoScale();
+    autoScaleCheck->setChecked(autoOn);
+    dynRangeSpin->setValue(view->dynamicRange());
+    dynRangeSpin->setEnabled(!autoOn);
+
+    const bool locked = view->isLockedToTrace();
+    lockCheck->setChecked(locked);
+    if (view->spanMs() > 0)
+        spanSpin->setValue(static_cast<int>(view->spanMs()));
+    spanSpin->setEnabled(!locked);
+}
+
+void SpectralInspector::setView(SpectralView* v)
+{
+    view = v;
+    setEnabled(v != nullptr);
+    if (v)
+        reloadFromView();
 }
 
 void SpectralInspector::setChannelCount(int n)
