@@ -40,6 +40,7 @@ set(_srcs
     traceview.cpp
     spectralview.cpp
     spectralinspector.cpp
+    freqbandslider.cpp
     tracewidget.cpp
     imagecreator.cpp
     globaleventsprovider.cpp

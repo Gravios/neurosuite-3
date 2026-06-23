@@ -271,6 +271,7 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
 void SpectralView::setSpectralMode(SpectralMode mode)
 {
     params.mode = mode;
+    emit spectralModeChanged(mode);
     scheduleParamUpdate();
 }
 
@@ -313,6 +314,7 @@ void SpectralView::setFrequencyRange(double lowHz, double highHz)
 {
     params.freqLow = lowHz;
     params.freqHigh = highHz;
+    emit frequencyRangeChanged(lowHz, highHz);
     scheduleParamUpdate();
 }
 

@@ -44,6 +44,7 @@ class TracesProvider;
 class BaseFrame;
 class ChannelColors;
 class SpectralView;
+class FreqBandSlider;
 class QVBoxLayout;
 
 /**
@@ -682,6 +683,13 @@ private:
 
     /**Spectral (multitaper) view, created on first toggle; null until then.*/
     SpectralView* spectralView = nullptr;
+
+    /**Thin frequency-band slider shown to the left of the spectral view in
+     * channel mode; null until the spectral view is created.*/
+    FreqBandSlider* freqBandSlider = nullptr;
+
+    /**Horizontal container holding [freqBandSlider | spectralView].*/
+    QWidget* spectralRow = nullptr;
 
     /**True while the spectral view is shown in place of the waveforms.*/
     bool spectralMode = false;

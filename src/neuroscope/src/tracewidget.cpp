@@ -17,6 +17,7 @@
 //include files for the application
 #include "tracewidget.h"
 #include "spectralview.h"
+#include "freqbandslider.h"
 
 #include <QShortcut>
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
@@ -33,6 +34,7 @@
 #include <QKeyEvent>
 #include <QDebug>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 
 
 /// Added by M.Zugaro to enable automatic forward paging
@@ -788,18 +790,52 @@ void TraceWidget::setSpectralMode(bool on)
         if (!spectralView) {
             spectralView = new SpectralView(mTracesProvider, currentChannels,
                                             startTime, timeWindow, this);
+
+            // Thin frequency-band slider to the left of the spectral view. Its
+            // extent is the displayed frequency range; its selection drives the
+            // mode-B per-channel integration band (re-integrated, not recomputed).
+            freqBandSlider = new FreqBandSlider(this);
+            const neuroscope::spectral::SpectralParams& sp = spectralView->spectralParams();
+            const double fLo = sp.freqLow;
+            const double fHi = (sp.freqHigh > 0.0) ? sp.freqHigh
+                                                   : (sp.samplingRate > 1.0 ? sp.samplingRate / 2.0 : 300.0);
+            freqBandSlider->setRange(fLo, fHi);
+            freqBandSlider->setBand(fLo, fHi);
+
+            spectralRow = new QWidget(this);
+            QHBoxLayout* rowLay = new QHBoxLayout(spectralRow);
+            rowLay->setContentsMargins(0, 0, 0, 0);
+            rowLay->setSpacing(0);
+            rowLay->addWidget(freqBandSlider);
+            rowLay->addWidget(spectralView, 1);
+
             // Same layout slot as the traces, above the time-selection controls.
-            mainLayout->insertWidget(0, spectralView);
-            mainLayout->setStretchFactor(spectralView, 200);
+            mainLayout->insertWidget(0, spectralRow);
+            mainLayout->setStretchFactor(spectralRow, 200);
+
+            connect(freqBandSlider, &FreqBandSlider::bandChanged,
+                    spectralView, &SpectralView::setBand);
+            connect(spectralView, &SpectralView::frequencyRangeChanged,
+                    freqBandSlider, &FreqBandSlider::setRange);
+            connect(spectralView, &SpectralView::spectralModeChanged, this,
+                    [this](neuroscope::spectral::SpectralMode m) {
+                        if (freqBandSlider)
+                            freqBandSlider->setVisible(
+                                m == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels);
+                    });
+            // Only meaningful in channel mode; hidden until then.
+            freqBandSlider->setVisible(
+                spectralView->spectralParams().mode
+                == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels);
         }
         view.hide();
-        spectralView->show();
+        spectralRow->show();
         spectralMode = true;
         spectralView->setChannels(currentChannels);
         spectralView->displayTimeFrame(startTime, timeWindow);
     } else {
-        if (spectralView)
-            spectralView->hide();
+        if (spectralRow)
+            spectralRow->hide();
         view.show();
         spectralMode = false;
         view.displayTimeFrame(startTime, timeWindow);

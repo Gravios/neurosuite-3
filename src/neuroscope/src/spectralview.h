@@ -92,6 +92,14 @@ public:
 public Q_SLOTS:
     void dataAvailable(Array<dataType>& data, QObject* initiator);
 
+Q_SIGNALS:
+    /// Emitted when the displayed frequency range changes, so the band slider
+    /// can update its extent to match.
+    void frequencyRangeChanged(double lowHz, double highHz);
+    /// Emitted when the spectral mode changes (e.g. to show the band slider
+    /// only in channel mode).
+    void spectralModeChanged(neuroscope::spectral::SpectralMode mode);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 
