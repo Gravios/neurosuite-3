@@ -360,6 +360,7 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
     overviewTemplateMatrixDock = templateMatrix;
     setConnections(TEMPLATE_MATRIX,tmView,templateMatrix);
+    connectMatrixZoomSync();
 }
 
 
@@ -1044,6 +1045,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
             tabifyDockWidget(overviewTemplateMatrixDock, errorMatrix);
         }
         setConnections(ERROR_MATRIX,errorMatrixView,errorMatrix);
+        connectMatrixZoomSync();
         break;
     case TEMPLATE_MATRIX:
         newViewType = true;
@@ -1063,6 +1065,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
             overviewErrorMatrixDock->raise();
         }
         setConnections(TEMPLATE_MATRIX,qobject_cast<TemplateMatrixView*>(templateMatrix->widget()),templateMatrix);
+        connectMatrixZoomSync();
         break;
     case RESIDUAL_MATRIX:
         newViewType = true;
@@ -1875,6 +1878,20 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
                 }
             }
         }
+    }
+}
+
+void KlustersView::connectMatrixZoomSync()
+{
+    ErrorMatrixView* emv = overviewErrorMatrixDock
+        ? qobject_cast<ErrorMatrixView*>(overviewErrorMatrixDock->widget()) : nullptr;
+    TemplateMatrixView* tmv = overviewTemplateMatrixDock
+        ? qobject_cast<TemplateMatrixView*>(overviewTemplateMatrixDock->widget()) : nullptr;
+    if (emv && tmv) {
+        connect(emv, &ErrorMatrixView::zoomChanged,
+                tmv, &TemplateMatrixView::setZoomLevel, Qt::UniqueConnection);
+        connect(tmv, &TemplateMatrixView::zoomChanged,
+                emv, &ErrorMatrixView::setZoomLevel, Qt::UniqueConnection);
     }
 }
 
