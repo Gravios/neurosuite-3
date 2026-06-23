@@ -15,12 +15,17 @@ add_library(neuroscope-spectral STATIC
     multitaper.cpp
     spectralfft.cpp
     decimate.cpp
+    chunkcache.cpp
     spectralengine.cpp)
 
 target_compile_features(neuroscope-spectral PUBLIC cxx_std_20)
 set_target_properties(neuroscope-spectral PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(neuroscope-spectral
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# The chunk cache runs its fill on a std::thread.
+find_package(Threads REQUIRED)
+target_link_libraries(neuroscope-spectral PUBLIC Threads::Threads)
 
 # GPU backend source: the cuFFT translation unit when CUDA is enabled and the
 # toolkit is present, otherwise a CPU stub that always declines so the engine
