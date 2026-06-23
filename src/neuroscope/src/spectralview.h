@@ -18,6 +18,7 @@
 #include <QList>
 
 class QTimer;
+template <typename T> class QFutureWatcher;
 
 class SpectralView : public BaseFrame {
     Q_OBJECT
@@ -123,6 +124,11 @@ private:
     // fast variant of the current params.
     void settleNow();
     neuroscope::spectral::SpectralParams previewParams() const;
+    // Flatten the current window into sample-major doubles + valid channel list.
+    bool buildInput(std::vector<double>& sampleMajor, std::vector<int>& chans,
+                    int& nSamples, int& nCh) const;
+    // Applies a background full-multitaper result if it is still current.
+    void onSettleComputed();
 
     TracesProvider& tracesProvider;
     QList<int> channels;
@@ -158,6 +164,12 @@ private:
 
     QTimer* settleTimer = nullptr; // fires when the window stops moving
     bool movePreview = false;      // true while scrolling: render the fast preview
+
+    // Background full-multitaper pass that replaces the settle render when ready.
+    QFutureWatcher<neuroscope::spectral::SpectralImage>* mtWatcher = nullptr;
+    unsigned long settleGen = 0;        // bumped on each move; discards stale results
+    unsigned long pendingSettleGen = 0; // generation of the in-flight background pass
+    std::uint64_t pendingWindowId = 0;
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H

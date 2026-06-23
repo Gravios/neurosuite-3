@@ -4,6 +4,8 @@
 #include <QPaintEvent>
 #include <QTimer>
 #include <QRect>
+#include <QtConcurrentRun>
+#include <QFutureWatcher>
 
 #include <algorithm>
 #include <cmath>
@@ -71,6 +73,10 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
     settleTimer->setSingleShot(true);
     connect(settleTimer, &QTimer::timeout, this, &SpectralView::settleNow);
 
+    mtWatcher = new QFutureWatcher<neuroscope::spectral::SpectralImage>(this);
+    connect(mtWatcher, &QFutureWatcher<neuroscope::spectral::SpectralImage>::finished,
+            this, &SpectralView::onSettleComputed);
+
     traceStart = startTime;
     traceWidth = timeFrameWidth;
     recordingLength = tracesProvider.recordingLength();
@@ -92,6 +98,7 @@ void SpectralView::displayTimeFrame(long start, long width)
     // A moving window renders the fast preview; the settle timer restarts on
     // every move and triggers the full multitaper once it stops (~200 ms idle).
     movePreview = true;
+    ++settleGen;          // invalidates any in-flight background multitaper pass
     settleTimer->start(200);
     applyWindow();
 }
@@ -113,6 +120,7 @@ void SpectralView::scheduleParamUpdate()
 {
     engine.invalidate();
     paramsDirty = true;
+    ++settleGen;   // a parameter change supersedes any in-flight background pass
     if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
@@ -120,6 +128,7 @@ void SpectralView::scheduleParamUpdate()
 void SpectralView::scheduleWindowUpdate()
 {
     windowDirty = true;
+    ++settleGen;
     if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
@@ -165,24 +174,33 @@ void SpectralView::dataAvailable(Array<dataType>& incoming, QObject* initiator)
     if (recomputeTimer) recomputeTimer->stop();
 }
 
-void SpectralView::recompute()
+bool SpectralView::buildInput(std::vector<double>& sampleMajor, std::vector<int>& chans,
+                              int& nSamples, int& nCh) const
 {
-    const int nSamples = static_cast<int>(data.nbOfRows());
-    const int nCh = static_cast<int>(data.nbOfColumns());
-    if (nSamples <= 0 || nCh <= 0) { image = QImage(); return; }
+    nSamples = static_cast<int>(data.nbOfRows());
+    nCh = static_cast<int>(data.nbOfColumns());
+    if (nSamples <= 0 || nCh <= 0) return false;
 
     // Array is 1-based (sample i, channel j); flatten to sample-major double.
-    std::vector<double> sampleMajor(static_cast<std::size_t>(nSamples) * nCh);
+    sampleMajor.assign(static_cast<std::size_t>(nSamples) * nCh, 0.0);
     for (int s = 0; s < nSamples; ++s)
         for (int c = 0; c < nCh; ++c)
             sampleMajor[static_cast<std::size_t>(s) * nCh + c] =
                 static_cast<double>(data(s + 1, c + 1));
 
-    std::vector<int> chans;
+    chans.clear();
     chans.reserve(channels.size());
     for (int c : channels)
         if (c >= 0 && c < nCh) chans.push_back(c);
-    if (chans.empty()) { image = QImage(); return; }
+    return !chans.empty();
+}
+
+void SpectralView::recompute()
+{
+    std::vector<double> sampleMajor;
+    std::vector<int> chans;
+    int nSamples = 0, nCh = 0;
+    if (!buildInput(sampleMajor, chans, nSamples, nCh)) { image = QImage(); return; }
 
     params.samplingRate = tracesProvider.getSamplingRate();
     const std::uint64_t windowId =
@@ -211,7 +229,51 @@ void SpectralView::settleNow()
 {
     if (!movePreview) return;
     movePreview = false;
-    if (dataReady) { recompute(); update(); }  // now uses the full parameters
+    if (!dataReady) return;
+
+    // Launch the full multitaper on a worker thread; the preview stays on screen
+    // until it returns. Stale results (a newer move bumped settleGen) are dropped
+    // in onSettleComputed().
+    std::vector<double> sampleMajor;
+    std::vector<int> chans;
+    int nSamples = 0, nCh = 0;
+    if (!buildInput(sampleMajor, chans, nSamples, nCh)) return;
+
+    neuroscope::spectral::SpectralParams full = params;
+    full.samplingRate = tracesProvider.getSamplingRate();
+    const std::uint64_t windowId =
+        (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
+        ^ static_cast<std::uint32_t>(timeFrameWidth);
+
+    pendingSettleGen = settleGen;
+    pendingWindowId = windowId;
+
+    // Compute on a private engine (the member engine stays with the UI thread).
+    // FFTW plan creation is mutex-guarded, so this is safe alongside the preview.
+    auto future = QtConcurrent::run(
+        [sm = std::move(sampleMajor), chans = std::move(chans), nSamples, nCh, full, windowId]() {
+            neuroscope::spectral::SpectralEngine local;
+            return local.compute(sm.data(), nSamples, nCh, chans, full, windowId);
+        });
+    mtWatcher->setFuture(future);
+}
+
+void SpectralView::onSettleComputed()
+{
+    if (!mtWatcher->future().isValid() || mtWatcher->future().resultCount() == 0)
+        return;
+    // Discard if a newer move started, or the window moved, since the launch.
+    const std::uint64_t windowId =
+        (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
+        ^ static_cast<std::uint32_t>(timeFrameWidth);
+    if (pendingSettleGen != settleGen || pendingWindowId != windowId || movePreview)
+        return;
+
+    lastImage = mtWatcher->result();
+    // Re-apply the current band selection to the freshly computed cube.
+    neuroscope::spectral::integrateBand(lastImage, params.bandLo, params.bandHi);
+    rebuildImage();
+    update();
 }
 
 void SpectralView::rebuildImage()

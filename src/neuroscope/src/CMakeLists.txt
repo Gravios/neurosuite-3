@@ -71,7 +71,8 @@ target_link_libraries(neuroscope PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::PrintSupport)
+    Qt6::PrintSupport
+    Qt6::Concurrent)
 
 # ---------------------------------------------------------------------------
 # Install
