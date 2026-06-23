@@ -44,7 +44,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     modeCombo->setCurrentIndex(p.mode == SpectralMode::FrequencyAcrossChannels ? 1 : 0);
 
     channelSpin = new QSpinBox;
-    channelSpin->setRange(0, 1023);
+    channelSpin->setRange(0, 10000);
     channelSpin->setValue(p.singleChannel);
     channelSpin->setToolTip(tr("channel row (time-freq mode)"));
 
