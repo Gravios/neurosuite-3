@@ -1,6 +1,8 @@
 #include "spectralinspector.h"
 #include "spectralview.h"
 
+#include <algorithm>
+
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QComboBox>
@@ -49,12 +51,12 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     channelSpin->setToolTip(tr("channel row (time-freq mode)"));
 
     nwSpin = new QDoubleSpinBox;
-    nwSpin->setRange(1.0, 10.0); nwSpin->setSingleStep(0.5); nwSpin->setDecimals(1);
+    nwSpin->setRange(1.0, 1000.0); nwSpin->setSingleStep(0.5); nwSpin->setDecimals(1);
     nwSpin->setValue(p.nw);
     nwSpin->setToolTip(tr("time-bandwidth NW"));
 
     taperSpin = new QSpinBox;
-    taperSpin->setRange(1, 20); taperSpin->setValue(p.nTapers);
+    taperSpin->setRange(1, 1000); taperSpin->setValue(p.nTapers);
     taperSpin->setToolTip(tr("number of tapers K"));
 
     windowSpin = new QSpinBox;
@@ -66,7 +68,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     nfftSpin->setToolTip(tr("FFT length"));
 
     stepSpin = new QSpinBox;
-    stepSpin->setRange(1, 8192); stepSpin->setValue(p.stepSamples);
+    stepSpin->setRange(1, 100000); stepSpin->setValue(p.stepSamples);
     stepSpin->setToolTip(tr("hop (samples)"));
 
     freqLowSpin = new QDoubleSpinBox;
@@ -109,7 +111,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     autoScaleCheck->setToolTip(tr("auto colour scale (full range); uncheck for a fixed dB range"));
 
     dynRangeSpin = new QDoubleSpinBox;
-    dynRangeSpin->setRange(6.0, 160.0); dynRangeSpin->setDecimals(0);
+    dynRangeSpin->setRange(6.0, 100000.0); dynRangeSpin->setDecimals(0);
     dynRangeSpin->setValue(60.0);
     dynRangeSpin->setEnabled(false);   // auto is on by default
     dynRangeSpin->setToolTip(tr("dynamic range (dB) when auto is off"));
@@ -193,5 +195,5 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
 void SpectralInspector::setChannelCount(int n)
 {
     if (n < 1) n = 1;
-    channelSpin->setRange(0, n - 1);
+    channelSpin->setRange(0, std::max(n - 1, 10000));
 }
