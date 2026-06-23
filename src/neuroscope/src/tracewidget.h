@@ -146,6 +146,11 @@ public Q_SLOTS:
   */
     void moveToTime(long time);
 
+    /**Scrolls the time window by a quarter of its width. direction is -1 for
+     * left (earlier) or +1 for right (later); the new start is clamped to the
+     * recording. Bound to the Left/Right arrow keys.*/
+    void scrollByQuarterWindow(int direction);
+
     /**
   * Sets the mode of presentation to single or multiple columns.
   * @param multiple true if the traces are presented on multiple columns, false if they are presented on a single column.
