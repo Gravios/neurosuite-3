@@ -33,6 +33,7 @@
 #include <QProcess>
 #include <QMenu>
 #include <QMenuBar>
+#include <QActionGroup>
 #include <QDebug>
 #include <QSettings>
 #include <QPointer>
@@ -40,6 +41,8 @@
 
 // application specific includes
 #include "ndmanager.h"
+
+#include <klustersshared/theme.h>
 #include <QDialog>
 #include <qrecentfileaction.h>
 #include "queryinputdialog.h"
@@ -209,6 +212,27 @@ void ndManager::setupActions()
     if ( settings.contains("expertMode")) mExpertMode->setChecked(settings.value("expertMode").toBool());
 	 else mExpertMode->setChecked(true);
     settings.endGroup();
+
+    // Appearance: suite-wide light/dark/system theme. ndmanager has no page-based
+    // preferences dialog, so the control lives here as a Settings submenu.
+    settingsMenu->addSeparator();
+    QMenu* themeMenu = settingsMenu->addMenu(tr("&Theme"));
+    QActionGroup* themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+    const neurosuite::Theme currentTheme = neurosuite::loadThemePreference();
+    const neurosuite::Theme themeChoices[] = {
+        neurosuite::Theme::System, neurosuite::Theme::Light, neurosuite::Theme::Dark };
+    for (const neurosuite::Theme t : themeChoices) {
+        QAction* themeAction = themeMenu->addAction(neurosuite::themeDisplayName(t));
+        themeAction->setCheckable(true);
+        themeAction->setActionGroup(themeGroup);
+        themeAction->setChecked(t == currentTheme);
+        connect(themeAction, &QAction::triggered, this, [t]() {
+            neurosuite::saveThemePreference(t);
+            neurosuite::applyTheme(t);
+        });
+    }
+    settingsMenu->addSeparator();
 
     viewMainToolBar = settingsMenu->addAction(tr("Show Main Toolbar"));
 
