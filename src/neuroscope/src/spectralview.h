@@ -117,6 +117,13 @@ private:
     void scheduleWindowUpdate();
     void flushPending();
 
+    // While the time window is moving, recompute() renders a fast preview
+    // (single taper on decimated data); settleNow(), fired once the window
+    // stops, renders the full multitaper estimate. previewParams() builds the
+    // fast variant of the current params.
+    void settleNow();
+    neuroscope::spectral::SpectralParams previewParams() const;
+
     TracesProvider& tracesProvider;
     QList<int> channels;
 
@@ -148,6 +155,9 @@ private:
     bool paramsDirty = false;  // a parameter change awaits recompute
     bool windowDirty = false;  // a span/lock change awaits a window re-derive
     int  recomputeDelayMs = 0;   // 0 = manual: changes apply only on "u"
+
+    QTimer* settleTimer = nullptr; // fires when the window stops moving
+    bool movePreview = false;      // true while scrolling: render the fast preview
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H

@@ -65,6 +65,12 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
     recomputeTimer->setSingleShot(true);
     connect(recomputeTimer, &QTimer::timeout, this, &SpectralView::flushPending);
 
+    // Fires once the time window stops moving, to replace the fast scroll
+    // preview with the full multitaper estimate.
+    settleTimer = new QTimer(this);
+    settleTimer->setSingleShot(true);
+    connect(settleTimer, &QTimer::timeout, this, &SpectralView::settleNow);
+
     traceStart = startTime;
     traceWidth = timeFrameWidth;
     recordingLength = tracesProvider.recordingLength();
@@ -83,6 +89,10 @@ void SpectralView::displayTimeFrame(long start, long width)
 {
     traceStart = start;
     traceWidth = width;
+    // A moving window renders the fast preview; the settle timer restarts on
+    // every move and triggers the full multitaper once it stops (~200 ms idle).
+    movePreview = true;
+    settleTimer->start(200);
     applyWindow();
 }
 
@@ -179,8 +189,29 @@ void SpectralView::recompute()
         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
         ^ static_cast<std::uint32_t>(timeFrameWidth);
 
-    lastImage = engine.compute(sampleMajor.data(), nSamples, nCh, chans, params, windowId);
+    // While scrolling, render a fast preview (single taper on decimated data);
+    // the full multitaper estimate follows once the window settles.
+    const neuroscope::spectral::SpectralParams& p = movePreview ? previewParams() : params;
+    lastImage = engine.compute(sampleMajor.data(), nSamples, nCh, chans, p, windowId);
     rebuildImage();
+}
+
+neuroscope::spectral::SpectralParams SpectralView::previewParams() const
+{
+    // Cheapest meaningful estimate: one taper over the decimated (0-300 Hz)
+    // data. The bin spacing is preserved, so the preview lines up with the full
+    // estimate that replaces it on settle.
+    neuroscope::spectral::SpectralParams p = params;
+    p.nTapers = 1;
+    p.decimate = true;
+    return p;
+}
+
+void SpectralView::settleNow()
+{
+    if (!movePreview) return;
+    movePreview = false;
+    if (dataReady) { recompute(); update(); }  // now uses the full parameters
 }
 
 void SpectralView::rebuildImage()
