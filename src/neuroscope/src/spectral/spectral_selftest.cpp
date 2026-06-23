@@ -11,6 +11,7 @@
 #include "dpss.h"
 #include "multitaper.h"
 #include "spectralengine.h"
+#include "chunkcache.h"
 #include "colormap.h"
 #include "spectralgpu_kernels.h"
 #include "spectralwindow.h"
@@ -19,6 +20,9 @@
 #include <cstdio>
 #include <random>
 #include <vector>
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 using namespace neuroscope::spectral;
 
@@ -400,6 +404,60 @@ int main()
         // Re-selecting the whole band restores at least the in-band integral.
         integrateBand(img, 0.0, 0.0);     const double pFull = meanPower(img);
         check(pFull >= pIn * 0.99, "full band integral >= sub-band integral", pFull, pIn);
+    }
+
+    // ---- Sliding-window chunk cache --------------------------------------
+    {
+        using namespace std::chrono;
+        auto waitFor = [](auto pred, int timeoutMs) {
+            const auto t0 = steady_clock::now();
+            while (!pred()) {
+                if (duration_cast<milliseconds>(steady_clock::now() - t0).count() > timeoutMs)
+                    return false;
+                std::this_thread::sleep_for(milliseconds(2));
+            }
+            return true;
+        };
+
+        SpectralChunkCache cache;
+        std::atomic<int> calls{0};
+        cache.setCompute([&](int idx, const SpectralParams&, SpectralImage& out) {
+            calls++;
+            out.rows = 1; out.cols = 1;
+            out.data.assign(1, static_cast<float>(idx));   // marker = chunk index
+            std::this_thread::sleep_for(milliseconds(1));
+            return true;
+        });
+        SpectralParams cp;
+        cache.configure(/*numChunks*/100, /*radius*/5);
+        cache.setParams(cp);
+        cache.setCenter(50);
+        cache.start();
+
+        const bool filled = waitFor([&]{ return cache.isReady(45) && cache.isReady(50)
+                                              && cache.isReady(55); }, 5000);
+        check(filled, "window around centre fills in the background", cache.readyCount(), 11);
+        check(!cache.isReady(0) && !cache.isReady(99),
+              "chunks outside the window are not computed", 0, 0);
+
+        SpectralImage got;
+        const bool gotIt = cache.tryGet(50, got);
+        check(gotIt && !got.data.empty() && got.data[0] == 50.0f,
+              "cached chunk carries its own index", gotIt ? got.data[0] : -1, 50);
+
+        // Scroll far: old chunks evict, the new window fills.
+        cache.setCenter(90);
+        const bool moved = waitFor([&]{ return cache.isReady(90) && !cache.isReady(50); }, 5000);
+        check(moved, "scrolling evicts the old window and fills the new", cache.center(), 90);
+
+        // A param change drops everything and refills around the centre.
+        const int before = calls.load();
+        cp.nfft = cp.nfft * 2;
+        cache.setParams(cp);
+        const bool refilled = waitFor([&]{ return cache.isReady(90) && calls.load() > before; }, 5000);
+        check(refilled, "param change invalidates and recomputes", calls.load() - before, 1);
+
+        cache.stop();
     }
 
     // ---- Colormaps -------------------------------------------------------
