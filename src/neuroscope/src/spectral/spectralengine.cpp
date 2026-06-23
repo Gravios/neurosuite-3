@@ -128,9 +128,13 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
     img.mode = params.mode;
 
     const int nch = static_cast<int>(channels.size());
-    const int N = params.windowSamples;
+    // Clamp the analysis window to the data: a window longer than the supplied
+    // samples (e.g. a saved windowSamples bigger than the current view) yields a
+    // single best-effort column rather than an empty image, which would otherwise
+    // leave the spectral view stuck showing "computing...".
+    const int N = std::min(params.windowSamples, nSamples);
     const double fs = params.samplingRate;
-    if (nch < 1 || nSamples < N || N < 2 || fs <= 0.0 || params.stepSamples <= 0) {
+    if (nch < 1 || N < 2 || fs <= 0.0 || params.stepSamples <= 0) {
         cache_ = img; cacheParams_ = params; cacheWindowId_ = windowId; hasCache_ = true;
         return cache_;
     }

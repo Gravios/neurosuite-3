@@ -249,6 +249,16 @@ int main()
         for (int c = 0; c < A.cols; ++c) { pTone += A.at(2, c); pOther += A.at(0, c); }
         check(pTone > 5.0 * pOther, "engine mode A separates in-band channel", pTone, pOther);
 
+        // A window longer than the available data must still produce a best-
+        // effort estimate (one column over the whole window), not an empty image
+        // that would leave the view stuck on "computing...".
+        SpectralParams pBig = pb;
+        pBig.windowSamples = nS * 2;     // 8192 > nS (4096)
+        pBig.nfft = nS * 2;
+        const SpectralImage& Big = engine.compute(data.data(), nS, nCh, channels, pBig, 7);
+        check(Big.valid() && Big.cols >= 1,
+              "engine clamps over-long window to the data", Big.cols, 1);
+
         // Whitening path runs and yields a finite image.
         SpectralParams pw = pa; pw.whiten = true;
         const SpectralImage& W = engine.compute(data.data(), nS, nCh, channels, pw, 2);
