@@ -103,15 +103,15 @@ void SpectralView::scheduleParamUpdate()
 {
     engine.invalidate();
     paramsDirty = true;
-    if (recomputeDelayMs <= 0) flushPending();
-    else recomputeTimer->start(recomputeDelayMs);
+    if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
+    // else: manual mode — the change waits for commitNow() ("u").
 }
 
 void SpectralView::scheduleWindowUpdate()
 {
     windowDirty = true;
-    if (recomputeDelayMs <= 0) flushPending();
-    else recomputeTimer->start(recomputeDelayMs);
+    if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
+    // else: manual mode — the change waits for commitNow() ("u").
 }
 
 void SpectralView::flushPending()
