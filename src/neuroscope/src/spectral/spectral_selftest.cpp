@@ -332,16 +332,16 @@ int main()
               && Bn.freqs.back() <= 200.0 + binHz && Bn.rows < B.rows,
               "freq range crops mode B band", Bn.rows, B.rows);
 
-        // Mode A band power tracks the integration band: the 120 Hz tone lands
+        // Mode A band power tracks the band: the 125 Hz tone on channel 2 lands
         // inside [100,150] but not inside [10,40].
         SpectralParams pIn = pa;  pIn.freqLow = 100.0; pIn.freqHigh = 150.0;
         SpectralParams pOut = pa; pOut.freqLow = 10.0;  pOut.freqHigh = 40.0;
         SpectralImage Ain  = engine.compute(data.data(), nS, nCh, channels, pIn, 1);
         SpectralImage Aout = engine.compute(data.data(), nS, nCh, channels, pOut, 1);
         double pin = 0, pout = 0;
-        for (int c = 0; c < Ain.cols; ++c)  pin  += Ain.at(0, c);
-        for (int c = 0; c < Aout.cols; ++c) pout += Aout.at(0, c);
-        check(pin > 5.0 * pout, "mode A band power follows freq range", pin, pout);
+        for (int c = 0; c < Ain.cols; ++c)  pin  += Ain.at(2, c);   // tone channel
+        for (int c = 0; c < Aout.cols; ++c) pout += Aout.at(2, c);
+        check(pin > 5.0 * pout, "mode A band power follows the band", pin, pout);
     }
 
     // ---- Decimation preserves the in-band spectrogram --------------------
@@ -383,7 +383,7 @@ int main()
               "decimated band covers ~[0,100] Hz", dec.freqs.back(), 100);
     }
 
-    // ---- Mode B sub-band re-integration from the retained cube -----------
+    // ---- Mode A band selection via band-pass + RMS -----------------------
     {
         const double fs = 1000.0;
         const int nCh = 2, nS = 16384;
@@ -400,20 +400,20 @@ int main()
         p.mode = SpectralMode::FrequencyAcrossChannels;
         p.samplingRate = fs; p.windowSamples = 1024; p.nfft = 1024; p.stepSamples = 512;
         p.nw = 3.0; p.nTapers = 5; p.freqLow = 0.0; p.freqHigh = 100.0;
-        // Default band (0,0) integrates the whole displayed range.
-        SpectralImage img = eng.compute(data.data(), nS, nCh, channels, p, 1);
-        check(!img.cube.empty(), "mode B retains a freq cube", double(img.cube.size()), 1);
 
         auto meanPower = [](const SpectralImage& im) {
             double s = 0; for (float v : im.data) s += v;
             return s / std::max<std::size_t>(1, im.data.size());
         };
-        integrateBand(img, 20.0, 40.0);   const double pIn  = meanPower(img); // holds 30 Hz
-        integrateBand(img, 60.0, 100.0);  const double pOut = meanPower(img); // excludes it
-        check(pIn > 3.0 * pOut, "sub-band with the 30 Hz tone >> band without", pIn, pOut);
-        // Re-selecting the whole band restores at least the in-band integral.
-        integrateBand(img, 0.0, 0.0);     const double pFull = meanPower(img);
-        check(pFull >= pIn * 0.99, "full band integral >= sub-band integral", pFull, pIn);
+
+        // No freq cube is retained in this mode; the band is the filter pass-band.
+        SpectralParams pin = p;  pin.bandLo = 20.0;  pin.bandHi = 40.0;   // holds 30 Hz
+        SpectralParams pout = p; pout.bandLo = 60.0; pout.bandHi = 100.0; // excludes it
+        SpectralImage in  = eng.compute(data.data(), nS, nCh, channels, pin, 1);
+        SpectralImage out = eng.compute(data.data(), nS, nCh, channels, pout, 1);
+        check(in.cube.empty(), "mode A keeps no freq cube (filter+RMS)", double(in.cube.size()), 0);
+        const double pIn = meanPower(in), pOut = meanPower(out);
+        check(pIn > 3.0 * pOut, "mode A band [20,40] (30 Hz tone) >> band [60,100]", pIn, pOut);
     }
 
     // ---- Sliding-window chunk cache --------------------------------------
