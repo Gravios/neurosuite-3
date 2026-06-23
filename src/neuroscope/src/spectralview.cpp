@@ -121,6 +121,7 @@ void SpectralView::scheduleParamUpdate()
     engine.invalidate();
     paramsDirty = true;
     ++settleGen;   // a parameter change supersedes any in-flight background pass
+    recent_.clear();   // cached estimates are for the old parameters
     if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
@@ -129,6 +130,7 @@ void SpectralView::scheduleWindowUpdate()
 {
     windowDirty = true;
     ++settleGen;
+    recent_.clear();   // window width may change, invalidating cached window ids
     if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
@@ -197,15 +199,27 @@ bool SpectralView::buildInput(std::vector<double>& sampleMajor, std::vector<int>
 
 void SpectralView::recompute()
 {
-    std::vector<double> sampleMajor;
-    std::vector<int> chans;
-    int nSamples = 0, nCh = 0;
-    if (!buildInput(sampleMajor, chans, nSamples, nCh)) { image = QImage(); return; }
-
     params.samplingRate = tracesProvider.getSamplingRate();
     const std::uint64_t windowId =
         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
         ^ static_cast<std::uint32_t>(timeFrameWidth);
+
+    // Revisiting a window we already settled: render its full estimate at once,
+    // re-applying the current band, and skip the preview/settle cycle.
+    if (movePreview && recentGet(windowId, lastImage)) {
+        neuroscope::spectral::integrateBand(lastImage, params.bandLo, params.bandHi);
+        fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
+        haveFullScale = true;
+        movePreview = false;
+        settleTimer->stop();
+        rebuildImage();
+        return;
+    }
+
+    std::vector<double> sampleMajor;
+    std::vector<int> chans;
+    int nSamples = 0, nCh = 0;
+    if (!buildInput(sampleMajor, chans, nSamples, nCh)) { image = QImage(); return; }
 
     // While scrolling, render a fast preview (single taper); the full multitaper
     // estimate follows once the window settles.
@@ -218,8 +232,31 @@ void SpectralView::recompute()
     } else if (!movePreview) {
         fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
         haveFullScale = true;
+        recentPut(windowId, lastImage);   // a synchronous full estimate is cacheable
     }
     rebuildImage();
+}
+
+bool SpectralView::recentGet(std::uint64_t windowId,
+                             neuroscope::spectral::SpectralImage& out)
+{
+    for (auto it = recent_.begin(); it != recent_.end(); ++it) {
+        if (it->first == windowId) {
+            out = it->second;                       // copy out
+            recent_.splice(recent_.begin(), recent_, it); // move to front (LRU)
+            return true;
+        }
+    }
+    return false;
+}
+
+void SpectralView::recentPut(std::uint64_t windowId,
+                             const neuroscope::spectral::SpectralImage& img)
+{
+    for (auto it = recent_.begin(); it != recent_.end(); ++it)
+        if (it->first == windowId) { recent_.erase(it); break; }
+    recent_.emplace_front(windowId, img);
+    while (recent_.size() > recentCap) recent_.pop_back();
 }
 
 neuroscope::spectral::SpectralParams SpectralView::previewParams() const
@@ -284,6 +321,7 @@ void SpectralView::onSettleComputed()
     neuroscope::spectral::integrateBand(lastImage, params.bandLo, params.bandHi);
     fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
     haveFullScale = true;
+    recentPut(pendingWindowId, lastImage);   // settled full estimate is cacheable
     rebuildImage();
     update();
 }
