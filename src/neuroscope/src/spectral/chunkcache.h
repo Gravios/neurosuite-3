@@ -63,6 +63,19 @@ public:
     int  readyCount() const;
     int  center() const;
 
+    // ---- External fill -----------------------------------------------------
+    // The cache can also be filled by the caller (e.g. a main-thread driver
+    // that reuses the view's async data path) instead of, or alongside, the
+    // worker. The caller reads epoch() and nextWanted(), fetches/computes that
+    // chunk, then put()s it back tagged with the epoch it started from; a put
+    // whose epoch is stale (params changed meanwhile) or whose chunk scrolled
+    // out of the window is dropped. markUnavailable() records a chunk that could
+    // not be produced so it is not requested again until eviction/invalidation.
+    long epoch() const;
+    int  nextWanted() const;
+    bool put(int chunkIndex, const SpectralImage& img, long epoch);
+    void markUnavailable(int chunkIndex, long epoch);
+
 private:
     void workerLoop();
     int  pickNextLocked() const;          // nearest in-window, not ready/attempted; -1 if none
