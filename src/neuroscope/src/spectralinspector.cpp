@@ -92,6 +92,11 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     whitenCheck = new QCheckBox(tr("whiten"));
     whitenCheck->setChecked(p.whiten);
 
+    decimCheck = new QCheckBox(tr("decim"));
+    decimCheck->setChecked(p.decimate);
+    decimCheck->setToolTip(tr("anti-alias + downsample to the high-frequency edge "
+                              "before the transform (faster for narrow low bands)"));
+
     colormapCombo = new QComboBox;
     colormapCombo->addItem(tr("gray"));
     colormapCombo->addItem(tr("viridis"));
@@ -131,6 +136,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     addLabeled(lay, tr("span"), spanSpin);
     addSeparator(lay);
     lay->addWidget(whitenCheck);
+    lay->addWidget(decimCheck);
     addLabeled(lay, tr("cmap"), colormapCombo);
     lay->addWidget(autoScaleCheck);
     addLabeled(lay, tr("dB"), dynRangeSpin);
@@ -155,6 +161,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     connect(stepSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             view, &SpectralView::setStep);
     connect(whitenCheck, &QCheckBox::toggled, view, &SpectralView::setWhitening);
+    connect(decimCheck, &QCheckBox::toggled, view, &SpectralView::setDecimate);
     connect(dynRangeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             view, &SpectralView::setDynamicRangeDb);
 
