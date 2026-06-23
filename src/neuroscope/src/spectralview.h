@@ -45,6 +45,10 @@ public:
     void setTimeBandwidth(double nw);
     void setNumTapers(int k);
     void setFrequencyRange(double lowHz, double highHz);
+
+    /// Set the mode-B integration sub-band [lowHz, highHz] (Hz). This re-sums
+    /// the retained cube and repaints immediately, without recomputing.
+    void setBand(double lowHz, double highHz);
     void setSingleChannelRow(int row);
     void setWhitening(bool on);
     void setDecimate(bool on);

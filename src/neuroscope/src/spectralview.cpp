@@ -316,6 +316,20 @@ void SpectralView::setFrequencyRange(double lowHz, double highHz)
     scheduleParamUpdate();
 }
 
+void SpectralView::setBand(double lowHz, double highHz)
+{
+    params.bandLo = lowHz;
+    params.bandHi = highHz;
+    // The band only changes how the retained cube is integrated, so re-sum it
+    // and repaint immediately rather than recomputing the spectrogram.
+    if (lastImage.mode == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels
+        && !lastImage.cube.empty()) {
+        neuroscope::spectral::integrateBand(lastImage, lowHz, highHz);
+        rebuildImage();
+        update();
+    }
+}
+
 void SpectralView::setSingleChannelRow(int row)
 {
     params.singleChannel = row < 0 ? 0 : row;
