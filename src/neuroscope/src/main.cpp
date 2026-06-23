@@ -26,6 +26,8 @@
 // Application-specific include files
 #include "neuroscope.h"
 
+#include <klustersshared/theme.h>
+
 int main(int argc, char *argv[])
 {
     QApplication::setOrganizationName(QStringLiteral("sourceforge"));
@@ -34,6 +36,9 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QStringLiteral("2.0.0"));
 
     QApplication app(argc, argv);
+
+    // Apply the suite-wide light/dark/system theme preference.
+    neurosuite::initThemeFromSettings();
 
     // ---- Command-line parsing with QCommandLineParser (Qt5+) ----
     QCommandLineParser parser;

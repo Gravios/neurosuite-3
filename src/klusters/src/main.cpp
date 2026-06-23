@@ -23,6 +23,8 @@
 #include <QLocale>
 
 #include "klusters.h"
+
+#include <klustersshared/theme.h>
 #include "timer.h"
 #include "config-klusters.h"
 
@@ -36,6 +38,9 @@ int main(int argc, char* argv[])
     QApplication::setApplicationVersion(KLUSTERS_VERSION);
 
     QApplication app(argc, argv);
+
+    // Apply the suite-wide light/dark/system theme preference.
+    neurosuite::initThemeFromSettings();
 
     // Pin the C locale for all numeric input and formatting.  Without this the
     // spin boxes and the QIntValidator / QDoubleValidator input fields inherit
