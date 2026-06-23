@@ -231,10 +231,6 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         effNSamples = nDec;
     }
 
-    const DpssTapers& tapers = tapersFor(effN, params.nw, params.nTapers);
-    const int nfftReq = std::max((decM > 1) ? params.nfft / decM : params.nfft, effN);
-    RealFftPlan plan(nfftReq);                    // effective size from the plan
-    const int effNfft = plan.nfft();
     const int nCols = 1 + (effNSamples - effN) / effStep;
 
     // Time axis: window-centre time (s); decimation preserves real time.
@@ -246,6 +242,10 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
     double vmax = -std::numeric_limits<double>::infinity();
 
     if (params.mode == SpectralMode::TimeFrequencySingleChannel) {
+        const DpssTapers& tapers = tapersFor(effN, params.nw, params.nTapers);
+        const int nfftReq = std::max((decM > 1) ? params.nfft / decM : params.nfft, effN);
+        RealFftPlan plan(nfftReq);                // effective size from the plan
+        const int effNfft = plan.nfft();
         int ch = std::max(0, std::min(params.singleChannel, nch - 1));
         const double* sig = block.data() + static_cast<std::size_t>(ch) * effNSamples;
 
@@ -289,15 +289,19 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         #pragma omp parallel for schedule(dynamic)
 #endif
         for (int r = 0; r < nch; ++r) {
-            std::vector<double> x(block.begin() + static_cast<std::size_t>(r) * effNSamples,
-                                  block.begin() + static_cast<std::size_t>(r + 1) * effNSamples);
-            bandpassInPlace(x.data(), effNSamples, effFs, flo, fhi);
+            // Filter the channel in place (block is scratch here), then replace
+            // it with the running sum of squares so each window's mean square is
+            // an O(1) difference - one pass regardless of window overlap, and no
+            // per-channel allocation.
+            double* b = block.data() + static_cast<std::size_t>(r) * effNSamples;
+            bandpassInPlace(b, effNSamples, effFs, flo, fhi);
+            double acc = 0.0;
+            for (int i = 0; i < effNSamples; ++i) { acc += b[i] * b[i]; b[i] = acc; }
+            float* row = &img.data[static_cast<std::size_t>(r) * nCols];
             for (int c = 0; c < nCols; ++c) {
-                const int s0 = c * effStep;
-                double ss = 0.0;
-                for (int i = 0; i < effN; ++i) { const double v = x[s0 + i]; ss += v * v; }
-                img.data[static_cast<std::size_t>(r) * nCols + c] =
-                    static_cast<float>(ss / effN);          // mean square = band power
+                const int s0 = c * effStep, s1 = s0 + effN;     // window [s0, s1)
+                const double sum = b[s1 - 1] - (s0 > 0 ? b[s0 - 1] : 0.0);
+                row[c] = static_cast<float>(sum / effN);        // mean square = band power
             }
         }
 

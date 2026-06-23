@@ -159,9 +159,12 @@ void SpectralView::displayTimeFrame(long start, long width)
     traceWidth = width;
     // A moving window renders the fast preview; the settle timer restarts on
     // every move and triggers the full multitaper once it stops (~200 ms idle).
+    // FrequencyAcrossChannels needs no settle - its single compute is the full
+    // estimate - so skip the redundant background pass there.
     movePreview = true;
     ++settleGen;          // invalidates any in-flight background multitaper pass
-    settleTimer->start(200);
+    if (params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels)
+        settleTimer->start(200);
     applyWindow();
 }
 
@@ -295,20 +298,23 @@ void SpectralView::recompute()
         return;   // keep the current frame rather than blanking to "computing..."
     }
 
-    // While scrolling, render a fast preview (single taper); the full multitaper
-    // estimate follows once the window settles.
-    const neuroscope::spectral::SpectralParams& p = movePreview ? previewParams() : params;
+    // FrequencyAcrossChannels (band-pass + RMS) is already cheap and has no
+    // preview tier, so treat it as a full estimate; other modes preview while
+    // moving and settle to the full multitaper.
+    const bool preview = movePreview &&
+        params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels;
+    const neuroscope::spectral::SpectralParams& p = preview ? previewParams() : params;
     lastImage = engine.compute(sampleMajor.data(), nSamples, nCh, chans, p, windowId);
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug() << "[spectral] compute" << (movePreview ? "preview" : "full")
+        qDebug() << "[spectral] compute" << (preview ? "preview" : "full")
                  << "backend=" << static_cast<int>(p.backend)
                  << "valid=" << lastImage.valid()
                  << "rows=" << lastImage.rows << "cols=" << lastImage.cols;
-    if (movePreview && autoScale && haveFullScale) {
+    if (preview && autoScale && haveFullScale) {
         // Show the preview at the last full estimate's scale to avoid a flash.
         lastImage.valueMin = fullScaleMin;
         lastImage.valueMax = fullScaleMax;
-    } else if (!movePreview) {
+    } else if (!preview) {
         fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
         haveFullScale = true;
         recentPut(windowId, lastImage);   // a synchronous full estimate is cacheable
