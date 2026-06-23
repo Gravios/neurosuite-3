@@ -61,6 +61,20 @@ write_basic_package_version_file(
 add_subdirectory(src)
 
 # ---------------------------------------------------------------------------
+# Regression tests — built only with NS_BUILD_TESTS, run with ctest.
+# (Only the self-contained theme test is registered here; the legacy
+# test_scrollview demo in test/ is left untouched and unbuilt.)
+# ---------------------------------------------------------------------------
+if(NS_BUILD_TESTS)
+    add_executable(klustersshared_theme_test test/theme_test.cpp)
+    target_link_libraries(klustersshared_theme_test PRIVATE Neurosuite::qt Qt6::Widgets)
+    add_test(NAME klustersshared_theme_test COMMAND klustersshared_theme_test)
+    set_tests_properties(klustersshared_theme_test PROPERTIES
+        ENVIRONMENT
+            "QT_QPA_PLATFORM=offscreen;XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/themecfg")
+endif()
+
+# ---------------------------------------------------------------------------
 # Install cmake package files
 # ---------------------------------------------------------------------------
 install(EXPORT LibKlustersSharedTargets
