@@ -8,10 +8,22 @@
 #include <QFontMetrics>
 
 namespace {
-constexpr int kSliderWidth = 38;   // thin
-constexpr int kVMargin     = 14;   // room for the top/bottom labels
-constexpr int kHandleGrab  = 7;    // px hit tolerance around a handle
-constexpr int kTrackInset  = 10;   // left inset of the track within the widget
+constexpr int kSliderWidth = 54;   // room for a left-hand Hz label column
+constexpr int kLabelW      = 28;    // width of the tick-label column
+constexpr int kVMargin     = 10;    // top/bottom padding
+constexpr int kHandleGrab  = 7;     // px hit tolerance around a handle
+constexpr int kRightPad    = 6;     // padding right of the track
+
+// "Nice" tick step (1/2/5 x 10^k) giving roughly `target` divisions over span.
+double niceStep(double span, int target)
+{
+    if (span <= 0.0 || target < 1) return 1.0;
+    const double raw = span / target;
+    const double mag = std::pow(10.0, std::floor(std::log10(raw)));
+    const double n   = raw / mag;
+    const double nice = (n < 1.5) ? 1.0 : (n < 3.0) ? 2.0 : (n < 7.0) ? 5.0 : 10.0;
+    return nice * mag;
+}
 }
 
 FreqBandSlider::FreqBandSlider(QWidget* parent) : QWidget(parent)
@@ -27,8 +39,8 @@ QSize FreqBandSlider::minimumSizeHint() const { return QSize(kSliderWidth, 80); 
 
 QRect FreqBandSlider::trackRect() const
 {
-    return QRect(kTrackInset, kVMargin,
-                 width() - kTrackInset - 6,
+    return QRect(kLabelW, kVMargin,
+                 std::max(1, width() - kLabelW - kRightPad),
                  std::max(1, height() - 2 * kVMargin));
 }
 
@@ -151,15 +163,35 @@ void FreqBandSlider::paintEvent(QPaintEvent*)
         p.drawRoundedRect(h, 2, 2);
     }
 
-    // Edge labels (top = range high, bottom = range low) and the band edges.
+    // Frequency ticks at nice steps, with labels in the left column.
     p.setPen(txt);
     QFont f = p.font(); f.setPointSizeF(std::max(6.0, f.pointSizeF() - 2.0)); p.setFont(f);
     const QFontMetrics fm(f);
-    auto label = [&](double hz, int y, int flags) {
+    const double span = rangeHi - rangeLo;
+    const double step = niceStep(span, 5);
+    const int    minGapPx = fm.height() + 2;     // avoid label overlap
+    int lastY = -10000;
+    const double first = std::ceil(rangeLo / step) * step;
+    for (double hz = first; hz <= rangeHi + step * 0.001; hz += step) {
+        const int y = yForHz(hz);
+        if (std::abs(y - lastY) < minGapPx) continue;
+        lastY = y;
+        // tick mark just left of the track
+        p.setPen(QPen(txt, 1));
+        p.drawLine(t.left() - 3, y, t.left() - 1, y);
+        // right-aligned label in the label column
         const QString s = QString::number(hz, 'f', 0);
-        QRect r(0, y - fm.height() / 2, width(), fm.height());
-        p.drawText(r, flags | Qt::AlignVCenter, s);
+        QRect r(0, y - fm.height() / 2, kLabelW - 5, fm.height());
+        p.drawText(r, Qt::AlignRight | Qt::AlignVCenter, s);
+    }
+
+    // Current band edges, drawn at the handles so the selection reads exactly.
+    p.setPen(sel.darker(160));
+    auto edge = [&](double hz, int y) {
+        const QString s = QString::number(hz, 'f', 0);
+        QRect r(t.left(), y - fm.height() - 1, t.width(), fm.height());
+        p.drawText(r, Qt::AlignHCenter | Qt::AlignBottom, s);
     };
-    label(rangeHi, t.top() - kVMargin / 2 - 2, Qt::AlignHCenter);
-    label(rangeLo, t.bottom() + kVMargin / 2 + 2, Qt::AlignHCenter);
+    edge(bandHi, yHi);
+    if (yLo - yHi > fm.height() + 4) edge(bandLo, yLo + fm.height() + 1);
 }
