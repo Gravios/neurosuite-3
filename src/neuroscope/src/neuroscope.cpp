@@ -54,6 +54,7 @@
 #include <QSpinBox>
 #include "neuroscopedoc.h"
 #include "channelpalette.h"
+#include "spectralinspector.h"
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "propertiesdialog.h"
@@ -71,6 +72,7 @@ NeuroscopeApp::NeuroscopeApp()
     ,spikeChannelPalette(0)
     ,tabsParent(nullptr)
     ,paletteTabsParent(nullptr),
+      spectralInspector(nullptr),
       isInit(true)
     ,groupsModified(false)
     ,colorModified(false)
@@ -691,6 +693,10 @@ void NeuroscopeApp::initItemPanel(){
         index = paletteTabsParent->addTab(spikeChannelPalette,QString());
         paletteTabsParent->setTabIcon(index,QIcon(":/icons/spikes"));
     }
+    // Shared spectral parameter panel, alongside the channel palettes. It is
+    // unbound (and therefore disabled) until a display enters spectral mode.
+    spectralInspector = new SpectralInspector(nullptr, this);
+    paletteTabsParent->addTab(spectralInspector, tr("Spectral"));
     paletteTabsParent->hide();
 }
 void NeuroscopeApp::executePreferencesDlg(){
@@ -2042,6 +2048,21 @@ void NeuroscopeApp::slotSpectralView(){
     NeuroscopeView* view = activeView();
     if(view)
         view->setSpectralMode(mSpectralView->isChecked());
+    updateSpectralInspectorTarget();
+}
+
+void NeuroscopeApp::updateSpectralInspectorTarget(){
+    if(!spectralInspector)
+        return;
+    NeuroscopeView* view = activeView();
+    SpectralView* target = (view && view->isSpectralMode()) ? view->spectralView() : nullptr;
+    spectralInspector->setView(target);
+    // Surface the panel when a spectrogram is active so its controls are at hand.
+    if(target){
+        const int idx = paletteTabsParent->indexOf(spectralInspector);
+        if(idx >= 0)
+            paletteTabsParent->setCurrentIndex(idx);
+    }
 }
 
 
@@ -2328,6 +2349,8 @@ void NeuroscopeApp::slotTabChange(int index){
 
     isInit = false; //now a change in a KToggleAction will trigger an update of the display
 
+    // Rebind the shared spectral inspector to the newly active display.
+    updateSpectralInspectorTarget();
 }
 
 

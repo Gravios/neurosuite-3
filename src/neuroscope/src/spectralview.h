@@ -77,6 +77,14 @@ public:
 
     const neuroscope::spectral::SpectralParams& spectralParams() const { return params; }
 
+    // Display-state accessors (not part of SpectralParams) so a shared
+    // inspector can reload its controls when it is retargeted to this view.
+    neuroscope::spectral::Colormap colormapValue() const { return colormap; }
+    double dynamicRange() const { return dynamicRangeDb; }
+    bool   isAutoScale() const { return autoScale; }
+    bool   isLockedToTrace() const { return lockToTrace; }
+    long   spanMs() const { return span; }
+
 public Q_SLOTS:
     void dataAvailable(Array<dataType>& data, QObject* initiator);
 

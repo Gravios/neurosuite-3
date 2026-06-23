@@ -44,7 +44,6 @@ class TracesProvider;
 class BaseFrame;
 class ChannelColors;
 class SpectralView;
-class SpectralInspector;
 class QVBoxLayout;
 
 /**
@@ -196,6 +195,11 @@ public Q_SLOTS:
   * @param on true to show the spectral view, false to show the waveforms.
   */
     void setSpectralMode(bool on);
+
+    /**Returns the spectral view, or null if it has not been created yet
+     * (it is created lazily on the first spectral-mode toggle). Used by the
+     * shared spectral inspector to bind to the active display.*/
+    SpectralView* getSpectralView() const { return spectralView; }
 
     /**Returns true if the spectral view is currently shown.*/
     bool isSpectralMode() const { return spectralMode; }
@@ -678,9 +682,6 @@ private:
 
     /**Spectral (multitaper) view, created on first toggle; null until then.*/
     SpectralView* spectralView = nullptr;
-
-    /**Parameter strip for the spectral view, shown below it; null until then.*/
-    SpectralInspector* spectralInspector = nullptr;
 
     /**True while the spectral view is shown in place of the waveforms.*/
     bool spectralMode = false;

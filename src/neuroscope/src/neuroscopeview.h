@@ -46,6 +46,7 @@ class EventsProvider;
 class PositionsProvider;
 class ItemColors;
 class TraceWidget;
+class SpectralView;
 
 
 
@@ -201,6 +202,11 @@ public:
 
     /**Returns true if the active display is showing the spectral view.*/
     bool isSpectralMode() const { return spectralModeState; }
+
+    /**Returns the display's SpectralView (created lazily on the first spectral
+     * toggle), or null if it does not exist yet. Defined out-of-line because it
+     * dereferences the TraceWidget.*/
+    SpectralView* spectralView() const;
 
     /**Displays or hides vertical lines to show the clusters.
     * @param lines true if the vertical lines are drawn for each cluster, false otherwise.

@@ -17,7 +17,6 @@
 //include files for the application
 #include "tracewidget.h"
 #include "spectralview.h"
-#include "spectralinspector.h"
 
 #include <QShortcut>
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
@@ -778,8 +777,6 @@ void TraceWidget::updateSpectralChannels()
 {
     if (spectralView)
         spectralView->setChannels(currentChannels);
-    if (spectralInspector)
-        spectralInspector->setChannelCount(currentChannels.size());
 }
 
 void TraceWidget::setSpectralMode(bool on)
@@ -794,24 +791,15 @@ void TraceWidget::setSpectralMode(bool on)
             // Same layout slot as the traces, above the time-selection controls.
             mainLayout->insertWidget(0, spectralView);
             mainLayout->setStretchFactor(spectralView, 200);
-
-            // Parameter strip directly below the spectral view (above the
-            // time-selection controls, which are the last item in the layout).
-            spectralInspector = new SpectralInspector(spectralView, this);
-            spectralInspector->setChannelCount(currentChannels.size());
-            mainLayout->insertWidget(mainLayout->count() - 1, spectralInspector);
         }
         view.hide();
         spectralView->show();
-        spectralInspector->show();
         spectralMode = true;
         spectralView->setChannels(currentChannels);
         spectralView->displayTimeFrame(startTime, timeWindow);
     } else {
         if (spectralView)
             spectralView->hide();
-        if (spectralInspector)
-            spectralInspector->hide();
         view.show();
         spectralMode = false;
         view.displayTimeFrame(startTime, timeWindow);

@@ -160,6 +160,11 @@ NeuroscopeView::~NeuroscopeView()
     delete shownChannels;
 }
 
+SpectralView* NeuroscopeView::spectralView() const
+{
+    return traceWidget ? traceWidget->getSpectralView() : nullptr;
+}
+
 
 void NeuroscopeView::print(QPrinter* printer,const QString& filePath,bool whiteBackground)
 {
