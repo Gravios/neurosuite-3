@@ -165,6 +165,12 @@ private:
     QTimer* settleTimer = nullptr; // fires when the window stops moving
     bool movePreview = false;      // true while scrolling: render the fast preview
 
+    // Auto-scale continuity: previews reuse the value range of the last full
+    // (multitaper) estimate so the colour scale does not jump on settle.
+    double fullScaleMin = 0.0;
+    double fullScaleMax = 0.0;
+    bool   haveFullScale = false;
+
     // Background full-multitaper pass that replaces the settle render when ready.
     QFutureWatcher<neuroscope::spectral::SpectralImage>* mtWatcher = nullptr;
     unsigned long settleGen = 0;        // bumped on each move; discards stale results

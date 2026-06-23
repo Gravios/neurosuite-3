@@ -207,21 +207,31 @@ void SpectralView::recompute()
         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
         ^ static_cast<std::uint32_t>(timeFrameWidth);
 
-    // While scrolling, render a fast preview (single taper on decimated data);
-    // the full multitaper estimate follows once the window settles.
+    // While scrolling, render a fast preview (single taper); the full multitaper
+    // estimate follows once the window settles.
     const neuroscope::spectral::SpectralParams& p = movePreview ? previewParams() : params;
     lastImage = engine.compute(sampleMajor.data(), nSamples, nCh, chans, p, windowId);
+    if (movePreview && autoScale && haveFullScale) {
+        // Show the preview at the last full estimate's scale to avoid a flash.
+        lastImage.valueMin = fullScaleMin;
+        lastImage.valueMax = fullScaleMax;
+    } else if (!movePreview) {
+        fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
+        haveFullScale = true;
+    }
     rebuildImage();
 }
 
 neuroscope::spectral::SpectralParams SpectralView::previewParams() const
 {
-    // Cheapest meaningful estimate: one taper over the decimated (0-300 Hz)
-    // data. The bin spacing is preserved, so the preview lines up with the full
-    // estimate that replaces it on settle.
+    // Cheapest meaningful estimate: a single taper. In channel (band-power) mode
+    // we also decimate to 0-300 Hz, which is the band of interest there and keeps
+    // the bin spacing. In single-channel time-frequency mode frequency is the
+    // y-axis, so decimating would shrink the visible range and the axis would
+    // jump on settle; there we keep the full rate and only drop to one taper.
     neuroscope::spectral::SpectralParams p = params;
     p.nTapers = 1;
-    p.decimate = true;
+    p.decimate = (params.mode == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels);
     return p;
 }
 
@@ -272,6 +282,8 @@ void SpectralView::onSettleComputed()
     lastImage = mtWatcher->result();
     // Re-apply the current band selection to the freshly computed cube.
     neuroscope::spectral::integrateBand(lastImage, params.bandLo, params.bandHi);
+    fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
+    haveFullScale = true;
     rebuildImage();
     update();
 }
