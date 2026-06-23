@@ -27,6 +27,7 @@ class PrefGeneral;
 class PrefDefaults;
 class PositionProperties;
 class ClusterProperties;
+class QComboBox;
 
 
 /**
@@ -67,6 +68,7 @@ private:
     PrefDefaults* prefDefaults;
     PositionProperties* positionProperties;
     ClusterProperties* clusterProperties;
+    QComboBox* themeCombo;
     bool applyEnable;
 };
 

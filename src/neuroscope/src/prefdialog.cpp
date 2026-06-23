@@ -16,11 +16,16 @@
  ***************************************************************************/
 // include files for QT
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLayout>        // for QVBoxLayout
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QLabel>         // for QLabel
 #include <QTabWidget>
 
 #include <QMessageBox>
+
+#include <klustersshared/theme.h>
 
 
 //include files for the application
@@ -81,6 +86,38 @@ PrefDialog::PrefDialog(QWidget *parent)
 
 
     addPage(item);
+
+    //adding page "Appearance" (suite-wide light/dark/system theme)
+    QWidget* appearance = new QWidget(this);
+    QVBoxLayout* appearanceLayout = new QVBoxLayout(appearance);
+    QHBoxLayout* themeRow = new QHBoxLayout;
+    QLabel* themeLabel = new QLabel(tr("Theme:"), appearance);
+    themeCombo = new QComboBox(appearance);
+    themeCombo->addItem(neurosuite::themeDisplayName(neurosuite::Theme::System),
+                        static_cast<int>(neurosuite::Theme::System));
+    themeCombo->addItem(neurosuite::themeDisplayName(neurosuite::Theme::Light),
+                        static_cast<int>(neurosuite::Theme::Light));
+    themeCombo->addItem(neurosuite::themeDisplayName(neurosuite::Theme::Dark),
+                        static_cast<int>(neurosuite::Theme::Dark));
+    themeRow->addWidget(themeLabel);
+    themeRow->addWidget(themeCombo);
+    themeRow->addStretch(1);
+    QLabel* themeHint = new QLabel(
+        tr("Applies to all NeuroSuite programs. Takes effect when you click Apply or OK."),
+        appearance);
+    themeHint->setWordWrap(true);
+    appearanceLayout->addLayout(themeRow);
+    appearanceLayout->addWidget(themeHint);
+    appearanceLayout->addStretch(1);
+
+    QPageWidgetItem* appearanceItem = new QPageWidgetItem(appearance, tr("Appearance"));
+    appearanceItem->setHeader(tr("Appearance"));
+    appearanceItem->setIcon(QIcon(":/shared-icons/folder-open"));
+    addPage(appearanceItem);
+
+    // activated fires only on user choice (not programmatic setCurrentIndex),
+    // so populating the combo in updateDialog() will not light up Apply.
+    connect(themeCombo, &QComboBox::activated, this, &PrefDialog::enableApply);
 
     // connect interactive widgets and selfmade signals to the enableApply slotDefault
     connect(prefGeneral->headerCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
@@ -148,6 +185,13 @@ void PrefDialog::updateDialog() {
     positionProperties->setBackgroundImage(configuration().getBackgroundImage());
     positionProperties->setPositionsBackground(configuration().getPositionsBackground());
 
+    // Appearance: reflect the current suite-wide theme preference.
+    {
+        const int idx = themeCombo->findData(
+            static_cast<int>(neurosuite::loadThemePreference()));
+        themeCombo->setCurrentIndex(idx < 0 ? 0 : idx);
+    }
+
     enableButtonApply(false);   // disable apply button
     applyEnable = false;
 }
@@ -177,6 +221,14 @@ void PrefDialog::updateConfiguration(){
     configuration().setRotation(positionProperties->getRotation());
     configuration().setFlip(positionProperties->getFlip());
     configuration().setPositionsBackground(positionProperties->getPositionsBackground());
+
+    // Appearance: persist the suite-wide theme and apply it immediately.
+    {
+        const neurosuite::Theme t =
+            static_cast<neurosuite::Theme>(themeCombo->currentData().toInt());
+        neurosuite::saveThemePreference(t);
+        neurosuite::applyTheme(t);
+    }
 
     enableButtonApply(false);   // disable apply button
     applyEnable = false;
