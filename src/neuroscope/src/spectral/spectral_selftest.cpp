@@ -332,8 +332,9 @@ int main()
 
     // ---- Decimation preserves the in-band spectrogram --------------------
     {
-        const double fs = 1000.0;
-        const int nCh = 2, nS = 16384;
+        const double fs = 4000.0;   // high enough that the fixed 300 Hz
+                                    // decimation target actually engages (M>1)
+        const int nCh = 2, nS = 65536;
         std::mt19937 rng(123);
         std::normal_distribution<double> g(0.0, 0.05);
         std::vector<double> data(static_cast<std::size_t>(nS) * nCh);

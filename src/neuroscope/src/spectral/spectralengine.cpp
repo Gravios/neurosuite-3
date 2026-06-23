@@ -15,6 +15,11 @@ namespace neuroscope {
 namespace spectral {
 
 namespace {
+// Target band for anti-aliased decimation. The decimated representation always
+// spans 0..kDecimatedBandHz, independent of the inspector's display range, so a
+// single decimated spectrogram can back any sub-band selection within it.
+constexpr double kDecimatedBandHz = 300.0;
+
 // Route the spectrogram to the GPU when that backend is selected and usable;
 // otherwise (and on any GPU decline) compute on the CPU.
 void dispatchSpectrogram(const double* sig, int n, const DpssTapers& tapers,
@@ -120,7 +125,7 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
     int    effNSamples = nSamples;
     int    decM = 1;
     if (params.decimate) {
-        decM = decimationFactor(fs, params.freqHigh, 1.25, 64, nSamples, 64);
+        decM = decimationFactor(fs, kDecimatedBandHz, 1.25, 64, nSamples, 64);
         while (decM > 1 && (N / decM < 8 || params.stepSamples / decM < 1)) decM >>= 1;
     }
     if (decM > 1) {
