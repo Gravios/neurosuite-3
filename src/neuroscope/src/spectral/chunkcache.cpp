@@ -165,5 +165,36 @@ int SpectralChunkCache::center() const
     return center_;
 }
 
+long SpectralChunkCache::epoch() const
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    return epoch_;
+}
+
+int SpectralChunkCache::nextWanted() const
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    return pickNextLocked();
+}
+
+bool SpectralChunkCache::put(int chunkIndex, const SpectralImage& img, long epoch)
+{
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (epoch != epoch_) return false;          // params changed since the fetch began
+        if (!inWindowLocked(chunkIndex)) return false; // scrolled out of the window
+        ready_[chunkIndex] = img;
+    }
+    cv_.notify_all();
+    return true;
+}
+
+void SpectralChunkCache::markUnavailable(int chunkIndex, long epoch)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    if (epoch == epoch_ && inWindowLocked(chunkIndex))
+        attempted_.insert(chunkIndex);
+}
+
 } // namespace spectral
 } // namespace neuroscope

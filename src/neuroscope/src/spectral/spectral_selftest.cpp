@@ -460,6 +460,36 @@ int main()
         cache.stop();
     }
 
+    // ---- Chunk cache external (main-thread driver) fill ------------------
+    {
+        SpectralChunkCache cache;
+        cache.configure(/*numChunks*/50, /*radius*/3);
+        SpectralParams cp;
+        cache.setParams(cp);
+        cache.setCenter(25);
+        // No worker started: the caller drives the fill.
+        const long e0 = cache.epoch();
+        const int want = cache.nextWanted();
+        check(want == 25, "driver is offered the centre chunk first", want, 25);
+
+        SpectralImage img; img.rows = 1; img.cols = 1; img.data.assign(1, 7.0f);
+        check(cache.put(25, img, e0), "driver put stores an in-window chunk", 1, 1);
+        check(cache.isReady(25), "put chunk is ready", 1, 1);
+
+        // Out-of-window put is rejected.
+        check(!cache.put(40, img, e0), "put outside the window is dropped", 0, 0);
+        // Stale-epoch put is rejected after a param change.
+        cp.nfft *= 2; cache.setParams(cp);
+        check(!cache.put(25, img, e0), "put with a stale epoch is dropped", 0, 0);
+        check(!cache.isReady(25), "invalidation cleared the earlier put", 0, 0);
+
+        // markUnavailable keeps a chunk from being offered again.
+        const long e1 = cache.epoch();
+        const int w1 = cache.nextWanted();
+        cache.markUnavailable(w1, e1);
+        check(cache.nextWanted() != w1, "an unavailable chunk is not re-offered", 0, 0);
+    }
+
     // ---- Colormaps -------------------------------------------------------
     {
         std::uint8_t r, g, b;
