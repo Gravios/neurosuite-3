@@ -6,6 +6,7 @@
 #include <QRect>
 #include <QtConcurrentRun>
 #include <QFutureWatcher>
+#include <QSettings>
 
 #include <algorithm>
 #include <cmath>
@@ -77,13 +78,73 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
     connect(mtWatcher, &QFutureWatcher<neuroscope::spectral::SpectralImage>::finished,
             this, &SpectralView::onSettleComputed);
 
+    loadSettings();   // restore inspector/render settings over the defaults above
+
     traceStart = startTime;
     traceWidth = timeFrameWidth;
     recordingLength = tracesProvider.recordingLength();
     applyWindow();
 }
 
-SpectralView::~SpectralView() = default;
+SpectralView::~SpectralView() { saveSettings(); }
+
+namespace {
+constexpr auto kSpectralGroup = "spectral";
+}
+
+void SpectralView::loadSettings()
+{
+    QSettings s;
+    s.beginGroup(kSpectralGroup);
+    if (!s.contains("mode")) { s.endGroup(); return; }  // nothing saved yet
+
+    params.mode = static_cast<neuroscope::spectral::SpectralMode>(
+        s.value("mode", static_cast<int>(params.mode)).toInt());
+    params.singleChannel = s.value("singleChannel", params.singleChannel).toInt();
+    params.nw            = s.value("nw", params.nw).toDouble();
+    params.nTapers       = s.value("nTapers", params.nTapers).toInt();
+    params.windowSamples = s.value("windowSamples", params.windowSamples).toInt();
+    params.nfft          = s.value("nfft", params.nfft).toInt();
+    params.stepSamples   = s.value("stepSamples", params.stepSamples).toInt();
+    params.freqLow       = s.value("freqLow", params.freqLow).toDouble();
+    params.freqHigh      = s.value("freqHigh", params.freqHigh).toDouble();
+    params.whiten        = s.value("whiten", params.whiten).toBool();
+    params.decimate      = s.value("decimate", params.decimate).toBool();
+    params.bandLo        = s.value("bandLo", params.bandLo).toDouble();
+    params.bandHi        = s.value("bandHi", params.bandHi).toDouble();
+    colormap = static_cast<neuroscope::spectral::Colormap>(
+        s.value("colormap", static_cast<int>(colormap)).toInt());
+    autoScale      = s.value("autoScale", autoScale).toBool();
+    dynamicRangeDb = s.value("dynamicRangeDb", dynamicRangeDb).toDouble();
+    lockToTrace    = s.value("lockToTrace", lockToTrace).toBool();
+    span           = s.value("span", static_cast<qlonglong>(span)).toLongLong();
+    s.endGroup();
+}
+
+void SpectralView::saveSettings() const
+{
+    QSettings s;
+    s.beginGroup(kSpectralGroup);
+    s.setValue("mode", static_cast<int>(params.mode));
+    s.setValue("singleChannel", params.singleChannel);
+    s.setValue("nw", params.nw);
+    s.setValue("nTapers", params.nTapers);
+    s.setValue("windowSamples", params.windowSamples);
+    s.setValue("nfft", params.nfft);
+    s.setValue("stepSamples", params.stepSamples);
+    s.setValue("freqLow", params.freqLow);
+    s.setValue("freqHigh", params.freqHigh);
+    s.setValue("whiten", params.whiten);
+    s.setValue("decimate", params.decimate);
+    s.setValue("bandLo", params.bandLo);
+    s.setValue("bandHi", params.bandHi);
+    s.setValue("colormap", static_cast<int>(colormap));
+    s.setValue("autoScale", autoScale);
+    s.setValue("dynamicRangeDb", dynamicRangeDb);
+    s.setValue("lockToTrace", lockToTrace);
+    s.setValue("span", static_cast<qlonglong>(span));
+    s.endGroup();
+}
 
 void SpectralView::requestCurrentWindow()
 {
