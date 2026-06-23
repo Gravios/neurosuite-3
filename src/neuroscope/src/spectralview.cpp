@@ -7,6 +7,7 @@
 #include <QtConcurrentRun>
 #include <QFutureWatcher>
 #include <QSettings>
+#include <QDebug>
 
 #include <algorithm>
 #include <cmath>
@@ -223,10 +224,17 @@ void SpectralView::setChannels(const QList<int>& chans)
 void SpectralView::dataAvailable(Array<dataType>& incoming, QObject* initiator)
 {
     if (initiator != this) return;       // not our request
-    if (incoming.nbOfRows() == 0) return; // I/O error upstream
+    if (incoming.nbOfRows() == 0) {       // I/O error upstream
+        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug() << "[spectral] dataAvailable: 0 rows (no data) - keeping current frame";
+        return;
+    }
 
     data = incoming;
     dataReady = true;
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug() << "[spectral] dataAvailable rows=" << data.nbOfRows()
+                 << "cols=" << data.nbOfColumns() << "movePreview=" << movePreview;
     recompute();
     update();
 
@@ -280,12 +288,22 @@ void SpectralView::recompute()
     std::vector<double> sampleMajor;
     std::vector<int> chans;
     int nSamples = 0, nCh = 0;
-    if (!buildInput(sampleMajor, chans, nSamples, nCh)) { image = QImage(); return; }
+    if (!buildInput(sampleMajor, chans, nSamples, nCh)) {
+        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug() << "[spectral] recompute: buildInput failed (no valid channels/data)"
+                     << "channels=" << channels.size() << "nCh=" << nCh;
+        return;   // keep the current frame rather than blanking to "computing..."
+    }
 
     // While scrolling, render a fast preview (single taper); the full multitaper
     // estimate follows once the window settles.
     const neuroscope::spectral::SpectralParams& p = movePreview ? previewParams() : params;
     lastImage = engine.compute(sampleMajor.data(), nSamples, nCh, chans, p, windowId);
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug() << "[spectral] compute" << (movePreview ? "preview" : "full")
+                 << "backend=" << static_cast<int>(p.backend)
+                 << "valid=" << lastImage.valid()
+                 << "rows=" << lastImage.rows << "cols=" << lastImage.cols;
     if (movePreview && autoScale && haveFullScale) {
         // Show the preview at the last full estimate's scale to avoid a flash.
         lastImage.valueMin = fullScaleMin;
@@ -349,12 +367,19 @@ void SpectralView::settleNow()
 
     neuroscope::spectral::SpectralParams full = params;
     full.samplingRate = tracesProvider.getSamplingRate();
+    // The settle runs on a worker thread. GPU (cuFFT) work must stay on the UI
+    // thread where the CUDA context is current, so force the worker to the CPU
+    // backend; the GPU path is still used for the main-thread preview/compute.
+    full.backend = neuroscope::spectral::SpectralBackend::Cpu;
     const std::uint64_t windowId =
         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
         ^ static_cast<std::uint32_t>(timeFrameWidth);
 
     pendingSettleGen = settleGen;
     pendingWindowId = windowId;
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug() << "[spectral] settleNow launch gen=" << settleGen
+                 << "nSamples=" << nSamples << "nCh=" << nCh;
 
     // Compute on a private engine (the member engine stays with the UI thread).
     // FFTW plan creation is mutex-guarded, so this is safe alongside the preview.
@@ -374,10 +399,17 @@ void SpectralView::onSettleComputed()
     const std::uint64_t windowId =
         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(startTime)) << 32)
         ^ static_cast<std::uint32_t>(timeFrameWidth);
-    if (pendingSettleGen != settleGen || pendingWindowId != windowId || movePreview)
-        return;
+    const bool current = (pendingSettleGen == settleGen)
+                      && (pendingWindowId == windowId) && !movePreview;
+    neuroscope::spectral::SpectralImage res = mtWatcher->result();
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug() << "[spectral] settle done current=" << current
+                 << "result.valid=" << res.valid()
+                 << "rows=" << res.rows << "cols=" << res.cols;
+    if (!current) return;
+    if (!res.valid()) return;   // a failed settle must not blank the shown preview
 
-    lastImage = mtWatcher->result();
+    lastImage = std::move(res);
     // Re-apply the current band selection to the freshly computed cube.
     neuroscope::spectral::integrateBand(lastImage, params.bandLo, params.bandHi);
     fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
@@ -389,8 +421,12 @@ void SpectralView::onSettleComputed()
 
 void SpectralView::rebuildImage()
 {
-    image = neuroscope::spectral::spectralImageToQImage(lastImage, dynamicRangeDb,
-                                                        colormap, autoScale);
+    QImage img = neuroscope::spectral::spectralImageToQImage(lastImage, dynamicRangeDb,
+                                                             colormap, autoScale);
+    // Never replace a good frame with an empty render; if nothing valid has been
+    // produced yet, image stays null and the view shows "computing...".
+    if (!img.isNull() || image.isNull())
+        image = img;
 }
 
 void SpectralView::paintEvent(QPaintEvent*)
