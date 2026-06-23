@@ -340,14 +340,15 @@ void SpectralView::recentPut(std::uint64_t windowId,
 
 neuroscope::spectral::SpectralParams SpectralView::previewParams() const
 {
-    // Cheapest meaningful estimate: a single taper. In channel (band-power) mode
-    // we also decimate to 0-300 Hz, which is the band of interest there and keeps
-    // the bin spacing. In single-channel time-frequency mode frequency is the
-    // y-axis, so decimating would shrink the visible range and the axis would
-    // jump on settle; there we keep the full rate and only drop to one taper.
+    // FrequencyAcrossChannels is band-pass + RMS - already cheap, so it has no
+    // separate preview tier (preview == full, served straight from the cache).
+    if (params.mode == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels)
+        return params;
+    // Single-channel time-frequency: a one-taper preview at the full rate keeps
+    // the frequency axis put while scrolling; the full multitaper follows.
     neuroscope::spectral::SpectralParams p = params;
     p.nTapers = 1;
-    p.decimate = (params.mode == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels);
+    p.decimate = false;
     return p;
 }
 
@@ -562,13 +563,12 @@ void SpectralView::setBand(double lowHz, double highHz)
 {
     params.bandLo = lowHz;
     params.bandHi = highHz;
-    // The band only changes how the retained cube is integrated, so re-sum it
-    // and repaint immediately rather than recomputing the spectrogram.
-    if (lastImage.mode == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels
-        && !lastImage.cube.empty()) {
-        neuroscope::spectral::integrateBand(lastImage, lowHz, highHz);
-        rebuildImage();
-        update();
+    // The band is now the band-pass filter's pass-band, so re-filter rather than
+    // re-integrate a cube. Filtering is cheap, so recompute immediately for live
+    // slider feedback; cached estimates are band-specific, so drop them.
+    if (lastImage.mode == neuroscope::spectral::SpectralMode::FrequencyAcrossChannels) {
+        recent_.clear();
+        if (dataReady) { recompute(); update(); }
     }
 }
 

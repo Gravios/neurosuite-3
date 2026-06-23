@@ -33,6 +33,49 @@ void dispatchSpectrogram(const double* sig, int n, const DpssTapers& tapers,
     }
     multitaperSpectrogram(sig, n, tapers, fs, nfft, step, w, out);
 }
+
+// --- Band-pass + RMS band power (FrequencyAcrossChannels) --------------------
+// A 2nd-order Butterworth high-pass at the low edge cascaded with a low-pass at
+// the high edge. Transposed Direct-Form II biquads; coefficients from the RBJ
+// cookbook with Q = 1/sqrt(2). Edges at/near DC or Nyquist drop that section.
+struct Biquad {
+    double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+    inline double process(double x) {
+        const double y = b0 * x + z1;
+        z1 = b1 * x - a1 * y + z2;
+        z2 = b2 * x - a2 * y;
+        return y;
+    }
+};
+inline Biquad lowpassBiquad(double f0, double fs, double Q) {
+    const double w = 2.0 * M_PI * f0 / fs, c = std::cos(w), s = std::sin(w);
+    const double al = s / (2.0 * Q), a0 = 1.0 + al;
+    Biquad q;
+    q.b0 = ((1 - c) / 2) / a0; q.b1 = (1 - c) / a0; q.b2 = ((1 - c) / 2) / a0;
+    q.a1 = (-2 * c) / a0;      q.a2 = (1 - al) / a0;
+    return q;
+}
+inline Biquad highpassBiquad(double f0, double fs, double Q) {
+    const double w = 2.0 * M_PI * f0 / fs, c = std::cos(w), s = std::sin(w);
+    const double al = s / (2.0 * Q), a0 = 1.0 + al;
+    Biquad q;
+    q.b0 = ((1 + c) / 2) / a0; q.b1 = (-(1 + c)) / a0; q.b2 = ((1 + c) / 2) / a0;
+    q.a1 = (-2 * c) / a0;      q.a2 = (1 - al) / a0;
+    return q;
+}
+void bandpassInPlace(double* x, int n, double fs, double flo, double fhi) {
+    const double nyq = 0.5 * fs, Q = 0.70710678118654752;
+    if (flo < 0.0) flo = 0.0;
+    if (fhi <= 0.0 || fhi > 0.999 * nyq) fhi = 0.999 * nyq;
+    if (flo > 0.5) {                       // skip the high-pass for a DC-anchored band
+        Biquad hp = highpassBiquad(flo, fs, Q);
+        for (int i = 0; i < n; ++i) x[i] = hp.process(x[i]);
+    }
+    if (fhi < 0.999 * nyq) {               // skip the low-pass for a Nyquist-anchored band
+        Biquad lp = lowpassBiquad(fhi, fs, Q);
+        for (int i = 0; i < n; ++i) x[i] = lp.process(x[i]);
+    }
+}
 } // namespace
 
 bool SpectralParams::sameAs(const SpectralParams& o) const
@@ -50,7 +93,11 @@ bool SpectralParams::sameAs(const SpectralParams& o) const
         && freqHigh == o.freqHigh
         && singleChannel == o.singleChannel
         && backend == o.backend
-        && decimate == o.decimate;
+        && decimate == o.decimate
+        // bandLo/bandHi now define the FrequencyAcrossChannels filter pass-band,
+        // so they affect the computed image and must invalidate the cache.
+        && bandLo == o.bandLo
+        && bandHi == o.bandHi;
 }
 
 const DpssTapers& SpectralEngine::tapersFor(int N, double nw, int K)
@@ -221,42 +268,41 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
                 vmin = std::min(vmin, v); vmax = std::max(vmax, v);
             }
     } else {
-        // FrequencyAcrossChannels: band power per channel over time.
-        int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, effFs, lo, hi);
-        const double df = effFs / effNfft;
-        const int nF = hi - lo + 1;
-
+        // FrequencyAcrossChannels: per-channel band power over time. Estimated
+        // by band-pass filtering each channel to the selected band and taking
+        // the windowed mean square (RMS^2) - far cheaper than a full multitaper
+        // spectrogram per channel, and no freq cube is retained.
         img.rows = nch; img.cols = nCols;
         img.data.assign(static_cast<std::size_t>(nch) * nCols, 0.0f);
         img.rowChannels = channels;
+        img.cube.clear(); img.cubeFreqs.clear(); img.cubeDf = 0.0;
 
-        // Retain the freq-resolved power so the integration sub-band can be
-        // re-selected (by the band slider) without recomputing.
-        img.cube.assign(static_cast<std::size_t>(nch) * nCols * std::max(nF, 0), 0.0f);
-        img.cubeFreqs.resize(std::max(nF, 0));
-        img.cubeDf = df;
-        {
-            const std::vector<double> allFreqs = psdFrequencies(effNfft, effFs);
-            for (int f = 0; f < nF; ++f) img.cubeFreqs[f] = allFreqs[lo + f];
-        }
+        // Effective band: the slider sub-band when set, else the analysis range;
+        // a high edge <= the low edge (e.g. 0) means up to Nyquist.
+        double flo = params.bandLo, fhi = params.bandHi;
+        if (!(fhi > flo)) { flo = params.freqLow; fhi = params.freqHigh; }
+        if (fhi <= 0.0) fhi = 0.5 * effFs;
+        if (flo < 0.0) flo = 0.0;
+        fhi = std::min(fhi, 0.5 * effFs);
 
 #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic) if(!((params.backend == SpectralBackend::Cuda) && gpu::available()))
+        #pragma omp parallel for schedule(dynamic)
 #endif
         for (int r = 0; r < nch; ++r) {
-            const double* sig = block.data() + static_cast<std::size_t>(r) * effNSamples;
-            std::vector<std::vector<double>> sg;
-            dispatchSpectrogram(sig, effNSamples, tapers, effFs, effNfft,
-                                effStep, params.weighting, params.backend, sg);
-            for (int c = 0; c < static_cast<int>(sg.size()) && c < nCols; ++c) {
-                float* cell = &img.cube[(static_cast<std::size_t>(r) * nCols + c) * nF];
-                for (int b = lo; b <= hi; ++b) cell[b - lo] = static_cast<float>(sg[c][b]);
+            std::vector<double> x(block.begin() + static_cast<std::size_t>(r) * effNSamples,
+                                  block.begin() + static_cast<std::size_t>(r + 1) * effNSamples);
+            bandpassInPlace(x.data(), effNSamples, effFs, flo, fhi);
+            for (int c = 0; c < nCols; ++c) {
+                const int s0 = c * effStep;
+                double ss = 0.0;
+                for (int i = 0; i < effN; ++i) { const double v = x[s0 + i]; ss += v * v; }
+                img.data[static_cast<std::size_t>(r) * nCols + c] =
+                    static_cast<float>(ss / effN);          // mean square = band power
             }
         }
 
-        // Initial display integrates the selected sub-band (or the whole band).
-        integrateBand(img, params.bandLo, params.bandHi);
-        vmin = img.valueMin; vmax = img.valueMax;
+        for (float v : img.data) { vmin = std::min(vmin, (double)v); vmax = std::max(vmax, (double)v); }
+        img.valueMin = vmin; img.valueMax = vmax;
     }
 
     if (!std::isfinite(vmin)) { vmin = 0.0; vmax = 0.0; }
