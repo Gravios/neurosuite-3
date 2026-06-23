@@ -138,6 +138,10 @@ private:
     bool recentGet(std::uint64_t windowId, neuroscope::spectral::SpectralImage& out);
     void recentPut(std::uint64_t windowId, const neuroscope::spectral::SpectralImage& img);
 
+    // Persist/restore inspector + render settings across sessions (QSettings).
+    void loadSettings();
+    void saveSettings() const;
+
     TracesProvider& tracesProvider;
     QList<int> channels;
 
