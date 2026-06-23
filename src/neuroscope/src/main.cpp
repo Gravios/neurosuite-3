@@ -18,6 +18,7 @@
 // Qt include files
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QLocale>
 #include <QDir>
 #include <QFileInfo>
 #include <QString>
@@ -36,6 +37,16 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QStringLiteral("2.0.0"));
 
     QApplication app(argc, argv);
+
+    // Pin the C locale for all numeric input and formatting, matching klusters
+    // and ndmanager. Without it the spin boxes and validators inherit
+    // QLocale::system(): in locales whose decimal separator is not '.' (German,
+    // for instance, uses ',') typing '.' in a double field is rejected and '.'
+    // is read as a thousands separator in integer fields, so certain numbers
+    // cannot be typed. The C locale ('.' decimal, no grouping) makes entry
+    // consistent everywhere and matches the Neurosuite data files. Set after the
+    // QApplication is constructed and before any widget, so it is inherited.
+    QLocale::setDefault(QLocale::c());
 
     // Apply the suite-wide light/dark/system theme preference.
     neurosuite::initThemeFromSettings();
