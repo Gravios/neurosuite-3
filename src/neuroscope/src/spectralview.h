@@ -49,6 +49,11 @@ public:
     void setWhitening(bool on);
     void setColormap(neuroscope::spectral::Colormap cm);
     void setDynamicRangeDb(double db);
+
+    /**If true, the colour scale spans the full observed power range of the
+    * current image; if false, it uses the fixed dynamic range (setDynamicRangeDb).*/
+    void setAutoScale(bool on);
+
     void setBackend(neuroscope::spectral::SpectralBackend backend);
 
     /**If true, the spectral view uses the trace window unchanged. If false, it
@@ -111,6 +116,7 @@ private:
     neuroscope::spectral::SpectralImage lastImage;
     neuroscope::spectral::Colormap colormap = neuroscope::spectral::Colormap::Viridis;
     double dynamicRangeDb = 60.0;
+    bool autoScale = true;
 
     QImage image;
 

@@ -185,7 +185,8 @@ void SpectralView::recompute()
 
 void SpectralView::rebuildImage()
 {
-    image = neuroscope::spectral::spectralImageToQImage(lastImage, dynamicRangeDb, colormap);
+    image = neuroscope::spectral::spectralImageToQImage(lastImage, dynamicRangeDb,
+                                                        colormap, autoScale);
 }
 
 void SpectralView::paintEvent(QPaintEvent*)
@@ -338,6 +339,13 @@ void SpectralView::setDynamicRangeDb(double db)
 {
     dynamicRangeDb = db;
     rebuildImage();   // dB range only affects rendering
+    update();
+}
+
+void SpectralView::setAutoScale(bool on)
+{
+    autoScale = on;
+    rebuildImage();   // scaling only affects rendering
     update();
 }
 

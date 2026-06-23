@@ -19,10 +19,13 @@ namespace neuroscope {
 namespace spectral {
 
 // dynamicRangeDb : dB below the per-image maximum mapped to the colormap
-//                  bottom (e.g. 60). cm : colormap. Empty QImage if invalid.
+//                  bottom (e.g. 60). cm : colormap. autoScale : if true, ignore
+//                  dynamicRangeDb and span the full observed range (image min to
+//                  max in dB). Empty QImage if invalid.
 QImage spectralImageToQImage(const SpectralImage& img,
                              double dynamicRangeDb,
-                             Colormap cm);
+                             Colormap cm,
+                             bool autoScale = false);
 
 } // namespace spectral
 } // namespace neuroscope

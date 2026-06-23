@@ -16,7 +16,8 @@ namespace spectral {
 enum class Colormap : int {
     Grayscale = 0,
     Viridis   = 1,
-    Inferno   = 2
+    Inferno   = 2,
+    Jet       = 3
 };
 
 namespace detail {
@@ -39,6 +40,14 @@ inline const Anchor* infernoAnchors(int& n)
         {0.75, 249, 142,   9}, {1.0, 252, 255, 164}
     };
     n = 5; return a;
+}
+inline const Anchor* jetAnchors(int& n)
+{
+    static const Anchor a[] = {
+        {0.0,    0,   0, 128}, {0.125,  0,   0, 255}, {0.375,  0, 255, 255},
+        {0.625, 255, 255,  0}, {0.875, 255,   0,   0}, {1.0,  128,   0,   0}
+    };
+    n = 6; return a;
 }
 
 inline void interp(const Anchor* a, int n, double t,
@@ -70,6 +79,7 @@ inline void colormapRgb(double t, Colormap cm,
     }
     case Colormap::Viridis: { int n; const auto* a = detail::viridisAnchors(n); detail::interp(a, n, t, r, g, b); return; }
     case Colormap::Inferno: { int n; const auto* a = detail::infernoAnchors(n); detail::interp(a, n, t, r, g, b); return; }
+    case Colormap::Jet:     { int n; const auto* a = detail::jetAnchors(n);     detail::interp(a, n, t, r, g, b); return; }
     }
     r = g = b = 0;
 }

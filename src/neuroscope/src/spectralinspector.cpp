@@ -96,12 +96,18 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     colormapCombo->addItem(tr("gray"));
     colormapCombo->addItem(tr("viridis"));
     colormapCombo->addItem(tr("inferno"));
+    colormapCombo->addItem(tr("jet"));
     colormapCombo->setCurrentIndex(1);
+
+    autoScaleCheck = new QCheckBox(tr("auto"));
+    autoScaleCheck->setChecked(true);
+    autoScaleCheck->setToolTip(tr("auto colour scale (full range); uncheck for a fixed dB range"));
 
     dynRangeSpin = new QDoubleSpinBox;
     dynRangeSpin->setRange(6.0, 160.0); dynRangeSpin->setDecimals(0);
     dynRangeSpin->setValue(60.0);
-    dynRangeSpin->setToolTip(tr("dynamic range (dB)"));
+    dynRangeSpin->setEnabled(false);   // auto is on by default
+    dynRangeSpin->setToolTip(tr("dynamic range (dB) when auto is off"));
 
     backendCombo = new QComboBox;
     backendCombo->addItem(tr("CPU"));
@@ -126,6 +132,7 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     addSeparator(lay);
     lay->addWidget(whitenCheck);
     addLabeled(lay, tr("cmap"), colormapCombo);
+    lay->addWidget(autoScaleCheck);
     addLabeled(lay, tr("dB"), dynRangeSpin);
     addSeparator(lay);
     addLabeled(lay, tr("backend"), backendCombo);
@@ -169,6 +176,11 @@ SpectralInspector::SpectralInspector(SpectralView* view, QWidget* parent)
     });
     connect(spanSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
             [this](int ms){ this->view->setSpan(static_cast<long>(ms)); });
+
+    connect(autoScaleCheck, &QCheckBox::toggled, this, [this](bool on){
+        dynRangeSpin->setEnabled(!on);
+        this->view->setAutoScale(on);
+    });
 }
 
 void SpectralInspector::setChannelCount(int n)
