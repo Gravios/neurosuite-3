@@ -55,6 +55,14 @@ struct SpectralParams {
     SpectralBackend backend = SpectralBackend::Cpu;
     bool   decimate        = false; // anti-alias + downsample to the band before FFT
 
+    // Integration sub-band for mode B (FrequencyAcrossChannels): the per-channel
+    // power is integrated over [bandLo, bandHi] within the displayed [freqLow,
+    // freqHigh]. bandHi <= bandLo means "use the whole displayed range". This is
+    // a pure re-integration of the retained cube, so it is deliberately excluded
+    // from sameAs() below: changing it must not invalidate the computed cache.
+    double bandLo          = 0.0;
+    double bandHi          = 0.0;
+
     // Equality of everything that affects the result (used for caching).
     bool sameAs(const SpectralParams& o) const;
 };
@@ -69,9 +77,23 @@ struct SpectralImage {
     std::vector<double> colTimes;       // length cols, window-centre time (s) from window start
     double valueMin = 0.0;              // min/max of data (linear power) for scaling
     double valueMax = 0.0;
+
+    // Mode B only: the freq-resolved band-power density, retained so the
+    // integration sub-band can be re-selected without recomputing. Layout is
+    // [(r*cols + c)*nFreq + f]; cubeFreqs gives the Hz of each f, cubeDf the bin
+    // width used to turn a bin sum into a band power. Empty in mode A.
+    std::vector<float>  cube;
+    std::vector<double> cubeFreqs;
+    double cubeDf = 0.0;
     bool valid() const { return rows > 0 && cols > 0 && static_cast<int>(data.size()) == rows * cols; }
     float at(int r, int c) const { return data[static_cast<std::size_t>(r) * cols + c]; }
 };
+
+// Re-integrate a mode-B image's retained cube over a new sub-band [bandLo,
+// bandHi] (Hz), writing img.data and refreshing img.valueMin/valueMax. A band
+// with bandHi <= bandLo (or one that selects no bins) integrates the whole cube.
+// No-op for mode A or an image without a cube.
+void integrateBand(SpectralImage& img, double bandLo, double bandHi);
 
 class SpectralEngine {
 public:

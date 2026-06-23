@@ -78,6 +78,40 @@ void bandBins(double fLow, double fHigh, int nfft, double fs, int& lo, int& hi)
 
 } // namespace
 
+void integrateBand(SpectralImage& img, double bandLo, double bandHi)
+{
+    if (img.mode != SpectralMode::FrequencyAcrossChannels || img.cube.empty())
+        return;
+    const int nF = static_cast<int>(img.cubeFreqs.size());
+    const int rows = img.rows, cols = img.cols;
+    if (nF <= 0 || rows <= 0 || cols <= 0) return;
+
+    // Resolve the cube bin span for [bandLo, bandHi]; fall back to the whole
+    // cube when the band is degenerate or selects no bins.
+    int b0 = 0, b1 = nF - 1;
+    if (bandHi > bandLo) {
+        b0 = nF; b1 = -1;
+        for (int f = 0; f < nF; ++f) {
+            const double hz = img.cubeFreqs[f];
+            if (hz >= bandLo && hz <= bandHi) { if (f < b0) b0 = f; if (f > b1) b1 = f; }
+        }
+        if (b1 < b0) { b0 = 0; b1 = nF - 1; }
+    }
+
+    double vmin = std::numeric_limits<double>::infinity();
+    double vmax = -std::numeric_limits<double>::infinity();
+    for (int r = 0; r < rows; ++r)
+        for (int c = 0; c < cols; ++c) {
+            const float* cell = &img.cube[(static_cast<std::size_t>(r) * cols + c) * nF];
+            double bp = 0.0;
+            for (int f = b0; f <= b1; ++f) bp += static_cast<double>(cell[f]) * img.cubeDf;
+            img.data[static_cast<std::size_t>(r) * cols + c] = static_cast<float>(bp);
+            vmin = std::min(vmin, bp); vmax = std::max(vmax, bp);
+        }
+    if (!std::isfinite(vmin)) { vmin = 0.0; vmax = 0.0; }
+    img.valueMin = vmin; img.valueMax = vmax;
+}
+
 const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
                                              int nSamples, int nChannels,
                                              const std::vector<int>& channels,
@@ -186,17 +220,24 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         // FrequencyAcrossChannels: band power per channel over time.
         int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, effFs, lo, hi);
         const double df = effFs / effNfft;
+        const int nF = hi - lo + 1;
 
         img.rows = nch; img.cols = nCols;
         img.data.assign(static_cast<std::size_t>(nch) * nCols, 0.0f);
         img.rowChannels = channels;
 
-        // One row (channel) per task; windows handled inside the spectrogram.
-        std::vector<double> rowMin(nch,  std::numeric_limits<double>::infinity());
-        std::vector<double> rowMax(nch, -std::numeric_limits<double>::infinity());
-        const bool useGpu = (params.backend == SpectralBackend::Cuda) && gpu::available();
+        // Retain the freq-resolved power so the integration sub-band can be
+        // re-selected (by the band slider) without recomputing.
+        img.cube.assign(static_cast<std::size_t>(nch) * nCols * std::max(nF, 0), 0.0f);
+        img.cubeFreqs.resize(std::max(nF, 0));
+        img.cubeDf = df;
+        {
+            const std::vector<double> allFreqs = psdFrequencies(effNfft, effFs);
+            for (int f = 0; f < nF; ++f) img.cubeFreqs[f] = allFreqs[lo + f];
+        }
+
 #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic) if(!useGpu)
+        #pragma omp parallel for schedule(dynamic) if(!((params.backend == SpectralBackend::Cuda) && gpu::available()))
 #endif
         for (int r = 0; r < nch; ++r) {
             const double* sig = block.data() + static_cast<std::size_t>(r) * effNSamples;
@@ -204,14 +245,14 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
             dispatchSpectrogram(sig, effNSamples, tapers, effFs, effNfft,
                                 effStep, params.weighting, params.backend, sg);
             for (int c = 0; c < static_cast<int>(sg.size()) && c < nCols; ++c) {
-                double bp = 0.0;
-                for (int b = lo; b <= hi; ++b) bp += sg[c][b] * df; // integrate band
-                img.data[static_cast<std::size_t>(r) * nCols + c] = static_cast<float>(bp);
-                rowMin[r] = std::min(rowMin[r], bp);
-                rowMax[r] = std::max(rowMax[r], bp);
+                float* cell = &img.cube[(static_cast<std::size_t>(r) * nCols + c) * nF];
+                for (int b = lo; b <= hi; ++b) cell[b - lo] = static_cast<float>(sg[c][b]);
             }
         }
-        for (int r = 0; r < nch; ++r) { vmin = std::min(vmin, rowMin[r]); vmax = std::max(vmax, rowMax[r]); }
+
+        // Initial display integrates the selected sub-band (or the whole band).
+        integrateBand(img, params.bandLo, params.bandHi);
+        vmin = img.valueMin; vmax = img.valueMax;
     }
 
     if (!std::isfinite(vmin)) { vmin = 0.0; vmax = 0.0; }

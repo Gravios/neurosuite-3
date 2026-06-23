@@ -369,6 +369,39 @@ int main()
               "decimated band covers ~[0,100] Hz", dec.freqs.back(), 100);
     }
 
+    // ---- Mode B sub-band re-integration from the retained cube -----------
+    {
+        const double fs = 1000.0;
+        const int nCh = 2, nS = 16384;
+        std::mt19937 rng(7);
+        std::normal_distribution<double> g(0.0, 0.05);
+        std::vector<double> data(static_cast<std::size_t>(nS) * nCh);
+        for (int s = 0; s < nS; ++s)
+            for (int c = 0; c < nCh; ++c)
+                data[static_cast<std::size_t>(s) * nCh + c] =
+                    g(rng) + std::sin(2.0 * M_PI * 30.0 * s / fs);
+        std::vector<int> channels{0, 1};
+        SpectralEngine eng;
+        SpectralParams p;
+        p.mode = SpectralMode::FrequencyAcrossChannels;
+        p.samplingRate = fs; p.windowSamples = 1024; p.nfft = 1024; p.stepSamples = 512;
+        p.nw = 3.0; p.nTapers = 5; p.freqLow = 0.0; p.freqHigh = 100.0;
+        // Default band (0,0) integrates the whole displayed range.
+        SpectralImage img = eng.compute(data.data(), nS, nCh, channels, p, 1);
+        check(!img.cube.empty(), "mode B retains a freq cube", double(img.cube.size()), 1);
+
+        auto meanPower = [](const SpectralImage& im) {
+            double s = 0; for (float v : im.data) s += v;
+            return s / std::max<std::size_t>(1, im.data.size());
+        };
+        integrateBand(img, 20.0, 40.0);   const double pIn  = meanPower(img); // holds 30 Hz
+        integrateBand(img, 60.0, 100.0);  const double pOut = meanPower(img); // excludes it
+        check(pIn > 3.0 * pOut, "sub-band with the 30 Hz tone >> band without", pIn, pOut);
+        // Re-selecting the whole band restores at least the in-band integral.
+        integrateBand(img, 0.0, 0.0);     const double pFull = meanPower(img);
+        check(pFull >= pIn * 0.99, "full band integral >= sub-band integral", pFull, pIn);
+    }
+
     // ---- Colormaps -------------------------------------------------------
     {
         std::uint8_t r, g, b;
