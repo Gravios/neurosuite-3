@@ -14,6 +14,7 @@ add_library(neuroscope-spectral STATIC
     dpss.cpp
     multitaper.cpp
     spectralfft.cpp
+    decimate.cpp
     spectralengine.cpp)
 
 target_compile_features(neuroscope-spectral PUBLIC cxx_std_20)

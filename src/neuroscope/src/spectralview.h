@@ -47,6 +47,7 @@ public:
     void setFrequencyRange(double lowHz, double highHz);
     void setSingleChannelRow(int row);
     void setWhitening(bool on);
+    void setDecimate(bool on);
     void setColormap(neuroscope::spectral::Colormap cm);
     void setDynamicRangeDb(double db);
 

@@ -328,6 +328,12 @@ void SpectralView::setWhitening(bool on)
     scheduleParamUpdate();
 }
 
+void SpectralView::setDecimate(bool on)
+{
+    params.decimate = on;
+    scheduleParamUpdate();
+}
+
 void SpectralView::setColormap(Colormap cm)
 {
     colormap = cm;

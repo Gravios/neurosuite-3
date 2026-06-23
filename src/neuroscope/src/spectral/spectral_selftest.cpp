@@ -330,6 +330,44 @@ int main()
         check(pin > 5.0 * pout, "mode A band power follows freq range", pin, pout);
     }
 
+    // ---- Decimation preserves the in-band spectrogram --------------------
+    {
+        const double fs = 1000.0;
+        const int nCh = 2, nS = 16384;
+        std::mt19937 rng(123);
+        std::normal_distribution<double> g(0.0, 0.05);
+        std::vector<double> data(static_cast<std::size_t>(nS) * nCh);
+        for (int s = 0; s < nS; ++s)
+            for (int c = 0; c < nCh; ++c)
+                data[static_cast<std::size_t>(s) * nCh + c] =
+                    g(rng) + std::sin(2.0 * M_PI * 30.0 * s / fs);
+        std::vector<int> channels{0, 1};
+        SpectralEngine eng;
+        SpectralParams p;
+        p.mode = SpectralMode::TimeFrequencySingleChannel;
+        p.samplingRate = fs; p.windowSamples = 1024; p.nfft = 1024; p.stepSamples = 512;
+        p.nw = 3.0; p.nTapers = 5; p.singleChannel = 0; p.freqLow = 0.0; p.freqHigh = 100.0;
+
+        p.decimate = false;
+        SpectralImage full = eng.compute(data.data(), nS, nCh, channels, p, 1);
+        p.decimate = true;
+        SpectralImage dec = eng.compute(data.data(), nS, nCh, channels, p, 2);
+
+        auto peakFreq = [](const SpectralImage& im) {
+            int best = 0; double bestv = -1e300;
+            for (int r = 0; r < im.rows; ++r) {
+                double s = 0; for (int c = 0; c < im.cols; ++c) s += im.at(r, c);
+                if (s > bestv) { bestv = s; best = r; }
+            }
+            return im.freqs.empty() ? -1.0 : im.freqs[best];
+        };
+        const double pf = peakFreq(full), pd = peakFreq(dec);
+        check(std::abs(pf - 30.0) <= 5.0, "full mode B peak ~30 Hz", pf, 30);
+        check(std::abs(pd - 30.0) <= 5.0, "decimated mode B peak ~30 Hz", pd, 30);
+        check(!dec.freqs.empty() && dec.freqs.back() >= 90.0 && dec.freqs.back() <= 105.0,
+              "decimated band covers ~[0,100] Hz", dec.freqs.back(), 100);
+    }
+
     // ---- Colormaps -------------------------------------------------------
     {
         std::uint8_t r, g, b;

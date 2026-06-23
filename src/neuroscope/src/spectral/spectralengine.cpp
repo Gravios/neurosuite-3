@@ -1,6 +1,7 @@
 #include "spectralengine.h"
 #include "spectralfft.h"
 #include "spectralgpu.h"
+#include "decimate.h"
 
 #include <algorithm>
 #include <cmath>
@@ -43,7 +44,8 @@ bool SpectralParams::sameAs(const SpectralParams& o) const
         && freqLow == o.freqLow
         && freqHigh == o.freqHigh
         && singleChannel == o.singleChannel
-        && backend == o.backend;
+        && backend == o.backend
+        && decimate == o.decimate;
 }
 
 const DpssTapers& SpectralEngine::tapersFor(int N, double nw, int K)
@@ -107,31 +109,63 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
     if (params.whiten && nch > 1)
         commonWhiten(block.data(), nch, nSamples, 1e-6);
 
-    const DpssTapers& tapers = tapersFor(N, params.nw, params.nTapers);
-    const int nfft = std::max(params.nfft, N);
-    RealFftPlan plan(nfft);                       // effective size from the plan
-    const int effNfft = plan.nfft();
-    const int nCols = 1 + (nSamples - N) / params.stepSamples;
+    // Optional anti-aliased decimation: when a high-frequency edge well below
+    // Nyquist is selected, low-pass and downsample each channel by M so the
+    // transform shrinks while the in-band resolution is preserved. The effective
+    // sampling rate, window, step and sample count all scale by M, which keeps
+    // the bin spacing (effFs/effNfft) and the real time axis unchanged.
+    double effFs = fs;
+    int    effN = N;
+    int    effStep = params.stepSamples;
+    int    effNSamples = nSamples;
+    int    decM = 1;
+    if (params.decimate) {
+        decM = decimationFactor(fs, params.freqHigh, 1.25, 64, nSamples, 64);
+        while (decM > 1 && (N / decM < 8 || params.stepSamples / decM < 1)) decM >>= 1;
+    }
+    if (decM > 1) {
+        const int nDec = nSamples / decM;
+        std::vector<double> decBlock(static_cast<std::size_t>(nch) * nDec);
+        std::vector<double> chDec;
+        for (int r = 0; r < nch; ++r) {
+            decimate(block.data() + static_cast<std::size_t>(r) * nSamples,
+                     nSamples, decM, chDec);
+            const int cn = std::min<int>(nDec, static_cast<int>(chDec.size()));
+            std::copy(chDec.begin(), chDec.begin() + cn,
+                      decBlock.begin() + static_cast<std::size_t>(r) * nDec);
+        }
+        block.swap(decBlock);
+        effFs = fs / decM;
+        effN = std::max(2, N / decM);
+        effStep = std::max(1, params.stepSamples / decM);
+        effNSamples = nDec;
+    }
 
-    // Time axis: window-centre time (s) relative to the window start.
+    const DpssTapers& tapers = tapersFor(effN, params.nw, params.nTapers);
+    const int nfftReq = std::max((decM > 1) ? params.nfft / decM : params.nfft, effN);
+    RealFftPlan plan(nfftReq);                    // effective size from the plan
+    const int effNfft = plan.nfft();
+    const int nCols = 1 + (effNSamples - effN) / effStep;
+
+    // Time axis: window-centre time (s); decimation preserves real time.
     img.colTimes.resize(nCols);
     for (int c = 0; c < nCols; ++c)
-        img.colTimes[c] = (c * params.stepSamples + N / 2.0) / fs;
+        img.colTimes[c] = (c * effStep + effN / 2.0) / effFs;
 
     double vmin = std::numeric_limits<double>::infinity();
     double vmax = -std::numeric_limits<double>::infinity();
 
     if (params.mode == SpectralMode::TimeFrequencySingleChannel) {
         int ch = std::max(0, std::min(params.singleChannel, nch - 1));
-        const double* sig = block.data() + static_cast<std::size_t>(ch) * nSamples;
+        const double* sig = block.data() + static_cast<std::size_t>(ch) * effNSamples;
 
         std::vector<std::vector<double>> sg;
-        dispatchSpectrogram(sig, nSamples, tapers, fs, effNfft,
-                            params.stepSamples, params.weighting, params.backend, sg);
+        dispatchSpectrogram(sig, effNSamples, tapers, effFs, effNfft,
+                            effStep, params.weighting, params.backend, sg);
 
-        int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, fs, lo, hi);
+        int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, effFs, lo, hi);
         const int rows = hi - lo + 1;
-        const std::vector<double> allFreqs = psdFrequencies(effNfft, fs);
+        const std::vector<double> allFreqs = psdFrequencies(effNfft, effFs);
 
         img.rows = rows; img.cols = static_cast<int>(sg.size());
         img.data.assign(static_cast<std::size_t>(rows) * img.cols, 0.0f);
@@ -145,8 +179,8 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
             }
     } else {
         // FrequencyAcrossChannels: band power per channel over time.
-        int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, fs, lo, hi);
-        const double df = fs / effNfft;
+        int lo, hi; bandBins(params.freqLow, params.freqHigh, effNfft, effFs, lo, hi);
+        const double df = effFs / effNfft;
 
         img.rows = nch; img.cols = nCols;
         img.data.assign(static_cast<std::size_t>(nch) * nCols, 0.0f);
@@ -160,10 +194,10 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         #pragma omp parallel for schedule(dynamic) if(!useGpu)
 #endif
         for (int r = 0; r < nch; ++r) {
-            const double* sig = block.data() + static_cast<std::size_t>(r) * nSamples;
+            const double* sig = block.data() + static_cast<std::size_t>(r) * effNSamples;
             std::vector<std::vector<double>> sg;
-            dispatchSpectrogram(sig, nSamples, tapers, fs, effNfft,
-                                params.stepSamples, params.weighting, params.backend, sg);
+            dispatchSpectrogram(sig, effNSamples, tapers, effFs, effNfft,
+                                effStep, params.weighting, params.backend, sg);
             for (int c = 0; c < static_cast<int>(sg.size()) && c < nCols; ++c) {
                 double bp = 0.0;
                 for (int b = lo; b <= hi; ++b) bp += sg[c][b] * df; // integrate band

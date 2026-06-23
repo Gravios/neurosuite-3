@@ -53,6 +53,7 @@ struct SpectralParams {
     double freqHigh        = 0.0;   // high edge; <= 0 means Nyquist
     int    singleChannel   = 0;     // row index (into the channel list) for mode B
     SpectralBackend backend = SpectralBackend::Cpu;
+    bool   decimate        = false; // anti-alias + downsample to the band before FFT
 
     // Equality of everything that affects the result (used for caching).
     bool sameAs(const SpectralParams& o) const;
