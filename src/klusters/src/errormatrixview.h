@@ -112,7 +112,16 @@ Q_SIGNALS:
     /// hand without polling or blocking.
     void matrixUpdated();
 
+    /// Emitted when the user changes this view's zoom level (wheel, reset).
+    /// Used to keep the error and template matrix zooms synchronised.
+    void zoomChanged(double zoom);
+
 public Q_SLOTS:
+
+    /// Set the zoom level from an external source (the synchronised template
+    /// matrix view), keeping the current centre. Does not emit zoomChanged, so
+    /// the two views can be cross-connected without a loop.
+    void setZoomLevel(double zoom);
 
     /**Enables the caller to know if there is any thread running launch by the Widget.*/
     bool isThreadsRunning() const override;

@@ -1040,6 +1040,11 @@ private:
    */
     void setConnections(DisplayType displayType,QWidget* view,QDockWidget* dockWidget);
 
+    /// Cross-connect the error and template matrix views so zooming one applies
+    /// the same zoom level to the other. Safe to call repeatedly (uses
+    /// Qt::UniqueConnection) and whenever either view is (re)created.
+    void connectMatrixZoomSync();
+
     /**
    * Makes signal and slot connection between the current view and the active correlogramView.
    * @param viewWidget view for which connections will be made.

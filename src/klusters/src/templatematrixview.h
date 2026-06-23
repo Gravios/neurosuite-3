@@ -51,6 +51,11 @@ public:
     friend class TemplateMatrixThread;
     friend class PairXcorrThread;
 
+    /// Set the zoom level from an external source (e.g. the synchronised error
+    /// matrix view), zooming around the widget centre. Does not emit
+    /// zoomChanged, so the two views can be cross-connected without a loop.
+    void setZoomLevel(double zoom);
+
     explicit TemplateMatrixView(KlustersDoc& doc, KlustersView& view,
                                 const QColor& backgroundColor,
                                 QStatusBar* statusBar,
@@ -120,6 +125,10 @@ Q_SIGNALS:
     /// interacted with — Shift+S reorder uses that matrix when both
     /// error and template matrices coexist.
     void viewInteracted();
+
+    /// Emitted when the user changes this view's zoom level (wheel, +/- keys,
+    /// reset). Used to keep the error and template matrix zooms synchronised.
+    void zoomChanged(double zoom);
 
     /// Emitted from customEvent() each time a freshly computed matrix is
     /// accepted.  Symmetric with ErrorMatrixView::matrixUpdated() so

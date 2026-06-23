@@ -15,6 +15,7 @@
  *                                                                         *
  ***************************************************************************/
 //include files for the application
+#include <cmath>
 #include <QApplication>
 #include "errormatrixview.h"
 #include "errormatrixthread.h"
@@ -686,6 +687,7 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     updateWindow();
     drawContentsMode = REDRAW;
     update();
+    emit zoomChanged(userZoom);
     e->accept();
 }
 
@@ -697,7 +699,22 @@ void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
     updateWindow();
     drawContentsMode = REDRAW;
     update();
+    emit zoomChanged(userZoom);
     e->accept();
+}
+
+void ErrorMatrixView::setZoomLevel(double newZoom){
+    newZoom = qBound(1.0, newZoom, userZoomMax);
+    if(std::abs(newZoom - userZoom) < 1e-9) return;
+    // Re-bound the centre to the new zoom and rebuild the window; no signal is
+    // emitted so a cross-connected view does not echo the change back.
+    const double hf = 0.5 / newZoom;
+    userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
+    userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
+    userZoom = newZoom;
+    updateWindow();
+    drawContentsMode = REDRAW;
+    update();
 }
 
 

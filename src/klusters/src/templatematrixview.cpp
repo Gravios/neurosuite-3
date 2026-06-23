@@ -777,12 +777,29 @@ void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
     panY += dy;
     zoom = newZoom;
     update();
+    emit zoomChanged(zoom);
 }
 
 void TemplateMatrixView::resetPanZoom()
 {
     panX = panY = 0.0;
     zoom = 1.0;
+    update();
+    emit zoomChanged(zoom);
+}
+
+void TemplateMatrixView::setZoomLevel(double newZoom)
+{
+    newZoom = std::clamp(newZoom, zoomMin, zoomMax);
+    if (zoom <= 0.0 || std::abs(newZoom - zoom) < 1e-9) return;
+    // Zoom around the widget centre; no signal is emitted so a cross-connected
+    // view does not echo the change back.
+    const QPointF pivot(width() / 2.0, height() / 2.0);
+    const double ratio = newZoom / zoom;
+    const QPoint base = matrixTopLeft();
+    panX += (pivot.x() - base.x() - panX) * (1.0 - ratio);
+    panY += (pivot.y() - base.y() - panY) * (1.0 - ratio);
+    zoom = newZoom;
     update();
 }
 
