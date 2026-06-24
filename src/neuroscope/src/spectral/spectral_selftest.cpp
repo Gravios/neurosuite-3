@@ -168,6 +168,64 @@ int main()
         check(maxOff < 0.05, "whitening decorrelates channels", maxOff, 0);
     }
 
+    // ---- Common-average reference: per-sample channel sum -> 0 -----------
+    {
+        const int nch = 4, ns = 8000;
+        std::mt19937 rng(13);
+        std::normal_distribution<double> g(0.0, 1.0);
+        std::vector<double> data((size_t)nch * ns);
+        for (int s = 0; s < ns; ++s) {
+            const double common = 5.0 * g(rng);      // strong shared component
+            for (int c = 0; c < nch; ++c)
+                data[(size_t)c * ns + s] = common + 0.3 * g(rng);
+        }
+        commonAverageReference(data.data(), nch, ns);
+        // After CAR the across-channel sum is identically zero at every sample.
+        double maxSum = 0.0;
+        for (int s = 0; s < ns; ++s) {
+            double sum = 0.0;
+            for (int c = 0; c < nch; ++c) sum += data[(size_t)c * ns + s];
+            maxSum = std::max(maxSum, std::abs(sum));
+        }
+        check(maxSum < 1e-9, "CAR zeroes the per-sample channel sum", maxSum, 0);
+    }
+
+    // ---- Reference regression: residual orthogonal to the reference ------
+    {
+        const int nch = 3, ns = 16000, refRow = 0;
+        std::mt19937 rng(17);
+        std::normal_distribution<double> g(0.0, 1.0);
+        std::vector<double> data((size_t)nch * ns);
+        for (int s = 0; s < ns; ++s) {
+            const double ref = g(rng);
+            data[(size_t)0 * ns + s] = ref;                       // reference
+            data[(size_t)1 * ns + s] = 2.0 * ref + 0.5 * g(rng);  // strongly ref-coupled
+            data[(size_t)2 * ns + s] = -1.0 * ref + 0.5 * g(rng);
+        }
+        // Snapshot and de-mean the reference (the function de-means internally).
+        std::vector<double> ref(ns);
+        for (int s = 0; s < ns; ++s) ref[s] = data[(size_t)refRow * ns + s];
+        double rm = 0; for (double v : ref) rm += v; rm /= ns; for (double& v : ref) v -= rm;
+        double rr = 0; for (double v : ref) rr += v * v;
+
+        referenceRegress(data.data(), nch, ns, refRow);
+
+        // Residuals must be uncorrelated with the reference; the reference row
+        // itself collapses to zero.
+        double maxCorr = 0.0, refEnergy = 0.0;
+        for (int c = 0; c < nch; ++c) {
+            double dot = 0.0, nrm = 0.0;
+            for (int s = 0; s < ns; ++s) {
+                dot += data[(size_t)c * ns + s] * ref[s];
+                nrm += data[(size_t)c * ns + s] * data[(size_t)c * ns + s];
+            }
+            if (c == refRow) refEnergy = nrm;
+            else maxCorr = std::max(maxCorr, std::abs(dot) / (std::sqrt(rr) + 1e-12));
+        }
+        check(maxCorr < 1e-6, "reference regression removes the reference", maxCorr, 0);
+        check(refEnergy < 1e-9, "reference row collapses to zero", refEnergy, 0);
+    }
+
     // ---- Arbitrary (non-power-of-two) nfft via FFTW ----------------------
     // Exercised only when the FFTW backend is compiled in; the radix-2
     // fallback rounds nfft to a power of two and is covered above.

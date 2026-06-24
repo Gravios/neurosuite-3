@@ -145,6 +145,9 @@ bool SpectralParams::sameAs(const SpectralParams& o) const
         && singleChannel == o.singleChannel
         && backend == o.backend
         && decimate == o.decimate
+        && car == o.car
+        && refRegress == o.refRegress
+        && refChannel == o.refChannel
         // bandLo/bandHi now define the FrequencyAcrossChannels filter pass-band,
         // so they affect the computed image and must invalidate the cache.
         && bandLo == o.bandLo
@@ -247,6 +250,16 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
             dst[s] = sampleMajor[static_cast<std::size_t>(s) * nChannels + c];
     }
 
+    // Re-referencing (channel-major, before any decimation), in increasing
+    // specificity: common-average reference removes whole-array common mode;
+    // reference regression removes one chosen channel from every channel; ZCA
+    // whitening decorrelates what remains. Each is an independent toggle.
+    if (params.car && nch > 1)
+        commonAverageReference(block.data(), nch, nSamples);
+    if (params.refRegress && nch > 1) {
+        const int rr = std::max(0, std::min(params.refChannel, nch - 1));
+        referenceRegress(block.data(), nch, nSamples, rr);
+    }
     if (params.whiten && nch > 1)
         commonWhiten(block.data(), nch, nSamples, 1e-6);
 

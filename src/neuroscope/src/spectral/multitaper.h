@@ -74,6 +74,18 @@ std::vector<double> psdFrequencies(int nfft, double fs);
 // solved with cyclic Jacobi. eps regularises near-zero eigenvalues.
 void commonWhiten(double* data, int nChannels, int nSamples, double eps = 1e-6);
 
+// In-place common-average reference: subtract the per-sample mean across all
+// channels from each channel, removing activity common to the whole array.
+// data is row-major [nChannels][nSamples]. No-op for fewer than two channels.
+void commonAverageReference(double* data, int nChannels, int nSamples);
+
+// In-place reference regression: de-mean each channel, then remove from every
+// channel its least-squares projection onto the reference channel refRow
+// (beta = <ch,ref>/<ref,ref>), keeping the residual. Unlike ZCA this does not
+// mix the other channels together - each channel only has the reference removed.
+// The reference row itself becomes ~0. data is row-major [nChannels][nSamples].
+void referenceRegress(double* data, int nChannels, int nSamples, int refRow);
+
 } // namespace spectral
 } // namespace neuroscope
 

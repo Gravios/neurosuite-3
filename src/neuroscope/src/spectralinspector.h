@@ -46,6 +46,9 @@ private:
     QSpinBox*        spanSpin = nullptr;
     QCheckBox*       whitenCheck = nullptr;
     QCheckBox*       decimCheck = nullptr;
+    QCheckBox*       carCheck = nullptr;
+    QCheckBox*       refRegressCheck = nullptr;
+    QSpinBox*        refChannelSpin = nullptr;
     QComboBox*       colormapCombo = nullptr;
     QCheckBox*       autoScaleCheck = nullptr;
     QDoubleSpinBox*  dynRangeSpin = nullptr;
