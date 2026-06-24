@@ -72,6 +72,17 @@ SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
     decimCheck->setToolTip(tr("anti-alias + downsample to the high-frequency edge "
                               "before the transform (faster for narrow low bands)"));
 
+    carCheck = new QCheckBox(tr("CAR"));
+    carCheck->setToolTip(tr("common-average reference: subtract the per-sample mean "
+                            "of the selected channels from each"));
+    refRegressCheck = new QCheckBox(tr("ref regress"));
+    refRegressCheck->setToolTip(tr("regress every channel on the reference channel "
+                                   "and keep the residual (removes that reference)"));
+    refChannelSpin = new QSpinBox;
+    refChannelSpin->setRange(0, 10000);
+    refChannelSpin->setEnabled(false);   // enabled only while ref regress is on
+    refChannelSpin->setToolTip(tr("reference channel row for ref regress"));
+
     colormapCombo = new QComboBox;
     colormapCombo->addItem(tr("gray"));
     colormapCombo->addItem(tr("viridis"));
@@ -126,6 +137,9 @@ SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
     QFormLayout* disp = new QFormLayout(dispBox);
     disp->addRow(whitenCheck);
     disp->addRow(decimCheck);
+    disp->addRow(carCheck);
+    disp->addRow(refRegressCheck);
+    disp->addRow(tr("Ref row"), refChannelSpin);
     disp->addRow(tr("Colormap"), colormapCombo);
     disp->addRow(autoScaleCheck);
     disp->addRow(tr("Range (dB)"), dynRangeSpin);
@@ -155,6 +169,12 @@ SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
             [this](bool on){ if(view) view->setWhitening(on); });
     connect(decimCheck, &QCheckBox::toggled, this,
             [this](bool on){ if(view) view->setDecimate(on); });
+    connect(carCheck, &QCheckBox::toggled, this,
+            [this](bool on){ if(view) view->setCar(on); });
+    connect(refRegressCheck, &QCheckBox::toggled, this,
+            [this](bool on){ refChannelSpin->setEnabled(on); if(view) view->setRefRegress(on); });
+    connect(refChannelSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int v){ if(view) view->setRefChannel(v); });
     connect(dynRangeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [this](double v){ if(view) view->setDynamicRangeDb(v); });
 
@@ -198,7 +218,8 @@ void SpectralInspector::reloadFromView()
                          b6(stepSpin),   b7(freqLowSpin), b8(freqHighSpin),
                          b9(lockCheck),  b10(spanSpin),   b11(whitenCheck),
                          b12(decimCheck),b13(colormapCombo), b14(autoScaleCheck),
-                         b15(dynRangeSpin), b16(backendCombo);
+                         b15(dynRangeSpin), b16(backendCombo),
+                         b17(carCheck), b18(refRegressCheck), b19(refChannelSpin);
 
     modeCombo->setCurrentIndex(p.mode == SpectralMode::FrequencyAcrossChannels ? 1 : 0);
     channelSpin->setValue(p.singleChannel);
@@ -211,6 +232,10 @@ void SpectralInspector::reloadFromView()
     freqHighSpin->setValue(p.freqHigh);
     whitenCheck->setChecked(p.whiten);
     decimCheck->setChecked(p.decimate);
+    carCheck->setChecked(p.car);
+    refRegressCheck->setChecked(p.refRegress);
+    refChannelSpin->setValue(p.refChannel);
+    refChannelSpin->setEnabled(p.refRegress);
     backendCombo->setCurrentIndex(p.backend == SpectralBackend::Cuda ? 1 : 0);
 
     colormapCombo->setCurrentIndex(static_cast<int>(view->colormapValue()));
@@ -238,4 +263,5 @@ void SpectralInspector::setChannelCount(int n)
 {
     if (n < 1) n = 1;
     channelSpin->setRange(0, std::max(n - 1, 10000));
+    refChannelSpin->setRange(0, std::max(n - 1, 10000));
 }

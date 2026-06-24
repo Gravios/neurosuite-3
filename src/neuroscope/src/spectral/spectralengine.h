@@ -54,6 +54,11 @@ struct SpectralParams {
     int    singleChannel   = 0;     // row index (into the channel list) for mode B
     SpectralBackend backend = SpectralBackend::Cpu;
     bool   decimate        = false; // anti-alias + downsample to the band before FFT
+    bool   car             = false; // common-average reference (subtract per-sample
+                                    // mean of the selected channels from each)
+    bool   refRegress      = false; // regress each channel on a reference channel
+                                    // and keep the residual (removes the reference)
+    int    refChannel      = 0;     // reference row index (into the channel list) for refRegress
 
     // Integration sub-band for mode B (FrequencyAcrossChannels): the per-channel
     // power is integrated over [bandLo, bandHi] within the displayed [freqLow,

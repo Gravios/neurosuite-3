@@ -209,5 +209,50 @@ void commonWhiten(double* data, int nChannels, int nSamples, double eps)
     }
 }
 
+void commonAverageReference(double* data, int nChannels, int nSamples)
+{
+    if (nChannels < 2 || nSamples < 1) return;
+    const double inv = 1.0 / nChannels;
+    for (int s = 0; s < nSamples; ++s) {
+        double m = 0.0;
+        for (int c = 0; c < nChannels; ++c)
+            m += data[static_cast<std::size_t>(c) * nSamples + s];
+        m *= inv;
+        for (int c = 0; c < nChannels; ++c)
+            data[static_cast<std::size_t>(c) * nSamples + s] -= m;
+    }
+}
+
+void referenceRegress(double* data, int nChannels, int nSamples, int refRow)
+{
+    if (nChannels < 1 || nSamples < 2) return;
+    if (refRow < 0 || refRow >= nChannels) return;
+
+    // De-mean each channel so beta is a covariance ratio.
+    for (int c = 0; c < nChannels; ++c) {
+        double m = 0.0;
+        double* row = data + static_cast<std::size_t>(c) * nSamples;
+        for (int s = 0; s < nSamples; ++s) m += row[s];
+        m /= nSamples;
+        for (int s = 0; s < nSamples; ++s) row[s] -= m;
+    }
+
+    // Snapshot the reference: regressing it out modifies rows in place, and the
+    // reference row itself goes to zero, so later channels must still see it.
+    const double* ref = data + static_cast<std::size_t>(refRow) * nSamples;
+    std::vector<double> refCopy(ref, ref + nSamples);
+    double rr = 0.0;
+    for (int s = 0; s < nSamples; ++s) rr += refCopy[s] * refCopy[s];
+    if (rr <= 0.0) return;                       // flat reference: nothing to remove
+
+    for (int c = 0; c < nChannels; ++c) {
+        double* row = data + static_cast<std::size_t>(c) * nSamples;
+        double cr = 0.0;
+        for (int s = 0; s < nSamples; ++s) cr += row[s] * refCopy[s];
+        const double beta = cr / rr;
+        for (int s = 0; s < nSamples; ++s) row[s] -= beta * refCopy[s];
+    }
+}
+
 } // namespace spectral
 } // namespace neuroscope

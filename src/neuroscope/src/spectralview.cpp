@@ -61,6 +61,9 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
     params.freqHigh      = 0.0;   // Nyquist
     params.singleChannel = 0;
     params.whiten        = false;
+    params.car           = false;
+    params.refRegress    = false;
+    params.refChannel    = 0;
 
     connect(&tracesProvider, &TracesProvider::dataReady, this,
             static_cast<void (SpectralView::*)(Array<dataType>&, QObject*)>(&SpectralView::dataAvailable));
@@ -110,6 +113,9 @@ void SpectralView::loadSettings()
     params.freqLow       = s.value("freqLow", params.freqLow).toDouble();
     params.freqHigh      = s.value("freqHigh", params.freqHigh).toDouble();
     params.whiten        = s.value("whiten", params.whiten).toBool();
+    params.car           = s.value("car", params.car).toBool();
+    params.refRegress    = s.value("refRegress", params.refRegress).toBool();
+    params.refChannel    = s.value("refChannel", params.refChannel).toInt();
     params.decimate      = s.value("decimate", params.decimate).toBool();
     params.bandLo        = s.value("bandLo", params.bandLo).toDouble();
     params.bandHi        = s.value("bandHi", params.bandHi).toDouble();
@@ -136,6 +142,9 @@ void SpectralView::saveSettings() const
     s.setValue("freqLow", params.freqLow);
     s.setValue("freqHigh", params.freqHigh);
     s.setValue("whiten", params.whiten);
+    s.setValue("car", params.car);
+    s.setValue("refRegress", params.refRegress);
+    s.setValue("refChannel", params.refChannel);
     s.setValue("decimate", params.decimate);
     s.setValue("bandLo", params.bandLo);
     s.setValue("bandHi", params.bandHi);
@@ -587,6 +596,24 @@ void SpectralView::setSingleChannelRow(int row)
 void SpectralView::setWhitening(bool on)
 {
     params.whiten = on;
+    scheduleParamUpdate();
+}
+
+void SpectralView::setCar(bool on)
+{
+    params.car = on;
+    scheduleParamUpdate();
+}
+
+void SpectralView::setRefRegress(bool on)
+{
+    params.refRegress = on;
+    scheduleParamUpdate();
+}
+
+void SpectralView::setRefChannel(int row)
+{
+    params.refChannel = row < 0 ? 0 : row;
     scheduleParamUpdate();
 }
 
