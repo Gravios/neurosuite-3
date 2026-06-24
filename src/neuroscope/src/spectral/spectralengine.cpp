@@ -63,17 +63,68 @@ inline Biquad highpassBiquad(double f0, double fs, double Q) {
     q.a1 = (-2 * c) / a0;      q.a2 = (1 - al) / a0;
     return q;
 }
-void bandpassInPlace(double* x, int n, double fs, double flo, double fhi) {
-    const double nyq = 0.5 * fs, Q = 0.70710678118654752;
+// Per-channel band power (band-pass + windowed RMS^2), vectorised across
+// channels. The IIR recurrence is serial over samples but independent across
+// channels, so channels are processed in sample-major tiles: the inner loop
+// over a tile's channels has no cross-lane dependency and vectorises (one
+// AVX-512 vector covers 8 channels). blockCM is channel-major (each channel's
+// samples contiguous); out is channel-major out[ch * nCols + col]. Build with
+// -march=native (NS_ZEN_OPT) for the full width.
+void bandPowerByChannel(const double* blockCM, int nch, int effNSamples,
+                        int effN, int effStep, int nCols,
+                        double effFs, double flo, double fhi, float* out)
+{
+    const double nyq = 0.5 * effFs, Q = 0.70710678118654752;
     if (flo < 0.0) flo = 0.0;
     if (fhi <= 0.0 || fhi > 0.999 * nyq) fhi = 0.999 * nyq;
-    if (flo > 0.5) {                       // skip the high-pass for a DC-anchored band
-        Biquad hp = highpassBiquad(flo, fs, Q);
-        for (int i = 0; i < n; ++i) x[i] = hp.process(x[i]);
-    }
-    if (fhi < 0.999 * nyq) {               // skip the low-pass for a Nyquist-anchored band
-        Biquad lp = lowpassBiquad(fhi, fs, Q);
-        for (int i = 0; i < n; ++i) x[i] = lp.process(x[i]);
+    const bool useHP = flo > 0.5;
+    const bool useLP = fhi < 0.999 * nyq;
+    // Identity biquad (default Biquad{}) when an edge is skipped, so the fused
+    // loop applies both stages unconditionally with no branch to vectorise around.
+    const Biquad hp = useHP ? highpassBiquad(flo, effFs, Q) : Biquad{};
+    const Biquad lp = useLP ? lowpassBiquad(fhi, effFs, Q) : Biquad{};
+    const double hb0=hp.b0,hb1=hp.b1,hb2=hp.b2,ha1=hp.a1,ha2=hp.a2;
+    const double lb0=lp.b0,lb1=lp.b1,lb2=lp.b2,la1=lp.a1,la2=lp.a2;
+    const double invN = 1.0 / effN;
+    constexpr int TILE = 8;                 // one AVX-512 double vector
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(dynamic)
+#endif
+    for (int c0 = 0; c0 < nch; c0 += TILE) {
+        const int w = std::min(TILE, nch - c0);
+        std::vector<double> sm(static_cast<std::size_t>(effNSamples) * w);
+        for (int k = 0; k < w; ++k) {       // transpose tile -> sample-major
+            const double* src = blockCM + static_cast<std::size_t>(c0 + k) * effNSamples;
+            for (int i = 0; i < effNSamples; ++i) sm[static_cast<std::size_t>(i) * w + k] = src[i];
+        }
+        // Single fused pass: high-pass, low-pass and prefix-sum-of-squares per
+        // channel, streaming the tile through memory once instead of three times.
+        double h1[TILE]={0}, h2[TILE]={0}, l1[TILE]={0}, l2[TILE]={0}, acc[TILE]={0};
+        for (int i = 0; i < effNSamples; ++i) {
+            double* row = &sm[static_cast<std::size_t>(i) * w];
+            #pragma omp simd
+            for (int k = 0; k < w; ++k) {
+                const double x = row[k];
+                const double yh = hb0 * x + h1[k];
+                h1[k] = hb1 * x - ha1 * yh + h2[k];
+                h2[k] = hb2 * x - ha2 * yh;
+                const double yl = lb0 * yh + l1[k];
+                l1[k] = lb1 * yh - la1 * yl + l2[k];
+                l2[k] = lb2 * yh - la2 * yl;
+                acc[k] += yl * yl;
+                row[k] = acc[k];            // prefix sum of squares
+            }
+        }
+        for (int col = 0; col < nCols; ++col) {
+            const int s0 = col * effStep, sEnd = s0 + effN;
+            const double* hiR = &sm[static_cast<std::size_t>(sEnd - 1) * w];
+            const double* loR = (s0 > 0) ? &sm[static_cast<std::size_t>(s0 - 1) * w] : nullptr;
+            for (int k = 0; k < w; ++k) {
+                const double sum = hiR[k] - (loR ? loR[k] : 0.0);
+                out[static_cast<std::size_t>(c0 + k) * nCols + col] = static_cast<float>(sum * invN);
+            }
+        }
     }
 }
 } // namespace
@@ -285,25 +336,8 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         if (flo < 0.0) flo = 0.0;
         fhi = std::min(fhi, 0.5 * effFs);
 
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic)
-#endif
-        for (int r = 0; r < nch; ++r) {
-            // Filter the channel in place (block is scratch here), then replace
-            // it with the running sum of squares so each window's mean square is
-            // an O(1) difference - one pass regardless of window overlap, and no
-            // per-channel allocation.
-            double* b = block.data() + static_cast<std::size_t>(r) * effNSamples;
-            bandpassInPlace(b, effNSamples, effFs, flo, fhi);
-            double acc = 0.0;
-            for (int i = 0; i < effNSamples; ++i) { acc += b[i] * b[i]; b[i] = acc; }
-            float* row = &img.data[static_cast<std::size_t>(r) * nCols];
-            for (int c = 0; c < nCols; ++c) {
-                const int s0 = c * effStep, s1 = s0 + effN;     // window [s0, s1)
-                const double sum = b[s1 - 1] - (s0 > 0 ? b[s0 - 1] : 0.0);
-                row[c] = static_cast<float>(sum / effN);        // mean square = band power
-            }
-        }
+        bandPowerByChannel(block.data(), nch, effNSamples, effN, effStep, nCols,
+                           effFs, flo, fhi, img.data.data());
 
         for (float v : img.data) { vmin = std::min(vmin, (double)v); vmax = std::max(vmax, (double)v); }
         img.valueMin = vmin; img.valueMax = vmax;
