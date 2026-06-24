@@ -7,7 +7,9 @@
  *  pandas/scikit-learn for empirical decision-tree training.
  *
  *  Log format: one JSON object per line, UTF-8.
- *  File location: <sessionDir>/<baseName>.curation_log.<electrodeGroup>.jl
+ *  File location: <sessionDir>/<baseName>.curation_log.<electrodeGroup>.<stage>
+ *  where <stage> is the .clu variant (e.g. "stderiv"). The untagged default
+ *  stage ("standard") is not logged.
  *
  *  Lifecycle (deferred-flush model):
  *    1. KlustersDoc::openDocument()   → CurationLogger::open()
