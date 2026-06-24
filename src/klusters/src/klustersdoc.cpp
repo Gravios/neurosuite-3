@@ -636,9 +636,15 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         // (snapshotClusters -> computeAllCentroids) is taken.  This is the
         // low-overhead path for performance testing; undo/redo are unaffected
         // (rollback is driven by clusteringData->undo, not the logger).
-        if (configuration().getCurationLogging()) {
+        // The curation log is named for the clustering stage (the .clu variant,
+        // e.g. "stderiv"): the stage replaces the generic ".jl" suffix, so each
+        // stage keeps its own log instead of overwriting one file. The untagged
+        // default stage ("standard") is treated as "no stage" and gets no log.
+        const bool stagedClustering = (sessionMethod != QLatin1String("standard"));
+        if (configuration().getCurationLogging() && stagedClustering) {
             const QString logPath = urlFileInfo.absolutePath() + QDir::separator()
-                                    + baseName + ".curation_log." + electrodeGroupID + ".jl";
+                                    + baseName + ".curation_log." + electrodeGroupID
+                                    + "." + sessionMethod;
             curationLogger = std::make_unique<CurationLogger>();
             curationLogger->open(
                 logPath,
