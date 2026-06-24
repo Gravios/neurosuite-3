@@ -240,11 +240,22 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         return cache_;
     }
 
+    // Mode B transforms a single channel; the others are needed only for a
+    // cross-channel step (CAR / reference regression / whitening). When none is
+    // active, gather - and below, decimate - just that one channel, skipping the
+    // per-channel anti-alias FIR on rows that would be discarded.
+    const bool crossChannel =
+        (params.car || params.refRegress || params.whiten) && nch > 1;
+    const bool singleOnly =
+        params.mode == SpectralMode::TimeFrequencySingleChannel && !crossChannel;
+    const int  fftRow  = std::max(0, std::min(params.singleChannel, nch - 1));
+    const int  nGather = singleOnly ? 1 : nch;
+
     // Gather the requested channels into a contiguous channel-major buffer
     // (each channel's samples consecutive) for whitening and the estimator.
-    std::vector<double> block(static_cast<std::size_t>(nch) * nSamples);
-    for (int r = 0; r < nch; ++r) {
-        const int c = channels[r];
+    std::vector<double> block(static_cast<std::size_t>(nGather) * nSamples);
+    for (int r = 0; r < nGather; ++r) {
+        const int c = singleOnly ? channels[fftRow] : channels[r];
         double* dst = block.data() + static_cast<std::size_t>(r) * nSamples;
         for (int s = 0; s < nSamples; ++s)
             dst[s] = sampleMajor[static_cast<std::size_t>(s) * nChannels + c];
@@ -253,15 +264,16 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
     // Re-referencing (channel-major, before any decimation), in increasing
     // specificity: common-average reference removes whole-array common mode;
     // reference regression removes one chosen channel from every channel; ZCA
-    // whitening decorrelates what remains. Each is an independent toggle.
-    if (params.car && nch > 1)
-        commonAverageReference(block.data(), nch, nSamples);
-    if (params.refRegress && nch > 1) {
-        const int rr = std::max(0, std::min(params.refChannel, nch - 1));
-        referenceRegress(block.data(), nch, nSamples, rr);
+    // whitening decorrelates what remains. Each is an independent toggle. These
+    // only run when !singleOnly, so they always see the full channel set.
+    if (params.car && nGather > 1)
+        commonAverageReference(block.data(), nGather, nSamples);
+    if (params.refRegress && nGather > 1) {
+        const int rr = std::max(0, std::min(params.refChannel, nGather - 1));
+        referenceRegress(block.data(), nGather, nSamples, rr);
     }
-    if (params.whiten && nch > 1)
-        commonWhiten(block.data(), nch, nSamples, 1e-6);
+    if (params.whiten && nGather > 1)
+        commonWhiten(block.data(), nGather, nSamples, 1e-6);
 
     // Optional anti-aliased decimation: when a high-frequency edge well below
     // Nyquist is selected, low-pass and downsample each channel by M so the
@@ -279,9 +291,9 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
     }
     if (decM > 1) {
         const int nDec = nSamples / decM;
-        std::vector<double> decBlock(static_cast<std::size_t>(nch) * nDec);
+        std::vector<double> decBlock(static_cast<std::size_t>(nGather) * nDec);
         std::vector<double> chDec;
-        for (int r = 0; r < nch; ++r) {
+        for (int r = 0; r < nGather; ++r) {
             decimate(block.data() + static_cast<std::size_t>(r) * nSamples,
                      nSamples, decM, chDec);
             const int cn = std::min<int>(nDec, static_cast<int>(chDec.size()));
@@ -310,7 +322,7 @@ const SpectralImage& SpectralEngine::compute(const double* sampleMajor,
         const int nfftReq = std::max((decM > 1) ? params.nfft / decM : params.nfft, effN);
         RealFftPlan plan(nfftReq);                // effective size from the plan
         const int effNfft = plan.nfft();
-        int ch = std::max(0, std::min(params.singleChannel, nch - 1));
+        int ch = singleOnly ? 0 : fftRow;
         const double* sig = block.data() + static_cast<std::size_t>(ch) * effNSamples;
 
         std::vector<std::vector<double>> sg;
