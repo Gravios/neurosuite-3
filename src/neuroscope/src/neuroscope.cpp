@@ -55,6 +55,8 @@
 #include "neuroscopedoc.h"
 #include "channelpalette.h"
 #include "spectralinspector.h"
+#include "spectralview.h"
+#include <QShortcut>
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "propertiesdialog.h"
@@ -698,6 +700,21 @@ void NeuroscopeApp::initItemPanel(){
     spectralInspector = new SpectralInspector(nullptr, this);
     paletteTabsParent->addTab(spectralInspector, tr("Spectral"));
     paletteTabsParent->hide();
+
+    // "u" commits the pending spectral parameter/window change and recomputes.
+    // Scoped to the whole window (not a sub-widget) so it works wherever focus
+    // happens to be - the spectral view itself takes no focus (BaseFrame is
+    // NoFocus) and the inspector panel is often hidden, so a widget-scoped
+    // shortcut would silently miss. Routed to the active display's view, so it
+    // follows whichever spectrogram is in front. Text fields reclaim "u" via the
+    // shortcut-override they already send, so typing is unaffected.
+    QShortcut* spectralCommit = new QShortcut(QKeySequence(Qt::Key_U), this);
+    spectralCommit->setContext(Qt::WindowShortcut);
+    connect(spectralCommit, &QShortcut::activated, this, [this]{
+        NeuroscopeView* v = activeView();
+        if(v && v->isSpectralMode() && v->spectralView())
+            v->spectralView()->commitNow();
+    });
 }
 void NeuroscopeApp::executePreferencesDlg(){
     if(prefDialog == nullptr){

@@ -184,14 +184,6 @@ SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
 
     // Bind (or disable when null).
     setView(initialView);
-
-    // "u" commits any pending parameter change on the bound view. The inspector
-    // now lives outside the trace widget (in the channel-selection panel), so
-    // the trace widget's own "u" shortcut no longer reaches it; this one fires
-    // while the inspector or one of its controls has focus.
-    QShortcut* commit = new QShortcut(QKeySequence(Qt::Key_U), this);
-    commit->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(commit, &QShortcut::activated, this, [this]{ if(view) view->commitNow(); });
 }
 
 void SpectralInspector::reloadFromView()

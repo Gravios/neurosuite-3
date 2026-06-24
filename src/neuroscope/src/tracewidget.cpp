@@ -65,14 +65,6 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     currentChannels = channelsToDisplay;
 
     // "u" applies any pending spectral parameter change (manual update mode).
-    // Scoped to this widget and its children, so it fires while the spectral
-    // inspector or view has focus, and only acts in spectral mode.
-    QShortcut* commitShortcut = new QShortcut(QKeySequence(Qt::Key_U), this);
-    commitShortcut->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(commitShortcut, &QShortcut::activated, this, [this]() {
-        if (spectralView && spectralMode) spectralView->commitNow();
-    });
-
     // Left / Right arrows scroll the time window by a quarter of its width.
     // Scoped to this widget and its children; text fields keep the keys for
     // cursor movement (they accept the shortcut override), so only the data
