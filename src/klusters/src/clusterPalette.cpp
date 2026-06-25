@@ -372,7 +372,13 @@ ClusterPalette::~ClusterPalette()
 // must be consulted everywhere the palette maps a row to a cluster id, so the
 // displayed list and the id lookups always agree.
 ItemColors& ClusterPalette::boundColors() const {
-    return showsChildScope ? doc->clusterColors() : doc->parentClusterColors();
+    // The child palette must bind to the CHILD list specifically, not the
+    // ACTIVE list (doc->clusterColors()).  The active list is the child list
+    // only while a child is selected; with no child selected it is the parent
+    // list, which is shorter.  Item INDEX roles are positions in the child
+    // list, so indexing them into the parent list (e.g. on hover via
+    // slotOnItem -> itemId(INDEX)) walks off the end and segfaults.
+    return showsChildScope ? doc->childClusterColors() : doc->parentClusterColors();
 }
 
 void ClusterPalette::createClusterList(KlustersDoc* document){
