@@ -1456,35 +1456,14 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         // ── Tab / Shift+Tab ─────────────────────────────────────────────────
         // Cycle: cluster list  →  tab area (single stop, Overview if entering)
         //        →  toolbar fields  →  (wrap)
-        if(ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab){
-            buildFocusZones();
-            if(focusZones.isEmpty()) return QWidget::eventFilter(object, event);
-
-            // Locate which zone currently holds focus.
-            QWidget* focused = QApplication::focusWidget();
-            int currentZone = -1;
-
-            if(focused){
-                for(int z = 0; z < focusZones.size() && currentZone < 0; ++z){
-                    QObject* w = focused;
-                    while(w){
-                        if(w == focusZones[z]){ currentZone = z; break; }
-                        w = w->parent();
-                    }
-                }
-            }
-
-            const int n = focusZones.size();
-            int next;
-            if(ke->key() == Qt::Key_Tab)
-                next = (currentZone < 0) ? 0 : (currentZone + 1) % n;
-            else
-                next = (currentZone < 0) ? n - 1 : (currentZone - 1 + n) % n;
-
-            QWidget* target = focusZones[next];
-
-            // Focus the cluster list or toolbar field directly.
-            target->setFocus(Qt::TabFocusReason);
+        // Ctrl+Shift+Left/Right cycles keyboard focus across the focus ring
+        // (cluster palette, child palettes A/B when shown, toolbar spinboxes).
+        // This replaces the former Tab cycling.  Placed before the Left/Right
+        // tab-display handler so it is not swallowed as a tab switch.
+        if((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right)
+           && (ke->modifiers() & Qt::ControlModifier)
+           && (ke->modifiers() & Qt::ShiftModifier)){
+            cycleHierarchyFocus(ke->key() == Qt::Key_Right);
             return true;
         }
 
@@ -1653,27 +1632,25 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
 
 void KlustersApp::buildFocusZones()
 {
-    // Tab/Shift+Tab stops:
-    //   1. Cluster list (left panel)
-    //   2. Toolbar spinboxes / line-edits (left-to-right order)
-    // The tab-display area is intentionally excluded so Tab never
-    // moves focus inside the waveform/scatter/correlation views.
+    // Ctrl+Shift+Left/Right focus ring:
+    //   1. Cluster (parent) palette
+    //   2. Child palettes A and B (only while the hierarchical view is shown)
+    //   3. Toolbar spinboxes / line-edits (left-to-right order)
+    // The tab-display area is intentionally excluded so focus never lands
+    // inside the waveform/scatter/correlation views.
     focusZones.clear();
 
     // 1. Cluster list
     if(clusterPanel && clusterPanel->isVisible() && clusterPalette)
         focusZones.append(clusterPalette);
 
-    // Hierarchical (dual child) view: Tab cycles the three palettes only --
-    // parent -> A -> B -> parent -- so the user can drive pairwise child edits
-    // without Tab wandering into the toolbar.
+    // 2. Child palettes A / B
     if(childPanel && childPanel->isVisible()){
         if(childPaletteA) focusZones.append(childPaletteA);
         if(childPaletteB) focusZones.append(childPaletteB);
-        return;
     }
 
-    // 2. Toolbar fields only
+    // 3. Toolbar fields only
     if(paramBar){
         const QList<QAction*> actions = paramBar->actions();
         for(QAction* a : actions){
@@ -3586,6 +3563,26 @@ QList<int> KlustersApp::selectedChildrenAB() const {
 void KlustersApp::refreshChildUndoActions(){
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc && doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc && doc->childRedoCount() > 0);
+}
+
+void KlustersApp::cycleHierarchyFocus(bool forward){
+    // Cycle focus across the full ring: cluster palette, child palettes A/B
+    // (when shown), then the toolbar spinboxes/line-edits.  Mirrors the focus
+    // logic formerly bound to Tab.
+    buildFocusZones();
+    if(focusZones.isEmpty()) return;
+    QWidget* focused = QApplication::focusWidget();
+    int cur = -1;
+    if(focused){
+        for(int z = 0; z < focusZones.size() && cur < 0; ++z){
+            for(QObject* w = focused; w; w = w->parent())
+                if(w == focusZones[z]){ cur = z; break; }
+        }
+    }
+    const int n = focusZones.size();
+    const int nextI = (cur < 0) ? (forward ? 0 : n - 1)
+                                : (forward ? (cur + 1) % n : (cur - 1 + n) % n);
+    focusZones[nextI]->setFocus(Qt::TabFocusReason);
 }
 
 // Ctrl-arrow / M hierarchy operations, dispatched by selection state while the
@@ -7651,7 +7648,7 @@ void KlustersApp::slotShowShortcutHelp()
                                "Next / previous spike (in trace view)"},
         }},
         {"Hierarchical view (.clc child layer)", {
-            {"Tab",            "Cycle focus: parent \u2192 A \u2192 B palette"},
+            {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle focus: palettes (parent / A / B) + toolbar fields"},
             {"S",              "Mark focused palette's item (parent or child)"},
             {"Esc",            "Return focus from a child palette to the parent"},
             {"M",              "Merge (adaptive): children \u2192 one child; else fold fiber / parents"},
