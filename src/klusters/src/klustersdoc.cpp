@@ -1321,6 +1321,13 @@ void KlustersDoc::resyncStraddlingAtoms(){
             childData->moveSpikeSubset(a.key(), p.value(), newAtom, fromC, emptied);
         }
     }
+    // A parent split re-cut the child layer with moveSpikeSubset (which does NOT
+    // push a childData undo level), so any ChildEdit already on the atom-undo stack
+    // now points at a snapshot taken before this re-cut; reverting it would restore
+    // a stale child state.  Drop the atom-undo history: the parent split is a new
+    // baseline for the child layer (its own undo is on the parent Ctrl+Z timeline).
+    childUndoStack.clear();
+    childRedoStack.clear();
     // Always refresh: even atoms that did not straddle may now sit under a new
     // parent id (the split-off fiber), which rebuildHierarchyFromData re-derives.
     syncChildColors();
@@ -2310,10 +2317,18 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // atom is a sibling under the SAME parent.  Refresh the child layer and let
         // the child palette select + focus the new sibling.
         const int newAtom = static_cast<int>(newClusterId);
+        // Child split is one self-snapshotting childData edit (Data::createNewCluster
+        // calls prepareUndo once) -> one ChildEdit on the atom-undo timeline, so
+        // Ctrl+Shift+Z reverts it: 'added' is removed and the sources restored.
+        ChildEdit e; e.added = { newAtom }; e.modified = fromClusters; e.deleted = emptyClusters;
+        childUndoStack.prepend(e);
+        childRedoStack.clear();
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
         emit hierarchyChildrenCreated(QList<int>{newAtom});
+        lastEditLayer = EditLayer::Atom;
+        modified = true;
         logAfter(QList<int>{newAtom});
     }
     else{
@@ -2391,10 +2406,18 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         // Child split: the new atoms are siblings under the same parent(s).
         // Refresh the child layer and let the child palette select + focus them.
         std::sort(newClusters.begin(), newClusters.end());
+        // Child split: one self-snapshotting childData edit (Data::createNewClusters
+        // calls prepareUndo once, even for several new atoms) -> one ChildEdit, so
+        // Ctrl+Shift+Z reverts the whole split in a single step.
+        ChildEdit e; e.added = newClusters; e.modified = fromClusters; e.deleted = emptyClusters;
+        childUndoStack.prepend(e);
+        childRedoStack.clear();
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
         emit hierarchyChildrenCreated(newClusters);
+        lastEditLayer = EditLayer::Atom;
+        modified = true;
         logAfter(newClusters);
     }
     else{
@@ -3833,9 +3856,17 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     const bool reclusterWasChild = (reclusterTarget && reclusterTarget == childData);
     reclusterTarget = nullptr;
     if (reclusterWasChild){
+        // integrateReclusteredClusters self-snapshotted childData once -> one
+        // ChildEdit so Ctrl+Shift+Z reverts the child recluster: the new atoms are
+        // removed and the reclustered source atoms restored from the snapshot.
+        ChildEdit e; e.added = reclusteredClusterList; e.deleted = clustersToRecluster;
+        childUndoStack.prepend(e);
+        childRedoStack.clear();
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
+        lastEditLayer = EditLayer::Atom;
+        modified = true;
         return;
     }
 
@@ -3954,6 +3985,12 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
             for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it)
                 childData->moveSpikeSubset(it.key(), it.value(), newAtom, fromC, emptied);
         }
+        // Same as the parent-split case: the mint re-cut the child layer with
+        // moveSpikeSubset (no childData undo level), so prior ChildEdits now point at
+        // a pre-recluster snapshot.  Drop the atom-undo history (the parent recluster
+        // is the child layer's new baseline; its undo is on the parent timeline).
+        childUndoStack.clear();
+        childRedoStack.clear();
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
