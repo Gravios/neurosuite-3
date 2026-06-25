@@ -515,7 +515,10 @@ public:
 
     private:
         Iterator(dataType clusterId, const Data& d):data(d),clusterId(clusterId){
-            ClusterInfo clusterInfo = (*data.clusterInfoMap)[clusterId];
+            // value() (not operator[]) so an unknown cluster id is not inserted
+            // into the map; combined with ClusterInfo's zero-init default this
+            // yields an empty, crash-safe span for ids absent from this Data.
+            ClusterInfo clusterInfo = data.clusterInfoMap->value(clusterId);
             index = clusterInfo.firstSpikePosition();
             lastIndex = index + clusterInfo.nbSpikes() - 1;
         }
@@ -1013,8 +1016,14 @@ private:
          void setNotes(const QString& pNotes) { notes = pNotes; }
 
     private:
-        dataType position;
-        dataType spikeNb;
+        // Zero-initialised so a default-constructed ClusterInfo — e.g. the one
+        // QMap returns/inserts for a missing cluster id — has a benign empty
+        // span (firstSpikePosition 0, nbSpikes 0) instead of garbage.  Without
+        // this, iterating a cluster id absent from the active clustering (which
+        // happens transiently when the parent<->child active clustering is
+        // switched) reads spikesByCluster/features out of bounds and segfaults.
+        dataType position = 0;
+        dataType spikeNb = 0;
 
         QString		structure;
         QString		type;
