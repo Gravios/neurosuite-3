@@ -22,6 +22,7 @@
 #include "klusters.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
+#include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include "reorder_similarity_dispatch.h"
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
@@ -1957,7 +1958,7 @@ void KlustersApp::openDocumentFile(const QString& url)
         if(returnStatus == KlustersDoc::INCORRECT_FILE)
         {
             QApplication::restoreOverrideCursor();
-            QMessageBox::critical (this, tr("Error!"), tr("The selected file is invalid, it has to be of the form baseName.clu.n, baseName.fet.n, or baseName.par.n — optionally followed by an experiment tag (e.g. baseName.clu.n.stack)."));
+            QMessageBox::critical (this, tr("Error!"), tr("The selected file is invalid, it has to be of the form baseName.clu.n, baseName.clc.n, baseName.fet.n, or baseName.par.n — optionally followed by an experiment tag (e.g. baseName.clu.n.stack)."));
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             //close the document
             doc->closeDocument();
@@ -2062,25 +2063,19 @@ void KlustersApp::openDocumentFile(const QString& url)
         QFileInfo urlFileInfo(url);
         QStringList fileParts = urlFileInfo.fileName().split(".", Qt::SkipEmptyParts);
 
-        // Same scan-from-end parser as KlustersDoc::openDocument so tagged
-        // .clu filenames (chain-of-custody <base>.clu.<method>.<grp>[.suffix])
-        // resolve to the canonical `baseName-group` document name and the
-        // "already-open" check succeeds.  The method token (between the type
-        // token and the integer group) and any post-group suffix are skipped
-        // for the document-name comparison.
-        static const QStringList kTypeTokens = {
-            QStringLiteral("clu"), QStringLiteral("fet"),
-            QStringLiteral("spk"), QStringLiteral("par"),
-        };
-        qsizetype typeIdx = -1;
-        for (qsizetype probe = 2; probe <= 5 && probe <= fileParts.count(); ++probe) {
-            const qsizetype idx = fileParts.count() - probe;
-            if (idx < 1) break;  // baseName needs at least parts[0]
-            if (kTypeTokens.contains(fileParts[idx])) { typeIdx = idx; break; }
-        }
+        // Parse via the shared custody policy so a tagged anchor
+        // (<base>.<type>[.<method>].<grp>[.<suffix>], including .clc children)
+        // maps to the same canonical `baseName-group` document name as
+        // KlustersDoc::openDocument and the already-open check succeeds.  The
+        // method token and any post-group suffix are not part of the name.
+        const neurosuite::custody::Anchor anchor =
+            neurosuite::custody::parseAnchor(urlFileInfo.fileName().toStdString());
         QString electrodNb;
         QString baseName;
-        if (typeIdx < 0) {
+        if (anchor.ok) {
+            baseName   = QString::fromStdString(anchor.base);
+            electrodNb = QString::number(anchor.group);
+        } else {
             // Fall back to legacy behaviour (no recognised type token) so an
             // invalid filename still doesn't crash; the slotFileOpenRecent
             // path will print the usual "invalid filename" error downstream.
@@ -2091,18 +2086,6 @@ void KlustersApp::openDocumentFile(const QString& url)
             baseName = fileParts[0];
             for (qsizetype i = 1; i < fileParts.count()-2; ++i)
                 baseName += "." + fileParts[i];
-        } else {
-            baseName = fileParts[0];
-            for (qsizetype i = 1; i < typeIdx; ++i)
-                baseName += "." + fileParts[i];
-            // After the type token: [.<method>].<grp>[.<suffix>].  Skip the
-            // method token (non-integer) to reach the integer group.
-            qsizetype grpIdx = typeIdx + 1;
-            bool nextIsInt = false;
-            (void)fileParts[typeIdx + 1].toInt(&nextIsInt);
-            if (!nextIsInt && typeIdx + 2 < fileParts.count())
-                grpIdx = typeIdx + 2;
-            electrodNb = fileParts[grpIdx];
         }
         QString name = urlFileInfo.absolutePath() + QDir::separator() + baseName + "-" + electrodNb;
 
@@ -2283,7 +2266,7 @@ void KlustersApp::slotFileOpen()
 
     QSettings settings;
     const QString url=QFileDialog::getOpenFileName(this, tr("Open File..."), settings.value("CurrentDirectory").toString(),
-                                             tr("Feature File (*.fet.*);;Cluster File (*.clu.*);;Spike File (*.spk.*);;Specific Parameter File (*.par.*);;All files (*.*)"));
+                                             tr("Feature File (*.fet.*);;Cluster File (*.clu.*);;Cluster Children File (*.clc.*);;Spike File (*.spk.*);;Specific Parameter File (*.par.*);;All files (*.*)"));
     if(!url.isEmpty())
     {
         QDir CurrentDir;

@@ -15,6 +15,7 @@
 #
 # ── classify ────────────────────────────────────────────────────────────────
 classify	clu	MethodSpecific
+classify	clc	MethodSpecific
 classify	fet	MethodSpecific
 classify	pca	MethodSpecific
 classify	col	MethodSpecific
@@ -29,6 +30,7 @@ classify	yaml	SessionWide
 classify	par	SessionWide
 # ── method_of ───────────────────────────────────────────────────────────────
 method_of	sess.clu.stderiv.5	stderiv
+method_of	sess.clc.stderiv.5	stderiv
 method_of	sess.spk.standard.5	standard
 method_of	sess.clu.sdiff.12	sdiff
 method_of	sess.spk.5	
@@ -38,6 +40,8 @@ method_of	sess.fil
 method_of	sess	
 # ── parse_anchor ────────────────────────────────────────────────────────────
 parse_anchor	sess.clu.stderiv.5	sess	clu	stderiv	5		1
+parse_anchor	sess.clc.stderiv.5.microfiber	sess	clc	stderiv	5	microfiber	1
+parse_anchor	sess.clc.7	sess	clc		7		1
 parse_anchor	sess.clu.5	sess	clu		5		1
 parse_anchor	sess.clu.stderiv.5.drift	sess	clu	stderiv	5	drift	1
 parse_anchor	exp.v2.clu.sdiff.8	exp.v2	clu	sdiff	8		1

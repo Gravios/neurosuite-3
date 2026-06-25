@@ -12,7 +12,7 @@
 #             SessionWide    (fil/dat/xml/yaml/par/...)   — <base>.<type>
 
 NDM_DEFAULT_METHOD=standard
-_NDM_PERGROUP=" res spk clu fet pca col model klg "
+_NDM_PERGROUP=" res spk clu clc fet pca col model klg "
 _NDM_SESSIONWIDE=" fil dat xml yaml nrs par eeg lfp "
 
 ndm_is_per_group_type()    { case "$_NDM_PERGROUP"    in *" $1 "*) return 0;; esac; return 1; }

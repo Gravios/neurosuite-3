@@ -25,6 +25,7 @@
 //include files for the application
 #include "clustersprovider.h"
 #include "timer.h"
+#include <neurosuite/core/custody.hpp>   // shared anchor parser (clu/clc/...)
 
 
 ClustersProvider::ClustersProvider(const QString& fileUrl,double samplingRate,double currentSamplingRate,Data& clusteringData,dataType dataFileMaxTime)
@@ -36,16 +37,24 @@ ClustersProvider::ClustersProvider(const QString& fileUrl,double samplingRate,do
 
     clusterPosition = 0.25;
 
-    //Find the cluster file number and use it as the name for the provider
-    //the file name can be X.clu.n or X.n.clu
+    //Name the provider by its electrode group.  Parse via the shared custody
+    //anchor (handles <X>.clu.<grp>, <X>.clc.<method>.<grp>[.<suffix>], legacy
+    //<X>.<grp>.clu) instead of a hand-rolled "clu" search that would miss .clc.
     QString fileName = fileUrl;
-    int startingIndex = fileName.lastIndexOf("clu");
-    if (startingIndex == static_cast<int>(fileName.length()) - 3) {//X.n.clu
-        int nBStartingIndex = fileName.lastIndexOf(".",startingIndex - 2);
-        name = fileName.mid(nBStartingIndex + 1,(startingIndex - 1) - (nBStartingIndex + 1));
-    } else {//X.clu.n
-        const int nBStartingIndex = fileName.lastIndexOf(".");
-        name = fileName.right(static_cast<int>(fileName.length()) - (nBStartingIndex + 1));
+    const neurosuite::custody::Anchor a =
+        neurosuite::custody::parseAnchor(fileName.toStdString());
+    if (a.ok) {
+        name = QString::number(a.group);
+    } else {
+        int startingIndex = fileName.lastIndexOf("clu");
+        if (startingIndex < 0) startingIndex = fileName.lastIndexOf("clc");
+        if (startingIndex == static_cast<int>(fileName.length()) - 3) {//X.n.clu
+            int nBStartingIndex = fileName.lastIndexOf(".",startingIndex - 2);
+            name = fileName.mid(nBStartingIndex + 1,(startingIndex - 1) - (nBStartingIndex + 1));
+        } else {//X.clu.n
+            const int nBStartingIndex = fileName.lastIndexOf(".");
+            name = fileName.right(static_cast<int>(fileName.length()) - (nBStartingIndex + 1));
+        }
     }
 
     nbOfDimensions = clusteringData.nbOfDimensions();
