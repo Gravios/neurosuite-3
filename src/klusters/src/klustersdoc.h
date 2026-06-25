@@ -323,6 +323,11 @@ public:
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
      *  separate map-undo stack. */
     void rebuildHierarchyFromData();
+    /** After a PARENT edit that moved spikes across fiber boundaries (a manual
+     *  polygon split), carve only the child atoms that now straddle two or more
+     *  parents so every parent regains whole atoms; atoms wholly inside one
+     *  parent are left intact (a split must not collapse untouched children). */
+    void resyncStraddlingAtoms();
     /** Overwrite the .clc and .clp siblings (with .bak) from the current child
      *  layer + child->parent map.  Called by saveDocument when a child
      *  clustering is loaded. */
