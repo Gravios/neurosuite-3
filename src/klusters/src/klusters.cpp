@@ -3513,8 +3513,17 @@ void KlustersApp::slotPromoteChildren(){
         statusBar()->showMessage(tr("Select one or more children to promote."), 4000);
         return;
     }
-    for(int c : kids)
-        doc->promoteChild(c, *activeView());   // each is one undo step
+    QList<int> newParents;
+    for(int c : kids){
+        const int p = doc->promoteChild(c, *activeView());   // each is one undo step
+        if(p > 0) newParents.append(p);
+    }
+    // The new fibers inherit focus: select them in the main palette and give it
+    // list focus so the curator continues from the just-promoted parents.
+    if(!newParents.isEmpty() && clusterPalette){
+        clusterPalette->selectItems(newParents);
+        clusterPalette->setFocusToList();
+    }
 }
 
 void KlustersApp::slotMoveChildrenToFiber(){
