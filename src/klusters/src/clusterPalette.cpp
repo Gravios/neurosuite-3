@@ -411,8 +411,8 @@ void ClusterPalette::updateClusterList(){
             swatchCache.insert(swatchKey, pix);
         }
         const int curId = clusterColors.itemId(i);
-        if(doc->isMasked(curId))
-            continue;   // masking: masked clusters are omitted from the active list
+        if(doc->isMasked(curId) || doc->isChildScopeHidden(curId))
+            continue;   // masking + hierarchical child-scope: omit from the active list
         QString clusterText = QString::fromLatin1("%1").arg(curId);
 
         if(isInUserClusterInfoMode){

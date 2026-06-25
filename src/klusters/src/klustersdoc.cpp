@@ -266,6 +266,10 @@ void KlustersDoc::closeDocument(){
         clusteringData = nullptr;
         delete clusterColorList;
         clusterColorList = nullptr;
+        // hierarchical (.clc) child clustering, if it was loaded
+        delete childData;       childData = nullptr;
+        delete childColorList;  childColorList = nullptr;
+        activeData = nullptr;   activeColorList = nullptr;
         delete addedClusters;
         addedClusters = nullptr;
         delete modifiedClusters;
@@ -316,6 +320,8 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     //Initialize the members specific to a document
     clusteringData = new Data();
     clusterColorList = new ItemColors();
+    activeData = clusteringData;          // views render the parent until a child is shown
+    activeColorList = clusterColorList;
     addedClusters = new QList<int>();
     modifiedClusters = new QList<int>();
     deletedClusters = new QList<int>();
@@ -592,6 +598,31 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         endAutoSaving = false;
         autoSaveThread = new AutoSaveThread(*clusteringData,this,cluFileSaveUrl);
         autoSaveThread->start();
+    }
+
+    // ── hierarchical view: detect an optional .clc child sibling ─────────────
+    // The .clc holds the microfiber / pure-shape children of these units (same
+    // .res alignment).  Loaded lazily when the user enables hierarchical view;
+    // here we only resolve its path (via custody) and capture the sibling paths
+    // needed to re-read it into a second Data.  A fresh open also clears any
+    // child clustering left over from a previously opened document.
+    if (childData){ delete childData; childData = nullptr; }
+    if (childColorList){ delete childColorList; childColorList = nullptr; }
+    activeData = clusteringData; activeColorList = clusterColorList;
+    parentToChildren.clear(); childToParent.clear(); childScopeVisible.clear();
+    childScopeActive = false;
+    siblingFetPath       = fetFileUrl;
+    siblingSpkPath       = spikeFilePath;
+    siblingYamlPath      = yamlParFileUrl;
+    siblingSpkFileLength = spkFileLength;
+    siblingYamlForm      = isYamlParExist;
+    clcSiblingPath.clear();
+    if (isYamlParExist) {
+        const QString clc = resolveFeature(
+            urlFileInfo.absolutePath() + QDir::separator() + baseName,
+            "clc", electrodeGroupID, sessionMethod);
+        if (QFile::exists(clc))
+            clcSiblingPath = clc;
     }
 
     // Establish the four permanent pending files so the originals are never
@@ -1056,26 +1087,152 @@ void KlustersDoc::singleColorUpdate(int clusterId,KlustersView& activeView){
 }
 
 
+// ── hierarchical (.clc child) clustering ─────────────────────────────────────
+
+void KlustersDoc::setActiveClustering(bool child){
+    if (child && childData){
+        activeData       = childData;
+        activeColorList  = childColorList;
+        childScopeActive = true;
+    } else {
+        activeData       = clusteringData;
+        activeColorList  = clusterColorList;
+        childScopeActive = false;
+    }
+}
+
+void KlustersDoc::buildHierarchyMaps(){
+    parentToChildren.clear();
+    childToParent.clear();
+    if (!clusteringData || clcSiblingPath.isEmpty()) return;
+
+    // Read the aligned per-spike parent (.clu == docUrl) and child (.clc) id
+    // arrays directly; both are binary clu-format aligned to the same .res.
+    const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    const neurofileio::CluFile par = neurofileio::readCluBinary(docUrl.toStdString(), nSpikes);
+    const neurofileio::CluFile chi = neurofileio::readCluBinary(clcSiblingPath.toStdString(), nSpikes);
+    if (!par.ok || !chi.ok || par.ids.size() != chi.ids.size()){
+        qWarning() << "[hierarchy] could not read aligned .clu/.clc; hierarchy maps empty";
+        return;
+    }
+
+    // child -> parent must be a function (nesting invariant): each child id is
+    // owned by exactly one parent.  A violation means the .clc is not nested in
+    // the .clu; we keep the first-seen owner and warn rather than silently merge.
+    bool nestingViolation = false;
+    const std::size_t n = par.ids.size();
+    for (std::size_t i = 0; i < n; ++i){
+        const int p = par.ids[i];
+        const int c = chi.ids[i];
+        const auto existing = childToParent.constFind(c);
+        if (existing != childToParent.constEnd()){
+            if (existing.value() != p) nestingViolation = true;
+        } else {
+            childToParent.insert(c, p);
+            parentToChildren[p].append(c);
+        }
+    }
+    if (nestingViolation)
+        qWarning() << "[hierarchy] .clc is not nested in .clu (a child id spans "
+                      "multiple parents); kept first-seen parent for each child.";
+
+    for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
+        QList<int>& kids = it.value();
+        std::sort(kids.begin(), kids.end());
+        kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
+    }
+}
+
+bool KlustersDoc::loadChildClustering(QString& errorInformation){
+    if (childData) return true;                        // already loaded
+    if (clcSiblingPath.isEmpty() || !siblingYamlForm){
+        errorInformation = tr("Hierarchical view needs a YAML-form .clc child file "
+                              "next to the opened .clu.");
+        return false;
+    }
+    QFile fetFile(siblingFetPath);
+    QFile clcFile(clcSiblingPath);
+    QFile yamlParFile(siblingYamlPath);
+    if (!fetFile.open(QIODevice::ReadOnly) || !clcFile.open(QIODevice::ReadOnly)
+        || !yamlParFile.open(QIODevice::ReadOnly)){
+        errorInformation = tr("Cannot open the .clc child siblings.");
+        if (fetFile.isOpen())     fetFile.close();
+        if (clcFile.isOpen())     clcFile.close();
+        if (yamlParFile.isOpen()) yamlParFile.close();
+        return false;
+    }
+    // Second Data over the SAME fet/spk/par, with the .clc as the cluster file.
+    // (v1 re-reads the feature/spike arrays; they could later be shared with the
+    // parent to halve memory.)
+    childData = new Data();
+    const bool ok = childData->initialize(
+        fetFile, clcFile, siblingSpkFileLength, siblingSpkPath,
+        yamlParFile, electrodeGroupID.toInt(), errorInformation);
+    yamlParFile.close(); fetFile.close(); clcFile.close();
+    if (!ok){
+        delete childData; childData = nullptr;
+        return false;
+    }
+    // Colour list for the child clusters (same HSV scheme as the parent build).
+    childColorList = new ItemColors();
+    const QList<dataType> kids = childData->clusterIds();
+    for (dataType id : kids){
+        QColor color;
+        if (id == 1) color.setHsv(0,0,220);
+        else color.setHsv(static_cast<int>(fmod(static_cast<double>(id)*7,36))*10,200,255);
+        childColorList->append(static_cast<int>(id), color);
+    }
+    buildHierarchyMaps();
+    return true;
+}
+
+QList<int> KlustersDoc::childrenOf(const QList<int>& parents) const{
+    QList<int> out;
+    for (int p : parents){
+        const auto it = parentToChildren.constFind(p);
+        if (it != parentToChildren.constEnd()) out += it.value();
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+void KlustersDoc::setChildScope(const QList<int>& visibleChildren){
+    childScopeVisible = QSet<int>(visibleChildren.begin(), visibleChildren.end());
+}
+
+bool KlustersDoc::isChildScopeHidden(int clusterId) const{
+    if (!childData) return false;
+    if (!childToParent.contains(clusterId)) return false;   // parent id: never hidden here
+    return !childScopeVisible.contains(clusterId);
+}
+
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersView& activeView){
-    if(clusterColorList->isColorChanged()){
+    // Use the colours of whichever clustering is active (parent or child).
+    ItemColors* colors = activeColorList ? activeColorList : clusterColorList;
+    if(colors->isColorChanged()){
         //Notify all the views of the modification
 
         for (KlustersView* view : *viewList)
             view->updateColors(view == &activeView);
 
         //Reset the color status in clusterColors
-        clusterColorList->resetAllColorStatus();
+        colors->resetAllColorStatus();
 
-        //Update the palette of clusters
-        clusterPalette.updateClusterList();
-        clusterPalette.selectItems(clustersToShow);
+        //Update the palette of clusters -- only for the parent clustering; the
+        //child palette is rebuilt explicitly by the app, never from here (which
+        //would otherwise overwrite the parent palette with child data).
+        if(!childScopeActive){
+            clusterPalette.updateClusterList();
+            clusterPalette.selectItems(clustersToShow);
+        }
     }
 
     //The new selection of clusters only means for the active view
     activeView.shownClustersUpdate(clustersToShow);
 
     //update the TraceView if any
-    activeView.updateTraceView(electrodeGroupID,clusterColorList,true);
+    activeView.updateTraceView(electrodeGroupID,colors,true);
 }
 
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){

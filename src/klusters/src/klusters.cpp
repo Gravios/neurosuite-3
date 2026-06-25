@@ -101,6 +101,7 @@
 #include <QKeySequence>
 #include <QShortcut>  // (kept for potential future use; J/K/X removed 2026-04)
 #include <QFileDialog>
+#include <QSignalBlocker>
 #include <QTime>
 #include <QSettings>
 
@@ -235,7 +236,13 @@ void KlustersApp::initView()
 {
     initClusterPanel();
     QSplitter *splitter = new QSplitter;
-    splitter->addWidget(clusterPanel);
+    // Stack the main cluster palette over the (hidden) child palette so the
+    // hierarchical view appears directly below it.
+    QSplitter *clusterStack = new QSplitter(Qt::Vertical);
+    clusterStack->setChildrenCollapsible(false);
+    clusterStack->addWidget(clusterPanel);
+    clusterStack->addWidget(childPanel);
+    splitter->addWidget(clusterStack);
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
     // Prevent the QTabWidget frame itself from ever holding keyboard focus.
@@ -707,6 +714,12 @@ void KlustersApp::createMenus()
 
     //Displays menu
     QMenu *displayMenu = menuBar()->addMenu(tr("&Displays"));
+    mHierarchicalView = displayMenu->addAction(tr("Show Child Clusters (.clc)"));
+    mHierarchicalView->setCheckable(true);
+    mHierarchicalView->setChecked(false);
+    mHierarchicalView->setEnabled(false);   // enabled on open iff a .clc sibling exists
+    connect(mHierarchicalView, &QAction::toggled, this, &KlustersApp::slotHierarchicalViewToggled);
+    displayMenu->addSeparator();
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");
     newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
     connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
@@ -833,6 +846,7 @@ void KlustersApp::createMenus()
     //Custom connections
     connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
     connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
+    connect(childPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::groupClusters), this, &KlustersApp::slotGroupClusters);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToNoise), this, &KlustersApp::slotMoveClustersToNoise);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToArtefact), this, &KlustersApp::slotMoveClustersToArtefact);
@@ -1642,6 +1656,15 @@ void KlustersApp::initClusterPanel()
     clusterPanel->setWidget(clusterPalette);
     clusterPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
     clusterPanel->hide();
+
+    // Hierarchical view: a second palette listing the children (.clc microfibers)
+    // of the unit(s) selected in the main palette.  Hidden until the View-menu
+    // toggle enables it; stacked directly below the main palette in initView().
+    childPanel = new QDockWidget(tr("Child clusters (.clc)"),nullptr);
+    childPalette = new ClusterPalette(backgroundColor,childPanel,statusBar(),"ChildClusterPalette");
+    childPanel->setWidget(childPalette);
+    childPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    childPanel->hide();
 }
 
 void KlustersApp::initDisplay(){
@@ -1727,6 +1750,16 @@ void KlustersApp::initDisplay(){
     //Create the cluster list and select the clusters which will be drawn
     clusterPalette->createClusterList(doc);
     clusterPalette->selectItems(*clusterList);
+
+    // Hierarchical view starts off; enable the toggle only when the opened
+    // document has a .clc child sibling (auto-detected in KlustersDoc::openDocument).
+    if(childPanel) childPanel->hide();
+    if(childPalette) childPalette->reset();
+    if(mHierarchicalView){
+        const QSignalBlocker block(mHierarchicalView);   // don't fire the toggle slot
+        mHierarchicalView->setChecked(false);
+        mHierarchicalView->setEnabled(doc->hasChildSibling());
+    }
 
     // Once the view is shown and the WaveformThread has loaded the first
     // cluster, auto-scale the waveform amplitude. A 350 ms delay is enough
@@ -3239,6 +3272,9 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
     //Trigger ths action only if the active display does not contain a ProcessWidget
     if(!activeView())
         return;
+    // A parent selection always returns the views to the parent clustering; any
+    // child sub-selection is re-applied afterwards via the child palette.
+    if(doc) doc->setActiveClustering(false);
     if(!doesActiveDisplayContainProcessWidget()){
 
         //Update the browsing possibility of the traceView
@@ -3251,6 +3287,61 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
 
         KlustersView* view = activeView();
         doc->shownClustersUpdate(selectedClusters,*view);
+    }
+    // hierarchical view: refresh the child palette for the new parent selection
+    if(childPanel && childPanel->isVisible())
+        repopulateChildPalette(selectedClusters);
+}
+
+void KlustersApp::slotHierarchicalViewToggled(bool on){
+    if(!doc){ if(mHierarchicalView) mHierarchicalView->setChecked(false); return; }
+    if(on){
+        if(!doc->hasChildSibling()){
+            QMessageBox::information(this,tr("Hierarchical view"),
+                tr("No .clc child file was found next to this clustering."));
+            mHierarchicalView->setChecked(false);
+            return;
+        }
+        QString err;
+        if(!doc->loadChildClustering(err)){
+            QMessageBox::critical(this,tr("Hierarchical view"),
+                tr("Could not load the child clustering:\n%1").arg(err));
+            mHierarchicalView->setChecked(false);
+            return;
+        }
+        childPanel->show();
+        repopulateChildPalette(clusterPalette->selectedClusters());
+    } else {
+        childPanel->hide();
+        childPalette->reset();
+        doc->setActiveClustering(false);                 // views back to the parent
+        if(activeView())
+            doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
+    }
+}
+
+void KlustersApp::repopulateChildPalette(const QList<int>& parents){
+    if(!doc || !childPalette || !childPanel || !childPanel->isVisible()) return;
+    const QList<int> kids = doc->childrenOf(parents);
+    // Build the child palette from the child clustering's colours, scoped to the
+    // children of the selected parent(s); then restore the parent as active so
+    // every other part of the app keeps seeing the parent clustering.
+    doc->setActiveClustering(true);
+    doc->setChildScope(kids);
+    childPalette->createClusterList(doc);
+    doc->setActiveClustering(false);
+    // The parent view was already updated by the caller (slotUpdateShownClusters
+    // or the toggle handler); rebuilding the child palette does not re-scope it.
+}
+
+void KlustersApp::slotChildSelectionChanged(const QList<int>& childClusters){
+    if(!doc || !activeView()) return;
+    if(childClusters.isEmpty()){
+        doc->setActiveClustering(false);                 // no child selected -> parent view
+        doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
+    } else {
+        doc->setActiveClustering(true);                  // show the child's spikes (within the parent)
+        doc->shownClustersUpdate(childClusters, *activeView());
     }
 }
 
