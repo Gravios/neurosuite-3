@@ -146,6 +146,15 @@ public:
      *  so it always lists the parent clustering and is never collapsed by a
      *  left-over child-active scope; only the child palette is child-scoped. */
     void setShowsChildScope(bool on){showsChildScope = on;}
+    /** Scope this (child) palette to a specific set of child ids; ids outside the
+     *  set are omitted from the list.  Pass an empty list to scope to nothing
+     *  (an unassigned A/B slot). */
+    void setPaletteScope(const QList<int>& ids){
+        paletteScope = QSet<int>(ids.begin(), ids.end());
+        paletteScoped = true;
+    }
+    /** Drop the scope filter entirely (list every bound cluster). */
+    void clearPaletteScope(){ paletteScope.clear(); paletteScoped = false; }
     void selectItems(const QList<int> &selectedClusters);
 
     /** Rewrite the S-pinned-ids set through a partial cluster-rename map.
@@ -224,6 +233,12 @@ private:
      *  child colour list, the scope filter drops the out-of-scope children, and
      *  the list collapses to only the (un-scoped) noise cluster. */
     bool showsChildScope = false;
+    /** Per-palette child scope: the child ids this palette is allowed to list.
+     *  Each child palette (A / B) carries its OWN scope so the two can display
+     *  different parents' children at once -- the scope is no longer global doc
+     *  state.  Only consulted when showsChildScope and paletteScoped are set. */
+    QSet<int> paletteScope;
+    bool paletteScoped = false;
     /** The colour list this palette is bound to: the parent list for the main
      *  palette, the active (child) list for the child palette. */
     ItemColors& boundColors() const;

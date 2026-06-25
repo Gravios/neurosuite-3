@@ -420,7 +420,7 @@ void ClusterPalette::updateClusterList(){
             swatchCache.insert(swatchKey, pix);
         }
         const int curId = clusterColors.itemId(i);
-        if(doc->isMasked(curId) || (showsChildScope && doc->isChildScopeHidden(curId)))
+        if(doc->isMasked(curId) || (showsChildScope && paletteScoped && !paletteScope.contains(curId)))
             continue;   // masking + hierarchical child-scope: omit from the active list
         QString clusterText = QString::fromLatin1("%1").arg(curId);
 

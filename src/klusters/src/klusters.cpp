@@ -888,7 +888,8 @@ void KlustersApp::createMenus()
     //Custom connections
     connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
     connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
-    connect(childPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
+    connect(childPaletteA, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
+    connect(childPaletteB, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::groupClusters), this, &KlustersApp::slotGroupClusters);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToNoise), this, &KlustersApp::slotMoveClustersToNoise);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToArtefact), this, &KlustersApp::slotMoveClustersToArtefact);
@@ -1334,6 +1335,16 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         return true;
     }
 
+    // Keep the childPalette alias pointing at whichever child palette (A/B) most
+    // recently gained focus -- by keyboard (Tab) or mouse -- so the hierarchy
+    // ops that act on "the focused child palette" target the right one.
+    if(event->type() == QEvent::FocusIn){
+        for(QObject* w = object; w; w = w->parent()){
+            if(w == childPaletteA){ childPalette = childPaletteA; break; }
+            if(w == childPaletteB){ childPalette = childPaletteB; break; }
+        }
+    }
+
     // ── Watershed live-preview mode ─────────────────────────────────────────
     // When wsPreviewActive is true, four arrow keys + Enter + Esc are claimed
     // exclusively; any other key is swallowed silently to prevent the
@@ -1406,6 +1417,16 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         // "H" — keyboard shortcut help dialog
         if(ke->key() == Qt::Key_H && ke->modifiers() == Qt::NoModifier){
             slotShowShortcutHelp();
+            return true;
+        }
+
+        // Esc from a child (A/B) palette returns focus to the parent palette.
+        // (When the temporary child error/template matrices exist, Esc will
+        // also dismiss them first -- added with that feature.)
+        if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
+           && focusedChildPalette() != nullptr){
+            childPalette = childPaletteA;
+            if(clusterPalette) clusterPalette->setFocusToList();
             return true;
         }
         // "1" — new cluster mode
@@ -1536,7 +1557,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
            && paletteHasFocus()){
-            clusterPalette->toggleCurrentSelection();
+            // s marks the focused palette's current item: parents in the main
+            // palette, children when an A/B child palette holds focus.
+            ClusterPalette* target = focusedChildPalette();
+            if(!target) target = clusterPalette;
+            target->toggleCurrentSelection();
             return true;
         }
     }
@@ -1621,6 +1646,15 @@ void KlustersApp::buildFocusZones()
     if(clusterPanel && clusterPanel->isVisible() && clusterPalette)
         focusZones.append(clusterPalette);
 
+    // Hierarchical (dual child) view: Tab cycles the three palettes only --
+    // parent -> A -> B -> parent -- so the user can drive pairwise child edits
+    // without Tab wandering into the toolbar.
+    if(childPanel && childPanel->isVisible()){
+        if(childPaletteA) focusZones.append(childPaletteA);
+        if(childPaletteB) focusZones.append(childPaletteB);
+        return;
+    }
+
     // 2. Toolbar fields only
     if(paramBar){
         const QList<QAction*> actions = paramBar->actions();
@@ -1669,7 +1703,7 @@ bool KlustersApp::paletteHasFocus() const
     // matching clusterPalette means the palette tree owns focus.
     if (!clusterPalette) return false;
     for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget())
-        if (w == clusterPalette) return true;
+        if (w == clusterPalette || w == childPaletteA || w == childPaletteB) return true;
     return false;
 }
 
@@ -1709,9 +1743,18 @@ void KlustersApp::initClusterPanel()
     // of the unit(s) selected in the main palette.  Hidden until the View-menu
     // toggle enables it; stacked directly below the main palette in initView().
     childPanel = new QDockWidget(tr("Child clusters (.clc)"),nullptr);
-    childPalette = new ClusterPalette(backgroundColor,childPanel,statusBar(),"ChildClusterPalette");
-    childPalette->setShowsChildScope(true);   // the child palette is the only scope-filtered one
-    childPanel->setWidget(childPalette);
+    // Two child palettes stacked vertically: A (top, parent A) over B (bottom,
+    // parent B).  Each is scope-bound to its own parent's children.
+    QSplitter* childSplit = new QSplitter(Qt::Vertical, childPanel);
+    childSplit->setChildrenCollapsible(false);
+    childPaletteA = new ClusterPalette(backgroundColor,childSplit,statusBar(),"ChildClusterPaletteA");
+    childPaletteB = new ClusterPalette(backgroundColor,childSplit,statusBar(),"ChildClusterPaletteB");
+    childPaletteA->setShowsChildScope(true);
+    childPaletteB->setShowsChildScope(true);
+    childSplit->addWidget(childPaletteA);
+    childSplit->addWidget(childPaletteB);
+    childPalette = childPaletteA;          // alias: focused child palette, default A
+    childPanel->setWidget(childSplit);
     childPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
     childPanel->hide();
 }
@@ -1804,7 +1847,8 @@ void KlustersApp::initDisplay(){
     // child sibling (auto-detected in KlustersDoc::openDocument), and turn it on
     // by default so the child palette is immediately available.
     if(childPanel) childPanel->hide();
-    if(childPalette) childPalette->reset();
+    if(childPaletteA) childPaletteA->reset();
+    if(childPaletteB) childPaletteB->reset();
     if(mHierarchicalView){
         const bool hasChild = doc->hasChildSibling();
         {
@@ -3368,7 +3412,10 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
         repopulateChildPalette(clusterPalette->selectedClusters());
     } else {
         childPanel->hide();
-        childPalette->reset();
+        childPaletteA->reset();
+        childPaletteB->reset();
+        parentSlotA = parentSlotB = -1;
+        childPalette = childPaletteA;
         doc->setActiveClustering(false);                 // views back to the parent
         if(activeView())
             doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
@@ -3488,28 +3535,54 @@ void KlustersApp::slotMoveChildrenToFiber(){
         doc->moveChild(c, target.first(), *activeView());
 }
 
-void KlustersApp::repopulateChildPalette(const QList<int>& parents){
-    if(!doc || !childPalette || !childPanel || !childPanel->isVisible()) return;
-    const QList<int> kids = doc->childrenOf(parents);
-    // Build the child palette from the child clustering's colours, scoped to the
-    // children of the selected parent(s); then restore the parent as active so
-    // every other part of the app keeps seeing the parent clustering.
+void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
+    if(!pal || !doc) return;
+    if(parentId < 0){ pal->clearPaletteScope(); pal->reset(); return; }
+    const QList<int> kids = doc->childrenOf(QList<int>{parentId});
+    // Build the palette from the child clustering's colours, scoped to this
+    // parent's children; restore parent-active so the rest of the app keeps
+    // seeing the parent clustering.
     doc->setActiveClustering(true);
-    doc->setChildScope(kids);
-    childPalette->createClusterList(doc);
+    pal->setPaletteScope(kids);
+    pal->createClusterList(doc);
     doc->setActiveClustering(false);
-    // The parent view was already updated by the caller (slotUpdateShownClusters
-    // or the toggle handler); rebuilding the child palette does not re-scope it.
 }
 
-void KlustersApp::slotChildSelectionChanged(const QList<int>& childClusters){
+ClusterPalette* KlustersApp::focusedChildPalette() const {
+    QWidget* f = QApplication::focusWidget();
+    while(f){
+        if(f == childPaletteA) return childPaletteA;
+        if(f == childPaletteB) return childPaletteB;
+        f = f->parentWidget();
+    }
+    return nullptr;
+}
+
+void KlustersApp::repopulateChildPalette(const QList<int>& parents){
+    if(!doc || !childPanel || !childPanel->isVisible()) return;
+    // The first selected parent populates slot A, the second slot B; further
+    // parents are ignored by the dual view (pairwise by design).  A single
+    // selected parent fills A and clears B.
+    parentSlotA = parents.size() >= 1 ? parents[0] : -1;
+    parentSlotB = parents.size() >= 2 ? parents[1] : -1;
+    assignChildSlot(childPaletteA, parentSlotA);
+    assignChildSlot(childPaletteB, parentSlotB);
+    if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
+}
+
+void KlustersApp::slotChildSelectionChanged(const QList<int>&){
     if(!doc || !activeView()) return;
-    if(childClusters.isEmpty()){
+    // The views reflect the union of children selected across A and B; with no
+    // child selected they fall back to the parent unit(s).
+    QList<int> kids;
+    if(childPaletteA) kids += childPaletteA->selectedClusters();
+    if(childPaletteB) kids += childPaletteB->selectedClusters();
+    if(kids.isEmpty()){
         doc->setActiveClustering(false);                 // no child selected -> parent view
         doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
     } else {
-        doc->setActiveClustering(true);                  // show the child's spikes (within the parent)
-        doc->shownClustersUpdate(childClusters, *activeView());
+        doc->setActiveClustering(true);                  // show the selected children's spikes
+        doc->shownClustersUpdate(kids, *activeView());
     }
 }
 
