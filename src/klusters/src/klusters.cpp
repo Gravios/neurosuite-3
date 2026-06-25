@@ -74,6 +74,8 @@
 #include <QImage>
 #include <QPixmap>
 #include <QFrame>
+#include <QMenu>
+#include <QAction>
 #include <QMessageBox>
 #include <QLabel>
 #include <QPrinter>
@@ -864,6 +866,10 @@ void KlustersApp::createMenus()
     //Initialize the update mode
     mImmediateSelection->setChecked(true);
     settingsMenu->addSeparator();
+
+    mPluginsMenu = menuBar()->addMenu(tr("&Plugins"));
+    mPluginsMenu->setToolTipsVisible(true);
+    populatePluginsMenu();
 
     QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
@@ -7490,4 +7496,62 @@ void KlustersApp::slotShowShortcutHelp()
     connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     vl->addWidget(bb);
     dlg.exec();
+}
+
+// ---------------------------------------------------------------------------
+// Plugins menu (descriptor discovery; read-only listing in v1 — the parameter
+// dialog + process runner arrive in later phases, see docs/PLUGIN_API.md).
+// ---------------------------------------------------------------------------
+void KlustersApp::populatePluginsMenu()
+{
+    if (!mPluginsMenu)
+        return;
+    mPluginsMenu->clear();
+    mPluginRegistry.reload();
+    const QList<KlustersPlugin>& plugins = mPluginRegistry.plugins();
+
+    if (plugins.isEmpty()) {
+        QAction* none = mPluginsMenu->addAction(tr("(no plugins found)"));
+        none->setEnabled(false);
+    } else {
+        for (const KlustersPlugin& p : plugins) {
+            const QString kind = p.kind.isEmpty() ? tr("plugin") : p.kind;
+            QAction* act = mPluginsMenu->addAction(QStringLiteral("%1  [%2]").arg(p.name, kind));
+            const QString tip = p.help.section(QLatin1Char('\n'), 0, 0);
+            act->setToolTip(tip);
+            act->setStatusTip(tip);
+            const KlustersPlugin info = p;   // capture by value for the dialog
+            connect(act, &QAction::triggered, this, [this, info]() {
+                QString params;
+                for (const PluginParameter& pp : info.parameters)
+                    params += QStringLiteral("\n  %1 = %2  (%3)").arg(pp.name, pp.value, pp.status);
+                QMessageBox box(this);
+                box.setWindowTitle(tr("Plugin: %1").arg(info.name));
+                box.setIcon(QMessageBox::Information);
+                box.setText(tr("<b>%1</b> — kind: %2")
+                                .arg(info.name, info.kind.isEmpty() ? tr("(unspecified)") : info.kind));
+                box.setInformativeText(
+                    tr("integration: %1\nconsumes: %2\nproduces: %3\nparameters:%4\n\n%5\n\n(%6)")
+                        .arg(info.integration.isEmpty() ? tr("none") : info.integration,
+                             info.consumes.join(QLatin1Char(' ')),
+                             info.produces.isEmpty() ? tr("none") : info.produces,
+                             params.isEmpty() ? tr(" (none)") : params,
+                             info.help,
+                             tr("Running plugins from Klusters arrives in a later phase; "
+                                "this lists and describes the discovered descriptors.")));
+                box.setDetailedText(info.descriptorPath);
+                box.exec();
+            });
+        }
+    }
+    mPluginsMenu->addSeparator();
+    QAction* reload = mPluginsMenu->addAction(tr("&Reload Plugins"));
+    connect(reload, &QAction::triggered, this, &KlustersApp::slotReloadPlugins);
+}
+
+void KlustersApp::slotReloadPlugins()
+{
+    populatePluginsMenu();
+    const int n = mPluginRegistry.plugins().size();
+    statusBar()->showMessage(tr("Reloaded plugins: %1 descriptor(s) found.").arg(n), 4000);
 }

@@ -29,6 +29,8 @@
 #include "spinbox.h"
 #include "klustersview.h"
 #include "klustersdoc.h"   // needed by inline slot methods on KlustersDoc
+#include "pluginregistry.h"  // Plugins menu (discovery + descriptors)
+class QMenu;
 #include "watershed2d.h"   // for Result struct used in live-preview state
 
 
@@ -579,6 +581,12 @@ private:
     void readSettings();
     void initView();
     void createMenus();
+
+    // Plugins (descriptor discovery; read-only listing in v1).
+    PluginRegistry mPluginRegistry;
+    QMenu* mPluginsMenu = nullptr;
+    void populatePluginsMenu();
+    void slotReloadPlugins();
 
     void createToolBar();
 

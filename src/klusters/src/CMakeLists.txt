@@ -63,6 +63,7 @@ set(klusters_SRCS
     prefwaveformview.cpp
     processlinemaker.cpp
     processwidget.cpp
+    pluginregistry.cpp
     spinbox.cpp
     savethread.cpp
     sortabletable.cpp
