@@ -1,0 +1,25 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>klustakwik</n>
+  <parameters>
+   <parameter><n>max-clusters</n><value>200</value><status>Optional</status></parameter>
+   <parameter><n>min-size</n><value>20</value><status>Optional</status></parameter>
+   <parameter><n>seed</n><value>42</value><status>Optional</status></parameter>
+  </parameters>
+  <help>Re-partition the selected cluster(s) with KlustaKwik (CEM Gaussian-mixture)
+on the PCA features of their waveforms.  The output .clu is fed through the
+existing recluster integration so the new sub-clusters replace the source(s) on
+the active view, with one undo step.
+
+This descriptor registers the built-in recluster backend as a plugin so an
+alternative backend can be dropped in beside it under the same interface.</help>
+ </program>
+ <klusters>
+  <kind>recluster</kind>
+  <consumes>base group selection</consumes>
+  <produces>clu</produces>
+  <integration>recluster-integrate</integration>
+  <selection>clusters</selection>
+ </klusters>
+</parameter>

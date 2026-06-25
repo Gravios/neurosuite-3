@@ -1,0 +1,32 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>fiber-refiber</n>
+  <parameters>
+   <parameter><n>variant</n><value>stderiv</value><status>Optional</status></parameter>
+   <parameter><n>tag</n><value>microfiber</value><status>Optional</status></parameter>
+   <parameter><n>min-cos</n><value>0.85</value><status>Optional</status></parameter>
+   <parameter><n>dy-um</n><value>6</value><status>Optional</status></parameter>
+   <parameter><n>dz-um</n><value>8</value><status>Optional</status></parameter>
+   <parameter><n>dlogA</n><value>0.25</value><status>Optional</status></parameter>
+   <parameter><n>clique</n><value>0</value><status>Optional</status></parameter>
+   <parameter><n>out-tag</n><value></value><status>Optional</status></parameter>
+  </parameters>
+  <help>Group the per-spike microfiber atom layer (.clc) into fibers by raw-position
++ median-template-shape co-gating, then write the .clu/.clc/.clp triple.  The .clc
+atoms are preserved verbatim; only .clu/.clp change.  Intended for the atoms
+produced by a 'replace' spike-recluster: the recluster makes atoms, this makes
+fibers from them.  After it runs, Klusters reloads the triple and the atoms
+appear as children of the new fibers.
+
+Prerequisite: a .clc atom layer next to the open clustering (e.g. the output of a
+replace-recluster).  Engine: the fiber-kit 'fiber-refiber' console script.</help>
+ </program>
+ <klusters>
+  <kind>refiber</kind>
+  <consumes>base group</consumes>
+  <produces>triple</produces>
+  <integration>hierarchy-reload</integration>
+  <selection>none</selection>
+ </klusters>
+</parameter>
