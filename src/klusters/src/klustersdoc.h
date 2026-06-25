@@ -282,6 +282,17 @@ public:
     /** Eject child @p childCluster from its fiber onto the noise cluster (1)
      *  without deleting its spikes. */
     bool dropChildToNoise(int childCluster, KlustersView& activeView);
+    // ── atom-layer edit (rewrites .clc; separate child-undo timeline) ────────
+    /** Collapse @p children (which MUST share a fiber) into one microfiber.
+     *  Mutates childData, pushes a child-undo entry.  Returns the new child id,
+     *  or -1 (e.g. on a cross-fiber selection, which is refused). */
+    int mergeChildren(const QList<int>& children, KlustersView& activeView);
+    /** Undo / redo the most recent atom-layer edit (childData), independent of
+     *  the parent Ctrl+Z timeline. */
+    bool undoChildEdit(KlustersView& activeView);
+    bool redoChildEdit(KlustersView& activeView);
+    int childUndoCount() const { return childUndoStack.count(); }
+    int childRedoCount() const { return childRedoStack.count(); }
     /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
      *  child's fiber is the .clu label of its spikes).  Cheap pure function of
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
@@ -291,6 +302,9 @@ public:
      *  layer + child->parent map.  Called by saveDocument when a child
      *  clustering is loaded. */
     bool saveHierarchySiblings();
+    /** Ensure childColorList has a deterministic (id-derived) colour for every
+     *  current child id, so atom edits/undo/redo never leave a child uncoloured. */
+    void syncChildColors();
     /**True iff any cluster is currently masked.*/
     bool hasMask() const {return !maskedClusters.isEmpty();}
     /**Currently masked cluster ids.*/
@@ -1288,6 +1302,14 @@ private:
     ItemColors* activeColorList = nullptr;   // parallels activeData
     QString     clcSiblingPath;              // resolved .clc path ("" if none detected)
     QString     clpSiblingPath;              // resolved .clp child->parent map ("" if none)
+    // Atom-layer (childData) edits live on their OWN undo timeline, because the
+    // main undo() is hardwired to clusteringData.  Each entry records the child
+    // clusters that changed, for childData->undo()/redo() (cache invalidation)
+    // and for the deterministic colour re-sync.  rebuildHierarchyFromData() then
+    // keeps the fiber maps consistent regardless of which timeline moved.
+    struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted; };
+    QList<ChildEdit> childUndoStack;
+    QList<ChildEdit> childRedoStack;
     // sibling paths captured at open so the child clustering can be re-read lazily
     QString     siblingFetPath, siblingSpkPath, siblingYamlPath;
     long        siblingSpkFileLength = 0;
