@@ -739,7 +739,23 @@ private:
      *  of the unit(s) selected in the main palette.  Hidden until the View-menu
      *  toggle (mHierarchicalView) enables it. */
     QDockWidget* childPanel = nullptr;
-    ClusterPalette* childPalette = nullptr;
+    /** The two child palettes of the hierarchical view, stacked vertically in
+     *  childPanel: A (top) and B (bottom).  Each lists the children of one
+     *  selected parent and carries its own scope.  childPalette is a NON-owning
+     *  alias to whichever of A/B currently holds focus (default A), so the
+     *  existing single-palette hierarchy ops keep working against "the focused
+     *  child palette". */
+    ClusterPalette* childPaletteA = nullptr;
+    ClusterPalette* childPaletteB = nullptr;
+    ClusterPalette* childPalette  = nullptr;   // alias -> focused child palette
+    int parentSlotA = -1;   // parent id shown in palette A (-1 = unassigned)
+    int parentSlotB = -1;   // parent id shown in palette B
+    /** Build palette @p pal scoped to the children of @p parentId (or clear it
+     *  when parentId < 0).  Used to (re)assign a parent to slot A or B. */
+    void assignChildSlot(ClusterPalette* pal, int parentId);
+    /** The child palette (A or B) that currently owns keyboard focus, or nullptr
+     *  if neither does. */
+    ClusterPalette* focusedChildPalette() const;
 
     /**
     * Represents the document on which the application works
