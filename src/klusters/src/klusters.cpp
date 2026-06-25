@@ -720,6 +720,20 @@ void KlustersApp::createMenus()
     mHierarchicalView->setEnabled(false);   // enabled on open iff a .clc sibling exists
     connect(mHierarchicalView, &QAction::toggled, this, &KlustersApp::slotHierarchicalViewToggled);
     displayMenu->addSeparator();
+
+    // Hierarchy edits (enabled only while the child palette is shown): merge the
+    // fibers selected in the main palette; promote / move the children selected
+    // in the child palette.  Each regenerates .clu/.clc/.clp on Save.
+    QMenu* hierarchyMenu = menuBar()->addMenu(tr("&Hierarchy"));
+    mMergeFibers = hierarchyMenu->addAction(tr("&Merge Selected Fibers"));
+    mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Fiber"));
+    mMoveChild = hierarchyMenu->addAction(tr("Move Child to Selected &Fiber"));
+    mMergeFibers->setEnabled(false);
+    mPromoteChild->setEnabled(false);
+    mMoveChild->setEnabled(false);
+    connect(mMergeFibers, &QAction::triggered, this, &KlustersApp::slotMergeFibers);
+    connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
+    connect(mMoveChild, &QAction::triggered, this, &KlustersApp::slotMoveChildrenToFiber);
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");
     newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
     connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
@@ -854,6 +868,12 @@ void KlustersApp::createMenus()
     connect(clusterPalette, &ClusterPalette::paletteGainedFocus, this, &KlustersApp::slotShowOverviewForPalette);
     connect(doc, &KlustersDoc::updateUndoNb, this, &KlustersApp::slotUpdateUndoNb);
     connect(doc, &KlustersDoc::updateRedoNb, this, &KlustersApp::slotUpdateRedoNb);
+    // hierarchical view: after a hierarchy edit or an undo/redo of one, refresh
+    // the child palette for the current parent selection.
+    connect(doc, &KlustersDoc::hierarchyChanged, this, [this]{
+        if (childPanel && childPanel->isVisible())
+            repopulateChildPalette(clusterPalette->selectedClusters());
+    });
     connect(doc, &KlustersDoc::spikesDeleted, this, &KlustersApp::slotSpikesDeleted);
 
     // After a polygon-driven new-cluster operation in any 2D scatter view,
@@ -3324,6 +3344,44 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
         if(activeView())
             doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
     }
+    const bool editable = on && doc->hasChildClustering();
+    if(mMergeFibers)  mMergeFibers->setEnabled(editable);
+    if(mPromoteChild) mPromoteChild->setEnabled(editable);
+    if(mMoveChild)    mMoveChild->setEnabled(editable);
+}
+
+void KlustersApp::slotMergeFibers(){
+    if(!doc || !activeView()) return;
+    const QList<int> sel = clusterPalette->selectedClusters();
+    if(sel.size() < 2){
+        statusBar()->showMessage(tr("Select two or more fibers in the main palette to merge."), 4000);
+        return;
+    }
+    doc->mergeParentFibers(sel, *activeView());
+}
+
+void KlustersApp::slotPromoteChildren(){
+    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    const QList<int> kids = childPalette->selectedClusters();
+    if(kids.isEmpty()){
+        statusBar()->showMessage(tr("Select one or more children to promote."), 4000);
+        return;
+    }
+    for(int c : kids)
+        doc->promoteChild(c, *activeView());   // each is one undo step
+}
+
+void KlustersApp::slotMoveChildrenToFiber(){
+    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    const QList<int> kids = childPalette->selectedClusters();
+    const QList<int> target = clusterPalette->selectedClusters();
+    if(kids.isEmpty() || target.size() != 1){
+        statusBar()->showMessage(
+            tr("Select child(ren) in the child palette and exactly one target fiber in the main palette."), 5000);
+        return;
+    }
+    for(int c : kids)
+        doc->moveChild(c, target.first(), *activeView());
 }
 
 void KlustersApp::repopulateChildPalette(const QList<int>& parents){

@@ -804,6 +804,13 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     //close the file
     fclose(cluFile);
 
+    // hierarchical view: regenerate the .clc/.clp siblings from the edited
+    // child->parent map so the triple stays consistent.  Only on a regular Save
+    // (the captured sibling paths are the originals); SaveAs of the triple is a
+    // follow-up.
+    if (!isSaveAs && childData)
+        saveHierarchySiblings();
+
     QString cluFileSuffix_;
     QString saMethod = QStringLiteral("standard");   // method parsed from a SaveAs target
     // For SaveAs: update doc URL and derived paths before committing.
@@ -1248,6 +1255,121 @@ bool KlustersDoc::isChildScopeHidden(int clusterId) const{
     if (!childData) return false;
     if (!childToParent.contains(clusterId)) return false;   // parent id: never hidden here
     return !childScopeVisible.contains(clusterId);
+}
+
+// ── hierarchy edits ──────────────────────────────────────────────────────────
+// All three operate on the parent clustering (clusteringData) through the
+// existing, proven, undoable doc primitives — merge via groupClusters, promote
+// and move via moveSpikeSubsetToCluster (which creates the target if new).  The
+// fiber<-child maps are then re-derived from the data, so a single Ctrl+Z (which
+// reverts clusteringData) plus the same re-derive on undo/redo keeps everything
+// consistent without a separate map-undo stack.
+
+void KlustersDoc::rebuildHierarchyFromData(){
+    if (!childData) return;
+    parentToChildren.clear();
+    childToParent.clear();
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    const int n = qMin(cluByRow.size(), childByRow.size());
+    for (int r = 1; r < n; ++r){                  // feature rows are 1-based
+        const int c = static_cast<int>(childByRow[r]);
+        if (c <= 0) continue;
+        if (!childToParent.contains(c)){
+            const int f = static_cast<int>(cluByRow[r]);
+            childToParent.insert(c, f);
+            parentToChildren[f].append(c);
+        }
+    }
+    for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
+        QList<int>& kids = it.value();
+        std::sort(kids.begin(), kids.end());
+        kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
+    }
+}
+
+int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activeView){
+    if (fibers.size() < 2) return -1;
+    setActiveClustering(false);                   // edits always target the parent
+    const int kept = groupClusters(fibers, activeView);   // existing: mutate + undo + views
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    return kept;
+}
+
+int KlustersDoc::promoteChild(int childCluster, KlustersView& activeView){
+    if (!childData || !childToParent.contains(childCluster)) return -1;
+    const int parent = childToParent.value(childCluster);
+    if (parentToChildren.value(parent).size() <= 1)
+        return parent;                            // only child == already its own fiber
+    const QVector<int> spk = childData->clusterSpkIndices(childCluster);
+    if (spk.isEmpty()) return -1;
+    setActiveClustering(false);
+    const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
+    moveSpikeSubsetToCluster(parent, spk, newId, activeView);   // creates newId
+    // moveSpikeSubsetToCluster only colours the noise cluster; give the new fiber
+    // its own colour.  Appended AFTER the call so it is NOT in that op's undo
+    // snapshot -> a subsequent Ctrl+Z removes the colour with the cluster.
+    if (!clusterColorList->contains(newId)){
+        QColor color;
+        color.setHsv(static_cast<int>(fmod(static_cast<double>(newId) * 7, 36)) * 10, 200, 255);
+        clusterColorList->append(newId, color);
+        clusterPalette.updateClusterList();
+    }
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    return newId;
+}
+
+bool KlustersDoc::moveChild(int childCluster, int targetFiber, KlustersView& activeView){
+    if (!childData || !childToParent.contains(childCluster)) return false;
+    const int parent = childToParent.value(childCluster);
+    if (parent == targetFiber) return false;      // already there
+    const QVector<int> spk = childData->clusterSpkIndices(childCluster);
+    if (spk.isEmpty()) return false;
+    setActiveClustering(false);
+    moveSpikeSubsetToCluster(parent, spk, targetFiber, activeView);   // targetFiber exists
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    return true;
+}
+
+bool KlustersDoc::saveHierarchySiblings(){
+    if (!childData || clcSiblingPath.isEmpty()) return true;   // nothing to write
+    // .clc — the per-spike child layer (unchanged by merge/promote/move, but
+    // rewritten so the triple is regenerated together); .clp — the edited
+    // child->parent map.  Overwrite in place with a .bak backup of each.
+    auto backup = [](const QString& p){
+        if (QFile::exists(p)){
+            const QString b = p + QStringLiteral(".bak");
+            QFile::remove(b);
+            QFile::copy(p, b);
+        }
+    };
+    bool ok = true;
+    backup(clcSiblingPath);
+    if (FILE* f = fopen(qPrintable(clcSiblingPath), "wb")){
+        ok &= childData->saveClusters(f);
+        fclose(f);
+    } else ok = false;
+
+    if (!clpSiblingPath.isEmpty()){
+        int nChildren = 0;
+        for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it)
+            nChildren = qMax(nChildren, it.key());
+        backup(clpSiblingPath);
+        if (FILE* f = fopen(qPrintable(clpSiblingPath), "wb")){
+            const int32_t hdr = nChildren;                 // header ignored by readers (count derived from size)
+            ok &= (fwrite(&hdr, sizeof(int32_t), 1, f) == 1);
+            for (int c = 1; c <= nChildren && ok; ++c){
+                const int32_t p = childToParent.value(c, 0);
+                ok &= (fwrite(&p, sizeof(int32_t), 1, f) == 1);
+            }
+            fclose(f);
+        } else ok = false;
+    }
+    if (!ok) qWarning() << "[hierarchy] failed to write .clc/.clp siblings";
+    return ok;
 }
 
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersView& activeView){
@@ -2875,6 +2997,9 @@ void KlustersDoc::undo(){
     if (curationLogger && curationLogger->isOpen()) {
         curationLogger->notifyUndo();
     }
+    // hierarchical view: an undo of a hierarchy edit reverts clusteringData, so
+    // re-derive the fiber<-child maps and refresh the child palette.
+    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
 }
 
 
@@ -3025,6 +3150,8 @@ void KlustersDoc::redo(){
     if (curationLogger && curationLogger->isOpen()) {
         curationLogger->notifyRedo();
     }
+    // hierarchical view: a redo re-applies a hierarchy edit; re-derive the maps.
+    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
 }
 
 void KlustersDoc::renumberClusters(){
