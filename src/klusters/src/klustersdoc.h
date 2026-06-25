@@ -161,6 +161,11 @@ public:
     * @return ItemColors containing the information on the clusters and their associated color.
     */
     ItemColors& clusterColors() const {return *(activeColorList ? activeColorList : clusterColorList);}
+    /** The PARENT cluster colours, independent of which clustering is active.
+     *  The main cluster palette binds to this so it always lists the parent
+     *  clustering and is never collapsed to noise by a left-over child-active
+     *  scope (the active list is the child list while a child is selected). */
+    ItemColors& parentClusterColors() const {return *clusterColorList;}
 
     /**Returns a reference on data (object containing all the information).
     * @return data object.

@@ -1710,6 +1710,7 @@ void KlustersApp::initClusterPanel()
     // toggle enables it; stacked directly below the main palette in initView().
     childPanel = new QDockWidget(tr("Child clusters (.clc)"),nullptr);
     childPalette = new ClusterPalette(backgroundColor,childPanel,statusBar(),"ChildClusterPalette");
+    childPalette->setShowsChildScope(true);   // the child palette is the only scope-filtered one
     childPanel->setWidget(childPalette);
     childPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
     childPanel->hide();
