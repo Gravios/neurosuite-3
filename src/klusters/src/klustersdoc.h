@@ -977,6 +977,9 @@ Q_SIGNALS:
     /** Emitted after a hierarchy edit (merge/promote/move) or an undo/redo that
      *  changed the fiber<-child maps, so the app can repopulate the child palette. */
     void hierarchyChanged();
+    /** Emitted after a child (atom) split mints new sibling atoms, carrying their
+     *  ids so the child palette can select and focus them. */
+    void hierarchyChildrenCreated(const QList<int>& newChildren);
     void clustersDeleted(QList<int>& deletedClusters,int destinationCluster);
     void removeSpikesFromClusters(QList<int>& fromClusters, int destinationClusterId,QList<int>& emptiedClusters);
     void newClusterAdded(QList<int>& fromClusters,int clusterId,QList<int>& emptiedClusters);

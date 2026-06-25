@@ -2293,12 +2293,28 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
     logBefore(CurationLogger::ActionType::SPLIT,
               QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
-    float newClusterId = clusteringData->createNewCluster(region,clustersOfOrigin,dimensionX,dimensionY,fromClusters,emptyClusters);
+    // Route through the ACTIVE clustering: childData when a child is selected (the
+    // split becomes a new sibling atom under the same parent), clusteringData
+    // otherwise -- data() == clusteringData then, so the parent path is unchanged.
+    Data& targetData = data();
+    const bool onChild = (&targetData == childData);
+    float newClusterId = targetData.createNewCluster(region,clustersOfOrigin,dimensionX,dimensionY,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
     if(newClusterId == 0){
         activeView->selectionIsEmpty();
         activeView->showAllWidgets();
+    }
+    else if(onChild){
+        // Child split: the drawn spikes are a subset of one child atom, so the new
+        // atom is a sibling under the SAME parent.  Refresh the child layer and let
+        // the child palette select + focus the new sibling.
+        const int newAtom = static_cast<int>(newClusterId);
+        syncChildColors();
+        rebuildHierarchyFromData();
+        emit hierarchyChanged();
+        emit hierarchyChildrenCreated(QList<int>{newAtom});
+        logAfter(QList<int>{newAtom});
     }
     else{
         const int newClusterIdint = static_cast<int>(newClusterId);
@@ -2357,7 +2373,12 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
               QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
     QList <int> newClusters;
-    QMap<int,int> fromToNewClusterIds = clusteringData->createNewClusters(region,clustersOfOrigin,dimensionX,dimensionY,emptyClusters);
+    // Route through the ACTIVE clustering (childData when a child is selected ->
+    // the new clusters are sibling atoms under the same parent; clusteringData
+    // otherwise, unchanged parent path).
+    Data& targetData = data();
+    const bool onChild = (&targetData == childData);
+    QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(region,clustersOfOrigin,dimensionX,dimensionY,emptyClusters);
     newClusters = fromToNewClusterIds.values();
     fromClusters = fromToNewClusterIds.keys();
 
@@ -2365,6 +2386,16 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
     if(newClusters.size() == 0){
         activeView->selectionIsEmpty();
         activeView->showAllWidgets();
+    }
+    else if(onChild){
+        // Child split: the new atoms are siblings under the same parent(s).
+        // Refresh the child layer and let the child palette select + focus them.
+        std::sort(newClusters.begin(), newClusters.end());
+        syncChildColors();
+        rebuildHierarchyFromData();
+        emit hierarchyChanged();
+        emit hierarchyChildrenCreated(newClusters);
+        logAfter(newClusters);
     }
     else{
         //Prepare the undo
