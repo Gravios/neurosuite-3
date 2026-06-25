@@ -64,6 +64,7 @@ set(klusters_SRCS
     processlinemaker.cpp
     processwidget.cpp
     pluginregistry.cpp
+    plugindialog.cpp
     spinbox.cpp
     savethread.cpp
     sortabletable.cpp
