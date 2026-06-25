@@ -76,6 +76,7 @@
 #include <QFrame>
 #include <QMenu>
 #include <QAction>
+#include "plugindialog.h"
 #include <QMessageBox>
 #include <QLabel>
 #include <QPrinter>
@@ -7522,24 +7523,29 @@ void KlustersApp::populatePluginsMenu()
             act->setStatusTip(tip);
             const KlustersPlugin info = p;   // capture by value for the dialog
             connect(act, &QAction::triggered, this, [this, info]() {
-                QString params;
-                for (const PluginParameter& pp : info.parameters)
-                    params += QStringLiteral("\n  %1 = %2  (%3)").arg(pp.name, pp.value, pp.status);
+                if (!doc || doc->url().isEmpty()) {
+                    QMessageBox::information(this, tr("Plugins"),
+                        tr("Open a clustering before running a plugin."));
+                    return;
+                }
+                PluginDialog dlg(info, this);
+                if (dlg.exec() != QDialog::Accepted)
+                    return;
+                const QMap<QString, QString> params = dlg.values();
+                const QMap<QString, QString> ctx = pluginContext();
+                const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters()
+                                                      : QList<int>();
+                const QStringList argv = PluginRegistry::buildArgv(info, params, ctx, sel);
+                // v1: dry-run preview.  The process runner (ProcessWidget) and the
+                // <integration> dispatch land in the next phase.
                 QMessageBox box(this);
-                box.setWindowTitle(tr("Plugin: %1").arg(info.name));
+                box.setWindowTitle(tr("Plugin command (preview): %1").arg(info.name));
                 box.setIcon(QMessageBox::Information);
-                box.setText(tr("<b>%1</b> — kind: %2")
-                                .arg(info.name, info.kind.isEmpty() ? tr("(unspecified)") : info.kind));
+                box.setText(argv.join(QLatin1Char(' ')));
                 box.setInformativeText(
-                    tr("integration: %1\nconsumes: %2\nproduces: %3\nparameters:%4\n\n%5\n\n(%6)")
-                        .arg(info.integration.isEmpty() ? tr("none") : info.integration,
-                             info.consumes.join(QLatin1Char(' ')),
-                             info.produces.isEmpty() ? tr("none") : info.produces,
-                             params.isEmpty() ? tr(" (none)") : params,
-                             info.help,
-                             tr("Running plugins from Klusters arrives in a later phase; "
-                                "this lists and describes the discovered descriptors.")));
-                box.setDetailedText(info.descriptorPath);
+                    tr("This is the command Klusters will run once the process-runner "
+                       "phase lands.  Integration on success: %1.")
+                        .arg(info.integration.isEmpty() ? tr("none") : info.integration));
                 box.exec();
             });
         }
@@ -7554,4 +7560,26 @@ void KlustersApp::slotReloadPlugins()
     populatePluginsMenu();
     const int n = mPluginRegistry.plugins().size();
     statusBar()->showMessage(tr("Reloaded plugins: %1 descriptor(s) found.").arg(n), 4000);
+}
+
+QMap<QString, QString> KlustersApp::pluginContext() const
+{
+    QMap<QString, QString> ctx;
+    if (!doc)
+        return ctx;
+    const QString url = doc->url();
+    const QFileInfo fi(url);
+    // Session base = the path up to the ".clu" token (e.g.
+    // /p/sirotaA-...-20120312.clu.stderiv.5.microfiber -> /p/sirotaA-...-20120312).
+    const QString full = fi.absoluteFilePath();
+    const int i = full.indexOf(QStringLiteral(".clu"));
+    ctx.insert(QStringLiteral("base"),
+               (i > 0) ? full.left(i)
+                       : fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName());
+    ctx.insert(QStringLiteral("group"), doc->currentElectrodeGroupID());
+    // variant/tag are parsed from the filename in a later pass; the starter
+    // descriptors do not consume them.
+    ctx.insert(QStringLiteral("variant"), QString());
+    ctx.insert(QStringLiteral("tag"), QString());
+    return ctx;
 }

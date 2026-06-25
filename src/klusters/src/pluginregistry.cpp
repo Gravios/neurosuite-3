@@ -89,6 +89,39 @@ KlustersPlugin PluginRegistry::parseDescriptor(const QString& path)
     return p;
 }
 
+QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
+                                     const QMap<QString, QString>& params,
+                                     const QMap<QString, QString>& context,
+                                     const QList<int>& selection)
+{
+    QStringList argv;
+    argv << plugin.name;
+
+    // Resolved <consumes> tokens, positional, in declared order.
+    for (const QString& tok : plugin.consumes) {
+        if (tok == QLatin1String("selection") || tok == QLatin1String("children")) {
+            for (int c : selection)
+                argv << QString::number(c);
+        } else {
+            argv << context.value(tok);     // base / group / variant / tag
+        }
+    }
+
+    // Descriptor parameters as "--name value".  An Optional parameter left empty
+    // is omitted; a value-less parameter becomes a bare flag.
+    for (const PluginParameter& p : plugin.parameters) {
+        const QString v = params.value(p.name, p.value);
+        const bool mandatory =
+            (p.status.compare(QStringLiteral("Mandatory"), Qt::CaseInsensitive) == 0);
+        if (v.isEmpty() && !mandatory)
+            continue;
+        argv << (QStringLiteral("--") + p.name);
+        if (!v.isEmpty())
+            argv << v;
+    }
+    return argv;
+}
+
 void PluginRegistry::reload()
 {
     mPlugins.clear();

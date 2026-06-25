@@ -11,6 +11,7 @@
 #include <QString>
 #include <QStringList>
 #include <QList>
+#include <QMap>
 
 struct PluginParameter {
     QString name;
@@ -44,6 +45,16 @@ public:
     static QStringList discoveryDirs();
     /** Parse one descriptor file.  Returns a plugin with valid==false on error. */
     static KlustersPlugin parseDescriptor(const QString& path);
+
+    /** Assemble the program invocation: program name, then the resolved
+     *  <consumes> tokens (in declared order; 'selection'/'children' expand to the
+     *  selected ids), then "--name value" for each parameter (an Optional
+     *  parameter left empty is omitted).  @p context maps base/group/variant/tag
+     *  to their resolved values. */
+    static QStringList buildArgv(const KlustersPlugin& plugin,
+                                 const QMap<QString, QString>& params,
+                                 const QMap<QString, QString>& context,
+                                 const QList<int>& selection);
 
 private:
     QList<KlustersPlugin> mPlugins;

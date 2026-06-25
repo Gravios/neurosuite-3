@@ -587,6 +587,9 @@ private:
     QMenu* mPluginsMenu = nullptr;
     void populatePluginsMenu();
     void slotReloadPlugins();
+    /** Resolve base/group/variant/tag from the open document for a plugin's
+     *  <consumes> contract. */
+    QMap<QString, QString> pluginContext() const;
 
     void createToolBar();
 
