@@ -85,7 +85,7 @@ void WaveformCompareWidget::drawPanel(QPainter& p, const QRectF& rect,
     // Find global amplitude range across all spikes and channels
     double globalMax = 1.0;
     for (qint16 v : waveforms)
-        globalMax = std::max(globalMax, std::abs((double)v));
+        globalMax = std::max(globalMax, std::abs(static_cast<double>(v)));
 
     // Compute mean waveform — layout [s * nChan + ch]
     QVector<double> mean(nChan * nSamp, 0.0);

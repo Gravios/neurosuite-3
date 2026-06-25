@@ -59,8 +59,8 @@ static bool convertFet(const std::string& path, int& nDimOut, int64_t& nSpikesOu
         data.push_back(v);
     fclose(f);
 
-    int64_t nSpikes = (int64_t)data.size() / nDim;
-    if (nSpikes * nDim != (int64_t)data.size()) {
+    int64_t nSpikes = static_cast<int64_t>(data.size()) / nDim;
+    if (nSpikes * nDim != static_cast<int64_t>(data.size())) {
         fprintf(stderr, "WARNING: .fet size %zu not divisible by nDim=%d\n",
                 data.size(), nDim);
     }
@@ -70,14 +70,14 @@ static bool convertFet(const std::string& path, int& nDimOut, int64_t& nSpikesOu
 
     FILE* w = fopen(path.c_str(), "wb");
     if (!w) { fprintf(stderr, "Cannot write %s\n", path.c_str()); return false; }
-    int32_t nDim32 = (int32_t)nDim;
+    int32_t nDim32 = static_cast<int32_t>(nDim);
     fwrite(&nDim32, sizeof(int32_t), 1, w);
     fwrite(data.data(), sizeof(int64_t), data.size(), w);
     fclose(w);
 
     nDimOut = nDim;
     nSpikesOut = nSpikes;
-    printf("  .fet: %lld spikes x %d dims\n", (long long)nSpikes, nDim);
+    printf("  .fet: %lld spikes x %d dims\n", static_cast<long long>(nSpikes), nDim);
     return true;
 }
 
@@ -94,7 +94,7 @@ static bool convertClu(const std::string& path)
     std::vector<int32_t> ids;
     int v;
     while (fscanf(f, "%d", &v) == 1)
-        ids.push_back((int32_t)v);
+        ids.push_back(static_cast<int32_t>(v));
     fclose(f);
 
     std::string bak = path + ".bak";
@@ -102,7 +102,7 @@ static bool convertClu(const std::string& path)
 
     FILE* w = fopen(path.c_str(), "wb");
     if (!w) { fprintf(stderr, "Cannot write %s\n", path.c_str()); return false; }
-    int32_t nClu32 = (int32_t)nClu;
+    int32_t nClu32 = static_cast<int32_t>(nClu);
     fwrite(&nClu32, sizeof(int32_t), 1, w);
     fwrite(ids.data(), sizeof(int32_t), ids.size(), w);
     fclose(w);

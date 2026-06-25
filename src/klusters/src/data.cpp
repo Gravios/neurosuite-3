@@ -1699,7 +1699,7 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
             qWarning("integrateBasinLabeling: feature row %lld has no basin "
                      "label — caller must label every spike (use a residual "
                      "label for unassigned points)",
-                     (long long)row);
+                     static_cast<long long>(row));
             reclusteringSpikesByCluster.setSize(0, true);
             return false;
         }
@@ -3853,14 +3853,14 @@ bool Data::saveClusters(FILE* clusterFile)
             clusterInfoMapTemp.insert(it.key(), it.value());
     }
 
-    int32_t nClusters = (int32_t)clusterInfoMapTemp.count();
+    int32_t nClusters = static_cast<int32_t>(clusterInfoMapTemp.count());
     if (fwrite(&nClusters, sizeof(int32_t), 1, clusterFile) != 1) return false;
 
     // Sort by spike order (row 1 = feature index = timestamp order)
     spikesByClusterTemp.sort(1);
 
     for (long i = 1; i <= nbSpikes; ++i) {
-        int32_t id = (int32_t)(spikesByClusterTemp)(2, i);
+        int32_t id = static_cast<int32_t>((spikesByClusterTemp)(2, i));
         if (fwrite(&id, sizeof(int32_t), 1, clusterFile) != 1) return false;
     }
 
@@ -5664,7 +5664,7 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     fetFile.close();
     FILE* ff = fopen(fetFile.fileName().toLocal8Bit().constData(), "wb");
     if (ff) {
-        int32_t nDim32 = (int32_t)nbDimensions;
+        int32_t nDim32 = static_cast<int32_t>(nbDimensions);
         fwrite(&nDim32, sizeof(int32_t), 1, ff);
         for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
             dataType featuresRowIndex = reclusteringSpikesByCluster(1, i);

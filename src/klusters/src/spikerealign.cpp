@@ -93,20 +93,20 @@ bool SpikeRealign::verifyRawSource(const QVector<long long>& globalIndices,
     QVector<long long> allRes;
     if (!readAllRes(allRes)) return true;   // can't verify, but don't block
     const long long gidx = globalIndices[0];
-    if (gidx - 1 >= (long long)allRes.size()) return true;
-    const long long oldTs = allRes[(int)(gidx - 1)];
+    if (gidx - 1 >= static_cast<long long>(allRes.size())) return true;
+    const long long oldTs = allRes[static_cast<int>((gidx - 1))];
     const long long startSample = oldTs - peakPos;
 
     const long long totalSamples =
-        QFileInfo(filPath()).size() / ((long long)sizeof(short) * totalNbChan);
+        QFileInfo(filPath()).size() / (static_cast<long long>(sizeof(short)) * totalNbChan);
     if (startSample < 0 || startSample + nSamples > totalSamples) return true;
 
-    off_t rawOff = (off_t)startSample * totalNbChan * sizeof(short);
+    off_t rawOff = static_cast<off_t>(startSample) * totalNbChan * sizeof(short);
     if (fseeko(rawFile, rawOff, SEEK_SET) != 0) return true;
 
-    QVector<short> rawFrame((size_t)nSamples * totalNbChan);
-    if ((int)fread(rawFrame.data(), sizeof(short),
-                   (size_t)nSamples * totalNbChan, rawFile)
+    QVector<short> rawFrame(static_cast<size_t>(nSamples) * totalNbChan);
+    if (static_cast<int>(fread(rawFrame.data(), sizeof(short),
+                   static_cast<size_t>(nSamples) * totalNbChan, rawFile))
         != nSamples * totalNbChan)
         return true;
 
@@ -117,9 +117,9 @@ bool SpikeRealign::verifyRawSource(const QVector<long long>& globalIndices,
         for (int ci = 0; ci < nChan; ++ci) {
             short fresh = rawFrame[s * totalNbChan + channelIds[ci]];
             short spk   = spkWv[s * nChan + ci];
-            double d = (double)fresh - (double)spk;
+            double d = static_cast<double>(fresh) - static_cast<double>(spk);
             sumSq    += d * d;
-            sumRefSq += (double)spk * (double)spk;
+            sumRefSq += static_cast<double>(spk) * static_cast<double>(spk);
         }
     }
     const double rmsDiff = std::sqrt(sumSq / (nSamples * nChan));
@@ -177,19 +177,19 @@ PcaEigenvectors SpikeRealign::loadEigenvectors(const QString& evecPath)
     // if there are enough bytes for recShift + all means + all evecs, read it;
     // otherwise leave recShift = 0 for backward compatibility.
     {
-        long curPos = (long)ftell(f);
+        long curPos = static_cast<long>(ftell(f));
         fseek(f, 0, SEEK_END);
-        long endPos = (long)ftell(f);
+        long endPos = static_cast<long>(ftell(f));
         fseek(f, curPos, SEEK_SET);
         long remaining   = endPos - curPos;
         long withShift   = sizeof(int32_t)
-                         + (long)pca.nChannels * pca.data2use * sizeof(double)
-                         + (long)pca.nChannels * pca.data2use * pca.nComponents * sizeof(double);
-        long withoutShift = withShift - (long)sizeof(int32_t);
+                         + static_cast<long>(pca.nChannels) * pca.data2use * sizeof(double)
+                         + static_cast<long>(pca.nChannels) * pca.data2use * pca.nComponents * sizeof(double);
+        long withoutShift = withShift - static_cast<long>(sizeof(int32_t));
         if (remaining == withShift) {
             int32_t shift32 = 0;
             if (fread(&shift32, sizeof(int32_t), 1, f) != 1) { fclose(f); return pca; }
-            pca.recShift = (int)shift32;
+            pca.recShift = static_cast<int>(shift32);
         } else if (remaining == withoutShift) {
             pca.recShift = 0;   // old file without recShift field
         } else {
@@ -201,7 +201,7 @@ PcaEigenvectors SpikeRealign::loadEigenvectors(const QString& evecPath)
     pca.means.resize(pca.nChannels);
     for (int ch = 0; ch < pca.nChannels; ++ch) {
         pca.means[ch].resize(pca.data2use);
-        if ((int)fread(pca.means[ch].data(), sizeof(double), pca.data2use, f)
+        if (static_cast<int>(fread(pca.means[ch].data(), sizeof(double), pca.data2use, f))
                 != pca.data2use) {
             fclose(f); pca = PcaEigenvectors(); return pca;
         }
@@ -211,7 +211,7 @@ PcaEigenvectors SpikeRealign::loadEigenvectors(const QString& evecPath)
     const int evecSize = pca.data2use * pca.nComponents;
     for (int ch = 0; ch < pca.nChannels; ++ch) {
         pca.evec[ch].resize(evecSize);
-        if ((int)fread(pca.evec[ch].data(), sizeof(double), evecSize, f) != evecSize) {
+        if (static_cast<int>(fread(pca.evec[ch].data(), sizeof(double), evecSize, f)) != evecSize) {
             fclose(f); pca = PcaEigenvectors(); return pca;
         }
     }
@@ -293,10 +293,10 @@ bool SpikeRealign::readSpkWaveforms(const QVector<long long>& spikeGlobalIndices
     waveforms.resize(spikeGlobalIndices.size());
     for (qsizetype k = 0; k < spikeGlobalIndices.size(); ++k) {
         long long idx = spikeGlobalIndices[k];  // 1-based chronological index
-        off_t offset  = (off_t)(idx - 1) * nPts * sizeof(short);
+        off_t offset  = static_cast<off_t>((idx - 1)) * nPts * sizeof(short);
         if (fseeko(f, offset, SEEK_SET) != 0) { fclose(f); return false; }
         waveforms[k].resize(nPts);
-        if ((int)fread(waveforms[k].data(), sizeof(short), nPts, f) != nPts) {
+        if (static_cast<int>(fread(waveforms[k].data(), sizeof(short), nPts, f)) != nPts) {
             fclose(f); return false;
         }
     }
@@ -314,9 +314,9 @@ bool SpikeRealign::rewriteSpkSlot(long long globalIdx1based,
     const int nPts   = data->nbOfchannels() * data->nbOfSampleInWaveform();
     FILE* f = fopen(spkPath().toLocal8Bit().constData(), "r+b");
     if (!f) return false;
-    off_t offset = (off_t)(globalIdx1based - 1) * nPts * sizeof(short);
+    off_t offset = static_cast<off_t>((globalIdx1based - 1)) * nPts * sizeof(short);
     if (fseeko(f, offset, SEEK_SET) != 0) { fclose(f); return false; }
-    bool ok = ((int)fwrite(newWaveform.constData(), sizeof(short), nPts, f) == nPts);
+    bool ok = (static_cast<int>(fwrite(newWaveform.constData(), sizeof(short), nPts, f)) == nPts);
     fclose(f);
     return ok;
 }
@@ -347,7 +347,7 @@ bool SpikeRealign::projectWaveform(const QVector<short>& waveform,
         for (int j = 0; j < data2use; ++j) {
             int s = j + recShift;
             double raw = (s >= 0 && s < nSamples)
-                         ? (double)waveform[s * nChan + ch]
+                         ? static_cast<double>(waveform[s * nChan + ch])
                          : 0.0;
             x[j] = pca.isCentered
                    ? (raw - pca.means[ch][j])
@@ -376,8 +376,8 @@ bool SpikeRealign::swapSpikes(long long idxA, long long idxB,
                                int /*nClustersHeader*/)
 {
     // 0-based positions for vector indexing
-    int posA = (int)(idxA - 1);
-    int posB = (int)(idxB - 1);
+    int posA = static_cast<int>((idxA - 1));
+    int posB = static_cast<int>((idxB - 1));
 
     // Swap res
     std::swap(allRes[posA], allRes[posB]);
@@ -391,13 +391,13 @@ bool SpikeRealign::swapSpikes(long long idxA, long long idxB,
     if (!spkf) return false;
 
     QVector<short> wvA(nPts), wvB(nPts);
-    off_t offA = (off_t)posA * nPts * sizeof(short);
-    off_t offB = (off_t)posB * nPts * sizeof(short);
+    off_t offA = static_cast<off_t>(posA) * nPts * sizeof(short);
+    off_t offB = static_cast<off_t>(posB) * nPts * sizeof(short);
 
     fseeko(spkf, offA, SEEK_SET);
-    if ((int)fread(wvA.data(), sizeof(short), nPts, spkf) != nPts) { fclose(spkf); return false; }
+    if (static_cast<int>(fread(wvA.data(), sizeof(short), nPts, spkf)) != nPts) { fclose(spkf); return false; }
     fseeko(spkf, offB, SEEK_SET);
-    if ((int)fread(wvB.data(), sizeof(short), nPts, spkf) != nPts) { fclose(spkf); return false; }
+    if (static_cast<int>(fread(wvB.data(), sizeof(short), nPts, spkf)) != nPts) { fclose(spkf); return false; }
     fseeko(spkf, offA, SEEK_SET);
     fwrite(wvB.constData(), sizeof(short), nPts, spkf);
     fseeko(spkf, offB, SEEK_SET);
@@ -463,7 +463,7 @@ RealignResult SpikeRealign::run()
         result.errorMessage = "Failed to get spike positions (cluster not found or modified).";
         return result;
     }
-    const int nSpikesInCluster = (int)positions.nbOfColumns();
+    const int nSpikesInCluster = static_cast<int>(positions.nbOfColumns());
     if (nSpikesInCluster == 0) {
         result.errorMessage = "Cluster is empty.";
         return result;
@@ -471,7 +471,7 @@ RealignResult SpikeRealign::run()
 
     QVector<long long> globalIndices(nSpikesInCluster);
     for (int i = 0; i < nSpikesInCluster; ++i)
-        globalIndices[i] = (long long)positions(1, i + 1);  // 1-based
+        globalIndices[i] = static_cast<long long>(positions(1, i + 1));  // 1-based
 
     // ------------------------------------------------------------------
     // 3. Read waveforms for this cluster
@@ -496,7 +496,7 @@ RealignResult SpikeRealign::run()
 
     QVector<short> meanWv(nPts);
     for (int p = 0; p < nPts; ++p)
-        meanWv[p] = (short)std::round(meanWvD[p]);
+        meanWv[p] = static_cast<short>(std::round(meanWvD[p]));
 
     // Find the sample where the mean waveform actually peaks (summed |amplitude|
     // across all channels), then shift meanWv so that sample lands at peakPos.
@@ -576,7 +576,7 @@ RealignResult SpikeRealign::run()
         result.errorMessage = QString("Cannot read .res file:\n%1").arg(resPath());
         return result;
     }
-    const long long totalSpikes = (long long)allRes.size();
+    const long long totalSpikes = static_cast<long long>(allRes.size());
 
     QVector<int> allClu;
     int nClustersHeader = 0;
@@ -625,7 +625,7 @@ RealignResult SpikeRealign::run()
     // patch62 — totalSamples was previously int, overflows at ~18h × 32kHz
     // × 64 channels.  Use long long throughout for future-proofing.
     const long long totalSamples = QFileInfo(filPath()).size()
-                                 / ((long long)sizeof(short) * totalNbChan);
+                                 / (static_cast<long long>(sizeof(short)) * totalNbChan);
 
     // patch62 — verify the raw file we'll re-extract from actually
     // produces waveforms compatible with the existing .spk content.
@@ -658,7 +658,7 @@ RealignResult SpikeRealign::run()
 
     for (int si = 0; si < nSpikesInCluster; ++si) {
         const long long gidx = globalIndices[si];  // 1-based
-        const int vecIdx = (int)(gidx - 1);        // 0-based index into allRes/allClu
+        const int vecIdx = static_cast<int>((gidx - 1));        // 0-based index into allRes/allClu
 
         // Shift from dispatcher (sign convention: add to timestamp to realign)
         int sh = shifts[static_cast<size_t>(si)];
@@ -676,11 +676,11 @@ RealignResult SpikeRealign::run()
             bool canExtract = (startSample >= 0 &&
                                startSample + nSamples <= totalSamples);
             if (canExtract) {
-                off_t rawOff = (off_t)startSample * totalNbChan * sizeof(short);
+                off_t rawOff = static_cast<off_t>(startSample) * totalNbChan * sizeof(short);
                 fseeko(rawFile, rawOff, SEEK_SET);
-                QVector<short> rawFrame((size_t)nSamples * totalNbChan);
-                if ((int)fread(rawFrame.data(), sizeof(short),
-                               (size_t)nSamples * totalNbChan, rawFile)
+                QVector<short> rawFrame(static_cast<size_t>(nSamples) * totalNbChan);
+                if (static_cast<int>(fread(rawFrame.data(), sizeof(short),
+                               static_cast<size_t>(nSamples) * totalNbChan, rawFile))
                     == nSamples * totalNbChan) {
                     // Extract only our group's channels
                     for (int s = 0; s < nSamples; ++s)
@@ -715,7 +715,7 @@ RealignResult SpikeRealign::run()
                     // Build new .fet line: features then timestamp
                     QStringList parts;
                     for (double fv : newFeats)
-                        parts << QString::number((int)std::round(fv));
+                        parts << QString::number(static_cast<int>(std::round(fv)));
                     parts << QString::number(newTs);
                     if (vecIdx + 1 < fetLines.size())
                         fetLines[vecIdx + 1] = parts.join(" ");
@@ -785,7 +785,7 @@ RealignResult SpikeRealign::run()
         ++processedSinceLastProgress;
         if (processedSinceLastProgress >= std::max(1, nSpikesInCluster / 70)) {
             processedSinceLastProgress = 0;
-            int pct = 20 + (int)(70.0 * si / nSpikesInCluster);
+            int pct = 20 + static_cast<int>((70.0 * si / nSpikesInCluster));
             emit progress(pct);
         }
     }

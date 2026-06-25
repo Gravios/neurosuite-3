@@ -4323,7 +4323,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             return false;
         }
         for (int64_t i = 0; i < N; ++i) {
-            const off_t off = (off_t)(gidx[static_cast<size_t>(i)] * bytesPerSpike);
+            const off_t off = static_cast<off_t>((gidx[static_cast<size_t>(i)] * bytesPerSpike));
             if (fseeko(sf, off, SEEK_SET) != 0) {
                 fclose(sf);
                 log << "ERROR: .spk seek failed at spike "
@@ -4411,18 +4411,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             log << "ERROR: cannot read .fet header\n";
             return false;
         }
-        if (fetNDim != (int32_t)timeDim) {
+        if (fetNDim != static_cast<int32_t>(timeDim)) {
             log << "WARNING: .fet nDimensions=" << fetNDim
                 << " but timeDim=" << timeDim
                 << " — proceeding with file value\n";
         }
-        const int32_t fileDim = (fetNDim > 0) ? fetNDim : (int32_t)timeDim;
+        const int32_t fileDim = (fetNDim > 0) ? fetNDim : static_cast<int32_t>(timeDim);
 
         for (int64_t i = 0; i < N; ++i) {
             const int64_t p = gidx[static_cast<size_t>(i)];
 
             // Read timestamp from .res at byte offset p*8
-            if (fseeko(rf, (off_t)(p * static_cast<int64_t>(sizeof(int64_t))), SEEK_SET) != 0 ||
+            if (fseeko(rf, static_cast<off_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0 ||
                 fread(&clusterTs[static_cast<size_t>(i)],
                       sizeof(int64_t), 1, rf) != 1) {
                 fclose(rf); fclose(ff);
@@ -4433,9 +4433,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             // Read extra feature columns from .fet row p
             for (int k = 0; k < nExtraFeats; ++k) {
                 const int col = nPcaFeats + k;
-                const off_t off = (off_t)sizeof(int32_t)
-                                + (off_t)(p * static_cast<int64_t>(fileDim) + col)
-                                * (off_t)sizeof(int64_t);
+                const off_t off = static_cast<off_t>(sizeof(int32_t))
+                                + static_cast<off_t>((p * static_cast<int64_t>(fileDim) + col))
+                                * static_cast<off_t>(sizeof(int64_t));
                 if (fseeko(ff, off, SEEK_SET) != 0 ||
                     fread(&extraFeats[static_cast<size_t>(i)][static_cast<size_t>(k)],
                           sizeof(int64_t), 1, ff) != 1) {
@@ -4703,12 +4703,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 // is still fast enough that splitting the batch isn't
                 // worth the code.
                 const long long rawBytes =
-                    (long long)N * nChan * wideLen * sizeof(int16_t);
-                if (rawBytes > (long long)512 * 1024 * 1024) break;
+                    static_cast<long long>(N) * nChan * wideLen * sizeof(int16_t);
+                if (rawBytes > static_cast<long long>(512) * 1024 * 1024) break;
 
                 std::vector<int16_t> rawWindows(
-                    (size_t)N * nChan * wideLen, 0);
-                std::vector<int> validRow((size_t)N, 1);
+                    static_cast<size_t>(N) * nChan * wideLen, 0);
+                std::vector<int> validRow(static_cast<size_t>(N), 1);
 
                 // ── Phase A — read one wide window per spike ────────────
                 // Saves ~M× the .fil syscalls vs the CPU per-candidate loop.
@@ -4718,37 +4718,37 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 // behaviour exactly.
                 int prepared = 0;
                 for (int64_t i = 0; i < N; ++i) {
-                    const int   curr = cumShift[(size_t)i];
-                    const int64_t baseTs = clusterTs[(size_t)i] + curr;
+                    const int   curr = cumShift[static_cast<size_t>(i)];
+                    const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
                     const int64_t leftStart = baseTs - maxShift
-                                            - (int64_t)peakSamp0;
+                                            - static_cast<int64_t>(peakSamp0);
                     if (leftStart < 0 ||
                         leftStart + wideLen > totalSamplesP82) {
-                        validRow[(size_t)i] = 0;
+                        validRow[static_cast<size_t>(i)] = 0;
                         continue;
                     }
-                    const off_t rawOff = (off_t)leftStart
-                                       * (off_t)totalNbChanP82
-                                       * (off_t)sizeof(short);
+                    const off_t rawOff = static_cast<off_t>(leftStart)
+                                       * static_cast<off_t>(totalNbChanP82)
+                                       * static_cast<off_t>(sizeof(short));
                     if (fseeko(filFp82, rawOff, SEEK_SET) != 0) {
-                        validRow[(size_t)i] = 0;
+                        validRow[static_cast<size_t>(i)] = 0;
                         continue;
                     }
                     // Read sample-major into rawFrame (reused), then
                     // gather to channel-major into rawWindows.
                     std::vector<int16_t> wide(
-                        (size_t)wideLen * totalNbChanP82);
+                        static_cast<size_t>(wideLen) * totalNbChanP82);
                     if (fread(wide.data(), sizeof(short),
                               wide.size(), filFp82) != wide.size()) {
-                        validRow[(size_t)i] = 0;
+                        validRow[static_cast<size_t>(i)] = 0;
                         continue;
                     }
                     int16_t* spkBase = rawWindows.data()
-                                     + (size_t)i * nChan * wideLen;
+                                     + static_cast<size_t>(i) * nChan * wideLen;
                     for (int t = 0; t < wideLen; ++t)
                         for (int ci = 0; ci < nChan; ++ci)
-                            spkBase[(size_t)ci * wideLen + t] =
-                                wide[(size_t)t * totalNbChanP82
+                            spkBase[static_cast<size_t>(ci) * wideLen + t] =
+                                wide[static_cast<size_t>(t) * totalNbChanP82
                                    + groupChannelsP82[ci]];
                     ++prepared;
                 }
@@ -4757,28 +4757,28 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
                 // ── Phase B — pack PCA basis into flat float arrays ─────
                 std::vector<float> evecFlat(
-                    (size_t)chForPca * kComp * d2u);
+                    static_cast<size_t>(chForPca) * kComp * d2u);
                 std::vector<float> meansFlat(
-                    centered ? (size_t)chForPca * d2u : 0);
+                    centered ? static_cast<size_t>(chForPca) * d2u : 0);
                 for (int ch = 0; ch < chForPca; ++ch) {
-                    const auto& ev = pca.evec[(size_t)ch];
+                    const auto& ev = pca.evec[static_cast<size_t>(ch)];
                     for (int k = 0; k < kComp; ++k)
                         for (int u = 0; u < d2u; ++u)
-                            evecFlat[(size_t)ch * kComp * d2u
-                                   + (size_t)k * d2u + u] =
-                                (float)ev[(size_t)k * d2u + u];
+                            evecFlat[static_cast<size_t>(ch) * kComp * d2u
+                                   + static_cast<size_t>(k) * d2u + u] =
+                                static_cast<float>(ev[static_cast<size_t>(k) * d2u + u]);
                     if (centered) {
-                        const auto& mu = pca.means[(size_t)ch];
+                        const auto& mu = pca.means[static_cast<size_t>(ch)];
                         for (int u = 0; u < d2u; ++u)
-                            meansFlat[(size_t)ch * d2u + u] =
-                                (float)mu[(size_t)u];
+                            meansFlat[static_cast<size_t>(ch) * d2u + u] =
+                                static_cast<float>(mu[static_cast<size_t>(u)]);
                     }
                 }
 
                 // ── Phase C — kernel launch + best-shift collection ─────
-                std::vector<int> bestShiftGpu((size_t)N, 0);
+                std::vector<int> bestShiftGpu(static_cast<size_t>(N), 0);
                 const int rc = PcaRefineGpu::refine(
-                    (int)N, M, wideLen, nSamp, nChan, chForPca,
+                    static_cast<int>(N), M, wideLen, nSamp, nChan, chForPca,
                     kComp, d2u, rShift, maxShift,
                     centered ? 1 : 0, useStder ? 1 : 0,
                     rawWindows.data(),
@@ -4798,23 +4798,23 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 // matches the CPU path's "every candidate ran off the
                 // .fil edge" accounting.
                 std::vector<int16_t> rawFrame(
-                    (size_t)nSamp * totalNbChanP82);
+                    static_cast<size_t>(nSamp) * totalNbChanP82);
                 for (int64_t i = 0; i < N; ++i) {
-                    if (!validRow[(size_t)i]) { ++nClamped; continue; }
-                    const int bestS = bestShiftGpu[(size_t)i];
+                    if (!validRow[static_cast<size_t>(i)]) { ++nClamped; continue; }
+                    const int bestS = bestShiftGpu[static_cast<size_t>(i)];
                     if (bestS == 0) continue;
 
-                    cumShift[(size_t)i] = cumShift[(size_t)i] + bestS;
+                    cumShift[static_cast<size_t>(i)] = cumShift[static_cast<size_t>(i)] + bestS;
                     ++nRefined;
 
                     // Refresh wavBuf[i] from .fil at the chosen position
                     // (same logic as the CPU branch below).
                     const int64_t bestStart =
-                        clusterTs[(size_t)i] + cumShift[(size_t)i]
-                      - (int64_t)peakSamp0;
-                    const off_t bestOff = (off_t)bestStart
-                                        * (off_t)totalNbChanP82
-                                        * (off_t)sizeof(short);
+                        clusterTs[static_cast<size_t>(i)] + cumShift[static_cast<size_t>(i)]
+                      - static_cast<int64_t>(peakSamp0);
+                    const off_t bestOff = static_cast<off_t>(bestStart)
+                                        * static_cast<off_t>(totalNbChanP82)
+                                        * static_cast<off_t>(sizeof(short));
                     if (fseeko(filFp82, bestOff, SEEK_SET) != 0) continue;
                     if (fread(rawFrame.data(), sizeof(short),
                               rawFrame.size(), filFp82)
@@ -4823,24 +4823,24 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                         + (ptrdiff_t)i * (ptrdiff_t)spkElems;
                     for (int t = 0; t < nSamp; ++t)
                         for (int ci = 0; ci < nChan; ++ci)
-                            wTgt[(size_t)ci * nSamp + t] =
-                                rawFrame[(size_t)t * totalNbChanP82
+                            wTgt[static_cast<size_t>(ci) * nSamp + t] =
+                                rawFrame[static_cast<size_t>(t) * totalNbChanP82
                                        + groupChannelsP82[ci]];
                     if (useStder) {
-                        std::vector<int16_t> sdPrev((size_t)nChan, 0);
+                        std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
                         for (int t = 0; t < nSamp; ++t) {
                             int64_t sum = 0;
                             for (int ci = 0; ci < nChan; ++ci)
-                                sum += wTgt[(size_t)ci * nSamp + t];
+                                sum += wTgt[static_cast<size_t>(ci) * nSamp + t];
                             for (int ci = 0; ci < nChan; ++ci) {
-                                const int v = wTgt[(size_t)ci * nSamp + t];
-                                const int sd = nChan * v - (int)sum;
+                                const int v = wTgt[static_cast<size_t>(ci) * nSamp + t];
+                                const int sd = nChan * v - static_cast<int>(sum);
                                 const int16_t sdCl = (int16_t)
                                     std::max(-32768, std::min(32767, sd));
-                                const int diff = (int)sdCl
-                                    - (int)sdPrev[(size_t)ci];
-                                sdPrev[(size_t)ci] = sdCl;
-                                wTgt[(size_t)ci * nSamp + t] = (int16_t)
+                                const int diff = static_cast<int>(sdCl)
+                                    - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
+                                sdPrev[static_cast<size_t>(ci)] = sdCl;
+                                wTgt[static_cast<size_t>(ci) * nSamp + t] = (int16_t)
                                     std::max(-32768, std::min(32767, diff));
                             }
                         }
@@ -5751,12 +5751,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 "[timing] cluster %d: nspk=%lld gap=%lldms setup=%lldms "
                 "compute=%lldms wsort=%lldms wopen=%lldms wwrite=%lldms "
                 "wlog=%lldms total=%lldms\n",
-                clusterId, (long long)N, _gapMs, (long long)_rtSetupMs,
-                (long long)(_rtComputeMs - _rtSetupMs),
-                (long long)(_rtWprepMs - _rtComputeMs),
-                (long long)(_rtWopenMs - _rtWprepMs),
-                (long long)(_rtWwriteMs - _rtWopenMs),
-                (long long)(_tot - _rtWwriteMs), (long long)_tot);
+                clusterId, static_cast<long long>(N), _gapMs, static_cast<long long>(_rtSetupMs),
+                static_cast<long long>((_rtComputeMs - _rtSetupMs)),
+                static_cast<long long>((_rtWprepMs - _rtComputeMs)),
+                static_cast<long long>((_rtWopenMs - _rtWprepMs)),
+                static_cast<long long>((_rtWwriteMs - _rtWopenMs)),
+                static_cast<long long>((_tot - _rtWwriteMs)), static_cast<long long>(_tot));
         fflush(stderr);
     }
     // Record this call's end so the next cluster can report its gap.  Updated
