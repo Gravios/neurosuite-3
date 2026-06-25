@@ -366,6 +366,15 @@ ClusterPalette::~ClusterPalette()
     // no need to delete child widgets, Qt does it all for us
 }
 
+// The colour list this palette is bound to.  The MAIN palette is pinned to the
+// parent clustering so it always lists the parent clusters regardless of which
+// clustering is active; the CHILD palette follows the active (child) list.  This
+// must be consulted everywhere the palette maps a row to a cluster id, so the
+// displayed list and the id lookups always agree.
+ItemColors& ClusterPalette::boundColors() const {
+    return showsChildScope ? doc->clusterColors() : doc->parentClusterColors();
+}
+
 void ClusterPalette::createClusterList(KlustersDoc* document){
     //Assign the document to the doc member for future use
     doc = document;
@@ -387,7 +396,7 @@ void ClusterPalette::updateClusterList(){
 
 
     //Get the list of clusters with their color
-    ItemColors& clusterColors = doc->clusterColors();
+    ItemColors& clusterColors = boundColors();
     int nbClusters = clusterColors.numberOfItems();
 
     //Construct one icon for each cluster.  The icon is a solid 12x12 colour
@@ -411,7 +420,7 @@ void ClusterPalette::updateClusterList(){
             swatchCache.insert(swatchKey, pix);
         }
         const int curId = clusterColors.itemId(i);
-        if(doc->isMasked(curId) || doc->isChildScopeHidden(curId))
+        if(doc->isMasked(curId) || (showsChildScope && doc->isChildScopeHidden(curId)))
             continue;   // masking + hierarchical child-scope: omit from the active list
         QString clusterText = QString::fromLatin1("%1").arg(curId);
 
@@ -477,7 +486,7 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
     else{
         ////If several options are available a poppupmenu can be added////
 
-        int clusterNumber = doc->clusterColors().itemId(item->data(INDEX).toInt());
+        int clusterNumber = boundColors().itemId(item->data(INDEX).toInt());
 
         //The dialog is not shown for the Noise and arterfact clusters (1 and 0).
         if(clusterNumber != 0 && clusterNumber != 1){
@@ -494,7 +503,7 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
             if(clusterInformationDialog->exec() == QDialog::Accepted)
             {
                 //Update the cluster user information.
-                doc->data().setUserClusterInformation(doc->clusterColors().itemId(item->data(INDEX).toInt()),clusterInformationDialog->getStructure(),clusterInformationDialog->getType(),clusterInformationDialog->getId(),clusterInformationDialog->getQuality(),clusterInformationDialog->getNotes());
+                doc->data().setUserClusterInformation(boundColors().itemId(item->data(INDEX).toInt()),clusterInformationDialog->getStructure(),clusterInformationDialog->getType(),clusterInformationDialog->getId(),clusterInformationDialog->getQuality(),clusterInformationDialog->getNotes());
 
                 //update the text of the item
                 if(isInUserClusterInfoMode){
@@ -559,7 +568,7 @@ void ClusterPalette::slotOnItem(QListWidgetItem* item){
         return; // right pressed on viewport
     } else {
 
-        int clusterNumber = doc->clusterColors().itemId(item->data(INDEX).toInt());
+        int clusterNumber = boundColors().itemId(item->data(INDEX).toInt());
 
         //The information are not shown in the statusBar for the Noise and arterfact clusters (1 and 0).
         if(clusterNumber != 0 && clusterNumber != 1){
@@ -757,7 +766,7 @@ void ClusterPalette::changeColor(QListWidgetItem* item) {
         return;
     }
     //Get the list of clusters with their color
-    ItemColors& clusterColors = doc->clusterColors();
+    ItemColors& clusterColors = boundColors();
 
     const int index = item->data(INDEX).toInt();
 
@@ -859,7 +868,7 @@ void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
     QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
     doc->data().getClusterUserInformation(electrodeGroupId,clusterUserInformationMap);
 
-    ItemColors& clusterColors = doc->clusterColors();
+    ItemColors& clusterColors = boundColors();
     ClusterUserInformation currentClusterInformation;
 
     for(int i =0; i< iconView->count() ; ++i) {
@@ -933,7 +942,7 @@ void ClusterPalette::hideUserClusterInformation(){
     iconView->setGridSize(QSize(fontInfo.pixelSize() * 2,15*2));
     //iconView->arrangeItemsInGrid();
 
-    ItemColors& clusterColors = doc->clusterColors();
+    ItemColors& clusterColors = boundColors();
 
     for(int i = 0; i < iconView->count(); ++i) {
         int clusterId = clusterColors.itemId(i);

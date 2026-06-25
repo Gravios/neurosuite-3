@@ -32,6 +32,7 @@ class QStatusBar;
 
 // forward declaration of the KlustersDoc class
 class KlustersDoc;
+class ItemColors;
 
 /**
   * This class represents the Cluster Panel of the application.
@@ -140,6 +141,11 @@ public:
 
     void createClusterList(KlustersDoc* doc);
     void updateClusterList();
+    /** Bind this palette to the child (hierarchical) clustering instead of the
+     *  parent.  The main cluster palette stays bound to the parent (the default),
+     *  so it always lists the parent clustering and is never collapsed by a
+     *  left-over child-active scope; only the child palette is child-scoped. */
+    void setShowsChildScope(bool on){showsChildScope = on;}
     void selectItems(const QList<int> &selectedClusters);
 
     /** Rewrite the S-pinned-ids set through a partial cluster-rename map.
@@ -210,6 +216,17 @@ Q_SIGNALS:
 private:
     ClusterPaletteWidget* iconView;
     KlustersDoc* doc;
+
+    /** When true this palette displays the active (child) clustering and honours
+     *  the child-scope filter; when false (the main palette) it is pinned to the
+     *  parent clustering, independent of which clustering is active.  Without
+     *  this, a rebuild of the main palette while a child is selected reads the
+     *  child colour list, the scope filter drops the out-of-scope children, and
+     *  the list collapses to only the (un-scoped) noise cluster. */
+    bool showsChildScope = false;
+    /** The colour list this palette is bound to: the parent list for the main
+     *  palette, the active (child) list for the child palette. */
+    ItemColors& boundColors() const;
 
     Mode mode;//default IMMEDIATE
 
