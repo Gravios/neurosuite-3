@@ -1302,6 +1302,10 @@ void KlustersDoc::resyncStraddlingAtoms(){
     if (!childData) return;
     const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    // Snapshot the child labels BEFORE the carve so a parent undo can revert it
+    // (the carve uses moveSpikeSubset, which pushes no childData undo level).
+    const QVector<dataType> childPreCut = childByRow;
+    bool recut = false;
     const int n = qMin(cluByRow.size(), childByRow.size());
     QHash<int, QHash<int, QSet<dataType>>> atomParentRows;   // atom -> parent -> rows
     for (int r = 1; r < n; ++r){
@@ -1319,13 +1323,16 @@ void KlustersDoc::resyncStraddlingAtoms(){
             const int newAtom = static_cast<int>(childData->nextFreeClusterId());
             QList<int> fromC, emptied;
             childData->moveSpikeSubset(a.key(), p.value(), newAtom, fromC, emptied);
+            recut = true;
         }
     }
-    // A parent split re-cut the child layer with moveSpikeSubset (which does NOT
-    // push a childData undo level), so any ChildEdit already on the atom-undo stack
-    // now points at a snapshot taken before this re-cut; reverting it would restore
-    // a stale child state.  Drop the atom-undo history: the parent split is a new
-    // baseline for the child layer (its own undo is on the parent Ctrl+Z timeline).
+    // Attach the pre-re-cut snapshot to THIS parent edit's order marker (pushed by
+    // prepareClusterColorUndo earlier in the same split), so a parent undo reverts
+    // the carve atomically with the split.  Only when a carve actually happened.
+    if (recut && !editOrderUndo.isEmpty() && editOrderUndo.first().layer == EditLayer::Parent)
+        editOrderUndo.first().childPre = childPreCut;
+    // The atom-undo history is invalidated by this re-cut; drop it (the split's own
+    // undo is on the parent timeline -- and now carries the child revert via childPre).
     childUndoStack.clear();
     childRedoStack.clear();
     // Always refresh: even atoms that did not straddle may now sit under a new
@@ -1520,7 +1527,7 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
 void KlustersDoc::recordChildEdit(const ChildEdit& e){
     childUndoStack.prepend(e);
     childRedoStack.clear();                       // a new edit invalidates atom redo
-    editOrderUndo.prepend(EditLayer::Atom);       // unified-order marker
+    editOrderUndo.prepend(EditMarker{EditLayer::Atom, {}, {}});       // unified-order marker
     editOrderRedo.clear();                        // ... and the unified redo
     // Make the main Undo enable pick up this atom-only edit (slots OR child count).
     emit updateUndoNb(parentUndoCount());
@@ -1531,18 +1538,27 @@ void KlustersDoc::undoDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
     if (!v) return;
     while (!editOrderUndo.isEmpty()){
-        const EditLayer layer = editOrderUndo.first();
+        const EditLayer layer = editOrderUndo.first().layer;
         if (layer == EditLayer::Atom){
             if (childUndoCount() > 0){
-                editOrderUndo.removeFirst();
-                editOrderRedo.prepend(layer);
+                editOrderRedo.prepend(editOrderUndo.takeFirst());
                 undoChildEdit(*v);
                 return;
             }
         } else {                                  // Parent (None treated as parent)
             if (parentUndoCount() > 0){
-                editOrderUndo.removeFirst();
-                editOrderRedo.prepend(layer);
+                EditMarker m = editOrderUndo.takeFirst();
+                // Couple the child-layer re-cut this parent edit triggered: revert
+                // childData to its pre-re-cut snapshot (saving the post-re-cut state
+                // for redo) so undo()'s tail rebuildHierarchyFromData sees BOTH layers
+                // at their pre-op state.  Empty childPre == this parent edit touched
+                // only the parent layer, so nothing to couple.
+                if (childData && !m.childPre.isEmpty()){
+                    m.childPost = childData->labelByFeatureRow();
+                    childData->restoreClusterLabels(m.childPre);
+                    syncChildColors();
+                }
+                editOrderRedo.prepend(m);
                 undo();
                 return;
             }
@@ -1559,18 +1575,21 @@ void KlustersDoc::redoDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
     if (!v) return;
     while (!editOrderRedo.isEmpty()){
-        const EditLayer layer = editOrderRedo.first();
+        const EditLayer layer = editOrderRedo.first().layer;
         if (layer == EditLayer::Atom){
             if (childRedoCount() > 0){
-                editOrderRedo.removeFirst();
-                editOrderUndo.prepend(layer);
+                editOrderUndo.prepend(editOrderRedo.takeFirst());
                 redoChildEdit(*v);
                 return;
             }
         } else {
             if (parentRedoCount() > 0){
-                editOrderRedo.removeFirst();
-                editOrderUndo.prepend(layer);
+                EditMarker m = editOrderRedo.takeFirst();
+                if (childData && !m.childPost.isEmpty()){
+                    childData->restoreClusterLabels(m.childPost);   // re-apply the child re-cut
+                    syncChildColors();
+                }
+                editOrderUndo.prepend(m);
                 redo();
                 return;
             }
@@ -1587,18 +1606,20 @@ bool KlustersDoc::undoChildEditDispatch(){
     // Forced atom undo (Ctrl+Shift+Z): remove the most-recent Atom marker from the
     // unified order -- wherever it sits, a newer parent edit may be above it -- and
     // move it to the redo side so redoDispatch replays it in order.
+    EditMarker m{EditLayer::Atom, {}, {}};
     for (int i = 0; i < editOrderUndo.size(); ++i)
-        if (editOrderUndo.at(i) == EditLayer::Atom){ editOrderUndo.removeAt(i); break; }
-    editOrderRedo.prepend(EditLayer::Atom);
+        if (editOrderUndo.at(i).layer == EditLayer::Atom){ m = editOrderUndo.takeAt(i); break; }
+    editOrderRedo.prepend(m);
     return undoChildEdit(*v);
 }
 
 bool KlustersDoc::redoChildEditDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
     if (!v || childRedoCount() == 0) return false;
+    EditMarker m{EditLayer::Atom, {}, {}};
     for (int i = 0; i < editOrderRedo.size(); ++i)
-        if (editOrderRedo.at(i) == EditLayer::Atom){ editOrderRedo.removeAt(i); break; }
-    editOrderUndo.prepend(EditLayer::Atom);
+        if (editOrderRedo.at(i).layer == EditLayer::Atom){ m = editOrderRedo.takeAt(i); break; }
+    editOrderUndo.prepend(m);
     return redoChildEdit(*v);
 }
 
@@ -2849,7 +2870,7 @@ void KlustersDoc::prepareClusterColorUndo(){
     //Store the current clusterColors in the undo list and make the temporary become the current one.
     clusterColorListUndoList.prepend(clusterColorList);
     clusterColorList = clusterColorListTemp;
-    editOrderUndo.prepend(EditLayer::Parent);   // unified-order marker for this parent edit
+    editOrderUndo.prepend(EditMarker{EditLayer::Parent, {}, {}});   // unified-order marker for this parent edit
 
     //if the number of undo has been reach remove the last element in the undo list (first inserted)
     int currentClusterColorsNbUndo = clusterColorListUndoList.count();
@@ -4069,6 +4090,9 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     if (childData) {
         const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
         const QVector<dataType> childByRow = childData->labelByFeatureRow();
+        // Snapshot child labels BEFORE the mint so a parent undo reverts it.
+        const QVector<dataType> childPreCut = childByRow;
+        bool recut = false;
         const int n = qMin(cluByRow.size(), childByRow.size());
         for (int newParent : reclusteredClusterList) {
             QHash<int, QSet<dataType>> bySource;        // current child atom -> rows
@@ -4080,13 +4104,17 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
             if (bySource.isEmpty()) continue;
             const int newAtom = static_cast<int>(childData->nextFreeClusterId());
             QList<int> fromC, emptied;
-            for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it)
+            for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it){
                 childData->moveSpikeSubset(it.key(), it.value(), newAtom, fromC, emptied);
+                recut = true;
+            }
         }
-        // Same as the parent-split case: the mint re-cut the child layer with
-        // moveSpikeSubset (no childData undo level), so prior ChildEdits now point at
-        // a pre-recluster snapshot.  Drop the atom-undo history (the parent recluster
-        // is the child layer's new baseline; its undo is on the parent timeline).
+        // Attach the pre-re-cut snapshot to this parent recluster's order marker so a
+        // parent undo reverts the mint atomically with the recluster.
+        if (recut && !editOrderUndo.isEmpty() && editOrderUndo.first().layer == EditLayer::Parent)
+            editOrderUndo.first().childPre = childPreCut;
+        // Atom-undo history invalidated by the re-cut; drop it (the recluster's undo
+        // is on the parent timeline and now carries the child revert via childPre).
         childUndoStack.clear();
         childRedoStack.clear();
         syncChildColors();

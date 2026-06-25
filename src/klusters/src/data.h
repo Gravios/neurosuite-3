@@ -366,6 +366,15 @@ public:
                          int toCluster,
                          QList<int>& fromClusters, QList<int>& emptiedClusters);
 
+    /** Inverse of labelByFeatureRow(): rebuild spikesByCluster + clusterInfoMap so
+     *  the spike at 1-based feature row r belongs to cluster @p labels[r].  Used to
+     *  revert a child-layer re-cut as one atomic step inside a parent undo/redo --
+     *  the re-cut runs through moveSpikeSubset, which pushes no Data undo level, so
+     *  it cannot be reverted by undo()/redo(); a label snapshot taken before the
+     *  re-cut is replayed here instead.  Invalidates the waveform / correlation
+     *  caches for every cluster whose membership may have changed. */
+    void restoreClusterLabels(const QVector<dataType>& labels);
+
     /** Atomic two-way split of a single cluster.
      *
      *  Partitions every spike of @p sourceCluster into TWO new clusters

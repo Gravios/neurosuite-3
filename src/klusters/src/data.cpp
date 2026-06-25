@@ -2996,6 +2996,52 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
         clusterInfoMap->remove(static_cast<dataType>(cid));
 }
 
+void Data::restoreClusterLabels(const QVector<dataType>& labels)
+{
+    // Inverse of labelByFeatureRow(): group every feature row by its target
+    // cluster (ascending row order == time order within a cluster, since we
+    // iterate rows ascending) and rebuild the two tables in one pass.
+    if (labels.size() < static_cast<int>(nbSpikes) + 1) return;   // size guard
+
+    QMap<dataType, QList<dataType>> rowsByCluster;
+    for (dataType r = 1; r <= nbSpikes; ++r)
+        rowsByCluster[labels[static_cast<int>(r)]].append(r);
+
+    SortableTable*  newSpk  = new SortableTable();
+    ClusterInfoMap* newInfo = new ClusterInfoMap();
+    newSpk->setSize(nbSpikes);
+    dataType pos = 1;
+    for (auto it = rowsByCluster.constBegin(); it != rowsByCluster.constEnd(); ++it) {
+        const dataType cid     = it.key();
+        const QList<dataType>& rows = it.value();   // ascending
+        const dataType clStart = pos;
+        for (dataType row1 : rows) {
+            (*newSpk)(1, pos) = row1;
+            (*newSpk)(2, pos) = cid;
+            ++pos;
+        }
+        newInfo->insert(cid, ClusterInfo(clStart, static_cast<dataType>(rows.size())));
+    }
+
+    // Clusters that existed before OR exist now may have changed membership.
+    QList<dataType> before = clusterIds();
+
+    {
+        QMutexLocker lk(&mutex);
+        delete spikesByCluster; spikesByCluster = newSpk;
+        delete clusterInfoMap;  clusterInfoMap  = newInfo;
+    }
+
+    QSet<dataType> touched(before.begin(), before.end());
+    for (auto it = newInfo->constBegin(); it != newInfo->constEnd(); ++it)
+        touched.insert(it.key());
+    for (dataType cid : touched) {
+        invalidateWaveformCache(static_cast<int>(cid));
+        invalidateCorrelogramCache(static_cast<int>(cid));
+    }
+}
+
+
 // ---------------------------------------------------------------------------
 // Data::splitClusterTwoWays
 //

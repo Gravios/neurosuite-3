@@ -1380,15 +1380,20 @@ private:
     // user's most recent action (their last action was a fiber-layer edit).
     enum class EditLayer { None, Parent, Atom };
     EditLayer lastEditLayer = EditLayer::None;
-    // Unified undo/redo order: one marker per edit, newest-first, recording which
-    // timeline (Parent=clusteringData, Atom=childData) that edit touched.  The
-    // dispatcher pops the top marker and reverts that layer; the live per-layer
-    // stack counts (parentUndoCount/childUndoCount) are authoritative for
-    // availability, so a marker whose layer stack was capped (nbUndo) or cleared
-    // (a parent op re-cutting the child layer) is simply skipped -- no separate
-    // cap/clear bookkeeping is mirrored here.
-    QList<EditLayer> editOrderUndo;
-    QList<EditLayer> editOrderRedo;
+    // One marker per edit on the unified order timeline.  For a parent edit that
+    // also re-cut the child layer (the covering-atom mint after a parent recluster,
+    // or resyncStraddlingAtoms after a parent split -- both via moveSpikeSubset,
+    // which pushes no childData undo level), childPre holds the child label snapshot
+    // taken BEFORE the re-cut, so a parent undo can revert it atomically; childPost
+    // is filled at undo time so redo can re-apply it.  Empty for edits with no
+    // child re-cut (every atom edit, and parent edits made with no child layer).
+    struct EditMarker {
+        EditLayer         layer;
+        QVector<dataType> childPre;
+        QVector<dataType> childPost;
+    };
+    QList<EditMarker> editOrderUndo;
+    QList<EditMarker> editOrderRedo;
     // Record one atom-layer edit: push its ChildEdit + an Atom order marker, and
     // invalidate the atom + unified redo.  The single funnel for the child edits.
     void recordChildEdit(const ChildEdit& e);
