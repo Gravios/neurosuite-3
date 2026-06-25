@@ -1751,14 +1751,20 @@ void KlustersApp::initDisplay(){
     clusterPalette->createClusterList(doc);
     clusterPalette->selectItems(*clusterList);
 
-    // Hierarchical view starts off; enable the toggle only when the opened
-    // document has a .clc child sibling (auto-detected in KlustersDoc::openDocument).
+    // Hierarchical view: enable the toggle when the opened document has a .clc
+    // child sibling (auto-detected in KlustersDoc::openDocument), and turn it on
+    // by default so the child palette is immediately available.
     if(childPanel) childPanel->hide();
     if(childPalette) childPalette->reset();
     if(mHierarchicalView){
-        const QSignalBlocker block(mHierarchicalView);   // don't fire the toggle slot
-        mHierarchicalView->setChecked(false);
-        mHierarchicalView->setEnabled(doc->hasChildSibling());
+        const bool hasChild = doc->hasChildSibling();
+        {
+            const QSignalBlocker block(mHierarchicalView);   // set state without firing the slot
+            mHierarchicalView->setChecked(false);
+            mHierarchicalView->setEnabled(hasChild);
+        }
+        if(hasChild)
+            mHierarchicalView->setChecked(true);   // default on -> fires the slot -> loads + shows
     }
 
     // Once the view is shown and the WaveformThread has loaded the first

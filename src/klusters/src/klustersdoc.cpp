@@ -617,12 +617,22 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     siblingSpkFileLength = spkFileLength;
     siblingYamlForm      = isYamlParExist;
     clcSiblingPath.clear();
-    if (isYamlParExist) {
-        const QString clc = resolveFeature(
-            urlFileInfo.absolutePath() + QDir::separator() + baseName,
-            "clc", electrodeGroupID, sessionMethod);
-        if (QFile::exists(clc))
-            clcSiblingPath = clc;
+    clpSiblingPath.clear();
+    // The .clc / .clp siblings share the opened .clu's full anchor (method,
+    // group AND suffix) -- only the type token differs.  resolveFeature would
+    // drop the suffix (e.g. ".microfiber"), so derive the sibling names by
+    // swapping the type token in the opened cluster filename instead.  Only
+    // attempt this when a .clu parent was opened (not a .clc viewed directly).
+    if (isYamlParExist && anchor.ok && anchor.type == std::string("clu")
+        && cluFileName.contains(QStringLiteral(".clu."))) {
+        const QString dir = urlFileInfo.absolutePath() + QDir::separator();
+        QString clcName = cluFileName; clcName.replace(QStringLiteral(".clu."), QStringLiteral(".clc."));
+        QString clpName = cluFileName; clpName.replace(QStringLiteral(".clu."), QStringLiteral(".clp."));
+        if (QFile::exists(dir + clcName)) clcSiblingPath = dir + clcName;
+        if (QFile::exists(dir + clpName)) clpSiblingPath = dir + clpName;
+        qDebug() << "[hierarchy] opened" << cluFileName
+                 << "-> clc:" << (clcSiblingPath.isEmpty() ? QStringLiteral("(none)") : clcName)
+                 << "clp:"   << (clpSiblingPath.isEmpty() ? QStringLiteral("(none)") : clpName);
     }
 
     // Establish the four permanent pending files so the originals are never
@@ -1104,10 +1114,43 @@ void KlustersDoc::setActiveClustering(bool child){
 void KlustersDoc::buildHierarchyMaps(){
     parentToChildren.clear();
     childToParent.clear();
-    if (!clusteringData || clcSiblingPath.isEmpty()) return;
+    if (!clusteringData) return;
 
-    // Read the aligned per-spike parent (.clu == docUrl) and child (.clc) id
-    // arrays directly; both are binary clu-format aligned to the same .res.
+    // Preferred source: the .clp child->parent map (binary clu-format, one int32
+    // header = nFibers, then nChildren int32 parent-fiber ids indexed by child id;
+    // parent[c-1] owns child c, child ids are global 1..nChildren).  Authoritative
+    // and O(nChildren) -- no per-spike scan, and correct even if a child id were
+    // reused across parents in the per-spike arrays.
+    if (!clpSiblingPath.isEmpty()){
+        const qint64 bytes = QFileInfo(clpSiblingPath).size();
+        if (bytes > 4){
+            const int64_t nChildren = (bytes - 4) / 4;            // minus the int32 header
+            const neurofileio::CluFile clp =
+                neurofileio::readCluBinary(clpSiblingPath.toStdString(), nChildren);
+            if (clp.ok && static_cast<int64_t>(clp.ids.size()) == nChildren){
+                for (int64_t i = 0; i < nChildren; ++i){
+                    const int childId  = static_cast<int>(i + 1);  // child ids are 1-based
+                    const int parentId = clp.ids[i];
+                    if (parentId <= 0) continue;                   // 0 = noise / unmapped
+                    childToParent.insert(childId, parentId);
+                    parentToChildren[parentId].append(childId);
+                }
+                for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
+                    QList<int>& kids = it.value();
+                    std::sort(kids.begin(), kids.end());
+                    kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
+                }
+                qDebug() << "[hierarchy] built from .clp:" << childToParent.size()
+                         << "children under" << parentToChildren.size() << "parents";
+                return;
+            }
+            qWarning() << "[hierarchy] .clp present but unreadable; falling back to .clu/.clc scan";
+        }
+    }
+
+    // Fallback: derive from the aligned per-spike parent (.clu == docUrl) and
+    // child (.clc) id arrays; both are binary clu-format aligned to the same .res.
+    if (clcSiblingPath.isEmpty()) return;
     const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
     const neurofileio::CluFile par = neurofileio::readCluBinary(docUrl.toStdString(), nSpikes);
     const neurofileio::CluFile chi = neurofileio::readCluBinary(clcSiblingPath.toStdString(), nSpikes);

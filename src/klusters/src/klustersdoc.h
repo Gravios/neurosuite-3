@@ -1255,6 +1255,7 @@ private:
     Data*       activeData      = nullptr;   // VIEW-facing: == clusteringData, or childData
     ItemColors* activeColorList = nullptr;   // parallels activeData
     QString     clcSiblingPath;              // resolved .clc path ("" if none detected)
+    QString     clpSiblingPath;              // resolved .clp child->parent map ("" if none)
     // sibling paths captured at open so the child clustering can be re-read lazily
     QString     siblingFetPath, siblingSpkPath, siblingYamlPath;
     long        siblingSpkFileLength = 0;
