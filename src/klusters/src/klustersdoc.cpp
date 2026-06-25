@@ -1288,6 +1288,46 @@ void KlustersDoc::rebuildHierarchyFromData(){
     }
 }
 
+void KlustersDoc::resyncStraddlingAtoms(){
+    // After a manual parent split, the split-off spikes changed parent but kept
+    // their child-atom label, so any atom that spanned the cut now straddles two
+    // parents -- which breaks nesting and desynchronises the child view.  Carve
+    // ONLY those atoms: for a straddling atom, the first parent keeps the original
+    // atom id and each other parent's portion becomes a fresh atom.  Atoms wholly
+    // within one parent are left untouched, so the parent's existing sub-structure
+    // survives (a split, unlike a recluster, should not collapse unaffected
+    // children).  moveSpikeSubset rebuilds spikesByCluster + clusterInfoMap together
+    // (no zero-spike phantom) and nextFreeClusterId keeps new atom ids in the
+    // child-id space (above the highest child id; no parent/child collision).
+    if (!childData) return;
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    const int n = qMin(cluByRow.size(), childByRow.size());
+    QHash<int, QHash<int, QSet<dataType>>> atomParentRows;   // atom -> parent -> rows
+    for (int r = 1; r < n; ++r){
+        const int atom = static_cast<int>(childByRow[r]);
+        if (atom <= 0) continue;                              // noise/unassigned: no atom to carve
+        const int parent = static_cast<int>(cluByRow[r]);
+        atomParentRows[atom][parent].insert(static_cast<dataType>(r));
+    }
+    for (auto a = atomParentRows.constBegin(); a != atomParentRows.constEnd(); ++a){
+        const QHash<int, QSet<dataType>>& parentRows = a.value();
+        if (parentRows.size() < 2) continue;                 // wholly inside one parent -> intact
+        bool first = true;
+        for (auto p = parentRows.constBegin(); p != parentRows.constEnd(); ++p){
+            if (first){ first = false; continue; }           // first parent keeps the atom id
+            const int newAtom = static_cast<int>(childData->nextFreeClusterId());
+            QList<int> fromC, emptied;
+            childData->moveSpikeSubset(a.key(), p.value(), newAtom, fromC, emptied);
+        }
+    }
+    // Always refresh: even atoms that did not straddle may now sit under a new
+    // parent id (the split-off fiber), which rebuildHierarchyFromData re-derives.
+    syncChildColors();
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+}
+
 int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activeView){
     if (fibers.size() < 2) return -1;
     setActiveClustering(false);                   // edits always target the parent
@@ -2268,6 +2308,10 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         commitClusterCreation(newClusterIdint, fromClusters, emptyClusters,
                               activeView);
 
+        // Hierarchical mode: the split moved spikes into a new fiber, so any child
+        // atom that spanned the cut now straddles two parents -- re-cut just those.
+        if (childData) resyncStraddlingAtoms();
+
         // Log after: surviving source clusters + the new cluster
         QList<int> resultIds;
         for (int id : fromClusters)
@@ -2364,6 +2408,9 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         //Update the palette of cluster
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
+
+        // Hierarchical mode: re-cut child atoms that now straddle the split.
+        if (childData) resyncStraddlingAtoms();
 
         // Log after: surviving sources + all newly created clusters
         {
