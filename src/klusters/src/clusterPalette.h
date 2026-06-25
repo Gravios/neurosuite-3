@@ -32,6 +32,7 @@ class QStatusBar;
 
 // forward declaration of the KlustersDoc class
 class KlustersDoc;
+class Data;
 class ItemColors;
 
 /**
@@ -242,6 +243,13 @@ private:
     /** The colour list this palette is bound to: the parent list for the main
      *  palette, the active (child) list for the child palette. */
     ItemColors& boundColors() const;
+
+    /** The clustering this palette is bound to, mirroring boundColors(): the
+     *  parent clustering for the main palette, the child clustering for the
+     *  child palette.  Used for every per-id user-information lookup so the id
+     *  (taken from boundColors()) is resolved against the clustering that
+     *  actually contains it. */
+    Data& boundData() const;
 
     Mode mode;//default IMMEDIATE
 

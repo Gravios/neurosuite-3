@@ -381,6 +381,15 @@ ItemColors& ClusterPalette::boundColors() const {
     return showsChildScope ? doc->childClusterColors() : doc->parentClusterColors();
 }
 
+Data& ClusterPalette::boundData() const {
+    // Mirror boundColors(): resolve per-id user-information lookups against the
+    // clustering this palette displays.  KlustersDoc::data() is the ACTIVE
+    // clustering, which is the parent while no child is selected; a child id
+    // looked up there is absent, so getUserClusterInformation() leaves the list
+    // empty and the caller's .at(0) walks off the end.
+    return showsChildScope ? doc->childClusterData() : doc->parentData();
+}
+
 void ClusterPalette::createClusterList(KlustersDoc* document){
     //Assign the document to the doc member for future use
     doc = document;
@@ -437,7 +446,7 @@ void ClusterPalette::updateClusterList(){
                 clusterText.append(" - ").append("noise");
             } else{
                 QList<QString> clusterInformation;
-                doc->data().getUserClusterInformation(curId,clusterInformation);
+                boundData().getUserClusterInformation(curId,clusterInformation);
 
                 if(!clusterInformation.at(0).isEmpty()){
                     clusterText.append(" - ").append(clusterInformation.at(0));
@@ -499,7 +508,7 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
             ClusterInformationDialog *clusterInformationDialog = new ClusterInformationDialog();
             //initizialize the dialog with the previous information
             QList<QString> clusterInformation;
-            doc->data().getUserClusterInformation(clusterNumber,clusterInformation);
+            boundData().getUserClusterInformation(clusterNumber,clusterInformation);
             clusterInformationDialog->setStructure(clusterInformation.at(0));
             clusterInformationDialog->setType(clusterInformation.at(1));
             clusterInformationDialog->setId(clusterInformation.at(2));
@@ -509,7 +518,7 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
             if(clusterInformationDialog->exec() == QDialog::Accepted)
             {
                 //Update the cluster user information.
-                doc->data().setUserClusterInformation(boundColors().itemId(item->data(INDEX).toInt()),clusterInformationDialog->getStructure(),clusterInformationDialog->getType(),clusterInformationDialog->getId(),clusterInformationDialog->getQuality(),clusterInformationDialog->getNotes());
+                boundData().setUserClusterInformation(boundColors().itemId(item->data(INDEX).toInt()),clusterInformationDialog->getStructure(),clusterInformationDialog->getType(),clusterInformationDialog->getId(),clusterInformationDialog->getQuality(),clusterInformationDialog->getNotes());
 
                 //update the text of the item
                 if(isInUserClusterInfoMode){
@@ -580,7 +589,7 @@ void ClusterPalette::slotOnItem(QListWidgetItem* item){
         if(clusterNumber != 0 && clusterNumber != 1){
             //Update the statusbar with the cluster information
             QList<QString> clusterInformation;
-            doc->data().getUserClusterInformation(clusterNumber,clusterInformation);
+            boundData().getUserClusterInformation(clusterNumber,clusterInformation);
 
             QString clusterText;
             bool first = true;
@@ -872,7 +881,7 @@ void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
     iconView->setGridSize(QSize(2500,iconView->gridSize().height()));
 
     QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
-    doc->data().getClusterUserInformation(electrodeGroupId,clusterUserInformationMap);
+    boundData().getClusterUserInformation(electrodeGroupId,clusterUserInformationMap);
 
     ItemColors& clusterColors = boundColors();
     ClusterUserInformation currentClusterInformation;

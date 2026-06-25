@@ -186,6 +186,14 @@ public:
     Data& data() const {return *(activeData ? activeData : clusteringData);}
     /** The parent (.clu) clustering, regardless of the hierarchical active state. */
     Data& parentData() const {return *clusteringData;}
+    /** The child (.clc) clustering, regardless of the active state.  The child
+     *  palette consults this (not data(), which is the active clustering) when
+     *  it maps a row to a cluster id: with no child selected, data() is the
+     *  PARENT clustering, which does not contain the child ids, so a per-id
+     *  lookup there returns nothing and the caller indexes an empty list.
+     *  Falls back to the parent clustering when the hierarchy is not loaded so
+     *  the reference is always valid; the child palette is empty in that state. */
+    Data& childClusterData() const {return *(childData ? childData : clusteringData);}
 
     /**Manages the color change of a single cluster.
     * Called when the palette is in immediate-update mode (no need to press
