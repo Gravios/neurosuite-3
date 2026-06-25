@@ -764,6 +764,8 @@ private:
     bool dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods);
     /** Re-enable/disable the atom (child-layer) undo/redo menu items. */
     void refreshChildUndoActions();
+    /** Cycle keyboard focus across the three palettes: parent <-> A <-> B. */
+    void cycleHierarchyFocus(bool forward);
 
     /**
     * Represents the document on which the application works
