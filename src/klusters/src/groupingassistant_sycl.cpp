@@ -80,19 +80,19 @@ extern "C" int sycl_compute_probabilities(
             q = queue(default_selector_v, property::queue::in_order{});
         }
 
-        const size_t featSz  = (size_t)nbSpikes   * nbDim;
-        const size_t cholSz  = (size_t)nbClusters * nbDim * nbDim;
-        const size_t meansSz = (size_t)nbClusters * nbDim;
-        const size_t probSz  = (size_t)nbSpikes   * nbClusters;
+        const size_t featSz  = static_cast<size_t>(nbSpikes)   * nbDim;
+        const size_t cholSz  = static_cast<size_t>(nbClusters) * nbDim * nbDim;
+        const size_t meansSz = static_cast<size_t>(nbClusters) * nbDim;
+        const size_t probSz  = static_cast<size_t>(nbSpikes)   * nbClusters;
 
         // Allocate USM (Unified Shared Memory) — simpler than explicit buffers
         // and avoids a manual copy-back step on Intel Arc (shares system RAM).
         double* d_feat  = malloc_device<double>(featSz,  q);
         double* d_chol  = malloc_device<double>(cholSz,  q);
         double* d_means = malloc_device<double>(meansSz, q);
-        double* d_log   = malloc_device<double>((size_t)nbClusters, q);
+        double* d_log   = malloc_device<double>(static_cast<size_t>(nbClusters), q);
         double* d_prob  = malloc_device<double>(probSz,  q);
-        int*    d_ign   = malloc_device<int>   ((size_t)nbClusters, q);
+        int*    d_ign   = malloc_device<int>   (static_cast<size_t>(nbClusters), q);
 
         if (!d_feat || !d_chol || !d_means || !d_log || !d_prob || !d_ign)
             throw std::runtime_error("SYCL USM allocation failed");
@@ -101,9 +101,9 @@ extern "C" int sycl_compute_probabilities(
         q.memcpy(d_feat,  features,    featSz  * sizeof(double));
         q.memcpy(d_chol,  choleskyAll, cholSz  * sizeof(double));
         q.memcpy(d_means, means,       meansSz * sizeof(double));
-        q.memcpy(d_log,   logTerms,    (size_t)nbClusters * sizeof(double));
+        q.memcpy(d_log,   logTerms,    static_cast<size_t>(nbClusters) * sizeof(double));
         q.memcpy(d_prob,  probOut,     probSz  * sizeof(double));
-        q.memcpy(d_ign,   ignoreFlags, (size_t)nbClusters * sizeof(int));
+        q.memcpy(d_ign,   ignoreFlags, static_cast<size_t>(nbClusters) * sizeof(int));
         q.wait();
 
         // ------------------------------------------------------------------
@@ -111,7 +111,7 @@ extern "C" int sycl_compute_probabilities(
         // nd_range: global = (nbClusters, nbSpikes), local = (1, 256)
         // ------------------------------------------------------------------
         const size_t LSIZE = 256;
-        const size_t gSpikes   = ((size_t)nbSpikes + LSIZE - 1) / LSIZE * LSIZE;
+        const size_t gSpikes   = (static_cast<size_t>(nbSpikes) + LSIZE - 1) / LSIZE * LSIZE;
 
         q.submit([&](handler& h) {
             // Capture by value so the lambda is device-safe.
