@@ -273,6 +273,15 @@ public:
     int promoteChild(int childCluster, KlustersView& activeView);
     /** Move child @p childCluster's spikes onto the existing fiber @p targetFiber. */
     bool moveChild(int childCluster, int targetFiber, KlustersView& activeView);
+    /** Collect @p children (possibly from different fibers) into one new fiber.
+     *  Returns the new fiber id, or -1.  Reuses moveSpikeSubsetToCluster. */
+    int groupChildrenIntoFiber(const QList<int>& children, KlustersView& activeView);
+    /** Explode @p fiber into its constituent children, each becoming its own
+     *  fiber (one keeps @p fiber's id).  Inverse of mergeParentFibers. */
+    bool dissolveFiber(int fiber, KlustersView& activeView);
+    /** Eject child @p childCluster from its fiber onto the noise cluster (1)
+     *  without deleting its spikes. */
+    bool dropChildToNoise(int childCluster, KlustersView& activeView);
     /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
      *  child's fiber is the .clu label of its spikes).  Cheap pure function of
      *  the data, so it keeps the maps correct across edits AND undo/redo with no

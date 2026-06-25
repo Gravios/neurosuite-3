@@ -1334,6 +1334,60 @@ bool KlustersDoc::moveChild(int childCluster, int targetFiber, KlustersView& act
     return true;
 }
 
+int KlustersDoc::groupChildrenIntoFiber(const QList<int>& children, KlustersView& activeView){
+    if (!childData || children.isEmpty()) return -1;
+    setActiveClustering(false);
+    const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
+    int target = -1;
+    for (int c : children){
+        if (!childToParent.contains(c)) continue;
+        const int parent = childToParent.value(c);
+        if (parent == newId) continue;                // already pooled
+        const QVector<int> spk = childData->clusterSpkIndices(c);
+        if (spk.isEmpty()) continue;
+        moveSpikeSubsetToCluster(parent, spk, (target < 0 ? newId : target), activeView);
+        if (target < 0){
+            target = newId;
+            // colour the new fiber (appended after the first move so a Ctrl+Z
+            // that reverts that move also drops the colour).
+            if (!clusterColorList->contains(newId)){
+                QColor color;
+                color.setHsv(static_cast<int>(fmod(static_cast<double>(newId) * 7, 36)) * 10, 200, 255);
+                clusterColorList->append(newId, color);
+            }
+        }
+    }
+    if (target < 0) return -1;
+    clusterPalette.updateClusterList();
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    return target;
+}
+
+bool KlustersDoc::dissolveFiber(int fiber, KlustersView& activeView){
+    if (!childData) return false;
+    const QList<int> kids = parentToChildren.value(fiber);
+    if (kids.size() < 2) return false;                // nothing to explode
+    // promoteChild detaches each child into its own fiber; the final child is
+    // the only one left under `fiber` so its promote no-ops and it keeps the id.
+    for (int c : kids)
+        promoteChild(c, activeView);                  // each re-derives + emits
+    return true;
+}
+
+bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
+    if (!childData || !childToParent.contains(childCluster)) return false;
+    const int parent = childToParent.value(childCluster);
+    if (parent == 1) return false;                    // already noise
+    const QVector<int> spk = childData->clusterSpkIndices(childCluster);
+    if (spk.isEmpty()) return false;
+    setActiveClustering(false);
+    moveSpikeSubsetToCluster(parent, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    return true;
+}
+
 bool KlustersDoc::saveHierarchySiblings(){
     if (!childData || clcSiblingPath.isEmpty()) return true;   // nothing to write
     // .clc — the per-spike child layer (unchanged by merge/promote/move, but
