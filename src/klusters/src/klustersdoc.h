@@ -711,6 +711,11 @@ public:
      *  after a nudge the desync predates it.  See
      *  KlustersApp::slotRecluster. */
     bool clusterHasMembers(int clusterId) const;
+    /** Like clusterHasMembers, but queries the ACTIVE clustering (childData in
+     *  hierarchical mode) rather than the parent.  The recluster guard uses this
+     *  so a child id -- which never exists in the parent clustering -- is
+     *  validated against the child clustering that actually owns it. */
+    bool activeClusterHasMembers(int clusterId) const;
 
     /**
      * Re-aligns the spikes of @p clusterId to their true peak position.
@@ -1325,6 +1330,14 @@ private:
     ItemColors* childColorList  = nullptr;   // colours for the child clusters
     Data*       activeData      = nullptr;   // VIEW-facing: == clusteringData, or childData
     ItemColors* activeColorList = nullptr;   // parallels activeData
+
+    // Data pinned for the in-flight recluster.  Set when the temp .fet is built
+    // (== data(), i.e. childData in hierarchical mode) and consumed at
+    // integrate/UI time, so an async selection change between launch and the
+    // KlustaKwik exit cannot retarget the integration.  null when no recluster
+    // is in flight.  See createFeatureFile / integrateReclusteredClusters /
+    // reclusteringUpdate.
+    Data*       reclusterTarget = nullptr;
     QString     clcSiblingPath;              // resolved .clc path ("" if none detected)
     QString     clpSiblingPath;              // resolved .clp child->parent map ("" if none)
     // Atom-layer (childData) edits live on their OWN undo timeline, because the
