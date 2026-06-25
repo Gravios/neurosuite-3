@@ -732,18 +732,28 @@ void KlustersApp::createMenus()
     mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Fiber"));
     mDissolveFiber = hierarchyMenu->addAction(tr("&Dissolve Fiber into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
+    hierarchyMenu->addSeparator();
+    mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
+    mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
+    mRedoChildEdit = hierarchyMenu->addAction(tr("&Redo Child-Layer Edit"));
     mMergeFibers->setEnabled(false);
     mPromoteChild->setEnabled(false);
     mMoveChild->setEnabled(false);
     mGroupChildren->setEnabled(false);
     mDissolveFiber->setEnabled(false);
     mDropChildNoise->setEnabled(false);
+    mMergeChildren->setEnabled(false);
+    mUndoChildEdit->setEnabled(false);
+    mRedoChildEdit->setEnabled(false);
     connect(mMergeFibers, &QAction::triggered, this, &KlustersApp::slotMergeFibers);
     connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
     connect(mMoveChild, &QAction::triggered, this, &KlustersApp::slotMoveChildrenToFiber);
     connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoFiber);
     connect(mDissolveFiber, &QAction::triggered, this, &KlustersApp::slotDissolveFiber);
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
+    connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
+    connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
+    connect(mRedoChildEdit, &QAction::triggered, this, &KlustersApp::slotRedoChildEdit);
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");
     newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
     connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
@@ -3361,6 +3371,36 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
     if(mGroupChildren)  mGroupChildren->setEnabled(editable);
     if(mDissolveFiber)  mDissolveFiber->setEnabled(editable);
     if(mDropChildNoise) mDropChildNoise->setEnabled(editable);
+    if(mMergeChildren)  mMergeChildren->setEnabled(editable);
+    if(mUndoChildEdit)  mUndoChildEdit->setEnabled(editable && doc->childUndoCount() > 0);
+    if(mRedoChildEdit)  mRedoChildEdit->setEnabled(editable && doc->childRedoCount() > 0);
+}
+
+void KlustersApp::slotMergeChildren(){
+    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    const QList<int> kids = childPalette->selectedClusters();
+    if(kids.size() < 2){
+        statusBar()->showMessage(tr("Select two or more children of the same fiber to merge."), 4000);
+        return;
+    }
+    if(doc->mergeChildren(kids, *activeView()) < 0)
+        statusBar()->showMessage(tr("Children must belong to the same fiber to merge."), 4000);
+    if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
+    if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
+}
+
+void KlustersApp::slotUndoChildEdit(){
+    if(!doc || !activeView()) return;
+    doc->undoChildEdit(*activeView());
+    if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
+    if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
+}
+
+void KlustersApp::slotRedoChildEdit(){
+    if(!doc || !activeView()) return;
+    doc->redoChildEdit(*activeView());
+    if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
+    if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
 
 void KlustersApp::slotGroupChildrenIntoFiber(){

@@ -1388,6 +1388,71 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     return true;
 }
 
+void KlustersDoc::syncChildColors(){
+    if (!childData || !childColorList) return;
+    const QList<dataType> ids = childData->clusterIds();
+    for (dataType id : ids){
+        if (!childColorList->contains(static_cast<int>(id))){
+            QColor color;
+            if (id == 1) color.setHsv(0, 0, 220);
+            else color.setHsv(static_cast<int>(fmod(static_cast<double>(id) * 7, 36)) * 10, 200, 255);
+            childColorList->append(static_cast<int>(id), color);
+        }
+    }
+}
+
+int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeView){
+    if (!childData || children.size() < 2) return -1;
+    // Same-fiber guard: merging atoms from different fibers would create a
+    // microfiber whose spikes straddle two fibers, which the nesting invariant
+    // forbids.  Refuse rather than silently re-parent.
+    const int parent = childToParent.value(children.first(), -1);
+    for (int c : children)
+        if (childToParent.value(c, -2) != parent) return -1;
+
+    QList<int> grp = children;                         // groupClusters takes a non-const ref
+    const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots
+    ChildEdit e; e.added = { newId }; e.deleted = children;
+    childUndoStack.prepend(e);
+    childRedoStack.clear();                            // a new edit invalidates redo
+
+    syncChildColors();
+    rebuildHierarchyFromData();
+    if (childScopeActive) activeView.showAllWidgets();
+    emit hierarchyChanged();
+    modified = true;
+    return newId;
+}
+
+bool KlustersDoc::undoChildEdit(KlustersView& activeView){
+    if (!childData || childUndoStack.isEmpty()) return false;
+    ChildEdit e = childUndoStack.takeFirst();
+    QList<int> added = e.added;                        // by-ref args; copy so the entry is preserved
+    QList<int> modified = e.modified;
+    childData->undo(added, modified);                 // reverts childData's tables
+    childRedoStack.prepend(e);
+    syncChildColors();
+    rebuildHierarchyFromData();
+    if (childScopeActive) activeView.showAllWidgets();
+    emit hierarchyChanged();
+    modified = true;
+    return true;
+}
+
+bool KlustersDoc::redoChildEdit(KlustersView& activeView){
+    if (!childData || childRedoStack.isEmpty()) return false;
+    ChildEdit e = childRedoStack.takeFirst();
+    QList<int> added = e.added, modified = e.modified, deleted = e.deleted;
+    childData->redo(added, modified, deleted);        // re-applies the atom edit
+    childUndoStack.prepend(e);
+    syncChildColors();
+    rebuildHierarchyFromData();
+    if (childScopeActive) activeView.showAllWidgets();
+    emit hierarchyChanged();
+    modified = true;
+    return true;
+}
+
 bool KlustersDoc::saveHierarchySiblings(){
     if (!childData || clcSiblingPath.isEmpty()) return true;   // nothing to write
     // .clc — the per-spike child layer (unchanged by merge/promote/move, but
