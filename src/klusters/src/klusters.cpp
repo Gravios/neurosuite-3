@@ -906,6 +906,17 @@ void KlustersApp::createMenus()
         if (childPanel && childPanel->isVisible())
             repopulateChildPalette(clusterPalette->selectedClusters());
     });
+    // After a child (atom) split, hierarchyChanged has already repopulated the
+    // child palette for the unchanged parent; land focus on the new sibling atoms.
+    connect(doc, &KlustersDoc::hierarchyChildrenCreated, this,
+            [this](const QList<int>& newChildren){
+        if (!childPanel || !childPanel->isVisible() || newChildren.isEmpty()) return;
+        ClusterPalette* cp = focusedChildPalette() ? focusedChildPalette() : childPalette;
+        if (cp) {
+            cp->selectItems(newChildren);
+            cp->setFocusToList();
+        }
+    });
     connect(doc, &KlustersDoc::spikesDeleted, this, &KlustersApp::slotSpikesDeleted);
 
     // After a polygon-driven new-cluster operation in any 2D scatter view,
