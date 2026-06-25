@@ -756,6 +756,14 @@ private:
     /** The child palette (A or B) that currently owns keyboard focus, or nullptr
      *  if neither does. */
     ClusterPalette* focusedChildPalette() const;
+    /** Union of the children selected across palettes A and B. */
+    QList<int> selectedChildrenAB() const;
+    /** Route a Ctrl-modified arrow / M key to the matching hierarchy operation
+     *  based on the current parent/child selection, while the dual child view is
+     *  visible.  Returns true if the key was consumed. */
+    bool dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods);
+    /** Re-enable/disable the atom (child-layer) undo/redo menu items. */
+    void refreshChildUndoActions();
 
     /**
     * Represents the document on which the application works

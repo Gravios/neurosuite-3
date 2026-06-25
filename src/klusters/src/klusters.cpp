@@ -330,7 +330,9 @@ void KlustersApp::createMenus()
     connect(mUndo, &QAction::triggered, this, &KlustersApp::slotUndo);
 
     mRedo = editMenu->addAction(tr("Redo"));
-    mRedo->setShortcut(QKeySequence::Redo);
+    mRedo->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Y));   // explicit Ctrl+Y so the
+                                                              // Linux default Ctrl+Shift+Z
+                                                              // is free for the atom layer
     mRedo->setIcon(QPixmap(":/shared-icons/edit-redo"));
     connect(mRedo, &QAction::triggered, this, &KlustersApp::slotRedo);
 
@@ -740,6 +742,7 @@ void KlustersApp::createMenus()
     mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
     mUndoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
     mRedoChildEdit = hierarchyMenu->addAction(tr("&Redo Child-Layer Edit"));
+    mRedoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Y));
     mMergeFibers->setEnabled(false);
     mPromoteChild->setEnabled(false);
     mMoveChild->setEnabled(false);
@@ -1429,6 +1432,14 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             if(clusterPalette) clusterPalette->setFocusToList();
             return true;
         }
+
+        // Hierarchy operations (Ctrl+arrows, M) while the dual child view is up.
+        // Runs before the Left/Right tab-cycle handler so Ctrl+Left/Right is
+        // claimed for custody transfer when a child pane has focus; otherwise it
+        // returns false and the tab handler keeps Ctrl+Left/Right.
+        if(childPanel && childPanel->isVisible()
+           && dispatchHierarchyKey(ke->key(), ke->modifiers()))
+            return true;
         // "1" — new cluster mode
         if(ke->key() == Qt::Key_1 && ke->modifiers() == Qt::NoModifier
            && !isInit && doc && activeView()){
@@ -1550,6 +1561,13 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
            && paletteHasFocus()){
             ke->accept(); // claim the shortcut so the QAction doesn't fire
+            return true;
+        }
+        // M is the mean-presentation toggle globally, but the adaptive merge in
+        // the dual child view when a palette has focus; claim it there.
+        if(ke->key() == Qt::Key_M && ke->modifiers() == Qt::NoModifier
+           && childPanel && childPanel->isVisible() && paletteHasFocus()){
+            ke->accept();
             return true;
         }
     }
@@ -3556,6 +3574,102 @@ ClusterPalette* KlustersApp::focusedChildPalette() const {
         f = f->parentWidget();
     }
     return nullptr;
+}
+
+QList<int> KlustersApp::selectedChildrenAB() const {
+    QList<int> kids;
+    if(childPaletteA) kids += childPaletteA->selectedClusters();
+    if(childPaletteB) kids += childPaletteB->selectedClusters();
+    return kids;
+}
+
+void KlustersApp::refreshChildUndoActions(){
+    if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc && doc->childUndoCount() > 0);
+    if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc && doc->childRedoCount() > 0);
+}
+
+// Ctrl-arrow / M hierarchy operations, dispatched by selection state while the
+// dual child view is visible.  All operations reuse the existing doc primitives
+// (the same ones the &Hierarchy menu drives).  Returns true when consumed.
+//   M (no mod) ............ adaptive merge (see below)
+//   Ctrl+Up ............... new fiber from selected children (or all children of 2+ parents)
+//   Ctrl+Down ............. group selected parents
+//   Ctrl+Shift+Down ....... dissolve the selected parent
+//   Ctrl+Left/Right ....... spike-custody transfer B->A / A->B (needs A/B focus)
+bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
+    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return false;
+    const bool ctrl  = mods & Qt::ControlModifier;
+    const bool shift = mods & Qt::ShiftModifier;
+    const QList<int> parents = clusterPalette->selectedClusters();
+    const QList<int> kidsAB  = selectedChildrenAB();
+
+    // M -- adaptive merge.  Only when a palette holds focus (otherwise M is the
+    // mean-presentation display toggle).
+    if(key == Qt::Key_M && mods == Qt::NoModifier){
+        if(!paletteHasFocus()) return false;
+        if(kidsAB.size() >= 2){
+            if(doc->mergeChildren(kidsAB, *activeView()) < 0)
+                statusBar()->showMessage(tr("Children must belong to the same fiber to merge."), 4000);
+        } else if(kidsAB.size() == 1){
+            statusBar()->showMessage(tr("Select 2+ children to merge, or none to merge a whole fiber's children."), 4000);
+        } else if(parents.size() == 1){
+            doc->mergeChildren(doc->childrenOf(parents), *activeView());   // collapse one fiber's children
+        } else if(parents.size() >= 2){
+            doc->mergeParentFibers(parents, *activeView());                // fold parents into one
+        } else {
+            return false;
+        }
+        refreshChildUndoActions();
+        return true;
+    }
+
+    // Arrow operations require the Ctrl modifier and a palette in focus.
+    if(!ctrl || !paletteHasFocus()) return false;
+
+    if(key == Qt::Key_Up && !shift){                       // new fiber from children
+        QList<int> kids = kidsAB;
+        if(kids.isEmpty() && parents.size() >= 2) kids = doc->childrenOf(parents);
+        if(kids.isEmpty()){
+            statusBar()->showMessage(tr("Select children (or 2+ parents) to form a new fiber."), 4000);
+            return true;
+        }
+        doc->groupChildrenIntoFiber(kids, *activeView());
+        return true;
+    }
+    if(key == Qt::Key_Down && shift){                      // dissolve parent
+        if(parents.size() != 1){
+            statusBar()->showMessage(tr("Select exactly one fiber to dissolve into its children."), 4000);
+            return true;
+        }
+        doc->dissolveFiber(parents.first(), *activeView());
+        return true;
+    }
+    if(key == Qt::Key_Down && !shift){                     // group parents
+        if(parents.size() < 2){
+            statusBar()->showMessage(tr("Select two or more fibers to group."), 4000);
+            return true;
+        }
+        doc->mergeParentFibers(parents, *activeView());
+        return true;
+    }
+    if((key == Qt::Key_Left || key == Qt::Key_Right) && !shift){   // spike-custody A<->B
+        if(focusedChildPalette() == nullptr) return false;         // only from a child pane
+        if(parentSlotA < 0 || parentSlotB < 0){
+            statusBar()->showMessage(tr("Custody transfer needs a parent in both A and B."), 5000);
+            return true;
+        }
+        const bool toB = (key == Qt::Key_Right);
+        ClusterPalette* src = toB ? childPaletteA : childPaletteB;
+        const int targetParent = toB ? parentSlotB : parentSlotA;
+        const QList<int> moving = src ? src->selectedClusters() : QList<int>();
+        if(moving.isEmpty()){
+            statusBar()->showMessage(tr("Select the child(ren) to transfer in the source pane."), 4000);
+            return true;
+        }
+        for(int c : moving) doc->moveChild(c, targetParent, *activeView());
+        return true;
+    }
+    return false;
 }
 
 void KlustersApp::repopulateChildPalette(const QList<int>& parents){
@@ -7535,6 +7649,17 @@ void KlustersApp::slotShowShortcutHelp()
             {"(no shortcuts)", "Use Correlations menu to adjust amplitude"},
             {"Ctrl+Shift+F / Ctrl+Shift+B",
                                "Next / previous spike (in trace view)"},
+        }},
+        {"Hierarchical view (.clc child layer)", {
+            {"Tab",            "Cycle focus: parent \u2192 A \u2192 B palette"},
+            {"S",              "Mark focused palette's item (parent or child)"},
+            {"Esc",            "Return focus from a child palette to the parent"},
+            {"M",              "Merge (adaptive): children \u2192 one child; else fold fiber / parents"},
+            {"Ctrl+\u2191",        "New fiber from selected children"},
+            {"Ctrl+\u2193",        "Group selected parent fibers"},
+            {"Ctrl+Shift+\u2193",  "Dissolve selected fiber into its children"},
+            {"Ctrl+\u2190 / Ctrl+\u2192", "Spike-custody transfer between A and B"},
+            {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
         }},
     };
 
