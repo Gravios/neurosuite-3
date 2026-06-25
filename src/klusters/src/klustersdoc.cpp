@@ -1420,6 +1420,7 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
+    lastEditLayer = EditLayer::Atom;
     modified = true;
     return newId;
 }
@@ -1428,13 +1429,14 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     if (!childData || childUndoStack.isEmpty()) return false;
     ChildEdit e = childUndoStack.takeFirst();
     QList<int> added = e.added;                        // by-ref args; copy so the entry is preserved
-    QList<int> modified = e.modified;
-    childData->undo(added, modified);                 // reverts childData's tables
+    QList<int> mod = e.modified;
+    childData->undo(added, mod);                       // reverts childData's tables
     childRedoStack.prepend(e);
     syncChildColors();
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
+    lastEditLayer = EditLayer::Atom;
     modified = true;
     return true;
 }
@@ -1442,13 +1444,14 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
 bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     if (!childData || childRedoStack.isEmpty()) return false;
     ChildEdit e = childRedoStack.takeFirst();
-    QList<int> added = e.added, modified = e.modified, deleted = e.deleted;
-    childData->redo(added, modified, deleted);        // re-applies the atom edit
+    QList<int> added = e.added, mod = e.modified, deleted = e.deleted;
+    childData->redo(added, mod, deleted);             // re-applies the atom edit
     childUndoStack.prepend(e);
     syncChildColors();
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
+    lastEditLayer = EditLayer::Atom;
     modified = true;
     return true;
 }
@@ -1767,6 +1770,7 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
 
     //Notify the errorMatrixView of the modification
     emit clustersGrouped(clustersToGroup,newClusterIdint);
+    lastEditLayer = EditLayer::Parent;
 
     //Reset the color status in clusterColors if need it
     if(clusterColorList->isColorChanged())
@@ -1836,6 +1840,7 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     }
 
     emit removeSpikesFromClusters(fromClusters, toCluster, emptiedClusters);
+    lastEditLayer = EditLayer::Parent;
 
     if (clusterColorList->isColorChanged())
         clusterColorList->resetAllColorStatus();
@@ -3118,7 +3123,7 @@ void KlustersDoc::undo(){
     }
     // hierarchical view: an undo of a hierarchy edit reverts clusteringData, so
     // re-derive the fiber<-child maps and refresh the child palette.
-    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
+    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); lastEditLayer = EditLayer::Parent; }
 }
 
 
@@ -3270,7 +3275,7 @@ void KlustersDoc::redo(){
         curationLogger->notifyRedo();
     }
     // hierarchical view: a redo re-applies a hierarchy edit; re-derive the maps.
-    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
+    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); lastEditLayer = EditLayer::Parent; }
 }
 
 void KlustersDoc::renumberClusters(){

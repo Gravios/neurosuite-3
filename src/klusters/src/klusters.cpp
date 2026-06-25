@@ -735,6 +735,7 @@ void KlustersApp::createMenus()
     hierarchyMenu->addSeparator();
     mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
     mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
+    mUndoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
     mRedoChildEdit = hierarchyMenu->addAction(tr("&Redo Child-Layer Edit"));
     mMergeFibers->setEnabled(false);
     mPromoteChild->setEnabled(false);
@@ -3391,6 +3392,17 @@ void KlustersApp::slotMergeChildren(){
 
 void KlustersApp::slotUndoChildEdit(){
     if(!doc || !activeView()) return;
+    if(doc->childUndoCount() == 0){
+        statusBar()->showMessage(tr("No child-layer (atom) edit to undo."), 4000);
+        return;
+    }
+    // Two undo timelines exist: Ctrl+Z reverts fiber-layer edits, Ctrl+Shift+Z
+    // reverts atom-layer edits.  If the user's most recent action was NOT an
+    // atom edit, warn that this is reverting an earlier atom edit out of order.
+    if(!doc->childUndoMatchesLastAction())
+        statusBar()->showMessage(
+            tr("Note: your most recent action was a fiber-layer edit (use Ctrl+Z). "
+               "Ctrl+Shift+Z is reverting an earlier child-layer edit."), 7000);
     doc->undoChildEdit(*activeView());
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);

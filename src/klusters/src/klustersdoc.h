@@ -293,6 +293,10 @@ public:
     bool redoChildEdit(KlustersView& activeView);
     int childUndoCount() const { return childUndoStack.count(); }
     int childRedoCount() const { return childRedoStack.count(); }
+    /** True when the top of the child-undo stack IS the user's most recent
+     *  action (so Ctrl+Shift+Z reverts what they just did).  False when the most
+     *  recent action was a fiber-layer edit/undo — the app warns in that case. */
+    bool childUndoMatchesLastAction() const { return lastEditLayer == EditLayer::Atom; }
     /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
      *  child's fiber is the .clu label of its spikes).  Cheap pure function of
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
@@ -1310,6 +1314,11 @@ private:
     struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted; };
     QList<ChildEdit> childUndoStack;
     QList<ChildEdit> childRedoStack;
+    // Which layer the most recent edit/undo/redo touched, so the atom-undo
+    // (Ctrl+Shift+Z) can warn when it would revert an atom edit that is NOT the
+    // user's most recent action (their last action was a fiber-layer edit).
+    enum class EditLayer { None, Parent, Atom };
+    EditLayer lastEditLayer = EditLayer::None;
     // sibling paths captured at open so the child clustering can be re-read lazily
     QString     siblingFetPath, siblingSpkPath, siblingYamlPath;
     long        siblingSpkFileLength = 0;
