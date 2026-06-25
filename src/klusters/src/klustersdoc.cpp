@@ -1460,8 +1460,7 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     QList<int> grp = children;                         // groupClusters takes a non-const ref
     const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots
     ChildEdit e; e.added = { newId }; e.deleted = children;
-    childUndoStack.prepend(e);
-    childRedoStack.clear();                            // a new edit invalidates redo
+    recordChildEdit(e);
 
     syncChildColors();
     rebuildHierarchyFromData();
@@ -1485,6 +1484,8 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     emit hierarchyChanged();
     lastEditLayer = EditLayer::Atom;
     modified = true;
+    emit updateUndoNb(parentUndoCount());
+    emit updateRedoNb(parentRedoCount());
     return true;
 }
 
@@ -1500,7 +1501,105 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     emit hierarchyChanged();
     lastEditLayer = EditLayer::Atom;
     modified = true;
+    // Refresh the main Undo/Redo enable: the slots OR the child counts, so emit
+    // the parent counts to drive a combined re-evaluation.
+    emit updateUndoNb(parentUndoCount());
+    emit updateRedoNb(parentRedoCount());
     return true;
+}
+
+// ── unified undo/redo dispatcher ─────────────────────────────────────────────
+// Two real undo timelines exist -- the parent stack (clusteringData, driven by
+// undo()/redo()) and the atom stack (childData, driven by undoChildEdit()/
+// redoChildEdit()).  editOrderUndo/editOrderRedo record, newest-first, which
+// layer each edit touched, so one keystroke reverts the single most recent edit.
+// The live per-layer counts are authoritative: a marker whose layer stack was
+// capped (parent nbUndo) or bulk-cleared (a parent op re-cutting the child layer)
+// is stale and skipped, so the timeline needs no cap/clear bookkeeping of its own.
+
+void KlustersDoc::recordChildEdit(const ChildEdit& e){
+    childUndoStack.prepend(e);
+    childRedoStack.clear();                       // a new edit invalidates atom redo
+    editOrderUndo.prepend(EditLayer::Atom);       // unified-order marker
+    editOrderRedo.clear();                        // ... and the unified redo
+    // Make the main Undo enable pick up this atom-only edit (slots OR child count).
+    emit updateUndoNb(parentUndoCount());
+    emit updateRedoNb(parentRedoCount());
+}
+
+void KlustersDoc::undoDispatch(){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    if (!v) return;
+    while (!editOrderUndo.isEmpty()){
+        const EditLayer layer = editOrderUndo.first();
+        if (layer == EditLayer::Atom){
+            if (childUndoCount() > 0){
+                editOrderUndo.removeFirst();
+                editOrderRedo.prepend(layer);
+                undoChildEdit(*v);
+                return;
+            }
+        } else {                                  // Parent (None treated as parent)
+            if (parentUndoCount() > 0){
+                editOrderUndo.removeFirst();
+                editOrderRedo.prepend(layer);
+                undo();
+                return;
+            }
+        }
+        editOrderUndo.removeFirst();              // stale marker (its stack is empty): discard
+    }
+    // No usable marker (e.g. an edit made before the timeline existed): fall back
+    // to whichever timeline still has something to revert, parent first.
+    if (parentUndoCount() > 0)      undo();
+    else if (childUndoCount() > 0)  undoChildEdit(*v);
+}
+
+void KlustersDoc::redoDispatch(){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    if (!v) return;
+    while (!editOrderRedo.isEmpty()){
+        const EditLayer layer = editOrderRedo.first();
+        if (layer == EditLayer::Atom){
+            if (childRedoCount() > 0){
+                editOrderRedo.removeFirst();
+                editOrderUndo.prepend(layer);
+                redoChildEdit(*v);
+                return;
+            }
+        } else {
+            if (parentRedoCount() > 0){
+                editOrderRedo.removeFirst();
+                editOrderUndo.prepend(layer);
+                redo();
+                return;
+            }
+        }
+        editOrderRedo.removeFirst();
+    }
+    if (parentRedoCount() > 0)     redo();
+    else if (childRedoCount() > 0) redoChildEdit(*v);
+}
+
+bool KlustersDoc::undoChildEditDispatch(){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    if (!v || childUndoCount() == 0) return false;
+    // Forced atom undo (Ctrl+Shift+Z): remove the most-recent Atom marker from the
+    // unified order -- wherever it sits, a newer parent edit may be above it -- and
+    // move it to the redo side so redoDispatch replays it in order.
+    for (int i = 0; i < editOrderUndo.size(); ++i)
+        if (editOrderUndo.at(i) == EditLayer::Atom){ editOrderUndo.removeAt(i); break; }
+    editOrderRedo.prepend(EditLayer::Atom);
+    return undoChildEdit(*v);
+}
+
+bool KlustersDoc::redoChildEditDispatch(){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    if (!v || childRedoCount() == 0) return false;
+    for (int i = 0; i < editOrderRedo.size(); ++i)
+        if (editOrderRedo.at(i) == EditLayer::Atom){ editOrderRedo.removeAt(i); break; }
+    editOrderUndo.prepend(EditLayer::Atom);
+    return redoChildEdit(*v);
 }
 
 bool KlustersDoc::saveHierarchySiblings(){
@@ -2321,8 +2420,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // calls prepareUndo once) -> one ChildEdit on the atom-undo timeline, so
         // Ctrl+Shift+Z reverts it: 'added' is removed and the sources restored.
         ChildEdit e; e.added = { newAtom }; e.modified = fromClusters; e.deleted = emptyClusters;
-        childUndoStack.prepend(e);
-        childRedoStack.clear();
+        recordChildEdit(e);
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
@@ -2410,8 +2508,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         // calls prepareUndo once, even for several new atoms) -> one ChildEdit, so
         // Ctrl+Shift+Z reverts the whole split in a single step.
         ChildEdit e; e.added = newClusters; e.modified = fromClusters; e.deleted = emptyClusters;
-        childUndoStack.prepend(e);
-        childRedoStack.clear();
+        recordChildEdit(e);
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
@@ -2752,6 +2849,7 @@ void KlustersDoc::prepareClusterColorUndo(){
     //Store the current clusterColors in the undo list and make the temporary become the current one.
     clusterColorListUndoList.prepend(clusterColorList);
     clusterColorList = clusterColorListTemp;
+    editOrderUndo.prepend(EditLayer::Parent);   // unified-order marker for this parent edit
 
     //if the number of undo has been reach remove the last element in the undo list (first inserted)
     int currentClusterColorsNbUndo = clusterColorListUndoList.count();
@@ -2761,6 +2859,7 @@ void KlustersDoc::prepareClusterColorUndo(){
     //Clear the redoList
     qDeleteAll(clusterColorListRedoList);
     clusterColorListRedoList.clear();
+    editOrderRedo.clear();   // a new parent edit invalidates the unified redo too
 
     //Signal to klusters the new number of undo and redo
     emit updateUndoNb(clusterColorListUndoList.count());
@@ -3860,8 +3959,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         // ChildEdit so Ctrl+Shift+Z reverts the child recluster: the new atoms are
         // removed and the reclustered source atoms restored from the snapshot.
         ChildEdit e; e.added = reclusteredClusterList; e.deleted = clustersToRecluster;
-        childUndoStack.prepend(e);
-        childRedoStack.clear();
+        recordChildEdit(e);
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();

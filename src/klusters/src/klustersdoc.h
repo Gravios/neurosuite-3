@@ -318,6 +318,21 @@ public:
      *  action (so Ctrl+Shift+Z reverts what they just did).  False when the most
      *  recent action was a fiber-layer edit/undo — the app warns in that case. */
     bool childUndoMatchesLastAction() const { return lastEditLayer == EditLayer::Atom; }
+    /** Unified undo/redo dispatcher.  Routes Ctrl+Z / Ctrl+Y to the parent
+     *  (clusteringData) or atom (childData) timeline by the recorded order of
+     *  edits, so one shortcut reverts the single most recent edit regardless of
+     *  which layer produced it.  Stale order markers (a layer capped by nbUndo,
+     *  or cleared when a parent op re-cut the child layer) are skipped using the
+     *  live per-layer stack counts as the source of truth. */
+    void undoDispatch();
+    void redoDispatch();
+    int  parentUndoCount() const { return clusterColorListUndoList.count(); }
+    int  parentRedoCount() const { return clusterColorListRedoList.count(); }
+    /** Force the atom timeline (Ctrl+Shift+Z and its redo): revert / replay the
+     *  most recent atom edit even when a newer parent edit exists, keeping the
+     *  unified order timeline consistent. */
+    bool undoChildEditDispatch();
+    bool redoChildEditDispatch();
     /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
      *  child's fiber is the .clu label of its spikes).  Cheap pure function of
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
@@ -1365,6 +1380,18 @@ private:
     // user's most recent action (their last action was a fiber-layer edit).
     enum class EditLayer { None, Parent, Atom };
     EditLayer lastEditLayer = EditLayer::None;
+    // Unified undo/redo order: one marker per edit, newest-first, recording which
+    // timeline (Parent=clusteringData, Atom=childData) that edit touched.  The
+    // dispatcher pops the top marker and reverts that layer; the live per-layer
+    // stack counts (parentUndoCount/childUndoCount) are authoritative for
+    // availability, so a marker whose layer stack was capped (nbUndo) or cleared
+    // (a parent op re-cutting the child layer) is simply skipped -- no separate
+    // cap/clear bookkeeping is mirrored here.
+    QList<EditLayer> editOrderUndo;
+    QList<EditLayer> editOrderRedo;
+    // Record one atom-layer edit: push its ChildEdit + an Atom order marker, and
+    // invalidate the atom + unified redo.  The single funnel for the child edits.
+    void recordChildEdit(const ChildEdit& e);
     // sibling paths captured at open so the child clustering can be re-read lazily
     QString     siblingFetPath, siblingSpkPath, siblingYamlPath;
     long        siblingSpkFileLength = 0;
