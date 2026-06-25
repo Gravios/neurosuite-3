@@ -5678,6 +5678,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         NS3_DIAG() << info;
     }
 
+    const bool childRecluster = doc->reclusterTargetIsChild();   // capture before the pin is consumed
     doc->reclusteringUpdate(clustersToRecluster,clustersFromReclustering);
 
     // Restore focus to the palette rather than the 2D ClusterView.  After a
@@ -5685,7 +5686,20 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // new clusters and inspect it — that requires arrow-key navigation in
     // the palette, which needs iconView focus.  focusClusterView() here
     // would silently break arrow-key nav (and force a Tab press to recover).
-    if (clusterPalette) clusterPalette->setFocusToList();
+    if (childRecluster) {
+        // Child recluster: parent selection is untouched (reclusteringUpdate's
+        // child branch leaves it), so keep the parent selected and land focus on
+        // the freshly split atoms in the child palette — clustersFromReclustering
+        // are the new child ids, and hierarchyChanged already repopulated the
+        // child palette for the parent.
+        ClusterPalette* cp = focusedChildPalette() ? focusedChildPalette() : childPalette;
+        if (cp) {
+            cp->selectItems(clustersFromReclustering);
+            cp->setFocusToList();
+        }
+    } else if (clusterPalette) {
+        clusterPalette->setFocusToList();
+    }
     processFinished = true;
     processKilled = false;
     // Re-run the full tab-change logic so that every action disabled by

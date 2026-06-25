@@ -721,6 +721,10 @@ public:
      *  so a child id -- which never exists in the parent clustering -- is
      *  validated against the child clustering that actually owns it. */
     bool activeClusterHasMembers(int clusterId) const;
+    /** True while an in-flight recluster targets the child (atom) layer; lets the
+     *  exit handler land focus on the new atoms in the child palette instead of
+     *  the parent list.  Valid until reclusteringUpdate consumes the pin. */
+    bool reclusterTargetIsChild() const { return reclusterTarget && reclusterTarget == childData; }
 
     /**
      * Re-aligns the spikes of @p clusterId to their true peak position.
